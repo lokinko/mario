@@ -1,4 +1,5 @@
 mod ai;
+mod context;
 mod db;
 mod error;
 mod memory;
@@ -18,11 +19,11 @@ use axum::{
 };
 use db::Database;
 use error::{AppError, AppResult};
-use memory::LexicalMemoryRetriever;
+use memory::{LexicalMemoryRetriever, MemoryRetriever};
 use models::{
-    AnalysisRequest, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReviewInput,
-    FinancialProfile, GoalInput, HoldingInput, ModelConfig, ModelConfigInput, ModelConnectionTest,
-    Snapshot,
+    AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
+    DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, ModelConfig,
+    ModelConfigInput, ModelConnectionTest, Snapshot,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -78,7 +79,9 @@ async fn main() -> AppResult<()> {
         )
         .route("/api/model-config/test", post(test_model_config))
         .route("/api/model-key", axum::routing::delete(delete_model_key))
+        .route("/api/analysis/preview", post(preview_analysis))
         .route("/api/analysis", post(run_analysis))
+        .route("/api/analyses", get(analyses))
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state);
@@ -212,28 +215,66 @@ async fn run_analysis(
     State(state): State<Arc<AppState>>,
     Json(request): Json<AnalysisRequest>,
 ) -> AppResult<Json<AnalysisResult>> {
-    if request.question.trim().is_empty() {
-        return Err(AppError::Validation("分析问题不能为空".into()));
-    }
+    validate_analysis_request(&request)?;
     let config = state.db.model_config()?;
     let snapshot = state.db.snapshot()?;
-    let memories = if request.use_memory {
-        state.db.memories()?
+    let retriever = LexicalMemoryRetriever;
+    let memories = if request.workflow == "deep" && request.use_memory {
+        retriever.search(&request.question, &state.db.memories()?, 8)
     } else {
         Vec::new()
     };
+    let built_context = context::ContextBuilder::build(&request, &snapshot, &memories);
+    if request.preview_revision.as_deref() != Some(built_context.revision.as_str()) {
+        return Err(AppError::Validation(
+            "本地数据或上下文选择已变化，请重新预览后再确认分析".into(),
+        ));
+    }
     let provider =
         OpenAiCompatibleProvider::new(config.base_url, config.model, secrets::get_api_key()?)?;
-    let retriever = LexicalMemoryRetriever;
     let orchestrator = InvestmentOrchestrator::new(&provider, &retriever);
-    let result = orchestrator.run(&request, &snapshot, &memories).await?;
-    state.db.save_analysis(
-        &result.id,
-        &request.question,
-        &result.answer,
-        &result.created_at,
-    )?;
+    let result = orchestrator
+        .run(&request, &built_context, &memories)
+        .await?;
+    state.db.save_analysis(&result, &request.question)?;
     Ok(Json(result))
+}
+
+async fn preview_analysis(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<AnalysisRequest>,
+) -> AppResult<Json<AnalysisPreview>> {
+    validate_analysis_request(&request)?;
+    let config = state.db.model_config()?;
+    let snapshot = state.db.snapshot()?;
+    let retriever = LexicalMemoryRetriever;
+    let memories = if request.workflow == "deep" && request.use_memory {
+        retriever.search(&request.question, &state.db.memories()?, 8)
+    } else {
+        Vec::new()
+    };
+    let built_context = context::ContextBuilder::build(&request, &snapshot, &memories);
+    Ok(Json(context::ContextBuilder::preview(
+        &request,
+        built_context,
+        config.provider,
+        config.model,
+        memories,
+    )))
+}
+
+async fn analyses(State(state): State<Arc<AppState>>) -> AppResult<Json<Vec<AnalysisHistoryItem>>> {
+    Ok(Json(state.db.analysis_history()?))
+}
+
+fn validate_analysis_request(request: &AnalysisRequest) -> AppResult<()> {
+    if request.question.trim().is_empty() {
+        return Err(AppError::Validation("分析问题不能为空".into()));
+    }
+    if !matches!(request.workflow.as_str(), "quick" | "deep") {
+        return Err(AppError::Validation("未知的分析工作流".into()));
+    }
+    Ok(())
 }
 
 fn data_directory() -> AppResult<PathBuf> {

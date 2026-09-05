@@ -7,8 +7,9 @@ use uuid::Uuid;
 use crate::{
     error::{AppError, AppResult},
     models::{
-        DecisionEntry, DecisionRecord, DecisionReview, DecisionReviewInput, FinancialProfile, Goal,
-        GoalInput, Holding, HoldingInput, MemoryItem, ModelConfig, Snapshot,
+        AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
+        DecisionReviewInput, FinancialProfile, Goal, GoalInput, Holding, HoldingInput, MemoryItem,
+        ModelConfig, Snapshot,
     },
     planning, risk,
 };
@@ -39,7 +40,8 @@ impl Database {
                monthly_contribution REAL NOT NULL DEFAULT 0,
                target_date TEXT NOT NULL,
                priority TEXT NOT NULL,
-               created_at TEXT NOT NULL
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL
              );
              CREATE TABLE IF NOT EXISTS holdings (
                id TEXT PRIMARY KEY,
@@ -50,7 +52,8 @@ impl Database {
                cost_basis REAL NOT NULL,
                target_pct REAL NOT NULL DEFAULT 0,
                currency TEXT NOT NULL,
-               created_at TEXT NOT NULL
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL
              );
              CREATE TABLE IF NOT EXISTS decisions (
                id TEXT PRIMARY KEY,
@@ -72,6 +75,7 @@ impl Database {
                id TEXT PRIMARY KEY,
                question TEXT NOT NULL,
                answer TEXT NOT NULL,
+               audit TEXT,
                created_at TEXT NOT NULL
              );
              CREATE TABLE IF NOT EXISTS settings (
@@ -85,6 +89,13 @@ impl Database {
             "current_amount",
             "REAL NOT NULL DEFAULT 0",
         )?;
+        ensure_column(&connection, "analyses", "audit", "TEXT")?;
+        ensure_column(
+            &connection,
+            "goals",
+            "updated_at",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
         ensure_column(
             &connection,
             "goals",
@@ -96,6 +107,12 @@ impl Database {
             "holdings",
             "target_pct",
             "REAL NOT NULL DEFAULT 0",
+        )?;
+        ensure_column(
+            &connection,
+            "holdings",
+            "updated_at",
+            "TEXT NOT NULL DEFAULT ''",
         )?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -154,7 +171,21 @@ impl Database {
         drop(holding_stmt);
         drop(goal_stmt);
 
-        Ok(build_snapshot(profile, goals, holdings))
+        let updated_at = conn
+            .query_row(
+                "SELECT MAX(value) FROM (
+                   SELECT updated_at AS value FROM profile
+                   UNION ALL
+                   SELECT CASE WHEN updated_at='' THEN created_at ELSE updated_at END FROM goals
+                   UNION ALL
+                   SELECT CASE WHEN updated_at='' THEN created_at ELSE updated_at END FROM holdings
+                 )",
+                [],
+                |row| row.get::<_, Option<String>>(0),
+            )?
+            .unwrap_or_else(|| Utc::now().to_rfc3339());
+
+        Ok(build_snapshot(profile, goals, holdings, updated_at))
     }
 
     pub fn save_profile(&self, profile: &FinancialProfile) -> AppResult<Snapshot> {
@@ -184,10 +215,11 @@ impl Database {
         }
         validate_non_negative(&[input.market_value, input.cost_basis, input.target_pct])?;
         validate_percentage(input.target_pct, "目标权重")?;
+        let now = Utc::now().to_rfc3339();
         self.conn()?.execute(
-            "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency, Utc::now().to_rfc3339()],
+            "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency, now],
         )?;
         self.snapshot()
     }
@@ -199,8 +231,8 @@ impl Database {
         validate_non_negative(&[input.market_value, input.cost_basis, input.target_pct])?;
         validate_percentage(input.target_pct, "目标权重")?;
         let affected = self.conn()?.execute(
-            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8 WHERE id=?1",
-            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency],
+            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, updated_at=?9 WHERE id=?1",
+            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency, Utc::now().to_rfc3339()],
         )?;
         if affected == 0 {
             return Err(AppError::Validation("找不到要更新的资产".into()));
@@ -220,9 +252,10 @@ impl Database {
 
     pub fn add_goal(&self, input: &GoalInput) -> AppResult<Snapshot> {
         validate_goal(input)?;
+        let now = Utc::now().to_rfc3339();
         self.conn()?.execute(
-            "INSERT INTO goals (id, name, target_amount, current_amount, monthly_contribution, target_date, priority, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![Uuid::new_v4().to_string(), input.name.trim(), input.target_amount, input.current_amount, input.monthly_contribution, input.target_date, input.priority, Utc::now().to_rfc3339()],
+            "INSERT INTO goals (id, name, target_amount, current_amount, monthly_contribution, target_date, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+            params![Uuid::new_v4().to_string(), input.name.trim(), input.target_amount, input.current_amount, input.monthly_contribution, input.target_date, input.priority, now],
         )?;
         self.snapshot()
     }
@@ -230,8 +263,8 @@ impl Database {
     pub fn update_goal(&self, id: &str, input: &GoalInput) -> AppResult<Snapshot> {
         validate_goal(input)?;
         let affected = self.conn()?.execute(
-            "UPDATE goals SET name=?2, target_amount=?3, current_amount=?4, monthly_contribution=?5, target_date=?6, priority=?7 WHERE id=?1",
-            params![id, input.name.trim(), input.target_amount, input.current_amount, input.monthly_contribution, input.target_date, input.priority],
+            "UPDATE goals SET name=?2, target_amount=?3, current_amount=?4, monthly_contribution=?5, target_date=?6, priority=?7, updated_at=?8 WHERE id=?1",
+            params![id, input.name.trim(), input.target_amount, input.current_amount, input.monthly_contribution, input.target_date, input.priority, Utc::now().to_rfc3339()],
         )?;
         if affected == 0 {
             return Err(AppError::Validation("找不到要更新的目标".into()));
@@ -439,22 +472,55 @@ impl Database {
         Ok(items)
     }
 
-    pub fn save_analysis(
-        &self,
-        id: &str,
-        question: &str,
-        answer: &str,
-        created_at: &str,
-    ) -> AppResult<()> {
+    pub fn save_analysis(&self, result: &AnalysisResult, question: &str) -> AppResult<()> {
         self.conn()?.execute(
-            "INSERT INTO analyses (id, question, answer, created_at) VALUES (?1,?2,?3,?4)",
-            params![id, question, answer, created_at],
+            "INSERT INTO analyses (id, question, answer, audit, created_at) VALUES (?1,?2,?3,?4,?5)",
+            params![
+                result.id,
+                question,
+                result.answer,
+                serde_json::to_string(&result.transparency)?,
+                result.created_at
+            ],
         )?;
         Ok(())
     }
+
+    pub fn analysis_history(&self) -> AppResult<Vec<AnalysisHistoryItem>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT id, question, created_at, audit FROM analyses ORDER BY created_at DESC LIMIT 50",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        let mut history = Vec::new();
+        for row in rows {
+            let (id, question, created_at, audit) = row?;
+            history.push(AnalysisHistoryItem {
+                id,
+                question,
+                created_at,
+                transparency: audit
+                    .as_deref()
+                    .and_then(|value| serde_json::from_str(value).ok()),
+            });
+        }
+        Ok(history)
+    }
 }
 
-fn build_snapshot(profile: FinancialProfile, goals: Vec<Goal>, holdings: Vec<Holding>) -> Snapshot {
+fn build_snapshot(
+    profile: FinancialProfile,
+    goals: Vec<Goal>,
+    holdings: Vec<Holding>,
+    updated_at: String,
+) -> Snapshot {
     let raw_total = holdings.iter().map(|h| h.market_value).sum::<f64>();
     let total_value = if raw_total.abs() < f64::EPSILON {
         0.0
@@ -511,7 +577,7 @@ fn build_snapshot(profile: FinancialProfile, goals: Vec<Goal>, holdings: Vec<Hol
         emergency_months,
         concentration_pct,
         plan,
-        updated_at: Utc::now().to_rfc3339(),
+        updated_at,
     }
 }
 
@@ -705,8 +771,13 @@ mod tests {
                    asset_class TEXT NOT NULL, market_value REAL NOT NULL, cost_basis REAL NOT NULL,
                    currency TEXT NOT NULL, created_at TEXT NOT NULL
                  );
+                 CREATE TABLE analyses (
+                   id TEXT PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL,
+                   created_at TEXT NOT NULL
+                 );
                  INSERT INTO goals VALUES ('g1','养老',1000000,'2036-12-31','重要','2026-01-01');
-                 INSERT INTO holdings VALUES ('h1','IDX','指数','基金',100000,90000,'CNY','2026-01-01');",
+                 INSERT INTO holdings VALUES ('h1','IDX','指数','基金',100000,90000,'CNY','2026-01-01');
+                 INSERT INTO analyses VALUES ('a1','旧问题','旧回答','2026-01-01');",
             )
             .unwrap();
         drop(connection);
@@ -716,5 +787,34 @@ mod tests {
         assert_eq!(snapshot.goals[0].current_amount, 0.0);
         assert_eq!(snapshot.goals[0].monthly_contribution, 0.0);
         assert_eq!(snapshot.holdings[0].target_pct, 0.0);
+        assert!(db.analysis_history().unwrap()[0].transparency.is_none());
+    }
+
+    #[test]
+    fn stores_analysis_transparency_audit() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        let result = AnalysisResult {
+            id: "analysis-1".into(),
+            answer: "先控制风险".into(),
+            stages: vec!["本地风险检查".into()],
+            transparency: crate::models::AnalysisTransparency {
+                provider: "mock".into(),
+                model: "mock-model".into(),
+                context_groups: vec!["本次问题".into(), "规则型风险检查".into()],
+                payload_bytes: 512,
+                context_revision: "ctx-test".into(),
+                memory_items_used: 2,
+                external_data_used: false,
+                api_key_sent: false,
+            },
+            created_at: "2026-01-01T00:00:00Z".into(),
+            disclaimer: "测试".into(),
+        };
+        db.save_analysis(&result, "如何控制风险？").unwrap();
+        let history = db.analysis_history().unwrap();
+        let audit = history[0].transparency.as_ref().unwrap();
+        assert_eq!(audit.memory_items_used, 2);
+        assert!(!audit.api_key_sent);
     }
 }

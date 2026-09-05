@@ -21,6 +21,7 @@
 │                               │
 │ API ─┬─ deterministic rules   │
 │      ├─ planning simulation   │
+│      ├─ context builder       │
 │      ├─ AI orchestrator       │
 │      ├─ memory retriever      │
 │      └─ provider adapter      │
@@ -61,7 +62,9 @@ pub trait ModelProvider: Send + Sync {
 6. 使用独立提示词进行反方审查。
 7. 最后整合结论、未知项、行动和证伪条件。
 
-编排器不知道 API Key 的存储方式，也不直接访问数据库。它只接收 Provider、Retriever、Snapshot 和 MemoryItem，因此可以单元测试并在未来替换为图式工作流。
+编排器不知道 API Key 的存储方式，也不直接访问数据库。它只接收 Provider、Retriever、BuiltContext 和 MemoryItem，因此可以单元测试并在未来替换为图式工作流。
+
+`ContextBuilder` 位于 `server/src/context.rs`，负责在编排前执行最小披露策略。编排器不再接收完整 `Snapshot`，只接收经过用户选择、发送前预览和一致性指纹校验的 `BuiltContext`。候选记忆也在预览阶段冻结，后续检索不能越出该集合。详细契约见 [AI 数据边界](ai-data-boundary.md)。
 
 ## 数据与安全边界
 
@@ -69,6 +72,8 @@ pub trait ModelProvider: Send + Sync {
 - 桌面端把自身进程号传给 sidecar；桌面进程退出后，本地服务会自动停止。
 - CORS 只允许桌面 WebView 和本地开发地址。
 - 模型密钥保存在系统钥匙串。
+- API Key 只进入 HTTP Authorization 请求头，不进入提示词、预览或分析审计。
+- AI 分析必须携带与当前本地上下文一致的预览指纹。
 - Base URL 默认要求 HTTPS，本机模型例外。
 - 模型提示词明确禁止编造实时市场数据、收益保证和确定性买卖指令。
 - 规则层输出与模型推理分离，降低大模型覆盖基础风险事实的概率。

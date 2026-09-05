@@ -27,5 +27,6 @@ impl ChatMessage {
 #[async_trait]
 pub trait ModelProvider: Send + Sync {
     async fn complete(&self, messages: Vec<ChatMessage>) -> AppResult<String>;
+    fn provider_name(&self) -> &str;
     fn model_name(&self) -> &str;
 }

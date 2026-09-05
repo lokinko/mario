@@ -175,6 +175,82 @@ pub struct AnalysisRequest {
     pub use_memory: bool,
     pub reflect: bool,
     pub explore_alternatives: bool,
+    #[serde(default)]
+    pub context_selection: ContextSelection,
+    #[serde(default)]
+    pub preview_revision: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextSelection {
+    #[serde(default = "enabled")]
+    pub include_profile: bool,
+    #[serde(default = "enabled")]
+    pub include_goals: bool,
+    #[serde(default = "enabled")]
+    pub include_holdings: bool,
+    #[serde(default = "enabled")]
+    pub include_planning: bool,
+    #[serde(default = "enabled")]
+    pub include_risk_findings: bool,
+}
+
+impl Default for ContextSelection {
+    fn default() -> Self {
+        Self {
+            include_profile: true,
+            include_goals: true,
+            include_holdings: true,
+            include_planning: true,
+            include_risk_findings: true,
+        }
+    }
+}
+
+fn enabled() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextGroup {
+    pub key: String,
+    pub label: String,
+    pub included: bool,
+    pub record_count: usize,
+    pub sensitivity: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisPreview {
+    pub provider: String,
+    pub model: String,
+    pub workflow: String,
+    pub groups: Vec<ContextGroup>,
+    pub memory_candidates: Vec<MemoryItem>,
+    pub payload: serde_json::Value,
+    pub payload_bytes: usize,
+    pub context_revision: String,
+    pub memory_policy: String,
+    pub system_policy: String,
+    pub local_only: Vec<String>,
+    pub generated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisTransparency {
+    pub provider: String,
+    pub model: String,
+    pub context_groups: Vec<String>,
+    pub payload_bytes: usize,
+    pub context_revision: String,
+    pub memory_items_used: usize,
+    pub external_data_used: bool,
+    pub api_key_sent: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,8 +259,18 @@ pub struct AnalysisResult {
     pub id: String,
     pub answer: String,
     pub stages: Vec<String>,
+    pub transparency: AnalysisTransparency,
     pub created_at: String,
     pub disclaimer: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisHistoryItem {
+    pub id: String,
+    pub question: String,
+    pub created_at: String,
+    pub transparency: Option<AnalysisTransparency>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

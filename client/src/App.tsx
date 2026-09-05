@@ -10,6 +10,7 @@ import {
   Compass,
   Database,
   Edit3,
+  Eye,
   FilePenLine,
   KeyRound,
   LayoutDashboard,
@@ -17,6 +18,7 @@ import {
   LockKeyhole,
   Plus,
   Save,
+  Send,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -31,6 +33,7 @@ import {
   getDecisions,
   getModelConfig,
   getSnapshot,
+  previewAnalysis,
   runAnalysis,
   saveDecision,
   saveDecisionReview,
@@ -43,7 +46,10 @@ import {
   updateGoal,
 } from "./api";
 import type {
+  AnalysisPreview,
+  AnalysisRequest,
   AnalysisResult,
+  ContextSelection,
   DecisionEntry,
   DecisionRecord,
   DecisionReview,
@@ -575,36 +581,89 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
   const [memory, setMemory] = useState(true);
   const [reflection, setReflection] = useState(true);
   const [alternatives, setAlternatives] = useState(true);
+  const [contextSelection, setContextSelection] = useState<ContextSelection>({ includeProfile: true, includeGoals: true, includeHoldings: true, includePlanning: true, includeRiskFindings: true });
+  const [preview, setPreview] = useState<AnalysisPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
 
+  const request = (previewRevision?: string): AnalysisRequest => ({
+    question,
+    workflow: deep ? "deep" : "quick",
+    useMemory: memory,
+    reflect: reflection,
+    exploreAlternatives: alternatives,
+    contextSelection,
+    previewRevision,
+  });
+
+  const invalidatePreview = (action: () => void) => {
+    action();
+    setPreview(null);
+    setResult(null);
+  };
+
+  const prepare = async () => {
+    setPreviewing(true); setError(""); setResult(null);
+    try { setPreview(await previewAnalysis(request())); }
+    catch (e) { setError(String(e)); } finally { setPreviewing(false); }
+  };
+
   const analyze = async () => {
     setRunning(true); setError(""); setResult(null);
     try {
-      setResult(await runAnalysis({ question, workflow: deep ? "deep" : "quick", useMemory: memory, reflect: reflection, exploreAlternatives: alternatives }));
+      if (!preview) throw new Error("请先预览将发送的数据");
+      setResult(await runAnalysis(request(preview.contextRevision)));
+      setPreview(null);
     } catch (e) { setError(String(e)); } finally { setRunning(false); }
   };
+
+  const toggleContext = (key: keyof ContextSelection) => invalidatePreview(() => setContextSelection((current) => ({ ...current, [key]: !current[key] })));
 
   return (
     <div className="page narrow">
       <PageHeader eyebrow="AI 原生分析" title="研究室，而不是荐股机" description="规则引擎先处理确定性风险，大模型负责理解、比较、反驳与解释。" action={<div className={`model-pill ${model.hasApiKey ? "ready" : ""}`}><Bot size={15} />{model.hasApiKey ? model.model : "尚未配置模型"}</div>} />
       {!model.hasApiKey && <div className="setup-banner"><KeyRound size={20} /><div><strong>配置自己的模型密钥</strong><p>密钥保存到系统钥匙串，不写入投资数据库。</p></div><button className="secondary" onClick={() => navigate("settings")}>立即配置</button></div>}
       <section className="panel advisor-panel">
-        <label className="question-box"><span>这次希望解决什么问题？</span><textarea value={question} onChange={(e) => setQuestion(e.target.value)} /></label>
+        <label className="question-box"><span>这次希望解决什么问题？</span><textarea value={question} onChange={(e) => invalidatePreview(() => setQuestion(e.target.value))} /></label>
         <div className="workflow-options">
-          <Toggle icon={<BrainCircuit size={17} />} title="深度编排" detail="构建计划并分阶段分析" checked={deep} onChange={setDeep} />
-          <Toggle icon={<Database size={17} />} title="本地记忆" detail="检索相关历史决策" checked={memory} onChange={setMemory} />
-          <Toggle icon={<ShieldCheck size={17} />} title="纠错反思" detail="独立检查遗漏和过度自信" checked={reflection} onChange={setReflection} />
-          <Toggle icon={<Sparkles size={17} />} title="多方案探索" detail="比较至少两条可行路径" checked={alternatives} onChange={setAlternatives} />
+          <Toggle icon={<BrainCircuit size={17} />} title="深度编排" detail="构建计划并分阶段分析" checked={deep} onChange={(value) => invalidatePreview(() => setDeep(value))} />
+          <Toggle icon={<Database size={17} />} title="本地记忆" detail="检索相关历史决策" checked={memory} onChange={(value) => invalidatePreview(() => setMemory(value))} />
+          <Toggle icon={<ShieldCheck size={17} />} title="纠错反思" detail="独立检查遗漏和过度自信" checked={reflection} onChange={(value) => invalidatePreview(() => setReflection(value))} />
+          <Toggle icon={<Sparkles size={17} />} title="多方案探索" detail="比较至少两条可行路径" checked={alternatives} onChange={(value) => invalidatePreview(() => setAlternatives(value))} />
         </div>
-        <button className="primary analyze-button" onClick={analyze} disabled={running || !question.trim() || !model.hasApiKey}>
-          {running ? <><LoaderCircle size={17} className="spin" />正在执行分析链路…</> : <><Sparkles size={17} />开始结构化分析</>}
+        <div className="context-control">
+          <div><strong>选择允许发送的本地上下文</strong><span>取消选择后，该组不会进入模型提示词</span></div>
+          <div className="context-options">
+            {([
+              ["includeProfile", "财务档案"], ["includeGoals", "目标计划"], ["includeHoldings", "持仓明细"],
+              ["includePlanning", "规划结果"], ["includeRiskFindings", "风险检查"],
+            ] as [keyof ContextSelection, string][]).map(([key, label]) => <button key={key} className={contextSelection[key] ? "selected" : ""} onClick={() => toggleContext(key)}><i>{contextSelection[key] && <Check size={11} />}</i>{label}</button>)}
+          </div>
+        </div>
+        <button className="primary analyze-button" onClick={prepare} disabled={previewing || running || !question.trim()}>
+          {previewing ? <><LoaderCircle size={17} className="spin" />正在生成本地预览…</> : <><Eye size={17} />预览将发送的数据</>}
         </button>
       </section>
 
       {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
-      {result && <section className="panel result-panel"><div className="result-meta">{result.stages.map((stage) => <span key={stage}><Check size={13} />{stage}</span>)}</div><div className="answer">{result.answer}</div><p className="disclaimer">{result.disclaimer}</p></section>}
+      {preview && <section className="panel preview-panel">
+        <div className="panel-title"><div><span>发送前确认</span><h2>模型将看到这些内容</h2></div><div className="preview-size">{(preview.payloadBytes / 1024).toFixed(1)} KB</div></div>
+        <div className="preview-provider"><Bot size={16} /><span><strong>{preview.model}</strong>{preview.provider} · {preview.workflow === "deep" ? "深度工作流" : "快速工作流"}</span></div>
+        <div className="context-group-list">{preview.groups.map((group) => <div className={group.included ? "included" : "omitted"} key={group.key}><i>{group.included ? <Check size={12} /> : "—"}</i><div><strong>{group.label}</strong><small>{group.description}</small></div><span>{group.included ? `${group.recordCount} 项 · ${group.sensitivity}` : "留在本机"}</span></div>)}</div>
+        <div className="local-only-note"><LockKeyhole size={16} /><div><strong>始终留在本机</strong><p>{preview.localOnly.join("；")}</p></div></div>
+        <details className="payload-details"><summary>查看实际本地数据载荷</summary><pre>{JSON.stringify(preview.payload, null, 2)}</pre></details>
+        {preview.memoryCandidates.length > 0 && <details className="payload-details"><summary>查看允许检索的候选记忆（{preview.memoryCandidates.length} 条）</summary><pre>{JSON.stringify(preview.memoryCandidates, null, 2)}</pre></details>}
+        <details className="payload-details"><summary>查看固定投资方法论提示</summary><pre>{preview.systemPolicy}</pre></details>
+        <p className="memory-policy">{preview.memoryPolicy}</p>
+        <div className="preview-actions"><button className="text-button" onClick={() => setPreview(null)}>返回修改</button><button className="primary" onClick={analyze} disabled={running || !model.hasApiKey}>{running ? <><LoaderCircle size={15} className="spin" />正在分析…</> : <><Send size={15} />确认并开始分析</>}</button></div>
+      </section>}
+      {result && <section className="panel result-panel">
+        <div className="result-meta">{result.stages.map((stage) => <span key={stage}><Check size={13} />{stage}</span>)}</div>
+        <div className="analysis-audit"><div><strong>{result.transparency.model}</strong><span>{result.transparency.provider}</span></div><div><strong>{result.transparency.contextGroups.length} 组</strong><span>本地上下文</span></div><div><strong>{result.transparency.memoryItemsUsed} 条</strong><span>历史记忆</span></div><div><strong>{result.transparency.externalDataUsed ? "已使用" : "未使用"}</strong><span>外部实时数据</span></div><div><strong>{result.transparency.apiKeySent ? "异常" : "未进入提示词"}</strong><span>API Key</span></div></div>
+        <div className="answer">{result.answer}</div><p className="disclaimer">{result.disclaimer}</p>
+      </section>}
     </div>
   );
 }

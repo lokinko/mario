@@ -1,5 +1,6 @@
 import type {
   AnalysisRequest,
+  AnalysisPreview,
   AnalysisResult,
   DecisionEntry,
   DecisionRecord,
@@ -96,6 +97,10 @@ export async function deleteModelKey(): Promise<ModelConfig> {
 
 export async function runAnalysis(request: AnalysisRequest): Promise<AnalysisResult> {
   return httpRequest<AnalysisResult>("/analysis", { method: "POST", body: JSON.stringify(request) });
+}
+
+export async function previewAnalysis(request: AnalysisRequest): Promise<AnalysisPreview> {
+  return httpRequest<AnalysisPreview>("/analysis/preview", { method: "POST", body: JSON.stringify(request) });
 }
 
 export async function saveDecision(entry: DecisionEntry): Promise<void> {

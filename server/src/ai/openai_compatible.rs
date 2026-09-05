@@ -79,6 +79,10 @@ impl ModelProvider for OpenAiCompatibleProvider {
     fn model_name(&self) -> &str {
         &self.model
     }
+
+    fn provider_name(&self) -> &str {
+        "openai-compatible"
+    }
 }
 
 fn truncate(value: &str, max: usize) -> String {

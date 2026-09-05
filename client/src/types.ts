@@ -106,12 +106,66 @@ export interface AnalysisRequest {
   useMemory: boolean;
   reflect: boolean;
   exploreAlternatives: boolean;
+  contextSelection: ContextSelection;
+  previewRevision?: string;
+}
+
+export interface ContextSelection {
+  includeProfile: boolean;
+  includeGoals: boolean;
+  includeHoldings: boolean;
+  includePlanning: boolean;
+  includeRiskFindings: boolean;
+}
+
+export interface ContextGroup {
+  key: string;
+  label: string;
+  included: boolean;
+  recordCount: number;
+  sensitivity: string;
+  description: string;
+}
+
+export interface AnalysisPreview {
+  provider: string;
+  model: string;
+  workflow: "quick" | "deep";
+  groups: ContextGroup[];
+  memoryCandidates: MemoryCandidate[];
+  payload: Record<string, unknown>;
+  payloadBytes: number;
+  contextRevision: string;
+  memoryPolicy: string;
+  systemPolicy: string;
+  localOnly: string[];
+  generatedAt: string;
+}
+
+export interface MemoryCandidate {
+  id: string;
+  kind: string;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface AnalysisTransparency {
+  provider: string;
+  model: string;
+  contextGroups: string[];
+  payloadBytes: number;
+  contextRevision: string;
+  memoryItemsUsed: number;
+  externalDataUsed: boolean;
+  apiKeySent: boolean;
 }
 
 export interface AnalysisResult {
   id: string;
   answer: string;
   stages: string[];
+  transparency: AnalysisTransparency;
   createdAt: string;
   disclaimer: string;
 }

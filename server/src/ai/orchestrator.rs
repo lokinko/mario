@@ -1,22 +1,10 @@
-use serde_json::json;
-
 use super::{ChatMessage, ModelProvider};
 use crate::{
+    context::{BuiltContext, INVESTMENT_SYSTEM_POLICY},
     error::AppResult,
     memory::MemoryRetriever,
-    models::{AnalysisRequest, AnalysisResult, MemoryItem, Snapshot},
+    models::{AnalysisRequest, AnalysisResult, AnalysisTransparency, MemoryItem},
 };
-
-const INVESTMENT_SYSTEM: &str = r#"
-你是“知衡”的投资决策教练。你的任务不是荐股或承诺收益，而是提升用户的决策质量。
-必须遵守：
-1. 先检查财务安全垫、期限、流动性、负债、集中度和永久损失风险，再讨论潜在收益。
-2. 明确区分：用户提供的事实、合理推断、未知信息。缺少实时市场数据时严禁编造。
-3. 使用概率和情景，不用“一定”“稳赚”等确定性语言。
-4. 区分资产价格与内在价值，区分好结果与好过程。
-5. 给出可执行的检查项、证伪条件与复盘节点；避免直接下达买卖指令。
-6. 输出中文，清楚、克制，优先解释为什么。
-"#;
 
 pub struct InvestmentOrchestrator<'a> {
     provider: &'a dyn ModelProvider,
@@ -34,24 +22,24 @@ impl<'a> InvestmentOrchestrator<'a> {
     pub async fn run(
         &self,
         request: &AnalysisRequest,
-        snapshot: &Snapshot,
+        built_context: &BuiltContext,
         memory_pool: &[MemoryItem],
     ) -> AppResult<AnalysisResult> {
-        let context = serde_json::to_string_pretty(snapshot)?;
+        let context = serde_json::to_string_pretty(&built_context.payload)?;
         let mut stages = vec!["确定性风险检查".into(), "构建最小必要上下文".into()];
 
         if request.workflow == "quick" {
             let answer = self.provider.complete(vec![
-                ChatMessage::system(INVESTMENT_SYSTEM),
+                ChatMessage::system(INVESTMENT_SYSTEM_POLICY),
                 ChatMessage::user(format!("用户问题：{}\n\n本地投资档案：{}\n\n请给出结构化分析，并说明仍需核实的信息。", request.question, context)),
             ]).await?;
             stages.push(format!("{} 快速分析", self.provider.model_name()));
-            return Ok(result(answer, stages));
+            return Ok(result(self.provider, answer, stages, built_context, &[]));
         }
 
         let plan = self.provider.complete(vec![
-            ChatMessage::system(format!("{}\n你现在是研究规划模块，只制定分析计划和检索线索，不给最终结论。", INVESTMENT_SYSTEM)),
-            ChatMessage::user(format!("问题：{}\n已知档案摘要：{}\n请列出需要核实的假设、反方问题，以及用于检索历史决策的关键词。", request.question, compact_snapshot(snapshot))),
+            ChatMessage::system(format!("{}\n你现在是研究规划模块，只制定分析计划和检索线索，不给最终结论。", INVESTMENT_SYSTEM_POLICY)),
+            ChatMessage::user(format!("问题：{}\n已知档案摘要：{}\n请列出需要核实的假设、反方问题，以及用于检索历史决策的关键词。", request.question, built_context.payload)),
         ]).await?;
         stages.push("生成研究计划".into());
 
@@ -81,7 +69,7 @@ impl<'a> InvestmentOrchestrator<'a> {
         let draft = self
             .provider
             .complete(vec![
-                ChatMessage::system(INVESTMENT_SYSTEM),
+                ChatMessage::system(INVESTMENT_SYSTEM_POLICY),
                 ChatMessage::user(format!(
                 "用户问题：{}\n\n本地投资档案：{}\n\n研究计划：{}\n\n相关历史记忆：{}\n\n任务：{}",
                 request.question, context, plan, memory_context, draft_instruction
@@ -92,7 +80,7 @@ impl<'a> InvestmentOrchestrator<'a> {
         let critique = if request.reflect {
             stages.push("独立纠错反思".into());
             self.provider.complete(vec![
-                ChatMessage::system(format!("{}\n你现在是独立风险审查模块。只找问题，不迎合上一位分析者。", INVESTMENT_SYSTEM)),
+                ChatMessage::system(format!("{}\n你现在是独立风险审查模块。只找问题，不迎合上一位分析者。", INVESTMENT_SYSTEM_POLICY)),
                 ChatMessage::user(format!("原问题：{}\n候选分析：{}\n请检查：事实与推断是否混淆、是否忽略极端风险、是否过度自信、是否给了隐性买卖指令、是否缺少更简单的基准方案。", request.question, draft)),
             ]).await?
         } else {
@@ -100,37 +88,21 @@ impl<'a> InvestmentOrchestrator<'a> {
         };
 
         let answer = self.provider.complete(vec![
-            ChatMessage::system(format!("{}\n你是最终整合模块。吸收审查意见，但要自行判断，不机械拼接。", INVESTMENT_SYSTEM)),
+            ChatMessage::system(format!("{}\n你是最终整合模块。吸收审查意见，但要自行判断，不机械拼接。", INVESTMENT_SYSTEM_POLICY)),
             ChatMessage::user(format!(
                 "原问题：{}\n\n档案：{}\n\n研究计划：{}\n\n候选分析：{}\n\n独立审查：{}\n\n请输出：①当前最重要判断；②风险与未知；③方案比较；④下一步行动；⑤未来复盘/证伪条件。明确指出本次没有接入的外部实时数据。",
                 request.question, context, plan, draft, critique
             )),
         ]).await?;
         stages.push("综合结论与行动清单".into());
-        Ok(result(answer, stages))
+        Ok(result(
+            self.provider,
+            answer,
+            stages,
+            built_context,
+            &memories,
+        ))
     }
-}
-
-fn compact_snapshot(snapshot: &Snapshot) -> String {
-    json!({
-        "totalValue": snapshot.total_value,
-        "emergencyMonths": snapshot.emergency_months,
-        "concentrationPct": snapshot.concentration_pct,
-        "horizonYears": snapshot.profile.horizon_years,
-        "riskLevel": snapshot.profile.risk_level,
-        "findings": snapshot.findings,
-        "portfolioPlan": {
-            "monthlySurplus": snapshot.plan.monthly_surplus,
-            "committedMonthly": snapshot.plan.committed_monthly,
-            "stressLossPct": snapshot.plan.stress_loss_pct,
-            "riskCapacityPct": snapshot.plan.risk_capacity_pct,
-            "riskStatus": snapshot.plan.risk_status,
-            "goalProjections": snapshot.plan.goal_projections,
-            "rebalancing": snapshot.plan.rebalancing,
-            "assumptions": snapshot.plan.assumptions,
-        },
-    })
-    .to_string()
 }
 
 fn merge_memories(
@@ -153,11 +125,37 @@ fn merge_memories(
     result
 }
 
-fn result(answer: String, stages: Vec<String>) -> AnalysisResult {
+fn result(
+    provider: &dyn ModelProvider,
+    answer: String,
+    stages: Vec<String>,
+    built_context: &BuiltContext,
+    memory_items: &[MemoryItem],
+) -> AnalysisResult {
+    let mut context_groups: Vec<_> = built_context
+        .groups
+        .iter()
+        .filter(|group| group.included)
+        .map(|group| group.label.clone())
+        .collect();
+    if !memory_items.is_empty() {
+        context_groups.push("相关历史记忆".into());
+    }
     AnalysisResult {
         id: uuid::Uuid::new_v4().to_string(),
         answer,
         stages,
+        transparency: AnalysisTransparency {
+            provider: provider.provider_name().into(),
+            model: provider.model_name().into(),
+            context_groups,
+            payload_bytes: built_context.payload_bytes
+                + serde_json::to_vec(memory_items).map_or(0, |bytes| bytes.len()),
+            context_revision: built_context.revision.clone(),
+            memory_items_used: memory_items.len(),
+            external_data_used: false,
+            api_key_sent: false,
+        },
         created_at: chrono::Utc::now().to_rfc3339(),
         disclaimer: "本分析用于投资教育与决策支持，不构成收益保证或针对具体证券的买卖建议。".into(),
     }
@@ -171,9 +169,12 @@ mod tests {
 
     use super::*;
     use crate::{
+        context::ContextBuilder,
         error::AppResult,
         memory::LexicalMemoryRetriever,
-        models::{FinancialProfile, Holding, PortfolioPlan, RiskFinding},
+        models::{
+            ContextSelection, FinancialProfile, Holding, PortfolioPlan, RiskFinding, Snapshot,
+        },
     };
 
     struct MockProvider {
@@ -194,6 +195,10 @@ mod tests {
 
         fn model_name(&self) -> &str {
             "mock"
+        }
+
+        fn provider_name(&self) -> &str {
+            "mock-provider"
         }
     }
 
@@ -255,9 +260,13 @@ mod tests {
             use_memory: true,
             reflect: true,
             explore_alternatives: true,
+            context_selection: ContextSelection::default(),
+            preview_revision: None,
         };
+        let snapshot = snapshot();
+        let context = ContextBuilder::build(&request, &snapshot, &memory);
         let output = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &snapshot(), &memory)
+            .run(&request, &context, &memory)
             .await
             .unwrap();
         assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
@@ -270,5 +279,7 @@ mod tests {
             .iter()
             .any(|stage| stage.contains("独立纠错反思")));
         assert!(output.answer.contains("最终"));
+        assert_eq!(output.transparency.memory_items_used, 1);
+        assert!(!output.transparency.api_key_sent);
     }
 }
