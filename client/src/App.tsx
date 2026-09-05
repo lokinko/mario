@@ -938,8 +938,10 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
   const [memory, setMemory] = useState(true);
   const [reflection, setReflection] = useState(true);
   const [alternatives, setAlternatives] = useState(true);
+  const [excludedMemoryIds, setExcludedMemoryIds] = useState<string[]>([]);
   const [contextSelection, setContextSelection] = useState<ContextSelection>({ includeProfile: true, includeGoals: true, includeHoldings: true, includePlanning: true, includeRiskFindings: true, includeRules: true, includeSystemReviews: true, includeEvidence: true });
   const [preview, setPreview] = useState<AnalysisPreview | null>(null);
+  const [previewStale, setPreviewStale] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -959,19 +961,22 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
     useMemory: memory,
     reflect: reflection,
     exploreAlternatives: alternatives,
+    excludedMemoryIds,
     contextSelection,
     previewRevision,
   });
 
   const invalidatePreview = (action: () => void) => {
     action();
+    setExcludedMemoryIds([]);
     setPreview(null);
+    setPreviewStale(false);
     setResult(null);
   };
 
   const prepare = async () => {
     setPreviewing(true); setError(""); setResult(null);
-    try { setPreview(await previewAnalysis(request())); }
+    try { setPreview(await previewAnalysis(request())); setPreviewStale(false); }
     catch (e) { setError(String(e)); } finally { setPreviewing(false); }
   };
 
@@ -979,12 +984,18 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
     setRunning(true); setError(""); setResult(null);
     try {
       if (!preview) throw new Error("请先预览将发送的数据");
+      if (previewStale) throw new Error("记忆选择已变化，请重新预览后再确认");
       setResult(await runAnalysis(request(preview.contextRevision)));
       setPreview(null);
     } catch (e) { setError(String(e)); } finally { setRunning(false); }
   };
 
   const toggleContext = (key: keyof ContextSelection) => invalidatePreview(() => setContextSelection((current) => ({ ...current, [key]: !current[key] })));
+  const toggleMemoryCandidate = (id: string) => {
+    setExcludedMemoryIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+    setPreviewStale(true);
+    setResult(null);
+  };
 
   return (
     <div className="page narrow">
@@ -1017,14 +1028,15 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
       {preview && <section className="panel preview-panel">
         <div className="panel-title"><div><span>发送前确认</span><h2>模型将看到这些内容</h2></div><div className="preview-size">{(preview.payloadBytes / 1024).toFixed(1)} KB</div></div>
         <div className="preview-provider"><Bot size={16} /><span><strong>{preview.model}</strong>{preview.provider} · {preview.workflow === "deep" ? "深度工作流" : "快速工作流"}</span></div>
+        {previewStale && <div className="preview-stale"><AlertTriangle size={15} /><div><strong>记忆授权已变化</strong><span>下方显示的是新选择，但旧指纹已经失效。重新预览后才能开始分析。</span></div></div>}
         <div className="context-group-list">{preview.groups.map((group) => <div className={group.included ? "included" : "omitted"} key={group.key}><i>{group.included ? <Check size={12} /> : "—"}</i><div><strong>{group.label}</strong><small>{group.description}</small></div><span>{group.included ? `${group.recordCount} 项 · ${group.sensitivity}` : "留在本机"}</span></div>)}</div>
         <div className="local-only-note"><LockKeyhole size={16} /><div><strong>始终留在本机</strong><p>{preview.localOnly.join("；")}</p></div></div>
         <details className="payload-details"><summary>查看实际本地数据载荷</summary><pre>{JSON.stringify(preview.payload, null, 2)}</pre></details>
         {preview.evidenceCandidates.length > 0 && <details className="payload-details"><summary>查看本次可引用证据（{preview.evidenceCandidates.length} 条）</summary><pre>{JSON.stringify(preview.evidenceCandidates, null, 2)}</pre></details>}
-        {preview.memoryCandidates.length > 0 && <details className="payload-details memory-disclosure"><summary>查看允许检索的候选记忆（{preview.memoryCandidates.length} 条）</summary><MemoryItems items={preview.memoryCandidates} /></details>}
+        {preview.memoryCandidates.length > 0 && <details className="payload-details memory-disclosure"><summary>逐条选择候选记忆（授权 {preview.memoryCandidates.filter((item) => !excludedMemoryIds.includes(item.id)).length}/{preview.memoryCandidates.length} 条）</summary><MemoryItems items={preview.memoryCandidates} excludedIds={excludedMemoryIds} onToggle={toggleMemoryCandidate} /></details>}
         <details className="payload-details"><summary>查看固定投资方法论提示</summary><pre>{preview.systemPolicy}</pre></details>
         <p className="memory-policy">{preview.memoryPolicy}</p>
-        <div className="preview-actions"><button className="text-button" onClick={() => setPreview(null)}>返回修改</button><button className="primary" onClick={analyze} disabled={running || !model.hasApiKey}>{running ? <><LoaderCircle size={15} className="spin" />正在分析…</> : <><Send size={15} />确认并开始分析</>}</button></div>
+        <div className="preview-actions"><button className="text-button" onClick={() => setPreview(null)}>返回修改</button><button className="primary" onClick={previewStale ? prepare : analyze} disabled={running || previewing || (!previewStale && !model.hasApiKey)}>{previewing ? <><LoaderCircle size={15} className="spin" />正在更新预览…</> : previewStale ? <><Eye size={15} />按新选择重新预览</> : running ? <><LoaderCircle size={15} className="spin" />正在分析…</> : <><Send size={15} />确认并开始分析</>}</button></div>
       </section>}
       {result && <section className="panel result-panel">
         <div className="result-meta">{result.stages.map((stage) => <span key={stage}><Check size={13} />{stage}</span>)}</div>
@@ -1044,14 +1056,16 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
   );
 }
 
-function MemoryItems({ items, compact = false }: { items: MemoryCandidate[]; compact?: boolean }) {
-  return <div className={`memory-candidate-list ${compact ? "compact" : ""}`}>{items.map((item) => <article key={`${item.kind}-${item.id}`} className={item.contradiction ? "contradiction" : ""}>
-    <div className="memory-head"><div><span>{item.kind === "decision" ? "决策" : "AI 分析"}</span><strong>{item.title}</strong></div><div>{item.reviewed && <em>已复盘</em>}{item.contradiction && <em className="counter">反证</em>}{item.retrieval && <b>{item.retrieval.score.toFixed(1)} 分</b>}</div></div>
+function MemoryItems({ items, compact = false, excludedIds = [], onToggle }: { items: MemoryCandidate[]; compact?: boolean; excludedIds?: string[]; onToggle?: (id: string) => void }) {
+  return <div className={`memory-candidate-list ${compact ? "compact" : ""}`}>{items.map((item) => {
+    const selected = onToggle ? !excludedIds.includes(item.id) : item.selected;
+    return <article key={`${item.kind}-${item.id}`} className={`${item.contradiction ? "contradiction" : ""} ${selected ? "" : "excluded"}`}>
+    <div className="memory-head"><div><span>{item.kind === "decision" ? "决策" : "AI 分析"}</span><strong>{item.title}</strong></div><div>{item.reviewed && <em>已复盘</em>}{item.contradiction && <em className="counter">反证</em>}{item.retrieval && <b>{item.retrieval.score.toFixed(1)} 分</b>}{onToggle && <button className={selected ? "memory-toggle selected" : "memory-toggle"} onClick={() => onToggle(item.id)}>{selected ? "本次发送" : "留在本机"}</button>}</div></div>
     <p>{item.summary}</p>
     <div className="memory-reasons">{item.retrieval?.reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>
-    <footer><small>{new Date(item.occurredAt).toLocaleDateString("zh-CN")} · {item.status}</small>{item.retrieval && <small>{item.retrieval.passes.join(" + ") || "候选初筛"}</small>}</footer>
+    <footer><small>{new Date(item.occurredAt).toLocaleDateString("zh-CN")} · {item.status}</small>{selected && item.retrieval ? <small>{item.retrieval.passes.join(" + ") || "候选初筛"}</small> : <small className="local-memory">不会进入模型</small>}</footer>
     {!compact && <details><summary>查看冻结的结构化内容</summary><pre>{JSON.stringify(item.content, null, 2)}</pre></details>}
-  </article>)}</div>;
+  </article>;})}</div>;
 }
 
 function Toggle({ icon, title, detail, checked, onChange }: { icon: React.ReactNode; title: string; detail: string; checked: boolean; onChange: (v: boolean) => void }) {

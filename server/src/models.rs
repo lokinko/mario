@@ -176,6 +176,8 @@ pub struct AnalysisRequest {
     pub reflect: bool,
     pub explore_alternatives: bool,
     #[serde(default)]
+    pub excluded_memory_ids: Vec<String>,
+    #[serde(default)]
     pub context_selection: ContextSelection,
     #[serde(default)]
     pub preview_revision: Option<String>,
@@ -406,6 +408,8 @@ pub struct MemoryItem {
     pub reviewed: bool,
     pub contradiction: bool,
     pub tags: Vec<String>,
+    #[serde(default = "enabled")]
+    pub selected: bool,
     #[serde(default)]
     pub retrieval: Option<MemoryRetrieval>,
 }

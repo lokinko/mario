@@ -9,7 +9,7 @@ mod planning;
 mod risk;
 mod secrets;
 
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use ai::{ChatMessage, InvestmentOrchestrator, ModelProvider, OpenAiCompatibleProvider};
 use axum::{
@@ -299,11 +299,17 @@ async fn run_analysis(
     let config = state.db.model_config()?;
     let snapshot = state.db.snapshot()?;
     let retriever = HybridMemoryRetriever::default();
-    let memories = if request.workflow == "deep" && request.use_memory {
-        initial_memory_candidates(&retriever, &request.question, &state.db.memories()?)
+    let memory_candidates = if request.workflow == "deep" && request.use_memory {
+        initial_memory_candidates(
+            &retriever,
+            &request.question,
+            &state.db.memories()?,
+            &request.excluded_memory_ids,
+        )
     } else {
         Vec::new()
     };
+    let memories = selected_memories(&memory_candidates);
     let rules = state.db.investment_rules()?;
     let system_reviews = state
         .db
@@ -343,11 +349,17 @@ async fn preview_analysis(
     let config = state.db.model_config()?;
     let snapshot = state.db.snapshot()?;
     let retriever = HybridMemoryRetriever::default();
-    let memories = if request.workflow == "deep" && request.use_memory {
-        initial_memory_candidates(&retriever, &request.question, &state.db.memories()?)
+    let memory_candidates = if request.workflow == "deep" && request.use_memory {
+        initial_memory_candidates(
+            &retriever,
+            &request.question,
+            &state.db.memories()?,
+            &request.excluded_memory_ids,
+        )
     } else {
         Vec::new()
     };
+    let memories = selected_memories(&memory_candidates);
     let rules = state.db.investment_rules()?;
     let system_reviews = state
         .db
@@ -369,7 +381,7 @@ async fn preview_analysis(
         built_context,
         config.provider,
         config.model,
-        memories,
+        memory_candidates,
         evidence_candidates,
     )))
 }
@@ -384,6 +396,17 @@ fn validate_analysis_request(request: &AnalysisRequest) -> AppResult<()> {
     }
     if !matches!(request.workflow.as_str(), "quick" | "deep") {
         return Err(AppError::Validation("未知的分析工作流".into()));
+    }
+    if request.excluded_memory_ids.len() > 64 {
+        return Err(AppError::Validation("单次最多排除 64 条候选记忆".into()));
+    }
+    let mut unique_ids = HashSet::new();
+    for id in &request.excluded_memory_ids {
+        if id.trim().is_empty() || id.chars().count() > 128 || !unique_ids.insert(id) {
+            return Err(AppError::Validation(
+                "排除记忆 ID 必须非空、不重复且不超过 128 个字符".into(),
+            ));
+        }
     }
     Ok(())
 }
@@ -410,14 +433,26 @@ fn initial_memory_candidates(
     retriever: &dyn MemoryRetriever,
     question: &str,
     pool: &[models::MemoryItem],
+    excluded_memory_ids: &[String],
 ) -> Vec<models::MemoryItem> {
     let mut candidates = retriever.search(question, pool, 16);
     for item in &mut candidates {
+        item.selected = !excluded_memory_ids
+            .iter()
+            .any(|excluded| excluded == &item.id);
         if let Some(retrieval) = &mut item.retrieval {
             retrieval.passes.push("发送前问题初筛".into());
         }
     }
     candidates
+}
+
+fn selected_memories(candidates: &[models::MemoryItem]) -> Vec<models::MemoryItem> {
+    candidates
+        .iter()
+        .filter(|item| item.selected)
+        .cloned()
+        .collect()
 }
 
 fn data_directory() -> AppResult<PathBuf> {
@@ -475,4 +510,64 @@ async fn shutdown_signal(mut parent_exit: watch::Receiver<bool>) {
         }
     };
     tokio::select! { _ = ctrl_c => {}, _ = terminate => {}, _ = parent_stopped => {} }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use models::{ContextSelection, MemoryItem};
+
+    fn request(excluded_memory_ids: Vec<String>) -> AnalysisRequest {
+        AnalysisRequest {
+            question: "复盘指数集中风险".into(),
+            workflow: "deep".into(),
+            use_memory: true,
+            reflect: true,
+            explore_alternatives: true,
+            excluded_memory_ids,
+            context_selection: ContextSelection::default(),
+            preview_revision: None,
+        }
+    }
+
+    fn memory() -> MemoryItem {
+        MemoryItem {
+            id: "memory-1".into(),
+            kind: "decision".into(),
+            title: "指数".into(),
+            summary: "集中风险".into(),
+            content: json!({ "lesson": "降低集中度" }),
+            created_at: "2026-01-01".into(),
+            occurred_at: "2026-01-01".into(),
+            status: "已复盘".into(),
+            reviewed: true,
+            contradiction: false,
+            tags: vec!["指数".into()],
+            selected: true,
+            retrieval: None,
+        }
+    }
+
+    #[test]
+    fn excluded_memory_remains_visible_but_is_not_authorized() {
+        let retriever = HybridMemoryRetriever::default();
+        let candidates = initial_memory_candidates(
+            &retriever,
+            "复盘指数集中风险",
+            &[memory()],
+            &["memory-1".into()],
+        );
+        assert_eq!(candidates.len(), 1);
+        assert!(!candidates[0].selected);
+        assert!(selected_memories(&candidates).is_empty());
+    }
+
+    #[test]
+    fn rejects_duplicate_or_oversized_memory_exclusions() {
+        assert!(validate_analysis_request(&request(vec!["same".into(), "same".into()])).is_err());
+        assert!(validate_analysis_request(&request(vec!["x".repeat(129)])).is_err());
+        assert!(validate_analysis_request(&request(vec!["memory-1".into()])).is_ok());
+    }
 }

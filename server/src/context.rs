@@ -97,7 +97,11 @@ impl ContextBuilder {
         let serialized = serde_json::to_vec(&payload).unwrap_or_default();
         let payload_bytes = serialized.len();
         let mut revision_input = serialized.clone();
-        revision_input.extend(serde_json::to_vec(memory_candidates).unwrap_or_default());
+        let selected_memory_candidates = memory_candidates
+            .iter()
+            .filter(|item| item.selected)
+            .collect::<Vec<_>>();
+        revision_input.extend(serde_json::to_vec(&selected_memory_candidates).unwrap_or_default());
         let revision = context_revision(&revision_input);
         BuiltContext {
             payload,
@@ -121,19 +125,27 @@ impl ContextBuilder {
         evidence_candidates: Vec<ResearchEvidence>,
     ) -> AnalysisPreview {
         let memory_enabled = request.workflow == "deep" && request.use_memory;
+        let selected_memories = memory_candidates
+            .iter()
+            .filter(|item| item.selected)
+            .collect::<Vec<_>>();
+        let selected_memory_count = selected_memories.len();
+        let selected_memory_bytes =
+            serde_json::to_vec(&selected_memories).map_or(0, |bytes| bytes.len());
+        let excluded_memories = memory_candidates.len() - selected_memory_count;
         let mut groups = context.groups.clone();
         groups.push(ContextGroup {
             key: "memory".into(),
             label: "相关历史记忆".into(),
             included: memory_enabled,
             record_count: if memory_enabled {
-                memory_candidates.len()
+                selected_memory_count
             } else {
                 0
             },
             sensitivity: "中".into(),
             description: if memory_enabled {
-                "结构、主题、复盘状态与时间共同排序 16 条冻结候选；再按问题和研究计划检索，最终最多发送 8 条。".into()
+                format!("本地排序并冻结最多 16 条候选；本次授权 {selected_memory_count} 条、排除 {excluded_memories} 条，再经两轮检索后最多发送 8 条。")
             } else if request.workflow == "quick" && request.use_memory {
                 "快速工作流不会读取历史记忆。".into()
             } else {
@@ -152,6 +164,9 @@ impl ContextBuilder {
         if !omitted.is_empty() {
             local_only.push(format!("本次未选择的数据组：{}", omitted.join("、")));
         }
+        if excluded_memories > 0 {
+            local_only.push(format!("用户逐条排除的候选记忆：{excluded_memories} 条"));
+        }
         AnalysisPreview {
             provider,
             model,
@@ -160,11 +175,10 @@ impl ContextBuilder {
             memory_candidates: memory_candidates.clone(),
             evidence_candidates,
             payload: context.payload,
-            payload_bytes: context.payload_bytes
-                + serde_json::to_vec(&memory_candidates).map_or(0, |bytes| bytes.len()),
+            payload_bytes: context.payload_bytes + selected_memory_bytes,
             context_revision: context.revision,
             memory_policy: if memory_enabled {
-                "候选记忆最多 16 条并在发送前冻结；深度工作流最终最多使用 8 条。已复盘经验优先，旧记忆降低时效权重，历史 AI 回答仅作未验证线索。".into()
+                format!("候选记忆最多 16 条并在发送前冻结；你可以逐条排除。本次授权 {selected_memory_count} 条，最终最多使用 8 条。已复盘经验优先，旧记忆降低时效权重，历史 AI 回答仅作未验证线索。")
             } else {
                 "本次不会向模型发送历史记忆。".into()
             },
@@ -348,6 +362,7 @@ mod tests {
             use_memory: false,
             reflect: true,
             explore_alternatives: true,
+            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection {
                 include_profile: false,
                 include_goals: false,
@@ -374,6 +389,7 @@ mod tests {
             use_memory: true,
             reflect: true,
             explore_alternatives: true,
+            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
@@ -390,6 +406,7 @@ mod tests {
                 reviewed: false,
                 contradiction: false,
                 tags: Vec::new(),
+                selected: true,
                 retrieval: None,
             })
             .collect::<Vec<_>>();
@@ -422,6 +439,7 @@ mod tests {
             use_memory: true,
             reflect: true,
             explore_alternatives: true,
+            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
@@ -438,13 +456,20 @@ mod tests {
             reviewed: false,
             contradiction: false,
             tags: Vec::new(),
+            selected: true,
             retrieval: None,
         }];
         let mut changed = first.clone();
         changed[0].content = serde_json::json!({ "value": "已经变化" });
+        let mut excluded = first.clone();
+        excluded[0].selected = false;
         assert_ne!(
             ContextBuilder::build(&request, &snapshot, &[], &[], &[], &first).revision,
             ContextBuilder::build(&request, &snapshot, &[], &[], &[], &changed).revision
+        );
+        assert_ne!(
+            ContextBuilder::build(&request, &snapshot, &[], &[], &[], &first).revision,
+            ContextBuilder::build(&request, &snapshot, &[], &[], &[], &excluded).revision
         );
     }
 
@@ -456,6 +481,7 @@ mod tests {
             use_memory: false,
             reflect: true,
             explore_alternatives: true,
+            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
@@ -529,6 +555,7 @@ mod tests {
             use_memory: false,
             reflect: true,
             explore_alternatives: true,
+            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };

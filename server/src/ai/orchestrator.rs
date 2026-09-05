@@ -416,6 +416,7 @@ mod tests {
             reviewed: true,
             contradiction: false,
             tags: vec!["指数".into(), "集中度".into()],
+            selected: true,
             retrieval: None,
         }];
         let request = AnalysisRequest {
@@ -424,6 +425,7 @@ mod tests {
             use_memory: true,
             reflect: true,
             explore_alternatives: true,
+            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
@@ -495,6 +497,7 @@ mod tests {
             use_memory: true,
             reflect: true,
             explore_alternatives: true,
+            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };

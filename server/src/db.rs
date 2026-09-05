@@ -893,6 +893,7 @@ impl Database {
                 reviewed,
                 contradiction,
                 tags: vec![record.asset_name, "投资决策".into(), status],
+                selected: true,
                 retrieval: None,
             });
         }
@@ -923,6 +924,7 @@ impl Database {
                 reviewed: false,
                 contradiction: false,
                 tags: vec!["AI 分析".into(), "历史建议".into()],
+                selected: true,
                 retrieval: None,
             })
         })? {

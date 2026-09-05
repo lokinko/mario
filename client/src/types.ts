@@ -106,6 +106,7 @@ export interface AnalysisRequest {
   useMemory: boolean;
   reflect: boolean;
   exploreAlternatives: boolean;
+  excludedMemoryIds: string[];
   contextSelection: ContextSelection;
   previewRevision?: string;
 }
@@ -158,6 +159,7 @@ export interface MemoryCandidate {
   reviewed: boolean;
   contradiction: boolean;
   tags: string[];
+  selected: boolean;
   retrieval?: MemoryRetrieval;
 }
 

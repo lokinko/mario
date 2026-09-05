@@ -51,6 +51,9 @@ fn score_item(
     query_tokens: &HashSet<String>,
     as_of: NaiveDate,
 ) -> Option<(f64, MemoryItem)> {
+    if !item.selected {
+        return None;
+    }
     let identity = normalize(&format!(
         "{} {} {} {}",
         item.title,
@@ -229,6 +232,7 @@ mod tests {
             reviewed,
             contradiction,
             tags: vec![title.into()],
+            selected: true,
             retrieval: None,
         }
     }
@@ -305,5 +309,14 @@ mod tests {
             false,
         )];
         assert_eq!(retriever().search("如何控制下跌损失", &items, 3).len(), 1);
+    }
+
+    #[test]
+    fn never_returns_a_memory_the_user_excluded() {
+        let mut excluded = memory("private", "指数", "集中风险", "2026-08-01", true, true);
+        excluded.selected = false;
+        assert!(retriever()
+            .search("复盘指数集中风险", &[excluded], 3)
+            .is_empty());
     }
 }
