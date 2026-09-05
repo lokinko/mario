@@ -26,6 +26,7 @@
 - 研究证据账本：记录来源层级、HTTPS 链接、资料日期、支持/反驳关系与限制
 - 证据检索与引用：按问题和组合筛选，发送前冻结，要求 AI 只引用实际进入载荷的来源
 - 简化概率校准：使用历史置信度与逻辑结果训练概率意识，不用单笔盈亏评价能力
+- 账户与手动云同步：投资域数据端到端加密后上传，支持恢复密钥与版本冲突保护
 
 ## 仓库结构
 
@@ -43,7 +44,7 @@ docs/                   架构与投资方法论
 scripts/                sidecar 构建脚本
 ```
 
-产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[AI 工作流契约](docs/ai-workflow.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[确定性规划模型](docs/planning-model.md) 与 [AI 数据边界](docs/ai-data-boundary.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[AI 工作流契约](docs/ai-workflow.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
 
 ## 本地开发
 
@@ -92,4 +93,4 @@ npm run desktop:build
 
 默认数据库位于操作系统的本地数据目录 `com.compassinvest.desktop/compass.db`。开发和测试时可通过 `COMPASS_DATA_DIR` 指定隔离目录。
 
-服务端只在用户主动发起 AI 分析时，将完成该任务所需的投资上下文发送给用户配置的模型服务。当前版本尚未实现数据库整体加密、证券行情源、券商交易或云同步。
+服务端只在用户主动发起 AI 分析时，将完成该任务所需的投资上下文发送给用户配置的模型服务。云同步同样只在用户主动操作时发生，模型密钥、登录令牌与恢复密钥不会进入同步包。当前版本尚未实现本地数据库整体加密、证券行情源或券商交易。

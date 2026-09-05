@@ -1,4 +1,5 @@
 mod ai;
+mod cloud_sync;
 mod context;
 mod db;
 mod error;
@@ -17,6 +18,10 @@ use axum::{
     http::{HeaderValue, Method},
     routing::{get, post, put},
     Json, Router,
+};
+use cloud_sync::{
+    AccountCredentials, AccountResult, CloudConfig, CloudStatus, PullInput, RecoveryKeyInput,
+    SyncResult,
 };
 use db::Database;
 use error::{AppError, AppResult};
@@ -104,6 +109,20 @@ async fn main() -> AppResult<()> {
         )
         .route("/api/model-config/test", post(test_model_config))
         .route("/api/model-key", axum::routing::delete(delete_model_key))
+        .route(
+            "/api/cloud/config",
+            get(cloud_config).put(save_cloud_config),
+        )
+        .route("/api/cloud/status", get(cloud_status))
+        .route("/api/cloud/signup", post(cloud_signup))
+        .route("/api/cloud/login", post(cloud_login))
+        .route("/api/cloud/session", axum::routing::delete(cloud_logout))
+        .route(
+            "/api/cloud/recovery-key",
+            get(export_cloud_recovery_key).put(import_cloud_recovery_key),
+        )
+        .route("/api/cloud/sync/push", post(cloud_push))
+        .route("/api/cloud/sync/pull", post(cloud_pull))
         .route("/api/analysis/preview", post(preview_analysis))
         .route("/api/analysis", post(run_analysis))
         .route("/api/analyses", get(analyses))
@@ -289,6 +308,67 @@ async fn test_model_config(
 async fn delete_model_key(State(state): State<Arc<AppState>>) -> AppResult<Json<ModelConfig>> {
     secrets::delete_api_key()?;
     Ok(Json(state.db.model_config()?))
+}
+
+async fn cloud_config(State(state): State<Arc<AppState>>) -> AppResult<Json<Option<CloudConfig>>> {
+    Ok(Json(cloud_sync::config(&state.db)?))
+}
+
+async fn save_cloud_config(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<CloudConfig>,
+) -> AppResult<Json<CloudStatus>> {
+    Ok(Json(cloud_sync::save_config(&state.db, &input)?))
+}
+
+async fn cloud_status(State(state): State<Arc<AppState>>) -> AppResult<Json<CloudStatus>> {
+    Ok(Json(cloud_sync::status(&state.db)?))
+}
+
+async fn cloud_signup(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<AccountCredentials>,
+) -> AppResult<Json<AccountResult>> {
+    Ok(Json(cloud_sync::sign_up(&state.db, &input).await?))
+}
+
+async fn cloud_login(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<AccountCredentials>,
+) -> AppResult<Json<AccountResult>> {
+    Ok(Json(cloud_sync::sign_in(&state.db, &input).await?))
+}
+
+async fn cloud_logout(State(state): State<Arc<AppState>>) -> AppResult<Json<CloudStatus>> {
+    Ok(Json(cloud_sync::sign_out(&state.db).await?))
+}
+
+async fn export_cloud_recovery_key(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<serde_json::Value>> {
+    Ok(Json(serde_json::json!({
+        "recoveryKey": cloud_sync::export_recovery_key(&state.db)?,
+        "warning": "任何获得此密钥的人都可能解密你的云端投资数据，请离线保管。"
+    })))
+}
+
+async fn import_cloud_recovery_key(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<RecoveryKeyInput>,
+) -> AppResult<axum::http::StatusCode> {
+    cloud_sync::import_recovery_key(&state.db, &input)?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+async fn cloud_push(State(state): State<Arc<AppState>>) -> AppResult<Json<SyncResult>> {
+    Ok(Json(cloud_sync::push(&state.db).await?))
+}
+
+async fn cloud_pull(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<PullInput>,
+) -> AppResult<Json<SyncResult>> {
+    Ok(Json(cloud_sync::pull(&state.db, &input).await?))
 }
 
 async fn run_analysis(

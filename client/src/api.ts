@@ -2,6 +2,9 @@ import type {
   AnalysisRequest,
   AnalysisPreview,
   AnalysisResult,
+  AccountResult,
+  CloudConfig,
+  CloudStatus,
   DecisionEntry,
   DecisionRecord,
   DecisionReview,
@@ -15,9 +18,11 @@ import type {
   ModelConnectionTest,
   ResearchEvidence,
   ResearchEvidenceInput,
+  RecoveryKeyResult,
   Snapshot,
   SystemReviewInput,
   SystemReviewRecord,
+  SyncResult,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4217/api";
@@ -100,6 +105,46 @@ export async function testModelConnection(): Promise<ModelConnectionTest> {
 
 export async function deleteModelKey(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-key", { method: "DELETE" });
+}
+
+export async function getCloudConfig(): Promise<CloudConfig | null> {
+  return httpRequest<CloudConfig | null>("/cloud/config");
+}
+
+export async function getCloudStatus(): Promise<CloudStatus> {
+  return httpRequest<CloudStatus>("/cloud/status");
+}
+
+export async function saveCloudConfig(config: CloudConfig): Promise<CloudStatus> {
+  return httpRequest<CloudStatus>("/cloud/config", { method: "PUT", body: JSON.stringify(config) });
+}
+
+export async function signUpCloud(email: string, password: string): Promise<AccountResult> {
+  return httpRequest<AccountResult>("/cloud/signup", { method: "POST", body: JSON.stringify({ email, password }) });
+}
+
+export async function signInCloud(email: string, password: string): Promise<AccountResult> {
+  return httpRequest<AccountResult>("/cloud/login", { method: "POST", body: JSON.stringify({ email, password }) });
+}
+
+export async function signOutCloud(): Promise<CloudStatus> {
+  return httpRequest<CloudStatus>("/cloud/session", { method: "DELETE" });
+}
+
+export async function pushCloudSync(): Promise<SyncResult> {
+  return httpRequest<SyncResult>("/cloud/sync/push", { method: "POST" });
+}
+
+export async function pullCloudSync(confirmReplace: boolean): Promise<SyncResult> {
+  return httpRequest<SyncResult>("/cloud/sync/pull", { method: "POST", body: JSON.stringify({ confirmReplace }) });
+}
+
+export async function exportCloudRecoveryKey(): Promise<RecoveryKeyResult> {
+  return httpRequest<RecoveryKeyResult>("/cloud/recovery-key");
+}
+
+export async function importCloudRecoveryKey(recoveryKey: string, confirmReplace: boolean): Promise<void> {
+  await httpRequest<void>("/cloud/recovery-key", { method: "PUT", body: JSON.stringify({ recoveryKey, confirmReplace }) });
 }
 
 export async function runAnalysis(request: AnalysisRequest): Promise<AnalysisResult> {

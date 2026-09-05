@@ -1,7 +1,8 @@
 use std::{path::Path, sync::Mutex};
 
 use chrono::Utc;
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, types::ValueRef, Connection, Transaction};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -18,6 +19,221 @@ use crate::{
 
 pub struct Database {
     connection: Mutex<Connection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SyncValue {
+    Null,
+    Integer(i64),
+    Real(f64),
+    Text(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncTable {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<SyncValue>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncDataset {
+    pub schema_version: u32,
+    pub exported_at: String,
+    pub tables: Vec<SyncTable>,
+}
+
+struct SyncTableSpec {
+    name: &'static str,
+    columns: &'static [&'static str],
+    order_by: &'static str,
+}
+
+const SYNC_TABLES: &[SyncTableSpec] = &[
+    SyncTableSpec {
+        name: "profile",
+        columns: &["id", "payload", "updated_at"],
+        order_by: "id",
+    },
+    SyncTableSpec {
+        name: "goals",
+        columns: &[
+            "id",
+            "name",
+            "target_amount",
+            "current_amount",
+            "monthly_contribution",
+            "target_date",
+            "priority",
+            "created_at",
+            "updated_at",
+        ],
+        order_by: "id",
+    },
+    SyncTableSpec {
+        name: "holdings",
+        columns: &[
+            "id",
+            "symbol",
+            "name",
+            "asset_class",
+            "market_value",
+            "cost_basis",
+            "target_pct",
+            "currency",
+            "created_at",
+            "updated_at",
+        ],
+        order_by: "id",
+    },
+    SyncTableSpec {
+        name: "decisions",
+        columns: &["id", "asset_name", "payload", "review_date", "created_at"],
+        order_by: "id",
+    },
+    SyncTableSpec {
+        name: "decision_reviews",
+        columns: &[
+            "decision_id",
+            "outcome_summary",
+            "actual_return_pct",
+            "thesis_status",
+            "process_rating",
+            "lessons",
+            "reviewed_at",
+        ],
+        order_by: "decision_id",
+    },
+    SyncTableSpec {
+        name: "analyses",
+        columns: &["id", "question", "answer", "audit", "trace", "created_at"],
+        order_by: "id",
+    },
+    SyncTableSpec {
+        name: "system_reviews",
+        columns: &[
+            "id",
+            "payload",
+            "snapshot",
+            "next_review_date",
+            "created_at",
+        ],
+        order_by: "id",
+    },
+    SyncTableSpec {
+        name: "investment_rules",
+        columns: &[
+            "id",
+            "category",
+            "statement",
+            "trigger",
+            "rationale",
+            "active",
+            "source_review_id",
+            "revision",
+            "created_at",
+            "updated_at",
+        ],
+        order_by: "id",
+    },
+    SyncTableSpec {
+        name: "investment_rule_revisions",
+        columns: &["rule_id", "revision", "payload", "changed_at"],
+        order_by: "rule_id, revision",
+    },
+    SyncTableSpec {
+        name: "research_evidence",
+        columns: &[
+            "id",
+            "asset_name",
+            "title",
+            "publisher",
+            "source_url",
+            "source_tier",
+            "evidence_type",
+            "stance",
+            "as_of_date",
+            "claim",
+            "notes",
+            "active",
+            "captured_at",
+        ],
+        order_by: "id",
+    },
+];
+
+impl SyncDataset {
+    pub fn content_hash(&self) -> AppResult<String> {
+        Ok(crate::cloud_sync::hash_bytes(&serde_json::to_vec(
+            &self.tables,
+        )?))
+    }
+
+    pub fn record_count(&self) -> usize {
+        self.tables.iter().map(|table| table.rows.len()).sum()
+    }
+
+    pub fn validate(&self) -> AppResult<()> {
+        if self.schema_version != 1 {
+            return Err(AppError::Validation(format!(
+                "不支持的数据快照版本 {}",
+                self.schema_version
+            )));
+        }
+        chrono::DateTime::parse_from_rfc3339(&self.exported_at)
+            .map_err(|_| AppError::Validation("数据快照时间格式无效".into()))?;
+        if self.tables.len() != SYNC_TABLES.len() {
+            return Err(AppError::Validation("数据快照缺少必要数据表".into()));
+        }
+        let mut total_rows = 0_usize;
+        for spec in SYNC_TABLES {
+            let table = self
+                .tables
+                .iter()
+                .find(|table| table.name == spec.name)
+                .ok_or_else(|| AppError::Validation(format!("数据快照缺少 {}", spec.name)))?;
+            let expected_columns = spec
+                .columns
+                .iter()
+                .copied()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            if table.columns != expected_columns {
+                return Err(AppError::Validation(format!(
+                    "数据表 {} 的字段结构不匹配",
+                    spec.name
+                )));
+            }
+            total_rows += table.rows.len();
+            if total_rows > 50_000 {
+                return Err(AppError::Validation("同步记录超过 50000 条安全上限".into()));
+            }
+            for row in &table.rows {
+                if row.len() != spec.columns.len() {
+                    return Err(AppError::Validation(format!(
+                        "数据表 {} 存在字段数量错误的记录",
+                        spec.name
+                    )));
+                }
+                for value in row {
+                    match value {
+                        SyncValue::Real(number) if !number.is_finite() => {
+                            return Err(AppError::Validation("同步数据包含无效数字".into()));
+                        }
+                        SyncValue::Text(text) if text.len() > 2 * 1024 * 1024 => {
+                            return Err(AppError::Validation(
+                                "单个同步字段超过 2 MB 安全上限".into(),
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Database {
@@ -170,6 +386,137 @@ impl Database {
         self.connection
             .lock()
             .map_err(|_| AppError::Database(rusqlite::Error::InvalidQuery))
+    }
+
+    pub fn setting(&self, key: &str) -> AppResult<Option<String>> {
+        Ok(self
+            .conn()?
+            .query_row("SELECT value FROM settings WHERE key=?1", [key], |row| {
+                row.get(0)
+            })
+            .optional()?)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> AppResult<()> {
+        self.conn()?.execute(
+            "INSERT INTO settings (key,value) VALUES (?1,?2)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_setting(&self, key: &str) -> AppResult<()> {
+        self.conn()?
+            .execute("DELETE FROM settings WHERE key=?1", [key])?;
+        Ok(())
+    }
+
+    pub fn export_sync_data(&self) -> AppResult<SyncDataset> {
+        let conn = self.conn()?;
+        let mut tables = Vec::with_capacity(SYNC_TABLES.len());
+        for spec in SYNC_TABLES {
+            let columns = spec
+                .columns
+                .iter()
+                .map(|column| quote_identifier(column))
+                .collect::<Vec<_>>();
+            let sql = format!(
+                "SELECT {} FROM {} ORDER BY {}",
+                columns.join(","),
+                quote_identifier(spec.name),
+                spec.order_by
+            );
+            let mut statement = conn.prepare(&sql)?;
+            let rows = statement
+                .query_map([], |row| {
+                    let mut values = Vec::with_capacity(spec.columns.len());
+                    for index in 0..spec.columns.len() {
+                        values.push(match row.get_ref(index)? {
+                            ValueRef::Null => SyncValue::Null,
+                            ValueRef::Integer(value) => SyncValue::Integer(value),
+                            ValueRef::Real(value) => SyncValue::Real(value),
+                            ValueRef::Text(value) => SyncValue::Text(
+                                String::from_utf8(value.to_vec()).map_err(|error| {
+                                    rusqlite::Error::FromSqlConversionFailure(
+                                        index,
+                                        rusqlite::types::Type::Text,
+                                        Box::new(error),
+                                    )
+                                })?,
+                            ),
+                            ValueRef::Blob(_) => {
+                                return Err(rusqlite::Error::InvalidColumnType(
+                                    index,
+                                    spec.columns[index].into(),
+                                    rusqlite::types::Type::Blob,
+                                ));
+                            }
+                        });
+                    }
+                    Ok(values)
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            tables.push(SyncTable {
+                name: spec.name.into(),
+                columns: spec.columns.iter().copied().map(str::to_owned).collect(),
+                rows,
+            });
+        }
+        let dataset = SyncDataset {
+            schema_version: 1,
+            exported_at: Utc::now().to_rfc3339(),
+            tables,
+        };
+        dataset.validate()?;
+        Ok(dataset)
+    }
+
+    pub fn import_sync_data(&self, dataset: &SyncDataset) -> AppResult<()> {
+        dataset.validate()?;
+        let mut conn = self.conn()?;
+        let transaction = conn.transaction()?;
+        transaction.execute_batch("PRAGMA defer_foreign_keys=ON;")?;
+
+        for spec in SYNC_TABLES.iter().rev() {
+            transaction.execute(&format!("DELETE FROM {}", quote_identifier(spec.name)), [])?;
+        }
+        for spec in SYNC_TABLES {
+            let table = dataset
+                .tables
+                .iter()
+                .find(|table| table.name == spec.name)
+                .ok_or_else(|| AppError::Validation(format!("数据快照缺少 {}", spec.name)))?;
+            let columns = spec
+                .columns
+                .iter()
+                .map(|column| quote_identifier(column))
+                .collect::<Vec<_>>();
+            let placeholders = (1..=spec.columns.len())
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>();
+            let sql = format!(
+                "INSERT INTO {} ({}) VALUES ({})",
+                quote_identifier(spec.name),
+                columns.join(","),
+                placeholders.join(",")
+            );
+            let mut statement = transaction.prepare(&sql)?;
+            for row in &table.rows {
+                let values = row
+                    .iter()
+                    .map(|value| match value {
+                        SyncValue::Null => rusqlite::types::Value::Null,
+                        SyncValue::Integer(value) => rusqlite::types::Value::Integer(*value),
+                        SyncValue::Real(value) => rusqlite::types::Value::Real(*value),
+                        SyncValue::Text(value) => rusqlite::types::Value::Text(value.clone()),
+                    })
+                    .collect::<Vec<_>>();
+                statement.execute(rusqlite::params_from_iter(values.iter()))?;
+            }
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn snapshot(&self) -> AppResult<Snapshot> {
@@ -989,6 +1336,10 @@ fn truncate_chars(value: &str, max: usize) -> String {
     result
 }
 
+fn quote_identifier(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
 fn build_snapshot(
     profile: FinancialProfile,
     goals: Vec<Goal>,
@@ -1260,6 +1611,60 @@ mod tests {
         let snapshot = db.snapshot().unwrap();
         assert_eq!(snapshot.holdings.len(), 1);
         assert_eq!(snapshot.emergency_months, 6.0);
+    }
+
+    #[test]
+    fn sync_snapshot_round_trips_domain_data_but_never_settings() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = Database::open(&directory.path().join("source.db")).unwrap();
+        source
+            .save_profile(&FinancialProfile {
+                monthly_expense: 8_000.0,
+                emergency_fund: 48_000.0,
+                ..Default::default()
+            })
+            .unwrap();
+        source
+            .add_holding(&HoldingInput {
+                symbol: "IDX".into(),
+                name: "宽基指数".into(),
+                asset_class: "基金".into(),
+                market_value: 120_000.0,
+                cost_basis: 100_000.0,
+                target_pct: 100.0,
+                currency: "CNY".into(),
+            })
+            .unwrap();
+        source.set_setting("model.name", "never-sync-this").unwrap();
+
+        let dataset = source.export_sync_data().unwrap();
+        let second_export = source.export_sync_data().unwrap();
+        assert_eq!(
+            dataset.content_hash().unwrap(),
+            second_export.content_hash().unwrap()
+        );
+
+        let target = Database::open(&directory.path().join("target.db")).unwrap();
+        target
+            .set_setting("model.name", "keep-local-model")
+            .unwrap();
+        target.import_sync_data(&dataset).unwrap();
+        let restored = target.snapshot().unwrap();
+        assert_eq!(restored.holdings.len(), 1);
+        assert_eq!(restored.profile.emergency_fund, 48_000.0);
+        assert_eq!(
+            target.setting("model.name").unwrap().as_deref(),
+            Some("keep-local-model")
+        );
+    }
+
+    #[test]
+    fn sync_snapshot_rejects_unknown_or_incomplete_schema() {
+        let directory = tempfile::tempdir().unwrap();
+        let db = Database::open(&directory.path().join("source.db")).unwrap();
+        let mut dataset = db.export_sync_data().unwrap();
+        dataset.tables.pop();
+        assert!(matches!(dataset.validate(), Err(AppError::Validation(_))));
     }
 
     #[test]

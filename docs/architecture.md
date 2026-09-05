@@ -7,6 +7,7 @@
 3. **规则与模型解耦**：能够确定计算的风险先由代码完成，大模型处理解释、比较和反思。
 4. **模型可替换**：业务工作流只依赖 `ModelProvider` 接口。
 5. **工作流可组合**：记忆、检索、多方案和反思是独立阶段，可以关闭或替换。
+6. **同步可替换且零明文托管**：账户 Provider 可替换，云端对象存储只接触密文和版本元数据。
 
 ## 运行拓扑
 
@@ -28,18 +29,20 @@
 │      ├─ workflow definition   │
 │      ├─ AI orchestrator       │
 │      ├─ memory retriever      │
-│      └─ provider adapter      │
-└──────┬────────────────┬───────┘
-       │                │ on explicit analysis only
-┌──────▼───────┐  ┌─────▼────────────────┐
-│ SQLite       │  │ User-selected model   │
-│ local data   │  │ OpenAI-compatible API │
-└──────────────┘  └──────────────────────┘
+│      ├─ provider adapter      │
+│      └─ encrypted sync       │
+└──────┬───────────────┬──────────────┘
+       │               │ explicit analysis only
+┌──────▼───────┐ ┌─────▼────────────────┐
+│ SQLite       │ │ User-selected model   │
+│ local data   │ │ OpenAI-compatible API │
+└──────┬───────┘ └──────────────────────┘
        │
-┌──────▼──────────┐
-│ OS Keychain     │
-│ API key only    │
-└─────────────────┘
+┌──────▼─────────────┐       explicit manual sync
+│ OS Keychain        │ ┌─────────────────────────────┐
+│ model key / tokens ├─┤ Account + ciphertext store  │
+│ / recovery key     │ │ Supabase or self-hosted     │
+└────────────────────┘ └─────────────────────────────┘
 ```
 
 ## AI 模块边界
@@ -89,6 +92,11 @@ pub trait ModelProvider: Send + Sync {
 - Base URL 默认要求 HTTPS，本机模型例外。
 - 模型提示词明确禁止编造实时市场数据、收益保证和确定性买卖指令。
 - 规则层输出与模型推理分离，降低大模型覆盖基础风险事实的概率。
+- 云同步使用固定数据表白名单与 XChaCha20-Poly1305；恢复密钥不上传。
+- 同步写入以云端 revision 做原子比较；并发修改不会静默覆盖。
+- 拉取完成解密、结构和内容指纹检查后，才在一个 SQLite 事务中替换投资域数据；本地设置和密钥不在事务范围内。
+
+账户与云同步的协议、冲突语义和 Supabase RLS 参考迁移见 [账户与端到端加密云同步](cloud-sync.md)。
 
 后续安全工作：数据库加密、应用签名与公证、进程间认证令牌、Prompt Injection 防护和自动更新签名。
 
