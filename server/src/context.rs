@@ -1,7 +1,8 @@
 use serde_json::{json, Map, Value};
 
 use crate::models::{
-    AnalysisPreview, AnalysisRequest, ContextGroup, ContextSelection, MemoryItem, Snapshot,
+    AnalysisPreview, AnalysisRequest, ContextGroup, ContextSelection, InvestmentRule, MemoryItem,
+    Snapshot, SystemReviewRecord,
 };
 
 pub const INVESTMENT_SYSTEM_POLICY: &str = r#"
@@ -13,6 +14,7 @@ pub const INVESTMENT_SYSTEM_POLICY: &str = r#"
 4. 区分资产价格与内在价值，区分好结果与好过程。
 5. 给出可执行的检查项、证伪条件与复盘节点；避免直接下达买卖指令。
 6. 输出中文，清楚、克制，优先解释为什么。
+7. 用户的个人投资规则与周期复盘是待检验的长期约束：检查是否被违反，但不得静默替用户改写规则。
 "#;
 
 #[derive(Debug, Clone)]
@@ -29,6 +31,8 @@ impl ContextBuilder {
     pub fn build(
         request: &AnalysisRequest,
         snapshot: &Snapshot,
+        rules: &[InvestmentRule],
+        system_reviews: &[SystemReviewRecord],
         memory_candidates: &[MemoryItem],
     ) -> BuiltContext {
         let mut payload = Map::new();
@@ -63,8 +67,17 @@ impl ContextBuilder {
         if selection.include_risk_findings {
             payload.insert("riskFindings".into(), json!(snapshot.findings));
         }
+        if selection.include_rules {
+            payload.insert(
+                "personalInvestmentRules".into(),
+                json!(rules.iter().filter(|rule| rule.active).collect::<Vec<_>>()),
+            );
+        }
+        if selection.include_system_reviews {
+            payload.insert("periodicSystemReviews".into(), json!(system_reviews));
+        }
 
-        let groups = context_groups(selection, snapshot, request);
+        let groups = context_groups(selection, snapshot, rules, system_reviews, request);
         let payload = Value::Object(payload);
         let serialized = serde_json::to_vec(&payload).unwrap_or_default();
         let payload_bytes = serialized.len();
@@ -143,6 +156,8 @@ impl ContextBuilder {
 fn context_groups(
     selection: &ContextSelection,
     snapshot: &Snapshot,
+    rules: &[InvestmentRule],
+    system_reviews: &[SystemReviewRecord],
     request: &AnalysisRequest,
 ) -> Vec<ContextGroup> {
     vec![
@@ -195,6 +210,22 @@ fn context_groups(
             "本地规则引擎产生的风险事实与行动建议。",
         ),
         group(
+            "rules",
+            "个人投资规则",
+            selection.include_rules,
+            rules.iter().filter(|rule| rule.active).count(),
+            "高",
+            "用户明确建立且当前启用的决策、仓位、风险与行为规则。",
+        ),
+        group(
+            "systemReviews",
+            "周期系统复盘",
+            selection.include_system_reviews,
+            system_reviews.len(),
+            "高",
+            "最近的纪律执行、违规、经验修正、行动与当时组合快照。",
+        ),
+        group(
             "workflow",
             "工作流选择",
             true,
@@ -244,7 +275,9 @@ fn context_revision(serialized: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{FinancialProfile, PortfolioPlan};
+    use crate::models::{
+        FinancialProfile, InvestmentRule, PortfolioPlan, SystemReviewRecord, SystemReviewSnapshot,
+    };
 
     fn snapshot() -> Snapshot {
         Snapshot {
@@ -289,10 +322,11 @@ mod tests {
                 include_holdings: false,
                 include_planning: true,
                 include_risk_findings: true,
+                ..Default::default()
             },
             preview_revision: None,
         };
-        let built = ContextBuilder::build(&request, &snapshot(), &[]);
+        let built = ContextBuilder::build(&request, &snapshot(), &[], &[], &[]);
         assert!(built.payload.get("financialProfile").is_none());
         assert!(built.payload.get("goals").is_none());
         assert!(built.payload.get("portfolio").is_none());
@@ -320,7 +354,7 @@ mod tests {
                 created_at: "2026-01-01".into(),
             })
             .collect::<Vec<_>>();
-        let built = ContextBuilder::build(&request, &snapshot(), &memories);
+        let built = ContextBuilder::build(&request, &snapshot(), &[], &[], &memories);
         let preview = ContextBuilder::preview(
             &request,
             built,
@@ -362,8 +396,79 @@ mod tests {
         let mut changed = first.clone();
         changed[0].content = "已经变化".into();
         assert_ne!(
-            ContextBuilder::build(&request, &snapshot, &first).revision,
-            ContextBuilder::build(&request, &snapshot, &changed).revision
+            ContextBuilder::build(&request, &snapshot, &[], &[], &first).revision,
+            ContextBuilder::build(&request, &snapshot, &[], &[], &changed).revision
         );
+    }
+
+    #[test]
+    fn rules_and_reviews_follow_selection_and_revision_contract() {
+        let request = AnalysisRequest {
+            question: "复盘我的纪律".into(),
+            workflow: "deep".into(),
+            use_memory: false,
+            reflect: true,
+            explore_alternatives: true,
+            context_selection: ContextSelection::default(),
+            preview_revision: None,
+        };
+        let rule = InvestmentRule {
+            id: "rule-1".into(),
+            category: "风险".into(),
+            statement: "单一仓位不超过 10%".into(),
+            trigger: "加仓前".into(),
+            rationale: "限制永久损失".into(),
+            active: true,
+            source_review_id: None,
+            revision: 1,
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-01-01".into(),
+        };
+        let review = SystemReviewRecord {
+            id: "review-1".into(),
+            period_label: "2026 Q3".into(),
+            adherence_score: 4,
+            process_summary: "按计划执行".into(),
+            rule_violations: "无".into(),
+            lessons: "减少计划外交易".into(),
+            next_actions: "继续记录".into(),
+            next_review_date: "2026-12-31".into(),
+            snapshot: SystemReviewSnapshot {
+                portfolio_value: 0.0,
+                emergency_months: 0.0,
+                concentration_pct: 0.0,
+                risk_status: "insufficient".into(),
+                high_risk_findings: 0,
+                goal_total: 0,
+                goals_on_track: 0,
+                decision_total: 0,
+                reviewed_decisions: 0,
+                active_rules: 1,
+            },
+            created_at: "2026-09-30".into(),
+        };
+        let included = ContextBuilder::build(
+            &request,
+            &snapshot(),
+            std::slice::from_ref(&rule),
+            std::slice::from_ref(&review),
+            &[],
+        );
+        assert!(included.payload.get("personalInvestmentRules").is_some());
+        assert!(included.payload.get("periodicSystemReviews").is_some());
+
+        let mut excluded_request = request.clone();
+        excluded_request.context_selection.include_rules = false;
+        excluded_request.context_selection.include_system_reviews = false;
+        let excluded = ContextBuilder::build(
+            &excluded_request,
+            &snapshot(),
+            std::slice::from_ref(&rule),
+            std::slice::from_ref(&review),
+            &[],
+        );
+        assert!(excluded.payload.get("personalInvestmentRules").is_none());
+        assert!(excluded.payload.get("periodicSystemReviews").is_none());
+        assert_ne!(included.revision, excluded.revision);
     }
 }

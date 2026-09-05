@@ -12,6 +12,7 @@ import {
   Edit3,
   Eye,
   FilePenLine,
+  History,
   KeyRound,
   LayoutDashboard,
   LoaderCircle,
@@ -31,18 +32,24 @@ import {
   deleteHolding,
   deleteGoal,
   getDecisions,
+  getInvestmentRules,
+  getInvestmentRuleHistory,
   getModelConfig,
   getSnapshot,
+  getSystemReviews,
   previewAnalysis,
   runAnalysis,
   saveDecision,
   saveDecisionReview,
   saveGoal,
   saveHolding,
+  saveInvestmentRule,
   saveModelConfig,
   saveProfile,
+  saveSystemReview,
   testModelConnection,
   updateHolding,
+  updateInvestmentRule,
   updateGoal,
 } from "./api";
 import type {
@@ -56,12 +63,17 @@ import type {
   FinancialProfile,
   Goal,
   Holding,
+  InvestmentRule,
+  InvestmentRuleInput,
+  InvestmentRuleRevision,
   ModelConfig,
   Snapshot,
+  SystemReviewInput,
+  SystemReviewRecord,
 } from "./types";
 
-type View = "dashboard" | "foundation" | "decision" | "advisor" | "settings";
-const views: View[] = ["dashboard", "foundation", "decision", "advisor", "settings"];
+type View = "dashboard" | "foundation" | "decision" | "review" | "advisor" | "settings";
+const views: View[] = ["dashboard", "foundation", "decision", "review", "advisor", "settings"];
 
 function initialView(): View {
   const candidate = window.location.hash.replace("#", "") as View;
@@ -74,10 +86,18 @@ const money = new Intl.NumberFormat("zh-CN", {
   maximumFractionDigits: 0,
 });
 
+function localDateValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 const nav = [
   { id: "dashboard" as const, label: "决策总览", icon: LayoutDashboard },
   { id: "foundation" as const, label: "财务底座", icon: WalletCards },
   { id: "decision" as const, label: "决策日志", icon: FilePenLine },
+  { id: "review" as const, label: "复盘与规则", icon: History },
   { id: "advisor" as const, label: "AI 研究室", icon: BrainCircuit },
 ];
 
@@ -130,6 +150,7 @@ function App() {
   const navigate = (nextView: View) => {
     setView(nextView);
     window.history.replaceState(null, "", `#${nextView}`);
+    window.scrollTo({ top: 0, behavior: "auto" });
   };
 
   if (loading) {
@@ -185,6 +206,7 @@ function App() {
         {view === "dashboard" && <Dashboard snapshot={snapshot} model={model} navigate={navigate} />}
         {view === "foundation" && <Foundation snapshot={snapshot} onUpdate={setSnapshot} flash={flash} />}
         {view === "decision" && <DecisionJournal flash={flash} />}
+        {view === "review" && <ReviewCenter navigate={navigate} flash={flash} />}
         {view === "advisor" && <Advisor model={model} navigate={navigate} />}
         {view === "settings" && <ModelSettings model={model} onUpdate={setModel} flash={flash} />}
       </main>
@@ -490,7 +512,7 @@ function DecisionJournal({ flash }: { flash: (s: string) => void }) {
     : null;
 
   const persist = async () => {
-    if (!entry.assetName || !entry.thesis || !entry.counterThesis || !entry.invalidation) return;
+    if (!entry.assetName || !entry.thesis || !entry.counterThesis || !entry.invalidation || !entry.reviewDate) return;
     setSaving(true);
     try {
       await saveDecision(entry);
@@ -539,7 +561,7 @@ function DecisionJournal({ flash }: { flash: (s: string) => void }) {
           <label><span>计划复盘日</span><input type="date" value={entry.reviewDate} onChange={(e) => setEntry({ ...entry, reviewDate: e.target.value })} /></label>
           <div className={`ev-card ${expectedValue >= 0 ? "positive-bg" : "negative-bg"}`}><span>粗略概率加权结果</span><strong>{expectedValue > 0 ? "+" : ""}{expectedValue.toFixed(1)}%</strong><small>仅作思考校准，不代表预测</small></div>
         </div>
-        <div className="form-actions"><p>必填：投资对象、正反逻辑与证伪条件</p><button className="primary" onClick={persist} disabled={saving}><Save size={16} />冻结决策快照</button></div>
+        <div className="form-actions"><p>必填：投资对象、正反逻辑、证伪条件与复盘日期</p><button className="primary" onClick={persist} disabled={saving || !entry.assetName || !entry.thesis || !entry.counterThesis || !entry.invalidation || !entry.reviewDate}><Save size={16} />冻结决策快照</button></div>
       </section>
 
       <section className="panel decision-history">
@@ -548,7 +570,7 @@ function DecisionJournal({ flash }: { flash: (s: string) => void }) {
         {!error && records.length === 0 && <div className="empty">还没有决策记录。先冻结一张决策卡，未来才有可复盘的证据。</div>}
         <div className="decision-list">
           {records.map((record) => {
-            const due = Boolean(record.reviewDate && record.reviewDate <= new Date().toISOString().slice(0, 10) && !record.review);
+            const due = Boolean(record.reviewDate && record.reviewDate <= localDateValue(new Date()) && !record.review);
             return <article key={record.id} className={reviewingId === record.id ? "reviewing" : ""}>
               <div className="decision-summary">
                 <div className="decision-name"><span className={record.review ? "reviewed" : due ? "due" : "planned"}>{record.review ? "已复盘" : due ? "待复盘" : "观察中"}</span><strong>{record.assetName}</strong><small>{new Date(record.createdAt).toLocaleDateString("zh-CN")}</small></div>
@@ -575,18 +597,240 @@ function DecisionJournal({ flash }: { flash: (s: string) => void }) {
   );
 }
 
+const emptyRule: InvestmentRuleInput = {
+  category: "风险",
+  statement: "",
+  trigger: "",
+  rationale: "",
+  active: true,
+};
+
+function defaultSystemReview(): SystemReviewInput {
+  const now = new Date();
+  const quarter = Math.floor(now.getMonth() / 3) + 1;
+  const next = new Date(now);
+  next.setMonth(next.getMonth() + 3);
+  return {
+    periodLabel: `${now.getFullYear()} Q${quarter}`,
+    adherenceScore: 3,
+    processSummary: "",
+    ruleViolations: "",
+    lessons: "",
+    nextActions: "",
+    nextReviewDate: localDateValue(next),
+  };
+}
+
+function ruleInput(rule: InvestmentRule): InvestmentRuleInput {
+  return {
+    category: rule.category,
+    statement: rule.statement,
+    trigger: rule.trigger,
+    rationale: rule.rationale,
+    active: rule.active,
+    sourceReviewId: rule.sourceReviewId,
+  };
+}
+
+function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash: (s: string) => void }) {
+  const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
+  const [rules, setRules] = useState<InvestmentRule[]>([]);
+  const [reviews, setReviews] = useState<SystemReviewRecord[]>([]);
+  const [review, setReview] = useState<SystemReviewInput>(defaultSystemReview);
+  const [rule, setRule] = useState<InvestmentRuleInput>(emptyRule);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
+  const [ruleHistories, setRuleHistories] = useState<Record<string, InvestmentRuleRevision[]>>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const refresh = async () => {
+    try {
+      const [nextDecisions, nextRules, nextReviews] = await Promise.all([
+        getDecisions(), getInvestmentRules(), getSystemReviews(),
+      ]);
+      setDecisions(nextDecisions);
+      setRules(nextRules);
+      setReviews(nextReviews);
+      setError("");
+    } catch (nextError) { setError(String(nextError)); }
+  };
+
+  useEffect(() => { void refresh(); }, []);
+
+  const today = localDateValue(new Date());
+  const dueDecisions = decisions.filter((item) => !item.review && item.reviewDate && item.reviewDate <= today);
+  const activeRules = rules.filter((item) => item.active);
+  const averageAdherence = reviews.length
+    ? reviews.reduce((sum, item) => sum + item.adherenceScore, 0) / reviews.length
+    : null;
+  const latestReview = reviews[0];
+  const periodicReviewDue = !latestReview || latestReview.nextReviewDate <= today;
+
+  const persistSystemReview = async () => {
+    if (!review.periodLabel || !review.processSummary || !review.lessons || !review.nextActions || !review.nextReviewDate) return;
+    setSaving(true); setError("");
+    try {
+      await saveSystemReview(review);
+      setReview(defaultSystemReview());
+      await refresh();
+      flash("周期复盘已冻结，并保留当时的组合与方法快照");
+    } catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
+  };
+
+  const persistRule = async () => {
+    if (!rule.statement || !rule.trigger || !rule.rationale) return;
+    setSaving(true); setError("");
+    try {
+      if (editingRuleId) await updateInvestmentRule(editingRuleId, rule);
+      else await saveInvestmentRule(rule);
+      if (editingRuleId) {
+        setRuleHistories((current) => {
+          const next = { ...current };
+          delete next[editingRuleId];
+          return next;
+        });
+        setExpandedRuleId(null);
+      }
+      setRule(emptyRule);
+      setEditingRuleId(null);
+      await refresh();
+      flash(editingRuleId ? "规则已产生新版本，旧版本仍保留" : "个人投资规则已建立");
+    } catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
+  };
+
+  const toggleRule = async (item: InvestmentRule) => {
+    setSaving(true); setError("");
+    try {
+      await updateInvestmentRule(item.id, { ...ruleInput(item), active: !item.active });
+      setRuleHistories((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+      setExpandedRuleId(null);
+      await refresh();
+      flash(item.active ? "规则已停用，历史版本仍保留" : "规则已重新启用");
+    } catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
+  };
+
+  const toggleRuleHistory = async (item: InvestmentRule) => {
+    if (expandedRuleId === item.id) { setExpandedRuleId(null); return; }
+    setExpandedRuleId(item.id);
+    if (ruleHistories[item.id]) return;
+    try {
+      const history = await getInvestmentRuleHistory(item.id);
+      setRuleHistories((current) => ({ ...current, [item.id]: history }));
+    } catch (nextError) { setError(String(nextError)); }
+  };
+
+  const convertLessonToRule = (item: SystemReviewRecord) => {
+    setEditingRuleId(null);
+    setRule({
+      category: "复盘",
+      statement: "",
+      trigger: "下次遇到相似决策时",
+      rationale: item.lessons,
+      active: true,
+      sourceReviewId: item.id,
+    });
+    window.requestAnimationFrame(() => document.querySelector(".rule-editor")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  };
+
+  const startAiReview = () => {
+    window.sessionStorage.setItem(
+      "compass.advisorQuestion",
+      "请基于我的个人投资规则、最近周期复盘、财务目标、当前组合和历史决策，完成一次系统复盘：先核对规则违反与风险边界，再识别重复错误，比较至少两种改进路径，并给出下一周期可验证的行动与证伪条件。",
+    );
+    navigate("advisor");
+  };
+
+  return (
+    <div className="page narrow">
+      <PageHeader eyebrow="方法论 · 校准层" title="让经验沉淀为规则" description="周期复盘不是解释盈亏，而是检查纪律、修订规则并冻结当时的证据。" action={<button className="primary" onClick={startAiReview}><Sparkles size={16} />AI 辅助系统复盘</button>} />
+      <section className="review-metrics">
+        <article><span>到期待复盘</span><strong className={dueDecisions.length ? "warning-text" : ""}>{dueDecisions.length}</strong><small>按原始证伪条件回看</small></article>
+        <article><span>周期复盘</span><strong>{reviews.length}</strong><small className={periodicReviewDue ? "warning-text" : ""}>{periodicReviewDue ? "现在需要安排一次" : `下次 ${latestReview.nextReviewDate}`}</small></article>
+        <article><span>有效规则</span><strong>{activeRules.length}</strong><small>{rules.length - activeRules.length} 条历史停用规则</small></article>
+        <article><span>平均纪律评分</span><strong>{averageAdherence === null ? "—" : averageAdherence.toFixed(1)}</strong><small>只评价是否按流程行动</small></article>
+      </section>
+
+      {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
+
+      {dueDecisions.length > 0 && <section className="panel due-review-panel">
+        <div className="panel-title"><div><span>复盘队列</span><h2>先处理已经到期的原始判断</h2></div><button className="secondary" onClick={() => navigate("decision")}>前往决策日志</button></div>
+        <div className="due-review-list">{dueDecisions.map((item) => <div key={item.id}><strong>{item.assetName}</strong><span>置信度 {item.confidencePct}%</span><span>计划复盘日 {item.reviewDate}</span><small>{item.invalidation}</small></div>)}</div>
+      </section>}
+
+      <section className="panel form-panel system-review-form">
+        <div className="panel-title"><div><span>周期系统复盘</span><h2>冻结这一周期的过程与约束</h2></div><History size={21} className="muted-icon" /></div>
+        <div className="form-grid">
+          <label><span>复盘周期</span><input value={review.periodLabel} onChange={(e) => setReview({ ...review, periodLabel: e.target.value })} placeholder="例如 2026 Q3" /></label>
+          <label><span>纪律执行评分</span><select value={review.adherenceScore} onChange={(e) => setReview({ ...review, adherenceScore: Number(e.target.value) })}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5</option>)}</select></label>
+          <label><span>下次复盘日</span><input type="date" value={review.nextReviewDate} onChange={(e) => setReview({ ...review, nextReviewDate: e.target.value })} /></label>
+          <label className="span-3"><span>这一周期实际执行了什么？</span><textarea value={review.processSummary} onChange={(e) => setReview({ ...review, processSummary: e.target.value })} placeholder="只写事实：投入、再平衡、研究和计划外交易。" /></label>
+          <label className="span-3"><span>违反了哪些预设规则？</span><textarea value={review.ruleViolations} onChange={(e) => setReview({ ...review, ruleViolations: e.target.value })} placeholder="没有则写“无”；不要用盈利为违规行为辩护。" /></label>
+          <label className="span-3"><span>哪些认知需要修正？</span><textarea value={review.lessons} onChange={(e) => setReview({ ...review, lessons: e.target.value })} placeholder="区分可重复的经验与一次性噪声。" /></label>
+          <label className="span-3"><span>下一周期只做哪些行动？</span><textarea value={review.nextActions} onChange={(e) => setReview({ ...review, nextActions: e.target.value })} placeholder="使用可检查的动作、期限和触发条件。" /></label>
+        </div>
+        <div className="form-actions"><p>保存时会同时冻结组合、目标、风险和决策完成度摘要。</p><button className="primary" disabled={saving || !review.processSummary || !review.lessons || !review.nextActions} onClick={persistSystemReview}><Save size={16} />冻结周期复盘</button></div>
+      </section>
+
+      <section className="panel rule-workbench">
+        <div className="panel-title"><div><span>个人投资规则</span><h2>把经验写成触发时能执行的动作</h2></div><span className="history-count">{activeRules.length} 条有效</span></div>
+        <div className="rule-layout">
+          <div className="rule-list">
+            {rules.length === 0 && <div className="empty">还没有个人规则。好的规则应说明“何时触发、具体做什么、为什么”。</div>}
+            {rules.map((item) => <article key={item.id} className={item.active ? "" : "inactive"}>
+              <div><span>{item.category} · v{item.revision}</span><strong>{item.statement}</strong><p><b>触发</b>{item.trigger}</p><small>{item.rationale}</small></div>
+              <div className="rule-actions"><button className="text-button" onClick={() => toggleRuleHistory(item)}>历史</button><button className="text-button" onClick={() => { setEditingRuleId(item.id); setRule(ruleInput(item)); }}>修订</button><button className="text-button" disabled={saving} onClick={() => toggleRule(item)}>{item.active ? "停用" : "启用"}</button></div>
+              {expandedRuleId === item.id && <div className="rule-history">{(ruleHistories[item.id] ?? []).map((revision) => <div key={revision.revision}><span>v{revision.revision} · {new Date(revision.changedAt).toLocaleDateString("zh-CN")}</span><strong>{revision.statement}</strong><small>{revision.active ? "当时启用" : "当时停用"}</small></div>)}</div>}
+            </article>)}
+          </div>
+          <div className="rule-editor">
+            <strong>{editingRuleId ? "修订规则" : rule.sourceReviewId ? "从复盘沉淀规则" : "建立一条规则"}</strong>
+            <label><span>类别</span><select value={rule.category} onChange={(e) => setRule({ ...rule, category: e.target.value as InvestmentRuleInput["category"] })}>{["资产配置", "风险", "研究", "仓位", "行为", "复盘"].map((value) => <option key={value}>{value}</option>)}</select></label>
+            <label><span>规则内容</span><textarea value={rule.statement} onChange={(e) => setRule({ ...rule, statement: e.target.value })} placeholder="例如：单一主动仓位不得超过 8%。" /></label>
+            <label><span>触发条件</span><textarea value={rule.trigger} onChange={(e) => setRule({ ...rule, trigger: e.target.value })} placeholder="什么时候必须检查这条规则？" /></label>
+            <label><span>依据</span><textarea value={rule.rationale} onChange={(e) => setRule({ ...rule, rationale: e.target.value })} placeholder="它避免哪一种重复错误？" /></label>
+            <div className="rule-editor-actions">{(editingRuleId || rule.sourceReviewId) && <button className="text-button" onClick={() => { setEditingRuleId(null); setRule(emptyRule); }}>取消</button>}<button className="secondary" disabled={saving || !rule.statement || !rule.trigger || !rule.rationale} onClick={persistRule}>{editingRuleId ? "保存新版本" : "建立规则"}</button></div>
+          </div>
+        </div>
+      </section>
+
+      {reviews.length > 0 && <section className="panel system-review-history">
+        <div className="panel-title"><div><span>冻结记录</span><h2>用当时的事实检验方法是否进步</h2></div><span className="history-count">{reviews.length} 期</span></div>
+        <div className="system-review-list">{reviews.map((item) => <article key={item.id}>
+          <div className="system-review-head"><div><span>{item.periodLabel}</span><strong>纪律 {item.adherenceScore}/5</strong></div><small>{new Date(item.createdAt).toLocaleDateString("zh-CN")}</small></div>
+          <p><b>过程事实</b>{item.processSummary}</p><p><b>规则违反</b>{item.ruleViolations || "无"}</p><p><b>经验修正</b>{item.lessons}</p><p><b>下一步</b>{item.nextActions}</p>
+          <div className="frozen-snapshot"><span>组合 {money.format(item.snapshot.portfolioValue)}</span><span>集中度 {item.snapshot.concentrationPct.toFixed(1)}%</span><span>高风险 {item.snapshot.highRiskFindings}</span><span>目标 {item.snapshot.goalsOnTrack}/{item.snapshot.goalTotal}</span></div>
+          <button className="text-button" onClick={() => convertLessonToRule(item)}>把经验沉淀为规则 <ChevronRight size={14} /></button>
+        </article>)}</div>
+      </section>}
+    </div>
+  );
+}
+
 function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) => void }) {
   const [question, setQuestion] = useState("请基于我的财务目标和当前组合，指出最需要优先处理的风险，并给出不依赖市场预测的改进方案。");
   const [deep, setDeep] = useState(true);
   const [memory, setMemory] = useState(true);
   const [reflection, setReflection] = useState(true);
   const [alternatives, setAlternatives] = useState(true);
-  const [contextSelection, setContextSelection] = useState<ContextSelection>({ includeProfile: true, includeGoals: true, includeHoldings: true, includePlanning: true, includeRiskFindings: true });
+  const [contextSelection, setContextSelection] = useState<ContextSelection>({ includeProfile: true, includeGoals: true, includeHoldings: true, includePlanning: true, includeRiskFindings: true, includeRules: true, includeSystemReviews: true });
   const [preview, setPreview] = useState<AnalysisPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const queued = window.sessionStorage.getItem("compass.advisorQuestion");
+    if (queued) {
+      setQuestion(queued);
+      window.sessionStorage.removeItem("compass.advisorQuestion");
+    }
+  }, []);
 
   const request = (previewRevision?: string): AnalysisRequest => ({
     question,
@@ -638,7 +882,8 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
           <div className="context-options">
             {([
               ["includeProfile", "财务档案"], ["includeGoals", "目标计划"], ["includeHoldings", "持仓明细"],
-              ["includePlanning", "规划结果"], ["includeRiskFindings", "风险检查"],
+              ["includePlanning", "规划结果"], ["includeRiskFindings", "风险检查"], ["includeRules", "个人规则"],
+              ["includeSystemReviews", "周期复盘"],
             ] as [keyof ContextSelection, string][]).map(([key, label]) => <button key={key} className={contextSelection[key] ? "selected" : ""} onClick={() => toggleContext(key)}><i>{contextSelection[key] && <Check size={11} />}</i>{label}</button>)}
           </div>
         </div>

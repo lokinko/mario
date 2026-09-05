@@ -194,6 +194,10 @@ pub struct ContextSelection {
     pub include_planning: bool,
     #[serde(default = "enabled")]
     pub include_risk_findings: bool,
+    #[serde(default = "enabled")]
+    pub include_rules: bool,
+    #[serde(default = "enabled")]
+    pub include_system_reviews: bool,
 }
 
 impl Default for ContextSelection {
@@ -204,6 +208,8 @@ impl Default for ContextSelection {
             include_holdings: true,
             include_planning: true,
             include_risk_findings: true,
+            include_rules: true,
+            include_system_reviews: true,
         }
     }
 }
@@ -333,5 +339,87 @@ pub struct MemoryItem {
     pub kind: String,
     pub title: String,
     pub content: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestmentRuleInput {
+    pub category: String,
+    pub statement: String,
+    pub trigger: String,
+    pub rationale: String,
+    pub active: bool,
+    pub source_review_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestmentRule {
+    pub id: String,
+    pub category: String,
+    pub statement: String,
+    pub trigger: String,
+    pub rationale: String,
+    pub active: bool,
+    pub source_review_id: Option<String>,
+    pub revision: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestmentRuleRevision {
+    pub rule_id: String,
+    pub revision: i64,
+    pub category: String,
+    pub statement: String,
+    pub trigger: String,
+    pub rationale: String,
+    pub active: bool,
+    pub source_review_id: Option<String>,
+    pub changed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemReviewInput {
+    pub period_label: String,
+    pub adherence_score: i64,
+    pub process_summary: String,
+    pub rule_violations: String,
+    pub lessons: String,
+    pub next_actions: String,
+    pub next_review_date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemReviewSnapshot {
+    pub portfolio_value: f64,
+    pub emergency_months: f64,
+    pub concentration_pct: f64,
+    pub risk_status: String,
+    pub high_risk_findings: usize,
+    pub goal_total: usize,
+    pub goals_on_track: usize,
+    pub decision_total: usize,
+    pub reviewed_decisions: usize,
+    pub active_rules: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemReviewRecord {
+    pub id: String,
+    pub period_label: String,
+    pub adherence_score: i64,
+    pub process_summary: String,
+    pub rule_violations: String,
+    pub lessons: String,
+    pub next_actions: String,
+    pub next_review_date: String,
+    pub snapshot: SystemReviewSnapshot,
     pub created_at: String,
 }

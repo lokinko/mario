@@ -8,9 +8,14 @@ import type {
   FinancialProfile,
   Goal,
   Holding,
+  InvestmentRule,
+  InvestmentRuleInput,
+  InvestmentRuleRevision,
   ModelConfig,
   ModelConnectionTest,
   Snapshot,
+  SystemReviewInput,
+  SystemReviewRecord,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4217/api";
@@ -113,4 +118,28 @@ export async function getDecisions(): Promise<DecisionRecord[]> {
 
 export async function saveDecisionReview(id: string, review: DecisionReview): Promise<void> {
   await httpRequest<void>(`/decisions/${encodeURIComponent(id)}/review`, { method: "PUT", body: JSON.stringify(review) });
+}
+
+export async function getInvestmentRules(): Promise<InvestmentRule[]> {
+  return httpRequest<InvestmentRule[]>("/investment-rules");
+}
+
+export async function saveInvestmentRule(rule: InvestmentRuleInput): Promise<InvestmentRule> {
+  return httpRequest<InvestmentRule>("/investment-rules", { method: "POST", body: JSON.stringify(rule) });
+}
+
+export async function updateInvestmentRule(id: string, rule: InvestmentRuleInput): Promise<InvestmentRule> {
+  return httpRequest<InvestmentRule>(`/investment-rules/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(rule) });
+}
+
+export async function getInvestmentRuleHistory(id: string): Promise<InvestmentRuleRevision[]> {
+  return httpRequest<InvestmentRuleRevision[]>(`/investment-rules/${encodeURIComponent(id)}/history`);
+}
+
+export async function getSystemReviews(): Promise<SystemReviewRecord[]> {
+  return httpRequest<SystemReviewRecord[]>("/system-reviews");
+}
+
+export async function saveSystemReview(review: SystemReviewInput): Promise<SystemReviewRecord> {
+  return httpRequest<SystemReviewRecord>("/system-reviews", { method: "POST", body: JSON.stringify(review) });
 }

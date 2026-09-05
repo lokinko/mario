@@ -1,15 +1,16 @@
 use std::{path::Path, sync::Mutex};
 
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction};
 use uuid::Uuid;
 
 use crate::{
     error::{AppError, AppResult},
     models::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
-        DecisionReviewInput, FinancialProfile, Goal, GoalInput, Holding, HoldingInput, MemoryItem,
-        ModelConfig, Snapshot,
+        DecisionReviewInput, FinancialProfile, Goal, GoalInput, Holding, HoldingInput,
+        InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem, ModelConfig,
+        Snapshot, SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
     },
     planning, risk,
 };
@@ -77,6 +78,34 @@ impl Database {
                answer TEXT NOT NULL,
                audit TEXT,
                created_at TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS system_reviews (
+               id TEXT PRIMARY KEY,
+               payload TEXT NOT NULL,
+               snapshot TEXT NOT NULL,
+               next_review_date TEXT NOT NULL,
+               created_at TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS investment_rules (
+               id TEXT PRIMARY KEY,
+               category TEXT NOT NULL,
+               statement TEXT NOT NULL,
+               trigger TEXT NOT NULL,
+               rationale TEXT NOT NULL,
+               active INTEGER NOT NULL,
+               source_review_id TEXT,
+               revision INTEGER NOT NULL,
+               created_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL,
+               FOREIGN KEY(source_review_id) REFERENCES system_reviews(id)
+             );
+             CREATE TABLE IF NOT EXISTS investment_rule_revisions (
+               rule_id TEXT NOT NULL,
+               revision INTEGER NOT NULL,
+               payload TEXT NOT NULL,
+               changed_at TEXT NOT NULL,
+               PRIMARY KEY(rule_id, revision),
+               FOREIGN KEY(rule_id) REFERENCES investment_rules(id) ON DELETE CASCADE
              );
              CREATE TABLE IF NOT EXISTS settings (
                key TEXT PRIMARY KEY,
@@ -287,15 +316,23 @@ impl Database {
             || entry.thesis.trim().is_empty()
             || entry.counter_thesis.trim().is_empty()
             || entry.invalidation.trim().is_empty()
+            || entry.review_date.trim().is_empty()
         {
             return Err(AppError::Validation(
-                "投资对象、正反逻辑和证伪条件为必填项".into(),
+                "投资对象、正反逻辑、证伪条件和复盘日期为必填项".into(),
             ));
         }
-        validate_non_negative(&[entry.confidence_pct, entry.position_pct])?;
+        validate_non_negative(&[
+            entry.expected_return_pct,
+            entry.downside_pct,
+            entry.confidence_pct,
+            entry.position_pct,
+        ])?;
         if entry.confidence_pct > 100.0 || entry.position_pct > 100.0 {
             return Err(AppError::Validation("置信度和仓位不能超过 100%".into()));
         }
+        chrono::NaiveDate::parse_from_str(&entry.review_date, "%Y-%m-%d")
+            .map_err(|_| AppError::Validation("复盘日期格式无效".into()))?;
         let id = entry
             .id
             .clone()
@@ -365,6 +402,12 @@ impl Database {
         if !(1..=5).contains(&input.process_rating) {
             return Err(AppError::Validation("过程评分必须在 1—5 之间".into()));
         }
+        if !matches!(
+            input.thesis_status.as_str(),
+            "成立" | "部分成立" | "失效" | "尚不明确"
+        ) {
+            return Err(AppError::Validation("未知的原始逻辑结果".into()));
+        }
         if let Some(value) = input.actual_return_pct {
             if !value.is_finite() {
                 return Err(AppError::Validation("实际收益率必须是有效数字".into()));
@@ -392,6 +435,250 @@ impl Database {
             params![id, input.outcome_summary.trim(), input.actual_return_pct, input.thesis_status, input.process_rating, input.lessons.trim(), Utc::now().to_rfc3339()],
         )?;
         Ok(())
+    }
+
+    pub fn investment_rules(&self) -> AppResult<Vec<InvestmentRule>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT id, category, statement, trigger, rationale, active, source_review_id,
+                    revision, created_at, updated_at
+             FROM investment_rules
+             ORDER BY active DESC, updated_at DESC, id ASC",
+        )?;
+        let rules = statement
+            .query_map([], |row| {
+                Ok(InvestmentRule {
+                    id: row.get(0)?,
+                    category: row.get(1)?,
+                    statement: row.get(2)?,
+                    trigger: row.get(3)?,
+                    rationale: row.get(4)?,
+                    active: row.get::<_, i64>(5)? != 0,
+                    source_review_id: row.get(6)?,
+                    revision: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rules)
+    }
+
+    pub fn add_investment_rule(&self, input: &InvestmentRuleInput) -> AppResult<InvestmentRule> {
+        validate_investment_rule(input)?;
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let rule = InvestmentRule {
+            id: id.clone(),
+            category: input.category.trim().into(),
+            statement: input.statement.trim().into(),
+            trigger: input.trigger.trim().into(),
+            rationale: input.rationale.trim().into(),
+            active: input.active,
+            source_review_id: input.source_review_id.clone(),
+            revision: 1,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        };
+        let mut conn = self.conn()?;
+        let transaction = conn.transaction()?;
+        transaction.execute(
+            "INSERT INTO investment_rules
+             (id, category, statement, trigger, rationale, active, source_review_id, revision, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            params![
+                rule.id,
+                rule.category,
+                rule.statement,
+                rule.trigger,
+                rule.rationale,
+                i64::from(rule.active),
+                rule.source_review_id,
+                rule.revision,
+                rule.created_at,
+                rule.updated_at
+            ],
+        )?;
+        store_rule_revision(&transaction, &rule)?;
+        transaction.commit()?;
+        Ok(rule)
+    }
+
+    pub fn update_investment_rule(
+        &self,
+        id: &str,
+        input: &InvestmentRuleInput,
+    ) -> AppResult<InvestmentRule> {
+        validate_investment_rule(input)?;
+        let mut conn = self.conn()?;
+        let transaction = conn.transaction()?;
+        let existing = transaction
+            .query_row(
+                "SELECT created_at, revision FROM investment_rules WHERE id=?1",
+                [id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| AppError::Validation("找不到要修订的投资规则".into()))?;
+        let now = Utc::now().to_rfc3339();
+        let rule = InvestmentRule {
+            id: id.into(),
+            category: input.category.trim().into(),
+            statement: input.statement.trim().into(),
+            trigger: input.trigger.trim().into(),
+            rationale: input.rationale.trim().into(),
+            active: input.active,
+            source_review_id: input.source_review_id.clone(),
+            revision: existing.1 + 1,
+            created_at: existing.0,
+            updated_at: now,
+        };
+        transaction.execute(
+            "UPDATE investment_rules SET category=?2, statement=?3, trigger=?4, rationale=?5,
+                    active=?6, source_review_id=?7, revision=?8, updated_at=?9 WHERE id=?1",
+            params![
+                rule.id,
+                rule.category,
+                rule.statement,
+                rule.trigger,
+                rule.rationale,
+                i64::from(rule.active),
+                rule.source_review_id,
+                rule.revision,
+                rule.updated_at
+            ],
+        )?;
+        store_rule_revision(&transaction, &rule)?;
+        transaction.commit()?;
+        Ok(rule)
+    }
+
+    pub fn investment_rule_history(&self, id: &str) -> AppResult<Vec<InvestmentRuleRevision>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT payload, changed_at FROM investment_rule_revisions
+             WHERE rule_id=?1 ORDER BY revision DESC",
+        )?;
+        let rows = statement.query_map([id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut revisions = Vec::new();
+        for row in rows {
+            let (payload, changed_at) = row?;
+            let rule: InvestmentRule = serde_json::from_str(&payload)?;
+            revisions.push(InvestmentRuleRevision {
+                rule_id: rule.id,
+                revision: rule.revision,
+                category: rule.category,
+                statement: rule.statement,
+                trigger: rule.trigger,
+                rationale: rule.rationale,
+                active: rule.active,
+                source_review_id: rule.source_review_id,
+                changed_at,
+            });
+        }
+        Ok(revisions)
+    }
+
+    pub fn save_system_review(&self, input: &SystemReviewInput) -> AppResult<SystemReviewRecord> {
+        validate_system_review(input)?;
+        let portfolio = self.snapshot()?;
+        let decisions = self.decisions()?;
+        let rules = self.investment_rules()?;
+        let id = Uuid::new_v4().to_string();
+        let created_at = Utc::now().to_rfc3339();
+        let snapshot = SystemReviewSnapshot {
+            portfolio_value: portfolio.total_value,
+            emergency_months: portfolio.emergency_months,
+            concentration_pct: portfolio.concentration_pct,
+            risk_status: portfolio.plan.risk_status,
+            high_risk_findings: portfolio
+                .findings
+                .iter()
+                .filter(|finding| finding.level == "high")
+                .count(),
+            goal_total: portfolio.goals.len(),
+            goals_on_track: portfolio
+                .plan
+                .goal_projections
+                .iter()
+                .filter(|goal| matches!(goal.status.as_str(), "on-track" | "reached"))
+                .count(),
+            decision_total: decisions.len(),
+            reviewed_decisions: decisions
+                .iter()
+                .filter(|decision| decision.review.is_some())
+                .count(),
+            active_rules: rules.iter().filter(|rule| rule.active).count(),
+        };
+        let record = SystemReviewRecord {
+            id,
+            period_label: input.period_label.trim().into(),
+            adherence_score: input.adherence_score,
+            process_summary: input.process_summary.trim().into(),
+            rule_violations: input.rule_violations.trim().into(),
+            lessons: input.lessons.trim().into(),
+            next_actions: input.next_actions.trim().into(),
+            next_review_date: input.next_review_date.clone(),
+            snapshot,
+            created_at,
+        };
+        let normalized_input = SystemReviewInput {
+            period_label: record.period_label.clone(),
+            adherence_score: record.adherence_score,
+            process_summary: record.process_summary.clone(),
+            rule_violations: record.rule_violations.clone(),
+            lessons: record.lessons.clone(),
+            next_actions: record.next_actions.clone(),
+            next_review_date: record.next_review_date.clone(),
+        };
+        self.conn()?.execute(
+            "INSERT INTO system_reviews (id, payload, snapshot, next_review_date, created_at)
+             VALUES (?1,?2,?3,?4,?5)",
+            params![
+                record.id,
+                serde_json::to_string(&normalized_input)?,
+                serde_json::to_string(&record.snapshot)?,
+                record.next_review_date,
+                record.created_at
+            ],
+        )?;
+        Ok(record)
+    }
+
+    pub fn system_reviews(&self) -> AppResult<Vec<SystemReviewRecord>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT id, payload, snapshot, created_at FROM system_reviews
+             ORDER BY created_at DESC, id ASC LIMIT 50",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut reviews = Vec::new();
+        for row in rows {
+            let (id, payload, snapshot, created_at) = row?;
+            let input: SystemReviewInput = serde_json::from_str(&payload)?;
+            reviews.push(SystemReviewRecord {
+                id,
+                period_label: input.period_label,
+                adherence_score: input.adherence_score,
+                process_summary: input.process_summary,
+                rule_violations: input.rule_violations,
+                lessons: input.lessons,
+                next_actions: input.next_actions,
+                next_review_date: input.next_review_date,
+                snapshot: serde_json::from_str(&snapshot)?,
+                created_at,
+            });
+        }
+        Ok(reviews)
     }
 
     pub fn model_config(&self) -> AppResult<ModelConfig> {
@@ -614,6 +901,58 @@ fn validate_goal(input: &GoalInput) -> AppResult<()> {
     Ok(())
 }
 
+fn validate_investment_rule(input: &InvestmentRuleInput) -> AppResult<()> {
+    if input.category.trim().is_empty()
+        || input.statement.trim().is_empty()
+        || input.trigger.trim().is_empty()
+        || input.rationale.trim().is_empty()
+    {
+        return Err(AppError::Validation(
+            "规则类别、内容、触发条件和依据均为必填项".into(),
+        ));
+    }
+    if !matches!(
+        input.category.as_str(),
+        "资产配置" | "风险" | "研究" | "仓位" | "行为" | "复盘"
+    ) {
+        return Err(AppError::Validation("未知的投资规则类别".into()));
+    }
+    Ok(())
+}
+
+fn validate_system_review(input: &SystemReviewInput) -> AppResult<()> {
+    if input.period_label.trim().is_empty()
+        || input.process_summary.trim().is_empty()
+        || input.lessons.trim().is_empty()
+        || input.next_actions.trim().is_empty()
+        || input.next_review_date.trim().is_empty()
+    {
+        return Err(AppError::Validation(
+            "复盘周期、过程事实、经验、下一步和下次复盘日均为必填项".into(),
+        ));
+    }
+    if !(1..=5).contains(&input.adherence_score) {
+        return Err(AppError::Validation("纪律执行评分必须在 1—5 之间".into()));
+    }
+    chrono::NaiveDate::parse_from_str(&input.next_review_date, "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("下次复盘日期格式无效".into()))?;
+    Ok(())
+}
+
+fn store_rule_revision(transaction: &Transaction<'_>, rule: &InvestmentRule) -> AppResult<()> {
+    transaction.execute(
+        "INSERT INTO investment_rule_revisions (rule_id, revision, payload, changed_at)
+         VALUES (?1,?2,?3,?4)",
+        params![
+            rule.id,
+            rule.revision,
+            serde_json::to_string(rule)?,
+            rule.updated_at
+        ],
+    )?;
+    Ok(())
+}
+
 fn ensure_column(
     connection: &Connection,
     table: &str,
@@ -733,6 +1072,25 @@ mod tests {
     }
 
     #[test]
+    fn requires_every_decision_to_have_a_review_date() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        let result = db.save_decision(&DecisionEntry {
+            id: None,
+            asset_name: "指数".into(),
+            thesis: "长期风险溢价".into(),
+            counter_thesis: "估值过高".into(),
+            expected_return_pct: 8.0,
+            downside_pct: 20.0,
+            confidence_pct: 60.0,
+            position_pct: 30.0,
+            invalidation: "风险容量下降".into(),
+            review_date: "".into(),
+        });
+        assert!(matches!(result, Err(AppError::Validation(_))));
+    }
+
+    #[test]
     fn updates_goal_funding_and_recalculates_projection() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("test.db")).unwrap();
@@ -816,5 +1174,90 @@ mod tests {
         let audit = history[0].transparency.as_ref().unwrap();
         assert_eq!(audit.memory_items_used, 2);
         assert!(!audit.api_key_sent);
+    }
+
+    #[test]
+    fn versions_investment_rules_without_overwriting_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        let original = InvestmentRuleInput {
+            category: "仓位".into(),
+            statement: "单一主动仓位不超过 10%".into(),
+            trigger: "任何新建或加仓决定".into(),
+            rationale: "限制单一判断错误的永久损失".into(),
+            active: true,
+            source_review_id: None,
+        };
+        let created = db.add_investment_rule(&original).unwrap();
+        let revised = db
+            .update_investment_rule(
+                &created.id,
+                &InvestmentRuleInput {
+                    statement: "单一主动仓位不超过 8%".into(),
+                    ..original
+                },
+            )
+            .unwrap();
+
+        assert_eq!(revised.revision, 2);
+        let history = db.investment_rule_history(&created.id).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].statement, "单一主动仓位不超过 8%");
+        assert_eq!(history[1].statement, "单一主动仓位不超过 10%");
+    }
+
+    #[test]
+    fn system_review_freezes_portfolio_and_method_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        db.add_holding(&HoldingInput {
+            symbol: "IDX".into(),
+            name: "指数".into(),
+            asset_class: "基金".into(),
+            market_value: 100_000.0,
+            cost_basis: 90_000.0,
+            target_pct: 100.0,
+            currency: "CNY".into(),
+        })
+        .unwrap();
+        db.add_investment_rule(&InvestmentRuleInput {
+            category: "行为".into(),
+            statement: "重大决定等待 24 小时".into(),
+            trigger: "出现计划外交易冲动".into(),
+            rationale: "降低情绪交易".into(),
+            active: true,
+            source_review_id: None,
+        })
+        .unwrap();
+        let review = db
+            .save_system_review(&SystemReviewInput {
+                period_label: "2026 Q3".into(),
+                adherence_score: 4,
+                process_summary: "按计划定投，没有追涨".into(),
+                rule_violations: "无".into(),
+                lessons: "继续降低无效交易".into(),
+                next_actions: "下季度检查再平衡".into(),
+                next_review_date: "2026-12-31".into(),
+            })
+            .unwrap();
+        let holding_id = db.snapshot().unwrap().holdings[0].id.clone();
+        db.update_holding(
+            &holding_id,
+            &HoldingInput {
+                symbol: "IDX".into(),
+                name: "指数".into(),
+                asset_class: "基金".into(),
+                market_value: 200_000.0,
+                cost_basis: 90_000.0,
+                target_pct: 100.0,
+                currency: "CNY".into(),
+            },
+        )
+        .unwrap();
+
+        let stored = db.system_reviews().unwrap().remove(0);
+        assert_eq!(stored.id, review.id);
+        assert_eq!(stored.snapshot.portfolio_value, 100_000.0);
+        assert_eq!(stored.snapshot.active_rules, 1);
     }
 }

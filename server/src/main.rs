@@ -22,8 +22,9 @@ use error::{AppError, AppResult};
 use memory::{LexicalMemoryRetriever, MemoryRetriever};
 use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
-    DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, ModelConfig,
-    ModelConfigInput, ModelConnectionTest, Snapshot,
+    DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, InvestmentRule,
+    InvestmentRuleInput, InvestmentRuleRevision, ModelConfig, ModelConfigInput,
+    ModelConnectionTest, Snapshot, SystemReviewInput, SystemReviewRecord,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -73,6 +74,19 @@ async fn main() -> AppResult<()> {
         .route("/api/goals/{id}", put(update_goal).delete(delete_goal))
         .route("/api/decisions", get(decisions).post(save_decision))
         .route("/api/decisions/{id}/review", put(save_decision_review))
+        .route(
+            "/api/investment-rules",
+            get(investment_rules).post(add_investment_rule),
+        )
+        .route("/api/investment-rules/{id}", put(update_investment_rule))
+        .route(
+            "/api/investment-rules/{id}/history",
+            get(investment_rule_history),
+        )
+        .route(
+            "/api/system-reviews",
+            get(system_reviews).post(save_system_review),
+        )
         .route(
             "/api/model-config",
             get(model_config).put(save_model_config),
@@ -166,6 +180,41 @@ async fn save_decision_review(
     state.db.save_decision_review(&id, &input)?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
+async fn investment_rules(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<Vec<InvestmentRule>>> {
+    Ok(Json(state.db.investment_rules()?))
+}
+async fn add_investment_rule(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<InvestmentRuleInput>,
+) -> AppResult<Json<InvestmentRule>> {
+    Ok(Json(state.db.add_investment_rule(&input)?))
+}
+async fn update_investment_rule(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(input): Json<InvestmentRuleInput>,
+) -> AppResult<Json<InvestmentRule>> {
+    Ok(Json(state.db.update_investment_rule(&id, &input)?))
+}
+async fn investment_rule_history(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> AppResult<Json<Vec<InvestmentRuleRevision>>> {
+    Ok(Json(state.db.investment_rule_history(&id)?))
+}
+async fn system_reviews(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<Vec<SystemReviewRecord>>> {
+    Ok(Json(state.db.system_reviews()?))
+}
+async fn save_system_review(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<SystemReviewInput>,
+) -> AppResult<Json<SystemReviewRecord>> {
+    Ok(Json(state.db.save_system_review(&input)?))
+}
 async fn model_config(State(state): State<Arc<AppState>>) -> AppResult<Json<ModelConfig>> {
     Ok(Json(state.db.model_config()?))
 }
@@ -224,7 +273,15 @@ async fn run_analysis(
     } else {
         Vec::new()
     };
-    let built_context = context::ContextBuilder::build(&request, &snapshot, &memories);
+    let rules = state.db.investment_rules()?;
+    let system_reviews = state
+        .db
+        .system_reviews()?
+        .into_iter()
+        .take(8)
+        .collect::<Vec<_>>();
+    let built_context =
+        context::ContextBuilder::build(&request, &snapshot, &rules, &system_reviews, &memories);
     if request.preview_revision.as_deref() != Some(built_context.revision.as_str()) {
         return Err(AppError::Validation(
             "本地数据或上下文选择已变化，请重新预览后再确认分析".into(),
@@ -253,7 +310,15 @@ async fn preview_analysis(
     } else {
         Vec::new()
     };
-    let built_context = context::ContextBuilder::build(&request, &snapshot, &memories);
+    let rules = state.db.investment_rules()?;
+    let system_reviews = state
+        .db
+        .system_reviews()?
+        .into_iter()
+        .take(8)
+        .collect::<Vec<_>>();
+    let built_context =
+        context::ContextBuilder::build(&request, &snapshot, &rules, &system_reviews, &memories);
     Ok(Json(context::ContextBuilder::preview(
         &request,
         built_context,

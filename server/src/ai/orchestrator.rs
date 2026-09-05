@@ -264,7 +264,7 @@ mod tests {
             preview_revision: None,
         };
         let snapshot = snapshot();
-        let context = ContextBuilder::build(&request, &snapshot, &memory);
+        let context = ContextBuilder::build(&request, &snapshot, &[], &[], &memory);
         let output = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &memory)
             .await
