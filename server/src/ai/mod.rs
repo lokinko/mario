@@ -1,6 +1,7 @@
 mod openai_compatible;
 mod orchestrator;
 mod provider;
+mod structured_output;
 mod workflow;
 
 pub use openai_compatible::OpenAiCompatibleProvider;

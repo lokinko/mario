@@ -57,6 +57,8 @@ import {
 } from "./api";
 import type {
   AnalysisPreview,
+  AnalysisClaim,
+  AnalysisEvidenceReference,
   AnalysisRequest,
   AnalysisResult,
   ContextSelection,
@@ -74,6 +76,7 @@ import type {
   ResearchEvidence,
   ResearchEvidenceInput,
   Snapshot,
+  StructuredAnalysis,
   SystemReviewInput,
   SystemReviewRecord,
 } from "./types";
@@ -1040,9 +1043,9 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
       </section>}
       {result && <section className="panel result-panel">
         <div className="result-meta">{result.stages.map((stage) => <span key={stage}><Check size={13} />{stage}</span>)}</div>
-        <div className="analysis-audit"><div><strong>{result.transparency.model}</strong><span>{result.transparency.provider}</span></div><div><strong>{result.transparency.modelCalls} 次</strong><span>模型调用</span></div><div><strong>{(result.transparency.totalLatencyMs / 1000).toFixed(1)} 秒</strong><span>模型总耗时</span></div><div><strong>{result.transparency.inputTokens == null ? "未返回" : result.transparency.inputTokens.toLocaleString()}</strong><span>输入 tokens</span></div><div><strong>{result.transparency.contextGroups.length} 组</strong><span>上下文</span></div><div><strong>{result.transparency.memoryItemsUsed} 条</strong><span>采用记忆</span></div><div><strong>{result.transparency.reviewedMemoryItemsUsed} / {result.transparency.conflictingMemoryItemsUsed}</strong><span>已复盘 / 反证</span></div><div><strong>{result.transparency.evidenceItemsUsed} 条</strong><span>带来源证据</span></div><div><strong>{result.transparency.citationsRequired ? "必须引用" : "无可引用证据"}</strong><span>引用约束</span></div><div><strong>{result.transparency.apiKeySent ? "异常" : "未进入提示词"}</strong><span>API Key</span></div></div>
+        <div className="analysis-audit"><div><strong>{result.transparency.model}</strong><span>{result.transparency.provider}</span></div><div><strong>{result.transparency.modelCalls} 次</strong><span>模型调用</span></div><div><strong>{(result.transparency.totalLatencyMs / 1000).toFixed(1)} 秒</strong><span>模型总耗时</span></div><div><strong>{result.transparency.inputTokens == null ? "未返回" : result.transparency.inputTokens.toLocaleString()}</strong><span>输入 tokens</span></div><div><strong>{result.transparency.contextGroups.length} 组</strong><span>上下文</span></div><div><strong>{result.transparency.memoryItemsUsed} 条</strong><span>采用记忆</span></div><div><strong>{result.transparency.reviewedMemoryItemsUsed} / {result.transparency.conflictingMemoryItemsUsed}</strong><span>已复盘 / 反证</span></div><div><strong>{result.transparency.evidenceItemsUsed} 条</strong><span>带来源证据</span></div><div><strong>{result.transparency.citationsRequired ? "外部事实须引用" : "无可引用证据"}</strong><span>引用约束</span></div><div><strong>{result.transparency.structuredOutputValidated ? (result.transparency.outputRepairs > 0 ? `修复 ${result.transparency.outputRepairs} 次` : "直接通过") : "未校验"}</strong><span>输出契约</span></div><div><strong>{result.transparency.apiKeySent ? "异常" : "未进入提示词"}</strong><span>API Key</span></div></div>
         {(result.workflowTrace.researchPlan || result.workflowTrace.alternatives.length > 0 || result.workflowTrace.critique) && <div className="workflow-trace">
-          <div className="workflow-trace-title"><div><span>可审计工作流 · {result.workflowTrace.version}</span><strong>查看模型如何比较、反驳再裁决</strong></div><small>以下是显式要求模型输出的研究产物，不是隐藏思维过程。</small></div>
+          <div className="workflow-trace-title"><div><span>可审计工作流 · {result.workflowTrace.version}</span><strong>查看模型如何比较、反驳再裁决</strong></div><small>{result.workflowTrace.outputValidation ? `最终输出 ${result.workflowTrace.outputValidation.status === "repaired" ? "经 1 次自动修复后" : "首次"}通过机器校验。` : "以下是显式要求模型输出的研究产物，不是隐藏思维过程。"}</small></div>
           {result.workflowTrace.researchPlan && <details><summary><span>01</span><div><strong>研究计划</strong><small>假设、未知与检索线索</small></div><ChevronRight size={15} /></summary><div className="trace-content">{result.workflowTrace.researchPlan}</div></details>}
           {result.workflowTrace.memoryItems.length > 0 && <details><summary><span>M</span><div><strong>实际采用的长期记忆</strong><small>{result.workflowTrace.memoryItems.length} 条 · 显示命中原因与冲突信号</small></div><ChevronRight size={15} /></summary><MemoryItems items={result.workflowTrace.memoryItems} compact /></details>}
           {result.workflowTrace.alternatives.map((alternative, index) => <details key={alternative.id}><summary><span>{String(index + 2).padStart(2, "0")}</span><div><strong>{alternative.label}</strong><small>{alternative.lens}</small></div><ChevronRight size={15} /></summary><div className="trace-content">{alternative.content}</div></details>)}
@@ -1050,10 +1053,36 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
           <details className="call-trace"><summary><span>Σ</span><div><strong>模型调用记录</strong><small>{result.workflowTrace.calls.length} 个独立阶段</small></div><ChevronRight size={15} /></summary><div className="call-list">{result.workflowTrace.calls.map((call) => <div key={call.stage}><strong>{call.label}</strong><span>{(call.latencyMs / 1000).toFixed(2)} 秒</span><span>{call.inputTokens == null ? "token 未返回" : `${call.inputTokens.toLocaleString()} 入 / ${(call.outputTokens ?? 0).toLocaleString()} 出`}</span></div>)}</div></details>
         </div>}
         <div className="final-answer-label"><Sparkles size={15} /><div><span>最终综合裁决</span><strong>吸收方案与反方审查后的行动建议</strong></div></div>
-        <div className="answer">{result.answer}</div><p className="disclaimer">{result.disclaimer}</p>
+        {result.workflowTrace.outputValidation && <details className="payload-details"><summary>输出检查：{result.workflowTrace.outputValidation.status === "repaired" ? "修复后通过" : "首次通过"}</summary><p className="memory-policy">已检查字段完整性和引用 ID 是否属于本次授权证据；不代表事实准确性或推理有效性已经得到验证。</p>{result.workflowTrace.outputValidation.errors.length > 0 && <pre>{result.workflowTrace.outputValidation.errors.join("\n")}</pre>}</details>}
+        {result.workflowTrace.structuredReport ? <StructuredReportView report={result.workflowTrace.structuredReport} evidence={result.workflowTrace.evidenceCatalog ?? []} /> : <div className="answer">{result.answer}</div>}<p className="disclaimer">{result.disclaimer}</p>
       </section>}
     </div>
   );
+}
+
+function StructuredReportView({ report, evidence }: { report: StructuredAnalysis; evidence: AnalysisEvidenceReference[] }) {
+  const evidenceById = new Map(evidence.map((item) => [item.id, item]));
+  return <div className="structured-report">
+    <section className="report-verdict"><span>当前最重要判断</span><p>{report.verdict}</p></section>
+    <div className="report-claim-grid">
+      <section><div className="report-section-title"><Check size={14} /><strong>已知事实</strong><small>用户数据或已授权证据</small></div><ClaimList items={report.facts} evidenceById={evidenceById} /></section>
+      <section><div className="report-section-title"><BrainCircuit size={14} /><strong>合理推断</strong><small>不与事实混写</small></div>{report.inferences.length > 0 ? <ClaimList items={report.inferences} evidenceById={evidenceById} /> : <p className="report-empty">本次没有需要单列的推断。</p>}</section>
+    </div>
+    <section className="report-section unknown-section"><div className="report-section-title"><AlertTriangle size={14} /><strong>仍待核实</strong><small>模型不得补写为事实</small></div><ul>{report.unknowns.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>
+    <section className="report-section"><div className="report-section-title"><Compass size={14} /><strong>方案与取舍</strong><small>{report.options.length} 条可行路径</small></div><div className="report-option-grid">{report.options.map((option, index) => <article key={`${option.name}-${index}`}><span>方案 {String(index + 1).padStart(2, "0")}</span><h3>{option.name}</h3><p><b>适用条件</b>{option.suitableWhen}</p><p><b>机会成本</b>{option.tradeoffs.join("；")}</p><p><b>主要风险</b>{option.risks.join("；")}</p></article>)}</div></section>
+    <section className="report-section"><div className="report-section-title"><ArrowRight size={14} /><strong>下一步行动</strong><small>行动必须带理由和复盘条件</small></div><div className="report-action-list">{report.actions.map((action, index) => <article key={`${action.action}-${index}`}><i>{index + 1}</i><div><strong>{action.action}</strong><p>{action.rationale}</p><small>复盘：{action.reviewTrigger}</small></div><em className={action.reversible ? "reversible" : "confirm-first"}>{action.reversible ? "可逆" : "需单独确认"}</em></article>)}</div></section>
+    <section className="report-section trigger-section"><div className="report-section-title"><History size={14} /><strong>复盘与证伪条件</strong><small>未来用结果校准判断</small></div><ul>{report.reviewTriggers.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>
+  </div>;
+}
+
+function ClaimList({ items, evidenceById }: { items: AnalysisClaim[]; evidenceById: Map<string, AnalysisEvidenceReference> }) {
+  return <div className="report-claim-list">{items.map((claim, index) => <article key={`${claim.statement}-${index}`}>
+    <p>{claim.statement}</p>
+    <footer><span>{claim.basis === "research_evidence" ? "研究证据" : "用户数据"}</span>{claim.evidenceIds.map((id) => {
+      const source = evidenceById.get(id);
+      return source ? <a key={id} href={source.sourceUrl} target="_blank" rel="noreferrer" title={`${source.publisher} · ${source.asOfDate}`}>{source.title} · {source.sourceTier} · {source.asOfDate}</a> : <em key={id}>证据 {id}</em>;
+    })}</footer>
+  </article>)}</div>;
 }
 
 function MemoryItems({ items, compact = false, excludedIds = [], onToggle }: { items: MemoryCandidate[]; compact?: boolean; excludedIds?: string[]; onToggle?: (id: string) => void }) {

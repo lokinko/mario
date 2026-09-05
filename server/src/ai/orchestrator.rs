@@ -1,7 +1,8 @@
-use std::time::Instant;
+use std::{collections::HashSet, time::Instant};
 
 use super::{
-    workflow::{AnalysisWorkflow, CandidateContext, InvestmentWorkflowV3, StagePrompt},
+    structured_output::{parse_structured_analysis, render_report},
+    workflow::{AnalysisWorkflow, CandidateContext, InvestmentWorkflowV4, StagePrompt},
     ModelProvider,
 };
 use crate::{
@@ -9,8 +10,9 @@ use crate::{
     error::AppResult,
     memory::MemoryRetriever,
     models::{
-        AnalysisAlternative, AnalysisRequest, AnalysisResult, AnalysisTransparency,
-        AnalysisWorkflowTrace, MemoryItem, ModelCallTrace,
+        AnalysisAlternative, AnalysisEvidenceReference, AnalysisRequest, AnalysisResult,
+        AnalysisTransparency, AnalysisWorkflowTrace, MemoryItem, ModelCallTrace,
+        OutputValidationTrace, ResearchEvidence, StructuredAnalysis,
     },
 };
 
@@ -20,7 +22,7 @@ pub struct InvestmentOrchestrator<'a> {
     workflow: &'a dyn AnalysisWorkflow,
 }
 
-static DEFAULT_WORKFLOW: InvestmentWorkflowV3 = InvestmentWorkflowV3;
+static DEFAULT_WORKFLOW: InvestmentWorkflowV4 = InvestmentWorkflowV4;
 
 impl<'a> InvestmentOrchestrator<'a> {
     pub fn new(provider: &'a dyn ModelProvider, retriever: &'a dyn MemoryRetriever) -> Self {
@@ -51,16 +53,34 @@ impl<'a> InvestmentOrchestrator<'a> {
             version: self.workflow.version().into(),
             ..AnalysisWorkflowTrace::default()
         };
+        trace.evidence_catalog = evidence_catalog(&built_context.payload);
+        let allowed_evidence_ids = trace
+            .evidence_catalog
+            .iter()
+            .map(|item| item.id.clone())
+            .collect::<Vec<_>>();
         if built_context.evidence_items > 0 {
             stages.push("冻结带来源研究证据".into());
         }
 
         if request.workflow == "quick" {
-            let (answer, call) = self
-                .call_stage(self.workflow.quick(&request.question, &context))
+            let (report, calls, validation) = self
+                .call_structured_stage(
+                    self.workflow.quick(&request.question, &context),
+                    &allowed_evidence_ids,
+                )
                 .await?;
-            trace.calls.push(call);
+            let answer = render_report(&report);
+            let repaired = validation.status == "repaired";
+            trace.structured_report = Some(report);
+            trace.output_validation = Some(validation);
+            trace.calls.extend(calls);
             stages.push(format!("{} 快速分析", self.provider.model_name()));
+            stages.push(if repaired {
+                "修复并校验结构化输出".into()
+            } else {
+                "校验结构化输出".into()
+            });
             return Ok(result(
                 self.provider,
                 answer,
@@ -144,17 +164,29 @@ impl<'a> InvestmentOrchestrator<'a> {
             .critique
             .as_deref()
             .unwrap_or("用户未启用独立风险审查。");
-        let (answer, call) = self
-            .call_stage(self.workflow.synthesis(
-                &request.question,
-                &context,
-                &plan,
-                &alternatives_context,
-                critique_context,
-            ))
+        let (report, calls, validation) = self
+            .call_structured_stage(
+                self.workflow.synthesis(
+                    &request.question,
+                    &context,
+                    &plan,
+                    &alternatives_context,
+                    critique_context,
+                ),
+                &allowed_evidence_ids,
+            )
             .await?;
-        trace.calls.push(call);
+        let answer = render_report(&report);
+        let repaired = validation.status == "repaired";
+        trace.structured_report = Some(report);
+        trace.output_validation = Some(validation);
+        trace.calls.extend(calls);
         stages.push("综合结论与行动清单".into());
+        stages.push(if repaired {
+            "修复并校验结构化输出".into()
+        } else {
+            "校验结构化输出".into()
+        });
         Ok(result(
             self.provider,
             answer,
@@ -180,6 +212,74 @@ impl<'a> InvestmentOrchestrator<'a> {
             },
         ))
     }
+
+    async fn call_structured_stage(
+        &self,
+        prompt: StagePrompt,
+        allowed_evidence_ids: &[String],
+    ) -> AppResult<(
+        StructuredAnalysis,
+        Vec<ModelCallTrace>,
+        OutputValidationTrace,
+    )> {
+        let stage_label = prompt.label;
+        let allowed = allowed_evidence_ids.iter().cloned().collect::<HashSet<_>>();
+        let (content, first_call) = self.call_stage(prompt).await?;
+        match parse_structured_analysis(&content, &allowed) {
+            Ok(report) => Ok((
+                report,
+                vec![first_call],
+                OutputValidationTrace {
+                    status: "valid".into(),
+                    attempts: 1,
+                    errors: Vec::new(),
+                },
+            )),
+            Err(first_error) => {
+                let repair_prompt = self.workflow.repair_output(
+                    stage_label,
+                    &content,
+                    &first_error,
+                    allowed_evidence_ids,
+                );
+                let (repaired_content, repair_call) = self.call_stage(repair_prompt).await?;
+                let report = parse_structured_analysis(&repaired_content, &allowed).map_err(
+                    |second_error| {
+                        crate::error::AppError::Model(format!(
+                            "模型输出两次未通过结构化校验：首次 {first_error}；修复后 {second_error}"
+                        ))
+                    },
+                )?;
+                Ok((
+                    report,
+                    vec![first_call, repair_call],
+                    OutputValidationTrace {
+                        status: "repaired".into(),
+                        attempts: 2,
+                        errors: vec![first_error],
+                    },
+                ))
+            }
+        }
+    }
+}
+
+fn evidence_catalog(payload: &serde_json::Value) -> Vec<AnalysisEvidenceReference> {
+    payload
+        .get("researchEvidence")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| serde_json::from_value::<ResearchEvidence>(value.clone()).ok())
+        .map(|item| AnalysisEvidenceReference {
+            id: item.id,
+            title: item.title,
+            publisher: item.publisher,
+            source_url: item.source_url,
+            source_tier: item.source_tier,
+            as_of_date: item.as_of_date,
+        })
+        .collect()
 }
 
 fn merge_memories(
@@ -263,6 +363,11 @@ fn result(
     let output_tokens =
         sum_known_tokens(workflow_trace.calls.iter().map(|call| call.output_tokens));
     let model_calls = workflow_trace.calls.len();
+    let structured_output_validated = workflow_trace.structured_report.is_some();
+    let output_repairs = workflow_trace
+        .output_validation
+        .as_ref()
+        .map_or(0, |validation| validation.attempts.saturating_sub(1));
     AnalysisResult {
         id: uuid::Uuid::new_v4().to_string(),
         answer,
@@ -286,6 +391,8 @@ fn result(
             total_latency_ms,
             input_tokens,
             output_tokens,
+            structured_output_validated,
+            output_repairs,
             external_data_used: built_context.evidence_items > 0,
             api_key_sent: false,
         },
@@ -307,9 +414,13 @@ fn sum_known_tokens(values: impl Iterator<Item = Option<u64>>) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    };
 
     use async_trait::async_trait;
+    use axum::{extract::State, http::HeaderMap, routing::post, Json, Router};
 
     use super::*;
     use crate::{
@@ -331,15 +442,26 @@ mod tests {
     impl ModelProvider for MockProvider {
         async fn complete(
             &self,
-            _messages: Vec<ChatMessage>,
+            messages: Vec<ChatMessage>,
         ) -> AppResult<super::super::ModelCompletion> {
             let call = self.calls.fetch_add(1, Ordering::SeqCst);
-            let content = match call {
-                0 => "研究计划：检索指数和集中度".into(),
-                1 => "稳健基准：先不行动".into(),
-                2 => "目标方案：逐步降低集中度".into(),
-                3 => "审查：需要说明未知信息".into(),
-                _ => "最终：先处理集中风险并设置复盘条件".into(),
+            let requires_structured_output = messages
+                .iter()
+                .any(|message| message.content.contains("\"reviewTriggers\""));
+            let content = if requires_structured_output {
+                valid_report_json(
+                    messages
+                        .iter()
+                        .any(|message| message.content.contains("\"id\": \"e1\"")),
+                )
+            } else {
+                match call {
+                    0 => "研究计划：检索指数和集中度".into(),
+                    1 => "稳健基准：先不行动".into(),
+                    2 => "目标方案：逐步降低集中度".into(),
+                    3 => "审查：需要说明未知信息".into(),
+                    _ => "额外阶段".into(),
+                }
             };
             Ok(super::super::ModelCompletion {
                 content,
@@ -357,6 +479,31 @@ mod tests {
         fn provider_name(&self) -> &str {
             "mock-provider"
         }
+    }
+
+    fn valid_report_json(with_evidence: bool) -> String {
+        let mut facts = vec![serde_json::json!({
+            "statement": "当前组合集中度超过风险预算",
+            "basis": "user_data",
+            "evidenceIds": []
+        })];
+        if with_evidence {
+            facts.push(serde_json::json!({
+                "statement": "指数采用公开方法编制",
+                "basis": "research_evidence",
+                "evidenceIds": ["e1"]
+            }));
+        }
+        serde_json::json!({
+            "verdict": "先处理集中风险并设置复盘条件",
+            "facts": facts,
+            "inferences": [{"statement":"降低集中度可能改善风险匹配","basis":"user_data","evidenceIds":[]}],
+            "unknowns": ["调整的税费与流动性影响"],
+            "options": [{"name":"分批调整","suitableWhen":"风险已经超出预算","tradeoffs":["可能错过短期上涨"],"risks":["调整速度不合适"]}],
+            "actions": [{"action":"核对目标权重后分批调整","rationale":"避免一次性预测市场","reversible":true,"reviewTrigger":"每完成一批后复核风险预算"}],
+            "reviewTriggers": ["集中度回到目标区间或风险承受力变化"]
+        })
+        .to_string()
     }
 
     fn snapshot() -> Snapshot {
@@ -459,7 +606,7 @@ mod tests {
             .stages
             .iter()
             .any(|stage| stage.contains("独立纠错反思")));
-        assert!(output.answer.contains("最终"));
+        assert!(output.answer.contains("当前判断"));
         assert_eq!(output.workflow_trace.alternatives.len(), 2);
         assert!(output.workflow_trace.research_plan.is_some());
         assert_eq!(output.workflow_trace.memory_items.len(), 1);
@@ -473,6 +620,17 @@ mod tests {
         );
         assert!(output.workflow_trace.critique.is_some());
         assert_eq!(output.workflow_trace.calls.len(), 5);
+        assert!(output.workflow_trace.structured_report.is_some());
+        assert_eq!(
+            output
+                .workflow_trace
+                .output_validation
+                .as_ref()
+                .unwrap()
+                .status,
+            "valid"
+        );
+        assert_eq!(output.workflow_trace.evidence_catalog.len(), 1);
         assert_eq!(output.transparency.model_calls, 5);
         assert_eq!(output.transparency.input_tokens, Some(500));
         assert_eq!(output.transparency.output_tokens, Some(100));
@@ -481,6 +639,8 @@ mod tests {
         assert_eq!(output.transparency.conflicting_memory_items_used, 0);
         assert_eq!(output.transparency.evidence_items_used, 1);
         assert!(output.transparency.citations_required);
+        assert!(output.transparency.structured_output_validated);
+        assert_eq!(output.transparency.output_repairs, 0);
         assert!(output.transparency.external_data_used);
         assert!(!output.transparency.api_key_sent);
     }
@@ -511,6 +671,8 @@ mod tests {
         assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
         assert_eq!(output.transparency.model_calls, 1);
         assert_eq!(output.workflow_trace.calls.len(), 1);
+        assert!(output.workflow_trace.structured_report.is_some());
+        assert!(output.transparency.structured_output_validated);
         assert!(output.workflow_trace.research_plan.is_none());
         assert!(output.workflow_trace.alternatives.is_empty());
         assert!(output.workflow_trace.critique.is_none());
@@ -518,5 +680,188 @@ mod tests {
             .stages
             .iter()
             .any(|stage| stage.contains("本地记忆检索")));
+    }
+
+    struct RepairingProvider {
+        calls: AtomicUsize,
+        always_invalid: bool,
+    }
+
+    #[async_trait]
+    impl ModelProvider for RepairingProvider {
+        async fn complete(
+            &self,
+            _messages: Vec<ChatMessage>,
+        ) -> AppResult<super::super::ModelCompletion> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            let content = if call == 0 || self.always_invalid {
+                "这是一段无法机器校验的自由文本".into()
+            } else {
+                valid_report_json(false)
+            };
+            Ok(super::super::ModelCompletion {
+                content,
+                usage: super::super::ModelUsage::default(),
+            })
+        }
+
+        fn model_name(&self) -> &str {
+            "repairing-mock"
+        }
+
+        fn provider_name(&self) -> &str {
+            "mock-provider"
+        }
+    }
+
+    #[tokio::test]
+    async fn repairs_an_invalid_final_output_once_and_audits_it() {
+        let provider = RepairingProvider {
+            calls: AtomicUsize::new(0),
+            always_invalid: false,
+        };
+        let retriever = HybridMemoryRetriever::default();
+        let request = AnalysisRequest {
+            question: "快速检查风险".into(),
+            workflow: "quick".into(),
+            use_memory: false,
+            reflect: false,
+            explore_alternatives: false,
+            excluded_memory_ids: Vec::new(),
+            context_selection: ContextSelection::default(),
+            preview_revision: None,
+        };
+        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[]);
+        let output = InvestmentOrchestrator::new(&provider, &retriever)
+            .run(&request, &context, &[])
+            .await
+            .unwrap();
+
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(output.transparency.model_calls, 2);
+        assert_eq!(output.transparency.output_repairs, 1);
+        let validation = output.workflow_trace.output_validation.unwrap();
+        assert_eq!(validation.status, "repaired");
+        assert_eq!(validation.attempts, 2);
+        assert_eq!(validation.errors.len(), 1);
+        assert!(output
+            .stages
+            .iter()
+            .any(|stage| stage.contains("修复并校验")));
+    }
+
+    #[tokio::test]
+    async fn rejects_output_that_still_fails_after_one_repair() {
+        let provider = RepairingProvider {
+            calls: AtomicUsize::new(0),
+            always_invalid: true,
+        };
+        let retriever = HybridMemoryRetriever::default();
+        let request = AnalysisRequest {
+            question: "快速检查风险".into(),
+            workflow: "quick".into(),
+            use_memory: false,
+            reflect: false,
+            explore_alternatives: false,
+            excluded_memory_ids: Vec::new(),
+            context_selection: ContextSelection::default(),
+            preview_revision: None,
+        };
+        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[]);
+        let error = InvestmentOrchestrator::new(&provider, &retriever)
+            .run(&request, &context, &[])
+            .await
+            .unwrap_err();
+
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+        assert!(error.to_string().contains("两次未通过结构化校验"));
+    }
+
+    struct HttpMockState {
+        calls: AtomicUsize,
+        requests: Mutex<Vec<serde_json::Value>>,
+        authorizations: Mutex<Vec<String>>,
+    }
+
+    async fn mock_chat_completion(
+        State(state): State<Arc<HttpMockState>>,
+        headers: HeaderMap,
+        Json(request): Json<serde_json::Value>,
+    ) -> Json<serde_json::Value> {
+        state.requests.lock().unwrap().push(request);
+        state.authorizations.lock().unwrap().push(
+            headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .into(),
+        );
+        let call = state.calls.fetch_add(1, Ordering::SeqCst);
+        let content = if call == 0 {
+            "自由文本，触发修复".into()
+        } else {
+            valid_report_json(false)
+        };
+        Json(serde_json::json!({
+            "choices": [{"message": {"role": "assistant", "content": content}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 2}
+        }))
+    }
+
+    #[tokio::test]
+    async fn real_openai_compatible_http_path_repairs_and_validates_output() {
+        let state = Arc::new(HttpMockState {
+            calls: AtomicUsize::new(0),
+            requests: Mutex::new(Vec::new()),
+            authorizations: Mutex::new(Vec::new()),
+        });
+        let app = Router::new()
+            .route("/chat/completions", post(mock_chat_completion))
+            .with_state(state.clone());
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let provider = crate::ai::OpenAiCompatibleProvider::new(
+            format!("http://{address}"),
+            "protocol-mock".into(),
+            "test-only-key".into(),
+        )
+        .unwrap();
+        let retriever = HybridMemoryRetriever::default();
+        let request = AnalysisRequest {
+            question: "快速检查风险".into(),
+            workflow: "quick".into(),
+            use_memory: false,
+            reflect: false,
+            explore_alternatives: false,
+            excluded_memory_ids: Vec::new(),
+            context_selection: ContextSelection::default(),
+            preview_revision: None,
+        };
+        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[]);
+        let output = InvestmentOrchestrator::new(&provider, &retriever)
+            .run(&request, &context, &[])
+            .await
+            .unwrap();
+
+        server.abort();
+        assert_eq!(state.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(output.transparency.output_repairs, 1);
+        assert_eq!(output.transparency.input_tokens, Some(20));
+        assert_eq!(output.transparency.output_tokens, Some(4));
+        assert!(state
+            .authorizations
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|value| value == "Bearer test-only-key"));
+        let requests = state.requests.lock().unwrap();
+        assert!(requests[1]["messages"][0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("结构化输出修复模块"));
     }
 }

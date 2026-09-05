@@ -1429,11 +1429,41 @@ mod tests {
                 total_latency_ms: 1200,
                 input_tokens: Some(400),
                 output_tokens: Some(100),
+                structured_output_validated: true,
+                output_repairs: 0,
                 external_data_used: false,
                 api_key_sent: false,
             },
             workflow_trace: crate::models::AnalysisWorkflowTrace {
-                version: "investment-workflow-v3".into(),
+                version: "investment-workflow-v4".into(),
+                structured_report: Some(crate::models::StructuredAnalysis {
+                    verdict: "先控制风险".into(),
+                    facts: vec![crate::models::AnalysisClaim {
+                        statement: "风险预算已超出".into(),
+                        basis: "user_data".into(),
+                        evidence_ids: Vec::new(),
+                    }],
+                    inferences: Vec::new(),
+                    unknowns: vec!["未来现金流".into()],
+                    options: vec![crate::models::AnalysisOption {
+                        name: "分批调整".into(),
+                        suitable_when: "风险超限".into(),
+                        tradeoffs: vec!["可能错过上涨".into()],
+                        risks: vec!["执行偏差".into()],
+                    }],
+                    actions: vec![crate::models::AnalysisAction {
+                        action: "核对目标权重".into(),
+                        rationale: "避免错误交易".into(),
+                        reversible: true,
+                        review_trigger: "一周后".into(),
+                    }],
+                    review_triggers: vec!["风险回到预算内".into()],
+                }),
+                output_validation: Some(crate::models::OutputValidationTrace {
+                    status: "valid".into(),
+                    attempts: 1,
+                    errors: Vec::new(),
+                }),
                 ..crate::models::AnalysisWorkflowTrace::default()
             },
             created_at: "2026-01-01T00:00:00Z".into(),
@@ -1447,8 +1477,15 @@ mod tests {
         assert!(!audit.api_key_sent);
         assert_eq!(
             history[0].workflow_trace.as_ref().unwrap().version,
-            "investment-workflow-v3"
+            "investment-workflow-v4"
         );
+        assert!(history[0]
+            .workflow_trace
+            .as_ref()
+            .unwrap()
+            .structured_report
+            .is_some());
+        assert!(audit.structured_output_validated);
         let memory = db
             .memories()
             .unwrap()
@@ -1457,7 +1494,7 @@ mod tests {
             .unwrap();
         assert!(!memory.reviewed);
         assert!(memory.status.contains("未经结果验证"));
-        assert_eq!(memory.content["workflowVersion"], "investment-workflow-v3");
+        assert_eq!(memory.content["workflowVersion"], "investment-workflow-v4");
     }
 
     #[test]
@@ -1481,6 +1518,8 @@ mod tests {
         assert_eq!(audit.model_calls, 0);
         assert_eq!(audit.reviewed_memory_items_used, 0);
         assert_eq!(audit.conflicting_memory_items_used, 0);
+        assert!(!audit.structured_output_validated);
+        assert_eq!(audit.output_repairs, 0);
         assert!(db.analysis_history().unwrap()[0].workflow_trace.is_none());
     }
 
@@ -1537,6 +1576,9 @@ mod tests {
             .unwrap();
         assert_eq!(trace.version, "investment-workflow-v2");
         assert!(trace.memory_items.is_empty());
+        assert!(trace.structured_report.is_none());
+        assert!(trace.output_validation.is_none());
+        assert!(trace.evidence_catalog.is_empty());
     }
 
     #[test]

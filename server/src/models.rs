@@ -277,8 +277,69 @@ pub struct AnalysisTransparency {
     pub input_tokens: Option<u64>,
     #[serde(default)]
     pub output_tokens: Option<u64>,
+    #[serde(default)]
+    pub structured_output_validated: bool,
+    #[serde(default)]
+    pub output_repairs: usize,
     pub external_data_used: bool,
     pub api_key_sent: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StructuredAnalysis {
+    pub verdict: String,
+    pub facts: Vec<AnalysisClaim>,
+    pub inferences: Vec<AnalysisClaim>,
+    pub unknowns: Vec<String>,
+    pub options: Vec<AnalysisOption>,
+    pub actions: Vec<AnalysisAction>,
+    pub review_triggers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisClaim {
+    pub statement: String,
+    pub basis: String,
+    pub evidence_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisOption {
+    pub name: String,
+    pub suitable_when: String,
+    pub tradeoffs: Vec<String>,
+    pub risks: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisAction {
+    pub action: String,
+    pub rationale: String,
+    pub reversible: bool,
+    pub review_trigger: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputValidationTrace {
+    pub status: String,
+    pub attempts: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisEvidenceReference {
+    pub id: String,
+    pub title: String,
+    pub publisher: String,
+    pub source_url: String,
+    pub source_tier: String,
+    pub as_of_date: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -296,6 +357,12 @@ pub struct AnalysisWorkflowTrace {
     pub critique: Option<String>,
     #[serde(default)]
     pub calls: Vec<ModelCallTrace>,
+    #[serde(default)]
+    pub structured_report: Option<StructuredAnalysis>,
+    #[serde(default)]
+    pub output_validation: Option<OutputValidationTrace>,
+    #[serde(default)]
+    pub evidence_catalog: Vec<AnalysisEvidenceReference>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

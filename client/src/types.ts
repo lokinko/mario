@@ -185,6 +185,8 @@ export interface AnalysisTransparency {
   totalLatencyMs: number;
   inputTokens?: number;
   outputTokens?: number;
+  structuredOutputValidated: boolean;
+  outputRepairs: number;
   externalDataUsed: boolean;
   apiKeySent: boolean;
 }
@@ -206,6 +208,54 @@ export interface AnalysisWorkflowTrace {
   alternatives: AnalysisAlternative[];
   critique?: string;
   calls: ModelCallTrace[];
+  structuredReport?: StructuredAnalysis;
+  outputValidation?: OutputValidationTrace;
+  evidenceCatalog: AnalysisEvidenceReference[];
+}
+
+export interface StructuredAnalysis {
+  verdict: string;
+  facts: AnalysisClaim[];
+  inferences: AnalysisClaim[];
+  unknowns: string[];
+  options: AnalysisOption[];
+  actions: AnalysisAction[];
+  reviewTriggers: string[];
+}
+
+export interface AnalysisClaim {
+  statement: string;
+  basis: "user_data" | "research_evidence";
+  evidenceIds: string[];
+}
+
+export interface AnalysisOption {
+  name: string;
+  suitableWhen: string;
+  tradeoffs: string[];
+  risks: string[];
+}
+
+export interface AnalysisAction {
+  action: string;
+  rationale: string;
+  reversible: boolean;
+  reviewTrigger: string;
+}
+
+export interface OutputValidationTrace {
+  status: "valid" | "repaired";
+  attempts: number;
+  errors: string[];
+}
+
+export interface AnalysisEvidenceReference {
+  id: string;
+  title: string;
+  publisher: string;
+  sourceUrl: string;
+  sourceTier: string;
+  asOfDate: string;
 }
 
 export interface AnalysisAlternative {

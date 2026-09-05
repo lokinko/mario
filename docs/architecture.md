@@ -49,7 +49,7 @@
 ```rust
 #[async_trait]
 pub trait ModelProvider: Send + Sync {
-    async fn complete(&self, messages: Vec<ChatMessage>) -> AppResult<String>;
+    async fn complete(&self, messages: Vec<ChatMessage>) -> AppResult<ModelCompletion>;
     fn model_name(&self) -> &str;
     fn provider_name(&self) -> &str;
 }
@@ -57,7 +57,7 @@ pub trait ModelProvider: Send + Sync {
 
 新增供应商时实现这个接口即可，不需要修改投资方法论或 HTTP 层。当前的 `OpenAiCompatibleProvider` 是第一个适配器。
 
-`server/src/ai/workflow.rs` 中的 `AnalysisWorkflow` 定义阶段职责和提示契约，`InvestmentWorkflowV3` 是当前实现。`InvestmentOrchestrator` 通过 `with_workflow` 接受替代实现，并只负责执行、检索、计时、汇总与审计：
+`server/src/ai/workflow.rs` 中的 `AnalysisWorkflow` 定义阶段职责和提示契约，`InvestmentWorkflowV4` 是当前实现。`InvestmentOrchestrator` 通过 `with_workflow` 接受替代实现，并只负责执行、检索、计时、汇总与审计：
 
 1. 读取规则引擎已经计算的风险事实。
 2. 读取本地规划引擎生成的目标情景、风险预算和再平衡偏差。
@@ -66,6 +66,7 @@ pub trait ModelProvider: Send + Sync {
 5. 让彼此隔离的“稳健基准”和“目标推进”模块分别生成候选方案。
 6. 使用独立提示词进行反方审查。
 7. 最后整合结论、未知项、行动和证伪条件。
+8. 用独立模块校验结构化输出和证据 ID；失败时只修复一次，再失败则拒绝保存。
 
 编排器不知道 API Key 的存储方式，也不直接访问数据库。它只接收 Workflow、Provider、Retriever、BuiltContext 和 MemoryItem，因此可以单元测试并在未来替换为图式工作流。每个模型调用返回统一的正文与可选 usage；执行器记录阶段耗时，完整研究计划、候选方案、批判和调用轨迹由 SQLite 本地保存。详细契约见 [AI 分析工作流](ai-workflow.md)。
 
@@ -97,5 +98,5 @@ pub trait ModelProvider: Send + Sync {
 2. 增加持仓 CSV 导入与组合变化归因。
 3. 新增本地嵌入向量 Retriever，与当前可解释检索融合并保留离线降级。
 4. 增加受信任行情 Provider；外部数据必须标注来源和时间。
-5. 为工作流增加可恢复 checkpoint、结构化输出校验与版本评测。
-6. 使用 Mock Provider 完成 HTTP 级 AI 工作流测试。
+5. 为工作流增加可恢复 checkpoint 与版本评测。
+6. 扩展 HTTP 级 Mock Provider 场景，覆盖超时、限流和中途断线。

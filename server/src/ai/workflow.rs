@@ -1,9 +1,10 @@
 use serde_json::Value;
 
+use super::structured_output::STRUCTURED_ANALYSIS_CONTRACT;
 use super::ChatMessage;
 use crate::context::INVESTMENT_SYSTEM_POLICY;
 
-pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v3";
+pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v4";
 
 pub struct StagePrompt {
     pub key: &'static str,
@@ -40,11 +41,18 @@ pub trait AnalysisWorkflow: Send + Sync {
         alternatives: &str,
         critique: &str,
     ) -> StagePrompt;
+    fn repair_output(
+        &self,
+        stage_label: &str,
+        invalid_output: &str,
+        validation_error: &str,
+        allowed_evidence_ids: &[String],
+    ) -> StagePrompt;
 }
 
-pub struct InvestmentWorkflowV3;
+pub struct InvestmentWorkflowV4;
 
-impl AnalysisWorkflow for InvestmentWorkflowV3 {
+impl AnalysisWorkflow for InvestmentWorkflowV4 {
     fn version(&self) -> &'static str {
         INVESTMENT_WORKFLOW_VERSION
     }
@@ -56,7 +64,7 @@ impl AnalysisWorkflow for InvestmentWorkflowV3 {
             messages: vec![
                 ChatMessage::system(INVESTMENT_SYSTEM_POLICY),
                 ChatMessage::user(format!(
-                    "用户问题：{question}\n\n本地投资档案：{local_context}\n\n请给出结构化分析，并说明仍需核实的信息。"
+                    "用户问题：{question}\n\n本地投资档案：{local_context}\n\n请给出结构化分析，并说明仍需核实的信息。\n\n{STRUCTURED_ANALYSIS_CONTRACT}"
                 )),
             ],
         }
@@ -155,11 +163,38 @@ impl AnalysisWorkflow for InvestmentWorkflowV3 {
                     "{INVESTMENT_SYSTEM_POLICY}\n你是最终整合模块。比较候选方案并吸收审查意见，但要自行判断，不机械拼接。"
                 )),
                 ChatMessage::user(format!(
-                    "原问题：{question}\n\n档案：{local_context}\n\n研究计划：{research_plan}\n\n独立候选方案：{alternatives}\n\n独立审查：{critique}\n\n请输出：①当前最重要判断；②风险与未知；③候选方案比较与取舍；④可逆的下一步行动；⑤未来复盘/证伪条件。区分用户保存的带来源证据与尚未接入的实时外部数据，不得把未知信息写成事实。"
+                    "原问题：{question}\n\n档案：{local_context}\n\n研究计划：{research_plan}\n\n独立候选方案：{alternatives}\n\n独立审查：{critique}\n\n请输出当前判断、事实、推断、未知、方案比较、可逆行动与未来复盘/证伪条件。区分用户保存的带来源证据与尚未接入的实时外部数据，不得把未知信息写成事实。\n\n{STRUCTURED_ANALYSIS_CONTRACT}"
                 )),
             ],
         }
     }
+
+    fn repair_output(
+        &self,
+        stage_label: &str,
+        invalid_output: &str,
+        validation_error: &str,
+        allowed_evidence_ids: &[String],
+    ) -> StagePrompt {
+        StagePrompt {
+            key: "structured_output_repair",
+            label: "结构化输出修复",
+            messages: vec![
+                ChatMessage::system(format!(
+                    "{INVESTMENT_SYSTEM_POLICY}\n你现在是结构化输出修复模块。只能修复格式、字段和引用约束，不得添加原输出没有依据的新事实。"
+                )),
+                ChatMessage::user(format!(
+                    "待修复阶段：{stage_label}\n校验错误：{validation_error}\n本次允许引用的证据 ID：{}\n\n原输出：\n{}\n\n请严格按契约重写。\n{STRUCTURED_ANALYSIS_CONTRACT}",
+                    serde_json::to_string(allowed_evidence_ids).unwrap_or_else(|_| "[]".into()),
+                    truncate_chars(invalid_output, 12_000)
+                )),
+            ],
+        }
+    }
+}
+
+fn truncate_chars(value: &str, max: usize) -> String {
+    value.chars().take(max).collect()
 }
 
 #[cfg(test)]
@@ -168,7 +203,7 @@ mod tests {
 
     #[test]
     fn exploration_uses_independent_and_distinct_lenses() {
-        let workflow = InvestmentWorkflowV3;
+        let workflow = InvestmentWorkflowV4;
         let alternatives = workflow.alternative_specs(true);
         assert_eq!(alternatives.len(), 2);
         assert_ne!(alternatives[0].id, alternatives[1].id);
@@ -178,7 +213,7 @@ mod tests {
 
     #[test]
     fn disabling_exploration_preserves_a_no_action_baseline() {
-        let workflow = InvestmentWorkflowV3;
+        let workflow = InvestmentWorkflowV4;
         let alternatives = workflow.alternative_specs(false);
         assert_eq!(alternatives.len(), 1);
         assert_eq!(alternatives[0].id, "baseline");
@@ -186,7 +221,7 @@ mod tests {
 
     #[test]
     fn every_model_stage_inherits_the_untrusted_data_boundary() {
-        let workflow = InvestmentWorkflowV3;
+        let workflow = InvestmentWorkflowV4;
         let prompts = [
             workflow.quick("问题", "上下文"),
             workflow.research_plan("问题", &serde_json::json!({})),
@@ -207,5 +242,18 @@ mod tests {
         assert!(workflow.alternative(&context, &spec).messages[0]
             .content
             .contains("不可信数据"));
+    }
+
+    #[test]
+    fn final_stages_require_the_machine_readable_contract() {
+        let workflow = InvestmentWorkflowV4;
+        assert!(workflow.quick("问题", "上下文").messages[1]
+            .content
+            .contains("evidenceIds"));
+        assert!(workflow
+            .synthesis("问题", "上下文", "计划", "候选", "审查")
+            .messages[1]
+            .content
+            .contains("reviewTriggers"));
     }
 }
