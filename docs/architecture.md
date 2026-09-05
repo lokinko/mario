@@ -64,6 +64,7 @@ pub trait ModelProvider: Send + Sync {
 ## 数据与安全边界
 
 - 服务端只监听 loopback 地址，不暴露局域网端口。
+- 桌面端把自身进程号传给 sidecar；桌面进程退出后，本地服务会自动停止。
 - CORS 只允许桌面 WebView 和本地开发地址。
 - 模型密钥保存在系统钥匙串。
 - Base URL 默认要求 HTTPS，本机模型例外。
@@ -75,10 +76,9 @@ pub trait ModelProvider: Send + Sync {
 ## 推荐扩展顺序
 
 1. 用数据库迁移工具替代当前幂等建表脚本。
-2. 增加持仓编辑、删除和 CSV 导入。
+2. 增加持仓 CSV 导入与组合级周期复盘。
 3. 实现目标成功概率与再平衡建议的确定性计算。
 4. 新增嵌入向量 Retriever，同时保留词法检索作为离线降级。
 5. 增加受信任行情 Provider；外部数据必须标注来源和时间。
 6. 为编排阶段增加 token、延迟和错误可观测性。
 7. 使用 Mock Provider 完成端到端 AI 工作流测试。
-

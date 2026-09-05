@@ -2,10 +2,13 @@ import type {
   AnalysisRequest,
   AnalysisResult,
   DecisionEntry,
+  DecisionRecord,
+  DecisionReview,
   FinancialProfile,
   Goal,
   Holding,
   ModelConfig,
+  ModelConnectionTest,
   Snapshot,
 } from "./types";
 
@@ -30,7 +33,14 @@ async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response) throw lastError ?? new Error("无法连接本地服务");
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(body || `本地服务返回 ${response.status}`);
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { error?: string };
+      if (parsed.error) message = parsed.error;
+    } catch {
+      // Keep the original non-JSON response for diagnostics.
+    }
+    throw new Error(message || `本地服务返回 ${response.status}`);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -48,6 +58,14 @@ export async function saveHolding(holding: Omit<Holding, "id">): Promise<Snapsho
   return httpRequest<Snapshot>("/holdings", { method: "POST", body: JSON.stringify(holding) });
 }
 
+export async function updateHolding(id: string, holding: Omit<Holding, "id">): Promise<Snapshot> {
+  return httpRequest<Snapshot>(`/holdings/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(holding) });
+}
+
+export async function deleteHolding(id: string): Promise<Snapshot> {
+  return httpRequest<Snapshot>(`/holdings/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 export async function saveGoal(goal: Omit<Goal, "id">): Promise<Snapshot> {
   return httpRequest<Snapshot>("/goals", { method: "POST", body: JSON.stringify(goal) });
 }
@@ -60,10 +78,26 @@ export async function saveModelConfig(config: Omit<ModelConfig, "hasApiKey"> & {
   return httpRequest<ModelConfig>("/model-config", { method: "PUT", body: JSON.stringify(config) });
 }
 
+export async function testModelConnection(): Promise<ModelConnectionTest> {
+  return httpRequest<ModelConnectionTest>("/model-config/test", { method: "POST" });
+}
+
+export async function deleteModelKey(): Promise<ModelConfig> {
+  return httpRequest<ModelConfig>("/model-key", { method: "DELETE" });
+}
+
 export async function runAnalysis(request: AnalysisRequest): Promise<AnalysisResult> {
   return httpRequest<AnalysisResult>("/analysis", { method: "POST", body: JSON.stringify(request) });
 }
 
 export async function saveDecision(entry: DecisionEntry): Promise<void> {
   await httpRequest<void>("/decisions", { method: "POST", body: JSON.stringify(entry) });
+}
+
+export async function getDecisions(): Promise<DecisionRecord[]> {
+  return httpRequest<DecisionRecord[]>("/decisions");
+}
+
+export async function saveDecisionReview(id: string, review: DecisionReview): Promise<void> {
+  await httpRequest<void>(`/decisions/${encodeURIComponent(id)}/review`, { method: "PUT", body: JSON.stringify(review) });
 }

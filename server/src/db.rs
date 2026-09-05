@@ -7,8 +7,8 @@ use uuid::Uuid;
 use crate::{
     error::{AppError, AppResult},
     models::{
-        DecisionEntry, FinancialProfile, Goal, GoalInput, Holding, HoldingInput, MemoryItem,
-        ModelConfig, Snapshot,
+        DecisionEntry, DecisionRecord, DecisionReview, DecisionReviewInput, FinancialProfile, Goal,
+        GoalInput, Holding, HoldingInput, MemoryItem, ModelConfig, Snapshot,
     },
     risk,
 };
@@ -55,6 +55,15 @@ impl Database {
                payload TEXT NOT NULL,
                review_date TEXT NOT NULL,
                created_at TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS decision_reviews (
+               decision_id TEXT PRIMARY KEY REFERENCES decisions(id) ON DELETE CASCADE,
+               outcome_summary TEXT NOT NULL,
+               actual_return_pct REAL,
+               thesis_status TEXT NOT NULL,
+               process_rating INTEGER NOT NULL,
+               lessons TEXT NOT NULL,
+               reviewed_at TEXT NOT NULL
              );
              CREATE TABLE IF NOT EXISTS analyses (
                id TEXT PRIMARY KEY,
@@ -158,6 +167,31 @@ impl Database {
         self.snapshot()
     }
 
+    pub fn update_holding(&self, id: &str, input: &HoldingInput) -> AppResult<Snapshot> {
+        if input.name.trim().is_empty() || input.market_value <= 0.0 {
+            return Err(AppError::Validation("资产名称和正数市值为必填项".into()));
+        }
+        validate_non_negative(&[input.market_value, input.cost_basis])?;
+        let affected = self.conn()?.execute(
+            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, currency=?7 WHERE id=?1",
+            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.currency],
+        )?;
+        if affected == 0 {
+            return Err(AppError::Validation("找不到要更新的资产".into()));
+        }
+        self.snapshot()
+    }
+
+    pub fn delete_holding(&self, id: &str) -> AppResult<Snapshot> {
+        let affected = self
+            .conn()?
+            .execute("DELETE FROM holdings WHERE id=?1", [id])?;
+        if affected == 0 {
+            return Err(AppError::Validation("找不到要删除的资产".into()));
+        }
+        self.snapshot()
+    }
+
     pub fn add_goal(&self, input: &GoalInput) -> AppResult<Snapshot> {
         if input.name.trim().is_empty()
             || input.target_amount <= 0.0
@@ -190,9 +224,96 @@ impl Database {
             .id
             .clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let mut stored = entry.clone();
+        stored.id = Some(id.clone());
         self.conn()?.execute(
             "INSERT INTO decisions (id, asset_name, payload, review_date, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, entry.asset_name.trim(), serde_json::to_string(entry)?, entry.review_date, Utc::now().to_rfc3339()],
+            params![id, entry.asset_name.trim(), serde_json::to_string(&stored)?, entry.review_date, Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    pub fn decisions(&self) -> AppResult<Vec<DecisionRecord>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT d.id, d.payload, d.created_at,
+                    r.outcome_summary, r.actual_return_pct, r.thesis_status,
+                    r.process_rating, r.lessons, r.reviewed_at
+             FROM decisions d
+             LEFT JOIN decision_reviews r ON r.decision_id = d.id
+             ORDER BY d.created_at DESC",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let id: String = row.get(0)?;
+            let payload: String = row.get(1)?;
+            let created_at: String = row.get(2)?;
+            let review = row
+                .get::<_, Option<String>>(3)?
+                .map(|outcome_summary| DecisionReview {
+                    outcome_summary,
+                    actual_return_pct: row.get(4).ok().flatten(),
+                    thesis_status: row.get::<_, String>(5).unwrap_or_default(),
+                    process_rating: row.get::<_, i64>(6).unwrap_or_default(),
+                    lessons: row.get::<_, String>(7).unwrap_or_default(),
+                    reviewed_at: row.get::<_, String>(8).unwrap_or_default(),
+                });
+            Ok((id, payload, created_at, review))
+        })?;
+
+        let mut records = Vec::new();
+        for row in rows {
+            let (id, payload, created_at, review) = row?;
+            let entry: DecisionEntry = serde_json::from_str(&payload)?;
+            records.push(DecisionRecord {
+                id,
+                asset_name: entry.asset_name,
+                thesis: entry.thesis,
+                counter_thesis: entry.counter_thesis,
+                expected_return_pct: entry.expected_return_pct,
+                downside_pct: entry.downside_pct,
+                confidence_pct: entry.confidence_pct,
+                position_pct: entry.position_pct,
+                invalidation: entry.invalidation,
+                review_date: entry.review_date,
+                created_at,
+                review,
+            });
+        }
+        Ok(records)
+    }
+
+    pub fn save_decision_review(&self, id: &str, input: &DecisionReviewInput) -> AppResult<()> {
+        if input.outcome_summary.trim().is_empty() || input.lessons.trim().is_empty() {
+            return Err(AppError::Validation("结果摘要和经验修正为必填项".into()));
+        }
+        if !(1..=5).contains(&input.process_rating) {
+            return Err(AppError::Validation("过程评分必须在 1—5 之间".into()));
+        }
+        if let Some(value) = input.actual_return_pct {
+            if !value.is_finite() {
+                return Err(AppError::Validation("实际收益率必须是有效数字".into()));
+            }
+        }
+        let conn = self.conn()?;
+        let exists: i64 =
+            conn.query_row("SELECT COUNT(*) FROM decisions WHERE id=?1", [id], |row| {
+                row.get(0)
+            })?;
+        if exists == 0 {
+            return Err(AppError::Validation("找不到要复盘的决策".into()));
+        }
+        conn.execute(
+            "INSERT INTO decision_reviews
+             (decision_id, outcome_summary, actual_return_pct, thesis_status, process_rating, lessons, reviewed_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7)
+             ON CONFLICT(decision_id) DO UPDATE SET
+               outcome_summary=excluded.outcome_summary,
+               actual_return_pct=excluded.actual_return_pct,
+               thesis_status=excluded.thesis_status,
+               process_rating=excluded.process_rating,
+               lessons=excluded.lessons,
+               reviewed_at=excluded.reviewed_at",
+            params![id, input.outcome_summary.trim(), input.actual_return_pct, input.thesis_status, input.process_rating, input.lessons.trim(), Utc::now().to_rfc3339()],
         )?;
         Ok(())
     }
@@ -373,5 +494,60 @@ mod tests {
         let snapshot = db.snapshot().unwrap();
         assert_eq!(snapshot.holdings.len(), 1);
         assert_eq!(snapshot.emergency_months, 6.0);
+    }
+
+    #[test]
+    fn updates_and_deletes_holding() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        let input = HoldingInput {
+            symbol: "IDX".into(),
+            name: "指数".into(),
+            asset_class: "基金".into(),
+            market_value: 100_000.0,
+            cost_basis: 90_000.0,
+            currency: "CNY".into(),
+        };
+        let created = db.add_holding(&input).unwrap();
+        let id = &created.holdings[0].id;
+        let mut updated = input;
+        updated.market_value = 120_000.0;
+        let snapshot = db.update_holding(id, &updated).unwrap();
+        assert_eq!(snapshot.holdings[0].market_value, 120_000.0);
+        assert!(db.delete_holding(id).unwrap().holdings.is_empty());
+    }
+
+    #[test]
+    fn stores_decision_review_separately_from_original_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        db.save_decision(&DecisionEntry {
+            id: None,
+            asset_name: "指数".into(),
+            thesis: "长期风险溢价".into(),
+            counter_thesis: "估值过高".into(),
+            expected_return_pct: 12.0,
+            downside_pct: 20.0,
+            confidence_pct: 65.0,
+            position_pct: 30.0,
+            invalidation: "风险容量改变".into(),
+            review_date: "2026-12-01".into(),
+        })
+        .unwrap();
+        let id = db.decisions().unwrap()[0].id.clone();
+        db.save_decision_review(
+            &id,
+            &DecisionReviewInput {
+                outcome_summary: "价格下跌但逻辑未破坏".into(),
+                actual_return_pct: Some(-8.0),
+                thesis_status: "部分成立".into(),
+                process_rating: 4,
+                lessons: "进一步区分价格与逻辑".into(),
+            },
+        )
+        .unwrap();
+        let record = db.decisions().unwrap().remove(0);
+        assert_eq!(record.thesis, "长期风险溢价");
+        assert_eq!(record.review.unwrap().process_rating, 4);
     }
 }

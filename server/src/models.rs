@@ -112,6 +112,14 @@ pub struct ModelConfigInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ModelConnectionTest {
+    pub ok: bool,
+    pub model: String,
+    pub latency_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnalysisRequest {
     pub question: String,
     pub workflow: String,
@@ -143,6 +151,44 @@ pub struct DecisionEntry {
     pub position_pct: f64,
     pub invalidation: String,
     pub review_date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionReview {
+    pub outcome_summary: String,
+    pub actual_return_pct: Option<f64>,
+    pub thesis_status: String,
+    pub process_rating: i64,
+    pub lessons: String,
+    pub reviewed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionReviewInput {
+    pub outcome_summary: String,
+    pub actual_return_pct: Option<f64>,
+    pub thesis_status: String,
+    pub process_rating: i64,
+    pub lessons: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionRecord {
+    pub id: String,
+    pub asset_name: String,
+    pub thesis: String,
+    pub counter_thesis: String,
+    pub expected_return_pct: f64,
+    pub downside_pct: f64,
+    pub confidence_pct: f64,
+    pub position_pct: f64,
+    pub invalidation: String,
+    pub review_date: String,
+    pub created_at: String,
+    pub review: Option<DecisionReview>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

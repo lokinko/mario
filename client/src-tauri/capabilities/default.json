@@ -7,7 +7,7 @@
     "core:default",
     {
       "identifier": "shell:allow-spawn",
-      "allow": [{ "name": "compass-server", "sidecar": true }]
+      "allow": [{ "name": "compass-server", "sidecar": true, "args": true }]
     }
   ]
 }

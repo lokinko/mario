@@ -8,12 +8,14 @@
 
 - macOS 桌面客户端：Tauri + React + TypeScript
 - 独立本地服务端：Rust + Axum，仅监听 `127.0.0.1:4217`
-- 本地 SQLite：财务档案、目标、持仓、决策与分析历史
+- 本地 SQLite：财务档案、目标、可编辑持仓、决策与分析历史
 - 系统钥匙串：模型 API Key 不写入数据库
 - 确定性风险规则：应急资金、负债压力、集中度、期限错配
 - OpenAI-compatible 模型适配器
 - AI 深度工作流：研究计划 → 两轮本地记忆检索 → 多方案探索 → 独立反思 → 最终整合
 - AI 快速工作流：用于低成本的单轮结构化分析
+- 决策复盘：原始判断不可变，复盘单独记录结果、过程评分与经验修正
+- 简化概率校准：使用历史置信度与逻辑结果训练概率意识，不用单笔盈亏评价能力
 
 ## 仓库结构
 
@@ -30,7 +32,7 @@ docs/                   架构与投资方法论
 scripts/                sidecar 构建脚本
 ```
 
-详细设计见 [架构说明](docs/architecture.md) 与 [投资方法论](docs/methodology.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md) 与 [投资方法论](docs/methodology.md)。
 
 ## 本地开发
 
@@ -73,9 +75,10 @@ npm run desktop:build
 
 当前支持 `/chat/completions` 协议的 OpenAI-compatible 服务。允许 HTTPS 远端地址，也允许 `localhost`/`127.0.0.1` 上的 HTTP 本地模型。API Key 由系统钥匙串保存；SQLite 只保存非敏感元数据。
 
+保存后可在页面内测试连接，也可以随时从系统钥匙串移除密钥。
+
 ## 数据位置
 
 默认数据库位于操作系统的本地数据目录 `com.compassinvest.desktop/compass.db`。开发和测试时可通过 `COMPASS_DATA_DIR` 指定隔离目录。
 
 服务端只在用户主动发起 AI 分析时，将完成该任务所需的投资上下文发送给用户配置的模型服务。当前版本尚未实现数据库整体加密、证券行情源、券商交易或云同步。
-

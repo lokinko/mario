@@ -54,6 +54,12 @@ export interface ModelConfig {
   hasApiKey: boolean;
 }
 
+export interface ModelConnectionTest {
+  ok: boolean;
+  model: string;
+  latencyMs: number;
+}
+
 export interface AnalysisRequest {
   question: string;
   workflow: "quick" | "deep";
@@ -81,4 +87,19 @@ export interface DecisionEntry {
   positionPct: number;
   invalidation: string;
   reviewDate: string;
+}
+
+export interface DecisionReview {
+  outcomeSummary: string;
+  actualReturnPct?: number;
+  thesisStatus: "成立" | "部分成立" | "失效" | "尚不明确";
+  processRating: number;
+  lessons: string;
+  reviewedAt?: string;
+}
+
+export interface DecisionRecord extends Omit<DecisionEntry, "id"> {
+  id: string;
+  createdAt: string;
+  review?: DecisionReview;
 }

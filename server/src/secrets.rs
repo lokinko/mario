@@ -35,3 +35,13 @@ pub fn set_api_key(value: &str) -> AppResult<()> {
         .set_password(value.trim())
         .map_err(|e| AppError::Keyring(e.to_string()))
 }
+
+pub fn delete_api_key() -> AppResult<()> {
+    match entry()
+        .map_err(|e| AppError::Keyring(e.to_string()))?
+        .delete_credential()
+    {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(AppError::Keyring(error.to_string())),
+    }
+}

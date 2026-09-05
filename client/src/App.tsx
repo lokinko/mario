@@ -9,6 +9,7 @@ import {
   CircleDollarSign,
   Compass,
   Database,
+  Edit3,
   FilePenLine,
   KeyRound,
   LayoutDashboard,
@@ -20,21 +21,30 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  Trash2,
   WalletCards,
 } from "lucide-react";
 import {
+  deleteModelKey,
+  deleteHolding,
+  getDecisions,
   getModelConfig,
   getSnapshot,
   runAnalysis,
   saveDecision,
+  saveDecisionReview,
   saveGoal,
   saveHolding,
   saveModelConfig,
   saveProfile,
+  testModelConnection,
+  updateHolding,
 } from "./api";
 import type {
   AnalysisResult,
   DecisionEntry,
+  DecisionRecord,
+  DecisionReview,
   FinancialProfile,
   Goal,
   Holding,
@@ -43,6 +53,12 @@ import type {
 } from "./types";
 
 type View = "dashboard" | "foundation" | "decision" | "advisor" | "settings";
+const views: View[] = ["dashboard", "foundation", "decision", "advisor", "settings"];
+
+function initialView(): View {
+  const candidate = window.location.hash.replace("#", "") as View;
+  return views.includes(candidate) ? candidate : "dashboard";
+}
 
 const money = new Intl.NumberFormat("zh-CN", {
   style: "currency",
@@ -68,8 +84,12 @@ const emptyProfile: FinancialProfile = {
   riskLevel: "稳健",
 };
 
+const emptyHolding: Omit<Holding, "id"> = {
+  symbol: "", name: "", assetClass: "基金", marketValue: 0, costBasis: 0, currency: "CNY",
+};
+
 function App() {
-  const [view, setView] = useState<View>("dashboard");
+  const [view, setView] = useState<View>(initialView);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [model, setModel] = useState<ModelConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,6 +113,11 @@ function App() {
   const flash = (message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2400);
+  };
+
+  const navigate = (nextView: View) => {
+    setView(nextView);
+    window.history.replaceState(null, "", `#${nextView}`);
   };
 
   if (loading) {
@@ -127,7 +152,7 @@ function App() {
         <nav>
           <p className="nav-caption">投资系统</p>
           {nav.map((item) => (
-            <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}>
+            <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}>
               <item.icon size={18} />{item.label}
             </button>
           ))}
@@ -138,17 +163,17 @@ function App() {
           <LockKeyhole size={18} />
           <div><strong>本地优先</strong><span>财务档案存储在此设备</span></div>
         </div>
-        <button className={`settings-link ${view === "settings" ? "active" : ""}`} onClick={() => setView("settings")}>
+        <button className={`settings-link ${view === "settings" ? "active" : ""}`} onClick={() => navigate("settings")}>
           <Settings2 size={18} /> 模型与隐私
         </button>
       </aside>
 
       <main>
         {notice && <div className="toast"><Check size={16} />{notice}</div>}
-        {view === "dashboard" && <Dashboard snapshot={snapshot} model={model} navigate={setView} />}
+        {view === "dashboard" && <Dashboard snapshot={snapshot} model={model} navigate={navigate} />}
         {view === "foundation" && <Foundation snapshot={snapshot} onUpdate={setSnapshot} flash={flash} />}
         {view === "decision" && <DecisionJournal flash={flash} />}
-        {view === "advisor" && <Advisor model={model} navigate={setView} />}
+        {view === "advisor" && <Advisor model={model} navigate={navigate} />}
         {view === "settings" && <ModelSettings model={model} onUpdate={setModel} flash={flash} />}
       </main>
     </div>
@@ -244,7 +269,8 @@ function allocationGradient(allocation: { pct: number }[]) {
 
 function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdate: (s: Snapshot) => void; flash: (s: string) => void }) {
   const [profile, setProfile] = useState(snapshot.profile ?? emptyProfile);
-  const [holding, setHolding] = useState<Omit<Holding, "id">>({ symbol: "", name: "", assetClass: "基金", marketValue: 0, costBasis: 0, currency: "CNY" });
+  const [holding, setHolding] = useState<Omit<Holding, "id">>(emptyHolding);
+  const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
   const [goal, setGoal] = useState<Omit<Goal, "id">>({ name: "", targetAmount: 0, targetDate: "", priority: "重要" });
   const [saving, setSaving] = useState(false);
 
@@ -255,13 +281,33 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
     try { onUpdate(await saveProfile(profile)); flash("财务档案已保存在本机"); } finally { setSaving(false); }
   };
 
-  const addHolding = async () => {
+  const persistHolding = async () => {
     if (!holding.name || holding.marketValue <= 0) return;
     setSaving(true);
     try {
-      onUpdate(await saveHolding(holding));
-      setHolding({ symbol: "", name: "", assetClass: "基金", marketValue: 0, costBasis: 0, currency: "CNY" });
-      flash("资产已加入组合");
+      const next = editingHoldingId
+        ? await updateHolding(editingHoldingId, holding)
+        : await saveHolding(holding);
+      onUpdate(next);
+      setHolding(emptyHolding);
+      setEditingHoldingId(null);
+      flash(editingHoldingId ? "资产信息已更新" : "资产已加入组合");
+    } finally { setSaving(false); }
+  };
+
+  const editHolding = (item: Holding) => {
+    const { id, ...values } = item;
+    setHolding(values);
+    setEditingHoldingId(id);
+  };
+
+  const removeHolding = async (item: Holding) => {
+    if (!window.confirm(`确认删除“${item.name}”？相关决策日志不会被删除。`)) return;
+    setSaving(true);
+    try {
+      onUpdate(await deleteHolding(item.id));
+      if (editingHoldingId === item.id) { setEditingHoldingId(null); setHolding(emptyHolding); }
+      flash("资产已从组合删除");
     } finally { setSaving(false); }
   };
 
@@ -306,7 +352,19 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
       </section>
 
       <section className="panel form-panel">
-        <div className="panel-title"><div><span>组合输入</span><h2>添加一项资产</h2></div><CircleDollarSign size={21} className="muted-icon" /></div>
+        <div className="panel-title"><div><span>组合输入</span><h2>{editingHoldingId ? "修改资产" : "管理资产组合"}</h2></div><CircleDollarSign size={21} className="muted-icon" /></div>
+        {snapshot.holdings.length > 0 && <div className="holding-list">
+          <div className="holding-head"><span>资产</span><span>类别</span><span>市值</span><span>账面变化</span><span /></div>
+          {snapshot.holdings.map((item) => {
+            const pnlPct = item.costBasis > 0 ? (item.marketValue - item.costBasis) / item.costBasis * 100 : 0;
+            return <div className={editingHoldingId === item.id ? "editing" : ""} key={item.id}>
+              <strong>{item.name}<small>{item.symbol || "未填写代码"}</small></strong>
+              <span>{item.assetClass}</span><span>{money.format(item.marketValue)}</span>
+              <span className={pnlPct >= 0 ? "gain" : "loss"}>{pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%</span>
+              <span className="row-actions"><button aria-label="编辑资产" onClick={() => editHolding(item)}><Edit3 size={14} /></button><button aria-label="删除资产" onClick={() => removeHolding(item)}><Trash2 size={14} /></button></span>
+            </div>;
+          })}
+        </div>}
         <div className="form-grid compact-grid">
           <label><span>资产名称</span><input value={holding.name} onChange={(e) => setHolding({ ...holding, name: e.target.value })} placeholder="例如：宽基指数基金" /></label>
           <label><span>代码（可选）</span><input value={holding.symbol} onChange={(e) => setHolding({ ...holding, symbol: e.target.value })} placeholder="例如：000300" /></label>
@@ -314,7 +372,10 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
           <NumberField label="当前市值" value={holding.marketValue} onChange={(v) => setHolding({ ...holding, marketValue: Number(v) })} prefix="¥" />
           <NumberField label="累计成本" value={holding.costBasis} onChange={(v) => setHolding({ ...holding, costBasis: Number(v) })} prefix="¥" />
         </div>
-        <div className="form-actions"><span /><button className="secondary" onClick={addHolding} disabled={saving || !holding.name}><Plus size={16} />加入组合</button></div>
+        <div className="form-actions">
+          {editingHoldingId ? <button className="text-button" onClick={() => { setEditingHoldingId(null); setHolding(emptyHolding); }}>取消修改</button> : <span />}
+          <button className="secondary" onClick={persistHolding} disabled={saving || !holding.name}>{editingHoldingId ? <Save size={16} /> : <Plus size={16} />}{editingHoldingId ? "保存修改" : "加入组合"}</button>
+        </div>
       </section>
     </div>
   );
@@ -331,18 +392,71 @@ const emptyDecision: DecisionEntry = {
 
 function DecisionJournal({ flash }: { flash: (s: string) => void }) {
   const [entry, setEntry] = useState(emptyDecision);
+  const [records, setRecords] = useState<DecisionRecord[]>([]);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [review, setReview] = useState<DecisionReview>({ outcomeSummary: "", thesisStatus: "尚不明确", processRating: 3, lessons: "" });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const expectedValue = entry.confidencePct / 100 * entry.expectedReturnPct - (1 - entry.confidencePct / 100) * Math.abs(entry.downsidePct);
+
+  const refresh = async () => {
+    try { setRecords(await getDecisions()); setError(""); }
+    catch (nextError) { setError(String(nextError)); }
+  };
+
+  useEffect(() => { void refresh(); }, []);
+
+  const reviewed = records.filter((item) => item.review);
+  const calibration = useMemo(() => {
+    const measurable = reviewed.filter((item) => item.review?.thesisStatus !== "尚不明确");
+    if (!measurable.length) return null;
+    const brier = measurable.reduce((sum, item) => {
+      const outcome = item.review?.thesisStatus === "成立" ? 1 : item.review?.thesisStatus === "失效" ? 0 : 0.5;
+      return sum + Math.pow(item.confidencePct / 100 - outcome, 2);
+    }, 0) / measurable.length;
+    return Math.max(0, Math.round((1 - brier) * 100));
+  }, [reviewed]);
+
+  const processAverage = reviewed.length
+    ? reviewed.reduce((sum, item) => sum + (item.review?.processRating ?? 0), 0) / reviewed.length
+    : null;
 
   const persist = async () => {
     if (!entry.assetName || !entry.thesis || !entry.counterThesis || !entry.invalidation) return;
     setSaving(true);
-    try { await saveDecision(entry); flash("决策快照已冻结，可用于未来复盘"); setEntry(emptyDecision); } finally { setSaving(false); }
+    try {
+      await saveDecision(entry);
+      flash("决策快照已冻结，可用于未来复盘");
+      setEntry(emptyDecision);
+      await refresh();
+    } finally { setSaving(false); }
+  };
+
+  const beginReview = (record: DecisionRecord) => {
+    setReviewingId(record.id);
+    setReview(record.review ?? { outcomeSummary: "", thesisStatus: "尚不明确", processRating: 3, lessons: "" });
+  };
+
+  const persistReview = async () => {
+    if (!reviewingId || !review.outcomeSummary || !review.lessons) return;
+    setSaving(true);
+    try {
+      await saveDecisionReview(reviewingId, review);
+      await refresh();
+      setReviewingId(null);
+      flash("复盘已保存，判断校准数据已更新");
+    } finally { setSaving(false); }
   };
 
   return (
     <div className="page narrow">
       <PageHeader eyebrow="方法论 · 决策层" title="先写下来，再按下买入" description="记录当时真正知道的事，避免用事后结果改写记忆。" />
+      <section className="review-metrics">
+        <article><span>决策记录</span><strong>{records.length}</strong><small>原始判断不可被复盘覆盖</small></article>
+        <article><span>已完成复盘</span><strong>{reviewed.length}</strong><small>{records.length ? `${Math.round(reviewed.length / records.length * 100)}% 完成率` : "等待第一条记录"}</small></article>
+        <article><span>简化校准分</span><strong>{calibration === null ? "—" : `${calibration}`}</strong><small>{calibration === null ? "至少需要一条明确结果" : `${reviewed.length} 个样本，仅作训练`}</small></article>
+        <article><span>过程评分</span><strong>{processAverage === null ? "—" : processAverage.toFixed(1)}</strong><small>独立于实际盈亏</small></article>
+      </section>
       <section className="panel form-panel decision-card">
         <div className="panel-title"><div><span>投资决策卡</span><h2>把观点变成可证伪的假设</h2></div><FilePenLine size={21} className="muted-icon" /></div>
         <div className="form-grid">
@@ -358,6 +472,36 @@ function DecisionJournal({ flash }: { flash: (s: string) => void }) {
           <div className={`ev-card ${expectedValue >= 0 ? "positive-bg" : "negative-bg"}`}><span>粗略概率加权结果</span><strong>{expectedValue > 0 ? "+" : ""}{expectedValue.toFixed(1)}%</strong><small>仅作思考校准，不代表预测</small></div>
         </div>
         <div className="form-actions"><p>必填：投资对象、正反逻辑与证伪条件</p><button className="primary" onClick={persist} disabled={saving}><Save size={16} />冻结决策快照</button></div>
+      </section>
+
+      <section className="panel decision-history">
+        <div className="panel-title"><div><span>历史证据</span><h2>按原始假设复盘，而不是看盈亏讲故事</h2></div><span className="history-count">{records.length} 条</span></div>
+        {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
+        {!error && records.length === 0 && <div className="empty">还没有决策记录。先冻结一张决策卡，未来才有可复盘的证据。</div>}
+        <div className="decision-list">
+          {records.map((record) => {
+            const due = Boolean(record.reviewDate && record.reviewDate <= new Date().toISOString().slice(0, 10) && !record.review);
+            return <article key={record.id} className={reviewingId === record.id ? "reviewing" : ""}>
+              <div className="decision-summary">
+                <div className="decision-name"><span className={record.review ? "reviewed" : due ? "due" : "planned"}>{record.review ? "已复盘" : due ? "待复盘" : "观察中"}</span><strong>{record.assetName}</strong><small>{new Date(record.createdAt).toLocaleDateString("zh-CN")}</small></div>
+                <div><span>置信度</span><strong>{record.confidencePct}%</strong></div>
+                <div><span>计划仓位</span><strong>{record.positionPct}%</strong></div>
+                <div><span>复盘日</span><strong>{record.reviewDate || "未设定"}</strong></div>
+                <button className="secondary" onClick={() => beginReview(record)}>{record.review ? "更新复盘" : "开始复盘"}</button>
+              </div>
+              <div className="decision-thesis"><p><b>原始逻辑</b>{record.thesis}</p><p><b>证伪条件</b>{record.invalidation}</p></div>
+              {record.review && reviewingId !== record.id && <div className="review-result"><span>{record.review.thesisStatus}</span><p>{record.review.outcomeSummary}</p><strong>过程 {record.review.processRating}/5</strong>{record.review.actualReturnPct !== undefined && <em className={record.review.actualReturnPct >= 0 ? "gain" : "loss"}>{record.review.actualReturnPct >= 0 ? "+" : ""}{record.review.actualReturnPct}%</em>}</div>}
+              {reviewingId === record.id && <div className="review-form">
+                <label><span>原始逻辑结果</span><select value={review.thesisStatus} onChange={(e) => setReview({ ...review, thesisStatus: e.target.value as DecisionReview["thesisStatus"] })}><option>成立</option><option>部分成立</option><option>失效</option><option>尚不明确</option></select></label>
+                <label><span>实际收益（可选）</span><div className="input-affix"><input type="number" value={review.actualReturnPct ?? ""} onChange={(e) => setReview({ ...review, actualReturnPct: e.target.value === "" ? undefined : Number(e.target.value) })} /><i>%</i></div></label>
+                <label><span>决策过程评分</span><select value={review.processRating} onChange={(e) => setReview({ ...review, processRating: Number(e.target.value) })}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5</option>)}</select></label>
+                <label className="span-3"><span>实际发生了什么？</span><textarea value={review.outcomeSummary} onChange={(e) => setReview({ ...review, outcomeSummary: e.target.value })} placeholder="只记录事实，区分价格结果与逻辑变化。" /></label>
+                <label className="span-3"><span>如何修正未来决策？</span><textarea value={review.lessons} onChange={(e) => setReview({ ...review, lessons: e.target.value })} placeholder="保留、修改或删除哪条规则？" /></label>
+                <div className="span-3 review-actions"><button className="text-button" onClick={() => setReviewingId(null)}>取消</button><button className="primary" disabled={saving || !review.outcomeSummary || !review.lessons} onClick={persistReview}><Save size={15} />保存复盘</button></div>
+              </div>}
+            </article>;
+          })}
+        </div>
       </section>
     </div>
   );
@@ -388,7 +532,7 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
         <label className="question-box"><span>这次希望解决什么问题？</span><textarea value={question} onChange={(e) => setQuestion(e.target.value)} /></label>
         <div className="workflow-options">
           <Toggle icon={<BrainCircuit size={17} />} title="深度编排" detail="构建计划并分阶段分析" checked={deep} onChange={setDeep} />
-          <Toggle icon={<Database size={17} />} title="本地记忆" detail="检索相关相关历史决策" checked={memory} onChange={setMemory} />
+          <Toggle icon={<Database size={17} />} title="本地记忆" detail="检索相关历史决策" checked={memory} onChange={setMemory} />
           <Toggle icon={<ShieldCheck size={17} />} title="纠错反思" detail="独立检查遗漏和过度自信" checked={reflection} onChange={setReflection} />
           <Toggle icon={<Sparkles size={17} />} title="多方案探索" detail="比较至少两条可行路径" checked={alternatives} onChange={setAlternatives} />
         </div>
@@ -412,13 +556,31 @@ function ModelSettings({ model, onUpdate, flash }: { model: ModelConfig; onUpdat
   const [modelName, setModelName] = useState(model.model);
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [connectionResult, setConnectionResult] = useState("");
+  const [error, setError] = useState("");
 
   const persist = async () => {
-    setSaving(true);
+    setSaving(true); setError(""); setConnectionResult("");
     try {
       const next = await saveModelConfig({ provider: "openai-compatible", baseUrl, model: modelName, apiKey: apiKey || undefined });
       onUpdate(next); setApiKey(""); flash("模型配置已安全保存");
-    } finally { setSaving(false); }
+    } catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
+  };
+
+  const testConnection = async () => {
+    setTesting(true); setError(""); setConnectionResult("");
+    try {
+      const result = await testModelConnection();
+      setConnectionResult(`${result.model} · ${result.latencyMs} ms`);
+    } catch (nextError) { setError(String(nextError)); } finally { setTesting(false); }
+  };
+
+  const clearKey = async () => {
+    if (!window.confirm("确认从系统钥匙串中移除模型 API Key？")) return;
+    setSaving(true); setError(""); setConnectionResult("");
+    try { onUpdate(await deleteModelKey()); flash("模型密钥已从系统钥匙串移除"); }
+    catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
   };
 
   return (
@@ -432,7 +594,12 @@ function ModelSettings({ model, onUpdate, flash }: { model: ModelConfig; onUpdat
           <label><span>API Key</span><div className="secure-input"><KeyRound size={16} /><input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={model.hasApiKey ? "已保存在系统钥匙串；留空则不修改" : "输入模型供应商密钥"} /></div></label>
         </div>
         <div className="privacy-note"><LockKeyhole size={18} /><div><strong>密钥与业务数据分离</strong><p>密钥由操作系统钥匙串托管；本地 SQLite 数据库只保存提供商、地址和模型名称。</p></div></div>
-        <div className="form-actions"><span /><button className="primary" onClick={persist} disabled={saving || !baseUrl || !modelName}><Save size={16} />保存配置</button></div>
+        {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
+        {connectionResult && <div className="connection-success"><Check size={16} /><span><strong>连接成功</strong>{connectionResult}</span></div>}
+        <div className="form-actions">
+          <div className="key-actions">{model.hasApiKey && <button className="danger-text" onClick={clearKey} disabled={saving}><Trash2 size={14} />移除密钥</button>}<button className="secondary" onClick={testConnection} disabled={testing || !model.hasApiKey}>{testing ? <LoaderCircle size={15} className="spin" /> : <Bot size={15} />}测试已保存连接</button></div>
+          <button className="primary" onClick={persist} disabled={saving || !baseUrl || !modelName}><Save size={16} />保存配置</button>
+        </div>
       </section>
       <section className="architecture-grid">
         <article><span>01</span><strong>确定性规则层</strong><p>现金流、集中度、期限错配等风险无需调用模型。</p></article>

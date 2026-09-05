@@ -17,7 +17,11 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             if !server_is_running() {
-                let command = app.shell().sidecar("compass-server")?;
+                let parent_pid = std::process::id().to_string();
+                let command = app
+                    .shell()
+                    .sidecar("compass-server")?
+                    .args(["--parent-pid", parent_pid.as_str()]);
                 let (_events, _child) = command.spawn()?;
             }
             Ok(())
