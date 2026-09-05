@@ -150,8 +150,22 @@ export interface MemoryCandidate {
   id: string;
   kind: string;
   title: string;
-  content: string;
+  summary: string;
+  content: Record<string, unknown>;
   createdAt: string;
+  occurredAt: string;
+  status: string;
+  reviewed: boolean;
+  contradiction: boolean;
+  tags: string[];
+  retrieval?: MemoryRetrieval;
+}
+
+export interface MemoryRetrieval {
+  score: number;
+  ageDays: number;
+  reasons: string[];
+  passes: string[];
 }
 
 export interface AnalysisTransparency {
@@ -161,6 +175,8 @@ export interface AnalysisTransparency {
   payloadBytes: number;
   contextRevision: string;
   memoryItemsUsed: number;
+  reviewedMemoryItemsUsed: number;
+  conflictingMemoryItemsUsed: number;
   evidenceItemsUsed: number;
   citationsRequired: boolean;
   modelCalls: number;
@@ -184,6 +200,7 @@ export interface AnalysisResult {
 export interface AnalysisWorkflowTrace {
   version: string;
   researchPlan?: string;
+  memoryItems: MemoryCandidate[];
   alternatives: AnalysisAlternative[];
   critique?: string;
   calls: ModelCallTrace[];

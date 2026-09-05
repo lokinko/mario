@@ -13,7 +13,8 @@
 - 确定性风险规则：应急资金、负债压力、集中度、期限错配
 - 确定性规划：目标路径模拟、月度投入缺口、风险预算与再平衡偏差
 - OpenAI-compatible 模型适配器
-- AI 深度工作流：研究计划 → 两轮本地记忆检索 → 两个独立候选方案 → 独立反思 → 最终裁决
+- AI 深度工作流：研究计划 → 两轮结构化长期记忆检索 → 两个独立候选方案 → 独立反思 → 最终裁决
+- 可解释长期记忆：区分已复盘决策、未验证判断与历史 AI 回答，支持时间衰减和反证信号
 - AI 工作流轨迹：逐阶段保存研究产物、模型耗时与 Provider 返回的 token 用量
 - AI 快速工作流：用于低成本的单轮结构化分析
 - AI 数据预览：逐组选择上下文、冻结候选记忆、确认指纹并保存本地审计
@@ -33,14 +34,14 @@ client/                 React 桌面界面与 Tauri 外壳
 server/                 可独立启动的本地 HTTP 服务
   src/ai/               可替换工作流、执行器与模型 Provider
   src/db.rs             SQLite 持久化
-  src/memory.rs         可替换的记忆检索接口
+  src/memory.rs         可替换、可解释的结构化记忆检索接口
   src/evidence.rs       可替换的研究证据检索接口
   src/risk.rs           不依赖大模型的风险规则
 docs/                   架构与投资方法论
 scripts/                sidecar 构建脚本
 ```
 
-产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[AI 工作流契约](docs/ai-workflow.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[确定性规划模型](docs/planning-model.md) 与 [AI 数据边界](docs/ai-data-boundary.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[AI 工作流契约](docs/ai-workflow.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[确定性规划模型](docs/planning-model.md) 与 [AI 数据边界](docs/ai-data-boundary.md)。
 
 ## 本地开发
 

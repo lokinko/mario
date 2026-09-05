@@ -57,17 +57,19 @@ pub trait ModelProvider: Send + Sync {
 
 新增供应商时实现这个接口即可，不需要修改投资方法论或 HTTP 层。当前的 `OpenAiCompatibleProvider` 是第一个适配器。
 
-`server/src/ai/workflow.rs` 中的 `AnalysisWorkflow` 定义阶段职责和提示契约，`InvestmentWorkflowV2` 是当前实现。`InvestmentOrchestrator` 通过 `with_workflow` 接受替代实现，并只负责执行、检索、计时、汇总与审计：
+`server/src/ai/workflow.rs` 中的 `AnalysisWorkflow` 定义阶段职责和提示契约，`InvestmentWorkflowV3` 是当前实现。`InvestmentOrchestrator` 通过 `with_workflow` 接受替代实现，并只负责执行、检索、计时、汇总与审计：
 
 1. 读取规则引擎已经计算的风险事实。
 2. 读取本地规划引擎生成的目标情景、风险预算和再平衡偏差。
 3. 让模型形成研究计划和检索线索。
-4. 使用原问题与计划分别检索一次本地记忆并合并去重。
+4. 从结构化记忆候选中，使用原问题与计划分别进行一次可解释混合检索并合并去重。
 5. 让彼此隔离的“稳健基准”和“目标推进”模块分别生成候选方案。
 6. 使用独立提示词进行反方审查。
 7. 最后整合结论、未知项、行动和证伪条件。
 
 编排器不知道 API Key 的存储方式，也不直接访问数据库。它只接收 Workflow、Provider、Retriever、BuiltContext 和 MemoryItem，因此可以单元测试并在未来替换为图式工作流。每个模型调用返回统一的正文与可选 usage；执行器记录阶段耗时，完整研究计划、候选方案、批判和调用轨迹由 SQLite 本地保存。详细契约见 [AI 分析工作流](ai-workflow.md)。
+
+`server/src/memory.rs` 的 `MemoryRetriever` 不依赖数据库或模型。当前 `HybridMemoryRetriever` 综合字段/内容匹配、投资概念关联、复盘可信度和时间衰减，并为每条结果生成可见命中原因。决策记忆由不可变原始快照与独立复盘动态构造，历史 AI 回答始终标为未经结果验证。详细契约见 [长期记忆与多轮检索](long-term-memory.md)。
 
 `ContextBuilder` 位于 `server/src/context.rs`，负责在编排前执行最小披露策略。编排器不再接收完整 `Snapshot`，只接收经过用户选择、发送前预览和一致性指纹校验的 `BuiltContext`。候选记忆也在预览阶段冻结，后续检索不能越出该集合。详细契约见 [AI 数据边界](ai-data-boundary.md)。
 
@@ -93,7 +95,7 @@ pub trait ModelProvider: Send + Sync {
 
 1. 用数据库迁移工具替代当前幂等建表脚本。
 2. 增加持仓 CSV 导入与组合变化归因。
-3. 新增嵌入向量 Retriever，同时保留词法检索作为离线降级。
+3. 新增本地嵌入向量 Retriever，与当前可解释检索融合并保留离线降级。
 4. 增加受信任行情 Provider；外部数据必须标注来源和时间。
 5. 为工作流增加可恢复 checkpoint、结构化输出校验与版本评测。
 6. 使用 Mock Provider 完成 HTTP 级 AI 工作流测试。

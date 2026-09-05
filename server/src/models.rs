@@ -260,6 +260,10 @@ pub struct AnalysisTransparency {
     pub context_revision: String,
     pub memory_items_used: usize,
     #[serde(default)]
+    pub reviewed_memory_items_used: usize,
+    #[serde(default)]
+    pub conflicting_memory_items_used: usize,
+    #[serde(default)]
     pub evidence_items_used: usize,
     #[serde(default)]
     pub citations_required: bool,
@@ -282,6 +286,8 @@ pub struct AnalysisWorkflowTrace {
     pub version: String,
     #[serde(default)]
     pub research_plan: Option<String>,
+    #[serde(default)]
+    pub memory_items: Vec<MemoryItem>,
     #[serde(default)]
     pub alternatives: Vec<AnalysisAlternative>,
     #[serde(default)]
@@ -392,8 +398,25 @@ pub struct MemoryItem {
     pub id: String,
     pub kind: String,
     pub title: String,
-    pub content: String,
+    pub summary: String,
+    pub content: serde_json::Value,
     pub created_at: String,
+    pub occurred_at: String,
+    pub status: String,
+    pub reviewed: bool,
+    pub contradiction: bool,
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub retrieval: Option<MemoryRetrieval>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryRetrieval {
+    pub score: f64,
+    pub age_days: i64,
+    pub reasons: Vec<String>,
+    pub passes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

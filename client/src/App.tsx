@@ -69,6 +69,7 @@ import type {
   InvestmentRule,
   InvestmentRuleInput,
   InvestmentRuleRevision,
+  MemoryCandidate,
   ModelConfig,
   ResearchEvidence,
   ResearchEvidenceInput,
@@ -1020,17 +1021,18 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
         <div className="local-only-note"><LockKeyhole size={16} /><div><strong>始终留在本机</strong><p>{preview.localOnly.join("；")}</p></div></div>
         <details className="payload-details"><summary>查看实际本地数据载荷</summary><pre>{JSON.stringify(preview.payload, null, 2)}</pre></details>
         {preview.evidenceCandidates.length > 0 && <details className="payload-details"><summary>查看本次可引用证据（{preview.evidenceCandidates.length} 条）</summary><pre>{JSON.stringify(preview.evidenceCandidates, null, 2)}</pre></details>}
-        {preview.memoryCandidates.length > 0 && <details className="payload-details"><summary>查看允许检索的候选记忆（{preview.memoryCandidates.length} 条）</summary><pre>{JSON.stringify(preview.memoryCandidates, null, 2)}</pre></details>}
+        {preview.memoryCandidates.length > 0 && <details className="payload-details memory-disclosure"><summary>查看允许检索的候选记忆（{preview.memoryCandidates.length} 条）</summary><MemoryItems items={preview.memoryCandidates} /></details>}
         <details className="payload-details"><summary>查看固定投资方法论提示</summary><pre>{preview.systemPolicy}</pre></details>
         <p className="memory-policy">{preview.memoryPolicy}</p>
         <div className="preview-actions"><button className="text-button" onClick={() => setPreview(null)}>返回修改</button><button className="primary" onClick={analyze} disabled={running || !model.hasApiKey}>{running ? <><LoaderCircle size={15} className="spin" />正在分析…</> : <><Send size={15} />确认并开始分析</>}</button></div>
       </section>}
       {result && <section className="panel result-panel">
         <div className="result-meta">{result.stages.map((stage) => <span key={stage}><Check size={13} />{stage}</span>)}</div>
-        <div className="analysis-audit"><div><strong>{result.transparency.model}</strong><span>{result.transparency.provider}</span></div><div><strong>{result.transparency.modelCalls} 次</strong><span>模型调用</span></div><div><strong>{(result.transparency.totalLatencyMs / 1000).toFixed(1)} 秒</strong><span>模型总耗时</span></div><div><strong>{result.transparency.inputTokens == null ? "未返回" : result.transparency.inputTokens.toLocaleString()}</strong><span>输入 tokens</span></div><div><strong>{result.transparency.contextGroups.length} 组</strong><span>上下文</span></div><div><strong>{result.transparency.memoryItemsUsed} 条</strong><span>历史记忆</span></div><div><strong>{result.transparency.evidenceItemsUsed} 条</strong><span>带来源证据</span></div><div><strong>{result.transparency.citationsRequired ? "必须引用" : "无可引用证据"}</strong><span>引用约束</span></div><div><strong>{result.transparency.apiKeySent ? "异常" : "未进入提示词"}</strong><span>API Key</span></div></div>
+        <div className="analysis-audit"><div><strong>{result.transparency.model}</strong><span>{result.transparency.provider}</span></div><div><strong>{result.transparency.modelCalls} 次</strong><span>模型调用</span></div><div><strong>{(result.transparency.totalLatencyMs / 1000).toFixed(1)} 秒</strong><span>模型总耗时</span></div><div><strong>{result.transparency.inputTokens == null ? "未返回" : result.transparency.inputTokens.toLocaleString()}</strong><span>输入 tokens</span></div><div><strong>{result.transparency.contextGroups.length} 组</strong><span>上下文</span></div><div><strong>{result.transparency.memoryItemsUsed} 条</strong><span>采用记忆</span></div><div><strong>{result.transparency.reviewedMemoryItemsUsed} / {result.transparency.conflictingMemoryItemsUsed}</strong><span>已复盘 / 反证</span></div><div><strong>{result.transparency.evidenceItemsUsed} 条</strong><span>带来源证据</span></div><div><strong>{result.transparency.citationsRequired ? "必须引用" : "无可引用证据"}</strong><span>引用约束</span></div><div><strong>{result.transparency.apiKeySent ? "异常" : "未进入提示词"}</strong><span>API Key</span></div></div>
         {(result.workflowTrace.researchPlan || result.workflowTrace.alternatives.length > 0 || result.workflowTrace.critique) && <div className="workflow-trace">
           <div className="workflow-trace-title"><div><span>可审计工作流 · {result.workflowTrace.version}</span><strong>查看模型如何比较、反驳再裁决</strong></div><small>以下是显式要求模型输出的研究产物，不是隐藏思维过程。</small></div>
           {result.workflowTrace.researchPlan && <details><summary><span>01</span><div><strong>研究计划</strong><small>假设、未知与检索线索</small></div><ChevronRight size={15} /></summary><div className="trace-content">{result.workflowTrace.researchPlan}</div></details>}
+          {result.workflowTrace.memoryItems.length > 0 && <details><summary><span>M</span><div><strong>实际采用的长期记忆</strong><small>{result.workflowTrace.memoryItems.length} 条 · 显示命中原因与冲突信号</small></div><ChevronRight size={15} /></summary><MemoryItems items={result.workflowTrace.memoryItems} compact /></details>}
           {result.workflowTrace.alternatives.map((alternative, index) => <details key={alternative.id}><summary><span>{String(index + 2).padStart(2, "0")}</span><div><strong>{alternative.label}</strong><small>{alternative.lens}</small></div><ChevronRight size={15} /></summary><div className="trace-content">{alternative.content}</div></details>)}
           {result.workflowTrace.critique && <details><summary><span>{String(result.workflowTrace.alternatives.length + 2).padStart(2, "0")}</span><div><strong>独立风险审查</strong><small>寻找证据漏洞、极端风险与过度自信</small></div><ChevronRight size={15} /></summary><div className="trace-content">{result.workflowTrace.critique}</div></details>}
           <details className="call-trace"><summary><span>Σ</span><div><strong>模型调用记录</strong><small>{result.workflowTrace.calls.length} 个独立阶段</small></div><ChevronRight size={15} /></summary><div className="call-list">{result.workflowTrace.calls.map((call) => <div key={call.stage}><strong>{call.label}</strong><span>{(call.latencyMs / 1000).toFixed(2)} 秒</span><span>{call.inputTokens == null ? "token 未返回" : `${call.inputTokens.toLocaleString()} 入 / ${(call.outputTokens ?? 0).toLocaleString()} 出`}</span></div>)}</div></details>
@@ -1040,6 +1042,16 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
       </section>}
     </div>
   );
+}
+
+function MemoryItems({ items, compact = false }: { items: MemoryCandidate[]; compact?: boolean }) {
+  return <div className={`memory-candidate-list ${compact ? "compact" : ""}`}>{items.map((item) => <article key={`${item.kind}-${item.id}`} className={item.contradiction ? "contradiction" : ""}>
+    <div className="memory-head"><div><span>{item.kind === "decision" ? "决策" : "AI 分析"}</span><strong>{item.title}</strong></div><div>{item.reviewed && <em>已复盘</em>}{item.contradiction && <em className="counter">反证</em>}{item.retrieval && <b>{item.retrieval.score.toFixed(1)} 分</b>}</div></div>
+    <p>{item.summary}</p>
+    <div className="memory-reasons">{item.retrieval?.reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>
+    <footer><small>{new Date(item.occurredAt).toLocaleDateString("zh-CN")} · {item.status}</small>{item.retrieval && <small>{item.retrieval.passes.join(" + ") || "候选初筛"}</small>}</footer>
+    {!compact && <details><summary>查看冻结的结构化内容</summary><pre>{JSON.stringify(item.content, null, 2)}</pre></details>}
+  </article>)}</div>;
 }
 
 function Toggle({ icon, title, detail, checked, onChange }: { icon: React.ReactNode; title: string; detail: string; checked: boolean; onChange: (v: boolean) => void }) {

@@ -17,15 +17,15 @@ InvestmentOrchestrator ── 执行、检索、计时、汇总、审计
 ModelProvider ── 适配用户选择的模型 API
 ```
 
-- `ai/workflow.rs`：只定义阶段和提示契约。当前实现是 `InvestmentWorkflowV2`。
+- `ai/workflow.rs`：只定义阶段和提示契约。当前实现是 `InvestmentWorkflowV3`。
 - `ai/orchestrator.rs`：只负责调用阶段、在冻结集合中二次检索记忆、汇总结果与生成轨迹。
 - `ai/provider.rs`：定义统一模型响应，包括正文和可选 token 用量。
-- `memory.rs`：定义可替换的记忆检索接口。
+- `memory.rs`：定义可替换的结构化记忆检索接口；当前实现同时考虑概念、复盘状态、冲突与时间衰减。
 - `context.rs`：负责用户可见的数据选择、发送前预览和一致性指纹。
 
 编排器提供 `with_workflow` 注入点。未来可以新增事实核验、估值情景或规则冲突检查工作流，而无需让工作流读取数据库或 API Key。
 
-## 深度工作流 v2
+## 深度工作流 v3
 
 ```text
 确定性风险检查
@@ -50,6 +50,7 @@ ModelProvider ── 适配用户选择的模型 API
 
 - 工作流版本；
 - 研究计划；
+- 最终实际采用的结构化记忆、命中原因与检索轮次；
 - 每个独立候选方案的名称、视角和正文；
 - 独立风险审查；
 - 每次模型调用的阶段、耗时，以及 Provider 返回时的输入/输出 token；

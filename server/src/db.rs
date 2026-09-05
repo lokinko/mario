@@ -839,28 +839,91 @@ impl Database {
     }
 
     pub fn memories(&self) -> AppResult<Vec<MemoryItem>> {
-        let conn = self.conn()?;
         let mut items = Vec::new();
-        let mut stmt = conn.prepare("SELECT id, asset_name, payload, created_at FROM decisions ORDER BY created_at DESC LIMIT 50")?;
-        for item in stmt.query_map([], |row| {
-            Ok(MemoryItem {
-                id: row.get(0)?,
+        for record in self.decisions()?.into_iter().take(50) {
+            let (summary, occurred_at, status, reviewed, contradiction, review_payload) =
+                if let Some(review) = &record.review {
+                    (
+                        format!(
+                            "复盘结论：{}；经验修正：{}",
+                            review.outcome_summary, review.lessons
+                        ),
+                        if review.reviewed_at.is_empty() {
+                            record.created_at.clone()
+                        } else {
+                            review.reviewed_at.clone()
+                        },
+                        format!("复盘：{}", review.thesis_status),
+                        true,
+                        matches!(review.thesis_status.as_str(), "失效" | "部分成立"),
+                        serde_json::to_value(review)?,
+                    )
+                } else {
+                    (
+                        format!(
+                            "尚未复盘；原始置信度 {:.0}%，计划仓位 {:.1}%",
+                            record.confidence_pct, record.position_pct
+                        ),
+                        record.created_at.clone(),
+                        "待复盘的原始判断".into(),
+                        false,
+                        false,
+                        serde_json::Value::Null,
+                    )
+                };
+            items.push(MemoryItem {
+                id: record.id,
                 kind: "decision".into(),
-                title: row.get(1)?,
-                content: row.get(2)?,
-                created_at: row.get(3)?,
-            })
-        })? {
-            items.push(item?);
+                title: record.asset_name.clone(),
+                summary,
+                content: serde_json::json!({
+                    "originalThesis": record.thesis,
+                    "counterThesis": record.counter_thesis,
+                    "invalidation": record.invalidation,
+                    "confidencePct": record.confidence_pct,
+                    "expectedReturnPct": record.expected_return_pct,
+                    "downsidePct": record.downside_pct,
+                    "positionPct": record.position_pct,
+                    "reviewDate": record.review_date,
+                    "review": review_payload,
+                }),
+                created_at: record.created_at,
+                occurred_at,
+                status: status.clone(),
+                reviewed,
+                contradiction,
+                tags: vec![record.asset_name, "投资决策".into(), status],
+                retrieval: None,
+            });
         }
-        let mut stmt = conn.prepare("SELECT id, question, answer, created_at FROM analyses ORDER BY created_at DESC LIMIT 20")?;
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare("SELECT id, question, answer, trace, created_at FROM analyses ORDER BY created_at DESC LIMIT 20")?;
         for item in stmt.query_map([], |row| {
+            let answer: String = row.get(2)?;
+            let trace: Option<String> = row.get(3)?;
+            let workflow_version = trace
+                .as_deref()
+                .and_then(|value| {
+                    serde_json::from_str::<crate::models::AnalysisWorkflowTrace>(value).ok()
+                })
+                .map(|value| value.version)
+                .filter(|value| !value.is_empty());
             Ok(MemoryItem {
                 id: row.get(0)?,
                 kind: "analysis".into(),
                 title: row.get(1)?,
-                content: row.get(2)?,
-                created_at: row.get(3)?,
+                summary: truncate_chars(&answer, 180),
+                content: serde_json::json!({
+                    "answer": answer,
+                    "workflowVersion": workflow_version,
+                }),
+                created_at: row.get(4)?,
+                occurred_at: row.get(4)?,
+                status: "历史 AI 分析（未经结果验证）".into(),
+                reviewed: false,
+                contradiction: false,
+                tags: vec!["AI 分析".into(), "历史建议".into()],
+                retrieval: None,
             })
         })? {
             items.push(item?);
@@ -914,6 +977,14 @@ impl Database {
         }
         Ok(history)
     }
+}
+
+fn truncate_chars(value: &str, max: usize) -> String {
+    let mut result = value.chars().take(max).collect::<String>();
+    if value.chars().count() > max {
+        result.push('…');
+    }
+    result
 }
 
 fn build_snapshot(
@@ -1243,6 +1314,17 @@ mod tests {
         let record = db.decisions().unwrap().remove(0);
         assert_eq!(record.thesis, "长期风险溢价");
         assert_eq!(record.review.unwrap().process_rating, 4);
+        let memory = db
+            .memories()
+            .unwrap()
+            .into_iter()
+            .find(|item| item.kind == "decision")
+            .unwrap();
+        assert!(memory.reviewed);
+        assert!(memory.contradiction);
+        assert_eq!(memory.status, "复盘：部分成立");
+        assert_eq!(memory.content["originalThesis"], "长期风险溢价");
+        assert_eq!(memory.content["review"]["processRating"], 4);
     }
 
     #[test]
@@ -1337,6 +1419,8 @@ mod tests {
                 payload_bytes: 512,
                 context_revision: "ctx-test".into(),
                 memory_items_used: 2,
+                reviewed_memory_items_used: 1,
+                conflicting_memory_items_used: 1,
                 evidence_items_used: 0,
                 citations_required: false,
                 model_calls: 3,
@@ -1347,7 +1431,7 @@ mod tests {
                 api_key_sent: false,
             },
             workflow_trace: crate::models::AnalysisWorkflowTrace {
-                version: "investment-workflow-v2".into(),
+                version: "investment-workflow-v3".into(),
                 ..crate::models::AnalysisWorkflowTrace::default()
             },
             created_at: "2026-01-01T00:00:00Z".into(),
@@ -1361,8 +1445,17 @@ mod tests {
         assert!(!audit.api_key_sent);
         assert_eq!(
             history[0].workflow_trace.as_ref().unwrap().version,
-            "investment-workflow-v2"
+            "investment-workflow-v3"
         );
+        let memory = db
+            .memories()
+            .unwrap()
+            .into_iter()
+            .find(|item| item.kind == "analysis")
+            .unwrap();
+        assert!(!memory.reviewed);
+        assert!(memory.status.contains("未经结果验证"));
+        assert_eq!(memory.content["workflowVersion"], "investment-workflow-v3");
     }
 
     #[test]
@@ -1384,6 +1477,8 @@ mod tests {
         assert_eq!(audit.evidence_items_used, 0);
         assert!(!audit.citations_required);
         assert_eq!(audit.model_calls, 0);
+        assert_eq!(audit.reviewed_memory_items_used, 0);
+        assert_eq!(audit.conflicting_memory_items_used, 0);
         assert!(db.analysis_history().unwrap()[0].workflow_trace.is_none());
     }
 
@@ -1419,6 +1514,27 @@ mod tests {
             .unwrap();
         assert_eq!(trace_columns, 1);
         assert!(db.analysis_history().unwrap()[0].workflow_trace.is_none());
+    }
+
+    #[test]
+    fn reads_workflow_trace_created_before_structured_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        db.conn()
+            .unwrap()
+            .execute(
+                "INSERT INTO analyses (id,question,answer,audit,trace,created_at)
+                 VALUES ('old-trace','旧分析','旧回答',NULL,?1,'2026-01-01')",
+                [r#"{"version":"investment-workflow-v2","researchPlan":"旧计划","alternatives":[],"critique":null,"calls":[]}"#],
+            )
+            .unwrap();
+
+        let trace = db.analysis_history().unwrap()[0]
+            .workflow_trace
+            .clone()
+            .unwrap();
+        assert_eq!(trace.version, "investment-workflow-v2");
+        assert!(trace.memory_items.is_empty());
     }
 
     #[test]

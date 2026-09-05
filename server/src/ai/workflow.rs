@@ -3,7 +3,7 @@ use serde_json::Value;
 use super::ChatMessage;
 use crate::context::INVESTMENT_SYSTEM_POLICY;
 
-pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v2";
+pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v3";
 
 pub struct StagePrompt {
     pub key: &'static str,
@@ -42,9 +42,9 @@ pub trait AnalysisWorkflow: Send + Sync {
     ) -> StagePrompt;
 }
 
-pub struct InvestmentWorkflowV2;
+pub struct InvestmentWorkflowV3;
 
-impl AnalysisWorkflow for InvestmentWorkflowV2 {
+impl AnalysisWorkflow for InvestmentWorkflowV3 {
     fn version(&self) -> &'static str {
         INVESTMENT_WORKFLOW_VERSION
     }
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn exploration_uses_independent_and_distinct_lenses() {
-        let workflow = InvestmentWorkflowV2;
+        let workflow = InvestmentWorkflowV3;
         let alternatives = workflow.alternative_specs(true);
         assert_eq!(alternatives.len(), 2);
         assert_ne!(alternatives[0].id, alternatives[1].id);
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn disabling_exploration_preserves_a_no_action_baseline() {
-        let workflow = InvestmentWorkflowV2;
+        let workflow = InvestmentWorkflowV3;
         let alternatives = workflow.alternative_specs(false);
         assert_eq!(alternatives.len(), 1);
         assert_eq!(alternatives[0].id, "baseline");
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn every_model_stage_inherits_the_untrusted_data_boundary() {
-        let workflow = InvestmentWorkflowV2;
+        let workflow = InvestmentWorkflowV3;
         let prompts = [
             workflow.quick("问题", "上下文"),
             workflow.research_plan("问题", &serde_json::json!({})),

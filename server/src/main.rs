@@ -21,7 +21,7 @@ use axum::{
 use db::Database;
 use error::{AppError, AppResult};
 use evidence::{EvidenceRetriever, LexicalEvidenceRetriever};
-use memory::{LexicalMemoryRetriever, MemoryRetriever};
+use memory::{HybridMemoryRetriever, MemoryRetriever};
 use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
     DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, InvestmentRule,
@@ -298,9 +298,9 @@ async fn run_analysis(
     validate_analysis_request(&request)?;
     let config = state.db.model_config()?;
     let snapshot = state.db.snapshot()?;
-    let retriever = LexicalMemoryRetriever;
+    let retriever = HybridMemoryRetriever::default();
     let memories = if request.workflow == "deep" && request.use_memory {
-        retriever.search(&request.question, &state.db.memories()?, 8)
+        initial_memory_candidates(&retriever, &request.question, &state.db.memories()?)
     } else {
         Vec::new()
     };
@@ -342,9 +342,9 @@ async fn preview_analysis(
     validate_analysis_request(&request)?;
     let config = state.db.model_config()?;
     let snapshot = state.db.snapshot()?;
-    let retriever = LexicalMemoryRetriever;
+    let retriever = HybridMemoryRetriever::default();
     let memories = if request.workflow == "deep" && request.use_memory {
-        retriever.search(&request.question, &state.db.memories()?, 8)
+        initial_memory_candidates(&retriever, &request.question, &state.db.memories()?)
     } else {
         Vec::new()
     };
@@ -404,6 +404,20 @@ fn relevant_evidence(
         .join(" ");
     let query = format!("{} {}", request.question, holdings);
     Ok(LexicalEvidenceRetriever.search(&query, &db.research_evidence()?, 12))
+}
+
+fn initial_memory_candidates(
+    retriever: &dyn MemoryRetriever,
+    question: &str,
+    pool: &[models::MemoryItem],
+) -> Vec<models::MemoryItem> {
+    let mut candidates = retriever.search(question, pool, 16);
+    for item in &mut candidates {
+        if let Some(retrieval) = &mut item.retrieval {
+            retrieval.passes.push("发送前问题初筛".into());
+        }
+    }
+    candidates
 }
 
 fn data_directory() -> AppResult<PathBuf> {

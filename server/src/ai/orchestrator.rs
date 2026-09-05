@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use super::{
-    workflow::{AnalysisWorkflow, CandidateContext, InvestmentWorkflowV2, StagePrompt},
+    workflow::{AnalysisWorkflow, CandidateContext, InvestmentWorkflowV3, StagePrompt},
     ModelProvider,
 };
 use crate::{
@@ -20,7 +20,7 @@ pub struct InvestmentOrchestrator<'a> {
     workflow: &'a dyn AnalysisWorkflow,
 }
 
-static DEFAULT_WORKFLOW: InvestmentWorkflowV2 = InvestmentWorkflowV2;
+static DEFAULT_WORKFLOW: InvestmentWorkflowV3 = InvestmentWorkflowV3;
 
 impl<'a> InvestmentOrchestrator<'a> {
     pub fn new(provider: &'a dyn ModelProvider, retriever: &'a dyn MemoryRetriever) -> Self {
@@ -82,8 +82,10 @@ impl<'a> InvestmentOrchestrator<'a> {
         stages.push("生成研究计划".into());
 
         let memories = if request.use_memory {
-            let first = self.retriever.search(&request.question, memory_pool, 4);
-            let second = self.retriever.search(&plan, memory_pool, 6);
+            let mut first = self.retriever.search(&request.question, memory_pool, 4);
+            mark_retrieval_pass(&mut first, "用户问题复核");
+            let mut second = self.retriever.search(&plan, memory_pool, 6);
+            mark_retrieval_pass(&mut second, "研究计划扩展");
             merge_memories(first, second, 8)
         } else {
             Vec::new()
@@ -96,6 +98,7 @@ impl<'a> InvestmentOrchestrator<'a> {
         } else {
             serde_json::to_string_pretty(&memories)?
         };
+        trace.memory_items = memories.clone();
 
         if request.explore_alternatives {
             stages.push("探索多个可行方案".into());
@@ -184,12 +187,11 @@ fn merge_memories(
     second: Vec<MemoryItem>,
     limit: usize,
 ) -> Vec<MemoryItem> {
-    let mut result = Vec::new();
+    let mut result: Vec<MemoryItem> = Vec::new();
     for item in first.into_iter().chain(second) {
-        if !result
-            .iter()
-            .any(|existing: &MemoryItem| existing.id == item.id)
-        {
+        if let Some(existing) = result.iter_mut().find(|existing| existing.id == item.id) {
+            merge_retrieval(existing, &item);
+        } else {
             result.push(item);
         }
         if result.len() == limit {
@@ -197,6 +199,42 @@ fn merge_memories(
         }
     }
     result
+}
+
+fn mark_retrieval_pass(items: &mut [MemoryItem], pass: &str) {
+    for item in items {
+        if let Some(retrieval) = &mut item.retrieval {
+            if !retrieval.passes.iter().any(|existing| existing == pass) {
+                retrieval.passes.push(pass.into());
+            }
+        }
+    }
+}
+
+fn merge_retrieval(existing: &mut MemoryItem, incoming: &MemoryItem) {
+    let (Some(current), Some(next)) = (&mut existing.retrieval, &incoming.retrieval) else {
+        return;
+    };
+    current.score = current.score.max(next.score);
+    current.age_days = current.age_days.min(next.age_days);
+    for reason in &next.reasons {
+        if !current.reasons.contains(reason) {
+            current.reasons.push(reason.clone());
+        }
+    }
+    for pass in &next.passes {
+        if !current.passes.contains(pass) {
+            current.passes.push(pass.clone());
+        }
+    }
+    if current.passes.len() > 1
+        && !current
+            .reasons
+            .iter()
+            .any(|reason| reason == "原问题与研究计划均命中")
+    {
+        current.reasons.push("原问题与研究计划均命中".into());
+    }
 }
 
 fn result(
@@ -237,6 +275,11 @@ fn result(
                 + serde_json::to_vec(memory_items).map_or(0, |bytes| bytes.len()),
             context_revision: built_context.revision.clone(),
             memory_items_used: memory_items.len(),
+            reviewed_memory_items_used: memory_items.iter().filter(|item| item.reviewed).count(),
+            conflicting_memory_items_used: memory_items
+                .iter()
+                .filter(|item| item.contradiction)
+                .count(),
             evidence_items_used: built_context.evidence_items,
             citations_required: built_context.evidence_items > 0,
             model_calls,
@@ -273,7 +316,7 @@ mod tests {
         ai::ChatMessage,
         context::ContextBuilder,
         error::AppResult,
-        memory::LexicalMemoryRetriever,
+        memory::HybridMemoryRetriever,
         models::{
             ContextSelection, FinancialProfile, Holding, PortfolioPlan, ResearchEvidence,
             RiskFinding, Snapshot,
@@ -360,13 +403,20 @@ mod tests {
         let provider = MockProvider {
             calls: AtomicUsize::new(0),
         };
-        let retriever = LexicalMemoryRetriever;
+        let retriever = HybridMemoryRetriever::default();
         let memory = vec![MemoryItem {
             id: "m1".into(),
             kind: "decision".into(),
             title: "指数决策".into(),
-            content: "集中度复盘".into(),
+            summary: "集中度复盘".into(),
+            content: serde_json::json!({ "lesson": "集中度复盘" }),
             created_at: "2026-01-01".into(),
+            occurred_at: "2026-01-01".into(),
+            status: "已复盘".into(),
+            reviewed: true,
+            contradiction: false,
+            tags: vec!["指数".into(), "集中度".into()],
+            retrieval: None,
         }];
         let request = AnalysisRequest {
             question: "检查指数集中度".into(),
@@ -410,12 +460,23 @@ mod tests {
         assert!(output.answer.contains("最终"));
         assert_eq!(output.workflow_trace.alternatives.len(), 2);
         assert!(output.workflow_trace.research_plan.is_some());
+        assert_eq!(output.workflow_trace.memory_items.len(), 1);
+        assert_eq!(
+            output.workflow_trace.memory_items[0]
+                .retrieval
+                .as_ref()
+                .unwrap()
+                .passes,
+            vec!["用户问题复核", "研究计划扩展"]
+        );
         assert!(output.workflow_trace.critique.is_some());
         assert_eq!(output.workflow_trace.calls.len(), 5);
         assert_eq!(output.transparency.model_calls, 5);
         assert_eq!(output.transparency.input_tokens, Some(500));
         assert_eq!(output.transparency.output_tokens, Some(100));
         assert_eq!(output.transparency.memory_items_used, 1);
+        assert_eq!(output.transparency.reviewed_memory_items_used, 1);
+        assert_eq!(output.transparency.conflicting_memory_items_used, 0);
         assert_eq!(output.transparency.evidence_items_used, 1);
         assert!(output.transparency.citations_required);
         assert!(output.transparency.external_data_used);
@@ -427,7 +488,7 @@ mod tests {
         let provider = MockProvider {
             calls: AtomicUsize::new(0),
         };
-        let retriever = LexicalMemoryRetriever;
+        let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
             question: "只做快速风险摘要".into(),
             workflow: "quick".into(),
