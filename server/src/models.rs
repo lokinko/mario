@@ -34,6 +34,8 @@ pub struct Goal {
     pub id: String,
     pub name: String,
     pub target_amount: f64,
+    pub current_amount: f64,
+    pub monthly_contribution: f64,
     pub target_date: String,
     pub priority: String,
 }
@@ -43,6 +45,8 @@ pub struct Goal {
 pub struct GoalInput {
     pub name: String,
     pub target_amount: f64,
+    pub current_amount: f64,
+    pub monthly_contribution: f64,
     pub target_date: String,
     pub priority: String,
 }
@@ -56,6 +60,7 @@ pub struct Holding {
     pub asset_class: String,
     pub market_value: f64,
     pub cost_basis: f64,
+    pub target_pct: f64,
     pub currency: String,
 }
 
@@ -67,6 +72,7 @@ pub struct HoldingInput {
     pub asset_class: String,
     pub market_value: f64,
     pub cost_basis: f64,
+    pub target_pct: f64,
     pub currency: String,
 }
 
@@ -89,7 +95,50 @@ pub struct Snapshot {
     pub total_value: f64,
     pub emergency_months: f64,
     pub concentration_pct: f64,
+    pub plan: PortfolioPlan,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioPlan {
+    pub monthly_surplus: f64,
+    pub committed_monthly: f64,
+    pub modeled_annual_return_pct: f64,
+    pub modeled_annual_volatility_pct: f64,
+    pub stress_loss_pct: f64,
+    pub risk_capacity_pct: f64,
+    pub risk_status: String,
+    pub goal_projections: Vec<GoalProjection>,
+    pub rebalancing: Vec<RebalanceAction>,
+    pub assumptions: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalProjection {
+    pub goal_id: String,
+    pub name: String,
+    pub months_remaining: i64,
+    pub funded_pct: f64,
+    pub estimated_success_pct: f64,
+    pub conservative_amount: f64,
+    pub median_amount: f64,
+    pub required_monthly_contribution: f64,
+    pub monthly_gap: f64,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RebalanceAction {
+    pub holding_id: String,
+    pub name: String,
+    pub current_pct: f64,
+    pub target_pct: f64,
+    pub deviation_pct: f64,
+    pub amount: f64,
+    pub direction: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

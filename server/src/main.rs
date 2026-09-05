@@ -3,6 +3,7 @@ mod db;
 mod error;
 mod memory;
 mod models;
+mod planning;
 mod risk;
 mod secrets;
 
@@ -68,6 +69,7 @@ async fn main() -> AppResult<()> {
             put(update_holding).delete(delete_holding),
         )
         .route("/api/goals", post(add_goal))
+        .route("/api/goals/{id}", put(update_goal).delete(delete_goal))
         .route("/api/decisions", get(decisions).post(save_decision))
         .route("/api/decisions/{id}/review", put(save_decision_review))
         .route(
@@ -129,6 +131,19 @@ async fn add_goal(
     Json(input): Json<GoalInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.add_goal(&input)?))
+}
+async fn update_goal(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(input): Json<GoalInput>,
+) -> AppResult<Json<Snapshot>> {
+    Ok(Json(state.db.update_goal(&id, &input)?))
+}
+async fn delete_goal(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> AppResult<Json<Snapshot>> {
+    Ok(Json(state.db.delete_goal(&id)?))
 }
 async fn save_decision(
     State(state): State<Arc<AppState>>,

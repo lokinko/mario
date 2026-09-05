@@ -119,6 +119,16 @@ fn compact_snapshot(snapshot: &Snapshot) -> String {
         "horizonYears": snapshot.profile.horizon_years,
         "riskLevel": snapshot.profile.risk_level,
         "findings": snapshot.findings,
+        "portfolioPlan": {
+            "monthlySurplus": snapshot.plan.monthly_surplus,
+            "committedMonthly": snapshot.plan.committed_monthly,
+            "stressLossPct": snapshot.plan.stress_loss_pct,
+            "riskCapacityPct": snapshot.plan.risk_capacity_pct,
+            "riskStatus": snapshot.plan.risk_status,
+            "goalProjections": snapshot.plan.goal_projections,
+            "rebalancing": snapshot.plan.rebalancing,
+            "assumptions": snapshot.plan.assumptions,
+        },
     })
     .to_string()
 }
@@ -163,7 +173,7 @@ mod tests {
     use crate::{
         error::AppResult,
         memory::LexicalMemoryRetriever,
-        models::{FinancialProfile, Holding, RiskFinding},
+        models::{FinancialProfile, Holding, PortfolioPlan, RiskFinding},
     };
 
     struct MockProvider {
@@ -198,6 +208,7 @@ mod tests {
                 asset_class: "基金".into(),
                 market_value: 100.0,
                 cost_basis: 90.0,
+                target_pct: 100.0,
                 currency: "CNY".into(),
             }],
             findings: vec![RiskFinding {
@@ -209,6 +220,18 @@ mod tests {
             total_value: 100.0,
             emergency_months: 6.0,
             concentration_pct: 100.0,
+            plan: PortfolioPlan {
+                monthly_surplus: 0.0,
+                committed_monthly: 0.0,
+                modeled_annual_return_pct: 5.5,
+                modeled_annual_volatility_pct: 14.0,
+                stress_loss_pct: 28.0,
+                risk_capacity_pct: 15.0,
+                risk_status: "over".into(),
+                goal_projections: Vec::new(),
+                rebalancing: Vec::new(),
+                assumptions: "测试".into(),
+            },
             updated_at: "2026-01-01".into(),
         }
     }

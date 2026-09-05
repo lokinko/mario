@@ -70,6 +70,14 @@ export async function saveGoal(goal: Omit<Goal, "id">): Promise<Snapshot> {
   return httpRequest<Snapshot>("/goals", { method: "POST", body: JSON.stringify(goal) });
 }
 
+export async function updateGoal(id: string, goal: Omit<Goal, "id">): Promise<Snapshot> {
+  return httpRequest<Snapshot>(`/goals/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(goal) });
+}
+
+export async function deleteGoal(id: string): Promise<Snapshot> {
+  return httpRequest<Snapshot>(`/goals/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 export async function getModelConfig(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-config");
 }

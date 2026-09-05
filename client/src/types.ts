@@ -15,6 +15,8 @@ export interface Goal {
   id: string;
   name: string;
   targetAmount: number;
+  currentAmount: number;
+  monthlyContribution: number;
   targetDate: string;
   priority: "刚性" | "重要" | "弹性";
 }
@@ -26,6 +28,7 @@ export interface Holding {
   assetClass: "现金" | "债券" | "股票" | "基金" | "黄金" | "其他";
   marketValue: number;
   costBasis: number;
+  targetPct: number;
   currency: string;
 }
 
@@ -44,7 +47,44 @@ export interface Snapshot {
   totalValue: number;
   emergencyMonths: number;
   concentrationPct: number;
+  plan: PortfolioPlan;
   updatedAt: string;
+}
+
+export interface PortfolioPlan {
+  monthlySurplus: number;
+  committedMonthly: number;
+  modeledAnnualReturnPct: number;
+  modeledAnnualVolatilityPct: number;
+  stressLossPct: number;
+  riskCapacityPct: number;
+  riskStatus: "within" | "near" | "over" | "insufficient";
+  goalProjections: GoalProjection[];
+  rebalancing: RebalanceAction[];
+  assumptions: string;
+}
+
+export interface GoalProjection {
+  goalId: string;
+  name: string;
+  monthsRemaining: number;
+  fundedPct: number;
+  estimatedSuccessPct: number;
+  conservativeAmount: number;
+  medianAmount: number;
+  requiredMonthlyContribution: number;
+  monthlyGap: number;
+  status: "on-track" | "watch" | "off-track" | "reached" | "expired";
+}
+
+export interface RebalanceAction {
+  holdingId: string;
+  name: string;
+  currentPct: number;
+  targetPct: number;
+  deviationPct: number;
+  amount: number;
+  direction: "增加" | "减少";
 }
 
 export interface ModelConfig {

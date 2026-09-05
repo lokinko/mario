@@ -20,6 +20,7 @@
 │ Local Axum Server             │
 │                               │
 │ API ─┬─ deterministic rules   │
+│      ├─ planning simulation   │
 │      ├─ AI orchestrator       │
 │      ├─ memory retriever      │
 │      └─ provider adapter      │
@@ -53,11 +54,12 @@ pub trait ModelProvider: Send + Sync {
 `InvestmentOrchestrator` 负责阶段组合：
 
 1. 读取规则引擎已经计算的风险事实。
-2. 让模型形成研究计划和检索线索。
-3. 使用原问题与计划分别检索一次本地记忆并合并去重。
-4. 按用户设置探索多个方案。
-5. 使用独立提示词进行反方审查。
-6. 最后整合结论、未知项、行动和证伪条件。
+2. 读取本地规划引擎生成的目标情景、风险预算和再平衡偏差。
+3. 让模型形成研究计划和检索线索。
+4. 使用原问题与计划分别检索一次本地记忆并合并去重。
+5. 按用户设置探索多个方案。
+6. 使用独立提示词进行反方审查。
+7. 最后整合结论、未知项、行动和证伪条件。
 
 编排器不知道 API Key 的存储方式，也不直接访问数据库。它只接收 Provider、Retriever、Snapshot 和 MemoryItem，因此可以单元测试并在未来替换为图式工作流。
 

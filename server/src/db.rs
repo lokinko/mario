@@ -10,7 +10,7 @@ use crate::{
         DecisionEntry, DecisionRecord, DecisionReview, DecisionReviewInput, FinancialProfile, Goal,
         GoalInput, Holding, HoldingInput, MemoryItem, ModelConfig, Snapshot,
     },
-    risk,
+    planning, risk,
 };
 
 pub struct Database {
@@ -35,6 +35,8 @@ impl Database {
                id TEXT PRIMARY KEY,
                name TEXT NOT NULL,
                target_amount REAL NOT NULL,
+               current_amount REAL NOT NULL DEFAULT 0,
+               monthly_contribution REAL NOT NULL DEFAULT 0,
                target_date TEXT NOT NULL,
                priority TEXT NOT NULL,
                created_at TEXT NOT NULL
@@ -46,6 +48,7 @@ impl Database {
                asset_class TEXT NOT NULL,
                market_value REAL NOT NULL,
                cost_basis REAL NOT NULL,
+               target_pct REAL NOT NULL DEFAULT 0,
                currency TEXT NOT NULL,
                created_at TEXT NOT NULL
              );
@@ -76,6 +79,24 @@ impl Database {
                value TEXT NOT NULL
              );",
         )?;
+        ensure_column(
+            &connection,
+            "goals",
+            "current_amount",
+            "REAL NOT NULL DEFAULT 0",
+        )?;
+        ensure_column(
+            &connection,
+            "goals",
+            "monthly_contribution",
+            "REAL NOT NULL DEFAULT 0",
+        )?;
+        ensure_column(
+            &connection,
+            "holdings",
+            "target_pct",
+            "REAL NOT NULL DEFAULT 0",
+        )?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -99,7 +120,7 @@ impl Database {
             .unwrap_or_default();
 
         let mut goal_stmt = conn.prepare(
-            "SELECT id, name, target_amount, target_date, priority FROM goals ORDER BY created_at",
+            "SELECT id, name, target_amount, current_amount, monthly_contribution, target_date, priority FROM goals ORDER BY created_at",
         )?;
         let goals = goal_stmt
             .query_map([], |row| {
@@ -107,13 +128,15 @@ impl Database {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     target_amount: row.get(2)?,
-                    target_date: row.get(3)?,
-                    priority: row.get(4)?,
+                    current_amount: row.get(3)?,
+                    monthly_contribution: row.get(4)?,
+                    target_date: row.get(5)?,
+                    priority: row.get(6)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, currency FROM holdings ORDER BY created_at")?;
+        let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency FROM holdings ORDER BY created_at")?;
         let holdings = holding_stmt
             .query_map([], |row| {
                 Ok(Holding {
@@ -123,7 +146,8 @@ impl Database {
                     asset_class: row.get(3)?,
                     market_value: row.get(4)?,
                     cost_basis: row.get(5)?,
-                    currency: row.get(6)?,
+                    target_pct: row.get(6)?,
+                    currency: row.get(7)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -158,11 +182,12 @@ impl Database {
         if input.name.trim().is_empty() || input.market_value <= 0.0 {
             return Err(AppError::Validation("资产名称和正数市值为必填项".into()));
         }
-        validate_non_negative(&[input.market_value, input.cost_basis])?;
+        validate_non_negative(&[input.market_value, input.cost_basis, input.target_pct])?;
+        validate_percentage(input.target_pct, "目标权重")?;
         self.conn()?.execute(
-            "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, currency, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.currency, Utc::now().to_rfc3339()],
+            "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency, Utc::now().to_rfc3339()],
         )?;
         self.snapshot()
     }
@@ -171,10 +196,11 @@ impl Database {
         if input.name.trim().is_empty() || input.market_value <= 0.0 {
             return Err(AppError::Validation("资产名称和正数市值为必填项".into()));
         }
-        validate_non_negative(&[input.market_value, input.cost_basis])?;
+        validate_non_negative(&[input.market_value, input.cost_basis, input.target_pct])?;
+        validate_percentage(input.target_pct, "目标权重")?;
         let affected = self.conn()?.execute(
-            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, currency=?7 WHERE id=?1",
-            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.currency],
+            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8 WHERE id=?1",
+            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency],
         )?;
         if affected == 0 {
             return Err(AppError::Validation("找不到要更新的资产".into()));
@@ -193,16 +219,33 @@ impl Database {
     }
 
     pub fn add_goal(&self, input: &GoalInput) -> AppResult<Snapshot> {
-        if input.name.trim().is_empty()
-            || input.target_amount <= 0.0
-            || input.target_date.trim().is_empty()
-        {
-            return Err(AppError::Validation("目标名称、金额和日期为必填项".into()));
-        }
+        validate_goal(input)?;
         self.conn()?.execute(
-            "INSERT INTO goals (id, name, target_amount, target_date, priority, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![Uuid::new_v4().to_string(), input.name.trim(), input.target_amount, input.target_date, input.priority, Utc::now().to_rfc3339()],
+            "INSERT INTO goals (id, name, target_amount, current_amount, monthly_contribution, target_date, priority, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![Uuid::new_v4().to_string(), input.name.trim(), input.target_amount, input.current_amount, input.monthly_contribution, input.target_date, input.priority, Utc::now().to_rfc3339()],
         )?;
+        self.snapshot()
+    }
+
+    pub fn update_goal(&self, id: &str, input: &GoalInput) -> AppResult<Snapshot> {
+        validate_goal(input)?;
+        let affected = self.conn()?.execute(
+            "UPDATE goals SET name=?2, target_amount=?3, current_amount=?4, monthly_contribution=?5, target_date=?6, priority=?7 WHERE id=?1",
+            params![id, input.name.trim(), input.target_amount, input.current_amount, input.monthly_contribution, input.target_date, input.priority],
+        )?;
+        if affected == 0 {
+            return Err(AppError::Validation("找不到要更新的目标".into()));
+        }
+        self.snapshot()
+    }
+
+    pub fn delete_goal(&self, id: &str) -> AppResult<Snapshot> {
+        let affected = self
+            .conn()?
+            .execute("DELETE FROM goals WHERE id=?1", [id])?;
+        if affected == 0 {
+            return Err(AppError::Validation("找不到要删除的目标".into()));
+        }
         self.snapshot()
     }
 
@@ -432,7 +475,33 @@ fn build_snapshot(profile: FinancialProfile, goals: Vec<Goal>, holdings: Vec<Hol
     } else {
         0.0
     };
-    let findings = risk::analyze(&profile, &holdings);
+    let mut findings = risk::analyze(&profile, &holdings);
+    let plan = planning::analyze(&profile, &goals, &holdings);
+    let target_total: f64 = holdings.iter().map(|holding| holding.target_pct).sum();
+    if target_total > 0.0 && !(99.0..=101.0).contains(&target_total) {
+        findings.push(crate::models::RiskFinding {
+            level: "medium".into(),
+            title: "目标权重尚未闭合".into(),
+            detail: format!(
+                "当前持仓目标权重合计为 {target_total:.1}%，完成到 100% 后才能计算再平衡动作。"
+            ),
+            action: "检查每项持仓目标权重，避免无意中放大或遗漏风险预算。".into(),
+        });
+    }
+    if plan.committed_monthly > plan.monthly_surplus
+        && plan.committed_monthly > 0.0
+        && (profile.monthly_income > 0.0 || profile.monthly_expense > 0.0)
+    {
+        findings.push(crate::models::RiskFinding {
+            level: "high".into(),
+            title: "目标投入超过月度结余".into(),
+            detail: format!(
+                "计划每月投入 {:.0} 元，但当前月度结余约 {:.0} 元。",
+                plan.committed_monthly, plan.monthly_surplus
+            ),
+            action: "调整目标优先级、期限或月度投入，避免计划依赖新增负债。".into(),
+        });
+    }
     Snapshot {
         profile,
         goals,
@@ -441,6 +510,7 @@ fn build_snapshot(profile: FinancialProfile, goals: Vec<Goal>, holdings: Vec<Hol
         total_value,
         emergency_months,
         concentration_pct,
+        plan,
         updated_at: Utc::now().to_rfc3339(),
     }
 }
@@ -450,6 +520,49 @@ fn validate_non_negative(values: &[f64]) -> AppResult<()> {
         return Err(AppError::Validation(
             "金额、比例和期限必须是有效的非负数".into(),
         ));
+    }
+    Ok(())
+}
+
+fn validate_percentage(value: f64, label: &str) -> AppResult<()> {
+    if !value.is_finite() || !(0.0..=100.0).contains(&value) {
+        return Err(AppError::Validation(format!("{label}必须在 0—100% 之间")));
+    }
+    Ok(())
+}
+
+fn validate_goal(input: &GoalInput) -> AppResult<()> {
+    if input.name.trim().is_empty()
+        || input.target_amount <= 0.0
+        || input.target_date.trim().is_empty()
+    {
+        return Err(AppError::Validation("目标名称、金额和日期为必填项".into()));
+    }
+    validate_non_negative(&[
+        input.target_amount,
+        input.current_amount,
+        input.monthly_contribution,
+    ])?;
+    chrono::NaiveDate::parse_from_str(&input.target_date, "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("目标日期格式无效".into()))?;
+    Ok(())
+}
+
+fn ensure_column(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> AppResult<()> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if !columns.iter().any(|value| value == column) {
+        connection.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )?;
     }
     Ok(())
 }
@@ -488,6 +601,7 @@ mod tests {
             asset_class: "基金".into(),
             market_value: 100_000.0,
             cost_basis: 90_000.0,
+            target_pct: 100.0,
             currency: "CNY".into(),
         })
         .unwrap();
@@ -506,6 +620,7 @@ mod tests {
             asset_class: "基金".into(),
             market_value: 100_000.0,
             cost_basis: 90_000.0,
+            target_pct: 100.0,
             currency: "CNY".into(),
         };
         let created = db.add_holding(&input).unwrap();
@@ -549,5 +664,57 @@ mod tests {
         let record = db.decisions().unwrap().remove(0);
         assert_eq!(record.thesis, "长期风险溢价");
         assert_eq!(record.review.unwrap().process_rating, 4);
+    }
+
+    #[test]
+    fn updates_goal_funding_and_recalculates_projection() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        let input = GoalInput {
+            name: "养老".into(),
+            target_amount: 1_000_000.0,
+            current_amount: 100_000.0,
+            monthly_contribution: 2_000.0,
+            target_date: "2036-12-31".into(),
+            priority: "重要".into(),
+        };
+        let created = db.add_goal(&input).unwrap();
+        let id = created.goals[0].id.clone();
+        let initial_success = created.plan.goal_projections[0].estimated_success_pct;
+        let mut updated = input;
+        updated.monthly_contribution = 8_000.0;
+        let snapshot = db.update_goal(&id, &updated).unwrap();
+        assert_eq!(snapshot.goals[0].monthly_contribution, 8_000.0);
+        assert!(snapshot.plan.goal_projections[0].estimated_success_pct > initial_success);
+        assert!(db.delete_goal(&id).unwrap().goals.is_empty());
+    }
+
+    #[test]
+    fn migrates_existing_goal_and_holding_columns_without_losing_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("legacy.db");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE goals (
+                   id TEXT PRIMARY KEY, name TEXT NOT NULL, target_amount REAL NOT NULL,
+                   target_date TEXT NOT NULL, priority TEXT NOT NULL, created_at TEXT NOT NULL
+                 );
+                 CREATE TABLE holdings (
+                   id TEXT PRIMARY KEY, symbol TEXT NOT NULL, name TEXT NOT NULL,
+                   asset_class TEXT NOT NULL, market_value REAL NOT NULL, cost_basis REAL NOT NULL,
+                   currency TEXT NOT NULL, created_at TEXT NOT NULL
+                 );
+                 INSERT INTO goals VALUES ('g1','养老',1000000,'2036-12-31','重要','2026-01-01');
+                 INSERT INTO holdings VALUES ('h1','IDX','指数','基金',100000,90000,'CNY','2026-01-01');",
+            )
+            .unwrap();
+        drop(connection);
+
+        let db = Database::open(&path).unwrap();
+        let snapshot = db.snapshot().unwrap();
+        assert_eq!(snapshot.goals[0].current_amount, 0.0);
+        assert_eq!(snapshot.goals[0].monthly_contribution, 0.0);
+        assert_eq!(snapshot.holdings[0].target_pct, 0.0);
     }
 }

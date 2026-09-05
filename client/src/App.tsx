@@ -27,6 +27,7 @@ import {
 import {
   deleteModelKey,
   deleteHolding,
+  deleteGoal,
   getDecisions,
   getModelConfig,
   getSnapshot,
@@ -39,6 +40,7 @@ import {
   saveProfile,
   testModelConnection,
   updateHolding,
+  updateGoal,
 } from "./api";
 import type {
   AnalysisResult,
@@ -85,7 +87,11 @@ const emptyProfile: FinancialProfile = {
 };
 
 const emptyHolding: Omit<Holding, "id"> = {
-  symbol: "", name: "", assetClass: "基金", marketValue: 0, costBasis: 0, currency: "CNY",
+  symbol: "", name: "", assetClass: "基金", marketValue: 0, costBasis: 0, targetPct: 0, currency: "CNY",
+};
+
+const emptyGoal: Omit<Goal, "id"> = {
+  name: "", targetAmount: 0, currentAmount: 0, monthlyContribution: 0, targetDate: "", priority: "重要",
 };
 
 function App() {
@@ -246,6 +252,29 @@ function Dashboard({ snapshot, model, navigate }: { snapshot: Snapshot; model: M
         </article>
       </section>
 
+      <section className="planning-grid">
+        <article className="panel">
+          <div className="panel-title"><div><span>目标可行性</span><h2>计划能否覆盖目标</h2></div><Target size={22} className="muted-icon" /></div>
+          {snapshot.plan.goalProjections.length === 0
+            ? <div className="empty">添加目标的已投入金额和月度投入后，这里会生成概率情景。</div>
+            : <div className="projection-list">{snapshot.plan.goalProjections.map((goal) => (
+              <div key={goal.goalId}>
+                <div className="projection-head"><strong>{goal.name}</strong><span className={goal.status}>{goalStatus(goal.status)}</span></div>
+                <div className="projection-bar"><i style={{ width: `${Math.min(100, goal.estimatedSuccessPct)}%` }} /></div>
+                <div className="projection-stats"><span>模拟达成率 <b>{goal.estimatedSuccessPct.toFixed(0)}%</b></span><span>月度缺口 <b>{money.format(goal.monthlyGap)}</b></span><span>剩余 <b>{goal.monthsRemaining} 个月</b></span></div>
+              </div>
+            ))}</div>}
+        </article>
+        <article className="panel">
+          <div className="panel-title"><div><span>风险预算与再平衡</span><h2>风险有没有超出边界</h2></div><ShieldCheck size={22} className="muted-icon" /></div>
+          <div className={`risk-budget ${snapshot.plan.riskStatus}`}><div><span>压力损失估计</span><strong>{snapshot.plan.stressLossPct.toFixed(1)}%</strong></div><ArrowRight size={17} /><div><span>当前风险容量</span><strong>{snapshot.plan.riskCapacityPct.toFixed(1)}%</strong></div><em>{riskStatus(snapshot.plan.riskStatus)}</em></div>
+          {snapshot.plan.rebalancing.length > 0
+            ? <div className="rebalance-list">{snapshot.plan.rebalancing.slice(0, 4).map((item) => <div key={item.holdingId}><span>{item.name}</span><small>{item.currentPct.toFixed(1)}% → {item.targetPct.toFixed(1)}%</small><strong>{item.direction} {money.format(item.amount)}</strong></div>)}</div>
+            : <p className="planning-empty">持仓目标权重合计达到 100%，且偏差超过 3 个百分点时生成再平衡提示。</p>}
+          <p className="assumption-note">{snapshot.plan.assumptions}</p>
+        </article>
+      </section>
+
       <section className="method-strip">
         <div><p className="eyebrow">知衡决策闭环</p><h2>每一次判断，都留下可复盘的证据</h2></div>
         {["财务底座", "目标配置", "独立研究", "仓位决策", "复盘校准"].map((step, index) => (
@@ -254,6 +283,14 @@ function Dashboard({ snapshot, model, navigate }: { snapshot: Snapshot; model: M
       </section>
     </div>
   );
+}
+
+function goalStatus(status: Snapshot["plan"]["goalProjections"][number]["status"]) {
+  return ({ "on-track": "路径较稳", watch: "需要关注", "off-track": "存在缺口", reached: "已经达成", expired: "目标到期" })[status];
+}
+
+function riskStatus(status: Snapshot["plan"]["riskStatus"]) {
+  return ({ within: "边界内", near: "接近上限", over: "超出边界", insufficient: "等待持仓" })[status];
 }
 
 function allocationGradient(allocation: { pct: number }[]) {
@@ -271,7 +308,8 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
   const [profile, setProfile] = useState(snapshot.profile ?? emptyProfile);
   const [holding, setHolding] = useState<Omit<Holding, "id">>(emptyHolding);
   const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
-  const [goal, setGoal] = useState<Omit<Goal, "id">>({ name: "", targetAmount: 0, targetDate: "", priority: "重要" });
+  const [goal, setGoal] = useState<Omit<Goal, "id">>(emptyGoal);
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const updateNumber = (key: keyof FinancialProfile, value: string) => setProfile({ ...profile, [key]: Number(value) });
@@ -311,13 +349,31 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
     } finally { setSaving(false); }
   };
 
-  const addGoal = async () => {
+  const persistGoal = async () => {
     if (!goal.name || goal.targetAmount <= 0 || !goal.targetDate) return;
     setSaving(true);
     try {
-      onUpdate(await saveGoal(goal));
-      setGoal({ name: "", targetAmount: 0, targetDate: "", priority: "重要" });
-      flash("投资目标已保存");
+      const next = editingGoalId ? await updateGoal(editingGoalId, goal) : await saveGoal(goal);
+      onUpdate(next);
+      setGoal(emptyGoal);
+      setEditingGoalId(null);
+      flash(editingGoalId ? "投资目标已更新" : "投资目标已保存");
+    } finally { setSaving(false); }
+  };
+
+  const editGoal = (item: Goal) => {
+    const { id, ...values } = item;
+    setGoal(values);
+    setEditingGoalId(id);
+  };
+
+  const removeGoal = async (item: Goal) => {
+    if (!window.confirm(`确认删除目标“${item.name}”？`)) return;
+    setSaving(true);
+    try {
+      onUpdate(await deleteGoal(item.id));
+      if (editingGoalId === item.id) { setEditingGoalId(null); setGoal(emptyGoal); }
+      flash("投资目标已删除");
     } finally { setSaving(false); }
   };
 
@@ -340,26 +396,31 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
       </section>
 
       <section className="panel form-panel">
-        <div className="panel-title"><div><span>目标账户</span><h2>给资金一个明确任务</h2></div><Target size={21} className="muted-icon" /></div>
-        {snapshot.goals.length > 0 && <div className="goal-list">{snapshot.goals.map((item) => <div key={item.id}><span>{item.priority}</span><strong>{item.name}</strong><em>{money.format(item.targetAmount)} · {item.targetDate}</em></div>)}</div>}
+        <div className="panel-title"><div><span>目标账户</span><h2>{editingGoalId ? "修改目标计划" : "给资金一个明确任务"}</h2></div><Target size={21} className="muted-icon" /></div>
+        {snapshot.goals.length > 0 && <div className="goal-list">{snapshot.goals.map((item) => {
+          const projection = snapshot.plan.goalProjections.find((value) => value.goalId === item.id);
+          return <div className={editingGoalId === item.id ? "editing" : ""} key={item.id}><span>{item.priority}</span><strong>{item.name}<small>已投入 {money.format(item.currentAmount)} · 每月 {money.format(item.monthlyContribution)}</small></strong><em>{projection ? `模拟达成 ${projection.estimatedSuccessPct.toFixed(0)}%` : item.targetDate}</em><span className="row-actions"><button aria-label="编辑目标" onClick={() => editGoal(item)}><Edit3 size={14} /></button><button aria-label="删除目标" onClick={() => removeGoal(item)}><Trash2 size={14} /></button></span></div>;
+        })}</div>}
         <div className="form-grid compact-grid">
           <label><span>目标名称</span><input value={goal.name} onChange={(e) => setGoal({ ...goal, name: e.target.value })} placeholder="例如：长期养老账户" /></label>
           <NumberField label="目标金额" value={goal.targetAmount} onChange={(v) => setGoal({ ...goal, targetAmount: Number(v) })} prefix="¥" />
+          <NumberField label="已经投入" value={goal.currentAmount} onChange={(v) => setGoal({ ...goal, currentAmount: Number(v) })} prefix="¥" />
+          <NumberField label="计划每月投入" value={goal.monthlyContribution} onChange={(v) => setGoal({ ...goal, monthlyContribution: Number(v) })} prefix="¥" />
           <label><span>目标日期</span><input type="date" value={goal.targetDate} onChange={(e) => setGoal({ ...goal, targetDate: e.target.value })} /></label>
           <label><span>目标优先级</span><select value={goal.priority} onChange={(e) => setGoal({ ...goal, priority: e.target.value as Goal["priority"] })}><option>刚性</option><option>重要</option><option>弹性</option></select></label>
         </div>
-        <div className="form-actions"><p>目标决定期限，期限决定可以承担的波动。</p><button className="secondary" onClick={addGoal} disabled={saving || !goal.name}><Plus size={16} />添加目标</button></div>
+        <div className="form-actions">{editingGoalId ? <button className="text-button" onClick={() => { setEditingGoalId(null); setGoal(emptyGoal); }}>取消修改</button> : <p>目标决定期限，期限决定可以承担的波动。</p>}<button className="secondary" onClick={persistGoal} disabled={saving || !goal.name}>{editingGoalId ? <Save size={16} /> : <Plus size={16} />}{editingGoalId ? "保存目标" : "添加目标"}</button></div>
       </section>
 
       <section className="panel form-panel">
         <div className="panel-title"><div><span>组合输入</span><h2>{editingHoldingId ? "修改资产" : "管理资产组合"}</h2></div><CircleDollarSign size={21} className="muted-icon" /></div>
         {snapshot.holdings.length > 0 && <div className="holding-list">
-          <div className="holding-head"><span>资产</span><span>类别</span><span>市值</span><span>账面变化</span><span /></div>
+          <div className="holding-head"><span>资产</span><span>类别</span><span>市值</span><span>目标权重</span><span>账面变化</span><span /></div>
           {snapshot.holdings.map((item) => {
             const pnlPct = item.costBasis > 0 ? (item.marketValue - item.costBasis) / item.costBasis * 100 : 0;
             return <div className={editingHoldingId === item.id ? "editing" : ""} key={item.id}>
               <strong>{item.name}<small>{item.symbol || "未填写代码"}</small></strong>
-              <span>{item.assetClass}</span><span>{money.format(item.marketValue)}</span>
+              <span>{item.assetClass}</span><span>{money.format(item.marketValue)}</span><span>{item.targetPct ? `${item.targetPct.toFixed(1)}%` : "未设置"}</span>
               <span className={pnlPct >= 0 ? "gain" : "loss"}>{pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%</span>
               <span className="row-actions"><button aria-label="编辑资产" onClick={() => editHolding(item)}><Edit3 size={14} /></button><button aria-label="删除资产" onClick={() => removeHolding(item)}><Trash2 size={14} /></button></span>
             </div>;
@@ -371,6 +432,7 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
           <label><span>资产类别</span><select value={holding.assetClass} onChange={(e) => setHolding({ ...holding, assetClass: e.target.value as Holding["assetClass"] })}>{["现金", "债券", "股票", "基金", "黄金", "其他"].map((v) => <option key={v}>{v}</option>)}</select></label>
           <NumberField label="当前市值" value={holding.marketValue} onChange={(v) => setHolding({ ...holding, marketValue: Number(v) })} prefix="¥" />
           <NumberField label="累计成本" value={holding.costBasis} onChange={(v) => setHolding({ ...holding, costBasis: Number(v) })} prefix="¥" />
+          <NumberField label="目标权重" value={holding.targetPct} onChange={(v) => setHolding({ ...holding, targetPct: Number(v) })} suffix="%" />
         </div>
         <div className="form-actions">
           {editingHoldingId ? <button className="text-button" onClick={() => { setEditingHoldingId(null); setHolding(emptyHolding); }}>取消修改</button> : <span />}
