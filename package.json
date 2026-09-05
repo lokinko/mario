@@ -1,28 +1,17 @@
 {
-  "name": "compass-invest",
+  "name": "compass-invest-workspace",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "tauri": "tauri",
-    "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
-  },
-  "dependencies": {
-    "@tauri-apps/api": "^2.8.0",
-    "lucide-react": "^0.468.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "install:all": "npm install --ignore-scripts && npm install --prefix client --ignore-scripts",
+    "dev": "concurrently -k -n server,client -c green,blue \"cargo run --manifest-path server/Cargo.toml\" \"npm run dev --prefix client\"",
+    "test": "bash scripts/test.sh",
+    "desktop:dev": "bash scripts/desktop.sh debug",
+    "desktop:build": "bash scripts/desktop.sh release",
+    "sidecar:debug": "bash scripts/prepare-sidecar.sh debug",
+    "sidecar:release": "bash scripts/prepare-sidecar.sh release"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.8.4",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "~5.7.2",
-    "vite": "^6.0.5"
+    "concurrently": "^9.1.2"
   }
 }

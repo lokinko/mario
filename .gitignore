@@ -1,8 +1,13 @@
 node_modules
 dist
-src-tauri/target
+client/src-tauri/target
+client/src-tauri/binaries
+client/src-tauri/gen
+server/target
 .DS_Store
 *.log
 .env
 .env.*
 !/.env.example
+/work
+/outputs
