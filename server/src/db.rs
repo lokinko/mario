@@ -10,7 +10,8 @@ use crate::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
         DecisionReviewInput, FinancialProfile, Goal, GoalInput, Holding, HoldingInput,
         InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem, ModelConfig,
-        Snapshot, SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
+        ResearchEvidence, ResearchEvidenceInput, Snapshot, SystemReviewInput, SystemReviewRecord,
+        SystemReviewSnapshot,
     },
     planning, risk,
 };
@@ -106,6 +107,21 @@ impl Database {
                changed_at TEXT NOT NULL,
                PRIMARY KEY(rule_id, revision),
                FOREIGN KEY(rule_id) REFERENCES investment_rules(id) ON DELETE CASCADE
+             );
+             CREATE TABLE IF NOT EXISTS research_evidence (
+               id TEXT PRIMARY KEY,
+               asset_name TEXT NOT NULL,
+               title TEXT NOT NULL,
+               publisher TEXT NOT NULL,
+               source_url TEXT NOT NULL,
+               source_tier TEXT NOT NULL,
+               evidence_type TEXT NOT NULL,
+               stance TEXT NOT NULL,
+               as_of_date TEXT NOT NULL,
+               claim TEXT NOT NULL,
+               notes TEXT NOT NULL,
+               active INTEGER NOT NULL,
+               captured_at TEXT NOT NULL
              );
              CREATE TABLE IF NOT EXISTS settings (
                key TEXT PRIMARY KEY,
@@ -681,6 +697,97 @@ impl Database {
         Ok(reviews)
     }
 
+    pub fn research_evidence(&self) -> AppResult<Vec<ResearchEvidence>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT id, asset_name, title, publisher, source_url, source_tier, evidence_type,
+                    stance, as_of_date, claim, notes, active, captured_at
+             FROM research_evidence
+             ORDER BY active DESC, as_of_date DESC, captured_at DESC, id ASC",
+        )?;
+        let evidence = statement
+            .query_map([], |row| {
+                Ok(ResearchEvidence {
+                    id: row.get(0)?,
+                    asset_name: row.get(1)?,
+                    title: row.get(2)?,
+                    publisher: row.get(3)?,
+                    source_url: row.get(4)?,
+                    source_tier: row.get(5)?,
+                    evidence_type: row.get(6)?,
+                    stance: row.get(7)?,
+                    as_of_date: row.get(8)?,
+                    claim: row.get(9)?,
+                    notes: row.get(10)?,
+                    active: row.get::<_, i64>(11)? != 0,
+                    captured_at: row.get(12)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(evidence)
+    }
+
+    pub fn add_research_evidence(
+        &self,
+        input: &ResearchEvidenceInput,
+    ) -> AppResult<ResearchEvidence> {
+        validate_research_evidence(input)?;
+        let evidence = ResearchEvidence {
+            id: Uuid::new_v4().to_string(),
+            asset_name: input.asset_name.trim().into(),
+            title: input.title.trim().into(),
+            publisher: input.publisher.trim().into(),
+            source_url: input.source_url.trim().into(),
+            source_tier: input.source_tier.clone(),
+            evidence_type: input.evidence_type.clone(),
+            stance: input.stance.clone(),
+            as_of_date: input.as_of_date.clone(),
+            claim: input.claim.trim().into(),
+            notes: input.notes.trim().into(),
+            active: true,
+            captured_at: Utc::now().to_rfc3339(),
+        };
+        self.conn()?.execute(
+            "INSERT INTO research_evidence
+             (id, asset_name, title, publisher, source_url, source_tier, evidence_type, stance,
+              as_of_date, claim, notes, active, captured_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,1,?12)",
+            params![
+                evidence.id,
+                evidence.asset_name,
+                evidence.title,
+                evidence.publisher,
+                evidence.source_url,
+                evidence.source_tier,
+                evidence.evidence_type,
+                evidence.stance,
+                evidence.as_of_date,
+                evidence.claim,
+                evidence.notes,
+                evidence.captured_at
+            ],
+        )?;
+        Ok(evidence)
+    }
+
+    pub fn set_research_evidence_status(
+        &self,
+        id: &str,
+        active: bool,
+    ) -> AppResult<ResearchEvidence> {
+        let affected = self.conn()?.execute(
+            "UPDATE research_evidence SET active=?2 WHERE id=?1",
+            params![id, i64::from(active)],
+        )?;
+        if affected == 0 {
+            return Err(AppError::Validation("找不到要更新的研究证据".into()));
+        }
+        self.research_evidence()?
+            .into_iter()
+            .find(|item| item.id == id)
+            .ok_or_else(|| AppError::Validation("找不到要更新的研究证据".into()))
+    }
+
     pub fn model_config(&self) -> AppResult<ModelConfig> {
         let conn = self.conn()?;
         let value = |key: &str, fallback: &str| -> AppResult<String> {
@@ -939,6 +1046,66 @@ fn validate_system_review(input: &SystemReviewInput) -> AppResult<()> {
     Ok(())
 }
 
+fn validate_research_evidence(input: &ResearchEvidenceInput) -> AppResult<()> {
+    if input.asset_name.trim().is_empty()
+        || input.title.trim().is_empty()
+        || input.publisher.trim().is_empty()
+        || input.source_url.trim().is_empty()
+        || input.as_of_date.trim().is_empty()
+        || input.claim.trim().is_empty()
+    {
+        return Err(AppError::Validation(
+            "资产、标题、发布方、来源链接、资料日期和证据摘要均为必填项".into(),
+        ));
+    }
+    if !matches!(
+        input.source_tier.as_str(),
+        "一手来源" | "二手研究" | "媒体报道"
+    ) {
+        return Err(AppError::Validation("未知的来源层级".into()));
+    }
+    if !matches!(
+        input.evidence_type.as_str(),
+        "公司披露" | "监管文件" | "数据发布" | "研究报告" | "新闻" | "其他"
+    ) {
+        return Err(AppError::Validation("未知的证据类型".into()));
+    }
+    if !matches!(input.stance.as_str(), "支持" | "反驳" | "背景") {
+        return Err(AppError::Validation("未知的证据立场".into()));
+    }
+    let as_of_date = chrono::NaiveDate::parse_from_str(&input.as_of_date, "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("资料日期格式无效".into()))?;
+    if as_of_date > Utc::now().date_naive() {
+        return Err(AppError::Validation("资料日期不能晚于今天".into()));
+    }
+    let source = reqwest::Url::parse(input.source_url.trim())
+        .map_err(|_| AppError::Validation("来源链接格式无效".into()))?;
+    if source.scheme() != "https"
+        || source.host_str().is_none()
+        || !source.username().is_empty()
+        || source.password().is_some()
+    {
+        return Err(AppError::Validation(
+            "研究证据必须使用有效的 HTTPS 来源链接".into(),
+        ));
+    }
+    for (label, value, limit) in [
+        ("资产或主题", input.asset_name.as_str(), 120),
+        ("资料标题", input.title.as_str(), 300),
+        ("发布方", input.publisher.as_str(), 200),
+        ("来源链接", input.source_url.as_str(), 2_048),
+        ("证据摘要", input.claim.as_str(), 4_000),
+        ("限制与待核实项", input.notes.as_str(), 4_000),
+    ] {
+        if value.chars().count() > limit {
+            return Err(AppError::Validation(format!(
+                "{label}不能超过 {limit} 个字符"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn store_rule_revision(transaction: &Transaction<'_>, rule: &InvestmentRule) -> AppResult<()> {
     transaction.execute(
         "INSERT INTO investment_rule_revisions (rule_id, revision, payload, changed_at)
@@ -1163,6 +1330,8 @@ mod tests {
                 payload_bytes: 512,
                 context_revision: "ctx-test".into(),
                 memory_items_used: 2,
+                evidence_items_used: 0,
+                citations_required: false,
                 external_data_used: false,
                 api_key_sent: false,
             },
@@ -1174,6 +1343,26 @@ mod tests {
         let audit = history[0].transparency.as_ref().unwrap();
         assert_eq!(audit.memory_items_used, 2);
         assert!(!audit.api_key_sent);
+    }
+
+    #[test]
+    fn reads_analysis_audit_created_before_evidence_fields_existed() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        db.conn()
+            .unwrap()
+            .execute(
+                "INSERT INTO analyses (id, question, answer, audit, created_at)
+                 VALUES ('legacy','旧问题','旧回答',?1,'2026-01-01')",
+                [r#"{"provider":"mock","model":"old","contextGroups":[],"payloadBytes":1,"contextRevision":"ctx-old","memoryItemsUsed":0,"externalDataUsed":false,"apiKeySent":false}"#],
+            )
+            .unwrap();
+        let audit = db.analysis_history().unwrap()[0]
+            .transparency
+            .clone()
+            .unwrap();
+        assert_eq!(audit.evidence_items_used, 0);
+        assert!(!audit.citations_required);
     }
 
     #[test]
@@ -1259,5 +1448,49 @@ mod tests {
         assert_eq!(stored.id, review.id);
         assert_eq!(stored.snapshot.portfolio_value, 100_000.0);
         assert_eq!(stored.snapshot.active_rules, 1);
+    }
+
+    #[test]
+    fn stores_immutable_research_evidence_and_allows_archiving() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        let created = db
+            .add_research_evidence(&ResearchEvidenceInput {
+                asset_name: "全球指数".into(),
+                title: "基金年度报告".into(),
+                publisher: "基金管理人".into(),
+                source_url: "https://example.com/annual-report".into(),
+                source_tier: "一手来源".into(),
+                evidence_type: "公司披露".into(),
+                stance: "背景".into(),
+                as_of_date: "2026-06-30".into(),
+                claim: "报告披露了费用与跟踪误差".into(),
+                notes: "复核费用变化".into(),
+            })
+            .unwrap();
+        let archived = db.set_research_evidence_status(&created.id, false).unwrap();
+
+        assert!(!archived.active);
+        assert_eq!(archived.claim, created.claim);
+        assert_eq!(db.research_evidence().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn rejects_non_https_research_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        let result = db.add_research_evidence(&ResearchEvidenceInput {
+            asset_name: "指数".into(),
+            title: "未知资料".into(),
+            publisher: "未知".into(),
+            source_url: "http://example.com/report".into(),
+            source_tier: "媒体报道".into(),
+            evidence_type: "新闻".into(),
+            stance: "支持".into(),
+            as_of_date: "2026-06-30".into(),
+            claim: "未经验证的摘要".into(),
+            notes: String::new(),
+        });
+        assert!(matches!(result, Err(AppError::Validation(_))));
     }
 }

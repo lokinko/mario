@@ -13,6 +13,8 @@ import type {
   InvestmentRuleRevision,
   ModelConfig,
   ModelConnectionTest,
+  ResearchEvidence,
+  ResearchEvidenceInput,
   Snapshot,
   SystemReviewInput,
   SystemReviewRecord,
@@ -142,4 +144,16 @@ export async function getSystemReviews(): Promise<SystemReviewRecord[]> {
 
 export async function saveSystemReview(review: SystemReviewInput): Promise<SystemReviewRecord> {
   return httpRequest<SystemReviewRecord>("/system-reviews", { method: "POST", body: JSON.stringify(review) });
+}
+
+export async function getResearchEvidence(): Promise<ResearchEvidence[]> {
+  return httpRequest<ResearchEvidence[]>("/research-evidence");
+}
+
+export async function saveResearchEvidence(evidence: ResearchEvidenceInput): Promise<ResearchEvidence> {
+  return httpRequest<ResearchEvidence>("/research-evidence", { method: "POST", body: JSON.stringify(evidence) });
+}
+
+export async function setResearchEvidenceStatus(id: string, active: boolean): Promise<ResearchEvidence> {
+  return httpRequest<ResearchEvidence>(`/research-evidence/${encodeURIComponent(id)}/status`, { method: "PUT", body: JSON.stringify({ active }) });
 }

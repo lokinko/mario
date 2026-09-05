@@ -2,6 +2,7 @@ mod ai;
 mod context;
 mod db;
 mod error;
+mod evidence;
 mod memory;
 mod models;
 mod planning;
@@ -19,12 +20,14 @@ use axum::{
 };
 use db::Database;
 use error::{AppError, AppResult};
+use evidence::{EvidenceRetriever, LexicalEvidenceRetriever};
 use memory::{LexicalMemoryRetriever, MemoryRetriever};
 use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
     DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, InvestmentRule,
     InvestmentRuleInput, InvestmentRuleRevision, ModelConfig, ModelConfigInput,
-    ModelConnectionTest, Snapshot, SystemReviewInput, SystemReviewRecord,
+    ModelConnectionTest, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
+    Snapshot, SystemReviewInput, SystemReviewRecord,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -86,6 +89,14 @@ async fn main() -> AppResult<()> {
         .route(
             "/api/system-reviews",
             get(system_reviews).post(save_system_review),
+        )
+        .route(
+            "/api/research-evidence",
+            get(research_evidence).post(add_research_evidence),
+        )
+        .route(
+            "/api/research-evidence/{id}/status",
+            put(set_research_evidence_status),
         )
         .route(
             "/api/model-config",
@@ -215,6 +226,26 @@ async fn save_system_review(
 ) -> AppResult<Json<SystemReviewRecord>> {
     Ok(Json(state.db.save_system_review(&input)?))
 }
+async fn research_evidence(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<Vec<ResearchEvidence>>> {
+    Ok(Json(state.db.research_evidence()?))
+}
+async fn add_research_evidence(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<ResearchEvidenceInput>,
+) -> AppResult<Json<ResearchEvidence>> {
+    Ok(Json(state.db.add_research_evidence(&input)?))
+}
+async fn set_research_evidence_status(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(input): Json<ResearchEvidenceStatusInput>,
+) -> AppResult<Json<ResearchEvidence>> {
+    Ok(Json(
+        state.db.set_research_evidence_status(&id, input.active)?,
+    ))
+}
 async fn model_config(State(state): State<Arc<AppState>>) -> AppResult<Json<ModelConfig>> {
     Ok(Json(state.db.model_config()?))
 }
@@ -280,8 +311,15 @@ async fn run_analysis(
         .into_iter()
         .take(8)
         .collect::<Vec<_>>();
-    let built_context =
-        context::ContextBuilder::build(&request, &snapshot, &rules, &system_reviews, &memories);
+    let evidence_candidates = relevant_evidence(&state.db, &request, &snapshot)?;
+    let built_context = context::ContextBuilder::build(
+        &request,
+        &snapshot,
+        &rules,
+        &system_reviews,
+        &evidence_candidates,
+        &memories,
+    );
     if request.preview_revision.as_deref() != Some(built_context.revision.as_str()) {
         return Err(AppError::Validation(
             "本地数据或上下文选择已变化，请重新预览后再确认分析".into(),
@@ -317,14 +355,22 @@ async fn preview_analysis(
         .into_iter()
         .take(8)
         .collect::<Vec<_>>();
-    let built_context =
-        context::ContextBuilder::build(&request, &snapshot, &rules, &system_reviews, &memories);
+    let evidence_candidates = relevant_evidence(&state.db, &request, &snapshot)?;
+    let built_context = context::ContextBuilder::build(
+        &request,
+        &snapshot,
+        &rules,
+        &system_reviews,
+        &evidence_candidates,
+        &memories,
+    );
     Ok(Json(context::ContextBuilder::preview(
         &request,
         built_context,
         config.provider,
         config.model,
         memories,
+        evidence_candidates,
     )))
 }
 
@@ -340,6 +386,24 @@ fn validate_analysis_request(request: &AnalysisRequest) -> AppResult<()> {
         return Err(AppError::Validation("未知的分析工作流".into()));
     }
     Ok(())
+}
+
+fn relevant_evidence(
+    db: &Database,
+    request: &AnalysisRequest,
+    snapshot: &Snapshot,
+) -> AppResult<Vec<ResearchEvidence>> {
+    if !request.context_selection.include_evidence {
+        return Ok(Vec::new());
+    }
+    let holdings = snapshot
+        .holdings
+        .iter()
+        .map(|holding| format!("{} {}", holding.name, holding.symbol))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let query = format!("{} {}", request.question, holdings);
+    Ok(LexicalEvidenceRetriever.search(&query, &db.research_evidence()?, 12))
 }
 
 fn data_directory() -> AppResult<PathBuf> {

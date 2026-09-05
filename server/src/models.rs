@@ -198,6 +198,8 @@ pub struct ContextSelection {
     pub include_rules: bool,
     #[serde(default = "enabled")]
     pub include_system_reviews: bool,
+    #[serde(default = "enabled")]
+    pub include_evidence: bool,
 }
 
 impl Default for ContextSelection {
@@ -210,6 +212,7 @@ impl Default for ContextSelection {
             include_risk_findings: true,
             include_rules: true,
             include_system_reviews: true,
+            include_evidence: true,
         }
     }
 }
@@ -237,6 +240,7 @@ pub struct AnalysisPreview {
     pub workflow: String,
     pub groups: Vec<ContextGroup>,
     pub memory_candidates: Vec<MemoryItem>,
+    pub evidence_candidates: Vec<ResearchEvidence>,
     pub payload: serde_json::Value,
     pub payload_bytes: usize,
     pub context_revision: String,
@@ -255,6 +259,10 @@ pub struct AnalysisTransparency {
     pub payload_bytes: usize,
     pub context_revision: String,
     pub memory_items_used: usize,
+    #[serde(default)]
+    pub evidence_items_used: usize,
+    #[serde(default)]
+    pub citations_required: bool,
     pub external_data_used: bool,
     pub api_key_sent: bool,
 }
@@ -422,4 +430,43 @@ pub struct SystemReviewRecord {
     pub next_review_date: String,
     pub snapshot: SystemReviewSnapshot,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchEvidenceInput {
+    pub asset_name: String,
+    pub title: String,
+    pub publisher: String,
+    pub source_url: String,
+    pub source_tier: String,
+    pub evidence_type: String,
+    pub stance: String,
+    pub as_of_date: String,
+    pub claim: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchEvidence {
+    pub id: String,
+    pub asset_name: String,
+    pub title: String,
+    pub publisher: String,
+    pub source_url: String,
+    pub source_tier: String,
+    pub evidence_type: String,
+    pub stance: String,
+    pub as_of_date: String,
+    pub claim: String,
+    pub notes: String,
+    pub active: bool,
+    pub captured_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchEvidenceStatusInput {
+    pub active: bool,
 }

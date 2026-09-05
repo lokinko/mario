@@ -27,6 +27,9 @@ impl<'a> InvestmentOrchestrator<'a> {
     ) -> AppResult<AnalysisResult> {
         let context = serde_json::to_string_pretty(&built_context.payload)?;
         let mut stages = vec!["确定性风险检查".into(), "构建最小必要上下文".into()];
+        if built_context.evidence_items > 0 {
+            stages.push("冻结带来源研究证据".into());
+        }
 
         if request.workflow == "quick" {
             let answer = self.provider.complete(vec![
@@ -153,7 +156,9 @@ fn result(
                 + serde_json::to_vec(memory_items).map_or(0, |bytes| bytes.len()),
             context_revision: built_context.revision.clone(),
             memory_items_used: memory_items.len(),
-            external_data_used: false,
+            evidence_items_used: built_context.evidence_items,
+            citations_required: built_context.evidence_items > 0,
+            external_data_used: built_context.evidence_items > 0,
             api_key_sent: false,
         },
         created_at: chrono::Utc::now().to_rfc3339(),
@@ -173,7 +178,8 @@ mod tests {
         error::AppResult,
         memory::LexicalMemoryRetriever,
         models::{
-            ContextSelection, FinancialProfile, Holding, PortfolioPlan, RiskFinding, Snapshot,
+            ContextSelection, FinancialProfile, Holding, PortfolioPlan, ResearchEvidence,
+            RiskFinding, Snapshot,
         },
     };
 
@@ -264,7 +270,22 @@ mod tests {
             preview_revision: None,
         };
         let snapshot = snapshot();
-        let context = ContextBuilder::build(&request, &snapshot, &[], &[], &memory);
+        let evidence = vec![ResearchEvidence {
+            id: "e1".into(),
+            asset_name: "指数".into(),
+            title: "指数方法说明".into(),
+            publisher: "指数公司".into(),
+            source_url: "https://example.com/index".into(),
+            source_tier: "一手来源".into(),
+            evidence_type: "公司披露".into(),
+            stance: "背景".into(),
+            as_of_date: "2026-01-01".into(),
+            claim: "指数采用公开方法编制".into(),
+            notes: String::new(),
+            active: true,
+            captured_at: "2026-01-01".into(),
+        }];
+        let context = ContextBuilder::build(&request, &snapshot, &[], &[], &evidence, &memory);
         let output = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &memory)
             .await
@@ -280,6 +301,9 @@ mod tests {
             .any(|stage| stage.contains("独立纠错反思")));
         assert!(output.answer.contains("最终"));
         assert_eq!(output.transparency.memory_items_used, 1);
+        assert_eq!(output.transparency.evidence_items_used, 1);
+        assert!(output.transparency.citations_required);
+        assert!(output.transparency.external_data_used);
         assert!(!output.transparency.api_key_sent);
     }
 }

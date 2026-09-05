@@ -19,6 +19,8 @@
 - 决策复盘：原始判断不可变，复盘单独记录结果、过程评分与经验修正
 - 周期系统复盘：冻结当时组合、目标、风险、决策完成度与纪律执行记录
 - 个人投资规则：从复盘沉淀触发条件与行动，任何修订都保留历史版本
+- 研究证据账本：记录来源层级、HTTPS 链接、资料日期、支持/反驳关系与限制
+- 证据检索与引用：按问题和组合筛选，发送前冻结，要求 AI 只引用实际进入载荷的来源
 - 简化概率校准：使用历史置信度与逻辑结果训练概率意识，不用单笔盈亏评价能力
 
 ## 仓库结构
@@ -31,12 +33,13 @@ server/                 可独立启动的本地 HTTP 服务
   src/ai/               模型 Provider 与投资分析编排器
   src/db.rs             SQLite 持久化
   src/memory.rs         可替换的记忆检索接口
+  src/evidence.rs       可替换的研究证据检索接口
   src/risk.rs           不依赖大模型的风险规则
 docs/                   架构与投资方法论
 scripts/                sidecar 构建脚本
 ```
 
-产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[投资方法论](docs/methodology.md)、[复盘与规则闭环](docs/review-and-rules.md)、[确定性规划模型](docs/planning-model.md) 与 [AI 数据边界](docs/ai-data-boundary.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[确定性规划模型](docs/planning-model.md) 与 [AI 数据边界](docs/ai-data-boundary.md)。
 
 ## 本地开发
 

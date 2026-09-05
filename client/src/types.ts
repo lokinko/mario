@@ -118,6 +118,7 @@ export interface ContextSelection {
   includeRiskFindings: boolean;
   includeRules: boolean;
   includeSystemReviews: boolean;
+  includeEvidence: boolean;
 }
 
 export interface ContextGroup {
@@ -135,6 +136,7 @@ export interface AnalysisPreview {
   workflow: "quick" | "deep";
   groups: ContextGroup[];
   memoryCandidates: MemoryCandidate[];
+  evidenceCandidates: ResearchEvidence[];
   payload: Record<string, unknown>;
   payloadBytes: number;
   contextRevision: string;
@@ -159,6 +161,8 @@ export interface AnalysisTransparency {
   payloadBytes: number;
   contextRevision: string;
   memoryItemsUsed: number;
+  evidenceItemsUsed: number;
+  citationsRequired: boolean;
   externalDataUsed: boolean;
   apiKeySent: boolean;
 }
@@ -249,4 +253,23 @@ export interface SystemReviewRecord extends SystemReviewInput {
   id: string;
   snapshot: SystemReviewSnapshot;
   createdAt: string;
+}
+
+export interface ResearchEvidenceInput {
+  assetName: string;
+  title: string;
+  publisher: string;
+  sourceUrl: string;
+  sourceTier: "一手来源" | "二手研究" | "媒体报道";
+  evidenceType: "公司披露" | "监管文件" | "数据发布" | "研究报告" | "新闻" | "其他";
+  stance: "支持" | "反驳" | "背景";
+  asOfDate: string;
+  claim: string;
+  notes: string;
+}
+
+export interface ResearchEvidence extends ResearchEvidenceInput {
+  id: string;
+  active: boolean;
+  capturedAt: string;
 }
