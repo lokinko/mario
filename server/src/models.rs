@@ -263,8 +263,50 @@ pub struct AnalysisTransparency {
     pub evidence_items_used: usize,
     #[serde(default)]
     pub citations_required: bool,
+    #[serde(default)]
+    pub model_calls: usize,
+    #[serde(default)]
+    pub total_latency_ms: u64,
+    #[serde(default)]
+    pub input_tokens: Option<u64>,
+    #[serde(default)]
+    pub output_tokens: Option<u64>,
     pub external_data_used: bool,
     pub api_key_sent: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisWorkflowTrace {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub research_plan: Option<String>,
+    #[serde(default)]
+    pub alternatives: Vec<AnalysisAlternative>,
+    #[serde(default)]
+    pub critique: Option<String>,
+    #[serde(default)]
+    pub calls: Vec<ModelCallTrace>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisAlternative {
+    pub id: String,
+    pub label: String,
+    pub lens: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCallTrace {
+    pub stage: String,
+    pub label: String,
+    pub latency_ms: u64,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -274,6 +316,8 @@ pub struct AnalysisResult {
     pub answer: String,
     pub stages: Vec<String>,
     pub transparency: AnalysisTransparency,
+    #[serde(default)]
+    pub workflow_trace: AnalysisWorkflowTrace,
     pub created_at: String,
     pub disclaimer: String,
 }
@@ -285,6 +329,8 @@ pub struct AnalysisHistoryItem {
     pub question: String,
     pub created_at: String,
     pub transparency: Option<AnalysisTransparency>,
+    #[serde(default)]
+    pub workflow_trace: Option<AnalysisWorkflowTrace>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -78,6 +78,7 @@ impl Database {
                question TEXT NOT NULL,
                answer TEXT NOT NULL,
                audit TEXT,
+               trace TEXT,
                created_at TEXT NOT NULL
              );
              CREATE TABLE IF NOT EXISTS system_reviews (
@@ -135,6 +136,7 @@ impl Database {
             "REAL NOT NULL DEFAULT 0",
         )?;
         ensure_column(&connection, "analyses", "audit", "TEXT")?;
+        ensure_column(&connection, "analyses", "trace", "TEXT")?;
         ensure_column(
             &connection,
             "goals",
@@ -868,12 +870,13 @@ impl Database {
 
     pub fn save_analysis(&self, result: &AnalysisResult, question: &str) -> AppResult<()> {
         self.conn()?.execute(
-            "INSERT INTO analyses (id, question, answer, audit, created_at) VALUES (?1,?2,?3,?4,?5)",
+            "INSERT INTO analyses (id, question, answer, audit, trace, created_at) VALUES (?1,?2,?3,?4,?5,?6)",
             params![
                 result.id,
                 question,
                 result.answer,
                 serde_json::to_string(&result.transparency)?,
+                serde_json::to_string(&result.workflow_trace)?,
                 result.created_at
             ],
         )?;
@@ -883,7 +886,7 @@ impl Database {
     pub fn analysis_history(&self) -> AppResult<Vec<AnalysisHistoryItem>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT id, question, created_at, audit FROM analyses ORDER BY created_at DESC LIMIT 50",
+            "SELECT id, question, created_at, audit, trace FROM analyses ORDER BY created_at DESC LIMIT 50",
         )?;
         let rows = statement.query_map([], |row| {
             Ok((
@@ -891,16 +894,20 @@ impl Database {
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
             ))
         })?;
         let mut history = Vec::new();
         for row in rows {
-            let (id, question, created_at, audit) = row?;
+            let (id, question, created_at, audit, trace) = row?;
             history.push(AnalysisHistoryItem {
                 id,
                 question,
                 created_at,
                 transparency: audit
+                    .as_deref()
+                    .and_then(|value| serde_json::from_str(value).ok()),
+                workflow_trace: trace
                     .as_deref()
                     .and_then(|value| serde_json::from_str(value).ok()),
             });
@@ -1332,8 +1339,16 @@ mod tests {
                 memory_items_used: 2,
                 evidence_items_used: 0,
                 citations_required: false,
+                model_calls: 3,
+                total_latency_ms: 1200,
+                input_tokens: Some(400),
+                output_tokens: Some(100),
                 external_data_used: false,
                 api_key_sent: false,
+            },
+            workflow_trace: crate::models::AnalysisWorkflowTrace {
+                version: "investment-workflow-v2".into(),
+                ..crate::models::AnalysisWorkflowTrace::default()
             },
             created_at: "2026-01-01T00:00:00Z".into(),
             disclaimer: "测试".into(),
@@ -1342,7 +1357,12 @@ mod tests {
         let history = db.analysis_history().unwrap();
         let audit = history[0].transparency.as_ref().unwrap();
         assert_eq!(audit.memory_items_used, 2);
+        assert_eq!(audit.model_calls, 3);
         assert!(!audit.api_key_sent);
+        assert_eq!(
+            history[0].workflow_trace.as_ref().unwrap().version,
+            "investment-workflow-v2"
+        );
     }
 
     #[test]
@@ -1363,6 +1383,42 @@ mod tests {
             .unwrap();
         assert_eq!(audit.evidence_items_used, 0);
         assert!(!audit.citations_required);
+        assert_eq!(audit.model_calls, 0);
+        assert!(db.analysis_history().unwrap()[0].workflow_trace.is_none());
+    }
+
+    #[test]
+    fn adds_workflow_trace_column_to_an_existing_analysis_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("legacy.db");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE analyses (
+                   id TEXT PRIMARY KEY,
+                   question TEXT NOT NULL,
+                   answer TEXT NOT NULL,
+                   audit TEXT,
+                   created_at TEXT NOT NULL
+                 );
+                 INSERT INTO analyses (id,question,answer,audit,created_at)
+                 VALUES ('legacy','旧问题','旧回答',NULL,'2026-01-01');",
+            )
+            .unwrap();
+        drop(connection);
+
+        let db = Database::open(&path).unwrap();
+        let trace_columns: i64 = db
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('analyses') WHERE name = 'trace'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(trace_columns, 1);
+        assert!(db.analysis_history().unwrap()[0].workflow_trace.is_none());
     }
 
     #[test]

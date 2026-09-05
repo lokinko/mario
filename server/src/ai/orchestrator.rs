@@ -1,21 +1,41 @@
-use super::{ChatMessage, ModelProvider};
+use std::time::Instant;
+
+use super::{
+    workflow::{AnalysisWorkflow, CandidateContext, InvestmentWorkflowV2, StagePrompt},
+    ModelProvider,
+};
 use crate::{
-    context::{BuiltContext, INVESTMENT_SYSTEM_POLICY},
+    context::BuiltContext,
     error::AppResult,
     memory::MemoryRetriever,
-    models::{AnalysisRequest, AnalysisResult, AnalysisTransparency, MemoryItem},
+    models::{
+        AnalysisAlternative, AnalysisRequest, AnalysisResult, AnalysisTransparency,
+        AnalysisWorkflowTrace, MemoryItem, ModelCallTrace,
+    },
 };
 
 pub struct InvestmentOrchestrator<'a> {
     provider: &'a dyn ModelProvider,
     retriever: &'a dyn MemoryRetriever,
+    workflow: &'a dyn AnalysisWorkflow,
 }
+
+static DEFAULT_WORKFLOW: InvestmentWorkflowV2 = InvestmentWorkflowV2;
 
 impl<'a> InvestmentOrchestrator<'a> {
     pub fn new(provider: &'a dyn ModelProvider, retriever: &'a dyn MemoryRetriever) -> Self {
+        Self::with_workflow(provider, retriever, &DEFAULT_WORKFLOW)
+    }
+
+    pub fn with_workflow(
+        provider: &'a dyn ModelProvider,
+        retriever: &'a dyn MemoryRetriever,
+        workflow: &'a dyn AnalysisWorkflow,
+    ) -> Self {
         Self {
             provider,
             retriever,
+            workflow,
         }
     }
 
@@ -27,23 +47,38 @@ impl<'a> InvestmentOrchestrator<'a> {
     ) -> AppResult<AnalysisResult> {
         let context = serde_json::to_string_pretty(&built_context.payload)?;
         let mut stages = vec!["确定性风险检查".into(), "构建最小必要上下文".into()];
+        let mut trace = AnalysisWorkflowTrace {
+            version: self.workflow.version().into(),
+            ..AnalysisWorkflowTrace::default()
+        };
         if built_context.evidence_items > 0 {
             stages.push("冻结带来源研究证据".into());
         }
 
         if request.workflow == "quick" {
-            let answer = self.provider.complete(vec![
-                ChatMessage::system(INVESTMENT_SYSTEM_POLICY),
-                ChatMessage::user(format!("用户问题：{}\n\n本地投资档案：{}\n\n请给出结构化分析，并说明仍需核实的信息。", request.question, context)),
-            ]).await?;
+            let (answer, call) = self
+                .call_stage(self.workflow.quick(&request.question, &context))
+                .await?;
+            trace.calls.push(call);
             stages.push(format!("{} 快速分析", self.provider.model_name()));
-            return Ok(result(self.provider, answer, stages, built_context, &[]));
+            return Ok(result(
+                self.provider,
+                answer,
+                stages,
+                built_context,
+                &[],
+                trace,
+            ));
         }
 
-        let plan = self.provider.complete(vec![
-            ChatMessage::system(format!("{}\n你现在是研究规划模块，只制定分析计划和检索线索，不给最终结论。", INVESTMENT_SYSTEM_POLICY)),
-            ChatMessage::user(format!("问题：{}\n已知档案摘要：{}\n请列出需要核实的假设、反方问题，以及用于检索历史决策的关键词。", request.question, built_context.payload)),
-        ]).await?;
+        let (plan, call) = self
+            .call_stage(
+                self.workflow
+                    .research_plan(&request.question, &built_context.payload),
+            )
+            .await?;
+        trace.research_plan = Some(plan.clone());
+        trace.calls.push(call);
         stages.push("生成研究计划".into());
 
         let memories = if request.use_memory {
@@ -62,41 +97,60 @@ impl<'a> InvestmentOrchestrator<'a> {
             serde_json::to_string_pretty(&memories)?
         };
 
-        let draft_instruction = if request.explore_alternatives {
+        if request.explore_alternatives {
             stages.push("探索多个可行方案".into());
-            "提出至少两个可行方案（包括保持不动），比较适用条件、主要风险、机会成本和需要验证的证据；不要为了凑数制造方案。"
-        } else {
-            "提出一个最稳健的分析框架，说明适用条件、风险和需要验证的证据。"
+        }
+        let alternative_specs = self
+            .workflow
+            .alternative_specs(request.explore_alternatives);
+        let candidate_context = CandidateContext {
+            question: &request.question,
+            local_context: &context,
+            research_plan: &plan,
+            memory_context: &memory_context,
         };
 
-        let draft = self
-            .provider
-            .complete(vec![
-                ChatMessage::system(INVESTMENT_SYSTEM_POLICY),
-                ChatMessage::user(format!(
-                "用户问题：{}\n\n本地投资档案：{}\n\n研究计划：{}\n\n相关历史记忆：{}\n\n任务：{}",
-                request.question, context, plan, memory_context, draft_instruction
-            )),
-            ])
-            .await?;
+        for spec in alternative_specs {
+            let (content, call) = self
+                .call_stage(self.workflow.alternative(&candidate_context, &spec))
+                .await?;
+            trace.alternatives.push(AnalysisAlternative {
+                id: spec.id.into(),
+                label: spec.label.into(),
+                lens: spec.lens.into(),
+                content,
+            });
+            trace.calls.push(call);
+        }
 
-        let critique = if request.reflect {
+        let alternatives_context = serde_json::to_string_pretty(&trace.alternatives)?;
+
+        if request.reflect {
             stages.push("独立纠错反思".into());
-            self.provider.complete(vec![
-                ChatMessage::system(format!("{}\n你现在是独立风险审查模块。只找问题，不迎合上一位分析者。", INVESTMENT_SYSTEM_POLICY)),
-                ChatMessage::user(format!("原问题：{}\n候选分析：{}\n请检查：事实与推断是否混淆、是否忽略极端风险、是否过度自信、是否给了隐性买卖指令、是否缺少更简单的基准方案。", request.question, draft)),
-            ]).await?
-        } else {
-            "未启用独立反思。".into()
-        };
+            let (critique, call) = self
+                .call_stage(
+                    self.workflow
+                        .critique(&request.question, &alternatives_context),
+                )
+                .await?;
+            trace.critique = Some(critique);
+            trace.calls.push(call);
+        }
 
-        let answer = self.provider.complete(vec![
-            ChatMessage::system(format!("{}\n你是最终整合模块。吸收审查意见，但要自行判断，不机械拼接。", INVESTMENT_SYSTEM_POLICY)),
-            ChatMessage::user(format!(
-                "原问题：{}\n\n档案：{}\n\n研究计划：{}\n\n候选分析：{}\n\n独立审查：{}\n\n请输出：①当前最重要判断；②风险与未知；③方案比较；④下一步行动；⑤未来复盘/证伪条件。明确指出本次没有接入的外部实时数据。",
-                request.question, context, plan, draft, critique
-            )),
-        ]).await?;
+        let critique_context = trace
+            .critique
+            .as_deref()
+            .unwrap_or("用户未启用独立风险审查。");
+        let (answer, call) = self
+            .call_stage(self.workflow.synthesis(
+                &request.question,
+                &context,
+                &plan,
+                &alternatives_context,
+                critique_context,
+            ))
+            .await?;
+        trace.calls.push(call);
         stages.push("综合结论与行动清单".into());
         Ok(result(
             self.provider,
@@ -104,6 +158,23 @@ impl<'a> InvestmentOrchestrator<'a> {
             stages,
             built_context,
             &memories,
+            trace,
+        ))
+    }
+
+    async fn call_stage(&self, prompt: StagePrompt) -> AppResult<(String, ModelCallTrace)> {
+        let started = Instant::now();
+        let completion = self.provider.complete(prompt.messages).await?;
+        let latency_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        Ok((
+            completion.content,
+            ModelCallTrace {
+                stage: prompt.key.into(),
+                label: prompt.label.into(),
+                latency_ms,
+                input_tokens: completion.usage.input_tokens,
+                output_tokens: completion.usage.output_tokens,
+            },
         ))
     }
 }
@@ -134,6 +205,7 @@ fn result(
     stages: Vec<String>,
     built_context: &BuiltContext,
     memory_items: &[MemoryItem],
+    workflow_trace: AnalysisWorkflowTrace,
 ) -> AnalysisResult {
     let mut context_groups: Vec<_> = built_context
         .groups
@@ -144,6 +216,15 @@ fn result(
     if !memory_items.is_empty() {
         context_groups.push("相关历史记忆".into());
     }
+    let total_latency_ms = workflow_trace
+        .calls
+        .iter()
+        .map(|call| call.latency_ms)
+        .sum();
+    let input_tokens = sum_known_tokens(workflow_trace.calls.iter().map(|call| call.input_tokens));
+    let output_tokens =
+        sum_known_tokens(workflow_trace.calls.iter().map(|call| call.output_tokens));
+    let model_calls = workflow_trace.calls.len();
     AnalysisResult {
         id: uuid::Uuid::new_v4().to_string(),
         answer,
@@ -158,12 +239,27 @@ fn result(
             memory_items_used: memory_items.len(),
             evidence_items_used: built_context.evidence_items,
             citations_required: built_context.evidence_items > 0,
+            model_calls,
+            total_latency_ms,
+            input_tokens,
+            output_tokens,
             external_data_used: built_context.evidence_items > 0,
             api_key_sent: false,
         },
+        workflow_trace,
         created_at: chrono::Utc::now().to_rfc3339(),
         disclaimer: "本分析用于投资教育与决策支持，不构成收益保证或针对具体证券的买卖建议。".into(),
     }
+}
+
+fn sum_known_tokens(values: impl Iterator<Item = Option<u64>>) -> Option<u64> {
+    let mut count = 0;
+    let mut total = 0;
+    for value in values {
+        total += value?;
+        count += 1;
+    }
+    (count > 0).then_some(total)
 }
 
 #[cfg(test)]
@@ -174,6 +270,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        ai::ChatMessage,
         context::ContextBuilder,
         error::AppResult,
         memory::LexicalMemoryRetriever,
@@ -189,13 +286,24 @@ mod tests {
 
     #[async_trait]
     impl ModelProvider for MockProvider {
-        async fn complete(&self, _messages: Vec<ChatMessage>) -> AppResult<String> {
+        async fn complete(
+            &self,
+            _messages: Vec<ChatMessage>,
+        ) -> AppResult<super::super::ModelCompletion> {
             let call = self.calls.fetch_add(1, Ordering::SeqCst);
-            Ok(match call {
+            let content = match call {
                 0 => "研究计划：检索指数和集中度".into(),
-                1 => "候选方案 A 与 B".into(),
-                2 => "审查：需要说明未知信息".into(),
+                1 => "稳健基准：先不行动".into(),
+                2 => "目标方案：逐步降低集中度".into(),
+                3 => "审查：需要说明未知信息".into(),
                 _ => "最终：先处理集中风险并设置复盘条件".into(),
+            };
+            Ok(super::super::ModelCompletion {
+                content,
+                usage: super::super::ModelUsage {
+                    input_tokens: Some(100),
+                    output_tokens: Some(20),
+                },
             })
         }
 
@@ -290,7 +398,7 @@ mod tests {
             .run(&request, &context, &memory)
             .await
             .unwrap();
-        assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 5);
         assert!(output
             .stages
             .iter()
@@ -300,10 +408,51 @@ mod tests {
             .iter()
             .any(|stage| stage.contains("独立纠错反思")));
         assert!(output.answer.contains("最终"));
+        assert_eq!(output.workflow_trace.alternatives.len(), 2);
+        assert!(output.workflow_trace.research_plan.is_some());
+        assert!(output.workflow_trace.critique.is_some());
+        assert_eq!(output.workflow_trace.calls.len(), 5);
+        assert_eq!(output.transparency.model_calls, 5);
+        assert_eq!(output.transparency.input_tokens, Some(500));
+        assert_eq!(output.transparency.output_tokens, Some(100));
         assert_eq!(output.transparency.memory_items_used, 1);
         assert_eq!(output.transparency.evidence_items_used, 1);
         assert!(output.transparency.citations_required);
         assert!(output.transparency.external_data_used);
         assert!(!output.transparency.api_key_sent);
+    }
+
+    #[tokio::test]
+    async fn quick_workflow_is_honest_about_using_a_single_model_call() {
+        let provider = MockProvider {
+            calls: AtomicUsize::new(0),
+        };
+        let retriever = LexicalMemoryRetriever;
+        let request = AnalysisRequest {
+            question: "只做快速风险摘要".into(),
+            workflow: "quick".into(),
+            use_memory: true,
+            reflect: true,
+            explore_alternatives: true,
+            context_selection: ContextSelection::default(),
+            preview_revision: None,
+        };
+        let snapshot = snapshot();
+        let context = ContextBuilder::build(&request, &snapshot, &[], &[], &[], &[]);
+        let output = InvestmentOrchestrator::new(&provider, &retriever)
+            .run(&request, &context, &[])
+            .await
+            .unwrap();
+
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(output.transparency.model_calls, 1);
+        assert_eq!(output.workflow_trace.calls.len(), 1);
+        assert!(output.workflow_trace.research_plan.is_none());
+        assert!(output.workflow_trace.alternatives.is_empty());
+        assert!(output.workflow_trace.critique.is_none());
+        assert!(!output
+            .stages
+            .iter()
+            .any(|stage| stage.contains("本地记忆检索")));
     }
 }

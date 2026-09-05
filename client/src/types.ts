@@ -163,6 +163,10 @@ export interface AnalysisTransparency {
   memoryItemsUsed: number;
   evidenceItemsUsed: number;
   citationsRequired: boolean;
+  modelCalls: number;
+  totalLatencyMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
   externalDataUsed: boolean;
   apiKeySent: boolean;
 }
@@ -172,8 +176,32 @@ export interface AnalysisResult {
   answer: string;
   stages: string[];
   transparency: AnalysisTransparency;
+  workflowTrace: AnalysisWorkflowTrace;
   createdAt: string;
   disclaimer: string;
+}
+
+export interface AnalysisWorkflowTrace {
+  version: string;
+  researchPlan?: string;
+  alternatives: AnalysisAlternative[];
+  critique?: string;
+  calls: ModelCallTrace[];
+}
+
+export interface AnalysisAlternative {
+  id: string;
+  label: string;
+  lens: string;
+  content: string;
+}
+
+export interface ModelCallTrace {
+  stage: string;
+  label: string;
+  latencyMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export interface DecisionEntry {

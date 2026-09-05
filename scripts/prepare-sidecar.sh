@@ -4,10 +4,8 @@ set -euo pipefail
 profile="${1:-debug}"
 root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 
-if [[ "$(uname -s)" == "Darwin" ]] && ! /usr/bin/clang --version >/dev/null 2>&1; then
-  if [[ -x "/Library/Developer/CommandLineTools/usr/bin/clang" ]]; then
-    export DEVELOPER_DIR="/Library/Developer/CommandLineTools"
-  fi
+if [[ "$(uname -s)" == "Darwin" ]] && [[ -x "/Library/Developer/CommandLineTools/usr/bin/clang" ]]; then
+  export DEVELOPER_DIR="/Library/Developer/CommandLineTools"
 fi
 
 target_triple="$(rustc -vV | sed -n 's/^host: //p')"
