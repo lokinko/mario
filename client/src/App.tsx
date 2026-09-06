@@ -10,7 +10,6 @@ import {
   ChevronRight,
   CircleDollarSign,
   Cloud,
-  Compass,
   Copy,
   Database,
   Download,
@@ -238,7 +237,7 @@ function downloadPortfolioEventCsvTemplate(baseCurrency: string) {
   const url = URL.createObjectURL(new Blob([portfolioEventCsvTemplate], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = "知衡_组合流水模板.csv";
+  link.download = "mario_组合流水模板.csv";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -317,8 +316,8 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark"><Compass size={20} /></div>
-          <div><strong>知衡</strong><span>本地投资决策助手</span></div>
+          <div className="brand-mark"><BrainCircuit size={20} /></div>
+          <div><strong>mario</strong><span>本地投资决策助手</span></div>
         </div>
 
         <nav>
@@ -504,7 +503,7 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
       </section>
 
       <section className="method-strip">
-        <div><p className="eyebrow">知衡决策闭环</p><h2>每一次判断，都留下可复盘的证据</h2></div>
+        <div><p className="eyebrow">mario 决策闭环</p><h2>每一次判断，都留下可复盘的证据</h2></div>
         {["财务底座", "目标配置", "独立研究", "仓位决策", "复盘校准"].map((step, index) => (
           <div className="method-step" key={step}><span>0{index + 1}</span><strong>{step}</strong>{index < 4 && <ArrowRight size={15} />}</div>
         ))}
@@ -922,7 +921,7 @@ function EvidenceWorkbench({ navigate, flash }: { navigate: (v: View) => void; f
   const startEvidenceAnalysis = () => {
     const assets = [...new Set(active.map((item) => item.assetName))].join("、");
     window.sessionStorage.setItem(
-      "compass.advisorQuestion",
+      "mario.advisorQuestion",
       `请基于我保存的带来源研究证据，审查${assets || "当前组合"}的投资假设：区分一手事实、二手解释与未知项，优先寻找反方证据，只引用载荷中实际存在的 HTTPS 来源，并给出下一步需要补齐的证据。`,
     );
     navigate("advisor");
@@ -953,7 +952,7 @@ function EvidenceWorkbench({ navigate, flash }: { navigate: (v: View) => void; f
             <label className="span-2"><span>这条来源实际支持什么事实？</span><textarea maxLength={4000} value={draft.claim} onChange={(e) => setDraft({ ...draft, claim: e.target.value })} placeholder="只记录来源能够直接支持的内容，不写买卖结论。" /></label>
             <label className="span-2"><span>限制与待核实项（可选）</span><textarea maxLength={4000} value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} placeholder="口径差异、样本限制、尚未核验的解释。" /></label>
           </div>
-          <aside className="evidence-guide"><strong>来源不是结论</strong><p>“一手来源”表示离原始事实更近，不代表内容完整或投资判断正确。</p><ol><li>优先保存公司披露、监管文件和原始数据。</li><li>支持材料与反方材料分开记录。</li><li>错误记录应归档并重新建立，不覆盖旧证据。</li><li>知衡当前不自动抓取或核验链接内容。</li></ol></aside>
+          <aside className="evidence-guide"><strong>来源不是结论</strong><p>“一手来源”表示离原始事实更近，不代表内容完整或投资判断正确。</p><ol><li>优先保存公司披露、监管文件和原始数据。</li><li>支持材料与反方材料分开记录。</li><li>错误记录应归档并重新建立，不覆盖旧证据。</li><li>mario 当前不自动抓取或核验链接内容。</li></ol></aside>
         </div>
         {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
         <div className="form-actions"><p>保存后内容不可编辑；归档是可恢复操作。</p><button className="primary" onClick={persist} disabled={saving || !draft.assetName || !draft.title || !draft.publisher || !draft.sourceUrl || !draft.asOfDate || !draft.claim}><Save size={16} />保存证据</button></div>
@@ -1285,7 +1284,7 @@ function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash:
 
   const startAiReview = () => {
     window.sessionStorage.setItem(
-      "compass.advisorQuestion",
+      "mario.advisorQuestion",
       "请基于我的个人投资规则、最近周期复盘、财务目标、当前组合和历史决策，完成一次系统复盘：先核对规则违反与风险边界，再识别重复错误，比较至少两种改进路径，并给出下一周期可验证的行动与证伪条件。",
     );
     navigate("advisor");
@@ -1424,9 +1423,11 @@ function Advisor({ model, navigate, requestedAnalysisId, clearRequestedAnalysis,
   const [historyError, setHistoryError] = useState("");
 
   useEffect(() => {
-    const queued = window.sessionStorage.getItem("compass.advisorQuestion");
+    const queued = window.sessionStorage.getItem("mario.advisorQuestion")
+      ?? window.sessionStorage.getItem("compass.advisorQuestion");
     if (queued) {
       setQuestion(queued);
+      window.sessionStorage.removeItem("mario.advisorQuestion");
       window.sessionStorage.removeItem("compass.advisorQuestion");
     }
   }, []);
@@ -1640,7 +1641,7 @@ function StructuredReportView({ report, evidence, analysisId, onCreateDecisionDr
       <section><div className="report-section-title"><BrainCircuit size={14} /><strong>合理推断</strong><small>不与事实混写</small></div>{report.inferences.length > 0 ? <ClaimList items={report.inferences} evidenceById={evidenceById} /> : <p className="report-empty">本次没有需要单列的推断。</p>}</section>
     </div>
     <section className="report-section unknown-section"><div className="report-section-title"><AlertTriangle size={14} /><strong>仍待核实</strong><small>模型不得补写为事实</small></div><ul>{report.unknowns.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>
-    <section className="report-section"><div className="report-section-title"><Compass size={14} /><strong>方案与取舍</strong><small>{report.options.length} 条可行路径</small></div><div className="report-option-grid">{report.options.map((option, index) => <article key={`${option.name}-${index}`}><span>方案 {String(index + 1).padStart(2, "0")}</span><h3>{option.name}</h3><p><b>适用条件</b>{option.suitableWhen}</p><p><b>机会成本</b>{option.tradeoffs.join("；")}</p><p><b>主要风险</b>{option.risks.join("；")}</p></article>)}</div></section>
+    <section className="report-section"><div className="report-section-title"><BrainCircuit size={14} /><strong>方案与取舍</strong><small>{report.options.length} 条可行路径</small></div><div className="report-option-grid">{report.options.map((option, index) => <article key={`${option.name}-${index}`}><span>方案 {String(index + 1).padStart(2, "0")}</span><h3>{option.name}</h3><p><b>适用条件</b>{option.suitableWhen}</p><p><b>机会成本</b>{option.tradeoffs.join("；")}</p><p><b>主要风险</b>{option.risks.join("；")}</p></article>)}</div></section>
     <section className="report-section"><div className="report-section-title"><ArrowRight size={14} /><strong>下一步行动</strong><small>选择后仍需人工补全与确认</small></div><div className="report-action-list">{report.actions.map((action, index) => <article key={`${action.action}-${index}`}><i>{index + 1}</i><div><strong>{action.action}</strong><p>{action.rationale}</p><small>复盘：{action.reviewTrigger}</small><button className="decision-draft-button" onClick={() => createDecisionDraft(action, index)}><FilePenLine size={12} />转为决策草稿</button></div><em className={action.reversible ? "reversible" : "confirm-first"}>{action.reversible ? "可逆" : "需单独确认"}</em></article>)}</div></section>
     <section className="report-section trigger-section"><div className="report-section-title"><History size={14} /><strong>复盘与证伪条件</strong><small>未来用结果校准判断</small></div><ul>{report.reviewTriggers.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>
   </div>;
@@ -1794,7 +1795,7 @@ function CloudSync({ flash }: { flash: (message: string) => void }) {
       <div className="panel-title"><div><span>跨设备恢复</span><h2>恢复密钥</h2></div><KeyRound size={22} className="muted-icon" /></div>
       <p className="section-intro">云端不保存此密钥。首次上传后从当前设备导出；在新设备登录同一账户后导入，才能解密数据。</p>
       {revealedKey && <div className="recovery-value"><code>{revealedKey}</code><button className="secondary" onClick={copyRecoveryKey}><Copy size={14} />复制</button></div>}
-      <div className="form-grid single-column"><label><span>从其他设备导入恢复密钥</span><input type="password" value={recoveryKey} onChange={(event) => setRecoveryKey(event.target.value)} placeholder="zhiheng-sync-v1:…" /></label></div>
+      <div className="form-grid single-column"><label><span>从其他设备导入恢复密钥</span><input type="password" value={recoveryKey} onChange={(event) => setRecoveryKey(event.target.value)} placeholder="mario-sync-v1:…" /></label></div>
       <div className="form-actions"><button className="secondary" onClick={revealRecoveryKey} disabled={busy !== "" || !status.signedIn || !status.hasRecoveryKey}>显示本机恢复密钥</button><button className="primary" onClick={importRecoveryKey} disabled={busy !== "" || !status.signedIn || !recoveryKey}>保存导入密钥</button></div>
     </section>
 

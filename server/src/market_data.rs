@@ -32,7 +32,7 @@ impl EcbFxRateProvider {
         Ok(Self {
             client: Client::builder()
                 .timeout(Duration::from_secs(12))
-                .user_agent("compass-invest/market-data")
+                .user_agent("mario/market-data")
                 .build()?,
             base_url: ECB_API_BASE.into(),
         })

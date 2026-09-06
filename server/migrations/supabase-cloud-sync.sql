@@ -1,4 +1,4 @@
--- Run this migration in the Supabase SQL editor for the project used by 知衡.
+-- Run this migration in the Supabase SQL editor for the project used by mario.
 -- The service only receives ciphertext, nonce, hash and schema metadata.
 
 create table if not exists public.sync_blobs (

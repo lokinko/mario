@@ -43,14 +43,14 @@ pub fn run() {
             let port = port.to_string();
             let command = app
                 .shell()
-                .sidecar("compass-server")?
+                .sidecar("mario-server")?
                 .args(["--parent-pid", parent_pid.as_str(), "--port", port.as_str()])
-                .env("COMPASS_AUTH_TOKEN", &sidecar_config.auth_token);
+                .env("MARIO_AUTH_TOKEN", &sidecar_config.auth_token);
             let (_events, _child) = command.spawn()?;
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running Compass Invest desktop client");
+        .expect("error while running mario desktop client");
 }
 
 #[cfg(test)]

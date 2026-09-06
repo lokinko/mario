@@ -1,3 +1,3 @@
 fn main() {
-    compass_invest_client_lib::run();
+    mario_client_lib::run();
 }

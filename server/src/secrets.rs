@@ -1,16 +1,17 @@
 use crate::error::{AppError, AppResult};
 
-const SERVICE: &str = "com.compassinvest.desktop";
+const SERVICE: &str = "com.lokinko.mario";
+const LEGACY_SERVICE: &str = "com.compassinvest.desktop";
 const MODEL_API_KEY: &str = "llm-api-key";
 const CLOUD_ACCESS_TOKEN: &str = "cloud-access-token";
 const CLOUD_REFRESH_TOKEN: &str = "cloud-refresh-token";
 
-fn entry(account: &str) -> Result<keyring::Entry, keyring::Error> {
-    keyring::Entry::new(SERVICE, account)
+fn entry(service: &str, account: &str) -> Result<keyring::Entry, keyring::Error> {
+    keyring::Entry::new(service, account)
 }
 
-fn read(account: &str) -> AppResult<Option<String>> {
-    match entry(account)
+fn read_from(service: &str, account: &str) -> AppResult<Option<String>> {
+    match entry(service, account)
         .map_err(|error| AppError::Keyring(error.to_string()))?
         .get_password()
     {
@@ -20,24 +21,40 @@ fn read(account: &str) -> AppResult<Option<String>> {
     }
 }
 
+fn read(account: &str) -> AppResult<Option<String>> {
+    if let Some(value) = read_from(SERVICE, account)? {
+        return Ok(Some(value));
+    }
+    let Some(value) = read_from(LEGACY_SERVICE, account)? else {
+        return Ok(None);
+    };
+    write(account, &value)?;
+    Ok(Some(value))
+}
+
 fn write(account: &str, value: &str) -> AppResult<()> {
     if value.trim().is_empty() {
         return Err(AppError::Validation("不能保存空密钥或令牌".into()));
     }
-    entry(account)
+    entry(SERVICE, account)
         .map_err(|error| AppError::Keyring(error.to_string()))?
         .set_password(value.trim())
         .map_err(|error| AppError::Keyring(error.to_string()))
 }
 
-fn delete(account: &str) -> AppResult<()> {
-    match entry(account)
+fn delete_from(service: &str, account: &str) -> AppResult<()> {
+    match entry(service, account)
         .map_err(|error| AppError::Keyring(error.to_string()))?
         .delete_credential()
     {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(AppError::Keyring(error.to_string())),
     }
+}
+
+fn delete(account: &str) -> AppResult<()> {
+    delete_from(SERVICE, account)?;
+    delete_from(LEGACY_SERVICE, account)
 }
 
 pub fn has_api_key() -> bool {

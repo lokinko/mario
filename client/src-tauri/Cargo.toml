@@ -1,13 +1,13 @@
 [package]
-name = "compass-invest"
-version = "0.2.0"
-description = "Desktop client for Compass Invest"
-authors = ["Compass Invest"]
+name = "mario"
+version = "0.3.0"
+description = "Desktop client for mario"
+authors = ["mario"]
 edition = "2021"
 rust-version = "1.86"
 
 [lib]
-name = "compass_invest_client_lib"
+name = "mario_client_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

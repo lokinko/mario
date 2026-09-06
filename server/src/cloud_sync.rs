@@ -16,8 +16,10 @@ use crate::{
     secrets,
 };
 
-const ENCRYPTION_CONTEXT: &[u8] = b"zhiheng-cloud-sync-v1";
-const RECOVERY_KEY_PREFIX: &str = "zhiheng-sync-v1:";
+const ENCRYPTION_CONTEXT: &[u8] = b"mario-cloud-sync-v1";
+const LEGACY_ENCRYPTION_CONTEXT: &[u8] = b"zhiheng-cloud-sync-v1";
+const RECOVERY_KEY_PREFIX: &str = "mario-sync-v1:";
+const LEGACY_RECOVERY_KEY_PREFIX: &str = "zhiheng-sync-v1:";
 
 const SETTING_CLOUD_URL: &str = "cloud.url";
 const SETTING_CLOUD_KEY: &str = "cloud.publishable_key";
@@ -420,8 +422,9 @@ pub async fn sign_out(db: &Database) -> AppResult<CloudStatus> {
 
 pub fn export_recovery_key(db: &Database) -> AppResult<String> {
     let user_id = current_account_id(db)?;
-    secrets::cloud_encryption_key(&user_id)?
-        .ok_or_else(|| AppError::Validation("尚未生成同步恢复密钥；首次上传时会自动生成".into()))
+    let value = secrets::cloud_encryption_key(&user_id)?
+        .ok_or_else(|| AppError::Validation("尚未生成同步恢复密钥；首次上传时会自动生成".into()))?;
+    canonical_recovery_key(&value)
 }
 
 pub fn import_recovery_key(db: &Database, input: &RecoveryKeyInput) -> AppResult<()> {
@@ -431,8 +434,8 @@ pub fn import_recovery_key(db: &Database, input: &RecoveryKeyInput) -> AppResult
             "本机已有恢复密钥；替换前必须明确确认".into(),
         ));
     }
-    parse_recovery_key(&input.recovery_key)?;
-    secrets::set_cloud_encryption_key(&user_id, &input.recovery_key)
+    let canonical = canonical_recovery_key(&input.recovery_key)?;
+    secrets::set_cloud_encryption_key(&user_id, &canonical)
 }
 
 pub async fn push(db: &Database) -> AppResult<SyncResult> {
@@ -474,7 +477,13 @@ pub async fn push(db: &Database) -> AppResult<SyncResult> {
     }
 
     let recovery_key = match secrets::cloud_encryption_key(&session.user.id)? {
-        Some(value) => value,
+        Some(value) => {
+            let canonical = canonical_recovery_key(&value)?;
+            if canonical != value {
+                secrets::set_cloud_encryption_key(&session.user.id, &canonical)?;
+            }
+            canonical
+        }
         None => {
             let value = generate_recovery_key();
             secrets::set_cloud_encryption_key(&session.user.id, &value)?;
@@ -681,9 +690,10 @@ fn generate_recovery_key() -> String {
 }
 
 fn parse_recovery_key(value: &str) -> AppResult<[u8; 32]> {
+    let value = value.trim();
     let encoded = value
-        .trim()
         .strip_prefix(RECOVERY_KEY_PREFIX)
+        .or_else(|| value.strip_prefix(LEGACY_RECOVERY_KEY_PREFIX))
         .ok_or_else(|| AppError::Validation("恢复密钥格式无效".into()))?;
     let decoded = URL_SAFE_NO_PAD
         .decode(encoded)
@@ -693,7 +703,22 @@ fn parse_recovery_key(value: &str) -> AppResult<[u8; 32]> {
         .map_err(|_| AppError::Validation("恢复密钥长度无效".into()))
 }
 
+fn canonical_recovery_key(value: &str) -> AppResult<String> {
+    Ok(format!(
+        "{RECOVERY_KEY_PREFIX}{}",
+        URL_SAFE_NO_PAD.encode(parse_recovery_key(value)?)
+    ))
+}
+
 fn encrypt_dataset(dataset: &SyncDataset, key: &[u8; 32]) -> AppResult<RemoteBlob> {
+    encrypt_dataset_with_context(dataset, key, ENCRYPTION_CONTEXT)
+}
+
+fn encrypt_dataset_with_context(
+    dataset: &SyncDataset,
+    key: &[u8; 32],
+    context: &[u8],
+) -> AppResult<RemoteBlob> {
     let plaintext = serde_json::to_vec(dataset)?;
     let content_hash = dataset.content_hash()?;
     let mut nonce = [0_u8; 24];
@@ -704,7 +729,7 @@ fn encrypt_dataset(dataset: &SyncDataset, key: &[u8; 32]) -> AppResult<RemoteBlo
             XNonce::from_slice(&nonce),
             Payload {
                 msg: &plaintext,
-                aad: ENCRYPTION_CONTEXT,
+                aad: context,
             },
         )
         .map_err(|_| AppError::Cloud("无法加密同步数据".into()))?;
@@ -735,15 +760,20 @@ fn decrypt_dataset(blob: &RemoteBlob, key: &[u8; 32]) -> AppResult<SyncDataset> 
         .decode(&blob.ciphertext)
         .map_err(|_| AppError::Validation("云端密文格式损坏".into()))?;
     let cipher = XChaCha20Poly1305::new(key.into());
-    let plaintext = cipher
-        .decrypt(
-            XNonce::from_slice(&nonce),
-            Payload {
-                msg: &ciphertext,
-                aad: ENCRYPTION_CONTEXT,
-            },
-        )
-        .map_err(|_| AppError::Validation("无法解密云端数据：恢复密钥错误或密文已损坏".into()))?;
+    let plaintext = [ENCRYPTION_CONTEXT, LEGACY_ENCRYPTION_CONTEXT]
+        .into_iter()
+        .find_map(|context| {
+            cipher
+                .decrypt(
+                    XNonce::from_slice(&nonce),
+                    Payload {
+                        msg: &ciphertext,
+                        aad: context,
+                    },
+                )
+                .ok()
+        })
+        .ok_or_else(|| AppError::Validation("无法解密云端数据：恢复密钥错误或密文已损坏".into()))?;
     if plaintext.len() > 25 * 1024 * 1024 {
         return Err(AppError::Validation("云端数据包超过 25 MB 安全上限".into()));
     }
@@ -822,6 +852,16 @@ mod tests {
 
         let wrong_key = parse_recovery_key(&generate_recovery_key()).unwrap();
         assert!(decrypt_dataset(&blob, &wrong_key).is_err());
+
+        let legacy_blob =
+            encrypt_dataset_with_context(&source, &key, LEGACY_ENCRYPTION_CONTEXT).unwrap();
+        assert_eq!(
+            decrypt_dataset(&legacy_blob, &key)
+                .unwrap()
+                .content_hash()
+                .unwrap(),
+            source.content_hash().unwrap()
+        );
     }
 
     #[test]
@@ -921,6 +961,9 @@ mod tests {
         let value = generate_recovery_key();
         assert!(value.starts_with(RECOVERY_KEY_PREFIX));
         assert_eq!(parse_recovery_key(&value).unwrap().len(), 32);
+        let legacy = value.replacen(RECOVERY_KEY_PREFIX, LEGACY_RECOVERY_KEY_PREFIX, 1);
+        assert_eq!(parse_recovery_key(&legacy).unwrap().len(), 32);
+        assert_eq!(canonical_recovery_key(&legacy).unwrap(), value);
         assert!(parse_recovery_key("bad").is_err());
     }
 

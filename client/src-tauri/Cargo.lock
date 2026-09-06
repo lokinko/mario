@@ -467,29 +467,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "compass-invest"
-version = "0.2.0"
-dependencies = [
- "icu_collections",
- "icu_locale_core",
- "icu_normalizer",
- "icu_normalizer_data",
- "icu_properties",
- "icu_properties_data",
- "icu_provider",
- "notify-rust",
- "plist",
- "rand 0.8.8",
- "serde",
- "serde_with",
- "tauri",
- "tauri-build",
- "tauri-plugin-notification",
- "tauri-plugin-shell",
- "time",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2039,6 +2016,29 @@ dependencies = [
  "objc2-foundation",
  "time",
  "uuid",
+]
+
+[[package]]
+name = "mario"
+version = "0.3.0"
+dependencies = [
+ "icu_collections",
+ "icu_locale_core",
+ "icu_normalizer",
+ "icu_normalizer_data",
+ "icu_properties",
+ "icu_properties_data",
+ "icu_provider",
+ "notify-rust",
+ "plist",
+ "rand 0.8.8",
+ "serde",
+ "serde_with",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-notification",
+ "tauri-plugin-shell",
+ "time",
 ]
 
 [[package]]

@@ -14,7 +14,12 @@ mod risk;
 mod secrets;
 mod valuation;
 
-use std::{collections::HashSet, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashSet,
+    net::SocketAddr,
+    path::{Path as FilePath, PathBuf},
+    sync::Arc,
+};
 
 use ai::{ChatMessage, InvestmentOrchestrator, ModelProvider, OpenAiCompatibleProvider};
 use axum::{
@@ -66,7 +71,7 @@ async fn main() -> AppResult<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "compass_server=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "mario_server=info,tower_http=info".into()),
         )
         .init();
 
@@ -77,7 +82,7 @@ async fn main() -> AppResult<()> {
         tokio::spawn(watch_parent(pid, parent_exit_tx));
     }
     let state = Arc::new(AppState {
-        db: Database::open(&data_dir.join("compass.db"))?,
+        db: Database::open(&data_dir.join("mario.db"))?,
         auth_token: options.auth_token.clone(),
         fx_provider: Arc::new(EcbFxRateProvider::new()?),
     });
@@ -732,12 +737,83 @@ fn selected_memories(candidates: &[models::MemoryItem]) -> Vec<models::MemoryIte
 }
 
 fn data_directory() -> AppResult<PathBuf> {
-    if let Ok(value) = std::env::var("COMPASS_DATA_DIR") {
-        return Ok(PathBuf::from(value));
+    if let Ok(value) = std::env::var("MARIO_DATA_DIR") {
+        let directory = PathBuf::from(value);
+        migrate_legacy_database_filename(&directory)?;
+        return Ok(directory);
     }
-    dirs::data_local_dir()
-        .map(|path| path.join("com.compassinvest.desktop"))
-        .ok_or_else(|| AppError::Validation("无法确定本地数据目录".into()))
+    if let Ok(value) = std::env::var("COMPASS_DATA_DIR") {
+        tracing::warn!("COMPASS_DATA_DIR 已弃用，请改用 MARIO_DATA_DIR");
+        let directory = PathBuf::from(value);
+        migrate_legacy_database_filename(&directory)?;
+        return Ok(directory);
+    }
+    let root = dirs::data_local_dir()
+        .ok_or_else(|| AppError::Validation("无法确定本地数据目录".into()))?;
+    migrate_legacy_data_directory(&root)
+}
+
+fn migrate_legacy_data_directory(root: &FilePath) -> AppResult<PathBuf> {
+    let current = root.join("com.lokinko.mario");
+    let legacy = root.join("com.compassinvest.desktop");
+    let selected = if !current.exists() && legacy.exists() {
+        match std::fs::rename(&legacy, &current) {
+            Ok(()) => current.clone(),
+            Err(error) => {
+                tracing::warn!(%error, "无法移动旧版数据目录，将继续从原位置读取");
+                legacy.clone()
+            }
+        }
+    } else {
+        current.clone()
+    };
+    if selected == current && legacy.exists() {
+        migrate_legacy_database_between_directories(&legacy, &current)?;
+    }
+    migrate_legacy_database_filename(&selected)?;
+    Ok(selected)
+}
+
+fn migrate_legacy_database_between_directories(
+    legacy_directory: &FilePath,
+    current_directory: &FilePath,
+) -> AppResult<()> {
+    let legacy = legacy_directory.join("compass.db");
+    let current = current_directory.join("mario.db");
+    if current.exists() || !legacy.exists() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(current_directory)?;
+    std::fs::rename(&legacy, &current)?;
+    for suffix in ["-wal", "-shm"] {
+        let legacy_sidecar = legacy_directory.join(format!("compass.db{suffix}"));
+        if legacy_sidecar.exists() {
+            std::fs::rename(
+                legacy_sidecar,
+                current_directory.join(format!("mario.db{suffix}")),
+            )?;
+        }
+    }
+    tracing::info!(data_dir = %current_directory.display(), "已迁移旧版 mario 本地数据库");
+    Ok(())
+}
+
+fn migrate_legacy_database_filename(directory: &FilePath) -> AppResult<()> {
+    let current = directory.join("mario.db");
+    let legacy = directory.join("compass.db");
+    if current.exists() || !legacy.exists() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(directory)?;
+    std::fs::rename(&legacy, &current)?;
+    for suffix in ["-wal", "-shm"] {
+        let legacy_sidecar = directory.join(format!("compass.db{suffix}"));
+        if legacy_sidecar.exists() {
+            std::fs::rename(legacy_sidecar, directory.join(format!("mario.db{suffix}")))?;
+        }
+    }
+    tracing::info!(data_dir = %directory.display(), "已迁移旧版 mario 本地数据库");
+    Ok(())
 }
 
 fn server_options() -> AppResult<ServerOptions> {
@@ -770,7 +846,8 @@ fn server_options() -> AppResult<ServerOptions> {
             _ => {}
         }
     }
-    let auth_token = std::env::var("COMPASS_AUTH_TOKEN")
+    let auth_token = std::env::var("MARIO_AUTH_TOKEN")
+        .or_else(|_| std::env::var("COMPASS_AUTH_TOKEN"))
         .ok()
         .filter(|value| !value.trim().is_empty());
     if !allow_unauthenticated_dev
@@ -892,5 +969,44 @@ mod tests {
         let token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         assert!(token_matches(token, token));
         assert!(!token_matches(token, "different"));
+    }
+
+    #[test]
+    fn migrates_legacy_brand_data_directory_and_database_name() {
+        let root = tempfile::tempdir().unwrap();
+        let legacy = root.path().join("com.compassinvest.desktop");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("compass.db"), b"legacy database").unwrap();
+        std::fs::write(legacy.join("compass.db-wal"), b"legacy wal").unwrap();
+
+        let selected = migrate_legacy_data_directory(root.path()).unwrap();
+        assert_eq!(selected, root.path().join("com.lokinko.mario"));
+        assert_eq!(
+            std::fs::read(selected.join("mario.db")).unwrap(),
+            b"legacy database"
+        );
+        assert_eq!(
+            std::fs::read(selected.join("mario.db-wal")).unwrap(),
+            b"legacy wal"
+        );
+        assert!(!root.path().join("com.compassinvest.desktop").exists());
+    }
+
+    #[test]
+    fn migrates_legacy_database_when_new_brand_directory_already_exists() {
+        let root = tempfile::tempdir().unwrap();
+        let legacy = root.path().join("com.compassinvest.desktop");
+        let current = root.path().join("com.lokinko.mario");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::write(legacy.join("compass.db"), b"legacy database").unwrap();
+
+        let selected = migrate_legacy_data_directory(root.path()).unwrap();
+        assert_eq!(selected, current);
+        assert_eq!(
+            std::fs::read(selected.join("mario.db")).unwrap(),
+            b"legacy database"
+        );
+        assert!(!legacy.join("compass.db").exists());
     }
 }

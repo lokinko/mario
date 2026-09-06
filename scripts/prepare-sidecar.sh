@@ -12,15 +12,15 @@ target_triple="$(rustc -vV | sed -n 's/^host: //p')"
 
 if [[ "$profile" == "release" ]]; then
   cargo build --release --manifest-path "$root_dir/server/Cargo.toml"
-  source_binary="$root_dir/server/target/release/compass-server"
+  source_binary="$root_dir/server/target/release/mario-server"
 else
   cargo build --manifest-path "$root_dir/server/Cargo.toml"
-  source_binary="$root_dir/server/target/debug/compass-server"
+  source_binary="$root_dir/server/target/debug/mario-server"
 fi
 
 destination_dir="$root_dir/client/src-tauri/binaries"
 mkdir -p "$destination_dir"
-cp "$source_binary" "$destination_dir/compass-server-$target_triple"
-chmod +x "$destination_dir/compass-server-$target_triple"
+cp "$source_binary" "$destination_dir/mario-server-$target_triple"
+chmod +x "$destination_dir/mario-server-$target_triple"
 
-echo "Prepared sidecar: $destination_dir/compass-server-$target_triple"
+echo "Prepared sidecar: $destination_dir/mario-server-$target_triple"

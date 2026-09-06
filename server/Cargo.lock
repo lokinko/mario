@@ -233,42 +233,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "compass-server"
-version = "0.2.0"
-dependencies = [
- "async-trait",
- "axum",
- "base64",
- "chacha20poly1305",
- "chrono",
- "csv",
- "dirs",
- "icu_collections",
- "icu_locale_core",
- "icu_normalizer",
- "icu_normalizer_data",
- "icu_properties",
- "icu_properties_data",
- "icu_provider",
- "keyring",
- "rand 0.8.8",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "subtle",
- "sysinfo",
- "tempfile",
- "thiserror",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -851,6 +815,42 @@ name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
+
+[[package]]
+name = "mario-server"
+version = "0.3.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64",
+ "chacha20poly1305",
+ "chrono",
+ "csv",
+ "dirs",
+ "icu_collections",
+ "icu_locale_core",
+ "icu_normalizer",
+ "icu_normalizer_data",
+ "icu_properties",
+ "icu_properties_data",
+ "icu_provider",
+ "keyring",
+ "rand 0.8.8",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "sysinfo",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
 
 [[package]]
 name = "matchers"

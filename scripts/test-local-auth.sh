@@ -2,8 +2,8 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "$0")/.." && pwd)"
-server_bin="$root_dir/server/target/debug/compass-server"
-test_dir="$(mktemp -d /tmp/zhiheng-local-auth.XXXXXX)"
+server_bin="$root_dir/server/target/debug/mario-server"
+test_dir="$(mktemp -d /tmp/mario-local-auth.XXXXXX)"
 port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 token="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 server_pid=""
@@ -17,12 +17,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if env -u COMPASS_AUTH_TOKEN COMPASS_DATA_DIR="$test_dir" "$server_bin" --port "$port" >"$test_dir/no-token.log" 2>&1; then
+if env -u MARIO_AUTH_TOKEN -u COMPASS_AUTH_TOKEN MARIO_DATA_DIR="$test_dir" "$server_bin" --port "$port" >"$test_dir/no-token.log" 2>&1; then
   echo "server unexpectedly started without an authentication token" >&2
   exit 1
 fi
 
-COMPASS_DATA_DIR="$test_dir" COMPASS_AUTH_TOKEN="$token" \
+env -u COMPASS_AUTH_TOKEN MARIO_DATA_DIR="$test_dir" MARIO_AUTH_TOKEN="$token" \
   "$server_bin" --port "$port" >"$test_dir/server.log" 2>&1 &
 server_pid=$!
 

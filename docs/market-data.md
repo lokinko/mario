@@ -4,7 +4,7 @@
 
 外币持仓和流水必须先换算到用户的基准币种，才能进入组合汇总、风险检查、规划和变化归因。完全手填的汇率容易产生日期错位、录入错误和无法追溯的问题。本模块提供可替换的 `FxRateProvider`，首个实现使用欧洲中央银行（ECB）公开参考汇率。
 
-ECB 的 [Data Portal API](https://data.ecb.europa.eu/help/api/data-examples) 提供 SDMX 2.1 数据访问和 CSV 输出；知衡读取 `EXR.D.<currency>.EUR.SP00.A` 日度序列。ECB 说明参考汇率通常在工作日发布，属于买卖报价的平均参考值，仅供信息使用，并不代表实际市场成交价；完整边界见 [ECB 汇率说明](https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates)。
+ECB 的 [Data Portal API](https://data.ecb.europa.eu/help/api/data-examples) 提供 SDMX 2.1 数据访问和 CSV 输出；mario 读取 `EXR.D.<currency>.EUR.SP00.A` 日度序列。ECB 说明参考汇率通常在工作日发布，属于买卖报价的平均参考值，仅供信息使用，并不代表实际市场成交价；完整边界见 [ECB 汇率说明](https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates)。
 
 ## 换算协议
 
