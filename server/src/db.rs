@@ -1,20 +1,27 @@
-use std::{collections::HashSet, path::Path, sync::Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    sync::Mutex,
+};
 
 use chrono::{Local, NaiveDate, Utc};
-use rusqlite::{params, types::ValueRef, Connection, Transaction};
+use rusqlite::{params, types::ValueRef, Connection, Row, Transaction};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::{
     error::{AppError, AppResult},
+    event_import,
     models::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
         DecisionReviewInput, DecisionRuleCheck, FinancialProfile, Goal, GoalInput, Holding,
         HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem,
-        ModelConfig, PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventInput,
-        PortfolioEventRecord, PortfolioEventType, ReminderSettings, ResearchEvidence,
-        ResearchEvidenceInput, ReviewReminderSummary, RuleEffectivenessItem,
+        ModelConfig, PortfolioCheckInInput, PortfolioCheckInRecord,
+        PortfolioEventImportCommitRequest, PortfolioEventImportPreview,
+        PortfolioEventImportRequest, PortfolioEventImportResult, PortfolioEventImportRow,
+        PortfolioEventInput, PortfolioEventRecord, PortfolioEventType, ReminderSettings,
+        ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary, RuleEffectivenessItem,
         RuleEffectivenessSummary, Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
         SystemReviewSnapshot,
     },
@@ -82,6 +89,37 @@ const CURRENT_HOLDING_COLUMNS: &[&str] = &[
     "valuation_date",
     "created_at",
     "updated_at",
+];
+
+const LEGACY_EVENT_COLUMNS: &[&str] = &[
+    "id",
+    "event_type",
+    "asset_name",
+    "amount",
+    "currency",
+    "fx_rate_to_base",
+    "base_currency",
+    "base_amount",
+    "occurred_on",
+    "note",
+    "created_at",
+];
+
+const CURRENT_EVENT_COLUMNS: &[&str] = &[
+    "id",
+    "event_type",
+    "source",
+    "external_id",
+    "fingerprint",
+    "asset_name",
+    "amount",
+    "currency",
+    "fx_rate_to_base",
+    "base_currency",
+    "base_amount",
+    "occurred_on",
+    "note",
+    "created_at",
 ];
 
 const SYNC_TABLES: &[SyncTableSpec] = &[
@@ -191,24 +229,12 @@ const SYNC_TABLES: &[SyncTableSpec] = &[
     },
     SyncTableSpec {
         name: "portfolio_events",
-        columns: &[
-            "id",
-            "event_type",
-            "asset_name",
-            "amount",
-            "currency",
-            "fx_rate_to_base",
-            "base_currency",
-            "base_amount",
-            "occurred_on",
-            "note",
-            "created_at",
-        ],
+        columns: CURRENT_EVENT_COLUMNS,
         order_by: "occurred_on, created_at, id",
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 4;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 5;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 
@@ -227,6 +253,10 @@ fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
         }
         3 => {
             specs.truncate(V2_V3_SYNC_TABLE_COUNT);
+            Ok(specs)
+        }
+        4 => {
+            specs.last_mut().expect("event sync table").columns = LEGACY_EVENT_COLUMNS;
             Ok(specs)
         }
         SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
@@ -417,6 +447,9 @@ impl Database {
              CREATE TABLE IF NOT EXISTS portfolio_events (
                id TEXT PRIMARY KEY,
                event_type TEXT NOT NULL,
+               source TEXT NOT NULL DEFAULT 'manual',
+               external_id TEXT NOT NULL DEFAULT '',
+               fingerprint TEXT NOT NULL DEFAULT '',
                asset_name TEXT NOT NULL,
                amount REAL NOT NULL,
                currency TEXT NOT NULL,
@@ -427,8 +460,6 @@ impl Database {
                note TEXT NOT NULL,
                created_at TEXT NOT NULL
              );
-             CREATE INDEX IF NOT EXISTS idx_portfolio_events_occurred_on
-               ON portfolio_events(occurred_on, created_at);
              CREATE TABLE IF NOT EXISTS settings (
                key TEXT PRIMARY KEY,
                value TEXT NOT NULL
@@ -465,6 +496,30 @@ impl Database {
             "holdings",
             "updated_at",
             "TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(
+            &connection,
+            "portfolio_events",
+            "source",
+            "TEXT NOT NULL DEFAULT 'manual'",
+        )?;
+        ensure_column(
+            &connection,
+            "portfolio_events",
+            "external_id",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(
+            &connection,
+            "portfolio_events",
+            "fingerprint",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
+        connection.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_portfolio_events_occurred_on
+               ON portfolio_events(occurred_on, created_at);
+             CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolio_events_fingerprint
+               ON portfolio_events(fingerprint) WHERE fingerprint <> '';",
         )?;
         ensure_column(&connection, "holdings", "fx_rate_to_base", "REAL")?;
         ensure_column(
@@ -645,6 +700,7 @@ impl Database {
 
     pub fn import_sync_data(&self, dataset: &SyncDataset) -> AppResult<()> {
         dataset.validate()?;
+        validate_synced_event_identities(dataset)?;
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
         transaction.execute_batch("PRAGMA defer_foreign_keys=ON;")?;
@@ -827,28 +883,12 @@ impl Database {
     pub fn portfolio_events(&self) -> AppResult<Vec<PortfolioEventRecord>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT id, event_type, asset_name, amount, currency, fx_rate_to_base,
-                    base_currency, base_amount, occurred_on, note, created_at
+            "SELECT id, event_type, source, external_id, asset_name, amount, currency,
+                    fx_rate_to_base, base_currency, base_amount, occurred_on, note, created_at
              FROM portfolio_events
              ORDER BY occurred_on DESC, created_at DESC, id DESC LIMIT 500",
         )?;
-        let rows = statement.query_map([], |row| {
-            let event_type = portfolio_event_type_from_db(row.get::<_, String>(1)?.as_str())
-                .map_err(|_| rusqlite::Error::InvalidQuery)?;
-            Ok(PortfolioEventRecord {
-                id: row.get(0)?,
-                event_type,
-                asset_name: row.get(2)?,
-                amount: row.get(3)?,
-                currency: row.get(4)?,
-                fx_rate_to_base: row.get(5)?,
-                base_currency: row.get(6)?,
-                base_amount: row.get(7)?,
-                occurred_on: row.get(8)?,
-                note: row.get(9)?,
-                created_at: row.get(10)?,
-            })
-        })?;
+        let rows = statement.query_map([], portfolio_event_record_from_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
@@ -879,49 +919,188 @@ impl Database {
             )));
         }
 
-        let currency = input.currency.trim().to_ascii_uppercase();
-        let fx_rate_to_base = if currency == base_currency {
-            None
-        } else {
-            input.fx_rate_to_base
-        };
-        let base_amount = input.amount * fx_rate_to_base.unwrap_or(1.0);
-        if !base_amount.is_finite() || base_amount > 1e15 {
-            return Err(AppError::Validation("流水折算金额超出有效范围".into()));
+        let record = portfolio_event_record(input, &base_currency)?;
+        let fingerprint = portfolio_event_fingerprint(input);
+        let conn = self.conn()?;
+        if !fingerprint.is_empty()
+            && conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM portfolio_events WHERE fingerprint=?1)",
+                [&fingerprint],
+                |row| row.get::<_, bool>(0),
+            )?
+        {
+            return Err(AppError::Conflict(
+                "相同来源与交易 ID 的流水已经存在".into(),
+            ));
         }
-        let record = PortfolioEventRecord {
-            id: Uuid::new_v4().to_string(),
-            event_type: input.event_type.clone(),
-            asset_name: input.asset_name.trim().into(),
-            amount: input.amount,
-            currency,
-            fx_rate_to_base,
-            base_currency,
-            base_amount,
-            occurred_on: input.occurred_on.trim().into(),
-            note: input.note.trim().into(),
-            created_at: Utc::now().to_rfc3339(),
-        };
-        self.conn()?.execute(
-            "INSERT INTO portfolio_events
-             (id, event_type, asset_name, amount, currency, fx_rate_to_base, base_currency,
-              base_amount, occurred_on, note, created_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
-            params![
-                record.id,
-                portfolio_event_type_to_db(&record.event_type),
-                record.asset_name,
-                record.amount,
-                record.currency,
-                record.fx_rate_to_base,
-                record.base_currency,
-                record.base_amount,
-                record.occurred_on,
-                record.note,
-                record.created_at,
-            ],
-        )?;
+        insert_portfolio_event(&conn, &record, &fingerprint)?;
         Ok(record)
+    }
+
+    pub fn preview_portfolio_event_import(
+        &self,
+        request: &PortfolioEventImportRequest,
+    ) -> AppResult<PortfolioEventImportPreview> {
+        let parsed = event_import::parse(&request.csv_text)?;
+        let snapshot = self.snapshot()?;
+        let base_currency = snapshot.profile.base_currency.trim().to_ascii_uppercase();
+        let latest = self
+            .portfolio_checkins()?
+            .into_iter()
+            .next()
+            .ok_or_else(|| AppError::Validation("请先在决策总览建立组合基线".into()))?;
+        if !latest.base_currency.eq_ignore_ascii_case(&base_currency) {
+            return Err(AppError::Validation(
+                "基准币种已改变；请先建立新的组合基线，再导入流水".into(),
+            ));
+        }
+        let frozen_through = latest.valuation_date.ok_or_else(|| {
+            AppError::Validation("旧组合检查点没有估值日期；请先建立新的比较基线".into())
+        })?;
+        let existing = self.portfolio_event_identities()?;
+        let mut seen = HashMap::<String, String>::new();
+        let mut rows = parsed.issues;
+
+        for parsed_row in parsed.rows {
+            let input = &parsed_row.input;
+            let mut status = "ready";
+            let mut message = "校验通过，确认后写入".to_owned();
+            let validation =
+                if input.source.trim().is_empty() || input.external_id.trim().is_empty() {
+                    Err(AppError::Validation(
+                        "CSV 导入必须填写 source 和 external_id".into(),
+                    ))
+                } else if input.occurred_on.trim() <= frozen_through.as_str() {
+                    Err(AppError::Validation(format!(
+                        "发生日期必须晚于冻结边界 {frozen_through}"
+                    )))
+                } else {
+                    validate_portfolio_event(input, &base_currency)
+                };
+
+            if let Err(error) = validation {
+                status = "error";
+                message = error.to_string();
+            } else {
+                let record = portfolio_event_record(input, &base_currency)?;
+                let identity = portfolio_event_fingerprint(input);
+                let content = portfolio_event_content_hash(&record)?;
+                if let Some(existing_content) = existing.get(&identity) {
+                    if existing_content == &content {
+                        status = "duplicate";
+                        message = "相同来源交易 ID 与内容已经存在，将跳过".into();
+                    } else {
+                        status = "error";
+                        message = "相同来源交易 ID 已存在，但内容不同".into();
+                    }
+                } else if let Some(previous_content) = seen.get(&identity) {
+                    if previous_content == &content {
+                        status = "duplicate";
+                        message = "CSV 内存在完全相同的重复行，将跳过".into();
+                    } else {
+                        status = "error";
+                        message = "CSV 内同一来源交易 ID 对应不同内容".into();
+                    }
+                } else {
+                    seen.insert(identity, content);
+                }
+            }
+
+            rows.push(portfolio_event_import_row(
+                parsed_row.row_number,
+                input,
+                status,
+                message,
+            ));
+        }
+        rows.sort_by_key(|row| row.row_number);
+        let ready_count = rows.iter().filter(|row| row.status == "ready").count();
+        let duplicate_count = rows.iter().filter(|row| row.status == "duplicate").count();
+        let error_count = rows.iter().filter(|row| row.status == "error").count();
+        let preview_revision =
+            portfolio_import_revision(&rows, &base_currency, &frozen_through, &request.csv_text)?;
+        Ok(PortfolioEventImportPreview {
+            rows,
+            ready_count,
+            duplicate_count,
+            error_count,
+            preview_revision,
+            base_currency,
+            frozen_through,
+        })
+    }
+
+    pub fn commit_portfolio_event_import(
+        &self,
+        request: &PortfolioEventImportCommitRequest,
+    ) -> AppResult<PortfolioEventImportResult> {
+        let preview = self.preview_portfolio_event_import(&PortfolioEventImportRequest {
+            csv_text: request.csv_text.clone(),
+        })?;
+        if request.preview_revision != preview.preview_revision {
+            return Err(AppError::Conflict(
+                "流水或组合基线已变化，请重新预览 CSV".into(),
+            ));
+        }
+        if preview.error_count > 0 {
+            return Err(AppError::Validation(
+                "CSV 仍有错误行，修正并重新预览后才能导入".into(),
+            ));
+        }
+        let ready_rows = preview
+            .rows
+            .iter()
+            .filter(|row| row.status == "ready")
+            .map(|row| row.row_number)
+            .collect::<HashSet<_>>();
+        let parsed = event_import::parse(&request.csv_text)?;
+        let mut conn = self.conn()?;
+        let transaction = conn.transaction()?;
+        let mut inserted_count = 0;
+        for row in parsed.rows {
+            if !ready_rows.contains(&row.row_number) {
+                continue;
+            }
+            let record = portfolio_event_record(&row.input, &preview.base_currency)?;
+            let fingerprint = portfolio_event_fingerprint(&row.input);
+            insert_portfolio_event(&transaction, &record, &fingerprint)?;
+            inserted_count += 1;
+        }
+        transaction.commit()?;
+        Ok(PortfolioEventImportResult {
+            inserted_count,
+            duplicate_count: preview.duplicate_count,
+            preview_revision: preview.preview_revision,
+        })
+    }
+
+    fn portfolio_event_identities(&self) -> AppResult<HashMap<String, String>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT id, event_type, source, external_id, asset_name, amount, currency,
+                    fx_rate_to_base, base_currency, base_amount, occurred_on, note, created_at
+             FROM portfolio_events WHERE external_id <> ''",
+        )?;
+        let rows = statement.query_map([], portfolio_event_record_from_row)?;
+        let mut identities = HashMap::new();
+        for row in rows {
+            let record = row?;
+            identities.insert(
+                portfolio_event_fingerprint(&PortfolioEventInput {
+                    event_type: record.event_type.clone(),
+                    source: record.source.clone(),
+                    external_id: record.external_id.clone(),
+                    asset_name: record.asset_name.clone(),
+                    amount: record.amount,
+                    currency: record.currency.clone(),
+                    fx_rate_to_base: record.fx_rate_to_base,
+                    occurred_on: record.occurred_on.clone(),
+                    note: record.note.clone(),
+                }),
+                portfolio_event_content_hash(&record)?,
+            );
+        }
+        Ok(identities)
     }
 
     fn portfolio_events_between(
@@ -931,29 +1110,16 @@ impl Database {
     ) -> AppResult<Vec<PortfolioEventRecord>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT id, event_type, asset_name, amount, currency, fx_rate_to_base,
-                    base_currency, base_amount, occurred_on, note, created_at
+            "SELECT id, event_type, source, external_id, asset_name, amount, currency,
+                    fx_rate_to_base, base_currency, base_amount, occurred_on, note, created_at
              FROM portfolio_events
              WHERE occurred_on > ?1 AND occurred_on <= ?2
              ORDER BY occurred_on, created_at, id",
         )?;
-        let rows = statement.query_map(params![period_start, period_end], |row| {
-            let event_type = portfolio_event_type_from_db(row.get::<_, String>(1)?.as_str())
-                .map_err(|_| rusqlite::Error::InvalidQuery)?;
-            Ok(PortfolioEventRecord {
-                id: row.get(0)?,
-                event_type,
-                asset_name: row.get(2)?,
-                amount: row.get(3)?,
-                currency: row.get(4)?,
-                fx_rate_to_base: row.get(5)?,
-                base_currency: row.get(6)?,
-                base_amount: row.get(7)?,
-                occurred_on: row.get(8)?,
-                note: row.get(9)?,
-                created_at: row.get(10)?,
-            })
-        })?;
+        let rows = statement.query_map(
+            params![period_start, period_end],
+            portfolio_event_record_from_row,
+        )?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
@@ -2207,6 +2373,209 @@ fn portfolio_event_type_from_db(value: &str) -> AppResult<PortfolioEventType> {
     }
 }
 
+fn portfolio_event_record_from_row(row: &Row<'_>) -> rusqlite::Result<PortfolioEventRecord> {
+    let event_type = portfolio_event_type_from_db(row.get::<_, String>(1)?.as_str())
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    Ok(PortfolioEventRecord {
+        id: row.get(0)?,
+        event_type,
+        source: row.get(2)?,
+        external_id: row.get(3)?,
+        asset_name: row.get(4)?,
+        amount: row.get(5)?,
+        currency: row.get(6)?,
+        fx_rate_to_base: row.get(7)?,
+        base_currency: row.get(8)?,
+        base_amount: row.get(9)?,
+        occurred_on: row.get(10)?,
+        note: row.get(11)?,
+        created_at: row.get(12)?,
+    })
+}
+
+fn portfolio_event_record(
+    input: &PortfolioEventInput,
+    base_currency: &str,
+) -> AppResult<PortfolioEventRecord> {
+    let currency = input.currency.trim().to_ascii_uppercase();
+    let fx_rate_to_base = if currency == base_currency {
+        None
+    } else {
+        input.fx_rate_to_base
+    };
+    let base_amount = input.amount * fx_rate_to_base.unwrap_or(1.0);
+    if !base_amount.is_finite() || base_amount > 1e15 {
+        return Err(AppError::Validation("流水折算金额超出有效范围".into()));
+    }
+    Ok(PortfolioEventRecord {
+        id: Uuid::new_v4().to_string(),
+        event_type: input.event_type.clone(),
+        source: if input.source.trim().is_empty() {
+            "manual".into()
+        } else {
+            input.source.trim().into()
+        },
+        external_id: input.external_id.trim().into(),
+        asset_name: input.asset_name.trim().into(),
+        amount: input.amount,
+        currency,
+        fx_rate_to_base,
+        base_currency: base_currency.into(),
+        base_amount,
+        occurred_on: input.occurred_on.trim().into(),
+        note: input.note.trim().into(),
+        created_at: Utc::now().to_rfc3339(),
+    })
+}
+
+fn portfolio_event_fingerprint(input: &PortfolioEventInput) -> String {
+    portfolio_event_identity_fingerprint(&input.source, &input.external_id)
+}
+
+fn portfolio_event_identity_fingerprint(source: &str, external_id: &str) -> String {
+    if external_id.trim().is_empty() {
+        return String::new();
+    }
+    format!(
+        "{:x}",
+        Sha256::digest(
+            format!(
+                "{}\u{1f}{}",
+                source.trim().to_ascii_lowercase(),
+                external_id.trim()
+            )
+            .as_bytes()
+        )
+    )
+}
+
+fn validate_synced_event_identities(dataset: &SyncDataset) -> AppResult<()> {
+    if dataset.schema_version < 5 {
+        return Ok(());
+    }
+    let table = dataset
+        .tables
+        .iter()
+        .find(|table| table.name == "portfolio_events")
+        .ok_or_else(|| AppError::Validation("数据快照缺少 portfolio_events".into()))?;
+    let mut seen = HashSet::new();
+    for row in &table.rows {
+        let SyncValue::Text(source) = &row[2] else {
+            return Err(AppError::Validation("同步流水来源字段类型无效".into()));
+        };
+        let SyncValue::Text(external_id) = &row[3] else {
+            return Err(AppError::Validation("同步流水交易 ID 字段类型无效".into()));
+        };
+        let SyncValue::Text(fingerprint) = &row[4] else {
+            return Err(AppError::Validation("同步流水去重指纹字段类型无效".into()));
+        };
+        if (!external_id.is_empty() && source.trim().is_empty())
+            || source.chars().count() > 120
+            || external_id.chars().count() > 200
+        {
+            return Err(AppError::Validation("同步流水导入标识无效".into()));
+        }
+        let expected = portfolio_event_identity_fingerprint(source, external_id);
+        if fingerprint != &expected {
+            return Err(AppError::Validation("同步流水去重指纹不匹配".into()));
+        }
+        if !fingerprint.is_empty() && !seen.insert(fingerprint) {
+            return Err(AppError::Validation("同步数据包含重复流水交易 ID".into()));
+        }
+    }
+    Ok(())
+}
+
+fn portfolio_event_content_hash(record: &PortfolioEventRecord) -> AppResult<String> {
+    let canonical = serde_json::json!({
+        "eventType": record.event_type,
+        "source": record.source.trim().to_ascii_lowercase(),
+        "externalId": record.external_id.trim(),
+        "assetName": record.asset_name.trim(),
+        "amount": record.amount,
+        "currency": record.currency.trim().to_ascii_uppercase(),
+        "fxRateToBase": record.fx_rate_to_base,
+        "baseCurrency": record.base_currency.trim().to_ascii_uppercase(),
+        "baseAmount": record.base_amount,
+        "occurredOn": record.occurred_on.trim(),
+        "note": record.note.trim(),
+    });
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&canonical)?)
+    ))
+}
+
+fn portfolio_event_import_row(
+    row_number: usize,
+    input: &PortfolioEventInput,
+    status: &str,
+    message: String,
+) -> PortfolioEventImportRow {
+    PortfolioEventImportRow {
+        row_number,
+        status: status.into(),
+        message,
+        source: input.source.trim().into(),
+        external_id: input.external_id.trim().into(),
+        event_type: portfolio_event_type_to_db(&input.event_type).into(),
+        occurred_on: input.occurred_on.trim().into(),
+        amount: Some(input.amount),
+        currency: input.currency.trim().to_ascii_uppercase(),
+        fx_rate_to_base: input.fx_rate_to_base,
+        asset_name: input.asset_name.trim().into(),
+        note: input.note.trim().into(),
+    }
+}
+
+fn portfolio_import_revision(
+    rows: &[PortfolioEventImportRow],
+    base_currency: &str,
+    frozen_through: &str,
+    csv_text: &str,
+) -> AppResult<String> {
+    let canonical = serde_json::json!({
+        "rows": rows,
+        "baseCurrency": base_currency,
+        "frozenThrough": frozen_through,
+        "csvSha256": format!("{:x}", Sha256::digest(csv_text.as_bytes())),
+    });
+    Ok(format!(
+        "import-{:x}",
+        Sha256::digest(serde_json::to_vec(&canonical)?)
+    ))
+}
+
+fn insert_portfolio_event(
+    connection: &Connection,
+    record: &PortfolioEventRecord,
+    fingerprint: &str,
+) -> AppResult<()> {
+    connection.execute(
+        "INSERT INTO portfolio_events
+         (id, event_type, source, external_id, fingerprint, asset_name, amount, currency,
+          fx_rate_to_base, base_currency, base_amount, occurred_on, note, created_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+        params![
+            record.id,
+            portfolio_event_type_to_db(&record.event_type),
+            record.source,
+            record.external_id,
+            fingerprint,
+            record.asset_name,
+            record.amount,
+            record.currency,
+            record.fx_rate_to_base,
+            record.base_currency,
+            record.base_amount,
+            record.occurred_on,
+            record.note,
+            record.created_at,
+        ],
+    )?;
+    Ok(())
+}
+
 fn validate_portfolio_event(input: &PortfolioEventInput, base_currency: &str) -> AppResult<()> {
     if !input.amount.is_finite() || input.amount <= 0.0 || input.amount > 1e15 {
         return Err(AppError::Validation(
@@ -2240,6 +2609,13 @@ fn validate_portfolio_event(input: &PortfolioEventInput, base_currency: &str) ->
             "流水说明为必填项，便于未来核对".into(),
         ));
     }
+    let source = input.source.trim();
+    let external_id = input.external_id.trim();
+    if source.is_empty() && !external_id.is_empty() {
+        return Err(AppError::Validation(
+            "填写来源交易 ID 时必须同时填写流水来源".into(),
+        ));
+    }
     if matches!(
         input.event_type,
         PortfolioEventType::Buy
@@ -2252,8 +2628,14 @@ fn validate_portfolio_event(input: &PortfolioEventInput, base_currency: &str) ->
             "买卖、分红或利息流水必须填写关联资产".into(),
         ));
     }
-    if input.asset_name.chars().count() > 200 || input.note.chars().count() > 2_000 {
-        return Err(AppError::Validation("流水资产名称或说明过长".into()));
+    if source.chars().count() > 120
+        || external_id.chars().count() > 200
+        || input.asset_name.chars().count() > 200
+        || input.note.chars().count() > 2_000
+    {
+        return Err(AppError::Validation(
+            "流水来源、交易 ID、资产名称或说明过长".into(),
+        ));
     }
     Ok(())
 }
@@ -2639,6 +3021,8 @@ mod tests {
         source
             .add_portfolio_event(&PortfolioEventInput {
                 event_type: PortfolioEventType::Deposit,
+                source: "同步券商".into(),
+                external_id: "sync-event-1".into(),
                 asset_name: String::new(),
                 amount: 5_000.0,
                 currency: "CNY".into(),
@@ -2656,6 +3040,20 @@ mod tests {
             second_export.content_hash().unwrap()
         );
 
+        let mut corrupted_identity = dataset.clone();
+        let event_table = corrupted_identity
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "portfolio_events")
+            .unwrap();
+        event_table.rows[0][4] = SyncValue::Text("wrong-fingerprint".into());
+        let corrupted_target =
+            Database::open(&directory.path().join("corrupted-target.db")).unwrap();
+        assert!(matches!(
+            corrupted_target.import_sync_data(&corrupted_identity),
+            Err(AppError::Validation(_))
+        ));
+
         let target = Database::open(&directory.path().join("target.db")).unwrap();
         target
             .set_setting("model.name", "keep-local-model")
@@ -2668,13 +3066,37 @@ mod tests {
         assert_eq!(restored_decision.rule_checks.len(), 1);
         assert_eq!(restored_decision.rule_checks[0].status, "遵守");
         assert_eq!(target.portfolio_checkins().unwrap().len(), 1);
-        assert_eq!(target.portfolio_events().unwrap().len(), 1);
+        let restored_events = target.portfolio_events().unwrap();
+        assert_eq!(restored_events.len(), 1);
+        assert_eq!(restored_events[0].source, "同步券商");
+        assert_eq!(restored_events[0].external_id, "sync-event-1");
         assert_eq!(
             target.setting("model.name").unwrap().as_deref(),
             Some("keep-local-model")
         );
 
-        let mut legacy_v3 = dataset.clone();
+        let mut legacy_v4 = dataset.clone();
+        legacy_v4.schema_version = 4;
+        let events = legacy_v4
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "portfolio_events")
+            .unwrap();
+        for index in [4, 3, 2] {
+            events.columns.remove(index);
+            for row in &mut events.rows {
+                row.remove(index);
+            }
+        }
+        legacy_v4.validate().unwrap();
+        let v4_target = Database::open(&directory.path().join("v4-target.db")).unwrap();
+        v4_target.import_sync_data(&legacy_v4).unwrap();
+        let v4_events = v4_target.portfolio_events().unwrap();
+        assert_eq!(v4_events.len(), 1);
+        assert_eq!(v4_events[0].source, "manual");
+        assert!(v4_events[0].external_id.is_empty());
+
+        let mut legacy_v3 = legacy_v4;
         legacy_v3.schema_version = 3;
         assert_eq!(legacy_v3.tables.pop().unwrap().name, "portfolio_events");
         legacy_v3.validate().unwrap();
@@ -2881,6 +3303,8 @@ mod tests {
         assert!(matches!(
             db.add_portfolio_event(&PortfolioEventInput {
                 event_type: PortfolioEventType::Deposit,
+                source: "manual".into(),
+                external_id: String::new(),
                 asset_name: String::new(),
                 amount: 1_000.0,
                 currency: "CNY".into(),
@@ -2915,6 +3339,8 @@ mod tests {
         for input in [
             PortfolioEventInput {
                 event_type: PortfolioEventType::Deposit,
+                source: "manual".into(),
+                external_id: String::new(),
                 asset_name: String::new(),
                 amount: 10_000.0,
                 currency: "CNY".into(),
@@ -2924,6 +3350,8 @@ mod tests {
             },
             PortfolioEventInput {
                 event_type: PortfolioEventType::Dividend,
+                source: "manual".into(),
+                external_id: String::new(),
                 asset_name: "宽基指数".into(),
                 amount: 500.0,
                 currency: "CNY".into(),
@@ -2933,6 +3361,8 @@ mod tests {
             },
             PortfolioEventInput {
                 event_type: PortfolioEventType::Fee,
+                source: "manual".into(),
+                external_id: String::new(),
                 asset_name: "宽基指数".into(),
                 amount: 50.0,
                 currency: "CNY".into(),
@@ -2942,6 +3372,8 @@ mod tests {
             },
             PortfolioEventInput {
                 event_type: PortfolioEventType::Buy,
+                source: "manual".into(),
+                external_id: String::new(),
                 asset_name: "宽基指数".into(),
                 amount: 20_000.0,
                 currency: "CNY".into(),
@@ -2988,6 +3420,8 @@ mod tests {
         assert!(matches!(
             db.add_portfolio_event(&PortfolioEventInput {
                 event_type: PortfolioEventType::Withdrawal,
+                source: "manual".into(),
+                external_id: String::new(),
                 asset_name: String::new(),
                 amount: 100.0,
                 currency: "CNY".into(),
@@ -2996,6 +3430,124 @@ mod tests {
                 note: "迟到记录".into(),
             }),
             Err(AppError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn csv_event_import_is_previewed_atomic_deduplicated_and_revision_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("event-import.db")).unwrap();
+        db.add_holding(&HoldingInput {
+            symbol: "CASH".into(),
+            name: "现金".into(),
+            asset_class: "现金".into(),
+            market_value: 10_000.0,
+            cost_basis: 10_000.0,
+            target_pct: 100.0,
+            currency: "CNY".into(),
+            fx_rate_to_base: None,
+            valuation_date: "2026-08-31".into(),
+        })
+        .unwrap();
+        db.save_portfolio_checkin(&PortfolioCheckInInput {
+            period_label: "导入基线".into(),
+            external_cash_flow: 0.0,
+            note: String::new(),
+            reset_baseline: false,
+            use_ledger_cash_flows: true,
+        })
+        .unwrap();
+
+        let conflicting = "source,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,asset_name,note\n券商甲,trade-001,deposit,2026-09-01,1000,CNY,,,首次入金\n券商甲,trade-001,deposit,2026-09-01,2000,CNY,,,冲突入金\n";
+        let conflict_preview = db
+            .preview_portfolio_event_import(&PortfolioEventImportRequest {
+                csv_text: conflicting.into(),
+            })
+            .unwrap();
+        assert_eq!(conflict_preview.ready_count, 1);
+        assert_eq!(conflict_preview.error_count, 1);
+        assert!(matches!(
+            db.commit_portfolio_event_import(&PortfolioEventImportCommitRequest {
+                csv_text: conflicting.into(),
+                preview_revision: conflict_preview.preview_revision,
+            }),
+            Err(AppError::Validation(_))
+        ));
+        assert!(db.portfolio_events().unwrap().is_empty());
+
+        let valid = "source,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,asset_name,note\n券商甲,trade-001,deposit,2026-09-01,1000,CNY,,,首次入金\n券商甲,trade-001,deposit,2026-09-01,1000,CNY,,,首次入金\n券商甲,fee-001,fee,2026-09-02,5,CNY,,指数基金,交易费用\n";
+        let preview = db
+            .preview_portfolio_event_import(&PortfolioEventImportRequest {
+                csv_text: valid.into(),
+            })
+            .unwrap();
+        assert_eq!(preview.ready_count, 2);
+        assert_eq!(preview.duplicate_count, 1);
+        assert_eq!(preview.error_count, 0);
+        let changed_after_preview = valid.replace("交易费用", "费用说明已改变");
+        assert!(matches!(
+            db.commit_portfolio_event_import(&PortfolioEventImportCommitRequest {
+                csv_text: changed_after_preview,
+                preview_revision: preview.preview_revision.clone(),
+            }),
+            Err(AppError::Conflict(_))
+        ));
+        assert!(db.portfolio_events().unwrap().is_empty());
+        let result = db
+            .commit_portfolio_event_import(&PortfolioEventImportCommitRequest {
+                csv_text: valid.into(),
+                preview_revision: preview.preview_revision,
+            })
+            .unwrap();
+        assert_eq!(result.inserted_count, 2);
+        assert_eq!(result.duplicate_count, 1);
+        assert_eq!(db.portfolio_events().unwrap().len(), 2);
+
+        let repeated = db
+            .preview_portfolio_event_import(&PortfolioEventImportRequest {
+                csv_text: valid.into(),
+            })
+            .unwrap();
+        assert_eq!(repeated.ready_count, 0);
+        assert_eq!(repeated.duplicate_count, 3);
+        let repeated_result = db
+            .commit_portfolio_event_import(&PortfolioEventImportCommitRequest {
+                csv_text: valid.into(),
+                preview_revision: repeated.preview_revision,
+            })
+            .unwrap();
+        assert_eq!(repeated_result.inserted_count, 0);
+
+        let changed = valid.replace("1000,CNY,,,首次入金", "1200,CNY,,,首次入金");
+        let changed_preview = db
+            .preview_portfolio_event_import(&PortfolioEventImportRequest { csv_text: changed })
+            .unwrap();
+        assert!(changed_preview.error_count > 0);
+
+        let late = "source,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,asset_name,note\n券商甲,trade-003,interest,2026-09-03,20,CNY,,现金,利息\n";
+        let late_preview = db
+            .preview_portfolio_event_import(&PortfolioEventImportRequest {
+                csv_text: late.into(),
+            })
+            .unwrap();
+        db.add_portfolio_event(&PortfolioEventInput {
+            event_type: PortfolioEventType::Interest,
+            source: "券商甲".into(),
+            external_id: "trade-003".into(),
+            asset_name: "现金".into(),
+            amount: 20.0,
+            currency: "CNY".into(),
+            fx_rate_to_base: None,
+            occurred_on: "2026-09-03".into(),
+            note: "利息".into(),
+        })
+        .unwrap();
+        assert!(matches!(
+            db.commit_portfolio_event_import(&PortfolioEventImportCommitRequest {
+                csv_text: late.into(),
+                preview_revision: late_preview.preview_revision,
+            }),
+            Err(AppError::Conflict(_))
         ));
     }
 
@@ -3025,6 +3577,8 @@ mod tests {
         .unwrap();
         let mut input = PortfolioEventInput {
             event_type: PortfolioEventType::Withdrawal,
+            source: "manual".into(),
+            external_id: String::new(),
             asset_name: String::new(),
             amount: 100.0,
             currency: "USD".into(),
@@ -3466,9 +4020,19 @@ mod tests {
                    id TEXT PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL,
                    created_at TEXT NOT NULL
                  );
+                 CREATE TABLE portfolio_events (
+                   id TEXT PRIMARY KEY, event_type TEXT NOT NULL, asset_name TEXT NOT NULL,
+                   amount REAL NOT NULL, currency TEXT NOT NULL, fx_rate_to_base REAL,
+                   base_currency TEXT NOT NULL, base_amount REAL NOT NULL,
+                   occurred_on TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL
+                 );
                  INSERT INTO goals VALUES ('g1','养老',1000000,'2036-12-31','重要','2026-01-01');
                  INSERT INTO holdings VALUES ('h1','IDX','指数','基金',100000,90000,'CNY','2026-01-01');
-                 INSERT INTO analyses VALUES ('a1','旧问题','旧回答','2026-01-01');",
+                 INSERT INTO analyses VALUES ('a1','旧问题','旧回答','2026-01-01');
+                 INSERT INTO portfolio_events VALUES (
+                   'e1','deposit','',1000,'CNY',NULL,'CNY',1000,
+                   '2026-01-02','旧版入金','2026-01-02T00:00:00Z'
+                 );",
             )
             .unwrap();
         drop(connection);
@@ -3480,6 +4044,10 @@ mod tests {
         assert_eq!(snapshot.holdings[0].target_pct, 0.0);
         assert_eq!(snapshot.holdings[0].fx_rate_to_base, None);
         assert!(snapshot.holdings[0].valuation_date.is_empty());
+        let events = db.portfolio_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].source, "manual");
+        assert!(events[0].external_id.is_empty());
         assert_eq!(snapshot.profile.base_currency, "CNY");
         assert_eq!(snapshot.valuation_status.undated_holding_count, 1);
         assert!(db.analysis_history().unwrap()[0].transparency.is_none());

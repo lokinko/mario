@@ -70,6 +70,8 @@ mod tests {
         PortfolioEventRecord {
             id: format!("{event_type:?}-{occurred_on}"),
             event_type,
+            source: "manual".into(),
+            external_id: String::new(),
             asset_name: String::new(),
             amount,
             currency: "CNY".into(),

@@ -825,9 +825,27 @@ mod tests {
     }
 
     #[test]
-    fn decrypts_legacy_v1_through_v3_bundles_and_rejects_mismatched_markers() {
+    fn decrypts_legacy_v1_through_v4_bundles_and_rejects_mismatched_markers() {
         let key = parse_recovery_key(&generate_recovery_key()).unwrap();
-        let mut v3_source = dataset();
+        let mut v4_source = dataset();
+        v4_source.schema_version = 4;
+        let events = v4_source
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "portfolio_events")
+            .unwrap();
+        for index in [4, 3, 2] {
+            events.columns.remove(index);
+            for row in &mut events.rows {
+                row.remove(index);
+            }
+        }
+        v4_source.validate().unwrap();
+        let mut v4_blob = encrypt_dataset(&v4_source, &key).unwrap();
+        v4_blob.schema_version = 4;
+        assert_eq!(decrypt_dataset(&v4_blob, &key).unwrap().schema_version, 4);
+
+        let mut v3_source = v4_source;
         v3_source.schema_version = 3;
         assert_eq!(v3_source.tables.pop().unwrap().name, "portfolio_events");
         v3_source.validate().unwrap();

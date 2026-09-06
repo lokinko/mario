@@ -1,6 +1,6 @@
 [package]
 name = "compass-server"
-version = "0.1.8"
+version = "0.1.9"
 description = "Local API, investment methodology and AI orchestration service"
 edition = "2021"
 rust-version = "1.86"
@@ -11,6 +11,7 @@ axum = "0.8"
 base64 = "0.22"
 chacha20poly1305 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
+csv = "1"
 dirs = "6"
 keyring = { version = "3", features = ["apple-native"] }
 rand = "0.8"

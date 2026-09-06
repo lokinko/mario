@@ -104,6 +104,10 @@ pub enum PortfolioEventType {
 #[serde(rename_all = "camelCase")]
 pub struct PortfolioEventInput {
     pub event_type: PortfolioEventType,
+    #[serde(default = "default_manual_source")]
+    pub source: String,
+    #[serde(default)]
+    pub external_id: String,
     #[serde(default)]
     pub asset_name: String,
     pub amount: f64,
@@ -119,6 +123,10 @@ pub struct PortfolioEventInput {
 pub struct PortfolioEventRecord {
     pub id: String,
     pub event_type: PortfolioEventType,
+    #[serde(default = "default_manual_source")]
+    pub source: String,
+    #[serde(default)]
+    pub external_id: String,
     pub asset_name: String,
     pub amount: f64,
     pub currency: String,
@@ -128,6 +136,56 @@ pub struct PortfolioEventRecord {
     pub occurred_on: String,
     pub note: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioEventImportRequest {
+    pub csv_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioEventImportCommitRequest {
+    pub csv_text: String,
+    pub preview_revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioEventImportRow {
+    pub row_number: usize,
+    pub status: String,
+    pub message: String,
+    pub source: String,
+    pub external_id: String,
+    pub event_type: String,
+    pub occurred_on: String,
+    pub amount: Option<f64>,
+    pub currency: String,
+    pub fx_rate_to_base: Option<f64>,
+    pub asset_name: String,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioEventImportPreview {
+    pub rows: Vec<PortfolioEventImportRow>,
+    pub ready_count: usize,
+    pub duplicate_count: usize,
+    pub error_count: usize,
+    pub preview_revision: String,
+    pub base_currency: String,
+    pub frozen_through: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioEventImportResult {
+    pub inserted_count: usize,
+    pub duplicate_count: usize,
+    pub preview_revision: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -373,6 +431,10 @@ fn enabled() -> bool {
 }
 
 fn default_cash_flow_source() -> String {
+    "manual".into()
+}
+
+fn default_manual_source() -> String {
     "manual".into()
 }
 

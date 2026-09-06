@@ -47,6 +47,8 @@ export type PortfolioEventType = "deposit" | "withdrawal" | "dividend" | "intere
 
 export interface PortfolioEventInput {
   eventType: PortfolioEventType;
+  source: string;
+  externalId: string;
   assetName: string;
   amount: number;
   currency: string;
@@ -60,6 +62,39 @@ export interface PortfolioEventRecord extends PortfolioEventInput {
   baseCurrency: string;
   baseAmount: number;
   createdAt: string;
+}
+
+export type PortfolioEventImportStatus = "ready" | "duplicate" | "error";
+
+export interface PortfolioEventImportRow {
+  rowNumber: number;
+  status: PortfolioEventImportStatus;
+  message: string;
+  source: string;
+  externalId: string;
+  eventType: string;
+  occurredOn: string;
+  amount: number | null;
+  currency: string;
+  fxRateToBase: number | null;
+  assetName: string;
+  note: string;
+}
+
+export interface PortfolioEventImportPreview {
+  rows: PortfolioEventImportRow[];
+  readyCount: number;
+  duplicateCount: number;
+  errorCount: number;
+  previewRevision: string;
+  baseCurrency: string;
+  frozenThrough: string;
+}
+
+export interface PortfolioEventImportResult {
+  insertedCount: number;
+  duplicateCount: number;
+  previewRevision: string;
 }
 
 export interface PortfolioAllocationChange {

@@ -105,7 +105,24 @@ impl ContextBuilder {
             );
         }
         if selection.include_portfolio_events {
-            payload.insert("portfolioEvents".into(), json!(portfolio_events));
+            payload.insert(
+                "portfolioEvents".into(),
+                json!(portfolio_events
+                    .iter()
+                    .map(|event| json!({
+                        "id": event.id,
+                        "eventType": event.event_type,
+                        "assetName": event.asset_name,
+                        "amount": event.amount,
+                        "currency": event.currency,
+                        "fxRateToBase": event.fx_rate_to_base,
+                        "baseCurrency": event.base_currency,
+                        "baseAmount": event.base_amount,
+                        "occurredOn": event.occurred_on,
+                        "note": event.note,
+                    }))
+                    .collect::<Vec<_>>()),
+            );
         }
         if selection.include_evidence {
             payload.insert("researchEvidence".into(), json!(evidence_candidates));
@@ -729,6 +746,8 @@ mod tests {
         let event = PortfolioEventRecord {
             id: "event-1".into(),
             event_type: PortfolioEventType::Deposit,
+            source: "券商隐私来源".into(),
+            external_id: "sensitive-trade-id".into(),
             asset_name: String::new(),
             amount: 10_000.0,
             currency: "CNY".into(),
@@ -748,6 +767,9 @@ mod tests {
             },
         );
         assert!(included.payload.get("portfolioEvents").is_some());
+        let serialized = included.payload.to_string();
+        assert!(!serialized.contains("券商隐私来源"));
+        assert!(!serialized.contains("sensitive-trade-id"));
 
         let mut excluded_request = request;
         excluded_request.context_selection.include_portfolio_events = false;

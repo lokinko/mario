@@ -21,6 +21,8 @@ import type {
   PortfolioCheckInInput,
   PortfolioCheckInRecord,
   PortfolioEventInput,
+  PortfolioEventImportPreview,
+  PortfolioEventImportResult,
   PortfolioEventRecord,
   ResearchEvidence,
   ResearchEvidenceInput,
@@ -127,6 +129,20 @@ export async function savePortfolioEvent(input: PortfolioEventInput): Promise<Po
   return httpRequest<PortfolioEventRecord>("/portfolio-events", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export async function previewPortfolioEventImport(csvText: string): Promise<PortfolioEventImportPreview> {
+  return httpRequest<PortfolioEventImportPreview>("/portfolio-events/import/preview", {
+    method: "POST",
+    body: JSON.stringify({ csvText }),
+  });
+}
+
+export async function commitPortfolioEventImport(csvText: string, previewRevision: string): Promise<PortfolioEventImportResult> {
+  return httpRequest<PortfolioEventImportResult>("/portfolio-events/import/commit", {
+    method: "POST",
+    body: JSON.stringify({ csvText, previewRevision }),
   });
 }
 

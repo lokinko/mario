@@ -24,6 +24,7 @@
 │      ├─ planning simulation   │
 │      ├─ valuation integrity   │
 │      ├─ event ledger/performance│
+│      ├─ CSV import preview    │
 │      ├─ review snapshots      │
 │      ├─ versioned user rules  │
 │      ├─ evidence retriever    │
@@ -87,6 +88,8 @@ pub trait ModelProvider: Send + Sync {
 
 `server/src/performance.rs` 只处理已经冻结的组合流水：将外部入出金、内部现金收入、费用税费和交易换手分开汇总，并按发生日期计算 Modified Dietz 期间近似回报。流水与检查点由数据库保证只追加和按日期分段；该模块不读取持仓、不调用模型，也不把近似回报冒充时间加权收益率。
 
+`server/src/event_import.rs` 把 CSV 当作不可信输入，负责大小和行数上限、表头映射、类型解析与行级结构错误。数据库领域层复用手工流水校验，增加稳定来源编号去重、内容冲突检测、预览版本绑定和事务写入。解析器不知道 HTTP、SQLite 或 AI；机构适配器未来可以统一输出这份中间契约。详细说明见 [组合流水 CSV 导入](portfolio-event-import.md)。
+
 ## 数据与安全边界
 
 - 服务端只监听 loopback 地址，不暴露局域网端口。
@@ -101,7 +104,7 @@ pub trait ModelProvider: Send + Sync {
 - 模型提示词明确禁止编造实时市场数据、收益保证和确定性买卖指令。
 - 规则层输出与模型推理分离，降低大模型覆盖基础风险事实的概率。
 - 所有组合级数值先按财务档案的基准币种折算；外币汇率缺失时风险、规划、再平衡和归因安全降级，不对原币金额求和。
-- 云同步使用固定数据表白名单与 XChaCha20-Poly1305；组合流水随投资域数据同步，恢复密钥不上传。
+- 云同步使用固定数据表白名单与 XChaCha20-Poly1305；组合流水和导入去重标识随投资域数据同步，恢复密钥不上传。
 - 同步写入以云端 revision 做原子比较；并发修改不会静默覆盖。
 - 拉取完成解密、结构和内容指纹检查后，才在一个 SQLite 事务中替换投资域数据；本地设置和密钥不在事务范围内。
 
@@ -112,7 +115,7 @@ pub trait ModelProvider: Send + Sync {
 ## 推荐扩展顺序
 
 1. 用数据库迁移工具替代当前幂等建表脚本。
-2. 增加持仓与交易 CSV 导入、可靠汇率/价格 Provider，并在外部现金流时点取得可验证组合估值后实现时间加权收益率。
+2. 增加券商原始格式适配、持仓导入与可靠汇率/价格 Provider，并在外部现金流时点取得可验证组合估值后实现时间加权收益率。
 3. 新增本地嵌入向量 Retriever，与当前可解释检索融合并保留离线降级。
 4. 增加受信任行情 Provider；外部数据必须标注来源和时间。
 5. 为工作流增加可恢复 checkpoint 与版本评测。

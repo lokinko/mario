@@ -28,6 +28,7 @@
 - 个人投资规则：从复盘沉淀触发条件与行动，任何修订都保留历史版本
 - 决策前规则检查与有效性追踪：冻结当时规则版本、遵守或偏离状态，用复盘后的过程评分寻找需要保留或修订的规则
 - 不可变组合流水：按日期记录入金、出金、分红、利息、费用、税费与买卖额，冻结原币、汇率和基准币种
+- 安全 CSV 导入：写入前逐行预览，使用来源交易编号幂等去重；编号冲突或错误行会阻止整批写入
 - 组合变化归因：周期性冻结持仓，自动汇总区间流水，把组合总变化、外部现金流与估值/数据残差分开观察，并提供明确标注的 Modified Dietz 近似回报
 - 估值口径护栏：支持基准币种、外币折算汇率和持仓估值日；缺失汇率或日期错位时停止伪精确汇总与归因
 - 研究证据账本：记录来源层级、HTTPS 链接、资料日期、支持/反驳关系与限制
@@ -48,12 +49,13 @@ server/                 可独立启动的本地 HTTP 服务
   src/evidence.rs       可替换的研究证据检索接口
   src/valuation.rs      基准币种折算、估值完整性与资产类别变化
   src/performance.rs    流水分类汇总与现金流调整后期间回报
+  src/event_import.rs   CSV 解析、字段映射与不可信输入边界
   src/risk.rs           不依赖大模型的风险规则
 docs/                   架构与投资方法论
 scripts/                sidecar 构建脚本
 ```
 
-产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[本地桌面威胁模型](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合变化归因](docs/portfolio-attribution.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[本地桌面威胁模型](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合变化归因](docs/portfolio-attribution.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
 
 ## 本地开发
 

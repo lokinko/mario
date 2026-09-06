@@ -3,6 +3,7 @@ mod cloud_sync;
 mod context;
 mod db;
 mod error;
+mod event_import;
 mod evidence;
 mod memory;
 mod models;
@@ -36,11 +37,12 @@ use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
     DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, InvestmentRule,
     InvestmentRuleInput, InvestmentRuleRevision, ModelConfig, ModelConfigInput,
-    ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventInput,
-    PortfolioEventRecord, ReminderSettings, ReminderSettingsInput, ResearchEvidence,
-    ResearchEvidenceInput, ResearchEvidenceStatusInput, ReviewReminderAcknowledgeInput,
-    ReviewReminderSummary, RuleEffectivenessSummary, Snapshot, StoredAnalysis, SystemReviewInput,
-    SystemReviewRecord,
+    ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord,
+    PortfolioEventImportCommitRequest, PortfolioEventImportPreview, PortfolioEventImportRequest,
+    PortfolioEventImportResult, PortfolioEventInput, PortfolioEventRecord, ReminderSettings,
+    ReminderSettingsInput, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
+    ReviewReminderAcknowledgeInput, ReviewReminderSummary, RuleEffectivenessSummary, Snapshot,
+    StoredAnalysis, SystemReviewInput, SystemReviewRecord,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -101,6 +103,14 @@ async fn main() -> AppResult<()> {
         .route(
             "/api/portfolio-events",
             get(portfolio_events).post(add_portfolio_event),
+        )
+        .route(
+            "/api/portfolio-events/import/preview",
+            post(preview_portfolio_event_import),
+        )
+        .route(
+            "/api/portfolio-events/import/commit",
+            post(commit_portfolio_event_import),
         )
         .route("/api/goals", post(add_goal))
         .route("/api/goals/{id}", put(update_goal).delete(delete_goal))
@@ -261,6 +271,18 @@ async fn add_portfolio_event(
     Json(input): Json<PortfolioEventInput>,
 ) -> AppResult<Json<PortfolioEventRecord>> {
     Ok(Json(state.db.add_portfolio_event(&input)?))
+}
+async fn preview_portfolio_event_import(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<PortfolioEventImportRequest>,
+) -> AppResult<Json<PortfolioEventImportPreview>> {
+    Ok(Json(state.db.preview_portfolio_event_import(&input)?))
+}
+async fn commit_portfolio_event_import(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<PortfolioEventImportCommitRequest>,
+) -> AppResult<Json<PortfolioEventImportResult>> {
+    Ok(Json(state.db.commit_portfolio_event_import(&input)?))
 }
 async fn add_goal(
     State(state): State<Arc<AppState>>,

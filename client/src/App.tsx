@@ -56,6 +56,7 @@ import {
   getSnapshot,
   getSystemReviews,
   previewAnalysis,
+  previewPortfolioEventImport,
   pullCloudSync,
   pushCloudSync,
   runAnalysis,
@@ -68,6 +69,7 @@ import {
   saveModelConfig,
   savePortfolioCheckin,
   savePortfolioEvent,
+  commitPortfolioEventImport,
   saveProfile,
   saveResearchEvidence,
   saveSystemReview,
@@ -107,6 +109,7 @@ import type {
   PortfolioCheckInInput,
   PortfolioCheckInRecord,
   PortfolioEventInput,
+  PortfolioEventImportPreview,
   PortfolioEventRecord,
   PortfolioEventType,
   ResearchEvidence,
@@ -191,6 +194,8 @@ function emptyHolding(baseCurrency = "CNY"): Omit<Holding, "id"> {
 function emptyPortfolioEvent(baseCurrency = "CNY"): PortfolioEventInput {
   return {
     eventType: "deposit",
+    source: "manual",
+    externalId: "",
     assetName: "",
     amount: 0,
     currency: baseCurrency,
@@ -210,6 +215,16 @@ const portfolioEventLabels: Record<PortfolioEventType, string> = {
   buy: "买入",
   sell: "卖出",
 };
+
+function downloadPortfolioEventCsvTemplate(baseCurrency: string) {
+  const portfolioEventCsvTemplate = `\ufeffsource,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,asset_name,note\n券商账户,trade-001,buy,${localDateValue(new Date())},10000,${baseCurrency},,全球指数基金,定投买入\n`;
+  const url = URL.createObjectURL(new Blob([portfolioEventCsvTemplate], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "知衡_组合流水模板.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 function nextCalendarDate(value: string) {
   const date = new Date(`${value}T12:00:00`);
@@ -507,6 +522,11 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [csvText, setCsvText] = useState("");
+  const [csvFileName, setCsvFileName] = useState("");
+  const [importPreview, setImportPreview] = useState<PortfolioEventImportPreview | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
   const latestCheckin = checkins[0];
   const requiresAsset = ["buy", "sell", "dividend", "interest"].includes(draft.eventType);
 
@@ -542,6 +562,34 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
     finally { setSaving(false); }
   };
 
+  const selectCsvFile = async (file?: File) => {
+    setImportPreview(null);
+    setImportError("");
+    if (!file) { setCsvText(""); setCsvFileName(""); return; }
+    setCsvFileName(file.name);
+    try { setCsvText(await file.text()); }
+    catch (nextError) { setCsvText(""); setImportError(`无法读取文件：${String(nextError)}`); }
+  };
+
+  const previewCsv = async () => {
+    setImporting(true); setImportError("");
+    try { setImportPreview(await previewPortfolioEventImport(csvText)); }
+    catch (nextError) { setImportPreview(null); setImportError(String(nextError)); }
+    finally { setImporting(false); }
+  };
+
+  const commitCsv = async () => {
+    if (!importPreview) return;
+    setImporting(true); setImportError("");
+    try {
+      const result = await commitPortfolioEventImport(csvText, importPreview.previewRevision);
+      await load();
+      setCsvText(""); setCsvFileName(""); setImportPreview(null);
+      flash(`已写入 ${result.insertedCount} 笔流水，跳过 ${result.duplicateCount} 笔重复记录`);
+    } catch (nextError) { setImportError(String(nextError)); }
+    finally { setImporting(false); }
+  };
+
   return (
     <div className="page narrow ledger-page">
       <PageHeader eyebrow="方法论 · 组合记录" title="把资金变化写成可核对的流水" description="先分清外部入出金、内部收益成本和交易换手，再谈组合回报。已保存记录只追加、不静默改写。" />
@@ -570,13 +618,40 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
         <div className="form-actions"><p><ShieldCheck size={16} />买卖额不改变组合总值，也不会被系统当作收益。</p><button className="primary" disabled={saving || !latestCheckin?.valuationDate || draft.occurredOn <= (latestCheckin?.valuationDate ?? "") || draft.amount <= 0 || !draft.occurredOn || !draft.note.trim() || (requiresAsset && !draft.assetName.trim()) || Boolean(draft.currency !== snapshot.profile.baseCurrency && (!draft.fxRateToBase || draft.fxRateToBase <= 0))} onClick={persist}><Plus size={16} />{saving ? "保存中…" : "冻结这笔流水"}</button></div>
       </section>
 
+      <section className="panel ledger-import">
+        <div className="panel-title"><div><span>批量录入 · 两阶段确认</span><h2>从券商或银行 CSV 导入</h2></div><Upload size={21} className="muted-icon" /></div>
+        <p className="import-intro">本机先解析并逐行校验，不会在预览时写入。相同 <code>source + external_id</code> 且内容一致的记录会跳过；编号相同但内容不同会阻止整批导入。</p>
+        <div className="import-controls">
+          <label className="file-picker"><Upload size={16} /><span>{csvFileName || "选择 CSV 文件"}</span><input key={csvFileName || "empty"} type="file" accept=".csv,text/csv" onChange={(event) => void selectCsvFile(event.target.files?.[0])} /></label>
+          <button className="secondary" onClick={() => downloadPortfolioEventCsvTemplate(snapshot.profile.baseCurrency)}><Download size={16} />下载模板</button>
+          <button className="secondary" disabled={!csvText || importing || !latestCheckin?.valuationDate} onClick={previewCsv}>{importing ? <LoaderCircle className="spin" size={16} /> : <Eye size={16} />}校验并预览</button>
+        </div>
+        <p className="import-hint">必填列：source、external_id、event_type、occurred_on、amount、currency、note；可选列：fx_rate_to_base、asset_name。单次最多 1000 行、2 MB。</p>
+        {importError && <div className="error-box"><AlertTriangle size={17} />{importError}</div>}
+        {importPreview && <div className="import-preview">
+          <div className="import-result-bar">
+            <div><span className="ready-dot" />待写入 <strong>{importPreview.readyCount}</strong></div>
+            <div><span className="duplicate-dot" />重复跳过 <strong>{importPreview.duplicateCount}</strong></div>
+            <div><span className="error-dot" />错误 <strong>{importPreview.errorCount}</strong></div>
+            <small>基准币种 {importPreview.baseCurrency} · 冻结至 {importPreview.frozenThrough}</small>
+          </div>
+          <div className="import-table-wrap"><table className="import-table"><thead><tr><th>行</th><th>状态</th><th>来源 / 交易编号</th><th>类型与日期</th><th>金额</th><th>资产 / 说明</th><th>校验结果</th></tr></thead><tbody>{importPreview.rows.map((row) => <tr key={`${row.rowNumber}-${row.externalId}`} className={`import-${row.status}`}>
+            <td>{row.rowNumber}</td><td><span>{row.status === "ready" ? "可导入" : row.status === "duplicate" ? "重复" : "错误"}</span></td>
+            <td><strong>{row.source || "—"}</strong><small>{row.externalId || "—"}</small></td>
+            <td><strong>{portfolioEventLabels[row.eventType as PortfolioEventType] ?? (row.eventType || "—")}</strong><small>{row.occurredOn || "—"}</small></td>
+            <td>{row.amount === null ? "—" : formatMoney(row.amount, row.currency || importPreview.baseCurrency)}{row.fxRateToBase && <small>汇率 {row.fxRateToBase}</small>}</td><td><strong>{row.assetName || "组合账户"}</strong><small>{row.note || "—"}</small></td><td>{row.message}</td>
+          </tr>)}</tbody></table></div>
+          <div className="import-actions"><p><ShieldCheck size={16} />有任意错误时整批不会写入；确认时会再次校验预览版本。</p><button className="primary" disabled={importing || importPreview.errorCount > 0 || importPreview.readyCount === 0} onClick={commitCsv}><Check size={16} />{importing ? "写入中…" : `确认写入 ${importPreview.readyCount} 笔`}</button></div>
+        </div>}
+      </section>
+
       <section className="panel ledger-history">
         <div className="panel-title"><div><span>本地流水账</span><h2>按发生日期倒序</h2></div><span className="history-count">{events.length} 笔</span></div>
         {loading && <div className="empty">正在读取本地流水…</div>}
         {!loading && events.length === 0 && <div className="empty">还没有流水。建立组合基线后，从下一笔真实资金变化开始记录。</div>}
         <div className="ledger-list">{events.map((item) => <article key={item.id}>
           <span className={`event-kind kind-${item.eventType}`}>{portfolioEventLabels[item.eventType]}</span>
-          <div><strong>{item.assetName || "组合账户"}</strong><p>{item.note}</p><small>{item.occurredOn} · 录入 {new Date(item.createdAt).toLocaleString("zh-CN")}</small></div>
+          <div><strong>{item.assetName || "组合账户"}</strong><p>{item.note}</p><small>{item.occurredOn} · 录入 {new Date(item.createdAt).toLocaleString("zh-CN")}{item.externalId ? ` · ${item.source}/${item.externalId}` : ""}</small></div>
           <div className="ledger-amount"><strong>{formatMoney(item.amount, item.currency)}</strong><small>{item.currency === item.baseCurrency ? item.baseCurrency : `汇率 ${item.fxRateToBase} · ${formatMoney(item.baseAmount, item.baseCurrency)}`}</small></div>
         </article>)}</div>
         <p className="effectiveness-disclaimer">这些记录来自用户输入，系统校验结构和口径但不核验银行、券商或市场事实。若需要纠错，应保留说明并建立新的比较基线，不能回写已经冻结的期间。</p>
