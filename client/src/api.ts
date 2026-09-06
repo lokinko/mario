@@ -20,6 +20,8 @@ import type {
   ModelConnectionTest,
   PortfolioCheckInInput,
   PortfolioCheckInRecord,
+  PortfolioEventInput,
+  PortfolioEventRecord,
   ResearchEvidence,
   ResearchEvidenceInput,
   ReminderSettings,
@@ -112,6 +114,17 @@ export async function getPortfolioCheckins(): Promise<PortfolioCheckInRecord[]> 
 
 export async function savePortfolioCheckin(input: PortfolioCheckInInput): Promise<PortfolioCheckInRecord> {
   return httpRequest<PortfolioCheckInRecord>("/portfolio-checkins", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getPortfolioEvents(): Promise<PortfolioEventRecord[]> {
+  return httpRequest<PortfolioEventRecord[]>("/portfolio-events");
+}
+
+export async function savePortfolioEvent(input: PortfolioEventInput): Promise<PortfolioEventRecord> {
+  return httpRequest<PortfolioEventRecord>("/portfolio-events", {
     method: "POST",
     body: JSON.stringify(input),
   });

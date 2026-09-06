@@ -49,6 +49,7 @@ import {
   getInvestmentRuleHistory,
   getModelConfig,
   getPortfolioCheckins,
+  getPortfolioEvents,
   getResearchEvidence,
   getReviewReminders,
   getRuleEffectiveness,
@@ -66,6 +67,7 @@ import {
   saveInvestmentRule,
   saveModelConfig,
   savePortfolioCheckin,
+  savePortfolioEvent,
   saveProfile,
   saveResearchEvidence,
   saveSystemReview,
@@ -104,6 +106,9 @@ import type {
   ModelConfig,
   PortfolioCheckInInput,
   PortfolioCheckInRecord,
+  PortfolioEventInput,
+  PortfolioEventRecord,
+  PortfolioEventType,
   ResearchEvidence,
   ResearchEvidenceInput,
   Snapshot,
@@ -122,8 +127,8 @@ import {
   isDesktopApp,
 } from "./reminders";
 
-type View = "dashboard" | "foundation" | "evidence" | "decision" | "review" | "advisor" | "cloud" | "settings";
-const views: View[] = ["dashboard", "foundation", "evidence", "decision", "review", "advisor", "cloud", "settings"];
+type View = "dashboard" | "foundation" | "ledger" | "evidence" | "decision" | "review" | "advisor" | "cloud" | "settings";
+const views: View[] = ["dashboard", "foundation", "ledger", "evidence", "decision", "review", "advisor", "cloud", "settings"];
 
 function initialView(): View {
   const candidate = window.location.hash.replace("#", "") as View;
@@ -157,6 +162,7 @@ function localDateValue(date: Date) {
 const nav = [
   { id: "dashboard" as const, label: "决策总览", icon: LayoutDashboard },
   { id: "foundation" as const, label: "财务底座", icon: WalletCards },
+  { id: "ledger" as const, label: "组合流水", icon: CircleDollarSign },
   { id: "evidence" as const, label: "研究证据", icon: Database },
   { id: "decision" as const, label: "决策日志", icon: FilePenLine },
   { id: "review" as const, label: "复盘与规则", icon: History },
@@ -180,6 +186,35 @@ function emptyHolding(baseCurrency = "CNY"): Omit<Holding, "id"> {
     symbol: "", name: "", assetClass: "基金", marketValue: 0, costBasis: 0, targetPct: 0,
     currency: baseCurrency, fxRateToBase: null, valuationDate: localDateValue(new Date()),
   };
+}
+
+function emptyPortfolioEvent(baseCurrency = "CNY"): PortfolioEventInput {
+  return {
+    eventType: "deposit",
+    assetName: "",
+    amount: 0,
+    currency: baseCurrency,
+    fxRateToBase: null,
+    occurredOn: localDateValue(new Date()),
+    note: "",
+  };
+}
+
+const portfolioEventLabels: Record<PortfolioEventType, string> = {
+  deposit: "入金",
+  withdrawal: "出金",
+  dividend: "分红",
+  interest: "利息",
+  fee: "费用",
+  tax: "税费",
+  buy: "买入",
+  sell: "卖出",
+};
+
+function nextCalendarDate(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + 1);
+  return localDateValue(date);
 }
 
 const emptyGoal: Omit<Goal, "id"> = {
@@ -280,6 +315,7 @@ function App() {
         {notice && <div className="toast"><Check size={16} />{notice}</div>}
         {view === "dashboard" && <Dashboard snapshot={snapshot} model={model} navigate={navigate} flash={flash} />}
         {view === "foundation" && <Foundation snapshot={snapshot} onUpdate={setSnapshot} flash={flash} />}
+        {view === "ledger" && <PortfolioLedger snapshot={snapshot} flash={flash} />}
         {view === "evidence" && <EvidenceWorkbench navigate={navigate} flash={flash} />}
         {view === "decision" && <DecisionJournal flash={flash} seed={decisionDraft} clearSeed={() => setDecisionDraft(null)} onOpenAnalysis={(id) => { setAnalysisToOpen(id); navigate("advisor"); }} />}
         {view === "review" && <ReviewCenter navigate={navigate} flash={flash} />}
@@ -307,6 +343,7 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
     externalCashFlow: 0,
     note: "",
     resetBaseline: false,
+    useLedgerCashFlows: true,
   });
   const [checkinSaving, setCheckinSaving] = useState(false);
   const [checkinError, setCheckinError] = useState("");
@@ -324,7 +361,7 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
     (model.hasApiKey ? 25 : 10),
   ));
   const latestCheckin = checkins[0];
-  const baselineMode = !latestCheckin || latestCheckin.baseCurrency !== snapshot.profile.baseCurrency || checkin.resetBaseline;
+  const baselineMode = !latestCheckin || !latestCheckin.valuationDate || latestCheckin.baseCurrency !== snapshot.profile.baseCurrency || checkin.resetBaseline;
 
   useEffect(() => {
     getPortfolioCheckins()
@@ -333,7 +370,7 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
   }, []);
 
   const persistCheckin = async () => {
-    if (!checkin.periodLabel || (!baselineMode && checkin.externalCashFlow !== 0 && !checkin.note.trim())) return;
+    if (!checkin.periodLabel) return;
     setCheckinSaving(true); setCheckinError("");
     try {
       await savePortfolioCheckin(baselineMode ? { ...checkin, externalCashFlow: 0, resetBaseline: Boolean(latestCheckin) } : checkin);
@@ -370,19 +407,20 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
         {latestCheckin && baselineMode && <div className="attribution-baseline"><History size={18} /><div><strong>本次将重新建立比较基线</strong><p>{latestCheckin.baseCurrency !== snapshot.profile.baseCurrency ? `基准币种已从 ${latestCheckin.baseCurrency} 改为 ${snapshot.profile.baseCurrency}，两个口径不能直接比较。` : "适用于估值口径发生实质变化的情况；新记录不会计算与上一条的差额。"}</p></div></div>}
         {latestCheckin?.totalChange != null && <div className="attribution-metrics">
           <article><span>组合总值变化</span><strong className={latestCheckin.totalChange >= 0 ? "gain" : "loss"}>{latestCheckin.totalChange >= 0 ? "+" : ""}{formatMoney(latestCheckin.totalChange, latestCheckin.baseCurrency)}</strong><small>{formatMoney(latestCheckin.previousTotalValue ?? 0, latestCheckin.baseCurrency)} → {formatMoney(latestCheckin.totalValue, latestCheckin.baseCurrency)}</small></article>
-          <article><span>期间净外部现金流</span><strong>{latestCheckin.externalCashFlow >= 0 ? "+" : ""}{formatMoney(latestCheckin.externalCashFlow, latestCheckin.baseCurrency)}</strong><small>入金为正，出金为负</small></article>
+          <article><span>期间净外部现金流</span><strong>{latestCheckin.externalCashFlow >= 0 ? "+" : ""}{formatMoney(latestCheckin.externalCashFlow, latestCheckin.baseCurrency)}</strong><small>{latestCheckin.cashFlowSource === "ledger" ? `${latestCheckin.eventIds.length} 笔流水自动汇总` : "旧记录为手工净额"}</small></article>
           <article><span>估值与数据变动残差</span><strong className={(latestCheckin.valuationResidual ?? 0) >= 0 ? "gain" : "loss"}>{(latestCheckin.valuationResidual ?? 0) >= 0 ? "+" : ""}{formatMoney(latestCheckin.valuationResidual ?? 0, latestCheckin.baseCurrency)}</strong><small>总值变化减净现金流</small></article>
+          <article><span>现金流调整后期间回报</span><strong>{latestCheckin.modifiedDietzReturnPct == null ? "—" : `${latestCheckin.modifiedDietzReturnPct >= 0 ? "+" : ""}${latestCheckin.modifiedDietzReturnPct.toFixed(2)}%`}</strong><small>Modified Dietz 近似，不是 TWR</small></article>
         </div>}
         {latestCheckin?.allocationChanges.length > 0 && <div className="allocation-change-list">{latestCheckin.allocationChanges.slice(0, 5).map((item) => <div key={item.assetClass}><strong>{item.assetClass}</strong><span>{formatMoney(item.previousValue, latestCheckin.baseCurrency)} → {formatMoney(item.currentValue, latestCheckin.baseCurrency)}</span><em className={item.pctPointChange >= 0 ? "gain" : "loss"}>{item.pctPointChange >= 0 ? "+" : ""}{item.pctPointChange.toFixed(1)} pct</em></div>)}</div>}
         <div className="attribution-entry">
           <label><span>记录周期</span><input maxLength={100} value={checkin.periodLabel} onChange={(event) => setCheckin({ ...checkin, periodLabel: event.target.value })} placeholder="例如 2026 年 9 月" /></label>
-          <label><span>期间净入金 / 出金</span><div className="input-affix"><input type="number" disabled={baselineMode} value={baselineMode ? 0 : checkin.externalCashFlow} onChange={(event) => setCheckin({ ...checkin, externalCashFlow: Number(event.target.value) })} /><i>{snapshot.profile.baseCurrency}</i></div><small>{baselineMode ? "本次仅建立比较基线" : "入金填正数，出金填负数"}</small></label>
-          <label className="attribution-note"><span>现金流与口径说明</span><input maxLength={2000} value={checkin.note} onChange={(event) => setCheckin({ ...checkin, note: event.target.value })} placeholder={latestCheckin ? "例如：工资结余入金；持仓均按同一日收盘价更新" : "例如：首次冻结，持仓按同一日口径录入"} /></label>
-          <button className="secondary" disabled={checkinSaving || !snapshot.holdings.length || !snapshot.valuationStatus.comparable || !snapshot.valuationStatus.alignedValuationDate || !checkin.periodLabel || Boolean(!baselineMode && checkin.externalCashFlow !== 0 && !checkin.note.trim())} onClick={persistCheckin}>{checkinSaving ? "保存中…" : baselineMode ? "建立组合基线" : "冻结本期变化"}</button>
+          <label><span>期间现金流</span><input disabled value={baselineMode ? "本次仅建立比较基线" : "按两个估值日之间的流水自动汇总"} /><small><button className="inline-link" onClick={() => navigate("ledger")}>前往组合流水</button></small></label>
+          <label className="attribution-note"><span>估值口径说明（可选）</span><input maxLength={2000} value={checkin.note} onChange={(event) => setCheckin({ ...checkin, note: event.target.value })} placeholder={latestCheckin ? "例如：所有持仓均按同一日收盘价更新" : "例如：首次冻结，持仓按同一日口径录入"} /></label>
+          <button className="secondary" disabled={checkinSaving || !snapshot.holdings.length || !snapshot.valuationStatus.comparable || !snapshot.valuationStatus.alignedValuationDate || !checkin.periodLabel || Boolean(!baselineMode && latestCheckin?.valuationDate && snapshot.valuationStatus.alignedValuationDate <= latestCheckin.valuationDate)} onClick={persistCheckin}>{checkinSaving ? "保存中…" : baselineMode ? "建立组合基线" : "冻结本期变化"}</button>
         </div>
         {latestCheckin && latestCheckin.baseCurrency === snapshot.profile.baseCurrency && <button className="text-button attribution-reset" onClick={() => setCheckin({ ...checkin, resetBaseline: !checkin.resetBaseline, externalCashFlow: 0 })}>{checkin.resetBaseline ? "继续原有比较链" : "估值口径变化？重新建立基线"}</button>}
         {checkinError && <div className="error-box"><AlertTriangle size={16} />{checkinError}</div>}
-        {checkins.length > 0 && <details className="attribution-history"><summary>查看历史快照（{checkins.length}）</summary><div>{checkins.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.periodLabel}</strong><small>{item.valuationDate ?? "旧记录未保存估值日"} · {new Date(item.createdAt).toLocaleString("zh-CN")}</small></div><span>{formatMoney(item.totalValue, item.baseCurrency)}</span><em>{item.totalChange == null ? "组合基线" : `变化 ${item.totalChange >= 0 ? "+" : ""}${formatMoney(item.totalChange, item.baseCurrency)} · 净现金流 ${item.externalCashFlow >= 0 ? "+" : ""}${formatMoney(item.externalCashFlow, item.baseCurrency)} · 残差 ${(item.valuationResidual ?? 0) >= 0 ? "+" : ""}${formatMoney(item.valuationResidual ?? 0, item.baseCurrency)}`}</em></article>)}</div></details>}
+        {checkins.length > 0 && <details className="attribution-history"><summary>查看历史快照（{checkins.length}）</summary><div>{checkins.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.periodLabel}</strong><small>{item.valuationDate ?? "旧记录未保存估值日"} · {new Date(item.createdAt).toLocaleString("zh-CN")}</small></div><span>{formatMoney(item.totalValue, item.baseCurrency)}</span><em>{item.totalChange == null ? "组合基线" : `变化 ${item.totalChange >= 0 ? "+" : ""}${formatMoney(item.totalChange, item.baseCurrency)} · 净现金流 ${item.externalCashFlow >= 0 ? "+" : ""}${formatMoney(item.externalCashFlow, item.baseCurrency)} · 近似回报 ${item.modifiedDietzReturnPct == null ? "—" : `${item.modifiedDietzReturnPct.toFixed(2)}%`}`}</em></article>)}</div></details>}
         <p className="effectiveness-disclaimer">若持仓缺失、币种未换算、估值日期不同或录入错误，残差也会变化。它只能帮助分离外部现金流，不能替代时间加权收益率或完整业绩归因。</p>
       </section>
 
@@ -460,6 +498,91 @@ function allocationGradient(allocation: { pct: number }[]) {
     return `${colors[index % colors.length]} ${start}% ${cursor}%`;
   });
   return `conic-gradient(${stops.join(",")})`;
+}
+
+function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (message: string) => void }) {
+  const [events, setEvents] = useState<PortfolioEventRecord[]>([]);
+  const [checkins, setCheckins] = useState<PortfolioCheckInRecord[]>([]);
+  const [draft, setDraft] = useState<PortfolioEventInput>(() => emptyPortfolioEvent(snapshot.profile.baseCurrency));
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const latestCheckin = checkins[0];
+  const requiresAsset = ["buy", "sell", "dividend", "interest"].includes(draft.eventType);
+
+  const load = async () => {
+    setLoading(true); setError("");
+    try {
+      const [nextEvents, nextCheckins] = await Promise.all([getPortfolioEvents(), getPortfolioCheckins()]);
+      setEvents(nextEvents); setCheckins(nextCheckins);
+    } catch (nextError) { setError(String(nextError)); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const summary = useMemo(() => events.reduce((value, item) => {
+    if (item.baseCurrency !== snapshot.profile.baseCurrency) return value;
+    if (item.eventType === "deposit") value.external += item.baseAmount;
+    if (item.eventType === "withdrawal") value.external -= item.baseAmount;
+    if (item.eventType === "dividend" || item.eventType === "interest") value.income += item.baseAmount;
+    if (item.eventType === "fee" || item.eventType === "tax") value.costs += item.baseAmount;
+    if (item.eventType === "buy" || item.eventType === "sell") value.turnover += item.baseAmount;
+    return value;
+  }, { external: 0, income: 0, costs: 0, turnover: 0 }), [events, snapshot.profile.baseCurrency]);
+
+  const persist = async () => {
+    setSaving(true); setError("");
+    try {
+      await savePortfolioEvent(draft);
+      setDraft(emptyPortfolioEvent(snapshot.profile.baseCurrency));
+      await load();
+      flash("组合流水已冻结；后续检查点会按日期自动汇总");
+    } catch (nextError) { setError(String(nextError)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="page narrow ledger-page">
+      <PageHeader eyebrow="方法论 · 组合记录" title="把资金变化写成可核对的流水" description="先分清外部入出金、内部收益成本和交易换手，再谈组合回报。已保存记录只追加、不静默改写。" />
+
+      <section className="ledger-summary">
+        <article><span>累计净外部现金流</span><strong>{summary.external >= 0 ? "+" : ""}{formatMoney(summary.external, snapshot.profile.baseCurrency)}</strong><small>入金减出金</small></article>
+        <article><span>累计现金收入</span><strong>{formatMoney(summary.income, snapshot.profile.baseCurrency)}</strong><small>分红与利息</small></article>
+        <article><span>累计费用税费</span><strong>{formatMoney(summary.costs, snapshot.profile.baseCurrency)}</strong><small>不与外部现金流混合</small></article>
+        <article><span>累计交易额</span><strong>{formatMoney(summary.turnover, snapshot.profile.baseCurrency)}</strong><small>买入与卖出，仅衡量换手</small></article>
+      </section>
+
+      <div className="ledger-boundary"><LockKeyhole size={16} /><div><strong>{latestCheckin ? `最近冻结边界：${latestCheckin.valuationDate ?? "旧记录无估值日"}` : "尚未建立组合基线"}</strong><p>{latestCheckin ? "为保护归因链，新增流水必须晚于该日期。历史漏项请在说明中保留纠正原因，并从新基线开始。" : "请先在决策总览冻结当前组合；基线之前的历史变化不会被系统猜测。"}</p></div></div>
+      {error && <div className="error-box"><AlertTriangle size={17} />{error}</div>}
+
+      <section className="panel form-panel ledger-entry">
+        <div className="panel-title"><div><span>新增不可变记录</span><h2>这笔资金变化是什么？</h2></div><CircleDollarSign size={21} className="muted-icon" /></div>
+        <div className="form-grid compact-grid">
+          <label><span>流水类型</span><select value={draft.eventType} onChange={(event) => setDraft({ ...draft, eventType: event.target.value as PortfolioEventType })}>{Object.entries(portfolioEventLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>入金/出金属于外部现金流；其他项目属于组合内部活动。</small></label>
+          <label><span>关联资产{requiresAsset ? "" : "（可选）"}</span><input maxLength={200} value={draft.assetName} onChange={(event) => setDraft({ ...draft, assetName: event.target.value })} placeholder="例如：全球股票指数基金" /></label>
+          <NumberField label={`金额（${draft.currency}）`} value={draft.amount} onChange={(value) => setDraft({ ...draft, amount: Number(value) })} prefix={draft.currency} />
+          <label><span>原币种</span><select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value, fxRateToBase: event.target.value === snapshot.profile.baseCurrency ? null : draft.fxRateToBase })}>{["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => <option key={value}>{value}</option>)}</select></label>
+          {draft.currency !== snapshot.profile.baseCurrency && <NumberField label={`折算汇率（1 ${draft.currency} = ? ${snapshot.profile.baseCurrency}）`} value={draft.fxRateToBase ?? 0} onChange={(value) => setDraft({ ...draft, fxRateToBase: value ? Number(value) : null })} suffix={snapshot.profile.baseCurrency} />}
+          <label><span>发生日期</span><input type="date" min={latestCheckin?.valuationDate ? nextCalendarDate(latestCheckin.valuationDate) : undefined} max={localDateValue(new Date())} value={draft.occurredOn} onChange={(event) => setDraft({ ...draft, occurredOn: event.target.value })} /><small>日期用于自动分段和现金流权重。</small></label>
+          <label className="ledger-note"><span>核对说明</span><textarea maxLength={2000} value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} placeholder="例如：工资结余转入证券账户；以银行流水为准" /></label>
+        </div>
+        <div className="form-actions"><p><ShieldCheck size={16} />买卖额不改变组合总值，也不会被系统当作收益。</p><button className="primary" disabled={saving || !latestCheckin?.valuationDate || draft.occurredOn <= (latestCheckin?.valuationDate ?? "") || draft.amount <= 0 || !draft.occurredOn || !draft.note.trim() || (requiresAsset && !draft.assetName.trim()) || Boolean(draft.currency !== snapshot.profile.baseCurrency && (!draft.fxRateToBase || draft.fxRateToBase <= 0))} onClick={persist}><Plus size={16} />{saving ? "保存中…" : "冻结这笔流水"}</button></div>
+      </section>
+
+      <section className="panel ledger-history">
+        <div className="panel-title"><div><span>本地流水账</span><h2>按发生日期倒序</h2></div><span className="history-count">{events.length} 笔</span></div>
+        {loading && <div className="empty">正在读取本地流水…</div>}
+        {!loading && events.length === 0 && <div className="empty">还没有流水。建立组合基线后，从下一笔真实资金变化开始记录。</div>}
+        <div className="ledger-list">{events.map((item) => <article key={item.id}>
+          <span className={`event-kind kind-${item.eventType}`}>{portfolioEventLabels[item.eventType]}</span>
+          <div><strong>{item.assetName || "组合账户"}</strong><p>{item.note}</p><small>{item.occurredOn} · 录入 {new Date(item.createdAt).toLocaleString("zh-CN")}</small></div>
+          <div className="ledger-amount"><strong>{formatMoney(item.amount, item.currency)}</strong><small>{item.currency === item.baseCurrency ? item.baseCurrency : `汇率 ${item.fxRateToBase} · ${formatMoney(item.baseAmount, item.baseCurrency)}`}</small></div>
+        </article>)}</div>
+        <p className="effectiveness-disclaimer">这些记录来自用户输入，系统校验结构和口径但不核验银行、券商或市场事实。若需要纠错，应保留说明并建立新的比较基线，不能回写已经冻结的期间。</p>
+      </section>
+    </div>
+  );
 }
 
 function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdate: (s: Snapshot) => void; flash: (s: string) => void }) {
@@ -1161,7 +1284,7 @@ function Advisor({ model, navigate, requestedAnalysisId, clearRequestedAnalysis,
   const [reflection, setReflection] = useState(true);
   const [alternatives, setAlternatives] = useState(true);
   const [excludedMemoryIds, setExcludedMemoryIds] = useState<string[]>([]);
-  const [contextSelection, setContextSelection] = useState<ContextSelection>({ includeProfile: true, includeGoals: true, includeHoldings: true, includePlanning: true, includeRiskFindings: true, includeRules: true, includeSystemReviews: true, includePortfolioCheckins: true, includeEvidence: true });
+  const [contextSelection, setContextSelection] = useState<ContextSelection>({ includeProfile: true, includeGoals: true, includeHoldings: true, includePlanning: true, includeRiskFindings: true, includeRules: true, includeSystemReviews: true, includePortfolioCheckins: true, includePortfolioEvents: true, includeEvidence: true });
   const [preview, setPreview] = useState<AnalysisPreview | null>(null);
   const [previewStale, setPreviewStale] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -1287,7 +1410,7 @@ function Advisor({ model, navigate, requestedAnalysisId, clearRequestedAnalysis,
             {([
               ["includeProfile", "财务档案"], ["includeGoals", "目标计划"], ["includeHoldings", "持仓明细"],
               ["includePlanning", "规划结果"], ["includeRiskFindings", "风险检查"], ["includeRules", "个人规则"],
-              ["includeSystemReviews", "周期复盘"], ["includePortfolioCheckins", "组合变化"], ["includeEvidence", "研究证据"],
+              ["includeSystemReviews", "周期复盘"], ["includePortfolioCheckins", "组合变化"], ["includePortfolioEvents", "组合流水"], ["includeEvidence", "研究证据"],
             ] as [keyof ContextSelection, string][]).map(([key, label]) => <button key={key} className={contextSelection[key] ? "selected" : ""} onClick={() => toggleContext(key)}><i>{contextSelection[key] && <Check size={11} />}</i>{label}</button>)}
           </div>
         </div>

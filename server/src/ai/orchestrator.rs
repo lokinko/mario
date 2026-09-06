@@ -425,7 +425,7 @@ mod tests {
     use super::*;
     use crate::{
         ai::ChatMessage,
-        context::ContextBuilder,
+        context::{ContextBuilder, ContextSources},
         error::AppResult,
         memory::HybridMemoryRetriever,
         models::{
@@ -603,7 +603,15 @@ mod tests {
             active: true,
             captured_at: "2026-01-01".into(),
         }];
-        let context = ContextBuilder::build(&request, &snapshot, &[], &[], &[], &evidence, &memory);
+        let context = ContextBuilder::build(
+            &request,
+            &snapshot,
+            &ContextSources {
+                evidence_candidates: &evidence,
+                memory_candidates: &memory,
+                ..Default::default()
+            },
+        );
         let output = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &memory)
             .await
@@ -673,7 +681,7 @@ mod tests {
             preview_revision: None,
         };
         let snapshot = snapshot();
-        let context = ContextBuilder::build(&request, &snapshot, &[], &[], &[], &[], &[]);
+        let context = ContextBuilder::build(&request, &snapshot, &ContextSources::default());
         let output = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &[])
             .await
@@ -742,7 +750,7 @@ mod tests {
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
-        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[], &[]);
+        let context = ContextBuilder::build(&request, &snapshot(), &ContextSources::default());
         let output = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &[])
             .await
@@ -778,7 +786,7 @@ mod tests {
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
-        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[], &[]);
+        let context = ContextBuilder::build(&request, &snapshot(), &ContextSources::default());
         let error = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &[])
             .await
@@ -852,7 +860,7 @@ mod tests {
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
-        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[], &[]);
+        let context = ContextBuilder::build(&request, &snapshot(), &ContextSources::default());
         let output = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &[])
             .await

@@ -6,6 +6,7 @@ mod error;
 mod evidence;
 mod memory;
 mod models;
+mod performance;
 mod planning;
 mod risk;
 mod secrets;
@@ -35,10 +36,11 @@ use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
     DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, InvestmentRule,
     InvestmentRuleInput, InvestmentRuleRevision, ModelConfig, ModelConfigInput,
-    ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord, ReminderSettings,
-    ReminderSettingsInput, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
-    ReviewReminderAcknowledgeInput, ReviewReminderSummary, RuleEffectivenessSummary, Snapshot,
-    StoredAnalysis, SystemReviewInput, SystemReviewRecord,
+    ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventInput,
+    PortfolioEventRecord, ReminderSettings, ReminderSettingsInput, ResearchEvidence,
+    ResearchEvidenceInput, ResearchEvidenceStatusInput, ReviewReminderAcknowledgeInput,
+    ReviewReminderSummary, RuleEffectivenessSummary, Snapshot, StoredAnalysis, SystemReviewInput,
+    SystemReviewRecord,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -95,6 +97,10 @@ async fn main() -> AppResult<()> {
         .route(
             "/api/portfolio-checkins",
             get(portfolio_checkins).post(save_portfolio_checkin),
+        )
+        .route(
+            "/api/portfolio-events",
+            get(portfolio_events).post(add_portfolio_event),
         )
         .route("/api/goals", post(add_goal))
         .route("/api/goals/{id}", put(update_goal).delete(delete_goal))
@@ -244,6 +250,17 @@ async fn save_portfolio_checkin(
     Json(input): Json<PortfolioCheckInInput>,
 ) -> AppResult<Json<PortfolioCheckInRecord>> {
     Ok(Json(state.db.save_portfolio_checkin(&input)?))
+}
+async fn portfolio_events(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<Vec<PortfolioEventRecord>>> {
+    Ok(Json(state.db.portfolio_events()?))
+}
+async fn add_portfolio_event(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<PortfolioEventInput>,
+) -> AppResult<Json<PortfolioEventRecord>> {
+    Ok(Json(state.db.add_portfolio_event(&input)?))
 }
 async fn add_goal(
     State(state): State<Arc<AppState>>,
@@ -509,15 +526,24 @@ async fn run_analysis(
         .into_iter()
         .take(12)
         .collect::<Vec<_>>();
+    let portfolio_events = state
+        .db
+        .portfolio_events()?
+        .into_iter()
+        .take(100)
+        .collect::<Vec<_>>();
     let evidence_candidates = relevant_evidence(&state.db, &request, &snapshot)?;
     let built_context = context::ContextBuilder::build(
         &request,
         &snapshot,
-        &rules,
-        &system_reviews,
-        &portfolio_checkins,
-        &evidence_candidates,
-        &memories,
+        &context::ContextSources {
+            rules: &rules,
+            system_reviews: &system_reviews,
+            portfolio_checkins: &portfolio_checkins,
+            portfolio_events: &portfolio_events,
+            evidence_candidates: &evidence_candidates,
+            memory_candidates: &memories,
+        },
     );
     if request.preview_revision.as_deref() != Some(built_context.revision.as_str()) {
         return Err(AppError::Validation(
@@ -566,15 +592,24 @@ async fn preview_analysis(
         .into_iter()
         .take(12)
         .collect::<Vec<_>>();
+    let portfolio_events = state
+        .db
+        .portfolio_events()?
+        .into_iter()
+        .take(100)
+        .collect::<Vec<_>>();
     let evidence_candidates = relevant_evidence(&state.db, &request, &snapshot)?;
     let built_context = context::ContextBuilder::build(
         &request,
         &snapshot,
-        &rules,
-        &system_reviews,
-        &portfolio_checkins,
-        &evidence_candidates,
-        &memories,
+        &context::ContextSources {
+            rules: &rules,
+            system_reviews: &system_reviews,
+            portfolio_checkins: &portfolio_checkins,
+            portfolio_events: &portfolio_events,
+            evidence_candidates: &evidence_candidates,
+            memory_candidates: &memories,
+        },
     );
     Ok(Json(context::ContextBuilder::preview(
         &request,

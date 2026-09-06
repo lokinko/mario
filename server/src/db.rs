@@ -12,12 +12,13 @@ use crate::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
         DecisionReviewInput, DecisionRuleCheck, FinancialProfile, Goal, GoalInput, Holding,
         HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem,
-        ModelConfig, PortfolioCheckInInput, PortfolioCheckInRecord, ReminderSettings,
-        ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary, RuleEffectivenessItem,
+        ModelConfig, PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventInput,
+        PortfolioEventRecord, PortfolioEventType, ReminderSettings, ResearchEvidence,
+        ResearchEvidenceInput, ReviewReminderSummary, RuleEffectivenessItem,
         RuleEffectivenessSummary, Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
         SystemReviewSnapshot,
     },
-    planning, risk, valuation,
+    performance, planning, risk, valuation,
 };
 
 pub struct Database {
@@ -188,10 +189,28 @@ const SYNC_TABLES: &[SyncTableSpec] = &[
         columns: &["id", "payload", "created_at"],
         order_by: "created_at, id",
     },
+    SyncTableSpec {
+        name: "portfolio_events",
+        columns: &[
+            "id",
+            "event_type",
+            "asset_name",
+            "amount",
+            "currency",
+            "fx_rate_to_base",
+            "base_currency",
+            "base_amount",
+            "occurred_on",
+            "note",
+            "created_at",
+        ],
+        order_by: "occurred_on, created_at, id",
+    },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 3;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 4;
 const V1_SYNC_TABLE_COUNT: usize = 10;
+const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 
 fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
@@ -202,7 +221,12 @@ fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
             Ok(specs)
         }
         2 => {
+            specs.truncate(V2_V3_SYNC_TABLE_COUNT);
             specs[2].columns = LEGACY_HOLDING_COLUMNS;
+            Ok(specs)
+        }
+        3 => {
+            specs.truncate(V2_V3_SYNC_TABLE_COUNT);
             Ok(specs)
         }
         SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
@@ -390,6 +414,21 @@ impl Database {
                payload TEXT NOT NULL,
                created_at TEXT NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS portfolio_events (
+               id TEXT PRIMARY KEY,
+               event_type TEXT NOT NULL,
+               asset_name TEXT NOT NULL,
+               amount REAL NOT NULL,
+               currency TEXT NOT NULL,
+               fx_rate_to_base REAL,
+               base_currency TEXT NOT NULL,
+               base_amount REAL NOT NULL,
+               occurred_on TEXT NOT NULL,
+               note TEXT NOT NULL,
+               created_at TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_portfolio_events_occurred_on
+               ON portfolio_events(occurred_on, created_at);
              CREATE TABLE IF NOT EXISTS settings (
                key TEXT PRIMARY KEY,
                value TEXT NOT NULL
@@ -785,6 +824,139 @@ impl Database {
         self.snapshot()
     }
 
+    pub fn portfolio_events(&self) -> AppResult<Vec<PortfolioEventRecord>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT id, event_type, asset_name, amount, currency, fx_rate_to_base,
+                    base_currency, base_amount, occurred_on, note, created_at
+             FROM portfolio_events
+             ORDER BY occurred_on DESC, created_at DESC, id DESC LIMIT 500",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let event_type = portfolio_event_type_from_db(row.get::<_, String>(1)?.as_str())
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+            Ok(PortfolioEventRecord {
+                id: row.get(0)?,
+                event_type,
+                asset_name: row.get(2)?,
+                amount: row.get(3)?,
+                currency: row.get(4)?,
+                fx_rate_to_base: row.get(5)?,
+                base_currency: row.get(6)?,
+                base_amount: row.get(7)?,
+                occurred_on: row.get(8)?,
+                note: row.get(9)?,
+                created_at: row.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn add_portfolio_event(
+        &self,
+        input: &PortfolioEventInput,
+    ) -> AppResult<PortfolioEventRecord> {
+        let snapshot = self.snapshot()?;
+        let base_currency = snapshot.profile.base_currency.trim().to_ascii_uppercase();
+        validate_portfolio_event(input, &base_currency)?;
+
+        let latest = self
+            .portfolio_checkins()?
+            .into_iter()
+            .next()
+            .ok_or_else(|| AppError::Validation("请先在决策总览建立组合基线".into()))?;
+        if !latest.base_currency.eq_ignore_ascii_case(&base_currency) {
+            return Err(AppError::Validation(
+                "基准币种已改变；请先建立新的组合基线，再记录流水".into(),
+            ));
+        }
+        let latest_date = latest.valuation_date.ok_or_else(|| {
+            AppError::Validation("旧组合检查点没有估值日期；请先明确建立新的比较基线".into())
+        })?;
+        if input.occurred_on.trim() <= latest_date.as_str() {
+            return Err(AppError::Validation(format!(
+                "流水日期必须晚于最近一次组合检查点 {latest_date}；已冻结期间不能回填"
+            )));
+        }
+
+        let currency = input.currency.trim().to_ascii_uppercase();
+        let fx_rate_to_base = if currency == base_currency {
+            None
+        } else {
+            input.fx_rate_to_base
+        };
+        let base_amount = input.amount * fx_rate_to_base.unwrap_or(1.0);
+        if !base_amount.is_finite() || base_amount > 1e15 {
+            return Err(AppError::Validation("流水折算金额超出有效范围".into()));
+        }
+        let record = PortfolioEventRecord {
+            id: Uuid::new_v4().to_string(),
+            event_type: input.event_type.clone(),
+            asset_name: input.asset_name.trim().into(),
+            amount: input.amount,
+            currency,
+            fx_rate_to_base,
+            base_currency,
+            base_amount,
+            occurred_on: input.occurred_on.trim().into(),
+            note: input.note.trim().into(),
+            created_at: Utc::now().to_rfc3339(),
+        };
+        self.conn()?.execute(
+            "INSERT INTO portfolio_events
+             (id, event_type, asset_name, amount, currency, fx_rate_to_base, base_currency,
+              base_amount, occurred_on, note, created_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![
+                record.id,
+                portfolio_event_type_to_db(&record.event_type),
+                record.asset_name,
+                record.amount,
+                record.currency,
+                record.fx_rate_to_base,
+                record.base_currency,
+                record.base_amount,
+                record.occurred_on,
+                record.note,
+                record.created_at,
+            ],
+        )?;
+        Ok(record)
+    }
+
+    fn portfolio_events_between(
+        &self,
+        period_start: &str,
+        period_end: &str,
+    ) -> AppResult<Vec<PortfolioEventRecord>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT id, event_type, asset_name, amount, currency, fx_rate_to_base,
+                    base_currency, base_amount, occurred_on, note, created_at
+             FROM portfolio_events
+             WHERE occurred_on > ?1 AND occurred_on <= ?2
+             ORDER BY occurred_on, created_at, id",
+        )?;
+        let rows = statement.query_map(params![period_start, period_end], |row| {
+            let event_type = portfolio_event_type_from_db(row.get::<_, String>(1)?.as_str())
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+            Ok(PortfolioEventRecord {
+                id: row.get(0)?,
+                event_type,
+                asset_name: row.get(2)?,
+                amount: row.get(3)?,
+                currency: row.get(4)?,
+                fx_rate_to_base: row.get(5)?,
+                base_currency: row.get(6)?,
+                base_amount: row.get(7)?,
+                occurred_on: row.get(8)?,
+                note: row.get(9)?,
+                created_at: row.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     pub fn portfolio_checkins(&self) -> AppResult<Vec<PortfolioCheckInRecord>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
@@ -812,7 +984,10 @@ impl Database {
         if !input.external_cash_flow.is_finite() || input.external_cash_flow.abs() > 1e15 {
             return Err(AppError::Validation("期间净入金必须是有效金额".into()));
         }
-        if input.external_cash_flow.abs() > 0.005 && input.note.trim().is_empty() {
+        if !input.use_ledger_cash_flows
+            && input.external_cash_flow.abs() > 0.005
+            && input.note.trim().is_empty()
+        {
             return Err(AppError::Validation(
                 "存在净入金或出金时，必须说明现金流来源".into(),
             ));
@@ -860,10 +1035,62 @@ impl Database {
             ));
         }
 
+        let previous_date = previous
+            .as_ref()
+            .and_then(|record| record.valuation_date.as_deref());
+        if previous_date.is_some_and(|date| valuation_date.as_str() <= date) {
+            return Err(AppError::Validation(
+                "本次估值日期必须晚于上一条组合检查点".into(),
+            ));
+        }
+
+        let period_events = if input.use_ledger_cash_flows {
+            if let Some(period_start) = previous_date {
+                let events = self.portfolio_events_between(period_start, &valuation_date)?;
+                if events.iter().any(|event| {
+                    !event
+                        .base_currency
+                        .eq_ignore_ascii_case(&snapshot.valuation_status.base_currency)
+                }) {
+                    return Err(AppError::Validation(
+                        "期间流水的基准币种与当前组合不一致，请重新建立基线".into(),
+                    ));
+                }
+                events
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+        let event_summary = performance::summarize(&period_events);
+        let external_cash_flow = if input.use_ledger_cash_flows {
+            event_summary.external_cash_flow
+        } else {
+            input.external_cash_flow
+        };
+
         let total_change = previous
             .as_ref()
             .map(|record| snapshot.total_value - record.total_value);
-        let valuation_residual = total_change.map(|change| change - input.external_cash_flow);
+        let valuation_residual = total_change.map(|change| change - external_cash_flow);
+        let modified_dietz_return_pct = if input.use_ledger_cash_flows {
+            previous.as_ref().and_then(|record| {
+                let period_start =
+                    NaiveDate::parse_from_str(record.valuation_date.as_deref()?, "%Y-%m-%d")
+                        .ok()?;
+                let period_end = NaiveDate::parse_from_str(&valuation_date, "%Y-%m-%d").ok()?;
+                performance::modified_dietz_return_pct(
+                    record.total_value,
+                    snapshot.total_value,
+                    period_start,
+                    period_end,
+                    &period_events,
+                )
+            })
+        } else {
+            None
+        };
         let allocation_changes = previous
             .as_ref()
             .map(|record| {
@@ -877,7 +1104,7 @@ impl Database {
         let record = PortfolioCheckInRecord {
             id: Uuid::new_v4().to_string(),
             period_label: input.period_label.trim().into(),
-            external_cash_flow: input.external_cash_flow,
+            external_cash_flow,
             note: input.note.trim().into(),
             total_value: snapshot.total_value,
             previous_check_in_id: previous.as_ref().map(|record| record.id.clone()),
@@ -886,6 +1113,18 @@ impl Database {
             valuation_residual,
             base_currency: snapshot.valuation_status.base_currency,
             valuation_date: Some(valuation_date),
+            cash_flow_source: if previous.is_none() {
+                "baseline".into()
+            } else if input.use_ledger_cash_flows {
+                "ledger".into()
+            } else {
+                "manual".into()
+            },
+            event_ids: event_summary.event_ids,
+            income: event_summary.income,
+            costs: event_summary.costs,
+            turnover: event_summary.turnover,
+            modified_dietz_return_pct,
             holdings: snapshot.holdings,
             allocation_changes,
             created_at: Utc::now().to_rfc3339(),
@@ -1941,6 +2180,84 @@ fn validate_currency(value: &str) -> AppResult<()> {
     Ok(())
 }
 
+fn portfolio_event_type_to_db(event_type: &PortfolioEventType) -> &'static str {
+    match event_type {
+        PortfolioEventType::Deposit => "deposit",
+        PortfolioEventType::Withdrawal => "withdrawal",
+        PortfolioEventType::Dividend => "dividend",
+        PortfolioEventType::Interest => "interest",
+        PortfolioEventType::Fee => "fee",
+        PortfolioEventType::Tax => "tax",
+        PortfolioEventType::Buy => "buy",
+        PortfolioEventType::Sell => "sell",
+    }
+}
+
+fn portfolio_event_type_from_db(value: &str) -> AppResult<PortfolioEventType> {
+    match value {
+        "deposit" => Ok(PortfolioEventType::Deposit),
+        "withdrawal" => Ok(PortfolioEventType::Withdrawal),
+        "dividend" => Ok(PortfolioEventType::Dividend),
+        "interest" => Ok(PortfolioEventType::Interest),
+        "fee" => Ok(PortfolioEventType::Fee),
+        "tax" => Ok(PortfolioEventType::Tax),
+        "buy" => Ok(PortfolioEventType::Buy),
+        "sell" => Ok(PortfolioEventType::Sell),
+        _ => Err(AppError::Validation("流水类型无效".into())),
+    }
+}
+
+fn validate_portfolio_event(input: &PortfolioEventInput, base_currency: &str) -> AppResult<()> {
+    if !input.amount.is_finite() || input.amount <= 0.0 || input.amount > 1e15 {
+        return Err(AppError::Validation(
+            "流水金额必须是大于 0 的有效数字".into(),
+        ));
+    }
+    let currency = input.currency.trim();
+    if currency.len() != 3
+        || !currency
+            .chars()
+            .all(|character| character.is_ascii_alphabetic())
+    {
+        return Err(AppError::Validation("流水币种必须是 3 位字母代码".into()));
+    }
+    if !currency.eq_ignore_ascii_case(base_currency)
+        && !input
+            .fx_rate_to_base
+            .is_some_and(|rate| rate.is_finite() && rate > 0.0 && rate <= 1e9)
+    {
+        return Err(AppError::Validation(
+            "外币流水必须填写折算到当前基准币种的有效汇率".into(),
+        ));
+    }
+    let occurred_on = NaiveDate::parse_from_str(input.occurred_on.trim(), "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("流水日期必须使用 YYYY-MM-DD".into()))?;
+    if occurred_on > Local::now().date_naive() {
+        return Err(AppError::Validation("流水日期不能晚于今天".into()));
+    }
+    if input.note.trim().is_empty() {
+        return Err(AppError::Validation(
+            "流水说明为必填项，便于未来核对".into(),
+        ));
+    }
+    if matches!(
+        input.event_type,
+        PortfolioEventType::Buy
+            | PortfolioEventType::Sell
+            | PortfolioEventType::Dividend
+            | PortfolioEventType::Interest
+    ) && input.asset_name.trim().is_empty()
+    {
+        return Err(AppError::Validation(
+            "买卖、分红或利息流水必须填写关联资产".into(),
+        ));
+    }
+    if input.asset_name.chars().count() > 200 || input.note.chars().count() > 2_000 {
+        return Err(AppError::Validation("流水资产名称或说明过长".into()));
+    }
+    Ok(())
+}
+
 fn validate_holding(input: &HoldingInput, base_currency: &str) -> AppResult<()> {
     if input.name.trim().is_empty() || input.market_value <= 0.0 {
         return Err(AppError::Validation("资产名称和正数市值为必填项".into()));
@@ -2316,6 +2633,18 @@ mod tests {
                 external_cash_flow: 0.0,
                 note: "首次组合快照".into(),
                 reset_baseline: false,
+                use_ledger_cash_flows: false,
+            })
+            .unwrap();
+        source
+            .add_portfolio_event(&PortfolioEventInput {
+                event_type: PortfolioEventType::Deposit,
+                asset_name: String::new(),
+                amount: 5_000.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                occurred_on: "2026-01-02".into(),
+                note: "同步测试入金".into(),
             })
             .unwrap();
         source.set_setting("model.name", "never-sync-this").unwrap();
@@ -2339,12 +2668,21 @@ mod tests {
         assert_eq!(restored_decision.rule_checks.len(), 1);
         assert_eq!(restored_decision.rule_checks[0].status, "遵守");
         assert_eq!(target.portfolio_checkins().unwrap().len(), 1);
+        assert_eq!(target.portfolio_events().unwrap().len(), 1);
         assert_eq!(
             target.setting("model.name").unwrap().as_deref(),
             Some("keep-local-model")
         );
 
-        let mut legacy_v2 = dataset.clone();
+        let mut legacy_v3 = dataset.clone();
+        legacy_v3.schema_version = 3;
+        assert_eq!(legacy_v3.tables.pop().unwrap().name, "portfolio_events");
+        legacy_v3.validate().unwrap();
+        let v3_target = Database::open(&directory.path().join("v3-target.db")).unwrap();
+        v3_target.import_sync_data(&legacy_v3).unwrap();
+        assert!(v3_target.portfolio_events().unwrap().is_empty());
+
+        let mut legacy_v2 = legacy_v3;
         legacy_v2.schema_version = 2;
         let holdings = legacy_v2
             .tables
@@ -2426,6 +2764,7 @@ mod tests {
                 external_cash_flow: 0.0,
                 note: "".into(),
                 reset_baseline: false,
+                use_ledger_cash_flows: false,
             }),
             Err(AppError::Validation(_))
         ));
@@ -2448,6 +2787,7 @@ mod tests {
                 external_cash_flow: 10_000.0,
                 note: "首次入金".into(),
                 reset_baseline: false,
+                use_ledger_cash_flows: false,
             }),
             Err(AppError::Validation(_))
         ));
@@ -2457,6 +2797,7 @@ mod tests {
                 external_cash_flow: 0.0,
                 note: "首次冻结组合".into(),
                 reset_baseline: false,
+                use_ledger_cash_flows: false,
             })
             .unwrap();
         assert_eq!(baseline.total_value, 100_000.0);
@@ -2496,6 +2837,7 @@ mod tests {
                 external_cash_flow: 10_000.0,
                 note: "工资结余入金".into(),
                 reset_baseline: false,
+                use_ledger_cash_flows: false,
             })
             .unwrap();
         assert_eq!(
@@ -2530,6 +2872,175 @@ mod tests {
             102_000.0
         );
         assert_eq!(history[1].holdings[0].market_value, 100_000.0);
+    }
+
+    #[test]
+    fn ledger_drives_checkin_cash_flows_and_preserves_frozen_periods() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("ledger.db")).unwrap();
+        assert!(matches!(
+            db.add_portfolio_event(&PortfolioEventInput {
+                event_type: PortfolioEventType::Deposit,
+                asset_name: String::new(),
+                amount: 1_000.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                occurred_on: "2026-01-01".into(),
+                note: "没有基线".into(),
+            }),
+            Err(AppError::Validation(_))
+        ));
+        let created = db
+            .add_holding(&HoldingInput {
+                symbol: "IDX".into(),
+                name: "宽基指数".into(),
+                asset_class: "基金".into(),
+                market_value: 100_000.0,
+                cost_basis: 90_000.0,
+                target_pct: 100.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-01-01".into(),
+            })
+            .unwrap();
+        db.save_portfolio_checkin(&PortfolioCheckInInput {
+            period_label: "一月基线".into(),
+            external_cash_flow: 0.0,
+            note: "开始记录".into(),
+            reset_baseline: false,
+            use_ledger_cash_flows: true,
+        })
+        .unwrap();
+
+        for input in [
+            PortfolioEventInput {
+                event_type: PortfolioEventType::Deposit,
+                asset_name: String::new(),
+                amount: 10_000.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                occurred_on: "2026-01-16".into(),
+                note: "工资结余入金".into(),
+            },
+            PortfolioEventInput {
+                event_type: PortfolioEventType::Dividend,
+                asset_name: "宽基指数".into(),
+                amount: 500.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                occurred_on: "2026-01-20".into(),
+                note: "现金分红".into(),
+            },
+            PortfolioEventInput {
+                event_type: PortfolioEventType::Fee,
+                asset_name: "宽基指数".into(),
+                amount: 50.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                occurred_on: "2026-01-21".into(),
+                note: "交易费用".into(),
+            },
+            PortfolioEventInput {
+                event_type: PortfolioEventType::Buy,
+                asset_name: "宽基指数".into(),
+                amount: 20_000.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                occurred_on: "2026-01-22".into(),
+                note: "账户内部调仓".into(),
+            },
+        ] {
+            db.add_portfolio_event(&input).unwrap();
+        }
+
+        db.update_holding(
+            &created.holdings[0].id,
+            &HoldingInput {
+                symbol: "IDX".into(),
+                name: "宽基指数".into(),
+                asset_class: "基金".into(),
+                market_value: 120_450.0,
+                cost_basis: 110_000.0,
+                target_pct: 100.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-01-31".into(),
+            },
+        )
+        .unwrap();
+        let checkin = db
+            .save_portfolio_checkin(&PortfolioCheckInInput {
+                period_label: "一月".into(),
+                external_cash_flow: 999_999.0,
+                note: "流水自动汇总".into(),
+                reset_baseline: false,
+                use_ledger_cash_flows: true,
+            })
+            .unwrap();
+        assert_eq!(checkin.cash_flow_source, "ledger");
+        assert_eq!(checkin.external_cash_flow, 10_000.0);
+        assert_eq!(checkin.income, 500.0);
+        assert_eq!(checkin.costs, 50.0);
+        assert_eq!(checkin.turnover, 20_000.0);
+        assert_eq!(checkin.event_ids.len(), 4);
+        assert!((checkin.modified_dietz_return_pct.unwrap() - 9.952_380_952).abs() < 1e-6);
+
+        assert!(matches!(
+            db.add_portfolio_event(&PortfolioEventInput {
+                event_type: PortfolioEventType::Withdrawal,
+                asset_name: String::new(),
+                amount: 100.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                occurred_on: "2026-01-30".into(),
+                note: "迟到记录".into(),
+            }),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn foreign_currency_events_require_and_freeze_the_declared_rate() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("event-fx.db")).unwrap();
+        db.add_holding(&HoldingInput {
+            symbol: "CASH".into(),
+            name: "现金".into(),
+            asset_class: "现金".into(),
+            market_value: 10_000.0,
+            cost_basis: 10_000.0,
+            target_pct: 100.0,
+            currency: "CNY".into(),
+            fx_rate_to_base: None,
+            valuation_date: "2026-08-31".into(),
+        })
+        .unwrap();
+        db.save_portfolio_checkin(&PortfolioCheckInInput {
+            period_label: "基线".into(),
+            external_cash_flow: 0.0,
+            note: String::new(),
+            reset_baseline: false,
+            use_ledger_cash_flows: true,
+        })
+        .unwrap();
+        let mut input = PortfolioEventInput {
+            event_type: PortfolioEventType::Withdrawal,
+            asset_name: String::new(),
+            amount: 100.0,
+            currency: "USD".into(),
+            fx_rate_to_base: None,
+            occurred_on: "2026-09-01".into(),
+            note: "美元出金".into(),
+        };
+        assert!(matches!(
+            db.add_portfolio_event(&input),
+            Err(AppError::Validation(_))
+        ));
+        input.fx_rate_to_base = Some(7.0);
+        let event = db.add_portfolio_event(&input).unwrap();
+        assert_eq!(event.base_currency, "CNY");
+        assert_eq!(event.base_amount, 700.0);
+        assert_eq!(event.fx_rate_to_base, Some(7.0));
     }
 
     #[test]
@@ -2602,6 +3113,7 @@ mod tests {
             external_cash_flow: 0.0,
             note: "统一估值日".into(),
             reset_baseline: false,
+            use_ledger_cash_flows: false,
         })
         .unwrap();
 
@@ -2626,6 +3138,7 @@ mod tests {
                 external_cash_flow: 0.0,
                 note: "".into(),
                 reset_baseline: false,
+                use_ledger_cash_flows: false,
             }),
             Err(AppError::Validation(_))
         ));
@@ -2661,6 +3174,7 @@ mod tests {
                 external_cash_flow: 0.0,
                 note: "切换基准币种后重新开始比较".into(),
                 reset_baseline: true,
+                use_ledger_cash_flows: false,
             })
             .unwrap();
         assert_eq!(reset.base_currency, "USD");

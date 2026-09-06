@@ -23,6 +23,7 @@
 │ API ─┬─ deterministic rules   │
 │      ├─ planning simulation   │
 │      ├─ valuation integrity   │
+│      ├─ event ledger/performance│
 │      ├─ review snapshots      │
 │      ├─ versioned user rules  │
 │      ├─ evidence retriever    │
@@ -76,13 +77,15 @@ pub trait ModelProvider: Send + Sync {
 
 `server/src/memory.rs` 的 `MemoryRetriever` 不依赖数据库或模型。当前 `HybridMemoryRetriever` 综合字段/内容匹配、投资概念关联、复盘可信度和时间衰减，并为每条结果生成可见命中原因。决策记忆由不可变原始快照与独立复盘动态构造，历史 AI 回答始终标为未经结果验证。详细契约见 [长期记忆与多轮检索](long-term-memory.md)。
 
-`ContextBuilder` 位于 `server/src/context.rs`，负责在编排前执行最小披露策略。编排器不再接收完整 `Snapshot`，只接收经过用户选择、发送前预览和一致性指纹校验的 `BuiltContext`。候选记忆也在预览阶段冻结，后续检索不能越出该集合。详细契约见 [AI 数据边界](ai-data-boundary.md)。
+`ContextBuilder` 位于 `server/src/context.rs`，负责在编排前执行最小披露策略。规则、复盘、组合检查点、资金流水、证据和记忆通过单一 `ContextSources` 契约注入，新增数据组不会继续膨胀编排器参数。编排器不再接收完整 `Snapshot`，只接收经过用户选择、发送前预览和一致性指纹校验的 `BuiltContext`。候选记忆也在预览阶段冻结，后续检索不能越出该集合。详细契约见 [AI 数据边界](ai-data-boundary.md)。
 
-周期系统复盘、个人投资规则与组合检查点属于独立的本地领域模型。复盘写入时冻结组合和方法指标；规则更新采用追加版本；组合检查点冻结当时持仓与用户声明的净外部现金流。它们都保留历史且由 `ContextBuilder` 单独控制，用户可以在每次 AI 分析前选择是否发送。详细契约见 [复盘与规则闭环](review-and-rules.md) 与 [组合变化归因](portfolio-attribution.md)。
+周期系统复盘、个人投资规则、组合流水与组合检查点属于独立的本地领域模型。复盘写入时冻结组合和方法指标；规则更新采用追加版本；流水只追加并冻结原币、汇率、日期和口径；检查点冻结当时持仓、所消费的流水 ID 与分类汇总。它们都保留历史且由 `ContextBuilder` 分组控制，用户可以在每次 AI 分析前选择是否发送。详细契约见 [复盘与规则闭环](review-and-rules.md) 与 [组合变化归因](portfolio-attribution.md)。
 
 `server/src/evidence.rs` 定义独立的 `EvidenceRetriever`。当前词法实现按问题与持仓名称筛选最多 12 条有效记录；候选集合在预览时冻结，归档或新增相关证据会使旧指纹失效。证据内容由用户整理，服务端校验 HTTPS、日期和结构，但不声称已核验来源正文。未来外部行情与基本面 Provider 应写入同一个证据契约。详细说明见 [研究证据与引用](research-evidence.md)。
 
 `server/src/valuation.rs` 是不依赖数据库或模型的估值口径模块，负责基准币种折算、汇率缺失检测、估值日期对齐和资产类别变化。数据库只负责持久化原始输入与调用该模块；风险、规划、组合检查点和 AI 上下文共同消费同一份口径状态，避免各层自行解释币种。
+
+`server/src/performance.rs` 只处理已经冻结的组合流水：将外部入出金、内部现金收入、费用税费和交易换手分开汇总，并按发生日期计算 Modified Dietz 期间近似回报。流水与检查点由数据库保证只追加和按日期分段；该模块不读取持仓、不调用模型，也不把近似回报冒充时间加权收益率。
 
 ## 数据与安全边界
 
@@ -98,7 +101,7 @@ pub trait ModelProvider: Send + Sync {
 - 模型提示词明确禁止编造实时市场数据、收益保证和确定性买卖指令。
 - 规则层输出与模型推理分离，降低大模型覆盖基础风险事实的概率。
 - 所有组合级数值先按财务档案的基准币种折算；外币汇率缺失时风险、规划、再平衡和归因安全降级，不对原币金额求和。
-- 云同步使用固定数据表白名单与 XChaCha20-Poly1305；恢复密钥不上传。
+- 云同步使用固定数据表白名单与 XChaCha20-Poly1305；组合流水随投资域数据同步，恢复密钥不上传。
 - 同步写入以云端 revision 做原子比较；并发修改不会静默覆盖。
 - 拉取完成解密、结构和内容指纹检查后，才在一个 SQLite 事务中替换投资域数据；本地设置和密钥不在事务范围内。
 
@@ -109,7 +112,7 @@ pub trait ModelProvider: Send + Sync {
 ## 推荐扩展顺序
 
 1. 用数据库迁移工具替代当前幂等建表脚本。
-2. 增加持仓与交易 CSV 导入、可靠汇率/价格 Provider，以及具备现金流时间点的时间加权收益率。
+2. 增加持仓与交易 CSV 导入、可靠汇率/价格 Provider，并在外部现金流时点取得可验证组合估值后实现时间加权收益率。
 3. 新增本地嵌入向量 Retriever，与当前可解释检索融合并保留离线降级。
 4. 增加受信任行情 Provider；外部数据必须标注来源和时间。
 5. 为工作流增加可恢复 checkpoint 与版本评测。

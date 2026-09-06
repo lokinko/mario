@@ -468,7 +468,7 @@ dependencies = [
 
 [[package]]
 name = "compass-invest"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "icu_collections",
  "icu_locale_core",

@@ -40,6 +40,26 @@ export interface PortfolioCheckInInput {
   externalCashFlow: number;
   note: string;
   resetBaseline: boolean;
+  useLedgerCashFlows: boolean;
+}
+
+export type PortfolioEventType = "deposit" | "withdrawal" | "dividend" | "interest" | "fee" | "tax" | "buy" | "sell";
+
+export interface PortfolioEventInput {
+  eventType: PortfolioEventType;
+  assetName: string;
+  amount: number;
+  currency: string;
+  fxRateToBase: number | null;
+  occurredOn: string;
+  note: string;
+}
+
+export interface PortfolioEventRecord extends PortfolioEventInput {
+  id: string;
+  baseCurrency: string;
+  baseAmount: number;
+  createdAt: string;
 }
 
 export interface PortfolioAllocationChange {
@@ -64,6 +84,12 @@ export interface PortfolioCheckInRecord {
   valuationResidual: number | null;
   baseCurrency: string;
   valuationDate: string | null;
+  cashFlowSource: "baseline" | "ledger" | "manual";
+  eventIds: string[];
+  income: number;
+  costs: number;
+  turnover: number;
+  modifiedDietzReturnPct: number | null;
   holdings: Holding[];
   allocationChanges: PortfolioAllocationChange[];
   createdAt: string;
@@ -206,6 +232,7 @@ export interface ContextSelection {
   includeRules: boolean;
   includeSystemReviews: boolean;
   includePortfolioCheckins: boolean;
+  includePortfolioEvents: boolean;
   includeEvidence: boolean;
 }
 

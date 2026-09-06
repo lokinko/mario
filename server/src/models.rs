@@ -87,6 +87,59 @@ pub struct HoldingInput {
     pub valuation_date: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PortfolioEventType {
+    Deposit,
+    Withdrawal,
+    Dividend,
+    Interest,
+    Fee,
+    Tax,
+    Buy,
+    Sell,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioEventInput {
+    pub event_type: PortfolioEventType,
+    #[serde(default)]
+    pub asset_name: String,
+    pub amount: f64,
+    pub currency: String,
+    #[serde(default)]
+    pub fx_rate_to_base: Option<f64>,
+    pub occurred_on: String,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioEventRecord {
+    pub id: String,
+    pub event_type: PortfolioEventType,
+    pub asset_name: String,
+    pub amount: f64,
+    pub currency: String,
+    pub fx_rate_to_base: Option<f64>,
+    pub base_currency: String,
+    pub base_amount: f64,
+    pub occurred_on: String,
+    pub note: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioEventSummary {
+    pub event_ids: Vec<String>,
+    pub external_cash_flow: f64,
+    pub income: f64,
+    pub costs: f64,
+    pub turnover: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortfolioCheckInInput {
@@ -96,6 +149,8 @@ pub struct PortfolioCheckInInput {
     pub note: String,
     #[serde(default)]
     pub reset_baseline: bool,
+    #[serde(default)]
+    pub use_ledger_cash_flows: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +181,18 @@ pub struct PortfolioCheckInRecord {
     pub base_currency: String,
     #[serde(default)]
     pub valuation_date: Option<String>,
+    #[serde(default = "default_cash_flow_source")]
+    pub cash_flow_source: String,
+    #[serde(default)]
+    pub event_ids: Vec<String>,
+    #[serde(default)]
+    pub income: f64,
+    #[serde(default)]
+    pub costs: f64,
+    #[serde(default)]
+    pub turnover: f64,
+    #[serde(default)]
+    pub modified_dietz_return_pct: Option<f64>,
     pub holdings: Vec<Holding>,
     pub allocation_changes: Vec<PortfolioAllocationChange>,
     pub created_at: String,
@@ -279,6 +346,8 @@ pub struct ContextSelection {
     #[serde(default = "enabled")]
     pub include_portfolio_checkins: bool,
     #[serde(default = "enabled")]
+    pub include_portfolio_events: bool,
+    #[serde(default = "enabled")]
     pub include_evidence: bool,
 }
 
@@ -293,6 +362,7 @@ impl Default for ContextSelection {
             include_rules: true,
             include_system_reviews: true,
             include_portfolio_checkins: true,
+            include_portfolio_events: true,
             include_evidence: true,
         }
     }
@@ -300,6 +370,10 @@ impl Default for ContextSelection {
 
 fn enabled() -> bool {
     true
+}
+
+fn default_cash_flow_source() -> String {
+    "manual".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
