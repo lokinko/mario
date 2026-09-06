@@ -592,7 +592,7 @@ mod tests {
             active: true,
             captured_at: "2026-01-01".into(),
         }];
-        let context = ContextBuilder::build(&request, &snapshot, &[], &[], &evidence, &memory);
+        let context = ContextBuilder::build(&request, &snapshot, &[], &[], &[], &evidence, &memory);
         let output = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &memory)
             .await
@@ -662,7 +662,7 @@ mod tests {
             preview_revision: None,
         };
         let snapshot = snapshot();
-        let context = ContextBuilder::build(&request, &snapshot, &[], &[], &[], &[]);
+        let context = ContextBuilder::build(&request, &snapshot, &[], &[], &[], &[], &[]);
         let output = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &[])
             .await
@@ -731,7 +731,7 @@ mod tests {
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
-        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[]);
+        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[], &[]);
         let output = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &[])
             .await
@@ -767,7 +767,7 @@ mod tests {
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
-        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[]);
+        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[], &[]);
         let error = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &[])
             .await
@@ -841,7 +841,7 @@ mod tests {
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
-        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[]);
+        let context = ContextBuilder::build(&request, &snapshot(), &[], &[], &[], &[], &[]);
         let output = InvestmentOrchestrator::new(&provider, &retriever)
             .run(&request, &context, &[])
             .await

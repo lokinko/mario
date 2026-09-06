@@ -1,4 +1,8 @@
-use std::{collections::HashSet, path::Path, sync::Mutex};
+use std::{
+    collections::{BTreeMap, HashSet},
+    path::Path,
+    sync::Mutex,
+};
 
 use chrono::{NaiveDate, Utc};
 use rusqlite::{params, types::ValueRef, Connection, Transaction};
@@ -12,9 +16,10 @@ use crate::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
         DecisionReviewInput, DecisionRuleCheck, FinancialProfile, Goal, GoalInput, Holding,
         HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem,
-        ModelConfig, ReminderSettings, ResearchEvidence, ResearchEvidenceInput,
-        ReviewReminderSummary, RuleEffectivenessItem, RuleEffectivenessSummary, Snapshot,
-        StoredAnalysis, SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
+        ModelConfig, PortfolioAllocationChange, PortfolioCheckInInput, PortfolioCheckInRecord,
+        ReminderSettings, ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary,
+        RuleEffectivenessItem, RuleEffectivenessSummary, Snapshot, StoredAnalysis,
+        SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
     },
     planning, risk,
 };
@@ -164,7 +169,25 @@ const SYNC_TABLES: &[SyncTableSpec] = &[
         ],
         order_by: "id",
     },
+    SyncTableSpec {
+        name: "portfolio_checkins",
+        columns: &["id", "payload", "created_at"],
+        order_by: "created_at, id",
+    },
 ];
+
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 2;
+const V1_SYNC_TABLE_COUNT: usize = 10;
+
+fn sync_specs_for_version(version: u32) -> AppResult<&'static [SyncTableSpec]> {
+    match version {
+        1 => Ok(&SYNC_TABLES[..V1_SYNC_TABLE_COUNT]),
+        SYNC_DATASET_SCHEMA_VERSION => Ok(SYNC_TABLES),
+        _ => Err(AppError::Validation(format!(
+            "不支持的数据快照版本 {version}"
+        ))),
+    }
+}
 
 impl SyncDataset {
     pub fn content_hash(&self) -> AppResult<String> {
@@ -178,19 +201,14 @@ impl SyncDataset {
     }
 
     pub fn validate(&self) -> AppResult<()> {
-        if self.schema_version != 1 {
-            return Err(AppError::Validation(format!(
-                "不支持的数据快照版本 {}",
-                self.schema_version
-            )));
-        }
+        let specs = sync_specs_for_version(self.schema_version)?;
         chrono::DateTime::parse_from_rfc3339(&self.exported_at)
             .map_err(|_| AppError::Validation("数据快照时间格式无效".into()))?;
-        if self.tables.len() != SYNC_TABLES.len() {
+        if self.tables.len() != specs.len() {
             return Err(AppError::Validation("数据快照缺少必要数据表".into()));
         }
         let mut total_rows = 0_usize;
-        for spec in SYNC_TABLES {
+        for spec in specs {
             let table = self
                 .tables
                 .iter()
@@ -341,6 +359,11 @@ impl Database {
                notes TEXT NOT NULL,
                active INTEGER NOT NULL,
                captured_at TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS portfolio_checkins (
+               id TEXT PRIMARY KEY,
+               payload TEXT NOT NULL,
+               created_at TEXT NOT NULL
              );
              CREATE TABLE IF NOT EXISTS settings (
                key TEXT PRIMARY KEY,
@@ -541,7 +564,7 @@ impl Database {
             });
         }
         let dataset = SyncDataset {
-            schema_version: 1,
+            schema_version: SYNC_DATASET_SCHEMA_VERSION,
             exported_at: Utc::now().to_rfc3339(),
             tables,
         };
@@ -558,7 +581,7 @@ impl Database {
         for spec in SYNC_TABLES.iter().rev() {
             transaction.execute(&format!("DELETE FROM {}", quote_identifier(spec.name)), [])?;
         }
-        for spec in SYNC_TABLES {
+        for spec in sync_specs_for_version(dataset.schema_version)? {
             let table = dataset
                 .tables
                 .iter()
@@ -719,6 +742,85 @@ impl Database {
             return Err(AppError::Validation("找不到要删除的资产".into()));
         }
         self.snapshot()
+    }
+
+    pub fn portfolio_checkins(&self) -> AppResult<Vec<PortfolioCheckInRecord>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT payload FROM portfolio_checkins
+             ORDER BY created_at DESC, id DESC LIMIT 100",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        let mut records = Vec::new();
+        for row in rows {
+            records.push(serde_json::from_str::<PortfolioCheckInRecord>(&row?)?);
+        }
+        Ok(records)
+    }
+
+    pub fn save_portfolio_checkin(
+        &self,
+        input: &PortfolioCheckInInput,
+    ) -> AppResult<PortfolioCheckInRecord> {
+        if input.period_label.trim().is_empty() {
+            return Err(AppError::Validation("组合快照周期为必填项".into()));
+        }
+        if input.period_label.chars().count() > 100 || input.note.chars().count() > 2_000 {
+            return Err(AppError::Validation("组合快照周期或说明过长".into()));
+        }
+        if !input.external_cash_flow.is_finite() || input.external_cash_flow.abs() > 1e15 {
+            return Err(AppError::Validation("期间净入金必须是有效金额".into()));
+        }
+        if input.external_cash_flow.abs() > 0.005 && input.note.trim().is_empty() {
+            return Err(AppError::Validation(
+                "存在净入金或出金时，必须说明现金流来源".into(),
+            ));
+        }
+
+        let snapshot = self.snapshot()?;
+        if snapshot.holdings.is_empty() || snapshot.total_value <= 0.0 {
+            return Err(AppError::Validation(
+                "请先录入当前持仓，再建立组合变化基线".into(),
+            ));
+        }
+        let previous = self.portfolio_checkins()?.into_iter().next();
+        if previous.is_none() && input.external_cash_flow.abs() > 0.005 {
+            return Err(AppError::Validation(
+                "第一条记录是组合基线，期间净入金应填写 0".into(),
+            ));
+        }
+
+        let total_change = previous
+            .as_ref()
+            .map(|record| snapshot.total_value - record.total_value);
+        let valuation_residual = total_change.map(|change| change - input.external_cash_flow);
+        let allocation_changes = previous
+            .as_ref()
+            .map(|record| portfolio_allocation_changes(&record.holdings, &snapshot.holdings))
+            .unwrap_or_default();
+        let record = PortfolioCheckInRecord {
+            id: Uuid::new_v4().to_string(),
+            period_label: input.period_label.trim().into(),
+            external_cash_flow: input.external_cash_flow,
+            note: input.note.trim().into(),
+            total_value: snapshot.total_value,
+            previous_check_in_id: previous.as_ref().map(|record| record.id.clone()),
+            previous_total_value: previous.as_ref().map(|record| record.total_value),
+            total_change,
+            valuation_residual,
+            holdings: snapshot.holdings,
+            allocation_changes,
+            created_at: Utc::now().to_rfc3339(),
+        };
+        self.conn()?.execute(
+            "INSERT INTO portfolio_checkins (id, payload, created_at) VALUES (?1,?2,?3)",
+            params![
+                record.id,
+                serde_json::to_string(&record)?,
+                record.created_at
+            ],
+        )?;
+        Ok(record)
     }
 
     pub fn add_goal(&self, input: &GoalInput) -> AppResult<Snapshot> {
@@ -1682,6 +1784,61 @@ fn validate_non_negative(values: &[f64]) -> AppResult<()> {
     Ok(())
 }
 
+fn portfolio_allocation_changes(
+    previous_holdings: &[Holding],
+    current_holdings: &[Holding],
+) -> Vec<PortfolioAllocationChange> {
+    let aggregate = |holdings: &[Holding]| {
+        let mut values = BTreeMap::<String, f64>::new();
+        for holding in holdings {
+            *values.entry(holding.asset_class.clone()).or_default() += holding.market_value;
+        }
+        values
+    };
+    let previous = aggregate(previous_holdings);
+    let current = aggregate(current_holdings);
+    let previous_total = previous.values().sum::<f64>();
+    let current_total = current.values().sum::<f64>();
+    let mut categories = BTreeMap::<String, ()>::new();
+    for category in previous.keys().chain(current.keys()) {
+        categories.insert(category.clone(), ());
+    }
+    let mut changes = categories
+        .into_keys()
+        .map(|asset_class| {
+            let previous_value = previous.get(&asset_class).copied().unwrap_or_default();
+            let current_value = current.get(&asset_class).copied().unwrap_or_default();
+            let previous_pct = if previous_total > 0.0 {
+                previous_value / previous_total * 100.0
+            } else {
+                0.0
+            };
+            let current_pct = if current_total > 0.0 {
+                current_value / current_total * 100.0
+            } else {
+                0.0
+            };
+            PortfolioAllocationChange {
+                asset_class,
+                previous_value,
+                current_value,
+                value_change: current_value - previous_value,
+                previous_pct,
+                current_pct,
+                pct_point_change: current_pct - previous_pct,
+            }
+        })
+        .collect::<Vec<_>>();
+    changes.sort_by(|left, right| {
+        right
+            .value_change
+            .abs()
+            .total_cmp(&left.value_change.abs())
+            .then_with(|| left.asset_class.cmp(&right.asset_class))
+    });
+    changes
+}
+
 fn validate_and_canonicalize_rule_checks(
     checks: &[DecisionRuleCheck],
     active_rules: &[InvestmentRule],
@@ -2015,6 +2172,13 @@ mod tests {
                 }],
             })
             .unwrap();
+        source
+            .save_portfolio_checkin(&PortfolioCheckInInput {
+                period_label: "同步基线".into(),
+                external_cash_flow: 0.0,
+                note: "首次组合快照".into(),
+            })
+            .unwrap();
         source.set_setting("model.name", "never-sync-this").unwrap();
 
         let dataset = source.export_sync_data().unwrap();
@@ -2035,10 +2199,23 @@ mod tests {
         let restored_decision = target.decisions().unwrap().remove(0);
         assert_eq!(restored_decision.rule_checks.len(), 1);
         assert_eq!(restored_decision.rule_checks[0].status, "遵守");
+        assert_eq!(target.portfolio_checkins().unwrap().len(), 1);
         assert_eq!(
             target.setting("model.name").unwrap().as_deref(),
             Some("keep-local-model")
         );
+
+        let mut legacy_dataset = dataset.clone();
+        legacy_dataset.schema_version = 1;
+        assert_eq!(
+            legacy_dataset.tables.pop().unwrap().name,
+            "portfolio_checkins"
+        );
+        legacy_dataset.validate().unwrap();
+        let legacy_target = Database::open(&directory.path().join("legacy-target.db")).unwrap();
+        legacy_target.import_sync_data(&legacy_dataset).unwrap();
+        assert_eq!(legacy_target.snapshot().unwrap().holdings.len(), 1);
+        assert!(legacy_target.portfolio_checkins().unwrap().is_empty());
     }
 
     #[test]
@@ -2070,6 +2247,110 @@ mod tests {
         let snapshot = db.update_holding(id, &updated).unwrap();
         assert_eq!(snapshot.holdings[0].market_value, 120_000.0);
         assert!(db.delete_holding(id).unwrap().holdings.is_empty());
+    }
+
+    #[test]
+    fn portfolio_checkins_separate_external_flows_from_valuation_residuals() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        assert!(matches!(
+            db.save_portfolio_checkin(&PortfolioCheckInInput {
+                period_label: "基线".into(),
+                external_cash_flow: 0.0,
+                note: "".into(),
+            }),
+            Err(AppError::Validation(_))
+        ));
+        let snapshot = db
+            .add_holding(&HoldingInput {
+                symbol: "IDX".into(),
+                name: "宽基指数".into(),
+                asset_class: "基金".into(),
+                market_value: 100_000.0,
+                cost_basis: 90_000.0,
+                target_pct: 90.0,
+                currency: "CNY".into(),
+            })
+            .unwrap();
+        assert!(matches!(
+            db.save_portfolio_checkin(&PortfolioCheckInInput {
+                period_label: "错误基线".into(),
+                external_cash_flow: 10_000.0,
+                note: "首次入金".into(),
+            }),
+            Err(AppError::Validation(_))
+        ));
+        let baseline = db
+            .save_portfolio_checkin(&PortfolioCheckInInput {
+                period_label: "2026-08 基线".into(),
+                external_cash_flow: 0.0,
+                note: "首次冻结组合".into(),
+            })
+            .unwrap();
+        assert_eq!(baseline.total_value, 100_000.0);
+        assert_eq!(baseline.total_change, None);
+
+        let fund_id = snapshot.holdings[0].id.clone();
+        db.update_holding(
+            &fund_id,
+            &HoldingInput {
+                symbol: "IDX".into(),
+                name: "宽基指数".into(),
+                asset_class: "基金".into(),
+                market_value: 102_000.0,
+                cost_basis: 90_000.0,
+                target_pct: 90.0,
+                currency: "CNY".into(),
+            },
+        )
+        .unwrap();
+        db.add_holding(&HoldingInput {
+            symbol: "CASH".into(),
+            name: "新增现金".into(),
+            asset_class: "现金".into(),
+            market_value: 10_000.0,
+            cost_basis: 10_000.0,
+            target_pct: 10.0,
+            currency: "CNY".into(),
+        })
+        .unwrap();
+        let next = db
+            .save_portfolio_checkin(&PortfolioCheckInInput {
+                period_label: "2026-09".into(),
+                external_cash_flow: 10_000.0,
+                note: "工资结余入金".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            next.previous_check_in_id.as_deref(),
+            Some(baseline.id.as_str())
+        );
+        assert_eq!(next.total_value, 112_000.0);
+        assert_eq!(next.total_change, Some(12_000.0));
+        assert_eq!(next.valuation_residual, Some(2_000.0));
+        assert_eq!(next.allocation_changes.len(), 2);
+
+        db.update_holding(
+            &fund_id,
+            &HoldingInput {
+                symbol: "IDX".into(),
+                name: "宽基指数".into(),
+                asset_class: "基金".into(),
+                market_value: 120_000.0,
+                cost_basis: 90_000.0,
+                target_pct: 90.0,
+                currency: "CNY".into(),
+            },
+        )
+        .unwrap();
+        let history = db.portfolio_checkins().unwrap();
+        assert_eq!(
+            history[0].holdings[0]
+                .market_value
+                .max(history[0].holdings[1].market_value),
+            102_000.0
+        );
+        assert_eq!(history[1].holdings[0].market_value, 100_000.0);
     }
 
     #[test]

@@ -77,7 +77,7 @@ pub trait ModelProvider: Send + Sync {
 
 `ContextBuilder` 位于 `server/src/context.rs`，负责在编排前执行最小披露策略。编排器不再接收完整 `Snapshot`，只接收经过用户选择、发送前预览和一致性指纹校验的 `BuiltContext`。候选记忆也在预览阶段冻结，后续检索不能越出该集合。详细契约见 [AI 数据边界](ai-data-boundary.md)。
 
-周期系统复盘与个人投资规则属于独立的本地领域模型。复盘写入时冻结组合和方法指标；规则更新采用追加版本，当前状态与历史证据同时保留。两类信息都由 `ContextBuilder` 单独控制，用户可以在每次 AI 分析前选择是否发送。详细契约见 [复盘与规则闭环](review-and-rules.md)。
+周期系统复盘、个人投资规则与组合检查点属于独立的本地领域模型。复盘写入时冻结组合和方法指标；规则更新采用追加版本；组合检查点冻结当时持仓与用户声明的净外部现金流。它们都保留历史且由 `ContextBuilder` 单独控制，用户可以在每次 AI 分析前选择是否发送。详细契约见 [复盘与规则闭环](review-and-rules.md) 与 [组合变化归因](portfolio-attribution.md)。
 
 `server/src/evidence.rs` 定义独立的 `EvidenceRetriever`。当前词法实现按问题与持仓名称筛选最多 12 条有效记录；候选集合在预览时冻结，归档或新增相关证据会使旧指纹失效。证据内容由用户整理，服务端校验 HTTPS、日期和结构，但不声称已核验来源正文。未来外部行情与基本面 Provider 应写入同一个证据契约。详细说明见 [研究证据与引用](research-evidence.md)。
 
@@ -105,7 +105,7 @@ pub trait ModelProvider: Send + Sync {
 ## 推荐扩展顺序
 
 1. 用数据库迁移工具替代当前幂等建表脚本。
-2. 增加持仓 CSV 导入与组合变化归因。
+2. 增加持仓 CSV 导入、币种与估值日期校验，以及时间加权收益率。
 3. 新增本地嵌入向量 Retriever，与当前可解释检索融合并保留离线降级。
 4. 增加受信任行情 Provider；外部数据必须标注来源和时间。
 5. 为工作流增加可恢复 checkpoint 与版本评测。

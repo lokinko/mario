@@ -78,6 +78,44 @@ pub struct HoldingInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PortfolioCheckInInput {
+    pub period_label: String,
+    pub external_cash_flow: f64,
+    #[serde(default)]
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioAllocationChange {
+    pub asset_class: String,
+    pub previous_value: f64,
+    pub current_value: f64,
+    pub value_change: f64,
+    pub previous_pct: f64,
+    pub current_pct: f64,
+    pub pct_point_change: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioCheckInRecord {
+    pub id: String,
+    pub period_label: String,
+    pub external_cash_flow: f64,
+    pub note: String,
+    pub total_value: f64,
+    pub previous_check_in_id: Option<String>,
+    pub previous_total_value: Option<f64>,
+    pub total_change: Option<f64>,
+    pub valuation_residual: Option<f64>,
+    pub holdings: Vec<Holding>,
+    pub allocation_changes: Vec<PortfolioAllocationChange>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RiskFinding {
     pub level: String,
     pub title: String,
@@ -201,6 +239,8 @@ pub struct ContextSelection {
     #[serde(default = "enabled")]
     pub include_system_reviews: bool,
     #[serde(default = "enabled")]
+    pub include_portfolio_checkins: bool,
+    #[serde(default = "enabled")]
     pub include_evidence: bool,
 }
 
@@ -214,6 +254,7 @@ impl Default for ContextSelection {
             include_risk_findings: true,
             include_rules: true,
             include_system_reviews: true,
+            include_portfolio_checkins: true,
             include_evidence: true,
         }
     }

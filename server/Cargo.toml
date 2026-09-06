@@ -1,6 +1,6 @@
 [package]
 name = "compass-server"
-version = "0.1.5"
+version = "0.1.6"
 description = "Local API, investment methodology and AI orchestration service"
 edition = "2021"
 rust-version = "1.86"

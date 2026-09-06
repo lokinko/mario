@@ -34,10 +34,10 @@ use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
     DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, InvestmentRule,
     InvestmentRuleInput, InvestmentRuleRevision, ModelConfig, ModelConfigInput,
-    ModelConnectionTest, ReminderSettings, ReminderSettingsInput, ResearchEvidence,
-    ResearchEvidenceInput, ResearchEvidenceStatusInput, ReviewReminderAcknowledgeInput,
-    ReviewReminderSummary, RuleEffectivenessSummary, Snapshot, StoredAnalysis, SystemReviewInput,
-    SystemReviewRecord,
+    ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord, ReminderSettings,
+    ReminderSettingsInput, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
+    ReviewReminderAcknowledgeInput, ReviewReminderSummary, RuleEffectivenessSummary, Snapshot,
+    StoredAnalysis, SystemReviewInput, SystemReviewRecord,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -90,6 +90,10 @@ async fn main() -> AppResult<()> {
         .route(
             "/api/holdings/{id}",
             put(update_holding).delete(delete_holding),
+        )
+        .route(
+            "/api/portfolio-checkins",
+            get(portfolio_checkins).post(save_portfolio_checkin),
         )
         .route("/api/goals", post(add_goal))
         .route("/api/goals/{id}", put(update_goal).delete(delete_goal))
@@ -228,6 +232,17 @@ async fn delete_holding(
     Path(id): Path<String>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.delete_holding(&id)?))
+}
+async fn portfolio_checkins(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<Vec<PortfolioCheckInRecord>>> {
+    Ok(Json(state.db.portfolio_checkins()?))
+}
+async fn save_portfolio_checkin(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<PortfolioCheckInInput>,
+) -> AppResult<Json<PortfolioCheckInRecord>> {
+    Ok(Json(state.db.save_portfolio_checkin(&input)?))
 }
 async fn add_goal(
     State(state): State<Arc<AppState>>,
@@ -487,12 +502,19 @@ async fn run_analysis(
         .into_iter()
         .take(8)
         .collect::<Vec<_>>();
+    let portfolio_checkins = state
+        .db
+        .portfolio_checkins()?
+        .into_iter()
+        .take(12)
+        .collect::<Vec<_>>();
     let evidence_candidates = relevant_evidence(&state.db, &request, &snapshot)?;
     let built_context = context::ContextBuilder::build(
         &request,
         &snapshot,
         &rules,
         &system_reviews,
+        &portfolio_checkins,
         &evidence_candidates,
         &memories,
     );
@@ -537,12 +559,19 @@ async fn preview_analysis(
         .into_iter()
         .take(8)
         .collect::<Vec<_>>();
+    let portfolio_checkins = state
+        .db
+        .portfolio_checkins()?
+        .into_iter()
+        .take(12)
+        .collect::<Vec<_>>();
     let evidence_candidates = relevant_evidence(&state.db, &request, &snapshot)?;
     let built_context = context::ContextBuilder::build(
         &request,
         &snapshot,
         &rules,
         &system_reviews,
+        &portfolio_checkins,
         &evidence_candidates,
         &memories,
     );

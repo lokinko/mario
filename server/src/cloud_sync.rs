@@ -11,12 +11,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    db::{Database, SyncDataset},
+    db::{Database, SyncDataset, SYNC_DATASET_SCHEMA_VERSION},
     error::{AppError, AppResult},
     secrets,
 };
 
-const SYNC_SCHEMA_VERSION: u32 = 1;
 const ENCRYPTION_CONTEXT: &[u8] = b"zhiheng-cloud-sync-v1";
 const RECOVERY_KEY_PREFIX: &str = "zhiheng-sync-v1:";
 
@@ -714,13 +713,13 @@ fn encrypt_dataset(dataset: &SyncDataset, key: &[u8; 32]) -> AppResult<RemoteBlo
         ciphertext: URL_SAFE_NO_PAD.encode(ciphertext),
         nonce: URL_SAFE_NO_PAD.encode(nonce),
         content_hash,
-        schema_version: SYNC_SCHEMA_VERSION,
+        schema_version: SYNC_DATASET_SCHEMA_VERSION,
         updated_at: Utc::now().to_rfc3339(),
     })
 }
 
 fn decrypt_dataset(blob: &RemoteBlob, key: &[u8; 32]) -> AppResult<SyncDataset> {
-    if blob.schema_version != SYNC_SCHEMA_VERSION {
+    if !(1..=SYNC_DATASET_SCHEMA_VERSION).contains(&blob.schema_version) {
         return Err(AppError::Validation(format!(
             "云端数据版本 {} 暂不受支持",
             blob.schema_version
@@ -749,6 +748,9 @@ fn decrypt_dataset(blob: &RemoteBlob, key: &[u8; 32]) -> AppResult<SyncDataset> 
         return Err(AppError::Validation("云端数据包超过 25 MB 安全上限".into()));
     }
     let dataset = serde_json::from_slice::<SyncDataset>(&plaintext)?;
+    if dataset.schema_version != blob.schema_version {
+        return Err(AppError::Validation("云端数据版本标记不一致".into()));
+    }
     dataset.validate()?;
     let content_hash = dataset.content_hash()?;
     if content_hash != blob.content_hash {
@@ -820,6 +822,25 @@ mod tests {
 
         let wrong_key = parse_recovery_key(&generate_recovery_key()).unwrap();
         assert!(decrypt_dataset(&blob, &wrong_key).is_err());
+    }
+
+    #[test]
+    fn decrypts_legacy_v1_bundle_and_rejects_mismatched_version_marker() {
+        let mut source = dataset();
+        source.schema_version = 1;
+        assert_eq!(source.tables.pop().unwrap().name, "portfolio_checkins");
+        source.validate().unwrap();
+        let key = parse_recovery_key(&generate_recovery_key()).unwrap();
+        let mut blob = encrypt_dataset(&source, &key).unwrap();
+        blob.schema_version = 1;
+
+        let restored = decrypt_dataset(&blob, &key).unwrap();
+        assert_eq!(restored.schema_version, 1);
+        blob.schema_version = 2;
+        assert!(matches!(
+            decrypt_dataset(&blob, &key),
+            Err(AppError::Validation(_))
+        ));
     }
 
     #[test]

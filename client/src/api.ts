@@ -18,6 +18,8 @@ import type {
   InvestmentRuleRevision,
   ModelConfig,
   ModelConnectionTest,
+  PortfolioCheckInInput,
+  PortfolioCheckInRecord,
   ResearchEvidence,
   ResearchEvidenceInput,
   ReminderSettings,
@@ -102,6 +104,17 @@ export async function updateHolding(id: string, holding: Omit<Holding, "id">): P
 
 export async function deleteHolding(id: string): Promise<Snapshot> {
   return httpRequest<Snapshot>(`/holdings/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function getPortfolioCheckins(): Promise<PortfolioCheckInRecord[]> {
+  return httpRequest<PortfolioCheckInRecord[]>("/portfolio-checkins");
+}
+
+export async function savePortfolioCheckin(input: PortfolioCheckInInput): Promise<PortfolioCheckInRecord> {
+  return httpRequest<PortfolioCheckInRecord>("/portfolio-checkins", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function saveGoal(goal: Omit<Goal, "id">): Promise<Snapshot> {

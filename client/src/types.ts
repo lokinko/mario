@@ -32,6 +32,34 @@ export interface Holding {
   currency: string;
 }
 
+export interface PortfolioCheckInInput {
+  periodLabel: string;
+  externalCashFlow: number;
+  note: string;
+}
+
+export interface PortfolioAllocationChange {
+  assetClass: string;
+  previousValue: number;
+  currentValue: number;
+  valueChange: number;
+  previousPct: number;
+  currentPct: number;
+  pctPointChange: number;
+}
+
+export interface PortfolioCheckInRecord extends PortfolioCheckInInput {
+  id: string;
+  totalValue: number;
+  previousCheckInId: string | null;
+  previousTotalValue: number | null;
+  totalChange: number | null;
+  valuationResidual: number | null;
+  holdings: Holding[];
+  allocationChanges: PortfolioAllocationChange[];
+  createdAt: string;
+}
+
 export interface RiskFinding {
   level: "high" | "medium" | "low";
   title: string;
@@ -157,6 +185,7 @@ export interface ContextSelection {
   includeRiskFindings: boolean;
   includeRules: boolean;
   includeSystemReviews: boolean;
+  includePortfolioCheckins: boolean;
   includeEvidence: boolean;
 }
 

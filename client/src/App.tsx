@@ -48,6 +48,7 @@ import {
   getInvestmentRules,
   getInvestmentRuleHistory,
   getModelConfig,
+  getPortfolioCheckins,
   getResearchEvidence,
   getReviewReminders,
   getRuleEffectiveness,
@@ -64,6 +65,7 @@ import {
   saveHolding,
   saveInvestmentRule,
   saveModelConfig,
+  savePortfolioCheckin,
   saveProfile,
   saveResearchEvidence,
   saveSystemReview,
@@ -100,6 +102,8 @@ import type {
   InvestmentRuleRevision,
   MemoryCandidate,
   ModelConfig,
+  PortfolioCheckInInput,
+  PortfolioCheckInRecord,
   ResearchEvidence,
   ResearchEvidenceInput,
   Snapshot,
@@ -259,7 +263,7 @@ function App() {
 
       <main>
         {notice && <div className="toast"><Check size={16} />{notice}</div>}
-        {view === "dashboard" && <Dashboard snapshot={snapshot} model={model} navigate={navigate} />}
+        {view === "dashboard" && <Dashboard snapshot={snapshot} model={model} navigate={navigate} flash={flash} />}
         {view === "foundation" && <Foundation snapshot={snapshot} onUpdate={setSnapshot} flash={flash} />}
         {view === "evidence" && <EvidenceWorkbench navigate={navigate} flash={flash} />}
         {view === "decision" && <DecisionJournal flash={flash} seed={decisionDraft} clearSeed={() => setDecisionDraft(null)} onOpenAnalysis={(id) => { setAnalysisToOpen(id); navigate("advisor"); }} />}
@@ -281,7 +285,15 @@ function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; 
   );
 }
 
-function Dashboard({ snapshot, model, navigate }: { snapshot: Snapshot; model: ModelConfig; navigate: (view: View) => void }) {
+function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; model: ModelConfig; navigate: (view: View) => void; flash: (message: string) => void }) {
+  const [checkins, setCheckins] = useState<PortfolioCheckInRecord[]>([]);
+  const [checkin, setCheckin] = useState<PortfolioCheckInInput>({
+    periodLabel: new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" }).format(new Date()),
+    externalCashFlow: 0,
+    note: "",
+  });
+  const [checkinSaving, setCheckinSaving] = useState(false);
+  const [checkinError, setCheckinError] = useState("");
   const allocation = useMemo(() => {
     const totals = new Map<string, number>();
     snapshot.holdings.forEach((h) => totals.set(h.assetClass, (totals.get(h.assetClass) ?? 0) + h.marketValue));
@@ -294,6 +306,24 @@ function Dashboard({ snapshot, model, navigate }: { snapshot: Snapshot; model: M
     (snapshot.profile.horizonYears > 0 ? 25 : 0) +
     (model.hasApiKey ? 25 : 10),
   ));
+  const latestCheckin = checkins[0];
+
+  useEffect(() => {
+    getPortfolioCheckins()
+      .then((records) => { setCheckins(records); setCheckinError(""); })
+      .catch((error) => setCheckinError(String(error)));
+  }, []);
+
+  const persistCheckin = async () => {
+    if (!checkin.periodLabel || (latestCheckin && checkin.externalCashFlow !== 0 && !checkin.note.trim())) return;
+    setCheckinSaving(true); setCheckinError("");
+    try {
+      await savePortfolioCheckin(latestCheckin ? checkin : { ...checkin, externalCashFlow: 0 });
+      setCheckins(await getPortfolioCheckins());
+      setCheckin({ ...checkin, externalCashFlow: 0, note: "" });
+      flash(latestCheckin ? "组合变化已归因并冻结" : "组合变化基线已建立");
+    } catch (error) { setCheckinError(String(error)); } finally { setCheckinSaving(false); }
+  };
 
   return (
     <div className="page">
@@ -312,6 +342,26 @@ function Dashboard({ snapshot, model, navigate }: { snapshot: Snapshot; model: M
         <article className="metric"><span>应急覆盖</span><strong>{snapshot.emergencyMonths.toFixed(1)} <em>个月</em></strong><small className={snapshot.emergencyMonths >= 6 ? "positive" : "warning"}>{snapshot.emergencyMonths >= 6 ? "处于建议区间" : "建议优先补足"}</small></article>
         <article className="metric"><span>最大资产占比</span><strong>{snapshot.concentrationPct.toFixed(1)}%</strong><small>需要结合资产性质判断</small></article>
         <article className="metric"><span>系统准备度</span><strong>{readiness}<em>/100</em></strong><div className="progress"><i style={{ width: `${readiness}%` }} /></div></article>
+      </section>
+
+      <section className="panel portfolio-attribution">
+        <div className="panel-title"><div><span>组合变化归因</span><h2>增长来自投入，还是组合本身的变化？</h2></div><small className="causality-note">残差不是收益率，也不是业绩证明</small></div>
+        {!latestCheckin && <div className="attribution-baseline"><History size={18} /><div><strong>先建立一条组合基线</strong><p>冻结当前持仓和资产结构。下一次记录时再填写两次快照之间的净入金或出金。</p></div></div>}
+        {latestCheckin?.totalChange != null && <div className="attribution-metrics">
+          <article><span>组合总值变化</span><strong className={latestCheckin.totalChange >= 0 ? "gain" : "loss"}>{latestCheckin.totalChange >= 0 ? "+" : ""}{money.format(latestCheckin.totalChange)}</strong><small>{money.format(latestCheckin.previousTotalValue ?? 0)} → {money.format(latestCheckin.totalValue)}</small></article>
+          <article><span>期间净外部现金流</span><strong>{latestCheckin.externalCashFlow >= 0 ? "+" : ""}{money.format(latestCheckin.externalCashFlow)}</strong><small>入金为正，出金为负</small></article>
+          <article><span>估值与数据变动残差</span><strong className={(latestCheckin.valuationResidual ?? 0) >= 0 ? "gain" : "loss"}>{(latestCheckin.valuationResidual ?? 0) >= 0 ? "+" : ""}{money.format(latestCheckin.valuationResidual ?? 0)}</strong><small>总值变化减净现金流</small></article>
+        </div>}
+        {latestCheckin?.allocationChanges.length > 0 && <div className="allocation-change-list">{latestCheckin.allocationChanges.slice(0, 5).map((item) => <div key={item.assetClass}><strong>{item.assetClass}</strong><span>{money.format(item.previousValue)} → {money.format(item.currentValue)}</span><em className={item.pctPointChange >= 0 ? "gain" : "loss"}>{item.pctPointChange >= 0 ? "+" : ""}{item.pctPointChange.toFixed(1)} pct</em></div>)}</div>}
+        <div className="attribution-entry">
+          <label><span>记录周期</span><input maxLength={100} value={checkin.periodLabel} onChange={(event) => setCheckin({ ...checkin, periodLabel: event.target.value })} placeholder="例如 2026 年 9 月" /></label>
+          <label><span>期间净入金 / 出金</span><div className="input-affix"><input type="number" disabled={!latestCheckin} value={latestCheckin ? checkin.externalCashFlow : 0} onChange={(event) => setCheckin({ ...checkin, externalCashFlow: Number(event.target.value) })} /><i>¥</i></div><small>{latestCheckin ? "入金填正数，出金填负数" : "首条记录仅建立基线"}</small></label>
+          <label className="attribution-note"><span>现金流与口径说明</span><input maxLength={2000} value={checkin.note} onChange={(event) => setCheckin({ ...checkin, note: event.target.value })} placeholder={latestCheckin ? "例如：工资结余入金；持仓均按同一日收盘价更新" : "例如：首次冻结，持仓按同一日口径录入"} /></label>
+          <button className="secondary" disabled={checkinSaving || !snapshot.holdings.length || !checkin.periodLabel || Boolean(latestCheckin && checkin.externalCashFlow !== 0 && !checkin.note.trim())} onClick={persistCheckin}>{checkinSaving ? "保存中…" : latestCheckin ? "冻结本期变化" : "建立组合基线"}</button>
+        </div>
+        {checkinError && <div className="error-box"><AlertTriangle size={16} />{checkinError}</div>}
+        {checkins.length > 0 && <details className="attribution-history"><summary>查看历史快照（{checkins.length}）</summary><div>{checkins.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.periodLabel}</strong><small>{new Date(item.createdAt).toLocaleString("zh-CN")}</small></div><span>{money.format(item.totalValue)}</span><em>{item.totalChange == null ? "组合基线" : `变化 ${item.totalChange >= 0 ? "+" : ""}${money.format(item.totalChange)} · 净现金流 ${item.externalCashFlow >= 0 ? "+" : ""}${money.format(item.externalCashFlow)} · 残差 ${(item.valuationResidual ?? 0) >= 0 ? "+" : ""}${money.format(item.valuationResidual ?? 0)}`}</em></article>)}</div></details>}
+        <p className="effectiveness-disclaimer">若持仓缺失、币种未换算、估值日期不同或录入错误，残差也会变化。它只能帮助分离外部现金流，不能替代时间加权收益率或完整业绩归因。</p>
       </section>
 
       <section className="two-columns">
@@ -1085,7 +1135,7 @@ function Advisor({ model, navigate, requestedAnalysisId, clearRequestedAnalysis,
   const [reflection, setReflection] = useState(true);
   const [alternatives, setAlternatives] = useState(true);
   const [excludedMemoryIds, setExcludedMemoryIds] = useState<string[]>([]);
-  const [contextSelection, setContextSelection] = useState<ContextSelection>({ includeProfile: true, includeGoals: true, includeHoldings: true, includePlanning: true, includeRiskFindings: true, includeRules: true, includeSystemReviews: true, includeEvidence: true });
+  const [contextSelection, setContextSelection] = useState<ContextSelection>({ includeProfile: true, includeGoals: true, includeHoldings: true, includePlanning: true, includeRiskFindings: true, includeRules: true, includeSystemReviews: true, includePortfolioCheckins: true, includeEvidence: true });
   const [preview, setPreview] = useState<AnalysisPreview | null>(null);
   const [previewStale, setPreviewStale] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -1211,7 +1261,7 @@ function Advisor({ model, navigate, requestedAnalysisId, clearRequestedAnalysis,
             {([
               ["includeProfile", "财务档案"], ["includeGoals", "目标计划"], ["includeHoldings", "持仓明细"],
               ["includePlanning", "规划结果"], ["includeRiskFindings", "风险检查"], ["includeRules", "个人规则"],
-              ["includeSystemReviews", "周期复盘"], ["includeEvidence", "研究证据"],
+              ["includeSystemReviews", "周期复盘"], ["includePortfolioCheckins", "组合变化"], ["includeEvidence", "研究证据"],
             ] as [keyof ContextSelection, string][]).map(([key, label]) => <button key={key} className={contextSelection[key] ? "selected" : ""} onClick={() => toggleContext(key)}><i>{contextSelection[key] && <Check size={11} />}</i>{label}</button>)}
           </div>
         </div>
