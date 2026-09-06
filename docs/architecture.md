@@ -22,6 +22,7 @@
 │                               │
 │ API ─┬─ deterministic rules   │
 │      ├─ planning simulation   │
+│      ├─ valuation integrity   │
 │      ├─ review snapshots      │
 │      ├─ versioned user rules  │
 │      ├─ evidence retriever    │
@@ -81,6 +82,8 @@ pub trait ModelProvider: Send + Sync {
 
 `server/src/evidence.rs` 定义独立的 `EvidenceRetriever`。当前词法实现按问题与持仓名称筛选最多 12 条有效记录；候选集合在预览时冻结，归档或新增相关证据会使旧指纹失效。证据内容由用户整理，服务端校验 HTTPS、日期和结构，但不声称已核验来源正文。未来外部行情与基本面 Provider 应写入同一个证据契约。详细说明见 [研究证据与引用](research-evidence.md)。
 
+`server/src/valuation.rs` 是不依赖数据库或模型的估值口径模块，负责基准币种折算、汇率缺失检测、估值日期对齐和资产类别变化。数据库只负责持久化原始输入与调用该模块；风险、规划、组合检查点和 AI 上下文共同消费同一份口径状态，避免各层自行解释币种。
+
 ## 数据与安全边界
 
 - 服务端只监听 loopback 地址，不暴露局域网端口。
@@ -94,6 +97,7 @@ pub trait ModelProvider: Send + Sync {
 - Base URL 默认要求 HTTPS，本机模型例外。
 - 模型提示词明确禁止编造实时市场数据、收益保证和确定性买卖指令。
 - 规则层输出与模型推理分离，降低大模型覆盖基础风险事实的概率。
+- 所有组合级数值先按财务档案的基准币种折算；外币汇率缺失时风险、规划、再平衡和归因安全降级，不对原币金额求和。
 - 云同步使用固定数据表白名单与 XChaCha20-Poly1305；恢复密钥不上传。
 - 同步写入以云端 revision 做原子比较；并发修改不会静默覆盖。
 - 拉取完成解密、结构和内容指纹检查后，才在一个 SQLite 事务中替换投资域数据；本地设置和密钥不在事务范围内。
@@ -105,7 +109,7 @@ pub trait ModelProvider: Send + Sync {
 ## 推荐扩展顺序
 
 1. 用数据库迁移工具替代当前幂等建表脚本。
-2. 增加持仓 CSV 导入、币种与估值日期校验，以及时间加权收益率。
+2. 增加持仓与交易 CSV 导入、可靠汇率/价格 Provider，以及具备现金流时间点的时间加权收益率。
 3. 新增本地嵌入向量 Retriever，与当前可解释检索融合并保留离线降级。
 4. 增加受信任行情 Provider；外部数据必须标注来源和时间。
 5. 为工作流增加可恢复 checkpoint 与版本评测。

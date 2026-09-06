@@ -1,8 +1,17 @@
 use crate::models::{FinancialProfile, Holding, RiskFinding};
 
-pub fn analyze(profile: &FinancialProfile, holdings: &[Holding]) -> Vec<RiskFinding> {
+pub fn analyze(
+    profile: &FinancialProfile,
+    holdings: &[Holding],
+    portfolio_values_comparable: bool,
+) -> Vec<RiskFinding> {
     let mut findings = Vec::new();
-    let total: f64 = holdings.iter().map(|h| h.market_value).sum();
+    let total = portfolio_values_comparable.then(|| {
+        holdings
+            .iter()
+            .map(|holding| holding.market_value)
+            .sum::<f64>()
+    });
     let emergency_months = if profile.monthly_expense > 0.0 {
         profile.emergency_fund / profile.monthly_expense
     } else {
@@ -28,7 +37,7 @@ pub fn analyze(profile: &FinancialProfile, holdings: &[Holding]) -> Vec<RiskFind
         });
     }
 
-    if total > 0.0 {
+    if let Some(total) = total.filter(|value| *value > 0.0) {
         if let Some(largest) = holdings
             .iter()
             .max_by(|a, b| a.market_value.total_cmp(&b.market_value))
@@ -61,7 +70,7 @@ pub fn analyze(profile: &FinancialProfile, holdings: &[Holding]) -> Vec<RiskFind
         });
     }
 
-    if profile.investable_assets > 0.0 {
+    if let Some(total) = total.filter(|_| profile.investable_assets > 0.0) {
         let difference_pct =
             (total - profile.investable_assets).abs() / profile.investable_assets * 100.0;
         if difference_pct > 10.0 {
@@ -113,7 +122,7 @@ mod tests {
             emergency_fund: 15_000.0,
             ..Default::default()
         };
-        let result = analyze(&profile, &[]);
+        let result = analyze(&profile, &[], true);
         assert!(result.iter().any(|x| x.title.contains("应急资金不足")));
     }
 }

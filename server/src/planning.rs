@@ -334,6 +334,8 @@ mod tests {
                 cost_basis: 60.0,
                 target_pct: 60.0,
                 currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-01-01".into(),
             },
             Holding {
                 id: "two".into(),
@@ -344,6 +346,8 @@ mod tests {
                 cost_basis: 30.0,
                 target_pct: 40.0,
                 currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-01-01".into(),
             },
         ];
         let actions = rebalance_actions(&holdings);
@@ -380,6 +384,8 @@ mod tests {
                 cost_basis: 60.0,
                 target_pct: 60.0,
                 currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-01-01".into(),
             },
             Holding {
                 id: "two".into(),
@@ -390,6 +396,8 @@ mod tests {
                 cost_basis: 30.0,
                 target_pct: 40.0,
                 currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-01-01".into(),
             },
         ];
         let plan = analyze_at(

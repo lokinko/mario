@@ -11,6 +11,8 @@ pub struct FinancialProfile {
     pub horizon_years: i64,
     pub max_drawdown_pct: f64,
     pub risk_level: String,
+    #[serde(default = "default_currency")]
+    pub base_currency: String,
 }
 
 impl Default for FinancialProfile {
@@ -24,6 +26,7 @@ impl Default for FinancialProfile {
             horizon_years: 5,
             max_drawdown_pct: 15.0,
             risk_level: "稳健".into(),
+            base_currency: default_currency(),
         }
     }
 }
@@ -62,6 +65,10 @@ pub struct Holding {
     pub cost_basis: f64,
     pub target_pct: f64,
     pub currency: String,
+    #[serde(default)]
+    pub fx_rate_to_base: Option<f64>,
+    #[serde(default)]
+    pub valuation_date: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +81,10 @@ pub struct HoldingInput {
     pub cost_basis: f64,
     pub target_pct: f64,
     pub currency: String,
+    #[serde(default)]
+    pub fx_rate_to_base: Option<f64>,
+    #[serde(default)]
+    pub valuation_date: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +94,8 @@ pub struct PortfolioCheckInInput {
     pub external_cash_flow: f64,
     #[serde(default)]
     pub note: String,
+    #[serde(default)]
+    pub reset_baseline: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +122,10 @@ pub struct PortfolioCheckInRecord {
     pub previous_total_value: Option<f64>,
     pub total_change: Option<f64>,
     pub valuation_residual: Option<f64>,
+    #[serde(default = "default_currency")]
+    pub base_currency: String,
+    #[serde(default)]
+    pub valuation_date: Option<String>,
     pub holdings: Vec<Holding>,
     pub allocation_changes: Vec<PortfolioAllocationChange>,
     pub created_at: String,
@@ -133,8 +150,29 @@ pub struct Snapshot {
     pub total_value: f64,
     pub emergency_months: f64,
     pub concentration_pct: f64,
+    pub valuation_status: PortfolioValuationStatus,
     pub plan: PortfolioPlan,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioValuationStatus {
+    pub base_currency: String,
+    pub comparable: bool,
+    pub missing_fx_holdings: Vec<String>,
+    pub undated_holding_count: usize,
+    pub valuation_dates: Vec<String>,
+    pub aligned_valuation_date: Option<String>,
+    pub warnings: Vec<String>,
+}
+
+fn default_currency() -> String {
+    "CNY".into()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -683,6 +721,10 @@ pub struct SystemReviewInput {
 #[serde(rename_all = "camelCase")]
 pub struct SystemReviewSnapshot {
     pub portfolio_value: f64,
+    #[serde(default = "default_currency")]
+    pub base_currency: String,
+    #[serde(default = "default_true")]
+    pub portfolio_comparable: bool,
     pub emergency_months: f64,
     pub concentration_pct: f64,
     pub risk_status: String,

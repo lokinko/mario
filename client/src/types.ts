@@ -9,6 +9,7 @@ export interface FinancialProfile {
   horizonYears: number;
   maxDrawdownPct: number;
   riskLevel: RiskLevel;
+  baseCurrency: string;
 }
 
 export interface Goal {
@@ -30,12 +31,15 @@ export interface Holding {
   costBasis: number;
   targetPct: number;
   currency: string;
+  fxRateToBase: number | null;
+  valuationDate: string;
 }
 
 export interface PortfolioCheckInInput {
   periodLabel: string;
   externalCashFlow: number;
   note: string;
+  resetBaseline: boolean;
 }
 
 export interface PortfolioAllocationChange {
@@ -48,13 +52,18 @@ export interface PortfolioAllocationChange {
   pctPointChange: number;
 }
 
-export interface PortfolioCheckInRecord extends PortfolioCheckInInput {
+export interface PortfolioCheckInRecord {
   id: string;
+  periodLabel: string;
+  externalCashFlow: number;
+  note: string;
   totalValue: number;
   previousCheckInId: string | null;
   previousTotalValue: number | null;
   totalChange: number | null;
   valuationResidual: number | null;
+  baseCurrency: string;
+  valuationDate: string | null;
   holdings: Holding[];
   allocationChanges: PortfolioAllocationChange[];
   createdAt: string;
@@ -75,8 +84,19 @@ export interface Snapshot {
   totalValue: number;
   emergencyMonths: number;
   concentrationPct: number;
+  valuationStatus: PortfolioValuationStatus;
   plan: PortfolioPlan;
   updatedAt: string;
+}
+
+export interface PortfolioValuationStatus {
+  baseCurrency: string;
+  comparable: boolean;
+  missingFxHoldings: string[];
+  undatedHoldingCount: number;
+  valuationDates: string[];
+  alignedValuationDate: string | null;
+  warnings: string[];
 }
 
 export interface PortfolioPlan {
@@ -476,6 +496,8 @@ export interface SystemReviewInput {
 
 export interface SystemReviewSnapshot {
   portfolioValue: number;
+  baseCurrency: string;
+  portfolioComparable: boolean;
   emergencyMonths: number;
   concentrationPct: number;
   riskStatus: PortfolioPlan["riskStatus"];

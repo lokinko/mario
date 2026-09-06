@@ -130,11 +130,22 @@ function initialView(): View {
   return views.includes(candidate) ? candidate : "dashboard";
 }
 
-const money = new Intl.NumberFormat("zh-CN", {
-  style: "currency",
-  currency: "CNY",
-  maximumFractionDigits: 0,
-});
+function formatMoney(value: number, currency = "CNY") {
+  try {
+    return new Intl.NumberFormat("zh-CN", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `${currency} ${value.toFixed(0)}`;
+  }
+}
+
+function holdingValueInBase(holding: Holding, baseCurrency: string) {
+  if (holding.currency === baseCurrency) return holding.marketValue;
+  return holding.fxRateToBase ? holding.marketValue * holding.fxRateToBase : 0;
+}
 
 function localDateValue(date: Date) {
   const year = date.getFullYear();
@@ -161,11 +172,15 @@ const emptyProfile: FinancialProfile = {
   horizonYears: 5,
   maxDrawdownPct: 15,
   riskLevel: "稳健",
+  baseCurrency: "CNY",
 };
 
-const emptyHolding: Omit<Holding, "id"> = {
-  symbol: "", name: "", assetClass: "基金", marketValue: 0, costBasis: 0, targetPct: 0, currency: "CNY",
-};
+function emptyHolding(baseCurrency = "CNY"): Omit<Holding, "id"> {
+  return {
+    symbol: "", name: "", assetClass: "基金", marketValue: 0, costBasis: 0, targetPct: 0,
+    currency: baseCurrency, fxRateToBase: null, valuationDate: localDateValue(new Date()),
+  };
+}
 
 const emptyGoal: Omit<Goal, "id"> = {
   name: "", targetAmount: 0, currentAmount: 0, monthlyContribution: 0, targetDate: "", priority: "重要",
@@ -291,22 +306,25 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
     periodLabel: new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" }).format(new Date()),
     externalCashFlow: 0,
     note: "",
+    resetBaseline: false,
   });
   const [checkinSaving, setCheckinSaving] = useState(false);
   const [checkinError, setCheckinError] = useState("");
   const allocation = useMemo(() => {
+    if (!snapshot.valuationStatus.comparable) return [];
     const totals = new Map<string, number>();
-    snapshot.holdings.forEach((h) => totals.set(h.assetClass, (totals.get(h.assetClass) ?? 0) + h.marketValue));
+    snapshot.holdings.forEach((h) => totals.set(h.assetClass, (totals.get(h.assetClass) ?? 0) + holdingValueInBase(h, snapshot.profile.baseCurrency)));
     return [...totals.entries()].map(([name, value]) => ({ name, value, pct: snapshot.totalValue ? value / snapshot.totalValue * 100 : 0 }));
   }, [snapshot]);
 
   const readiness = Math.min(100, Math.round(
     (snapshot.emergencyMonths >= 6 ? 25 : snapshot.emergencyMonths / 6 * 25) +
-    (snapshot.holdings.length > 2 ? 25 : snapshot.holdings.length / 3 * 25) +
+    (snapshot.valuationStatus.comparable ? (snapshot.holdings.length > 2 ? 25 : snapshot.holdings.length / 3 * 25) : 0) +
     (snapshot.profile.horizonYears > 0 ? 25 : 0) +
     (model.hasApiKey ? 25 : 10),
   ));
   const latestCheckin = checkins[0];
+  const baselineMode = !latestCheckin || latestCheckin.baseCurrency !== snapshot.profile.baseCurrency || checkin.resetBaseline;
 
   useEffect(() => {
     getPortfolioCheckins()
@@ -315,13 +333,13 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
   }, []);
 
   const persistCheckin = async () => {
-    if (!checkin.periodLabel || (latestCheckin && checkin.externalCashFlow !== 0 && !checkin.note.trim())) return;
+    if (!checkin.periodLabel || (!baselineMode && checkin.externalCashFlow !== 0 && !checkin.note.trim())) return;
     setCheckinSaving(true); setCheckinError("");
     try {
-      await savePortfolioCheckin(latestCheckin ? checkin : { ...checkin, externalCashFlow: 0 });
+      await savePortfolioCheckin(baselineMode ? { ...checkin, externalCashFlow: 0, resetBaseline: Boolean(latestCheckin) } : checkin);
       setCheckins(await getPortfolioCheckins());
-      setCheckin({ ...checkin, externalCashFlow: 0, note: "" });
-      flash(latestCheckin ? "组合变化已归因并冻结" : "组合变化基线已建立");
+      setCheckin({ ...checkin, externalCashFlow: 0, note: "", resetBaseline: false });
+      flash(latestCheckin && !checkin.resetBaseline ? "组合变化已归因并冻结" : "组合变化基线已建立");
     } catch (error) { setCheckinError(String(error)); } finally { setCheckinSaving(false); }
   };
 
@@ -336,31 +354,35 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
 
       <section className="metric-grid">
         <article className="metric hero-metric">
-          <span>可投资资产</span><strong>{money.format(snapshot.totalValue)}</strong>
-          <small>最近更新 · {new Date(snapshot.updatedAt).toLocaleDateString("zh-CN")}</small>
+          <span>可投资资产 · {snapshot.profile.baseCurrency}</span><strong>{snapshot.valuationStatus.comparable ? formatMoney(snapshot.totalValue, snapshot.profile.baseCurrency) : "等待汇率"}</strong>
+          <small>{snapshot.valuationStatus.comparable ? `最近更新 · ${new Date(snapshot.updatedAt).toLocaleDateString("zh-CN")}` : `${snapshot.valuationStatus.missingFxHoldings.length} 项外币持仓未折算`}</small>
         </article>
         <article className="metric"><span>应急覆盖</span><strong>{snapshot.emergencyMonths.toFixed(1)} <em>个月</em></strong><small className={snapshot.emergencyMonths >= 6 ? "positive" : "warning"}>{snapshot.emergencyMonths >= 6 ? "处于建议区间" : "建议优先补足"}</small></article>
-        <article className="metric"><span>最大资产占比</span><strong>{snapshot.concentrationPct.toFixed(1)}%</strong><small>需要结合资产性质判断</small></article>
+        <article className="metric"><span>最大资产占比</span><strong>{snapshot.valuationStatus.comparable ? `${snapshot.concentrationPct.toFixed(1)}%` : "—"}</strong><small>{snapshot.valuationStatus.comparable ? "需要结合资产性质判断" : "补齐汇率后再计算"}</small></article>
         <article className="metric"><span>系统准备度</span><strong>{readiness}<em>/100</em></strong><div className="progress"><i style={{ width: `${readiness}%` }} /></div></article>
       </section>
+
+      {snapshot.valuationStatus.warnings.length > 0 && <section className="valuation-warning"><AlertTriangle size={17} /><div><strong>当前估值口径需要补齐</strong><p>{snapshot.valuationStatus.warnings.join("；")}。基准币种为 {snapshot.profile.baseCurrency}{snapshot.valuationStatus.alignedValuationDate ? `，统一估值日 ${snapshot.valuationStatus.alignedValuationDate}` : ""}。</p></div><button className="text-button" onClick={() => navigate("foundation")}>完善持仓</button></section>}
 
       <section className="panel portfolio-attribution">
         <div className="panel-title"><div><span>组合变化归因</span><h2>增长来自投入，还是组合本身的变化？</h2></div><small className="causality-note">残差不是收益率，也不是业绩证明</small></div>
         {!latestCheckin && <div className="attribution-baseline"><History size={18} /><div><strong>先建立一条组合基线</strong><p>冻结当前持仓和资产结构。下一次记录时再填写两次快照之间的净入金或出金。</p></div></div>}
+        {latestCheckin && baselineMode && <div className="attribution-baseline"><History size={18} /><div><strong>本次将重新建立比较基线</strong><p>{latestCheckin.baseCurrency !== snapshot.profile.baseCurrency ? `基准币种已从 ${latestCheckin.baseCurrency} 改为 ${snapshot.profile.baseCurrency}，两个口径不能直接比较。` : "适用于估值口径发生实质变化的情况；新记录不会计算与上一条的差额。"}</p></div></div>}
         {latestCheckin?.totalChange != null && <div className="attribution-metrics">
-          <article><span>组合总值变化</span><strong className={latestCheckin.totalChange >= 0 ? "gain" : "loss"}>{latestCheckin.totalChange >= 0 ? "+" : ""}{money.format(latestCheckin.totalChange)}</strong><small>{money.format(latestCheckin.previousTotalValue ?? 0)} → {money.format(latestCheckin.totalValue)}</small></article>
-          <article><span>期间净外部现金流</span><strong>{latestCheckin.externalCashFlow >= 0 ? "+" : ""}{money.format(latestCheckin.externalCashFlow)}</strong><small>入金为正，出金为负</small></article>
-          <article><span>估值与数据变动残差</span><strong className={(latestCheckin.valuationResidual ?? 0) >= 0 ? "gain" : "loss"}>{(latestCheckin.valuationResidual ?? 0) >= 0 ? "+" : ""}{money.format(latestCheckin.valuationResidual ?? 0)}</strong><small>总值变化减净现金流</small></article>
+          <article><span>组合总值变化</span><strong className={latestCheckin.totalChange >= 0 ? "gain" : "loss"}>{latestCheckin.totalChange >= 0 ? "+" : ""}{formatMoney(latestCheckin.totalChange, latestCheckin.baseCurrency)}</strong><small>{formatMoney(latestCheckin.previousTotalValue ?? 0, latestCheckin.baseCurrency)} → {formatMoney(latestCheckin.totalValue, latestCheckin.baseCurrency)}</small></article>
+          <article><span>期间净外部现金流</span><strong>{latestCheckin.externalCashFlow >= 0 ? "+" : ""}{formatMoney(latestCheckin.externalCashFlow, latestCheckin.baseCurrency)}</strong><small>入金为正，出金为负</small></article>
+          <article><span>估值与数据变动残差</span><strong className={(latestCheckin.valuationResidual ?? 0) >= 0 ? "gain" : "loss"}>{(latestCheckin.valuationResidual ?? 0) >= 0 ? "+" : ""}{formatMoney(latestCheckin.valuationResidual ?? 0, latestCheckin.baseCurrency)}</strong><small>总值变化减净现金流</small></article>
         </div>}
-        {latestCheckin?.allocationChanges.length > 0 && <div className="allocation-change-list">{latestCheckin.allocationChanges.slice(0, 5).map((item) => <div key={item.assetClass}><strong>{item.assetClass}</strong><span>{money.format(item.previousValue)} → {money.format(item.currentValue)}</span><em className={item.pctPointChange >= 0 ? "gain" : "loss"}>{item.pctPointChange >= 0 ? "+" : ""}{item.pctPointChange.toFixed(1)} pct</em></div>)}</div>}
+        {latestCheckin?.allocationChanges.length > 0 && <div className="allocation-change-list">{latestCheckin.allocationChanges.slice(0, 5).map((item) => <div key={item.assetClass}><strong>{item.assetClass}</strong><span>{formatMoney(item.previousValue, latestCheckin.baseCurrency)} → {formatMoney(item.currentValue, latestCheckin.baseCurrency)}</span><em className={item.pctPointChange >= 0 ? "gain" : "loss"}>{item.pctPointChange >= 0 ? "+" : ""}{item.pctPointChange.toFixed(1)} pct</em></div>)}</div>}
         <div className="attribution-entry">
           <label><span>记录周期</span><input maxLength={100} value={checkin.periodLabel} onChange={(event) => setCheckin({ ...checkin, periodLabel: event.target.value })} placeholder="例如 2026 年 9 月" /></label>
-          <label><span>期间净入金 / 出金</span><div className="input-affix"><input type="number" disabled={!latestCheckin} value={latestCheckin ? checkin.externalCashFlow : 0} onChange={(event) => setCheckin({ ...checkin, externalCashFlow: Number(event.target.value) })} /><i>¥</i></div><small>{latestCheckin ? "入金填正数，出金填负数" : "首条记录仅建立基线"}</small></label>
+          <label><span>期间净入金 / 出金</span><div className="input-affix"><input type="number" disabled={baselineMode} value={baselineMode ? 0 : checkin.externalCashFlow} onChange={(event) => setCheckin({ ...checkin, externalCashFlow: Number(event.target.value) })} /><i>{snapshot.profile.baseCurrency}</i></div><small>{baselineMode ? "本次仅建立比较基线" : "入金填正数，出金填负数"}</small></label>
           <label className="attribution-note"><span>现金流与口径说明</span><input maxLength={2000} value={checkin.note} onChange={(event) => setCheckin({ ...checkin, note: event.target.value })} placeholder={latestCheckin ? "例如：工资结余入金；持仓均按同一日收盘价更新" : "例如：首次冻结，持仓按同一日口径录入"} /></label>
-          <button className="secondary" disabled={checkinSaving || !snapshot.holdings.length || !checkin.periodLabel || Boolean(latestCheckin && checkin.externalCashFlow !== 0 && !checkin.note.trim())} onClick={persistCheckin}>{checkinSaving ? "保存中…" : latestCheckin ? "冻结本期变化" : "建立组合基线"}</button>
+          <button className="secondary" disabled={checkinSaving || !snapshot.holdings.length || !snapshot.valuationStatus.comparable || !snapshot.valuationStatus.alignedValuationDate || !checkin.periodLabel || Boolean(!baselineMode && checkin.externalCashFlow !== 0 && !checkin.note.trim())} onClick={persistCheckin}>{checkinSaving ? "保存中…" : baselineMode ? "建立组合基线" : "冻结本期变化"}</button>
         </div>
+        {latestCheckin && latestCheckin.baseCurrency === snapshot.profile.baseCurrency && <button className="text-button attribution-reset" onClick={() => setCheckin({ ...checkin, resetBaseline: !checkin.resetBaseline, externalCashFlow: 0 })}>{checkin.resetBaseline ? "继续原有比较链" : "估值口径变化？重新建立基线"}</button>}
         {checkinError && <div className="error-box"><AlertTriangle size={16} />{checkinError}</div>}
-        {checkins.length > 0 && <details className="attribution-history"><summary>查看历史快照（{checkins.length}）</summary><div>{checkins.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.periodLabel}</strong><small>{new Date(item.createdAt).toLocaleString("zh-CN")}</small></div><span>{money.format(item.totalValue)}</span><em>{item.totalChange == null ? "组合基线" : `变化 ${item.totalChange >= 0 ? "+" : ""}${money.format(item.totalChange)} · 净现金流 ${item.externalCashFlow >= 0 ? "+" : ""}${money.format(item.externalCashFlow)} · 残差 ${(item.valuationResidual ?? 0) >= 0 ? "+" : ""}${money.format(item.valuationResidual ?? 0)}`}</em></article>)}</div></details>}
+        {checkins.length > 0 && <details className="attribution-history"><summary>查看历史快照（{checkins.length}）</summary><div>{checkins.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.periodLabel}</strong><small>{item.valuationDate ?? "旧记录未保存估值日"} · {new Date(item.createdAt).toLocaleString("zh-CN")}</small></div><span>{formatMoney(item.totalValue, item.baseCurrency)}</span><em>{item.totalChange == null ? "组合基线" : `变化 ${item.totalChange >= 0 ? "+" : ""}${formatMoney(item.totalChange, item.baseCurrency)} · 净现金流 ${item.externalCashFlow >= 0 ? "+" : ""}${formatMoney(item.externalCashFlow, item.baseCurrency)} · 残差 ${(item.valuationResidual ?? 0) >= 0 ? "+" : ""}${formatMoney(item.valuationResidual ?? 0, item.baseCurrency)}`}</em></article>)}</div></details>}
         <p className="effectiveness-disclaimer">若持仓缺失、币种未换算、估值日期不同或录入错误，残差也会变化。它只能帮助分离外部现金流，不能替代时间加权收益率或完整业绩归因。</p>
       </section>
 
@@ -368,7 +390,7 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
         <article className="panel">
           <div className="panel-title"><div><span>组合结构</span><h2>钱现在在哪里</h2></div><button className="text-button" onClick={() => navigate("foundation")}>管理资产 <ChevronRight size={15} /></button></div>
           <div className="allocation">
-            <div className="donut" style={{ background: allocationGradient(allocation) }}><div><strong>{allocation.length}</strong><span>类资产</span></div></div>
+            <div className="donut" style={{ background: allocation.length ? allocationGradient(allocation) : "#dedfd9" }}><div><strong>{snapshot.valuationStatus.comparable ? allocation.length : "—"}</strong><span>{snapshot.valuationStatus.comparable ? "类资产" : "等待汇率"}</span></div></div>
             <div className="legend">
               {allocation.map((item, index) => <div key={item.name}><i className={`color-${index % 5}`} /><span>{item.name}</span><strong>{item.pct.toFixed(1)}%</strong></div>)}
             </div>
@@ -392,20 +414,20 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
         <article className="panel">
           <div className="panel-title"><div><span>目标可行性</span><h2>计划能否覆盖目标</h2></div><Target size={22} className="muted-icon" /></div>
           {snapshot.plan.goalProjections.length === 0
-            ? <div className="empty">添加目标的已投入金额和月度投入后，这里会生成概率情景。</div>
+            ? <div className="empty">{snapshot.valuationStatus.comparable ? "添加目标的已投入金额和月度投入后，这里会生成概率情景。" : "补齐外币折算汇率后，再生成目标概率情景。"}</div>
             : <div className="projection-list">{snapshot.plan.goalProjections.map((goal) => (
               <div key={goal.goalId}>
                 <div className="projection-head"><strong>{goal.name}</strong><span className={goal.status}>{goalStatus(goal.status)}</span></div>
                 <div className="projection-bar"><i style={{ width: `${Math.min(100, goal.estimatedSuccessPct)}%` }} /></div>
-                <div className="projection-stats"><span>模拟达成率 <b>{goal.estimatedSuccessPct.toFixed(0)}%</b></span><span>月度缺口 <b>{money.format(goal.monthlyGap)}</b></span><span>剩余 <b>{goal.monthsRemaining} 个月</b></span></div>
+                <div className="projection-stats"><span>模拟达成率 <b>{goal.estimatedSuccessPct.toFixed(0)}%</b></span><span>月度缺口 <b>{formatMoney(goal.monthlyGap, snapshot.profile.baseCurrency)}</b></span><span>剩余 <b>{goal.monthsRemaining} 个月</b></span></div>
               </div>
             ))}</div>}
         </article>
         <article className="panel">
           <div className="panel-title"><div><span>风险预算与再平衡</span><h2>风险有没有超出边界</h2></div><ShieldCheck size={22} className="muted-icon" /></div>
-          <div className={`risk-budget ${snapshot.plan.riskStatus}`}><div><span>压力损失估计</span><strong>{snapshot.plan.stressLossPct.toFixed(1)}%</strong></div><ArrowRight size={17} /><div><span>当前风险容量</span><strong>{snapshot.plan.riskCapacityPct.toFixed(1)}%</strong></div><em>{riskStatus(snapshot.plan.riskStatus)}</em></div>
+          <div className={`risk-budget ${snapshot.plan.riskStatus}`}><div><span>压力损失估计</span><strong>{snapshot.valuationStatus.comparable ? `${snapshot.plan.stressLossPct.toFixed(1)}%` : "—"}</strong></div><ArrowRight size={17} /><div><span>当前风险容量</span><strong>{snapshot.plan.riskCapacityPct.toFixed(1)}%</strong></div><em>{snapshot.valuationStatus.comparable ? riskStatus(snapshot.plan.riskStatus) : "等待汇率"}</em></div>
           {snapshot.plan.rebalancing.length > 0
-            ? <div className="rebalance-list">{snapshot.plan.rebalancing.slice(0, 4).map((item) => <div key={item.holdingId}><span>{item.name}</span><small>{item.currentPct.toFixed(1)}% → {item.targetPct.toFixed(1)}%</small><strong>{item.direction} {money.format(item.amount)}</strong></div>)}</div>
+            ? <div className="rebalance-list">{snapshot.plan.rebalancing.slice(0, 4).map((item) => <div key={item.holdingId}><span>{item.name}</span><small>{item.currentPct.toFixed(1)}% → {item.targetPct.toFixed(1)}%</small><strong>{item.direction} {formatMoney(item.amount, snapshot.profile.baseCurrency)}</strong></div>)}</div>
             : <p className="planning-empty">持仓目标权重合计达到 100%，且偏差超过 3 个百分点时生成再平衡提示。</p>}
           <p className="assumption-note">{snapshot.plan.assumptions}</p>
         </article>
@@ -442,7 +464,7 @@ function allocationGradient(allocation: { pct: number }[]) {
 
 function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdate: (s: Snapshot) => void; flash: (s: string) => void }) {
   const [profile, setProfile] = useState(snapshot.profile ?? emptyProfile);
-  const [holding, setHolding] = useState<Omit<Holding, "id">>(emptyHolding);
+  const [holding, setHolding] = useState<Omit<Holding, "id">>(() => emptyHolding(snapshot.profile.baseCurrency));
   const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
   const [goal, setGoal] = useState<Omit<Goal, "id">>(emptyGoal);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
@@ -463,7 +485,7 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
         ? await updateHolding(editingHoldingId, holding)
         : await saveHolding(holding);
       onUpdate(next);
-      setHolding(emptyHolding);
+      setHolding(emptyHolding(profile.baseCurrency));
       setEditingHoldingId(null);
       flash(editingHoldingId ? "资产信息已更新" : "资产已加入组合");
     } finally { setSaving(false); }
@@ -480,7 +502,7 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
     setSaving(true);
     try {
       onUpdate(await deleteHolding(item.id));
-      if (editingHoldingId === item.id) { setEditingHoldingId(null); setHolding(emptyHolding); }
+      if (editingHoldingId === item.id) { setEditingHoldingId(null); setHolding(emptyHolding(profile.baseCurrency)); }
       flash("资产已从组合删除");
     } finally { setSaving(false); }
   };
@@ -519,11 +541,12 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
       <section className="panel form-panel">
         <div className="panel-title"><div><span>个人资产负债表</span><h2>现金流与风险边界</h2></div><Database size={21} className="muted-icon" /></div>
         <div className="form-grid">
-          <NumberField label="月收入" value={profile.monthlyIncome} onChange={(v) => updateNumber("monthlyIncome", v)} prefix="¥" />
-          <NumberField label="月支出" value={profile.monthlyExpense} onChange={(v) => updateNumber("monthlyExpense", v)} prefix="¥" />
-          <NumberField label="应急资金" value={profile.emergencyFund} onChange={(v) => updateNumber("emergencyFund", v)} prefix="¥" />
-          <NumberField label="负债余额" value={profile.liabilities} onChange={(v) => updateNumber("liabilities", v)} prefix="¥" />
-          <NumberField label="可投资资产" value={profile.investableAssets} onChange={(v) => updateNumber("investableAssets", v)} prefix="¥" />
+          <label><span>基准币种</span><select value={profile.baseCurrency} onChange={(e) => setProfile({ ...profile, baseCurrency: e.target.value })}>{["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => <option key={value}>{value}</option>)}</select><small>财务、目标和组合汇总统一使用此币种；切换不会自动换算已有金额。</small></label>
+          <NumberField label="月收入" value={profile.monthlyIncome} onChange={(v) => updateNumber("monthlyIncome", v)} prefix={profile.baseCurrency} />
+          <NumberField label="月支出" value={profile.monthlyExpense} onChange={(v) => updateNumber("monthlyExpense", v)} prefix={profile.baseCurrency} />
+          <NumberField label="应急资金" value={profile.emergencyFund} onChange={(v) => updateNumber("emergencyFund", v)} prefix={profile.baseCurrency} />
+          <NumberField label="负债余额" value={profile.liabilities} onChange={(v) => updateNumber("liabilities", v)} prefix={profile.baseCurrency} />
+          <NumberField label="可投资资产" value={profile.investableAssets} onChange={(v) => updateNumber("investableAssets", v)} prefix={profile.baseCurrency} />
           <NumberField label="投资期限" value={profile.horizonYears} onChange={(v) => updateNumber("horizonYears", v)} suffix="年" />
           <NumberField label="可承受最大回撤" value={profile.maxDrawdownPct} onChange={(v) => updateNumber("maxDrawdownPct", v)} suffix="%" />
           <label><span>风险倾向</span><select value={profile.riskLevel} onChange={(e) => setProfile({ ...profile, riskLevel: e.target.value as FinancialProfile["riskLevel"] })}><option>保守</option><option>稳健</option><option>均衡</option><option>进取</option></select></label>
@@ -535,13 +558,13 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
         <div className="panel-title"><div><span>目标账户</span><h2>{editingGoalId ? "修改目标计划" : "给资金一个明确任务"}</h2></div><Target size={21} className="muted-icon" /></div>
         {snapshot.goals.length > 0 && <div className="goal-list">{snapshot.goals.map((item) => {
           const projection = snapshot.plan.goalProjections.find((value) => value.goalId === item.id);
-          return <div className={editingGoalId === item.id ? "editing" : ""} key={item.id}><span>{item.priority}</span><strong>{item.name}<small>已投入 {money.format(item.currentAmount)} · 每月 {money.format(item.monthlyContribution)}</small></strong><em>{projection ? `模拟达成 ${projection.estimatedSuccessPct.toFixed(0)}%` : item.targetDate}</em><span className="row-actions"><button aria-label="编辑目标" onClick={() => editGoal(item)}><Edit3 size={14} /></button><button aria-label="删除目标" onClick={() => removeGoal(item)}><Trash2 size={14} /></button></span></div>;
+          return <div className={editingGoalId === item.id ? "editing" : ""} key={item.id}><span>{item.priority}</span><strong>{item.name}<small>已投入 {formatMoney(item.currentAmount, profile.baseCurrency)} · 每月 {formatMoney(item.monthlyContribution, profile.baseCurrency)}</small></strong><em>{projection ? `模拟达成 ${projection.estimatedSuccessPct.toFixed(0)}%` : item.targetDate}</em><span className="row-actions"><button aria-label="编辑目标" onClick={() => editGoal(item)}><Edit3 size={14} /></button><button aria-label="删除目标" onClick={() => removeGoal(item)}><Trash2 size={14} /></button></span></div>;
         })}</div>}
         <div className="form-grid compact-grid">
           <label><span>目标名称</span><input value={goal.name} onChange={(e) => setGoal({ ...goal, name: e.target.value })} placeholder="例如：长期养老账户" /></label>
-          <NumberField label="目标金额" value={goal.targetAmount} onChange={(v) => setGoal({ ...goal, targetAmount: Number(v) })} prefix="¥" />
-          <NumberField label="已经投入" value={goal.currentAmount} onChange={(v) => setGoal({ ...goal, currentAmount: Number(v) })} prefix="¥" />
-          <NumberField label="计划每月投入" value={goal.monthlyContribution} onChange={(v) => setGoal({ ...goal, monthlyContribution: Number(v) })} prefix="¥" />
+          <NumberField label="目标金额" value={goal.targetAmount} onChange={(v) => setGoal({ ...goal, targetAmount: Number(v) })} prefix={profile.baseCurrency} />
+          <NumberField label="已经投入" value={goal.currentAmount} onChange={(v) => setGoal({ ...goal, currentAmount: Number(v) })} prefix={profile.baseCurrency} />
+          <NumberField label="计划每月投入" value={goal.monthlyContribution} onChange={(v) => setGoal({ ...goal, monthlyContribution: Number(v) })} prefix={profile.baseCurrency} />
           <label><span>目标日期</span><input type="date" value={goal.targetDate} onChange={(e) => setGoal({ ...goal, targetDate: e.target.value })} /></label>
           <label><span>目标优先级</span><select value={goal.priority} onChange={(e) => setGoal({ ...goal, priority: e.target.value as Goal["priority"] })}><option>刚性</option><option>重要</option><option>弹性</option></select></label>
         </div>
@@ -556,7 +579,7 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
             const pnlPct = item.costBasis > 0 ? (item.marketValue - item.costBasis) / item.costBasis * 100 : 0;
             return <div className={editingHoldingId === item.id ? "editing" : ""} key={item.id}>
               <strong>{item.name}<small>{item.symbol || "未填写代码"}</small></strong>
-              <span>{item.assetClass}</span><span>{money.format(item.marketValue)}</span><span>{item.targetPct ? `${item.targetPct.toFixed(1)}%` : "未设置"}</span>
+              <span>{item.assetClass}<small>{item.currency}{item.currency !== profile.baseCurrency && item.fxRateToBase ? ` · 汇率 ${item.fxRateToBase}` : ""}</small></span><span>{formatMoney(item.marketValue, item.currency)}<small>{item.currency !== profile.baseCurrency && item.fxRateToBase ? `折合 ${formatMoney(holdingValueInBase(item, profile.baseCurrency), profile.baseCurrency)} · ` : ""}{item.valuationDate || "待补估值日"}</small></span><span>{item.targetPct ? `${item.targetPct.toFixed(1)}%` : "未设置"}</span>
               <span className={pnlPct >= 0 ? "gain" : "loss"}>{pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%</span>
               <span className="row-actions"><button aria-label="编辑资产" onClick={() => editHolding(item)}><Edit3 size={14} /></button><button aria-label="删除资产" onClick={() => removeHolding(item)}><Trash2 size={14} /></button></span>
             </div>;
@@ -566,13 +589,16 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
           <label><span>资产名称</span><input value={holding.name} onChange={(e) => setHolding({ ...holding, name: e.target.value })} placeholder="例如：宽基指数基金" /></label>
           <label><span>代码（可选）</span><input value={holding.symbol} onChange={(e) => setHolding({ ...holding, symbol: e.target.value })} placeholder="例如：000300" /></label>
           <label><span>资产类别</span><select value={holding.assetClass} onChange={(e) => setHolding({ ...holding, assetClass: e.target.value as Holding["assetClass"] })}>{["现金", "债券", "股票", "基金", "黄金", "其他"].map((v) => <option key={v}>{v}</option>)}</select></label>
-          <NumberField label="当前市值" value={holding.marketValue} onChange={(v) => setHolding({ ...holding, marketValue: Number(v) })} prefix="¥" />
-          <NumberField label="累计成本" value={holding.costBasis} onChange={(v) => setHolding({ ...holding, costBasis: Number(v) })} prefix="¥" />
+          <label><span>持仓币种</span><select value={holding.currency} onChange={(e) => setHolding({ ...holding, currency: e.target.value, fxRateToBase: e.target.value === profile.baseCurrency ? null : holding.fxRateToBase })}>{["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <NumberField label={`当前市值（${holding.currency}）`} value={holding.marketValue} onChange={(v) => setHolding({ ...holding, marketValue: Number(v) })} prefix={holding.currency} />
+          <NumberField label={`累计成本（${holding.currency}）`} value={holding.costBasis} onChange={(v) => setHolding({ ...holding, costBasis: Number(v) })} prefix={holding.currency} />
           <NumberField label="目标权重" value={holding.targetPct} onChange={(v) => setHolding({ ...holding, targetPct: Number(v) })} suffix="%" />
+          <label><span>估值日期</span><input type="date" max={localDateValue(new Date())} value={holding.valuationDate} onChange={(e) => setHolding({ ...holding, valuationDate: e.target.value })} /><small>组合检查点要求全部持仓使用同一日期。</small></label>
+          {holding.currency !== profile.baseCurrency && <NumberField label={`折算汇率（1 ${holding.currency} = ? ${profile.baseCurrency}）`} value={holding.fxRateToBase ?? 0} onChange={(v) => setHolding({ ...holding, fxRateToBase: v ? Number(v) : null })} suffix={profile.baseCurrency} />}
         </div>
         <div className="form-actions">
-          {editingHoldingId ? <button className="text-button" onClick={() => { setEditingHoldingId(null); setHolding(emptyHolding); }}>取消修改</button> : <span />}
-          <button className="secondary" onClick={persistHolding} disabled={saving || !holding.name}>{editingHoldingId ? <Save size={16} /> : <Plus size={16} />}{editingHoldingId ? "保存修改" : "加入组合"}</button>
+          {editingHoldingId ? <button className="text-button" onClick={() => { setEditingHoldingId(null); setHolding(emptyHolding(profile.baseCurrency)); }}>取消修改</button> : <span />}
+          <button className="secondary" onClick={persistHolding} disabled={saving || !holding.name || !holding.valuationDate || Boolean(holding.currency !== profile.baseCurrency && (!holding.fxRateToBase || holding.fxRateToBase <= 0))}>{editingHoldingId ? <Save size={16} /> : <Plus size={16} />}{editingHoldingId ? "保存修改" : "加入组合"}</button>
         </div>
       </section>
     </div>
@@ -1120,7 +1146,7 @@ function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash:
         <div className="system-review-list">{reviews.map((item) => <article key={item.id}>
           <div className="system-review-head"><div><span>{item.periodLabel}</span><strong>纪律 {item.adherenceScore}/5</strong></div><small>{new Date(item.createdAt).toLocaleDateString("zh-CN")}</small></div>
           <p><b>过程事实</b>{item.processSummary}</p><p><b>规则违反</b>{item.ruleViolations || "无"}</p><p><b>经验修正</b>{item.lessons}</p><p><b>下一步</b>{item.nextActions}</p>
-          <div className="frozen-snapshot"><span>组合 {money.format(item.snapshot.portfolioValue)}</span><span>集中度 {item.snapshot.concentrationPct.toFixed(1)}%</span><span>高风险 {item.snapshot.highRiskFindings}</span><span>目标 {item.snapshot.goalsOnTrack}/{item.snapshot.goalTotal}</span></div>
+          <div className="frozen-snapshot"><span>组合 {item.snapshot.portfolioComparable ? formatMoney(item.snapshot.portfolioValue, item.snapshot.baseCurrency) : "待补汇率"}</span><span>集中度 {item.snapshot.portfolioComparable ? `${item.snapshot.concentrationPct.toFixed(1)}%` : "—"}</span><span>高风险 {item.snapshot.highRiskFindings}</span><span>目标 {item.snapshot.goalsOnTrack}/{item.snapshot.goalTotal}</span></div>
           <button className="text-button" onClick={() => convertLessonToRule(item)}>把经验沉淀为规则 <ChevronRight size={14} /></button>
         </article>)}</div>
       </section>}

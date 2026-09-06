@@ -1,10 +1,6 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    path::Path,
-    sync::Mutex,
-};
+use std::{collections::HashSet, path::Path, sync::Mutex};
 
-use chrono::{NaiveDate, Utc};
+use chrono::{Local, NaiveDate, Utc};
 use rusqlite::{params, types::ValueRef, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -16,12 +12,12 @@ use crate::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
         DecisionReviewInput, DecisionRuleCheck, FinancialProfile, Goal, GoalInput, Holding,
         HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem,
-        ModelConfig, PortfolioAllocationChange, PortfolioCheckInInput, PortfolioCheckInRecord,
-        ReminderSettings, ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary,
-        RuleEffectivenessItem, RuleEffectivenessSummary, Snapshot, StoredAnalysis,
-        SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
+        ModelConfig, PortfolioCheckInInput, PortfolioCheckInRecord, ReminderSettings,
+        ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary, RuleEffectivenessItem,
+        RuleEffectivenessSummary, Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
+        SystemReviewSnapshot,
     },
-    planning, risk,
+    planning, risk, valuation,
 };
 
 pub struct Database {
@@ -52,11 +48,40 @@ pub struct SyncDataset {
     pub tables: Vec<SyncTable>,
 }
 
+#[derive(Clone, Copy)]
 struct SyncTableSpec {
     name: &'static str,
     columns: &'static [&'static str],
     order_by: &'static str,
 }
+
+const LEGACY_HOLDING_COLUMNS: &[&str] = &[
+    "id",
+    "symbol",
+    "name",
+    "asset_class",
+    "market_value",
+    "cost_basis",
+    "target_pct",
+    "currency",
+    "created_at",
+    "updated_at",
+];
+
+const CURRENT_HOLDING_COLUMNS: &[&str] = &[
+    "id",
+    "symbol",
+    "name",
+    "asset_class",
+    "market_value",
+    "cost_basis",
+    "target_pct",
+    "currency",
+    "fx_rate_to_base",
+    "valuation_date",
+    "created_at",
+    "updated_at",
+];
 
 const SYNC_TABLES: &[SyncTableSpec] = &[
     SyncTableSpec {
@@ -81,18 +106,7 @@ const SYNC_TABLES: &[SyncTableSpec] = &[
     },
     SyncTableSpec {
         name: "holdings",
-        columns: &[
-            "id",
-            "symbol",
-            "name",
-            "asset_class",
-            "market_value",
-            "cost_basis",
-            "target_pct",
-            "currency",
-            "created_at",
-            "updated_at",
-        ],
+        columns: CURRENT_HOLDING_COLUMNS,
         order_by: "id",
     },
     SyncTableSpec {
@@ -176,13 +190,22 @@ const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 2;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 3;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 
-fn sync_specs_for_version(version: u32) -> AppResult<&'static [SyncTableSpec]> {
+fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
+    let mut specs = SYNC_TABLES.to_vec();
     match version {
-        1 => Ok(&SYNC_TABLES[..V1_SYNC_TABLE_COUNT]),
-        SYNC_DATASET_SCHEMA_VERSION => Ok(SYNC_TABLES),
+        1 => {
+            specs.truncate(V1_SYNC_TABLE_COUNT);
+            specs[2].columns = LEGACY_HOLDING_COLUMNS;
+            Ok(specs)
+        }
+        2 => {
+            specs[2].columns = LEGACY_HOLDING_COLUMNS;
+            Ok(specs)
+        }
+        SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
         _ => Err(AppError::Validation(format!(
             "不支持的数据快照版本 {version}"
         ))),
@@ -208,7 +231,7 @@ impl SyncDataset {
             return Err(AppError::Validation("数据快照缺少必要数据表".into()));
         }
         let mut total_rows = 0_usize;
-        for spec in specs {
+        for spec in &specs {
             let table = self
                 .tables
                 .iter()
@@ -290,6 +313,8 @@ impl Database {
                cost_basis REAL NOT NULL,
                target_pct REAL NOT NULL DEFAULT 0,
                currency TEXT NOT NULL,
+               fx_rate_to_base REAL,
+               valuation_date TEXT NOT NULL DEFAULT '',
                created_at TEXT NOT NULL,
                updated_at TEXT NOT NULL
              );
@@ -400,6 +425,13 @@ impl Database {
             &connection,
             "holdings",
             "updated_at",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(&connection, "holdings", "fx_rate_to_base", "REAL")?;
+        ensure_column(
+            &connection,
+            "holdings",
+            "valuation_date",
             "TEXT NOT NULL DEFAULT ''",
         )?;
         Ok(Self {
@@ -647,7 +679,7 @@ impl Database {
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency FROM holdings ORDER BY created_at")?;
+        let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date FROM holdings ORDER BY created_at")?;
         let holdings = holding_stmt
             .query_map([], |row| {
                 Ok(Holding {
@@ -659,6 +691,8 @@ impl Database {
                     cost_basis: row.get(5)?,
                     target_pct: row.get(6)?,
                     currency: row.get(7)?,
+                    fx_rate_to_base: row.get(8)?,
+                    valuation_date: row.get(9)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -694,39 +728,46 @@ impl Database {
         if !(0..=80).contains(&profile.horizon_years) {
             return Err(AppError::Validation("投资期限应在 0—80 年之间".into()));
         }
-        let payload = serde_json::to_string(profile)?;
-        self.conn()?.execute(
+        validate_currency(&profile.base_currency)?;
+        let mut normalized = profile.clone();
+        normalized.base_currency = profile.base_currency.trim().to_ascii_uppercase();
+        let payload = serde_json::to_string(&normalized)?;
+        let previous_base_currency = self.snapshot()?.profile.base_currency;
+        let mut conn = self.conn()?;
+        let transaction = conn.transaction()?;
+        transaction.execute(
             "INSERT INTO profile (id, payload, updated_at) VALUES (1, ?1, ?2)
              ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
             params![payload, Utc::now().to_rfc3339()],
         )?;
+        if !previous_base_currency.eq_ignore_ascii_case(&normalized.base_currency) {
+            transaction.execute(
+                "UPDATE holdings SET fx_rate_to_base=NULL, updated_at=?1
+                 WHERE UPPER(currency)<>?2",
+                params![Utc::now().to_rfc3339(), normalized.base_currency],
+            )?;
+        }
+        transaction.commit()?;
+        drop(conn);
         self.snapshot()
     }
 
     pub fn add_holding(&self, input: &HoldingInput) -> AppResult<Snapshot> {
-        if input.name.trim().is_empty() || input.market_value <= 0.0 {
-            return Err(AppError::Validation("资产名称和正数市值为必填项".into()));
-        }
-        validate_non_negative(&[input.market_value, input.cost_basis, input.target_pct])?;
-        validate_percentage(input.target_pct, "目标权重")?;
+        validate_holding(input, &self.snapshot()?.profile.base_currency)?;
         let now = Utc::now().to_rfc3339();
         self.conn()?.execute(
-            "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
-            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency, now],
+            "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), input.fx_rate_to_base, input.valuation_date.trim(), now],
         )?;
         self.snapshot()
     }
 
     pub fn update_holding(&self, id: &str, input: &HoldingInput) -> AppResult<Snapshot> {
-        if input.name.trim().is_empty() || input.market_value <= 0.0 {
-            return Err(AppError::Validation("资产名称和正数市值为必填项".into()));
-        }
-        validate_non_negative(&[input.market_value, input.cost_basis, input.target_pct])?;
-        validate_percentage(input.target_pct, "目标权重")?;
+        validate_holding(input, &self.snapshot()?.profile.base_currency)?;
         let affected = self.conn()?.execute(
-            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, updated_at=?9 WHERE id=?1",
-            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency, Utc::now().to_rfc3339()],
+            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, fx_rate_to_base=?9, valuation_date=?10, updated_at=?11 WHERE id=?1",
+            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), input.fx_rate_to_base, input.valuation_date.trim(), Utc::now().to_rfc3339()],
         )?;
         if affected == 0 {
             return Err(AppError::Validation("找不到要更新的资产".into()));
@@ -778,15 +819,44 @@ impl Database {
         }
 
         let snapshot = self.snapshot()?;
-        if snapshot.holdings.is_empty() || snapshot.total_value <= 0.0 {
+        if snapshot.holdings.is_empty() {
             return Err(AppError::Validation(
                 "请先录入当前持仓，再建立组合变化基线".into(),
             ));
         }
-        let previous = self.portfolio_checkins()?.into_iter().next();
+        if !snapshot.valuation_status.comparable {
+            return Err(AppError::Validation(format!(
+                "请先补齐外币持仓汇率：{}",
+                snapshot.valuation_status.missing_fx_holdings.join("、")
+            )));
+        }
+        let valuation_date = snapshot
+            .valuation_status
+            .aligned_valuation_date
+            .clone()
+            .ok_or_else(|| {
+                AppError::Validation("全部持仓必须使用同一个估值日期，才能冻结组合检查点".into())
+            })?;
+        if snapshot.total_value <= 0.0 {
+            return Err(AppError::Validation("组合折算后的总市值必须大于 0".into()));
+        }
+        let previous = if input.reset_baseline {
+            None
+        } else {
+            self.portfolio_checkins()?.into_iter().next()
+        };
         if previous.is_none() && input.external_cash_flow.abs() > 0.005 {
             return Err(AppError::Validation(
                 "第一条记录是组合基线，期间净入金应填写 0".into(),
+            ));
+        }
+        if previous.as_ref().is_some_and(|record| {
+            !record
+                .base_currency
+                .eq_ignore_ascii_case(&snapshot.valuation_status.base_currency)
+        }) {
+            return Err(AppError::Validation(
+                "基准币种已经改变；请明确选择按新币种重新建立基线".into(),
             ));
         }
 
@@ -796,7 +866,13 @@ impl Database {
         let valuation_residual = total_change.map(|change| change - input.external_cash_flow);
         let allocation_changes = previous
             .as_ref()
-            .map(|record| portfolio_allocation_changes(&record.holdings, &snapshot.holdings))
+            .map(|record| {
+                valuation::allocation_changes(
+                    &record.holdings,
+                    &snapshot.holdings,
+                    &snapshot.valuation_status.base_currency,
+                )
+            })
             .unwrap_or_default();
         let record = PortfolioCheckInRecord {
             id: Uuid::new_v4().to_string(),
@@ -808,6 +884,8 @@ impl Database {
             previous_total_value: previous.as_ref().map(|record| record.total_value),
             total_change,
             valuation_residual,
+            base_currency: snapshot.valuation_status.base_currency,
+            valuation_date: Some(valuation_date),
             holdings: snapshot.holdings,
             allocation_changes,
             created_at: Utc::now().to_rfc3339(),
@@ -1276,6 +1354,8 @@ impl Database {
         let created_at = Utc::now().to_rfc3339();
         let snapshot = SystemReviewSnapshot {
             portfolio_value: portfolio.total_value,
+            base_currency: portfolio.profile.base_currency.clone(),
+            portfolio_comparable: portfolio.valuation_status.comparable,
             emergency_months: portfolio.emergency_months,
             concentration_pct: portfolio.concentration_pct,
             risk_status: portfolio.plan.risk_status,
@@ -1715,7 +1795,19 @@ fn build_snapshot(
     holdings: Vec<Holding>,
     updated_at: String,
 ) -> Snapshot {
-    let raw_total = holdings.iter().map(|h| h.market_value).sum::<f64>();
+    let valuation_status = valuation::status(&profile.base_currency, &holdings);
+    let normalized_holdings = if valuation_status.comparable {
+        holdings
+            .iter()
+            .filter_map(|holding| valuation::normalize_holding(holding, &profile.base_currency))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let raw_total = normalized_holdings
+        .iter()
+        .map(|holding| holding.market_value)
+        .sum::<f64>();
     let total_value = if raw_total.abs() < f64::EPSILON {
         0.0
     } else {
@@ -1726,7 +1818,7 @@ fn build_snapshot(
     } else {
         0.0
     };
-    let largest = holdings
+    let largest = normalized_holdings
         .iter()
         .map(|h| h.market_value)
         .fold(0.0_f64, f64::max);
@@ -1735,8 +1827,59 @@ fn build_snapshot(
     } else {
         0.0
     };
-    let mut findings = risk::analyze(&profile, &holdings);
-    let plan = planning::analyze(&profile, &goals, &holdings);
+    let mut findings = risk::analyze(
+        &profile,
+        if valuation_status.comparable {
+            &normalized_holdings
+        } else {
+            &holdings
+        },
+        valuation_status.comparable,
+    );
+    if !valuation_status.missing_fx_holdings.is_empty() {
+        findings.push(crate::models::RiskFinding {
+            level: "high".into(),
+            title: "组合缺少外币折算汇率".into(),
+            detail: format!(
+                "{} 尚未折算为基准币种 {}，组合总值、集中度和规划已暂停。",
+                valuation_status.missing_fx_holdings.join("、"),
+                valuation_status.base_currency
+            ),
+            action: "补充估值日对应的汇率；不要把不同币种的原始金额直接相加。".into(),
+        });
+    }
+    if valuation_status.undated_holding_count > 0 || valuation_status.valuation_dates.len() > 1 {
+        findings.push(crate::models::RiskFinding {
+            level: "medium".into(),
+            title: "持仓估值日期尚未对齐".into(),
+            detail: if valuation_status.undated_holding_count > 0 {
+                format!(
+                    "有 {} 项持仓缺少估值日期，不能建立可靠的周期比较基线。",
+                    valuation_status.undated_holding_count
+                )
+            } else {
+                format!(
+                    "当前持仓使用了 {} 个不同估值日期，组合变化可能混入时间错位。",
+                    valuation_status.valuation_dates.len()
+                )
+            },
+            action: "把全部持仓更新到同一估值日后，再冻结组合检查点。".into(),
+        });
+    }
+    let mut plan = planning::analyze(&profile, &goals, &normalized_holdings);
+    if !valuation_status.comparable {
+        plan.goal_projections.clear();
+        plan.rebalancing.clear();
+        plan.assumptions = format!(
+            "存在未折算到 {} 的外币持仓，组合风险、目标路径和再平衡计算已暂停。",
+            valuation_status.base_currency
+        );
+    } else if !holdings.is_empty() {
+        plan.assumptions = format!(
+            "组合数值已按 {} 折算；汇率与估值日期来自用户输入。{}",
+            valuation_status.base_currency, plan.assumptions
+        );
+    }
     let target_total: f64 = holdings.iter().map(|holding| holding.target_pct).sum();
     if target_total > 0.0 && !(99.0..=101.0).contains(&target_total) {
         findings.push(crate::models::RiskFinding {
@@ -1756,8 +1899,11 @@ fn build_snapshot(
             level: "high".into(),
             title: "目标投入超过月度结余".into(),
             detail: format!(
-                "计划每月投入 {:.0} 元，但当前月度结余约 {:.0} 元。",
-                plan.committed_monthly, plan.monthly_surplus
+                "计划每月投入 {:.0} {}，但当前月度结余约 {:.0} {}。",
+                plan.committed_monthly,
+                profile.base_currency,
+                plan.monthly_surplus,
+                profile.base_currency
             ),
             action: "调整目标优先级、期限或月度投入，避免计划依赖新增负债。".into(),
         });
@@ -1770,6 +1916,7 @@ fn build_snapshot(
         total_value,
         emergency_months,
         concentration_pct,
+        valuation_status,
         plan,
         updated_at,
     }
@@ -1784,59 +1931,46 @@ fn validate_non_negative(values: &[f64]) -> AppResult<()> {
     Ok(())
 }
 
-fn portfolio_allocation_changes(
-    previous_holdings: &[Holding],
-    current_holdings: &[Holding],
-) -> Vec<PortfolioAllocationChange> {
-    let aggregate = |holdings: &[Holding]| {
-        let mut values = BTreeMap::<String, f64>::new();
-        for holding in holdings {
-            *values.entry(holding.asset_class.clone()).or_default() += holding.market_value;
-        }
-        values
-    };
-    let previous = aggregate(previous_holdings);
-    let current = aggregate(current_holdings);
-    let previous_total = previous.values().sum::<f64>();
-    let current_total = current.values().sum::<f64>();
-    let mut categories = BTreeMap::<String, ()>::new();
-    for category in previous.keys().chain(current.keys()) {
-        categories.insert(category.clone(), ());
+fn validate_currency(value: &str) -> AppResult<()> {
+    let currency = value.trim();
+    if currency.len() != 3 || !currency.bytes().all(|byte| byte.is_ascii_alphabetic()) {
+        return Err(AppError::Validation(
+            "币种必须使用三个英文字母，例如 CNY、USD 或 HKD".into(),
+        ));
     }
-    let mut changes = categories
-        .into_keys()
-        .map(|asset_class| {
-            let previous_value = previous.get(&asset_class).copied().unwrap_or_default();
-            let current_value = current.get(&asset_class).copied().unwrap_or_default();
-            let previous_pct = if previous_total > 0.0 {
-                previous_value / previous_total * 100.0
-            } else {
-                0.0
-            };
-            let current_pct = if current_total > 0.0 {
-                current_value / current_total * 100.0
-            } else {
-                0.0
-            };
-            PortfolioAllocationChange {
-                asset_class,
-                previous_value,
-                current_value,
-                value_change: current_value - previous_value,
-                previous_pct,
-                current_pct,
-                pct_point_change: current_pct - previous_pct,
-            }
-        })
-        .collect::<Vec<_>>();
-    changes.sort_by(|left, right| {
-        right
-            .value_change
-            .abs()
-            .total_cmp(&left.value_change.abs())
-            .then_with(|| left.asset_class.cmp(&right.asset_class))
-    });
-    changes
+    Ok(())
+}
+
+fn validate_holding(input: &HoldingInput, base_currency: &str) -> AppResult<()> {
+    if input.name.trim().is_empty() || input.market_value <= 0.0 {
+        return Err(AppError::Validation("资产名称和正数市值为必填项".into()));
+    }
+    validate_non_negative(&[input.market_value, input.cost_basis, input.target_pct])?;
+    validate_percentage(input.target_pct, "目标权重")?;
+    validate_currency(&input.currency)?;
+    let valuation_date = NaiveDate::parse_from_str(input.valuation_date.trim(), "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("持仓估值日期必须使用 YYYY-MM-DD".into()))?;
+    if valuation_date > Local::now().date_naive() {
+        return Err(AppError::Validation("持仓估值日期不能晚于今天".into()));
+    }
+    if input.currency.eq_ignore_ascii_case(base_currency) {
+        if input
+            .fx_rate_to_base
+            .is_some_and(|rate| !rate.is_finite() || rate <= 0.0)
+        {
+            return Err(AppError::Validation("汇率必须是有效正数".into()));
+        }
+    } else if input
+        .fx_rate_to_base
+        .is_none_or(|rate| !rate.is_finite() || rate <= 0.0)
+    {
+        return Err(AppError::Validation(format!(
+            "{} 持仓必须填写折算到基准币种 {} 的汇率",
+            input.currency.trim().to_ascii_uppercase(),
+            base_currency.trim().to_ascii_uppercase()
+        )));
+    }
+    Ok(())
 }
 
 fn validate_and_canonicalize_rule_checks(
@@ -2108,6 +2242,8 @@ mod tests {
             cost_basis: 90_000.0,
             target_pct: 100.0,
             currency: "CNY".into(),
+            fx_rate_to_base: None,
+            valuation_date: "2026-01-01".into(),
         })
         .unwrap();
         let snapshot = db.snapshot().unwrap();
@@ -2135,6 +2271,8 @@ mod tests {
                 cost_basis: 100_000.0,
                 target_pct: 100.0,
                 currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-01-01".into(),
             })
             .unwrap();
         let rule = source
@@ -2177,6 +2315,7 @@ mod tests {
                 period_label: "同步基线".into(),
                 external_cash_flow: 0.0,
                 note: "首次组合快照".into(),
+                reset_baseline: false,
             })
             .unwrap();
         source.set_setting("model.name", "never-sync-this").unwrap();
@@ -2205,7 +2344,33 @@ mod tests {
             Some("keep-local-model")
         );
 
-        let mut legacy_dataset = dataset.clone();
+        let mut legacy_v2 = dataset.clone();
+        legacy_v2.schema_version = 2;
+        let holdings = legacy_v2
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "holdings")
+            .unwrap();
+        for index in [9, 8] {
+            holdings.columns.remove(index);
+            for row in &mut holdings.rows {
+                row.remove(index);
+            }
+        }
+        legacy_v2.validate().unwrap();
+        let v2_target = Database::open(&directory.path().join("v2-target.db")).unwrap();
+        v2_target.import_sync_data(&legacy_v2).unwrap();
+        assert_eq!(v2_target.portfolio_checkins().unwrap().len(), 1);
+        assert_eq!(
+            v2_target
+                .snapshot()
+                .unwrap()
+                .valuation_status
+                .undated_holding_count,
+            1
+        );
+
+        let mut legacy_dataset = legacy_v2;
         legacy_dataset.schema_version = 1;
         assert_eq!(
             legacy_dataset.tables.pop().unwrap().name,
@@ -2239,6 +2404,8 @@ mod tests {
             cost_basis: 90_000.0,
             target_pct: 100.0,
             currency: "CNY".into(),
+            fx_rate_to_base: None,
+            valuation_date: "2026-01-01".into(),
         };
         let created = db.add_holding(&input).unwrap();
         let id = &created.holdings[0].id;
@@ -2258,6 +2425,7 @@ mod tests {
                 period_label: "基线".into(),
                 external_cash_flow: 0.0,
                 note: "".into(),
+                reset_baseline: false,
             }),
             Err(AppError::Validation(_))
         ));
@@ -2270,6 +2438,8 @@ mod tests {
                 cost_basis: 90_000.0,
                 target_pct: 90.0,
                 currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-01-01".into(),
             })
             .unwrap();
         assert!(matches!(
@@ -2277,6 +2447,7 @@ mod tests {
                 period_label: "错误基线".into(),
                 external_cash_flow: 10_000.0,
                 note: "首次入金".into(),
+                reset_baseline: false,
             }),
             Err(AppError::Validation(_))
         ));
@@ -2285,6 +2456,7 @@ mod tests {
                 period_label: "2026-08 基线".into(),
                 external_cash_flow: 0.0,
                 note: "首次冻结组合".into(),
+                reset_baseline: false,
             })
             .unwrap();
         assert_eq!(baseline.total_value, 100_000.0);
@@ -2301,6 +2473,8 @@ mod tests {
                 cost_basis: 90_000.0,
                 target_pct: 90.0,
                 currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-02-01".into(),
             },
         )
         .unwrap();
@@ -2312,6 +2486,8 @@ mod tests {
             cost_basis: 10_000.0,
             target_pct: 10.0,
             currency: "CNY".into(),
+            fx_rate_to_base: None,
+            valuation_date: "2026-02-01".into(),
         })
         .unwrap();
         let next = db
@@ -2319,6 +2495,7 @@ mod tests {
                 period_label: "2026-09".into(),
                 external_cash_flow: 10_000.0,
                 note: "工资结余入金".into(),
+                reset_baseline: false,
             })
             .unwrap();
         assert_eq!(
@@ -2340,6 +2517,8 @@ mod tests {
                 cost_basis: 90_000.0,
                 target_pct: 90.0,
                 currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-03-01".into(),
             },
         )
         .unwrap();
@@ -2351,6 +2530,141 @@ mod tests {
             102_000.0
         );
         assert_eq!(history[1].holdings[0].market_value, 100_000.0);
+    }
+
+    #[test]
+    fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("currency.db")).unwrap();
+        let mut profile = FinancialProfile {
+            base_currency: "CNY".into(),
+            ..Default::default()
+        };
+        db.save_profile(&profile).unwrap();
+
+        assert!(matches!(
+            db.add_holding(&HoldingInput {
+                symbol: "USD".into(),
+                name: "美元资产".into(),
+                asset_class: "股票".into(),
+                market_value: 100.0,
+                cost_basis: 90.0,
+                target_pct: 70.0,
+                currency: "USD".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-08-31".into(),
+            }),
+            Err(AppError::Validation(_))
+        ));
+        let usd_snapshot = db
+            .add_holding(&HoldingInput {
+                symbol: "USD".into(),
+                name: "美元资产".into(),
+                asset_class: "股票".into(),
+                market_value: 100.0,
+                cost_basis: 90.0,
+                target_pct: 70.0,
+                currency: "USD".into(),
+                fx_rate_to_base: Some(7.0),
+                valuation_date: "2026-08-31".into(),
+            })
+            .unwrap();
+        let usd_id = usd_snapshot.holdings[0].id.clone();
+        let snapshot = db
+            .add_holding(&HoldingInput {
+                symbol: "CASH".into(),
+                name: "人民币现金".into(),
+                asset_class: "现金".into(),
+                market_value: 300.0,
+                cost_basis: 300.0,
+                target_pct: 30.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-08-31".into(),
+            })
+            .unwrap();
+        let cny_id = snapshot
+            .holdings
+            .iter()
+            .find(|holding| holding.currency == "CNY")
+            .unwrap()
+            .id
+            .clone();
+        assert_eq!(snapshot.total_value, 1_000.0);
+        assert_eq!(snapshot.concentration_pct, 70.0);
+        assert!(snapshot.valuation_status.comparable);
+        assert_eq!(
+            snapshot.valuation_status.aligned_valuation_date.as_deref(),
+            Some("2026-08-31")
+        );
+        db.save_portfolio_checkin(&PortfolioCheckInInput {
+            period_label: "CNY 基线".into(),
+            external_cash_flow: 0.0,
+            note: "统一估值日".into(),
+            reset_baseline: false,
+        })
+        .unwrap();
+
+        db.update_holding(
+            &usd_id,
+            &HoldingInput {
+                symbol: "USD".into(),
+                name: "美元资产".into(),
+                asset_class: "股票".into(),
+                market_value: 100.0,
+                cost_basis: 90.0,
+                target_pct: 70.0,
+                currency: "USD".into(),
+                fx_rate_to_base: Some(7.0),
+                valuation_date: "2026-09-01".into(),
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            db.save_portfolio_checkin(&PortfolioCheckInInput {
+                period_label: "错位日期".into(),
+                external_cash_flow: 0.0,
+                note: "".into(),
+                reset_baseline: false,
+            }),
+            Err(AppError::Validation(_))
+        ));
+
+        profile.base_currency = "USD".into();
+        let changed = db.save_profile(&profile).unwrap();
+        assert!(!changed.valuation_status.comparable);
+        assert_eq!(changed.total_value, 0.0);
+        assert_eq!(
+            changed.valuation_status.missing_fx_holdings,
+            vec!["人民币现金"]
+        );
+        let normalized = db
+            .update_holding(
+                &cny_id,
+                &HoldingInput {
+                    symbol: "CASH".into(),
+                    name: "人民币现金".into(),
+                    asset_class: "现金".into(),
+                    market_value: 300.0,
+                    cost_basis: 300.0,
+                    target_pct: 30.0,
+                    currency: "CNY".into(),
+                    fx_rate_to_base: Some(0.14),
+                    valuation_date: "2026-09-01".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(normalized.total_value, 142.0);
+        let reset = db
+            .save_portfolio_checkin(&PortfolioCheckInInput {
+                period_label: "USD 新基线".into(),
+                external_cash_flow: 0.0,
+                note: "切换基准币种后重新开始比较".into(),
+                reset_baseline: true,
+            })
+            .unwrap();
+        assert_eq!(reset.base_currency, "USD");
+        assert_eq!(reset.total_change, None);
     }
 
     #[test]
@@ -2650,6 +2964,10 @@ mod tests {
         assert_eq!(snapshot.goals[0].current_amount, 0.0);
         assert_eq!(snapshot.goals[0].monthly_contribution, 0.0);
         assert_eq!(snapshot.holdings[0].target_pct, 0.0);
+        assert_eq!(snapshot.holdings[0].fx_rate_to_base, None);
+        assert!(snapshot.holdings[0].valuation_date.is_empty());
+        assert_eq!(snapshot.profile.base_currency, "CNY");
+        assert_eq!(snapshot.valuation_status.undated_holding_count, 1);
         assert!(db.analysis_history().unwrap()[0].transparency.is_none());
     }
 
@@ -2979,6 +3297,8 @@ mod tests {
             cost_basis: 90_000.0,
             target_pct: 100.0,
             currency: "CNY".into(),
+            fx_rate_to_base: None,
+            valuation_date: "2026-01-01".into(),
         })
         .unwrap();
         db.add_investment_rule(&InvestmentRuleInput {
@@ -3012,6 +3332,8 @@ mod tests {
                 cost_basis: 90_000.0,
                 target_pct: 100.0,
                 currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-02-01".into(),
             },
         )
         .unwrap();

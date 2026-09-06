@@ -519,6 +519,8 @@ mod tests {
                 cost_basis: 90.0,
                 target_pct: 100.0,
                 currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-01-01".into(),
             }],
             findings: vec![RiskFinding {
                 level: "medium".into(),
@@ -529,6 +531,15 @@ mod tests {
             total_value: 100.0,
             emergency_months: 6.0,
             concentration_pct: 100.0,
+            valuation_status: crate::models::PortfolioValuationStatus {
+                base_currency: "CNY".into(),
+                comparable: true,
+                missing_fx_holdings: Vec::new(),
+                undated_holding_count: 0,
+                valuation_dates: vec!["2026-01-01".into()],
+                aligned_valuation_date: Some("2026-01-01".into()),
+                warnings: Vec::new(),
+            },
             plan: PortfolioPlan {
                 monthly_surplus: 0.0,
                 committed_monthly: 0.0,

@@ -825,12 +825,41 @@ mod tests {
     }
 
     #[test]
-    fn decrypts_legacy_v1_bundle_and_rejects_mismatched_version_marker() {
+    fn decrypts_legacy_v1_and_v2_bundles_and_rejects_mismatched_markers() {
+        let mut v2_source = dataset();
+        v2_source.schema_version = 2;
+        let holdings = v2_source
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "holdings")
+            .unwrap();
+        for index in [9, 8] {
+            holdings.columns.remove(index);
+            for row in &mut holdings.rows {
+                row.remove(index);
+            }
+        }
+        v2_source.validate().unwrap();
+        let key = parse_recovery_key(&generate_recovery_key()).unwrap();
+        let mut v2_blob = encrypt_dataset(&v2_source, &key).unwrap();
+        v2_blob.schema_version = 2;
+        assert_eq!(decrypt_dataset(&v2_blob, &key).unwrap().schema_version, 2);
+
         let mut source = dataset();
         source.schema_version = 1;
         assert_eq!(source.tables.pop().unwrap().name, "portfolio_checkins");
+        let holdings = source
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "holdings")
+            .unwrap();
+        for index in [9, 8] {
+            holdings.columns.remove(index);
+            for row in &mut holdings.rows {
+                row.remove(index);
+            }
+        }
         source.validate().unwrap();
-        let key = parse_recovery_key(&generate_recovery_key()).unwrap();
         let mut blob = encrypt_dataset(&source, &key).unwrap();
         blob.schema_version = 1;
 

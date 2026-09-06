@@ -9,6 +9,7 @@ mod models;
 mod planning;
 mod risk;
 mod secrets;
+mod valuation;
 
 use std::{collections::HashSet, net::SocketAddr, path::PathBuf, sync::Arc};
 
