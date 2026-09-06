@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Mutex};
+use std::{collections::HashSet, path::Path, sync::Mutex};
 
 use chrono::{NaiveDate, Utc};
 use rusqlite::{params, types::ValueRef, Connection, Transaction};
@@ -10,9 +10,10 @@ use crate::{
     error::{AppError, AppResult},
     models::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
-        DecisionReviewInput, FinancialProfile, Goal, GoalInput, Holding, HoldingInput,
-        InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem, ModelConfig,
-        ReminderSettings, ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary, Snapshot,
+        DecisionReviewInput, DecisionRuleCheck, FinancialProfile, Goal, GoalInput, Holding,
+        HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem,
+        ModelConfig, ReminderSettings, ResearchEvidence, ResearchEvidenceInput,
+        ReviewReminderSummary, RuleEffectivenessItem, RuleEffectivenessSummary, Snapshot,
         StoredAnalysis, SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
     },
     planning, risk,
@@ -774,6 +775,13 @@ impl Database {
         }
         chrono::NaiveDate::parse_from_str(&entry.review_date, "%Y-%m-%d")
             .map_err(|_| AppError::Validation("复盘日期格式无效".into()))?;
+        let active_rules = self
+            .investment_rules()?
+            .into_iter()
+            .filter(|rule| rule.active)
+            .collect::<Vec<_>>();
+        let canonical_rule_checks =
+            validate_and_canonicalize_rule_checks(&entry.rule_checks, &active_rules)?;
         if entry.source_action_index.is_some() && entry.source_analysis_id.is_none() {
             return Err(AppError::Validation(
                 "AI 行动序号必须关联一条分析记录".into(),
@@ -816,6 +824,7 @@ impl Database {
             .unwrap_or_else(|| Uuid::new_v4().to_string());
         let mut stored = entry.clone();
         stored.id = Some(id.clone());
+        stored.rule_checks = canonical_rule_checks;
         conn.execute(
             "INSERT INTO decisions (id, asset_name, payload, review_date, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![id, entry.asset_name.trim(), serde_json::to_string(&stored)?, entry.review_date, Utc::now().to_rfc3339()],
@@ -867,6 +876,7 @@ impl Database {
                 position_pct: entry.position_pct,
                 invalidation: entry.invalidation,
                 review_date: entry.review_date,
+                rule_checks: entry.rule_checks,
                 created_at,
                 review,
             });
@@ -1058,6 +1068,101 @@ impl Database {
             });
         }
         Ok(revisions)
+    }
+
+    pub fn rule_effectiveness(&self) -> AppResult<RuleEffectivenessSummary> {
+        let decisions = self.decisions()?;
+        let rules = self.investment_rules()?;
+        let mut items = Vec::with_capacity(rules.len());
+
+        for rule in rules {
+            let checks = decisions
+                .iter()
+                .filter_map(|decision| {
+                    decision
+                        .rule_checks
+                        .iter()
+                        .find(|check| check.rule_id == rule.id)
+                        .map(|check| (check, decision.review.as_ref()))
+                })
+                .collect::<Vec<_>>();
+            let applicable = checks
+                .iter()
+                .filter(|(check, _)| check.status != "不适用")
+                .collect::<Vec<_>>();
+            let followed = applicable
+                .iter()
+                .filter(|(check, _)| check.status == "遵守")
+                .collect::<Vec<_>>();
+            let deviated = applicable
+                .iter()
+                .filter(|(check, _)| check.status == "偏离")
+                .collect::<Vec<_>>();
+            let followed_process = followed
+                .iter()
+                .filter_map(|(_, review)| review.map(|value| value.process_rating as f64))
+                .collect::<Vec<_>>();
+            let deviated_process = deviated
+                .iter()
+                .filter_map(|(_, review)| review.map(|value| value.process_rating as f64))
+                .collect::<Vec<_>>();
+            let mut observed_revisions = checks
+                .iter()
+                .map(|(check, _)| check.rule_revision)
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            observed_revisions.sort_unstable();
+            let reviewed_count = applicable
+                .iter()
+                .filter(|(_, review)| review.is_some())
+                .count();
+            let followed_process_average = average(&followed_process);
+            let deviated_process_average = average(&deviated_process);
+
+            items.push(RuleEffectivenessItem {
+                rule_id: rule.id,
+                current_revision: rule.revision,
+                observed_revisions,
+                category: rule.category,
+                statement: rule.statement,
+                active: rule.active,
+                decision_count: checks.len(),
+                applicable_count: applicable.len(),
+                followed_count: followed.len(),
+                deviated_count: deviated.len(),
+                reviewed_count,
+                followed_process_average,
+                deviated_process_average,
+                signal: rule_effectiveness_signal(
+                    reviewed_count,
+                    followed_process_average,
+                    deviated_process_average,
+                    followed_process.len(),
+                    deviated_process.len(),
+                ),
+            });
+        }
+
+        let evaluated_decisions = decisions
+            .iter()
+            .filter(|decision| !decision.rule_checks.is_empty())
+            .count();
+        let applicable_checks = items.iter().map(|item| item.applicable_count).sum();
+        let followed_checks = items.iter().map(|item| item.followed_count).sum();
+        let reviewed_checks = items.iter().map(|item| item.reviewed_count).sum();
+        let adherence_pct = (applicable_checks > 0)
+            .then(|| followed_checks as f64 / applicable_checks as f64 * 100.0);
+
+        Ok(RuleEffectivenessSummary {
+            total_decisions: decisions.len(),
+            evaluated_decisions,
+            applicable_checks,
+            followed_checks,
+            adherence_pct,
+            reviewed_checks,
+            rules: items,
+        })
     }
 
     pub fn save_system_review(&self, input: &SystemReviewInput) -> AppResult<SystemReviewRecord> {
@@ -1348,6 +1453,7 @@ impl Database {
                     "reviewDate": record.review_date,
                     "sourceAnalysisId": record.source_analysis_id,
                     "sourceActionIndex": record.source_action_index,
+                    "ruleChecks": record.rule_checks,
                     "review": review_payload,
                 }),
                 created_at: record.created_at,
@@ -1576,6 +1682,84 @@ fn validate_non_negative(values: &[f64]) -> AppResult<()> {
     Ok(())
 }
 
+fn validate_and_canonicalize_rule_checks(
+    checks: &[DecisionRuleCheck],
+    active_rules: &[InvestmentRule],
+) -> AppResult<Vec<DecisionRuleCheck>> {
+    if checks.len() != active_rules.len() {
+        return Err(AppError::Validation(
+            "请逐条确认当前所有有效投资规则后再冻结决策".into(),
+        ));
+    }
+    let mut seen = HashSet::new();
+    let mut canonical = Vec::with_capacity(active_rules.len());
+    for rule in active_rules {
+        let check = checks
+            .iter()
+            .find(|check| check.rule_id == rule.id)
+            .ok_or_else(|| AppError::Validation("缺少当前有效规则的确认结果".into()))?;
+        if !seen.insert(check.rule_id.as_str()) {
+            return Err(AppError::Validation("投资规则确认不能重复".into()));
+        }
+        if check.rule_revision != rule.revision {
+            return Err(AppError::Validation(
+                "投资规则已修订，请刷新并按最新版本重新确认".into(),
+            ));
+        }
+        if !matches!(check.status.as_str(), "遵守" | "偏离" | "不适用") {
+            return Err(AppError::Validation(
+                "每条有效规则必须明确标记为遵守、偏离或不适用".into(),
+            ));
+        }
+        if check.status == "偏离" && check.note.trim().is_empty() {
+            return Err(AppError::Validation("偏离规则时必须记录原因".into()));
+        }
+        if check.note.chars().count() > 1_000 {
+            return Err(AppError::Validation(
+                "规则确认备注不能超过 1000 个字符".into(),
+            ));
+        }
+        canonical.push(DecisionRuleCheck {
+            rule_id: rule.id.clone(),
+            rule_revision: rule.revision,
+            category: rule.category.clone(),
+            statement: rule.statement.clone(),
+            trigger: rule.trigger.clone(),
+            status: check.status.clone(),
+            note: check.note.trim().into(),
+        });
+    }
+    Ok(canonical)
+}
+
+fn average(values: &[f64]) -> Option<f64> {
+    (!values.is_empty()).then(|| values.iter().sum::<f64>() / values.len() as f64)
+}
+
+fn rule_effectiveness_signal(
+    reviewed_count: usize,
+    followed_average: Option<f64>,
+    deviated_average: Option<f64>,
+    followed_reviewed: usize,
+    deviated_reviewed: usize,
+) -> String {
+    if reviewed_count < 3 {
+        return "样本不足：继续记录过程".into();
+    }
+    match (followed_average, deviated_average) {
+        (Some(followed), Some(deviated)) if followed >= deviated + 0.5 => {
+            "遵守时过程评分更高".into()
+        }
+        (Some(followed), Some(deviated)) if followed + 0.5 < deviated => {
+            "反常信号：需要复核规则".into()
+        }
+        (Some(_), Some(_)) => "暂无明显过程差异".into(),
+        (Some(_), None) if followed_reviewed >= 3 => "只有遵守样本，缺少偏离对照".into(),
+        (None, Some(_)) if deviated_reviewed >= 3 => "只有偏离样本，无法判断规则作用".into(),
+        _ => "样本不足：继续记录过程".into(),
+    }
+}
+
 fn validate_percentage(value: f64, label: &str) -> AppResult<()> {
     if !value.is_finite() || !(0.0..=100.0).contains(&value) {
         return Err(AppError::Validation(format!("{label}必须在 0—100% 之间")));
@@ -1796,6 +1980,41 @@ mod tests {
                 currency: "CNY".into(),
             })
             .unwrap();
+        let rule = source
+            .add_investment_rule(&InvestmentRuleInput {
+                category: "仓位".into(),
+                statement: "单一主动仓位不超过 8%".into(),
+                trigger: "任何新建或加仓决定".into(),
+                rationale: "限制永久损失".into(),
+                active: true,
+                source_review_id: None,
+            })
+            .unwrap();
+        source
+            .save_decision(&DecisionEntry {
+                id: Some("synced-decision".into()),
+                source_analysis_id: None,
+                source_action_index: None,
+                asset_name: "宽基指数".into(),
+                thesis: "长期风险溢价".into(),
+                counter_thesis: "估值偏高".into(),
+                expected_return_pct: 8.0,
+                downside_pct: 20.0,
+                confidence_pct: 60.0,
+                position_pct: 8.0,
+                invalidation: "风险容量下降".into(),
+                review_date: "2026-12-01".into(),
+                rule_checks: vec![DecisionRuleCheck {
+                    rule_id: rule.id,
+                    rule_revision: rule.revision,
+                    category: rule.category,
+                    statement: rule.statement,
+                    trigger: rule.trigger,
+                    status: "遵守".into(),
+                    note: "".into(),
+                }],
+            })
+            .unwrap();
         source.set_setting("model.name", "never-sync-this").unwrap();
 
         let dataset = source.export_sync_data().unwrap();
@@ -1813,6 +2032,9 @@ mod tests {
         let restored = target.snapshot().unwrap();
         assert_eq!(restored.holdings.len(), 1);
         assert_eq!(restored.profile.emergency_fund, 48_000.0);
+        let restored_decision = target.decisions().unwrap().remove(0);
+        assert_eq!(restored_decision.rule_checks.len(), 1);
+        assert_eq!(restored_decision.rule_checks[0].status, "遵守");
         assert_eq!(
             target.setting("model.name").unwrap().as_deref(),
             Some("keep-local-model")
@@ -1867,6 +2089,7 @@ mod tests {
             position_pct: 30.0,
             invalidation: "风险容量改变".into(),
             review_date: "2026-12-01".into(),
+            rule_checks: vec![],
         })
         .unwrap();
         let id = db.decisions().unwrap()[0].id.clone();
@@ -1914,6 +2137,7 @@ mod tests {
             position_pct: 30.0,
             invalidation: "风险容量下降".into(),
             review_date: "".into(),
+            rule_checks: vec![],
         });
         assert!(matches!(result, Err(AppError::Validation(_))));
     }
@@ -1943,6 +2167,7 @@ mod tests {
             position_pct: 30.0,
             invalidation: "应急金不足".into(),
             review_date: "2026-09-06".into(),
+            rule_checks: vec![],
         })
         .unwrap();
         db.save_decision(&DecisionEntry {
@@ -1958,6 +2183,7 @@ mod tests {
             position_pct: 20.0,
             invalidation: "久期风险变化".into(),
             review_date: "2026-10-01".into(),
+            rule_checks: vec![],
         })
         .unwrap();
 
@@ -2041,6 +2267,7 @@ mod tests {
             position_pct: 30.0,
             invalidation: "风险容量下降".into(),
             review_date: "2026-12-01".into(),
+            rule_checks: vec![],
         };
         assert!(matches!(
             db.save_decision(&base),
@@ -2084,6 +2311,7 @@ mod tests {
         let entry: DecisionEntry = serde_json::from_str(payload).unwrap();
         assert_eq!(entry.source_analysis_id, None);
         assert_eq!(entry.source_action_index, None);
+        assert!(entry.rule_checks.is_empty());
     }
 
     #[test]
@@ -2356,6 +2584,106 @@ mod tests {
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].statement, "单一主动仓位不超过 8%");
         assert_eq!(history[1].statement, "单一主动仓位不超过 10%");
+    }
+
+    #[test]
+    fn freezes_rule_checks_and_tracks_process_association_after_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        let input = InvestmentRuleInput {
+            category: "仓位".into(),
+            statement: "单一主动仓位不超过 8%".into(),
+            trigger: "任何新建或加仓决定".into(),
+            rationale: "限制单一判断错误的永久损失".into(),
+            active: true,
+            source_review_id: None,
+        };
+        let rule = db.add_investment_rule(&input).unwrap();
+        let decision = |id: &str, status: &str, note: &str| DecisionEntry {
+            id: Some(id.into()),
+            source_analysis_id: None,
+            source_action_index: None,
+            asset_name: "主动基金".into(),
+            thesis: "策略存在长期超额".into(),
+            counter_thesis: "超额可能只是风格暴露".into(),
+            expected_return_pct: 10.0,
+            downside_pct: 20.0,
+            confidence_pct: 60.0,
+            position_pct: 8.0,
+            invalidation: "连续两期风格调整后仍无超额".into(),
+            review_date: "2026-12-01".into(),
+            rule_checks: vec![DecisionRuleCheck {
+                rule_id: rule.id.clone(),
+                rule_revision: rule.revision,
+                category: "伪造类别".into(),
+                statement: "伪造规则".into(),
+                trigger: "伪造触发条件".into(),
+                status: status.into(),
+                note: note.into(),
+            }],
+        };
+
+        let mut missing_check = decision("missing-check", "遵守", "");
+        missing_check.rule_checks.clear();
+        assert!(matches!(
+            db.save_decision(&missing_check),
+            Err(AppError::Validation(_))
+        ));
+        assert!(matches!(
+            db.save_decision(&decision("missing-note", "偏离", "")),
+            Err(AppError::Validation(_))
+        ));
+
+        for (id, status, note, rating) in [
+            ("followed-1", "遵守", "", 5),
+            ("followed-2", "遵守", "", 4),
+            ("deviated-1", "偏离", "因为已有相关敞口", 2),
+        ] {
+            db.save_decision(&decision(id, status, note)).unwrap();
+            db.save_decision_review(
+                id,
+                &DecisionReviewInput {
+                    outcome_summary: "按原计划完成复核".into(),
+                    actual_return_pct: None,
+                    thesis_status: "尚不明确".into(),
+                    process_rating: rating,
+                    lessons: "继续记录规则与过程之间的关系".into(),
+                },
+            )
+            .unwrap();
+        }
+
+        let stored = db
+            .decisions()
+            .unwrap()
+            .into_iter()
+            .find(|item| item.id == "followed-1")
+            .unwrap();
+        assert_eq!(stored.rule_checks[0].category, "仓位");
+        assert_eq!(stored.rule_checks[0].statement, input.statement);
+        assert_eq!(stored.rule_checks[0].trigger, input.trigger);
+
+        let revised = db
+            .update_investment_rule(
+                &rule.id,
+                &InvestmentRuleInput {
+                    statement: "单一主动仓位不超过 6%".into(),
+                    ..input
+                },
+            )
+            .unwrap();
+        let summary = db.rule_effectiveness().unwrap();
+        assert_eq!(summary.total_decisions, 3);
+        assert_eq!(summary.evaluated_decisions, 3);
+        assert!((summary.adherence_pct.unwrap() - 200.0 / 3.0).abs() < 1e-10);
+        let item = &summary.rules[0];
+        assert_eq!(item.current_revision, revised.revision);
+        assert_eq!(item.observed_revisions, vec![1]);
+        assert_eq!(item.followed_count, 2);
+        assert_eq!(item.deviated_count, 1);
+        assert_eq!(item.followed_process_average, Some(4.5));
+        assert_eq!(item.deviated_process_average, Some(2.0));
+        assert_eq!(item.signal, "遵守时过程评分更高");
     }
 
     #[test]

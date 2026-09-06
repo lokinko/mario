@@ -22,6 +22,7 @@ import type {
   ResearchEvidenceInput,
   ReminderSettings,
   ReviewReminderSummary,
+  RuleEffectivenessSummary,
   RecoveryKeyResult,
   Snapshot,
   SystemReviewInput,
@@ -223,6 +224,10 @@ export async function acknowledgeReviewReminder(fingerprint: string): Promise<Re
 
 export async function getInvestmentRules(): Promise<InvestmentRule[]> {
   return httpRequest<InvestmentRule[]>("/investment-rules");
+}
+
+export async function getRuleEffectiveness(): Promise<RuleEffectivenessSummary> {
+  return httpRequest<RuleEffectivenessSummary>("/rule-effectiveness");
 }
 
 export async function saveInvestmentRule(rule: InvestmentRuleInput): Promise<InvestmentRule> {

@@ -50,6 +50,7 @@ import {
   getModelConfig,
   getResearchEvidence,
   getReviewReminders,
+  getRuleEffectiveness,
   getSnapshot,
   getSystemReviews,
   previewAnalysis,
@@ -90,6 +91,7 @@ import type {
   DecisionEntry,
   DecisionRecord,
   DecisionReview,
+  DecisionRuleCheck,
   FinancialProfile,
   Goal,
   Holding,
@@ -106,6 +108,8 @@ import type {
   SystemReviewInput,
   SystemReviewRecord,
   ReviewReminderSummary,
+  RuleCheckStatus,
+  RuleEffectivenessSummary,
 } from "./types";
 import {
   checkAndSendReviewReminder,
@@ -644,12 +648,25 @@ function EvidenceWorkbench({ navigate, flash }: { navigate: (v: View) => void; f
 
 const emptyDecision: DecisionEntry = {
   assetName: "", thesis: "", counterThesis: "", expectedReturnPct: 0, downsidePct: 0,
-  confidencePct: 50, positionPct: 0, invalidation: "", reviewDate: "",
+  confidencePct: 50, positionPct: 0, invalidation: "", reviewDate: "", ruleChecks: [],
 };
+
+function checksForRules(rules: InvestmentRule[]): DecisionRuleCheck[] {
+  return rules.filter((rule) => rule.active).map((rule) => ({
+    ruleId: rule.id,
+    ruleRevision: rule.revision,
+    category: rule.category,
+    statement: rule.statement,
+    trigger: rule.trigger,
+    status: "待确认",
+    note: "",
+  }));
+}
 
 function DecisionJournal({ flash, seed, clearSeed, onOpenAnalysis }: { flash: (s: string) => void; seed: DecisionEntry | null; clearSeed: () => void; onOpenAnalysis: (id: string) => void }) {
   const [entry, setEntry] = useState({ ...emptyDecision });
   const [records, setRecords] = useState<DecisionRecord[]>([]);
+  const [rules, setRules] = useState<InvestmentRule[]>([]);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [review, setReview] = useState<DecisionReview>({ outcomeSummary: "", thesisStatus: "尚不明确", processRating: 3, lessons: "" });
   const [saving, setSaving] = useState(false);
@@ -657,12 +674,29 @@ function DecisionJournal({ flash, seed, clearSeed, onOpenAnalysis }: { flash: (s
   const expectedValue = entry.confidencePct / 100 * entry.expectedReturnPct - (1 - entry.confidencePct / 100) * Math.abs(entry.downsidePct);
 
   const refresh = async () => {
-    try { setRecords(await getDecisions()); setError(""); }
+    try {
+      const [nextRecords, nextRules] = await Promise.all([getDecisions(), getInvestmentRules()]);
+      setRecords(nextRecords);
+      setRules(nextRules);
+      setEntry((current) => current.ruleChecks?.length ? current : { ...current, ruleChecks: checksForRules(nextRules) });
+      setError("");
+    }
     catch (nextError) { setError(String(nextError)); }
   };
 
   useEffect(() => { void refresh(); }, []);
-  useEffect(() => { if (seed) setEntry({ ...seed }); }, [seed]);
+  useEffect(() => { if (seed) setEntry({ ...seed, ruleChecks: checksForRules(rules) }); }, [seed, rules]);
+
+  const activeRules = rules.filter((rule) => rule.active);
+  const incompleteRuleChecks = activeRules.length !== (entry.ruleChecks?.length ?? 0)
+    || (entry.ruleChecks ?? []).some((check) => check.status === "待确认" || (check.status === "偏离" && !check.note.trim()));
+
+  const updateRuleCheck = (ruleId: string, update: Partial<DecisionRuleCheck>) => {
+    setEntry({
+      ...entry,
+      ruleChecks: (entry.ruleChecks ?? []).map((check) => check.ruleId === ruleId ? { ...check, ...update } : check),
+    });
+  };
 
   const reviewed = records.filter((item) => item.review);
   const calibration = useMemo(() => {
@@ -680,12 +714,12 @@ function DecisionJournal({ flash, seed, clearSeed, onOpenAnalysis }: { flash: (s
     : null;
 
   const persist = async () => {
-    if (!entry.assetName || !entry.thesis || !entry.counterThesis || !entry.invalidation || !entry.reviewDate) return;
+    if (!entry.assetName || !entry.thesis || !entry.counterThesis || !entry.invalidation || !entry.reviewDate || incompleteRuleChecks) return;
     setSaving(true);
     try {
       await saveDecision(entry);
       flash("决策快照已冻结，可用于未来复盘");
-      setEntry({ ...emptyDecision });
+      setEntry({ ...emptyDecision, ruleChecks: checksForRules(rules) });
       clearSeed();
       await refresh();
     } catch (nextError) { setError(String(nextError)); }
@@ -732,7 +766,16 @@ function DecisionJournal({ flash, seed, clearSeed, onOpenAnalysis }: { flash: (s
           <label><span>计划复盘日</span><input type="date" value={entry.reviewDate} onChange={(e) => setEntry({ ...entry, reviewDate: e.target.value })} /></label>
           <div className={`ev-card ${expectedValue >= 0 ? "positive-bg" : "negative-bg"}`}><span>粗略概率加权结果</span><strong>{expectedValue > 0 ? "+" : ""}{expectedValue.toFixed(1)}%</strong><small>仅作思考校准，不代表预测</small></div>
         </div>
-        <div className="form-actions"><p>必填：投资对象、正反逻辑、证伪条件与复盘日期</p><button className="primary" onClick={persist} disabled={saving || !entry.assetName || !entry.thesis || !entry.counterThesis || !entry.invalidation || !entry.reviewDate}><Save size={16} />冻结决策快照</button></div>
+        <div className="rule-check-workbench">
+          <div className="rule-check-title"><div><span>决策前规则检查</span><strong>逐条确认，而不是事后声称自己遵守了纪律</strong></div><small>{activeRules.length ? `${activeRules.length} 条当前有效规则` : "当前没有有效规则"}</small></div>
+          {activeRules.length === 0 && <div className="empty">还没有需要确认的个人规则。可在“复盘与规则”中把经验沉淀成可执行约束。</div>}
+          <div className="rule-check-list">{(entry.ruleChecks ?? []).map((check) => <article key={check.ruleId} className={`status-${check.status}`}>
+            <div><span>{check.category} · v{check.ruleRevision}</span><strong>{check.statement}</strong><small>触发：{check.trigger}</small></div>
+            <label><span>本次判断</span><select value={check.status} onChange={(event) => updateRuleCheck(check.ruleId, { status: event.target.value as RuleCheckStatus, note: event.target.value === "偏离" ? check.note : "" })}><option>待确认</option><option>遵守</option><option>偏离</option><option>不适用</option></select></label>
+            {check.status === "偏离" && <label className="rule-deviation-note"><span>偏离原因（必填）</span><input maxLength={1000} value={check.note} onChange={(event) => updateRuleCheck(check.ruleId, { note: event.target.value })} placeholder="为什么仍决定偏离？需要什么证据纠正？" /></label>}
+          </article>)}</div>
+        </div>
+        <div className="form-actions"><p>{incompleteRuleChecks ? "请先完成所有有效规则的逐条确认" : "必填：投资对象、正反逻辑、证伪条件与复盘日期"}</p><button className="primary" onClick={persist} disabled={saving || !entry.assetName || !entry.thesis || !entry.counterThesis || !entry.invalidation || !entry.reviewDate || incompleteRuleChecks}><Save size={16} />冻结决策快照</button></div>
       </section>
 
       <section className="panel decision-history">
@@ -751,6 +794,7 @@ function DecisionJournal({ flash, seed, clearSeed, onOpenAnalysis }: { flash: (s
                 <button className="secondary" onClick={() => beginReview(record)}>{record.review ? "更新复盘" : "开始复盘"}</button>
               </div>
               <div className="decision-thesis"><p><b>原始逻辑</b>{record.thesis}</p><p><b>证伪条件</b>{record.invalidation}</p>{record.sourceAnalysisId && <button className="decision-provenance" onClick={() => onOpenAnalysis(record.sourceAnalysisId!)}><BrainCircuit size={12} />源自 AI 分析 · 行动 {(record.sourceActionIndex ?? 0) + 1} · 打开原记录</button>}</div>
+              {record.ruleChecks?.length > 0 && <div className="decision-rule-snapshot">{record.ruleChecks.map((check) => <div key={check.ruleId}><span className={`rule-check-status status-${check.status}`}>{check.status}</span><strong>{check.statement}</strong><small>v{check.ruleRevision}{check.note ? ` · ${check.note}` : ""}</small></div>)}</div>}
               {record.review && reviewingId !== record.id && <div className="review-result"><span>{record.review.thesisStatus}</span><p>{record.review.outcomeSummary}</p><strong>过程 {record.review.processRating}/5</strong>{record.review.actualReturnPct !== undefined && <em className={record.review.actualReturnPct >= 0 ? "gain" : "loss"}>{record.review.actualReturnPct >= 0 ? "+" : ""}{record.review.actualReturnPct}%</em>}</div>}
               {reviewingId === record.id && <div className="review-form">
                 <label><span>原始逻辑结果</span><select value={review.thesisStatus} onChange={(e) => setReview({ ...review, thesisStatus: e.target.value as DecisionReview["thesisStatus"] })}><option>成立</option><option>部分成立</option><option>失效</option><option>尚不明确</option></select></label>
@@ -814,18 +858,20 @@ function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash:
   const [ruleHistories, setRuleHistories] = useState<Record<string, InvestmentRuleRevision[]>>({});
   const [saving, setSaving] = useState(false);
   const [reminder, setReminder] = useState<ReviewReminderSummary | null>(null);
+  const [effectiveness, setEffectiveness] = useState<RuleEffectivenessSummary | null>(null);
   const [reminderSaving, setReminderSaving] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = async () => {
     try {
-      const [nextDecisions, nextRules, nextReviews, nextReminder] = await Promise.all([
-        getDecisions(), getInvestmentRules(), getSystemReviews(), getReviewReminders(),
+      const [nextDecisions, nextRules, nextReviews, nextReminder, nextEffectiveness] = await Promise.all([
+        getDecisions(), getInvestmentRules(), getSystemReviews(), getReviewReminders(), getRuleEffectiveness(),
       ]);
       setDecisions(nextDecisions);
       setRules(nextRules);
       setReviews(nextReviews);
       setReminder(nextReminder);
+      setEffectiveness(nextEffectiveness);
       setError("");
     } catch (nextError) { setError(String(nextError)); }
   };
@@ -958,6 +1004,22 @@ function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash:
         <button className={reminder?.enabled ? "secondary" : "primary"} disabled={reminderSaving || !isDesktopApp()} onClick={toggleReminders}>
           {reminderSaving ? "处理中…" : reminder?.enabled ? "关闭提醒" : isDesktopApp() ? "开启提醒" : "仅桌面应用可用"}
         </button>
+      </section>
+
+      <section className="panel rule-effectiveness-panel">
+        <div className="panel-title"><div><span>规则有效性追踪</span><h2>观察纪律与过程质量的关系</h2></div><small className="causality-note">只显示关联，不宣称因果</small></div>
+        <div className="effectiveness-summary">
+          <article><span>规则检查覆盖</span><strong>{effectiveness?.totalDecisions ? `${effectiveness.evaluatedDecisions}/${effectiveness.totalDecisions}` : "—"}</strong><small>启用此能力后的决策才计入</small></article>
+          <article><span>适用规则遵守率</span><strong>{effectiveness?.adherencePct == null ? "—" : `${effectiveness.adherencePct.toFixed(0)}%`}</strong><small>不适用规则不进入分母</small></article>
+          <article><span>已复盘规则样本</span><strong>{effectiveness?.reviewedChecks ?? 0}</strong><small>按决策过程评分比较</small></article>
+        </div>
+        {!effectiveness?.rules.length && <div className="empty">建立个人投资规则后，每次冻结决策都会先要求逐条确认。</div>}
+        <div className="effectiveness-list">{effectiveness?.rules.map((item) => <article key={item.ruleId} className={item.active ? "" : "inactive"}>
+          <div className="effectiveness-rule"><span>{item.category} · 当前 v{item.currentRevision}{item.active ? "" : " · 已停用"}</span><strong>{item.statement}</strong><small>{item.observedRevisions.length ? `已有决策覆盖版本 ${item.observedRevisions.join("、")}` : "尚无决策样本"}</small></div>
+          <div className="effectiveness-counts"><span>适用 <b>{item.applicableCount}</b></span><span>遵守 <b>{item.followedCount}</b></span><span>偏离 <b>{item.deviatedCount}</b></span><span>已复盘 <b>{item.reviewedCount}</b></span></div>
+          <div className="process-comparison"><span>遵守后的过程评分 <b>{item.followedProcessAverage == null ? "—" : item.followedProcessAverage.toFixed(1)}</b></span><span>偏离后的过程评分 <b>{item.deviatedProcessAverage == null ? "—" : item.deviatedProcessAverage.toFixed(1)}</b></span><strong className={item.signal.startsWith("反常") ? "warning-text" : ""}>{item.signal}</strong></div>
+        </article>)}</div>
+        <p className="effectiveness-disclaimer">过程评分也可能受规则本身影响，样本存在选择偏差。这里用于发现值得复核的规则，不用于证明某条规则提高收益。</p>
       </section>
 
       {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}

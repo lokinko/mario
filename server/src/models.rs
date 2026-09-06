@@ -439,6 +439,21 @@ pub struct DecisionEntry {
     pub position_pct: f64,
     pub invalidation: String,
     pub review_date: String,
+    #[serde(default)]
+    pub rule_checks: Vec<DecisionRuleCheck>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionRuleCheck {
+    pub rule_id: String,
+    pub rule_revision: i64,
+    pub category: String,
+    pub statement: String,
+    pub trigger: String,
+    pub status: String,
+    #[serde(default)]
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -477,8 +492,40 @@ pub struct DecisionRecord {
     pub position_pct: f64,
     pub invalidation: String,
     pub review_date: String,
+    pub rule_checks: Vec<DecisionRuleCheck>,
     pub created_at: String,
     pub review: Option<DecisionReview>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleEffectivenessSummary {
+    pub total_decisions: usize,
+    pub evaluated_decisions: usize,
+    pub applicable_checks: usize,
+    pub followed_checks: usize,
+    pub adherence_pct: Option<f64>,
+    pub reviewed_checks: usize,
+    pub rules: Vec<RuleEffectivenessItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleEffectivenessItem {
+    pub rule_id: String,
+    pub current_revision: i64,
+    pub observed_revisions: Vec<i64>,
+    pub category: String,
+    pub statement: String,
+    pub active: bool,
+    pub decision_count: usize,
+    pub applicable_count: usize,
+    pub followed_count: usize,
+    pub deviated_count: usize,
+    pub reviewed_count: usize,
+    pub followed_process_average: Option<f64>,
+    pub deviated_process_average: Option<f64>,
+    pub signal: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -36,7 +36,8 @@ use models::{
     InvestmentRuleInput, InvestmentRuleRevision, ModelConfig, ModelConfigInput,
     ModelConnectionTest, ReminderSettings, ReminderSettingsInput, ResearchEvidence,
     ResearchEvidenceInput, ResearchEvidenceStatusInput, ReviewReminderAcknowledgeInput,
-    ReviewReminderSummary, Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
+    ReviewReminderSummary, RuleEffectivenessSummary, Snapshot, StoredAnalysis, SystemReviewInput,
+    SystemReviewRecord,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -103,6 +104,7 @@ async fn main() -> AppResult<()> {
             "/api/investment-rules/{id}/history",
             get(investment_rule_history),
         )
+        .route("/api/rule-effectiveness", get(rule_effectiveness))
         .route(
             "/api/system-reviews",
             get(system_reviews).post(save_system_review),
@@ -287,6 +289,11 @@ async fn investment_rule_history(
     Path(id): Path<String>,
 ) -> AppResult<Json<Vec<InvestmentRuleRevision>>> {
     Ok(Json(state.db.investment_rule_history(&id)?))
+}
+async fn rule_effectiveness(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<RuleEffectivenessSummary>> {
+    Ok(Json(state.db.rule_effectiveness()?))
 }
 async fn system_reviews(
     State(state): State<Arc<AppState>>,

@@ -342,6 +342,19 @@ export interface DecisionEntry {
   positionPct: number;
   invalidation: string;
   reviewDate: string;
+  ruleChecks?: DecisionRuleCheck[];
+}
+
+export type RuleCheckStatus = "待确认" | "遵守" | "偏离" | "不适用";
+
+export interface DecisionRuleCheck {
+  ruleId: string;
+  ruleRevision: number;
+  category: string;
+  statement: string;
+  trigger: string;
+  status: RuleCheckStatus;
+  note: string;
 }
 
 export interface DecisionReview {
@@ -355,6 +368,7 @@ export interface DecisionReview {
 
 export interface DecisionRecord extends Omit<DecisionEntry, "id"> {
   id: string;
+  ruleChecks: DecisionRuleCheck[];
   createdAt: string;
   review?: DecisionReview;
 }
@@ -370,6 +384,33 @@ export interface ReviewReminderSummary {
   fingerprint: string;
   shouldNotify: boolean;
   checkedOn: string;
+}
+
+export interface RuleEffectivenessSummary {
+  totalDecisions: number;
+  evaluatedDecisions: number;
+  applicableChecks: number;
+  followedChecks: number;
+  adherencePct: number | null;
+  reviewedChecks: number;
+  rules: RuleEffectivenessItem[];
+}
+
+export interface RuleEffectivenessItem {
+  ruleId: string;
+  currentRevision: number;
+  observedRevisions: number[];
+  category: string;
+  statement: string;
+  active: boolean;
+  decisionCount: number;
+  applicableCount: number;
+  followedCount: number;
+  deviatedCount: number;
+  reviewedCount: number;
+  followedProcessAverage: number | null;
+  deviatedProcessAverage: number | null;
+  signal: string;
 }
 
 export interface InvestmentRuleInput {
