@@ -41,6 +41,8 @@ import {
   exportCloudRecoveryKey,
   getCloudConfig,
   getCloudStatus,
+  getAnalysis,
+  getAnalysisHistory,
   getInvestmentRules,
   getInvestmentRuleHistory,
   getModelConfig,
@@ -78,6 +80,8 @@ import type {
   AnalysisEvidenceReference,
   AnalysisRequest,
   AnalysisResult,
+  AnalysisHistoryItem,
+  AnalysisWorkflowTrace,
   CloudStatus,
   ContextSelection,
   DecisionEntry,
@@ -95,6 +99,7 @@ import type {
   ResearchEvidenceInput,
   Snapshot,
   StructuredAnalysis,
+  StoredAnalysis,
   SystemReviewInput,
   SystemReviewRecord,
 } from "./types";
@@ -156,6 +161,7 @@ function App() {
   const [startupError, setStartupError] = useState("");
   const [notice, setNotice] = useState("");
   const [decisionDraft, setDecisionDraft] = useState<DecisionEntry | null>(null);
+  const [analysisToOpen, setAnalysisToOpen] = useState<string | null>(null);
 
   const loadApplication = () => {
     setLoading(true);
@@ -238,9 +244,9 @@ function App() {
         {view === "dashboard" && <Dashboard snapshot={snapshot} model={model} navigate={navigate} />}
         {view === "foundation" && <Foundation snapshot={snapshot} onUpdate={setSnapshot} flash={flash} />}
         {view === "evidence" && <EvidenceWorkbench navigate={navigate} flash={flash} />}
-        {view === "decision" && <DecisionJournal flash={flash} seed={decisionDraft} clearSeed={() => setDecisionDraft(null)} />}
+        {view === "decision" && <DecisionJournal flash={flash} seed={decisionDraft} clearSeed={() => setDecisionDraft(null)} onOpenAnalysis={(id) => { setAnalysisToOpen(id); navigate("advisor"); }} />}
         {view === "review" && <ReviewCenter navigate={navigate} flash={flash} />}
-        {view === "advisor" && <Advisor model={model} navigate={navigate} onCreateDecisionDraft={(draft) => { setDecisionDraft(draft); navigate("decision"); }} />}
+        {view === "advisor" && <Advisor model={model} navigate={navigate} requestedAnalysisId={analysisToOpen} clearRequestedAnalysis={() => setAnalysisToOpen(null)} onCreateDecisionDraft={(draft) => { setDecisionDraft(draft); navigate("decision"); }} />}
         {view === "cloud" && <CloudSync flash={flash} />}
         {view === "settings" && <ModelSettings model={model} onUpdate={setModel} flash={flash} />}
       </main>
@@ -627,7 +633,7 @@ const emptyDecision: DecisionEntry = {
   confidencePct: 50, positionPct: 0, invalidation: "", reviewDate: "",
 };
 
-function DecisionJournal({ flash, seed, clearSeed }: { flash: (s: string) => void; seed: DecisionEntry | null; clearSeed: () => void }) {
+function DecisionJournal({ flash, seed, clearSeed, onOpenAnalysis }: { flash: (s: string) => void; seed: DecisionEntry | null; clearSeed: () => void; onOpenAnalysis: (id: string) => void }) {
   const [entry, setEntry] = useState({ ...emptyDecision });
   const [records, setRecords] = useState<DecisionRecord[]>([]);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
@@ -730,7 +736,7 @@ function DecisionJournal({ flash, seed, clearSeed }: { flash: (s: string) => voi
                 <div><span>复盘日</span><strong>{record.reviewDate || "未设定"}</strong></div>
                 <button className="secondary" onClick={() => beginReview(record)}>{record.review ? "更新复盘" : "开始复盘"}</button>
               </div>
-              <div className="decision-thesis"><p><b>原始逻辑</b>{record.thesis}</p><p><b>证伪条件</b>{record.invalidation}</p>{record.sourceAnalysisId && <span className="decision-provenance"><BrainCircuit size={12} />源自 AI 分析 · 行动 {(record.sourceActionIndex ?? 0) + 1} · 已由用户确认</span>}</div>
+              <div className="decision-thesis"><p><b>原始逻辑</b>{record.thesis}</p><p><b>证伪条件</b>{record.invalidation}</p>{record.sourceAnalysisId && <button className="decision-provenance" onClick={() => onOpenAnalysis(record.sourceAnalysisId!)}><BrainCircuit size={12} />源自 AI 分析 · 行动 {(record.sourceActionIndex ?? 0) + 1} · 打开原记录</button>}</div>
               {record.review && reviewingId !== record.id && <div className="review-result"><span>{record.review.thesisStatus}</span><p>{record.review.outcomeSummary}</p><strong>过程 {record.review.processRating}/5</strong>{record.review.actualReturnPct !== undefined && <em className={record.review.actualReturnPct >= 0 ? "gain" : "loss"}>{record.review.actualReturnPct >= 0 ? "+" : ""}{record.review.actualReturnPct}%</em>}</div>}
               {reviewingId === record.id && <div className="review-form">
                 <label><span>原始逻辑结果</span><select value={review.thesisStatus} onChange={(e) => setReview({ ...review, thesisStatus: e.target.value as DecisionReview["thesisStatus"] })}><option>成立</option><option>部分成立</option><option>失效</option><option>尚不明确</option></select></label>
@@ -962,7 +968,7 @@ function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash:
   );
 }
 
-function Advisor({ model, navigate, onCreateDecisionDraft }: { model: ModelConfig; navigate: (v: View) => void; onCreateDecisionDraft: (draft: DecisionEntry) => void }) {
+function Advisor({ model, navigate, requestedAnalysisId, clearRequestedAnalysis, onCreateDecisionDraft }: { model: ModelConfig; navigate: (v: View) => void; requestedAnalysisId: string | null; clearRequestedAnalysis: () => void; onCreateDecisionDraft: (draft: DecisionEntry) => void }) {
   const [question, setQuestion] = useState("请基于我的财务目标和当前组合，指出最需要优先处理的风险，并给出不依赖市场预测的改进方案。");
   const [deep, setDeep] = useState(true);
   const [memory, setMemory] = useState(true);
@@ -976,6 +982,10 @@ function Advisor({ model, navigate, onCreateDecisionDraft }: { model: ModelConfi
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
+  const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
+  const [storedAnalysis, setStoredAnalysis] = useState<StoredAnalysis | null>(null);
+  const [historyBusy, setHistoryBusy] = useState("");
+  const [historyError, setHistoryError] = useState("");
 
   useEffect(() => {
     const queued = window.sessionStorage.getItem("compass.advisorQuestion");
@@ -984,6 +994,30 @@ function Advisor({ model, navigate, onCreateDecisionDraft }: { model: ModelConfi
       window.sessionStorage.removeItem("compass.advisorQuestion");
     }
   }, []);
+
+  useEffect(() => {
+    getAnalysisHistory()
+      .then(setHistory)
+      .catch((nextError) => setHistoryError(String(nextError)));
+  }, []);
+
+  useEffect(() => {
+    if (!requestedAnalysisId) return;
+    setHistoryBusy(requestedAnalysisId);
+    setHistoryError("");
+    setResult(null);
+    setPreview(null);
+    getAnalysis(requestedAnalysisId)
+      .then((item) => {
+        setStoredAnalysis(item);
+        window.setTimeout(() => document.getElementById("stored-analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+      })
+      .catch((nextError) => setHistoryError(String(nextError)))
+      .finally(() => {
+        setHistoryBusy("");
+        clearRequestedAnalysis();
+      });
+  }, [requestedAnalysisId]);
 
   const request = (previewRevision?: string): AnalysisRequest => ({
     question,
@@ -1002,6 +1036,7 @@ function Advisor({ model, navigate, onCreateDecisionDraft }: { model: ModelConfi
     setPreview(null);
     setPreviewStale(false);
     setResult(null);
+    setStoredAnalysis(null);
   };
 
   const prepare = async () => {
@@ -1015,8 +1050,11 @@ function Advisor({ model, navigate, onCreateDecisionDraft }: { model: ModelConfi
     try {
       if (!preview) throw new Error("请先预览将发送的数据");
       if (previewStale) throw new Error("记忆选择已变化，请重新预览后再确认");
-      setResult(await runAnalysis(request(preview.contextRevision)));
+      const nextResult = await runAnalysis(request(preview.contextRevision));
+      setResult(nextResult);
+      setStoredAnalysis(null);
       setPreview(null);
+      getAnalysisHistory().then(setHistory).catch(() => undefined);
     } catch (e) { setError(String(e)); } finally { setRunning(false); }
   };
 
@@ -1025,6 +1063,24 @@ function Advisor({ model, navigate, onCreateDecisionDraft }: { model: ModelConfi
     setExcludedMemoryIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
     setPreviewStale(true);
     setResult(null);
+  };
+
+  const openStoredAnalysis = async (id: string) => {
+    setHistoryBusy(id); setHistoryError(""); setResult(null); setPreview(null);
+    try {
+      setStoredAnalysis(await getAnalysis(id));
+      window.setTimeout(() => document.getElementById("stored-analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    } catch (nextError) { setHistoryError(String(nextError)); }
+    finally { setHistoryBusy(""); }
+  };
+
+  const reuseStoredQuestion = (item: StoredAnalysis) => {
+    setQuestion(item.question);
+    setStoredAnalysis(null);
+    setResult(null);
+    setPreview(null);
+    setPreviewStale(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
@@ -1055,6 +1111,8 @@ function Advisor({ model, navigate, onCreateDecisionDraft }: { model: ModelConfi
       </section>
 
       {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
+      {historyError && <div className="error-box"><AlertTriangle size={18} />{historyError}</div>}
+      {storedAnalysis && <StoredAnalysisView item={storedAnalysis} onClose={() => setStoredAnalysis(null)} onReuse={() => reuseStoredQuestion(storedAnalysis)} onCreateDecisionDraft={onCreateDecisionDraft} />}
       {preview && <section className="panel preview-panel">
         <div className="panel-title"><div><span>发送前确认</span><h2>模型将看到这些内容</h2></div><div className="preview-size">{(preview.payloadBytes / 1024).toFixed(1)} KB</div></div>
         <div className="preview-provider"><Bot size={16} /><span><strong>{preview.model}</strong>{preview.provider} · {preview.workflow === "deep" ? "深度工作流" : "快速工作流"}</span></div>
@@ -1083,8 +1141,41 @@ function Advisor({ model, navigate, onCreateDecisionDraft }: { model: ModelConfi
         {result.workflowTrace.outputValidation && <details className="payload-details"><summary>输出检查：{result.workflowTrace.outputValidation.status === "repaired" ? "修复后通过" : "首次通过"}</summary><p className="memory-policy">已检查字段完整性和引用 ID 是否属于本次授权证据；不代表事实准确性或推理有效性已经得到验证。</p>{result.workflowTrace.outputValidation.errors.length > 0 && <pre>{result.workflowTrace.outputValidation.errors.join("\n")}</pre>}</details>}
         {result.workflowTrace.structuredReport ? <StructuredReportView report={result.workflowTrace.structuredReport} evidence={result.workflowTrace.evidenceCatalog ?? []} analysisId={result.id} onCreateDecisionDraft={onCreateDecisionDraft} /> : <div className="answer">{result.answer}</div>}<p className="disclaimer">{result.disclaimer}</p>
       </section>}
+      <section className="panel analysis-history-panel">
+        <div className="panel-title"><div><span>本地分析档案</span><h2>回看当时的问题，而不是依赖记忆改写</h2></div><span className="history-count">最近 {history.length} 条</span></div>
+        <p className="analysis-history-boundary">历史 AI 分析是未经结果验证的研究产物。它可以被重开、追溯或转成待确认草稿，但不会自动成为事实、规则或交易指令。</p>
+        {history.length === 0 && !historyError && <div className="empty">还没有保存过 AI 分析。成功完成一次分析后，完整工作流会留在本机。</div>}
+        <div className="analysis-history-list">{history.map((item) => <button key={item.id} className={storedAnalysis?.id === item.id ? "active" : ""} onClick={() => void openStoredAnalysis(item.id)} disabled={Boolean(historyBusy)}><div><History size={15} /><span>{item.workflowVersion || "旧版分析"}</span></div><strong>{item.question}</strong><p>{item.verdict || "旧记录没有结构化裁决，可打开查看原回答。"}</p><small>{new Date(item.createdAt).toLocaleString("zh-CN")} · {item.transparency?.model || "无模型审计"}</small><em>{historyBusy === item.id ? <LoaderCircle size={14} className="spin" /> : <ChevronRight size={14} />}</em></button>)}</div>
+      </section>
     </div>
   );
+}
+
+function StoredAnalysisView({ item, onClose, onReuse, onCreateDecisionDraft }: { item: StoredAnalysis; onClose: () => void; onReuse: () => void; onCreateDecisionDraft: (draft: DecisionEntry) => void }) {
+  const trace = item.workflowTrace;
+  const audit = item.transparency;
+  return <section className="panel stored-analysis" id="stored-analysis">
+    <div className="panel-title stored-analysis-title"><div><span>冻结于 {new Date(item.createdAt).toLocaleString("zh-CN")}</span><h2>{item.question}</h2></div><div><button className="text-button" onClick={onClose}>关闭</button><button className="secondary" onClick={onReuse}>用当前数据重新分析</button></div></div>
+    <div className="historical-analysis-warning"><History size={17} /><div><strong>历史 AI 分析 · 未经结果验证</strong><p>这是当时保存的原始研究产物，不会按当前持仓或新证据自动更新。重新分析会重新生成发送前预览。</p></div></div>
+    {audit && <div className="analysis-audit stored-analysis-audit"><div><strong>{audit.model}</strong><span>{audit.provider}</span></div><div><strong>{audit.modelCalls || "—"} 次</strong><span>模型调用</span></div><div><strong>{audit.totalLatencyMs ? `${(audit.totalLatencyMs / 1000).toFixed(1)} 秒` : "—"}</strong><span>模型总耗时</span></div><div><strong>{audit.memoryItemsUsed} 条</strong><span>采用记忆</span></div><div><strong>{audit.evidenceItemsUsed} 条</strong><span>带来源证据</span></div><div><strong>{audit.structuredOutputValidated ? (audit.outputRepairs > 0 ? `修复 ${audit.outputRepairs} 次` : "直接通过") : "旧版/未校验"}</strong><span>输出契约</span></div></div>}
+    {trace && <StoredWorkflowTrace trace={trace} />}
+    <div className="final-answer-label"><Sparkles size={15} /><div><span>当时的综合裁决</span><strong>请结合当前事实重新判断，不把旧回答当作实时建议</strong></div></div>
+    {trace?.outputValidation && <details className="payload-details"><summary>输出检查：{trace.outputValidation.status === "repaired" ? "修复后通过" : "首次通过"}</summary><p className="memory-policy">这里只证明输出符合当时的字段与引用契约，不证明事实、推理或未来结果正确。</p>{trace.outputValidation.errors.length > 0 && <pre>{trace.outputValidation.errors.join("\n")}</pre>}</details>}
+    {trace?.structuredReport ? <StructuredReportView report={trace.structuredReport} evidence={trace.evidenceCatalog ?? []} analysisId={item.id} onCreateDecisionDraft={onCreateDecisionDraft} /> : <div className="answer">{item.answer}</div>}
+    <p className="disclaimer">历史记录仅用于复盘当时的研究过程，不构成投资建议或收益保证。</p>
+  </section>;
+}
+
+function StoredWorkflowTrace({ trace }: { trace: AnalysisWorkflowTrace }) {
+  if (!trace.researchPlan && trace.alternatives.length === 0 && !trace.critique && trace.calls.length === 0) return null;
+  return <div className="workflow-trace">
+    <div className="workflow-trace-title"><div><span>可审计工作流 · {trace.version || "旧版"}</span><strong>当时实际保存的研究阶段</strong></div><small>以下是模型被明确要求输出的工作产物，不是隐藏思维过程。</small></div>
+    {trace.researchPlan && <details><summary><span>01</span><div><strong>研究计划</strong><small>假设、未知与检索线索</small></div><ChevronRight size={15} /></summary><div className="trace-content">{trace.researchPlan}</div></details>}
+    {trace.memoryItems.length > 0 && <details><summary><span>M</span><div><strong>实际采用的长期记忆</strong><small>{trace.memoryItems.length} 条 · 保留当时命中原因</small></div><ChevronRight size={15} /></summary><MemoryItems items={trace.memoryItems} compact /></details>}
+    {trace.alternatives.map((alternative, index) => <details key={alternative.id}><summary><span>{String(index + 2).padStart(2, "0")}</span><div><strong>{alternative.label}</strong><small>{alternative.lens}</small></div><ChevronRight size={15} /></summary><div className="trace-content">{alternative.content}</div></details>)}
+    {trace.critique && <details><summary><span>{String(trace.alternatives.length + 2).padStart(2, "0")}</span><div><strong>独立风险审查</strong><small>证据漏洞、极端风险与过度自信</small></div><ChevronRight size={15} /></summary><div className="trace-content">{trace.critique}</div></details>}
+    {trace.calls.length > 0 && <details className="call-trace"><summary><span>Σ</span><div><strong>模型调用记录</strong><small>{trace.calls.length} 个独立阶段</small></div><ChevronRight size={15} /></summary><div className="call-list">{trace.calls.map((call) => <div key={call.stage}><strong>{call.label}</strong><span>{(call.latencyMs / 1000).toFixed(2)} 秒</span><span>{call.inputTokens == null ? "token 未返回" : `${call.inputTokens.toLocaleString()} 入 / ${(call.outputTokens ?? 0).toLocaleString()} 出`}</span></div>)}</div></details>}
+  </div>;
 }
 
 function StructuredReportView({ report, evidence, analysisId, onCreateDecisionDraft }: { report: StructuredAnalysis; evidence: AnalysisEvidenceReference[]; analysisId: string; onCreateDecisionDraft: (draft: DecisionEntry) => void }) {

@@ -405,6 +405,20 @@ pub struct AnalysisHistoryItem {
     pub created_at: String,
     pub transparency: Option<AnalysisTransparency>,
     #[serde(default)]
+    pub workflow_version: Option<String>,
+    #[serde(default)]
+    pub verdict: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredAnalysis {
+    pub id: String,
+    pub question: String,
+    pub answer: String,
+    pub created_at: String,
+    pub transparency: Option<AnalysisTransparency>,
+    #[serde(default)]
     pub workflow_trace: Option<AnalysisWorkflowTrace>,
 }
 

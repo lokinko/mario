@@ -3,6 +3,7 @@ import type {
   AnalysisRequest,
   AnalysisPreview,
   AnalysisResult,
+  AnalysisHistoryItem,
   AccountResult,
   CloudConfig,
   CloudStatus,
@@ -24,6 +25,7 @@ import type {
   SystemReviewInput,
   SystemReviewRecord,
   SyncResult,
+  StoredAnalysis,
 } from "./types";
 
 interface LocalServiceConfig {
@@ -169,6 +171,14 @@ export async function importCloudRecoveryKey(recoveryKey: string, confirmReplace
 
 export async function runAnalysis(request: AnalysisRequest): Promise<AnalysisResult> {
   return httpRequest<AnalysisResult>("/analysis", { method: "POST", body: JSON.stringify(request) });
+}
+
+export async function getAnalysisHistory(): Promise<AnalysisHistoryItem[]> {
+  return httpRequest<AnalysisHistoryItem[]>("/analyses");
+}
+
+export async function getAnalysis(id: string): Promise<StoredAnalysis> {
+  return httpRequest<StoredAnalysis>(`/analyses/${encodeURIComponent(id)}`);
 }
 
 export async function previewAnalysis(request: AnalysisRequest): Promise<AnalysisPreview> {

@@ -11,8 +11,8 @@ use crate::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
         DecisionReviewInput, FinancialProfile, Goal, GoalInput, Holding, HoldingInput,
         InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem, ModelConfig,
-        ResearchEvidence, ResearchEvidenceInput, Snapshot, SystemReviewInput, SystemReviewRecord,
-        SystemReviewSnapshot,
+        ResearchEvidence, ResearchEvidenceInput, Snapshot, StoredAnalysis, SystemReviewInput,
+        SystemReviewRecord, SystemReviewSnapshot,
     },
     planning, risk,
 };
@@ -1352,6 +1352,9 @@ impl Database {
         let mut history = Vec::new();
         for row in rows {
             let (id, question, created_at, audit, trace) = row?;
+            let parsed_trace = trace.as_deref().and_then(|value| {
+                serde_json::from_str::<crate::models::AnalysisWorkflowTrace>(value).ok()
+            });
             history.push(AnalysisHistoryItem {
                 id,
                 question,
@@ -1359,12 +1362,54 @@ impl Database {
                 transparency: audit
                     .as_deref()
                     .and_then(|value| serde_json::from_str(value).ok()),
-                workflow_trace: trace
-                    .as_deref()
-                    .and_then(|value| serde_json::from_str(value).ok()),
+                workflow_version: parsed_trace
+                    .as_ref()
+                    .map(|item| item.version.clone())
+                    .filter(|value| !value.is_empty()),
+                verdict: parsed_trace
+                    .and_then(|item| item.structured_report)
+                    .map(|report| report.verdict),
             });
         }
         Ok(history)
+    }
+
+    pub fn analysis(&self, id: &str) -> AppResult<StoredAnalysis> {
+        if id.trim().is_empty() || id.len() > 128 {
+            return Err(AppError::Validation("分析 ID 无效".into()));
+        }
+        let row = self
+            .conn()?
+            .query_row(
+                "SELECT id, question, answer, created_at, audit, trace FROM analyses WHERE id=?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| AppError::NotFound("找不到这条历史 AI 分析".into()))?;
+        Ok(StoredAnalysis {
+            id: row.0,
+            question: row.1,
+            answer: row.2,
+            created_at: row.3,
+            transparency: row
+                .4
+                .as_deref()
+                .and_then(|value| serde_json::from_str(value).ok()),
+            workflow_trace: row
+                .5
+                .as_deref()
+                .and_then(|value| serde_json::from_str(value).ok()),
+        })
     }
 }
 
@@ -1987,16 +2032,22 @@ mod tests {
         assert_eq!(audit.model_calls, 3);
         assert!(!audit.api_key_sent);
         assert_eq!(
-            history[0].workflow_trace.as_ref().unwrap().version,
+            history[0].workflow_version.as_deref(),
+            Some("investment-workflow-v4")
+        );
+        assert_eq!(history[0].verdict.as_deref(), Some("先控制风险"));
+        let history_json = serde_json::to_value(&history[0]).unwrap();
+        assert!(history_json.get("workflowTrace").is_none());
+        assert_eq!(history_json["workflowVersion"], "investment-workflow-v4");
+        assert!(audit.structured_output_validated);
+        let stored = db.analysis("analysis-1").unwrap();
+        assert_eq!(stored.question, "如何控制风险？");
+        assert_eq!(stored.answer, "先控制风险");
+        assert_eq!(
+            stored.workflow_trace.unwrap().version,
             "investment-workflow-v4"
         );
-        assert!(history[0]
-            .workflow_trace
-            .as_ref()
-            .unwrap()
-            .structured_report
-            .is_some());
-        assert!(audit.structured_output_validated);
+        assert!(matches!(db.analysis("missing"), Err(AppError::NotFound(_))));
         let memory = db
             .memories()
             .unwrap()
@@ -2031,7 +2082,7 @@ mod tests {
         assert_eq!(audit.conflicting_memory_items_used, 0);
         assert!(!audit.structured_output_validated);
         assert_eq!(audit.output_repairs, 0);
-        assert!(db.analysis_history().unwrap()[0].workflow_trace.is_none());
+        assert!(db.analysis_history().unwrap()[0].workflow_version.is_none());
     }
 
     #[test]
@@ -2065,7 +2116,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(trace_columns, 1);
-        assert!(db.analysis_history().unwrap()[0].workflow_trace.is_none());
+        assert!(db.analysis_history().unwrap()[0].workflow_version.is_none());
     }
 
     #[test]
@@ -2081,10 +2132,13 @@ mod tests {
             )
             .unwrap();
 
-        let trace = db.analysis_history().unwrap()[0]
-            .workflow_trace
-            .clone()
-            .unwrap();
+        assert_eq!(
+            db.analysis_history().unwrap()[0]
+                .workflow_version
+                .as_deref(),
+            Some("investment-workflow-v2")
+        );
+        let trace = db.analysis("old-trace").unwrap().workflow_trace.unwrap();
         assert_eq!(trace.version, "investment-workflow-v2");
         assert!(trace.memory_items.is_empty());
         assert!(trace.structured_report.is_none());

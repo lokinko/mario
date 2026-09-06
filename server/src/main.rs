@@ -34,7 +34,7 @@ use models::{
     DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, InvestmentRule,
     InvestmentRuleInput, InvestmentRuleRevision, ModelConfig, ModelConfigInput,
     ModelConnectionTest, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
-    Snapshot, SystemReviewInput, SystemReviewRecord,
+    Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -136,6 +136,7 @@ async fn main() -> AppResult<()> {
         .route("/api/analysis/preview", post(preview_analysis))
         .route("/api/analysis", post(run_analysis))
         .route("/api/analyses", get(analyses))
+        .route("/api/analyses/{id}", get(analysis))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_local_auth,
@@ -510,6 +511,13 @@ async fn preview_analysis(
 
 async fn analyses(State(state): State<Arc<AppState>>) -> AppResult<Json<Vec<AnalysisHistoryItem>>> {
     Ok(Json(state.db.analysis_history()?))
+}
+
+async fn analysis(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> AppResult<Json<StoredAnalysis>> {
+    Ok(Json(state.db.analysis(&id)?))
 }
 
 fn validate_analysis_request(request: &AnalysisRequest) -> AppResult<()> {

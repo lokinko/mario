@@ -239,6 +239,24 @@ export interface AnalysisResult {
   disclaimer: string;
 }
 
+export interface AnalysisHistoryItem {
+  id: string;
+  question: string;
+  createdAt: string;
+  transparency?: AnalysisTransparency;
+  workflowVersion?: string;
+  verdict?: string;
+}
+
+export interface StoredAnalysis {
+  id: string;
+  question: string;
+  answer: string;
+  createdAt: string;
+  transparency?: AnalysisTransparency;
+  workflowTrace?: AnalysisWorkflowTrace;
+}
+
 export interface AnalysisWorkflowTrace {
   version: string;
   researchPlan?: string;

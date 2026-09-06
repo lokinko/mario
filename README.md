@@ -18,6 +18,7 @@
 - 可解释长期记忆：区分已复盘决策、未验证判断与历史 AI 回答，支持时间衰减和反证信号
 - 逐条记忆授权：发送前可单独排除候选记录，选择变化后必须重新生成一致性指纹
 - AI 工作流轨迹：逐阶段保存研究产物、模型耗时与 Provider 返回的 token 用量
+- 可审计分析档案：重开历史结构化报告和证据，从决策追溯原分析，或用当前数据重新分析旧问题
 - AI 快速工作流：用于低成本的单轮结构化分析
 - AI 数据预览：逐组选择上下文、冻结候选记忆、确认指纹并保存本地审计
 - 分析到决策闭环：用户选择一条 AI 行动后生成可编辑草稿，高风险数字必须人工填写，冻结时保留原分析来源
@@ -45,7 +46,7 @@ docs/                   架构与投资方法论
 scripts/                sidecar 构建脚本
 ```
 
-产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[本地桌面威胁模型](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[本地桌面威胁模型](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
 
 ## 本地开发
 

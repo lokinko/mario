@@ -27,6 +27,8 @@ pub enum AppError {
     #[error("云同步服务错误：{0}")]
     Cloud(String),
     #[error("{0}")]
+    NotFound(String),
+    #[error("{0}")]
     Validation(String),
     #[error("{0}")]
     Model(String),
@@ -49,6 +51,7 @@ impl IntoResponse for AppError {
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
             AppError::Auth(_) | AppError::LocalAuth(_) => StatusCode::UNAUTHORIZED,
             AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Model(_) | AppError::Network(_) => StatusCode::BAD_GATEWAY,
             AppError::Cloud(_) => StatusCode::BAD_GATEWAY,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
