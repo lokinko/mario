@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
+  Bell,
+  BellOff,
   Bot,
   BrainCircuit,
   Check,
@@ -47,6 +49,7 @@ import {
   getInvestmentRuleHistory,
   getModelConfig,
   getResearchEvidence,
+  getReviewReminders,
   getSnapshot,
   getSystemReviews,
   previewAnalysis,
@@ -102,7 +105,14 @@ import type {
   StoredAnalysis,
   SystemReviewInput,
   SystemReviewRecord,
+  ReviewReminderSummary,
 } from "./types";
+import {
+  checkAndSendReviewReminder,
+  disableReviewReminders,
+  enableReviewReminders,
+  isDesktopApp,
+} from "./reminders";
 
 type View = "dashboard" | "foundation" | "evidence" | "decision" | "review" | "advisor" | "cloud" | "settings";
 const views: View[] = ["dashboard", "foundation", "evidence", "decision", "review", "advisor", "cloud", "settings"];
@@ -176,6 +186,10 @@ function App() {
   };
 
   useEffect(loadApplication, []);
+
+  useEffect(() => {
+    if (!loading && !startupError) void checkAndSendReviewReminder().catch(() => undefined);
+  }, [loading, startupError]);
 
   const flash = (message: string) => {
     setNotice(message);
@@ -799,16 +813,19 @@ function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash:
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [ruleHistories, setRuleHistories] = useState<Record<string, InvestmentRuleRevision[]>>({});
   const [saving, setSaving] = useState(false);
+  const [reminder, setReminder] = useState<ReviewReminderSummary | null>(null);
+  const [reminderSaving, setReminderSaving] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = async () => {
     try {
-      const [nextDecisions, nextRules, nextReviews] = await Promise.all([
-        getDecisions(), getInvestmentRules(), getSystemReviews(),
+      const [nextDecisions, nextRules, nextReviews, nextReminder] = await Promise.all([
+        getDecisions(), getInvestmentRules(), getSystemReviews(), getReviewReminders(),
       ]);
       setDecisions(nextDecisions);
       setRules(nextRules);
       setReviews(nextReviews);
+      setReminder(nextReminder);
       setError("");
     } catch (nextError) { setError(String(nextError)); }
   };
@@ -902,6 +919,21 @@ function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash:
     navigate("advisor");
   };
 
+  const toggleReminders = async () => {
+    setReminderSaving(true); setError("");
+    try {
+      if (reminder?.enabled) {
+        await disableReviewReminders();
+        flash("桌面复盘提醒已关闭，本机到期队列仍会保留");
+      } else {
+        await enableReviewReminders();
+        await checkAndSendReviewReminder();
+        flash("桌面复盘提醒已开启");
+      }
+      await refresh();
+    } catch (nextError) { setError(String(nextError)); } finally { setReminderSaving(false); }
+  };
+
   return (
     <div className="page narrow">
       <PageHeader eyebrow="方法论 · 校准层" title="让经验沉淀为规则" description="周期复盘不是解释盈亏，而是检查纪律、修订规则并冻结当时的证据。" action={<button className="primary" onClick={startAiReview}><Sparkles size={16} />AI 辅助系统复盘</button>} />
@@ -910,6 +942,22 @@ function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash:
         <article><span>周期复盘</span><strong>{reviews.length}</strong><small className={periodicReviewDue ? "warning-text" : ""}>{periodicReviewDue ? "现在需要安排一次" : `下次 ${latestReview.nextReviewDate}`}</small></article>
         <article><span>有效规则</span><strong>{activeRules.length}</strong><small>{rules.length - activeRules.length} 条历史停用规则</small></article>
         <article><span>平均纪律评分</span><strong>{averageAdherence === null ? "—" : averageAdherence.toFixed(1)}</strong><small>只评价是否按流程行动</small></article>
+      </section>
+
+      <section className="panel reminder-panel">
+        <div className="reminder-copy">
+          <div className={`reminder-icon ${reminder?.enabled ? "enabled" : ""}`}>
+            {reminder?.enabled ? <Bell size={18} /> : <BellOff size={18} />}
+          </div>
+          <div>
+            <strong>桌面复盘提醒</strong>
+            <p>应用打开时检查到期事项；相同到期状态每天最多提醒一次，锁屏通知不显示资产名称。</p>
+            <small>设置只保存在这台设备，不参与云端同步。关闭应用后不会在后台运行。</small>
+          </div>
+        </div>
+        <button className={reminder?.enabled ? "secondary" : "primary"} disabled={reminderSaving || !isDesktopApp()} onClick={toggleReminders}>
+          {reminderSaving ? "处理中…" : reminder?.enabled ? "关闭提醒" : isDesktopApp() ? "开启提醒" : "仅桌面应用可用"}
+        </button>
       </section>
 
       {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}

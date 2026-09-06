@@ -483,6 +483,35 @@ pub struct DecisionRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ReminderSettings {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderSettingsInput {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewReminderSummary {
+    pub enabled: bool,
+    pub due_decision_count: usize,
+    pub periodic_review_due: bool,
+    pub fingerprint: String,
+    pub should_notify: bool,
+    pub checked_on: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewReminderAcknowledgeInput {
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MemoryItem {
     pub id: String,
     pub kind: String,

@@ -1,8 +1,9 @@
 use std::{path::Path, sync::Mutex};
 
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use rusqlite::{params, types::ValueRef, Connection, Transaction};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::{
@@ -11,8 +12,8 @@ use crate::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
         DecisionReviewInput, FinancialProfile, Goal, GoalInput, Holding, HoldingInput,
         InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem, ModelConfig,
-        ResearchEvidence, ResearchEvidenceInput, Snapshot, StoredAnalysis, SystemReviewInput,
-        SystemReviewRecord, SystemReviewSnapshot,
+        ReminderSettings, ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary, Snapshot,
+        StoredAnalysis, SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
     },
     planning, risk,
 };
@@ -410,6 +411,81 @@ impl Database {
         self.conn()?
             .execute("DELETE FROM settings WHERE key=?1", [key])?;
         Ok(())
+    }
+
+    pub fn reminder_settings(&self) -> AppResult<ReminderSettings> {
+        Ok(ReminderSettings {
+            enabled: self.setting("reminders.enabled")?.as_deref() == Some("true"),
+        })
+    }
+
+    pub fn save_reminder_settings(&self, enabled: bool) -> AppResult<ReminderSettings> {
+        self.set_setting("reminders.enabled", if enabled { "true" } else { "false" })?;
+        Ok(ReminderSettings { enabled })
+    }
+
+    pub fn review_reminder_summary(&self, today: NaiveDate) -> AppResult<ReviewReminderSummary> {
+        let enabled = self.reminder_settings()?.enabled;
+        let mut due_ids = self
+            .decisions()?
+            .into_iter()
+            .filter(|decision| {
+                decision.review.is_none()
+                    && NaiveDate::parse_from_str(&decision.review_date, "%Y-%m-%d")
+                        .is_ok_and(|date| date <= today)
+            })
+            .map(|decision| decision.id)
+            .collect::<Vec<_>>();
+        due_ids.sort();
+
+        let latest_review = self.system_reviews()?.into_iter().next();
+        let periodic_review_due = latest_review.as_ref().is_none_or(|review| {
+            NaiveDate::parse_from_str(&review.next_review_date, "%Y-%m-%d")
+                .map(|date| date <= today)
+                .unwrap_or(true)
+        });
+        let periodic_marker = latest_review
+            .as_ref()
+            .map(|review| format!("{}:{}", review.id, review.next_review_date))
+            .unwrap_or_else(|| "never-reviewed".into());
+        let fingerprint_source = format!(
+            "decisions={};periodic={periodic_review_due}:{periodic_marker}",
+            due_ids.join(",")
+        );
+        let fingerprint = format!("{:x}", Sha256::digest(fingerprint_source.as_bytes()));
+        let checked_on = today.format("%Y-%m-%d").to_string();
+        let already_notified = self.setting("reminders.last_notified_on")?.as_deref()
+            == Some(checked_on.as_str())
+            && self
+                .setting("reminders.last_notified_fingerprint")?
+                .as_deref()
+                == Some(fingerprint.as_str());
+        let has_due_work = !due_ids.is_empty() || periodic_review_due;
+
+        Ok(ReviewReminderSummary {
+            enabled,
+            due_decision_count: due_ids.len(),
+            periodic_review_due,
+            fingerprint,
+            should_notify: enabled && has_due_work && !already_notified,
+            checked_on,
+        })
+    }
+
+    pub fn acknowledge_review_reminder(
+        &self,
+        today: NaiveDate,
+        fingerprint: &str,
+    ) -> AppResult<ReviewReminderSummary> {
+        let current = self.review_reminder_summary(today)?;
+        if fingerprint.trim().is_empty() || fingerprint != current.fingerprint {
+            return Err(AppError::Validation(
+                "复盘提醒状态已经变化，请刷新后重试".into(),
+            ));
+        }
+        self.set_setting("reminders.last_notified_on", &current.checked_on)?;
+        self.set_setting("reminders.last_notified_fingerprint", &current.fingerprint)?;
+        self.review_reminder_summary(today)
     }
 
     pub fn export_sync_data(&self) -> AppResult<SyncDataset> {
@@ -1840,6 +1916,112 @@ mod tests {
             review_date: "".into(),
         });
         assert!(matches!(result, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn review_reminders_are_opt_in_deduplicated_and_follow_due_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 9, 6).unwrap();
+
+        let initial = db.review_reminder_summary(today).unwrap();
+        assert!(!initial.enabled);
+        assert!(initial.periodic_review_due);
+        assert!(!initial.should_notify);
+
+        db.save_reminder_settings(true).unwrap();
+        db.save_decision(&DecisionEntry {
+            id: Some("due-decision".into()),
+            source_analysis_id: None,
+            source_action_index: None,
+            asset_name: "宽基指数".into(),
+            thesis: "长期配置".into(),
+            counter_thesis: "风险容量下降".into(),
+            expected_return_pct: 7.0,
+            downside_pct: 20.0,
+            confidence_pct: 60.0,
+            position_pct: 30.0,
+            invalidation: "应急金不足".into(),
+            review_date: "2026-09-06".into(),
+        })
+        .unwrap();
+        db.save_decision(&DecisionEntry {
+            id: Some("future-decision".into()),
+            source_analysis_id: None,
+            source_action_index: None,
+            asset_name: "债券基金".into(),
+            thesis: "降低波动".into(),
+            counter_thesis: "利率快速上行".into(),
+            expected_return_pct: 3.0,
+            downside_pct: 5.0,
+            confidence_pct: 70.0,
+            position_pct: 20.0,
+            invalidation: "久期风险变化".into(),
+            review_date: "2026-10-01".into(),
+        })
+        .unwrap();
+
+        let due = db.review_reminder_summary(today).unwrap();
+        assert_eq!(due.due_decision_count, 1);
+        assert!(due.should_notify);
+        assert!(matches!(
+            db.acknowledge_review_reminder(today, "stale-fingerprint"),
+            Err(AppError::Validation(_))
+        ));
+        let acknowledged = db
+            .acknowledge_review_reminder(today, &due.fingerprint)
+            .unwrap();
+        assert!(!acknowledged.should_notify);
+
+        db.save_decision_review(
+            "due-decision",
+            &DecisionReviewInput {
+                outcome_summary: "按计划复核".into(),
+                actual_return_pct: None,
+                thesis_status: "尚不明确".into(),
+                process_rating: 4,
+                lessons: "继续观察证伪条件".into(),
+            },
+        )
+        .unwrap();
+        let changed = db.review_reminder_summary(today).unwrap();
+        assert_eq!(changed.due_decision_count, 0);
+        assert!(changed.periodic_review_due);
+        assert!(changed.should_notify);
+        assert_ne!(changed.fingerprint, due.fingerprint);
+
+        db.save_system_review(&SystemReviewInput {
+            period_label: "2026 Q3".into(),
+            adherence_score: 4,
+            process_summary: "按计划执行".into(),
+            rule_violations: "无".into(),
+            lessons: "保持低频复盘".into(),
+            next_actions: "下季度复核".into(),
+            next_review_date: "2026-12-31".into(),
+        })
+        .unwrap();
+        let clear = db.review_reminder_summary(today).unwrap();
+        assert_eq!(clear.due_decision_count, 0);
+        assert!(!clear.periodic_review_due);
+        assert!(!clear.should_notify);
+
+        db.save_reminder_settings(false).unwrap();
+        assert!(!db.review_reminder_summary(today).unwrap().should_notify);
+    }
+
+    #[test]
+    fn reminder_settings_are_device_local_and_never_cloud_synced() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = Database::open(&directory.path().join("source.db")).unwrap();
+        source.save_reminder_settings(true).unwrap();
+        let dataset = source.export_sync_data().unwrap();
+
+        let target = Database::open(&directory.path().join("target.db")).unwrap();
+        target.save_reminder_settings(false).unwrap();
+        target.import_sync_data(&dataset).unwrap();
+
+        assert!(!target.reminder_settings().unwrap().enabled);
+        assert!(dataset.tables.iter().all(|table| table.name != "settings"));
     }
 
     #[test]

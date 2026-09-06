@@ -21,6 +21,7 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
+use chrono::Local;
 use cloud_sync::{
     AccountCredentials, AccountResult, CloudConfig, CloudStatus, PullInput, RecoveryKeyInput,
     SyncResult,
@@ -33,8 +34,9 @@ use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
     DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, InvestmentRule,
     InvestmentRuleInput, InvestmentRuleRevision, ModelConfig, ModelConfigInput,
-    ModelConnectionTest, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
-    Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
+    ModelConnectionTest, ReminderSettings, ReminderSettingsInput, ResearchEvidence,
+    ResearchEvidenceInput, ResearchEvidenceStatusInput, ReviewReminderAcknowledgeInput,
+    ReviewReminderSummary, Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -104,6 +106,15 @@ async fn main() -> AppResult<()> {
         .route(
             "/api/system-reviews",
             get(system_reviews).post(save_system_review),
+        )
+        .route(
+            "/api/reminder-settings",
+            get(reminder_settings).put(save_reminder_settings),
+        )
+        .route("/api/review-reminders", get(review_reminders))
+        .route(
+            "/api/review-reminders/acknowledge",
+            post(acknowledge_review_reminder),
         )
         .route(
             "/api/research-evidence",
@@ -287,6 +298,35 @@ async fn save_system_review(
     Json(input): Json<SystemReviewInput>,
 ) -> AppResult<Json<SystemReviewRecord>> {
     Ok(Json(state.db.save_system_review(&input)?))
+}
+async fn reminder_settings(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<ReminderSettings>> {
+    Ok(Json(state.db.reminder_settings()?))
+}
+async fn save_reminder_settings(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<ReminderSettingsInput>,
+) -> AppResult<Json<ReminderSettings>> {
+    Ok(Json(state.db.save_reminder_settings(input.enabled)?))
+}
+async fn review_reminders(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<ReviewReminderSummary>> {
+    Ok(Json(
+        state
+            .db
+            .review_reminder_summary(Local::now().date_naive())?,
+    ))
+}
+async fn acknowledge_review_reminder(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<ReviewReminderAcknowledgeInput>,
+) -> AppResult<Json<ReviewReminderSummary>> {
+    Ok(Json(state.db.acknowledge_review_reminder(
+        Local::now().date_naive(),
+        &input.fingerprint,
+    )?))
 }
 async fn research_evidence(
     State(state): State<Arc<AppState>>,

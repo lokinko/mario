@@ -20,6 +20,8 @@ import type {
   ModelConnectionTest,
   ResearchEvidence,
   ResearchEvidenceInput,
+  ReminderSettings,
+  ReviewReminderSummary,
   RecoveryKeyResult,
   Snapshot,
   SystemReviewInput,
@@ -195,6 +197,28 @@ export async function getDecisions(): Promise<DecisionRecord[]> {
 
 export async function saveDecisionReview(id: string, review: DecisionReview): Promise<void> {
   await httpRequest<void>(`/decisions/${encodeURIComponent(id)}/review`, { method: "PUT", body: JSON.stringify(review) });
+}
+
+export async function getReminderSettings(): Promise<ReminderSettings> {
+  return httpRequest<ReminderSettings>("/reminder-settings");
+}
+
+export async function saveReminderSettings(enabled: boolean): Promise<ReminderSettings> {
+  return httpRequest<ReminderSettings>("/reminder-settings", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function getReviewReminders(): Promise<ReviewReminderSummary> {
+  return httpRequest<ReviewReminderSummary>("/review-reminders");
+}
+
+export async function acknowledgeReviewReminder(fingerprint: string): Promise<ReviewReminderSummary> {
+  return httpRequest<ReviewReminderSummary>("/review-reminders/acknowledge", {
+    method: "POST",
+    body: JSON.stringify({ fingerprint }),
+  });
 }
 
 export async function getInvestmentRules(): Promise<InvestmentRule[]> {

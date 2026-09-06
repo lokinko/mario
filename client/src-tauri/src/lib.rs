@@ -35,6 +35,7 @@ pub fn run() {
     let sidecar_config = service_config.clone();
     tauri::Builder::default()
         .manage(service_config)
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![local_service_config])
         .setup(move |app| {

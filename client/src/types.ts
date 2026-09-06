@@ -359,6 +359,19 @@ export interface DecisionRecord extends Omit<DecisionEntry, "id"> {
   review?: DecisionReview;
 }
 
+export interface ReminderSettings {
+  enabled: boolean;
+}
+
+export interface ReviewReminderSummary {
+  enabled: boolean;
+  dueDecisionCount: number;
+  periodicReviewDue: boolean;
+  fingerprint: string;
+  shouldNotify: boolean;
+  checkedOn: string;
+}
+
 export interface InvestmentRuleInput {
   category: "资产配置" | "风险" | "研究" | "仓位" | "行为" | "复盘";
   statement: string;

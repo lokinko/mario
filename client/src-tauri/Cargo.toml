@@ -1,6 +1,6 @@
 [package]
 name = "compass-invest"
-version = "0.1.3"
+version = "0.1.4"
 description = "Desktop client for Compass Invest"
 authors = ["Compass Invest"]
 edition = "2021"
@@ -18,6 +18,9 @@ rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "=2.8.5", features = [] }
 tauri-plugin-shell = "=2.3.0"
+tauri-plugin-notification = "=2.3.3"
+# The notification plugin's broad range otherwise selects 4.18, which requires Rust 1.89.
+notify-rust = "=4.17.0"
 # Lock transitive build crates to versions compatible with the declared toolchain.
 icu_collections = "=2.2.0"
 icu_locale_core = "=2.2.0"
