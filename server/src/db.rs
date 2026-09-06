@@ -698,13 +698,49 @@ impl Database {
         }
         chrono::NaiveDate::parse_from_str(&entry.review_date, "%Y-%m-%d")
             .map_err(|_| AppError::Validation("复盘日期格式无效".into()))?;
+        if entry.source_action_index.is_some() && entry.source_analysis_id.is_none() {
+            return Err(AppError::Validation(
+                "AI 行动序号必须关联一条分析记录".into(),
+            ));
+        }
+        let conn = self.conn()?;
+        if let Some(source_id) = entry.source_analysis_id.as_deref() {
+            if source_id.trim().is_empty() || source_id.len() > 128 {
+                return Err(AppError::Validation("AI 分析来源 ID 无效".into()));
+            }
+            let source_trace = conn
+                .query_row(
+                    "SELECT trace FROM analyses WHERE id=?1",
+                    [source_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()?
+                .ok_or_else(|| {
+                    AppError::Validation("找不到关联的 AI 分析；请保留原分析后再冻结决策".into())
+                })?;
+            if let Some(action_index) = entry.source_action_index {
+                let trace = source_trace
+                    .as_deref()
+                    .and_then(|value| {
+                        serde_json::from_str::<crate::models::AnalysisWorkflowTrace>(value).ok()
+                    })
+                    .ok_or_else(|| AppError::Validation("关联的 AI 分析缺少可验证工作流".into()))?;
+                let actions = trace
+                    .structured_report
+                    .map(|report| report.actions)
+                    .unwrap_or_default();
+                if action_index >= actions.len() {
+                    return Err(AppError::Validation("AI 行动序号超出原分析范围".into()));
+                }
+            }
+        }
         let id = entry
             .id
             .clone()
             .unwrap_or_else(|| Uuid::new_v4().to_string());
         let mut stored = entry.clone();
         stored.id = Some(id.clone());
-        self.conn()?.execute(
+        conn.execute(
             "INSERT INTO decisions (id, asset_name, payload, review_date, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![id, entry.asset_name.trim(), serde_json::to_string(&stored)?, entry.review_date, Utc::now().to_rfc3339()],
         )?;
@@ -744,6 +780,8 @@ impl Database {
             let entry: DecisionEntry = serde_json::from_str(&payload)?;
             records.push(DecisionRecord {
                 id,
+                source_analysis_id: entry.source_analysis_id,
+                source_action_index: entry.source_action_index,
                 asset_name: entry.asset_name,
                 thesis: entry.thesis,
                 counter_thesis: entry.counter_thesis,
@@ -1232,6 +1270,8 @@ impl Database {
                     "downsidePct": record.downside_pct,
                     "positionPct": record.position_pct,
                     "reviewDate": record.review_date,
+                    "sourceAnalysisId": record.source_analysis_id,
+                    "sourceActionIndex": record.source_action_index,
                     "review": review_payload,
                 }),
                 created_at: record.created_at,
@@ -1695,6 +1735,8 @@ mod tests {
         let db = Database::open(&dir.path().join("test.db")).unwrap();
         db.save_decision(&DecisionEntry {
             id: None,
+            source_analysis_id: None,
+            source_action_index: None,
             asset_name: "指数".into(),
             thesis: "长期风险溢价".into(),
             counter_thesis: "估值过高".into(),
@@ -1740,6 +1782,8 @@ mod tests {
         let db = Database::open(&dir.path().join("test.db")).unwrap();
         let result = db.save_decision(&DecisionEntry {
             id: None,
+            source_analysis_id: None,
+            source_action_index: None,
             asset_name: "指数".into(),
             thesis: "长期风险溢价".into(),
             counter_thesis: "估值过高".into(),
@@ -1751,6 +1795,68 @@ mod tests {
             review_date: "".into(),
         });
         assert!(matches!(result, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn decision_provenance_must_reference_an_existing_analysis() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("test.db")).unwrap();
+        let base = DecisionEntry {
+            id: None,
+            source_analysis_id: Some("analysis-1".into()),
+            source_action_index: Some(0),
+            asset_name: "指数".into(),
+            thesis: "长期风险溢价".into(),
+            counter_thesis: "估值过高".into(),
+            expected_return_pct: 8.0,
+            downside_pct: 20.0,
+            confidence_pct: 60.0,
+            position_pct: 30.0,
+            invalidation: "风险容量下降".into(),
+            review_date: "2026-12-01".into(),
+        };
+        assert!(matches!(
+            db.save_decision(&base),
+            Err(AppError::Validation(_))
+        ));
+
+        let now = Utc::now().to_rfc3339();
+        db.conn()
+            .unwrap()
+            .execute(
+                "INSERT INTO analyses (id, question, answer, audit, trace, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    "analysis-1",
+                    "如何处理风险",
+                    "先降低脆弱性",
+                    "{}",
+                    r#"{"structuredReport":{"verdict":"降低脆弱性","facts":[],"inferences":[],"unknowns":["估值"],"options":[],"actions":[{"action":"再平衡","rationale":"集中度过高","reversible":true,"reviewTrigger":"集中度下降"}],"reviewTriggers":["一个月后"]}}"#,
+                    now
+                ],
+            )
+            .unwrap();
+        let mut invalid_action = base.clone();
+        invalid_action.source_action_index = Some(1);
+        assert!(matches!(
+            db.save_decision(&invalid_action),
+            Err(AppError::Validation(_))
+        ));
+        db.save_decision(&base).unwrap();
+        let record = db.decisions().unwrap().remove(0);
+        assert_eq!(record.source_analysis_id.as_deref(), Some("analysis-1"));
+        assert_eq!(record.source_action_index, Some(0));
+    }
+
+    #[test]
+    fn old_decision_payload_deserializes_without_provenance() {
+        let payload = r#"{
+            "id":null,"assetName":"指数","thesis":"长期持有","counterThesis":"估值风险",
+            "expectedReturnPct":8,"downsidePct":20,"confidencePct":60,"positionPct":30,
+            "invalidation":"目标变化","reviewDate":"2026-12-01"
+        }"#;
+        let entry: DecisionEntry = serde_json::from_str(payload).unwrap();
+        assert_eq!(entry.source_analysis_id, None);
+        assert_eq!(entry.source_action_index, None);
     }
 
     #[test]

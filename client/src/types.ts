@@ -313,6 +313,8 @@ export interface ModelCallTrace {
 
 export interface DecisionEntry {
   id?: string;
+  sourceAnalysisId?: string;
+  sourceActionIndex?: number;
   assetName: string;
   thesis: string;
   counterThesis: string;

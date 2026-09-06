@@ -74,6 +74,7 @@ import {
 import type {
   AnalysisPreview,
   AnalysisClaim,
+  AnalysisAction,
   AnalysisEvidenceReference,
   AnalysisRequest,
   AnalysisResult,
@@ -154,6 +155,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [startupError, setStartupError] = useState("");
   const [notice, setNotice] = useState("");
+  const [decisionDraft, setDecisionDraft] = useState<DecisionEntry | null>(null);
 
   const loadApplication = () => {
     setLoading(true);
@@ -236,9 +238,9 @@ function App() {
         {view === "dashboard" && <Dashboard snapshot={snapshot} model={model} navigate={navigate} />}
         {view === "foundation" && <Foundation snapshot={snapshot} onUpdate={setSnapshot} flash={flash} />}
         {view === "evidence" && <EvidenceWorkbench navigate={navigate} flash={flash} />}
-        {view === "decision" && <DecisionJournal flash={flash} />}
+        {view === "decision" && <DecisionJournal flash={flash} seed={decisionDraft} clearSeed={() => setDecisionDraft(null)} />}
         {view === "review" && <ReviewCenter navigate={navigate} flash={flash} />}
-        {view === "advisor" && <Advisor model={model} navigate={navigate} />}
+        {view === "advisor" && <Advisor model={model} navigate={navigate} onCreateDecisionDraft={(draft) => { setDecisionDraft(draft); navigate("decision"); }} />}
         {view === "cloud" && <CloudSync flash={flash} />}
         {view === "settings" && <ModelSettings model={model} onUpdate={setModel} flash={flash} />}
       </main>
@@ -625,8 +627,8 @@ const emptyDecision: DecisionEntry = {
   confidencePct: 50, positionPct: 0, invalidation: "", reviewDate: "",
 };
 
-function DecisionJournal({ flash }: { flash: (s: string) => void }) {
-  const [entry, setEntry] = useState(emptyDecision);
+function DecisionJournal({ flash, seed, clearSeed }: { flash: (s: string) => void; seed: DecisionEntry | null; clearSeed: () => void }) {
+  const [entry, setEntry] = useState({ ...emptyDecision });
   const [records, setRecords] = useState<DecisionRecord[]>([]);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [review, setReview] = useState<DecisionReview>({ outcomeSummary: "", thesisStatus: "尚不明确", processRating: 3, lessons: "" });
@@ -640,6 +642,7 @@ function DecisionJournal({ flash }: { flash: (s: string) => void }) {
   };
 
   useEffect(() => { void refresh(); }, []);
+  useEffect(() => { if (seed) setEntry({ ...seed }); }, [seed]);
 
   const reviewed = records.filter((item) => item.review);
   const calibration = useMemo(() => {
@@ -662,9 +665,11 @@ function DecisionJournal({ flash }: { flash: (s: string) => void }) {
     try {
       await saveDecision(entry);
       flash("决策快照已冻结，可用于未来复盘");
-      setEntry(emptyDecision);
+      setEntry({ ...emptyDecision });
+      clearSeed();
       await refresh();
-    } finally { setSaving(false); }
+    } catch (nextError) { setError(String(nextError)); }
+    finally { setSaving(false); }
   };
 
   const beginReview = (record: DecisionRecord) => {
@@ -694,6 +699,7 @@ function DecisionJournal({ flash }: { flash: (s: string) => void }) {
       </section>
       <section className="panel form-panel decision-card">
         <div className="panel-title"><div><span>投资决策卡</span><h2>把观点变成可证伪的假设</h2></div><FilePenLine size={21} className="muted-icon" /></div>
+        {entry.sourceAnalysisId && <div className="decision-draft-notice"><BrainCircuit size={18} /><div><strong>来自 AI 分析的待确认草稿</strong><p>只复制了文字线索。投资对象、收益、损失、置信度、仓位和复盘日期必须由你判断；点击“冻结”前不会形成决策。</p></div><button className="text-button" onClick={() => { setEntry({ ...emptyDecision }); clearSeed(); }}>放弃草稿</button></div>}
         <div className="form-grid">
           <label className="span-2"><span>投资对象</span><input value={entry.assetName} onChange={(e) => setEntry({ ...entry, assetName: e.target.value })} placeholder="你真正购买的是什么？" /></label>
           <label className="span-2"><span>核心逻辑</span><textarea value={entry.thesis} onChange={(e) => setEntry({ ...entry, thesis: e.target.value })} placeholder="收益从哪里来？市场可能错在哪里？" /></label>
@@ -724,7 +730,7 @@ function DecisionJournal({ flash }: { flash: (s: string) => void }) {
                 <div><span>复盘日</span><strong>{record.reviewDate || "未设定"}</strong></div>
                 <button className="secondary" onClick={() => beginReview(record)}>{record.review ? "更新复盘" : "开始复盘"}</button>
               </div>
-              <div className="decision-thesis"><p><b>原始逻辑</b>{record.thesis}</p><p><b>证伪条件</b>{record.invalidation}</p></div>
+              <div className="decision-thesis"><p><b>原始逻辑</b>{record.thesis}</p><p><b>证伪条件</b>{record.invalidation}</p>{record.sourceAnalysisId && <span className="decision-provenance"><BrainCircuit size={12} />源自 AI 分析 · 行动 {(record.sourceActionIndex ?? 0) + 1} · 已由用户确认</span>}</div>
               {record.review && reviewingId !== record.id && <div className="review-result"><span>{record.review.thesisStatus}</span><p>{record.review.outcomeSummary}</p><strong>过程 {record.review.processRating}/5</strong>{record.review.actualReturnPct !== undefined && <em className={record.review.actualReturnPct >= 0 ? "gain" : "loss"}>{record.review.actualReturnPct >= 0 ? "+" : ""}{record.review.actualReturnPct}%</em>}</div>}
               {reviewingId === record.id && <div className="review-form">
                 <label><span>原始逻辑结果</span><select value={review.thesisStatus} onChange={(e) => setReview({ ...review, thesisStatus: e.target.value as DecisionReview["thesisStatus"] })}><option>成立</option><option>部分成立</option><option>失效</option><option>尚不明确</option></select></label>
@@ -956,7 +962,7 @@ function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash:
   );
 }
 
-function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) => void }) {
+function Advisor({ model, navigate, onCreateDecisionDraft }: { model: ModelConfig; navigate: (v: View) => void; onCreateDecisionDraft: (draft: DecisionEntry) => void }) {
   const [question, setQuestion] = useState("请基于我的财务目标和当前组合，指出最需要优先处理的风险，并给出不依赖市场预测的改进方案。");
   const [deep, setDeep] = useState(true);
   const [memory, setMemory] = useState(true);
@@ -1075,14 +1081,31 @@ function Advisor({ model, navigate }: { model: ModelConfig; navigate: (v: View) 
         </div>}
         <div className="final-answer-label"><Sparkles size={15} /><div><span>最终综合裁决</span><strong>吸收方案与反方审查后的行动建议</strong></div></div>
         {result.workflowTrace.outputValidation && <details className="payload-details"><summary>输出检查：{result.workflowTrace.outputValidation.status === "repaired" ? "修复后通过" : "首次通过"}</summary><p className="memory-policy">已检查字段完整性和引用 ID 是否属于本次授权证据；不代表事实准确性或推理有效性已经得到验证。</p>{result.workflowTrace.outputValidation.errors.length > 0 && <pre>{result.workflowTrace.outputValidation.errors.join("\n")}</pre>}</details>}
-        {result.workflowTrace.structuredReport ? <StructuredReportView report={result.workflowTrace.structuredReport} evidence={result.workflowTrace.evidenceCatalog ?? []} /> : <div className="answer">{result.answer}</div>}<p className="disclaimer">{result.disclaimer}</p>
+        {result.workflowTrace.structuredReport ? <StructuredReportView report={result.workflowTrace.structuredReport} evidence={result.workflowTrace.evidenceCatalog ?? []} analysisId={result.id} onCreateDecisionDraft={onCreateDecisionDraft} /> : <div className="answer">{result.answer}</div>}<p className="disclaimer">{result.disclaimer}</p>
       </section>}
     </div>
   );
 }
 
-function StructuredReportView({ report, evidence }: { report: StructuredAnalysis; evidence: AnalysisEvidenceReference[] }) {
+function StructuredReportView({ report, evidence, analysisId, onCreateDecisionDraft }: { report: StructuredAnalysis; evidence: AnalysisEvidenceReference[]; analysisId: string; onCreateDecisionDraft: (draft: DecisionEntry) => void }) {
   const evidenceById = new Map(evidence.map((item) => [item.id, item]));
+  const createDecisionDraft = (action: AnalysisAction, index: number) => {
+    const counterPoints = [
+      ...report.options.flatMap((option) => option.risks),
+      ...report.unknowns,
+    ].filter((item, itemIndex, all) => item.trim() && all.indexOf(item) === itemIndex);
+    const invalidation = [action.reviewTrigger, ...report.reviewTriggers]
+      .filter((item, itemIndex, all) => item.trim() && all.indexOf(item) === itemIndex)
+      .join("\n");
+    onCreateDecisionDraft({
+      ...emptyDecision,
+      sourceAnalysisId: analysisId,
+      sourceActionIndex: index,
+      thesis: `${report.verdict}\n\n拟采取行动：${action.action}\n理由：${action.rationale}`,
+      counterThesis: counterPoints.join("\n"),
+      invalidation,
+    });
+  };
   return <div className="structured-report">
     <section className="report-verdict"><span>当前最重要判断</span><p>{report.verdict}</p></section>
     <div className="report-claim-grid">
@@ -1091,7 +1114,7 @@ function StructuredReportView({ report, evidence }: { report: StructuredAnalysis
     </div>
     <section className="report-section unknown-section"><div className="report-section-title"><AlertTriangle size={14} /><strong>仍待核实</strong><small>模型不得补写为事实</small></div><ul>{report.unknowns.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>
     <section className="report-section"><div className="report-section-title"><Compass size={14} /><strong>方案与取舍</strong><small>{report.options.length} 条可行路径</small></div><div className="report-option-grid">{report.options.map((option, index) => <article key={`${option.name}-${index}`}><span>方案 {String(index + 1).padStart(2, "0")}</span><h3>{option.name}</h3><p><b>适用条件</b>{option.suitableWhen}</p><p><b>机会成本</b>{option.tradeoffs.join("；")}</p><p><b>主要风险</b>{option.risks.join("；")}</p></article>)}</div></section>
-    <section className="report-section"><div className="report-section-title"><ArrowRight size={14} /><strong>下一步行动</strong><small>行动必须带理由和复盘条件</small></div><div className="report-action-list">{report.actions.map((action, index) => <article key={`${action.action}-${index}`}><i>{index + 1}</i><div><strong>{action.action}</strong><p>{action.rationale}</p><small>复盘：{action.reviewTrigger}</small></div><em className={action.reversible ? "reversible" : "confirm-first"}>{action.reversible ? "可逆" : "需单独确认"}</em></article>)}</div></section>
+    <section className="report-section"><div className="report-section-title"><ArrowRight size={14} /><strong>下一步行动</strong><small>选择后仍需人工补全与确认</small></div><div className="report-action-list">{report.actions.map((action, index) => <article key={`${action.action}-${index}`}><i>{index + 1}</i><div><strong>{action.action}</strong><p>{action.rationale}</p><small>复盘：{action.reviewTrigger}</small><button className="decision-draft-button" onClick={() => createDecisionDraft(action, index)}><FilePenLine size={12} />转为决策草稿</button></div><em className={action.reversible ? "reversible" : "confirm-first"}>{action.reversible ? "可逆" : "需单独确认"}</em></article>)}</div></section>
     <section className="report-section trigger-section"><div className="report-section-title"><History size={14} /><strong>复盘与证伪条件</strong><small>未来用结果校准判断</small></div><ul>{report.reviewTriggers.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>
   </div>;
 }

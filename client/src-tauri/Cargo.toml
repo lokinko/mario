@@ -1,6 +1,6 @@
 [package]
 name = "compass-invest"
-version = "0.1.1"
+version = "0.1.2"
 description = "Desktop client for Compass Invest"
 authors = ["Compass Invest"]
 edition = "2021"

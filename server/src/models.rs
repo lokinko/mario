@@ -412,6 +412,10 @@ pub struct AnalysisHistoryItem {
 #[serde(rename_all = "camelCase")]
 pub struct DecisionEntry {
     pub id: Option<String>,
+    #[serde(default)]
+    pub source_analysis_id: Option<String>,
+    #[serde(default)]
+    pub source_action_index: Option<usize>,
     pub asset_name: String,
     pub thesis: String,
     pub counter_thesis: String,
@@ -448,6 +452,8 @@ pub struct DecisionReviewInput {
 #[serde(rename_all = "camelCase")]
 pub struct DecisionRecord {
     pub id: String,
+    pub source_analysis_id: Option<String>,
+    pub source_action_index: Option<usize>,
     pub asset_name: String,
     pub thesis: String,
     pub counter_thesis: String,
