@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import type {
   AnalysisRequest,
   AnalysisPreview,
@@ -25,17 +26,36 @@ import type {
   SyncResult,
 } from "./types";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4217/api";
+interface LocalServiceConfig {
+  baseUrl: string;
+  authToken?: string;
+}
+
+let localServiceConfig: Promise<LocalServiceConfig> | undefined;
+
+function getLocalServiceConfig(): Promise<LocalServiceConfig> {
+  if (!localServiceConfig) {
+    localServiceConfig = "__TAURI_INTERNALS__" in window
+      ? invoke<LocalServiceConfig>("local_service_config")
+      : Promise.resolve({ baseUrl: import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4217/api" });
+  }
+  return localServiceConfig;
+}
 
 async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const service = await getLocalServiceConfig();
   let response: Response | undefined;
   let lastError: unknown;
   const attempts = !init?.method || init.method === "GET" ? 10 : 1;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      response = await fetch(`${API_BASE}${path}`, {
+      response = await fetch(`${service.baseUrl}${path}`, {
         ...init,
-        headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+        headers: {
+          "Content-Type": "application/json",
+          ...(service.authToken ? { Authorization: `Bearer ${service.authToken}` } : {}),
+          ...(init?.headers ?? {}),
+        },
       });
       break;
     } catch (error) {

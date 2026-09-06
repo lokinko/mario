@@ -16,7 +16,7 @@
 │ Tauri Desktop Client          │
 │ React UI + typed HTTP client  │
 └───────────────┬───────────────┘
-                │ 127.0.0.1:4217
+                │ random loopback port + bearer token
 ┌───────────────▼───────────────┐
 │ Local Axum Server             │
 │                               │
@@ -84,6 +84,8 @@ pub trait ModelProvider: Send + Sync {
 ## 数据与安全边界
 
 - 服务端只监听 loopback 地址，不暴露局域网端口。
+- 桌面端每次启动选择随机回环端口并生成 256 位访问令牌；令牌经子进程环境和受控 Tauri command 分别交给 sidecar 与当前 WebView，不写入磁盘或进程参数。
+- 所有本地 API（包括健康检查）都要求当前启动令牌；令牌比较使用固定长度摘要和常数时间比较。无认证模式只能通过显式开发参数开启。
 - 桌面端把自身进程号传给 sidecar；桌面进程退出后，本地服务会自动停止。
 - CORS 只允许桌面 WebView 和本地开发地址。
 - 模型密钥保存在系统钥匙串。
@@ -98,7 +100,7 @@ pub trait ModelProvider: Send + Sync {
 
 账户与云同步的协议、冲突语义和 Supabase RLS 参考迁移见 [账户与端到端加密云同步](cloud-sync.md)。
 
-后续安全工作：数据库加密、应用签名与公证、进程间认证令牌、Prompt Injection 防护和自动更新签名。
+后续安全工作：数据库加密、应用签名与公证、更完整的 Prompt Injection 防护和自动更新签名。当前威胁边界见 [本地桌面威胁模型](threat-model.md)。
 
 ## 推荐扩展顺序
 

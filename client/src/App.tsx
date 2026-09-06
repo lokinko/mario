@@ -194,7 +194,7 @@ function App() {
       <div className="center-screen service-error">
         <AlertTriangle size={28} />
         <strong>本地服务尚未就绪</strong>
-        <span>客户端没有连接到 127.0.0.1:4217。你的数据没有丢失。</span>
+        <span>客户端没有连接到本次启动的本地服务。你的数据没有丢失。</span>
         <button className="primary" onClick={loadApplication}>重新连接</button>
         <small>{startupError}</small>
       </div>

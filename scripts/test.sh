@@ -10,4 +10,6 @@ npm run build --prefix "$root_dir/client"
 cargo fmt --manifest-path "$root_dir/server/Cargo.toml" -- --check
 cargo fmt --manifest-path "$root_dir/client/src-tauri/Cargo.toml" -- --check
 cargo test --manifest-path "$root_dir/server/Cargo.toml"
+cargo build --manifest-path "$root_dir/server/Cargo.toml"
+"$root_dir/scripts/test-local-auth.sh"
 cargo test --manifest-path "$root_dir/client/src-tauri/Cargo.toml"

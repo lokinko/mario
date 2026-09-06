@@ -20,6 +20,8 @@ pub enum AppError {
     Keyring(String),
     #[error("账户认证失败：{0}")]
     Auth(String),
+    #[error("本地客户端认证失败：{0}")]
+    LocalAuth(String),
     #[error("云同步冲突：{0}")]
     Conflict(String),
     #[error("云同步服务错误：{0}")]
@@ -45,7 +47,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = match self {
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
-            AppError::Auth(_) => StatusCode::UNAUTHORIZED,
+            AppError::Auth(_) | AppError::LocalAuth(_) => StatusCode::UNAUTHORIZED,
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::Model(_) | AppError::Network(_) => StatusCode::BAD_GATEWAY,
             AppError::Cloud(_) => StatusCode::BAD_GATEWAY,

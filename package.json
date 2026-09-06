@@ -1,10 +1,10 @@
 {
   "name": "compass-invest-workspace",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "scripts": {
     "install:all": "npm install --ignore-scripts && npm install --prefix client --ignore-scripts",
-    "dev": "concurrently -k -n server,client -c green,blue \"cargo run --manifest-path server/Cargo.toml\" \"npm run dev --prefix client\"",
+    "dev": "concurrently -k -n server,client -c green,blue \"cargo run --manifest-path server/Cargo.toml -- --allow-unauthenticated-dev\" \"npm run dev --prefix client\"",
     "test": "bash scripts/test.sh",
     "desktop:dev": "bash scripts/desktop.sh debug",
     "desktop:build": "bash scripts/desktop.sh release",

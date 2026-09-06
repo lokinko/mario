@@ -7,7 +7,7 @@
 ## 当前能力
 
 - macOS 桌面客户端：Tauri + React + TypeScript
-- 独立本地服务端：Rust + Axum，仅监听 `127.0.0.1:4217`
+- 独立本地服务端：Rust + Axum；桌面端使用随机回环端口和每次启动的认证令牌
 - 本地 SQLite：财务档案、目标、可编辑持仓、决策与分析历史
 - 系统钥匙串：模型 API Key 不写入数据库
 - 确定性风险规则：应急资金、负债压力、集中度、期限错配
@@ -44,7 +44,7 @@ docs/                   架构与投资方法论
 scripts/                sidecar 构建脚本
 ```
 
-产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[AI 工作流契约](docs/ai-workflow.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[本地桌面威胁模型](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
 
 ## 本地开发
 
@@ -55,7 +55,9 @@ npm run install:all
 npm run dev
 ```
 
-浏览器客户端运行在 `http://localhost:1420`，本地服务运行在 `http://127.0.0.1:4217`。
+浏览器开发客户端运行在 `http://localhost:1420`，开发服务默认运行在 `http://127.0.0.1:4217`。打包后的桌面客户端会为每次启动选择独立的随机回环端口，不使用固定端口。
+
+直接启动服务端时必须通过 `COMPASS_AUTH_TOKEN` 提供至少 32 字符的随机令牌；只有本地浏览器开发可以显式使用 `--allow-unauthenticated-dev`。
 
 桌面调试：
 

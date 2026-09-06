@@ -14,8 +14,10 @@ use std::{collections::HashSet, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use ai::{ChatMessage, InvestmentOrchestrator, ModelProvider, OpenAiCompatibleProvider};
 use axum::{
-    extract::{Path, State},
-    http::{HeaderValue, Method},
+    extract::{Path, Request, State},
+    http::{header, HeaderValue, Method},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{get, post, put},
     Json, Router,
 };
@@ -39,6 +41,13 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 struct AppState {
     db: Database,
+    auth_token: Option<String>,
+}
+
+struct ServerOptions {
+    parent_pid: Option<u32>,
+    port: u16,
+    auth_token: Option<String>,
 }
 
 #[tokio::main]
@@ -51,13 +60,14 @@ async fn main() -> AppResult<()> {
         .init();
 
     let data_dir = data_directory()?;
-    let parent_pid = parent_pid_argument();
+    let options = server_options()?;
     let (parent_exit_tx, parent_exit_rx) = watch::channel(false);
-    if let Some(pid) = parent_pid {
+    if let Some(pid) = options.parent_pid {
         tokio::spawn(watch_parent(pid, parent_exit_tx));
     }
     let state = Arc::new(AppState {
         db: Database::open(&data_dir.join("compass.db"))?,
+        auth_token: options.auth_token.clone(),
     });
     let cors = CorsLayer::new()
         .allow_origin([
@@ -67,7 +77,7 @@ async fn main() -> AppResult<()> {
             "http://tauri.localhost".parse::<HeaderValue>().unwrap(),
         ])
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
-        .allow_headers([axum::http::header::CONTENT_TYPE]);
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
     let app = Router::new()
         .route("/api/health", get(health))
@@ -126,12 +136,16 @@ async fn main() -> AppResult<()> {
         .route("/api/analysis/preview", post(preview_analysis))
         .route("/api/analysis", post(run_analysis))
         .route("/api/analyses", get(analyses))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_local_auth,
+        ))
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state);
 
-    let address = SocketAddr::from(([127, 0, 0, 1], 4217));
-    tracing::info!(%address, data_dir = %data_dir.display(), "local service started");
+    let address = SocketAddr::from(([127, 0, 0, 1], options.port));
+    tracing::info!(%address, data_dir = %data_dir.display(), authenticated = options.auth_token.is_some(), "local service started");
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .map_err(AppError::Io)?;
@@ -140,6 +154,34 @@ async fn main() -> AppResult<()> {
         .await
         .map_err(AppError::Io)?;
     Ok(())
+}
+
+async fn require_local_auth(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let Some(expected) = state.auth_token.as_deref() else {
+        return next.run(request).await;
+    };
+    let provided = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    if !provided.is_some_and(|value| token_matches(expected, value)) {
+        return AppError::LocalAuth("请求缺少本次应用启动生成的访问令牌".into()).into_response();
+    }
+    next.run(request).await
+}
+
+fn token_matches(expected: &str, provided: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    use subtle::ConstantTimeEq;
+
+    Sha256::digest(expected.as_bytes())
+        .ct_eq(&Sha256::digest(provided.as_bytes()))
+        .into()
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -544,14 +586,54 @@ fn data_directory() -> AppResult<PathBuf> {
         .ok_or_else(|| AppError::Validation("无法确定本地数据目录".into()))
 }
 
-fn parent_pid_argument() -> Option<u32> {
+fn server_options() -> AppResult<ServerOptions> {
     let mut arguments = std::env::args();
+    let mut parent_pid = None;
+    let mut port = 4217_u16;
+    let mut allow_unauthenticated_dev = false;
     while let Some(argument) = arguments.next() {
-        if argument == "--parent-pid" {
-            return arguments.next().and_then(|value| value.parse().ok());
+        match argument.as_str() {
+            "--parent-pid" => {
+                parent_pid = Some(
+                    arguments
+                        .next()
+                        .ok_or_else(|| AppError::Validation("--parent-pid 缺少参数".into()))?
+                        .parse::<u32>()
+                        .map_err(|_| AppError::Validation("--parent-pid 参数无效".into()))?,
+                );
+            }
+            "--port" => {
+                port = arguments
+                    .next()
+                    .ok_or_else(|| AppError::Validation("--port 缺少参数".into()))?
+                    .parse::<u16>()
+                    .map_err(|_| AppError::Validation("--port 参数无效".into()))?;
+                if port == 0 {
+                    return Err(AppError::Validation("--port 不能为 0".into()));
+                }
+            }
+            "--allow-unauthenticated-dev" => allow_unauthenticated_dev = true,
+            _ => {}
         }
     }
-    None
+    let auth_token = std::env::var("COMPASS_AUTH_TOKEN")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    if !allow_unauthenticated_dev
+        && auth_token
+            .as_deref()
+            .is_none_or(|value| value.len() < 32 || value.len() > 256)
+    {
+        return Err(AppError::Validation(
+            "本地服务必须由桌面客户端携带随机认证令牌启动；开发模式请显式使用 --allow-unauthenticated-dev"
+                .into(),
+        ));
+    }
+    Ok(ServerOptions {
+        parent_pid,
+        port,
+        auth_token,
+    })
 }
 
 async fn watch_parent(parent_pid: u32, exit: watch::Sender<bool>) {
@@ -649,5 +731,12 @@ mod tests {
         assert!(validate_analysis_request(&request(vec!["same".into(), "same".into()])).is_err());
         assert!(validate_analysis_request(&request(vec!["x".repeat(129)])).is_err());
         assert!(validate_analysis_request(&request(vec!["memory-1".into()])).is_ok());
+    }
+
+    #[test]
+    fn local_auth_token_comparison_rejects_missing_or_different_values() {
+        let token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assert!(token_matches(token, token));
+        assert!(!token_matches(token, "different"));
     }
 }
