@@ -21,13 +21,15 @@
 可选表头：
 
 - `fx_rate_to_base`：外币必填，含义是 1 单位原币折合多少基准币种；
+- `fx_rate_source`：汇率来源；留空时规范化为 `user_declared`；
+- `fx_rate_observed_on`：汇率实际观察日；留空时使用流水发生日，且不得晚于发生日；
 - `asset_name`：买入、卖出、分红和利息必须填写。
 
 模板示例：
 
 ```csv
-source,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,asset_name,note
-券商账户,trade-001,buy,2026-09-01,10000,CNY,,全球指数基金,定投买入
+source,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,fx_rate_source,fx_rate_observed_on,asset_name,note
+券商账户,trade-001,buy,2026-09-01,1000,USD,6.72,ecb_reference,2026-09-01,全球指数基金,定投买入
 ```
 
 ## 预览状态与写入语义
@@ -38,7 +40,7 @@ source,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,asset_
 
 稳定编号先生成不可逆 SHA-256 指纹，唯一索引关闭并发重复写入窗口；内容散列用于区分安全重试与真实冲突。确认接口重新执行完整预览并核对预览版本，基线、现有流水或文件内容改变后，旧确认会被拒绝。所有待写入行最终在一个 SQLite 事务中提交，不产生半批成功。
 
-导入成功后的流水与手工流水遵守同一冻结边界：发生日必须晚于最近检查点的估值日。系统保存来源和外部编号用于本地审计、重试去重和端到端加密同步，但不会把这两个导入标识发送给模型。
+导入成功后的流水与手工流水遵守同一冻结边界：发生日必须晚于最近检查点的估值日。系统保存汇率来源和观察日期，并把它们发送给模型以区分参考值与用户声明值；CSV 来源和外部编号只用于本地审计、重试去重和端到端加密同步，不会发送给模型。
 
 ## 当前边界
 

@@ -336,6 +336,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-01-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             },
             Holding {
                 id: "two".into(),
@@ -348,6 +350,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-01-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             },
         ];
         let actions = rebalance_actions(&holdings);
@@ -386,6 +390,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-01-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             },
             Holding {
                 id: "two".into(),
@@ -398,6 +404,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-01-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             },
         ];
         let plan = analyze_at(

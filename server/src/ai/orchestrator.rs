@@ -521,6 +521,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-01-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             }],
             findings: vec![RiskFinding {
                 level: "medium".into(),

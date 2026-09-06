@@ -31,6 +31,7 @@
 - 安全 CSV 导入：写入前逐行预览，使用来源交易编号幂等去重；编号冲突或错误行会阻止整批写入
 - 组合变化归因：周期性冻结持仓，自动汇总区间流水，把组合总变化、外部现金流与估值/数据残差分开观察，并提供明确标注的 Modified Dietz 近似回报
 - 估值口径护栏：支持基准币种、外币折算汇率和持仓估值日；缺失汇率或日期错位时停止伪精确汇总与归因
+- 可追溯参考汇率：按估值日查询 ECB 日度序列，周末使用最近共同工作日并明确标注；来源与观察日期随记录冻结
 - 研究证据账本：记录来源层级、HTTPS 链接、资料日期、支持/反驳关系与限制
 - 证据检索与引用：按问题和组合筛选，发送前冻结，要求 AI 只引用实际进入载荷的来源
 - 简化概率校准：使用历史置信度与逻辑结果训练概率意识，不用单笔盈亏评价能力
@@ -48,6 +49,7 @@ server/                 可独立启动的本地 HTTP 服务
   src/memory.rs         可替换、可解释的结构化记忆检索接口
   src/evidence.rs       可替换的研究证据检索接口
   src/valuation.rs      基准币种折算、估值完整性与资产类别变化
+  src/market_data.rs    可替换汇率 Provider 与 ECB 参考汇率适配器
   src/performance.rs    流水分类汇总与现金流调整后期间回报
   src/event_import.rs   CSV 解析、字段映射与不可信输入边界
   src/risk.rs           不依赖大模型的风险规则
@@ -55,7 +57,7 @@ docs/                   架构与投资方法论
 scripts/                sidecar 构建脚本
 ```
 
-产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[本地桌面威胁模型](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合变化归因](docs/portfolio-attribution.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[本地桌面威胁模型](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合变化归因](docs/portfolio-attribution.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[可追溯汇率数据](docs/market-data.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
 
 ## 本地开发
 
@@ -106,4 +108,4 @@ npm run desktop:build
 
 默认数据库位于操作系统的本地数据目录 `com.compassinvest.desktop/compass.db`。开发和测试时可通过 `COMPASS_DATA_DIR` 指定隔离目录。
 
-服务端只在用户主动发起 AI 分析时，将完成该任务所需的投资上下文发送给用户配置的模型服务。云同步同样只在用户主动操作时发生，模型密钥、登录令牌、恢复密钥与本机提醒设置不会进入同步包。桌面提醒必须由用户主动开启并授权系统通知；应用关闭后不会在后台运行。当前版本尚未实现本地数据库整体加密、证券行情源或券商交易。
+服务端只在用户主动发起 AI 分析时，将完成该任务所需的投资上下文发送给用户配置的模型服务。用户主动查询汇率时，ECB 只收到币种与日期。云同步同样只在用户主动操作时发生，模型密钥、登录令牌、恢复密钥与本机提醒设置不会进入同步包。桌面提醒必须由用户主动开启并授权系统通知；应用关闭后不会在后台运行。当前版本尚未实现本地数据库整体加密、证券价格行情源或券商交易。

@@ -26,6 +26,8 @@ pub enum AppError {
     Conflict(String),
     #[error("云同步服务错误：{0}")]
     Cloud(String),
+    #[error("市场数据服务错误：{0}")]
+    MarketData(String),
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
@@ -53,7 +55,7 @@ impl IntoResponse for AppError {
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Model(_) | AppError::Network(_) => StatusCode::BAD_GATEWAY,
-            AppError::Cloud(_) => StatusCode::BAD_GATEWAY,
+            AppError::Cloud(_) | AppError::MarketData(_) => StatusCode::BAD_GATEWAY,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let message = self.to_string();

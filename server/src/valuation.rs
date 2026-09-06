@@ -140,6 +140,8 @@ mod tests {
             currency: currency.into(),
             fx_rate_to_base: rate,
             valuation_date: date.into(),
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
         }
     }
 

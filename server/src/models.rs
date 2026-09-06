@@ -2,6 +2,30 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FxRateQuery {
+    pub from_currency: String,
+    pub to_currency: String,
+    pub on_date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FxRateQuote {
+    pub from_currency: String,
+    pub to_currency: String,
+    pub rate: f64,
+    pub requested_on: String,
+    pub observed_on: String,
+    pub staleness_days: i64,
+    pub provider_code: String,
+    pub provider_name: String,
+    pub source_url: String,
+    pub methodology_url: String,
+    pub disclaimer: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FinancialProfile {
     pub monthly_income: f64,
     pub monthly_expense: f64,
@@ -69,6 +93,10 @@ pub struct Holding {
     pub fx_rate_to_base: Option<f64>,
     #[serde(default)]
     pub valuation_date: String,
+    #[serde(default)]
+    pub fx_rate_source: String,
+    #[serde(default)]
+    pub fx_rate_observed_on: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +113,10 @@ pub struct HoldingInput {
     pub fx_rate_to_base: Option<f64>,
     #[serde(default)]
     pub valuation_date: String,
+    #[serde(default)]
+    pub fx_rate_source: String,
+    #[serde(default)]
+    pub fx_rate_observed_on: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +146,10 @@ pub struct PortfolioEventInput {
     pub currency: String,
     #[serde(default)]
     pub fx_rate_to_base: Option<f64>,
+    #[serde(default)]
+    pub fx_rate_source: String,
+    #[serde(default)]
+    pub fx_rate_observed_on: String,
     pub occurred_on: String,
     pub note: String,
 }
@@ -131,6 +167,10 @@ pub struct PortfolioEventRecord {
     pub amount: f64,
     pub currency: String,
     pub fx_rate_to_base: Option<f64>,
+    #[serde(default)]
+    pub fx_rate_source: String,
+    #[serde(default)]
+    pub fx_rate_observed_on: String,
     pub base_currency: String,
     pub base_amount: f64,
     pub occurred_on: String,
@@ -164,6 +204,8 @@ pub struct PortfolioEventImportRow {
     pub amount: Option<f64>,
     pub currency: String,
     pub fx_rate_to_base: Option<f64>,
+    pub fx_rate_source: String,
+    pub fx_rate_observed_on: String,
     pub asset_name: String,
     pub note: String,
 }

@@ -5,6 +5,7 @@ mod db;
 mod error;
 mod event_import;
 mod evidence;
+mod market_data;
 mod memory;
 mod models;
 mod performance;
@@ -17,7 +18,7 @@ use std::{collections::HashSet, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use ai::{ChatMessage, InvestmentOrchestrator, ModelProvider, OpenAiCompatibleProvider};
 use axum::{
-    extract::{Path, Request, State},
+    extract::{Path, Query, Request, State},
     http::{header, HeaderValue, Method},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -32,12 +33,13 @@ use cloud_sync::{
 use db::Database;
 use error::{AppError, AppResult};
 use evidence::{EvidenceRetriever, LexicalEvidenceRetriever};
+use market_data::{EcbFxRateProvider, FxRateProvider};
 use memory::{HybridMemoryRetriever, MemoryRetriever};
 use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
-    DecisionRecord, DecisionReviewInput, FinancialProfile, GoalInput, HoldingInput, InvestmentRule,
-    InvestmentRuleInput, InvestmentRuleRevision, ModelConfig, ModelConfigInput,
-    ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord,
+    DecisionRecord, DecisionReviewInput, FinancialProfile, FxRateQuery, FxRateQuote, GoalInput,
+    HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, ModelConfig,
+    ModelConfigInput, ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord,
     PortfolioEventImportCommitRequest, PortfolioEventImportPreview, PortfolioEventImportRequest,
     PortfolioEventImportResult, PortfolioEventInput, PortfolioEventRecord, ReminderSettings,
     ReminderSettingsInput, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
@@ -50,6 +52,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 struct AppState {
     db: Database,
     auth_token: Option<String>,
+    fx_provider: Arc<dyn FxRateProvider>,
 }
 
 struct ServerOptions {
@@ -76,6 +79,7 @@ async fn main() -> AppResult<()> {
     let state = Arc::new(AppState {
         db: Database::open(&data_dir.join("compass.db"))?,
         auth_token: options.auth_token.clone(),
+        fx_provider: Arc::new(EcbFxRateProvider::new()?),
     });
     let cors = CorsLayer::new()
         .allow_origin([
@@ -90,6 +94,7 @@ async fn main() -> AppResult<()> {
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/snapshot", get(snapshot))
+        .route("/api/market-data/fx-rate", get(fx_rate_quote))
         .route("/api/profile", put(save_profile))
         .route("/api/holdings", post(add_holding))
         .route(
@@ -224,6 +229,13 @@ async fn health() -> Json<serde_json::Value> {
 }
 async fn snapshot(State(state): State<Arc<AppState>>) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.snapshot()?))
+}
+
+async fn fx_rate_quote(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<FxRateQuery>,
+) -> AppResult<Json<FxRateQuote>> {
+    Ok(Json(state.fx_provider.quote(&query).await?))
 }
 async fn save_profile(
     State(state): State<Arc<AppState>>,

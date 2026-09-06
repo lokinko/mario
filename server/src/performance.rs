@@ -76,6 +76,8 @@ mod tests {
             amount,
             currency: "CNY".into(),
             fx_rate_to_base: None,
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
             base_currency: "CNY".into(),
             base_amount: amount,
             occurred_on: occurred_on.into(),

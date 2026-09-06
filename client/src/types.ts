@@ -33,6 +33,22 @@ export interface Holding {
   currency: string;
   fxRateToBase: number | null;
   valuationDate: string;
+  fxRateSource: string;
+  fxRateObservedOn: string;
+}
+
+export interface FxRateQuote {
+  fromCurrency: string;
+  toCurrency: string;
+  rate: number;
+  requestedOn: string;
+  observedOn: string;
+  stalenessDays: number;
+  providerCode: string;
+  providerName: string;
+  sourceUrl: string;
+  methodologyUrl: string;
+  disclaimer: string;
 }
 
 export interface PortfolioCheckInInput {
@@ -53,6 +69,8 @@ export interface PortfolioEventInput {
   amount: number;
   currency: string;
   fxRateToBase: number | null;
+  fxRateSource: string;
+  fxRateObservedOn: string;
   occurredOn: string;
   note: string;
 }
@@ -77,6 +95,8 @@ export interface PortfolioEventImportRow {
   amount: number | null;
   currency: string;
   fxRateToBase: number | null;
+  fxRateSource: string;
+  fxRateObservedOn: string;
   assetName: string;
   note: string;
 }

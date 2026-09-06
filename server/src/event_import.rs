@@ -54,6 +54,8 @@ pub fn parse(csv_text: &str) -> AppResult<ParsedEventCsv> {
         "amount",
         "currency",
         "fx_rate_to_base",
+        "fx_rate_source",
+        "fx_rate_observed_on",
         "asset_name",
         "note",
     ];
@@ -126,6 +128,8 @@ fn parse_record(
     let currency = value("currency").to_owned();
     let asset_name = value("asset_name").to_owned();
     let note = value("note").to_owned();
+    let fx_rate_source = value("fx_rate_source").to_owned();
+    let fx_rate_observed_on = value("fx_rate_observed_on").to_owned();
     let amount_text = value("amount");
 
     let amount = match amount_text.parse::<f64>() {
@@ -141,6 +145,8 @@ fn parse_record(
                 None,
                 &currency,
                 None,
+                &fx_rate_source,
+                &fx_rate_observed_on,
                 &asset_name,
                 &note,
             )));
@@ -159,6 +165,8 @@ fn parse_record(
                 Some(amount),
                 &currency,
                 None,
+                &fx_rate_source,
+                &fx_rate_observed_on,
                 &asset_name,
                 &note,
             )));
@@ -181,6 +189,8 @@ fn parse_record(
                     Some(amount),
                     &currency,
                     None,
+                    &fx_rate_source,
+                    &fx_rate_observed_on,
                     &asset_name,
                     &note,
                 )));
@@ -198,6 +208,8 @@ fn parse_record(
             amount,
             currency,
             fx_rate_to_base,
+            fx_rate_source,
+            fx_rate_observed_on,
             occurred_on,
             note,
         },
@@ -219,7 +231,9 @@ fn parse_event_type(value: &str) -> Option<PortfolioEventType> {
 }
 
 fn issue(row_number: usize, message: String) -> PortfolioEventImportRow {
-    issue_with_values(row_number, message, "", "", "", "", None, "", None, "", "")
+    issue_with_values(
+        row_number, message, "", "", "", "", None, "", None, "", "", "", "",
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -233,6 +247,8 @@ fn issue_with_values(
     amount: Option<f64>,
     currency: &str,
     fx_rate_to_base: Option<f64>,
+    fx_rate_source: &str,
+    fx_rate_observed_on: &str,
     asset_name: &str,
     note: &str,
 ) -> PortfolioEventImportRow {
@@ -247,6 +263,8 @@ fn issue_with_values(
         amount,
         currency: currency.into(),
         fx_rate_to_base,
+        fx_rate_source: fx_rate_source.into(),
+        fx_rate_observed_on: fx_rate_observed_on.into(),
         asset_name: asset_name.into(),
         note: note.into(),
     }

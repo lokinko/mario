@@ -40,6 +40,7 @@ import {
   deleteHolding,
   deleteGoal,
   getDecisions,
+  getFxRate,
   exportCloudRecoveryKey,
   getCloudConfig,
   getCloudStatus,
@@ -99,6 +100,7 @@ import type {
   DecisionReview,
   DecisionRuleCheck,
   FinancialProfile,
+  FxRateQuote,
   Goal,
   Holding,
   InvestmentRule,
@@ -188,6 +190,7 @@ function emptyHolding(baseCurrency = "CNY"): Omit<Holding, "id"> {
   return {
     symbol: "", name: "", assetClass: "基金", marketValue: 0, costBasis: 0, targetPct: 0,
     currency: baseCurrency, fxRateToBase: null, valuationDate: localDateValue(new Date()),
+    fxRateSource: "", fxRateObservedOn: "",
   };
 }
 
@@ -200,6 +203,8 @@ function emptyPortfolioEvent(baseCurrency = "CNY"): PortfolioEventInput {
     amount: 0,
     currency: baseCurrency,
     fxRateToBase: null,
+    fxRateSource: "",
+    fxRateObservedOn: "",
     occurredOn: localDateValue(new Date()),
     note: "",
   };
@@ -216,8 +221,20 @@ const portfolioEventLabels: Record<PortfolioEventType, string> = {
   sell: "卖出",
 };
 
+const ecbFxMethodologyUrl = "https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates";
+
+function fxSourceLabel(source: string) {
+  if (source === "ecb_reference") return "ECB 参考汇率";
+  if (source === "user_declared") return "用户声明汇率";
+  return source || "待确认来源";
+}
+
+function normalizedQuoteRate(rate: number) {
+  return Number(rate.toPrecision(12));
+}
+
 function downloadPortfolioEventCsvTemplate(baseCurrency: string) {
-  const portfolioEventCsvTemplate = `\ufeffsource,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,asset_name,note\n券商账户,trade-001,buy,${localDateValue(new Date())},10000,${baseCurrency},,全球指数基金,定投买入\n`;
+  const portfolioEventCsvTemplate = `\ufeffsource,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,fx_rate_source,fx_rate_observed_on,asset_name,note\n券商账户,trade-001,buy,${localDateValue(new Date())},10000,${baseCurrency},,,,全球指数基金,定投买入\n`;
   const url = URL.createObjectURL(new Blob([portfolioEventCsvTemplate], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
@@ -527,6 +544,9 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
   const [importPreview, setImportPreview] = useState<PortfolioEventImportPreview | null>(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
+  const [eventFxQuote, setEventFxQuote] = useState<FxRateQuote | null>(null);
+  const [eventFxLoading, setEventFxLoading] = useState(false);
+  const [eventFxError, setEventFxError] = useState("");
   const latestCheckin = checkins[0];
   const requiresAsset = ["buy", "sell", "dividend", "interest"].includes(draft.eventType);
 
@@ -556,10 +576,21 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
     try {
       await savePortfolioEvent(draft);
       setDraft(emptyPortfolioEvent(snapshot.profile.baseCurrency));
+      setEventFxQuote(null); setEventFxError("");
       await load();
       flash("组合流水已冻结；后续检查点会按日期自动汇总");
     } catch (nextError) { setError(String(nextError)); }
     finally { setSaving(false); }
+  };
+
+  const lookupEventFx = async () => {
+    setEventFxLoading(true); setEventFxError("");
+    try {
+      const quote = await getFxRate(draft.currency, snapshot.profile.baseCurrency, draft.occurredOn);
+      setDraft((value) => ({ ...value, fxRateToBase: normalizedQuoteRate(quote.rate), fxRateSource: quote.providerCode, fxRateObservedOn: quote.observedOn }));
+      setEventFxQuote(quote);
+    } catch (nextError) { setEventFxQuote(null); setEventFxError(String(nextError)); }
+    finally { setEventFxLoading(false); }
   };
 
   const selectCsvFile = async (file?: File) => {
@@ -610,9 +641,12 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
           <label><span>流水类型</span><select value={draft.eventType} onChange={(event) => setDraft({ ...draft, eventType: event.target.value as PortfolioEventType })}>{Object.entries(portfolioEventLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>入金/出金属于外部现金流；其他项目属于组合内部活动。</small></label>
           <label><span>关联资产{requiresAsset ? "" : "（可选）"}</span><input maxLength={200} value={draft.assetName} onChange={(event) => setDraft({ ...draft, assetName: event.target.value })} placeholder="例如：全球股票指数基金" /></label>
           <NumberField label={`金额（${draft.currency}）`} value={draft.amount} onChange={(value) => setDraft({ ...draft, amount: Number(value) })} prefix={draft.currency} />
-          <label><span>原币种</span><select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value, fxRateToBase: event.target.value === snapshot.profile.baseCurrency ? null : draft.fxRateToBase })}>{["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => <option key={value}>{value}</option>)}</select></label>
-          {draft.currency !== snapshot.profile.baseCurrency && <NumberField label={`折算汇率（1 ${draft.currency} = ? ${snapshot.profile.baseCurrency}）`} value={draft.fxRateToBase ?? 0} onChange={(value) => setDraft({ ...draft, fxRateToBase: value ? Number(value) : null })} suffix={snapshot.profile.baseCurrency} />}
-          <label><span>发生日期</span><input type="date" min={latestCheckin?.valuationDate ? nextCalendarDate(latestCheckin.valuationDate) : undefined} max={localDateValue(new Date())} value={draft.occurredOn} onChange={(event) => setDraft({ ...draft, occurredOn: event.target.value })} /><small>日期用于自动分段和现金流权重。</small></label>
+          <label><span>原币种</span><select value={draft.currency} onChange={(event) => { setDraft({ ...draft, currency: event.target.value, fxRateToBase: null, fxRateSource: "", fxRateObservedOn: "" }); setEventFxQuote(null); setEventFxError(""); }}>{["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => <option key={value}>{value}</option>)}</select></label>
+          {draft.currency !== snapshot.profile.baseCurrency && <>
+            <NumberField label={`折算汇率（1 ${draft.currency} = ? ${snapshot.profile.baseCurrency}）`} value={draft.fxRateToBase ?? 0} onChange={(value) => { setDraft({ ...draft, fxRateToBase: value ? Number(value) : null, fxRateSource: "", fxRateObservedOn: "" }); setEventFxQuote(null); }} suffix={snapshot.profile.baseCurrency} />
+            <div className="fx-lookup"><button className="secondary" disabled={eventFxLoading || !draft.occurredOn} onClick={lookupEventFx}>{eventFxLoading ? <LoaderCircle className="spin" size={15} /> : <Cloud size={15} />}查询 ECB 当日参考汇率</button>{eventFxError && <small className="fx-error">{eventFxError}</small>}{draft.fxRateSource && <small>已采用 {fxSourceLabel(draft.fxRateSource)} · 观察日 {draft.fxRateObservedOn}</small>}{eventFxQuote && <p>{eventFxQuote.stalenessDays ? `非工作日，使用此前 ${eventFxQuote.stalenessDays} 天的共同观察值。` : "已取得当日共同观察值。"}<a href={eventFxQuote.sourceUrl} target="_blank" rel="noreferrer">核对原始数据</a></p>}</div>
+          </>}
+          <label><span>发生日期</span><input type="date" min={latestCheckin?.valuationDate ? nextCalendarDate(latestCheckin.valuationDate) : undefined} max={localDateValue(new Date())} value={draft.occurredOn} onChange={(event) => { setDraft({ ...draft, occurredOn: event.target.value, fxRateToBase: null, fxRateSource: "", fxRateObservedOn: "" }); setEventFxQuote(null); setEventFxError(""); }} /><small>日期用于自动分段和现金流权重。</small></label>
           <label className="ledger-note"><span>核对说明</span><textarea maxLength={2000} value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} placeholder="例如：工资结余转入证券账户；以银行流水为准" /></label>
         </div>
         <div className="form-actions"><p><ShieldCheck size={16} />买卖额不改变组合总值，也不会被系统当作收益。</p><button className="primary" disabled={saving || !latestCheckin?.valuationDate || draft.occurredOn <= (latestCheckin?.valuationDate ?? "") || draft.amount <= 0 || !draft.occurredOn || !draft.note.trim() || (requiresAsset && !draft.assetName.trim()) || Boolean(draft.currency !== snapshot.profile.baseCurrency && (!draft.fxRateToBase || draft.fxRateToBase <= 0))} onClick={persist}><Plus size={16} />{saving ? "保存中…" : "冻结这笔流水"}</button></div>
@@ -626,7 +660,7 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
           <button className="secondary" onClick={() => downloadPortfolioEventCsvTemplate(snapshot.profile.baseCurrency)}><Download size={16} />下载模板</button>
           <button className="secondary" disabled={!csvText || importing || !latestCheckin?.valuationDate} onClick={previewCsv}>{importing ? <LoaderCircle className="spin" size={16} /> : <Eye size={16} />}校验并预览</button>
         </div>
-        <p className="import-hint">必填列：source、external_id、event_type、occurred_on、amount、currency、note；可选列：fx_rate_to_base、asset_name。单次最多 1000 行、2 MB。</p>
+        <p className="import-hint">必填列：source、external_id、event_type、occurred_on、amount、currency、note；可选列：fx_rate_to_base、fx_rate_source、fx_rate_observed_on、asset_name。单次最多 1000 行、2 MB。</p>
         {importError && <div className="error-box"><AlertTriangle size={17} />{importError}</div>}
         {importPreview && <div className="import-preview">
           <div className="import-result-bar">
@@ -639,7 +673,7 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
             <td>{row.rowNumber}</td><td><span>{row.status === "ready" ? "可导入" : row.status === "duplicate" ? "重复" : "错误"}</span></td>
             <td><strong>{row.source || "—"}</strong><small>{row.externalId || "—"}</small></td>
             <td><strong>{portfolioEventLabels[row.eventType as PortfolioEventType] ?? (row.eventType || "—")}</strong><small>{row.occurredOn || "—"}</small></td>
-            <td>{row.amount === null ? "—" : formatMoney(row.amount, row.currency || importPreview.baseCurrency)}{row.fxRateToBase && <small>汇率 {row.fxRateToBase}</small>}</td><td><strong>{row.assetName || "组合账户"}</strong><small>{row.note || "—"}</small></td><td>{row.message}</td>
+            <td>{row.amount === null ? "—" : formatMoney(row.amount, row.currency || importPreview.baseCurrency)}{row.fxRateToBase && <small>汇率 {row.fxRateToBase}</small>}{row.fxRateSource && <small>{fxSourceLabel(row.fxRateSource)} · {row.fxRateObservedOn}</small>}</td><td><strong>{row.assetName || "组合账户"}</strong><small>{row.note || "—"}</small></td><td>{row.message}</td>
           </tr>)}</tbody></table></div>
           <div className="import-actions"><p><ShieldCheck size={16} />有任意错误时整批不会写入；确认时会再次校验预览版本。</p><button className="primary" disabled={importing || importPreview.errorCount > 0 || importPreview.readyCount === 0} onClick={commitCsv}><Check size={16} />{importing ? "写入中…" : `确认写入 ${importPreview.readyCount} 笔`}</button></div>
         </div>}
@@ -652,7 +686,7 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
         <div className="ledger-list">{events.map((item) => <article key={item.id}>
           <span className={`event-kind kind-${item.eventType}`}>{portfolioEventLabels[item.eventType]}</span>
           <div><strong>{item.assetName || "组合账户"}</strong><p>{item.note}</p><small>{item.occurredOn} · 录入 {new Date(item.createdAt).toLocaleString("zh-CN")}{item.externalId ? ` · ${item.source}/${item.externalId}` : ""}</small></div>
-          <div className="ledger-amount"><strong>{formatMoney(item.amount, item.currency)}</strong><small>{item.currency === item.baseCurrency ? item.baseCurrency : `汇率 ${item.fxRateToBase} · ${formatMoney(item.baseAmount, item.baseCurrency)}`}</small></div>
+          <div className="ledger-amount"><strong>{formatMoney(item.amount, item.currency)}</strong><small>{item.currency === item.baseCurrency ? item.baseCurrency : `汇率 ${item.fxRateToBase} · ${formatMoney(item.baseAmount, item.baseCurrency)}`}</small>{item.fxRateSource && <small>{fxSourceLabel(item.fxRateSource)} · {item.fxRateObservedOn}</small>}</div>
         </article>)}</div>
         <p className="effectiveness-disclaimer">这些记录来自用户输入，系统校验结构和口径但不核验银行、券商或市场事实。若需要纠错，应保留说明并建立新的比较基线，不能回写已经冻结的期间。</p>
       </section>
@@ -667,6 +701,9 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
   const [goal, setGoal] = useState<Omit<Goal, "id">>(emptyGoal);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [holdingFxQuote, setHoldingFxQuote] = useState<FxRateQuote | null>(null);
+  const [holdingFxLoading, setHoldingFxLoading] = useState(false);
+  const [holdingFxError, setHoldingFxError] = useState("");
 
   const updateNumber = (key: keyof FinancialProfile, value: string) => setProfile({ ...profile, [key]: Number(value) });
 
@@ -684,6 +721,7 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
         : await saveHolding(holding);
       onUpdate(next);
       setHolding(emptyHolding(profile.baseCurrency));
+      setHoldingFxQuote(null); setHoldingFxError("");
       setEditingHoldingId(null);
       flash(editingHoldingId ? "资产信息已更新" : "资产已加入组合");
     } finally { setSaving(false); }
@@ -693,6 +731,17 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
     const { id, ...values } = item;
     setHolding(values);
     setEditingHoldingId(id);
+    setHoldingFxQuote(null); setHoldingFxError("");
+  };
+
+  const lookupHoldingFx = async () => {
+    setHoldingFxLoading(true); setHoldingFxError("");
+    try {
+      const quote = await getFxRate(holding.currency, profile.baseCurrency, holding.valuationDate);
+      setHolding((value) => ({ ...value, fxRateToBase: normalizedQuoteRate(quote.rate), fxRateSource: quote.providerCode, fxRateObservedOn: quote.observedOn }));
+      setHoldingFxQuote(quote);
+    } catch (nextError) { setHoldingFxQuote(null); setHoldingFxError(String(nextError)); }
+    finally { setHoldingFxLoading(false); }
   };
 
   const removeHolding = async (item: Holding) => {
@@ -777,7 +826,7 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
             const pnlPct = item.costBasis > 0 ? (item.marketValue - item.costBasis) / item.costBasis * 100 : 0;
             return <div className={editingHoldingId === item.id ? "editing" : ""} key={item.id}>
               <strong>{item.name}<small>{item.symbol || "未填写代码"}</small></strong>
-              <span>{item.assetClass}<small>{item.currency}{item.currency !== profile.baseCurrency && item.fxRateToBase ? ` · 汇率 ${item.fxRateToBase}` : ""}</small></span><span>{formatMoney(item.marketValue, item.currency)}<small>{item.currency !== profile.baseCurrency && item.fxRateToBase ? `折合 ${formatMoney(holdingValueInBase(item, profile.baseCurrency), profile.baseCurrency)} · ` : ""}{item.valuationDate || "待补估值日"}</small></span><span>{item.targetPct ? `${item.targetPct.toFixed(1)}%` : "未设置"}</span>
+              <span>{item.assetClass}<small>{item.currency}{item.currency !== profile.baseCurrency && item.fxRateToBase ? ` · 汇率 ${item.fxRateToBase}` : ""}</small>{item.fxRateSource && <small>{fxSourceLabel(item.fxRateSource)} · {item.fxRateObservedOn}</small>}</span><span>{formatMoney(item.marketValue, item.currency)}<small>{item.currency !== profile.baseCurrency && item.fxRateToBase ? `折合 ${formatMoney(holdingValueInBase(item, profile.baseCurrency), profile.baseCurrency)} · ` : ""}{item.valuationDate || "待补估值日"}</small></span><span>{item.targetPct ? `${item.targetPct.toFixed(1)}%` : "未设置"}</span>
               <span className={pnlPct >= 0 ? "gain" : "loss"}>{pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%</span>
               <span className="row-actions"><button aria-label="编辑资产" onClick={() => editHolding(item)}><Edit3 size={14} /></button><button aria-label="删除资产" onClick={() => removeHolding(item)}><Trash2 size={14} /></button></span>
             </div>;
@@ -787,15 +836,18 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
           <label><span>资产名称</span><input value={holding.name} onChange={(e) => setHolding({ ...holding, name: e.target.value })} placeholder="例如：宽基指数基金" /></label>
           <label><span>代码（可选）</span><input value={holding.symbol} onChange={(e) => setHolding({ ...holding, symbol: e.target.value })} placeholder="例如：000300" /></label>
           <label><span>资产类别</span><select value={holding.assetClass} onChange={(e) => setHolding({ ...holding, assetClass: e.target.value as Holding["assetClass"] })}>{["现金", "债券", "股票", "基金", "黄金", "其他"].map((v) => <option key={v}>{v}</option>)}</select></label>
-          <label><span>持仓币种</span><select value={holding.currency} onChange={(e) => setHolding({ ...holding, currency: e.target.value, fxRateToBase: e.target.value === profile.baseCurrency ? null : holding.fxRateToBase })}>{["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label><span>持仓币种</span><select value={holding.currency} onChange={(e) => { setHolding({ ...holding, currency: e.target.value, fxRateToBase: null, fxRateSource: "", fxRateObservedOn: "" }); setHoldingFxQuote(null); setHoldingFxError(""); }}>{["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => <option key={value}>{value}</option>)}</select></label>
           <NumberField label={`当前市值（${holding.currency}）`} value={holding.marketValue} onChange={(v) => setHolding({ ...holding, marketValue: Number(v) })} prefix={holding.currency} />
           <NumberField label={`累计成本（${holding.currency}）`} value={holding.costBasis} onChange={(v) => setHolding({ ...holding, costBasis: Number(v) })} prefix={holding.currency} />
           <NumberField label="目标权重" value={holding.targetPct} onChange={(v) => setHolding({ ...holding, targetPct: Number(v) })} suffix="%" />
-          <label><span>估值日期</span><input type="date" max={localDateValue(new Date())} value={holding.valuationDate} onChange={(e) => setHolding({ ...holding, valuationDate: e.target.value })} /><small>组合检查点要求全部持仓使用同一日期。</small></label>
-          {holding.currency !== profile.baseCurrency && <NumberField label={`折算汇率（1 ${holding.currency} = ? ${profile.baseCurrency}）`} value={holding.fxRateToBase ?? 0} onChange={(v) => setHolding({ ...holding, fxRateToBase: v ? Number(v) : null })} suffix={profile.baseCurrency} />}
+          <label><span>估值日期</span><input type="date" max={localDateValue(new Date())} value={holding.valuationDate} onChange={(e) => { setHolding({ ...holding, valuationDate: e.target.value, fxRateToBase: null, fxRateSource: "", fxRateObservedOn: "" }); setHoldingFxQuote(null); setHoldingFxError(""); }} /><small>组合检查点要求全部持仓使用同一日期。</small></label>
+          {holding.currency !== profile.baseCurrency && <>
+            <NumberField label={`折算汇率（1 ${holding.currency} = ? ${profile.baseCurrency}）`} value={holding.fxRateToBase ?? 0} onChange={(v) => { setHolding({ ...holding, fxRateToBase: v ? Number(v) : null, fxRateSource: "", fxRateObservedOn: "" }); setHoldingFxQuote(null); }} suffix={profile.baseCurrency} />
+            <div className="fx-lookup"><button className="secondary" disabled={holdingFxLoading || !holding.valuationDate} onClick={lookupHoldingFx}>{holdingFxLoading ? <LoaderCircle className="spin" size={15} /> : <Cloud size={15} />}查询 ECB 当日参考汇率</button>{holdingFxError && <small className="fx-error">{holdingFxError}</small>}{holding.fxRateSource && <small>已采用 {fxSourceLabel(holding.fxRateSource)} · 观察日 {holding.fxRateObservedOn}</small>}{holdingFxQuote && <p>{holdingFxQuote.stalenessDays ? `非工作日，使用此前 ${holdingFxQuote.stalenessDays} 天的共同观察值。` : "已取得当日共同观察值。"}<a href={holdingFxQuote.sourceUrl} target="_blank" rel="noreferrer">核对原始数据</a></p>}{holding.fxRateSource === "ecb_reference" && !holdingFxQuote && <a className="fx-method-link" href={ecbFxMethodologyUrl} target="_blank" rel="noreferrer">查看 ECB 参考汇率方法</a>}</div>
+          </>}
         </div>
         <div className="form-actions">
-          {editingHoldingId ? <button className="text-button" onClick={() => { setEditingHoldingId(null); setHolding(emptyHolding(profile.baseCurrency)); }}>取消修改</button> : <span />}
+          {editingHoldingId ? <button className="text-button" onClick={() => { setEditingHoldingId(null); setHolding(emptyHolding(profile.baseCurrency)); setHoldingFxQuote(null); setHoldingFxError(""); }}>取消修改</button> : <span />}
           <button className="secondary" onClick={persistHolding} disabled={saving || !holding.name || !holding.valuationDate || Boolean(holding.currency !== profile.baseCurrency && (!holding.fxRateToBase || holding.fxRateToBase <= 0))}>{editingHoldingId ? <Save size={16} /> : <Plus size={16} />}{editingHoldingId ? "保存修改" : "加入组合"}</button>
         </div>
       </section>

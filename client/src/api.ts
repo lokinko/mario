@@ -11,6 +11,7 @@ import type {
   DecisionRecord,
   DecisionReview,
   FinancialProfile,
+  FxRateQuote,
   Goal,
   Holding,
   InvestmentRule,
@@ -92,6 +93,11 @@ async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function getSnapshot(): Promise<Snapshot> {
   return httpRequest<Snapshot>("/snapshot");
+}
+
+export async function getFxRate(fromCurrency: string, toCurrency: string, onDate: string): Promise<FxRateQuote> {
+  const query = new URLSearchParams({ fromCurrency, toCurrency, onDate });
+  return httpRequest<FxRateQuote>(`/market-data/fx-rate?${query.toString()}`);
 }
 
 export async function saveProfile(profile: FinancialProfile): Promise<Snapshot> {

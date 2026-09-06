@@ -76,7 +76,7 @@ const LEGACY_HOLDING_COLUMNS: &[&str] = &[
     "updated_at",
 ];
 
-const CURRENT_HOLDING_COLUMNS: &[&str] = &[
+const V3_HOLDING_COLUMNS: &[&str] = &[
     "id",
     "symbol",
     "name",
@@ -91,9 +91,43 @@ const CURRENT_HOLDING_COLUMNS: &[&str] = &[
     "updated_at",
 ];
 
+const CURRENT_HOLDING_COLUMNS: &[&str] = &[
+    "id",
+    "symbol",
+    "name",
+    "asset_class",
+    "market_value",
+    "cost_basis",
+    "target_pct",
+    "currency",
+    "fx_rate_to_base",
+    "valuation_date",
+    "fx_rate_source",
+    "fx_rate_observed_on",
+    "created_at",
+    "updated_at",
+];
+
 const LEGACY_EVENT_COLUMNS: &[&str] = &[
     "id",
     "event_type",
+    "asset_name",
+    "amount",
+    "currency",
+    "fx_rate_to_base",
+    "base_currency",
+    "base_amount",
+    "occurred_on",
+    "note",
+    "created_at",
+];
+
+const V5_EVENT_COLUMNS: &[&str] = &[
+    "id",
+    "event_type",
+    "source",
+    "external_id",
+    "fingerprint",
     "asset_name",
     "amount",
     "currency",
@@ -115,6 +149,8 @@ const CURRENT_EVENT_COLUMNS: &[&str] = &[
     "amount",
     "currency",
     "fx_rate_to_base",
+    "fx_rate_source",
+    "fx_rate_observed_on",
     "base_currency",
     "base_amount",
     "occurred_on",
@@ -234,7 +270,7 @@ const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 5;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 6;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 
@@ -253,10 +289,17 @@ fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
         }
         3 => {
             specs.truncate(V2_V3_SYNC_TABLE_COUNT);
+            specs[2].columns = V3_HOLDING_COLUMNS;
             Ok(specs)
         }
         4 => {
+            specs[2].columns = V3_HOLDING_COLUMNS;
             specs.last_mut().expect("event sync table").columns = LEGACY_EVENT_COLUMNS;
+            Ok(specs)
+        }
+        5 => {
+            specs[2].columns = V3_HOLDING_COLUMNS;
+            specs.last_mut().expect("event sync table").columns = V5_EVENT_COLUMNS;
             Ok(specs)
         }
         SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
@@ -369,6 +412,8 @@ impl Database {
                currency TEXT NOT NULL,
                fx_rate_to_base REAL,
                valuation_date TEXT NOT NULL DEFAULT '',
+               fx_rate_source TEXT NOT NULL DEFAULT '',
+               fx_rate_observed_on TEXT NOT NULL DEFAULT '',
                created_at TEXT NOT NULL,
                updated_at TEXT NOT NULL
              );
@@ -454,6 +499,8 @@ impl Database {
                amount REAL NOT NULL,
                currency TEXT NOT NULL,
                fx_rate_to_base REAL,
+               fx_rate_source TEXT NOT NULL DEFAULT '',
+               fx_rate_observed_on TEXT NOT NULL DEFAULT '',
                base_currency TEXT NOT NULL,
                base_amount REAL NOT NULL,
                occurred_on TEXT NOT NULL,
@@ -526,6 +573,30 @@ impl Database {
             &connection,
             "holdings",
             "valuation_date",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(
+            &connection,
+            "holdings",
+            "fx_rate_source",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(
+            &connection,
+            "holdings",
+            "fx_rate_observed_on",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(
+            &connection,
+            "portfolio_events",
+            "fx_rate_source",
+            "TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(
+            &connection,
+            "portfolio_events",
+            "fx_rate_observed_on",
             "TEXT NOT NULL DEFAULT ''",
         )?;
         Ok(Self {
@@ -701,6 +772,7 @@ impl Database {
     pub fn import_sync_data(&self, dataset: &SyncDataset) -> AppResult<()> {
         dataset.validate()?;
         validate_synced_event_identities(dataset)?;
+        validate_synced_fx_provenance(dataset)?;
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
         transaction.execute_batch("PRAGMA defer_foreign_keys=ON;")?;
@@ -774,7 +846,7 @@ impl Database {
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date FROM holdings ORDER BY created_at")?;
+        let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on FROM holdings ORDER BY created_at")?;
         let holdings = holding_stmt
             .query_map([], |row| {
                 Ok(Holding {
@@ -788,6 +860,8 @@ impl Database {
                     currency: row.get(7)?,
                     fx_rate_to_base: row.get(8)?,
                     valuation_date: row.get(9)?,
+                    fx_rate_source: row.get(10)?,
+                    fx_rate_observed_on: row.get(11)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -837,9 +911,9 @@ impl Database {
         )?;
         if !previous_base_currency.eq_ignore_ascii_case(&normalized.base_currency) {
             transaction.execute(
-                "UPDATE holdings SET fx_rate_to_base=NULL, updated_at=?1
-                 WHERE UPPER(currency)<>?2",
-                params![Utc::now().to_rfc3339(), normalized.base_currency],
+                "UPDATE holdings SET fx_rate_to_base=NULL, fx_rate_source='',
+                    fx_rate_observed_on='', updated_at=?1",
+                params![Utc::now().to_rfc3339()],
             )?;
         }
         transaction.commit()?;
@@ -848,21 +922,49 @@ impl Database {
     }
 
     pub fn add_holding(&self, input: &HoldingInput) -> AppResult<Snapshot> {
-        validate_holding(input, &self.snapshot()?.profile.base_currency)?;
+        let base_currency = self.snapshot()?.profile.base_currency;
+        validate_holding(input, &base_currency)?;
+        let fx_rate_to_base = if input.currency.eq_ignore_ascii_case(&base_currency) {
+            None
+        } else {
+            input.fx_rate_to_base
+        };
+        let (fx_rate_source, fx_rate_observed_on) = normalized_fx_provenance(
+            &input.currency,
+            &base_currency,
+            fx_rate_to_base,
+            &input.fx_rate_source,
+            &input.fx_rate_observed_on,
+            &input.valuation_date,
+        )?;
         let now = Utc::now().to_rfc3339();
         self.conn()?.execute(
-            "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
-            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), input.fx_rate_to_base, input.valuation_date.trim(), now],
+            "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
+            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, now],
         )?;
         self.snapshot()
     }
 
     pub fn update_holding(&self, id: &str, input: &HoldingInput) -> AppResult<Snapshot> {
-        validate_holding(input, &self.snapshot()?.profile.base_currency)?;
+        let base_currency = self.snapshot()?.profile.base_currency;
+        validate_holding(input, &base_currency)?;
+        let fx_rate_to_base = if input.currency.eq_ignore_ascii_case(&base_currency) {
+            None
+        } else {
+            input.fx_rate_to_base
+        };
+        let (fx_rate_source, fx_rate_observed_on) = normalized_fx_provenance(
+            &input.currency,
+            &base_currency,
+            fx_rate_to_base,
+            &input.fx_rate_source,
+            &input.fx_rate_observed_on,
+            &input.valuation_date,
+        )?;
         let affected = self.conn()?.execute(
-            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, fx_rate_to_base=?9, valuation_date=?10, updated_at=?11 WHERE id=?1",
-            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), input.fx_rate_to_base, input.valuation_date.trim(), Utc::now().to_rfc3339()],
+            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, fx_rate_to_base=?9, valuation_date=?10, fx_rate_source=?11, fx_rate_observed_on=?12, updated_at=?13 WHERE id=?1",
+            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, Utc::now().to_rfc3339()],
         )?;
         if affected == 0 {
             return Err(AppError::Validation("找不到要更新的资产".into()));
@@ -884,7 +986,8 @@ impl Database {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
             "SELECT id, event_type, source, external_id, asset_name, amount, currency,
-                    fx_rate_to_base, base_currency, base_amount, occurred_on, note, created_at
+                    fx_rate_to_base, fx_rate_source, fx_rate_observed_on, base_currency,
+                    base_amount, occurred_on, note, created_at
              FROM portfolio_events
              ORDER BY occurred_on DESC, created_at DESC, id DESC LIMIT 500",
         )?;
@@ -1011,6 +1114,7 @@ impl Database {
                 input,
                 status,
                 message,
+                &base_currency,
             ));
         }
         rows.sort_by_key(|row| row.row_number);
@@ -1078,7 +1182,8 @@ impl Database {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
             "SELECT id, event_type, source, external_id, asset_name, amount, currency,
-                    fx_rate_to_base, base_currency, base_amount, occurred_on, note, created_at
+                    fx_rate_to_base, fx_rate_source, fx_rate_observed_on, base_currency,
+                    base_amount, occurred_on, note, created_at
              FROM portfolio_events WHERE external_id <> ''",
         )?;
         let rows = statement.query_map([], portfolio_event_record_from_row)?;
@@ -1094,6 +1199,8 @@ impl Database {
                     amount: record.amount,
                     currency: record.currency.clone(),
                     fx_rate_to_base: record.fx_rate_to_base,
+                    fx_rate_source: record.fx_rate_source.clone(),
+                    fx_rate_observed_on: record.fx_rate_observed_on.clone(),
                     occurred_on: record.occurred_on.clone(),
                     note: record.note.clone(),
                 }),
@@ -1111,7 +1218,8 @@ impl Database {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
             "SELECT id, event_type, source, external_id, asset_name, amount, currency,
-                    fx_rate_to_base, base_currency, base_amount, occurred_on, note, created_at
+                    fx_rate_to_base, fx_rate_source, fx_rate_observed_on, base_currency,
+                    base_amount, occurred_on, note, created_at
              FROM portfolio_events
              WHERE occurred_on > ?1 AND occurred_on <= ?2
              ORDER BY occurred_on, created_at, id",
@@ -2385,11 +2493,13 @@ fn portfolio_event_record_from_row(row: &Row<'_>) -> rusqlite::Result<PortfolioE
         amount: row.get(5)?,
         currency: row.get(6)?,
         fx_rate_to_base: row.get(7)?,
-        base_currency: row.get(8)?,
-        base_amount: row.get(9)?,
-        occurred_on: row.get(10)?,
-        note: row.get(11)?,
-        created_at: row.get(12)?,
+        fx_rate_source: row.get(8)?,
+        fx_rate_observed_on: row.get(9)?,
+        base_currency: row.get(10)?,
+        base_amount: row.get(11)?,
+        occurred_on: row.get(12)?,
+        note: row.get(13)?,
+        created_at: row.get(14)?,
     })
 }
 
@@ -2407,6 +2517,14 @@ fn portfolio_event_record(
     if !base_amount.is_finite() || base_amount > 1e15 {
         return Err(AppError::Validation("流水折算金额超出有效范围".into()));
     }
+    let (fx_rate_source, fx_rate_observed_on) = normalized_fx_provenance(
+        &currency,
+        base_currency,
+        fx_rate_to_base,
+        &input.fx_rate_source,
+        &input.fx_rate_observed_on,
+        &input.occurred_on,
+    )?;
     Ok(PortfolioEventRecord {
         id: Uuid::new_v4().to_string(),
         event_type: input.event_type.clone(),
@@ -2420,6 +2538,8 @@ fn portfolio_event_record(
         amount: input.amount,
         currency,
         fx_rate_to_base,
+        fx_rate_source,
+        fx_rate_observed_on,
         base_currency: base_currency.into(),
         base_amount,
         occurred_on: input.occurred_on.trim().into(),
@@ -2486,6 +2606,92 @@ fn validate_synced_event_identities(dataset: &SyncDataset) -> AppResult<()> {
     Ok(())
 }
 
+fn sync_text<'a>(row: &'a [SyncValue], index: usize, label: &str) -> AppResult<&'a str> {
+    match row.get(index) {
+        Some(SyncValue::Text(value)) => Ok(value),
+        _ => Err(AppError::Validation(format!("同步{label}字段类型无效"))),
+    }
+}
+
+fn sync_optional_real(row: &[SyncValue], index: usize, label: &str) -> AppResult<Option<f64>> {
+    match row.get(index) {
+        Some(SyncValue::Null) => Ok(None),
+        Some(SyncValue::Real(value)) => Ok(Some(*value)),
+        _ => Err(AppError::Validation(format!("同步{label}字段类型无效"))),
+    }
+}
+
+fn validate_synced_fx_row(
+    row: &[SyncValue],
+    currency_index: usize,
+    rate_index: usize,
+    source_index: usize,
+    observed_index: usize,
+    base_currency: &str,
+    effective_index: usize,
+) -> AppResult<()> {
+    let currency = sync_text(row, currency_index, "币种")?;
+    let rate = sync_optional_real(row, rate_index, "汇率")?;
+    let source = sync_text(row, source_index, "汇率来源")?;
+    let observed_on = sync_text(row, observed_index, "汇率观察日")?;
+    let effective_on = sync_text(row, effective_index, "估值或流水日期")?;
+    if currency.eq_ignore_ascii_case(base_currency) && rate.is_some() {
+        return Err(AppError::Validation(
+            "同步数据中的同币种记录不能携带折算汇率".into(),
+        ));
+    }
+    let canonical = normalized_fx_provenance(
+        currency,
+        base_currency,
+        rate,
+        source,
+        observed_on,
+        effective_on,
+    )?;
+    if canonical.0 != source || canonical.1 != observed_on {
+        return Err(AppError::Validation("同步汇率来源不是规范形式".into()));
+    }
+    Ok(())
+}
+
+fn validate_synced_fx_provenance(dataset: &SyncDataset) -> AppResult<()> {
+    if dataset.schema_version < SYNC_DATASET_SCHEMA_VERSION {
+        return Ok(());
+    }
+    let profile_table = dataset
+        .tables
+        .iter()
+        .find(|table| table.name == "profile")
+        .ok_or_else(|| AppError::Validation("数据快照缺少 profile".into()))?;
+    let profile = match profile_table.rows.first() {
+        Some(profile_row) => {
+            serde_json::from_str::<FinancialProfile>(sync_text(profile_row, 1, "财务档案")?)
+                .map_err(|_| AppError::Validation("同步财务档案格式无效".into()))?
+        }
+        None => FinancialProfile::default(),
+    };
+
+    let holdings = dataset
+        .tables
+        .iter()
+        .find(|table| table.name == "holdings")
+        .ok_or_else(|| AppError::Validation("数据快照缺少 holdings".into()))?;
+    for row in &holdings.rows {
+        validate_synced_fx_row(row, 7, 8, 10, 11, &profile.base_currency, 9)?;
+    }
+
+    let events = dataset
+        .tables
+        .iter()
+        .find(|table| table.name == "portfolio_events")
+        .ok_or_else(|| AppError::Validation("数据快照缺少 portfolio_events".into()))?;
+    for row in &events.rows {
+        let base_currency = sync_text(row, 11, "流水基准币种")?;
+        validate_synced_fx_row(row, 7, 8, 9, 10, base_currency, 13)?;
+    }
+    Ok(())
+}
+
 fn portfolio_event_content_hash(record: &PortfolioEventRecord) -> AppResult<String> {
     let canonical = serde_json::json!({
         "eventType": record.event_type,
@@ -2495,6 +2701,8 @@ fn portfolio_event_content_hash(record: &PortfolioEventRecord) -> AppResult<Stri
         "amount": record.amount,
         "currency": record.currency.trim().to_ascii_uppercase(),
         "fxRateToBase": record.fx_rate_to_base,
+        "fxRateSource": record.fx_rate_source.trim(),
+        "fxRateObservedOn": record.fx_rate_observed_on.trim(),
         "baseCurrency": record.base_currency.trim().to_ascii_uppercase(),
         "baseAmount": record.base_amount,
         "occurredOn": record.occurred_on.trim(),
@@ -2511,7 +2719,22 @@ fn portfolio_event_import_row(
     input: &PortfolioEventInput,
     status: &str,
     message: String,
+    base_currency: &str,
 ) -> PortfolioEventImportRow {
+    let (fx_rate_source, fx_rate_observed_on) = normalized_fx_provenance(
+        &input.currency,
+        base_currency,
+        input.fx_rate_to_base,
+        &input.fx_rate_source,
+        &input.fx_rate_observed_on,
+        &input.occurred_on,
+    )
+    .unwrap_or_else(|_| {
+        (
+            input.fx_rate_source.trim().into(),
+            input.fx_rate_observed_on.trim().into(),
+        )
+    });
     PortfolioEventImportRow {
         row_number,
         status: status.into(),
@@ -2523,6 +2746,8 @@ fn portfolio_event_import_row(
         amount: Some(input.amount),
         currency: input.currency.trim().to_ascii_uppercase(),
         fx_rate_to_base: input.fx_rate_to_base,
+        fx_rate_source,
+        fx_rate_observed_on,
         asset_name: input.asset_name.trim().into(),
         note: input.note.trim().into(),
     }
@@ -2554,8 +2779,9 @@ fn insert_portfolio_event(
     connection.execute(
         "INSERT INTO portfolio_events
          (id, event_type, source, external_id, fingerprint, asset_name, amount, currency,
-          fx_rate_to_base, base_currency, base_amount, occurred_on, note, created_at)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+          fx_rate_to_base, fx_rate_source, fx_rate_observed_on, base_currency, base_amount,
+          occurred_on, note, created_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
         params![
             record.id,
             portfolio_event_type_to_db(&record.event_type),
@@ -2566,6 +2792,8 @@ fn insert_portfolio_event(
             record.amount,
             record.currency,
             record.fx_rate_to_base,
+            record.fx_rate_source,
+            record.fx_rate_observed_on,
             record.base_currency,
             record.base_amount,
             record.occurred_on,
@@ -2574,6 +2802,48 @@ fn insert_portfolio_event(
         ],
     )?;
     Ok(())
+}
+
+fn normalized_fx_provenance(
+    currency: &str,
+    base_currency: &str,
+    fx_rate_to_base: Option<f64>,
+    source: &str,
+    observed_on: &str,
+    effective_on: &str,
+) -> AppResult<(String, String)> {
+    if currency.trim().eq_ignore_ascii_case(base_currency.trim()) {
+        return Ok((String::new(), String::new()));
+    }
+    if fx_rate_to_base.is_none_or(|rate| !rate.is_finite() || rate <= 0.0 || rate > 1e9) {
+        return Err(AppError::Validation("外币折算汇率必须是有效正数".into()));
+    }
+    let source = if source.trim().is_empty() {
+        "user_declared"
+    } else {
+        source.trim()
+    };
+    if source.chars().count() > 120 {
+        return Err(AppError::Validation("汇率来源不能超过 120 个字符".into()));
+    }
+    let effective_date = NaiveDate::parse_from_str(effective_on.trim(), "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("估值或流水日期必须使用 YYYY-MM-DD".into()))?;
+    let observed_on = if observed_on.trim().is_empty() {
+        effective_on.trim()
+    } else {
+        observed_on.trim()
+    };
+    let observed_date = NaiveDate::parse_from_str(observed_on, "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("汇率观察日期必须使用 YYYY-MM-DD".into()))?;
+    if observed_date > effective_date {
+        return Err(AppError::Validation(
+            "汇率观察日期不能晚于对应的估值或流水日期".into(),
+        ));
+    }
+    if observed_date > Local::now().date_naive() {
+        return Err(AppError::Validation("汇率观察日期不能晚于今天".into()));
+    }
+    Ok((source.into(), observed_on.into()))
 }
 
 fn validate_portfolio_event(input: &PortfolioEventInput, base_currency: &str) -> AppResult<()> {
@@ -2637,6 +2907,14 @@ fn validate_portfolio_event(input: &PortfolioEventInput, base_currency: &str) ->
             "流水来源、交易 ID、资产名称或说明过长".into(),
         ));
     }
+    normalized_fx_provenance(
+        &input.currency,
+        base_currency,
+        input.fx_rate_to_base,
+        &input.fx_rate_source,
+        &input.fx_rate_observed_on,
+        &input.occurred_on,
+    )?;
     Ok(())
 }
 
@@ -2669,6 +2947,14 @@ fn validate_holding(input: &HoldingInput, base_currency: &str) -> AppResult<()> 
             base_currency.trim().to_ascii_uppercase()
         )));
     }
+    normalized_fx_provenance(
+        &input.currency,
+        base_currency,
+        input.fx_rate_to_base,
+        &input.fx_rate_source,
+        &input.fx_rate_observed_on,
+        &input.valuation_date,
+    )?;
     Ok(())
 }
 
@@ -2943,6 +3229,8 @@ mod tests {
             currency: "CNY".into(),
             fx_rate_to_base: None,
             valuation_date: "2026-01-01".into(),
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
         })
         .unwrap();
         let snapshot = db.snapshot().unwrap();
@@ -2972,6 +3260,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-01-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             })
             .unwrap();
         let rule = source
@@ -3024,9 +3314,11 @@ mod tests {
                 source: "同步券商".into(),
                 external_id: "sync-event-1".into(),
                 asset_name: String::new(),
-                amount: 5_000.0,
-                currency: "CNY".into(),
-                fx_rate_to_base: None,
+                amount: 700.0,
+                currency: "USD".into(),
+                fx_rate_to_base: Some(7.0),
+                fx_rate_source: "ecb_reference".into(),
+                fx_rate_observed_on: "2026-01-02".into(),
                 occurred_on: "2026-01-02".into(),
                 note: "同步测试入金".into(),
             })
@@ -3054,6 +3346,18 @@ mod tests {
             Err(AppError::Validation(_))
         ));
 
+        let mut corrupted_fx_date = dataset.clone();
+        let event_table = corrupted_fx_date
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "portfolio_events")
+            .unwrap();
+        event_table.rows[0][10] = SyncValue::Text("2026-01-03".into());
+        assert!(matches!(
+            corrupted_target.import_sync_data(&corrupted_fx_date),
+            Err(AppError::Validation(_))
+        ));
+
         let target = Database::open(&directory.path().join("target.db")).unwrap();
         target
             .set_setting("model.name", "keep-local-model")
@@ -3070,12 +3374,45 @@ mod tests {
         assert_eq!(restored_events.len(), 1);
         assert_eq!(restored_events[0].source, "同步券商");
         assert_eq!(restored_events[0].external_id, "sync-event-1");
+        assert_eq!(restored_events[0].fx_rate_source, "ecb_reference");
+        assert_eq!(restored_events[0].fx_rate_observed_on, "2026-01-02");
         assert_eq!(
             target.setting("model.name").unwrap().as_deref(),
             Some("keep-local-model")
         );
 
-        let mut legacy_v4 = dataset.clone();
+        let mut legacy_v5 = dataset.clone();
+        legacy_v5.schema_version = 5;
+        let holdings = legacy_v5
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "holdings")
+            .unwrap();
+        for index in [11, 10] {
+            holdings.columns.remove(index);
+            for row in &mut holdings.rows {
+                row.remove(index);
+            }
+        }
+        let events = legacy_v5
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "portfolio_events")
+            .unwrap();
+        for index in [10, 9] {
+            events.columns.remove(index);
+            for row in &mut events.rows {
+                row.remove(index);
+            }
+        }
+        legacy_v5.validate().unwrap();
+        let v5_target = Database::open(&directory.path().join("v5-target.db")).unwrap();
+        v5_target.import_sync_data(&legacy_v5).unwrap();
+        assert!(v5_target.portfolio_events().unwrap()[0]
+            .fx_rate_source
+            .is_empty());
+
+        let mut legacy_v4 = legacy_v5;
         legacy_v4.schema_version = 4;
         let events = legacy_v4
             .tables
@@ -3166,6 +3503,8 @@ mod tests {
             currency: "CNY".into(),
             fx_rate_to_base: None,
             valuation_date: "2026-01-01".into(),
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
         };
         let created = db.add_holding(&input).unwrap();
         let id = &created.holdings[0].id;
@@ -3201,6 +3540,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-01-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             })
             .unwrap();
         assert!(matches!(
@@ -3238,6 +3579,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-02-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             },
         )
         .unwrap();
@@ -3251,6 +3594,8 @@ mod tests {
             currency: "CNY".into(),
             fx_rate_to_base: None,
             valuation_date: "2026-02-01".into(),
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
         })
         .unwrap();
         let next = db
@@ -3283,6 +3628,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-03-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             },
         )
         .unwrap();
@@ -3309,6 +3656,8 @@ mod tests {
                 amount: 1_000.0,
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
                 occurred_on: "2026-01-01".into(),
                 note: "没有基线".into(),
             }),
@@ -3325,6 +3674,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-01-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             })
             .unwrap();
         db.save_portfolio_checkin(&PortfolioCheckInInput {
@@ -3345,6 +3696,8 @@ mod tests {
                 amount: 10_000.0,
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
                 occurred_on: "2026-01-16".into(),
                 note: "工资结余入金".into(),
             },
@@ -3356,6 +3709,8 @@ mod tests {
                 amount: 500.0,
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
                 occurred_on: "2026-01-20".into(),
                 note: "现金分红".into(),
             },
@@ -3367,6 +3722,8 @@ mod tests {
                 amount: 50.0,
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
                 occurred_on: "2026-01-21".into(),
                 note: "交易费用".into(),
             },
@@ -3378,6 +3735,8 @@ mod tests {
                 amount: 20_000.0,
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
                 occurred_on: "2026-01-22".into(),
                 note: "账户内部调仓".into(),
             },
@@ -3397,6 +3756,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-01-31".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             },
         )
         .unwrap();
@@ -3426,6 +3787,8 @@ mod tests {
                 amount: 100.0,
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
                 occurred_on: "2026-01-30".into(),
                 note: "迟到记录".into(),
             }),
@@ -3447,6 +3810,8 @@ mod tests {
             currency: "CNY".into(),
             fx_rate_to_base: None,
             valuation_date: "2026-08-31".into(),
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
         })
         .unwrap();
         db.save_portfolio_checkin(&PortfolioCheckInInput {
@@ -3538,6 +3903,8 @@ mod tests {
             amount: 20.0,
             currency: "CNY".into(),
             fx_rate_to_base: None,
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
             occurred_on: "2026-09-03".into(),
             note: "利息".into(),
         })
@@ -3565,6 +3932,8 @@ mod tests {
             currency: "CNY".into(),
             fx_rate_to_base: None,
             valuation_date: "2026-08-31".into(),
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
         })
         .unwrap();
         db.save_portfolio_checkin(&PortfolioCheckInInput {
@@ -3583,6 +3952,8 @@ mod tests {
             amount: 100.0,
             currency: "USD".into(),
             fx_rate_to_base: None,
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
             occurred_on: "2026-09-01".into(),
             note: "美元出金".into(),
         };
@@ -3591,10 +3962,19 @@ mod tests {
             Err(AppError::Validation(_))
         ));
         input.fx_rate_to_base = Some(7.0);
+        input.fx_rate_source = "ecb_reference".into();
+        input.fx_rate_observed_on = "2026-09-02".into();
+        assert!(matches!(
+            db.add_portfolio_event(&input),
+            Err(AppError::Validation(_))
+        ));
+        input.fx_rate_observed_on = "2026-08-31".into();
         let event = db.add_portfolio_event(&input).unwrap();
         assert_eq!(event.base_currency, "CNY");
         assert_eq!(event.base_amount, 700.0);
         assert_eq!(event.fx_rate_to_base, Some(7.0));
+        assert_eq!(event.fx_rate_source, "ecb_reference");
+        assert_eq!(event.fx_rate_observed_on, "2026-08-31");
     }
 
     #[test]
@@ -3618,6 +3998,8 @@ mod tests {
                 currency: "USD".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-08-31".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             }),
             Err(AppError::Validation(_))
         ));
@@ -3632,8 +4014,12 @@ mod tests {
                 currency: "USD".into(),
                 fx_rate_to_base: Some(7.0),
                 valuation_date: "2026-08-31".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             })
             .unwrap();
+        assert_eq!(usd_snapshot.holdings[0].fx_rate_source, "user_declared");
+        assert_eq!(usd_snapshot.holdings[0].fx_rate_observed_on, "2026-08-31");
         let usd_id = usd_snapshot.holdings[0].id.clone();
         let snapshot = db
             .add_holding(&HoldingInput {
@@ -3646,6 +4032,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-08-31".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             })
             .unwrap();
         let cny_id = snapshot
@@ -3683,6 +4071,8 @@ mod tests {
                 currency: "USD".into(),
                 fx_rate_to_base: Some(7.0),
                 valuation_date: "2026-09-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             },
         )
         .unwrap();
@@ -3705,6 +4095,14 @@ mod tests {
             changed.valuation_status.missing_fx_holdings,
             vec!["人民币现金"]
         );
+        let usd_after_base_change = changed
+            .holdings
+            .iter()
+            .find(|holding| holding.id == usd_id)
+            .unwrap();
+        assert_eq!(usd_after_base_change.fx_rate_to_base, None);
+        assert!(usd_after_base_change.fx_rate_source.is_empty());
+        assert!(usd_after_base_change.fx_rate_observed_on.is_empty());
         let normalized = db
             .update_holding(
                 &cny_id,
@@ -3718,6 +4116,8 @@ mod tests {
                     currency: "CNY".into(),
                     fx_rate_to_base: Some(0.14),
                     valuation_date: "2026-09-01".into(),
+                    fx_rate_source: String::new(),
+                    fx_rate_observed_on: String::new(),
                 },
             )
             .unwrap();
@@ -4044,10 +4444,14 @@ mod tests {
         assert_eq!(snapshot.holdings[0].target_pct, 0.0);
         assert_eq!(snapshot.holdings[0].fx_rate_to_base, None);
         assert!(snapshot.holdings[0].valuation_date.is_empty());
+        assert!(snapshot.holdings[0].fx_rate_source.is_empty());
+        assert!(snapshot.holdings[0].fx_rate_observed_on.is_empty());
         let events = db.portfolio_events().unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].source, "manual");
         assert!(events[0].external_id.is_empty());
+        assert!(events[0].fx_rate_source.is_empty());
+        assert!(events[0].fx_rate_observed_on.is_empty());
         assert_eq!(snapshot.profile.base_currency, "CNY");
         assert_eq!(snapshot.valuation_status.undated_holding_count, 1);
         assert!(db.analysis_history().unwrap()[0].transparency.is_none());
@@ -4381,6 +4785,8 @@ mod tests {
             currency: "CNY".into(),
             fx_rate_to_base: None,
             valuation_date: "2026-01-01".into(),
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
         })
         .unwrap();
         db.add_investment_rule(&InvestmentRuleInput {
@@ -4416,6 +4822,8 @@ mod tests {
                 currency: "CNY".into(),
                 fx_rate_to_base: None,
                 valuation_date: "2026-02-01".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
             },
         )
         .unwrap();
