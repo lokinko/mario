@@ -175,7 +175,18 @@ pub struct PortfolioEventRecord {
     pub base_amount: f64,
     pub occurred_on: String,
     pub note: String,
+    #[serde(default)]
+    pub reversal_of_event_id: Option<String>,
+    #[serde(default)]
+    pub reversed_by_event_id: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioEventReversalInput {
+    pub occurred_on: String,
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

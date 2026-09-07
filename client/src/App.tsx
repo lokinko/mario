@@ -31,6 +31,7 @@ import {
   Sparkles,
   Target,
   Trash2,
+  Undo2,
   Upload,
   UserRound,
   WalletCards,
@@ -62,6 +63,7 @@ import {
   pullCloudSync,
   pushCloudSync,
   runAnalysis,
+  reversePortfolioEvent,
   saveDecision,
   saveCloudConfig,
   saveDecisionReview,
@@ -559,6 +561,10 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
   const [eventFxQuote, setEventFxQuote] = useState<FxRateQuote | null>(null);
   const [eventFxLoading, setEventFxLoading] = useState(false);
   const [eventFxError, setEventFxError] = useState("");
+  const [reversingEventId, setReversingEventId] = useState<string | null>(null);
+  const [reversalDate, setReversalDate] = useState(() => localDateValue(new Date()));
+  const [reversalNote, setReversalNote] = useState("");
+  const [reversalSaving, setReversalSaving] = useState(false);
   const latestCheckin = checkins[0];
   const requiresAsset = ["buy", "sell", "dividend", "interest"].includes(draft.eventType);
 
@@ -633,6 +639,24 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
     finally { setImporting(false); }
   };
 
+  const beginReversal = (item: PortfolioEventRecord) => {
+    setReversingEventId(item.id);
+    setReversalDate(localDateValue(new Date()) < item.occurredOn ? item.occurredOn : localDateValue(new Date()));
+    setReversalNote("");
+    setError("");
+  };
+
+  const submitReversal = async (item: PortfolioEventRecord) => {
+    setReversalSaving(true); setError("");
+    try {
+      await reversePortfolioEvent(item.id, { occurredOn: reversalDate, note: reversalNote });
+      setReversingEventId(null); setReversalNote("");
+      await load();
+      flash("冲正流水已追加；原记录和修正原因均已保留");
+    } catch (nextError) { setError(String(nextError)); }
+    finally { setReversalSaving(false); }
+  };
+
   return (
     <div className="page narrow ledger-page">
       <PageHeader eyebrow="方法论 · 组合记录" title="把资金变化写成可核对的流水" description="先分清外部入出金、内部收益成本和交易换手，再谈组合回报。已保存记录只追加、不静默改写。" />
@@ -695,12 +719,22 @@ function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (mess
         <div className="panel-title"><div><span>本地流水账</span><h2>按发生日期倒序</h2></div><span className="history-count">{events.length} 笔</span></div>
         {loading && <div className="empty">正在读取本地流水…</div>}
         {!loading && events.length === 0 && <div className="empty">还没有流水。建立组合基线后，从下一笔真实资金变化开始记录。</div>}
-        <div className="ledger-list">{events.map((item) => <article key={item.id}>
-          <span className={`event-kind kind-${item.eventType}`}>{portfolioEventLabels[item.eventType]}</span>
-          <div><strong>{item.assetName || "组合账户"}</strong><p>{item.note}</p><small>{item.occurredOn} · 录入 {new Date(item.createdAt).toLocaleString("zh-CN")}{item.externalId ? ` · ${item.source}/${item.externalId}` : ""}</small></div>
-          <div className="ledger-amount"><strong>{formatMoney(item.amount, item.currency)}</strong><small>{item.currency === item.baseCurrency ? item.baseCurrency : `汇率 ${item.fxRateToBase} · ${formatMoney(item.baseAmount, item.baseCurrency)}`}</small>{item.fxRateSource && <small>{fxSourceLabel(item.fxRateSource)} · {item.fxRateObservedOn}</small>}</div>
-        </article>)}</div>
-        <p className="effectiveness-disclaimer">这些记录来自用户输入，系统校验结构和口径但不核验银行、券商或市场事实。若需要纠错，应保留说明并建立新的比较基线，不能回写已经冻结的期间。</p>
+        <div className="ledger-list">{events.map((item) => {
+          const canReverse = !item.reversalOfEventId && !item.reversedByEventId && item.amount > 0 && Boolean(latestCheckin?.valuationDate) && item.occurredOn > (latestCheckin?.valuationDate ?? "");
+          return <article key={item.id} className={`${item.reversalOfEventId ? "reversal-entry" : ""} ${item.reversedByEventId ? "reversed-entry" : ""}`}>
+            <span className={`event-kind kind-${item.eventType}`}>{item.reversalOfEventId ? "冲正" : portfolioEventLabels[item.eventType]}</span>
+            <div><strong>{item.assetName || "组合账户"}{item.reversedByEventId && <em className="event-status">已冲正</em>}</strong><p>{item.note}</p><small>{item.occurredOn} · 录入 {new Date(item.createdAt).toLocaleString("zh-CN")}{item.externalId && !item.reversalOfEventId ? ` · ${item.source}/${item.externalId}` : ""}{item.reversalOfEventId ? ` · 原记录 ${item.reversalOfEventId.slice(0, 8)}` : ""}</small></div>
+            <div className="ledger-amount"><strong>{formatMoney(item.amount, item.currency)}</strong><small>{item.currency === item.baseCurrency ? item.baseCurrency : `汇率 ${item.fxRateToBase} · ${formatMoney(item.baseAmount, item.baseCurrency)}`}</small>{item.fxRateSource && <small>{fxSourceLabel(item.fxRateSource)} · {item.fxRateObservedOn}</small>}</div>
+            {canReverse && <button className="reversal-button" onClick={() => reversingEventId === item.id ? setReversingEventId(null) : beginReversal(item)}><Undo2 size={13} />冲正</button>}
+            {reversingEventId === item.id && <div className="reversal-editor">
+              <div><strong>追加冲正记录</strong><small>系统将复制原流水口径并写入等额负数，原记录不会改变。</small></div>
+              <label><span>冲正日期</span><input type="date" min={item.occurredOn} max={localDateValue(new Date())} value={reversalDate} onChange={(event) => setReversalDate(event.target.value)} /></label>
+              <label><span>修正原因</span><textarea maxLength={2000} value={reversalNote} onChange={(event) => setReversalNote(event.target.value)} placeholder="例如：重复录入；已与券商对账单核对" /></label>
+              <div className="reversal-actions"><button className="text-button" onClick={() => setReversingEventId(null)}>取消</button><button className="primary" disabled={reversalSaving || !reversalDate || !reversalNote.trim()} onClick={() => void submitReversal(item)}>{reversalSaving ? <LoaderCircle className="spin" size={14} /> : <Undo2 size={14} />}确认追加</button></div>
+            </div>}
+          </article>;
+        })}</div>
+        <p className="effectiveness-disclaimer">这些记录来自用户输入，系统校验结构和口径但不核验银行、券商或市场事实。当前基线之后的误录可追加冲正；已冻结周期不能回写，应建立纠正后的新基线并保留说明。</p>
       </section>
     </div>
   );

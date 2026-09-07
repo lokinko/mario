@@ -79,7 +79,14 @@ export interface PortfolioEventRecord extends PortfolioEventInput {
   id: string;
   baseCurrency: string;
   baseAmount: number;
+  reversalOfEventId: string | null;
+  reversedByEventId: string | null;
   createdAt: string;
+}
+
+export interface PortfolioEventReversalInput {
+  occurredOn: string;
+  note: string;
 }
 
 export type PortfolioEventImportStatus = "ready" | "duplicate" | "error";

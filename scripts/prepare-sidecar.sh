@@ -6,6 +6,12 @@ root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [[ "$(uname -s)" == "Darwin" ]] && [[ -x "/Library/Developer/CommandLineTools/usr/bin/clang" ]]; then
   export DEVELOPER_DIR="/Library/Developer/CommandLineTools"
+  export PATH="/Library/Developer/CommandLineTools/usr/bin:$PATH"
+  export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+  export CC="clang"
+  export CXX="clang++"
+  export AR="ar"
+  export RANLIB="ranlib"
 fi
 
 target_triple="$(rustc -vV | sed -n 's/^host: //p')"

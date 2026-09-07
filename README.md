@@ -29,6 +29,7 @@ mario 是一个本地优先、AI-native 的投资决策辅助软件。它不以�
 - 决策前规则检查与有效性追踪：冻结当时规则版本、遵守或偏离状态，用复盘后的过程评分寻找需要保留或修订的规则
 - 不可变组合流水：按日期记录入金、出金、分红、利息、费用、税费与买卖额，冻结原币、汇率和基准币种
 - 安全 CSV 导入：写入前逐行预览，使用来源交易编号幂等去重；编号冲突或错误行会阻止整批写入
+- 可审计流水冲正：当前冻结周期内追加等额负向事件，保留原记录和修正原因，阻止重复冲正并随加密快照同步
 - 组合变化归因：周期性冻结持仓，自动汇总区间流水，把组合总变化、外部现金流与估值/数据残差分开观察，并提供明确标注的 Modified Dietz 近似回报
 - 估值口径护栏：支持基准币种、外币折算汇率和持仓估值日；缺失汇率或日期错位时停止伪精确汇总与归因
 - 可追溯参考汇率：按估值日查询 ECB 日度序列，周末使用最近共同工作日并明确标注；来源与观察日期随记录冻结
@@ -97,7 +98,7 @@ Android 调试 APK：
 ```bash
 npm run android:init   # 首次或需要重建 Android 工程时
 npm run android:build
-adb install -r outputs/mario_0.3.0_android-aarch64-debug.apk
+adb install -r outputs/mario_0.3.1_android-aarch64-debug.apk
 ```
 
 Android 版把同一个 Rust/Axum 服务库编译进应用进程，不依赖桌面 sidecar；SQLite 保存在应用沙盒，API Key、账户令牌与恢复密钥保存在 Android Keystore。详细环境要求、架构和调试边界见 [Android 调试构建](docs/android.md)。

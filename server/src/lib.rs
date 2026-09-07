@@ -47,10 +47,11 @@ use models::{
     HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, ModelConfig,
     ModelConfigInput, ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord,
     PortfolioEventImportCommitRequest, PortfolioEventImportPreview, PortfolioEventImportRequest,
-    PortfolioEventImportResult, PortfolioEventInput, PortfolioEventRecord, ReminderSettings,
-    ReminderSettingsInput, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
-    ReviewReminderAcknowledgeInput, ReviewReminderSummary, RuleEffectivenessSummary, Snapshot,
-    StoredAnalysis, SystemReviewInput, SystemReviewRecord,
+    PortfolioEventImportResult, PortfolioEventInput, PortfolioEventRecord,
+    PortfolioEventReversalInput, ReminderSettings, ReminderSettingsInput, ResearchEvidence,
+    ResearchEvidenceInput, ResearchEvidenceStatusInput, ReviewReminderAcknowledgeInput,
+    ReviewReminderSummary, RuleEffectivenessSummary, Snapshot, StoredAnalysis, SystemReviewInput,
+    SystemReviewRecord,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -159,6 +160,10 @@ where
         .route(
             "/api/portfolio-events/import/commit",
             post(commit_portfolio_event_import),
+        )
+        .route(
+            "/api/portfolio-events/{id}/reverse",
+            post(reverse_portfolio_event),
         )
         .route("/api/goals", post(add_goal))
         .route("/api/goals/{id}", put(update_goal).delete(delete_goal))
@@ -326,6 +331,13 @@ async fn add_portfolio_event(
     Json(input): Json<PortfolioEventInput>,
 ) -> AppResult<Json<PortfolioEventRecord>> {
     Ok(Json(state.db.add_portfolio_event(&input)?))
+}
+async fn reverse_portfolio_event(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(input): Json<PortfolioEventReversalInput>,
+) -> AppResult<Json<PortfolioEventRecord>> {
+    Ok(Json(state.db.reverse_portfolio_event(&id, &input)?))
 }
 async fn preview_portfolio_event_import(
     State(state): State<Arc<AppState>>,

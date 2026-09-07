@@ -760,6 +760,8 @@ mod tests {
             base_amount: 10_000.0,
             occurred_on: "2026-09-15".into(),
             note: "工资结余".into(),
+            reversal_of_event_id: None,
+            reversed_by_event_id: None,
             created_at: "2026-09-15T12:00:00Z".into(),
         };
         let included = ContextBuilder::build(

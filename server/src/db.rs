@@ -20,10 +20,10 @@ use crate::{
         ModelConfig, PortfolioCheckInInput, PortfolioCheckInRecord,
         PortfolioEventImportCommitRequest, PortfolioEventImportPreview,
         PortfolioEventImportRequest, PortfolioEventImportResult, PortfolioEventImportRow,
-        PortfolioEventInput, PortfolioEventRecord, PortfolioEventType, ReminderSettings,
-        ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary, RuleEffectivenessItem,
-        RuleEffectivenessSummary, Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
-        SystemReviewSnapshot,
+        PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, PortfolioEventType,
+        ReminderSettings, ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary,
+        RuleEffectivenessItem, RuleEffectivenessSummary, Snapshot, StoredAnalysis,
+        SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
     },
     performance, planning, risk, valuation,
 };
@@ -139,6 +139,25 @@ const V5_EVENT_COLUMNS: &[&str] = &[
     "created_at",
 ];
 
+const V6_EVENT_COLUMNS: &[&str] = &[
+    "id",
+    "event_type",
+    "source",
+    "external_id",
+    "fingerprint",
+    "asset_name",
+    "amount",
+    "currency",
+    "fx_rate_to_base",
+    "fx_rate_source",
+    "fx_rate_observed_on",
+    "base_currency",
+    "base_amount",
+    "occurred_on",
+    "note",
+    "created_at",
+];
+
 const CURRENT_EVENT_COLUMNS: &[&str] = &[
     "id",
     "event_type",
@@ -156,6 +175,7 @@ const CURRENT_EVENT_COLUMNS: &[&str] = &[
     "occurred_on",
     "note",
     "created_at",
+    "reversal_of_event_id",
 ];
 
 const SYNC_TABLES: &[SyncTableSpec] = &[
@@ -270,7 +290,7 @@ const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 6;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 7;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 
@@ -300,6 +320,10 @@ fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
         5 => {
             specs[2].columns = V3_HOLDING_COLUMNS;
             specs.last_mut().expect("event sync table").columns = V5_EVENT_COLUMNS;
+            Ok(specs)
+        }
+        6 => {
+            specs.last_mut().expect("event sync table").columns = V6_EVENT_COLUMNS;
             Ok(specs)
         }
         SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
@@ -505,7 +529,8 @@ impl Database {
                base_amount REAL NOT NULL,
                occurred_on TEXT NOT NULL,
                note TEXT NOT NULL,
-               created_at TEXT NOT NULL
+               created_at TEXT NOT NULL,
+               reversal_of_event_id TEXT REFERENCES portfolio_events(id)
              );
              CREATE TABLE IF NOT EXISTS settings (
                key TEXT PRIMARY KEY,
@@ -598,6 +623,16 @@ impl Database {
             "portfolio_events",
             "fx_rate_observed_on",
             "TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(
+            &connection,
+            "portfolio_events",
+            "reversal_of_event_id",
+            "TEXT REFERENCES portfolio_events(id)",
+        )?;
+        connection.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolio_events_single_reversal
+               ON portfolio_events(reversal_of_event_id) WHERE reversal_of_event_id IS NOT NULL;",
         )?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -773,6 +808,7 @@ impl Database {
         dataset.validate()?;
         validate_synced_event_identities(dataset)?;
         validate_synced_fx_provenance(dataset)?;
+        validate_synced_event_reversals(dataset)?;
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
         transaction.execute_batch("PRAGMA defer_foreign_keys=ON;")?;
@@ -985,11 +1021,14 @@ impl Database {
     pub fn portfolio_events(&self) -> AppResult<Vec<PortfolioEventRecord>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT id, event_type, source, external_id, asset_name, amount, currency,
-                    fx_rate_to_base, fx_rate_source, fx_rate_observed_on, base_currency,
-                    base_amount, occurred_on, note, created_at
-             FROM portfolio_events
-             ORDER BY occurred_on DESC, created_at DESC, id DESC LIMIT 500",
+            "SELECT event.id, event.event_type, event.source, event.external_id, event.asset_name,
+                    event.amount, event.currency, event.fx_rate_to_base, event.fx_rate_source,
+                    event.fx_rate_observed_on, event.base_currency, event.base_amount,
+                    event.occurred_on, event.note, event.reversal_of_event_id,
+                    reversal.id, event.created_at
+             FROM portfolio_events event
+             LEFT JOIN portfolio_events reversal ON reversal.reversal_of_event_id = event.id
+             ORDER BY event.occurred_on DESC, event.created_at DESC, event.id DESC LIMIT 500",
         )?;
         let rows = statement.query_map([], portfolio_event_record_from_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1036,6 +1075,94 @@ impl Database {
                 "相同来源与交易 ID 的流水已经存在".into(),
             ));
         }
+        insert_portfolio_event(&conn, &record, &fingerprint)?;
+        Ok(record)
+    }
+
+    pub fn reverse_portfolio_event(
+        &self,
+        id: &str,
+        input: &PortfolioEventReversalInput,
+    ) -> AppResult<PortfolioEventRecord> {
+        let occurred_on = NaiveDate::parse_from_str(input.occurred_on.trim(), "%Y-%m-%d")
+            .map_err(|_| AppError::Validation("冲正日期必须使用 YYYY-MM-DD".into()))?;
+        if occurred_on > Local::now().date_naive() {
+            return Err(AppError::Validation("冲正日期不能晚于今天".into()));
+        }
+        if input.note.trim().is_empty() {
+            return Err(AppError::Validation("冲正说明为必填项".into()));
+        }
+        if input.note.chars().count() > 2_000 {
+            return Err(AppError::Validation("冲正说明不能超过 2000 个字符".into()));
+        }
+
+        let latest = self
+            .portfolio_checkins()?
+            .into_iter()
+            .next()
+            .ok_or_else(|| AppError::Validation("请先在决策总览建立组合基线".into()))?;
+        let frozen_through = latest.valuation_date.ok_or_else(|| {
+            AppError::Validation("旧组合检查点没有估值日期；请先明确建立新的比较基线".into())
+        })?;
+        if input.occurred_on.trim() <= frozen_through.as_str() {
+            return Err(AppError::Validation(format!(
+                "冲正日期必须晚于最近一次组合检查点 {frozen_through}"
+            )));
+        }
+
+        let conn = self.conn()?;
+        let source = conn
+            .query_row(
+                "SELECT event.id, event.event_type, event.source, event.external_id, event.asset_name,
+                        event.amount, event.currency, event.fx_rate_to_base, event.fx_rate_source,
+                        event.fx_rate_observed_on, event.base_currency, event.base_amount,
+                        event.occurred_on, event.note, event.reversal_of_event_id,
+                        reversal.id, event.created_at
+                 FROM portfolio_events event
+                 LEFT JOIN portfolio_events reversal ON reversal.reversal_of_event_id = event.id
+                 WHERE event.id=?1",
+                [id],
+                portfolio_event_record_from_row,
+            )
+            .optional()?
+            .ok_or_else(|| AppError::NotFound("找不到要冲正的组合流水".into()))?;
+
+        if source.reversal_of_event_id.is_some() || source.amount <= 0.0 {
+            return Err(AppError::Validation("冲正记录不能再次冲正".into()));
+        }
+        if source.reversed_by_event_id.is_some() {
+            return Err(AppError::Conflict("这笔流水已经冲正".into()));
+        }
+        if source.occurred_on <= frozen_through {
+            return Err(AppError::Validation(
+                "这笔流水已进入冻结周期；请建立纠正后的新基线并保留说明".into(),
+            ));
+        }
+        if input.occurred_on.trim() < source.occurred_on.as_str() {
+            return Err(AppError::Validation("冲正日期不能早于原流水日期".into()));
+        }
+
+        let reversal_id = Uuid::new_v4().to_string();
+        let record = PortfolioEventRecord {
+            id: reversal_id.clone(),
+            event_type: source.event_type,
+            source: "mario-reversal".into(),
+            external_id: format!("reversal:{id}"),
+            asset_name: source.asset_name,
+            amount: -source.amount,
+            currency: source.currency,
+            fx_rate_to_base: source.fx_rate_to_base,
+            fx_rate_source: source.fx_rate_source,
+            fx_rate_observed_on: source.fx_rate_observed_on,
+            base_currency: source.base_currency,
+            base_amount: -source.base_amount,
+            occurred_on: input.occurred_on.trim().into(),
+            note: input.note.trim().into(),
+            reversal_of_event_id: Some(id.into()),
+            reversed_by_event_id: None,
+            created_at: Utc::now().to_rfc3339(),
+        };
+        let fingerprint = portfolio_event_identity_fingerprint(&record.source, &record.external_id);
         insert_portfolio_event(&conn, &record, &fingerprint)?;
         Ok(record)
     }
@@ -1181,10 +1308,14 @@ impl Database {
     fn portfolio_event_identities(&self) -> AppResult<HashMap<String, String>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT id, event_type, source, external_id, asset_name, amount, currency,
-                    fx_rate_to_base, fx_rate_source, fx_rate_observed_on, base_currency,
-                    base_amount, occurred_on, note, created_at
-             FROM portfolio_events WHERE external_id <> ''",
+            "SELECT event.id, event.event_type, event.source, event.external_id, event.asset_name,
+                    event.amount, event.currency, event.fx_rate_to_base, event.fx_rate_source,
+                    event.fx_rate_observed_on, event.base_currency, event.base_amount,
+                    event.occurred_on, event.note, event.reversal_of_event_id,
+                    reversal.id, event.created_at
+             FROM portfolio_events event
+             LEFT JOIN portfolio_events reversal ON reversal.reversal_of_event_id = event.id
+             WHERE event.external_id <> ''",
         )?;
         let rows = statement.query_map([], portfolio_event_record_from_row)?;
         let mut identities = HashMap::new();
@@ -1217,12 +1348,15 @@ impl Database {
     ) -> AppResult<Vec<PortfolioEventRecord>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT id, event_type, source, external_id, asset_name, amount, currency,
-                    fx_rate_to_base, fx_rate_source, fx_rate_observed_on, base_currency,
-                    base_amount, occurred_on, note, created_at
-             FROM portfolio_events
-             WHERE occurred_on > ?1 AND occurred_on <= ?2
-             ORDER BY occurred_on, created_at, id",
+            "SELECT event.id, event.event_type, event.source, event.external_id, event.asset_name,
+                    event.amount, event.currency, event.fx_rate_to_base, event.fx_rate_source,
+                    event.fx_rate_observed_on, event.base_currency, event.base_amount,
+                    event.occurred_on, event.note, event.reversal_of_event_id,
+                    reversal.id, event.created_at
+             FROM portfolio_events event
+             LEFT JOIN portfolio_events reversal ON reversal.reversal_of_event_id = event.id
+             WHERE event.occurred_on > ?1 AND event.occurred_on <= ?2
+             ORDER BY event.occurred_on, event.created_at, event.id",
         )?;
         let rows = statement.query_map(
             params![period_start, period_end],
@@ -2499,7 +2633,9 @@ fn portfolio_event_record_from_row(row: &Row<'_>) -> rusqlite::Result<PortfolioE
         base_amount: row.get(11)?,
         occurred_on: row.get(12)?,
         note: row.get(13)?,
-        created_at: row.get(14)?,
+        reversal_of_event_id: row.get(14)?,
+        reversed_by_event_id: row.get(15)?,
+        created_at: row.get(16)?,
     })
 }
 
@@ -2544,6 +2680,8 @@ fn portfolio_event_record(
         base_amount,
         occurred_on: input.occurred_on.trim().into(),
         note: input.note.trim().into(),
+        reversal_of_event_id: None,
+        reversed_by_event_id: None,
         created_at: Utc::now().to_rfc3339(),
     })
 }
@@ -2655,7 +2793,7 @@ fn validate_synced_fx_row(
 }
 
 fn validate_synced_fx_provenance(dataset: &SyncDataset) -> AppResult<()> {
-    if dataset.schema_version < SYNC_DATASET_SCHEMA_VERSION {
+    if dataset.schema_version < 6 {
         return Ok(());
     }
     let profile_table = dataset
@@ -2692,6 +2830,74 @@ fn validate_synced_fx_provenance(dataset: &SyncDataset) -> AppResult<()> {
     Ok(())
 }
 
+fn validate_synced_event_reversals(dataset: &SyncDataset) -> AppResult<()> {
+    if dataset.schema_version < 7 {
+        return Ok(());
+    }
+    let table = dataset
+        .tables
+        .iter()
+        .find(|table| table.name == "portfolio_events")
+        .ok_or_else(|| AppError::Validation("数据快照缺少 portfolio_events".into()))?;
+    let rows_by_id = table
+        .rows
+        .iter()
+        .map(|row| Ok((sync_text(row, 0, "流水 ID")?, row)))
+        .collect::<AppResult<HashMap<_, _>>>()?;
+    let mut reversed_targets = HashSet::new();
+
+    for row in &table.rows {
+        let target_id = match row.get(16) {
+            Some(SyncValue::Null) => continue,
+            Some(SyncValue::Text(value)) if !value.trim().is_empty() => value,
+            _ => return Err(AppError::Validation("同步流水冲正关联无效".into())),
+        };
+        let event_id = sync_text(row, 0, "流水 ID")?;
+        if target_id == event_id || !reversed_targets.insert(target_id.as_str()) {
+            return Err(AppError::Validation(
+                "同步数据包含重复或自引用的流水冲正".into(),
+            ));
+        }
+        let target = rows_by_id
+            .get(target_id.as_str())
+            .ok_or_else(|| AppError::Validation("同步流水冲正找不到原记录".into()))?;
+        if !matches!(target.get(16), Some(SyncValue::Null)) {
+            return Err(AppError::Validation(
+                "同步数据不能对冲正记录再次冲正".into(),
+            ));
+        }
+        let amount = sync_real(row, 6, "冲正金额")?;
+        let target_amount = sync_real(target, 6, "原流水金额")?;
+        let base_amount = sync_real(row, 12, "冲正折算金额")?;
+        let target_base_amount = sync_real(target, 12, "原流水折算金额")?;
+        if amount >= 0.0
+            || amount != -target_amount
+            || base_amount != -target_base_amount
+            || row[1] != target[1]
+            || row[5] != target[5]
+            || row[7] != target[7]
+            || row[8] != target[8]
+            || row[9] != target[9]
+            || row[10] != target[10]
+            || row[11] != target[11]
+            || sync_text(row, 13, "冲正日期")? < sync_text(target, 13, "原流水日期")?
+        {
+            return Err(AppError::Validation(
+                "同步流水冲正内容与原记录不匹配".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn sync_real(row: &[SyncValue], index: usize, label: &str) -> AppResult<f64> {
+    match row.get(index) {
+        Some(SyncValue::Real(value)) => Ok(*value),
+        Some(SyncValue::Integer(value)) => Ok(*value as f64),
+        _ => Err(AppError::Validation(format!("同步{label}字段类型无效"))),
+    }
+}
+
 fn portfolio_event_content_hash(record: &PortfolioEventRecord) -> AppResult<String> {
     let canonical = serde_json::json!({
         "eventType": record.event_type,
@@ -2707,6 +2913,7 @@ fn portfolio_event_content_hash(record: &PortfolioEventRecord) -> AppResult<Stri
         "baseAmount": record.base_amount,
         "occurredOn": record.occurred_on.trim(),
         "note": record.note.trim(),
+        "reversalOfEventId": record.reversal_of_event_id,
     });
     Ok(format!(
         "{:x}",
@@ -2780,8 +2987,8 @@ fn insert_portfolio_event(
         "INSERT INTO portfolio_events
          (id, event_type, source, external_id, fingerprint, asset_name, amount, currency,
           fx_rate_to_base, fx_rate_source, fx_rate_observed_on, base_currency, base_amount,
-          occurred_on, note, created_at)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+          occurred_on, note, created_at, reversal_of_event_id)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
         params![
             record.id,
             portfolio_event_type_to_db(&record.event_type),
@@ -2799,6 +3006,7 @@ fn insert_portfolio_event(
             record.occurred_on,
             record.note,
             record.created_at,
+            record.reversal_of_event_id,
         ],
     )?;
     Ok(())
@@ -3239,6 +3447,99 @@ mod tests {
     }
 
     #[test]
+    fn reverses_only_open_period_events_and_preserves_the_audit_chain() {
+        let directory = tempfile::tempdir().unwrap();
+        let db = Database::open(&directory.path().join("reversal.db")).unwrap();
+        db.add_holding(&HoldingInput {
+            symbol: "CASH".into(),
+            name: "现金".into(),
+            asset_class: "现金".into(),
+            market_value: 100_000.0,
+            cost_basis: 100_000.0,
+            target_pct: 100.0,
+            currency: "CNY".into(),
+            fx_rate_to_base: None,
+            valuation_date: "2026-08-01".into(),
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
+        })
+        .unwrap();
+        db.save_portfolio_checkin(&PortfolioCheckInInput {
+            period_label: "冲正测试基线".into(),
+            external_cash_flow: 0.0,
+            note: "冻结测试基线".into(),
+            reset_baseline: false,
+            use_ledger_cash_flows: false,
+        })
+        .unwrap();
+        let source = db
+            .add_portfolio_event(&PortfolioEventInput {
+                event_type: PortfolioEventType::Deposit,
+                source: "manual".into(),
+                external_id: String::new(),
+                asset_name: String::new(),
+                amount: 1_000.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
+                occurred_on: "2026-08-02".into(),
+                note: "误录入金".into(),
+            })
+            .unwrap();
+        let reversal = db
+            .reverse_portfolio_event(
+                &source.id,
+                &PortfolioEventReversalInput {
+                    occurred_on: "2026-08-03".into(),
+                    note: "与银行流水核对后确认重复".into(),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(reversal.amount, -1_000.0);
+        assert_eq!(reversal.base_amount, -1_000.0);
+        assert_eq!(
+            reversal.reversal_of_event_id.as_deref(),
+            Some(source.id.as_str())
+        );
+        let events = db.portfolio_events().unwrap();
+        let restored_source = events.iter().find(|event| event.id == source.id).unwrap();
+        assert_eq!(
+            restored_source.reversed_by_event_id.as_deref(),
+            Some(reversal.id.as_str())
+        );
+        assert_eq!(performance::summarize(&events).external_cash_flow, 0.0);
+        assert!(matches!(
+            db.reverse_portfolio_event(
+                &source.id,
+                &PortfolioEventReversalInput {
+                    occurred_on: "2026-08-03".into(),
+                    note: "再次冲正".into(),
+                }
+            ),
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            db.reverse_portfolio_event(
+                &reversal.id,
+                &PortfolioEventReversalInput {
+                    occurred_on: "2026-08-03".into(),
+                    note: "冲正冲正记录".into(),
+                }
+            ),
+            Err(AppError::Validation(_))
+        ));
+
+        let dataset = db.export_sync_data().unwrap();
+        let target = Database::open(&directory.path().join("reversal-target.db")).unwrap();
+        target.import_sync_data(&dataset).unwrap();
+        let restored = target.portfolio_events().unwrap();
+        assert_eq!(restored.len(), 2);
+        assert_eq!(performance::summarize(&restored).external_cash_flow, 0.0);
+    }
+
+    #[test]
     fn sync_snapshot_round_trips_domain_data_but_never_settings() {
         let directory = tempfile::tempdir().unwrap();
         let source = Database::open(&directory.path().join("source.db")).unwrap();
@@ -3381,7 +3682,23 @@ mod tests {
             Some("keep-local-model")
         );
 
-        let mut legacy_v5 = dataset.clone();
+        let mut legacy_v6 = dataset.clone();
+        legacy_v6.schema_version = 6;
+        let events = legacy_v6
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "portfolio_events")
+            .unwrap();
+        events.columns.remove(16);
+        for row in &mut events.rows {
+            row.remove(16);
+        }
+        legacy_v6.validate().unwrap();
+        let v6_target = Database::open(&directory.path().join("v6-target.db")).unwrap();
+        v6_target.import_sync_data(&legacy_v6).unwrap();
+        assert_eq!(v6_target.portfolio_events().unwrap().len(), 1);
+
+        let mut legacy_v5 = legacy_v6;
         legacy_v5.schema_version = 5;
         let holdings = legacy_v5
             .tables

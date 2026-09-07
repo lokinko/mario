@@ -25,6 +25,7 @@ import type {
   PortfolioEventImportPreview,
   PortfolioEventImportResult,
   PortfolioEventRecord,
+  PortfolioEventReversalInput,
   ResearchEvidence,
   ResearchEvidenceInput,
   ReminderSettings,
@@ -133,6 +134,13 @@ export async function getPortfolioEvents(): Promise<PortfolioEventRecord[]> {
 
 export async function savePortfolioEvent(input: PortfolioEventInput): Promise<PortfolioEventRecord> {
   return httpRequest<PortfolioEventRecord>("/portfolio-events", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function reversePortfolioEvent(id: string, input: PortfolioEventReversalInput): Promise<PortfolioEventRecord> {
+  return httpRequest<PortfolioEventRecord>(`/portfolio-events/${encodeURIComponent(id)}/reverse`, {
     method: "POST",
     body: JSON.stringify(input),
   });

@@ -15,9 +15,13 @@ export PATH="$rustup_bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/pl
 # temporarily incompatible with the current macOS runtime.
 clt_root="/Library/Developer/CommandLineTools"
 if [[ -x "$clt_root/usr/bin/clang" && -d "$clt_root/SDKs/MacOSX.sdk" ]]; then
+  export DEVELOPER_DIR="${DEVELOPER_DIR:-$clt_root}"
+  export PATH="$clt_root/usr/bin:$PATH"
   export SDKROOT="${SDKROOT:-$clt_root/SDKs/MacOSX.sdk}"
-  export CC="${CC:-$clt_root/usr/bin/clang}"
-  export CXX="${CXX:-$clt_root/usr/bin/clang++}"
+  export CC="${CC:-clang}"
+  export CXX="${CXX:-clang++}"
+  export AR="${AR:-ar}"
+  export RANLIB="${RANLIB:-ranlib}"
   export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="${CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER:-$clt_root/usr/bin/clang}"
 fi
 

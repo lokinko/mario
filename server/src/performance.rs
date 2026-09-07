@@ -82,6 +82,8 @@ mod tests {
             base_amount: amount,
             occurred_on: occurred_on.into(),
             note: "test".into(),
+            reversal_of_event_id: None,
+            reversed_by_event_id: None,
             created_at: "2026-02-01T00:00:00Z".into(),
         }
     }
