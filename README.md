@@ -7,7 +7,7 @@ mario 是一个本地优先、AI-native 的投资决策辅助软件。它不以�
 ## 当前能力
 
 - macOS 桌面客户端：Tauri + React + TypeScript
-- 独立本地服务端：Rust + Axum；桌面端使用随机回环端口和每次启动的认证令牌
+- 独立且可嵌入的本地服务端：Rust + Axum；原生客户端使用随机回环端口和每次启动的认证令牌
 - 本地 SQLite：财务档案、目标、可编辑持仓、决策与分析历史
 - 系统钥匙串：模型 API Key 不写入数据库
 - 确定性风险规则：应急资金、负债压力、集中度、期限错配
@@ -40,10 +40,10 @@ mario 是一个本地优先、AI-native 的投资决策辅助软件。它不以�
 ## 仓库结构
 
 ```text
-client/                 React 桌面界面与 Tauri 外壳
+client/                 React 响应式界面与 Tauri 桌面/Android 外壳
   src/                  页面、类型和本地 API 客户端
-  src-tauri/            启动/打包本地 server sidecar
-server/                 可独立启动的本地 HTTP 服务
+  src-tauri/            桌面启动 sidecar，Android 内嵌同一服务库
+server/                 可独立启动、也可嵌入客户端的本地 HTTP 服务
   src/ai/               可替换工作流、执行器与模型 Provider
   src/db.rs             SQLite 持久化
   src/memory.rs         可替换、可解释的结构化记忆检索接口
@@ -57,11 +57,11 @@ docs/                   架构与投资方法论
 scripts/                sidecar 构建脚本
 ```
 
-产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[本地桌面威胁模型](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合变化归因](docs/portfolio-attribution.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[可追溯汇率数据](docs/market-data.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[本地原生应用威胁模型](docs/threat-model.md)、[Android 调试构建](docs/android.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合变化归因](docs/portfolio-attribution.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[可追溯汇率数据](docs/market-data.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
 
 ## 本地开发
 
-要求：Node.js 20+、Rust 1.86、macOS 开发工具。
+桌面要求：Node.js 20+、Rust 1.86、macOS 开发工具。
 
 ```bash
 npm run install:all
@@ -90,7 +90,28 @@ npm test
 npm run desktop:build
 ```
 
-脚本会先把 `server` 编译成当前平台的 Tauri sidecar，再生成 `.app` 与 `.dmg`。未签名构建适合本机测试；对外发布还需要 Apple Developer 签名、公证和自动更新配置。
+脚本会先把 `server` 编译成当前平台的 Tauri sidecar，再生成 `.app` 与 `.dmg`。当前使用 ad hoc 签名，适合本机测试；对外发布还需要 Apple Developer 签名、公证和自动更新配置。
+
+Android 调试 APK：
+
+```bash
+npm run android:init   # 首次或需要重建 Android 工程时
+npm run android:build
+adb install -r outputs/mario_0.3.0_android-aarch64-debug.apk
+```
+
+Android 版把同一个 Rust/Axum 服务库编译进应用进程，不依赖桌面 sidecar；SQLite 保存在应用沙盒，API Key、账户令牌与恢复密钥保存在 Android Keystore。详细环境要求、架构和调试边界见 [Android 调试构建](docs/android.md)。
+
+Supabase 云同步部署与真实双设备测试：
+
+```bash
+supabase db query --linked --project-ref <project-ref> \
+  --file server/migrations/supabase-cloud-sync.sql
+cargo build --manifest-path server/Cargo.toml
+npm run supabase:test -- <project-ref>
+```
+
+完整的账户、RLS、端到端加密和恢复密钥边界见 [账户和端到端加密云同步](docs/cloud-sync.md)。
 
 ## 模型配置
 
@@ -106,6 +127,6 @@ npm run desktop:build
 
 ## 数据位置
 
-默认数据库位于操作系统的本地数据目录 `com.lokinko.mario/mario.db`。开发和测试时可通过 `MARIO_DATA_DIR` 指定隔离目录。升级时会自动迁移旧版数据目录和数据库文件；旧的 `COMPASS_DATA_DIR`、`COMPASS_AUTH_TOKEN` 仍作为过渡兼容别名。
+桌面版数据库默认位于操作系统的本地数据目录 `com.lokinko.mario/mario.db`；Android 版位于应用专属沙盒。开发和测试时可通过 `MARIO_DATA_DIR` 指定隔离目录。桌面升级时会自动迁移旧版数据目录和数据库文件；旧的 `COMPASS_DATA_DIR`、`COMPASS_AUTH_TOKEN` 仍作为过渡兼容别名。
 
-服务端只在用户主动发起 AI 分析时，将完成该任务所需的投资上下文发送给用户配置的模型服务。用户主动查询汇率时，ECB 只收到币种与日期。云同步同样只在用户主动操作时发生，模型密钥、登录令牌、恢复密钥与本机提醒设置不会进入同步包。桌面提醒必须由用户主动开启并授权系统通知；应用关闭后不会在后台运行。当前版本尚未实现本地数据库整体加密、证券价格行情源或券商交易。
+服务端只在用户主动发起 AI 分析时，将完成该任务所需的投资上下文发送给用户配置的模型服务。用户主动查询汇率时，ECB 只收到币种与日期。云同步同样只在用户主动操作时发生，模型密钥、登录令牌、恢复密钥与本机提醒设置不会进入同步包。原生应用提醒必须由用户主动开启并授权系统通知；应用关闭后不会在后台运行。当前版本尚未实现本地数据库整体加密、证券价格行情源或券商交易。

@@ -51,6 +51,20 @@
 
 数据库表启用 RLS；`anon` 无表权限，`authenticated` 只有按 `auth.uid()` 读取自己的密文权限。写入只能通过带 revision 比较的安全函数执行。生产环境还应配置备份、审计、速率限制、邮件投递监控和密钥轮换流程。
 
+为调试包预置公开客户端配置时，可以在构建进程中设置 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_PUBLISHABLE_KEY`。首次启动会把两者写入本机配置；已有用户配置优先，不会被构建值覆盖。Publishable Key 本来就会随客户端分发，真正的安全边界必须由 RLS 和数据库函数建立；不要以任何形式把 Secret 或 `service_role` Key 放进客户端构建。
+
+也可以使用官方 Supabase CLI 部署并执行真实的双设备加密同步测试：
+
+```bash
+supabase login --name mario
+supabase db query --linked --project-ref <project-ref> \
+  --file server/migrations/supabase-cloud-sync.sql
+cargo build --manifest-path server/Cargo.toml
+npm run supabase:test -- <project-ref>
+```
+
+测试会创建一个不发送邮件的临时已确认用户：设备 A 写入带唯一标记的数据并上传，设备 B 导入恢复密钥后拉取；随后检查云端密文不包含明文标记，并删除临时用户、级联密文和本机测试凭据。脚本只把敏感 Key 保存在权限为 `0600` 的临时文件和进程内存中，不打印或写入仓库。日常客户端只配置 Publishable Key，绝不使用 `service_role`/Secret Key。
+
 ## 可替换边界
 
 服务端的账户与对象存储调用通过 `CloudSyncProvider` 抽象。Supabase 是首个实现，自托管服务只需实现注册、登录、令牌刷新、读取密文和原子版本写入，不需要接触明文投资数据。

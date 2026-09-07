@@ -11,3 +11,4 @@ server/target
 !/.env.example
 /work
 /outputs
+/supabase/.temp

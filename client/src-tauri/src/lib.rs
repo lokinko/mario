@@ -1,5 +1,8 @@
 use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
+#[cfg(target_os = "android")]
+use tauri::Manager;
+#[cfg(desktop)]
 use tauri_plugin_shell::ShellExt;
 
 #[derive(Clone, Serialize)]
@@ -39,14 +42,37 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![local_service_config])
         .setup(move |app| {
-            let parent_pid = std::process::id().to_string();
-            let port = port.to_string();
-            let command = app
-                .shell()
-                .sidecar("mario-server")?
-                .args(["--parent-pid", parent_pid.as_str(), "--port", port.as_str()])
-                .env("MARIO_AUTH_TOKEN", &sidecar_config.auth_token);
-            let (_events, _child) = command.spawn()?;
+            #[cfg(desktop)]
+            {
+                let parent_pid = std::process::id().to_string();
+                let port = port.to_string();
+                let command = app
+                    .shell()
+                    .sidecar("mario-server")?
+                    .args(["--parent-pid", parent_pid.as_str(), "--port", port.as_str()])
+                    .env("MARIO_AUTH_TOKEN", &sidecar_config.auth_token);
+                let (_events, _child) = command.spawn()?;
+            }
+            #[cfg(target_os = "android")]
+            {
+                android_keyring::set_android_keyring_credential_builder()
+                    .map_err(std::io::Error::other)?;
+                let data_dir = app.path().app_local_data_dir()?;
+                std::fs::create_dir_all(&data_dir)?;
+                let auth_token = sidecar_config.auth_token.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = mario_server::serve_embedded(
+                        data_dir,
+                        port,
+                        auth_token,
+                        std::future::pending(),
+                    )
+                    .await
+                    {
+                        eprintln!("embedded mario-server failed: {error}");
+                    }
+                });
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

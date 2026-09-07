@@ -29,9 +29,19 @@
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "category": "Finance",
     "shortDescription": "本地优先的 AI 投资决策助手",
     "longDescription": "通过财务底座、目标配置、投资决策卡与复盘流程，帮助用户建立投资方法论。",
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "externalBin": ["binaries/mario-server"]
   }
 }

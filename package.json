@@ -8,6 +8,9 @@
     "test": "bash scripts/test.sh",
     "desktop:dev": "bash scripts/desktop.sh debug",
     "desktop:build": "bash scripts/desktop.sh release",
+    "android:init": "bash scripts/android.sh init",
+    "android:build": "bash scripts/android.sh build",
+    "supabase:test": "bash scripts/test-supabase-sync.sh",
     "sidecar:debug": "bash scripts/prepare-sidecar.sh debug",
     "sidecar:release": "bash scripts/prepare-sidecar.sh release"
   },

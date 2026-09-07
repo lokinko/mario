@@ -13,7 +13,7 @@
 
 ```text
 ┌───────────────────────────────┐
-│ Tauri Desktop Client          │
+│ Tauri Desktop / Android Client│
 │ React UI + typed HTTP client  │
 └───────────────┬───────────────┘
                 │ random loopback port + bearer token
@@ -47,6 +47,8 @@
 │ / recovery key     │ │ Supabase or self-hosted     │
 └────────────────────┘ └─────────────────────────────┘
 ```
+
+桌面端把服务构建为受控 sidecar；Android 端受平台限制不能执行桌面 sidecar，因此将同一个 `mario-server` Rust 库编译进应用进程。两端仍通过随机 loopback 端口、单次启动令牌与同一套 HTTP 契约通信，UI、领域规则和同步协议不分叉。Android 的 SQLite 位于应用沙盒，秘密通过 Android Keystore 加密存储。详见 [Android 调试构建](android.md)。
 
 ## AI 模块边界
 
@@ -95,11 +97,11 @@ pub trait ModelProvider: Send + Sync {
 ## 数据与安全边界
 
 - 服务端只监听 loopback 地址，不暴露局域网端口。
-- 桌面端每次启动选择随机回环端口并生成 256 位访问令牌；令牌经子进程环境和受控 Tauri command 分别交给 sidecar 与当前 WebView，不写入磁盘或进程参数。
+- 原生客户端每次启动选择随机回环端口并生成 256 位访问令牌；桌面端经子进程环境启动 sidecar，Android 端在应用进程内启动相同服务库；令牌经受控 Tauri command 交给当前 WebView，不写入磁盘或进程参数。
 - 所有本地 API（包括健康检查）都要求当前启动令牌；令牌比较使用固定长度摘要和常数时间比较。无认证模式只能通过显式开发参数开启。
-- 桌面端把自身进程号传给 sidecar；桌面进程退出后，本地服务会自动停止。
-- CORS 只允许桌面 WebView 和本地开发地址。
-- 模型密钥保存在系统钥匙串。
+- 桌面端把自身进程号传给 sidecar；桌面进程退出后，本地服务会自动停止。Android 内嵌服务随应用进程结束。
+- CORS 只允许 Tauri WebView 和本地开发地址。
+- 模型密钥在桌面端保存在系统钥匙串，在 Android 端由 Android Keystore 保护。
 - API Key 只进入 HTTP Authorization 请求头，不进入提示词、预览或分析审计。
 - AI 分析必须携带与当前本地上下文一致的预览指纹。
 - Base URL 默认要求 HTTPS，本机模型例外。
@@ -112,7 +114,7 @@ pub trait ModelProvider: Send + Sync {
 
 账户与云同步的协议、冲突语义和 Supabase RLS 参考迁移见 [账户与端到端加密云同步](cloud-sync.md)。
 
-后续安全工作：数据库加密、应用签名与公证、更完整的 Prompt Injection 防护和自动更新签名。当前威胁边界见 [本地桌面威胁模型](threat-model.md)。
+后续安全工作：数据库加密、应用签名与公证、更完整的 Prompt Injection 防护和自动更新签名。当前威胁边界见 [本地原生应用威胁模型](threat-model.md)。
 
 ## 推荐扩展顺序
 

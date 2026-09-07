@@ -10,7 +10,7 @@ import {
 } from "./api";
 import type { ReminderSettings, ReviewReminderSummary } from "./types";
 
-export function isDesktopApp(): boolean {
+export function isNativeApp(): boolean {
   return "__TAURI_INTERNALS__" in window;
 }
 
@@ -23,14 +23,14 @@ function notificationBody(summary: ReviewReminderSummary): string {
 
 export async function checkAndSendReviewReminder(): Promise<ReviewReminderSummary> {
   const summary = await getReviewReminders();
-  if (!isDesktopApp() || !summary.shouldNotify || !(await isPermissionGranted())) return summary;
+  if (!isNativeApp() || !summary.shouldNotify || !(await isPermissionGranted())) return summary;
 
   sendNotification({ title: "mario · 复盘提醒", body: notificationBody(summary) });
   return acknowledgeReviewReminder(summary.fingerprint);
 }
 
 export async function enableReviewReminders(): Promise<ReminderSettings> {
-  if (!isDesktopApp()) throw new Error("系统通知只在 mario 桌面应用中可用");
+  if (!isNativeApp()) throw new Error("系统通知只在 mario 原生应用中可用");
   let granted = await isPermissionGranted();
   if (!granted) granted = (await requestPermission()) === "granted";
   if (!granted) throw new Error("系统没有授予通知权限；你仍可在复盘中心查看到期事项");

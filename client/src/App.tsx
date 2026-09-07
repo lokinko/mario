@@ -22,6 +22,7 @@ import {
   LoaderCircle,
   LogOut,
   LockKeyhole,
+  Menu,
   Plus,
   Save,
   Send,
@@ -33,6 +34,7 @@ import {
   Upload,
   UserRound,
   WalletCards,
+  X,
 } from "lucide-react";
 import {
   deleteModelKey,
@@ -128,7 +130,7 @@ import {
   checkAndSendReviewReminder,
   disableReviewReminders,
   enableReviewReminders,
-  isDesktopApp,
+  isNativeApp,
 } from "./reminders";
 
 type View = "dashboard" | "foundation" | "ledger" | "evidence" | "decision" | "review" | "advisor" | "cloud" | "settings";
@@ -261,6 +263,7 @@ function App() {
   const [notice, setNotice] = useState("");
   const [decisionDraft, setDecisionDraft] = useState<DecisionEntry | null>(null);
   const [analysisToOpen, setAnalysisToOpen] = useState<string | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const loadApplication = () => {
     setLoading(true);
@@ -287,6 +290,7 @@ function App() {
 
   const navigate = (nextView: View) => {
     setView(nextView);
+    setMobileNavOpen(false);
     window.history.replaceState(null, "", `#${nextView}`);
     window.scrollTo({ top: 0, behavior: "auto" });
   };
@@ -314,10 +318,19 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark"><BrainCircuit size={20} /></div>
+          <div className="brand-mark"><img src="/mario-mark.svg" alt="" /></div>
           <div><strong>mario</strong><span>本地投资决策助手</span></div>
+          <button
+            className="mobile-menu"
+            type="button"
+            aria-label={mobileNavOpen ? "关闭导航" : "打开导航"}
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen((open) => !open)}
+          >
+            {mobileNavOpen ? <X size={21} /> : <Menu size={21} />}
+          </button>
         </div>
 
         <nav>
@@ -1326,8 +1339,8 @@ function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash:
             <small>设置只保存在这台设备，不参与云端同步。关闭应用后不会在后台运行。</small>
           </div>
         </div>
-        <button className={reminder?.enabled ? "secondary" : "primary"} disabled={reminderSaving || !isDesktopApp()} onClick={toggleReminders}>
-          {reminderSaving ? "处理中…" : reminder?.enabled ? "关闭提醒" : isDesktopApp() ? "开启提醒" : "仅桌面应用可用"}
+        <button className={reminder?.enabled ? "secondary" : "primary"} disabled={reminderSaving || !isNativeApp()} onClick={toggleReminders}>
+          {reminderSaving ? "处理中…" : reminder?.enabled ? "关闭提醒" : isNativeApp() ? "开启提醒" : "仅原生应用可用"}
         </button>
       </section>
 
@@ -1673,6 +1686,12 @@ function Toggle({ icon, title, detail, checked, onChange }: { icon: React.ReactN
   return <button className={`toggle-card ${checked ? "selected" : ""}`} onClick={() => onChange(!checked)}><span className="toggle-icon">{icon}</span><div><strong>{title}</strong><small>{detail}</small></div><i>{checked && <Check size={13} />}</i></button>;
 }
 
+const bundledCloudConfig = (() => {
+  const url = String(import.meta.env.VITE_SUPABASE_URL ?? "").trim();
+  const publishableKey = String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
+  return url && publishableKey ? { url, publishableKey } : null;
+})();
+
 function CloudSync({ flash }: { flash: (message: string) => void }) {
   const [status, setStatus] = useState<CloudStatus | null>(null);
   const [url, setUrl] = useState("");
@@ -1688,10 +1707,13 @@ function CloudSync({ flash }: { flash: (message: string) => void }) {
   const refresh = async () => setStatus(await getCloudStatus());
 
   useEffect(() => {
-    Promise.all([getCloudConfig(), getCloudStatus()])
-      .then(([config, nextStatus]) => {
+    getCloudConfig()
+      .then(async (storedConfig) => {
+        const config = storedConfig ?? bundledCloudConfig;
         if (config) { setUrl(config.url); setPublishableKey(config.publishableKey); }
-        setStatus(nextStatus);
+        setStatus(!storedConfig && bundledCloudConfig
+          ? await saveCloudConfig(bundledCloudConfig)
+          : await getCloudStatus());
       })
       .catch((nextError) => setError(String(nextError)));
   }, []);
