@@ -476,6 +476,9 @@ mod tests {
                 reviewed: false,
                 contradiction: false,
                 tags: Vec::new(),
+                preference: "default".into(),
+                preference_note: String::new(),
+                preference_updated_at: None,
                 selected: true,
                 retrieval: None,
             })
@@ -533,6 +536,9 @@ mod tests {
             reviewed: false,
             contradiction: false,
             tags: Vec::new(),
+            preference: "default".into(),
+            preference_note: String::new(),
+            preference_updated_at: None,
             selected: true,
             retrieval: None,
         }];

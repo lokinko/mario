@@ -865,9 +865,17 @@ mod tests {
     }
 
     #[test]
-    fn decrypts_legacy_v1_through_v6_bundles_and_rejects_mismatched_markers() {
+    fn decrypts_legacy_v1_through_v7_bundles_and_rejects_mismatched_markers() {
         let key = parse_recovery_key(&generate_recovery_key()).unwrap();
-        let mut v6_source = dataset();
+        let mut v7_source = dataset();
+        v7_source.schema_version = 7;
+        assert_eq!(v7_source.tables.pop().unwrap().name, "memory_preferences");
+        v7_source.validate().unwrap();
+        let mut v7_blob = encrypt_dataset(&v7_source, &key).unwrap();
+        v7_blob.schema_version = 7;
+        assert_eq!(decrypt_dataset(&v7_blob, &key).unwrap().schema_version, 7);
+
+        let mut v6_source = v7_source;
         v6_source.schema_version = 6;
         let events = v6_source
             .tables

@@ -110,6 +110,10 @@ fn score_item(
         1.5
     } else {
         0.5
+    } + if item.preference == "pinned" {
+        4.0
+    } else {
+        0.0
     };
     let score = ((relevance as f64 * decay + source_weight) * 100.0).round() / 100.0;
     let mut reasons = Vec::new();
@@ -130,6 +134,9 @@ fn score_item(
     }
     if item.kind == "analysis" {
         reasons.push("历史 AI 分析未经结果验证，仅作为线索".into());
+    }
+    if item.preference == "pinned" {
+        reasons.push("用户已标记为长期保留".into());
     }
     reasons.push(match age_days {
         0..=90 => "90 天内记忆".into(),
@@ -232,6 +239,9 @@ mod tests {
             reviewed,
             contradiction,
             tags: vec![title.into()],
+            preference: "default".into(),
+            preference_note: String::new(),
+            preference_updated_at: None,
             selected: true,
             retrieval: None,
         }
@@ -318,5 +328,21 @@ mod tests {
         assert!(retriever()
             .search("复盘指数集中风险", &[excluded], 3)
             .is_empty());
+    }
+
+    #[test]
+    fn pinned_memory_gets_a_visible_retrieval_boost() {
+        let normal = memory("normal", "指数", "集中风险", "2026-08-01", true, false);
+        let mut pinned = memory("pinned", "指数", "集中风险", "2026-08-01", true, false);
+        pinned.preference = "pinned".into();
+        let result = retriever().search("复盘指数集中风险", &[normal, pinned], 3);
+        assert_eq!(result[0].id, "pinned");
+        assert!(result[0]
+            .retrieval
+            .as_ref()
+            .unwrap()
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("长期保留")));
     }
 }

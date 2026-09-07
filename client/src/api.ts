@@ -19,6 +19,8 @@ import type {
   InvestmentRuleRevision,
   ModelConfig,
   ModelConnectionTest,
+  MemoryCandidate,
+  MemoryPreferenceInput,
   PortfolioCheckInInput,
   PortfolioCheckInRecord,
   PortfolioEventInput,
@@ -130,6 +132,17 @@ export async function savePortfolioCheckin(input: PortfolioCheckInInput): Promis
 
 export async function getPortfolioEvents(): Promise<PortfolioEventRecord[]> {
   return httpRequest<PortfolioEventRecord[]>("/portfolio-events");
+}
+
+export async function getMemories(): Promise<MemoryCandidate[]> {
+  return httpRequest<MemoryCandidate[]>("/memories");
+}
+
+export async function saveMemoryPreference(id: string, input: MemoryPreferenceInput): Promise<MemoryCandidate> {
+  return httpRequest<MemoryCandidate>(`/memories/${encodeURIComponent(id)}/preference`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function savePortfolioEvent(input: PortfolioEventInput): Promise<PortfolioEventRecord> {

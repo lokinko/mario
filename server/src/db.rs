@@ -17,7 +17,7 @@ use crate::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
         DecisionReviewInput, DecisionRuleCheck, FinancialProfile, Goal, GoalInput, Holding,
         HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem,
-        ModelConfig, PortfolioCheckInInput, PortfolioCheckInRecord,
+        MemoryPreferenceInput, ModelConfig, PortfolioCheckInInput, PortfolioCheckInRecord,
         PortfolioEventImportCommitRequest, PortfolioEventImportPreview,
         PortfolioEventImportRequest, PortfolioEventImportResult, PortfolioEventImportRow,
         PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, PortfolioEventType,
@@ -178,6 +178,8 @@ const CURRENT_EVENT_COLUMNS: &[&str] = &[
     "reversal_of_event_id",
 ];
 
+const V7_SYNC_TABLE_COUNT: usize = 12;
+
 const SYNC_TABLES: &[SyncTableSpec] = &[
     SyncTableSpec {
         name: "profile",
@@ -288,9 +290,14 @@ const SYNC_TABLES: &[SyncTableSpec] = &[
         columns: CURRENT_EVENT_COLUMNS,
         order_by: "occurred_on, created_at, id",
     },
+    SyncTableSpec {
+        name: "memory_preferences",
+        columns: &["memory_id", "preference", "note", "updated_at"],
+        order_by: "memory_id",
+    },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 7;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 8;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 
@@ -313,17 +320,24 @@ fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
             Ok(specs)
         }
         4 => {
+            specs.truncate(V7_SYNC_TABLE_COUNT);
             specs[2].columns = V3_HOLDING_COLUMNS;
-            specs.last_mut().expect("event sync table").columns = LEGACY_EVENT_COLUMNS;
+            specs[11].columns = LEGACY_EVENT_COLUMNS;
             Ok(specs)
         }
         5 => {
+            specs.truncate(V7_SYNC_TABLE_COUNT);
             specs[2].columns = V3_HOLDING_COLUMNS;
-            specs.last_mut().expect("event sync table").columns = V5_EVENT_COLUMNS;
+            specs[11].columns = V5_EVENT_COLUMNS;
             Ok(specs)
         }
         6 => {
-            specs.last_mut().expect("event sync table").columns = V6_EVENT_COLUMNS;
+            specs.truncate(V7_SYNC_TABLE_COUNT);
+            specs[11].columns = V6_EVENT_COLUMNS;
+            Ok(specs)
+        }
+        7 => {
+            specs.truncate(V7_SYNC_TABLE_COUNT);
             Ok(specs)
         }
         SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
@@ -531,6 +545,12 @@ impl Database {
                note TEXT NOT NULL,
                created_at TEXT NOT NULL,
                reversal_of_event_id TEXT REFERENCES portfolio_events(id)
+             );
+             CREATE TABLE IF NOT EXISTS memory_preferences (
+               memory_id TEXT PRIMARY KEY,
+               preference TEXT NOT NULL,
+               note TEXT NOT NULL DEFAULT '',
+               updated_at TEXT NOT NULL
              );
              CREATE TABLE IF NOT EXISTS settings (
                key TEXT PRIMARY KEY,
@@ -809,6 +829,7 @@ impl Database {
         validate_synced_event_identities(dataset)?;
         validate_synced_fx_provenance(dataset)?;
         validate_synced_event_reversals(dataset)?;
+        validate_synced_memory_preferences(dataset)?;
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
         transaction.execute_batch("PRAGMA defer_foreign_keys=ON;")?;
@@ -2234,8 +2255,12 @@ impl Database {
     }
 
     pub fn memories(&self) -> AppResult<Vec<MemoryItem>> {
+        let preferences = self.memory_preference_map()?;
         let mut items = Vec::new();
-        for record in self.decisions()?.into_iter().take(50) {
+        for (index, record) in self.decisions()?.into_iter().enumerate() {
+            if index >= 50 && !preferences.contains_key(&record.id) {
+                continue;
+            }
             let (summary, occurred_at, status, reviewed, contradiction, review_payload) =
                 if let Some(review) = &record.review {
                     (
@@ -2291,44 +2316,133 @@ impl Database {
                 reviewed,
                 contradiction,
                 tags: vec![record.asset_name, "投资决策".into(), status],
+                preference: "default".into(),
+                preference_note: String::new(),
+                preference_updated_at: None,
                 selected: true,
                 retrieval: None,
             });
         }
         let conn = self.conn()?;
-        let mut stmt = conn.prepare("SELECT id, question, answer, trace, created_at FROM analyses ORDER BY created_at DESC LIMIT 20")?;
-        for item in stmt.query_map([], |row| {
-            let answer: String = row.get(2)?;
-            let trace: Option<String> = row.get(3)?;
-            let workflow_version = trace
-                .as_deref()
-                .and_then(|value| {
-                    serde_json::from_str::<crate::models::AnalysisWorkflowTrace>(value).ok()
+        let mut stmt = conn.prepare(
+            "SELECT id, question, answer, trace, created_at FROM analyses ORDER BY created_at DESC",
+        )?;
+        for (index, item) in stmt
+            .query_map([], |row| {
+                let answer: String = row.get(2)?;
+                let trace: Option<String> = row.get(3)?;
+                let workflow_version = trace
+                    .as_deref()
+                    .and_then(|value| {
+                        serde_json::from_str::<crate::models::AnalysisWorkflowTrace>(value).ok()
+                    })
+                    .map(|value| value.version)
+                    .filter(|value| !value.is_empty());
+                Ok(MemoryItem {
+                    id: row.get(0)?,
+                    kind: "analysis".into(),
+                    title: row.get(1)?,
+                    summary: truncate_chars(&answer, 180),
+                    content: serde_json::json!({
+                        "answer": answer,
+                        "workflowVersion": workflow_version,
+                    }),
+                    created_at: row.get(4)?,
+                    occurred_at: row.get(4)?,
+                    status: "历史 AI 分析（未经结果验证）".into(),
+                    reviewed: false,
+                    contradiction: false,
+                    tags: vec!["AI 分析".into(), "历史建议".into()],
+                    preference: "default".into(),
+                    preference_note: String::new(),
+                    preference_updated_at: None,
+                    selected: true,
+                    retrieval: None,
                 })
-                .map(|value| value.version)
-                .filter(|value| !value.is_empty());
-            Ok(MemoryItem {
-                id: row.get(0)?,
-                kind: "analysis".into(),
-                title: row.get(1)?,
-                summary: truncate_chars(&answer, 180),
-                content: serde_json::json!({
-                    "answer": answer,
-                    "workflowVersion": workflow_version,
-                }),
-                created_at: row.get(4)?,
-                occurred_at: row.get(4)?,
-                status: "历史 AI 分析（未经结果验证）".into(),
-                reviewed: false,
-                contradiction: false,
-                tags: vec!["AI 分析".into(), "历史建议".into()],
-                selected: true,
-                retrieval: None,
-            })
-        })? {
-            items.push(item?);
+            })?
+            .enumerate()
+        {
+            let item = item?;
+            if index < 20 || preferences.contains_key(&item.id) {
+                items.push(item);
+            }
+        }
+        drop(stmt);
+        drop(conn);
+        for item in &mut items {
+            if let Some((preference, note, updated_at)) = preferences.get(&item.id) {
+                item.preference.clone_from(preference);
+                item.preference_note.clone_from(note);
+                item.preference_updated_at = Some(updated_at.clone());
+                item.selected = preference != "hidden";
+            }
         }
         Ok(items)
+    }
+
+    fn memory_preference_map(&self) -> AppResult<HashMap<String, (String, String, String)>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT memory_id, preference, note, updated_at FROM memory_preferences ORDER BY memory_id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+        Ok(rows
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(|(id, preference, note, updated_at)| (id, (preference, note, updated_at)))
+            .collect())
+    }
+
+    pub fn save_memory_preference(
+        &self,
+        id: &str,
+        input: &MemoryPreferenceInput,
+    ) -> AppResult<MemoryItem> {
+        if id.trim().is_empty() || id.chars().count() > 128 {
+            return Err(AppError::Validation("长期记忆 ID 无效".into()));
+        }
+        if !matches!(input.preference.as_str(), "default" | "pinned" | "hidden") {
+            return Err(AppError::Validation("长期记忆偏好无效".into()));
+        }
+        if input.note.chars().count() > 1_000 {
+            return Err(AppError::Validation(
+                "长期记忆备注不能超过 1000 个字符".into(),
+            ));
+        }
+        if !self.memories()?.iter().any(|item| item.id == id) {
+            return Err(AppError::NotFound("找不到要管理的长期记忆".into()));
+        }
+
+        if input.preference == "default" {
+            self.conn()?
+                .execute("DELETE FROM memory_preferences WHERE memory_id=?1", [id])?;
+        } else {
+            self.conn()?.execute(
+                "INSERT INTO memory_preferences (memory_id, preference, note, updated_at)
+                 VALUES (?1,?2,?3,?4)
+                 ON CONFLICT(memory_id) DO UPDATE SET
+                   preference=excluded.preference,
+                   note=excluded.note,
+                   updated_at=excluded.updated_at",
+                params![
+                    id,
+                    input.preference,
+                    input.note.trim(),
+                    Utc::now().to_rfc3339()
+                ],
+            )?;
+        }
+        self.memories()?
+            .into_iter()
+            .find(|item| item.id == id)
+            .ok_or_else(|| AppError::NotFound("找不到要管理的长期记忆".into()))
     }
 
     pub fn save_analysis(&self, result: &AnalysisResult, question: &str) -> AppResult<()> {
@@ -2885,6 +2999,42 @@ fn validate_synced_event_reversals(dataset: &SyncDataset) -> AppResult<()> {
             return Err(AppError::Validation(
                 "同步流水冲正内容与原记录不匹配".into(),
             ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_synced_memory_preferences(dataset: &SyncDataset) -> AppResult<()> {
+    if dataset.schema_version < 8 {
+        return Ok(());
+    }
+    let source_ids = dataset
+        .tables
+        .iter()
+        .filter(|table| matches!(table.name.as_str(), "decisions" | "analyses"))
+        .flat_map(|table| table.rows.iter())
+        .map(|row| sync_text(row, 0, "记忆来源 ID"))
+        .collect::<AppResult<HashSet<_>>>()?;
+    let table = dataset
+        .tables
+        .iter()
+        .find(|table| table.name == "memory_preferences")
+        .ok_or_else(|| AppError::Validation("数据快照缺少 memory_preferences".into()))?;
+    let mut seen = HashSet::new();
+    for row in &table.rows {
+        let memory_id = sync_text(row, 0, "长期记忆 ID")?;
+        let preference = sync_text(row, 1, "长期记忆偏好")?;
+        let note = sync_text(row, 2, "长期记忆备注")?;
+        let updated_at = sync_text(row, 3, "长期记忆更新时间")?;
+        if memory_id.trim().is_empty()
+            || memory_id.chars().count() > 128
+            || !seen.insert(memory_id)
+            || !source_ids.contains(memory_id)
+            || !matches!(preference, "pinned" | "hidden")
+            || note.chars().count() > 1_000
+            || chrono::DateTime::parse_from_rfc3339(updated_at).is_err()
+        {
+            return Err(AppError::Validation("同步长期记忆偏好无效".into()));
         }
     }
     Ok(())
@@ -3600,6 +3750,25 @@ mod tests {
                 }],
             })
             .unwrap();
+        let hidden_memory = source
+            .save_memory_preference(
+                "synced-decision",
+                &MemoryPreferenceInput {
+                    preference: "hidden".into(),
+                    note: "先验证永久屏蔽".into(),
+                },
+            )
+            .unwrap();
+        assert!(!hidden_memory.selected);
+        source
+            .save_memory_preference(
+                "synced-decision",
+                &MemoryPreferenceInput {
+                    preference: "pinned".into(),
+                    note: "跨设备保留的能力圈经验".into(),
+                },
+            )
+            .unwrap();
         source
             .save_portfolio_checkin(&PortfolioCheckInInput {
                 period_label: "同步基线".into(),
@@ -3632,6 +3801,20 @@ mod tests {
             dataset.content_hash().unwrap(),
             second_export.content_hash().unwrap()
         );
+
+        let mut orphaned_preference = dataset.clone();
+        let preference_table = orphaned_preference
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "memory_preferences")
+            .unwrap();
+        preference_table.rows[0][0] = SyncValue::Text("missing-memory".into());
+        let preference_target =
+            Database::open(&directory.path().join("preference-target.db")).unwrap();
+        assert!(matches!(
+            preference_target.import_sync_data(&orphaned_preference),
+            Err(AppError::Validation(_))
+        ));
 
         let mut corrupted_identity = dataset.clone();
         let event_table = corrupted_identity
@@ -3670,6 +3853,14 @@ mod tests {
         let restored_decision = target.decisions().unwrap().remove(0);
         assert_eq!(restored_decision.rule_checks.len(), 1);
         assert_eq!(restored_decision.rule_checks[0].status, "遵守");
+        let restored_memory = target
+            .memories()
+            .unwrap()
+            .into_iter()
+            .find(|item| item.id == "synced-decision")
+            .unwrap();
+        assert_eq!(restored_memory.preference, "pinned");
+        assert_eq!(restored_memory.preference_note, "跨设备保留的能力圈经验");
         assert_eq!(target.portfolio_checkins().unwrap().len(), 1);
         let restored_events = target.portfolio_events().unwrap();
         assert_eq!(restored_events.len(), 1);
@@ -3682,7 +3873,15 @@ mod tests {
             Some("keep-local-model")
         );
 
-        let mut legacy_v6 = dataset.clone();
+        let mut legacy_v7 = dataset.clone();
+        legacy_v7.schema_version = 7;
+        assert_eq!(legacy_v7.tables.pop().unwrap().name, "memory_preferences");
+        legacy_v7.validate().unwrap();
+        let v7_target = Database::open(&directory.path().join("v7-target.db")).unwrap();
+        v7_target.import_sync_data(&legacy_v7).unwrap();
+        assert_eq!(v7_target.portfolio_events().unwrap().len(), 1);
+
+        let mut legacy_v6 = legacy_v7;
         legacy_v6.schema_version = 6;
         let events = legacy_v6
             .tables

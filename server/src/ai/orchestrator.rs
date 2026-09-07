@@ -576,6 +576,9 @@ mod tests {
             reviewed: true,
             contradiction: false,
             tags: vec!["指数".into(), "集中度".into()],
+            preference: "default".into(),
+            preference_note: String::new(),
+            preference_updated_at: None,
             selected: true,
             retrieval: None,
         }];

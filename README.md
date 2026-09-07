@@ -16,6 +16,7 @@ mario 是一个本地优先、AI-native 的投资决策辅助软件。它不以�
 - AI 深度工作流：研究计划 → 两轮结构化长期记忆检索 → 两个独立候选方案 → 独立反思 → 最终裁决
 - 结构化输出校验：事实、推断、未知、方案、行动与复盘条件必须通过机器契约，非法引用自动拦截并允许一次修复
 - 可解释长期记忆：区分已复盘决策、未验证判断与历史 AI 回答，支持时间衰减和反证信号
+- 用户可管理的长期记忆：把相关经验标为长期保留、写适用范围注释或永久屏蔽；原始决策与复盘不被改写
 - 逐条记忆授权：发送前可单独排除候选记录，选择变化后必须重新生成一致性指纹
 - AI 工作流轨迹：逐阶段保存研究产物、模型耗时与 Provider 返回的 token 用量
 - 可审计分析档案：重开历史结构化报告和证据，从决策追溯原分析，或用当前数据重新分析旧问题
@@ -98,7 +99,7 @@ Android 调试 APK：
 ```bash
 npm run android:init   # 首次或需要重建 Android 工程时
 npm run android:build
-adb install -r outputs/mario_0.3.1_android-aarch64-debug.apk
+adb install -r outputs/mario_0.3.2_android-aarch64-debug.apk
 ```
 
 Android 版把同一个 Rust/Axum 服务库编译进应用进程，不依赖桌面 sidecar；SQLite 保存在应用沙盒，API Key、账户令牌与恢复密钥保存在 Android Keystore。详细环境要求、架构和调试边界见 [Android 调试构建](docs/android.md)。

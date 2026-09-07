@@ -335,8 +335,16 @@ export interface MemoryCandidate {
   reviewed: boolean;
   contradiction: boolean;
   tags: string[];
+  preference: "default" | "pinned" | "hidden";
+  preferenceNote: string;
+  preferenceUpdatedAt: string | null;
   selected: boolean;
   retrieval?: MemoryRetrieval;
+}
+
+export interface MemoryPreferenceInput {
+  preference: "default" | "pinned" | "hidden";
+  note: string;
 }
 
 export interface MemoryRetrieval {

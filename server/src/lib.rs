@@ -44,14 +44,14 @@ use memory::{HybridMemoryRetriever, MemoryRetriever};
 use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
     DecisionRecord, DecisionReviewInput, FinancialProfile, FxRateQuery, FxRateQuote, GoalInput,
-    HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, ModelConfig,
-    ModelConfigInput, ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord,
-    PortfolioEventImportCommitRequest, PortfolioEventImportPreview, PortfolioEventImportRequest,
-    PortfolioEventImportResult, PortfolioEventInput, PortfolioEventRecord,
-    PortfolioEventReversalInput, ReminderSettings, ReminderSettingsInput, ResearchEvidence,
-    ResearchEvidenceInput, ResearchEvidenceStatusInput, ReviewReminderAcknowledgeInput,
-    ReviewReminderSummary, RuleEffectivenessSummary, Snapshot, StoredAnalysis, SystemReviewInput,
-    SystemReviewRecord,
+    HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem,
+    MemoryPreferenceInput, ModelConfig, ModelConfigInput, ModelConnectionTest,
+    PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventImportCommitRequest,
+    PortfolioEventImportPreview, PortfolioEventImportRequest, PortfolioEventImportResult,
+    PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, ReminderSettings,
+    ReminderSettingsInput, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
+    ReviewReminderAcknowledgeInput, ReviewReminderSummary, RuleEffectivenessSummary, Snapshot,
+    StoredAnalysis, SystemReviewInput, SystemReviewRecord,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -179,6 +179,8 @@ where
             get(investment_rule_history),
         )
         .route("/api/rule-effectiveness", get(rule_effectiveness))
+        .route("/api/memories", get(memories))
+        .route("/api/memories/{id}/preference", put(save_memory_preference))
         .route(
             "/api/system-reviews",
             get(system_reviews).post(save_system_review),
@@ -350,6 +352,16 @@ async fn commit_portfolio_event_import(
     Json(input): Json<PortfolioEventImportCommitRequest>,
 ) -> AppResult<Json<PortfolioEventImportResult>> {
     Ok(Json(state.db.commit_portfolio_event_import(&input)?))
+}
+async fn memories(State(state): State<Arc<AppState>>) -> AppResult<Json<Vec<MemoryItem>>> {
+    Ok(Json(state.db.memories()?))
+}
+async fn save_memory_preference(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(input): Json<MemoryPreferenceInput>,
+) -> AppResult<Json<MemoryItem>> {
+    Ok(Json(state.db.save_memory_preference(&id, &input)?))
 }
 async fn add_goal(
     State(state): State<Arc<AppState>>,
@@ -988,6 +1000,9 @@ mod tests {
             reviewed: true,
             contradiction: false,
             tags: vec!["指数".into()],
+            preference: "default".into(),
+            preference_note: String::new(),
+            preference_updated_at: None,
             selected: true,
             retrieval: None,
         }

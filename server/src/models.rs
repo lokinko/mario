@@ -839,10 +839,28 @@ pub struct MemoryItem {
     pub reviewed: bool,
     pub contradiction: bool,
     pub tags: Vec<String>,
+    #[serde(default = "default_memory_preference")]
+    pub preference: String,
+    #[serde(default)]
+    pub preference_note: String,
+    #[serde(default)]
+    pub preference_updated_at: Option<String>,
     #[serde(default = "enabled")]
     pub selected: bool,
     #[serde(default)]
     pub retrieval: Option<MemoryRetrieval>,
+}
+
+fn default_memory_preference() -> String {
+    "default".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryPreferenceInput {
+    pub preference: String,
+    #[serde(default)]
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

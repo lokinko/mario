@@ -78,7 +78,7 @@ pub trait ModelProvider: Send + Sync {
 
 编排器不知道 API Key 的存储方式，也不直接访问数据库。它只接收 Workflow、Provider、Retriever、BuiltContext 和 MemoryItem，因此可以单元测试并在未来替换为图式工作流。每个模型调用返回统一的正文与可选 usage；执行器记录阶段耗时，完整研究计划、候选方案、批判和调用轨迹由 SQLite 本地保存。详细契约见 [AI 分析工作流](ai-workflow.md)。
 
-`server/src/memory.rs` 的 `MemoryRetriever` 不依赖数据库或模型。当前 `HybridMemoryRetriever` 综合字段/内容匹配、投资概念关联、复盘可信度和时间衰减，并为每条结果生成可见命中原因。决策记忆由不可变原始快照与独立复盘动态构造，历史 AI 回答始终标为未经结果验证。详细契约见 [长期记忆与多轮检索](long-term-memory.md)。
+`server/src/memory.rs` 的 `MemoryRetriever` 不依赖数据库或模型。当前 `HybridMemoryRetriever` 综合字段/内容匹配、投资概念关联、复盘可信度、时间衰减和用户长期偏好，并为每条结果生成可见命中原因。决策记忆由不可变原始快照与独立复盘动态构造，历史 AI 回答始终标为未经结果验证；用户只能为来源记录增加长期保留、屏蔽和注释，不能改写源内容。详细契约见 [长期记忆与多轮检索](long-term-memory.md)。
 
 `ContextBuilder` 位于 `server/src/context.rs`，负责在编排前执行最小披露策略。规则、复盘、组合检查点、资金流水、证据和记忆通过单一 `ContextSources` 契约注入，新增数据组不会继续膨胀编排器参数。编排器不再接收完整 `Snapshot`，只接收经过用户选择、发送前预览和一致性指纹校验的 `BuiltContext`。候选记忆也在预览阶段冻结，后续检索不能越出该集合。详细契约见 [AI 数据边界](ai-data-boundary.md)。
 
