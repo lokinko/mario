@@ -89,3 +89,6 @@ main { grid-column: 2; min-height: 100vh; position: relative; }.page { max-width
   .import-table-wrap,.payload-details pre{max-width:100%;overflow:auto}
   .toast{left:14px;right:14px;transform:none;text-align:center}
 }
+.cloud-page .form-actions { gap: 12px; flex-wrap: wrap; }
+.cloud-page .key-actions { flex-wrap: wrap; }
+.cloud-page .form-grid small { line-height: 1.6; color: #64736b; }

@@ -2305,7 +2305,7 @@ dependencies = [
 
 [[package]]
 name = "mario"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "android-keyring",
  "icu_collections",
@@ -2330,7 +2330,7 @@ dependencies = [
 
 [[package]]
 name = "mario-server"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "axum",

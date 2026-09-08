@@ -71,6 +71,9 @@ import {
   runAnalysis,
   reversePortfolioEvent,
   resendCloudConfirmation,
+  requestCloudPasswordReset,
+  verifyCloudPasswordReset,
+  resetCloudPassword,
   saveDecision,
   saveCloudConfig,
   saveDecisionReview,
@@ -1872,6 +1875,13 @@ function CloudSync({ flash }: { flash: (message: string) => void }) {
   const [password, setPassword] = useState("");
   const [recoveryKey, setRecoveryKey] = useState("");
   const [revealedKey, setRevealedKey] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "signup" | "recover" | "verify" | "reset">("login");
+  const [authError, setAuthError] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [proof, setProof] = useState("");
+  const [recoveryId, setRecoveryId] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
@@ -1909,16 +1919,46 @@ function CloudSync({ flash }: { flash: (message: string) => void }) {
     return "服务地址只用于账户认证和加密数据包同步。";
   });
 
-  const authenticate = (mode: "signup" | "login") => execute(mode, async () => {
+  const authExecute = async (name: string, action: () => Promise<void>) => {
+    setBusy(name); setAuthError(""); setAuthMessage("");
+    try { await action(); }
+    catch (nextError) { setAuthError(nextError instanceof Error ? nextError.message : String(nextError)); }
+    finally { setBusy(""); }
+  };
+
+  const changeAuthMode = (mode: typeof authMode) => {
+    setAuthMode(mode); setAuthError(""); setAuthMessage(""); setPassword("");
+    setProof(""); setRecoveryId(""); setNewPassword(""); setConfirmPassword("");
+  };
+
+  const authenticate = (mode: "signup" | "login") => authExecute(mode, async () => {
     const response = mode === "signup" ? await signUpCloud(email, password) : await signInCloud(email, password);
     setPassword(""); await refresh(); flash(response.message);
-    return response.message;
+    setAuthMessage(response.message);
+    if (!response.signedIn) setAuthMode("login");
   });
 
-  const resendConfirmation = () => execute("resend", async () => {
+  const resendConfirmation = () => authExecute("resend", async () => {
     const response = await resendCloudConfirmation(email);
     await refresh(); flash(response.message);
-    return response.message;
+    setAuthMessage(response.message);
+  });
+
+  const requestReset = () => authExecute("recover", async () => {
+    const response = await requestCloudPasswordReset(email.trim());
+    setEmail(email.trim()); setProof(""); setRecoveryId(""); setAuthMode("verify"); setAuthMessage(response.message);
+  });
+
+  const verifyReset = () => authExecute("verify", async () => {
+    const response = await verifyCloudPasswordReset(email, proof);
+    setRecoveryId(response.recoveryId); setProof(""); setAuthMode("reset"); setAuthMessage("邮箱验证成功，请在 10 分钟内设置新密码。");
+  });
+
+  const finishReset = () => authExecute("reset", async () => {
+    if (newPassword !== confirmPassword) throw new Error("两次输入的新密码不一致");
+    const response = await resetCloudPassword(recoveryId, newPassword);
+    setNewPassword(""); setConfirmPassword(""); setRecoveryId(""); setPassword("");
+    setAuthMode("login"); setAuthMessage(response.message);
   });
 
   const logout = () => execute("logout", async () => {
@@ -1979,14 +2019,25 @@ function CloudSync({ flash }: { flash: (message: string) => void }) {
     </section>
 
     <section className="panel form-panel">
-      <div className="panel-title"><div><span>设备绑定</span><h2>{status.signedIn ? "当前账户" : "注册或登录"}</h2></div><UserRound size={22} className="muted-icon" /></div>
+      <div className="panel-title"><div><span>设备绑定</span><h2>{status.signedIn ? "当前账户" : ({ login: "登录账户", signup: "创建账户", recover: "忘记密码", verify: "验证重置邮件", reset: "设置新密码" })[authMode]}</h2></div><UserRound size={22} className="muted-icon" /></div>
       {status.signedIn ? <div className="account-card"><div><strong>{status.email}</strong><span>登录令牌仅保存在系统钥匙串</span></div><button className="danger-text" onClick={logout} disabled={busy !== ""}><LogOut size={14} />退出账户</button></div> : <>
         <div className="form-grid single-column">
-          <label><span>邮箱</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" /></label>
-          <label><span>密码</span><div className="secure-input"><LockKeyhole size={16} /><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 个字符；不会保存到本机" /></div></label>
+          <label><span>邮箱</span><input type="email" autoComplete="email" disabled={busy !== "" || authMode === "verify" || authMode === "reset"} value={email} onChange={(event) => { setEmail(event.target.value); setAuthError(""); }} placeholder="name@example.com" /></label>
+          {(authMode === "login" || authMode === "signup") && <label><span>密码</span><div className="secure-input"><LockKeyhole size={16} /><input type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 个字符" /></div></label>}
+          {authMode === "verify" && <label><span>邮件验证码或重置链接</span><input type="password" autoComplete="off" value={proof} onChange={(event) => setProof(event.target.value)} placeholder="输入验证码，或粘贴邮件按钮的完整链接" /><small>如果邮件只有按钮，请右键或长按“Reset Password”并复制链接地址，回到这里粘贴，无需打开链接。链接已打开或过期时，可重新发送。</small></label>}
+          {authMode === "reset" && <><label><span>新密码</span><input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="至少 8 个字符" /></label><label><span>确认新密码</span><input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>{confirmPassword && newPassword !== confirmPassword && <p role="alert">两次输入的新密码不一致</p>}</>}
         </div>
-        {status.emailConfirmationPending && <div className="connection-success"><Send size={16} /><span><strong>等待邮箱确认</strong>确认链接即使最终跳到无法访问的 localhost 页面，邮箱验证仍可能已经完成；请回到 mario 使用原密码登录。</span></div>}
-        <div className="form-actions"><p>未收到确认邮件或换了设备，也可以只填写邮箱后重新发送。</p><div className="key-actions"><button className="secondary" onClick={() => authenticate("signup")} disabled={busy !== "" || !status.configured || !email || password.length < 8}>创建账户</button><button className="secondary" onClick={resendConfirmation} disabled={busy !== "" || !status.configured || !email}>重新发送确认邮件</button><button className="primary" onClick={() => authenticate("login")} disabled={busy !== "" || !status.configured || !email || password.length < 8}>登录</button></div></div>
+        {authError && <div className="error-box" role="alert"><AlertTriangle size={18} />{authError}</div>}
+        {authMessage && <div className="connection-success" role="status"><Check size={16} /><span>{authMessage}</span></div>}
+        {authMode === "login" && status.emailConfirmationPending && <p>请先点击注册确认邮件中的链接，再返回登录。</p>}
+        <div className="form-actions"><p>{authMode === "login" ? "还没有账户？选择去注册。忘记密码可以通过邮箱重置。" : authMode === "signup" ? "注册后请检查邮箱中的确认邮件。" : "重置登录密码后，云端数据仍需原同步恢复密钥解密。"}</p><div className="key-actions">
+          {authMode !== "login" && <button className="secondary" onClick={() => changeAuthMode("login")} disabled={busy !== ""}>返回登录</button>}
+          {authMode === "login" && <><button className="secondary" onClick={() => changeAuthMode("signup")} disabled={busy !== ""}>去注册</button><button className="secondary" onClick={() => changeAuthMode("recover")} disabled={busy !== ""}>忘记密码</button><button className="secondary" onClick={resendConfirmation} disabled={busy !== "" || !status.configured || !email.trim()}>重发确认邮件</button></>}
+          {(authMode === "login" || authMode === "signup") && <button className="primary" onClick={() => authenticate(authMode)} disabled={busy !== "" || !status.configured || !email.trim() || (authMode === "signup" ? password.length < 8 : !password)}>{busy === authMode ? "正在处理…" : authMode === "login" ? "登录" : "创建账户"}</button>}
+          {(authMode === "recover" || authMode === "verify") && <button className="secondary" onClick={requestReset} disabled={busy !== "" || !status.configured || !email.trim()}>{authMode === "verify" ? "重新发送重置邮件" : "发送重置邮件"}</button>}
+          {authMode === "verify" && <button className="primary" onClick={verifyReset} disabled={busy !== "" || !proof.trim()}>验证邮件</button>}
+          {authMode === "reset" && <><button className="secondary" onClick={() => changeAuthMode("recover")} disabled={busy !== ""}>重新验证邮箱</button><button className="primary" onClick={finishReset} disabled={busy !== "" || newPassword.length < 8 || newPassword !== confirmPassword}>保存新密码</button></>}
+        </div></div>
       </>}
     </section>
 

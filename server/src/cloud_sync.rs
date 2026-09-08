@@ -9,6 +9,7 @@ use rand::{rngs::OsRng, RngCore};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::time::{Duration, Instant};
 
 use crate::{
     db::{Database, SyncDataset, SYNC_DATASET_SCHEMA_VERSION},
@@ -48,6 +49,153 @@ pub struct AccountCredentials {
 #[serde(rename_all = "camelCase")]
 pub struct AccountEmailInput {
     pub email: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryVerificationInput {
+    pub email: String,
+    pub proof: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasswordResetInput {
+    pub recovery_id: String,
+    pub password: String,
+}
+
+#[derive(Default)]
+pub struct PasswordRecovery {
+    pending: tokio::sync::Mutex<Option<PendingRecovery>>,
+}
+
+struct PendingRecovery {
+    id: String,
+    config: CloudConfig,
+    access_token: String,
+    expires_at: Instant,
+}
+
+impl PasswordRecovery {
+    pub async fn verify(
+        &self,
+        db: &Database,
+        input: &RecoveryVerificationInput,
+    ) -> AppResult<String> {
+        let provider = provider(db)?;
+        let body = recovery_verification_body(&provider.config, input)?;
+        let response = provider
+            .public_request(provider.client.post(provider.endpoint("/auth/v1/verify")))
+            .json(&body)
+            .send()
+            .await?;
+        let session = provider.parse_auth(response).await?;
+        let access_token = session
+            .access_token
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| AppError::Auth("验证未返回有效会话，请重新发送重置邮件".into()))?;
+        if !session
+            .user
+            .as_ref()
+            .and_then(|u| u.email.as_deref())
+            .is_some_and(|email| email.eq_ignore_ascii_case(input.email.trim()))
+        {
+            return Err(AppError::Auth("重置邮件与填写的邮箱不一致".into()));
+        }
+        let mut random = [0u8; 32];
+        OsRng.fill_bytes(&mut random);
+        let id = URL_SAFE_NO_PAD.encode(random);
+        *self.pending.lock().await = Some(PendingRecovery {
+            id: id.clone(),
+            config: provider.config,
+            access_token,
+            expires_at: Instant::now() + Duration::from_secs(600),
+        });
+        Ok(id)
+    }
+
+    pub async fn reset(&self, db: &Database, input: &PasswordResetInput) -> AppResult<()> {
+        validate_password(&input.password)?;
+        let provider = provider(db)?;
+        let mut pending = self.pending.lock().await;
+        let flow = pending
+            .as_ref()
+            .filter(|flow| {
+                flow.id == input.recovery_id
+                    && flow.expires_at > Instant::now()
+                    && flow.config.url == provider.config.url
+                    && flow.config.publishable_key == provider.config.publishable_key
+            })
+            .ok_or_else(|| AppError::Auth("重置验证已过期，请重新验证邮件".into()))?;
+        let response = provider
+            .authenticated_request(
+                provider.client.put(provider.endpoint("/auth/v1/user")),
+                &flow.access_token,
+            )
+            .json(&serde_json::json!({"password": input.password}))
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(auth_error(response).await);
+        }
+        *pending = None;
+        Ok(())
+    }
+}
+
+fn recovery_verification_body(
+    config: &CloudConfig,
+    input: &RecoveryVerificationInput,
+) -> AppResult<serde_json::Value> {
+    let email = validate_email(&input.email)?;
+    let proof = input.proof.trim();
+    if (6..=10).contains(&proof.len()) && proof.bytes().all(|c| c.is_ascii_digit()) {
+        return Ok(serde_json::json!({"type":"recovery", "email":email, "token":proof}));
+    }
+    let invalid = || {
+        AppError::Validation(
+            "请粘贴邮件中的完整重置链接，或输入验证码；不要使用注册确认链接".into(),
+        )
+    };
+    if proof.len() > 8192 {
+        return Err(invalid());
+    }
+    let url = reqwest::Url::parse(proof).map_err(|_| invalid())?;
+    let base = reqwest::Url::parse(&config.url).map_err(|_| invalid())?;
+    if url.origin() != base.origin()
+        || url.path() != format!("{}/auth/v1/verify", base.path().trim_end_matches('/'))
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(invalid());
+    }
+    let values: Vec<_> = url.query_pairs().collect();
+    let types: Vec<_> = values.iter().filter(|(k, _)| k == "type").collect();
+    let tokens: Vec<_> = values
+        .iter()
+        .filter(|(k, _)| k == "token" || k == "token_hash")
+        .collect();
+    if types.len() != 1 || types[0].1 != "recovery" || tokens.len() != 1 || tokens[0].1.is_empty() {
+        return Err(invalid());
+    }
+    Ok(serde_json::json!({"type":"recovery", "token_hash":tokens[0].1}))
+}
+
+pub async fn request_password_reset(db: &Database, input: &AccountEmailInput) -> AppResult<()> {
+    let email = validate_email(&input.email)?;
+    let provider = provider(db)?;
+    let response = provider
+        .public_request(provider.client.post(provider.endpoint("/auth/v1/recover")))
+        .json(&serde_json::json!({"email":email}))
+        .send()
+        .await?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(auth_error(response).await)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,7 +300,11 @@ trait CloudSyncProvider {
 impl SupabaseProvider {
     fn new(config: CloudConfig) -> Self {
         Self {
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(Duration::from_secs(20))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("valid auth client"),
             config,
         }
     }
@@ -371,6 +523,10 @@ pub fn status(db: &Database) -> AppResult<CloudStatus> {
 }
 
 pub async fn sign_up(db: &Database, credentials: &AccountCredentials) -> AppResult<AccountResult> {
+    let credentials = &AccountCredentials {
+        email: credentials.email.trim().into(),
+        password: credentials.password.clone(),
+    };
     validate_credentials(credentials)?;
     let provider = provider(db)?;
     let response = provider.sign_up(credentials).await?;
@@ -402,7 +558,14 @@ pub async fn sign_up(db: &Database, credentials: &AccountCredentials) -> AppResu
 }
 
 pub async fn sign_in(db: &Database, credentials: &AccountCredentials) -> AppResult<AccountResult> {
-    validate_credentials(credentials)?;
+    let credentials = &AccountCredentials {
+        email: credentials.email.trim().into(),
+        password: credentials.password.clone(),
+    };
+    validate_email(&credentials.email)?;
+    if credentials.password.is_empty() || credentials.password.len() > 1024 {
+        return Err(AppError::Validation("请输入登录密码".into()));
+    }
     let provider = provider(db)?;
     let response = provider.sign_in(credentials).await?;
     let access = response
@@ -711,8 +874,15 @@ fn is_service_role_key(value: &str) -> bool {
 
 fn validate_credentials(credentials: &AccountCredentials) -> AppResult<()> {
     validate_email(&credentials.email)?;
-    if credentials.password.chars().count() < 8 {
+    validate_password(&credentials.password)
+}
+
+fn validate_password(password: &str) -> AppResult<()> {
+    if password.chars().count() < 8 {
         return Err(AppError::Validation("密码至少需要 8 个字符".into()));
+    }
+    if password.len() > 1024 {
+        return Err(AppError::Validation("密码过长".into()));
     }
     Ok(())
 }
@@ -720,6 +890,8 @@ fn validate_credentials(credentials: &AccountCredentials) -> AppResult<()> {
 fn validate_email(value: &str) -> AppResult<&str> {
     let email = value.trim();
     let valid = email.chars().count() <= 254
+        && !email.chars().any(|c| c.is_whitespace() || c.is_control())
+        && email.matches('@').count() == 1
         && email.split_once('@').is_some_and(|(local, domain)| {
             !local.is_empty() && domain.contains('.') && !domain.ends_with('.')
         });
@@ -838,14 +1010,41 @@ fn decrypt_dataset(blob: &RemoteBlob, key: &[u8; 32]) -> AppResult<SyncDataset> 
 async fn auth_error(response: reqwest::Response) -> AppError {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    let detail = localized_auth_detail(&error_detail(&body));
+    let code = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| {
+            v.get("error_code")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+        });
+    let detail = match code.as_deref() {
+        Some("invalid_credentials") => localized_auth_detail("invalid login credentials"),
+        Some("email_not_confirmed") => localized_auth_detail("email not confirmed"),
+        Some("user_not_found") => localized_auth_detail("user not found"),
+        Some("otp_expired") => "验证码或链接已失效，请重新发送重置邮件".into(),
+        Some("over_email_send_rate_limit" | "over_request_rate_limit") => {
+            "请求过于频繁，请稍后再试".into()
+        }
+        Some("same_password") => "新密码不能与旧密码相同，请换一个密码".into(),
+        Some("weak_password") => {
+            "新密码不符合账户安全要求，请增加长度并组合字母、数字和符号".into()
+        }
+        _ => localized_auth_detail(&error_detail(&body)),
+    };
     AppError::Auth(format!("{}（HTTP {}）", detail, status.as_u16()))
 }
 
 fn localized_auth_detail(detail: &str) -> String {
     match detail.to_ascii_lowercase().as_str() {
         "email not confirmed" => "邮箱尚未确认，请检查邮件或重新发送确认邮件".into(),
-        "invalid login credentials" => "邮箱或密码不正确".into(),
+        "invalid login credentials" => "邮箱或密码不正确；尚未注册请先注册，忘记密码可重置".into(),
+        "user not found" => "该邮箱尚未注册，请先注册".into(),
+        "token has expired or is invalid" | "email link is invalid or has expired" => {
+            "验证码或链接已失效，请重新发送重置邮件".into()
+        }
+        "new password should be different from the old password." => {
+            "新密码不能与旧密码相同，请换一个密码".into()
+        }
         "user already registered" => "该邮箱已经注册，请直接登录或重新发送确认邮件".into(),
         "email rate limit exceeded" => "确认邮件发送过于频繁，请稍后重试".into(),
         _ => detail.into(),
@@ -1153,7 +1352,126 @@ mod tests {
         );
         assert_eq!(
             localized_auth_detail("Invalid login credentials"),
-            "邮箱或密码不正确"
+            "邮箱或密码不正确；尚未注册请先注册，忘记密码可重置"
         );
+    }
+
+    #[test]
+    fn recovery_proof_is_bound_to_provider_and_recovery_type() {
+        let config = CloudConfig {
+            url: "https://example.supabase.co".into(),
+            publishable_key: "public".into(),
+        };
+        let input = |proof: &str| RecoveryVerificationInput {
+            email: "user@example.com".into(),
+            proof: proof.into(),
+        };
+        assert_eq!(
+            recovery_verification_body(&config, &input("123456")).unwrap()["token"],
+            "123456"
+        );
+        assert_eq!(
+            recovery_verification_body(
+                &config,
+                &input("https://example.supabase.co/auth/v1/verify?type=recovery&token=abc")
+            )
+            .unwrap()["token_hash"],
+            "abc"
+        );
+        for proof in [
+            "https://evil.example/auth/v1/verify?type=recovery&token=abc",
+            "https://example.supabase.co/auth/v1/verify?type=signup&token=abc",
+            "https://example.supabase.co/auth/v1/verify?type=recovery&token=abc&token=def",
+            "https://example.supabase.co/auth/v1/verify?type=recovery&token=abc#access_token=secret",
+        ] { assert!(recovery_verification_body(&config, &input(proof)).is_err()); }
+        assert!(validate_email("a@b@example.com").is_err());
+        assert!(validate_email("a b@example.com").is_err());
+    }
+
+    #[tokio::test]
+    async fn password_recovery_verifies_retries_policy_failure_and_consumes_session() {
+        use axum::http::StatusCode;
+        let app = Router::new()
+            .route("/auth/v1/recover", post(|headers: HeaderMap, Json(body): Json<serde_json::Value>| async move {
+                assert_eq!(headers["apikey"], "publishable-test-key");
+                assert_eq!(body["email"], "user@example.com");
+                Json(serde_json::json!({}))
+            }))
+            .route("/auth/v1/verify", post(|Json(body): Json<serde_json::Value>| async move {
+                assert_eq!(body["type"], "recovery");
+                if body["token"] != "123456" { return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error_code":"otp_expired"}))); }
+                (StatusCode::OK, Json(serde_json::json!({"access_token":"recovery-access", "user":{"id":"user-1", "email":"user@example.com"}})))
+            }))
+            .route("/auth/v1/user", axum::routing::put(|headers: HeaderMap, Json(body): Json<serde_json::Value>| async move {
+                assert_eq!(headers["authorization"], "Bearer recovery-access");
+                if body["password"] == "OldPassword1" { return (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error_code":"same_password"}))); }
+                assert_eq!(body["password"], "NewPassword2");
+                (StatusCode::OK, Json(serde_json::json!({"id":"user-1"})))
+            }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let directory = tempfile::tempdir().unwrap();
+        let db = Database::open(&directory.path().join("auth.db")).unwrap();
+        db.set_setting(SETTING_CLOUD_URL, &format!("http://{address}"))
+            .unwrap();
+        db.set_setting(SETTING_CLOUD_KEY, "publishable-test-key")
+            .unwrap();
+        request_password_reset(
+            &db,
+            &AccountEmailInput {
+                email: " user@example.com ".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let recovery = PasswordRecovery::default();
+        let input = |proof: &str| RecoveryVerificationInput {
+            email: "user@example.com".into(),
+            proof: proof.into(),
+        };
+        assert!(recovery
+            .verify(&db, &input("000000"))
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("失效"));
+        let id = recovery.verify(&db, &input("123456")).await.unwrap();
+        let reset = |id: &str, password: &str| PasswordResetInput {
+            recovery_id: id.into(),
+            password: password.into(),
+        };
+        assert!(recovery
+            .reset(&db, &reset("wrong-id", "NewPassword2"))
+            .await
+            .is_err());
+        assert!(recovery
+            .reset(&db, &reset(&id, "OldPassword1"))
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("旧密码"));
+        recovery
+            .reset(&db, &reset(&id, "NewPassword2"))
+            .await
+            .unwrap();
+        assert!(recovery
+            .reset(&db, &reset(&id, "NewPassword2"))
+            .await
+            .is_err());
+        let id = recovery.verify(&db, &input("123456")).await.unwrap();
+        recovery.pending.lock().await.as_mut().unwrap().expires_at = Instant::now();
+        assert!(recovery
+            .reset(&db, &reset(&id, "NewPassword2"))
+            .await
+            .is_err());
+        let id = recovery.verify(&db, &input("123456")).await.unwrap();
+        db.set_setting(SETTING_CLOUD_URL, "https://other.supabase.co")
+            .unwrap();
+        assert!(recovery
+            .reset(&db, &reset(&id, "NewPassword2"))
+            .await
+            .is_err());
+        task.abort();
     }
 }

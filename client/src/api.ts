@@ -259,6 +259,18 @@ export async function resendCloudConfirmation(email: string): Promise<AccountRes
   return httpRequest<AccountResult>("/cloud/confirmation/resend", { method: "POST", body: JSON.stringify({ email }) });
 }
 
+export async function requestCloudPasswordReset(email: string): Promise<{ message: string }> {
+  return httpRequest("/cloud/password/recover", { method: "POST", body: JSON.stringify({ email }) });
+}
+
+export async function verifyCloudPasswordReset(email: string, proof: string): Promise<{ recoveryId: string }> {
+  return httpRequest("/cloud/password/verify", { method: "POST", body: JSON.stringify({ email, proof }) });
+}
+
+export async function resetCloudPassword(recoveryId: string, password: string): Promise<{ message: string }> {
+  return httpRequest("/cloud/password/reset", { method: "POST", body: JSON.stringify({ recoveryId, password }) });
+}
+
 export async function signOutCloud(): Promise<CloudStatus> {
   return httpRequest<CloudStatus>("/cloud/session", { method: "DELETE" });
 }

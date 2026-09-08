@@ -61,6 +61,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 struct AppState {
     db: Database,
+    password_recovery: cloud_sync::PasswordRecovery,
     auth_token: Option<String>,
     fx_provider: Arc<dyn FxRateProvider>,
     security_price_provider: Arc<dyn SecurityPriceProvider>,
@@ -126,6 +127,7 @@ where
 {
     let state = Arc::new(AppState {
         db: Database::open(&data_dir.join("mario.db"))?,
+        password_recovery: cloud_sync::PasswordRecovery::default(),
         auth_token: auth_token.clone(),
         fx_provider: Arc::new(EcbFxRateProvider::new()?),
         security_price_provider: Arc::new(TwelveDataSecurityPriceProvider::new()?),
@@ -233,6 +235,9 @@ where
         .route("/api/cloud/status", get(cloud_status))
         .route("/api/cloud/signup", post(cloud_signup))
         .route("/api/cloud/login", post(cloud_login))
+        .route("/api/cloud/password/recover", post(cloud_password_recover))
+        .route("/api/cloud/password/verify", post(cloud_password_verify))
+        .route("/api/cloud/password/reset", post(cloud_password_reset))
         .route(
             "/api/cloud/confirmation/resend",
             post(cloud_resend_confirmation),
@@ -645,6 +650,34 @@ async fn cloud_resend_confirmation(
 
 async fn cloud_logout(State(state): State<Arc<AppState>>) -> AppResult<Json<CloudStatus>> {
     Ok(Json(cloud_sync::sign_out(&state.db).await?))
+}
+
+async fn cloud_password_recover(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<AccountEmailInput>,
+) -> AppResult<Json<serde_json::Value>> {
+    cloud_sync::request_password_reset(&state.db, &input).await?;
+    Ok(Json(
+        serde_json::json!({"message":"如果该邮箱已注册，将收到重置邮件。请检查收件箱和垃圾邮件；未注册请返回创建账户。"}),
+    ))
+}
+
+async fn cloud_password_verify(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<cloud_sync::RecoveryVerificationInput>,
+) -> AppResult<Json<serde_json::Value>> {
+    let recovery_id = state.password_recovery.verify(&state.db, &input).await?;
+    Ok(Json(serde_json::json!({"recoveryId": recovery_id})))
+}
+
+async fn cloud_password_reset(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<cloud_sync::PasswordResetInput>,
+) -> AppResult<Json<serde_json::Value>> {
+    state.password_recovery.reset(&state.db, &input).await?;
+    Ok(Json(
+        serde_json::json!({"message":"密码已更新，请使用新密码登录"}),
+    ))
 }
 
 async fn export_cloud_recovery_key(
