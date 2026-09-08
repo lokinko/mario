@@ -255,6 +255,10 @@ export async function signInCloud(email: string, password: string): Promise<Acco
   return httpRequest<AccountResult>("/cloud/login", { method: "POST", body: JSON.stringify({ email, password }) });
 }
 
+export async function resendCloudConfirmation(email: string): Promise<AccountResult> {
+  return httpRequest<AccountResult>("/cloud/confirmation/resend", { method: "POST", body: JSON.stringify({ email }) });
+}
+
 export async function signOutCloud(): Promise<CloudStatus> {
   return httpRequest<CloudStatus>("/cloud/session", { method: "DELETE" });
 }

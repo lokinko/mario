@@ -46,6 +46,12 @@ pub struct AccountCredentials {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AccountEmailInput {
+    pub email: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RecoveryKeyInput {
     pub recovery_key: String,
     pub confirm_replace: bool,
@@ -131,6 +137,7 @@ struct SupabaseProvider {
 trait CloudSyncProvider {
     async fn sign_up(&self, credentials: &AccountCredentials) -> AppResult<AuthSession>;
     async fn sign_in(&self, credentials: &AccountCredentials) -> AppResult<AuthSession>;
+    async fn resend_signup_confirmation(&self, email: &str) -> AppResult<()>;
     async fn refresh(&self, refresh_token: &str) -> AppResult<AuthSession>;
     async fn sign_out(&self, access_token: &str) -> AppResult<()>;
     async fn fetch_blob(&self, session: &Session) -> AppResult<Option<RemoteBlob>>;
@@ -198,6 +205,19 @@ impl CloudSyncProvider for SupabaseProvider {
             .send()
             .await?;
         self.parse_auth(response).await
+    }
+
+    async fn resend_signup_confirmation(&self, email: &str) -> AppResult<()> {
+        let response = self
+            .public_request(self.client.post(self.endpoint("/auth/v1/resend")))
+            .json(&serde_json::json!({ "type": "signup", "email": email }))
+            .send()
+            .await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(auth_error(response).await)
+        }
     }
 
     async fn refresh(&self, refresh_token: &str) -> AppResult<AuthSession> {
@@ -404,6 +424,22 @@ pub async fn sign_in(db: &Database, credentials: &AccountCredentials) -> AppResu
         email,
         email_confirmation_pending: false,
         message: "登录成功，数据仍保留在本机，等待你手动同步".into(),
+    })
+}
+
+pub async fn resend_signup_confirmation(
+    db: &Database,
+    input: &AccountEmailInput,
+) -> AppResult<AccountResult> {
+    let email = validate_email(&input.email)?;
+    provider(db)?.resend_signup_confirmation(email).await?;
+    db.set_setting(SETTING_ACCOUNT_EMAIL, email)?;
+    db.set_setting(SETTING_ACCOUNT_PENDING, "true")?;
+    Ok(AccountResult {
+        signed_in: false,
+        email: email.into(),
+        email_confirmation_pending: true,
+        message: "确认邮件已重新发送；确认后请使用原密码登录".into(),
     })
 }
 
@@ -674,13 +710,23 @@ fn is_service_role_key(value: &str) -> bool {
 }
 
 fn validate_credentials(credentials: &AccountCredentials) -> AppResult<()> {
-    if !credentials.email.contains('@') || credentials.email.chars().count() > 254 {
-        return Err(AppError::Validation("请输入有效邮箱".into()));
-    }
+    validate_email(&credentials.email)?;
     if credentials.password.chars().count() < 8 {
         return Err(AppError::Validation("密码至少需要 8 个字符".into()));
     }
     Ok(())
+}
+
+fn validate_email(value: &str) -> AppResult<&str> {
+    let email = value.trim();
+    let valid = email.chars().count() <= 254
+        && email.split_once('@').is_some_and(|(local, domain)| {
+            !local.is_empty() && domain.contains('.') && !domain.ends_with('.')
+        });
+    if !valid {
+        return Err(AppError::Validation("请输入有效邮箱".into()));
+    }
+    Ok(email)
 }
 
 fn generate_recovery_key() -> String {
@@ -792,8 +838,18 @@ fn decrypt_dataset(blob: &RemoteBlob, key: &[u8; 32]) -> AppResult<SyncDataset> 
 async fn auth_error(response: reqwest::Response) -> AppError {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    let detail = error_detail(&body);
+    let detail = localized_auth_detail(&error_detail(&body));
     AppError::Auth(format!("{}（HTTP {}）", detail, status.as_u16()))
+}
+
+fn localized_auth_detail(detail: &str) -> String {
+    match detail.to_ascii_lowercase().as_str() {
+        "email not confirmed" => "邮箱尚未确认，请检查邮件或重新发送确认邮件".into(),
+        "invalid login credentials" => "邮箱或密码不正确".into(),
+        "user already registered" => "该邮箱已经注册，请直接登录或重新发送确认邮件".into(),
+        "email rate limit exceeded" => "确认邮件发送过于频繁，请稍后重试".into(),
+        _ => detail.into(),
+    }
 }
 
 async fn cloud_error(response: reqwest::Response) -> AppError {
@@ -1025,6 +1081,17 @@ mod tests {
                 }),
             )
             .route(
+                "/auth/v1/resend",
+                post(
+                    |headers: HeaderMap, Json(body): Json<serde_json::Value>| async move {
+                        assert_eq!(headers.get("apikey").unwrap(), "publishable-test-key");
+                        assert_eq!(body["type"], "signup");
+                        assert_eq!(body["email"], "user@example.com");
+                        axum::http::StatusCode::OK
+                    },
+                ),
+            )
+            .route(
                 "/rest/v1/sync_blobs",
                 get(|headers: HeaderMap| async move {
                     assert_eq!(headers.get("authorization").unwrap(), "Bearer access");
@@ -1053,6 +1120,10 @@ mod tests {
             })
             .await
             .unwrap();
+        provider
+            .resend_signup_confirmation("user@example.com")
+            .await
+            .unwrap();
         let session = Session {
             access_token: response.access_token.unwrap(),
             user: response.user.unwrap(),
@@ -1067,5 +1138,22 @@ mod tests {
             updated_at: Utc::now().to_rfc3339(),
         };
         assert_eq!(provider.write_blob(&session, 0, &blob).await.unwrap(), 1);
+    }
+
+    #[test]
+    fn validates_email_and_localizes_common_auth_errors() {
+        assert_eq!(
+            validate_email(" user@example.com ").unwrap(),
+            "user@example.com"
+        );
+        assert!(validate_email("user@localhost").is_err());
+        assert_eq!(
+            localized_auth_detail("Email not confirmed"),
+            "邮箱尚未确认，请检查邮件或重新发送确认邮件"
+        );
+        assert_eq!(
+            localized_auth_detail("Invalid login credentials"),
+            "邮箱或密码不正确"
+        );
     }
 }

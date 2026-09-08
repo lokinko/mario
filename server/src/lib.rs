@@ -33,8 +33,8 @@ use axum::{
 };
 use chrono::Local;
 use cloud_sync::{
-    AccountCredentials, AccountResult, CloudConfig, CloudStatus, PullInput, RecoveryKeyInput,
-    SyncResult,
+    AccountCredentials, AccountEmailInput, AccountResult, CloudConfig, CloudStatus, PullInput,
+    RecoveryKeyInput, SyncResult,
 };
 use db::Database;
 pub use error::{AppError, AppResult};
@@ -233,6 +233,10 @@ where
         .route("/api/cloud/status", get(cloud_status))
         .route("/api/cloud/signup", post(cloud_signup))
         .route("/api/cloud/login", post(cloud_login))
+        .route(
+            "/api/cloud/confirmation/resend",
+            post(cloud_resend_confirmation),
+        )
         .route("/api/cloud/session", axum::routing::delete(cloud_logout))
         .route(
             "/api/cloud/recovery-key",
@@ -628,6 +632,15 @@ async fn cloud_login(
     Json(input): Json<AccountCredentials>,
 ) -> AppResult<Json<AccountResult>> {
     Ok(Json(cloud_sync::sign_in(&state.db, &input).await?))
+}
+
+async fn cloud_resend_confirmation(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<AccountEmailInput>,
+) -> AppResult<Json<AccountResult>> {
+    Ok(Json(
+        cloud_sync::resend_signup_confirmation(&state.db, &input).await?,
+    ))
 }
 
 async fn cloud_logout(State(state): State<Arc<AppState>>) -> AppResult<Json<CloudStatus>> {

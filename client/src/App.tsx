@@ -70,6 +70,7 @@ import {
   pushCloudSync,
   runAnalysis,
   reversePortfolioEvent,
+  resendCloudConfirmation,
   saveDecision,
   saveCloudConfig,
   saveDecisionReview,
@@ -1875,16 +1876,22 @@ function CloudSync({ flash }: { flash: (message: string) => void }) {
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
 
-  const refresh = async () => setStatus(await getCloudStatus());
+  const refresh = async () => {
+    const nextStatus = await getCloudStatus();
+    setStatus(nextStatus);
+    if (nextStatus.email) setEmail(nextStatus.email);
+  };
 
   useEffect(() => {
     getCloudConfig()
       .then(async (storedConfig) => {
         const config = storedConfig ?? bundledCloudConfig;
         if (config) { setUrl(config.url); setPublishableKey(config.publishableKey); }
-        setStatus(!storedConfig && bundledCloudConfig
+        const nextStatus = !storedConfig && bundledCloudConfig
           ? await saveCloudConfig(bundledCloudConfig)
-          : await getCloudStatus());
+          : await getCloudStatus();
+        setStatus(nextStatus);
+        if (nextStatus.email) setEmail(nextStatus.email);
       })
       .catch((nextError) => setError(String(nextError)));
   }, []);
@@ -1905,6 +1912,12 @@ function CloudSync({ flash }: { flash: (message: string) => void }) {
   const authenticate = (mode: "signup" | "login") => execute(mode, async () => {
     const response = mode === "signup" ? await signUpCloud(email, password) : await signInCloud(email, password);
     setPassword(""); await refresh(); flash(response.message);
+    return response.message;
+  });
+
+  const resendConfirmation = () => execute("resend", async () => {
+    const response = await resendCloudConfirmation(email);
+    await refresh(); flash(response.message);
     return response.message;
   });
 
@@ -1972,8 +1985,8 @@ function CloudSync({ flash }: { flash: (message: string) => void }) {
           <label><span>邮箱</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" /></label>
           <label><span>密码</span><div className="secure-input"><LockKeyhole size={16} /><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 个字符；不会保存到本机" /></div></label>
         </div>
-        {status.emailConfirmationPending && <div className="connection-success"><Send size={16} /><span><strong>等待邮箱确认</strong>确认后回到这里登录</span></div>}
-        <div className="form-actions"><p>账户系统由你配置的服务提供商托管。</p><div className="key-actions"><button className="secondary" onClick={() => authenticate("signup")} disabled={busy !== "" || !status.configured || !email || password.length < 8}>创建账户</button><button className="primary" onClick={() => authenticate("login")} disabled={busy !== "" || !status.configured || !email || password.length < 8}>登录</button></div></div>
+        {status.emailConfirmationPending && <div className="connection-success"><Send size={16} /><span><strong>等待邮箱确认</strong>确认链接即使最终跳到无法访问的 localhost 页面，邮箱验证仍可能已经完成；请回到 mario 使用原密码登录。</span></div>}
+        <div className="form-actions"><p>未收到确认邮件或换了设备，也可以只填写邮箱后重新发送。</p><div className="key-actions"><button className="secondary" onClick={() => authenticate("signup")} disabled={busy !== "" || !status.configured || !email || password.length < 8}>创建账户</button><button className="secondary" onClick={resendConfirmation} disabled={busy !== "" || !status.configured || !email}>重新发送确认邮件</button><button className="primary" onClick={() => authenticate("login")} disabled={busy !== "" || !status.configured || !email || password.length < 8}>登录</button></div></div>
       </>}
     </section>
 
