@@ -84,11 +84,11 @@ pub trait ModelProvider: Send + Sync {
 
 周期系统复盘、个人投资规则、组合流水与组合检查点属于独立的本地领域模型。复盘写入时冻结组合和方法指标；规则更新采用追加版本；流水只追加并冻结原币、汇率、来源、观察日和口径；检查点冻结当时持仓、所消费的流水 ID 与分类汇总。它们都保留历史且由 `ContextBuilder` 分组控制，用户可以在每次 AI 分析前选择是否发送。详细契约见 [复盘与规则闭环](review-and-rules.md) 与 [组合变化归因](portfolio-attribution.md)。
 
-`server/src/evidence.rs` 定义独立的 `EvidenceRetriever`。当前词法实现按问题与持仓名称筛选最多 12 条有效记录；候选集合在预览时冻结，归档或新增相关证据会使旧指纹失效。证据内容由用户整理，服务端校验 HTTPS、日期和结构，但不声称已核验来源正文。未来外部行情与基本面 Provider 应写入同一个证据契约。详细说明见 [研究证据与引用](research-evidence.md)。
+`server/src/evidence.rs` 定义独立的 `EvidenceRetriever`。当前词法实现按问题与持仓名称筛选最多 12 条有效记录；候选集合在预览时冻结，归档或新增相关证据会使旧指纹失效。证据内容由用户整理，服务端校验 HTTPS、日期和结构，但不声称已核验来源正文。证券日收盘价使用更严格的持仓估值证据契约；未来公司基本面、监管披露和宏观数据 Provider 应写入统一的研究证据契约。详细说明见 [研究证据与引用](research-evidence.md) 与 [市场数据](market-data.md)。
 
 `server/src/valuation.rs` 是不依赖数据库或模型的估值口径模块，负责基准币种折算、汇率缺失检测、估值日期对齐和资产类别变化。数据库只负责持久化原始输入与调用该模块；风险、规划、组合检查点和 AI 上下文共同消费同一份口径状态，避免各层自行解释币种。
 
-`server/src/market_data.rs` 定义可替换的 `FxRateProvider`。首个 ECB 适配器按请求日回看日度参考汇率，只使用两个币种共同存在的最近观察日计算交叉汇率；结果先回填给用户确认，保存后把来源与观察日冻结到领域记录。详细说明见 [可追溯汇率数据](market-data.md)。
+`server/src/market_data.rs` 定义彼此独立的 `FxRateProvider` 与 `SecurityPriceProvider`。ECB 适配器按请求日回看日度参考汇率，只使用两个币种共同存在的最近观察日计算交叉汇率；Twelve Data 适配器用用户自己的密钥查询未复权日收盘价，返回币种、交易所、MIC 和实际观察日。数据库以独立估值证据记录冻结“数量 × 单价 = 市值”及完整来源，手工改动关键字段会使当前核验失效，组合检查点则保留当时证据。详细说明见 [可追溯市场数据](market-data.md)。
 
 `server/src/performance.rs` 只处理已经冻结的组合流水：将外部入出金、内部现金收入、费用税费和交易换手分开汇总，并按发生日期计算 Modified Dietz 期间近似回报。流水与检查点由数据库保证只追加和按日期分段；该模块不读取持仓、不调用模型，也不把近似回报冒充时间加权收益率。
 
@@ -101,8 +101,8 @@ pub trait ModelProvider: Send + Sync {
 - 所有本地 API（包括健康检查）都要求当前启动令牌；令牌比较使用固定长度摘要和常数时间比较。无认证模式只能通过显式开发参数开启。
 - 桌面端把自身进程号传给 sidecar；桌面进程退出后，本地服务会自动停止。Android 内嵌服务随应用进程结束。
 - CORS 只允许 Tauri WebView 和本地开发地址。
-- 模型密钥在桌面端保存在系统钥匙串，在 Android 端由 Android Keystore 保护。
-- API Key 只进入 HTTP Authorization 请求头，不进入提示词、预览或分析审计。
+- 模型与行情密钥使用不同条目，在桌面端保存在系统钥匙串，在 Android 端由 Android Keystore 保护。
+- API Key 只进入对应 Provider 的 HTTP Authorization 请求头，不进入 URL、SQLite、提示词、预览、分析审计或同步包。
 - AI 分析必须携带与当前本地上下文一致的预览指纹。
 - Base URL 默认要求 HTTPS，本机模型例外。
 - 模型提示词明确禁止编造实时市场数据、收益保证和确定性买卖指令。
@@ -119,8 +119,8 @@ pub trait ModelProvider: Send + Sync {
 ## 推荐扩展顺序
 
 1. 用数据库迁移工具替代当前幂等建表脚本。
-2. 增加券商原始格式适配、持仓导入与可靠价格 Provider，并在外部现金流时点取得可验证组合估值后实现时间加权收益率。
+2. 在已落地的可靠价格 Provider 之上增加券商原始格式适配与持仓导入，并在外部现金流时点取得可验证全组合估值后实现时间加权收益率。
 3. 新增本地嵌入向量 Retriever，与当前可解释检索融合并保留离线降级。
-4. 在已落地的 ECB 汇率 Provider 之上增加受信任证券行情与基本面 Provider；外部数据必须标注来源和时间。
+4. 在已落地的 ECB 汇率和 Twelve Data 证券价格 Provider 之上增加公司行动、基准指数、基本面与宏观 Provider；外部数据必须标注来源和时间。
 5. 为工作流增加可恢复 checkpoint 与版本评测。
 6. 扩展 HTTP 级 Mock Provider 场景，覆盖超时、限流和中途断线。

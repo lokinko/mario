@@ -35,7 +35,7 @@ npm run android:init
 
 ```bash
 npm run android:build
-adb install -r outputs/mario_0.3.2_android-aarch64-debug.apk
+adb install -r outputs/mario_0.4.0_android-aarch64-debug.apk
 ```
 
 需要让调试 APK 首次启动即绑定某个 Supabase 项目时，在构建进程中传入公开客户端配置：
@@ -59,7 +59,7 @@ MARIO_ANDROID_TARGETS="aarch64 armv7 i686 x86_64" npm run android:build
 ## 安全边界
 
 - SQLite 位于 Android 应用专属沙盒，不申请共享存储权限。
-- 模型密钥、账户令牌与恢复密钥通过 Android Keystore 加密保存。
+- 模型密钥、行情密钥、账户令牌与恢复密钥通过彼此独立的 Android Keystore 条目加密保存。
 - 本地服务仅绑定 `127.0.0.1`，每次启动使用新的 256 位令牌；所有 API（包括健康检查）都要求令牌。
 - WebView 访问 loopback 需要 Android cleartext 开关；前端 CSP 仍只允许自身、loopback 与 HTTPS，CORS 只允许受信任的 Tauri/开发来源。
 - APK 不在后台常驻服务，进程退出后本地 HTTP 服务随之结束。

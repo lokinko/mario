@@ -344,7 +344,7 @@ pub fn status(db: &Database) -> AppResult<CloudStatus> {
         last_synced_at: db.setting(SETTING_LAST_SYNCED_AT)?,
         privacy_boundary: vec![
             "云端仅保存端到端加密后的投资数据包".into(),
-            "模型 API Key、云端登录令牌保存在本机系统钥匙串且永不同步".into(),
+            "模型与行情 API Key、云端登录令牌保存在本机系统钥匙串且永不同步".into(),
             "首次版本只允许手动同步；检测到双向修改时停止并提示冲突".into(),
         ],
     })
@@ -523,7 +523,7 @@ pub async fn pull(db: &Database, input: &PullInput) -> AppResult<SyncResult> {
 
     if local_hash != remote_hash && !input.confirm_replace {
         return Err(AppError::Conflict(
-            "拉取会替换本机投资数据，请确认后重试；模型密钥和账户配置不会被替换".into(),
+            "拉取会替换本机投资数据，请确认后重试；模型/行情密钥和账户配置不会被替换".into(),
         ));
     }
     if local_hash != remote_hash {
@@ -865,9 +865,17 @@ mod tests {
     }
 
     #[test]
-    fn decrypts_legacy_v1_through_v7_bundles_and_rejects_mismatched_markers() {
+    fn decrypts_legacy_v1_through_v8_bundles_and_rejects_mismatched_markers() {
         let key = parse_recovery_key(&generate_recovery_key()).unwrap();
-        let mut v7_source = dataset();
+        let mut v8_source = dataset();
+        v8_source.schema_version = 8;
+        assert_eq!(v8_source.tables.pop().unwrap().name, "holding_valuations");
+        v8_source.validate().unwrap();
+        let mut v8_blob = encrypt_dataset(&v8_source, &key).unwrap();
+        v8_blob.schema_version = 8;
+        assert_eq!(decrypt_dataset(&v8_blob, &key).unwrap().schema_version, 8);
+
+        let mut v7_source = v8_source;
         v7_source.schema_version = 7;
         assert_eq!(v7_source.tables.pop().unwrap().name, "memory_preferences");
         v7_source.validate().unwrap();

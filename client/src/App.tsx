@@ -39,11 +39,15 @@ import {
   X,
 } from "lucide-react";
 import {
+  applyVerifiedHoldingValuation,
   deleteModelKey,
+  deleteSecurityPriceKey,
   deleteHolding,
   deleteGoal,
   getDecisions,
   getFxRate,
+  getSecurityPrice,
+  getSecurityPriceConfig,
   exportCloudRecoveryKey,
   getCloudConfig,
   getCloudStatus,
@@ -79,6 +83,7 @@ import {
   commitPortfolioEventImport,
   saveProfile,
   saveResearchEvidence,
+  saveSecurityPriceConfig,
   saveSystemReview,
   setResearchEvidenceStatus,
   signInCloud,
@@ -109,11 +114,13 @@ import type {
   FxRateQuote,
   Goal,
   Holding,
+  HoldingValuationEvidence,
   InvestmentRule,
   InvestmentRuleInput,
   InvestmentRuleRevision,
   MemoryCandidate,
   ModelConfig,
+  SecurityPriceConfig,
   PortfolioCheckInInput,
   PortfolioCheckInRecord,
   PortfolioEventInput,
@@ -471,7 +478,7 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
         </div>
         {latestCheckin && latestCheckin.baseCurrency === snapshot.profile.baseCurrency && <button className="text-button attribution-reset" onClick={() => setCheckin({ ...checkin, resetBaseline: !checkin.resetBaseline, externalCashFlow: 0 })}>{checkin.resetBaseline ? "继续原有比较链" : "估值口径变化？重新建立基线"}</button>}
         {checkinError && <div className="error-box"><AlertTriangle size={16} />{checkinError}</div>}
-        {checkins.length > 0 && <details className="attribution-history"><summary>查看历史快照（{checkins.length}）</summary><div>{checkins.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.periodLabel}</strong><small>{item.valuationDate ?? "旧记录未保存估值日"} · {new Date(item.createdAt).toLocaleString("zh-CN")}</small></div><span>{formatMoney(item.totalValue, item.baseCurrency)}</span><em>{item.totalChange == null ? "组合基线" : `变化 ${item.totalChange >= 0 ? "+" : ""}${formatMoney(item.totalChange, item.baseCurrency)} · 净现金流 ${item.externalCashFlow >= 0 ? "+" : ""}${formatMoney(item.externalCashFlow, item.baseCurrency)} · 近似回报 ${item.modifiedDietzReturnPct == null ? "—" : `${item.modifiedDietzReturnPct.toFixed(2)}%`}`}</em></article>)}</div></details>}
+        {checkins.length > 0 && <details className="attribution-history"><summary>查看历史快照（{checkins.length}）</summary><div>{checkins.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.periodLabel}</strong><small>{item.valuationDate ?? "旧记录未保存估值日"} · 核验价 {item.holdingValuations.length}/{item.holdings.length} · {new Date(item.createdAt).toLocaleString("zh-CN")}</small></div><span>{formatMoney(item.totalValue, item.baseCurrency)}</span><em>{item.totalChange == null ? "组合基线" : `变化 ${item.totalChange >= 0 ? "+" : ""}${formatMoney(item.totalChange, item.baseCurrency)} · 净现金流 ${item.externalCashFlow >= 0 ? "+" : ""}${formatMoney(item.externalCashFlow, item.baseCurrency)} · 近似回报 ${item.modifiedDietzReturnPct == null ? "—" : `${item.modifiedDietzReturnPct.toFixed(2)}%`}`}</em></article>)}</div></details>}
         <p className="effectiveness-disclaimer">若持仓缺失、币种未换算、估值日期不同或录入错误，残差也会变化。它只能帮助分离外部现金流，不能替代时间加权收益率或完整业绩归因。</p>
       </section>
 
@@ -755,6 +762,9 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
   const [holdingFxQuote, setHoldingFxQuote] = useState<FxRateQuote | null>(null);
   const [holdingFxLoading, setHoldingFxLoading] = useState(false);
   const [holdingFxError, setHoldingFxError] = useState("");
+  const [valuationQuantity, setValuationQuantity] = useState(0);
+  const [valuationLoading, setValuationLoading] = useState(false);
+  const [valuationError, setValuationError] = useState("");
 
   const updateNumber = (key: keyof FinancialProfile, value: string) => setProfile({ ...profile, [key]: Number(value) });
 
@@ -773,6 +783,7 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
       onUpdate(next);
       setHolding(emptyHolding(profile.baseCurrency));
       setHoldingFxQuote(null); setHoldingFxError("");
+      setValuationQuantity(0); setValuationError("");
       setEditingHoldingId(null);
       flash(editingHoldingId ? "资产信息已更新" : "资产已加入组合");
     } finally { setSaving(false); }
@@ -783,6 +794,8 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
     setHolding(values);
     setEditingHoldingId(id);
     setHoldingFxQuote(null); setHoldingFxError("");
+    setValuationQuantity(snapshot.holdingValuations.find((value) => value.holdingId === id)?.quantity ?? 0);
+    setValuationError("");
   };
 
   const lookupHoldingFx = async () => {
@@ -793,6 +806,28 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
       setHoldingFxQuote(quote);
     } catch (nextError) { setHoldingFxQuote(null); setHoldingFxError(String(nextError)); }
     finally { setHoldingFxLoading(false); }
+  };
+
+  const applyMarketValuation = async () => {
+    if (!editingHoldingId || !holding.symbol.trim() || valuationQuantity <= 0 || !holding.valuationDate) return;
+    setValuationLoading(true); setValuationError("");
+    try {
+      const next = await applyVerifiedHoldingValuation(
+        editingHoldingId,
+        holding.symbol,
+        valuationQuantity,
+        holding.valuationDate,
+      );
+      onUpdate(next);
+      const updated = next.holdings.find((value) => value.id === editingHoldingId);
+      if (updated) {
+        const { id: _id, ...values } = updated;
+        setHolding(values);
+      }
+      setHoldingFxQuote(null);
+      flash("已冻结数量、日收盘价和来源；外币汇率如失效需重新查询");
+    } catch (nextError) { setValuationError(String(nextError)); }
+    finally { setValuationLoading(false); }
   };
 
   const removeHolding = async (item: Holding) => {
@@ -875,8 +910,9 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
           <div className="holding-head"><span>资产</span><span>类别</span><span>市值</span><span>目标权重</span><span>账面变化</span><span /></div>
           {snapshot.holdings.map((item) => {
             const pnlPct = item.costBasis > 0 ? (item.marketValue - item.costBasis) / item.costBasis * 100 : 0;
+            const valuation = snapshot.holdingValuations.find((value) => value.holdingId === item.id);
             return <div className={editingHoldingId === item.id ? "editing" : ""} key={item.id}>
-              <strong>{item.name}<small>{item.symbol || "未填写代码"}</small></strong>
+              <strong>{item.name}<small>{item.symbol || "未填写代码"}</small>{valuation && <small className="verified-source">已核验 · {valuation.providerName} · {valuation.observedOn}</small>}</strong>
               <span>{item.assetClass}<small>{item.currency}{item.currency !== profile.baseCurrency && item.fxRateToBase ? ` · 汇率 ${item.fxRateToBase}` : ""}</small>{item.fxRateSource && <small>{fxSourceLabel(item.fxRateSource)} · {item.fxRateObservedOn}</small>}</span><span>{formatMoney(item.marketValue, item.currency)}<small>{item.currency !== profile.baseCurrency && item.fxRateToBase ? `折合 ${formatMoney(holdingValueInBase(item, profile.baseCurrency), profile.baseCurrency)} · ` : ""}{item.valuationDate || "待补估值日"}</small></span><span>{item.targetPct ? `${item.targetPct.toFixed(1)}%` : "未设置"}</span>
               <span className={pnlPct >= 0 ? "gain" : "loss"}>{pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%</span>
               <span className="row-actions"><button aria-label="编辑资产" onClick={() => editHolding(item)}><Edit3 size={14} /></button><button aria-label="删除资产" onClick={() => removeHolding(item)}><Trash2 size={14} /></button></span>
@@ -892,16 +928,25 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
           <NumberField label={`累计成本（${holding.currency}）`} value={holding.costBasis} onChange={(v) => setHolding({ ...holding, costBasis: Number(v) })} prefix={holding.currency} />
           <NumberField label="目标权重" value={holding.targetPct} onChange={(v) => setHolding({ ...holding, targetPct: Number(v) })} suffix="%" />
           <label><span>估值日期</span><input type="date" max={localDateValue(new Date())} value={holding.valuationDate} onChange={(e) => { setHolding({ ...holding, valuationDate: e.target.value, fxRateToBase: null, fxRateSource: "", fxRateObservedOn: "" }); setHoldingFxQuote(null); setHoldingFxError(""); }} /><small>组合检查点要求全部持仓使用同一日期。</small></label>
+          {editingHoldingId && <>
+            <NumberField label="估值日持仓数量" value={valuationQuantity} onChange={(value) => setValuationQuantity(Number(value))} suffix="份 / 股" />
+            <div className="price-lookup">
+              <button className="secondary" disabled={valuationLoading || !holding.symbol.trim() || valuationQuantity <= 0 || !holding.valuationDate} onClick={applyMarketValuation}>{valuationLoading ? <LoaderCircle className="spin" size={15} /> : <Cloud size={15} />}查询并采用日收盘价</button>
+              {valuationError && <small className="fx-error">{valuationError}</small>}
+              {snapshot.holdingValuations.find((value) => value.holdingId === editingHoldingId) && ((valuation) => <p><strong>{valuation.quantity} × {valuation.unitPrice} {valuation.currency} = {formatMoney(valuation.marketValue, valuation.currency)}</strong><span>{valuation.exchange || valuation.micCode || "交易所未标注"} · {valuation.observedOn}{valuation.stalenessDays ? `（回退 ${valuation.stalenessDays} 天）` : ""} · 未复权日收盘价</span><a href={valuation.sourceUrl} target="_blank" rel="noreferrer">核对请求来源</a></p>)(snapshot.holdingValuations.find((value) => value.holdingId === editingHoldingId) as HoldingValuationEvidence)}
+            </div>
+          </>}
           {holding.currency !== profile.baseCurrency && <>
             <NumberField label={`折算汇率（1 ${holding.currency} = ? ${profile.baseCurrency}）`} value={holding.fxRateToBase ?? 0} onChange={(v) => { setHolding({ ...holding, fxRateToBase: v ? Number(v) : null, fxRateSource: "", fxRateObservedOn: "" }); setHoldingFxQuote(null); }} suffix={profile.baseCurrency} />
             <div className="fx-lookup"><button className="secondary" disabled={holdingFxLoading || !holding.valuationDate} onClick={lookupHoldingFx}>{holdingFxLoading ? <LoaderCircle className="spin" size={15} /> : <Cloud size={15} />}查询 ECB 当日参考汇率</button>{holdingFxError && <small className="fx-error">{holdingFxError}</small>}{holding.fxRateSource && <small>已采用 {fxSourceLabel(holding.fxRateSource)} · 观察日 {holding.fxRateObservedOn}</small>}{holdingFxQuote && <p>{holdingFxQuote.stalenessDays ? `非工作日，使用此前 ${holdingFxQuote.stalenessDays} 天的共同观察值。` : "已取得当日共同观察值。"}<a href={holdingFxQuote.sourceUrl} target="_blank" rel="noreferrer">核对原始数据</a></p>}{holding.fxRateSource === "ecb_reference" && !holdingFxQuote && <a className="fx-method-link" href={ecbFxMethodologyUrl} target="_blank" rel="noreferrer">查看 ECB 参考汇率方法</a>}</div>
           </>}
         </div>
         <div className="form-actions">
-          {editingHoldingId ? <button className="text-button" onClick={() => { setEditingHoldingId(null); setHolding(emptyHolding(profile.baseCurrency)); setHoldingFxQuote(null); setHoldingFxError(""); }}>取消修改</button> : <span />}
+          {editingHoldingId ? <button className="text-button" onClick={() => { setEditingHoldingId(null); setHolding(emptyHolding(profile.baseCurrency)); setHoldingFxQuote(null); setHoldingFxError(""); setValuationQuantity(0); setValuationError(""); }}>取消修改</button> : <span />}
           <button className="secondary" onClick={persistHolding} disabled={saving || !holding.name || !holding.valuationDate || Boolean(holding.currency !== profile.baseCurrency && (!holding.fxRateToBase || holding.fxRateToBase <= 0))}>{editingHoldingId ? <Save size={16} /> : <Plus size={16} />}{editingHoldingId ? "保存修改" : "加入组合"}</button>
         </div>
       </section>
+      <p className="effectiveness-disclaimer">证券价格功能需要先保存资产，再进入编辑并输入估值日持仓数量。系统只在你主动点击时查询；现金、非上市资产或未配置行情密钥的持仓仍可保留人工市值，但会明确标为未核验。</p>
     </div>
   );
 }
@@ -1961,6 +2006,17 @@ function ModelSettings({ model, onUpdate, flash }: { model: ModelConfig; onUpdat
   const [testing, setTesting] = useState(false);
   const [connectionResult, setConnectionResult] = useState("");
   const [error, setError] = useState("");
+  const [securityConfig, setSecurityConfig] = useState<SecurityPriceConfig | null>(null);
+  const [securityApiKey, setSecurityApiKey] = useState("");
+  const [marketBusy, setMarketBusy] = useState(false);
+  const [marketResult, setMarketResult] = useState("");
+  const [marketError, setMarketError] = useState("");
+
+  useEffect(() => {
+    void getSecurityPriceConfig()
+      .then(setSecurityConfig)
+      .catch((nextError) => setMarketError(String(nextError)));
+  }, []);
 
   const persist = async () => {
     setSaving(true); setError(""); setConnectionResult("");
@@ -1985,9 +2041,37 @@ function ModelSettings({ model, onUpdate, flash }: { model: ModelConfig; onUpdat
     catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
   };
 
+  const persistSecurityKey = async () => {
+    if (!securityApiKey.trim()) return;
+    setMarketBusy(true); setMarketError(""); setMarketResult("");
+    try {
+      setSecurityConfig(await saveSecurityPriceConfig(securityApiKey));
+      setSecurityApiKey("");
+      flash("行情密钥已安全保存");
+    } catch (nextError) { setMarketError(String(nextError)); }
+    finally { setMarketBusy(false); }
+  };
+
+  const testSecurityConnection = async () => {
+    setMarketBusy(true); setMarketError(""); setMarketResult("");
+    try {
+      const quote = await getSecurityPrice("AAPL", localDateValue(new Date()));
+      setMarketResult(`${quote.symbol} · ${quote.observedOn} · ${quote.close} ${quote.currency} · ${quote.exchange || quote.micCode}`);
+    } catch (nextError) { setMarketError(String(nextError)); }
+    finally { setMarketBusy(false); }
+  };
+
+  const clearSecurityKey = async () => {
+    if (!window.confirm("确认从系统钥匙串中移除 Twelve Data API Key？")) return;
+    setMarketBusy(true); setMarketError(""); setMarketResult("");
+    try { setSecurityConfig(await deleteSecurityPriceKey()); flash("行情密钥已从系统钥匙串移除"); }
+    catch (nextError) { setMarketError(String(nextError)); }
+    finally { setMarketBusy(false); }
+  };
+
   return (
     <div className="page narrow">
-      <PageHeader eyebrow="模型与隐私" title="模型可以替换，方法论保持稳定" description="AI 提供商通过统一接口接入；投资数据只在发起分析时按需发送。" />
+      <PageHeader eyebrow="模型与外部数据" title="模型可以替换，方法论保持稳定" description="AI 与行情服务分别授权；密钥留在设备端，投资数据只按明确动作发送。" />
       <section className="panel form-panel">
         <div className="panel-title"><div><span>OpenAI-compatible</span><h2>模型连接</h2></div><div className={`status-dot ${model.hasApiKey ? "connected" : ""}`}>{model.hasApiKey ? "已配置" : "未配置"}</div></div>
         <div className="form-grid single-column">
@@ -2001,6 +2085,20 @@ function ModelSettings({ model, onUpdate, flash }: { model: ModelConfig; onUpdat
         <div className="form-actions">
           <div className="key-actions">{model.hasApiKey && <button className="danger-text" onClick={clearKey} disabled={saving}><Trash2 size={14} />移除密钥</button>}<button className="secondary" onClick={testConnection} disabled={testing || !model.hasApiKey}>{testing ? <LoaderCircle size={15} className="spin" /> : <Bot size={15} />}测试已保存连接</button></div>
           <button className="primary" onClick={persist} disabled={saving || !baseUrl || !modelName}><Save size={16} />保存配置</button>
+        </div>
+      </section>
+      <section className="panel form-panel">
+        <div className="panel-title"><div><span>可审计证券价格</span><h2>Twelve Data 日收盘价</h2></div><div className={`status-dot ${securityConfig?.hasApiKey ? "connected" : ""}`}>{securityConfig?.hasApiKey ? "已配置" : "未配置"}</div></div>
+        <p className="section-intro">只在你主动查询持仓估值时调用。服务端使用 Authorization 请求头，密钥不进入浏览器地址、SQLite、AI 上下文或云端同步包。</p>
+        <div className="form-grid single-column">
+          <label><span>Twelve Data API Key</span><div className="secure-input"><KeyRound size={16} /><input type="password" value={securityApiKey} onChange={(event) => setSecurityApiKey(event.target.value)} placeholder={securityConfig?.hasApiKey ? "已保存在系统钥匙串；留空则不修改" : "输入个人 Twelve Data 密钥"} /></div></label>
+        </div>
+        <div className="privacy-note"><LockKeyhole size={18} /><div><strong>来源透明，许可归用户账户</strong><p>mario 保存代码、币种、交易所、观察日和未复权收盘价口径。免费 Basic 方案当前有每分钟与每日额度；个人方案仅适合个人、内部和非商业用途。</p><p><a href="https://twelvedata.com/docs/market-data/time-series" target="_blank" rel="noreferrer">接口方法</a> · <a href="https://twelvedata.com/pricing" target="_blank" rel="noreferrer">额度</a> · <a href="https://twelvedata.com/terms" target="_blank" rel="noreferrer">许可条款</a></p></div></div>
+        {marketError && <div className="error-box"><AlertTriangle size={18} />{marketError}</div>}
+        {marketResult && <div className="connection-success"><Check size={16} /><span><strong>价格连接成功</strong>{marketResult}</span></div>}
+        <div className="form-actions">
+          <div className="key-actions">{securityConfig?.hasApiKey && <button className="danger-text" onClick={clearSecurityKey} disabled={marketBusy}><Trash2 size={14} />移除密钥</button>}<button className="secondary" onClick={testSecurityConnection} disabled={marketBusy || !securityConfig?.hasApiKey}>{marketBusy ? <LoaderCircle size={15} className="spin" /> : <Cloud size={15} />}测试 AAPL 日线</button></div>
+          <button className="primary" onClick={persistSecurityKey} disabled={marketBusy || !securityApiKey.trim()}><Save size={16} />保存行情密钥</button>
         </div>
       </section>
       <section className="architecture-grid">

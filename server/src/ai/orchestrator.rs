@@ -524,6 +524,7 @@ mod tests {
                 fx_rate_source: String::new(),
                 fx_rate_observed_on: String::new(),
             }],
+            holding_valuations: Vec::new(),
             findings: vec![RiskFinding {
                 level: "medium".into(),
                 title: "集中度".into(),

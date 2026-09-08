@@ -51,6 +51,51 @@ export interface FxRateQuote {
   disclaimer: string;
 }
 
+export interface SecurityPriceQuote {
+  symbol: string;
+  currency: string;
+  close: number;
+  requestedOn: string;
+  observedOn: string;
+  stalenessDays: number;
+  providerCode: string;
+  providerName: string;
+  exchange: string;
+  micCode: string;
+  instrumentType: string;
+  priceBasis: string;
+  sourceUrl: string;
+  methodologyUrl: string;
+  disclaimer: string;
+}
+
+export interface SecurityPriceConfig {
+  provider: "twelve-data";
+  hasApiKey: boolean;
+}
+
+export interface HoldingValuationEvidence {
+  holdingId: string;
+  symbol: string;
+  quantity: number;
+  unitPrice: number;
+  marketValue: number;
+  currency: string;
+  requestedOn: string;
+  observedOn: string;
+  stalenessDays: number;
+  providerCode: string;
+  providerName: string;
+  exchange: string;
+  micCode: string;
+  instrumentType: string;
+  priceBasis: string;
+  sourceUrl: string;
+  methodologyUrl: string;
+  disclaimer: string;
+  capturedAt: string;
+}
+
 export interface PortfolioCheckInInput {
   periodLabel: string;
   externalCashFlow: number;
@@ -153,6 +198,7 @@ export interface PortfolioCheckInRecord {
   turnover: number;
   modifiedDietzReturnPct: number | null;
   holdings: Holding[];
+  holdingValuations: HoldingValuationEvidence[];
   allocationChanges: PortfolioAllocationChange[];
   createdAt: string;
 }
@@ -168,6 +214,7 @@ export interface Snapshot {
   profile: FinancialProfile;
   goals: Goal[];
   holdings: Holding[];
+  holdingValuations: HoldingValuationEvidence[];
   findings: RiskFinding[];
   totalValue: number;
   emergencyMonths: number;

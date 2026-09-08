@@ -1,7 +1,7 @@
 {
   "name": "mario-workspace",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.4.0",
   "scripts": {
     "install:all": "npm install --ignore-scripts && npm install --prefix client --ignore-scripts",
     "dev": "concurrently -k -n server,client -c green,blue \"cargo run --manifest-path server/Cargo.toml -- --allow-unauthenticated-dev\" \"npm run dev --prefix client\"",

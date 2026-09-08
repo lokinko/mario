@@ -45,6 +45,11 @@ if [[ "$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $toke
   echo "request with current token was not accepted" >&2
   exit 1
 fi
+market_config="$(curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/market-data/security/config")"
+if ! python3 -c 'import json,sys; value=json.load(sys.stdin); assert value["provider"] == "twelve-data" and isinstance(value["hasApiKey"], bool)' <<<"$market_config"; then
+  echo "security price config endpoint returned an unexpected response" >&2
+  exit 1
+fi
 if process_command="$(ps -p "$server_pid" -o command= 2>/dev/null)"; then
   if grep -Fq "$token" <<<"$process_command"; then
     echo "authentication token leaked into process arguments" >&2

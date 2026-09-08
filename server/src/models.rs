@@ -26,6 +26,78 @@ pub struct FxRateQuote {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SecurityPriceQuery {
+    pub symbol: String,
+    pub on_date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityPriceQuote {
+    pub symbol: String,
+    pub currency: String,
+    pub close: f64,
+    pub requested_on: String,
+    pub observed_on: String,
+    pub staleness_days: i64,
+    pub provider_code: String,
+    pub provider_name: String,
+    pub exchange: String,
+    pub mic_code: String,
+    pub instrument_type: String,
+    pub price_basis: String,
+    pub source_url: String,
+    pub methodology_url: String,
+    pub disclaimer: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityPriceConfig {
+    pub provider: String,
+    pub has_api_key: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityPriceConfigInput {
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedHoldingValuationInput {
+    pub symbol: String,
+    pub quantity: f64,
+    pub on_date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoldingValuationEvidence {
+    pub holding_id: String,
+    pub symbol: String,
+    pub quantity: f64,
+    pub unit_price: f64,
+    pub market_value: f64,
+    pub currency: String,
+    pub requested_on: String,
+    pub observed_on: String,
+    pub staleness_days: i64,
+    pub provider_code: String,
+    pub provider_name: String,
+    pub exchange: String,
+    pub mic_code: String,
+    pub instrument_type: String,
+    pub price_basis: String,
+    pub source_url: String,
+    pub methodology_url: String,
+    pub disclaimer: String,
+    pub captured_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FinancialProfile {
     pub monthly_income: f64,
     pub monthly_expense: f64,
@@ -305,6 +377,8 @@ pub struct PortfolioCheckInRecord {
     #[serde(default)]
     pub modified_dietz_return_pct: Option<f64>,
     pub holdings: Vec<Holding>,
+    #[serde(default)]
+    pub holding_valuations: Vec<HoldingValuationEvidence>,
     pub allocation_changes: Vec<PortfolioAllocationChange>,
     pub created_at: String,
 }
@@ -324,6 +398,8 @@ pub struct Snapshot {
     pub profile: FinancialProfile,
     pub goals: Vec<Goal>,
     pub holdings: Vec<Holding>,
+    #[serde(default)]
+    pub holding_valuations: Vec<HoldingValuationEvidence>,
     pub findings: Vec<RiskFinding>,
     pub total_value: f64,
     pub emergency_months: f64,

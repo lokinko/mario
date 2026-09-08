@@ -16,14 +16,15 @@ use crate::{
     models::{
         AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
         DecisionReviewInput, DecisionRuleCheck, FinancialProfile, Goal, GoalInput, Holding,
-        HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem,
-        MemoryPreferenceInput, ModelConfig, PortfolioCheckInInput, PortfolioCheckInRecord,
-        PortfolioEventImportCommitRequest, PortfolioEventImportPreview,
-        PortfolioEventImportRequest, PortfolioEventImportResult, PortfolioEventImportRow,
-        PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, PortfolioEventType,
-        ReminderSettings, ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary,
-        RuleEffectivenessItem, RuleEffectivenessSummary, Snapshot, StoredAnalysis,
-        SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
+        HoldingInput, HoldingValuationEvidence, InvestmentRule, InvestmentRuleInput,
+        InvestmentRuleRevision, MemoryItem, MemoryPreferenceInput, ModelConfig,
+        PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventImportCommitRequest,
+        PortfolioEventImportPreview, PortfolioEventImportRequest, PortfolioEventImportResult,
+        PortfolioEventImportRow, PortfolioEventInput, PortfolioEventRecord,
+        PortfolioEventReversalInput, PortfolioEventType, ReminderSettings, ResearchEvidence,
+        ResearchEvidenceInput, ReviewReminderSummary, RuleEffectivenessItem,
+        RuleEffectivenessSummary, SecurityPriceQuote, Snapshot, StoredAnalysis, SystemReviewInput,
+        SystemReviewRecord, SystemReviewSnapshot,
     },
     performance, planning, risk, valuation,
 };
@@ -295,11 +296,37 @@ const SYNC_TABLES: &[SyncTableSpec] = &[
         columns: &["memory_id", "preference", "note", "updated_at"],
         order_by: "memory_id",
     },
+    SyncTableSpec {
+        name: "holding_valuations",
+        columns: &[
+            "holding_id",
+            "symbol",
+            "quantity",
+            "unit_price",
+            "market_value",
+            "currency",
+            "requested_on",
+            "observed_on",
+            "staleness_days",
+            "provider_code",
+            "provider_name",
+            "exchange_name",
+            "mic_code",
+            "instrument_type",
+            "price_basis",
+            "source_url",
+            "methodology_url",
+            "disclaimer",
+            "captured_at",
+        ],
+        order_by: "holding_id",
+    },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 8;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 9;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
+const V8_SYNC_TABLE_COUNT: usize = 13;
 
 fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
@@ -338,6 +365,10 @@ fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
         }
         7 => {
             specs.truncate(V7_SYNC_TABLE_COUNT);
+            Ok(specs)
+        }
+        8 => {
+            specs.truncate(V8_SYNC_TABLE_COUNT);
             Ok(specs)
         }
         SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
@@ -551,6 +582,27 @@ impl Database {
                preference TEXT NOT NULL,
                note TEXT NOT NULL DEFAULT '',
                updated_at TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS holding_valuations (
+               holding_id TEXT PRIMARY KEY REFERENCES holdings(id) ON DELETE CASCADE,
+               symbol TEXT NOT NULL,
+               quantity REAL NOT NULL,
+               unit_price REAL NOT NULL,
+               market_value REAL NOT NULL,
+               currency TEXT NOT NULL,
+               requested_on TEXT NOT NULL,
+               observed_on TEXT NOT NULL,
+               staleness_days INTEGER NOT NULL,
+               provider_code TEXT NOT NULL,
+               provider_name TEXT NOT NULL,
+               exchange_name TEXT NOT NULL,
+               mic_code TEXT NOT NULL,
+               instrument_type TEXT NOT NULL,
+               price_basis TEXT NOT NULL,
+               source_url TEXT NOT NULL,
+               methodology_url TEXT NOT NULL,
+               disclaimer TEXT NOT NULL,
+               captured_at TEXT NOT NULL
              );
              CREATE TABLE IF NOT EXISTS settings (
                key TEXT PRIMARY KEY,
@@ -830,6 +882,7 @@ impl Database {
         validate_synced_fx_provenance(dataset)?;
         validate_synced_event_reversals(dataset)?;
         validate_synced_memory_preferences(dataset)?;
+        validate_synced_holding_valuations(dataset)?;
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
         transaction.execute_batch("PRAGMA defer_foreign_keys=ON;")?;
@@ -922,6 +975,39 @@ impl Database {
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
+        let mut valuation_stmt = conn.prepare(
+            "SELECT holding_id, symbol, quantity, unit_price, market_value, currency,
+                    requested_on, observed_on, staleness_days, provider_code, provider_name,
+                    exchange_name, mic_code, instrument_type, price_basis, source_url,
+                    methodology_url, disclaimer, captured_at
+             FROM holding_valuations ORDER BY holding_id",
+        )?;
+        let holding_valuations = valuation_stmt
+            .query_map([], |row| {
+                Ok(HoldingValuationEvidence {
+                    holding_id: row.get(0)?,
+                    symbol: row.get(1)?,
+                    quantity: row.get(2)?,
+                    unit_price: row.get(3)?,
+                    market_value: row.get(4)?,
+                    currency: row.get(5)?,
+                    requested_on: row.get(6)?,
+                    observed_on: row.get(7)?,
+                    staleness_days: row.get(8)?,
+                    provider_code: row.get(9)?,
+                    provider_name: row.get(10)?,
+                    exchange: row.get(11)?,
+                    mic_code: row.get(12)?,
+                    instrument_type: row.get(13)?,
+                    price_basis: row.get(14)?,
+                    source_url: row.get(15)?,
+                    methodology_url: row.get(16)?,
+                    disclaimer: row.get(17)?,
+                    captured_at: row.get(18)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(valuation_stmt);
         drop(holding_stmt);
         drop(goal_stmt);
 
@@ -939,7 +1025,13 @@ impl Database {
             )?
             .unwrap_or_else(|| Utc::now().to_rfc3339());
 
-        Ok(build_snapshot(profile, goals, holdings, updated_at))
+        Ok(build_snapshot(
+            profile,
+            goals,
+            holdings,
+            holding_valuations,
+            updated_at,
+        ))
     }
 
     pub fn save_profile(&self, profile: &FinancialProfile) -> AppResult<Snapshot> {
@@ -1019,13 +1111,121 @@ impl Database {
             &input.fx_rate_observed_on,
             &input.valuation_date,
         )?;
-        let affected = self.conn()?.execute(
+        let mut conn = self.conn()?;
+        let previous = conn
+            .query_row(
+                "SELECT symbol, market_value, currency, valuation_date FROM holdings WHERE id=?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, f64>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some(previous) = previous else {
+            return Err(AppError::Validation("找不到要更新的资产".into()));
+        };
+        let transaction = conn.transaction()?;
+        let affected = transaction.execute(
             "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, fx_rate_to_base=?9, valuation_date=?10, fx_rate_source=?11, fx_rate_observed_on=?12, updated_at=?13 WHERE id=?1",
             params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, Utc::now().to_rfc3339()],
         )?;
         if affected == 0 {
             return Err(AppError::Validation("找不到要更新的资产".into()));
         }
+        let valuation_changed = previous.0 != input.symbol.trim()
+            || (previous.1 - input.market_value).abs() > 0.005
+            || !previous.2.eq_ignore_ascii_case(input.currency.trim())
+            || previous.3 != input.valuation_date.trim();
+        if valuation_changed {
+            transaction.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
+        }
+        transaction.commit()?;
+        drop(conn);
+        self.snapshot()
+    }
+
+    pub fn apply_verified_holding_valuation(
+        &self,
+        id: &str,
+        quantity: f64,
+        quote: &SecurityPriceQuote,
+    ) -> AppResult<Snapshot> {
+        validate_holding_valuation_evidence(quantity, quote)?;
+        let market_value = quantity * quote.close;
+        if !market_value.is_finite() || market_value <= 0.0 || market_value > 1e15 {
+            return Err(AppError::Validation("数量乘以单位价格后的市值无效".into()));
+        }
+        let captured_at = Utc::now().to_rfc3339();
+        let mut conn = self.conn()?;
+        let holding_currency = conn
+            .query_row("SELECT currency FROM holdings WHERE id=?1", [id], |row| {
+                row.get::<_, String>(0)
+            })
+            .optional()?
+            .ok_or_else(|| AppError::Validation("找不到要估值的资产".into()))?;
+        if !holding_currency.eq_ignore_ascii_case(&quote.currency) {
+            return Err(AppError::Validation(format!(
+                "行情以 {} 计价，但持仓币种是 {}；请先核对代码和币种",
+                quote.currency, holding_currency
+            )));
+        }
+        let transaction = conn.transaction()?;
+        transaction.execute(
+            "UPDATE holdings
+             SET symbol=?2, market_value=?3, valuation_date=?4,
+                 fx_rate_to_base=CASE WHEN valuation_date=?4 THEN fx_rate_to_base ELSE NULL END,
+                 fx_rate_source=CASE WHEN valuation_date=?4 THEN fx_rate_source ELSE '' END,
+                 fx_rate_observed_on=CASE WHEN valuation_date=?4 THEN fx_rate_observed_on ELSE '' END,
+                 updated_at=?5
+             WHERE id=?1",
+            params![id, quote.symbol.trim(), market_value, quote.requested_on, captured_at],
+        )?;
+        transaction.execute(
+            "INSERT INTO holding_valuations (
+               holding_id, symbol, quantity, unit_price, market_value, currency,
+               requested_on, observed_on, staleness_days, provider_code, provider_name,
+               exchange_name, mic_code, instrument_type, price_basis, source_url,
+               methodology_url, disclaimer, captured_at
+             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
+             ON CONFLICT(holding_id) DO UPDATE SET
+               symbol=excluded.symbol, quantity=excluded.quantity,
+               unit_price=excluded.unit_price, market_value=excluded.market_value,
+               currency=excluded.currency, requested_on=excluded.requested_on,
+               observed_on=excluded.observed_on, staleness_days=excluded.staleness_days,
+               provider_code=excluded.provider_code, provider_name=excluded.provider_name,
+               exchange_name=excluded.exchange_name, mic_code=excluded.mic_code,
+               instrument_type=excluded.instrument_type, price_basis=excluded.price_basis,
+               source_url=excluded.source_url, methodology_url=excluded.methodology_url,
+               disclaimer=excluded.disclaimer, captured_at=excluded.captured_at",
+            params![
+                id,
+                quote.symbol.trim(),
+                quantity,
+                quote.close,
+                market_value,
+                quote.currency.trim().to_ascii_uppercase(),
+                quote.requested_on,
+                quote.observed_on,
+                quote.staleness_days,
+                quote.provider_code,
+                quote.provider_name,
+                quote.exchange,
+                quote.mic_code,
+                quote.instrument_type,
+                quote.price_basis,
+                quote.source_url,
+                quote.methodology_url,
+                quote.disclaimer,
+                captured_at,
+            ],
+        )?;
+        transaction.commit()?;
+        drop(conn);
         self.snapshot()
     }
 
@@ -1555,6 +1755,7 @@ impl Database {
             turnover: event_summary.turnover,
             modified_dietz_return_pct,
             holdings: snapshot.holdings,
+            holding_valuations: snapshot.holding_valuations,
             allocation_changes,
             created_at: Utc::now().to_rfc3339(),
         };
@@ -2554,6 +2755,7 @@ fn build_snapshot(
     profile: FinancialProfile,
     goals: Vec<Goal>,
     holdings: Vec<Holding>,
+    holding_valuations: Vec<HoldingValuationEvidence>,
     updated_at: String,
 ) -> Snapshot {
     let valuation_status = valuation::status(&profile.base_currency, &holdings);
@@ -2627,6 +2829,26 @@ fn build_snapshot(
             action: "把全部持仓更新到同一估值日后，再冻结组合检查点。".into(),
         });
     }
+    let verified_ids = holding_valuations
+        .iter()
+        .map(|valuation| valuation.holding_id.as_str())
+        .collect::<HashSet<_>>();
+    let unverified_holdings = holdings
+        .iter()
+        .filter(|holding| !verified_ids.contains(holding.id.as_str()))
+        .map(|holding| holding.name.as_str())
+        .collect::<Vec<_>>();
+    if !unverified_holdings.is_empty() {
+        findings.push(crate::models::RiskFinding {
+            level: "medium".into(),
+            title: "部分持仓仍是用户声明估值".into(),
+            detail: format!(
+                "{} 没有冻结数量、单位价格与外部价格来源；组合计算可继续，但不能视为已核验业绩。",
+                unverified_holdings.join("、")
+            ),
+            action: "对有公开代码的证券查询并采用指定估值日收盘价；现金和非上市资产继续保留人工口径说明。".into(),
+        });
+    }
     let mut plan = planning::analyze(&profile, &goals, &normalized_holdings);
     if !valuation_status.comparable {
         plan.goal_projections.clear();
@@ -2637,8 +2859,11 @@ fn build_snapshot(
         );
     } else if !holdings.is_empty() {
         plan.assumptions = format!(
-            "组合数值已按 {} 折算；汇率与估值日期来自用户输入。{}",
-            valuation_status.base_currency, plan.assumptions
+            "组合数值已按 {} 折算；{}/{} 项持仓冻结了带来源证券价格，其余市值、汇率与日期仍依赖用户确认。{}",
+            valuation_status.base_currency,
+            holding_valuations.len(),
+            holdings.len(),
+            plan.assumptions
         );
     }
     let target_total: f64 = holdings.iter().map(|holding| holding.target_pct).sum();
@@ -2673,6 +2898,7 @@ fn build_snapshot(
         profile,
         goals,
         holdings,
+        holding_valuations,
         findings,
         total_value,
         emergency_months,
@@ -3040,6 +3266,104 @@ fn validate_synced_memory_preferences(dataset: &SyncDataset) -> AppResult<()> {
     Ok(())
 }
 
+fn validate_synced_holding_valuations(dataset: &SyncDataset) -> AppResult<()> {
+    if dataset.schema_version < 9 {
+        return Ok(());
+    }
+    let holdings = dataset
+        .tables
+        .iter()
+        .find(|table| table.name == "holdings")
+        .ok_or_else(|| AppError::Validation("数据快照缺少 holdings".into()))?;
+    let holdings_by_id = holdings
+        .rows
+        .iter()
+        .map(|row| Ok((sync_text(row, 0, "持仓 ID")?, row)))
+        .collect::<AppResult<HashMap<_, _>>>()?;
+    let valuations = dataset
+        .tables
+        .iter()
+        .find(|table| table.name == "holding_valuations")
+        .ok_or_else(|| AppError::Validation("数据快照缺少 holding_valuations".into()))?;
+    let mut seen = HashSet::new();
+    for row in &valuations.rows {
+        let holding_id = sync_text(row, 0, "估值持仓 ID")?;
+        if !seen.insert(holding_id) {
+            return Err(AppError::Validation("同步数据包含重复持仓估值".into()));
+        }
+        let quantity = sync_real(row, 2, "持仓数量")?;
+        let market_value = sync_real(row, 4, "持仓估值")?;
+        let staleness = sync_real(row, 8, "价格回退天数")?;
+        if staleness.fract() != 0.0 {
+            return Err(AppError::Validation("同步价格回退天数无效".into()));
+        }
+        let quote = SecurityPriceQuote {
+            symbol: sync_text(row, 1, "行情代码")?.into(),
+            currency: sync_text(row, 5, "行情币种")?.into(),
+            close: sync_real(row, 3, "单位价格")?,
+            requested_on: sync_text(row, 6, "请求日期")?.into(),
+            observed_on: sync_text(row, 7, "观察日期")?.into(),
+            staleness_days: staleness as i64,
+            provider_code: sync_text(row, 9, "价格来源代码")?.into(),
+            provider_name: sync_text(row, 10, "价格来源名称")?.into(),
+            exchange: sync_text(row, 11, "交易所")?.into(),
+            mic_code: sync_text(row, 12, "MIC")?.into(),
+            instrument_type: sync_text(row, 13, "证券类型")?.into(),
+            price_basis: sync_text(row, 14, "价格口径")?.into(),
+            source_url: sync_text(row, 15, "价格来源地址")?.into(),
+            methodology_url: sync_text(row, 16, "价格方法地址")?.into(),
+            disclaimer: sync_text(row, 17, "价格限制")?.into(),
+        };
+        validate_holding_valuation_evidence(quantity, &quote)?;
+        let expected_market_value = quantity * quote.close;
+        if (market_value - expected_market_value).abs()
+            > 0.005_f64.max(expected_market_value.abs() * 1e-10)
+        {
+            return Err(AppError::Validation(
+                "同步持仓估值与数量、单位价格不一致".into(),
+            ));
+        }
+        chrono::DateTime::parse_from_rfc3339(sync_text(row, 18, "行情采集时间")?)
+            .map_err(|_| AppError::Validation("同步行情采集时间无效".into()))?;
+        let holding = holdings_by_id
+            .get(holding_id)
+            .ok_or_else(|| AppError::Validation("同步持仓估值找不到对应持仓".into()))?;
+        if sync_text(holding, 1, "持仓代码")? != quote.symbol
+            || !sync_text(holding, 7, "持仓币种")?.eq_ignore_ascii_case(&quote.currency)
+            || sync_text(holding, 9, "持仓估值日")? != quote.requested_on
+            || (sync_real(holding, 4, "持仓市值")? - market_value).abs() > 0.005
+        {
+            return Err(AppError::Validation("同步持仓与价格估值证据不一致".into()));
+        }
+    }
+
+    let checkins = dataset
+        .tables
+        .iter()
+        .find(|table| table.name == "portfolio_checkins")
+        .ok_or_else(|| AppError::Validation("数据快照缺少 portfolio_checkins".into()))?;
+    for row in &checkins.rows {
+        let record: PortfolioCheckInRecord = serde_json::from_str(sync_text(row, 1, "组合检查点")?)
+            .map_err(|_| AppError::Validation("同步组合检查点格式无效".into()))?;
+        for evidence in &record.holding_valuations {
+            validate_stored_holding_valuation(evidence)?;
+            let holding = record
+                .holdings
+                .iter()
+                .find(|holding| holding.id == evidence.holding_id)
+                .ok_or_else(|| AppError::Validation("检查点行情证据找不到对应持仓".into()))?;
+            if holding.symbol != evidence.symbol
+                || !holding.currency.eq_ignore_ascii_case(&evidence.currency)
+                || holding.valuation_date != evidence.requested_on
+                || (holding.market_value - evidence.market_value).abs() > 0.005
+            {
+                return Err(AppError::Validation("检查点持仓与行情证据不一致".into()));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn sync_real(row: &[SyncValue], index: usize, label: &str) -> AppResult<f64> {
     match row.get(index) {
         Some(SyncValue::Real(value)) => Ok(*value),
@@ -3316,6 +3640,87 @@ fn validate_holding(input: &HoldingInput, base_currency: &str) -> AppResult<()> 
     Ok(())
 }
 
+fn validate_holding_valuation_evidence(quantity: f64, quote: &SecurityPriceQuote) -> AppResult<()> {
+    if !quantity.is_finite() || quantity <= 0.0 || quantity > 1e15 {
+        return Err(AppError::Validation("持仓数量必须是有效正数".into()));
+    }
+    if !quote.close.is_finite() || quote.close <= 0.0 || quote.close > 1e15 {
+        return Err(AppError::Validation("证券单位价格必须是有效正数".into()));
+    }
+    let requested_on = NaiveDate::parse_from_str(quote.requested_on.trim(), "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("证券价格请求日期无效".into()))?;
+    let observed_on = NaiveDate::parse_from_str(quote.observed_on.trim(), "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("证券价格观察日期无效".into()))?;
+    if requested_on > Local::now().date_naive()
+        || observed_on > requested_on
+        || (requested_on - observed_on).num_days() != quote.staleness_days
+        || !(0..=10).contains(&quote.staleness_days)
+    {
+        return Err(AppError::Validation("证券价格日期或回退天数不一致".into()));
+    }
+    validate_currency(&quote.currency)?;
+    let source_url = reqwest::Url::parse(&quote.source_url)
+        .map_err(|_| AppError::Validation("证券价格来源地址无效".into()))?;
+    let source_symbol = source_url
+        .query_pairs()
+        .find(|(key, _)| key == "symbol")
+        .map(|(_, value)| value.into_owned());
+    let source_is_canonical = source_url.scheme() == "https"
+        && source_url.host_str() == Some("api.twelvedata.com")
+        && source_url.path() == "/time_series"
+        && source_url.username().is_empty()
+        && source_url.password().is_none()
+        && source_symbol.as_deref() == Some(quote.symbol.as_str())
+        && !source_url
+            .query_pairs()
+            .any(|(key, _)| key.eq_ignore_ascii_case("apikey"));
+    if quote.symbol.trim().is_empty()
+        || quote.symbol.chars().count() > 80
+        || quote.provider_code != "twelve_data_raw_close"
+        || quote.provider_name != "Twelve Data"
+        || quote.price_basis != "unadjusted_daily_close"
+        || !source_is_canonical
+        || quote.methodology_url != "https://twelvedata.com/docs/market-data/time-series"
+        || quote.disclaimer.trim().is_empty()
+        || quote.exchange.chars().count() > 120
+        || quote.mic_code.chars().count() > 32
+        || quote.instrument_type.chars().count() > 120
+    {
+        return Err(AppError::Validation(
+            "证券价格来源或元数据不是受支持的规范形式".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_stored_holding_valuation(evidence: &HoldingValuationEvidence) -> AppResult<()> {
+    let quote = SecurityPriceQuote {
+        symbol: evidence.symbol.clone(),
+        currency: evidence.currency.clone(),
+        close: evidence.unit_price,
+        requested_on: evidence.requested_on.clone(),
+        observed_on: evidence.observed_on.clone(),
+        staleness_days: evidence.staleness_days,
+        provider_code: evidence.provider_code.clone(),
+        provider_name: evidence.provider_name.clone(),
+        exchange: evidence.exchange.clone(),
+        mic_code: evidence.mic_code.clone(),
+        instrument_type: evidence.instrument_type.clone(),
+        price_basis: evidence.price_basis.clone(),
+        source_url: evidence.source_url.clone(),
+        methodology_url: evidence.methodology_url.clone(),
+        disclaimer: evidence.disclaimer.clone(),
+    };
+    validate_holding_valuation_evidence(evidence.quantity, &quote)?;
+    let expected = evidence.quantity * evidence.unit_price;
+    if (evidence.market_value - expected).abs() > 0.005_f64.max(expected.abs() * 1e-10)
+        || chrono::DateTime::parse_from_rfc3339(&evidence.captured_at).is_err()
+    {
+        return Err(AppError::Validation("持仓估值证据内容无效".into()));
+    }
+    Ok(())
+}
+
 fn validate_and_canonicalize_rule_checks(
     checks: &[DecisionRuleCheck],
     active_rules: &[InvestmentRule],
@@ -3567,6 +3972,26 @@ impl<T> OptionalRow<T> for rusqlite::Result<T> {
 mod tests {
     use super::*;
 
+    fn verified_quote() -> SecurityPriceQuote {
+        SecurityPriceQuote {
+            symbol: "AAPL".into(),
+            currency: "USD".into(),
+            close: 101.25,
+            requested_on: "2026-09-05".into(),
+            observed_on: "2026-09-04".into(),
+            staleness_days: 1,
+            provider_code: "twelve_data_raw_close".into(),
+            provider_name: "Twelve Data".into(),
+            exchange: "NASDAQ".into(),
+            mic_code: "XNAS".into(),
+            instrument_type: "Common Stock".into(),
+            price_basis: "unadjusted_daily_close".into(),
+            source_url: "https://api.twelvedata.com/time_series?symbol=AAPL&interval=1day".into(),
+            methodology_url: "https://twelvedata.com/docs/market-data/time-series".into(),
+            disclaimer: "测试用的明确限制".into(),
+        }
+    }
+
     #[test]
     fn persists_profile_and_holding() {
         let dir = tempfile::tempdir().unwrap();
@@ -3594,6 +4019,106 @@ mod tests {
         let snapshot = db.snapshot().unwrap();
         assert_eq!(snapshot.holdings.len(), 1);
         assert_eq!(snapshot.emergency_months, 6.0);
+    }
+
+    #[test]
+    fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("verified-valuation.db")).unwrap();
+        db.save_profile(&FinancialProfile {
+            base_currency: "USD".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        let created = db
+            .add_holding(&HoldingInput {
+                symbol: "AAPL".into(),
+                name: "Apple".into(),
+                asset_class: "股票".into(),
+                market_value: 900.0,
+                cost_basis: 800.0,
+                target_pct: 100.0,
+                currency: "USD".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-09-05".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
+            })
+            .unwrap();
+        let holding_id = created.holdings[0].id.clone();
+        let valued = db
+            .apply_verified_holding_valuation(&holding_id, 10.0, &verified_quote())
+            .unwrap();
+        assert_eq!(valued.holdings[0].market_value, 1_012.5);
+        assert_eq!(valued.holding_valuations.len(), 1);
+        assert_eq!(valued.holding_valuations[0].quantity, 10.0);
+        assert_eq!(valued.holding_valuations[0].observed_on, "2026-09-04");
+
+        let checkin = db
+            .save_portfolio_checkin(&PortfolioCheckInInput {
+                period_label: "带来源基线".into(),
+                external_cash_flow: 0.0,
+                note: String::new(),
+                reset_baseline: false,
+                use_ledger_cash_flows: true,
+            })
+            .unwrap();
+        assert_eq!(checkin.holding_valuations.len(), 1);
+
+        let unchanged = HoldingInput {
+            symbol: "AAPL".into(),
+            name: "Apple Inc.".into(),
+            asset_class: "股票".into(),
+            market_value: 1_012.5,
+            cost_basis: 810.0,
+            target_pct: 100.0,
+            currency: "USD".into(),
+            fx_rate_to_base: None,
+            valuation_date: "2026-09-05".into(),
+            fx_rate_source: String::new(),
+            fx_rate_observed_on: String::new(),
+        };
+        assert_eq!(
+            db.update_holding(&holding_id, &unchanged)
+                .unwrap()
+                .holding_valuations
+                .len(),
+            1
+        );
+        let changed = HoldingInput {
+            market_value: 1_020.0,
+            ..unchanged
+        };
+        assert!(db
+            .update_holding(&holding_id, &changed)
+            .unwrap()
+            .holding_valuations
+            .is_empty());
+    }
+
+    #[test]
+    fn rejects_verified_price_when_provider_currency_differs_from_holding() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("valuation-currency.db")).unwrap();
+        let created = db
+            .add_holding(&HoldingInput {
+                symbol: "AAPL".into(),
+                name: "错误币种".into(),
+                asset_class: "股票".into(),
+                market_value: 1_000.0,
+                cost_basis: 900.0,
+                target_pct: 100.0,
+                currency: "CNY".into(),
+                fx_rate_to_base: None,
+                valuation_date: "2026-09-05".into(),
+                fx_rate_source: String::new(),
+                fx_rate_observed_on: String::new(),
+            })
+            .unwrap();
+        assert!(matches!(
+            db.apply_verified_holding_valuation(&created.holdings[0].id, 10.0, &verified_quote()),
+            Err(AppError::Validation(_))
+        ));
     }
 
     #[test]
@@ -3714,6 +4239,18 @@ mod tests {
                 fx_rate_source: String::new(),
                 fx_rate_observed_on: String::new(),
             })
+            .unwrap();
+        let holding_id = source.snapshot().unwrap().holdings[0].id.clone();
+        let mut quote = verified_quote();
+        quote.symbol = "IDX".into();
+        quote.currency = "CNY".into();
+        quote.requested_on = "2026-01-01".into();
+        quote.observed_on = "2026-01-01".into();
+        quote.staleness_days = 0;
+        quote.close = 12.0;
+        quote.source_url = "https://api.twelvedata.com/time_series?symbol=IDX&interval=1day".into();
+        source
+            .apply_verified_holding_valuation(&holding_id, 10_000.0, &quote)
             .unwrap();
         let rule = source
             .add_investment_rule(&InvestmentRuleInput {
@@ -3842,6 +4379,18 @@ mod tests {
             Err(AppError::Validation(_))
         ));
 
+        let mut corrupted_valuation = dataset.clone();
+        let valuation_table = corrupted_valuation
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "holding_valuations")
+            .unwrap();
+        valuation_table.rows[0][4] = SyncValue::Real(999.0);
+        assert!(matches!(
+            corrupted_target.import_sync_data(&corrupted_valuation),
+            Err(AppError::Validation(_))
+        ));
+
         let target = Database::open(&directory.path().join("target.db")).unwrap();
         target
             .set_setting("model.name", "keep-local-model")
@@ -3849,6 +4398,8 @@ mod tests {
         target.import_sync_data(&dataset).unwrap();
         let restored = target.snapshot().unwrap();
         assert_eq!(restored.holdings.len(), 1);
+        assert_eq!(restored.holding_valuations.len(), 1);
+        assert_eq!(restored.holding_valuations[0].quantity, 10_000.0);
         assert_eq!(restored.profile.emergency_fund, 48_000.0);
         let restored_decision = target.decisions().unwrap().remove(0);
         assert_eq!(restored_decision.rule_checks.len(), 1);
@@ -3873,7 +4424,15 @@ mod tests {
             Some("keep-local-model")
         );
 
-        let mut legacy_v7 = dataset.clone();
+        let mut legacy_v8 = dataset.clone();
+        legacy_v8.schema_version = 8;
+        assert_eq!(legacy_v8.tables.pop().unwrap().name, "holding_valuations");
+        legacy_v8.validate().unwrap();
+        let v8_target = Database::open(&directory.path().join("v8-target.db")).unwrap();
+        v8_target.import_sync_data(&legacy_v8).unwrap();
+        assert_eq!(v8_target.memories().unwrap().len(), 1);
+
+        let mut legacy_v7 = legacy_v8;
         legacy_v7.schema_version = 7;
         assert_eq!(legacy_v7.tables.pop().unwrap().name, "memory_preferences");
         legacy_v7.validate().unwrap();

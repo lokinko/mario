@@ -39,7 +39,9 @@ use cloud_sync::{
 use db::Database;
 pub use error::{AppError, AppResult};
 use evidence::{EvidenceRetriever, LexicalEvidenceRetriever};
-use market_data::{EcbFxRateProvider, FxRateProvider};
+use market_data::{
+    EcbFxRateProvider, FxRateProvider, SecurityPriceProvider, TwelveDataSecurityPriceProvider,
+};
 use memory::{HybridMemoryRetriever, MemoryRetriever};
 use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
@@ -50,8 +52,9 @@ use models::{
     PortfolioEventImportPreview, PortfolioEventImportRequest, PortfolioEventImportResult,
     PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, ReminderSettings,
     ReminderSettingsInput, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
-    ReviewReminderAcknowledgeInput, ReviewReminderSummary, RuleEffectivenessSummary, Snapshot,
-    StoredAnalysis, SystemReviewInput, SystemReviewRecord,
+    ReviewReminderAcknowledgeInput, ReviewReminderSummary, RuleEffectivenessSummary,
+    SecurityPriceConfig, SecurityPriceConfigInput, SecurityPriceQuery, SecurityPriceQuote,
+    Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord, VerifiedHoldingValuationInput,
 };
 use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -60,6 +63,7 @@ struct AppState {
     db: Database,
     auth_token: Option<String>,
     fx_provider: Arc<dyn FxRateProvider>,
+    security_price_provider: Arc<dyn SecurityPriceProvider>,
 }
 
 struct ServerOptions {
@@ -124,6 +128,7 @@ where
         db: Database::open(&data_dir.join("mario.db"))?,
         auth_token: auth_token.clone(),
         fx_provider: Arc::new(EcbFxRateProvider::new()?),
+        security_price_provider: Arc::new(TwelveDataSecurityPriceProvider::new()?),
     });
     let cors = CorsLayer::new()
         .allow_origin([
@@ -139,11 +144,24 @@ where
         .route("/api/health", get(health))
         .route("/api/snapshot", get(snapshot))
         .route("/api/market-data/fx-rate", get(fx_rate_quote))
+        .route("/api/market-data/security-price", get(security_price_quote))
+        .route(
+            "/api/market-data/security/config",
+            get(security_price_config).put(save_security_price_config),
+        )
+        .route(
+            "/api/market-data/security/key",
+            axum::routing::delete(delete_security_price_key),
+        )
         .route("/api/profile", put(save_profile))
         .route("/api/holdings", post(add_holding))
         .route(
             "/api/holdings/{id}",
             put(update_holding).delete(delete_holding),
+        )
+        .route(
+            "/api/holdings/{id}/verified-valuation",
+            put(apply_verified_holding_valuation),
         )
         .route(
             "/api/portfolio-checkins",
@@ -286,6 +304,55 @@ async fn fx_rate_quote(
     Query(query): Query<FxRateQuery>,
 ) -> AppResult<Json<FxRateQuote>> {
     Ok(Json(state.fx_provider.quote(&query).await?))
+}
+
+async fn security_price_quote(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<SecurityPriceQuery>,
+) -> AppResult<Json<SecurityPriceQuote>> {
+    let key = secrets::get_security_price_api_key()?;
+    Ok(Json(
+        state.security_price_provider.quote(&query, &key).await?,
+    ))
+}
+
+async fn security_price_config() -> AppResult<Json<SecurityPriceConfig>> {
+    Ok(Json(SecurityPriceConfig {
+        provider: "twelve-data".into(),
+        has_api_key: secrets::has_security_price_api_key(),
+    }))
+}
+
+async fn save_security_price_config(
+    Json(input): Json<SecurityPriceConfigInput>,
+) -> AppResult<Json<SecurityPriceConfig>> {
+    if let Some(key) = input.api_key.as_deref() {
+        secrets::set_security_price_api_key(key)?;
+    }
+    security_price_config().await
+}
+
+async fn delete_security_price_key() -> AppResult<Json<SecurityPriceConfig>> {
+    secrets::delete_security_price_api_key()?;
+    security_price_config().await
+}
+
+async fn apply_verified_holding_valuation(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(input): Json<VerifiedHoldingValuationInput>,
+) -> AppResult<Json<Snapshot>> {
+    let query = SecurityPriceQuery {
+        symbol: input.symbol,
+        on_date: input.on_date,
+    };
+    let key = secrets::get_security_price_api_key()?;
+    let quote = state.security_price_provider.quote(&query, &key).await?;
+    Ok(Json(state.db.apply_verified_holding_valuation(
+        &id,
+        input.quantity,
+        &quote,
+    )?))
 }
 async fn save_profile(
     State(state): State<Arc<AppState>>,

@@ -3,6 +3,7 @@ use crate::error::{AppError, AppResult};
 const SERVICE: &str = "com.lokinko.mario";
 const LEGACY_SERVICE: &str = "com.compassinvest.desktop";
 const MODEL_API_KEY: &str = "llm-api-key";
+const SECURITY_PRICE_API_KEY: &str = "security-price-api-key";
 const CLOUD_ACCESS_TOKEN: &str = "cloud-access-token";
 const CLOUD_REFRESH_TOKEN: &str = "cloud-refresh-token";
 
@@ -76,6 +77,28 @@ pub fn set_api_key(value: &str) -> AppResult<()> {
 
 pub fn delete_api_key() -> AppResult<()> {
     delete(MODEL_API_KEY)
+}
+
+pub fn has_security_price_api_key() -> bool {
+    get_security_price_api_key()
+        .map(|key| !key.trim().is_empty())
+        .unwrap_or(false)
+}
+
+pub fn get_security_price_api_key() -> AppResult<String> {
+    read(SECURITY_PRICE_API_KEY)?
+        .ok_or_else(|| AppError::Validation("请先在客户端配置 Twelve Data API Key".into()))
+}
+
+pub fn set_security_price_api_key(value: &str) -> AppResult<()> {
+    if value.trim().is_empty() {
+        return Err(AppError::Validation("行情 API Key 不能为空".into()));
+    }
+    write(SECURITY_PRICE_API_KEY, value)
+}
+
+pub fn delete_security_price_api_key() -> AppResult<()> {
+    delete(SECURITY_PRICE_API_KEY)
 }
 
 pub fn cloud_tokens() -> AppResult<Option<(String, String)>> {

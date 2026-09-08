@@ -14,6 +14,8 @@ import type {
   FxRateQuote,
   Goal,
   Holding,
+  SecurityPriceConfig,
+  SecurityPriceQuote,
   InvestmentRule,
   InvestmentRuleInput,
   InvestmentRuleRevision,
@@ -101,6 +103,38 @@ export async function getSnapshot(): Promise<Snapshot> {
 export async function getFxRate(fromCurrency: string, toCurrency: string, onDate: string): Promise<FxRateQuote> {
   const query = new URLSearchParams({ fromCurrency, toCurrency, onDate });
   return httpRequest<FxRateQuote>(`/market-data/fx-rate?${query.toString()}`);
+}
+
+export async function getSecurityPrice(symbol: string, onDate: string): Promise<SecurityPriceQuote> {
+  const query = new URLSearchParams({ symbol, onDate });
+  return httpRequest<SecurityPriceQuote>(`/market-data/security-price?${query.toString()}`);
+}
+
+export async function getSecurityPriceConfig(): Promise<SecurityPriceConfig> {
+  return httpRequest<SecurityPriceConfig>("/market-data/security/config");
+}
+
+export async function saveSecurityPriceConfig(apiKey?: string): Promise<SecurityPriceConfig> {
+  return httpRequest<SecurityPriceConfig>("/market-data/security/config", {
+    method: "PUT",
+    body: JSON.stringify({ apiKey }),
+  });
+}
+
+export async function deleteSecurityPriceKey(): Promise<SecurityPriceConfig> {
+  return httpRequest<SecurityPriceConfig>("/market-data/security/key", { method: "DELETE" });
+}
+
+export async function applyVerifiedHoldingValuation(
+  id: string,
+  symbol: string,
+  quantity: number,
+  onDate: string,
+): Promise<Snapshot> {
+  return httpRequest<Snapshot>(`/holdings/${encodeURIComponent(id)}/verified-valuation`, {
+    method: "PUT",
+    body: JSON.stringify({ symbol, quantity, onDate }),
+  });
 }
 
 export async function saveProfile(profile: FinancialProfile): Promise<Snapshot> {
