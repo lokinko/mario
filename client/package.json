@@ -4,6 +4,8 @@
   "version": "0.4.3",
   "type": "module",
   "scripts": {
+    "format": "prettier --write src",
+    "format:check": "prettier --check src",
     "test": "vitest run",
     "dev": "vite",
     "build": "tsc && vite build",
@@ -26,6 +28,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^26.1.0",
+    "prettier": "^3.9.6",
     "typescript": "~5.7.2",
     "vite": "^6.0.5",
     "vitest": "^4.1.11"

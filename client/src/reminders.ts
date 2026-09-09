@@ -16,16 +16,21 @@ export function isNativeApp(): boolean {
 
 function notificationBody(summary: ReviewReminderSummary): string {
   const parts: string[] = [];
-  if (summary.dueDecisionCount > 0) parts.push(`${summary.dueDecisionCount} 条投资决策待复盘`);
+  if (summary.dueDecisionCount > 0)
+    parts.push(`${summary.dueDecisionCount} 条投资决策待复盘`);
   if (summary.periodicReviewDue) parts.push("周期复盘已到期");
   return `${parts.join("，")}。打开 mario，按原始判断校准方法。`;
 }
 
 export async function checkAndSendReviewReminder(): Promise<ReviewReminderSummary> {
   const summary = await getReviewReminders();
-  if (!isNativeApp() || !summary.shouldNotify || !(await isPermissionGranted())) return summary;
+  if (!isNativeApp() || !summary.shouldNotify || !(await isPermissionGranted()))
+    return summary;
 
-  sendNotification({ title: "mario · 复盘提醒", body: notificationBody(summary) });
+  sendNotification({
+    title: "mario · 复盘提醒",
+    body: notificationBody(summary),
+  });
   return acknowledgeReviewReminder(summary.fingerprint);
 }
 
@@ -33,7 +38,8 @@ export async function enableReviewReminders(): Promise<ReminderSettings> {
   if (!isNativeApp()) throw new Error("系统通知只在 mario 原生应用中可用");
   let granted = await isPermissionGranted();
   if (!granted) granted = (await requestPermission()) === "granted";
-  if (!granted) throw new Error("系统没有授予通知权限；你仍可在复盘中心查看到期事项");
+  if (!granted)
+    throw new Error("系统没有授予通知权限；你仍可在复盘中心查看到期事项");
   return saveReminderSettings(true);
 }
 

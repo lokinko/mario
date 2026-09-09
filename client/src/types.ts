@@ -104,7 +104,15 @@ export interface PortfolioCheckInInput {
   useLedgerCashFlows: boolean;
 }
 
-export type PortfolioEventType = "deposit" | "withdrawal" | "dividend" | "interest" | "fee" | "tax" | "buy" | "sell";
+export type PortfolioEventType =
+  | "deposit"
+  | "withdrawal"
+  | "dividend"
+  | "interest"
+  | "fee"
+  | "tax"
+  | "buy"
+  | "sell";
 
 export interface PortfolioEventInput {
   eventType: PortfolioEventType;
@@ -665,7 +673,8 @@ export interface ResearchEvidenceInput {
   publisher: string;
   sourceUrl: string;
   sourceTier: "一手来源" | "二手研究" | "媒体报道";
-  evidenceType: "公司披露" | "监管文件" | "数据发布" | "研究报告" | "新闻" | "其他";
+  evidenceType:
+    "公司披露" | "监管文件" | "数据发布" | "研究报告" | "新闻" | "其他";
   stance: "支持" | "反驳" | "背景";
   asOfDate: string;
   claim: string;

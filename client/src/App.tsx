@@ -1,129 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Bell, BellOff, BookMarked, Bot, BrainCircuit, Check, ChevronRight, CircleDollarSign, Cloud, Database, Download, Edit3, Eye, FilePenLine, History, KeyRound, LayoutDashboard, LoaderCircle, LockKeyhole, Menu, Plus, Save, Send, Settings2, ShieldCheck, Sparkles, Target, Trash2, Undo2, Upload, WalletCards, X } from "lucide-react";
-import { applyVerifiedHoldingValuation, deleteModelKey, deleteSecurityPriceKey, deleteHolding, deleteGoal, getDecisions, getFxRate, getSecurityPrice, getSecurityPriceConfig, getAnalysis, getAnalysisHistory, getInvestmentRules, getInvestmentRuleHistory, getModelConfig, getMemories, getPortfolioCheckins, getPortfolioEvents, getResearchEvidence, getReviewReminders, getRuleEffectiveness, getSnapshot, getSystemReviews, previewAnalysis, previewPortfolioEventImport, runAnalysis, reversePortfolioEvent, saveGoal, saveHolding, saveInvestmentRule, saveMemoryPreference, saveModelConfig, savePortfolioCheckin, savePortfolioEvent, commitPortfolioEventImport, saveProfile, saveResearchEvidence, saveSecurityPriceConfig, saveSystemReview, setResearchEvidenceStatus, testModelConnection, updateHolding, updateInvestmentRule, updateGoal } from "./api";
-import type { AnalysisPreview, AnalysisClaim, AnalysisAction, AnalysisEvidenceReference, AnalysisRequest, AnalysisResult, AnalysisHistoryItem, AnalysisWorkflowTrace, ContextSelection, DecisionEntry, DecisionRecord, FinancialProfile, FxRateQuote, Goal, Holding, HoldingValuationEvidence, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryCandidate, ModelConfig, SecurityPriceConfig, PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventInput, PortfolioEventImportPreview, PortfolioEventRecord, PortfolioEventType, ResearchEvidence, ResearchEvidenceInput, Snapshot, StructuredAnalysis, StoredAnalysis, SystemReviewInput, SystemReviewRecord, ReviewReminderSummary, RuleEffectivenessSummary } from "./types";
+import { useEffect, useRef, useState } from "react";
 import {
-  checkAndSendReviewReminder,
-  disableReviewReminders,
-  enableReviewReminders,
-  isNativeApp,
-} from "./reminders";
-
-type View = "dashboard" | "foundation" | "ledger" | "evidence" | "decision" | "review" | "memory" | "advisor" | "cloud" | "settings";
-const views: View[] = ["dashboard", "foundation", "ledger", "evidence", "decision", "review", "memory", "advisor", "cloud", "settings"];
-
-function initialView(): View {
-  const candidate = window.location.hash.replace("#", "") as View;
-  return views.includes(candidate) ? candidate : "dashboard";
-}
-
-function formatMoney(value: number, currency = "CNY") {
-  try {
-    return new Intl.NumberFormat("zh-CN", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: 0,
-    }).format(value);
-  } catch {
-    return `${currency} ${value.toFixed(0)}`;
-  }
-}
-
-function holdingValueInBase(holding: Holding, baseCurrency: string) {
-  if (holding.currency === baseCurrency) return holding.marketValue;
-  return holding.fxRateToBase ? holding.marketValue * holding.fxRateToBase : 0;
-}
-
-
-const nav = [
-  { id: "dashboard" as const, label: "决策总览", icon: LayoutDashboard },
-  { id: "foundation" as const, label: "财务底座", icon: WalletCards },
-  { id: "ledger" as const, label: "组合流水", icon: CircleDollarSign },
-  { id: "evidence" as const, label: "研究证据", icon: Database },
-  { id: "decision" as const, label: "决策日志", icon: FilePenLine },
-  { id: "review" as const, label: "复盘与规则", icon: History },
-  { id: "memory" as const, label: "长期记忆", icon: BookMarked },
-  { id: "advisor" as const, label: "AI 研究室", icon: BrainCircuit },
-];
-
-const emptyProfile: FinancialProfile = {
-  monthlyIncome: 0,
-  monthlyExpense: 0,
-  emergencyFund: 0,
-  liabilities: 0,
-  investableAssets: 0,
-  horizonYears: 5,
-  maxDrawdownPct: 15,
-  riskLevel: "稳健",
-  baseCurrency: "CNY",
-};
-
-function emptyHolding(baseCurrency = "CNY"): Omit<Holding, "id"> {
-  return {
-    symbol: "", name: "", assetClass: "基金", marketValue: 0, costBasis: 0, targetPct: 0,
-    currency: baseCurrency, fxRateToBase: null, valuationDate: localDateValue(new Date()),
-    fxRateSource: "", fxRateObservedOn: "",
-  };
-}
-
-function emptyPortfolioEvent(baseCurrency = "CNY"): PortfolioEventInput {
-  return {
-    eventType: "deposit",
-    source: "manual",
-    externalId: "",
-    assetName: "",
-    amount: 0,
-    currency: baseCurrency,
-    fxRateToBase: null,
-    fxRateSource: "",
-    fxRateObservedOn: "",
-    occurredOn: localDateValue(new Date()),
-    note: "",
-  };
-}
-
-const portfolioEventLabels: Record<PortfolioEventType, string> = {
-  deposit: "入金",
-  withdrawal: "出金",
-  dividend: "分红",
-  interest: "利息",
-  fee: "费用",
-  tax: "税费",
-  buy: "买入",
-  sell: "卖出",
-};
-
-const ecbFxMethodologyUrl = "https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates";
-
-function fxSourceLabel(source: string) {
-  if (source === "ecb_reference") return "ECB 参考汇率";
-  if (source === "user_declared") return "用户声明汇率";
-  return source || "待确认来源";
-}
-
-function normalizedQuoteRate(rate: number) {
-  return Number(rate.toPrecision(12));
-}
-
-function downloadPortfolioEventCsvTemplate(baseCurrency: string) {
-  const portfolioEventCsvTemplate = `\ufeffsource,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,fx_rate_source,fx_rate_observed_on,asset_name,note\n券商账户,trade-001,buy,${localDateValue(new Date())},10000,${baseCurrency},,,,全球指数基金,定投买入\n`;
-  const url = URL.createObjectURL(new Blob([portfolioEventCsvTemplate], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "mario_组合流水模板.csv";
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function nextCalendarDate(value: string) {
-  const date = new Date(`${value}T12:00:00`);
-  date.setDate(date.getDate() + 1);
-  return localDateValue(date);
-}
-
-const emptyGoal: Omit<Goal, "id"> = {
-  name: "", targetAmount: 0, currentAmount: 0, monthlyContribution: 0, targetDate: "", priority: "重要",
-};
+  AlertTriangle,
+  Check,
+  Cloud,
+  LoaderCircle,
+  LockKeyhole,
+  Menu,
+  Settings2,
+  X,
+} from "lucide-react";
+import { getModelConfig, getSnapshot } from "./api";
+import type { DecisionEntry, ModelConfig, Snapshot } from "./types";
+import { checkAndSendReviewReminder } from "./reminders";
+import { CloudSync } from "./features/account/CloudSync";
+import { DecisionJournal } from "./features/decisions/DecisionJournal";
+import { View, initialView, nav, supportingNav } from "./app/navigation";
+import { Dashboard } from "./features/dashboard/Dashboard";
+import { Foundation } from "./features/portfolio/Foundation";
+import { PortfolioLedger } from "./features/portfolio/PortfolioLedger";
+import { EvidenceWorkbench } from "./features/research/EvidenceWorkbench";
+import { ReviewCenter } from "./features/reviews/ReviewCenter";
+import { MemoryCenter } from "./features/memory/MemoryCenter";
+import { Advisor } from "./features/research/Advisor";
+import { ModelSettings } from "./features/settings/ModelSettings";
 
 function App() {
   const [view, setView] = useState<View>(initialView);
@@ -132,7 +31,9 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [startupError, setStartupError] = useState("");
   const [notice, setNotice] = useState("");
-  const [decisionDraft, setDecisionDraft] = useState<DecisionEntry | null>(null);
+  const [decisionDraft, setDecisionDraft] = useState<DecisionEntry | null>(
+    null,
+  );
   const [analysisToOpen, setAnalysisToOpen] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [modelError, setModelError] = useState("");
@@ -143,15 +44,33 @@ function App() {
     setStartupError("");
     const request = ++startupRequest.current;
     getSnapshot()
-      .then((nextSnapshot) => { if (request === startupRequest.current) setSnapshot(nextSnapshot); })
-      .catch((error) => { if (request === startupRequest.current) setStartupError(String(error)); })
-      .finally(() => { if (request === startupRequest.current) setLoading(false); });
+      .then((nextSnapshot) => {
+        if (request === startupRequest.current) setSnapshot(nextSnapshot);
+      })
+      .catch((error) => {
+        if (request === startupRequest.current) setStartupError(String(error));
+      })
+      .finally(() => {
+        if (request === startupRequest.current) setLoading(false);
+      });
     getModelConfig()
-      .then((nextModel) => { if (request === startupRequest.current) { setModel(nextModel); setModelError(""); } })
-      .catch((error) => { if (request === startupRequest.current) setModelError(String(error)); });
+      .then((nextModel) => {
+        if (request === startupRequest.current) {
+          setModel(nextModel);
+          setModelError("");
+        }
+      })
+      .catch((error) => {
+        if (request === startupRequest.current) setModelError(String(error));
+      });
   };
 
-  useEffect(() => { loadApplication(); return () => { startupRequest.current += 1; }; }, []);
+  useEffect(() => {
+    loadApplication();
+    return () => {
+      startupRequest.current += 1;
+    };
+  }, []);
 
   const refreshInvestmentData = async () => {
     setSnapshot(await getSnapshot());
@@ -160,7 +79,8 @@ function App() {
   };
 
   useEffect(() => {
-    if (!loading && !startupError) void checkAndSendReviewReminder().catch(() => undefined);
+    if (!loading && !startupError)
+      void checkAndSendReviewReminder().catch(() => undefined);
   }, [loading, startupError]);
 
   const flash = (message: string) => {
@@ -190,7 +110,9 @@ function App() {
         <AlertTriangle size={28} />
         <strong>本地服务尚未就绪</strong>
         <span>客户端没有连接到本次启动的本地服务。你的数据没有丢失。</span>
-        <button className="primary" onClick={loadApplication}>重新连接</button>
+        <button className="primary" onClick={loadApplication}>
+          重新连接
+        </button>
         <small>{startupError}</small>
       </div>
     );
@@ -200,8 +122,13 @@ function App() {
     <div className="app-shell">
       <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark"><img src="/mario-mark.svg" alt="" /></div>
-          <div><strong>mario</strong><span>本地投资决策助手</span></div>
+          <div className="brand-mark">
+            <img src="/mario-mark.svg" alt="" />
+          </div>
+          <div>
+            <strong>mario</strong>
+            <span>本地投资决策助手</span>
+          </div>
           <button
             className="mobile-menu"
             type="button"
@@ -214,1452 +141,133 @@ function App() {
         </div>
 
         <nav>
-          <p className="nav-caption">投资系统</p>
+          <p className="nav-caption">我的投资方法</p>
           {nav.map((item) => (
-            <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}>
-              <item.icon size={18} />{item.label}
+            <button
+              key={item.id}
+              aria-current={view === item.id ? "page" : undefined}
+              className={view === item.id ? "active" : ""}
+              onClick={() => navigate(item.id)}
+            >
+              <item.icon size={18} />
+              {item.label}
             </button>
           ))}
+          <details
+            className="supporting-nav"
+            open={supportingNav.some((item) => item.id === view)}
+          >
+            <summary>资料与工具</summary>
+            {supportingNav.map((item) => (
+              <button
+                key={item.id}
+                aria-current={view === item.id ? "page" : undefined}
+                className={view === item.id ? "active" : ""}
+                onClick={() => navigate(item.id)}
+              >
+                <item.icon size={18} />
+                {item.label}
+              </button>
+            ))}
+          </details>
         </nav>
 
         <div className="sidebar-spacer" />
         <div className="privacy-card">
           <LockKeyhole size={18} />
-          <div><strong>本地优先</strong><span>财务档案存储在此设备</span></div>
+          <div>
+            <strong>本地优先</strong>
+            <span>财务档案存储在此设备</span>
+          </div>
         </div>
-        <button className={`settings-link ${view === "cloud" ? "active" : ""}`} onClick={() => navigate("cloud")}>
+        <button
+          className={`settings-link ${view === "cloud" ? "active" : ""}`}
+          onClick={() => navigate("cloud")}
+        >
           <Cloud size={18} /> 账户与同步
         </button>
-        <button className={`settings-link ${view === "settings" ? "active" : ""}`} onClick={() => navigate("settings")}>
+        <button
+          className={`settings-link ${view === "settings" ? "active" : ""}`}
+          onClick={() => navigate("settings")}
+        >
           <Settings2 size={18} /> 模型与隐私
         </button>
       </aside>
 
       <main>
-        {notice && <div className="toast"><Check size={16} />{notice}</div>}
-        {modelError && <div className="error-box" role="alert">模型配置暂时不可用，本地决策与复盘不受影响。<button onClick={loadApplication}>重试</button></div>}
-        {view === "dashboard" && <Dashboard snapshot={snapshot} navigate={navigate} flash={flash} />}
-        {view === "foundation" && <Foundation snapshot={snapshot} onUpdate={setSnapshot} flash={flash} />}
-        {view === "ledger" && <PortfolioLedger snapshot={snapshot} flash={flash} />}
-        {view === "evidence" && <EvidenceWorkbench navigate={navigate} flash={flash} />}
-        {view === "decision" && <DecisionJournal flash={flash} seed={decisionDraft} clearSeed={() => setDecisionDraft(null)} onOpenAnalysis={(id) => { setAnalysisToOpen(id); navigate("advisor"); }} />}
-        {view === "review" && <ReviewCenter navigate={navigate} flash={flash} />}
+        {notice && (
+          <div className="toast">
+            <Check size={16} />
+            {notice}
+          </div>
+        )}
+        {modelError && (
+          <div className="error-box" role="alert">
+            模型配置暂时不可用，本地决策与复盘不受影响。
+            <button onClick={loadApplication}>重试</button>
+          </div>
+        )}
+        {view === "dashboard" && (
+          <Dashboard snapshot={snapshot} navigate={navigate} flash={flash} />
+        )}
+        {view === "foundation" && (
+          <Foundation
+            snapshot={snapshot}
+            onUpdate={setSnapshot}
+            flash={flash}
+          />
+        )}
+        {view === "ledger" && (
+          <PortfolioLedger snapshot={snapshot} flash={flash} />
+        )}
+        {view === "evidence" && (
+          <EvidenceWorkbench navigate={navigate} flash={flash} />
+        )}
+        {view === "decision" && (
+          <DecisionJournal
+            flash={flash}
+            seed={decisionDraft}
+            clearSeed={() => setDecisionDraft(null)}
+            onOpenAnalysis={(id) => {
+              setAnalysisToOpen(id);
+              navigate("advisor");
+            }}
+          />
+        )}
+        {view === "review" && (
+          <ReviewCenter navigate={navigate} flash={flash} />
+        )}
         {view === "memory" && <MemoryCenter flash={flash} />}
-        {view === "advisor" && model && <Advisor model={model} navigate={navigate} requestedAnalysisId={analysisToOpen} clearRequestedAnalysis={() => setAnalysisToOpen(null)} onCreateDecisionDraft={(draft) => { setDecisionDraft(draft); navigate("decision"); }} />}
-        {view === "cloud" && <CloudSync flash={flash} onRestore={refreshInvestmentData} />}
-        {view === "settings" && model && <ModelSettings model={model} onUpdate={setModel} flash={flash} />}
-        {(view === "advisor" || view === "settings") && !model && <div className="center-screen"><p>{modelError ? "请先重试读取模型配置。其他本地功能仍可使用。" : "正在读取模型配置…"}</p></div>}
+        {view === "advisor" && model && (
+          <Advisor
+            model={model}
+            navigate={navigate}
+            requestedAnalysisId={analysisToOpen}
+            clearRequestedAnalysis={() => setAnalysisToOpen(null)}
+            onCreateDecisionDraft={(draft) => {
+              setDecisionDraft(draft);
+              navigate("decision");
+            }}
+          />
+        )}
+        {view === "cloud" && (
+          <CloudSync flash={flash} onRestore={refreshInvestmentData} />
+        )}
+        {view === "settings" && model && (
+          <ModelSettings model={model} onUpdate={setModel} flash={flash} />
+        )}
+        {(view === "advisor" || view === "settings") && !model && (
+          <div className="center-screen">
+            <p>
+              {modelError
+                ? "请先重试读取模型配置。其他本地功能仍可使用。"
+                : "正在读取模型配置…"}
+            </p>
+          </div>
+        )}
       </main>
     </div>
   );
 }
 
-
-function Dashboard({ snapshot, navigate, flash }: { snapshot: Snapshot; navigate: (view: View) => void; flash: (message: string) => void }) {
-  const [checkins, setCheckins] = useState<PortfolioCheckInRecord[]>([]);
-  const [checkin, setCheckin] = useState<PortfolioCheckInInput>({
-    periodLabel: new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" }).format(new Date()),
-    externalCashFlow: 0,
-    note: "",
-    resetBaseline: false,
-    useLedgerCashFlows: true,
-  });
-  const [checkinSaving, setCheckinSaving] = useState(false);
-  const [checkinError, setCheckinError] = useState("");
-  const allocation = useMemo(() => {
-    if (!snapshot.valuationStatus.comparable) return [];
-    const totals = new Map<string, number>();
-    snapshot.holdings.forEach((h) => totals.set(h.assetClass, (totals.get(h.assetClass) ?? 0) + holdingValueInBase(h, snapshot.profile.baseCurrency)));
-    return [...totals.entries()].map(([name, value]) => ({ name, value, pct: snapshot.totalValue ? value / snapshot.totalValue * 100 : 0 }));
-  }, [snapshot]);
-
-  const latestCheckin = checkins[0];
-  const baselineMode = !latestCheckin || !latestCheckin.valuationDate || latestCheckin.baseCurrency !== snapshot.profile.baseCurrency || checkin.resetBaseline;
-
-  useEffect(() => {
-    getPortfolioCheckins()
-      .then((records) => { setCheckins(records); setCheckinError(""); })
-      .catch((error) => setCheckinError(String(error)));
-  }, []);
-
-  const persistCheckin = async () => {
-    if (!checkin.periodLabel) return;
-    setCheckinSaving(true); setCheckinError("");
-    try {
-      await savePortfolioCheckin(baselineMode ? { ...checkin, externalCashFlow: 0, resetBaseline: Boolean(latestCheckin) } : checkin);
-      setCheckins(await getPortfolioCheckins());
-      setCheckin({ ...checkin, externalCashFlow: 0, note: "", resetBaseline: false });
-      flash(latestCheckin && !checkin.resetBaseline ? "组合变化已归因并冻结" : "组合变化基线已建立");
-    } catch (error) { setCheckinError(String(error)); } finally { setCheckinSaving(false); }
-  };
-
-  return (
-    <div className="page">
-      <PageHeader
-        eyebrow="今天不需要预测市场"
-        title="先看目标，再看风险"
-        description="这里衡量的是决策质量，而不是鼓励更多交易。"
-        action={<button className="primary" onClick={() => navigate(snapshot.goals.length ? "review" : "foundation")}><ArrowRight size={17} />{snapshot.goals.length ? "检查待复盘判断" : "设定第一个目标"}</button>}
-      />
-
-      <section className="metric-grid">
-        <article className="metric hero-metric">
-          <span>可投资资产 · {snapshot.profile.baseCurrency}</span><strong>{snapshot.valuationStatus.comparable ? formatMoney(snapshot.totalValue, snapshot.profile.baseCurrency) : "等待汇率"}</strong>
-          <small>{snapshot.valuationStatus.comparable ? `最近更新 · ${new Date(snapshot.updatedAt).toLocaleDateString("zh-CN")}` : `${snapshot.valuationStatus.missingFxHoldings.length} 项外币持仓未折算`}</small>
-        </article>
-        <article className="metric"><span>应急覆盖</span><strong>{snapshot.emergencyMonths.toFixed(1)} <em>个月</em></strong><small className={snapshot.emergencyMonths >= 6 ? "positive" : "warning"}>{snapshot.emergencyMonths >= 6 ? "处于建议区间" : "建议优先补足"}</small></article>
-        <article className="metric"><span>最大资产占比</span><strong>{snapshot.valuationStatus.comparable ? `${snapshot.concentrationPct.toFixed(1)}%` : "—"}</strong><small>{snapshot.valuationStatus.comparable ? "需要结合资产性质判断" : "补齐汇率后再计算"}</small></article>
-        <article className="metric"><span>资料状态</span><strong>{snapshot.goals.length ? "已设目标" : "待设目标"}</strong><small>{snapshot.valuationStatus.comparable ? "估值口径可比较，不代表投资能力评分" : "估值资料待补充，不计算综合能力分"}</small></article>
-      </section>
-
-      {snapshot.valuationStatus.warnings.length > 0 && <section className="valuation-warning"><AlertTriangle size={17} /><div><strong>当前估值口径需要补齐</strong><p>{snapshot.valuationStatus.warnings.join("；")}。基准币种为 {snapshot.profile.baseCurrency}{snapshot.valuationStatus.alignedValuationDate ? `，统一估值日 ${snapshot.valuationStatus.alignedValuationDate}` : ""}。</p></div><button className="text-button" onClick={() => navigate("foundation")}>完善持仓</button></section>}
-
-      <section className="panel portfolio-attribution">
-        <div className="panel-title"><div><span>组合变化归因</span><h2>增长来自投入，还是组合本身的变化？</h2></div><small className="causality-note">残差不是收益率，也不是业绩证明</small></div>
-        {!latestCheckin && <div className="attribution-baseline"><History size={18} /><div><strong>先建立一条组合基线</strong><p>冻结当前持仓和资产结构。下一次记录时再填写两次快照之间的净入金或出金。</p></div></div>}
-        {latestCheckin && baselineMode && <div className="attribution-baseline"><History size={18} /><div><strong>本次将重新建立比较基线</strong><p>{latestCheckin.baseCurrency !== snapshot.profile.baseCurrency ? `基准币种已从 ${latestCheckin.baseCurrency} 改为 ${snapshot.profile.baseCurrency}，两个口径不能直接比较。` : "适用于估值口径发生实质变化的情况；新记录不会计算与上一条的差额。"}</p></div></div>}
-        {latestCheckin?.totalChange != null && <div className="attribution-metrics">
-          <article><span>组合总值变化</span><strong className={latestCheckin.totalChange >= 0 ? "gain" : "loss"}>{latestCheckin.totalChange >= 0 ? "+" : ""}{formatMoney(latestCheckin.totalChange, latestCheckin.baseCurrency)}</strong><small>{formatMoney(latestCheckin.previousTotalValue ?? 0, latestCheckin.baseCurrency)} → {formatMoney(latestCheckin.totalValue, latestCheckin.baseCurrency)}</small></article>
-          <article><span>期间净外部现金流</span><strong>{latestCheckin.externalCashFlow >= 0 ? "+" : ""}{formatMoney(latestCheckin.externalCashFlow, latestCheckin.baseCurrency)}</strong><small>{latestCheckin.cashFlowSource === "ledger" ? `${latestCheckin.eventIds.length} 笔流水自动汇总` : "旧记录为手工净额"}</small></article>
-          <article><span>估值与数据变动残差</span><strong className={(latestCheckin.valuationResidual ?? 0) >= 0 ? "gain" : "loss"}>{(latestCheckin.valuationResidual ?? 0) >= 0 ? "+" : ""}{formatMoney(latestCheckin.valuationResidual ?? 0, latestCheckin.baseCurrency)}</strong><small>总值变化减净现金流</small></article>
-          <article><span>现金流调整后期间回报</span><strong>{latestCheckin.modifiedDietzReturnPct == null ? "—" : `${latestCheckin.modifiedDietzReturnPct >= 0 ? "+" : ""}${latestCheckin.modifiedDietzReturnPct.toFixed(2)}%`}</strong><small>Modified Dietz 近似，不是 TWR</small></article>
-        </div>}
-        {latestCheckin?.allocationChanges.length > 0 && <div className="allocation-change-list">{latestCheckin.allocationChanges.slice(0, 5).map((item) => <div key={item.assetClass}><strong>{item.assetClass}</strong><span>{formatMoney(item.previousValue, latestCheckin.baseCurrency)} → {formatMoney(item.currentValue, latestCheckin.baseCurrency)}</span><em className={item.pctPointChange >= 0 ? "gain" : "loss"}>{item.pctPointChange >= 0 ? "+" : ""}{item.pctPointChange.toFixed(1)} pct</em></div>)}</div>}
-        <div className="attribution-entry">
-          <label><span>记录周期</span><input maxLength={100} value={checkin.periodLabel} onChange={(event) => setCheckin({ ...checkin, periodLabel: event.target.value })} placeholder="例如 2026 年 9 月" /></label>
-          <label><span>期间现金流</span><input disabled value={baselineMode ? "本次仅建立比较基线" : "按两个估值日之间的流水自动汇总"} /><small><button className="inline-link" onClick={() => navigate("ledger")}>前往组合流水</button></small></label>
-          <label className="attribution-note"><span>估值口径说明（可选）</span><input maxLength={2000} value={checkin.note} onChange={(event) => setCheckin({ ...checkin, note: event.target.value })} placeholder={latestCheckin ? "例如：所有持仓均按同一日收盘价更新" : "例如：首次冻结，持仓按同一日口径录入"} /></label>
-          <button className="secondary" disabled={checkinSaving || !snapshot.holdings.length || !snapshot.valuationStatus.comparable || !snapshot.valuationStatus.alignedValuationDate || !checkin.periodLabel || Boolean(!baselineMode && latestCheckin?.valuationDate && snapshot.valuationStatus.alignedValuationDate <= latestCheckin.valuationDate)} onClick={persistCheckin}>{checkinSaving ? "保存中…" : baselineMode ? "建立组合基线" : "冻结本期变化"}</button>
-        </div>
-        {latestCheckin && latestCheckin.baseCurrency === snapshot.profile.baseCurrency && <button className="text-button attribution-reset" onClick={() => setCheckin({ ...checkin, resetBaseline: !checkin.resetBaseline, externalCashFlow: 0 })}>{checkin.resetBaseline ? "继续原有比较链" : "估值口径变化？重新建立基线"}</button>}
-        {checkinError && <div className="error-box"><AlertTriangle size={16} />{checkinError}</div>}
-        {checkins.length > 0 && <details className="attribution-history"><summary>查看历史快照（{checkins.length}）</summary><div>{checkins.slice(0, 8).map((item) => <article key={item.id}><div><strong>{item.periodLabel}</strong><small>{item.valuationDate ?? "旧记录未保存估值日"} · 核验价 {item.holdingValuations.length}/{item.holdings.length} · {new Date(item.createdAt).toLocaleString("zh-CN")}</small></div><span>{formatMoney(item.totalValue, item.baseCurrency)}</span><em>{item.totalChange == null ? "组合基线" : `变化 ${item.totalChange >= 0 ? "+" : ""}${formatMoney(item.totalChange, item.baseCurrency)} · 净现金流 ${item.externalCashFlow >= 0 ? "+" : ""}${formatMoney(item.externalCashFlow, item.baseCurrency)} · 近似回报 ${item.modifiedDietzReturnPct == null ? "—" : `${item.modifiedDietzReturnPct.toFixed(2)}%`}`}</em></article>)}</div></details>}
-        <p className="effectiveness-disclaimer">若持仓缺失、币种未换算、估值日期不同或录入错误，残差也会变化。它只能帮助分离外部现金流，不能替代时间加权收益率或完整业绩归因。</p>
-      </section>
-
-      <section className="two-columns">
-        <article className="panel">
-          <div className="panel-title"><div><span>组合结构</span><h2>钱现在在哪里</h2></div><button className="text-button" onClick={() => navigate("foundation")}>管理资产 <ChevronRight size={15} /></button></div>
-          <div className="allocation">
-            <div className="donut" style={{ background: allocation.length ? allocationGradient(allocation) : "#dedfd9" }}><div><strong>{snapshot.valuationStatus.comparable ? allocation.length : "—"}</strong><span>{snapshot.valuationStatus.comparable ? "类资产" : "等待汇率"}</span></div></div>
-            <div className="legend">
-              {allocation.map((item, index) => <div key={item.name}><i className={`color-${index % 5}`} /><span>{item.name}</span><strong>{item.pct.toFixed(1)}%</strong></div>)}
-            </div>
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-title"><div><span>规则引擎</span><h2>优先处理的风险</h2></div><ShieldCheck size={22} className="muted-icon" /></div>
-          <div className="finding-list">
-            {snapshot.findings.length === 0 && <div className="empty">完成财务档案后，这里会出现确定性风险检查。</div>}
-            {snapshot.findings.slice(0, 3).map((finding, index) => (
-              <div className={`finding ${finding.level}`} key={`${finding.title}-${index}`}>
-                <AlertTriangle size={17} /><div><strong>{finding.title}</strong><p>{finding.detail}</p><small>{finding.action}</small></div>
-              </div>
-            ))}
-          </div>
-        </article>
-      </section>
-
-      <section className="planning-grid">
-        <article className="panel">
-          <div className="panel-title"><div><span>目标可行性</span><h2>计划能否覆盖目标</h2></div><Target size={22} className="muted-icon" /></div>
-          {snapshot.plan.goalProjections.length === 0
-            ? <div className="empty">{snapshot.valuationStatus.comparable ? "添加目标的已投入金额和月度投入后，这里会生成概率情景。" : "补齐外币折算汇率后，再生成目标概率情景。"}</div>
-            : <div className="projection-list">{snapshot.plan.goalProjections.map((goal) => (
-              <div key={goal.goalId}>
-                <div className="projection-head"><strong>{goal.name}</strong><span className={goal.status}>{goalStatus(goal.status)}</span></div>
-                <div className="projection-bar"><i style={{ width: `${Math.min(100, goal.estimatedSuccessPct)}%` }} /></div>
-                <div className="projection-stats"><span>模拟达成率 <b>{goal.estimatedSuccessPct.toFixed(0)}%</b></span><span>月度缺口 <b>{formatMoney(goal.monthlyGap, snapshot.profile.baseCurrency)}</b></span><span>剩余 <b>{goal.monthsRemaining} 个月</b></span></div>
-              </div>
-            ))}</div>}
-        </article>
-        <article className="panel">
-          <div className="panel-title"><div><span>风险预算与再平衡</span><h2>风险有没有超出边界</h2></div><ShieldCheck size={22} className="muted-icon" /></div>
-          <div className={`risk-budget ${snapshot.plan.riskStatus}`}><div><span>压力损失估计</span><strong>{snapshot.valuationStatus.comparable ? `${snapshot.plan.stressLossPct.toFixed(1)}%` : "—"}</strong></div><ArrowRight size={17} /><div><span>当前风险容量</span><strong>{snapshot.plan.riskCapacityPct.toFixed(1)}%</strong></div><em>{snapshot.valuationStatus.comparable ? riskStatus(snapshot.plan.riskStatus) : "等待汇率"}</em></div>
-          {snapshot.plan.rebalancing.length > 0
-            ? <div className="rebalance-list">{snapshot.plan.rebalancing.slice(0, 4).map((item) => <div key={item.holdingId}><span>{item.name}</span><small>{item.currentPct.toFixed(1)}% → {item.targetPct.toFixed(1)}%</small><strong>{item.direction} {formatMoney(item.amount, snapshot.profile.baseCurrency)}</strong></div>)}</div>
-            : <p className="planning-empty">持仓目标权重合计达到 100%，且偏差超过 3 个百分点时生成再平衡提示。</p>}
-          <p className="assumption-note">{snapshot.plan.assumptions}</p>
-        </article>
-      </section>
-
-      <section className="method-strip">
-        <div><p className="eyebrow">mario 决策闭环</p><h2>每一次判断，都留下可复盘的证据</h2></div>
-        {["财务底座", "目标配置", "独立研究", "仓位决策", "复盘校准"].map((step, index) => (
-          <div className="method-step" key={step}><span>0{index + 1}</span><strong>{step}</strong>{index < 4 && <ArrowRight size={15} />}</div>
-        ))}
-      </section>
-    </div>
-  );
-}
-
-function goalStatus(status: Snapshot["plan"]["goalProjections"][number]["status"]) {
-  return ({ "on-track": "路径较稳", watch: "需要关注", "off-track": "存在缺口", reached: "已经达成", expired: "目标到期" })[status];
-}
-
-function riskStatus(status: Snapshot["plan"]["riskStatus"]) {
-  return ({ within: "边界内", near: "接近上限", over: "超出边界", insufficient: "等待持仓" })[status];
-}
-
-function allocationGradient(allocation: { pct: number }[]) {
-  const colors = ["#cf5c3b", "#23443b", "#c99a45", "#80948f", "#774936"];
-  let cursor = 0;
-  const stops = allocation.map((item, index) => {
-    const start = cursor;
-    cursor += item.pct;
-    return `${colors[index % colors.length]} ${start}% ${cursor}%`;
-  });
-  return `conic-gradient(${stops.join(",")})`;
-}
-
-function PortfolioLedger({ snapshot, flash }: { snapshot: Snapshot; flash: (message: string) => void }) {
-  const [events, setEvents] = useState<PortfolioEventRecord[]>([]);
-  const [checkins, setCheckins] = useState<PortfolioCheckInRecord[]>([]);
-  const [draft, setDraft] = useState<PortfolioEventInput>(() => emptyPortfolioEvent(snapshot.profile.baseCurrency));
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [csvText, setCsvText] = useState("");
-  const [csvFileName, setCsvFileName] = useState("");
-  const [importPreview, setImportPreview] = useState<PortfolioEventImportPreview | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState("");
-  const [eventFxQuote, setEventFxQuote] = useState<FxRateQuote | null>(null);
-  const [eventFxLoading, setEventFxLoading] = useState(false);
-  const [eventFxError, setEventFxError] = useState("");
-  const [reversingEventId, setReversingEventId] = useState<string | null>(null);
-  const [reversalDate, setReversalDate] = useState(() => localDateValue(new Date()));
-  const [reversalNote, setReversalNote] = useState("");
-  const [reversalSaving, setReversalSaving] = useState(false);
-  const latestCheckin = checkins[0];
-  const requiresAsset = ["buy", "sell", "dividend", "interest"].includes(draft.eventType);
-
-  const load = async () => {
-    setLoading(true); setError("");
-    try {
-      const [nextEvents, nextCheckins] = await Promise.all([getPortfolioEvents(), getPortfolioCheckins()]);
-      setEvents(nextEvents); setCheckins(nextCheckins);
-    } catch (nextError) { setError(String(nextError)); }
-    finally { setLoading(false); }
-  };
-
-  useEffect(() => { void load(); }, []);
-
-  const summary = useMemo(() => events.reduce((value, item) => {
-    if (item.baseCurrency !== snapshot.profile.baseCurrency) return value;
-    if (item.eventType === "deposit") value.external += item.baseAmount;
-    if (item.eventType === "withdrawal") value.external -= item.baseAmount;
-    if (item.eventType === "dividend" || item.eventType === "interest") value.income += item.baseAmount;
-    if (item.eventType === "fee" || item.eventType === "tax") value.costs += item.baseAmount;
-    if (item.eventType === "buy" || item.eventType === "sell") value.turnover += item.baseAmount;
-    return value;
-  }, { external: 0, income: 0, costs: 0, turnover: 0 }), [events, snapshot.profile.baseCurrency]);
-
-  const persist = async () => {
-    setSaving(true); setError("");
-    try {
-      await savePortfolioEvent(draft);
-      setDraft(emptyPortfolioEvent(snapshot.profile.baseCurrency));
-      setEventFxQuote(null); setEventFxError("");
-      await load();
-      flash("组合流水已冻结；后续检查点会按日期自动汇总");
-    } catch (nextError) { setError(String(nextError)); }
-    finally { setSaving(false); }
-  };
-
-  const lookupEventFx = async () => {
-    setEventFxLoading(true); setEventFxError("");
-    try {
-      const quote = await getFxRate(draft.currency, snapshot.profile.baseCurrency, draft.occurredOn);
-      setDraft((value) => ({ ...value, fxRateToBase: normalizedQuoteRate(quote.rate), fxRateSource: quote.providerCode, fxRateObservedOn: quote.observedOn }));
-      setEventFxQuote(quote);
-    } catch (nextError) { setEventFxQuote(null); setEventFxError(String(nextError)); }
-    finally { setEventFxLoading(false); }
-  };
-
-  const selectCsvFile = async (file?: File) => {
-    setImportPreview(null);
-    setImportError("");
-    if (!file) { setCsvText(""); setCsvFileName(""); return; }
-    setCsvFileName(file.name);
-    try { setCsvText(await file.text()); }
-    catch (nextError) { setCsvText(""); setImportError(`无法读取文件：${String(nextError)}`); }
-  };
-
-  const previewCsv = async () => {
-    setImporting(true); setImportError("");
-    try { setImportPreview(await previewPortfolioEventImport(csvText)); }
-    catch (nextError) { setImportPreview(null); setImportError(String(nextError)); }
-    finally { setImporting(false); }
-  };
-
-  const commitCsv = async () => {
-    if (!importPreview) return;
-    setImporting(true); setImportError("");
-    try {
-      const result = await commitPortfolioEventImport(csvText, importPreview.previewRevision);
-      await load();
-      setCsvText(""); setCsvFileName(""); setImportPreview(null);
-      flash(`已写入 ${result.insertedCount} 笔流水，跳过 ${result.duplicateCount} 笔重复记录`);
-    } catch (nextError) { setImportError(String(nextError)); }
-    finally { setImporting(false); }
-  };
-
-  const beginReversal = (item: PortfolioEventRecord) => {
-    setReversingEventId(item.id);
-    setReversalDate(localDateValue(new Date()) < item.occurredOn ? item.occurredOn : localDateValue(new Date()));
-    setReversalNote("");
-    setError("");
-  };
-
-  const submitReversal = async (item: PortfolioEventRecord) => {
-    setReversalSaving(true); setError("");
-    try {
-      await reversePortfolioEvent(item.id, { occurredOn: reversalDate, note: reversalNote });
-      setReversingEventId(null); setReversalNote("");
-      await load();
-      flash("冲正流水已追加；原记录和修正原因均已保留");
-    } catch (nextError) { setError(String(nextError)); }
-    finally { setReversalSaving(false); }
-  };
-
-  return (
-    <div className="page narrow ledger-page">
-      <PageHeader eyebrow="方法论 · 组合记录" title="把资金变化写成可核对的流水" description="先分清外部入出金、内部收益成本和交易换手，再谈组合回报。已保存记录只追加、不静默改写。" />
-
-      <section className="ledger-summary">
-        <article><span>累计净外部现金流</span><strong>{summary.external >= 0 ? "+" : ""}{formatMoney(summary.external, snapshot.profile.baseCurrency)}</strong><small>入金减出金</small></article>
-        <article><span>累计现金收入</span><strong>{formatMoney(summary.income, snapshot.profile.baseCurrency)}</strong><small>分红与利息</small></article>
-        <article><span>累计费用税费</span><strong>{formatMoney(summary.costs, snapshot.profile.baseCurrency)}</strong><small>不与外部现金流混合</small></article>
-        <article><span>累计交易额</span><strong>{formatMoney(summary.turnover, snapshot.profile.baseCurrency)}</strong><small>买入与卖出，仅衡量换手</small></article>
-      </section>
-
-      <div className="ledger-boundary"><LockKeyhole size={16} /><div><strong>{latestCheckin ? `最近冻结边界：${latestCheckin.valuationDate ?? "旧记录无估值日"}` : "尚未建立组合基线"}</strong><p>{latestCheckin ? "为保护归因链，新增流水必须晚于该日期。历史漏项请在说明中保留纠正原因，并从新基线开始。" : "请先在决策总览冻结当前组合；基线之前的历史变化不会被系统猜测。"}</p></div></div>
-      {error && <div className="error-box"><AlertTriangle size={17} />{error}</div>}
-
-      <section className="panel form-panel ledger-entry">
-        <div className="panel-title"><div><span>新增不可变记录</span><h2>这笔资金变化是什么？</h2></div><CircleDollarSign size={21} className="muted-icon" /></div>
-        <div className="form-grid compact-grid">
-          <label><span>流水类型</span><select value={draft.eventType} onChange={(event) => setDraft({ ...draft, eventType: event.target.value as PortfolioEventType })}>{Object.entries(portfolioEventLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>入金/出金属于外部现金流；其他项目属于组合内部活动。</small></label>
-          <label><span>关联资产{requiresAsset ? "" : "（可选）"}</span><input maxLength={200} value={draft.assetName} onChange={(event) => setDraft({ ...draft, assetName: event.target.value })} placeholder="例如：全球股票指数基金" /></label>
-          <NumberField label={`金额（${draft.currency}）`} value={draft.amount} onChange={(value) => setDraft({ ...draft, amount: Number(value) })} prefix={draft.currency} />
-          <label><span>原币种</span><select value={draft.currency} onChange={(event) => { setDraft({ ...draft, currency: event.target.value, fxRateToBase: null, fxRateSource: "", fxRateObservedOn: "" }); setEventFxQuote(null); setEventFxError(""); }}>{["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => <option key={value}>{value}</option>)}</select></label>
-          {draft.currency !== snapshot.profile.baseCurrency && <>
-            <NumberField label={`折算汇率（1 ${draft.currency} = ? ${snapshot.profile.baseCurrency}）`} value={draft.fxRateToBase ?? 0} onChange={(value) => { setDraft({ ...draft, fxRateToBase: value ? Number(value) : null, fxRateSource: "", fxRateObservedOn: "" }); setEventFxQuote(null); }} suffix={snapshot.profile.baseCurrency} />
-            <div className="fx-lookup"><button className="secondary" disabled={eventFxLoading || !draft.occurredOn} onClick={lookupEventFx}>{eventFxLoading ? <LoaderCircle className="spin" size={15} /> : <Cloud size={15} />}查询 ECB 当日参考汇率</button>{eventFxError && <small className="fx-error">{eventFxError}</small>}{draft.fxRateSource && <small>已采用 {fxSourceLabel(draft.fxRateSource)} · 观察日 {draft.fxRateObservedOn}</small>}{eventFxQuote && <p>{eventFxQuote.stalenessDays ? `非工作日，使用此前 ${eventFxQuote.stalenessDays} 天的共同观察值。` : "已取得当日共同观察值。"}<a href={eventFxQuote.sourceUrl} target="_blank" rel="noreferrer">核对原始数据</a></p>}</div>
-          </>}
-          <label><span>发生日期</span><input type="date" min={latestCheckin?.valuationDate ? nextCalendarDate(latestCheckin.valuationDate) : undefined} max={localDateValue(new Date())} value={draft.occurredOn} onChange={(event) => { setDraft({ ...draft, occurredOn: event.target.value, fxRateToBase: null, fxRateSource: "", fxRateObservedOn: "" }); setEventFxQuote(null); setEventFxError(""); }} /><small>日期用于自动分段和现金流权重。</small></label>
-          <label className="ledger-note"><span>核对说明</span><textarea maxLength={2000} value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} placeholder="例如：工资结余转入证券账户；以银行流水为准" /></label>
-        </div>
-        <div className="form-actions"><p><ShieldCheck size={16} />买卖额不改变组合总值，也不会被系统当作收益。</p><button className="primary" disabled={saving || !latestCheckin?.valuationDate || draft.occurredOn <= (latestCheckin?.valuationDate ?? "") || draft.amount <= 0 || !draft.occurredOn || !draft.note.trim() || (requiresAsset && !draft.assetName.trim()) || Boolean(draft.currency !== snapshot.profile.baseCurrency && (!draft.fxRateToBase || draft.fxRateToBase <= 0))} onClick={persist}><Plus size={16} />{saving ? "保存中…" : "冻结这笔流水"}</button></div>
-      </section>
-
-      <section className="panel ledger-import">
-        <div className="panel-title"><div><span>批量录入 · 两阶段确认</span><h2>从券商或银行 CSV 导入</h2></div><Upload size={21} className="muted-icon" /></div>
-        <p className="import-intro">本机先解析并逐行校验，不会在预览时写入。相同 <code>source + external_id</code> 且内容一致的记录会跳过；编号相同但内容不同会阻止整批导入。</p>
-        <div className="import-controls">
-          <label className="file-picker"><Upload size={16} /><span>{csvFileName || "选择 CSV 文件"}</span><input key={csvFileName || "empty"} type="file" accept=".csv,text/csv" onChange={(event) => void selectCsvFile(event.target.files?.[0])} /></label>
-          <button className="secondary" onClick={() => downloadPortfolioEventCsvTemplate(snapshot.profile.baseCurrency)}><Download size={16} />下载模板</button>
-          <button className="secondary" disabled={!csvText || importing || !latestCheckin?.valuationDate} onClick={previewCsv}>{importing ? <LoaderCircle className="spin" size={16} /> : <Eye size={16} />}校验并预览</button>
-        </div>
-        <p className="import-hint">必填列：source、external_id、event_type、occurred_on、amount、currency、note；可选列：fx_rate_to_base、fx_rate_source、fx_rate_observed_on、asset_name。单次最多 1000 行、2 MB。</p>
-        {importError && <div className="error-box"><AlertTriangle size={17} />{importError}</div>}
-        {importPreview && <div className="import-preview">
-          <div className="import-result-bar">
-            <div><span className="ready-dot" />待写入 <strong>{importPreview.readyCount}</strong></div>
-            <div><span className="duplicate-dot" />重复跳过 <strong>{importPreview.duplicateCount}</strong></div>
-            <div><span className="error-dot" />错误 <strong>{importPreview.errorCount}</strong></div>
-            <small>基准币种 {importPreview.baseCurrency} · 冻结至 {importPreview.frozenThrough}</small>
-          </div>
-          <div className="import-table-wrap"><table className="import-table"><thead><tr><th>行</th><th>状态</th><th>来源 / 交易编号</th><th>类型与日期</th><th>金额</th><th>资产 / 说明</th><th>校验结果</th></tr></thead><tbody>{importPreview.rows.map((row) => <tr key={`${row.rowNumber}-${row.externalId}`} className={`import-${row.status}`}>
-            <td>{row.rowNumber}</td><td><span>{row.status === "ready" ? "可导入" : row.status === "duplicate" ? "重复" : "错误"}</span></td>
-            <td><strong>{row.source || "—"}</strong><small>{row.externalId || "—"}</small></td>
-            <td><strong>{portfolioEventLabels[row.eventType as PortfolioEventType] ?? (row.eventType || "—")}</strong><small>{row.occurredOn || "—"}</small></td>
-            <td>{row.amount === null ? "—" : formatMoney(row.amount, row.currency || importPreview.baseCurrency)}{row.fxRateToBase && <small>汇率 {row.fxRateToBase}</small>}{row.fxRateSource && <small>{fxSourceLabel(row.fxRateSource)} · {row.fxRateObservedOn}</small>}</td><td><strong>{row.assetName || "组合账户"}</strong><small>{row.note || "—"}</small></td><td>{row.message}</td>
-          </tr>)}</tbody></table></div>
-          <div className="import-actions"><p><ShieldCheck size={16} />有任意错误时整批不会写入；确认时会再次校验预览版本。</p><button className="primary" disabled={importing || importPreview.errorCount > 0 || importPreview.readyCount === 0} onClick={commitCsv}><Check size={16} />{importing ? "写入中…" : `确认写入 ${importPreview.readyCount} 笔`}</button></div>
-        </div>}
-      </section>
-
-      <section className="panel ledger-history">
-        <div className="panel-title"><div><span>本地流水账</span><h2>按发生日期倒序</h2></div><span className="history-count">{events.length} 笔</span></div>
-        {loading && <div className="empty">正在读取本地流水…</div>}
-        {!loading && events.length === 0 && <div className="empty">还没有流水。建立组合基线后，从下一笔真实资金变化开始记录。</div>}
-        <div className="ledger-list">{events.map((item) => {
-          const canReverse = !item.reversalOfEventId && !item.reversedByEventId && item.amount > 0 && Boolean(latestCheckin?.valuationDate) && item.occurredOn > (latestCheckin?.valuationDate ?? "");
-          return <article key={item.id} className={`${item.reversalOfEventId ? "reversal-entry" : ""} ${item.reversedByEventId ? "reversed-entry" : ""}`}>
-            <span className={`event-kind kind-${item.eventType}`}>{item.reversalOfEventId ? "冲正" : portfolioEventLabels[item.eventType]}</span>
-            <div><strong>{item.assetName || "组合账户"}{item.reversedByEventId && <em className="event-status">已冲正</em>}</strong><p>{item.note}</p><small>{item.occurredOn} · 录入 {new Date(item.createdAt).toLocaleString("zh-CN")}{item.externalId && !item.reversalOfEventId ? ` · ${item.source}/${item.externalId}` : ""}{item.reversalOfEventId ? ` · 原记录 ${item.reversalOfEventId.slice(0, 8)}` : ""}</small></div>
-            <div className="ledger-amount"><strong>{formatMoney(item.amount, item.currency)}</strong><small>{item.currency === item.baseCurrency ? item.baseCurrency : `汇率 ${item.fxRateToBase} · ${formatMoney(item.baseAmount, item.baseCurrency)}`}</small>{item.fxRateSource && <small>{fxSourceLabel(item.fxRateSource)} · {item.fxRateObservedOn}</small>}</div>
-            {canReverse && <button className="reversal-button" onClick={() => reversingEventId === item.id ? setReversingEventId(null) : beginReversal(item)}><Undo2 size={13} />冲正</button>}
-            {reversingEventId === item.id && <div className="reversal-editor">
-              <div><strong>追加冲正记录</strong><small>系统将复制原流水口径并写入等额负数，原记录不会改变。</small></div>
-              <label><span>冲正日期</span><input type="date" min={item.occurredOn} max={localDateValue(new Date())} value={reversalDate} onChange={(event) => setReversalDate(event.target.value)} /></label>
-              <label><span>修正原因</span><textarea maxLength={2000} value={reversalNote} onChange={(event) => setReversalNote(event.target.value)} placeholder="例如：重复录入；已与券商对账单核对" /></label>
-              <div className="reversal-actions"><button className="text-button" onClick={() => setReversingEventId(null)}>取消</button><button className="primary" disabled={reversalSaving || !reversalDate || !reversalNote.trim()} onClick={() => void submitReversal(item)}>{reversalSaving ? <LoaderCircle className="spin" size={14} /> : <Undo2 size={14} />}确认追加</button></div>
-            </div>}
-          </article>;
-        })}</div>
-        <p className="effectiveness-disclaimer">这些记录来自用户输入，系统校验结构和口径但不核验银行、券商或市场事实。当前基线之后的误录可追加冲正；已冻结周期不能回写，应建立纠正后的新基线并保留说明。</p>
-      </section>
-    </div>
-  );
-}
-
-function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdate: (s: Snapshot) => void; flash: (s: string) => void }) {
-  const [profile, setProfile] = useState(snapshot.profile ?? emptyProfile);
-  const [holding, setHolding] = useState<Omit<Holding, "id">>(() => emptyHolding(snapshot.profile.baseCurrency));
-  const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
-  const [goal, setGoal] = useState<Omit<Goal, "id">>(emptyGoal);
-  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [holdingFxQuote, setHoldingFxQuote] = useState<FxRateQuote | null>(null);
-  const [holdingFxLoading, setHoldingFxLoading] = useState(false);
-  const [holdingFxError, setHoldingFxError] = useState("");
-  const [valuationQuantity, setValuationQuantity] = useState(0);
-  const [valuationLoading, setValuationLoading] = useState(false);
-  const [valuationError, setValuationError] = useState("");
-
-  const updateNumber = (key: keyof FinancialProfile, value: string) => setProfile({ ...profile, [key]: Number(value) });
-
-  const persistProfile = async () => {
-    setSaving(true);
-    try { onUpdate(await saveProfile(profile)); flash("财务档案已保存在本机"); } finally { setSaving(false); }
-  };
-
-  const persistHolding = async () => {
-    if (!holding.name || holding.marketValue <= 0) return;
-    setSaving(true);
-    try {
-      const next = editingHoldingId
-        ? await updateHolding(editingHoldingId, holding)
-        : await saveHolding(holding);
-      onUpdate(next);
-      setHolding(emptyHolding(profile.baseCurrency));
-      setHoldingFxQuote(null); setHoldingFxError("");
-      setValuationQuantity(0); setValuationError("");
-      setEditingHoldingId(null);
-      flash(editingHoldingId ? "资产信息已更新" : "资产已加入组合");
-    } finally { setSaving(false); }
-  };
-
-  const editHolding = (item: Holding) => {
-    const { id, ...values } = item;
-    setHolding(values);
-    setEditingHoldingId(id);
-    setHoldingFxQuote(null); setHoldingFxError("");
-    setValuationQuantity(snapshot.holdingValuations.find((value) => value.holdingId === id)?.quantity ?? 0);
-    setValuationError("");
-  };
-
-  const lookupHoldingFx = async () => {
-    setHoldingFxLoading(true); setHoldingFxError("");
-    try {
-      const quote = await getFxRate(holding.currency, profile.baseCurrency, holding.valuationDate);
-      setHolding((value) => ({ ...value, fxRateToBase: normalizedQuoteRate(quote.rate), fxRateSource: quote.providerCode, fxRateObservedOn: quote.observedOn }));
-      setHoldingFxQuote(quote);
-    } catch (nextError) { setHoldingFxQuote(null); setHoldingFxError(String(nextError)); }
-    finally { setHoldingFxLoading(false); }
-  };
-
-  const applyMarketValuation = async () => {
-    if (!editingHoldingId || !holding.symbol.trim() || valuationQuantity <= 0 || !holding.valuationDate) return;
-    setValuationLoading(true); setValuationError("");
-    try {
-      const next = await applyVerifiedHoldingValuation(
-        editingHoldingId,
-        holding.symbol,
-        valuationQuantity,
-        holding.valuationDate,
-      );
-      onUpdate(next);
-      const updated = next.holdings.find((value) => value.id === editingHoldingId);
-      if (updated) {
-        const { id: _id, ...values } = updated;
-        setHolding(values);
-      }
-      setHoldingFxQuote(null);
-      flash("已冻结数量、日收盘价和来源；外币汇率如失效需重新查询");
-    } catch (nextError) { setValuationError(String(nextError)); }
-    finally { setValuationLoading(false); }
-  };
-
-  const removeHolding = async (item: Holding) => {
-    if (!window.confirm(`确认删除“${item.name}”？相关决策日志不会被删除。`)) return;
-    setSaving(true);
-    try {
-      onUpdate(await deleteHolding(item.id));
-      if (editingHoldingId === item.id) { setEditingHoldingId(null); setHolding(emptyHolding(profile.baseCurrency)); }
-      flash("资产已从组合删除");
-    } finally { setSaving(false); }
-  };
-
-  const persistGoal = async () => {
-    if (!goal.name || goal.targetAmount <= 0 || !goal.targetDate) return;
-    setSaving(true);
-    try {
-      const next = editingGoalId ? await updateGoal(editingGoalId, goal) : await saveGoal(goal);
-      onUpdate(next);
-      setGoal(emptyGoal);
-      setEditingGoalId(null);
-      flash(editingGoalId ? "投资目标已更新" : "投资目标已保存");
-    } finally { setSaving(false); }
-  };
-
-  const editGoal = (item: Goal) => {
-    const { id, ...values } = item;
-    setGoal(values);
-    setEditingGoalId(id);
-  };
-
-  const removeGoal = async (item: Goal) => {
-    if (!window.confirm(`确认删除目标“${item.name}”？`)) return;
-    setSaving(true);
-    try {
-      onUpdate(await deleteGoal(item.id));
-      if (editingGoalId === item.id) { setEditingGoalId(null); setGoal(emptyGoal); }
-      flash("投资目标已删除");
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <div className="page narrow">
-      <PageHeader eyebrow="方法论 · 第一层" title="建立财务底座" description="先确定哪些钱能承担风险，再讨论收益。数据仅保存在本地数据库。" />
-      <section className="panel form-panel">
-        <div className="panel-title"><div><span>个人资产负债表</span><h2>现金流与风险边界</h2></div><Database size={21} className="muted-icon" /></div>
-        <div className="form-grid">
-          <label><span>基准币种</span><select value={profile.baseCurrency} onChange={(e) => setProfile({ ...profile, baseCurrency: e.target.value })}>{["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => <option key={value}>{value}</option>)}</select><small>财务、目标和组合汇总统一使用此币种；切换不会自动换算已有金额。</small></label>
-          <NumberField label="月收入" value={profile.monthlyIncome} onChange={(v) => updateNumber("monthlyIncome", v)} prefix={profile.baseCurrency} />
-          <NumberField label="月支出" value={profile.monthlyExpense} onChange={(v) => updateNumber("monthlyExpense", v)} prefix={profile.baseCurrency} />
-          <NumberField label="应急资金" value={profile.emergencyFund} onChange={(v) => updateNumber("emergencyFund", v)} prefix={profile.baseCurrency} />
-          <NumberField label="负债余额" value={profile.liabilities} onChange={(v) => updateNumber("liabilities", v)} prefix={profile.baseCurrency} />
-          <NumberField label="可投资资产" value={profile.investableAssets} onChange={(v) => updateNumber("investableAssets", v)} prefix={profile.baseCurrency} />
-          <NumberField label="投资期限" value={profile.horizonYears} onChange={(v) => updateNumber("horizonYears", v)} suffix="年" />
-          <NumberField label="可承受最大回撤" value={profile.maxDrawdownPct} onChange={(v) => updateNumber("maxDrawdownPct", v)} suffix="%" />
-          <label><span>风险倾向</span><select value={profile.riskLevel} onChange={(e) => setProfile({ ...profile, riskLevel: e.target.value as FinancialProfile["riskLevel"] })}><option>保守</option><option>稳健</option><option>均衡</option><option>进取</option></select></label>
-        </div>
-        <div className="form-actions"><p><ShieldCheck size={16} />系统不会把“心理上敢亏”误认为真实风险承受能力。</p><button className="primary" onClick={persistProfile} disabled={saving}><Save size={16} />保存并检查</button></div>
-      </section>
-
-      <section className="panel form-panel">
-        <div className="panel-title"><div><span>目标账户</span><h2>{editingGoalId ? "修改目标计划" : "给资金一个明确任务"}</h2></div><Target size={21} className="muted-icon" /></div>
-        {snapshot.goals.length > 0 && <div className="goal-list">{snapshot.goals.map((item) => {
-          const projection = snapshot.plan.goalProjections.find((value) => value.goalId === item.id);
-          return <div className={editingGoalId === item.id ? "editing" : ""} key={item.id}><span>{item.priority}</span><strong>{item.name}<small>已投入 {formatMoney(item.currentAmount, profile.baseCurrency)} · 每月 {formatMoney(item.monthlyContribution, profile.baseCurrency)}</small></strong><em>{projection ? `模拟达成 ${projection.estimatedSuccessPct.toFixed(0)}%` : item.targetDate}</em><span className="row-actions"><button aria-label="编辑目标" onClick={() => editGoal(item)}><Edit3 size={14} /></button><button aria-label="删除目标" onClick={() => removeGoal(item)}><Trash2 size={14} /></button></span></div>;
-        })}</div>}
-        <div className="form-grid compact-grid">
-          <label><span>目标名称</span><input value={goal.name} onChange={(e) => setGoal({ ...goal, name: e.target.value })} placeholder="例如：长期养老账户" /></label>
-          <NumberField label="目标金额" value={goal.targetAmount} onChange={(v) => setGoal({ ...goal, targetAmount: Number(v) })} prefix={profile.baseCurrency} />
-          <NumberField label="已经投入" value={goal.currentAmount} onChange={(v) => setGoal({ ...goal, currentAmount: Number(v) })} prefix={profile.baseCurrency} />
-          <NumberField label="计划每月投入" value={goal.monthlyContribution} onChange={(v) => setGoal({ ...goal, monthlyContribution: Number(v) })} prefix={profile.baseCurrency} />
-          <label><span>目标日期</span><input type="date" value={goal.targetDate} onChange={(e) => setGoal({ ...goal, targetDate: e.target.value })} /></label>
-          <label><span>目标优先级</span><select value={goal.priority} onChange={(e) => setGoal({ ...goal, priority: e.target.value as Goal["priority"] })}><option>刚性</option><option>重要</option><option>弹性</option></select></label>
-        </div>
-        <div className="form-actions">{editingGoalId ? <button className="text-button" onClick={() => { setEditingGoalId(null); setGoal(emptyGoal); }}>取消修改</button> : <p>目标决定期限，期限决定可以承担的波动。</p>}<button className="secondary" onClick={persistGoal} disabled={saving || !goal.name}>{editingGoalId ? <Save size={16} /> : <Plus size={16} />}{editingGoalId ? "保存目标" : "添加目标"}</button></div>
-      </section>
-
-      <section className="panel form-panel">
-        <div className="panel-title"><div><span>组合输入</span><h2>{editingHoldingId ? "修改资产" : "管理资产组合"}</h2></div><CircleDollarSign size={21} className="muted-icon" /></div>
-        {snapshot.holdings.length > 0 && <div className="holding-list">
-          <div className="holding-head"><span>资产</span><span>类别</span><span>市值</span><span>目标权重</span><span>账面变化</span><span /></div>
-          {snapshot.holdings.map((item) => {
-            const pnlPct = item.costBasis > 0 ? (item.marketValue - item.costBasis) / item.costBasis * 100 : 0;
-            const valuation = snapshot.holdingValuations.find((value) => value.holdingId === item.id);
-            return <div className={editingHoldingId === item.id ? "editing" : ""} key={item.id}>
-              <strong>{item.name}<small>{item.symbol || "未填写代码"}</small>{valuation && <small className="verified-source">已核验 · {valuation.providerName} · {valuation.observedOn}</small>}</strong>
-              <span>{item.assetClass}<small>{item.currency}{item.currency !== profile.baseCurrency && item.fxRateToBase ? ` · 汇率 ${item.fxRateToBase}` : ""}</small>{item.fxRateSource && <small>{fxSourceLabel(item.fxRateSource)} · {item.fxRateObservedOn}</small>}</span><span>{formatMoney(item.marketValue, item.currency)}<small>{item.currency !== profile.baseCurrency && item.fxRateToBase ? `折合 ${formatMoney(holdingValueInBase(item, profile.baseCurrency), profile.baseCurrency)} · ` : ""}{item.valuationDate || "待补估值日"}</small></span><span>{item.targetPct ? `${item.targetPct.toFixed(1)}%` : "未设置"}</span>
-              <span className={pnlPct >= 0 ? "gain" : "loss"}>{pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%</span>
-              <span className="row-actions"><button aria-label="编辑资产" onClick={() => editHolding(item)}><Edit3 size={14} /></button><button aria-label="删除资产" onClick={() => removeHolding(item)}><Trash2 size={14} /></button></span>
-            </div>;
-          })}
-        </div>}
-        <div className="form-grid compact-grid">
-          <label><span>资产名称</span><input value={holding.name} onChange={(e) => setHolding({ ...holding, name: e.target.value })} placeholder="例如：宽基指数基金" /></label>
-          <label><span>代码（可选）</span><input value={holding.symbol} onChange={(e) => setHolding({ ...holding, symbol: e.target.value })} placeholder="例如：000300" /></label>
-          <label><span>资产类别</span><select value={holding.assetClass} onChange={(e) => setHolding({ ...holding, assetClass: e.target.value as Holding["assetClass"] })}>{["现金", "债券", "股票", "基金", "黄金", "其他"].map((v) => <option key={v}>{v}</option>)}</select></label>
-          <label><span>持仓币种</span><select value={holding.currency} onChange={(e) => { setHolding({ ...holding, currency: e.target.value, fxRateToBase: null, fxRateSource: "", fxRateObservedOn: "" }); setHoldingFxQuote(null); setHoldingFxError(""); }}>{["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => <option key={value}>{value}</option>)}</select></label>
-          <NumberField label={`当前市值（${holding.currency}）`} value={holding.marketValue} onChange={(v) => setHolding({ ...holding, marketValue: Number(v) })} prefix={holding.currency} />
-          <NumberField label={`累计成本（${holding.currency}）`} value={holding.costBasis} onChange={(v) => setHolding({ ...holding, costBasis: Number(v) })} prefix={holding.currency} />
-          <NumberField label="目标权重" value={holding.targetPct} onChange={(v) => setHolding({ ...holding, targetPct: Number(v) })} suffix="%" />
-          <label><span>估值日期</span><input type="date" max={localDateValue(new Date())} value={holding.valuationDate} onChange={(e) => { setHolding({ ...holding, valuationDate: e.target.value, fxRateToBase: null, fxRateSource: "", fxRateObservedOn: "" }); setHoldingFxQuote(null); setHoldingFxError(""); }} /><small>组合检查点要求全部持仓使用同一日期。</small></label>
-          {editingHoldingId && <>
-            <NumberField label="估值日持仓数量" value={valuationQuantity} onChange={(value) => setValuationQuantity(Number(value))} suffix="份 / 股" />
-            <div className="price-lookup">
-              <button className="secondary" disabled={valuationLoading || !holding.symbol.trim() || valuationQuantity <= 0 || !holding.valuationDate} onClick={applyMarketValuation}>{valuationLoading ? <LoaderCircle className="spin" size={15} /> : <Cloud size={15} />}查询并采用日收盘价</button>
-              {valuationError && <small className="fx-error">{valuationError}</small>}
-              {snapshot.holdingValuations.find((value) => value.holdingId === editingHoldingId) && ((valuation) => <p><strong>{valuation.quantity} × {valuation.unitPrice} {valuation.currency} = {formatMoney(valuation.marketValue, valuation.currency)}</strong><span>{valuation.exchange || valuation.micCode || "交易所未标注"} · {valuation.observedOn}{valuation.stalenessDays ? `（回退 ${valuation.stalenessDays} 天）` : ""} · 未复权日收盘价</span><a href={valuation.sourceUrl} target="_blank" rel="noreferrer">核对请求来源</a></p>)(snapshot.holdingValuations.find((value) => value.holdingId === editingHoldingId) as HoldingValuationEvidence)}
-            </div>
-          </>}
-          {holding.currency !== profile.baseCurrency && <>
-            <NumberField label={`折算汇率（1 ${holding.currency} = ? ${profile.baseCurrency}）`} value={holding.fxRateToBase ?? 0} onChange={(v) => { setHolding({ ...holding, fxRateToBase: v ? Number(v) : null, fxRateSource: "", fxRateObservedOn: "" }); setHoldingFxQuote(null); }} suffix={profile.baseCurrency} />
-            <div className="fx-lookup"><button className="secondary" disabled={holdingFxLoading || !holding.valuationDate} onClick={lookupHoldingFx}>{holdingFxLoading ? <LoaderCircle className="spin" size={15} /> : <Cloud size={15} />}查询 ECB 当日参考汇率</button>{holdingFxError && <small className="fx-error">{holdingFxError}</small>}{holding.fxRateSource && <small>已采用 {fxSourceLabel(holding.fxRateSource)} · 观察日 {holding.fxRateObservedOn}</small>}{holdingFxQuote && <p>{holdingFxQuote.stalenessDays ? `非工作日，使用此前 ${holdingFxQuote.stalenessDays} 天的共同观察值。` : "已取得当日共同观察值。"}<a href={holdingFxQuote.sourceUrl} target="_blank" rel="noreferrer">核对原始数据</a></p>}{holding.fxRateSource === "ecb_reference" && !holdingFxQuote && <a className="fx-method-link" href={ecbFxMethodologyUrl} target="_blank" rel="noreferrer">查看 ECB 参考汇率方法</a>}</div>
-          </>}
-        </div>
-        <div className="form-actions">
-          {editingHoldingId ? <button className="text-button" onClick={() => { setEditingHoldingId(null); setHolding(emptyHolding(profile.baseCurrency)); setHoldingFxQuote(null); setHoldingFxError(""); setValuationQuantity(0); setValuationError(""); }}>取消修改</button> : <span />}
-          <button className="secondary" onClick={persistHolding} disabled={saving || !holding.name || !holding.valuationDate || Boolean(holding.currency !== profile.baseCurrency && (!holding.fxRateToBase || holding.fxRateToBase <= 0))}>{editingHoldingId ? <Save size={16} /> : <Plus size={16} />}{editingHoldingId ? "保存修改" : "加入组合"}</button>
-        </div>
-      </section>
-      <p className="effectiveness-disclaimer">证券价格功能需要先保存资产，再进入编辑并输入估值日持仓数量。系统只在你主动点击时查询；现金、非上市资产或未配置行情密钥的持仓仍可保留人工市值，但会明确标为未核验。</p>
-    </div>
-  );
-}
-
-
-function emptyEvidence(): ResearchEvidenceInput {
-  return {
-    assetName: "",
-    title: "",
-    publisher: "",
-    sourceUrl: "",
-    sourceTier: "一手来源",
-    evidenceType: "公司披露",
-    stance: "背景",
-    asOfDate: localDateValue(new Date()),
-    claim: "",
-    notes: "",
-  };
-}
-
-function sourceHost(value: string) {
-  try { return new URL(value).hostname; }
-  catch { return value; }
-}
-
-function EvidenceWorkbench({ navigate, flash }: { navigate: (v: View) => void; flash: (s: string) => void }) {
-  const [draft, setDraft] = useState<ResearchEvidenceInput>(emptyEvidence);
-  const [items, setItems] = useState<ResearchEvidence[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const refresh = async () => {
-    try { setItems(await getResearchEvidence()); setError(""); }
-    catch (nextError) { setError(String(nextError)); }
-  };
-
-  useEffect(() => { void refresh(); }, []);
-
-  const active = items.filter((item) => item.active);
-  const primary = active.filter((item) => item.sourceTier === "一手来源");
-  const counter = active.filter((item) => item.stance === "反驳");
-  const oneYearAgo = new Date();
-  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  const aging = active.filter((item) => new Date(`${item.asOfDate}T00:00:00`) < oneYearAgo);
-
-  const persist = async () => {
-    if (!draft.assetName || !draft.title || !draft.publisher || !draft.sourceUrl || !draft.asOfDate || !draft.claim) return;
-    setSaving(true); setError("");
-    try {
-      await saveResearchEvidence(draft);
-      setDraft(emptyEvidence());
-      await refresh();
-      flash("研究证据已保存在本机，原始内容将保持不变");
-    } catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
-  };
-
-  const toggleStatus = async (item: ResearchEvidence) => {
-    setSaving(true); setError("");
-    try {
-      await setResearchEvidenceStatus(item.id, !item.active);
-      await refresh();
-      flash(item.active ? "证据已归档，不再进入 AI 检索" : "证据已恢复为有效状态");
-    } catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
-  };
-
-  const startEvidenceAnalysis = () => {
-    const assets = [...new Set(active.map((item) => item.assetName))].join("、");
-    window.sessionStorage.setItem(
-      "mario.advisorQuestion",
-      `请基于我保存的带来源研究证据，审查${assets || "当前组合"}的投资假设：区分一手事实、二手解释与未知项，优先寻找反方证据，只引用载荷中实际存在的 HTTPS 来源，并给出下一步需要补齐的证据。`,
-    );
-    navigate("advisor");
-  };
-
-  return (
-    <div className="page narrow">
-      <PageHeader eyebrow="方法论 · 研究层" title="观点之前，先建立证据" description="保存事实出处、资料日期与反方证据；AI 只能引用你确认发送的记录。" action={<button className="primary" onClick={startEvidenceAnalysis} disabled={!active.length}><Sparkles size={16} />用证据开始分析</button>} />
-      <section className="review-metrics">
-        <article><span>有效证据</span><strong>{active.length}</strong><small>{items.length - active.length} 条已归档</small></article>
-        <article><span>一手来源</span><strong>{primary.length}</strong><small>披露、监管或原始数据</small></article>
-        <article><span>反方证据</span><strong>{counter.length}</strong><small>避免只收集支持材料</small></article>
-        <article><span>超过一年</span><strong className={aging.length ? "warning-text" : ""}>{aging.length}</strong><small>过期不等于错误，但需要复核</small></article>
-      </section>
-
-      <section className="panel evidence-form">
-        <div className="panel-title"><div><span>证据账本</span><h2>记录一条可追溯事实</h2></div><Database size={21} className="muted-icon" /></div>
-        <div className="evidence-entry-layout">
-          <div className="form-grid">
-            <label><span>关联资产或主题</span><input maxLength={120} value={draft.assetName} onChange={(e) => setDraft({ ...draft, assetName: e.target.value })} placeholder="例如：全球指数、黄金、某家公司" /></label>
-            <label><span>资料标题</span><input maxLength={300} value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="使用来源页面的准确标题" /></label>
-            <label><span>发布方</span><input maxLength={200} value={draft.publisher} onChange={(e) => setDraft({ ...draft, publisher: e.target.value })} placeholder="公司、监管机构或研究机构" /></label>
-            <label><span>HTTPS 来源链接</span><input type="url" maxLength={2048} value={draft.sourceUrl} onChange={(e) => setDraft({ ...draft, sourceUrl: e.target.value })} placeholder="https://…（不要包含访问令牌）" /></label>
-            <label><span>来源层级</span><select value={draft.sourceTier} onChange={(e) => setDraft({ ...draft, sourceTier: e.target.value as ResearchEvidenceInput["sourceTier"] })}><option>一手来源</option><option>二手研究</option><option>媒体报道</option></select></label>
-            <label><span>证据类型</span><select value={draft.evidenceType} onChange={(e) => setDraft({ ...draft, evidenceType: e.target.value as ResearchEvidenceInput["evidenceType"] })}>{["公司披露", "监管文件", "数据发布", "研究报告", "新闻", "其他"].map((value) => <option key={value}>{value}</option>)}</select></label>
-            <label><span>与当前假设的关系</span><select value={draft.stance} onChange={(e) => setDraft({ ...draft, stance: e.target.value as ResearchEvidenceInput["stance"] })}><option>支持</option><option>反驳</option><option>背景</option></select></label>
-            <label><span>资料日期</span><input type="date" max={localDateValue(new Date())} value={draft.asOfDate} onChange={(e) => setDraft({ ...draft, asOfDate: e.target.value })} /></label>
-            <label className="span-2"><span>这条来源实际支持什么事实？</span><textarea maxLength={4000} value={draft.claim} onChange={(e) => setDraft({ ...draft, claim: e.target.value })} placeholder="只记录来源能够直接支持的内容，不写买卖结论。" /></label>
-            <label className="span-2"><span>限制与待核实项（可选）</span><textarea maxLength={4000} value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} placeholder="口径差异、样本限制、尚未核验的解释。" /></label>
-          </div>
-          <aside className="evidence-guide"><strong>来源不是结论</strong><p>“一手来源”表示离原始事实更近，不代表内容完整或投资判断正确。</p><ol><li>优先保存公司披露、监管文件和原始数据。</li><li>支持材料与反方材料分开记录。</li><li>错误记录应归档并重新建立，不覆盖旧证据。</li><li>mario 当前不自动抓取或核验链接内容。</li></ol></aside>
-        </div>
-        {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
-        <div className="form-actions"><p>保存后内容不可编辑；归档是可恢复操作。</p><button className="primary" onClick={persist} disabled={saving || !draft.assetName || !draft.title || !draft.publisher || !draft.sourceUrl || !draft.asOfDate || !draft.claim}><Save size={16} />保存证据</button></div>
-      </section>
-
-      <section className="panel evidence-library">
-        <div className="panel-title"><div><span>本地证据库</span><h2>检查来源结构，而不是累计观点数量</h2></div><span className="history-count">{items.length} 条</span></div>
-        {items.length === 0 && <div className="empty">还没有研究证据。先从一条可以打开、可以标注日期的一手来源开始。</div>}
-        <div className="evidence-list">{items.map((item) => <article key={item.id} className={item.active ? "" : "inactive"}>
-          <div className="evidence-head"><div><span className={`stance-${item.stance}`}>{item.stance}</span><strong>{item.assetName}</strong><em>{item.sourceTier}</em></div><small>{item.asOfDate}</small></div>
-          <h3>{item.title}</h3><p>{item.claim}</p>{item.notes && <small className="evidence-notes">限制：{item.notes}</small>}
-          <footer><a href={item.sourceUrl} target="_blank" rel="noreferrer">{item.publisher} · {sourceHost(item.sourceUrl)}</a><button className="text-button" disabled={saving} onClick={() => toggleStatus(item)}>{item.active ? "归档" : "恢复"}</button></footer>
-        </article>)}</div>
-      </section>
-    </div>
-  );
-}
-
-
-const emptyRule: InvestmentRuleInput = {
-  category: "风险",
-  statement: "",
-  trigger: "",
-  rationale: "",
-  active: true,
-};
-
-function defaultSystemReview(): SystemReviewInput {
-  const now = new Date();
-  const quarter = Math.floor(now.getMonth() / 3) + 1;
-  const next = new Date(now);
-  next.setMonth(next.getMonth() + 3);
-  return {
-    periodLabel: `${now.getFullYear()} Q${quarter}`,
-    adherenceScore: 3,
-    processSummary: "",
-    ruleViolations: "",
-    lessons: "",
-    nextActions: "",
-    nextReviewDate: localDateValue(next),
-  };
-}
-
-function ruleInput(rule: InvestmentRule): InvestmentRuleInput {
-  return {
-    category: rule.category,
-    statement: rule.statement,
-    trigger: rule.trigger,
-    rationale: rule.rationale,
-    active: rule.active,
-    sourceReviewId: rule.sourceReviewId,
-  };
-}
-
-function ReviewCenter({ navigate, flash }: { navigate: (v: View) => void; flash: (s: string) => void }) {
-  const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
-  const [rules, setRules] = useState<InvestmentRule[]>([]);
-  const [reviews, setReviews] = useState<SystemReviewRecord[]>([]);
-  const [review, setReview] = useState<SystemReviewInput>(defaultSystemReview);
-  const [rule, setRule] = useState<InvestmentRuleInput>(emptyRule);
-  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
-  const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
-  const [ruleHistories, setRuleHistories] = useState<Record<string, InvestmentRuleRevision[]>>({});
-  const [saving, setSaving] = useState(false);
-  const [reminder, setReminder] = useState<ReviewReminderSummary | null>(null);
-  const [effectiveness, setEffectiveness] = useState<RuleEffectivenessSummary | null>(null);
-  const [reminderSaving, setReminderSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const refresh = async () => {
-    try {
-      const [nextDecisions, nextRules, nextReviews, nextReminder, nextEffectiveness] = await Promise.all([
-        getDecisions(), getInvestmentRules(), getSystemReviews(), getReviewReminders(), getRuleEffectiveness(),
-      ]);
-      setDecisions(nextDecisions);
-      setRules(nextRules);
-      setReviews(nextReviews);
-      setReminder(nextReminder);
-      setEffectiveness(nextEffectiveness);
-      setError("");
-    } catch (nextError) { setError(String(nextError)); }
-  };
-
-  useEffect(() => { void refresh(); }, []);
-
-  const today = localDateValue(new Date());
-  const dueDecisions = decisions.filter((item) => !item.review && item.reviewDate && item.reviewDate <= today);
-  const activeRules = rules.filter((item) => item.active);
-  const averageAdherence = reviews.length
-    ? reviews.reduce((sum, item) => sum + item.adherenceScore, 0) / reviews.length
-    : null;
-  const latestReview = reviews[0];
-  const periodicReviewDue = !latestReview || latestReview.nextReviewDate <= today;
-
-  const persistSystemReview = async () => {
-    if (!review.periodLabel || !review.processSummary || !review.lessons || !review.nextActions || !review.nextReviewDate) return;
-    setSaving(true); setError("");
-    try {
-      await saveSystemReview(review);
-      setReview(defaultSystemReview());
-      await refresh();
-      flash("周期复盘已冻结，并保留当时的组合与方法快照");
-    } catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
-  };
-
-  const persistRule = async () => {
-    if (!rule.statement || !rule.trigger || !rule.rationale) return;
-    setSaving(true); setError("");
-    try {
-      if (editingRuleId) await updateInvestmentRule(editingRuleId, rule);
-      else await saveInvestmentRule(rule);
-      if (editingRuleId) {
-        setRuleHistories((current) => {
-          const next = { ...current };
-          delete next[editingRuleId];
-          return next;
-        });
-        setExpandedRuleId(null);
-      }
-      setRule(emptyRule);
-      setEditingRuleId(null);
-      await refresh();
-      flash(editingRuleId ? "规则已产生新版本，旧版本仍保留" : "个人投资规则已建立");
-    } catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
-  };
-
-  const toggleRule = async (item: InvestmentRule) => {
-    setSaving(true); setError("");
-    try {
-      await updateInvestmentRule(item.id, { ...ruleInput(item), active: !item.active });
-      setRuleHistories((current) => {
-        const next = { ...current };
-        delete next[item.id];
-        return next;
-      });
-      setExpandedRuleId(null);
-      await refresh();
-      flash(item.active ? "规则已停用，历史版本仍保留" : "规则已重新启用");
-    } catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
-  };
-
-  const toggleRuleHistory = async (item: InvestmentRule) => {
-    if (expandedRuleId === item.id) { setExpandedRuleId(null); return; }
-    setExpandedRuleId(item.id);
-    if (ruleHistories[item.id]) return;
-    try {
-      const history = await getInvestmentRuleHistory(item.id);
-      setRuleHistories((current) => ({ ...current, [item.id]: history }));
-    } catch (nextError) { setError(String(nextError)); }
-  };
-
-  const convertLessonToRule = (item: SystemReviewRecord) => {
-    setEditingRuleId(null);
-    setRule({
-      category: "复盘",
-      statement: "",
-      trigger: "下次遇到相似决策时",
-      rationale: item.lessons,
-      active: true,
-      sourceReviewId: item.id,
-    });
-    window.requestAnimationFrame(() => document.querySelector(".rule-editor")?.scrollIntoView({ behavior: "smooth", block: "center" }));
-  };
-
-  const startAiReview = () => {
-    window.sessionStorage.setItem(
-      "mario.advisorQuestion",
-      "请基于我的个人投资规则、最近周期复盘、财务目标、当前组合和历史决策，完成一次系统复盘：先核对规则违反与风险边界，再识别重复错误，比较至少两种改进路径，并给出下一周期可验证的行动与证伪条件。",
-    );
-    navigate("advisor");
-  };
-
-  const toggleReminders = async () => {
-    setReminderSaving(true); setError("");
-    try {
-      if (reminder?.enabled) {
-        await disableReviewReminders();
-        flash("桌面复盘提醒已关闭，本机到期队列仍会保留");
-      } else {
-        await enableReviewReminders();
-        await checkAndSendReviewReminder();
-        flash("桌面复盘提醒已开启");
-      }
-      await refresh();
-    } catch (nextError) { setError(String(nextError)); } finally { setReminderSaving(false); }
-  };
-
-  return (
-    <div className="page narrow">
-      <PageHeader eyebrow="方法论 · 校准层" title="让经验沉淀为规则" description="周期复盘不是解释盈亏，而是检查纪律、修订规则并冻结当时的证据。" action={<button className="primary" onClick={startAiReview}><Sparkles size={16} />AI 辅助系统复盘</button>} />
-      <section className="review-metrics">
-        <article><span>到期待复盘</span><strong className={dueDecisions.length ? "warning-text" : ""}>{dueDecisions.length}</strong><small>按原始证伪条件回看</small></article>
-        <article><span>周期复盘</span><strong>{reviews.length}</strong><small className={periodicReviewDue ? "warning-text" : ""}>{periodicReviewDue ? "现在需要安排一次" : `下次 ${latestReview.nextReviewDate}`}</small></article>
-        <article><span>有效规则</span><strong>{activeRules.length}</strong><small>{rules.length - activeRules.length} 条历史停用规则</small></article>
-        <article><span>平均纪律评分</span><strong>{averageAdherence === null ? "—" : averageAdherence.toFixed(1)}</strong><small>只评价是否按流程行动</small></article>
-      </section>
-
-      <section className="panel reminder-panel">
-        <div className="reminder-copy">
-          <div className={`reminder-icon ${reminder?.enabled ? "enabled" : ""}`}>
-            {reminder?.enabled ? <Bell size={18} /> : <BellOff size={18} />}
-          </div>
-          <div>
-            <strong>桌面复盘提醒</strong>
-            <p>应用打开时检查到期事项；相同到期状态每天最多提醒一次，锁屏通知不显示资产名称。</p>
-            <small>设置只保存在这台设备，不参与云端同步。关闭应用后不会在后台运行。</small>
-          </div>
-        </div>
-        <button className={reminder?.enabled ? "secondary" : "primary"} disabled={reminderSaving || !isNativeApp()} onClick={toggleReminders}>
-          {reminderSaving ? "处理中…" : reminder?.enabled ? "关闭提醒" : isNativeApp() ? "开启提醒" : "仅原生应用可用"}
-        </button>
-      </section>
-
-      <section className="panel rule-effectiveness-panel">
-        <div className="panel-title"><div><span>规则有效性追踪</span><h2>观察纪律与过程质量的关系</h2></div><small className="causality-note">只显示关联，不宣称因果</small></div>
-        <div className="effectiveness-summary">
-          <article><span>规则检查覆盖</span><strong>{effectiveness?.totalDecisions ? `${effectiveness.evaluatedDecisions}/${effectiveness.totalDecisions}` : "—"}</strong><small>启用此能力后的决策才计入</small></article>
-          <article><span>适用规则遵守率</span><strong>{effectiveness?.adherencePct == null ? "—" : `${effectiveness.adherencePct.toFixed(0)}%`}</strong><small>不适用规则不进入分母</small></article>
-          <article><span>已复盘规则样本</span><strong>{effectiveness?.reviewedChecks ?? 0}</strong><small>按决策过程评分比较</small></article>
-        </div>
-        {!effectiveness?.rules.length && <div className="empty">建立个人投资规则后，每次冻结决策都会先要求逐条确认。</div>}
-        <div className="effectiveness-list">{effectiveness?.rules.map((item) => <article key={item.ruleId} className={item.active ? "" : "inactive"}>
-          <div className="effectiveness-rule"><span>{item.category} · 当前 v{item.currentRevision}{item.active ? "" : " · 已停用"}</span><strong>{item.statement}</strong><small>{item.observedRevisions.length ? `已有决策覆盖版本 ${item.observedRevisions.join("、")}` : "尚无决策样本"}</small></div>
-          <div className="effectiveness-counts"><span>适用 <b>{item.applicableCount}</b></span><span>遵守 <b>{item.followedCount}</b></span><span>偏离 <b>{item.deviatedCount}</b></span><span>已复盘 <b>{item.reviewedCount}</b></span></div>
-          <div className="process-comparison"><span>遵守后的过程评分 <b>{item.followedProcessAverage == null ? "—" : item.followedProcessAverage.toFixed(1)}</b></span><span>偏离后的过程评分 <b>{item.deviatedProcessAverage == null ? "—" : item.deviatedProcessAverage.toFixed(1)}</b></span><strong className={item.signal.startsWith("反常") ? "warning-text" : ""}>{item.signal}</strong></div>
-        </article>)}</div>
-        <p className="effectiveness-disclaimer">过程评分也可能受规则本身影响，样本存在选择偏差。这里用于发现值得复核的规则，不用于证明某条规则提高收益。</p>
-      </section>
-
-      {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
-
-      {dueDecisions.length > 0 && <section className="panel due-review-panel">
-        <div className="panel-title"><div><span>复盘队列</span><h2>先处理已经到期的原始判断</h2></div><button className="secondary" onClick={() => navigate("decision")}>前往决策日志</button></div>
-        <div className="due-review-list">{dueDecisions.map((item) => <div key={item.id}><strong>{item.assetName}</strong><span>置信度 {item.confidencePct}%</span><span>计划复盘日 {item.reviewDate}</span><small>{item.invalidation}</small></div>)}</div>
-      </section>}
-
-      <section className="panel form-panel system-review-form">
-        <div className="panel-title"><div><span>周期系统复盘</span><h2>冻结这一周期的过程与约束</h2></div><History size={21} className="muted-icon" /></div>
-        <div className="form-grid">
-          <label><span>复盘周期</span><input value={review.periodLabel} onChange={(e) => setReview({ ...review, periodLabel: e.target.value })} placeholder="例如 2026 Q3" /></label>
-          <label><span>纪律执行评分</span><select value={review.adherenceScore} onChange={(e) => setReview({ ...review, adherenceScore: Number(e.target.value) })}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5</option>)}</select></label>
-          <label><span>下次复盘日</span><input type="date" value={review.nextReviewDate} onChange={(e) => setReview({ ...review, nextReviewDate: e.target.value })} /></label>
-          <label className="span-3"><span>这一周期实际执行了什么？</span><textarea value={review.processSummary} onChange={(e) => setReview({ ...review, processSummary: e.target.value })} placeholder="只写事实：投入、再平衡、研究和计划外交易。" /></label>
-          <label className="span-3"><span>违反了哪些预设规则？</span><textarea value={review.ruleViolations} onChange={(e) => setReview({ ...review, ruleViolations: e.target.value })} placeholder="没有则写“无”；不要用盈利为违规行为辩护。" /></label>
-          <label className="span-3"><span>哪些认知需要修正？</span><textarea value={review.lessons} onChange={(e) => setReview({ ...review, lessons: e.target.value })} placeholder="区分可重复的经验与一次性噪声。" /></label>
-          <label className="span-3"><span>下一周期只做哪些行动？</span><textarea value={review.nextActions} onChange={(e) => setReview({ ...review, nextActions: e.target.value })} placeholder="使用可检查的动作、期限和触发条件。" /></label>
-        </div>
-        <div className="form-actions"><p>保存时会同时冻结组合、目标、风险和决策完成度摘要。</p><button className="primary" disabled={saving || !review.processSummary || !review.lessons || !review.nextActions} onClick={persistSystemReview}><Save size={16} />冻结周期复盘</button></div>
-      </section>
-
-      <section className="panel rule-workbench">
-        <div className="panel-title"><div><span>个人投资规则</span><h2>把经验写成触发时能执行的动作</h2></div><span className="history-count">{activeRules.length} 条有效</span></div>
-        <div className="rule-layout">
-          <div className="rule-list">
-            {rules.length === 0 && <div className="empty">还没有个人规则。好的规则应说明“何时触发、具体做什么、为什么”。</div>}
-            {rules.map((item) => <article key={item.id} className={item.active ? "" : "inactive"}>
-              <div><span>{item.category} · v{item.revision}</span><strong>{item.statement}</strong><p><b>触发</b>{item.trigger}</p><small>{item.rationale}</small></div>
-              <div className="rule-actions"><button className="text-button" onClick={() => toggleRuleHistory(item)}>历史</button><button className="text-button" onClick={() => { setEditingRuleId(item.id); setRule(ruleInput(item)); }}>修订</button><button className="text-button" disabled={saving} onClick={() => toggleRule(item)}>{item.active ? "停用" : "启用"}</button></div>
-              {expandedRuleId === item.id && <div className="rule-history">{(ruleHistories[item.id] ?? []).map((revision) => <div key={revision.revision}><span>v{revision.revision} · {new Date(revision.changedAt).toLocaleDateString("zh-CN")}</span><strong>{revision.statement}</strong><small>{revision.active ? "当时启用" : "当时停用"}</small></div>)}</div>}
-            </article>)}
-          </div>
-          <div className="rule-editor">
-            <strong>{editingRuleId ? "修订规则" : rule.sourceReviewId ? "从复盘沉淀规则" : "建立一条规则"}</strong>
-            <label><span>类别</span><select value={rule.category} onChange={(e) => setRule({ ...rule, category: e.target.value as InvestmentRuleInput["category"] })}>{["资产配置", "风险", "研究", "仓位", "行为", "复盘"].map((value) => <option key={value}>{value}</option>)}</select></label>
-            <label><span>规则内容</span><textarea value={rule.statement} onChange={(e) => setRule({ ...rule, statement: e.target.value })} placeholder="例如：单一主动仓位不得超过 8%。" /></label>
-            <label><span>触发条件</span><textarea value={rule.trigger} onChange={(e) => setRule({ ...rule, trigger: e.target.value })} placeholder="什么时候必须检查这条规则？" /></label>
-            <label><span>依据</span><textarea value={rule.rationale} onChange={(e) => setRule({ ...rule, rationale: e.target.value })} placeholder="它避免哪一种重复错误？" /></label>
-            <div className="rule-editor-actions">{(editingRuleId || rule.sourceReviewId) && <button className="text-button" onClick={() => { setEditingRuleId(null); setRule(emptyRule); }}>取消</button>}<button className="secondary" disabled={saving || !rule.statement || !rule.trigger || !rule.rationale} onClick={persistRule}>{editingRuleId ? "保存新版本" : "建立规则"}</button></div>
-          </div>
-        </div>
-      </section>
-
-      {reviews.length > 0 && <section className="panel system-review-history">
-        <div className="panel-title"><div><span>冻结记录</span><h2>用当时的事实检验方法是否进步</h2></div><span className="history-count">{reviews.length} 期</span></div>
-        <div className="system-review-list">{reviews.map((item) => <article key={item.id}>
-          <div className="system-review-head"><div><span>{item.periodLabel}</span><strong>纪律 {item.adherenceScore}/5</strong></div><small>{new Date(item.createdAt).toLocaleDateString("zh-CN")}</small></div>
-          <p><b>过程事实</b>{item.processSummary}</p><p><b>规则违反</b>{item.ruleViolations || "无"}</p><p><b>经验修正</b>{item.lessons}</p><p><b>下一步</b>{item.nextActions}</p>
-          <div className="frozen-snapshot"><span>组合 {item.snapshot.portfolioComparable ? formatMoney(item.snapshot.portfolioValue, item.snapshot.baseCurrency) : "待补汇率"}</span><span>集中度 {item.snapshot.portfolioComparable ? `${item.snapshot.concentrationPct.toFixed(1)}%` : "—"}</span><span>高风险 {item.snapshot.highRiskFindings}</span><span>目标 {item.snapshot.goalsOnTrack}/{item.snapshot.goalTotal}</span></div>
-          <button className="text-button" onClick={() => convertLessonToRule(item)}>把经验沉淀为规则 <ChevronRight size={14} /></button>
-        </article>)}</div>
-      </section>}
-    </div>
-  );
-}
-
-type MemoryPreferenceDraft = { preference: MemoryCandidate["preference"]; note: string };
-
-function MemoryCenter({ flash }: { flash: (message: string) => void }) {
-  const [items, setItems] = useState<MemoryCandidate[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, MemoryPreferenceDraft>>({});
-  const [filter, setFilter] = useState<"all" | "pinned" | "hidden">("all");
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [error, setError] = useState("");
-
-  const load = async () => {
-    setLoading(true); setError("");
-    try {
-      const memories = await getMemories();
-      setItems(memories);
-      setDrafts(Object.fromEntries(memories.map((item) => [item.id, { preference: item.preference, note: item.preferenceNote }])));
-    } catch (nextError) { setError(String(nextError)); }
-    finally { setLoading(false); }
-  };
-
-  useEffect(() => { void load(); }, []);
-
-  const visibleItems = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    return items
-      .filter((item) => filter === "all" || item.preference === filter)
-      .filter((item) => !normalized || `${item.title} ${item.summary} ${item.status} ${item.preferenceNote}`.toLocaleLowerCase().includes(normalized))
-      .sort((left, right) => Number(right.preference === "pinned") - Number(left.preference === "pinned") || right.occurredAt.localeCompare(left.occurredAt));
-  }, [filter, items, query]);
-
-  const updateDraft = (id: string, patch: Partial<MemoryPreferenceDraft>) => {
-    setDrafts((current) => ({ ...current, [id]: { ...(current[id] ?? { preference: "default", note: "" }), ...patch } }));
-  };
-
-  const persist = async (item: MemoryCandidate, reset = false) => {
-    const draft = reset ? { preference: "default" as const, note: "" } : (drafts[item.id] ?? { preference: item.preference, note: item.preferenceNote });
-    setSavingId(item.id); setError("");
-    try {
-      const updated = await saveMemoryPreference(item.id, draft);
-      setItems((current) => current.map((candidate) => candidate.id === item.id ? updated : candidate));
-      setDrafts((current) => ({ ...current, [item.id]: { preference: updated.preference, note: updated.preferenceNote } }));
-      flash(updated.preference === "pinned" ? "已标记为长期保留，相关检索会提高权重" : updated.preference === "hidden" ? "已永久屏蔽，不会进入后续 AI 检索" : "已恢复默认记忆策略");
-    } catch (nextError) { setError(String(nextError)); }
-    finally { setSavingId(null); }
-  };
-
-  const pinnedCount = items.filter((item) => item.preference === "pinned").length;
-  const hiddenCount = items.filter((item) => item.preference === "hidden").length;
-
-  return <div className="page narrow memory-page">
-    <PageHeader eyebrow="方法论 · 长期记忆" title="由你决定哪些经验值得留下" description="记忆来自不可变决策、结果复盘和历史 AI 分析。固定会提高相关检索权重，屏蔽会永久阻止它进入模型候选；两者都不会改写原始记录。" />
-
-    <section className="memory-overview">
-      <article><span>当前候选目录</span><strong>{items.length}</strong><small>近期决策与分析，加上所有已管理记录</small></article>
-      <article><span>长期保留</span><strong>{pinnedCount}</strong><small>仅在主题相关时提高检索权重</small></article>
-      <article><span>永久屏蔽</span><strong>{hiddenCount}</strong><small>不进入后续 AI 候选池</small></article>
-    </section>
-
-    <section className="panel memory-manager">
-      <div className="panel-title"><div><span>本地记忆目录</span><h2>确认、注释或屏蔽历史经验</h2></div><BookMarked size={21} className="muted-icon" /></div>
-      <div className="memory-toolbar">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索资产、经验或状态" />
-        <div>{(["all", "pinned", "hidden"] as const).map((value) => <button key={value} className={filter === value ? "selected" : ""} onClick={() => setFilter(value)}>{value === "all" ? "全部" : value === "pinned" ? "长期保留" : "已屏蔽"}</button>)}</div>
-      </div>
-      {error && <div className="error-box"><AlertTriangle size={17} />{error}</div>}
-      {loading && <div className="empty">正在从本地原始记录重建记忆目录…</div>}
-      {!loading && visibleItems.length === 0 && <div className="empty">当前筛选下没有长期记忆。完成决策或 AI 分析后会自动出现候选。</div>}
-      <div className="memory-manager-list">{visibleItems.map((item) => {
-        const draft = drafts[item.id] ?? { preference: item.preference, note: item.preferenceNote };
-        const changed = draft.preference !== item.preference || draft.note.trim() !== item.preferenceNote;
-        return <article key={item.id} className={`${item.preference} ${item.contradiction ? "contradiction" : ""}`}>
-          <div className="managed-memory-head"><div><span>{item.kind === "decision" ? "决策" : "AI 分析"}</span><strong>{item.title}</strong></div><div>{item.reviewed && <em>已复盘</em>}{item.contradiction && <em className="counter">反证</em>}{item.preference === "pinned" && <b>长期保留</b>}{item.preference === "hidden" && <b className="hidden">已屏蔽</b>}</div></div>
-          <p>{item.summary}</p>
-          <small>{new Date(item.occurredAt).toLocaleDateString("zh-CN")} · {item.status}</small>
-          <div className="memory-preference-editor">
-            <label><span>长期策略</span><select value={draft.preference} onChange={(event) => updateDraft(item.id, { preference: event.target.value as MemoryCandidate["preference"] })}><option value="default">默认参与相关检索</option><option value="pinned">长期保留并提高权重</option><option value="hidden">永久屏蔽</option></select></label>
-            <label><span>我的注释（不会改写原记录）</span><input disabled={draft.preference === "default"} maxLength={1000} value={draft.note} onChange={(event) => updateDraft(item.id, { note: event.target.value })} placeholder={draft.preference === "default" ? "选择长期保留或屏蔽后可填写" : "例如：只适用于高波动主动仓位"} /></label>
-            <div><button className="text-button" disabled={savingId === item.id || item.preference === "default" && !item.preferenceNote} onClick={() => void persist(item, true)}>恢复默认</button><button className="secondary" disabled={savingId === item.id || !changed || draft.preference === "default"} onClick={() => void persist(item)}>{savingId === item.id ? "保存中…" : "保存策略"}</button></div>
-          </div>
-        </article>;
-      })}</div>
-      <p className="effectiveness-disclaimer">长期保留不是把内容升级为事实，也不会绕过问题相关性直接发送；历史 AI 回答仍只是待验证线索。偏好和注释属于投资域数据，会进入端到端加密同步包。</p>
-    </section>
-  </div>;
-}
-
-function Advisor({ model, navigate, requestedAnalysisId, clearRequestedAnalysis, onCreateDecisionDraft }: { model: ModelConfig; navigate: (v: View) => void; requestedAnalysisId: string | null; clearRequestedAnalysis: () => void; onCreateDecisionDraft: (draft: DecisionEntry) => void }) {
-  const [question, setQuestion] = useState("请基于我的财务目标和当前组合，指出最需要优先处理的风险，并给出不依赖市场预测的改进方案。");
-  const [deep, setDeep] = useState(true);
-  const [memory, setMemory] = useState(true);
-  const [reflection, setReflection] = useState(true);
-  const [alternatives, setAlternatives] = useState(true);
-  const [excludedMemoryIds, setExcludedMemoryIds] = useState<string[]>([]);
-  const [contextSelection, setContextSelection] = useState<ContextSelection>({ includeProfile: true, includeGoals: true, includeHoldings: true, includePlanning: true, includeRiskFindings: true, includeRules: true, includeSystemReviews: true, includePortfolioCheckins: true, includePortfolioEvents: true, includeEvidence: true });
-  const [preview, setPreview] = useState<AnalysisPreview | null>(null);
-  const [previewStale, setPreviewStale] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [error, setError] = useState("");
-  const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
-  const [storedAnalysis, setStoredAnalysis] = useState<StoredAnalysis | null>(null);
-  const [historyBusy, setHistoryBusy] = useState("");
-  const [historyError, setHistoryError] = useState("");
-
-  useEffect(() => {
-    const queued = window.sessionStorage.getItem("mario.advisorQuestion")
-      ?? window.sessionStorage.getItem("compass.advisorQuestion");
-    if (queued) {
-      setQuestion(queued);
-      window.sessionStorage.removeItem("mario.advisorQuestion");
-      window.sessionStorage.removeItem("compass.advisorQuestion");
-    }
-  }, []);
-
-  useEffect(() => {
-    getAnalysisHistory()
-      .then(setHistory)
-      .catch((nextError) => setHistoryError(String(nextError)));
-  }, []);
-
-  useEffect(() => {
-    if (!requestedAnalysisId) return;
-    setHistoryBusy(requestedAnalysisId);
-    setHistoryError("");
-    setResult(null);
-    setPreview(null);
-    getAnalysis(requestedAnalysisId)
-      .then((item) => {
-        setStoredAnalysis(item);
-        window.setTimeout(() => document.getElementById("stored-analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-      })
-      .catch((nextError) => setHistoryError(String(nextError)))
-      .finally(() => {
-        setHistoryBusy("");
-        clearRequestedAnalysis();
-      });
-  }, [requestedAnalysisId]);
-
-  const request = (previewRevision?: string): AnalysisRequest => ({
-    question,
-    workflow: deep ? "deep" : "quick",
-    useMemory: memory,
-    reflect: reflection,
-    exploreAlternatives: alternatives,
-    excludedMemoryIds,
-    contextSelection,
-    previewRevision,
-  });
-
-  const invalidatePreview = (action: () => void) => {
-    action();
-    setExcludedMemoryIds([]);
-    setPreview(null);
-    setPreviewStale(false);
-    setResult(null);
-    setStoredAnalysis(null);
-  };
-
-  const prepare = async () => {
-    setPreviewing(true); setError(""); setResult(null);
-    try { setPreview(await previewAnalysis(request())); setPreviewStale(false); }
-    catch (e) { setError(String(e)); } finally { setPreviewing(false); }
-  };
-
-  const analyze = async () => {
-    setRunning(true); setError(""); setResult(null);
-    try {
-      if (!preview) throw new Error("请先预览将发送的数据");
-      if (previewStale) throw new Error("记忆选择已变化，请重新预览后再确认");
-      const nextResult = await runAnalysis(request(preview.contextRevision));
-      setResult(nextResult);
-      setStoredAnalysis(null);
-      setPreview(null);
-      getAnalysisHistory().then(setHistory).catch(() => undefined);
-    } catch (e) { setError(String(e)); } finally { setRunning(false); }
-  };
-
-  const toggleContext = (key: keyof ContextSelection) => invalidatePreview(() => setContextSelection((current) => ({ ...current, [key]: !current[key] })));
-  const toggleMemoryCandidate = (id: string) => {
-    setExcludedMemoryIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-    setPreviewStale(true);
-    setResult(null);
-  };
-
-  const openStoredAnalysis = async (id: string) => {
-    setHistoryBusy(id); setHistoryError(""); setResult(null); setPreview(null);
-    try {
-      setStoredAnalysis(await getAnalysis(id));
-      window.setTimeout(() => document.getElementById("stored-analysis")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-    } catch (nextError) { setHistoryError(String(nextError)); }
-    finally { setHistoryBusy(""); }
-  };
-
-  const reuseStoredQuestion = (item: StoredAnalysis) => {
-    setQuestion(item.question);
-    setStoredAnalysis(null);
-    setResult(null);
-    setPreview(null);
-    setPreviewStale(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  return (
-    <div className="page narrow">
-      <PageHeader eyebrow="AI 原生分析" title="研究室，而不是荐股机" description="规则引擎先处理确定性风险，大模型负责理解、比较、反驳与解释。" action={<div className={`model-pill ${model.hasApiKey ? "ready" : ""}`}><Bot size={15} />{model.hasApiKey ? model.model : "尚未配置模型"}</div>} />
-      {!model.hasApiKey && <div className="setup-banner"><KeyRound size={20} /><div><strong>配置自己的模型密钥</strong><p>密钥保存到系统钥匙串，不写入投资数据库。</p></div><button className="secondary" onClick={() => navigate("settings")}>立即配置</button></div>}
-      <section className="panel advisor-panel">
-        <label className="question-box"><span>这次希望解决什么问题？</span><textarea value={question} onChange={(e) => invalidatePreview(() => setQuestion(e.target.value))} /></label>
-        <div className="workflow-options">
-          <Toggle icon={<BrainCircuit size={17} />} title="深度编排" detail="构建计划并分阶段分析" checked={deep} onChange={(value) => invalidatePreview(() => setDeep(value))} />
-          <Toggle icon={<Database size={17} />} title="本地记忆" detail="检索相关历史决策" checked={memory} onChange={(value) => invalidatePreview(() => setMemory(value))} />
-          <Toggle icon={<ShieldCheck size={17} />} title="纠错反思" detail="独立检查遗漏和过度自信" checked={reflection} onChange={(value) => invalidatePreview(() => setReflection(value))} />
-          <Toggle icon={<Sparkles size={17} />} title="多方案探索" detail="比较至少两条可行路径" checked={alternatives} onChange={(value) => invalidatePreview(() => setAlternatives(value))} />
-        </div>
-        <div className="context-control">
-          <div><strong>选择允许发送的本地上下文</strong><span>取消选择后，该组不会进入模型提示词</span></div>
-          <div className="context-options">
-            {([
-              ["includeProfile", "财务档案"], ["includeGoals", "目标计划"], ["includeHoldings", "持仓明细"],
-              ["includePlanning", "规划结果"], ["includeRiskFindings", "风险检查"], ["includeRules", "个人规则"],
-              ["includeSystemReviews", "周期复盘"], ["includePortfolioCheckins", "组合变化"], ["includePortfolioEvents", "组合流水"], ["includeEvidence", "研究证据"],
-            ] as [keyof ContextSelection, string][]).map(([key, label]) => <button key={key} className={contextSelection[key] ? "selected" : ""} onClick={() => toggleContext(key)}><i>{contextSelection[key] && <Check size={11} />}</i>{label}</button>)}
-          </div>
-        </div>
-        <button className="primary analyze-button" onClick={prepare} disabled={previewing || running || !question.trim()}>
-          {previewing ? <><LoaderCircle size={17} className="spin" />正在生成本地预览…</> : <><Eye size={17} />预览将发送的数据</>}
-        </button>
-      </section>
-
-      {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
-      {historyError && <div className="error-box"><AlertTriangle size={18} />{historyError}</div>}
-      {storedAnalysis && <StoredAnalysisView item={storedAnalysis} onClose={() => setStoredAnalysis(null)} onReuse={() => reuseStoredQuestion(storedAnalysis)} onCreateDecisionDraft={onCreateDecisionDraft} />}
-      {preview && <section className="panel preview-panel">
-        <div className="panel-title"><div><span>发送前确认</span><h2>模型将看到这些内容</h2></div><div className="preview-size">{(preview.payloadBytes / 1024).toFixed(1)} KB</div></div>
-        <div className="preview-provider"><Bot size={16} /><span><strong>{preview.model}</strong>{preview.provider} · {preview.workflow === "deep" ? "深度工作流" : "快速工作流"}</span></div>
-        {previewStale && <div className="preview-stale"><AlertTriangle size={15} /><div><strong>记忆授权已变化</strong><span>下方显示的是新选择，但旧指纹已经失效。重新预览后才能开始分析。</span></div></div>}
-        <div className="context-group-list">{preview.groups.map((group) => <div className={group.included ? "included" : "omitted"} key={group.key}><i>{group.included ? <Check size={12} /> : "—"}</i><div><strong>{group.label}</strong><small>{group.description}</small></div><span>{group.included ? `${group.recordCount} 项 · ${group.sensitivity}` : "留在本机"}</span></div>)}</div>
-        <div className="local-only-note"><LockKeyhole size={16} /><div><strong>始终留在本机</strong><p>{preview.localOnly.join("；")}</p></div></div>
-        <details className="payload-details"><summary>查看实际本地数据载荷</summary><pre>{JSON.stringify(preview.payload, null, 2)}</pre></details>
-        {preview.evidenceCandidates.length > 0 && <details className="payload-details"><summary>查看本次可引用证据（{preview.evidenceCandidates.length} 条）</summary><pre>{JSON.stringify(preview.evidenceCandidates, null, 2)}</pre></details>}
-        {preview.memoryCandidates.length > 0 && <details className="payload-details memory-disclosure"><summary>逐条选择候选记忆（授权 {preview.memoryCandidates.filter((item) => !excludedMemoryIds.includes(item.id)).length}/{preview.memoryCandidates.length} 条）</summary><MemoryItems items={preview.memoryCandidates} excludedIds={excludedMemoryIds} onToggle={toggleMemoryCandidate} /></details>}
-        <details className="payload-details"><summary>查看固定投资方法论提示</summary><pre>{preview.systemPolicy}</pre></details>
-        <p className="memory-policy">{preview.memoryPolicy}</p>
-        <div className="preview-actions"><button className="text-button" onClick={() => setPreview(null)}>返回修改</button><button className="primary" onClick={previewStale ? prepare : analyze} disabled={running || previewing || (!previewStale && !model.hasApiKey)}>{previewing ? <><LoaderCircle size={15} className="spin" />正在更新预览…</> : previewStale ? <><Eye size={15} />按新选择重新预览</> : running ? <><LoaderCircle size={15} className="spin" />正在分析…</> : <><Send size={15} />确认并开始分析</>}</button></div>
-      </section>}
-      {result && <section className="panel result-panel">
-        <div className="result-meta">{result.stages.map((stage) => <span key={stage}><Check size={13} />{stage}</span>)}</div>
-        <div className="analysis-audit"><div><strong>{result.transparency.model}</strong><span>{result.transparency.provider}</span></div><div><strong>{result.transparency.modelCalls} 次</strong><span>模型调用</span></div><div><strong>{(result.transparency.totalLatencyMs / 1000).toFixed(1)} 秒</strong><span>模型总耗时</span></div><div><strong>{result.transparency.inputTokens == null ? "未返回" : result.transparency.inputTokens.toLocaleString()}</strong><span>输入 tokens</span></div><div><strong>{result.transparency.contextGroups.length} 组</strong><span>上下文</span></div><div><strong>{result.transparency.memoryItemsUsed} 条</strong><span>采用记忆</span></div><div><strong>{result.transparency.reviewedMemoryItemsUsed} / {result.transparency.conflictingMemoryItemsUsed}</strong><span>已复盘 / 反证</span></div><div><strong>{result.transparency.evidenceItemsUsed} 条</strong><span>带来源证据</span></div><div><strong>{result.transparency.citationsRequired ? "外部事实须引用" : "无可引用证据"}</strong><span>引用约束</span></div><div><strong>{result.transparency.structuredOutputValidated ? (result.transparency.outputRepairs > 0 ? `修复 ${result.transparency.outputRepairs} 次` : "直接通过") : "未校验"}</strong><span>输出契约</span></div><div><strong>{result.transparency.apiKeySent ? "异常" : "未进入提示词"}</strong><span>API Key</span></div></div>
-        {(result.workflowTrace.researchPlan || result.workflowTrace.alternatives.length > 0 || result.workflowTrace.critique) && <div className="workflow-trace">
-          <div className="workflow-trace-title"><div><span>可审计工作流 · {result.workflowTrace.version}</span><strong>查看模型如何比较、反驳再裁决</strong></div><small>{result.workflowTrace.outputValidation ? `最终输出 ${result.workflowTrace.outputValidation.status === "repaired" ? "经 1 次自动修复后" : "首次"}通过机器校验。` : "以下是显式要求模型输出的研究产物，不是隐藏思维过程。"}</small></div>
-          {result.workflowTrace.researchPlan && <details><summary><span>01</span><div><strong>研究计划</strong><small>假设、未知与检索线索</small></div><ChevronRight size={15} /></summary><div className="trace-content">{result.workflowTrace.researchPlan}</div></details>}
-          {result.workflowTrace.memoryItems.length > 0 && <details><summary><span>M</span><div><strong>实际采用的长期记忆</strong><small>{result.workflowTrace.memoryItems.length} 条 · 显示命中原因与冲突信号</small></div><ChevronRight size={15} /></summary><MemoryItems items={result.workflowTrace.memoryItems} compact /></details>}
-          {result.workflowTrace.alternatives.map((alternative, index) => <details key={alternative.id}><summary><span>{String(index + 2).padStart(2, "0")}</span><div><strong>{alternative.label}</strong><small>{alternative.lens}</small></div><ChevronRight size={15} /></summary><div className="trace-content">{alternative.content}</div></details>)}
-          {result.workflowTrace.critique && <details><summary><span>{String(result.workflowTrace.alternatives.length + 2).padStart(2, "0")}</span><div><strong>独立风险审查</strong><small>寻找证据漏洞、极端风险与过度自信</small></div><ChevronRight size={15} /></summary><div className="trace-content">{result.workflowTrace.critique}</div></details>}
-          <details className="call-trace"><summary><span>Σ</span><div><strong>模型调用记录</strong><small>{result.workflowTrace.calls.length} 个独立阶段</small></div><ChevronRight size={15} /></summary><div className="call-list">{result.workflowTrace.calls.map((call) => <div key={call.stage}><strong>{call.label}</strong><span>{(call.latencyMs / 1000).toFixed(2)} 秒</span><span>{call.inputTokens == null ? "token 未返回" : `${call.inputTokens.toLocaleString()} 入 / ${(call.outputTokens ?? 0).toLocaleString()} 出`}</span></div>)}</div></details>
-        </div>}
-        <div className="final-answer-label"><Sparkles size={15} /><div><span>最终综合裁决</span><strong>吸收方案与反方审查后的行动建议</strong></div></div>
-        {result.workflowTrace.outputValidation && <details className="payload-details"><summary>输出检查：{result.workflowTrace.outputValidation.status === "repaired" ? "修复后通过" : "首次通过"}</summary><p className="memory-policy">已检查字段完整性和引用 ID 是否属于本次授权证据；不代表事实准确性或推理有效性已经得到验证。</p>{result.workflowTrace.outputValidation.errors.length > 0 && <pre>{result.workflowTrace.outputValidation.errors.join("\n")}</pre>}</details>}
-        {result.workflowTrace.structuredReport ? <StructuredReportView report={result.workflowTrace.structuredReport} evidence={result.workflowTrace.evidenceCatalog ?? []} analysisId={result.id} onCreateDecisionDraft={onCreateDecisionDraft} /> : <div className="answer">{result.answer}</div>}<p className="disclaimer">{result.disclaimer}</p>
-      </section>}
-      <section className="panel analysis-history-panel">
-        <div className="panel-title"><div><span>本地分析档案</span><h2>回看当时的问题，而不是依赖记忆改写</h2></div><span className="history-count">最近 {history.length} 条</span></div>
-        <p className="analysis-history-boundary">历史 AI 分析是未经结果验证的研究产物。它可以被重开、追溯或转成待确认草稿，但不会自动成为事实、规则或交易指令。</p>
-        {history.length === 0 && !historyError && <div className="empty">还没有保存过 AI 分析。成功完成一次分析后，完整工作流会留在本机。</div>}
-        <div className="analysis-history-list">{history.map((item) => <button key={item.id} className={storedAnalysis?.id === item.id ? "active" : ""} onClick={() => void openStoredAnalysis(item.id)} disabled={Boolean(historyBusy)}><div><History size={15} /><span>{item.workflowVersion || "旧版分析"}</span></div><strong>{item.question}</strong><p>{item.verdict || "旧记录没有结构化裁决，可打开查看原回答。"}</p><small>{new Date(item.createdAt).toLocaleString("zh-CN")} · {item.transparency?.model || "无模型审计"}</small><em>{historyBusy === item.id ? <LoaderCircle size={14} className="spin" /> : <ChevronRight size={14} />}</em></button>)}</div>
-      </section>
-    </div>
-  );
-}
-
-function StoredAnalysisView({ item, onClose, onReuse, onCreateDecisionDraft }: { item: StoredAnalysis; onClose: () => void; onReuse: () => void; onCreateDecisionDraft: (draft: DecisionEntry) => void }) {
-  const trace = item.workflowTrace;
-  const audit = item.transparency;
-  return <section className="panel stored-analysis" id="stored-analysis">
-    <div className="panel-title stored-analysis-title"><div><span>冻结于 {new Date(item.createdAt).toLocaleString("zh-CN")}</span><h2>{item.question}</h2></div><div><button className="text-button" onClick={onClose}>关闭</button><button className="secondary" onClick={onReuse}>用当前数据重新分析</button></div></div>
-    <div className="historical-analysis-warning"><History size={17} /><div><strong>历史 AI 分析 · 未经结果验证</strong><p>这是当时保存的原始研究产物，不会按当前持仓或新证据自动更新。重新分析会重新生成发送前预览。</p></div></div>
-    {audit && <div className="analysis-audit stored-analysis-audit"><div><strong>{audit.model}</strong><span>{audit.provider}</span></div><div><strong>{audit.modelCalls || "—"} 次</strong><span>模型调用</span></div><div><strong>{audit.totalLatencyMs ? `${(audit.totalLatencyMs / 1000).toFixed(1)} 秒` : "—"}</strong><span>模型总耗时</span></div><div><strong>{audit.memoryItemsUsed} 条</strong><span>采用记忆</span></div><div><strong>{audit.evidenceItemsUsed} 条</strong><span>带来源证据</span></div><div><strong>{audit.structuredOutputValidated ? (audit.outputRepairs > 0 ? `修复 ${audit.outputRepairs} 次` : "直接通过") : "旧版/未校验"}</strong><span>输出契约</span></div></div>}
-    {trace && <StoredWorkflowTrace trace={trace} />}
-    <div className="final-answer-label"><Sparkles size={15} /><div><span>当时的综合裁决</span><strong>请结合当前事实重新判断，不把旧回答当作实时建议</strong></div></div>
-    {trace?.outputValidation && <details className="payload-details"><summary>输出检查：{trace.outputValidation.status === "repaired" ? "修复后通过" : "首次通过"}</summary><p className="memory-policy">这里只证明输出符合当时的字段与引用契约，不证明事实、推理或未来结果正确。</p>{trace.outputValidation.errors.length > 0 && <pre>{trace.outputValidation.errors.join("\n")}</pre>}</details>}
-    {trace?.structuredReport ? <StructuredReportView report={trace.structuredReport} evidence={trace.evidenceCatalog ?? []} analysisId={item.id} onCreateDecisionDraft={onCreateDecisionDraft} /> : <div className="answer">{item.answer}</div>}
-    <p className="disclaimer">历史记录仅用于复盘当时的研究过程，不构成投资建议或收益保证。</p>
-  </section>;
-}
-
-function StoredWorkflowTrace({ trace }: { trace: AnalysisWorkflowTrace }) {
-  if (!trace.researchPlan && trace.alternatives.length === 0 && !trace.critique && trace.calls.length === 0) return null;
-  return <div className="workflow-trace">
-    <div className="workflow-trace-title"><div><span>可审计工作流 · {trace.version || "旧版"}</span><strong>当时实际保存的研究阶段</strong></div><small>以下是模型被明确要求输出的工作产物，不是隐藏思维过程。</small></div>
-    {trace.researchPlan && <details><summary><span>01</span><div><strong>研究计划</strong><small>假设、未知与检索线索</small></div><ChevronRight size={15} /></summary><div className="trace-content">{trace.researchPlan}</div></details>}
-    {trace.memoryItems.length > 0 && <details><summary><span>M</span><div><strong>实际采用的长期记忆</strong><small>{trace.memoryItems.length} 条 · 保留当时命中原因</small></div><ChevronRight size={15} /></summary><MemoryItems items={trace.memoryItems} compact /></details>}
-    {trace.alternatives.map((alternative, index) => <details key={alternative.id}><summary><span>{String(index + 2).padStart(2, "0")}</span><div><strong>{alternative.label}</strong><small>{alternative.lens}</small></div><ChevronRight size={15} /></summary><div className="trace-content">{alternative.content}</div></details>)}
-    {trace.critique && <details><summary><span>{String(trace.alternatives.length + 2).padStart(2, "0")}</span><div><strong>独立风险审查</strong><small>证据漏洞、极端风险与过度自信</small></div><ChevronRight size={15} /></summary><div className="trace-content">{trace.critique}</div></details>}
-    {trace.calls.length > 0 && <details className="call-trace"><summary><span>Σ</span><div><strong>模型调用记录</strong><small>{trace.calls.length} 个独立阶段</small></div><ChevronRight size={15} /></summary><div className="call-list">{trace.calls.map((call) => <div key={call.stage}><strong>{call.label}</strong><span>{(call.latencyMs / 1000).toFixed(2)} 秒</span><span>{call.inputTokens == null ? "token 未返回" : `${call.inputTokens.toLocaleString()} 入 / ${(call.outputTokens ?? 0).toLocaleString()} 出`}</span></div>)}</div></details>}
-  </div>;
-}
-
-function StructuredReportView({ report, evidence, analysisId, onCreateDecisionDraft }: { report: StructuredAnalysis; evidence: AnalysisEvidenceReference[]; analysisId: string; onCreateDecisionDraft: (draft: DecisionEntry) => void }) {
-  const evidenceById = new Map(evidence.map((item) => [item.id, item]));
-  const createDecisionDraft = (action: AnalysisAction, index: number) => {
-    const counterPoints = [
-      ...report.options.flatMap((option) => option.risks),
-      ...report.unknowns,
-    ].filter((item, itemIndex, all) => item.trim() && all.indexOf(item) === itemIndex);
-    const invalidation = [action.reviewTrigger, ...report.reviewTriggers]
-      .filter((item, itemIndex, all) => item.trim() && all.indexOf(item) === itemIndex)
-      .join("\n");
-    onCreateDecisionDraft({
-      ...emptyDecision,
-      sourceAnalysisId: analysisId,
-      sourceActionIndex: index,
-      thesis: `${report.verdict}\n\n拟采取行动：${action.action}\n理由：${action.rationale}`,
-      counterThesis: counterPoints.join("\n"),
-      invalidation,
-    });
-  };
-  return <div className="structured-report">
-    <section className="report-verdict"><span>当前最重要判断</span><p>{report.verdict}</p></section>
-    <div className="report-claim-grid">
-      <section><div className="report-section-title"><Check size={14} /><strong>已知事实</strong><small>用户数据或已授权证据</small></div><ClaimList items={report.facts} evidenceById={evidenceById} /></section>
-      <section><div className="report-section-title"><BrainCircuit size={14} /><strong>合理推断</strong><small>不与事实混写</small></div>{report.inferences.length > 0 ? <ClaimList items={report.inferences} evidenceById={evidenceById} /> : <p className="report-empty">本次没有需要单列的推断。</p>}</section>
-    </div>
-    <section className="report-section unknown-section"><div className="report-section-title"><AlertTriangle size={14} /><strong>仍待核实</strong><small>模型不得补写为事实</small></div><ul>{report.unknowns.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>
-    <section className="report-section"><div className="report-section-title"><BrainCircuit size={14} /><strong>方案与取舍</strong><small>{report.options.length} 条可行路径</small></div><div className="report-option-grid">{report.options.map((option, index) => <article key={`${option.name}-${index}`}><span>方案 {String(index + 1).padStart(2, "0")}</span><h3>{option.name}</h3><p><b>适用条件</b>{option.suitableWhen}</p><p><b>机会成本</b>{option.tradeoffs.join("；")}</p><p><b>主要风险</b>{option.risks.join("；")}</p></article>)}</div></section>
-    <section className="report-section"><div className="report-section-title"><ArrowRight size={14} /><strong>下一步行动</strong><small>选择后仍需人工补全与确认</small></div><div className="report-action-list">{report.actions.map((action, index) => <article key={`${action.action}-${index}`}><i>{index + 1}</i><div><strong>{action.action}</strong><p>{action.rationale}</p><small>复盘：{action.reviewTrigger}</small><button className="decision-draft-button" onClick={() => createDecisionDraft(action, index)}><FilePenLine size={12} />转为决策草稿</button></div><em className={action.reversible ? "reversible" : "confirm-first"}>{action.reversible ? "可逆" : "需单独确认"}</em></article>)}</div></section>
-    <section className="report-section trigger-section"><div className="report-section-title"><History size={14} /><strong>复盘与证伪条件</strong><small>未来用结果校准判断</small></div><ul>{report.reviewTriggers.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>
-  </div>;
-}
-
-function ClaimList({ items, evidenceById }: { items: AnalysisClaim[]; evidenceById: Map<string, AnalysisEvidenceReference> }) {
-  return <div className="report-claim-list">{items.map((claim, index) => <article key={`${claim.statement}-${index}`}>
-    <p>{claim.statement}</p>
-    <footer><span>{claim.basis === "research_evidence" ? "研究证据" : "用户数据"}</span>{claim.evidenceIds.map((id) => {
-      const source = evidenceById.get(id);
-      return source ? <a key={id} href={source.sourceUrl} target="_blank" rel="noreferrer" title={`${source.publisher} · ${source.asOfDate}`}>{source.title} · {source.sourceTier} · {source.asOfDate}</a> : <em key={id}>证据 {id}</em>;
-    })}</footer>
-  </article>)}</div>;
-}
-
-function MemoryItems({ items, compact = false, excludedIds = [], onToggle }: { items: MemoryCandidate[]; compact?: boolean; excludedIds?: string[]; onToggle?: (id: string) => void }) {
-  return <div className={`memory-candidate-list ${compact ? "compact" : ""}`}>{items.map((item) => {
-    const selected = onToggle ? !excludedIds.includes(item.id) : item.selected;
-    return <article key={`${item.kind}-${item.id}`} className={`${item.contradiction ? "contradiction" : ""} ${selected ? "" : "excluded"}`}>
-    <div className="memory-head"><div><span>{item.kind === "decision" ? "决策" : "AI 分析"}</span><strong>{item.title}</strong></div><div>{item.reviewed && <em>已复盘</em>}{item.contradiction && <em className="counter">反证</em>}{item.preference === "pinned" && <em>长期保留</em>}{item.retrieval && <b>{item.retrieval.score.toFixed(1)} 分</b>}{onToggle && <button className={selected ? "memory-toggle selected" : "memory-toggle"} onClick={() => onToggle(item.id)}>{selected ? "本次发送" : "留在本机"}</button>}</div></div>
-    <p>{item.summary}{item.preferenceNote ? ` · 我的注释：${item.preferenceNote}` : ""}</p>
-    <div className="memory-reasons">{item.retrieval?.reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>
-    <footer><small>{new Date(item.occurredAt).toLocaleDateString("zh-CN")} · {item.status}</small>{selected && item.retrieval ? <small>{item.retrieval.passes.join(" + ") || "候选初筛"}</small> : <small className="local-memory">不会进入模型</small>}</footer>
-    {!compact && <details><summary>查看冻结的结构化内容</summary><pre>{JSON.stringify(item.content, null, 2)}</pre></details>}
-  </article>;})}</div>;
-}
-
-function Toggle({ icon, title, detail, checked, onChange }: { icon: React.ReactNode; title: string; detail: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return <button className={`toggle-card ${checked ? "selected" : ""}`} onClick={() => onChange(!checked)}><span className="toggle-icon">{icon}</span><div><strong>{title}</strong><small>{detail}</small></div><i>{checked && <Check size={13} />}</i></button>;
-}
-
-
-function ModelSettings({ model, onUpdate, flash }: { model: ModelConfig; onUpdate: (m: ModelConfig) => void; flash: (s: string) => void }) {
-  const [baseUrl, setBaseUrl] = useState(model.baseUrl);
-  const [modelName, setModelName] = useState(model.model);
-  const [apiKey, setApiKey] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [connectionResult, setConnectionResult] = useState("");
-  const [error, setError] = useState("");
-  const [securityConfig, setSecurityConfig] = useState<SecurityPriceConfig | null>(null);
-  const [securityApiKey, setSecurityApiKey] = useState("");
-  const [marketBusy, setMarketBusy] = useState(false);
-  const [marketResult, setMarketResult] = useState("");
-  const [marketError, setMarketError] = useState("");
-
-  useEffect(() => {
-    void getSecurityPriceConfig()
-      .then(setSecurityConfig)
-      .catch((nextError) => setMarketError(String(nextError)));
-  }, []);
-
-  const persist = async () => {
-    setSaving(true); setError(""); setConnectionResult("");
-    try {
-      const next = await saveModelConfig({ provider: "openai-compatible", baseUrl, model: modelName, apiKey: apiKey || undefined });
-      onUpdate(next); setApiKey(""); flash("模型配置已安全保存");
-    } catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
-  };
-
-  const testConnection = async () => {
-    setTesting(true); setError(""); setConnectionResult("");
-    try {
-      const result = await testModelConnection();
-      setConnectionResult(`${result.model} · ${result.latencyMs} ms`);
-    } catch (nextError) { setError(String(nextError)); } finally { setTesting(false); }
-  };
-
-  const clearKey = async () => {
-    if (!window.confirm("确认从系统钥匙串中移除模型 API Key？")) return;
-    setSaving(true); setError(""); setConnectionResult("");
-    try { onUpdate(await deleteModelKey()); flash("模型密钥已从系统钥匙串移除"); }
-    catch (nextError) { setError(String(nextError)); } finally { setSaving(false); }
-  };
-
-  const persistSecurityKey = async () => {
-    if (!securityApiKey.trim()) return;
-    setMarketBusy(true); setMarketError(""); setMarketResult("");
-    try {
-      setSecurityConfig(await saveSecurityPriceConfig(securityApiKey));
-      setSecurityApiKey("");
-      flash("行情密钥已安全保存");
-    } catch (nextError) { setMarketError(String(nextError)); }
-    finally { setMarketBusy(false); }
-  };
-
-  const testSecurityConnection = async () => {
-    setMarketBusy(true); setMarketError(""); setMarketResult("");
-    try {
-      const quote = await getSecurityPrice("AAPL", localDateValue(new Date()));
-      setMarketResult(`${quote.symbol} · ${quote.observedOn} · ${quote.close} ${quote.currency} · ${quote.exchange || quote.micCode}`);
-    } catch (nextError) { setMarketError(String(nextError)); }
-    finally { setMarketBusy(false); }
-  };
-
-  const clearSecurityKey = async () => {
-    if (!window.confirm("确认从系统钥匙串中移除 Twelve Data API Key？")) return;
-    setMarketBusy(true); setMarketError(""); setMarketResult("");
-    try { setSecurityConfig(await deleteSecurityPriceKey()); flash("行情密钥已从系统钥匙串移除"); }
-    catch (nextError) { setMarketError(String(nextError)); }
-    finally { setMarketBusy(false); }
-  };
-
-  return (
-    <div className="page narrow">
-      <PageHeader eyebrow="模型与外部数据" title="模型可以替换，方法论保持稳定" description="AI 与行情服务分别授权；密钥留在设备端，投资数据只按明确动作发送。" />
-      <section className="panel form-panel">
-        <div className="panel-title"><div><span>OpenAI-compatible</span><h2>模型连接</h2></div><div className={`status-dot ${model.hasApiKey ? "connected" : ""}`}>{model.hasApiKey ? "已配置" : "未配置"}</div></div>
-        <div className="form-grid single-column">
-          <label><span>API Base URL</span><input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" /></label>
-          <label><span>模型名称</span><input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="gpt-4.1-mini" /></label>
-          <label><span>API Key</span><div className="secure-input"><KeyRound size={16} /><input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={model.hasApiKey ? "已保存在系统钥匙串；留空则不修改" : "输入模型供应商密钥"} /></div></label>
-        </div>
-        <div className="privacy-note"><LockKeyhole size={18} /><div><strong>密钥与业务数据分离</strong><p>密钥由操作系统钥匙串托管；本地 SQLite 数据库只保存提供商、地址和模型名称。</p></div></div>
-        {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
-        {connectionResult && <div className="connection-success"><Check size={16} /><span><strong>连接成功</strong>{connectionResult}</span></div>}
-        <div className="form-actions">
-          <div className="key-actions">{model.hasApiKey && <button className="danger-text" onClick={clearKey} disabled={saving}><Trash2 size={14} />移除密钥</button>}<button className="secondary" onClick={testConnection} disabled={testing || !model.hasApiKey}>{testing ? <LoaderCircle size={15} className="spin" /> : <Bot size={15} />}测试已保存连接</button></div>
-          <button className="primary" onClick={persist} disabled={saving || !baseUrl || !modelName}><Save size={16} />保存配置</button>
-        </div>
-      </section>
-      <section className="panel form-panel">
-        <div className="panel-title"><div><span>可审计证券价格</span><h2>Twelve Data 日收盘价</h2></div><div className={`status-dot ${securityConfig?.hasApiKey ? "connected" : ""}`}>{securityConfig?.hasApiKey ? "已配置" : "未配置"}</div></div>
-        <p className="section-intro">只在你主动查询持仓估值时调用。服务端使用 Authorization 请求头，密钥不进入浏览器地址、SQLite、AI 上下文或云端同步包。</p>
-        <div className="form-grid single-column">
-          <label><span>Twelve Data API Key</span><div className="secure-input"><KeyRound size={16} /><input type="password" value={securityApiKey} onChange={(event) => setSecurityApiKey(event.target.value)} placeholder={securityConfig?.hasApiKey ? "已保存在系统钥匙串；留空则不修改" : "输入个人 Twelve Data 密钥"} /></div></label>
-        </div>
-        <div className="privacy-note"><LockKeyhole size={18} /><div><strong>来源透明，许可归用户账户</strong><p>mario 保存代码、币种、交易所、观察日和未复权收盘价口径。免费 Basic 方案当前有每分钟与每日额度；个人方案仅适合个人、内部和非商业用途。</p><p><a href="https://twelvedata.com/docs/market-data/time-series" target="_blank" rel="noreferrer">接口方法</a> · <a href="https://twelvedata.com/pricing" target="_blank" rel="noreferrer">额度</a> · <a href="https://twelvedata.com/terms" target="_blank" rel="noreferrer">许可条款</a></p></div></div>
-        {marketError && <div className="error-box"><AlertTriangle size={18} />{marketError}</div>}
-        {marketResult && <div className="connection-success"><Check size={16} /><span><strong>价格连接成功</strong>{marketResult}</span></div>}
-        <div className="form-actions">
-          <div className="key-actions">{securityConfig?.hasApiKey && <button className="danger-text" onClick={clearSecurityKey} disabled={marketBusy}><Trash2 size={14} />移除密钥</button>}<button className="secondary" onClick={testSecurityConnection} disabled={marketBusy || !securityConfig?.hasApiKey}>{marketBusy ? <LoaderCircle size={15} className="spin" /> : <Cloud size={15} />}测试 AAPL 日线</button></div>
-          <button className="primary" onClick={persistSecurityKey} disabled={marketBusy || !securityApiKey.trim()}><Save size={16} />保存行情密钥</button>
-        </div>
-      </section>
-      <section className="architecture-grid">
-        <article><span>01</span><strong>确定性规则层</strong><p>现金流、集中度、期限错配等风险无需调用模型。</p></article>
-        <article><span>02</span><strong>上下文构建层</strong><p>只选择完成当前任务所需的本地数据。</p></article>
-        <article><span>03</span><strong>可替换编排层</strong><p>记忆、检索、探索和反思都是独立阶段。</p></article>
-      </section>
-    </div>
-  );
-}
-
 export default App;
-import { CloudSync } from "./features/account/CloudSync";
-import { PageHeader } from "./components/PageHeader";
-import { DecisionJournal, emptyDecision } from "./features/decisions/DecisionJournal";
-import { NumberField } from "./components/NumberField";
-import { localDateValue } from "./lib/dates";
