@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://haqvpuukgsxuroeqohsk.supabase.co; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>mario · 邮箱验证</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="auth.js" defer></script>
+</head>
+<body>
+  <main>
+    <a class="brand" href="https://github.com/lokinko/mario">mario</a>
+    <p class="eyebrow">账户与同步</p>
+    <h1 id="title">正在检查邮箱确认结果</h1>
+    <p id="message" role="status" aria-live="polite">请稍候…</p>
+    <form id="password-form" hidden>
+      <label for="password">新密码</label>
+      <input id="password" type="password" autocomplete="new-password" required minlength="8" maxlength="1024" placeholder="至少 8 个字符">
+      <label for="confirm">确认新密码</label>
+      <input id="confirm" type="password" autocomplete="new-password" required minlength="8" maxlength="1024">
+      <button id="save" type="submit">保存新密码</button>
+    </form>
+    <button id="verify" hidden>确认邮箱</button>
+    <button id="retry" hidden>重新检查</button>
+    <p id="error" role="alert" hidden></p>
+    <p class="help" id="help">确认完成后，请返回 mario 客户端登录。</p>
+    <a class="download" href="https://github.com/lokinko/mario/releases/latest">下载 mario 客户端</a>
+  </main>
+</body>
+</html>
