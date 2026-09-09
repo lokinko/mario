@@ -17,6 +17,7 @@ import type {
 import { PageHeader } from "../../components/PageHeader";
 import { NumberField } from "../../components/NumberField";
 import { localDateValue } from "../../lib/dates";
+import { useRequestGuard } from "../../lib/useRequestGuard";
 
 export const emptyDecision: DecisionEntry = {
   assetName: "",
@@ -67,17 +68,24 @@ export function DecisionJournal({
     lessons: "",
   });
   const [saving, setSaving] = useState(false);
+  const [rulesReady, setRulesReady] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const loadRequest = useRequestGuard();
   const [error, setError] = useState("");
   const expectedValue =
     (entry.confidencePct / 100) * entry.expectedReturnPct -
     (1 - entry.confidencePct / 100) * Math.abs(entry.downsidePct);
 
   const refresh = async () => {
+    const isCurrent = loadRequest.begin();
+    setLoading(true);
+    setRulesReady(false);
     try {
       const [nextRecords, nextRules] = await Promise.all([
         getDecisions(),
         getInvestmentRules(),
       ]);
+      if (!isCurrent()) return;
       setRecords(nextRecords);
       setRules(nextRules);
       setEntry((current) =>
@@ -86,8 +94,11 @@ export function DecisionJournal({
           : { ...current, ruleChecks: checksForRules(nextRules) },
       );
       setError("");
+      setRulesReady(true);
     } catch (nextError) {
-      setError(String(nextError));
+      if (isCurrent()) setError(String(nextError));
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
   };
 
@@ -101,6 +112,7 @@ export function DecisionJournal({
 
   const activeRules = rules.filter((rule) => rule.active);
   const incompleteRuleChecks =
+    !rulesReady ||
     activeRules.length !== (entry.ruleChecks?.length ?? 0) ||
     (entry.ruleChecks ?? []).some(
       (check) =>
@@ -123,20 +135,17 @@ export function DecisionJournal({
   const reviewed = records.filter((item) => item.review);
   const calibration = useMemo(() => {
     const measurable = reviewed.filter(
-      (item) => item.review?.thesisStatus !== "尚不明确",
+      (item) =>
+        item.review?.thesisStatus === "成立" ||
+        item.review?.thesisStatus === "失效",
     );
-    if (!measurable.length) return null;
+    if (!measurable.length) return { count: 0, error: null };
     const brier =
       measurable.reduce((sum, item) => {
-        const outcome =
-          item.review?.thesisStatus === "成立"
-            ? 1
-            : item.review?.thesisStatus === "失效"
-              ? 0
-              : 0.5;
+        const outcome = item.review?.thesisStatus === "成立" ? 1 : 0;
         return sum + Math.pow(item.confidencePct / 100 - outcome, 2);
       }, 0) / measurable.length;
-    return Math.max(0, Math.round((1 - brier) * 100));
+    return { count: measurable.length, error: brier };
   }, [reviewed]);
 
   const processAverage = reviewed.length
@@ -220,12 +229,12 @@ export function DecisionJournal({
           </small>
         </article>
         <article>
-          <span>简化校准分</span>
-          <strong>{calibration === null ? "—" : `${calibration}`}</strong>
+          <span>概率判断样本误差</span>
+          <strong>
+            {calibration.error === null ? "—" : calibration.error.toFixed(3)}
+          </strong>
           <small>
-            {calibration === null
-              ? "至少需要一条明确结果"
-              : `${reviewed.length} 个样本，仅作训练`}
+            {`${calibration.count} 个明确成立/失效样本；均方误差越低越好，仅描述已有样本，不是能力分`}
           </small>
         </article>
         <article>
@@ -415,9 +424,11 @@ export function DecisionJournal({
         </div>
         <div className="form-actions">
           <p>
-            {incompleteRuleChecks
-              ? "请先完成所有有效规则的逐条确认"
-              : "必填：投资对象、正反逻辑、证伪条件与复盘日期"}
+            {!rulesReady
+              ? "规则尚未读取成功，请等待或重新加载"
+              : incompleteRuleChecks
+                ? "请先完成所有有效规则的逐条确认"
+                : "必填：投资对象、正反逻辑、证伪条件与复盘日期"}
           </p>
           <button
             className="primary"
@@ -447,12 +458,20 @@ export function DecisionJournal({
           <span className="history-count">{records.length} 条</span>
         </div>
         {error && (
-          <div className="error-box">
+          <div className="error-box" role="alert">
             <AlertTriangle size={18} />
             {error}
+            <button
+              className="secondary"
+              disabled={loading}
+              onClick={() => void refresh()}
+            >
+              重新加载决策与规则
+            </button>
           </div>
         )}
-        {!error && records.length === 0 && (
+        {loading && <p role="status">正在读取决策与规则…</p>}
+        {!loading && !error && records.length === 0 && (
           <div className="empty">
             还没有决策记录。先冻结一张决策卡，未来才有可复盘的证据。
           </div>
