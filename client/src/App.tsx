@@ -1,147 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowRight,
-  Bell,
-  BellOff,
-  BookMarked,
-  Bot,
-  BrainCircuit,
-  Check,
-  ChevronRight,
-  CircleDollarSign,
-  Cloud,
-  Copy,
-  Database,
-  Download,
-  Edit3,
-  Eye,
-  FilePenLine,
-  History,
-  KeyRound,
-  LayoutDashboard,
-  LoaderCircle,
-  LogOut,
-  LockKeyhole,
-  Menu,
-  Plus,
-  Save,
-  Send,
-  Settings2,
-  ShieldCheck,
-  Sparkles,
-  Target,
-  Trash2,
-  Undo2,
-  Upload,
-  UserRound,
-  WalletCards,
-  X,
-} from "lucide-react";
-import {
-  applyVerifiedHoldingValuation,
-  deleteModelKey,
-  deleteSecurityPriceKey,
-  deleteHolding,
-  deleteGoal,
-  getDecisions,
-  getFxRate,
-  getSecurityPrice,
-  getSecurityPriceConfig,
-  exportCloudRecoveryKey,
-  getCloudConfig,
-  getCloudStatus,
-  getAnalysis,
-  getAnalysisHistory,
-  getInvestmentRules,
-  getInvestmentRuleHistory,
-  getModelConfig,
-  getMemories,
-  getPortfolioCheckins,
-  getPortfolioEvents,
-  getResearchEvidence,
-  getReviewReminders,
-  getRuleEffectiveness,
-  getSnapshot,
-  getSystemReviews,
-  previewAnalysis,
-  previewPortfolioEventImport,
-  pullCloudSync,
-  pushCloudSync,
-  runAnalysis,
-  reversePortfolioEvent,
-  resendCloudConfirmation,
-  requestCloudPasswordReset,
-  verifyCloudPasswordReset,
-  resetCloudPassword,
-  saveDecision,
-  saveCloudConfig,
-  saveDecisionReview,
-  saveGoal,
-  saveHolding,
-  saveInvestmentRule,
-  saveMemoryPreference,
-  saveModelConfig,
-  savePortfolioCheckin,
-  savePortfolioEvent,
-  commitPortfolioEventImport,
-  saveProfile,
-  saveResearchEvidence,
-  saveSecurityPriceConfig,
-  saveSystemReview,
-  setResearchEvidenceStatus,
-  signInCloud,
-  signOutCloud,
-  signUpCloud,
-  testModelConnection,
-  updateHolding,
-  updateInvestmentRule,
-  updateGoal,
-  importCloudRecoveryKey,
-} from "./api";
-import type {
-  AnalysisPreview,
-  AnalysisClaim,
-  AnalysisAction,
-  AnalysisEvidenceReference,
-  AnalysisRequest,
-  AnalysisResult,
-  AnalysisHistoryItem,
-  AnalysisWorkflowTrace,
-  CloudStatus,
-  ContextSelection,
-  DecisionEntry,
-  DecisionRecord,
-  DecisionReview,
-  DecisionRuleCheck,
-  FinancialProfile,
-  FxRateQuote,
-  Goal,
-  Holding,
-  HoldingValuationEvidence,
-  InvestmentRule,
-  InvestmentRuleInput,
-  InvestmentRuleRevision,
-  MemoryCandidate,
-  ModelConfig,
-  SecurityPriceConfig,
-  PortfolioCheckInInput,
-  PortfolioCheckInRecord,
-  PortfolioEventInput,
-  PortfolioEventImportPreview,
-  PortfolioEventRecord,
-  PortfolioEventType,
-  ResearchEvidence,
-  ResearchEvidenceInput,
-  Snapshot,
-  StructuredAnalysis,
-  StoredAnalysis,
-  SystemReviewInput,
-  SystemReviewRecord,
-  ReviewReminderSummary,
-  RuleCheckStatus,
-  RuleEffectivenessSummary,
-} from "./types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, ArrowRight, Bell, BellOff, BookMarked, Bot, BrainCircuit, Check, ChevronRight, CircleDollarSign, Cloud, Database, Download, Edit3, Eye, FilePenLine, History, KeyRound, LayoutDashboard, LoaderCircle, LockKeyhole, Menu, Plus, Save, Send, Settings2, ShieldCheck, Sparkles, Target, Trash2, Undo2, Upload, WalletCards, X } from "lucide-react";
+import { applyVerifiedHoldingValuation, deleteModelKey, deleteSecurityPriceKey, deleteHolding, deleteGoal, getDecisions, getFxRate, getSecurityPrice, getSecurityPriceConfig, getAnalysis, getAnalysisHistory, getInvestmentRules, getInvestmentRuleHistory, getModelConfig, getMemories, getPortfolioCheckins, getPortfolioEvents, getResearchEvidence, getReviewReminders, getRuleEffectiveness, getSnapshot, getSystemReviews, previewAnalysis, previewPortfolioEventImport, runAnalysis, reversePortfolioEvent, saveGoal, saveHolding, saveInvestmentRule, saveMemoryPreference, saveModelConfig, savePortfolioCheckin, savePortfolioEvent, commitPortfolioEventImport, saveProfile, saveResearchEvidence, saveSecurityPriceConfig, saveSystemReview, setResearchEvidenceStatus, testModelConnection, updateHolding, updateInvestmentRule, updateGoal } from "./api";
+import type { AnalysisPreview, AnalysisClaim, AnalysisAction, AnalysisEvidenceReference, AnalysisRequest, AnalysisResult, AnalysisHistoryItem, AnalysisWorkflowTrace, ContextSelection, DecisionEntry, DecisionRecord, FinancialProfile, FxRateQuote, Goal, Holding, HoldingValuationEvidence, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryCandidate, ModelConfig, SecurityPriceConfig, PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventInput, PortfolioEventImportPreview, PortfolioEventRecord, PortfolioEventType, ResearchEvidence, ResearchEvidenceInput, Snapshot, StructuredAnalysis, StoredAnalysis, SystemReviewInput, SystemReviewRecord, ReviewReminderSummary, RuleEffectivenessSummary } from "./types";
 import {
   checkAndSendReviewReminder,
   disableReviewReminders,
@@ -174,12 +34,6 @@ function holdingValueInBase(holding: Holding, baseCurrency: string) {
   return holding.fxRateToBase ? holding.marketValue * holding.fxRateToBase : 0;
 }
 
-function localDateValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
 const nav = [
   { id: "dashboard" as const, label: "决策总览", icon: LayoutDashboard },
@@ -281,20 +135,29 @@ function App() {
   const [decisionDraft, setDecisionDraft] = useState<DecisionEntry | null>(null);
   const [analysisToOpen, setAnalysisToOpen] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [modelError, setModelError] = useState("");
+  const startupRequest = useRef(0);
 
   const loadApplication = () => {
     setLoading(true);
     setStartupError("");
-    Promise.all([getSnapshot(), getModelConfig()])
-      .then(([nextSnapshot, nextModel]) => {
-        setSnapshot(nextSnapshot);
-        setModel(nextModel);
-      })
-      .catch((error) => setStartupError(String(error)))
-      .finally(() => setLoading(false));
+    const request = ++startupRequest.current;
+    getSnapshot()
+      .then((nextSnapshot) => { if (request === startupRequest.current) setSnapshot(nextSnapshot); })
+      .catch((error) => { if (request === startupRequest.current) setStartupError(String(error)); })
+      .finally(() => { if (request === startupRequest.current) setLoading(false); });
+    getModelConfig()
+      .then((nextModel) => { if (request === startupRequest.current) { setModel(nextModel); setModelError(""); } })
+      .catch((error) => { if (request === startupRequest.current) setModelError(String(error)); });
   };
 
-  useEffect(loadApplication, []);
+  useEffect(() => { loadApplication(); return () => { startupRequest.current += 1; }; }, []);
+
+  const refreshInvestmentData = async () => {
+    setSnapshot(await getSnapshot());
+    setDecisionDraft(null);
+    setAnalysisToOpen(null);
+  };
 
   useEffect(() => {
     if (!loading && !startupError) void checkAndSendReviewReminder().catch(() => undefined);
@@ -321,7 +184,7 @@ function App() {
     );
   }
 
-  if (startupError || !snapshot || !model) {
+  if (startupError || !snapshot) {
     return (
       <div className="center-screen service-error">
         <AlertTriangle size={28} />
@@ -374,31 +237,25 @@ function App() {
 
       <main>
         {notice && <div className="toast"><Check size={16} />{notice}</div>}
-        {view === "dashboard" && <Dashboard snapshot={snapshot} model={model} navigate={navigate} flash={flash} />}
+        {modelError && <div className="error-box" role="alert">模型配置暂时不可用，本地决策与复盘不受影响。<button onClick={loadApplication}>重试</button></div>}
+        {view === "dashboard" && <Dashboard snapshot={snapshot} navigate={navigate} flash={flash} />}
         {view === "foundation" && <Foundation snapshot={snapshot} onUpdate={setSnapshot} flash={flash} />}
         {view === "ledger" && <PortfolioLedger snapshot={snapshot} flash={flash} />}
         {view === "evidence" && <EvidenceWorkbench navigate={navigate} flash={flash} />}
         {view === "decision" && <DecisionJournal flash={flash} seed={decisionDraft} clearSeed={() => setDecisionDraft(null)} onOpenAnalysis={(id) => { setAnalysisToOpen(id); navigate("advisor"); }} />}
         {view === "review" && <ReviewCenter navigate={navigate} flash={flash} />}
         {view === "memory" && <MemoryCenter flash={flash} />}
-        {view === "advisor" && <Advisor model={model} navigate={navigate} requestedAnalysisId={analysisToOpen} clearRequestedAnalysis={() => setAnalysisToOpen(null)} onCreateDecisionDraft={(draft) => { setDecisionDraft(draft); navigate("decision"); }} />}
-        {view === "cloud" && <CloudSync flash={flash} />}
-        {view === "settings" && <ModelSettings model={model} onUpdate={setModel} flash={flash} />}
+        {view === "advisor" && model && <Advisor model={model} navigate={navigate} requestedAnalysisId={analysisToOpen} clearRequestedAnalysis={() => setAnalysisToOpen(null)} onCreateDecisionDraft={(draft) => { setDecisionDraft(draft); navigate("decision"); }} />}
+        {view === "cloud" && <CloudSync flash={flash} onRestore={refreshInvestmentData} />}
+        {view === "settings" && model && <ModelSettings model={model} onUpdate={setModel} flash={flash} />}
+        {(view === "advisor" || view === "settings") && !model && <div className="center-screen"><p>{modelError ? "请先重试读取模型配置。其他本地功能仍可使用。" : "正在读取模型配置…"}</p></div>}
       </main>
     </div>
   );
 }
 
-function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
-  return (
-    <header className="page-header">
-      <div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div>
-      {action}
-    </header>
-  );
-}
 
-function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; model: ModelConfig; navigate: (view: View) => void; flash: (message: string) => void }) {
+function Dashboard({ snapshot, navigate, flash }: { snapshot: Snapshot; navigate: (view: View) => void; flash: (message: string) => void }) {
   const [checkins, setCheckins] = useState<PortfolioCheckInRecord[]>([]);
   const [checkin, setCheckin] = useState<PortfolioCheckInInput>({
     periodLabel: new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" }).format(new Date()),
@@ -416,12 +273,6 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
     return [...totals.entries()].map(([name, value]) => ({ name, value, pct: snapshot.totalValue ? value / snapshot.totalValue * 100 : 0 }));
   }, [snapshot]);
 
-  const readiness = Math.min(100, Math.round(
-    (snapshot.emergencyMonths >= 6 ? 25 : snapshot.emergencyMonths / 6 * 25) +
-    (snapshot.valuationStatus.comparable ? (snapshot.holdings.length > 2 ? 25 : snapshot.holdings.length / 3 * 25) : 0) +
-    (snapshot.profile.horizonYears > 0 ? 25 : 0) +
-    (model.hasApiKey ? 25 : 10),
-  ));
   const latestCheckin = checkins[0];
   const baselineMode = !latestCheckin || !latestCheckin.valuationDate || latestCheckin.baseCurrency !== snapshot.profile.baseCurrency || checkin.resetBaseline;
 
@@ -448,7 +299,7 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
         eyebrow="今天不需要预测市场"
         title="先看目标，再看风险"
         description="这里衡量的是决策质量，而不是鼓励更多交易。"
-        action={<button className="primary" onClick={() => navigate("advisor")}><Sparkles size={17} />开始一次分析</button>}
+        action={<button className="primary" onClick={() => navigate(snapshot.goals.length ? "review" : "foundation")}><ArrowRight size={17} />{snapshot.goals.length ? "检查待复盘判断" : "设定第一个目标"}</button>}
       />
 
       <section className="metric-grid">
@@ -458,7 +309,7 @@ function Dashboard({ snapshot, model, navigate, flash }: { snapshot: Snapshot; m
         </article>
         <article className="metric"><span>应急覆盖</span><strong>{snapshot.emergencyMonths.toFixed(1)} <em>个月</em></strong><small className={snapshot.emergencyMonths >= 6 ? "positive" : "warning"}>{snapshot.emergencyMonths >= 6 ? "处于建议区间" : "建议优先补足"}</small></article>
         <article className="metric"><span>最大资产占比</span><strong>{snapshot.valuationStatus.comparable ? `${snapshot.concentrationPct.toFixed(1)}%` : "—"}</strong><small>{snapshot.valuationStatus.comparable ? "需要结合资产性质判断" : "补齐汇率后再计算"}</small></article>
-        <article className="metric"><span>系统准备度</span><strong>{readiness}<em>/100</em></strong><div className="progress"><i style={{ width: `${readiness}%` }} /></div></article>
+        <article className="metric"><span>资料状态</span><strong>{snapshot.goals.length ? "已设目标" : "待设目标"}</strong><small>{snapshot.valuationStatus.comparable ? "估值口径可比较，不代表投资能力评分" : "估值资料待补充，不计算综合能力分"}</small></article>
       </section>
 
       {snapshot.valuationStatus.warnings.length > 0 && <section className="valuation-warning"><AlertTriangle size={17} /><div><strong>当前估值口径需要补齐</strong><p>{snapshot.valuationStatus.warnings.join("；")}。基准币种为 {snapshot.profile.baseCurrency}{snapshot.valuationStatus.alignedValuationDate ? `，统一估值日 ${snapshot.valuationStatus.alignedValuationDate}` : ""}。</p></div><button className="text-button" onClick={() => navigate("foundation")}>完善持仓</button></section>}
@@ -955,9 +806,6 @@ function Foundation({ snapshot, onUpdate, flash }: { snapshot: Snapshot; onUpdat
   );
 }
 
-function NumberField({ label, value, onChange, prefix, suffix }: { label: string; value: number; onChange: (v: string) => void; prefix?: string; suffix?: string }) {
-  return <label><span>{label}</span><div className="input-affix">{prefix && <i>{prefix}</i>}<input type="number" value={value || ""} onChange={(e) => onChange(e.target.value)} />{suffix && <i>{suffix}</i>}</div></label>;
-}
 
 function emptyEvidence(): ResearchEvidenceInput {
   return {
@@ -1072,171 +920,6 @@ function EvidenceWorkbench({ navigate, flash }: { navigate: (v: View) => void; f
   );
 }
 
-const emptyDecision: DecisionEntry = {
-  assetName: "", thesis: "", counterThesis: "", expectedReturnPct: 0, downsidePct: 0,
-  confidencePct: 50, positionPct: 0, invalidation: "", reviewDate: "", ruleChecks: [],
-};
-
-function checksForRules(rules: InvestmentRule[]): DecisionRuleCheck[] {
-  return rules.filter((rule) => rule.active).map((rule) => ({
-    ruleId: rule.id,
-    ruleRevision: rule.revision,
-    category: rule.category,
-    statement: rule.statement,
-    trigger: rule.trigger,
-    status: "待确认",
-    note: "",
-  }));
-}
-
-function DecisionJournal({ flash, seed, clearSeed, onOpenAnalysis }: { flash: (s: string) => void; seed: DecisionEntry | null; clearSeed: () => void; onOpenAnalysis: (id: string) => void }) {
-  const [entry, setEntry] = useState({ ...emptyDecision });
-  const [records, setRecords] = useState<DecisionRecord[]>([]);
-  const [rules, setRules] = useState<InvestmentRule[]>([]);
-  const [reviewingId, setReviewingId] = useState<string | null>(null);
-  const [review, setReview] = useState<DecisionReview>({ outcomeSummary: "", thesisStatus: "尚不明确", processRating: 3, lessons: "" });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const expectedValue = entry.confidencePct / 100 * entry.expectedReturnPct - (1 - entry.confidencePct / 100) * Math.abs(entry.downsidePct);
-
-  const refresh = async () => {
-    try {
-      const [nextRecords, nextRules] = await Promise.all([getDecisions(), getInvestmentRules()]);
-      setRecords(nextRecords);
-      setRules(nextRules);
-      setEntry((current) => current.ruleChecks?.length ? current : { ...current, ruleChecks: checksForRules(nextRules) });
-      setError("");
-    }
-    catch (nextError) { setError(String(nextError)); }
-  };
-
-  useEffect(() => { void refresh(); }, []);
-  useEffect(() => { if (seed) setEntry({ ...seed, ruleChecks: checksForRules(rules) }); }, [seed, rules]);
-
-  const activeRules = rules.filter((rule) => rule.active);
-  const incompleteRuleChecks = activeRules.length !== (entry.ruleChecks?.length ?? 0)
-    || (entry.ruleChecks ?? []).some((check) => check.status === "待确认" || (check.status === "偏离" && !check.note.trim()));
-
-  const updateRuleCheck = (ruleId: string, update: Partial<DecisionRuleCheck>) => {
-    setEntry({
-      ...entry,
-      ruleChecks: (entry.ruleChecks ?? []).map((check) => check.ruleId === ruleId ? { ...check, ...update } : check),
-    });
-  };
-
-  const reviewed = records.filter((item) => item.review);
-  const calibration = useMemo(() => {
-    const measurable = reviewed.filter((item) => item.review?.thesisStatus !== "尚不明确");
-    if (!measurable.length) return null;
-    const brier = measurable.reduce((sum, item) => {
-      const outcome = item.review?.thesisStatus === "成立" ? 1 : item.review?.thesisStatus === "失效" ? 0 : 0.5;
-      return sum + Math.pow(item.confidencePct / 100 - outcome, 2);
-    }, 0) / measurable.length;
-    return Math.max(0, Math.round((1 - brier) * 100));
-  }, [reviewed]);
-
-  const processAverage = reviewed.length
-    ? reviewed.reduce((sum, item) => sum + (item.review?.processRating ?? 0), 0) / reviewed.length
-    : null;
-
-  const persist = async () => {
-    if (!entry.assetName || !entry.thesis || !entry.counterThesis || !entry.invalidation || !entry.reviewDate || incompleteRuleChecks) return;
-    setSaving(true);
-    try {
-      await saveDecision(entry);
-      flash("决策快照已冻结，可用于未来复盘");
-      setEntry({ ...emptyDecision, ruleChecks: checksForRules(rules) });
-      clearSeed();
-      await refresh();
-    } catch (nextError) { setError(String(nextError)); }
-    finally { setSaving(false); }
-  };
-
-  const beginReview = (record: DecisionRecord) => {
-    setReviewingId(record.id);
-    setReview(record.review ?? { outcomeSummary: "", thesisStatus: "尚不明确", processRating: 3, lessons: "" });
-  };
-
-  const persistReview = async () => {
-    if (!reviewingId || !review.outcomeSummary || !review.lessons) return;
-    setSaving(true);
-    try {
-      await saveDecisionReview(reviewingId, review);
-      await refresh();
-      setReviewingId(null);
-      flash("复盘已保存，判断校准数据已更新");
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <div className="page narrow">
-      <PageHeader eyebrow="方法论 · 决策层" title="先写下来，再按下买入" description="记录当时真正知道的事，避免用事后结果改写记忆。" />
-      <section className="review-metrics">
-        <article><span>决策记录</span><strong>{records.length}</strong><small>原始判断不可被复盘覆盖</small></article>
-        <article><span>已完成复盘</span><strong>{reviewed.length}</strong><small>{records.length ? `${Math.round(reviewed.length / records.length * 100)}% 完成率` : "等待第一条记录"}</small></article>
-        <article><span>简化校准分</span><strong>{calibration === null ? "—" : `${calibration}`}</strong><small>{calibration === null ? "至少需要一条明确结果" : `${reviewed.length} 个样本，仅作训练`}</small></article>
-        <article><span>过程评分</span><strong>{processAverage === null ? "—" : processAverage.toFixed(1)}</strong><small>独立于实际盈亏</small></article>
-      </section>
-      <section className="panel form-panel decision-card">
-        <div className="panel-title"><div><span>投资决策卡</span><h2>把观点变成可证伪的假设</h2></div><FilePenLine size={21} className="muted-icon" /></div>
-        {entry.sourceAnalysisId && <div className="decision-draft-notice"><BrainCircuit size={18} /><div><strong>来自 AI 分析的待确认草稿</strong><p>只复制了文字线索。投资对象、收益、损失、置信度、仓位和复盘日期必须由你判断；点击“冻结”前不会形成决策。</p></div><button className="text-button" onClick={() => { setEntry({ ...emptyDecision }); clearSeed(); }}>放弃草稿</button></div>}
-        <div className="form-grid">
-          <label className="span-2"><span>投资对象</span><input value={entry.assetName} onChange={(e) => setEntry({ ...entry, assetName: e.target.value })} placeholder="你真正购买的是什么？" /></label>
-          <label className="span-2"><span>核心逻辑</span><textarea value={entry.thesis} onChange={(e) => setEntry({ ...entry, thesis: e.target.value })} placeholder="收益从哪里来？市场可能错在哪里？" /></label>
-          <label className="span-2"><span>最强反方观点</span><textarea value={entry.counterThesis} onChange={(e) => setEntry({ ...entry, counterThesis: e.target.value })} placeholder="站在反方立场，什么最可能让这笔投资失败？" /></label>
-          <NumberField label="上行情景收益" value={entry.expectedReturnPct} onChange={(v) => setEntry({ ...entry, expectedReturnPct: Number(v) })} suffix="%" />
-          <NumberField label="下行情景损失" value={entry.downsidePct} onChange={(v) => setEntry({ ...entry, downsidePct: Number(v) })} suffix="%" />
-          <NumberField label="判断置信度" value={entry.confidencePct} onChange={(v) => setEntry({ ...entry, confidencePct: Number(v) })} suffix="%" />
-          <NumberField label="计划仓位" value={entry.positionPct} onChange={(v) => setEntry({ ...entry, positionPct: Number(v) })} suffix="%" />
-          <label className="span-2"><span>证伪条件</span><textarea value={entry.invalidation} onChange={(e) => setEntry({ ...entry, invalidation: e.target.value })} placeholder="出现什么证据时，你会承认原始判断已经失效？" /></label>
-          <label><span>计划复盘日</span><input type="date" value={entry.reviewDate} onChange={(e) => setEntry({ ...entry, reviewDate: e.target.value })} /></label>
-          <div className={`ev-card ${expectedValue >= 0 ? "positive-bg" : "negative-bg"}`}><span>粗略概率加权结果</span><strong>{expectedValue > 0 ? "+" : ""}{expectedValue.toFixed(1)}%</strong><small>仅作思考校准，不代表预测</small></div>
-        </div>
-        <div className="rule-check-workbench">
-          <div className="rule-check-title"><div><span>决策前规则检查</span><strong>逐条确认，而不是事后声称自己遵守了纪律</strong></div><small>{activeRules.length ? `${activeRules.length} 条当前有效规则` : "当前没有有效规则"}</small></div>
-          {activeRules.length === 0 && <div className="empty">还没有需要确认的个人规则。可在“复盘与规则”中把经验沉淀成可执行约束。</div>}
-          <div className="rule-check-list">{(entry.ruleChecks ?? []).map((check) => <article key={check.ruleId} className={`status-${check.status}`}>
-            <div><span>{check.category} · v{check.ruleRevision}</span><strong>{check.statement}</strong><small>触发：{check.trigger}</small></div>
-            <label><span>本次判断</span><select value={check.status} onChange={(event) => updateRuleCheck(check.ruleId, { status: event.target.value as RuleCheckStatus, note: event.target.value === "偏离" ? check.note : "" })}><option>待确认</option><option>遵守</option><option>偏离</option><option>不适用</option></select></label>
-            {check.status === "偏离" && <label className="rule-deviation-note"><span>偏离原因（必填）</span><input maxLength={1000} value={check.note} onChange={(event) => updateRuleCheck(check.ruleId, { note: event.target.value })} placeholder="为什么仍决定偏离？需要什么证据纠正？" /></label>}
-          </article>)}</div>
-        </div>
-        <div className="form-actions"><p>{incompleteRuleChecks ? "请先完成所有有效规则的逐条确认" : "必填：投资对象、正反逻辑、证伪条件与复盘日期"}</p><button className="primary" onClick={persist} disabled={saving || !entry.assetName || !entry.thesis || !entry.counterThesis || !entry.invalidation || !entry.reviewDate || incompleteRuleChecks}><Save size={16} />冻结决策快照</button></div>
-      </section>
-
-      <section className="panel decision-history">
-        <div className="panel-title"><div><span>历史证据</span><h2>按原始假设复盘，而不是看盈亏讲故事</h2></div><span className="history-count">{records.length} 条</span></div>
-        {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
-        {!error && records.length === 0 && <div className="empty">还没有决策记录。先冻结一张决策卡，未来才有可复盘的证据。</div>}
-        <div className="decision-list">
-          {records.map((record) => {
-            const due = Boolean(record.reviewDate && record.reviewDate <= localDateValue(new Date()) && !record.review);
-            return <article key={record.id} className={reviewingId === record.id ? "reviewing" : ""}>
-              <div className="decision-summary">
-                <div className="decision-name"><span className={record.review ? "reviewed" : due ? "due" : "planned"}>{record.review ? "已复盘" : due ? "待复盘" : "观察中"}</span><strong>{record.assetName}</strong><small>{new Date(record.createdAt).toLocaleDateString("zh-CN")}</small></div>
-                <div><span>置信度</span><strong>{record.confidencePct}%</strong></div>
-                <div><span>计划仓位</span><strong>{record.positionPct}%</strong></div>
-                <div><span>复盘日</span><strong>{record.reviewDate || "未设定"}</strong></div>
-                <button className="secondary" onClick={() => beginReview(record)}>{record.review ? "更新复盘" : "开始复盘"}</button>
-              </div>
-              <div className="decision-thesis"><p><b>原始逻辑</b>{record.thesis}</p><p><b>证伪条件</b>{record.invalidation}</p>{record.sourceAnalysisId && <button className="decision-provenance" onClick={() => onOpenAnalysis(record.sourceAnalysisId!)}><BrainCircuit size={12} />源自 AI 分析 · 行动 {(record.sourceActionIndex ?? 0) + 1} · 打开原记录</button>}</div>
-              {record.ruleChecks?.length > 0 && <div className="decision-rule-snapshot">{record.ruleChecks.map((check) => <div key={check.ruleId}><span className={`rule-check-status status-${check.status}`}>{check.status}</span><strong>{check.statement}</strong><small>v{check.ruleRevision}{check.note ? ` · ${check.note}` : ""}</small></div>)}</div>}
-              {record.review && reviewingId !== record.id && <div className="review-result"><span>{record.review.thesisStatus}</span><p>{record.review.outcomeSummary}</p><strong>过程 {record.review.processRating}/5</strong>{record.review.actualReturnPct !== undefined && <em className={record.review.actualReturnPct >= 0 ? "gain" : "loss"}>{record.review.actualReturnPct >= 0 ? "+" : ""}{record.review.actualReturnPct}%</em>}</div>}
-              {reviewingId === record.id && <div className="review-form">
-                <label><span>原始逻辑结果</span><select value={review.thesisStatus} onChange={(e) => setReview({ ...review, thesisStatus: e.target.value as DecisionReview["thesisStatus"] })}><option>成立</option><option>部分成立</option><option>失效</option><option>尚不明确</option></select></label>
-                <label><span>实际收益（可选）</span><div className="input-affix"><input type="number" value={review.actualReturnPct ?? ""} onChange={(e) => setReview({ ...review, actualReturnPct: e.target.value === "" ? undefined : Number(e.target.value) })} /><i>%</i></div></label>
-                <label><span>决策过程评分</span><select value={review.processRating} onChange={(e) => setReview({ ...review, processRating: Number(e.target.value) })}>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value} / 5</option>)}</select></label>
-                <label className="span-3"><span>实际发生了什么？</span><textarea value={review.outcomeSummary} onChange={(e) => setReview({ ...review, outcomeSummary: e.target.value })} placeholder="只记录事实，区分价格结果与逻辑变化。" /></label>
-                <label className="span-3"><span>如何修正未来决策？</span><textarea value={review.lessons} onChange={(e) => setReview({ ...review, lessons: e.target.value })} placeholder="保留、修改或删除哪条规则？" /></label>
-                <div className="span-3 review-actions"><button className="text-button" onClick={() => setReviewingId(null)}>取消</button><button className="primary" disabled={saving || !review.outcomeSummary || !review.lessons} onClick={persistReview}><Save size={15} />保存复盘</button></div>
-              </div>}
-            </article>;
-          })}
-        </div>
-      </section>
-    </div>
-  );
-}
 
 const emptyRule: InvestmentRuleInput = {
   category: "风险",
@@ -1861,206 +1544,6 @@ function Toggle({ icon, title, detail, checked, onChange }: { icon: React.ReactN
   return <button className={`toggle-card ${checked ? "selected" : ""}`} onClick={() => onChange(!checked)}><span className="toggle-icon">{icon}</span><div><strong>{title}</strong><small>{detail}</small></div><i>{checked && <Check size={13} />}</i></button>;
 }
 
-const bundledCloudConfig = (() => {
-  const url = String(import.meta.env.VITE_SUPABASE_URL ?? "").trim();
-  const publishableKey = String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
-  return url && publishableKey ? { url, publishableKey } : null;
-})();
-
-function CloudSync({ flash }: { flash: (message: string) => void }) {
-  const [status, setStatus] = useState<CloudStatus | null>(null);
-  const [url, setUrl] = useState("");
-  const [publishableKey, setPublishableKey] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [recoveryKey, setRecoveryKey] = useState("");
-  const [revealedKey, setRevealedKey] = useState("");
-  const [authMode, setAuthMode] = useState<"login" | "signup" | "recover" | "verify" | "reset">("login");
-  const [authError, setAuthError] = useState("");
-  const [authMessage, setAuthMessage] = useState("");
-  const [proof, setProof] = useState("");
-  const [recoveryId, setRecoveryId] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
-  const [result, setResult] = useState("");
-
-  const refresh = async () => {
-    const nextStatus = await getCloudStatus();
-    setStatus(nextStatus);
-    if (nextStatus.email) setEmail(nextStatus.email);
-  };
-
-  useEffect(() => {
-    getCloudConfig()
-      .then(async (storedConfig) => {
-        const config = storedConfig ?? bundledCloudConfig;
-        if (config) { setUrl(config.url); setPublishableKey(config.publishableKey); }
-        const nextStatus = !storedConfig && bundledCloudConfig
-          ? await saveCloudConfig(bundledCloudConfig)
-          : await getCloudStatus();
-        setStatus(nextStatus);
-        if (nextStatus.email) setEmail(nextStatus.email);
-      })
-      .catch((nextError) => setError(String(nextError)));
-  }, []);
-
-  const execute = async (name: string, action: () => Promise<string>) => {
-    setBusy(name); setError(""); setResult("");
-    try { const message = await action(); setResult(message); }
-    catch (nextError) { setError(String(nextError)); }
-    finally { setBusy(""); }
-  };
-
-  const persistConfig = () => execute("config", async () => {
-    const next = await saveCloudConfig({ url, publishableKey });
-    setStatus(next); flash("云端服务配置已保存");
-    return "服务地址只用于账户认证和加密数据包同步。";
-  });
-
-  const authExecute = async (name: string, action: () => Promise<void>) => {
-    setBusy(name); setAuthError(""); setAuthMessage("");
-    try { await action(); }
-    catch (nextError) { setAuthError(nextError instanceof Error ? nextError.message : String(nextError)); }
-    finally { setBusy(""); }
-  };
-
-  const changeAuthMode = (mode: typeof authMode) => {
-    setAuthMode(mode); setAuthError(""); setAuthMessage(""); setPassword("");
-    setProof(""); setRecoveryId(""); setNewPassword(""); setConfirmPassword("");
-  };
-
-  const authenticate = (mode: "signup" | "login") => authExecute(mode, async () => {
-    const response = mode === "signup" ? await signUpCloud(email, password) : await signInCloud(email, password);
-    setPassword(""); await refresh(); flash(response.message);
-    setAuthMessage(response.message);
-    if (!response.signedIn) setAuthMode("login");
-  });
-
-  const resendConfirmation = () => authExecute("resend", async () => {
-    const response = await resendCloudConfirmation(email);
-    await refresh(); flash(response.message);
-    setAuthMessage(response.message);
-  });
-
-  const requestReset = () => authExecute("recover", async () => {
-    const response = await requestCloudPasswordReset(email.trim());
-    setEmail(email.trim()); setProof(""); setRecoveryId(""); setAuthMode("verify"); setAuthMessage(response.message);
-  });
-
-  const verifyReset = () => authExecute("verify", async () => {
-    const response = await verifyCloudPasswordReset(email, proof);
-    setRecoveryId(response.recoveryId); setProof(""); setAuthMode("reset"); setAuthMessage("邮箱验证成功，请在 10 分钟内设置新密码。");
-  });
-
-  const finishReset = () => authExecute("reset", async () => {
-    if (newPassword !== confirmPassword) throw new Error("两次输入的新密码不一致");
-    const response = await resetCloudPassword(recoveryId, newPassword);
-    setNewPassword(""); setConfirmPassword(""); setRecoveryId(""); setPassword("");
-    setAuthMode("login"); setAuthMessage(response.message);
-  });
-
-  const logout = () => execute("logout", async () => {
-    setStatus(await signOutCloud()); setPassword("");
-    return "已退出账户；本地投资数据和恢复密钥仍保留在此设备。";
-  });
-
-  const push = () => execute("push", async () => {
-    const response = await pushCloudSync(); await refresh();
-    flash(`已上传云端版本 ${response.revision}`);
-    return `${response.message}（${response.recordCount} 条记录）`;
-  });
-
-  const pull = async () => {
-    if (!window.confirm("拉取会以云端快照替换本机的投资域数据。模型配置、模型密钥和账户配置不会改变。确认继续？")) return;
-    await execute("pull", async () => {
-      const response = await pullCloudSync(true); await refresh();
-      flash(`已恢复云端版本 ${response.revision}`);
-      window.setTimeout(() => window.location.reload(), 900);
-      return `${response.message}（${response.recordCount} 条记录）`;
-    });
-  };
-
-  const revealRecoveryKey = async () => {
-    if (!window.confirm("恢复密钥可以解密你的云端投资数据。仅在私密环境中显示，并请离线保管。继续？")) return;
-    await execute("reveal", async () => {
-      const response = await exportCloudRecoveryKey(); setRevealedKey(response.recoveryKey);
-      return response.warning;
-    });
-  };
-
-  const copyRecoveryKey = async () => {
-    await navigator.clipboard.writeText(revealedKey); flash("恢复密钥已复制，请离线保管");
-  };
-
-  const importRecoveryKey = async () => {
-    if (status?.hasRecoveryKey && !window.confirm("本机已有恢复密钥。替换后，原密钥对应的云端密文可能无法在本机解密。确认替换？")) return;
-    await execute("import", async () => {
-      await importCloudRecoveryKey(recoveryKey, Boolean(status?.hasRecoveryKey));
-      setRecoveryKey(""); await refresh(); flash("恢复密钥已保存到系统钥匙串");
-      return "现在可以拉取同一账户的云端加密快照。";
-    });
-  };
-
-  if (!status) return <div className="center-screen"><LoaderCircle className="spin" /><span>正在读取账户与同步状态…</span></div>;
-
-  return <div className="page narrow cloud-page">
-    <PageHeader eyebrow="账户与同步" title="跨设备延续同一套投资系统" description="账户负责识别你；投资数据在离开设备前完成加密，云端无法读取明文。" action={<div className={`status-dot ${status.signedIn ? "connected" : ""}`}>{status.signedIn ? status.email : "未登录"}</div>} />
-
-    <section className="panel form-panel">
-      <div className="panel-title"><div><span>可替换提供商 · Supabase 参考实现</span><h2>云端服务</h2></div><Cloud size={22} className="muted-icon" /></div>
-      <div className="form-grid single-column">
-        <label><span>Project URL</span><input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://your-project.supabase.co" /></label>
-        <label><span>Publishable / anon Key</span><div className="secure-input"><KeyRound size={16} /><input value={publishableKey} onChange={(event) => setPublishableKey(event.target.value)} placeholder="公开客户端 Key，不要填写 service_role Key" /></div></label>
-      </div>
-      <div className="privacy-note"><ShieldCheck size={18} /><div><strong>不要使用 service_role Key</strong><p>客户端只需要 Publishable/anon Key；数据库由 RLS 和带版本比较的写入函数限制。</p></div></div>
-      <div className="form-actions"><p>更换服务地址会退出当前账户并清除同步基线，不删除本地数据。</p><button className="primary" onClick={persistConfig} disabled={busy !== "" || !url || !publishableKey}><Save size={16} />保存服务配置</button></div>
-    </section>
-
-    <section className="panel form-panel">
-      <div className="panel-title"><div><span>设备绑定</span><h2>{status.signedIn ? "当前账户" : ({ login: "登录账户", signup: "创建账户", recover: "忘记密码", verify: "验证重置邮件", reset: "设置新密码" })[authMode]}</h2></div><UserRound size={22} className="muted-icon" /></div>
-      {status.signedIn ? <div className="account-card"><div><strong>{status.email}</strong><span>登录令牌仅保存在系统钥匙串</span></div><button className="danger-text" onClick={logout} disabled={busy !== ""}><LogOut size={14} />退出账户</button></div> : <>
-        <div className="form-grid single-column">
-          <label><span>邮箱</span><input type="email" autoComplete="email" disabled={busy !== "" || authMode === "verify" || authMode === "reset"} value={email} onChange={(event) => { setEmail(event.target.value); setAuthError(""); }} placeholder="name@example.com" /></label>
-          {(authMode === "login" || authMode === "signup") && <label><span>密码</span><div className="secure-input"><LockKeyhole size={16} /><input type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 8 个字符" /></div></label>}
-          {authMode === "verify" && <label><span>邮件验证码或重置链接</span><input type="password" autoComplete="off" value={proof} onChange={(event) => setProof(event.target.value)} placeholder="输入验证码，或粘贴邮件按钮的完整链接" /><small>如果邮件只有按钮，请右键或长按“Reset Password”并复制链接地址，回到这里粘贴，无需打开链接。链接已打开或过期时，可重新发送。</small></label>}
-          {authMode === "reset" && <><label><span>新密码</span><input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="至少 8 个字符" /></label><label><span>确认新密码</span><input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>{confirmPassword && newPassword !== confirmPassword && <p role="alert">两次输入的新密码不一致</p>}</>}
-        </div>
-        {authError && <div className="error-box" role="alert"><AlertTriangle size={18} />{authError}</div>}
-        {authMessage && <div className="connection-success" role="status"><Check size={16} /><span>{authMessage}</span></div>}
-        {authMode === "login" && status.emailConfirmationPending && <p>请先点击注册确认邮件中的链接，再返回登录。</p>}
-        <div className="form-actions"><p>{authMode === "login" ? "还没有账户？选择去注册。忘记密码可以通过邮箱重置。" : authMode === "signup" ? "注册后请检查邮箱中的确认邮件。" : "重置登录密码后，云端数据仍需原同步恢复密钥解密。"}</p><div className="key-actions">
-          {authMode !== "login" && <button className="secondary" onClick={() => changeAuthMode("login")} disabled={busy !== ""}>返回登录</button>}
-          {authMode === "login" && <><button className="secondary" onClick={() => changeAuthMode("signup")} disabled={busy !== ""}>去注册</button><button className="secondary" onClick={() => changeAuthMode("recover")} disabled={busy !== ""}>忘记密码</button><button className="secondary" onClick={resendConfirmation} disabled={busy !== "" || !status.configured || !email.trim()}>重发确认邮件</button></>}
-          {(authMode === "login" || authMode === "signup") && <button className="primary" onClick={() => authenticate(authMode)} disabled={busy !== "" || !status.configured || !email.trim() || (authMode === "signup" ? password.length < 8 : !password)}>{busy === authMode ? "正在处理…" : authMode === "login" ? "登录" : "创建账户"}</button>}
-          {(authMode === "recover" || authMode === "verify") && <button className="secondary" onClick={requestReset} disabled={busy !== "" || !status.configured || !email.trim()}>{authMode === "verify" ? "重新发送重置邮件" : "发送重置邮件"}</button>}
-          {authMode === "verify" && <button className="primary" onClick={verifyReset} disabled={busy !== "" || !proof.trim()}>验证邮件</button>}
-          {authMode === "reset" && <><button className="secondary" onClick={() => changeAuthMode("recover")} disabled={busy !== ""}>重新验证邮箱</button><button className="primary" onClick={finishReset} disabled={busy !== "" || newPassword.length < 8 || newPassword !== confirmPassword}>保存新密码</button></>}
-        </div></div>
-      </>}
-    </section>
-
-    <section className="panel form-panel">
-      <div className="panel-title"><div><span>端到端加密 · 手动触发</span><h2>同步控制台</h2></div><div className={`status-dot ${!status.localChangedSinceSync && status.baseRevision > 0 ? "connected" : ""}`}>{status.baseRevision > 0 ? `云端版本 ${status.baseRevision}` : "尚未同步"}</div></div>
-      <div className="sync-summary"><article><span>本机状态</span><strong>{status.localChangedSinceSync ? "有待同步修改" : "与同步基线一致"}</strong></article><article><span>上次成功同步</span><strong>{status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleString("zh-CN") : "无"}</strong></article><article><span>恢复密钥</span><strong>{status.hasRecoveryKey ? "已存入钥匙串" : "尚未生成 / 导入"}</strong></article></div>
-      <div className="sync-actions"><button className="primary" onClick={push} disabled={busy !== "" || !status.signedIn}><Upload size={16} />上传加密快照</button><button className="secondary" onClick={pull} disabled={busy !== "" || !status.signedIn || !status.hasRecoveryKey}><Download size={16} />拉取并替换本机数据</button></div>
-      <div className="privacy-boundary">{status.privacyBoundary.map((item) => <div key={item}><Check size={13} />{item}</div>)}</div>
-    </section>
-
-    <section className="panel form-panel recovery-panel">
-      <div className="panel-title"><div><span>跨设备恢复</span><h2>恢复密钥</h2></div><KeyRound size={22} className="muted-icon" /></div>
-      <p className="section-intro">云端不保存此密钥。首次上传后从当前设备导出；在新设备登录同一账户后导入，才能解密数据。</p>
-      {revealedKey && <div className="recovery-value"><code>{revealedKey}</code><button className="secondary" onClick={copyRecoveryKey}><Copy size={14} />复制</button></div>}
-      <div className="form-grid single-column"><label><span>从其他设备导入恢复密钥</span><input type="password" value={recoveryKey} onChange={(event) => setRecoveryKey(event.target.value)} placeholder="mario-sync-v1:…" /></label></div>
-      <div className="form-actions"><button className="secondary" onClick={revealRecoveryKey} disabled={busy !== "" || !status.signedIn || !status.hasRecoveryKey}>显示本机恢复密钥</button><button className="primary" onClick={importRecoveryKey} disabled={busy !== "" || !status.signedIn || !recoveryKey}>保存导入密钥</button></div>
-    </section>
-
-    {busy && <div className="connection-success"><LoaderCircle size={16} className="spin" /><span><strong>正在处理</strong>同步期间请不要关闭应用</span></div>}
-    {error && <div className="error-box"><AlertTriangle size={18} />{error}</div>}
-    {result && <div className="connection-success"><Check size={16} /><span><strong>操作完成</strong>{result}</span></div>}
-  </div>;
-}
 
 function ModelSettings({ model, onUpdate, flash }: { model: ModelConfig; onUpdate: (m: ModelConfig) => void; flash: (s: string) => void }) {
   const [baseUrl, setBaseUrl] = useState(model.baseUrl);
@@ -2175,3 +1658,8 @@ function ModelSettings({ model, onUpdate, flash }: { model: ModelConfig; onUpdat
 }
 
 export default App;
+import { CloudSync } from "./features/account/CloudSync";
+import { PageHeader } from "./components/PageHeader";
+import { DecisionJournal, emptyDecision } from "./features/decisions/DecisionJournal";
+import { NumberField } from "./components/NumberField";
+import { localDateValue } from "./lib/dates";

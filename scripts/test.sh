@@ -13,6 +13,7 @@ if [[ "$(uname -s)" == "Darwin" ]] && [[ -x "/Library/Developer/CommandLineTools
 fi
 
 npm run build --prefix "$root_dir/client"
+npm test --prefix "$root_dir/client"
 node --test "$root_dir/scripts/test-auth-page.mjs"
 cargo fmt --manifest-path "$root_dir/server/Cargo.toml" -- --check
 cargo fmt --manifest-path "$root_dir/client/src-tauri/Cargo.toml" -- --check

@@ -53,7 +53,7 @@ let localServiceConfig: Promise<LocalServiceConfig> | undefined;
 function getLocalServiceConfig(): Promise<LocalServiceConfig> {
   if (!localServiceConfig) {
     localServiceConfig = "__TAURI_INTERNALS__" in window
-      ? invoke<LocalServiceConfig>("local_service_config")
+      ? invoke<LocalServiceConfig>("local_service_config").catch((error) => { localServiceConfig = undefined; throw error; })
       : Promise.resolve({ baseUrl: import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4217/api" });
   }
   return localServiceConfig;
@@ -61,39 +61,15 @@ function getLocalServiceConfig(): Promise<LocalServiceConfig> {
 
 async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const service = await getLocalServiceConfig();
-  let response: Response | undefined;
-  let lastError: unknown;
-  const attempts = !init?.method || init.method === "GET" ? 10 : 1;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      response = await fetch(`${service.baseUrl}${path}`, {
-        ...init,
-        headers: {
-          "Content-Type": "application/json",
-          ...(service.authToken ? { Authorization: `Bearer ${service.authToken}` } : {}),
-          ...(init?.headers ?? {}),
-        },
-      });
-      break;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => window.setTimeout(resolve, 150));
-    }
-  }
-  if (!response) throw lastError ?? new Error("无法连接本地服务");
-  if (!response.ok) {
-    const body = await response.text();
-    let message = body;
-    try {
-      const parsed = JSON.parse(body) as { error?: string };
-      if (parsed.error) message = parsed.error;
-    } catch {
-      // Keep the original non-JSON response for diagnostics.
-    }
-    throw new Error(message || `本地服务返回 ${response.status}`);
-  }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  return requestJson<T>(`${service.baseUrl}${path}`, {
+    ...init,
+    timeoutMs: path === "/analysis" || path === "/model-config/test" ? 300000 : path.startsWith("/cloud/") ? 120000 : 15000,
+    headers: {
+      "Content-Type": "application/json",
+      ...(service.authToken ? { Authorization: `Bearer ${service.authToken}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
 }
 
 export async function getSnapshot(): Promise<Snapshot> {
@@ -380,3 +356,4 @@ export async function saveResearchEvidence(evidence: ResearchEvidenceInput): Pro
 export async function setResearchEvidenceStatus(id: string, active: boolean): Promise<ResearchEvidence> {
   return httpRequest<ResearchEvidence>(`/research-evidence/${encodeURIComponent(id)}/status`, { method: "PUT", body: JSON.stringify({ active }) });
 }
+import { requestJson } from "./lib/transport";
