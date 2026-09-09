@@ -327,13 +327,23 @@ impl SupabaseProvider {
 
     async fn parse_auth(&self, response: reqwest::Response) -> AppResult<AuthSession> {
         if response.status().is_success() {
-            return response
-                .json::<AuthSession>()
-                .await
-                .map_err(AppError::Network);
+            return parse_auth_payload(response.json::<serde_json::Value>().await?);
         }
         Err(auth_error(response).await)
     }
+}
+
+fn parse_auth_payload(value: serde_json::Value) -> AppResult<AuthSession> {
+    // GoTrue returns a bare user for signup awaiting confirmation, but a
+    // session containing `user` for login and verification.
+    if value.get("id").is_some() && value.get("user").is_none() {
+        return Ok(AuthSession {
+            access_token: None,
+            refresh_token: None,
+            user: Some(serde_json::from_value(value)?),
+        });
+    }
+    Ok(serde_json::from_value(value)?)
 }
 
 #[async_trait]
@@ -1354,6 +1364,17 @@ mod tests {
             localized_auth_detail("Invalid login credentials"),
             "邮箱或密码不正确；尚未注册请先注册，忘记密码可重置"
         );
+    }
+
+    #[test]
+    fn signup_accepts_bare_user_and_login_preserves_session() {
+        let signup = parse_auth_payload(serde_json::json!({"id":"user-1", "email":"user@example.com", "confirmation_sent_at":"2026-09-09T00:00:00Z"})).unwrap();
+        assert_eq!(signup.user.unwrap().id, "user-1");
+        assert!(signup.access_token.is_none());
+        let login = parse_auth_payload(serde_json::json!({"access_token":"access", "refresh_token":"refresh", "user":{"id":"user-1", "email":"user@example.com"}})).unwrap();
+        assert_eq!(login.access_token.as_deref(), Some("access"));
+        assert_eq!(login.refresh_token.as_deref(), Some("refresh"));
+        assert_eq!(login.user.unwrap().id, "user-1");
     }
 
     #[test]

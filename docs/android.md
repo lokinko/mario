@@ -35,7 +35,7 @@ npm run android:init
 
 ```bash
 npm run android:build
-adb install -r outputs/mario_0.4.2_android-aarch64-debug.apk
+adb install -r outputs/mario_0.4.3_android-aarch64-debug.apk
 ```
 
 需要让调试 APK 首次启动即绑定某个 Supabase 项目时，在构建进程中传入公开客户端配置：
