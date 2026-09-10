@@ -500,6 +500,10 @@ pub struct ModelConnectionTest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisRequest {
+    #[serde(default)]
+    pub web_search: bool,
+    #[serde(default)]
+    pub user_message: Option<String>,
     pub question: String,
     pub workflow: String,
     pub use_memory: bool,
@@ -661,6 +665,11 @@ pub struct AnalysisOption {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisAction {
+    // Defaults keep older frozen reports readable; new output is validated strictly.
+    #[serde(default)]
+    pub supporting_fact_indices: Vec<usize>,
+    #[serde(default)]
+    pub evidence_limits: Vec<String>,
     pub action: String,
     pub rationale: String,
     pub reversible: bool,
@@ -678,6 +687,18 @@ pub struct OutputValidationTrace {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisEvidenceReference {
+    #[serde(default)]
+    pub asset_name: String,
+    #[serde(default)]
+    pub evidence_type: String,
+    #[serde(default)]
+    pub claim: String,
+    #[serde(default)]
+    pub notes: String,
+    #[serde(default)]
+    pub stance: String,
+    #[serde(default)]
+    pub captured_at: String,
     pub id: String,
     pub title: String,
     pub publisher: String,
@@ -689,6 +710,12 @@ pub struct AnalysisEvidenceReference {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisWorkflowTrace {
+    #[serde(default)]
+    pub web_search: Option<WebSearchTrace>,
+    #[serde(default)]
+    pub advice_grounding: Vec<crate::ai::grounding::AdviceGrounding>,
+    #[serde(default)]
+    pub personal_context: Option<serde_json::Value>,
     #[serde(default)]
     pub version: String,
     #[serde(default)]
@@ -721,6 +748,8 @@ pub struct AnalysisAlternative {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCallTrace {
+    #[serde(default)]
+    pub request_count: Option<usize>,
     pub stage: String,
     pub label: String,
     pub latency_ms: u64,
@@ -744,6 +773,8 @@ pub struct AnalysisResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisHistoryItem {
+    #[serde(default)]
+    pub grounding_status: Option<String>,
     pub id: String,
     pub question: String,
     pub created_at: String,
@@ -1071,4 +1102,12 @@ pub struct ResearchEvidence {
 #[serde(rename_all = "camelCase")]
 pub struct ResearchEvidenceStatusInput {
     pub active: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebSearchTrace {
+    pub status: String,
+    pub search_calls: usize,
+    pub warnings: Vec<String>,
 }

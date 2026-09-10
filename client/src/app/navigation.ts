@@ -1,6 +1,6 @@
 import {
   BookMarked,
-  BrainCircuit,
+  MessageCircle,
   CircleDollarSign,
   Database,
   FilePenLine,
@@ -38,19 +38,19 @@ export const views: View[] = [
 
 export function initialView(): View {
   const candidate = window.location.hash.replace("#", "") as View;
-  return views.includes(candidate) ? candidate : "dashboard";
+  return views.includes(candidate) ? candidate : "advisor";
 }
 
 export const nav = [
-  { id: "dashboard" as const, label: "现在", icon: LayoutDashboard },
-  { id: "decision" as const, label: "决策", icon: FilePenLine },
-  { id: "review" as const, label: "复盘", icon: History },
+  { id: "advisor" as const, label: "问答", icon: MessageCircle },
 ];
 
 export const supportingNav = [
-  { id: "foundation" as const, label: "财务底座", icon: WalletCards },
+  { id: "decision" as const, label: "决策确认", icon: FilePenLine },
+  { id: "review" as const, label: "复盘记录", icon: History },
+  { id: "foundation" as const, label: "持仓与目标", icon: WalletCards },
+  { id: "dashboard" as const, label: "资产概览", icon: LayoutDashboard },
   { id: "ledger" as const, label: "组合流水", icon: CircleDollarSign },
-  { id: "evidence" as const, label: "研究证据", icon: Database },
-  { id: "memory" as const, label: "长期记忆", icon: BookMarked },
-  { id: "advisor" as const, label: "AI 研究室", icon: BrainCircuit },
+  { id: "evidence" as const, label: "参考资料", icon: Database },
+  { id: "memory" as const, label: "记忆与规则", icon: BookMarked },
 ];

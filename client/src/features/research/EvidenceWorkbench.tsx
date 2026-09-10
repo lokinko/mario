@@ -306,9 +306,13 @@ export function EvidenceWorkbench({
               />
             </label>
           </div>
-
         </div>
-        <details className="inline-help"><summary>记录说明</summary><p>来源内容需自行核验；一手来源不代表结论正确。支持与反方材料分开记录，错误记录归档后重建。</p></details>
+        <details className="inline-help">
+          <summary>记录说明</summary>
+          <p>
+            来源内容需自行核验；一手来源不代表结论正确。支持与反方材料分开记录，错误记录归档后重建。
+          </p>
+        </details>
         <LoadState
           loading={loading}
           error={error}
@@ -343,9 +347,7 @@ export function EvidenceWorkbench({
           <span className="history-count">{items.length} 条</span>
         </div>
         {!loading && !error && items.length === 0 && (
-          <div className="empty">
-            暂无证据，先添加一条来源。
-          </div>
+          <div className="empty">暂无证据，先添加一条来源。</div>
         )}
         <div className="evidence-list">
           {items.map((item) => (

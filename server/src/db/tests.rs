@@ -1604,6 +1604,8 @@ fn stores_analysis_transparency_audit() {
                     risks: vec!["执行偏差".into()],
                 }],
                 actions: vec![crate::models::AnalysisAction {
+                    supporting_fact_indices: vec![0],
+                    evidence_limits: vec!["旧记录的限制".into()],
                     action: "核对目标权重".into(),
                     rationale: "避免错误交易".into(),
                     reversible: true,
@@ -1632,6 +1634,7 @@ fn stores_analysis_transparency_audit() {
         Some("investment-workflow-v4")
     );
     assert_eq!(history[0].verdict.as_deref(), Some("先控制风险"));
+    assert_eq!(history[0].grounding_status.as_deref(), Some("unavailable"));
     let history_json = serde_json::to_value(&history[0]).unwrap();
     assert!(history_json.get("workflowTrace").is_none());
     assert_eq!(history_json["workflowVersion"], "investment-workflow-v4");
@@ -1642,6 +1645,34 @@ fn stores_analysis_transparency_audit() {
     assert_eq!(
         stored.workflow_trace.unwrap().version,
         "investment-workflow-v4"
+    );
+    let mut reviewed_result = result.clone();
+    reviewed_result.id = "analysis-checked".into();
+    reviewed_result.workflow_trace.advice_grounding = vec![crate::ai::grounding::AdviceGrounding {
+        action_index: 0,
+        status: "contradicted".into(),
+        reason: "与原始资料相反".into(),
+        checks: vec![],
+    }];
+    db.save_analysis(&reviewed_result, "核对结论").unwrap();
+    let checked_history = db
+        .analysis_history()
+        .unwrap()
+        .into_iter()
+        .find(|item| item.id == "analysis-checked")
+        .unwrap();
+    assert_eq!(
+        checked_history.grounding_status.as_deref(),
+        Some("contradicted")
+    );
+    assert_eq!(
+        db.analysis("analysis-checked")
+            .unwrap()
+            .workflow_trace
+            .unwrap()
+            .advice_grounding[0]
+            .reason,
+        "与原始资料相反"
     );
     assert!(matches!(db.analysis("missing"), Err(AppError::NotFound(_))));
     let memory = db

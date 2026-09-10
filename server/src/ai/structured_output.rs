@@ -10,10 +10,11 @@ pub const STRUCTURED_ANALYSIS_CONTRACT: &str = r#"
   "inferences": [{"statement":"基于事实的推断","basis":"user_data 或 research_evidence","evidenceIds":[]}],
   "unknowns": ["仍需核实的信息"],
   "options": [{"name":"方案名称","suitableWhen":"适用条件","tradeoffs":["机会成本或取舍"],"risks":["主要风险"]}],
-  "actions": [{"action":"下一步行动","rationale":"为什么","reversible":true,"reviewTrigger":"何时复盘或停止"}],
+  "actions": [{"supportingFactIndices":[0],"evidenceLimits":["这条建议的证据局限与尚需核实的条件"],"action":"下一步行动","rationale":"为什么","reversible":true,"reviewTrigger":"何时复盘或停止"}],
   "reviewTriggers": ["未来复盘或证伪条件"]
 }
-facts、unknowns、options、actions、reviewTriggers 均至少一项。basis 只能是 user_data 或 research_evidence；basis 为 research_evidence 时必须引用本次上下文里的证据 ID，basis 为 user_data 时 evidenceIds 必须为空。不得编造证据 ID。inferences 可以为空。所有字段都必须存在。"#;
+facts、unknowns、options、actions、reviewTriggers 均至少一项。basis 只能是 user_data 或 research_evidence；basis 为 research_evidence 时必须引用本次上下文里的证据 ID，basis 为 user_data 时 evidenceIds 必须为空。不得编造证据 ID。inferences 可以为空。所有字段都必须存在。
+每条 actions 必须通过 supportingFactIndices 引用 facts 中至少一条真正支持该行动的事实（从 0 开始，不得越界或重复），不得把所有事实无差别挂在每条建议上。rationale 必须解释这些事实如何结合用户持仓、目标或风险约束推出该行动，并区分事实与判断；涉及外部环境的建议须关联带 research_evidence 引用的事实。evidenceLimits 必须逐条列出该建议的口径、时效、反方证据或缺失信息，至少一条。来源不足时应建议核实/补充资料或暂缓行动，不得为了显得专业而编造事实、补齐引用或承诺收益。"#;
 
 pub fn parse_structured_analysis(
     content: &str,
@@ -63,8 +64,19 @@ pub fn render_report(report: &StructuredAnalysis) -> String {
                 "需单独确认"
             };
             format!(
-                "- {}（{}）：{}；复盘：{}",
-                action.action, reversibility, action.rationale, action.review_trigger
+                "- {}（{}）：{}；依据：{}；证据局限：{}；复盘：{}",
+                action.action,
+                reversibility,
+                action.rationale,
+                action
+                    .supporting_fact_indices
+                    .iter()
+                    .filter_map(|index| report.facts.get(*index))
+                    .map(|fact| fact.statement.clone())
+                    .collect::<Vec<_>>()
+                    .join("；"),
+                action.evidence_limits.join("；"),
+                action.review_trigger
             )
         })
         .collect::<Vec<_>>()
@@ -129,6 +141,20 @@ fn validate_report(
         validate_text_list("options.risks", &option.risks, 600)?;
     }
     for action in &report.actions {
+        check_count(
+            "actions.supportingFactIndices",
+            action.supporting_fact_indices.len(),
+            1,
+            12,
+        )?;
+        let mut seen = HashSet::new();
+        for index in &action.supporting_fact_indices {
+            if *index >= report.facts.len() || !seen.insert(index) {
+                return Err("actions.supportingFactIndices 不能越界或重复".into());
+            }
+        }
+        check_count("actions.evidenceLimits", action.evidence_limits.len(), 1, 6)?;
+        validate_text_list("actions.evidenceLimits", &action.evidence_limits, 800)?;
         check_text("actions.action", &action.action, 800)?;
         check_text("actions.rationale", &action.rationale, 800)?;
         check_text("actions.reviewTrigger", &action.review_trigger, 800)?;
@@ -229,7 +255,7 @@ mod tests {
             "inferences": [{"statement":"回撤可能超出预算","basis":"research_evidence","evidenceIds":["e1"]}],
             "unknowns": ["未来现金流是否稳定"],
             "options": [{"name":"分批调整","suitableWhen":"无需立即用钱","tradeoffs":["可能错过上涨"],"risks":["执行拖延"]}],
-            "actions": [{"action":"先核对目标权重","rationale":"减少错误交易","reversible":true,"reviewTrigger":"一周后复核"}],
+            "actions": [{"supportingFactIndices":[0],"evidenceLimits":["未来现金流未核实"],"action":"先核对目标权重","rationale":"减少错误交易","reversible":true,"reviewTrigger":"一周后复核"}],
             "reviewTriggers": ["集中度降至目标范围"]
         })
         .to_string()
@@ -241,6 +267,37 @@ mod tests {
             parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
         assert!(render_report(&report).contains("先降低集中风险"));
         assert!(render_report(&report).contains("证据：e1"));
+    }
+
+    #[test]
+    fn rejects_advice_without_grounding_or_with_invalid_fact_indices() {
+        for indices in [
+            serde_json::json!([]),
+            serde_json::json!([9]),
+            serde_json::json!([0, 0]),
+        ] {
+            let mut value: serde_json::Value = serde_json::from_str(&valid_json()).unwrap();
+            value["actions"][0]["supportingFactIndices"] = indices;
+            let error =
+                parse_structured_analysis(&value.to_string(), &HashSet::from(["e1".into()]))
+                    .unwrap_err();
+            assert!(error.contains("supportingFactIndices"));
+        }
+    }
+
+    #[test]
+    fn rejects_missing_caveats_but_can_read_legacy_stored_reports() {
+        let mut value: serde_json::Value = serde_json::from_str(&valid_json()).unwrap();
+        value["actions"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("evidenceLimits");
+        assert!(serde_json::from_value::<StructuredAnalysis>(value.clone()).is_ok());
+        assert!(
+            parse_structured_analysis(&value.to_string(), &HashSet::from(["e1".into()]))
+                .unwrap_err()
+                .contains("evidenceLimits")
+        );
     }
 
     #[test]

@@ -457,7 +457,9 @@ export function Dashboard({
             </div>
           ) : (
             <p className="planning-empty">
-              {snapshot.valuationStatus.comparable && snapshot.holdings.length ? "暂无再平衡提示" : "完善持仓后检查再平衡"}
+              {snapshot.valuationStatus.comparable && snapshot.holdings.length
+                ? "暂无再平衡提示"
+                : "完善持仓后检查再平衡"}
             </p>
           )}
           <details className="inline-help">

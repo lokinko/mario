@@ -1,9 +1,12 @@
-mod openai_compatible;
+pub(crate) mod grounding;
+mod native_provider;
 mod orchestrator;
 mod provider;
 mod structured_output;
 mod workflow;
 
-pub use openai_compatible::OpenAiCompatibleProvider;
+pub use native_provider::NativeModelProvider;
 pub use orchestrator::InvestmentOrchestrator;
-pub use provider::{ChatMessage, ModelCompletion, ModelProvider, ModelUsage};
+pub use provider::{ChatMessage, ModelProvider};
+#[cfg(test)]
+pub use provider::{ModelCompletion, ModelUsage};

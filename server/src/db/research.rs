@@ -130,7 +130,36 @@ impl Database {
             let parsed_trace = trace.as_deref().and_then(|value| {
                 serde_json::from_str::<crate::models::AnalysisWorkflowTrace>(value).ok()
             });
+            let grounding_status = parsed_trace
+                .as_ref()
+                .map(|trace| {
+                    if trace.advice_grounding.is_empty() {
+                        "unavailable"
+                    } else if trace
+                        .advice_grounding
+                        .iter()
+                        .any(|item| item.status == "contradicted")
+                    {
+                        "contradicted"
+                    } else if trace
+                        .advice_grounding
+                        .iter()
+                        .any(|item| item.status == "insufficient")
+                    {
+                        "insufficient"
+                    } else if trace
+                        .advice_grounding
+                        .iter()
+                        .any(|item| item.status != "supported")
+                    {
+                        "unavailable"
+                    } else {
+                        "supported"
+                    }
+                })
+                .map(str::to_string);
             history.push(AnalysisHistoryItem {
+                grounding_status,
                 id,
                 question,
                 created_at,

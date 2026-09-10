@@ -1,5 +1,14 @@
-import { AlertTriangle, ArrowRight, BrainCircuit, Check, ChevronRight, FilePenLine, History, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  BrainCircuit,
+  Check,
+  ChevronRight,
+  FilePenLine,
+  History,
+  Sparkles,
+} from "lucide-react";
 import type {
+  AdviceGrounding,
   AnalysisClaim,
   AnalysisAction,
   AnalysisEvidenceReference,
@@ -8,6 +17,7 @@ import type {
   StructuredAnalysis,
   StoredAnalysis,
 } from "../../types";
+import { formatMoney } from "../../lib/format";
 import { emptyDecision } from "../decisions/DecisionJournal";
 import { MemoryItems } from "../memory/MemoryItems";
 
@@ -49,6 +59,7 @@ export function StoredAnalysisView({
           </p>
         </div>
       </div>
+      {trace && <WebSearchStatus trace={trace} />}
       {audit && (
         <div className="analysis-audit stored-analysis-audit">
           <div>
@@ -114,6 +125,8 @@ export function StoredAnalysisView({
       {trace?.structuredReport ? (
         <StructuredReportView
           report={trace.structuredReport}
+          personalContext={trace.personalContext}
+          grounding={trace.adviceGrounding}
           evidence={trace.evidenceCatalog ?? []}
           analysisId={item.id}
           onCreateDecisionDraft={onCreateDecisionDraft}
@@ -235,37 +248,19 @@ export function StoredWorkflowTrace({
 export function StructuredReportView({
   report,
   evidence,
+  personalContext,
+  grounding,
   analysisId,
   onCreateDecisionDraft,
 }: {
   report: StructuredAnalysis;
+  personalContext?: AnalysisWorkflowTrace["personalContext"];
+  grounding?: AdviceGrounding[];
   evidence: AnalysisEvidenceReference[];
   analysisId: string;
   onCreateDecisionDraft: (draft: DecisionEntry) => void;
 }) {
   const evidenceById = new Map(evidence.map((item) => [item.id, item]));
-  const createDecisionDraft = (action: AnalysisAction, index: number) => {
-    const counterPoints = [
-      ...report.options.flatMap((option) => option.risks),
-      ...report.unknowns,
-    ].filter(
-      (item, itemIndex, all) => item.trim() && all.indexOf(item) === itemIndex,
-    );
-    const invalidation = [action.reviewTrigger, ...report.reviewTriggers]
-      .filter(
-        (item, itemIndex, all) =>
-          item.trim() && all.indexOf(item) === itemIndex,
-      )
-      .join("\n");
-    onCreateDecisionDraft({
-      ...emptyDecision,
-      sourceAnalysisId: analysisId,
-      sourceActionIndex: index,
-      thesis: `${report.verdict}\n\n拟采取行动：${action.action}\n理由：${action.rationale}`,
-      counterThesis: counterPoints.join("\n"),
-      invalidation,
-    });
-  };
   return (
     <div className="structured-report">
       <section className="report-verdict">
@@ -333,37 +328,14 @@ export function StructuredReportView({
           ))}
         </div>
       </section>
-      <section className="report-section">
-        <div className="report-section-title">
-          <ArrowRight size={14} />
-          <strong>下一步行动</strong>
-          <small>选择后仍需人工补全与确认</small>
-        </div>
-        <div className="report-action-list">
-          {report.actions.map((action, index) => (
-            <article key={`${action.action}-${index}`}>
-              <i>{index + 1}</i>
-              <div>
-                <strong>{action.action}</strong>
-                <p>{action.rationale}</p>
-                <small>复盘：{action.reviewTrigger}</small>
-                <button
-                  className="decision-draft-button"
-                  onClick={() => createDecisionDraft(action, index)}
-                >
-                  <FilePenLine size={12} />
-                  转为决策草稿
-                </button>
-              </div>
-              <em
-                className={action.reversible ? "reversible" : "confirm-first"}
-              >
-                {action.reversible ? "可逆" : "需单独确认"}
-              </em>
-            </article>
-          ))}
-        </div>
-      </section>
+      <AdviceCards
+        report={report}
+        personalContext={personalContext}
+        grounding={grounding}
+        evidence={evidence}
+        analysisId={analysisId}
+        onCreateDecisionDraft={onCreateDecisionDraft}
+      />
       <section className="report-section trigger-section">
         <div className="report-section-title">
           <History size={14} />
@@ -404,9 +376,10 @@ export function ClaimList({
                   href={source.sourceUrl}
                   target="_blank"
                   rel="noreferrer"
-                  title={`${source.publisher} · ${source.asOfDate}`}
+                  title={`${source.publisher} · ${source.asOfDate || "资料日期未提供"}`}
                 >
-                  {source.title} · {source.sourceTier} · {source.asOfDate}
+                  {source.title} · {source.sourceTier} ·{" "}
+                  {source.asOfDate || "资料日期未提供"}
                 </a>
               ) : (
                 <em key={id}>证据 {id}</em>
@@ -416,5 +389,402 @@ export function ClaimList({
         </article>
       ))}
     </div>
+  );
+}
+
+export function AdviceCards({
+  onAsk,
+  report,
+  evidence,
+  personalContext,
+  grounding,
+  analysisId,
+  onCreateDecisionDraft,
+}: {
+  onAsk?: (question: string) => void;
+  report: StructuredAnalysis;
+  personalContext?: AnalysisWorkflowTrace["personalContext"];
+  grounding?: AdviceGrounding[];
+  evidence: AnalysisEvidenceReference[];
+  analysisId: string;
+  onCreateDecisionDraft: (draft: DecisionEntry) => void;
+}) {
+  const evidenceById = new Map(evidence.map((item) => [item.id, item]));
+  const createDecisionDraft = (action: AnalysisAction, index: number) => {
+    const counterPoints = [
+      ...report.options.flatMap((option) => option.risks),
+      ...report.unknowns,
+    ].filter(
+      (item, itemIndex, all) => item.trim() && all.indexOf(item) === itemIndex,
+    );
+    const invalidation = [action.reviewTrigger, ...report.reviewTriggers]
+      .filter(
+        (item, itemIndex, all) =>
+          item.trim() && all.indexOf(item) === itemIndex,
+      )
+      .join("\n");
+    onCreateDecisionDraft({
+      ...emptyDecision,
+      sourceAnalysisId: analysisId,
+      sourceActionIndex: index,
+      thesis: `${report.verdict}\n\n拟采取行动：${action.action}\n理由：${action.rationale}\n\n依据：${(action.supportingFactIndices ?? []).flatMap((i) => (report.facts[i] ? [report.facts[i].statement] : [])).join("；")}\n证据局限：${(action.evidenceLimits ?? []).join("；")}`,
+      counterThesis: counterPoints.join("\n"),
+      invalidation,
+    });
+  };
+
+  return (
+    <section className="advice-cards" aria-label="建议与依据">
+      {report.actions.map((action, index) => {
+        const review = grounding?.find((item) => item.actionIndex === index);
+        const facts = (action.supportingFactIndices ?? []).flatMap((i) =>
+          report.facts[i] ? [report.facts[i]] : [],
+        );
+        const sourceIds = [
+          ...new Set(facts.flatMap((fact) => fact.evidenceIds)),
+        ];
+        const personalFacts = facts.filter(
+          (fact) => fact.basis === "user_data",
+        );
+        return (
+          <article
+            className="evidence-advice"
+            key={`${action.action}-${index}`}
+          >
+            <header>
+              <span>建议 {index + 1}</span>
+              <h3>{action.action}</h3>
+            </header>
+            <div
+              className={`advice-grounding-status ${review?.status ?? "unavailable"}`}
+            >
+              <strong>
+                {review?.status === "supported"
+                  ? "资料范围内支持 · 模型核对"
+                  : review?.status === "contradicted"
+                    ? "发现证据矛盾"
+                    : review?.status === "insufficient"
+                      ? "证据不足"
+                      : "尚未完成证据核对"}
+              </strong>
+              <p>
+                {review?.reason ??
+                  "旧记录没有逐条核对结果，请用当前资料重新分析。"}
+              </p>
+              {review && review.checks.length > 0 && (
+                <details>
+                  <summary>核对用到的原值与引文</summary>
+                  <ul>
+                    {review.checks.map((check, i) => (
+                      <li key={i}>
+                        {report.facts[check.factIndex]?.statement} —{" "}
+                        {check.sourceKind === "local"
+                          ? check.sourceRef === "/currentUserMessage"
+                            ? "本轮陈述"
+                            : "个人资料原值"
+                          : "来源摘录"}
+                        ：<q>{check.quote}</q>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              <small>模型核对不等于独立事实认证，也不验证未来结果。</small>
+              {onAsk && review?.status !== "supported" && (
+                <button
+                  className="text-button"
+                  onClick={() =>
+                    onAsk(
+                      `请先补齐这条建议的依据：“${action.action}”。核对问题：${review?.reason ?? "尚未核对"}。请指出最关键的缺失资料，并在证据不足时暂缓结论。`,
+                    )
+                  }
+                >
+                  继续核实这条建议
+                </button>
+              )}
+            </div>
+            <p className="advice-rationale">{action.rationale}</p>
+            {facts.length ? (
+              <div className="advice-grounding">
+                <strong>为什么适合你的情况</strong>
+                <ul>
+                  {facts.map((fact, i) => (
+                    <li key={i}>
+                      <span>
+                        {fact.basis === "user_data" ? "个人资料" : "外部信息"}
+                      </span>
+                      {fact.statement}
+                    </li>
+                  ))}
+                </ul>
+                <small>
+                  {personalFacts.length} 项个人资料依据 · {sourceIds.length}{" "}
+                  条外部引用
+                </small>
+              </div>
+            ) : (
+              <p className="advice-gap">
+                这份旧回答没有保存逐条建议的证据关联，需重新分析后核对依据。
+              </p>
+            )}
+            {personalFacts.length > 0 && (
+              <PersonalContextEvidence context={personalContext} />
+            )}
+            {sourceIds.map((id) => {
+              const source = evidenceById.get(id);
+              return source ? (
+                <SourceEvidence key={id} source={source} />
+              ) : (
+                <p className="advice-gap" key={id}>
+                  引用 {id} 的来源记录缺失，暂时无法核实。
+                </p>
+              );
+            })}
+            {!sourceIds.length && (
+              <p className="advice-gap">
+                未关联外部来源；这条建议不能据此说明当前市场或产品状况。
+              </p>
+            )}
+            {(action.evidenceLimits ?? []).length > 0 && (
+              <div className="advice-limits">
+                <strong>适用边界与待核实</strong>
+                <ul>
+                  {action.evidenceLimits!.map((limit, i) => (
+                    <li key={i}>{limit}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <footer>
+              <span>重新评估：{action.reviewTrigger}</span>
+              <button
+                className="decision-draft-button"
+                disabled={review?.status !== "supported"}
+                title={
+                  review?.status !== "supported"
+                    ? "补充或核对证据后重新分析"
+                    : undefined
+                }
+                onClick={() => createDecisionDraft(action, index)}
+              >
+                <FilePenLine size={12} />
+                确认行动草稿
+              </button>
+            </footer>
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
+export function SourceEvidence({
+  source,
+}: {
+  source: AnalysisEvidenceReference;
+}) {
+  // Historic/imported data may predate URL validation. Never make unsafe schemes clickable.
+  let safeUrl: string | null = null;
+  try {
+    const url = new URL(source.sourceUrl);
+    if (
+      ["https:", "http:"].includes(url.protocol) &&
+      !url.username &&
+      !url.password
+    )
+      safeUrl = url.href;
+  } catch {
+    /* Render the title as text when the source URL cannot be opened safely. */
+  }
+  return (
+    <details className="source-evidence">
+      <summary>
+        <span>
+          {source.publisher} · {source.asOfDate || "资料日期未提供"}
+        </span>
+        <strong>
+          {safeUrl ? (
+            <a
+              href={safeUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {source.title} ↗
+            </a>
+          ) : (
+            source.title
+          )}
+        </strong>
+        <small>
+          {source.sourceTier}
+          {source.stance ? ` · ${source.stance}` : ""}
+        </small>
+      </summary>
+      {source.claim && (
+        <p>
+          <b>
+            {source.evidenceType === "native_web_excerpt"
+              ? "原生引用片段"
+              : source.evidenceType === "native_web_summary"
+                ? "模型摘要（待核对原文）"
+                : "来源摘要"}
+          </b>
+          {source.claim}
+        </p>
+      )}
+      {source.notes && (
+        <p>
+          <b>口径与局限</b>
+          {source.notes}
+        </p>
+      )}
+      <p className="source-boundary">
+        资料日期不代表实时行情。摘要与原文的一致性仍需核对。
+      </p>
+      {safeUrl ? (
+        <a href={safeUrl} target="_blank" rel="noreferrer">
+          打开原始来源 ↗
+        </a>
+      ) : (
+        <span>来源链接不可用</span>
+      )}
+    </details>
+  );
+}
+
+export function PersonalContextEvidence({
+  context,
+}: {
+  context?: AnalysisWorkflowTrace["personalContext"];
+}) {
+  if (!context)
+    return (
+      <p className="advice-gap">
+        旧记录未保存个人资料快照，不能用当前持仓替代当时依据。
+      </p>
+    );
+  const holdings = context.portfolio?.holdings ?? [];
+  const profile = context.financialProfile?.profile;
+  return (
+    <details className="source-evidence personal-evidence">
+      <summary>
+        <strong>核对这次授权的持仓与目标</strong>
+        <small>分析时的资料快照 · 用户提供的数据</small>
+      </summary>
+      {context.currentUserMessage && (
+        <p>
+          <b>本轮补充（尚未写入档案）</b>：{context.currentUserMessage}
+        </p>
+      )}
+      {profile && (
+        <p>
+          风险偏好：{profile.riskLevel} · 可承受回撤：{profile.maxDrawdownPct}%
+          · 投资期限：{profile.horizonYears} 年
+        </p>
+      )}
+      {holdings.length > 0 ? (
+        <ul>
+          {holdings.map((holding) => (
+            <li key={holding.id}>
+              <strong>{holding.name}</strong>{" "}
+              {formatMoney(holding.marketValue, holding.currency)} · 估值日{" "}
+              {holding.valuationDate || "未填写"}
+              <br />
+              <small>
+                用户录入市值
+                {context.portfolio?.holdingValuations?.some(
+                  (item) => item.holdingId === holding.id,
+                )
+                  ? "；已附当时的价格来源记录"
+                  : "；未附价格核验记录"}
+              </small>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>本次没有授权持仓明细或尚未录入持仓。</p>
+      )}
+      {(context.portfolio?.holdingValuations ?? []).map((quote) => (
+        <SourceEvidence
+          key={quote.holdingId}
+          source={{
+            id: quote.holdingId,
+            title: `${quote.symbol} · ${quote.observedOn} 收盘价`,
+            publisher: quote.providerName,
+            sourceUrl: quote.sourceUrl,
+            sourceTier: "价格数据服务",
+            asOfDate: quote.observedOn,
+            claim: `单价 ${quote.unitPrice} ${quote.currency} × 数量 ${quote.quantity} = ${quote.marketValue} ${quote.currency}；${quote.priceBasis}`,
+            notes: quote.disclaimer,
+            capturedAt: quote.capturedAt,
+          }}
+        />
+      ))}
+      {(context.goals ?? []).map((goal) => (
+        <p key={goal.id}>
+          目标：{goal.name} · 计划日期 {goal.targetDate}
+        </p>
+      ))}
+      <p className="source-boundary">
+        这些是当时提供的资料，不代表实时资产；模型对资料的概括仍需与你的实际情况核对。
+      </p>
+    </details>
+  );
+}
+
+export function EvidenceOverview({
+  report,
+  evidence,
+}: {
+  report: StructuredAnalysis;
+  evidence: AnalysisEvidenceReference[];
+}) {
+  const cited = new Set(
+    report.facts.concat(report.inferences).flatMap((fact) => fact.evidenceIds),
+  );
+  const themes = [
+    ...new Set(evidence.map((item) => item.assetName).filter(Boolean)),
+  ];
+  return (
+    <details className="source-evidence evidence-overview">
+      <summary>
+        <strong>本次外部信息覆盖</strong>
+        <small>
+          {evidence.length} 条授权资料 ·{" "}
+          {evidence.filter((item) => cited.has(item.id)).length} 条被回答引用
+        </small>
+      </summary>
+      {themes.length > 0 && <p>涉及主题：{themes.join("、")}</p>}
+      <p className="source-boundary">
+        汇总本次授权的已保存资料，包括公开宏观指标；尚不覆盖全市场行情与最新公司披露。
+      </p>
+      {evidence.length ? (
+        evidence.map((source) => (
+          <div key={source.id}>
+            <small>
+              {cited.has(source.id) ? "回答已引用" : "候选资料，回答未引用"}
+            </small>
+            <SourceEvidence source={source} />
+          </div>
+        ))
+      ) : (
+        <p>
+          当前没有可引用的外部资料，需要补充来源后再形成涉及市场环境的判断。
+        </p>
+      )}
+    </details>
+  );
+}
+
+export function WebSearchStatus({ trace }: { trace: AnalysisWorkflowTrace }) {
+  if (!trace.webSearch) return null;
+  return (
+    <p className="source-boundary" role="status">
+      {trace.webSearch.status === "completed"
+        ? "已通过供应商网页搜索取得来源。"
+        : "网页搜索资料不完整。"}
+      {trace.webSearch.warnings.join("；")}
+    </p>
   );
 }

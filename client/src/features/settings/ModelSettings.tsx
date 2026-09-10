@@ -32,6 +32,11 @@ export function ModelSettings({
   onUpdate: (m: ModelConfig) => void;
   flash: (s: string) => void;
 }) {
+  const [provider, setProvider] = useState<ModelConfig["provider"]>(
+    model.provider === "openai-compatible"
+      ? "openai-responses"
+      : model.provider,
+  );
   const [baseUrl, setBaseUrl] = useState(model.baseUrl);
   const [modelName, setModelName] = useState(model.model);
   const [apiKey, setApiKey] = useState("");
@@ -66,7 +71,7 @@ export function ModelSettings({
     setConnectionResult("");
     try {
       const next = await saveModelConfig({
-        provider: "openai-compatible",
+        provider,
         baseUrl,
         model: modelName,
         apiKey: apiKey || undefined,
@@ -174,6 +179,27 @@ export function ModelSettings({
         </div>
         <div className="form-grid single-column">
           <label>
+            <span>模型接口</span>
+            <select
+              value={provider}
+              onChange={(event) => {
+                const next = event.target.value as ModelConfig["provider"];
+                setProvider(next);
+                setBaseUrl(
+                  next === "anthropic"
+                    ? "https://api.anthropic.com/v1"
+                    : "https://api.openai.com/v1",
+                );
+                setModelName("");
+                setApiKey("");
+                setConnectionResult("");
+              }}
+            >
+              <option value="openai-responses">OpenAI Responses</option>
+              <option value="anthropic">Anthropic Messages</option>
+            </select>
+          </label>
+          <label>
             <span>API Base URL</span>
             <input
               value={baseUrl}
@@ -186,7 +212,11 @@ export function ModelSettings({
             <input
               value={modelName}
               onChange={(e) => setModelName(e.target.value)}
-              placeholder="gpt-4.1-mini"
+              placeholder={
+                provider === "anthropic"
+                  ? "填写支持网页搜索的 Claude 模型 ID"
+                  : "填写支持网页搜索的 OpenAI 模型 ID"
+              }
             />
           </label>
           <label>
@@ -210,7 +240,9 @@ export function ModelSettings({
           <LockKeyhole size={18} />
           <div>
             <strong>密钥与业务数据分离</strong>
-            <p>密钥保存在系统钥匙串，不进入投资数据库。</p>
+            <p>
+              密钥保存在系统钥匙串，不进入投资数据库。切换接口或地址时请填写对应密钥。所选模型和服务需支持原生网页搜索；连接测试只验证普通调用。
+            </p>
           </div>
         </div>
         {error && (

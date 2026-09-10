@@ -27,6 +27,10 @@ import { ModelSettings } from "./features/settings/ModelSettings";
 
 function App() {
   const [view, setView] = useState<View>(initialView);
+  const [advisorVisited, setAdvisorVisited] = useState(
+    () => initialView() === "advisor",
+  );
+  const [dataRevision, setDataRevision] = useState(0);
   const [foundationSection, setFoundationSection] =
     useState<FoundationSection>("holdings");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -77,6 +81,7 @@ function App() {
 
   const refreshInvestmentData = async () => {
     setSnapshot(await getSnapshot());
+    setDataRevision((current) => current + 1);
     setDecisionDraft(null);
     setAnalysisToOpen(null);
   };
@@ -97,6 +102,7 @@ function App() {
   ) => {
     setFoundationSection(section);
     setView(nextView);
+    if (nextView === "advisor") setAdvisorVisited(true);
     setMobileNavOpen(false);
     window.history.replaceState(null, "", `#${nextView}`);
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -163,7 +169,7 @@ function App() {
             className="supporting-nav"
             open={supportingNav.some((item) => item.id === view)}
           >
-            <summary>资料与工具</summary>
+            <summary>资料与确认</summary>
             {supportingNav.map((item) => (
               <button
                 key={item.id}
@@ -244,17 +250,21 @@ function App() {
           <ReviewCenter navigate={navigate} flash={flash} />
         )}
         {view === "memory" && <MemoryCenter flash={flash} />}
-        {view === "advisor" && model && (
-          <Advisor
-            model={model}
-            navigate={navigate}
-            requestedAnalysisId={analysisToOpen}
-            clearRequestedAnalysis={() => setAnalysisToOpen(null)}
-            onCreateDecisionDraft={(draft) => {
-              setDecisionDraft(draft);
-              navigate("decision");
-            }}
-          />
+        {model && advisorVisited && (
+          <div hidden={view !== "advisor"}>
+            <Advisor
+              key={dataRevision}
+              active={view === "advisor"}
+              model={model}
+              navigate={navigate}
+              requestedAnalysisId={analysisToOpen}
+              clearRequestedAnalysis={() => setAnalysisToOpen(null)}
+              onCreateDecisionDraft={(draft) => {
+                setDecisionDraft(draft);
+                navigate("decision");
+              }}
+            />
+          </div>
         )}
         {view === "cloud" && (
           <CloudSync flash={flash} onRestore={refreshInvestmentData} />

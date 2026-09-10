@@ -22,7 +22,7 @@ use std::{
     sync::Arc,
 };
 
-use ai::{ChatMessage, InvestmentOrchestrator, ModelProvider, OpenAiCompatibleProvider};
+use ai::{ChatMessage, InvestmentOrchestrator, ModelProvider, NativeModelProvider};
 use axum::{
     extract::{Path, Query, Request, State},
     http::{header, HeaderValue, Method},
@@ -573,23 +573,75 @@ async fn save_model_config(
     State(state): State<Arc<AppState>>,
     Json(input): Json<ModelConfigInput>,
 ) -> AppResult<Json<ModelConfig>> {
+    let previous = state.db.model_config()?;
+    let protocol = if input.provider == "openai-compatible" {
+        "openai-responses"
+    } else {
+        &input.provider
+    };
+    if previous.has_api_key
+        && (protocol != previous.provider
+            || input.base_url.trim_end_matches('/') != previous.base_url.trim_end_matches('/'))
+        && input
+            .api_key
+            .as_deref()
+            .is_none_or(|key| key.trim().is_empty())
+    {
+        return Err(AppError::Validation(
+            "切换模型接口或地址时，请填写对应 API Key".into(),
+        ));
+    }
+    // Bind legacy credentials before changing metadata. A failed keychain write must
+    // never leave an old provider's key usable at the newly selected destination.
+    if state.db.setting("model.key_binding")?.is_none() {
+        state.db.set_setting(
+            "model.key_binding",
+            &model_key_binding(&previous.provider, &previous.base_url),
+        )?;
+    }
     state
         .db
         .save_model_metadata(&input.provider, &input.base_url, &input.model)?;
     if let Some(key) = input.api_key.as_deref() {
         secrets::set_api_key(key)?;
+        state.db.set_setting(
+            "model.key_binding",
+            &model_key_binding(protocol, &input.base_url),
+        )?;
     }
     Ok(Json(state.db.model_config()?))
+}
+
+fn model_key_binding(provider: &str, base_url: &str) -> String {
+    let protocol = if provider == "openai-compatible" {
+        "openai-responses"
+    } else {
+        provider
+    };
+    format!("{} {}", protocol, base_url.trim_end_matches('/'))
+}
+fn configured_model_key(db: &Database, config: &ModelConfig) -> AppResult<String> {
+    if db
+        .setting("model.key_binding")?
+        .is_some_and(|binding| binding != model_key_binding(&config.provider, &config.base_url))
+    {
+        return Err(AppError::Validation(
+            "当前密钥不属于这个模型接口，请重新保存对应 API Key".into(),
+        ));
+    }
+    secrets::get_api_key()
 }
 
 async fn test_model_config(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<ModelConnectionTest>> {
     let config = state.db.model_config()?;
-    let provider = OpenAiCompatibleProvider::new(
+    let api_key = configured_model_key(&state.db, &config)?;
+    let provider = NativeModelProvider::new(
+        config.provider,
         config.base_url,
         config.model.clone(),
-        secrets::get_api_key()?,
+        api_key,
     )?;
     let started = std::time::Instant::now();
     provider
@@ -764,8 +816,9 @@ async fn run_analysis(
             "本地数据或上下文选择已变化，请重新预览后再确认分析".into(),
         ));
     }
+    let api_key = configured_model_key(&state.db, &config)?;
     let provider =
-        OpenAiCompatibleProvider::new(config.base_url, config.model, secrets::get_api_key()?)?;
+        NativeModelProvider::new(config.provider, config.base_url, config.model, api_key)?;
     let orchestrator = InvestmentOrchestrator::new(&provider, &retriever);
     let result = orchestrator
         .run(&request, &built_context, &memories)
@@ -878,11 +931,13 @@ fn relevant_evidence(
     let holdings = snapshot
         .holdings
         .iter()
+        .filter(|_| request.context_selection.include_holdings)
         .map(|holding| format!("{} {}", holding.name, holding.symbol))
         .collect::<Vec<_>>()
         .join(" ");
     let query = format!("{} {}", request.question, holdings);
-    Ok(LexicalEvidenceRetriever.search(&query, &db.research_evidence()?, 12))
+    let items = db.research_evidence()?;
+    Ok(LexicalEvidenceRetriever.search(&query, &items, 12))
 }
 
 fn initial_memory_candidates(
@@ -1087,8 +1142,35 @@ mod tests {
     use super::*;
     use models::{ContextSelection, MemoryItem};
 
+    #[test]
+    fn mismatched_key_destination_is_rejected_before_reading_credentials() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("key-binding.db")).unwrap();
+        db.set_setting(
+            "model.key_binding",
+            &model_key_binding("openai-compatible", "https://api.openai.com/v1/"),
+        )
+        .unwrap();
+        let config = ModelConfig {
+            provider: "anthropic".into(),
+            base_url: "https://api.anthropic.com/v1".into(),
+            model: "fixture".into(),
+            has_api_key: true,
+        };
+        assert!(configured_model_key(&db, &config)
+            .unwrap_err()
+            .to_string()
+            .contains("当前密钥不属于"));
+        assert_eq!(
+            model_key_binding("openai-compatible", "https://api.openai.com/v1/"),
+            model_key_binding("openai-responses", "https://api.openai.com/v1")
+        );
+    }
+
     fn request(excluded_memory_ids: Vec<String>) -> AnalysisRequest {
         AnalysisRequest {
+            web_search: false,
+            user_message: None,
             question: "复盘指数集中风险".into(),
             workflow: "deep".into(),
             use_memory: true,

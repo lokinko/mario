@@ -284,10 +284,13 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
             );
           })}
         </div>
-        <details className="inline-help"><summary>记忆如何使用</summary><p>
-          长期保留不是把内容升级为事实，也不会绕过问题相关性直接发送；历史 AI
-          回答仍只是待验证线索。偏好和注释属于投资域数据，会进入端到端加密同步包。
-        </p></details>
+        <details className="inline-help">
+          <summary>记忆如何使用</summary>
+          <p>
+            长期保留不是把内容升级为事实，也不会绕过问题相关性直接发送；历史 AI
+            回答仍只是待验证线索。偏好和注释属于投资域数据，会进入端到端加密同步包。
+          </p>
+        </details>
       </section>
     </div>
   );

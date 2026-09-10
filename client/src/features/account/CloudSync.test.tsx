@@ -55,9 +55,7 @@ it("shows initialization errors and allows a successful retry", async () => {
   expect(screen.queryByText("正在读取账户与同步状态…")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "重新尝试" }));
   expect(await screen.findByRole("heading", { name: "登录账户" })).toBeTruthy();
-  const advanced = screen
-    .getByText("高级设置：自定义云端服务")
-    .closest("details");
+  const advanced = screen.getByText("自定义云端服务").closest("details");
   expect(advanced?.open).toBe(false);
 });
 

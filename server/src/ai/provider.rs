@@ -38,7 +38,29 @@ impl ChatMessage {
 
 #[async_trait]
 pub trait ModelProvider: Send + Sync {
+    async fn search(&self, _messages: Vec<ChatMessage>) -> AppResult<SearchCompletion> {
+        Err(crate::error::AppError::Model(
+            "当前模型未实现原生网页搜索".into(),
+        ))
+    }
     async fn complete(&self, messages: Vec<ChatMessage>) -> AppResult<ModelCompletion>;
     fn provider_name(&self) -> &str;
     fn model_name(&self) -> &str;
+}
+
+#[derive(Debug, Clone)]
+pub struct SearchSource {
+    pub url: String,
+    pub title: String,
+    pub claim: String,
+    pub original: bool,
+}
+#[derive(Debug, Clone, Default)]
+pub struct SearchCompletion {
+    pub api_calls: usize,
+    pub content: String,
+    pub usage: ModelUsage,
+    pub sources: Vec<SearchSource>,
+    pub search_calls: usize,
+    pub warnings: Vec<String>,
 }

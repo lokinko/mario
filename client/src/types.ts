@@ -279,7 +279,7 @@ export interface RebalanceAction {
 }
 
 export interface ModelConfig {
-  provider: "openai-compatible";
+  provider: "openai-responses" | "anthropic" | "openai-compatible";
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
@@ -330,6 +330,8 @@ export interface RecoveryKeyResult {
 }
 
 export interface AnalysisRequest {
+  webSearch?: boolean;
+  userMessage?: string;
   question: string;
   workflow: "quick" | "deep";
   useMemory: boolean;
@@ -441,6 +443,8 @@ export interface AnalysisResult {
 }
 
 export interface AnalysisHistoryItem {
+  groundingStatus?:
+    "supported" | "insufficient" | "contradicted" | "unavailable";
   id: string;
   question: string;
   createdAt: string;
@@ -458,7 +462,29 @@ export interface StoredAnalysis {
   workflowTrace?: AnalysisWorkflowTrace;
 }
 
+export interface AdviceGrounding {
+  actionIndex: number;
+  status: "supported" | "insufficient" | "contradicted" | "unavailable";
+  reason: string;
+  checks: {
+    factIndex: number;
+    sourceKind: string;
+    sourceRef: string;
+    quote: string;
+  }[];
+}
 export interface AnalysisWorkflowTrace {
+  webSearch?: { status: string; searchCalls: number; warnings: string[] };
+  adviceGrounding?: AdviceGrounding[];
+  personalContext?: {
+    currentUserMessage?: string;
+    financialProfile?: { profile: FinancialProfile; emergencyMonths: number };
+    portfolio?: {
+      holdings: Holding[];
+      holdingValuations: HoldingValuationEvidence[];
+    };
+    goals?: Goal[];
+  };
   version: string;
   researchPlan?: string;
   memoryItems: MemoryCandidate[];
@@ -494,6 +520,8 @@ export interface AnalysisOption {
 }
 
 export interface AnalysisAction {
+  supportingFactIndices?: number[];
+  evidenceLimits?: string[];
   action: string;
   rationale: string;
   reversible: boolean;
@@ -507,6 +535,12 @@ export interface OutputValidationTrace {
 }
 
 export interface AnalysisEvidenceReference {
+  assetName?: string;
+  evidenceType?: string;
+  claim?: string;
+  notes?: string;
+  stance?: string;
+  capturedAt?: string;
   id: string;
   title: string;
   publisher: string;

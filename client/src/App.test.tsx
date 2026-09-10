@@ -14,6 +14,7 @@ vi.mock("./api", async (original) => ({
   ...(await original<typeof import("./api")>()),
   getSnapshot: vi.fn(),
   getModelConfig: vi.fn(),
+  getAnalysisHistory: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("./reminders", () => ({
   checkAndSendReviewReminder: vi.fn().mockResolvedValue(undefined),
@@ -60,4 +61,30 @@ it("offers retry when required local data fails to load", async () => {
   expect(
     await screen.findByRole("button", { name: "测试恢复数据" }),
   ).toBeTruthy();
+});
+
+it("opens on questions and preserves a draft when returning from supporting pages", async () => {
+  window.location.hash = "";
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  vi.mocked(api.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+  );
+  vi.mocked(api.getModelConfig).mockResolvedValue({
+    provider: "openai-compatible",
+    model: "test",
+    baseUrl: "",
+    hasApiKey: true,
+  });
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "最近有什么投资上的困惑？" }),
+  ).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox"), {
+    target: { value: "暂存的问题" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "账户与同步" }));
+  await screen.findByRole("button", { name: "测试恢复数据" });
+  expect(screen.queryByRole("textbox")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "问答" }));
+  expect(screen.getByDisplayValue("暂存的问题")).toBeTruthy();
 });

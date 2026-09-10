@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Bot,
@@ -31,21 +31,29 @@ import type {
   ModelConfig,
   StoredAnalysis,
 } from "../../types";
-import { PageHeader } from "../../components/PageHeader";
 import { View } from "../../app/navigation";
 import { Toggle } from "../../components/Toggle";
-import { StoredAnalysisView, StructuredReportView } from "./AnalysisReport";
+import {
+  AdviceCards,
+  WebSearchStatus,
+  EvidenceOverview,
+  StoredAnalysisView,
+  StoredWorkflowTrace,
+  StructuredReportView,
+} from "./AnalysisReport";
 import { MemoryItems } from "../memory/MemoryItems";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 
 export function Advisor({
   model,
+  active = true,
   navigate,
   requestedAnalysisId,
   clearRequestedAnalysis,
   onCreateDecisionDraft,
 }: {
   model: ModelConfig;
+  active?: boolean;
   navigate: (v: View) => void;
   requestedAnalysisId: string | null;
   clearRequestedAnalysis: () => void;
@@ -53,9 +61,14 @@ export function Advisor({
 }) {
   const historyRequest = useRequestGuard();
   const analysisRequest = useRequestGuard();
-  const [question, setQuestion] = useState(
-    "请基于我的财务目标和当前组合，指出最需要风险提醒，并给出不依赖市场预测的改进方案。",
-  );
+  const [question, setQuestion] = useState("");
+  const latestAnswerRef = useRef<HTMLElement>(null);
+  const previewRef = useRef<HTMLElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [turns, setTurns] = useState<
+    { question: string; result: AnalysisResult }[]
+  >([]);
+  const [followUp, setFollowUp] = useState(false);
   const [deep, setDeep] = useState(true);
   const [memory, setMemory] = useState(true);
   const [reflection, setReflection] = useState(true);
@@ -77,7 +90,8 @@ export function Advisor({
   const [previewStale, setPreviewStale] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+
+  const [webSearch, setWebSearch] = useState(true);
   const [error, setError] = useState("");
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
   const [storedAnalysis, setStoredAnalysis] = useState<StoredAnalysis | null>(
@@ -87,15 +101,17 @@ export function Advisor({
   const [historyError, setHistoryError] = useState("");
 
   useEffect(() => {
+    if (!active) return;
     const queued =
       window.sessionStorage.getItem("mario.advisorQuestion") ??
       window.sessionStorage.getItem("compass.advisorQuestion");
     if (queued) {
-      setQuestion(queued);
+      invalidatePreview(() => setQuestion(queued));
+      setFollowUp(false);
       window.sessionStorage.removeItem("mario.advisorQuestion");
       window.sessionStorage.removeItem("compass.advisorQuestion");
     }
-  }, []);
+  }, [active]);
 
   useEffect(() => {
     let active = true;
@@ -118,8 +134,29 @@ export function Advisor({
     });
   }, [requestedAnalysisId]);
 
+  useEffect(() => {
+    if (preview && active)
+      previewRef.current?.scrollIntoView?.({
+        behavior: "smooth",
+        block: "nearest",
+      });
+  }, [preview, active]);
+
+  useEffect(() => {
+    if (active && turns.length)
+      latestAnswerRef.current?.scrollIntoView?.({
+        behavior: "smooth",
+        block: "start",
+      });
+  }, [turns.length]);
+
   const request = (previewRevision?: string): AnalysisRequest => ({
-    question,
+    webSearch,
+    userMessage: question,
+    question:
+      followUp && turns.length
+        ? `以下是上一轮问答，仅用于理解追问，模型回答不是已核实事实。\n上次问题：${turns[turns.length - 1].question}\n上次回答摘要：${turns[turns.length - 1].result.answer.slice(0, 6000)}\n\n本次问题：${question}`
+        : question,
     workflow: deep ? "deep" : "quick",
     useMemory: memory,
     reflect: reflection,
@@ -130,6 +167,7 @@ export function Advisor({
   });
 
   const invalidatePreview = (action: () => void) => {
+    if (running) return;
     analysisRequest.invalidate();
     setPreviewing(false);
     setRunning(false);
@@ -139,15 +177,14 @@ export function Advisor({
     setExcludedMemoryIds([]);
     setPreview(null);
     setPreviewStale(false);
-    setResult(null);
     setStoredAnalysis(null);
   };
 
   const prepare = async () => {
+    if (!question.trim() || running || previewing) return;
     const isCurrent = analysisRequest.begin();
     setPreviewing(true);
     setError("");
-    setResult(null);
     try {
       const nextPreview = await previewAnalysis(request());
       if (!isCurrent()) return;
@@ -164,13 +201,14 @@ export function Advisor({
     const isCurrent = analysisRequest.begin();
     setRunning(true);
     setError("");
-    setResult(null);
     try {
       if (!preview) throw new Error("请先预览将发送的数据");
       if (previewStale) throw new Error("记忆选择已变化，请重新预览后再确认");
       const nextResult = await runAnalysis(request(preview.contextRevision));
       if (!isCurrent()) return;
-      setResult(nextResult);
+      setTurns((current) => [...current, { question, result: nextResult }]);
+      setQuestion("");
+      setFollowUp(true);
       setStoredAnalysis(null);
       setPreview(null);
       getAnalysisHistory()
@@ -190,6 +228,7 @@ export function Advisor({
       setContextSelection((current) => ({ ...current, [key]: !current[key] })),
     );
   const toggleMemoryCandidate = (id: string) => {
+    if (running) return;
     analysisRequest.invalidate();
     setPreviewing(false);
     setRunning(false);
@@ -199,7 +238,6 @@ export function Advisor({
         : [...current, id],
     );
     setPreviewStale(true);
-    setResult(null);
   };
 
   const openStoredAnalysis = async (id: string) => {
@@ -209,7 +247,6 @@ export function Advisor({
     const isCurrent = historyRequest.begin();
     setHistoryBusy(id);
     setHistoryError("");
-    setResult(null);
     setPreview(null);
     setStoredAnalysis(null);
     try {
@@ -237,69 +274,412 @@ export function Advisor({
     historyRequest.invalidate();
     setHistoryBusy("");
     setQuestion(item.question);
+    setFollowUp(false);
     setStoredAnalysis(null);
-    setResult(null);
     setPreview(null);
     setPreviewStale(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
-    <div className="page narrow">
-      <PageHeader
-        title="AI 研究"
-        action={
-          <div className={`model-pill ${model.hasApiKey ? "ready" : ""}`}>
-            <Bot size={15} />
-            {model.hasApiKey ? model.model : "尚未配置模型"}
-          </div>
-        }
-      />
+    <div className="page narrow conversation-page">
+      <header className="conversation-heading">
+        <span className="conversation-eyebrow">和 mario 聊聊</span>
+        <h1>
+          {turns.length
+            ? "把问题聊清楚，再做决定。"
+            : "最近有什么投资上的困惑？"}
+        </h1>
+        <p>说说你的想法，或从一个小问题开始。</p>
+      </header>
       {!model.hasApiKey && (
         <div className="setup-banner">
           <KeyRound size={20} />
           <div>
-            <strong>配置自己的模型密钥</strong>
-            <p>密钥保存到系统钥匙串，不写入投资数据库。</p>
+            <strong>连接模型，开始问答</strong>
+            <p>使用你自己的模型密钥，已有资料会帮助它理解你的情况。</p>
           </div>
           <button className="secondary" onClick={() => navigate("settings")}>
-            立即配置
+            连接模型
           </button>
         </div>
       )}
-      <section className="panel advisor-panel">
+      <div className="conversation-turns" aria-label="本次问答">
+        {turns.map((turn) => (
+          <article
+            className="conversation-turn"
+            key={turn.result.id}
+            ref={turn === turns[turns.length - 1] ? latestAnswerRef : undefined}
+          >
+            <div className="user-question">
+              <span>你</span>
+              <p>{turn.question}</p>
+            </div>
+            <div className="assistant-answer">
+              <span className="answer-author">
+                <Sparkles size={16} /> mario
+              </span>
+              <WebSearchStatus trace={turn.result.workflowTrace} />
+              {turn.result.workflowTrace.adviceGrounding?.some(
+                (review) => review.status !== "supported",
+              ) && (
+                <p className="advice-gap" role="status">
+                  这次核对发现证据缺口；请先查看各条建议的核对结果。
+                </p>
+              )}
+              <p className="answer">
+                {turn.result.workflowTrace.structuredReport?.verdict ??
+                  turn.result.answer}
+              </p>
+              {turn.result.workflowTrace.structuredReport?.unknowns.length ? (
+                <div className="conversation-clarification">
+                  <strong>还需要了解</strong>
+                  <p>
+                    {turn.result.workflowTrace.structuredReport.unknowns[0]}
+                  </p>
+                  <button
+                    className="text-button"
+                    disabled={running}
+                    onClick={() => {
+                      invalidatePreview(() =>
+                        setQuestion(
+                          `关于“${turn.result.workflowTrace.structuredReport!.unknowns[0]}”，我的情况是：`,
+                        ),
+                      );
+                      setFollowUp(turn === turns[turns.length - 1]);
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    补充我的情况
+                  </button>
+                </div>
+              ) : null}
+              {turn.result.workflowTrace.structuredReport && (
+                <EvidenceOverview
+                  report={turn.result.workflowTrace.structuredReport}
+                  evidence={turn.result.workflowTrace.evidenceCatalog ?? []}
+                />
+              )}
+              {turn.result.workflowTrace.structuredReport && (
+                <AdviceCards
+                  onAsk={(prompt) => {
+                    if (running) return;
+                    invalidatePreview(() => setQuestion(prompt));
+                    setFollowUp(turn === turns[turns.length - 1]);
+                    inputRef.current?.focus();
+                  }}
+                  report={turn.result.workflowTrace.structuredReport}
+                  personalContext={turn.result.workflowTrace.personalContext}
+                  grounding={turn.result.workflowTrace.adviceGrounding}
+                  evidence={turn.result.workflowTrace.evidenceCatalog ?? []}
+                  analysisId={turn.result.id}
+                  onCreateDecisionDraft={onCreateDecisionDraft}
+                />
+              )}
+              {turn.result.workflowTrace.structuredReport && (
+                <details className="answer-details">
+                  <summary>查看完整分析与方案比较</summary>
+                  <StructuredReportView
+                    report={turn.result.workflowTrace.structuredReport}
+                    personalContext={turn.result.workflowTrace.personalContext}
+                    grounding={turn.result.workflowTrace.adviceGrounding}
+                    evidence={turn.result.workflowTrace.evidenceCatalog ?? []}
+                    analysisId={turn.result.id}
+                    onCreateDecisionDraft={onCreateDecisionDraft}
+                  />
+                </details>
+              )}
+              <details className="answer-details">
+                <summary>分析过程与使用的资料</summary>
+                <p>
+                  {turn.result.transparency.model} ·{" "}
+                  {turn.result.transparency.modelCalls} 次调用 ·{" "}
+                  {(turn.result.transparency.totalLatencyMs / 1000).toFixed(1)}{" "}
+                  秒
+                </p>
+                <StoredWorkflowTrace trace={turn.result.workflowTrace} />
+              </details>
+              <p className="disclaimer">{turn.result.disclaimer}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+      {storedAnalysis && (
+        <StoredAnalysisView
+          item={storedAnalysis}
+          onClose={() => setStoredAnalysis(null)}
+          onReuse={() => reuseStoredQuestion(storedAnalysis)}
+          onCreateDecisionDraft={onCreateDecisionDraft}
+        />
+      )}
+      <section className="panel advisor-panel conversation-composer">
         <label className="question-box">
-          <span>这次希望解决什么问题？</span>
+          <span>{turns.length ? "继续聊聊" : "这次希望解决什么问题？"}</span>
           <textarea
+            disabled={running}
+            ref={inputRef}
             value={question}
+            placeholder={
+              turns.length
+                ? "补充一点情况，或继续追问…"
+                : "例如：我想开始投资，但不知道该先考虑什么…"
+            }
             onChange={(e) =>
               invalidatePreview(() => setQuestion(e.target.value))
             }
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                (e.metaKey || e.ctrlKey) &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                void prepare();
+              }
+            }}
           />
         </label>
-        <div className="research-tasks" aria-label="研究任务">
-          {[
-            [
-              "检查风险",
-              "请依据我授权的资料检查目标与风险约束，列出证据缺口，并保留无需行动的选项。",
-            ],
-            [
-              "寻找反证",
-              "请质疑我当前的投资判断，区分事实、假设和未知项，提出最强反方证据与证伪条件。",
-            ],
-            [
-              "准备复盘",
-              "请对照历史判断与复盘证据，区分决策过程和结果，指出需要核实的事实及可能修订的规则。",
-            ],
-          ].map(([label, task]) => (
+        {!turns.length && (
+          <div className="research-tasks" aria-label="从一个问题开始">
+            {[
+              "我现在适合开始投资吗？",
+              "我的持仓有哪些需要注意的风险？",
+              "帮我理清最近的一次投资决定",
+            ].map((task) => (
+              <button
+                key={task}
+                className="secondary"
+                onClick={() => {
+                  invalidatePreview(() => setQuestion(task));
+                  inputRef.current?.focus();
+                }}
+              >
+                {task}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="composer-footer">
+          <span>
+            {turns.length && followUp
+              ? "会参考上一轮问答摘要"
+              : "发送前可确认使用的资料"}
+          </span>
+          {turns.length > 0 && (
             <button
-              key={label}
-              className="secondary"
-              onClick={() => invalidatePreview(() => setQuestion(task))}
+              className="text-button"
+              disabled={running}
+              onClick={() => {
+                invalidatePreview(() => setQuestion(""));
+                setFollowUp(!followUp);
+                inputRef.current?.focus();
+              }}
             >
-              {label}
+              {followUp ? "换个话题" : "接着上轮聊"}
             </button>
-          ))}
+          )}
+          <button
+            className="primary"
+            onClick={prepare}
+            disabled={previewing || running || !question.trim()}
+          >
+            {previewing ? (
+              <LoaderCircle size={17} className="spin" />
+            ) : (
+              <Send size={17} />
+            )}
+            {previewing ? "准备中…" : "提问"}
+          </button>
+        </div>
+      </section>
+      {error && (
+        <div className="error-box" role="alert">
+          <AlertTriangle size={18} />
+          {error}
+        </div>
+      )}
+      {historyError && (
+        <div className="error-box" role="alert">
+          <AlertTriangle size={18} />
+          {historyError}
+        </div>
+      )}
+      {preview && (
+        <section
+          ref={previewRef}
+          className="panel preview-panel"
+          aria-label="发送确认"
+        >
+          <div className="panel-title">
+            <div>
+              <h2>确认这次使用的资料</h2>
+            </div>
+            <div className="preview-size">
+              {(preview.payloadBytes / 1024).toFixed(1)} KB
+            </div>
+          </div>
+          <div className="preview-provider">
+            <Bot size={16} />
+            <span>
+              <strong>{preview.model}</strong>
+              {preview.provider} ·{" "}
+              {preview.workflow === "deep" ? "深度工作流" : "快速工作流"}
+            </span>
+          </div>
+          {previewStale && (
+            <div className="preview-stale">
+              <AlertTriangle size={15} />
+              <div>
+                <strong>记忆授权已变化</strong>
+                <span>下方显示的是新选择，但需要重新确认。</span>
+              </div>
+            </div>
+          )}
+          <p className="confirmation-summary">
+            将把你的问题和{" "}
+            {preview.groups.filter((group) => group.included).length}{" "}
+            组资料发送给上述模型。
+            {webSearch
+              ? "确认后将启用供应商网页搜索，搜索查询可能交给其搜索服务，且可能产生额外费用。"
+              : "本次不启用网页搜索，仅使用已选资料。"}
+            {followUp ? "本次也会附上上一轮问题与回答摘要。" : ""}
+          </p>
+          <details className="payload-details">
+            <summary>查看本次发送的资料</summary>
+            <div className="context-group-list">
+              {preview.groups.map((group) => (
+                <div
+                  className={group.included ? "included" : "omitted"}
+                  key={group.key}
+                >
+                  <i>{group.included ? <Check size={12} /> : "—"}</i>
+                  <div>
+                    <strong>{group.label}</strong>
+                    <small>{group.description}</small>
+                  </div>
+                  <span>
+                    {group.included
+                      ? `${group.recordCount} 项 · ${group.sensitivity}`
+                      : "留在本机"}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="local-only-note">
+              <LockKeyhole size={16} />
+              <div>
+                <strong>始终留在本机</strong>
+                <p>{preview.localOnly.join("；")}</p>
+              </div>
+            </div>
+            <details className="payload-details">
+              <summary>查看实际本地数据载荷</summary>
+              <pre>{JSON.stringify(preview.payload, null, 2)}</pre>
+            </details>
+            {preview.evidenceCandidates.length > 0 && (
+              <details className="payload-details">
+                <summary>
+                  查看本次可引用证据（{preview.evidenceCandidates.length} 条）
+                </summary>
+                <pre>{JSON.stringify(preview.evidenceCandidates, null, 2)}</pre>
+              </details>
+            )}
+            {preview.memoryCandidates.length > 0 && (
+              <details className="payload-details memory-disclosure">
+                <summary>
+                  逐条选择候选记忆（授权{" "}
+                  {
+                    preview.memoryCandidates.filter(
+                      (item) => !excludedMemoryIds.includes(item.id),
+                    ).length
+                  }
+                  /{preview.memoryCandidates.length} 条）
+                </summary>
+                <MemoryItems
+                  items={preview.memoryCandidates}
+                  excludedIds={excludedMemoryIds}
+                  onToggle={toggleMemoryCandidate}
+                />
+              </details>
+            )}
+            <details className="payload-details">
+              <summary>查看固定投资方法论提示</summary>
+              <pre>{preview.systemPolicy}</pre>
+            </details>
+            <p className="memory-policy">{preview.memoryPolicy}</p>
+          </details>
+          <div className="preview-actions">
+            <button
+              className="text-button"
+              disabled={running}
+              onClick={() => setPreview(null)}
+            >
+              返回修改
+            </button>
+            <button
+              className="primary"
+              onClick={previewStale ? prepare : analyze}
+              disabled={
+                running || previewing || (!previewStale && !model.hasApiKey)
+              }
+            >
+              {previewing ? (
+                <>
+                  <LoaderCircle size={15} className="spin" />
+                  正在更新预览…
+                </>
+              ) : previewStale ? (
+                <>
+                  <Eye size={15} />
+                  按新选择重新预览
+                </>
+              ) : running ? (
+                <>
+                  <LoaderCircle size={15} className="spin" />
+                  正在分析…
+                </>
+              ) : (
+                <>
+                  <Send size={15} />
+                  确认发送
+                </>
+              )}
+            </button>
+          </div>
+        </section>
+      )}
+
+      <details className="conversation-context">
+        <summary>供模型参考的资料与偏好</summary>
+        <p>
+          你已有的资料用于理解你的情况；需要时再补充。每次发送前都可以检查。
+        </p>
+        <div className="external-background">
+          <label className="auto-external-option">
+            <input
+              type="checkbox"
+              checked={webSearch}
+              disabled={running}
+              onChange={(event) =>
+                invalidatePreview(() => setWebSearch(event.target.checked))
+              }
+            />
+            联网查找相关资料
+          </label>
+          <p>
+            确认发送后由模型供应商搜索网页，回答会附上来源链接。关闭后仅参考已有资料。
+          </p>
+        </div>
+        <div className="context-shortcuts">
+          <button className="secondary" onClick={() => navigate("foundation")}>
+            我的持仓与目标
+          </button>
+          <button className="secondary" onClick={() => navigate("memory")}>
+            记忆与规则
+          </button>
+          <button className="secondary" onClick={() => navigate("evidence")}>
+            参考资料
+          </button>
         </div>
         <details className="workflow-advanced">
           <summary>高级分析选项</summary>
@@ -338,7 +718,8 @@ export function Advisor({
             />
           </div>
         </details>
-        <div className="context-control">
+        <details className="context-control">
+          <summary>模型可以参考哪些资料</summary>
           <div>
             <strong>选择允许发送的本地上下文</strong>
             <span>取消选择后，该组不会进入模型提示词</span>
@@ -360,6 +741,7 @@ export function Advisor({
             ).map(([key, label]) => (
               <button
                 key={key}
+                aria-pressed={contextSelection[key]}
                 className={contextSelection[key] ? "selected" : ""}
                 onClick={() => toggleContext(key)}
               >
@@ -368,397 +750,10 @@ export function Advisor({
               </button>
             ))}
           </div>
-        </div>
-        <button
-          className="primary analyze-button"
-          onClick={prepare}
-          disabled={previewing || running || !question.trim()}
-        >
-          {previewing ? (
-            <>
-              <LoaderCircle size={17} className="spin" />
-              正在生成本地预览…
-            </>
-          ) : (
-            <>
-              <Eye size={17} />
-              预览将发送的数据
-            </>
-          )}
-        </button>
-      </section>
-
-      {error && (
-        <div className="error-box">
-          <AlertTriangle size={18} />
-          {error}
-        </div>
-      )}
-      {historyError && (
-        <div className="error-box">
-          <AlertTriangle size={18} />
-          {historyError}
-        </div>
-      )}
-      {storedAnalysis && (
-        <StoredAnalysisView
-          item={storedAnalysis}
-          onClose={() => setStoredAnalysis(null)}
-          onReuse={() => reuseStoredQuestion(storedAnalysis)}
-          onCreateDecisionDraft={onCreateDecisionDraft}
-        />
-      )}
-      {preview && (
-        <section className="panel preview-panel">
-          <div className="panel-title">
-            <div>
-              <h2>发送前确认</h2>
-            </div>
-            <div className="preview-size">
-              {(preview.payloadBytes / 1024).toFixed(1)} KB
-            </div>
-          </div>
-          <div className="preview-provider">
-            <Bot size={16} />
-            <span>
-              <strong>{preview.model}</strong>
-              {preview.provider} ·{" "}
-              {preview.workflow === "deep" ? "深度工作流" : "快速工作流"}
-            </span>
-          </div>
-          {previewStale && (
-            <div className="preview-stale">
-              <AlertTriangle size={15} />
-              <div>
-                <strong>记忆授权已变化</strong>
-                <span>
-                  下方显示的是新选择，但旧指纹已经失效。重新预览后才能开始分析。
-                </span>
-              </div>
-            </div>
-          )}
-          <div className="context-group-list">
-            {preview.groups.map((group) => (
-              <div
-                className={group.included ? "included" : "omitted"}
-                key={group.key}
-              >
-                <i>{group.included ? <Check size={12} /> : "—"}</i>
-                <div>
-                  <strong>{group.label}</strong>
-                  <small>{group.description}</small>
-                </div>
-                <span>
-                  {group.included
-                    ? `${group.recordCount} 项 · ${group.sensitivity}`
-                    : "留在本机"}
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="local-only-note">
-            <LockKeyhole size={16} />
-            <div>
-              <strong>始终留在本机</strong>
-              <p>{preview.localOnly.join("；")}</p>
-            </div>
-          </div>
-          <details className="payload-details">
-            <summary>查看实际本地数据载荷</summary>
-            <pre>{JSON.stringify(preview.payload, null, 2)}</pre>
-          </details>
-          {preview.evidenceCandidates.length > 0 && (
-            <details className="payload-details">
-              <summary>
-                查看本次可引用证据（{preview.evidenceCandidates.length} 条）
-              </summary>
-              <pre>{JSON.stringify(preview.evidenceCandidates, null, 2)}</pre>
-            </details>
-          )}
-          {preview.memoryCandidates.length > 0 && (
-            <details className="payload-details memory-disclosure">
-              <summary>
-                逐条选择候选记忆（授权{" "}
-                {
-                  preview.memoryCandidates.filter(
-                    (item) => !excludedMemoryIds.includes(item.id),
-                  ).length
-                }
-                /{preview.memoryCandidates.length} 条）
-              </summary>
-              <MemoryItems
-                items={preview.memoryCandidates}
-                excludedIds={excludedMemoryIds}
-                onToggle={toggleMemoryCandidate}
-              />
-            </details>
-          )}
-          <details className="payload-details">
-            <summary>查看固定投资方法论提示</summary>
-            <pre>{preview.systemPolicy}</pre>
-          </details>
-          <p className="memory-policy">{preview.memoryPolicy}</p>
-          <div className="preview-actions">
-            <button className="text-button" onClick={() => setPreview(null)}>
-              返回修改
-            </button>
-            <button
-              className="primary"
-              onClick={previewStale ? prepare : analyze}
-              disabled={
-                running || previewing || (!previewStale && !model.hasApiKey)
-              }
-            >
-              {previewing ? (
-                <>
-                  <LoaderCircle size={15} className="spin" />
-                  正在更新预览…
-                </>
-              ) : previewStale ? (
-                <>
-                  <Eye size={15} />
-                  按新选择重新预览
-                </>
-              ) : running ? (
-                <>
-                  <LoaderCircle size={15} className="spin" />
-                  正在分析…
-                </>
-              ) : (
-                <>
-                  <Send size={15} />
-                  确认并开始分析
-                </>
-              )}
-            </button>
-          </div>
-        </section>
-      )}
-      {result && (
-        <section className="panel result-panel">
-          <div className="result-meta">
-            {result.stages.map((stage) => (
-              <span key={stage}>
-                <Check size={13} />
-                {stage}
-              </span>
-            ))}
-          </div>
-          <div className="analysis-audit">
-            <div>
-              <strong>{result.transparency.model}</strong>
-              <span>{result.transparency.provider}</span>
-            </div>
-            <div>
-              <strong>{result.transparency.modelCalls} 次</strong>
-              <span>模型调用</span>
-            </div>
-            <div>
-              <strong>
-                {(result.transparency.totalLatencyMs / 1000).toFixed(1)} 秒
-              </strong>
-              <span>模型总耗时</span>
-            </div>
-            <div>
-              <strong>
-                {result.transparency.inputTokens == null
-                  ? "未返回"
-                  : result.transparency.inputTokens.toLocaleString()}
-              </strong>
-              <span>输入 tokens</span>
-            </div>
-            <div>
-              <strong>{result.transparency.contextGroups.length} 组</strong>
-              <span>上下文</span>
-            </div>
-            <div>
-              <strong>{result.transparency.memoryItemsUsed} 条</strong>
-              <span>采用记忆</span>
-            </div>
-            <div>
-              <strong>
-                {result.transparency.reviewedMemoryItemsUsed} /{" "}
-                {result.transparency.conflictingMemoryItemsUsed}
-              </strong>
-              <span>已复盘 / 反证</span>
-            </div>
-            <div>
-              <strong>{result.transparency.evidenceItemsUsed} 条</strong>
-              <span>带来源证据</span>
-            </div>
-            <div>
-              <strong>
-                {result.transparency.citationsRequired
-                  ? "外部事实须引用"
-                  : "无可引用证据"}
-              </strong>
-              <span>引用约束</span>
-            </div>
-            <div>
-              <strong>
-                {result.transparency.structuredOutputValidated
-                  ? result.transparency.outputRepairs > 0
-                    ? `修复 ${result.transparency.outputRepairs} 次`
-                    : "直接通过"
-                  : "未校验"}
-              </strong>
-              <span>输出契约</span>
-            </div>
-            <div>
-              <strong>
-                {result.transparency.apiKeySent ? "异常" : "未进入提示词"}
-              </strong>
-              <span>API Key</span>
-            </div>
-          </div>
-          {(result.workflowTrace.researchPlan ||
-            result.workflowTrace.alternatives.length > 0 ||
-            result.workflowTrace.critique) && (
-            <div className="workflow-trace">
-              <div className="workflow-trace-title">
-                <div>
-                  <span>可审计工作流 · {result.workflowTrace.version}</span>
-                  <strong>查看模型如何比较、反驳再裁决</strong>
-                </div>
-                <small>
-                  {result.workflowTrace.outputValidation
-                    ? `最终输出 ${result.workflowTrace.outputValidation.status === "repaired" ? "经 1 次自动修复后" : "首次"}通过机器校验。`
-                    : "以下是显式要求模型输出的研究产物，不是隐藏思维过程。"}
-                </small>
-              </div>
-              {result.workflowTrace.researchPlan && (
-                <details>
-                  <summary>
-                    <span>01</span>
-                    <div>
-                      <strong>研究计划</strong>
-                      <small>假设、未知与检索线索</small>
-                    </div>
-                    <ChevronRight size={15} />
-                  </summary>
-                  <div className="trace-content">
-                    {result.workflowTrace.researchPlan}
-                  </div>
-                </details>
-              )}
-              {result.workflowTrace.memoryItems.length > 0 && (
-                <details>
-                  <summary>
-                    <span>M</span>
-                    <div>
-                      <strong>实际采用的长期记忆</strong>
-                      <small>
-                        {result.workflowTrace.memoryItems.length} 条 ·
-                        显示命中原因与冲突信号
-                      </small>
-                    </div>
-                    <ChevronRight size={15} />
-                  </summary>
-                  <MemoryItems
-                    items={result.workflowTrace.memoryItems}
-                    compact
-                  />
-                </details>
-              )}
-              {result.workflowTrace.alternatives.map((alternative, index) => (
-                <details key={alternative.id}>
-                  <summary>
-                    <span>{String(index + 2).padStart(2, "0")}</span>
-                    <div>
-                      <strong>{alternative.label}</strong>
-                      <small>{alternative.lens}</small>
-                    </div>
-                    <ChevronRight size={15} />
-                  </summary>
-                  <div className="trace-content">{alternative.content}</div>
-                </details>
-              ))}
-              {result.workflowTrace.critique && (
-                <details>
-                  <summary>
-                    <span>
-                      {String(
-                        result.workflowTrace.alternatives.length + 2,
-                      ).padStart(2, "0")}
-                    </span>
-                    <div>
-                      <strong>独立风险审查</strong>
-                      <small>寻找证据漏洞、极端风险与过度自信</small>
-                    </div>
-                    <ChevronRight size={15} />
-                  </summary>
-                  <div className="trace-content">
-                    {result.workflowTrace.critique}
-                  </div>
-                </details>
-              )}
-              <details className="call-trace">
-                <summary>
-                  <span>Σ</span>
-                  <div>
-                    <strong>模型调用记录</strong>
-                    <small>
-                      {result.workflowTrace.calls.length} 个独立阶段
-                    </small>
-                  </div>
-                  <ChevronRight size={15} />
-                </summary>
-                <div className="call-list">
-                  {result.workflowTrace.calls.map((call) => (
-                    <div key={call.stage}>
-                      <strong>{call.label}</strong>
-                      <span>{(call.latencyMs / 1000).toFixed(2)} 秒</span>
-                      <span>
-                        {call.inputTokens == null
-                          ? "token 未返回"
-                          : `${call.inputTokens.toLocaleString()} 入 / ${(call.outputTokens ?? 0).toLocaleString()} 出`}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            </div>
-          )}
-          <div className="final-answer-label">
-            <Sparkles size={15} />
-            <div>
-              <span>最终综合裁决</span>
-              <strong>吸收方案与反方审查后的行动建议</strong>
-            </div>
-          </div>
-          {result.workflowTrace.outputValidation && (
-            <details className="payload-details">
-              <summary>
-                输出检查：
-                {result.workflowTrace.outputValidation.status === "repaired"
-                  ? "修复后通过"
-                  : "首次通过"}
-              </summary>
-              <p className="memory-policy">
-                已检查字段完整性和引用 ID
-                是否属于本次授权证据；不代表事实准确性或推理有效性已经得到验证。
-              </p>
-              {result.workflowTrace.outputValidation.errors.length > 0 && (
-                <pre>
-                  {result.workflowTrace.outputValidation.errors.join("\n")}
-                </pre>
-              )}
-            </details>
-          )}
-          {result.workflowTrace.structuredReport ? (
-            <StructuredReportView
-              report={result.workflowTrace.structuredReport}
-              evidence={result.workflowTrace.evidenceCatalog ?? []}
-              analysisId={result.id}
-              onCreateDecisionDraft={onCreateDecisionDraft}
-            />
-          ) : (
-            <div className="answer">{result.answer}</div>
-          )}
-          <p className="disclaimer">{result.disclaimer}</p>
-        </section>
-      )}
-      <section className="panel analysis-history-panel">
+        </details>
+      </details>
+      <details className="panel analysis-history-panel">
+        <summary>以前的问答 · {history.length}</summary>
         <div className="panel-title">
           <div>
             <h2>分析历史</h2>
@@ -780,13 +775,22 @@ export function Advisor({
               key={item.id}
               className={storedAnalysis?.id === item.id ? "active" : ""}
               onClick={() => void openStoredAnalysis(item.id)}
-              disabled={Boolean(historyBusy)}
+              disabled={running || Boolean(historyBusy)}
             >
               <div>
                 <History size={15} />
                 <span>{item.workflowVersion || "旧版分析"}</span>
               </div>
               <strong>{item.question}</strong>
+              <small>
+                {item.groundingStatus === "supported"
+                  ? "资料范围内支持 · 模型核对"
+                  : item.groundingStatus === "contradicted"
+                    ? "发现证据矛盾"
+                    : item.groundingStatus === "insufficient"
+                      ? "证据不足"
+                      : "尚未完成证据核对"}
+              </small>
               <p>
                 {item.verdict || "旧记录没有结构化裁决，可打开查看原回答。"}
               </p>
@@ -804,7 +808,7 @@ export function Advisor({
             </button>
           ))}
         </div>
-      </section>
+      </details>
     </div>
   );
 }
