@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   CircleDollarSign,
   Cloud,
@@ -31,6 +31,7 @@ import type {
   Snapshot,
 } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
+import type { FoundationSection } from "../../app/navigation";
 import { NumberField } from "../../components/NumberField";
 import { localDateValue } from "../../lib/dates";
 import { emptyProfile, emptyHolding, emptyGoal } from "./forms";
@@ -46,16 +47,21 @@ export function Foundation({
   snapshot,
   onUpdate,
   flash,
+  initialSection = "holdings",
 }: {
   snapshot: Snapshot;
   onUpdate: (s: Snapshot) => void;
   flash: (s: string) => void;
+  initialSection?: FoundationSection;
 }) {
+  const [section, setSection] = useState<string>(initialSection);
   const [profile, setProfile] = useState(snapshot.profile ?? emptyProfile);
   const [holding, setHolding] = useState<Omit<Holding, "id">>(() =>
     emptyHolding(snapshot.profile.baseCurrency),
   );
   const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
+  const [holdingDetailsOpen, setHoldingDetailsOpen] = useState(false);
+  const holdingNameRef = useRef<HTMLInputElement>(null);
   const [goal, setGoal] = useState<Omit<Goal, "id">>(emptyGoal);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -68,6 +74,17 @@ export function Foundation({
   const [valuationQuantity, setValuationQuantity] = useState(0);
   const [valuationLoading, setValuationLoading] = useState(false);
   const [valuationError, setValuationError] = useState("");
+  const holdingBusy = saving || holdingFxLoading || valuationLoading;
+  const canSaveHolding =
+    !holdingBusy &&
+    Boolean(holding.name.trim()) &&
+    Number.isFinite(holding.marketValue) &&
+    holding.marketValue > 0 &&
+    Boolean(holding.valuationDate) &&
+    holding.valuationDate <= localDateValue(new Date()) &&
+    (holding.currency === profile.baseCurrency ||
+      (Number.isFinite(holding.fxRateToBase) &&
+        (holding.fxRateToBase ?? 0) > 0));
 
   const updateNumber = (key: keyof FinancialProfile, value: string) =>
     setProfile({ ...profile, [key]: Number(value) });
@@ -87,14 +104,29 @@ export function Foundation({
 
   const persistHolding = async () => {
     setError("");
-    if (!holding.name || holding.marketValue <= 0) return;
+    if (!canSaveHolding) return;
     setSaving(true);
     try {
       const next = editingHoldingId
-        ? await updateHolding(editingHoldingId, holding)
-        : await saveHolding(holding);
+        ? await updateHolding(editingHoldingId, {
+            ...holding,
+            name: holding.name.trim(),
+          })
+        : await saveHolding({ ...holding, name: holding.name.trim() });
       onUpdate(next);
-      setHolding(emptyHolding(profile.baseCurrency));
+      setHolding(
+        editingHoldingId
+          ? emptyHolding(profile.baseCurrency)
+          : {
+              ...emptyHolding(holding.currency),
+              assetClass: holding.assetClass,
+              valuationDate: holding.valuationDate,
+              fxRateToBase: holding.fxRateToBase,
+              fxRateSource: holding.fxRateSource,
+              fxRateObservedOn: holding.fxRateObservedOn,
+            },
+      );
+      setHoldingDetailsOpen(false);
       setHoldingFxQuote(null);
       setHoldingFxError("");
       setValuationQuantity(0);
@@ -111,6 +143,12 @@ export function Foundation({
   const editHolding = (item: Holding) => {
     const { id, ...values } = item;
     setHolding(values);
+    setHoldingDetailsOpen(true);
+    holdingNameRef.current?.focus();
+    holdingNameRef.current?.scrollIntoView?.({
+      block: "center",
+      behavior: "smooth",
+    });
     setEditingHoldingId(id);
     setHoldingFxQuote(null);
     setHoldingFxError("");
@@ -243,23 +281,437 @@ export function Foundation({
 
   return (
     <div className="page narrow">
-      <PageHeader
-        eyebrow="方法论 · 第一层"
-        title="建立财务底座"
-        description="先确定哪些钱能承担风险，再讨论收益。数据仅保存在本地数据库。"
-      />
+      <PageHeader title="财务底座" />
+      <div className="section-switcher" role="group" aria-label="财务分类">
+        {[
+          ["holdings", "持仓", snapshot.holdings.length],
+          ["profile", "收支与风险", null],
+          ["goals", "目标", snapshot.goals.length],
+        ].map(([id, label, count]) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={section === id}
+            onClick={() => setSection(String(id))}
+          >
+            {label}
+            {count !== null && <span>{count}</span>}
+          </button>
+        ))}
+      </div>
       {error && (
         <div className="error-box" role="alert">
           {error}。输入内容已保留；请核实当前记录后再重试。
         </div>
       )}
-      <section className="panel form-panel">
+      <section className="panel form-panel" hidden={section !== "holdings"}>
         <div className="panel-title">
           <div>
-            <span>个人资产负债表</span>
-            <h2>现金流与风险边界</h2>
+            <h2>{editingHoldingId ? "修改资产" : "管理资产组合"}</h2>
           </div>
-          <Database size={21} className="muted-icon" />
+        </div>
+        <p className="holding-hint">名称、市值必填。</p>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void persistHolding();
+          }}
+        >
+          <fieldset
+            className="holding-fields"
+            disabled={saving || holdingFxLoading || valuationLoading}
+          >
+            <div className="form-grid compact-grid">
+              <label>
+                <span>资产名称</span>
+                <input
+                  ref={holdingNameRef}
+                  required
+                  value={holding.name}
+                  onChange={(e) =>
+                    setHolding({ ...holding, name: e.target.value })
+                  }
+                  placeholder="例如：宽基指数基金"
+                />
+              </label>
+              <NumberField
+                label={`当前市值（${holding.currency}）`}
+                value={holding.marketValue}
+                onChange={(v) =>
+                  setHolding({ ...holding, marketValue: Number(v) })
+                }
+                prefix={holding.currency}
+              />
+              <label>
+                <span>资产类别</span>
+                <select
+                  value={holding.assetClass}
+                  onChange={(e) =>
+                    setHolding({
+                      ...holding,
+                      assetClass: e.target.value as Holding["assetClass"],
+                    })
+                  }
+                >
+                  {["现金", "债券", "股票", "基金", "黄金", "其他"].map((v) => (
+                    <option key={v}>{v}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>持仓币种</span>
+                <select
+                  value={holding.currency}
+                  onChange={(e) => {
+                    setHolding({
+                      ...holding,
+                      currency: e.target.value,
+                      fxRateToBase: null,
+                      fxRateSource: "",
+                      fxRateObservedOn: "",
+                    });
+                    setHoldingFxQuote(null);
+                    setHoldingFxError("");
+                  }}
+                >
+                  {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>估值日期</span>
+                <input
+                  type="date"
+                  max={localDateValue(new Date())}
+                  value={holding.valuationDate}
+                  onChange={(e) => {
+                    setHolding({
+                      ...holding,
+                      valuationDate: e.target.value,
+                      fxRateToBase: null,
+                      fxRateSource: "",
+                      fxRateObservedOn: "",
+                    });
+                    setHoldingFxQuote(null);
+                    setHoldingFxError("");
+                  }}
+                />
+                <small>所有持仓请使用同一估值日</small>
+              </label>
+            </div>
+            <details
+              className="holding-details"
+              open={holdingDetailsOpen}
+              onToggle={(event) =>
+                setHoldingDetailsOpen(event.currentTarget.open)
+              }
+            >
+              <summary>更多信息</summary>
+              <div className="form-grid compact-grid">
+                <label>
+                  <span>代码（可选）</span>
+                  <input
+                    value={holding.symbol}
+                    onChange={(e) =>
+                      setHolding({ ...holding, symbol: e.target.value })
+                    }
+                    placeholder="例如：000300"
+                  />
+                </label>
+                <NumberField
+                  label={`累计成本（${holding.currency}）`}
+                  value={holding.costBasis}
+                  onChange={(v) =>
+                    setHolding({ ...holding, costBasis: Number(v) })
+                  }
+                  prefix={holding.currency}
+                />
+                <NumberField
+                  label="目标权重"
+                  value={holding.targetPct}
+                  onChange={(v) =>
+                    setHolding({ ...holding, targetPct: Number(v) })
+                  }
+                  suffix="%"
+                />
+                {editingHoldingId && (
+                  <>
+                    <NumberField
+                      label="估值日持仓数量"
+                      value={valuationQuantity}
+                      onChange={(value) => setValuationQuantity(Number(value))}
+                      suffix="份 / 股"
+                    />
+                    <div className="price-lookup">
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={
+                          valuationLoading ||
+                          !holding.symbol.trim() ||
+                          valuationQuantity <= 0 ||
+                          !holding.valuationDate
+                        }
+                        onClick={applyMarketValuation}
+                      >
+                        {valuationLoading ? (
+                          <LoaderCircle className="spin" size={15} />
+                        ) : (
+                          <Cloud size={15} />
+                        )}
+                        查询并采用日收盘价
+                      </button>
+                      {valuationError && (
+                        <small className="fx-error">{valuationError}</small>
+                      )}
+                      {snapshot.holdingValuations.find(
+                        (value) => value.holdingId === editingHoldingId,
+                      ) &&
+                        ((valuation) => (
+                          <p>
+                            <strong>
+                              {valuation.quantity} × {valuation.unitPrice}{" "}
+                              {valuation.currency} ={" "}
+                              {formatMoney(
+                                valuation.marketValue,
+                                valuation.currency,
+                              )}
+                            </strong>
+                            <span>
+                              {valuation.exchange ||
+                                valuation.micCode ||
+                                "交易所未标注"}{" "}
+                              · {valuation.observedOn}
+                              {valuation.stalenessDays
+                                ? `（回退 ${valuation.stalenessDays} 天）`
+                                : ""}{" "}
+                              · 未复权日收盘价
+                            </span>
+                            <a
+                              href={valuation.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              核对请求来源
+                            </a>
+                          </p>
+                        ))(
+                          snapshot.holdingValuations.find(
+                            (value) => value.holdingId === editingHoldingId,
+                          ) as HoldingValuationEvidence,
+                        )}
+                    </div>
+                  </>
+                )}
+              </div>
+              <p className="holding-hint">
+                成本和目标权重可以稍后补充。查询证券收盘价需先保存持仓，再点击编辑。
+              </p>
+            </details>
+            <div className="form-grid compact-grid">
+              {holding.currency !== profile.baseCurrency && (
+                <>
+                  <NumberField
+                    label={`折算汇率（1 ${holding.currency} = ? ${profile.baseCurrency}）`}
+                    value={holding.fxRateToBase ?? 0}
+                    onChange={(v) => {
+                      setHolding({
+                        ...holding,
+                        fxRateToBase: v ? Number(v) : null,
+                        fxRateSource: "",
+                        fxRateObservedOn: "",
+                      });
+                      setHoldingFxQuote(null);
+                    }}
+                    suffix={profile.baseCurrency}
+                  />
+                  <div className="fx-lookup">
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={holdingFxLoading || !holding.valuationDate}
+                      onClick={lookupHoldingFx}
+                    >
+                      {holdingFxLoading ? (
+                        <LoaderCircle className="spin" size={15} />
+                      ) : (
+                        <Cloud size={15} />
+                      )}
+                      查询 ECB 当日参考汇率
+                    </button>
+                    {holdingFxError && (
+                      <small className="fx-error">{holdingFxError}</small>
+                    )}
+                    {holding.fxRateSource && (
+                      <small>
+                        已采用 {fxSourceLabel(holding.fxRateSource)} · 观察日{" "}
+                        {holding.fxRateObservedOn}
+                      </small>
+                    )}
+                    {holdingFxQuote && (
+                      <p>
+                        {holdingFxQuote.stalenessDays
+                          ? `非工作日，使用此前 ${holdingFxQuote.stalenessDays} 天的共同观察值。`
+                          : "已取得当日共同观察值。"}
+                        <a
+                          href={holdingFxQuote.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          核对原始数据
+                        </a>
+                      </p>
+                    )}
+                    {holding.fxRateSource === "ecb_reference" &&
+                      !holdingFxQuote && (
+                        <a
+                          className="fx-method-link"
+                          href={ecbFxMethodologyUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          查看 ECB 参考汇率方法
+                        </a>
+                      )}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="form-actions">
+              {editingHoldingId ? (
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    setHoldingDetailsOpen(false);
+                    setEditingHoldingId(null);
+                    setHolding(emptyHolding(profile.baseCurrency));
+                    setHoldingFxQuote(null);
+                    setHoldingFxError("");
+                    setValuationQuantity(0);
+                    setValuationError("");
+                  }}
+                >
+                  取消修改
+                </button>
+              ) : (
+                <p>连续添加会沿用类别、币种和日期</p>
+              )}
+              <button
+                className="primary"
+                type="submit"
+                disabled={!canSaveHolding}
+              >
+                {editingHoldingId ? <Save size={16} /> : <Plus size={16} />}
+                {editingHoldingId ? "保存修改" : "加入组合"}
+              </button>
+            </div>
+          </fieldset>
+        </form>
+        {snapshot.holdings.length > 0 && (
+          <div className="holding-list">
+            <div className="holding-head">
+              <span>资产</span>
+              <span>类别</span>
+              <span>市值</span>
+              <span>目标权重</span>
+              <span>账面变化</span>
+              <span />
+            </div>
+            {snapshot.holdings.map((item) => {
+              const pnlPct =
+                item.costBasis > 0
+                  ? ((item.marketValue - item.costBasis) / item.costBasis) * 100
+                  : 0;
+              const valuation = snapshot.holdingValuations.find(
+                (value) => value.holdingId === item.id,
+              );
+              return (
+                <div
+                  className={editingHoldingId === item.id ? "editing" : ""}
+                  key={item.id}
+                >
+                  <strong>
+                    {item.name}
+                    {item.symbol && <small>{item.symbol}</small>}
+                    {valuation && (
+                      <small className="verified-source">
+                        已核验 · {valuation.providerName} ·{" "}
+                        {valuation.observedOn}
+                      </small>
+                    )}
+                  </strong>
+                  <span>
+                    {item.assetClass}
+                    <small>
+                      {item.currency}
+                      {item.currency !== profile.baseCurrency &&
+                      item.fxRateToBase
+                        ? ` · 汇率 ${item.fxRateToBase}`
+                        : ""}
+                    </small>
+                    {item.fxRateSource && (
+                      <small>
+                        {fxSourceLabel(item.fxRateSource)} ·{" "}
+                        {item.fxRateObservedOn}
+                      </small>
+                    )}
+                  </span>
+                  <span>
+                    {formatMoney(item.marketValue, item.currency)}
+                    <small>
+                      {item.currency !== profile.baseCurrency &&
+                      item.fxRateToBase
+                        ? `折合 ${formatMoney(holdingValueInBase(item, profile.baseCurrency), profile.baseCurrency)} · `
+                        : ""}
+                      {item.valuationDate || "待补估值日"}
+                    </small>
+                  </span>
+                  <span>
+                    {item.targetPct
+                      ? `${item.targetPct.toFixed(1)}%`
+                      : "未设置"}
+                  </span>
+                  <span
+                    className={
+                      item.costBasis > 0 ? (pnlPct >= 0 ? "gain" : "loss") : ""
+                    }
+                  >
+                    {item.costBasis > 0
+                      ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%`
+                      : "待补成本"}
+                  </span>
+                  <span className="row-actions">
+                    <button
+                      type="button"
+                      disabled={saving || holdingFxLoading || valuationLoading}
+                      aria-label="编辑资产"
+                      onClick={() => editHolding(item)}
+                    >
+                      <Edit3 size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving || holdingFxLoading || valuationLoading}
+                      aria-label="删除资产"
+                      onClick={() => removeHolding(item)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="panel form-panel" hidden={section !== "profile"}>
+        <div className="panel-title">
+          <div>
+            <h2>收支与风险</h2>
+          </div>
         </div>
         <div className="form-grid">
           <label>
@@ -341,7 +793,7 @@ export function Foundation({
         <div className="form-actions">
           <p>
             <ShieldCheck size={16} />
-            系统不会把“心理上敢亏”误认为真实风险承受能力。
+            按实际收支评估风险容量
           </p>
           <button
             className="primary"
@@ -354,13 +806,11 @@ export function Foundation({
         </div>
       </section>
 
-      <section className="panel form-panel">
+      <section className="panel form-panel" hidden={section !== "goals"}>
         <div className="panel-title">
           <div>
-            <span>目标账户</span>
-            <h2>{editingGoalId ? "修改目标计划" : "给资金一个明确任务"}</h2>
+            <h2>{editingGoalId ? "修改目标计划" : "投资目标"}</h2>
           </div>
-          <Target size={21} className="muted-icon" />
         </div>
         {snapshot.goals.length > 0 && (
           <div className="goal-list">
@@ -476,7 +926,7 @@ export function Foundation({
               取消修改
             </button>
           ) : (
-            <p>目标决定期限，期限决定可以承担的波动。</p>
+            <span />
           )}
           <button
             className="secondary"
@@ -488,367 +938,6 @@ export function Foundation({
           </button>
         </div>
       </section>
-
-      <section className="panel form-panel">
-        <div className="panel-title">
-          <div>
-            <span>组合输入</span>
-            <h2>{editingHoldingId ? "修改资产" : "管理资产组合"}</h2>
-          </div>
-          <CircleDollarSign size={21} className="muted-icon" />
-        </div>
-        {snapshot.holdings.length > 0 && (
-          <div className="holding-list">
-            <div className="holding-head">
-              <span>资产</span>
-              <span>类别</span>
-              <span>市值</span>
-              <span>目标权重</span>
-              <span>账面变化</span>
-              <span />
-            </div>
-            {snapshot.holdings.map((item) => {
-              const pnlPct =
-                item.costBasis > 0
-                  ? ((item.marketValue - item.costBasis) / item.costBasis) * 100
-                  : 0;
-              const valuation = snapshot.holdingValuations.find(
-                (value) => value.holdingId === item.id,
-              );
-              return (
-                <div
-                  className={editingHoldingId === item.id ? "editing" : ""}
-                  key={item.id}
-                >
-                  <strong>
-                    {item.name}
-                    <small>{item.symbol || "未填写代码"}</small>
-                    {valuation && (
-                      <small className="verified-source">
-                        已核验 · {valuation.providerName} ·{" "}
-                        {valuation.observedOn}
-                      </small>
-                    )}
-                  </strong>
-                  <span>
-                    {item.assetClass}
-                    <small>
-                      {item.currency}
-                      {item.currency !== profile.baseCurrency &&
-                      item.fxRateToBase
-                        ? ` · 汇率 ${item.fxRateToBase}`
-                        : ""}
-                    </small>
-                    {item.fxRateSource && (
-                      <small>
-                        {fxSourceLabel(item.fxRateSource)} ·{" "}
-                        {item.fxRateObservedOn}
-                      </small>
-                    )}
-                  </span>
-                  <span>
-                    {formatMoney(item.marketValue, item.currency)}
-                    <small>
-                      {item.currency !== profile.baseCurrency &&
-                      item.fxRateToBase
-                        ? `折合 ${formatMoney(holdingValueInBase(item, profile.baseCurrency), profile.baseCurrency)} · `
-                        : ""}
-                      {item.valuationDate || "待补估值日"}
-                    </small>
-                  </span>
-                  <span>
-                    {item.targetPct
-                      ? `${item.targetPct.toFixed(1)}%`
-                      : "未设置"}
-                  </span>
-                  <span className={pnlPct >= 0 ? "gain" : "loss"}>
-                    {pnlPct >= 0 ? "+" : ""}
-                    {pnlPct.toFixed(1)}%
-                  </span>
-                  <span className="row-actions">
-                    <button
-                      aria-label="编辑资产"
-                      onClick={() => editHolding(item)}
-                    >
-                      <Edit3 size={14} />
-                    </button>
-                    <button
-                      aria-label="删除资产"
-                      onClick={() => removeHolding(item)}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <div className="form-grid compact-grid">
-          <label>
-            <span>资产名称</span>
-            <input
-              value={holding.name}
-              onChange={(e) => setHolding({ ...holding, name: e.target.value })}
-              placeholder="例如：宽基指数基金"
-            />
-          </label>
-          <label>
-            <span>代码（可选）</span>
-            <input
-              value={holding.symbol}
-              onChange={(e) =>
-                setHolding({ ...holding, symbol: e.target.value })
-              }
-              placeholder="例如：000300"
-            />
-          </label>
-          <label>
-            <span>资产类别</span>
-            <select
-              value={holding.assetClass}
-              onChange={(e) =>
-                setHolding({
-                  ...holding,
-                  assetClass: e.target.value as Holding["assetClass"],
-                })
-              }
-            >
-              {["现金", "债券", "股票", "基金", "黄金", "其他"].map((v) => (
-                <option key={v}>{v}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>持仓币种</span>
-            <select
-              value={holding.currency}
-              onChange={(e) => {
-                setHolding({
-                  ...holding,
-                  currency: e.target.value,
-                  fxRateToBase: null,
-                  fxRateSource: "",
-                  fxRateObservedOn: "",
-                });
-                setHoldingFxQuote(null);
-                setHoldingFxError("");
-              }}
-            >
-              {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => (
-                <option key={value}>{value}</option>
-              ))}
-            </select>
-          </label>
-          <NumberField
-            label={`当前市值（${holding.currency}）`}
-            value={holding.marketValue}
-            onChange={(v) => setHolding({ ...holding, marketValue: Number(v) })}
-            prefix={holding.currency}
-          />
-          <NumberField
-            label={`累计成本（${holding.currency}）`}
-            value={holding.costBasis}
-            onChange={(v) => setHolding({ ...holding, costBasis: Number(v) })}
-            prefix={holding.currency}
-          />
-          <NumberField
-            label="目标权重"
-            value={holding.targetPct}
-            onChange={(v) => setHolding({ ...holding, targetPct: Number(v) })}
-            suffix="%"
-          />
-          <label>
-            <span>估值日期</span>
-            <input
-              type="date"
-              max={localDateValue(new Date())}
-              value={holding.valuationDate}
-              onChange={(e) => {
-                setHolding({
-                  ...holding,
-                  valuationDate: e.target.value,
-                  fxRateToBase: null,
-                  fxRateSource: "",
-                  fxRateObservedOn: "",
-                });
-                setHoldingFxQuote(null);
-                setHoldingFxError("");
-              }}
-            />
-            <small>组合检查点要求全部持仓使用同一日期。</small>
-          </label>
-          {editingHoldingId && (
-            <>
-              <NumberField
-                label="估值日持仓数量"
-                value={valuationQuantity}
-                onChange={(value) => setValuationQuantity(Number(value))}
-                suffix="份 / 股"
-              />
-              <div className="price-lookup">
-                <button
-                  className="secondary"
-                  disabled={
-                    valuationLoading ||
-                    !holding.symbol.trim() ||
-                    valuationQuantity <= 0 ||
-                    !holding.valuationDate
-                  }
-                  onClick={applyMarketValuation}
-                >
-                  {valuationLoading ? (
-                    <LoaderCircle className="spin" size={15} />
-                  ) : (
-                    <Cloud size={15} />
-                  )}
-                  查询并采用日收盘价
-                </button>
-                {valuationError && (
-                  <small className="fx-error">{valuationError}</small>
-                )}
-                {snapshot.holdingValuations.find(
-                  (value) => value.holdingId === editingHoldingId,
-                ) &&
-                  ((valuation) => (
-                    <p>
-                      <strong>
-                        {valuation.quantity} × {valuation.unitPrice}{" "}
-                        {valuation.currency} ={" "}
-                        {formatMoney(valuation.marketValue, valuation.currency)}
-                      </strong>
-                      <span>
-                        {valuation.exchange ||
-                          valuation.micCode ||
-                          "交易所未标注"}{" "}
-                        · {valuation.observedOn}
-                        {valuation.stalenessDays
-                          ? `（回退 ${valuation.stalenessDays} 天）`
-                          : ""}{" "}
-                        · 未复权日收盘价
-                      </span>
-                      <a
-                        href={valuation.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        核对请求来源
-                      </a>
-                    </p>
-                  ))(
-                    snapshot.holdingValuations.find(
-                      (value) => value.holdingId === editingHoldingId,
-                    ) as HoldingValuationEvidence,
-                  )}
-              </div>
-            </>
-          )}
-          {holding.currency !== profile.baseCurrency && (
-            <>
-              <NumberField
-                label={`折算汇率（1 ${holding.currency} = ? ${profile.baseCurrency}）`}
-                value={holding.fxRateToBase ?? 0}
-                onChange={(v) => {
-                  setHolding({
-                    ...holding,
-                    fxRateToBase: v ? Number(v) : null,
-                    fxRateSource: "",
-                    fxRateObservedOn: "",
-                  });
-                  setHoldingFxQuote(null);
-                }}
-                suffix={profile.baseCurrency}
-              />
-              <div className="fx-lookup">
-                <button
-                  className="secondary"
-                  disabled={holdingFxLoading || !holding.valuationDate}
-                  onClick={lookupHoldingFx}
-                >
-                  {holdingFxLoading ? (
-                    <LoaderCircle className="spin" size={15} />
-                  ) : (
-                    <Cloud size={15} />
-                  )}
-                  查询 ECB 当日参考汇率
-                </button>
-                {holdingFxError && (
-                  <small className="fx-error">{holdingFxError}</small>
-                )}
-                {holding.fxRateSource && (
-                  <small>
-                    已采用 {fxSourceLabel(holding.fxRateSource)} · 观察日{" "}
-                    {holding.fxRateObservedOn}
-                  </small>
-                )}
-                {holdingFxQuote && (
-                  <p>
-                    {holdingFxQuote.stalenessDays
-                      ? `非工作日，使用此前 ${holdingFxQuote.stalenessDays} 天的共同观察值。`
-                      : "已取得当日共同观察值。"}
-                    <a
-                      href={holdingFxQuote.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      核对原始数据
-                    </a>
-                  </p>
-                )}
-                {holding.fxRateSource === "ecb_reference" &&
-                  !holdingFxQuote && (
-                    <a
-                      className="fx-method-link"
-                      href={ecbFxMethodologyUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      查看 ECB 参考汇率方法
-                    </a>
-                  )}
-              </div>
-            </>
-          )}
-        </div>
-        <div className="form-actions">
-          {editingHoldingId ? (
-            <button
-              className="text-button"
-              onClick={() => {
-                setEditingHoldingId(null);
-                setHolding(emptyHolding(profile.baseCurrency));
-                setHoldingFxQuote(null);
-                setHoldingFxError("");
-                setValuationQuantity(0);
-                setValuationError("");
-              }}
-            >
-              取消修改
-            </button>
-          ) : (
-            <span />
-          )}
-          <button
-            className="secondary"
-            onClick={persistHolding}
-            disabled={
-              saving ||
-              !holding.name ||
-              !holding.valuationDate ||
-              Boolean(
-                holding.currency !== profile.baseCurrency &&
-                (!holding.fxRateToBase || holding.fxRateToBase <= 0),
-              )
-            }
-          >
-            {editingHoldingId ? <Save size={16} /> : <Plus size={16} />}
-            {editingHoldingId ? "保存修改" : "加入组合"}
-          </button>
-        </div>
-      </section>
-      <p className="effectiveness-disclaimer">
-        证券价格功能需要先保存资产，再进入编辑并输入估值日持仓数量。系统只在你主动点击时查询；现金、非上市资产或未配置行情密钥的持仓仍可保留人工市值，但会明确标为未核验。
-      </p>
     </div>
   );
 }

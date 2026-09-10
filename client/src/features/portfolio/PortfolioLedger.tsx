@@ -250,11 +250,7 @@ export function PortfolioLedger({
 
   return (
     <div className="page narrow ledger-page">
-      <PageHeader
-        eyebrow="方法论 · 组合记录"
-        title="把资金变化写成可核对的流水"
-        description="先分清外部入出金、内部收益成本和交易换手，再谈组合回报。已保存记录只追加、不静默改写。"
-      />
+      <PageHeader title="组合流水" description="记录资金进出与交易。" />
 
       <section className="ledger-summary">
         <article>
@@ -299,7 +295,7 @@ export function PortfolioLedger({
           <p>
             {latestCheckin
               ? "为保护归因链，新增流水必须晚于该日期。历史漏项请在说明中保留纠正原因，并从新基线开始。"
-              : "请先在决策总览冻结当前组合；基线之前的历史变化不会被系统猜测。"}
+              : "请先在总览冻结当前组合；基线之前的历史变化不会被系统猜测。"}
           </p>
         </div>
       </div>
@@ -320,10 +316,8 @@ export function PortfolioLedger({
       <section className="panel form-panel ledger-entry">
         <div className="panel-title">
           <div>
-            <span>新增不可变记录</span>
-            <h2>这笔资金变化是什么？</h2>
+            <h2>记一笔</h2>
           </div>
-          <CircleDollarSign size={21} className="muted-icon" />
         </div>
         <div className="form-grid compact-grid">
           <label>
@@ -503,180 +497,175 @@ export function PortfolioLedger({
         </div>
       </section>
 
-      <section className="panel ledger-import">
-        <div className="panel-title">
-          <div>
-            <span>批量录入 · 两阶段确认</span>
-            <h2>从券商或银行 CSV 导入</h2>
-          </div>
-          <Upload size={21} className="muted-icon" />
-        </div>
-        <p className="import-intro">
-          本机先解析并逐行校验，不会在预览时写入。相同{" "}
-          <code>source + external_id</code>{" "}
-          且内容一致的记录会跳过；编号相同但内容不同会阻止整批导入。
-        </p>
-        <div className="import-controls">
-          <label className="file-picker">
-            <Upload size={16} />
-            <span>{csvFileName || "选择 CSV 文件"}</span>
-            <input
-              key={csvFileName || "empty"}
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) => void selectCsvFile(event.target.files?.[0])}
-            />
-          </label>
-          <button
-            className="secondary"
-            onClick={() =>
-              downloadPortfolioEventCsvTemplate(snapshot.profile.baseCurrency)
-            }
-          >
-            <Download size={16} />
-            下载模板
-          </button>
-          <button
-            className="secondary"
-            disabled={!csvText || importing || !latestCheckin?.valuationDate}
-            onClick={previewCsv}
-          >
-            {importing ? (
-              <LoaderCircle className="spin" size={16} />
-            ) : (
-              <Eye size={16} />
-            )}
-            校验并预览
-          </button>
-        </div>
-        <p className="import-hint">
-          必填列：source、external_id、event_type、occurred_on、amount、currency、note；可选列：fx_rate_to_base、fx_rate_source、fx_rate_observed_on、asset_name。单次最多
-          1000 行、2 MB。
-        </p>
-        {importError && (
-          <div className="error-box">
-            <AlertTriangle size={17} />
-            {importError}
-          </div>
-        )}
-        {importPreview && (
-          <div className="import-preview">
-            <div className="import-result-bar">
-              <div>
-                <span className="ready-dot" />
-                待写入 <strong>{importPreview.readyCount}</strong>
-              </div>
-              <div>
-                <span className="duplicate-dot" />
-                重复跳过 <strong>{importPreview.duplicateCount}</strong>
-              </div>
-              <div>
-                <span className="error-dot" />
-                错误 <strong>{importPreview.errorCount}</strong>
-              </div>
-              <small>
-                基准币种 {importPreview.baseCurrency} · 冻结至{" "}
-                {importPreview.frozenThrough}
-              </small>
-            </div>
-            <div className="import-table-wrap">
-              <table className="import-table">
-                <thead>
-                  <tr>
-                    <th>行</th>
-                    <th>状态</th>
-                    <th>来源 / 交易编号</th>
-                    <th>类型与日期</th>
-                    <th>金额</th>
-                    <th>资产 / 说明</th>
-                    <th>校验结果</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {importPreview.rows.map((row) => (
-                    <tr
-                      key={`${row.rowNumber}-${row.externalId}`}
-                      className={`import-${row.status}`}
-                    >
-                      <td>{row.rowNumber}</td>
-                      <td>
-                        <span>
-                          {row.status === "ready"
-                            ? "可导入"
-                            : row.status === "duplicate"
-                              ? "重复"
-                              : "错误"}
-                        </span>
-                      </td>
-                      <td>
-                        <strong>{row.source || "—"}</strong>
-                        <small>{row.externalId || "—"}</small>
-                      </td>
-                      <td>
-                        <strong>
-                          {portfolioEventLabels[
-                            row.eventType as PortfolioEventType
-                          ] ??
-                            (row.eventType || "—")}
-                        </strong>
-                        <small>{row.occurredOn || "—"}</small>
-                      </td>
-                      <td>
-                        {row.amount === null
-                          ? "—"
-                          : formatMoney(
-                              row.amount,
-                              row.currency || importPreview.baseCurrency,
-                            )}
-                        {row.fxRateToBase && (
-                          <small>汇率 {row.fxRateToBase}</small>
-                        )}
-                        {row.fxRateSource && (
-                          <small>
-                            {fxSourceLabel(row.fxRateSource)} ·{" "}
-                            {row.fxRateObservedOn}
-                          </small>
-                        )}
-                      </td>
-                      <td>
-                        <strong>{row.assetName || "组合账户"}</strong>
-                        <small>{row.note || "—"}</small>
-                      </td>
-                      <td>{row.message}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="import-actions">
-              <p>
-                <ShieldCheck size={16} />
-                有任意错误时整批不会写入；确认时会再次校验预览版本。
-              </p>
-              <button
-                className="primary"
-                disabled={
-                  importing ||
-                  importPreview.errorCount > 0 ||
-                  importPreview.readyCount === 0
+      <details className="panel disclosure-panel">
+        <summary>批量导入 CSV</summary>
+        <div className="disclosure-content">
+          <p className="import-intro">
+            先预览，再确认导入。重复记录跳过，编号冲突会提示修正。
+          </p>
+          <div className="import-controls">
+            <label className="file-picker">
+              <Upload size={16} />
+              <span>{csvFileName || "选择 CSV 文件"}</span>
+              <input
+                key={csvFileName || "empty"}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) =>
+                  void selectCsvFile(event.target.files?.[0])
                 }
-                onClick={commitCsv}
-              >
-                <Check size={16} />
-                {importing
-                  ? "写入中…"
-                  : `确认写入 ${importPreview.readyCount} 笔`}
-              </button>
-            </div>
+              />
+            </label>
+            <button
+              className="secondary"
+              onClick={() =>
+                downloadPortfolioEventCsvTemplate(snapshot.profile.baseCurrency)
+              }
+            >
+              <Download size={16} />
+              下载模板
+            </button>
+            <button
+              className="secondary"
+              disabled={!csvText || importing || !latestCheckin?.valuationDate}
+              onClick={previewCsv}
+            >
+              {importing ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <Eye size={16} />
+              )}
+              校验并预览
+            </button>
           </div>
-        )}
-      </section>
+          <p className="import-hint">
+            必填列：source、external_id、event_type、occurred_on、amount、currency、note；可选列：fx_rate_to_base、fx_rate_source、fx_rate_observed_on、asset_name。单次最多
+            1000 行、2 MB。
+          </p>
+          {importError && (
+            <div className="error-box">
+              <AlertTriangle size={17} />
+              {importError}
+            </div>
+          )}
+          {importPreview && (
+            <div className="import-preview">
+              <div className="import-result-bar">
+                <div>
+                  <span className="ready-dot" />
+                  待写入 <strong>{importPreview.readyCount}</strong>
+                </div>
+                <div>
+                  <span className="duplicate-dot" />
+                  重复跳过 <strong>{importPreview.duplicateCount}</strong>
+                </div>
+                <div>
+                  <span className="error-dot" />
+                  错误 <strong>{importPreview.errorCount}</strong>
+                </div>
+                <small>
+                  基准币种 {importPreview.baseCurrency} · 冻结至{" "}
+                  {importPreview.frozenThrough}
+                </small>
+              </div>
+              <div className="import-table-wrap">
+                <table className="import-table">
+                  <thead>
+                    <tr>
+                      <th>行</th>
+                      <th>状态</th>
+                      <th>来源 / 交易编号</th>
+                      <th>类型与日期</th>
+                      <th>金额</th>
+                      <th>资产 / 说明</th>
+                      <th>校验结果</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreview.rows.map((row) => (
+                      <tr
+                        key={`${row.rowNumber}-${row.externalId}`}
+                        className={`import-${row.status}`}
+                      >
+                        <td>{row.rowNumber}</td>
+                        <td>
+                          <span>
+                            {row.status === "ready"
+                              ? "可导入"
+                              : row.status === "duplicate"
+                                ? "重复"
+                                : "错误"}
+                          </span>
+                        </td>
+                        <td>
+                          <strong>{row.source || "—"}</strong>
+                          <small>{row.externalId || "—"}</small>
+                        </td>
+                        <td>
+                          <strong>
+                            {portfolioEventLabels[
+                              row.eventType as PortfolioEventType
+                            ] ??
+                              (row.eventType || "—")}
+                          </strong>
+                          <small>{row.occurredOn || "—"}</small>
+                        </td>
+                        <td>
+                          {row.amount === null
+                            ? "—"
+                            : formatMoney(
+                                row.amount,
+                                row.currency || importPreview.baseCurrency,
+                              )}
+                          {row.fxRateToBase && (
+                            <small>汇率 {row.fxRateToBase}</small>
+                          )}
+                          {row.fxRateSource && (
+                            <small>
+                              {fxSourceLabel(row.fxRateSource)} ·{" "}
+                              {row.fxRateObservedOn}
+                            </small>
+                          )}
+                        </td>
+                        <td>
+                          <strong>{row.assetName || "组合账户"}</strong>
+                          <small>{row.note || "—"}</small>
+                        </td>
+                        <td>{row.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="import-actions">
+                <p>
+                  <ShieldCheck size={16} />
+                  有任意错误时整批不会写入；确认时会再次校验预览版本。
+                </p>
+                <button
+                  className="primary"
+                  disabled={
+                    importing ||
+                    importPreview.errorCount > 0 ||
+                    importPreview.readyCount === 0
+                  }
+                  onClick={commitCsv}
+                >
+                  <Check size={16} />
+                  {importing
+                    ? "写入中…"
+                    : `确认写入 ${importPreview.readyCount} 笔`}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </details>
 
       <section className="panel ledger-history">
         <div className="panel-title">
           <div>
-            <span>本地流水账</span>
-            <h2>按发生日期倒序</h2>
+            <h2>流水记录</h2>
           </div>
           <span className="history-count">{events.length} 笔</span>
         </div>

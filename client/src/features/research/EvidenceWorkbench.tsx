@@ -131,9 +131,8 @@ export function EvidenceWorkbench({
   return (
     <div className="page narrow">
       <PageHeader
-        eyebrow="方法论 · 研究层"
-        title="观点之前，先建立证据"
-        description="保存事实出处、资料日期与反方证据；AI 只能引用你确认发送的记录。"
+        title="研究证据"
+        description="保存来源，核对事实。"
         action={
           <button
             className="primary"
@@ -159,24 +158,21 @@ export function EvidenceWorkbench({
         <article>
           <span>反方证据</span>
           <strong>{counter.length}</strong>
-          <small>避免只收集支持材料</small>
         </article>
         <article>
           <span>超过一年</span>
           <strong className={aging.length ? "warning-text" : ""}>
             {aging.length}
           </strong>
-          <small>过期不等于错误，但需要复核</small>
+          <small>待核对时效</small>
         </article>
       </section>
 
       <section className="panel evidence-form">
         <div className="panel-title">
           <div>
-            <span>证据账本</span>
-            <h2>记录一条可追溯事实</h2>
+            <h2>添加证据</h2>
           </div>
-          <Database size={21} className="muted-icon" />
         </div>
         <div className="evidence-entry-layout">
           <div className="form-grid">
@@ -310,17 +306,9 @@ export function EvidenceWorkbench({
               />
             </label>
           </div>
-          <aside className="evidence-guide">
-            <strong>来源不是结论</strong>
-            <p>“一手来源”表示离原始事实更近，不代表内容完整或投资判断正确。</p>
-            <ol>
-              <li>优先保存公司披露、监管文件和原始数据。</li>
-              <li>支持材料与反方材料分开记录。</li>
-              <li>错误记录应归档并重新建立，不覆盖旧证据。</li>
-              <li>mario 当前不自动抓取或核验链接内容。</li>
-            </ol>
-          </aside>
+
         </div>
+        <details className="inline-help"><summary>记录说明</summary><p>来源内容需自行核验；一手来源不代表结论正确。支持与反方材料分开记录，错误记录归档后重建。</p></details>
         <LoadState
           loading={loading}
           error={error}
@@ -350,14 +338,13 @@ export function EvidenceWorkbench({
       <section className="panel evidence-library">
         <div className="panel-title">
           <div>
-            <span>本地证据库</span>
-            <h2>检查来源结构，而不是累计观点数量</h2>
+            <h2>证据目录</h2>
           </div>
           <span className="history-count">{items.length} 条</span>
         </div>
         {!loading && !error && items.length === 0 && (
           <div className="empty">
-            还没有研究证据。先从一条可以打开、可以标注日期的一手来源开始。
+            暂无证据，先添加一条来源。
           </div>
         )}
         <div className="evidence-list">

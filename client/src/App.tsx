@@ -15,6 +15,7 @@ import { checkAndSendReviewReminder } from "./reminders";
 import { CloudSync } from "./features/account/CloudSync";
 import { DecisionJournal } from "./features/decisions/DecisionJournal";
 import { View, initialView, nav, supportingNav } from "./app/navigation";
+import type { FoundationSection } from "./app/navigation";
 import { Dashboard } from "./features/dashboard/Dashboard";
 import { Foundation } from "./features/portfolio/Foundation";
 import { PortfolioLedger } from "./features/portfolio/PortfolioLedger";
@@ -26,6 +27,8 @@ import { ModelSettings } from "./features/settings/ModelSettings";
 
 function App() {
   const [view, setView] = useState<View>(initialView);
+  const [foundationSection, setFoundationSection] =
+    useState<FoundationSection>("holdings");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [model, setModel] = useState<ModelConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,7 +91,11 @@ function App() {
     window.setTimeout(() => setNotice(""), 2400);
   };
 
-  const navigate = (nextView: View) => {
+  const navigate = (
+    nextView: View,
+    section: FoundationSection = "holdings",
+  ) => {
+    setFoundationSection(section);
     setView(nextView);
     setMobileNavOpen(false);
     window.history.replaceState(null, "", `#${nextView}`);
@@ -141,7 +148,6 @@ function App() {
         </div>
 
         <nav>
-          <p className="nav-caption">我的投资方法</p>
           {nav.map((item) => (
             <button
               key={item.id}
@@ -177,7 +183,6 @@ function App() {
           <LockKeyhole size={18} />
           <div>
             <strong>本地优先</strong>
-            <span>财务档案存储在此设备</span>
           </div>
         </div>
         <button
@@ -212,6 +217,7 @@ function App() {
         )}
         {view === "foundation" && (
           <Foundation
+            initialSection={foundationSection}
             snapshot={snapshot}
             onUpdate={setSnapshot}
             flash={flash}

@@ -124,37 +124,30 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
 
   return (
     <div className="page narrow memory-page">
-      <PageHeader
-        eyebrow="方法论 · 长期记忆"
-        title="由你决定哪些经验值得留下"
-        description="记忆来自不可变决策、结果复盘和历史 AI 分析。固定会提高相关检索权重，屏蔽会永久阻止它进入模型候选；两者都不会改写原始记录。"
-      />
+      <PageHeader title="长期记忆" description="管理 AI 可以参考的历史经验。" />
 
       <section className="memory-overview">
         <article>
-          <span>当前候选目录</span>
+          <span>记忆总数</span>
           <strong>{items.length}</strong>
-          <small>近期决策与分析，加上所有已管理记录</small>
         </article>
         <article>
           <span>长期保留</span>
           <strong>{pinnedCount}</strong>
-          <small>仅在主题相关时提高检索权重</small>
+          <small>相关时优先参考</small>
         </article>
         <article>
           <span>永久屏蔽</span>
           <strong>{hiddenCount}</strong>
-          <small>不进入后续 AI 候选池</small>
+          <small>不再提供给 AI</small>
         </article>
       </section>
 
       <section className="panel memory-manager">
         <div className="panel-title">
           <div>
-            <span>本地记忆目录</span>
-            <h2>确认、注释或屏蔽历史经验</h2>
+            <h2>记忆目录</h2>
           </div>
-          <BookMarked size={21} className="muted-icon" />
         </div>
         <div className="memory-toolbar">
           <input
@@ -195,9 +188,7 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
           <div className="empty">正在从本地原始记录重建记忆目录…</div>
         )}
         {!loading && !error && visibleItems.length === 0 && (
-          <div className="empty">
-            当前筛选下没有长期记忆。完成决策或 AI 分析后会自动出现候选。
-          </div>
+          <div className="empty">暂无记忆，完成决策或分析后自动生成。</div>
         )}
         <div className="memory-manager-list">
           {visibleItems.map((item) => {
@@ -293,10 +284,10 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
             );
           })}
         </div>
-        <p className="effectiveness-disclaimer">
+        <details className="inline-help"><summary>记忆如何使用</summary><p>
           长期保留不是把内容升级为事实，也不会绕过问题相关性直接发送；历史 AI
           回答仍只是待验证线索。偏好和注释属于投资域数据，会进入端到端加密同步包。
-        </p>
+        </p></details>
       </section>
     </div>
   );

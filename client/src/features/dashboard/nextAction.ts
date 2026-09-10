@@ -1,10 +1,11 @@
-import type { View } from "../../app/navigation";
+import type { View, FoundationSection } from "../../app/navigation";
 import type { ReviewReminderSummary, Snapshot } from "../../types";
 
 export interface NextAction {
   title: string;
   detail: string;
   destination?: View;
+  section?: FoundationSection;
   label?: string;
 }
 
@@ -14,16 +15,18 @@ export function nextAction(
 ): NextAction {
   if (!snapshot.goals.length)
     return {
-      title: "先确定资金的用途与期限",
-      detail: "建立一个目标即可开始，不需要先配置模型或注册账户。",
+      title: "设定第一个目标",
+      detail: "确定用途、金额和期限。",
       destination: "foundation",
+      section: "goals",
       label: "设定第一个目标",
     };
   if (!snapshot.valuationStatus.comparable)
     return {
       title: "先补齐估值资料",
-      detail: "当前口径不能可靠比较，补齐资料后再判断组合变化。",
+      detail: "补齐汇率后再比较组合。",
       destination: "foundation",
+      section: "holdings",
       label: "完善持仓资料",
     };
   const risk = snapshot.findings.find((finding) => finding.level === "high");
@@ -32,6 +35,7 @@ export function nextAction(
       title: risk.title,
       detail: risk.action,
       destination: "foundation",
+      section: "profile",
       label: "检查财务与风险约束",
     };
   if (!reminders)

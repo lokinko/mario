@@ -54,7 +54,7 @@ export function Advisor({
   const historyRequest = useRequestGuard();
   const analysisRequest = useRequestGuard();
   const [question, setQuestion] = useState(
-    "请基于我的财务目标和当前组合，指出最需要优先处理的风险，并给出不依赖市场预测的改进方案。",
+    "请基于我的财务目标和当前组合，指出最需要风险提醒，并给出不依赖市场预测的改进方案。",
   );
   const [deep, setDeep] = useState(true);
   const [memory, setMemory] = useState(true);
@@ -247,9 +247,7 @@ export function Advisor({
   return (
     <div className="page narrow">
       <PageHeader
-        eyebrow="AI 原生分析"
-        title="研究室，而不是荐股机"
-        description="规则引擎先处理确定性风险，大模型负责理解、比较、反驳与解释。"
+        title="AI 研究"
         action={
           <div className={`model-pill ${model.hasApiKey ? "ready" : ""}`}>
             <Bot size={15} />
@@ -414,8 +412,7 @@ export function Advisor({
         <section className="panel preview-panel">
           <div className="panel-title">
             <div>
-              <span>发送前确认</span>
-              <h2>模型将看到这些内容</h2>
+              <h2>发送前确认</h2>
             </div>
             <div className="preview-size">
               {(preview.payloadBytes / 1024).toFixed(1)} KB
@@ -764,8 +761,7 @@ export function Advisor({
       <section className="panel analysis-history-panel">
         <div className="panel-title">
           <div>
-            <span>本地分析档案</span>
-            <h2>回看当时的问题，而不是依赖记忆改写</h2>
+            <h2>分析历史</h2>
           </div>
           <span className="history-count">最近 {history.length} 条</span>
         </div>

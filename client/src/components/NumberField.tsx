@@ -18,6 +18,7 @@ export function NumberField({
         {prefix && <i>{prefix}</i>}
         <input
           type="number"
+          step="any"
           value={value || ""}
           onChange={(e) => onChange(e.target.value)}
         />

@@ -208,16 +208,11 @@ export function DecisionJournal({
 
   return (
     <div className="page narrow">
-      <PageHeader
-        eyebrow="方法论 · 决策层"
-        title="先写下来，再按下买入"
-        description="记录当时真正知道的事，避免用事后结果改写记忆。"
-      />
+      <PageHeader title="决策日志" description="记录判断，按期复盘。" />
       <section className="review-metrics">
         <article>
           <span>决策记录</span>
           <strong>{records.length}</strong>
-          <small>原始判断不可被复盘覆盖</small>
         </article>
         <article>
           <span>已完成复盘</span>
@@ -229,13 +224,11 @@ export function DecisionJournal({
           </small>
         </article>
         <article>
-          <span>概率判断样本误差</span>
+          <span>概率误差</span>
           <strong>
             {calibration.error === null ? "—" : calibration.error.toFixed(3)}
           </strong>
-          <small>
-            {`${calibration.count} 个明确成立/失效样本；均方误差越低越好，仅描述已有样本，不是能力分`}
-          </small>
+          <small>{`${calibration.count} 个明确成立/失效样本 · 非能力评分`}</small>
         </article>
         <article>
           <span>过程评分</span>
@@ -248,10 +241,8 @@ export function DecisionJournal({
       <section className="panel form-panel decision-card">
         <div className="panel-title">
           <div>
-            <span>投资决策卡</span>
-            <h2>把观点变成可证伪的假设</h2>
+            <h2>新建决策</h2>
           </div>
-          <FilePenLine size={21} className="muted-icon" />
         </div>
         {entry.sourceAnalysisId && (
           <div className="decision-draft-notice">
@@ -452,8 +443,7 @@ export function DecisionJournal({
       <section className="panel decision-history">
         <div className="panel-title">
           <div>
-            <span>历史证据</span>
-            <h2>按原始假设复盘，而不是看盈亏讲故事</h2>
+            <h2>历史决策</h2>
           </div>
           <span className="history-count">{records.length} 条</span>
         </div>

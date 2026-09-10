@@ -1,13 +1,4 @@
-import {
-  AlertTriangle,
-  ArrowRight,
-  BrainCircuit,
-  Check,
-  ChevronRight,
-  FilePenLine,
-  History,
-  Sparkles,
-} from "lucide-react";
+import { AlertTriangle, ArrowRight, BrainCircuit, Check, ChevronRight, FilePenLine, History, Sparkles } from "lucide-react";
 import type {
   AnalysisClaim,
   AnalysisAction,

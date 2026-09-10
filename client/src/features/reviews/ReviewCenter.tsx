@@ -291,11 +291,7 @@ export function ReviewCenter({
   )
     return (
       <div className="page narrow">
-        <PageHeader
-          eyebrow="复盘"
-          title="读取复盘与规则"
-          description="读取失败不等于没有待复盘记录。"
-        />
+        <PageHeader title="复盘" />
         <LoadState
           loading={loading}
           error={error}
@@ -307,9 +303,7 @@ export function ReviewCenter({
   return (
     <div className="page narrow">
       <PageHeader
-        eyebrow="方法论 · 校准层"
-        title="让经验沉淀为规则"
-        description="周期复盘不是解释盈亏，而是检查纪律、修订规则并冻结当时的证据。"
+        title="复盘"
         action={
           <button className="primary" onClick={startAiReview}>
             <Sparkles size={16} />
@@ -323,7 +317,6 @@ export function ReviewCenter({
           <strong className={dueDecisions.length ? "warning-text" : ""}>
             {dueDecisions.length}
           </strong>
-          <small>按原始证伪条件回看</small>
         </article>
         <article>
           <span>周期复盘</span>
@@ -344,143 +337,8 @@ export function ReviewCenter({
           <strong>
             {averageAdherence === null ? "—" : averageAdherence.toFixed(1)}
           </strong>
-          <small>只评价是否按流程行动</small>
+          <small>流程遵守情况</small>
         </article>
-      </section>
-
-      <section className="panel reminder-panel">
-        <div className="reminder-copy">
-          <div
-            className={`reminder-icon ${reminder?.enabled ? "enabled" : ""}`}
-          >
-            {reminder?.enabled ? <Bell size={18} /> : <BellOff size={18} />}
-          </div>
-          <div>
-            <strong>桌面复盘提醒</strong>
-            <p>
-              应用打开时检查到期事项；相同到期状态每天最多提醒一次，锁屏通知不显示资产名称。
-            </p>
-            <small>
-              设置只保存在这台设备，不参与云端同步。关闭应用后不会在后台运行。
-            </small>
-          </div>
-        </div>
-        <button
-          className={reminder?.enabled ? "secondary" : "primary"}
-          disabled={reminderSaving || !isNativeApp()}
-          onClick={toggleReminders}
-        >
-          {reminderSaving
-            ? "处理中…"
-            : reminder?.enabled
-              ? "关闭提醒"
-              : isNativeApp()
-                ? "开启提醒"
-                : "仅原生应用可用"}
-        </button>
-      </section>
-
-      <section className="panel rule-effectiveness-panel">
-        <div className="panel-title">
-          <div>
-            <span>规则有效性追踪</span>
-            <h2>观察纪律与过程质量的关系</h2>
-          </div>
-          <small className="causality-note">只显示关联，不宣称因果</small>
-        </div>
-        <div className="effectiveness-summary">
-          <article>
-            <span>规则检查覆盖</span>
-            <strong>
-              {effectiveness?.totalDecisions
-                ? `${effectiveness.evaluatedDecisions}/${effectiveness.totalDecisions}`
-                : "—"}
-            </strong>
-            <small>启用此能力后的决策才计入</small>
-          </article>
-          <article>
-            <span>适用规则遵守率</span>
-            <strong>
-              {effectiveness?.adherencePct == null
-                ? "—"
-                : `${effectiveness.adherencePct.toFixed(0)}%`}
-            </strong>
-            <small>不适用规则不进入分母</small>
-          </article>
-          <article>
-            <span>已复盘规则样本</span>
-            <strong>{effectiveness?.reviewedChecks ?? 0}</strong>
-            <small>按决策过程评分比较</small>
-          </article>
-        </div>
-        {!effectiveness?.rules.length && (
-          <div className="empty">
-            建立个人投资规则后，每次冻结决策都会先要求逐条确认。
-          </div>
-        )}
-        <div className="effectiveness-list">
-          {effectiveness?.rules.map((item) => (
-            <article
-              key={item.ruleId}
-              className={item.active ? "" : "inactive"}
-            >
-              <div className="effectiveness-rule">
-                <span>
-                  {item.category} · 当前 v{item.currentRevision}
-                  {item.active ? "" : " · 已停用"}
-                </span>
-                <strong>{item.statement}</strong>
-                <small>
-                  {item.observedRevisions.length
-                    ? `已有决策覆盖版本 ${item.observedRevisions.join("、")}`
-                    : "尚无决策样本"}
-                </small>
-              </div>
-              <div className="effectiveness-counts">
-                <span>
-                  适用 <b>{item.applicableCount}</b>
-                </span>
-                <span>
-                  遵守 <b>{item.followedCount}</b>
-                </span>
-                <span>
-                  偏离 <b>{item.deviatedCount}</b>
-                </span>
-                <span>
-                  已复盘 <b>{item.reviewedCount}</b>
-                </span>
-              </div>
-              <div className="process-comparison">
-                <span>
-                  遵守后的过程评分{" "}
-                  <b>
-                    {item.followedProcessAverage == null
-                      ? "—"
-                      : item.followedProcessAverage.toFixed(1)}
-                  </b>
-                </span>
-                <span>
-                  偏离后的过程评分{" "}
-                  <b>
-                    {item.deviatedProcessAverage == null
-                      ? "—"
-                      : item.deviatedProcessAverage.toFixed(1)}
-                  </b>
-                </span>
-                <strong
-                  className={
-                    item.signal.startsWith("反常") ? "warning-text" : ""
-                  }
-                >
-                  {item.signal}
-                </strong>
-              </div>
-            </article>
-          ))}
-        </div>
-        <p className="effectiveness-disclaimer">
-          过程评分也可能受规则本身影响，样本存在选择偏差。这里用于发现值得复核的规则，不用于证明某条规则提高收益。
-        </p>
       </section>
 
       <LoadState
@@ -493,8 +351,7 @@ export function ReviewCenter({
         <section className="panel due-review-panel">
           <div className="panel-title">
             <div>
-              <span>复盘队列</span>
-              <h2>先处理已经到期的原始判断</h2>
+              <h2>到期待复盘</h2>
             </div>
             <button className="secondary" onClick={() => navigate("decision")}>
               前往决策日志
@@ -516,10 +373,8 @@ export function ReviewCenter({
       <section className="panel form-panel system-review-form">
         <div className="panel-title">
           <div>
-            <span>周期系统复盘</span>
-            <h2>冻结这一周期的过程与约束</h2>
+            <h2>周期复盘</h2>
           </div>
-          <History size={21} className="muted-icon" />
         </div>
         <div className="form-grid">
           <label>
@@ -619,8 +474,7 @@ export function ReviewCenter({
       <section className="panel rule-workbench">
         <div className="panel-title">
           <div>
-            <span>个人投资规则</span>
-            <h2>把经验写成触发时能执行的动作</h2>
+            <h2>投资规则</h2>
           </div>
           <span className="history-count">{activeRules.length} 条有效</span>
         </div>
@@ -773,8 +627,7 @@ export function ReviewCenter({
         <section className="panel system-review-history">
           <div className="panel-title">
             <div>
-              <span>冻结记录</span>
-              <h2>用当时的事实检验方法是否进步</h2>
+              <h2>复盘记录</h2>
             </div>
             <span className="history-count">{reviews.length} 期</span>
           </div>
@@ -838,6 +691,135 @@ export function ReviewCenter({
           </div>
         </section>
       )}
+      <details className="panel disclosure-panel">
+        <summary>复盘提醒设置</summary>
+        <div className="disclosure-content">
+          <div className="reminder-copy">
+            <div
+              className={`reminder-icon ${reminder?.enabled ? "enabled" : ""}`}
+            >
+              {reminder?.enabled ? <Bell size={18} /> : <BellOff size={18} />}
+            </div>
+            <div>
+              <strong>桌面复盘提醒</strong>
+              <p>应用打开时检查，每天最多提醒一次。</p>
+              <small>仅此设备生效；关闭应用后不提醒。</small>
+            </div>
+          </div>
+          <button
+            className={reminder?.enabled ? "secondary" : "primary"}
+            disabled={reminderSaving || !isNativeApp()}
+            onClick={toggleReminders}
+          >
+            {reminderSaving
+              ? "处理中…"
+              : reminder?.enabled
+                ? "关闭提醒"
+                : isNativeApp()
+                  ? "开启提醒"
+                  : "仅原生应用可用"}
+          </button>
+        </div>
+      </details>
+
+      <details className="panel disclosure-panel">
+        <summary>规则表现与样本统计</summary>
+        <div className="disclosure-content">
+          <div className="effectiveness-summary">
+            <article>
+              <span>规则检查覆盖</span>
+              <strong>
+                {effectiveness?.totalDecisions
+                  ? `${effectiveness.evaluatedDecisions}/${effectiveness.totalDecisions}`
+                  : "—"}
+              </strong>
+              <small>启用此能力后的决策才计入</small>
+            </article>
+            <article>
+              <span>适用规则遵守率</span>
+              <strong>
+                {effectiveness?.adherencePct == null
+                  ? "—"
+                  : `${effectiveness.adherencePct.toFixed(0)}%`}
+              </strong>
+              <small>不适用规则不进入分母</small>
+            </article>
+            <article>
+              <span>已复盘规则样本</span>
+              <strong>{effectiveness?.reviewedChecks ?? 0}</strong>
+              <small>按决策过程评分比较</small>
+            </article>
+          </div>
+          {!effectiveness?.rules.length && (
+            <div className="empty">
+              建立个人投资规则后，每次冻结决策都会先要求逐条确认。
+            </div>
+          )}
+          <div className="effectiveness-list">
+            {effectiveness?.rules.map((item) => (
+              <article
+                key={item.ruleId}
+                className={item.active ? "" : "inactive"}
+              >
+                <div className="effectiveness-rule">
+                  <span>
+                    {item.category} · 当前 v{item.currentRevision}
+                    {item.active ? "" : " · 已停用"}
+                  </span>
+                  <strong>{item.statement}</strong>
+                  <small>
+                    {item.observedRevisions.length
+                      ? `已有决策覆盖版本 ${item.observedRevisions.join("、")}`
+                      : "尚无决策样本"}
+                  </small>
+                </div>
+                <div className="effectiveness-counts">
+                  <span>
+                    适用 <b>{item.applicableCount}</b>
+                  </span>
+                  <span>
+                    遵守 <b>{item.followedCount}</b>
+                  </span>
+                  <span>
+                    偏离 <b>{item.deviatedCount}</b>
+                  </span>
+                  <span>
+                    已复盘 <b>{item.reviewedCount}</b>
+                  </span>
+                </div>
+                <div className="process-comparison">
+                  <span>
+                    遵守后的过程评分{" "}
+                    <b>
+                      {item.followedProcessAverage == null
+                        ? "—"
+                        : item.followedProcessAverage.toFixed(1)}
+                    </b>
+                  </span>
+                  <span>
+                    偏离后的过程评分{" "}
+                    <b>
+                      {item.deviatedProcessAverage == null
+                        ? "—"
+                        : item.deviatedProcessAverage.toFixed(1)}
+                    </b>
+                  </span>
+                  <strong
+                    className={
+                      item.signal.startsWith("反常") ? "warning-text" : ""
+                    }
+                  >
+                    {item.signal}
+                  </strong>
+                </div>
+              </article>
+            ))}
+          </div>
+          <p className="effectiveness-disclaimer">
+            过程评分也可能受规则本身影响，样本存在选择偏差。这里用于发现值得复核的规则，不用于证明某条规则提高收益。
+          </p>
+        </div>
+      </details>
     </div>
   );
 }

@@ -21,6 +21,8 @@ export type View =
   | "cloud"
   | "settings";
 
+export type FoundationSection = "holdings" | "profile" | "goals";
+
 export const views: View[] = [
   "dashboard",
   "foundation",

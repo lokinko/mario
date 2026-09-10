@@ -160,14 +160,12 @@ export function ModelSettings({
   return (
     <div className="page narrow">
       <PageHeader
-        eyebrow="模型与外部数据"
-        title="模型可以替换，方法论保持稳定"
-        description="AI 与行情服务分别授权；密钥留在设备端，投资数据只按明确动作发送。"
+        title="模型与隐私"
+        description="密钥保存在此设备，数据仅在确认后发送。"
       />
       <section className="panel form-panel">
         <div className="panel-title">
           <div>
-            <span>OpenAI-compatible</span>
             <h2>模型连接</h2>
           </div>
           <div className={`status-dot ${model.hasApiKey ? "connected" : ""}`}>
@@ -212,10 +210,7 @@ export function ModelSettings({
           <LockKeyhole size={18} />
           <div>
             <strong>密钥与业务数据分离</strong>
-            <p>
-              密钥由操作系统钥匙串托管；本地 SQLite
-              数据库只保存提供商、地址和模型名称。
-            </p>
+            <p>密钥保存在系统钥匙串，不进入投资数据库。</p>
           </div>
         </div>
         {error && (
@@ -271,7 +266,6 @@ export function ModelSettings({
       <section className="panel form-panel">
         <div className="panel-title">
           <div>
-            <span>可审计证券价格</span>
             <h2>Twelve Data 日收盘价</h2>
           </div>
           <div
@@ -281,8 +275,7 @@ export function ModelSettings({
           </div>
         </div>
         <p className="section-intro">
-          只在你主动查询持仓估值时调用。服务端使用 Authorization
-          请求头，密钥不进入浏览器地址、SQLite、AI 上下文或云端同步包。
+          仅在主动查询时连接 Twelve Data；行情密钥不参与 AI 分析或同步。
         </p>
         <div className="form-grid single-column">
           <label>
@@ -386,23 +379,6 @@ export function ModelSettings({
             保存行情密钥
           </button>
         </div>
-      </section>
-      <section className="architecture-grid">
-        <article>
-          <span>01</span>
-          <strong>确定性规则层</strong>
-          <p>现金流、集中度、期限错配等风险无需调用模型。</p>
-        </article>
-        <article>
-          <span>02</span>
-          <strong>上下文构建层</strong>
-          <p>只选择完成当前任务所需的本地数据。</p>
-        </article>
-        <article>
-          <span>03</span>
-          <strong>可替换编排层</strong>
-          <p>记忆、检索、探索和反思都是独立阶段。</p>
-        </article>
       </section>
     </div>
   );

@@ -306,9 +306,8 @@ export function CloudSync({
   return (
     <div className="page narrow cloud-page">
       <PageHeader
-        eyebrow="账户与同步"
-        title="跨设备延续同一套投资系统"
-        description="账户负责识别你；投资数据在离开设备前完成加密，云端无法读取明文。"
+        title="账户与同步"
+        description="投资数据加密后同步。"
         action={
           <div className={`status-dot ${status.signedIn ? "connected" : ""}`}>
             {status.signedIn ? status.email : "未登录"}
@@ -317,14 +316,8 @@ export function CloudSync({
       />
 
       <details className="panel form-panel" open={!status.configured}>
-        <summary>高级设置：自定义云端服务</summary>
-        <div className="panel-title">
-          <div>
-            <span>可替换提供商 · Supabase 参考实现</span>
-            <h2>云端服务</h2>
-          </div>
-          <Cloud size={22} className="muted-icon" />
-        </div>
+        <summary>自定义云端服务</summary>
+
         <div className="form-grid single-column">
           <label>
             <span>Project URL</span>
@@ -372,7 +365,6 @@ export function CloudSync({
       <section className="panel form-panel">
         <div className="panel-title">
           <div>
-            <span>设备绑定</span>
             <h2>
               {status.signedIn
                 ? "当前账户"
@@ -385,7 +377,6 @@ export function CloudSync({
                   }[authMode]}
             </h2>
           </div>
-          <UserRound size={22} className="muted-icon" />
         </div>
         {status.signedIn ? (
           <div className="account-card">
@@ -616,7 +607,6 @@ export function CloudSync({
       <section className="panel form-panel">
         <div className="panel-title">
           <div>
-            <span>端到端加密 · 手动触发</span>
             <h2>同步控制台</h2>
           </div>
           <div
@@ -680,10 +670,8 @@ export function CloudSync({
       <section className="panel form-panel recovery-panel">
         <div className="panel-title">
           <div>
-            <span>跨设备恢复</span>
             <h2>恢复密钥</h2>
           </div>
-          <KeyRound size={22} className="muted-icon" />
         </div>
         <p className="section-intro">
           云端不保存此密钥。首次上传后从当前设备导出；在新设备登录同一账户后导入，才能解密数据。
