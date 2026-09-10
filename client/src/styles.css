@@ -3811,7 +3811,7 @@ main {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   body {
     min-width: 0;
   }
@@ -4026,7 +4026,18 @@ main {
 .next-action button {
   flex-shrink: 0;
 }
-@media (max-width: 720px) {
+.research-tasks {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.workflow-advanced summary {
+  cursor: pointer;
+  padding: 12px 0;
+  color: var(--green);
+}
+@media (max-width: 900px) {
   .next-action {
     align-items: stretch;
     flex-direction: column;

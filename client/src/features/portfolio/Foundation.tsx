@@ -59,6 +59,7 @@ export function Foundation({
   const [goal, setGoal] = useState<Omit<Goal, "id">>(emptyGoal);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [holdingFxQuote, setHoldingFxQuote] = useState<FxRateQuote | null>(
     null,
   );
@@ -72,16 +73,20 @@ export function Foundation({
     setProfile({ ...profile, [key]: Number(value) });
 
   const persistProfile = async () => {
+    setError("");
     setSaving(true);
     try {
       onUpdate(await saveProfile(profile));
       flash("财务档案已保存在本机");
+    } catch (nextError) {
+      setError(String(nextError));
     } finally {
       setSaving(false);
     }
   };
 
   const persistHolding = async () => {
+    setError("");
     if (!holding.name || holding.marketValue <= 0) return;
     setSaving(true);
     try {
@@ -96,6 +101,8 @@ export function Foundation({
       setValuationError("");
       setEditingHoldingId(null);
       flash(editingHoldingId ? "资产信息已更新" : "资产已加入组合");
+    } catch (nextError) {
+      setError(String(nextError));
     } finally {
       setSaving(false);
     }
@@ -173,6 +180,7 @@ export function Foundation({
   };
 
   const removeHolding = async (item: Holding) => {
+    setError("");
     if (!window.confirm(`确认删除“${item.name}”？相关决策日志不会被删除。`))
       return;
     setSaving(true);
@@ -183,12 +191,15 @@ export function Foundation({
         setHolding(emptyHolding(profile.baseCurrency));
       }
       flash("资产已从组合删除");
+    } catch (nextError) {
+      setError(String(nextError));
     } finally {
       setSaving(false);
     }
   };
 
   const persistGoal = async () => {
+    setError("");
     if (!goal.name || goal.targetAmount <= 0 || !goal.targetDate) return;
     setSaving(true);
     try {
@@ -199,6 +210,8 @@ export function Foundation({
       setGoal(emptyGoal);
       setEditingGoalId(null);
       flash(editingGoalId ? "投资目标已更新" : "投资目标已保存");
+    } catch (nextError) {
+      setError(String(nextError));
     } finally {
       setSaving(false);
     }
@@ -211,6 +224,7 @@ export function Foundation({
   };
 
   const removeGoal = async (item: Goal) => {
+    setError("");
     if (!window.confirm(`确认删除目标“${item.name}”？`)) return;
     setSaving(true);
     try {
@@ -220,6 +234,8 @@ export function Foundation({
         setGoal(emptyGoal);
       }
       flash("投资目标已删除");
+    } catch (nextError) {
+      setError(String(nextError));
     } finally {
       setSaving(false);
     }
@@ -232,6 +248,11 @@ export function Foundation({
         title="建立财务底座"
         description="先确定哪些钱能承担风险，再讨论收益。数据仅保存在本地数据库。"
       />
+      {error && (
+        <div className="error-box" role="alert">
+          {error}。输入内容已保留；请核实当前记录后再重试。
+        </div>
+      )}
       <section className="panel form-panel">
         <div className="panel-title">
           <div>

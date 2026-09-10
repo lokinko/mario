@@ -100,7 +100,7 @@ Android 调试 APK：
 ```bash
 npm run android:init   # 首次或需要重建 Android 工程时
 npm run android:build
-adb install -r outputs/mario_0.4.3_android-aarch64-debug.apk
+adb install -r outputs/mario_0.5.0_android-aarch64-debug.apk
 ```
 
 Android 版把同一个 Rust/Axum 服务库编译进应用进程，不依赖桌面 sidecar；SQLite 保存在应用沙盒，API Key、账户令牌与恢复密钥保存在 Android Keystore。详细环境要求、架构和调试边界见 [Android 调试构建](docs/android.md)。

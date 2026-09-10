@@ -47,9 +47,17 @@ export function ModelSettings({
   const [marketError, setMarketError] = useState("");
 
   useEffect(() => {
+    let active = true;
     void getSecurityPriceConfig()
-      .then(setSecurityConfig)
-      .catch((nextError) => setMarketError(String(nextError)));
+      .then((value) => {
+        if (active) setSecurityConfig(value);
+      })
+      .catch((nextError) => {
+        if (active) setMarketError(String(nextError));
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const persist = async () => {

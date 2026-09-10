@@ -560,7 +560,7 @@ export interface DecisionRuleCheck {
 
 export interface DecisionReview {
   outcomeSummary: string;
-  actualReturnPct?: number;
+  actualReturnPct?: number | null;
   thesisStatus: "成立" | "部分成立" | "失效" | "尚不明确";
   processRating: number;
   lessons: string;

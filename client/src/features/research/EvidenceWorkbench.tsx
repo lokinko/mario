@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useRequestGuard } from "../../lib/useRequestGuard";
+import { LoadState } from "../../components/LoadState";
 import { AlertTriangle, Database, Save, Sparkles } from "lucide-react";
 import {
   getResearchEvidence,
@@ -44,13 +46,21 @@ export function EvidenceWorkbench({
   const [items, setItems] = useState<ResearchEvidence[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const loadRequest = useRequestGuard();
 
   const refresh = async () => {
+    const isCurrent = loadRequest.begin();
+    setLoading(true);
     try {
-      setItems(await getResearchEvidence());
+      const items = await getResearchEvidence();
+      if (!isCurrent()) return;
+      setItems(items);
       setError("");
     } catch (nextError) {
-      setError(String(nextError));
+      if (isCurrent()) setError(String(nextError));
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
   };
 
@@ -311,12 +321,11 @@ export function EvidenceWorkbench({
             </ol>
           </aside>
         </div>
-        {error && (
-          <div className="error-box">
-            <AlertTriangle size={18} />
-            {error}
-          </div>
-        )}
+        <LoadState
+          loading={loading}
+          error={error}
+          onRetry={() => void refresh()}
+        />
         <div className="form-actions">
           <p>保存后内容不可编辑；归档是可恢复操作。</p>
           <button
@@ -346,7 +355,7 @@ export function EvidenceWorkbench({
           </div>
           <span className="history-count">{items.length} 条</span>
         </div>
-        {items.length === 0 && (
+        {!loading && !error && items.length === 0 && (
           <div className="empty">
             还没有研究证据。先从一条可以打开、可以标注日期的一手来源开始。
           </div>

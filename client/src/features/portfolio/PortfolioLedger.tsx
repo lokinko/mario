@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useRequestGuard } from "../../lib/useRequestGuard";
 import {
   AlertTriangle,
   Check,
@@ -58,6 +59,7 @@ export function PortfolioLedger({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const loadRequest = useRequestGuard();
   const [csvText, setCsvText] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
   const [importPreview, setImportPreview] =
@@ -79,6 +81,7 @@ export function PortfolioLedger({
   );
 
   const load = async () => {
+    const isCurrent = loadRequest.begin();
     setLoading(true);
     setError("");
     try {
@@ -86,12 +89,13 @@ export function PortfolioLedger({
         getPortfolioEvents(),
         getPortfolioCheckins(),
       ]);
+      if (!isCurrent()) return;
       setEvents(nextEvents);
       setCheckins(nextCheckins);
     } catch (nextError) {
-      setError(String(nextError));
+      if (isCurrent()) setError(String(nextError));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
@@ -300,9 +304,16 @@ export function PortfolioLedger({
         </div>
       </div>
       {error && (
-        <div className="error-box">
+        <div className="error-box" role="alert">
           <AlertTriangle size={17} />
           {error}
+          <button
+            className="secondary"
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            重新加载
+          </button>
         </div>
       )}
 

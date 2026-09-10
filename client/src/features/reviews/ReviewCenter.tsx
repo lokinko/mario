@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useRequestGuard } from "../../lib/useRequestGuard";
+import { LoadState } from "../../components/LoadState";
 import {
   AlertTriangle,
   Bell,
@@ -98,8 +100,12 @@ export function ReviewCenter({
     useState<RuleEffectivenessSummary | null>(null);
   const [reminderSaving, setReminderSaving] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const loadRequest = useRequestGuard();
 
   const refresh = async () => {
+    const isCurrent = loadRequest.begin();
+    setLoading(true);
     try {
       const [
         nextDecisions,
@@ -111,9 +117,10 @@ export function ReviewCenter({
         getDecisions(),
         getInvestmentRules(),
         getSystemReviews(),
-        getReviewReminders(),
-        getRuleEffectiveness(),
+        getReviewReminders().catch(() => null),
+        getRuleEffectiveness().catch(() => null),
       ]);
+      if (!isCurrent()) return;
       setDecisions(nextDecisions);
       setRules(nextRules);
       setReviews(nextReviews);
@@ -121,7 +128,9 @@ export function ReviewCenter({
       setEffectiveness(nextEffectiveness);
       setError("");
     } catch (nextError) {
-      setError(String(nextError));
+      if (isCurrent()) setError(String(nextError));
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
   };
 
@@ -275,6 +284,25 @@ export function ReviewCenter({
       setReminderSaving(false);
     }
   };
+
+  if (
+    loading ||
+    (error && !decisions.length && !rules.length && !reviews.length)
+  )
+    return (
+      <div className="page narrow">
+        <PageHeader
+          eyebrow="复盘"
+          title="读取复盘与规则"
+          description="读取失败不等于没有待复盘记录。"
+        />
+        <LoadState
+          loading={loading}
+          error={error}
+          onRetry={() => void refresh()}
+        />
+      </div>
+    );
 
   return (
     <div className="page narrow">
@@ -455,12 +483,11 @@ export function ReviewCenter({
         </p>
       </section>
 
-      {error && (
-        <div className="error-box">
-          <AlertTriangle size={18} />
-          {error}
-        </div>
-      )}
+      <LoadState
+        loading={loading}
+        error={error}
+        onRetry={() => void refresh()}
+      />
 
       {dueDecisions.length > 0 && (
         <section className="panel due-review-panel">

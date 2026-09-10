@@ -23,6 +23,47 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
+it("records a manual review without an account or model", async () => {
+  vi.mocked(api.getInvestmentRules).mockResolvedValue([]);
+  vi.mocked(api.getDecisions).mockResolvedValue([
+    {
+      ...emptyDecision,
+      id: "manual",
+      assetName: "人工判断",
+      ruleChecks: [],
+      createdAt: "2026-09-09",
+      reviewDate: "2026-09-09",
+    },
+  ]);
+  vi.mocked(api.saveDecisionReview).mockResolvedValue(undefined);
+  render(
+    <DecisionJournal
+      flash={vi.fn()}
+      seed={null}
+      clearSeed={vi.fn()}
+      onOpenAnalysis={vi.fn()}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "开始复盘" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "实际发生了什么？" }), {
+    target: { value: "记录可验证事实" },
+  });
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "如何修正未来决策？" }),
+    { target: { value: "补足反方证据" } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "保存复盘" }));
+  await waitFor(() =>
+    expect(api.saveDecisionReview).toHaveBeenCalledWith(
+      "manual",
+      expect.objectContaining({
+        outcomeSummary: "记录可验证事实",
+        lessons: "补足反方证据",
+      }),
+    ),
+  );
+});
+
 it("counts only binary resolved outcomes in the descriptive probability error", async () => {
   const outcomes: DecisionReview["thesisStatus"][] = [
     "成立",
@@ -43,6 +84,7 @@ it("counts only binary resolved outcomes in the descriptive probability error", 
         outcomeSummary: "记录结果",
         processRating: 3,
         lessons: "继续观察",
+        actualReturnPct: null,
       },
     })),
   );
@@ -57,6 +99,7 @@ it("counts only binary resolved outcomes in the descriptive probability error", 
   expect(await screen.findByText("0.250")).toBeTruthy();
   expect(screen.getByText(/2 个明确成立\/失效样本/)).toBeTruthy();
   expect(screen.queryByText("简化校准分")).toBeNull();
+  expect(screen.queryByText("+%")).toBeNull();
 });
 
 it("preserves edits to an AI draft when rules arrive later", async () => {

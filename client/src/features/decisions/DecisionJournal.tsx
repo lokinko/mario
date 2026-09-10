@@ -565,7 +565,7 @@ export function DecisionJournal({
                     <span>{record.review.thesisStatus}</span>
                     <p>{record.review.outcomeSummary}</p>
                     <strong>过程 {record.review.processRating}/5</strong>
-                    {record.review.actualReturnPct !== undefined && (
+                    {typeof record.review.actualReturnPct === "number" && (
                       <em
                         className={
                           record.review.actualReturnPct >= 0 ? "gain" : "loss"

@@ -1,6 +1,6 @@
 [package]
 name = "mario"
-version = "0.4.3"
+version = "0.5.0"
 description = "Desktop and Android client for mario"
 authors = ["mario"]
 edition = "2021"

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useRequestGuard } from "../../lib/useRequestGuard";
 import { AlertTriangle, BookMarked } from "lucide-react";
 import { getMemories, saveMemoryPreference } from "../../api";
 import type { MemoryCandidate } from "../../types";
@@ -19,12 +20,15 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const loadRequest = useRequestGuard();
 
   const load = async () => {
+    const isCurrent = loadRequest.begin();
     setLoading(true);
     setError("");
     try {
       const memories = await getMemories();
+      if (!isCurrent()) return;
       setItems(memories);
       setDrafts(
         Object.fromEntries(
@@ -35,9 +39,9 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
         ),
       );
     } catch (nextError) {
-      setError(String(nextError));
+      if (isCurrent()) setError(String(nextError));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
@@ -175,15 +179,22 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
           </div>
         </div>
         {error && (
-          <div className="error-box">
+          <div className="error-box" role="alert">
             <AlertTriangle size={17} />
             {error}
+            <button
+              className="secondary"
+              disabled={loading}
+              onClick={() => void load()}
+            >
+              重新加载
+            </button>
           </div>
         )}
         {loading && (
           <div className="empty">正在从本地原始记录重建记忆目录…</div>
         )}
-        {!loading && visibleItems.length === 0 && (
+        {!loading && !error && visibleItems.length === 0 && (
           <div className="empty">
             当前筛选下没有长期记忆。完成决策或 AI 分析后会自动出现候选。
           </div>

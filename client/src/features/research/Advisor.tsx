@@ -52,6 +52,7 @@ export function Advisor({
   onCreateDecisionDraft: (draft: DecisionEntry) => void;
 }) {
   const historyRequest = useRequestGuard();
+  const analysisRequest = useRequestGuard();
   const [question, setQuestion] = useState(
     "请基于我的财务目标和当前组合，指出最需要优先处理的风险，并给出不依赖市场预测的改进方案。",
   );
@@ -129,6 +130,9 @@ export function Advisor({
   });
 
   const invalidatePreview = (action: () => void) => {
+    analysisRequest.invalidate();
+    setPreviewing(false);
+    setRunning(false);
     historyRequest.invalidate();
     setHistoryBusy("");
     action();
@@ -140,20 +144,24 @@ export function Advisor({
   };
 
   const prepare = async () => {
+    const isCurrent = analysisRequest.begin();
     setPreviewing(true);
     setError("");
     setResult(null);
     try {
-      setPreview(await previewAnalysis(request()));
+      const nextPreview = await previewAnalysis(request());
+      if (!isCurrent()) return;
+      setPreview(nextPreview);
       setPreviewStale(false);
     } catch (e) {
-      setError(String(e));
+      if (isCurrent()) setError(String(e));
     } finally {
-      setPreviewing(false);
+      if (isCurrent()) setPreviewing(false);
     }
   };
 
   const analyze = async () => {
+    const isCurrent = analysisRequest.begin();
     setRunning(true);
     setError("");
     setResult(null);
@@ -161,16 +169,19 @@ export function Advisor({
       if (!preview) throw new Error("请先预览将发送的数据");
       if (previewStale) throw new Error("记忆选择已变化，请重新预览后再确认");
       const nextResult = await runAnalysis(request(preview.contextRevision));
+      if (!isCurrent()) return;
       setResult(nextResult);
       setStoredAnalysis(null);
       setPreview(null);
       getAnalysisHistory()
-        .then(setHistory)
+        .then((items) => {
+          if (isCurrent()) setHistory(items);
+        })
         .catch(() => undefined);
     } catch (e) {
-      setError(String(e));
+      if (isCurrent()) setError(String(e));
     } finally {
-      setRunning(false);
+      if (isCurrent()) setRunning(false);
     }
   };
 
@@ -179,6 +190,9 @@ export function Advisor({
       setContextSelection((current) => ({ ...current, [key]: !current[key] })),
     );
   const toggleMemoryCandidate = (id: string) => {
+    analysisRequest.invalidate();
+    setPreviewing(false);
+    setRunning(false);
     setExcludedMemoryIds((current) =>
       current.includes(id)
         ? current.filter((item) => item !== id)
@@ -189,6 +203,9 @@ export function Advisor({
   };
 
   const openStoredAnalysis = async (id: string) => {
+    analysisRequest.invalidate();
+    setPreviewing(false);
+    setRunning(false);
     const isCurrent = historyRequest.begin();
     setHistoryBusy(id);
     setHistoryError("");
@@ -214,6 +231,9 @@ export function Advisor({
   };
 
   const reuseStoredQuestion = (item: StoredAnalysis) => {
+    analysisRequest.invalidate();
+    setPreviewing(false);
+    setRunning(false);
     historyRequest.invalidate();
     setHistoryBusy("");
     setQuestion(item.question);
@@ -259,38 +279,67 @@ export function Advisor({
             }
           />
         </label>
-        <div className="workflow-options">
-          <Toggle
-            icon={<BrainCircuit size={17} />}
-            title="深度编排"
-            detail="构建计划并分阶段分析"
-            checked={deep}
-            onChange={(value) => invalidatePreview(() => setDeep(value))}
-          />
-          <Toggle
-            icon={<Database size={17} />}
-            title="本地记忆"
-            detail="检索相关历史决策"
-            checked={memory}
-            onChange={(value) => invalidatePreview(() => setMemory(value))}
-          />
-          <Toggle
-            icon={<ShieldCheck size={17} />}
-            title="纠错反思"
-            detail="独立检查遗漏和过度自信"
-            checked={reflection}
-            onChange={(value) => invalidatePreview(() => setReflection(value))}
-          />
-          <Toggle
-            icon={<Sparkles size={17} />}
-            title="多方案探索"
-            detail="比较至少两条可行路径"
-            checked={alternatives}
-            onChange={(value) =>
-              invalidatePreview(() => setAlternatives(value))
-            }
-          />
+        <div className="research-tasks" aria-label="研究任务">
+          {[
+            [
+              "检查风险",
+              "请依据我授权的资料检查目标与风险约束，列出证据缺口，并保留无需行动的选项。",
+            ],
+            [
+              "寻找反证",
+              "请质疑我当前的投资判断，区分事实、假设和未知项，提出最强反方证据与证伪条件。",
+            ],
+            [
+              "准备复盘",
+              "请对照历史判断与复盘证据，区分决策过程和结果，指出需要核实的事实及可能修订的规则。",
+            ],
+          ].map(([label, task]) => (
+            <button
+              key={label}
+              className="secondary"
+              onClick={() => invalidatePreview(() => setQuestion(task))}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+        <details className="workflow-advanced">
+          <summary>高级分析选项</summary>
+          <div className="workflow-options">
+            <Toggle
+              icon={<BrainCircuit size={17} />}
+              title="深度编排"
+              detail="构建计划并分阶段分析"
+              checked={deep}
+              onChange={(value) => invalidatePreview(() => setDeep(value))}
+            />
+            <Toggle
+              icon={<Database size={17} />}
+              title="本地记忆"
+              detail="检索相关历史决策"
+              checked={memory}
+              onChange={(value) => invalidatePreview(() => setMemory(value))}
+            />
+            <Toggle
+              icon={<ShieldCheck size={17} />}
+              title="纠错反思"
+              detail="独立检查遗漏和过度自信"
+              checked={reflection}
+              onChange={(value) =>
+                invalidatePreview(() => setReflection(value))
+              }
+            />
+            <Toggle
+              icon={<Sparkles size={17} />}
+              title="多方案探索"
+              detail="比较至少两条可行路径"
+              checked={alternatives}
+              onChange={(value) =>
+                invalidatePreview(() => setAlternatives(value))
+              }
+            />
+          </div>
+        </details>
         <div className="context-control">
           <div>
             <strong>选择允许发送的本地上下文</strong>
