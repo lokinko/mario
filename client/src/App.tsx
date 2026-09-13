@@ -58,7 +58,9 @@ function App() {
     if (!mobileNavOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    sidebarRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const frame = requestAnimationFrame(() =>
+      sidebarRef.current?.querySelector<HTMLButtonElement>("button")?.focus(),
+    );
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMobileNavOpen(false);
       if (event.key !== "Tab") return;
@@ -77,11 +79,19 @@ function App() {
     };
     window.addEventListener("keydown", keyboard);
     return () => {
+      cancelAnimationFrame(frame);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", keyboard);
       menuTrigger.current?.focus();
     };
   }, [mobileNavOpen]);
+  useEffect(() => {
+    const resize = () => {
+      if (window.innerWidth > 900) setMobileNavOpen(false);
+    };
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
   const startupRequest = useRef(0);
   const currentView = useRef(view);
   currentView.current = view;
@@ -286,6 +296,8 @@ function App() {
         ref={sidebarRef}
         id="main-navigation"
         aria-label="主导航"
+        role={mobileNavOpen ? "dialog" : undefined}
+        aria-modal={mobileNavOpen || undefined}
         className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}
       >
         <div className="brand">
