@@ -3905,9 +3905,7 @@ form + .holding-list {
     z-index: 60;
     visibility: hidden;
     transform: translateX(-100%);
-    transition:
-      transform 180ms ease,
-      visibility 180ms;
+    transition: transform 180ms ease;
   }
   .sidebar.mobile-open {
     visibility: visible;

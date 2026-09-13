@@ -58,7 +58,7 @@ function App() {
     if (!mobileNavOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const frame = requestAnimationFrame(() =>
+    const focusTimer = window.setTimeout(() =>
       sidebarRef.current?.querySelector<HTMLButtonElement>("button")?.focus(),
     );
     const keyboard = (event: KeyboardEvent) => {
@@ -79,7 +79,7 @@ function App() {
     };
     window.addEventListener("keydown", keyboard);
     return () => {
-      cancelAnimationFrame(frame);
+      clearTimeout(focusTimer);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", keyboard);
       menuTrigger.current?.focus();
@@ -294,6 +294,16 @@ function App() {
       )}
       <aside
         ref={sidebarRef}
+        onTransitionEnd={(event) => {
+          if (
+            mobileNavOpen &&
+            event.propertyName === "transform" &&
+            !sidebarRef.current?.contains(document.activeElement)
+          )
+            sidebarRef.current
+              ?.querySelector<HTMLButtonElement>("button")
+              ?.focus();
+        }}
         id="main-navigation"
         aria-label="主导航"
         role={mobileNavOpen ? "dialog" : undefined}

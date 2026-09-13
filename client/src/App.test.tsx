@@ -153,6 +153,11 @@ it("closes the left drawer with Escape and restores focus without changing the p
     document.querySelector("aside")?.classList.contains("mobile-open"),
   ).toBe(true);
   expect(document.querySelector("main")?.hasAttribute("inert")).toBe(true);
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "关闭导航" }),
+    ),
+  );
   fireEvent.keyDown(window, { key: "Escape" });
   expect(
     document.querySelector("aside")?.classList.contains("mobile-open"),
