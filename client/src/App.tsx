@@ -1,3 +1,11 @@
+import { DailyTracking } from "./features/portfolio/DailyTracking";
+import { startAutoSync, type SyncState } from "./lib/autoSync";
+import {
+  blockStaleWrites,
+  DATA_SAVED,
+  CLOUD_CHANGED,
+  CLOUD_DATA_UPDATED,
+} from "./lib/syncEvents";
 import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -9,7 +17,7 @@ import {
   Settings2,
   X,
 } from "lucide-react";
-import { getModelConfig, getSnapshot } from "./api";
+import { autoCloudSync, getModelConfig, getSnapshot } from "./api";
 import type { DecisionEntry, ModelConfig, Snapshot } from "./types";
 import { checkAndSendReviewReminder } from "./reminders";
 import { CloudSync } from "./features/account/CloudSync";
@@ -17,6 +25,7 @@ import { DecisionJournal } from "./features/decisions/DecisionJournal";
 import { View, initialView, nav, supportingNav } from "./app/navigation";
 import type { FoundationSection } from "./app/navigation";
 import { Dashboard } from "./features/dashboard/Dashboard";
+import { MyFacts } from "./features/portfolio/MyFacts";
 import { Foundation } from "./features/portfolio/Foundation";
 import { PortfolioLedger } from "./features/portfolio/PortfolioLedger";
 import { EvidenceWorkbench } from "./features/research/EvidenceWorkbench";
@@ -45,6 +54,63 @@ function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [modelError, setModelError] = useState("");
   const startupRequest = useRef(0);
+  const currentView = useRef(view);
+  currentView.current = view;
+  const edited = useRef(false);
+  const [remotePending, setRemotePending] = useState(false);
+  const [remoteViewRevision, setRemoteViewRevision] = useState(0);
+  const [syncState, setSyncState] = useState<SyncState>({
+    phase: "waiting",
+    message: "正在检查同步状态",
+  });
+  const syncController = useRef<ReturnType<typeof startAutoSync> | null>(null);
+  const loadRemoteData = async (protectDrafts = false) => {
+    const next = await getSnapshot();
+    if (
+      protectDrafts &&
+      edited.current &&
+      !["advisor", "cloud", "settings"].includes(currentView.current)
+    ) {
+      blockStaleWrites(true);
+      setRemotePending(true);
+      return;
+    }
+    setSnapshot(next);
+    setRemoteViewRevision((value) => value + 1);
+    setRemotePending(false);
+    blockStaleWrites(false);
+    window.dispatchEvent(new Event(CLOUD_DATA_UPDATED));
+  };
+  useEffect(() => {
+    if (loading || startupError) return;
+    const controller = startAutoSync({
+      sync: autoCloudSync,
+      visible: () =>
+        document.visibilityState !== "hidden" && document.hasFocus(),
+      online: () => navigator.onLine,
+      onStatus: setSyncState,
+      onRemoteUpdate: () => loadRemoteData(true),
+    });
+    syncController.current = controller;
+    window.addEventListener(DATA_SAVED, controller.changed);
+    window.addEventListener(CLOUD_CHANGED, controller.retry);
+    window.addEventListener("focus", controller.wake);
+    window.addEventListener("blur", controller.wake);
+    window.addEventListener("online", controller.wake);
+    window.addEventListener("offline", controller.wake);
+    document.addEventListener("visibilitychange", controller.wake);
+    return () => {
+      controller.dispose();
+      syncController.current = null;
+      window.removeEventListener(DATA_SAVED, controller.changed);
+      window.removeEventListener(CLOUD_CHANGED, controller.retry);
+      window.removeEventListener("focus", controller.wake);
+      window.removeEventListener("blur", controller.wake);
+      window.removeEventListener("online", controller.wake);
+      window.removeEventListener("offline", controller.wake);
+      document.removeEventListener("visibilitychange", controller.wake);
+    };
+  }, [loading, startupError]);
 
   const loadApplication = () => {
     setLoading(true);
@@ -80,6 +146,9 @@ function App() {
   }, []);
 
   const refreshInvestmentData = async () => {
+    blockStaleWrites(false);
+    setRemotePending(false);
+    edited.current = false;
     setSnapshot(await getSnapshot());
     setDataRevision((current) => current + 1);
     setDecisionDraft(null);
@@ -100,6 +169,7 @@ function App() {
     nextView: View,
     section: FoundationSection = "holdings",
   ) => {
+    edited.current = false;
     setFoundationSection(section);
     setView(nextView);
     if (nextView === "advisor") setAdvisorVisited(true);
@@ -107,6 +177,25 @@ function App() {
     window.history.replaceState(null, "", `#${nextView}`);
     window.scrollTo({ top: 0, behavior: "auto" });
   };
+
+  useEffect(() => {
+    const followLocation = () => {
+      const next = initialView();
+      if (next !== currentView.current) {
+        edited.current = false;
+        setView(next);
+        if (next === "advisor") setAdvisorVisited(true);
+        setMobileNavOpen(false);
+        window.scrollTo({ top: 0, behavior: "auto" });
+      }
+    };
+    window.addEventListener("hashchange", followLocation);
+    window.addEventListener("popstate", followLocation);
+    return () => {
+      window.removeEventListener("hashchange", followLocation);
+      window.removeEventListener("popstate", followLocation);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -165,23 +254,6 @@ function App() {
               {item.label}
             </button>
           ))}
-          <details
-            className="supporting-nav"
-            open={supportingNav.some((item) => item.id === view)}
-          >
-            <summary>资料与确认</summary>
-            {supportingNav.map((item) => (
-              <button
-                key={item.id}
-                aria-current={view === item.id ? "page" : undefined}
-                className={view === item.id ? "active" : ""}
-                onClick={() => navigate(item.id)}
-              >
-                <item.icon size={18} />
-                {item.label}
-              </button>
-            ))}
-          </details>
         </nav>
 
         <div className="sidebar-spacer" />
@@ -197,6 +269,11 @@ function App() {
         >
           <Cloud size={18} /> 账户与同步
         </button>
+        <small className="sidebar-sync-state" title={syncState.message}>
+          {syncState.phase === "attention"
+            ? "同步需要处理 · 打开账户与同步"
+            : syncState.message}
+        </small>
         <button
           className={`settings-link ${view === "settings" ? "active" : ""}`}
           onClick={() => navigate("settings")}
@@ -205,7 +282,45 @@ function App() {
         </button>
       </aside>
 
-      <main>
+      <main
+        onChangeCapture={() => {
+          edited.current = true;
+        }}
+      >
+        <DailyTracking />
+        {supportingNav.some((item) => item.id === view) && (
+          <div className="context-breadcrumb">
+            <button className="text-button" onClick={() => navigate("facts")}>
+              我的情况
+            </button>
+            <span aria-hidden="true"> / </span>
+            <span>{supportingNav.find((item) => item.id === view)?.label}</span>
+          </div>
+        )}
+        {remotePending && (
+          <div className="remote-update-notice" role="status">
+            其他设备的资料已同步，当前输入暂时保留。
+            <button
+              className="secondary"
+              onClick={() => {
+                if (
+                  edited.current &&
+                  !window.confirm(
+                    "查看最新资料会重载当前表单，未保存的输入将丢弃。可先复制需要保留的内容。继续？",
+                  )
+                )
+                  return;
+                void loadRemoteData()
+                  .then(() => {
+                    edited.current = false;
+                  })
+                  .catch((error) => flash(String(error)));
+              }}
+            >
+              查看最新资料
+            </button>
+          </div>
+        )}
         {notice && (
           <div className="toast">
             <Check size={16} />
@@ -221,8 +336,18 @@ function App() {
         {view === "dashboard" && (
           <Dashboard snapshot={snapshot} navigate={navigate} flash={flash} />
         )}
+        {view === "facts" && (
+          <MyFacts
+            key={remoteViewRevision}
+            snapshot={snapshot}
+            onUpdate={setSnapshot}
+            navigate={navigate}
+            flash={flash}
+          />
+        )}
         {view === "foundation" && (
           <Foundation
+            key={remoteViewRevision}
             initialSection={foundationSection}
             snapshot={snapshot}
             onUpdate={setSnapshot}
@@ -230,13 +355,22 @@ function App() {
           />
         )}
         {view === "ledger" && (
-          <PortfolioLedger snapshot={snapshot} flash={flash} />
+          <PortfolioLedger
+            key={remoteViewRevision}
+            snapshot={snapshot}
+            flash={flash}
+          />
         )}
         {view === "evidence" && (
-          <EvidenceWorkbench navigate={navigate} flash={flash} />
+          <EvidenceWorkbench
+            key={remoteViewRevision}
+            navigate={navigate}
+            flash={flash}
+          />
         )}
         {view === "decision" && (
           <DecisionJournal
+            key={remoteViewRevision}
             flash={flash}
             seed={decisionDraft}
             clearSeed={() => setDecisionDraft(null)}
@@ -247,9 +381,15 @@ function App() {
           />
         )}
         {view === "review" && (
-          <ReviewCenter navigate={navigate} flash={flash} />
+          <ReviewCenter
+            key={remoteViewRevision}
+            navigate={navigate}
+            flash={flash}
+          />
         )}
-        {view === "memory" && <MemoryCenter flash={flash} />}
+        {view === "memory" && (
+          <MemoryCenter key={remoteViewRevision} flash={flash} />
+        )}
         {model && advisorVisited && (
           <div hidden={view !== "advisor"}>
             <Advisor
@@ -267,10 +407,35 @@ function App() {
           </div>
         )}
         {view === "cloud" && (
-          <CloudSync flash={flash} onRestore={refreshInvestmentData} />
+          <CloudSync
+            flash={flash}
+            onRestore={refreshInvestmentData}
+            autoState={syncState}
+            onRetryAuto={() => syncController.current?.retry()}
+          />
         )}
         {view === "settings" && model && (
-          <ModelSettings model={model} onUpdate={setModel} flash={flash} />
+          <>
+            <ModelSettings model={model} onUpdate={setModel} flash={flash} />
+            <details className="page narrow archive-tools">
+              <summary>查看已有的资料与记录</summary>
+              <p>
+                mario
+                会在问答中查找相关资料。需要核对或修正历史记录时，可以从这里打开。
+              </p>
+              <div className="archive-links">
+                {supportingNav.map((item) => (
+                  <button
+                    className="secondary"
+                    key={item.id}
+                    onClick={() => navigate(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </details>
+          </>
         )}
         {(view === "advisor" || view === "settings") && !model && (
           <div className="center-screen">

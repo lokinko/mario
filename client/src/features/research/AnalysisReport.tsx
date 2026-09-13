@@ -393,6 +393,7 @@ export function ClaimList({
 }
 
 export function AdviceCards({
+  compact = false,
   onAsk,
   report,
   evidence,
@@ -401,6 +402,7 @@ export function AdviceCards({
   analysisId,
   onCreateDecisionDraft,
 }: {
+  compact?: boolean;
   onAsk?: (question: string) => void;
   report: StructuredAnalysis;
   personalContext?: AnalysisWorkflowTrace["personalContext"];
@@ -409,6 +411,41 @@ export function AdviceCards({
   analysisId: string;
   onCreateDecisionDraft: (draft: DecisionEntry) => void;
 }) {
+  if (compact) {
+    const action = report.actions[0];
+    if (!action) return null;
+    const review = grounding?.find((item) => item.actionIndex === 0);
+    const supported = review?.status === "supported";
+    return (
+      <section className="conversation-clarification" aria-label="下一步">
+        <strong>{supported ? "可以先做的一件事" : "先核实一件事"}</strong>
+        <p>
+          {supported
+            ? action.action
+            : review?.reason || "这条建议的依据还不够，需要先核对。"}
+        </p>
+        <small>
+          {supported
+            ? action.evidenceLimits?.[0]
+            : "核对清楚后，再决定是否行动。"}
+        </small>
+        {onAsk && (
+          <button
+            className="text-button"
+            onClick={() =>
+              onAsk(
+                supported
+                  ? `关于“${action.action}”，请帮我梳理最简单的第一步。需要我补充时，一次只问一件事。`
+                  : `请继续核实“${action.action}”的依据。${review?.reason ?? "依据待核对"}。你能查到的资料请自行查找，只问我你无法获知的个人事实。`,
+              )
+            }
+          >
+            {supported ? "帮我梳理第一步" : "请继续帮我核实"}
+          </button>
+        )}
+      </section>
+    );
+  }
   const evidenceById = new Map(evidence.map((item) => [item.id, item]));
   const createDecisionDraft = (action: AnalysisAction, index: number) => {
     const counterPoints = [

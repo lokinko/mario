@@ -78,6 +78,13 @@ fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
         .apply_verified_holding_valuation(&holding_id, 10.0, &verified_quote())
         .unwrap();
     assert_eq!(valued.holdings[0].market_value, 1_012.5);
+    assert_eq!(
+        db.daily_history(&super::daily::HistoryQuery::default())
+            .unwrap()
+            .records[0]
+            .total_assets,
+        Some(1_012.5)
+    );
     assert_eq!(valued.holding_valuations.len(), 1);
     assert_eq!(valued.holding_valuations[0].quantity, 10.0);
     assert_eq!(valued.holding_valuations[0].observed_on, "2026-09-04");
@@ -451,6 +458,7 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
     );
 
     let mut legacy_v8 = dataset.clone();
+    legacy_v8.tables.truncate(14); // Drop v10 daily tracking tables to construct an authentic v8 package.
     legacy_v8.schema_version = 8;
     assert_eq!(legacy_v8.tables.pop().unwrap().name, "holding_valuations");
     legacy_v8.validate().unwrap();
@@ -1088,8 +1096,8 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
     };
     db.save_profile(&profile).unwrap();
 
-    assert!(matches!(
-        db.add_holding(&HoldingInput {
+    let incomplete = db
+        .add_holding(&HoldingInput {
             symbol: "USD".into(),
             name: "美元资产".into(),
             asset_class: "股票".into(),
@@ -1101,9 +1109,10 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
             valuation_date: "2026-08-31".into(),
             fx_rate_source: String::new(),
             fx_rate_observed_on: String::new(),
-        }),
-        Err(AppError::Validation(_))
-    ));
+        })
+        .unwrap();
+    assert!(!incomplete.valuation_status.comparable);
+    db.delete_holding(&incomplete.holdings[0].id).unwrap();
     let usd_snapshot = db
         .add_holding(&HoldingInput {
             symbol: "USD".into(),

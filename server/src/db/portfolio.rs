@@ -1,5 +1,5 @@
 use super::{
-    build_snapshot, normalized_fx_provenance, params, validate_currency, validate_goal,
+    build_snapshot, normalized_holding_fx_provenance, params, validate_currency, validate_goal,
     validate_holding, validate_holding_valuation_evidence, validate_non_negative, AppError,
     AppResult, Database, FinancialProfile, Goal, GoalInput, Holding, HoldingInput,
     HoldingValuationEvidence, OptionalRow, SecurityPriceQuote, Snapshot, Utc, Uuid,
@@ -8,6 +8,10 @@ use super::{
 impl Database {
     pub fn snapshot(&self) -> AppResult<Snapshot> {
         let conn = self.conn()?;
+        Self::snapshot_on(&conn)
+    }
+
+    pub(super) fn snapshot_on(conn: &rusqlite::Connection) -> AppResult<Snapshot> {
         let profile = conn
             .query_row("SELECT payload FROM profile WHERE id = 1", [], |row| {
                 row.get::<_, String>(0)
@@ -103,13 +107,14 @@ impl Database {
             )?
             .unwrap_or_else(|| Utc::now().to_rfc3339());
 
-        Ok(build_snapshot(
-            profile,
-            goals,
-            holdings,
-            holding_valuations,
-            updated_at,
-        ))
+        let mut snapshot = build_snapshot(profile, goals, holdings, holding_valuations, updated_at);
+        let mut statement = conn.prepare(
+            "SELECT id, CASE WHEN updated_at='' THEN created_at ELSE updated_at END FROM holdings",
+        )?;
+        snapshot.holding_revisions = statement
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        Ok(snapshot)
     }
 
     pub fn save_profile(&self, profile: &FinancialProfile) -> AppResult<Snapshot> {
@@ -128,9 +133,10 @@ impl Database {
         let mut normalized = profile.clone();
         normalized.base_currency = profile.base_currency.trim().to_ascii_uppercase();
         let payload = serde_json::to_string(&normalized)?;
-        let previous_base_currency = self.snapshot()?.profile.base_currency;
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
+        let before = super::daily::prepare(&transaction)?;
+        let previous_base_currency = before.profile.base_currency.clone();
         transaction.execute(
             "INSERT INTO profile (id, payload, updated_at) VALUES (1, ?1, ?2)
              ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
@@ -143,20 +149,24 @@ impl Database {
                 params![Utc::now().to_rfc3339()],
             )?;
         }
+        super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
         drop(conn);
         self.snapshot()
     }
 
     pub fn add_holding(&self, input: &HoldingInput) -> AppResult<Snapshot> {
-        let base_currency = self.snapshot()?.profile.base_currency;
+        let mut conn = self.conn()?;
+        let transaction = conn.transaction()?;
+        let before = super::daily::prepare(&transaction)?;
+        let base_currency = before.profile.base_currency.clone();
         validate_holding(input, &base_currency)?;
         let fx_rate_to_base = if input.currency.eq_ignore_ascii_case(&base_currency) {
             None
         } else {
             input.fx_rate_to_base
         };
-        let (fx_rate_source, fx_rate_observed_on) = normalized_fx_provenance(
+        let (fx_rate_source, fx_rate_observed_on) = normalized_holding_fx_provenance(
             &input.currency,
             &base_currency,
             fx_rate_to_base,
@@ -165,23 +175,29 @@ impl Database {
             &input.valuation_date,
         )?;
         let now = Utc::now().to_rfc3339();
-        self.conn()?.execute(
+        transaction.execute(
             "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
             params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, now],
         )?;
+        super::daily::finish(&transaction, &before, None)?;
+        transaction.commit()?;
+        drop(conn);
         self.snapshot()
     }
 
     pub fn update_holding(&self, id: &str, input: &HoldingInput) -> AppResult<Snapshot> {
-        let base_currency = self.snapshot()?.profile.base_currency;
+        let mut conn = self.conn()?;
+        let transaction = conn.transaction()?;
+        let before = super::daily::prepare(&transaction)?;
+        let base_currency = before.profile.base_currency.clone();
         validate_holding(input, &base_currency)?;
         let fx_rate_to_base = if input.currency.eq_ignore_ascii_case(&base_currency) {
             None
         } else {
             input.fx_rate_to_base
         };
-        let (fx_rate_source, fx_rate_observed_on) = normalized_fx_provenance(
+        let (fx_rate_source, fx_rate_observed_on) = normalized_holding_fx_provenance(
             &input.currency,
             &base_currency,
             fx_rate_to_base,
@@ -189,8 +205,7 @@ impl Database {
             &input.fx_rate_observed_on,
             &input.valuation_date,
         )?;
-        let mut conn = self.conn()?;
-        let previous = conn
+        let previous = transaction
             .query_row(
                 "SELECT symbol, market_value, currency, valuation_date FROM holdings WHERE id=?1",
                 [id],
@@ -207,7 +222,6 @@ impl Database {
         let Some(previous) = previous else {
             return Err(AppError::Validation("找不到要更新的资产".into()));
         };
-        let transaction = conn.transaction()?;
         let affected = transaction.execute(
             "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, fx_rate_to_base=?9, valuation_date=?10, fx_rate_source=?11, fx_rate_observed_on=?12, updated_at=?13 WHERE id=?1",
             params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, Utc::now().to_rfc3339()],
@@ -222,6 +236,7 @@ impl Database {
         if valuation_changed {
             transaction.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
         }
+        super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
         drop(conn);
         self.snapshot()
@@ -240,7 +255,9 @@ impl Database {
         }
         let captured_at = Utc::now().to_rfc3339();
         let mut conn = self.conn()?;
-        let holding_currency = conn
+        let transaction = conn.transaction()?;
+        let before = super::daily::prepare(&transaction)?;
+        let holding_currency = transaction
             .query_row("SELECT currency FROM holdings WHERE id=?1", [id], |row| {
                 row.get::<_, String>(0)
             })
@@ -252,7 +269,6 @@ impl Database {
                 quote.currency, holding_currency
             )));
         }
-        let transaction = conn.transaction()?;
         transaction.execute(
             "UPDATE holdings
              SET symbol=?2, market_value=?3, valuation_date=?4,
@@ -302,18 +318,23 @@ impl Database {
                 captured_at,
             ],
         )?;
+        super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
         drop(conn);
         self.snapshot()
     }
 
     pub fn delete_holding(&self, id: &str) -> AppResult<Snapshot> {
-        let affected = self
-            .conn()?
-            .execute("DELETE FROM holdings WHERE id=?1", [id])?;
+        let mut conn = self.conn()?;
+        let transaction = conn.transaction()?;
+        let before = super::daily::prepare(&transaction)?;
+        let affected = transaction.execute("DELETE FROM holdings WHERE id=?1", [id])?;
         if affected == 0 {
             return Err(AppError::Validation("找不到要删除的资产".into()));
         }
+        super::daily::finish(&transaction, &before, None)?;
+        transaction.commit()?;
+        drop(conn);
         self.snapshot()
     }
 

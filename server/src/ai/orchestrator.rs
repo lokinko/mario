@@ -59,6 +59,7 @@ impl<'a> InvestmentOrchestrator<'a> {
             "portfolio",
             "goals",
             "currentUserMessage",
+            "dailyAssetHistory",
         ]
         .into_iter()
         .filter_map(|key| {
@@ -625,6 +626,7 @@ mod tests {
         .unwrap();
         let retriever = HybridMemoryRetriever::default();
         let mut request = AnalysisRequest {
+            daily_asset_range: None,
             web_search: true,
             user_message: Some("这笔资金三年内要用，请结合我的集中持仓和外部背景，说明风险、适合我的下一步以及依据。".into()),
             question: "这笔资金三年内要用，请结合我的集中持仓和外部背景，说明风险、适合我的下一步以及依据。".into(),
@@ -753,6 +755,7 @@ mod tests {
 
     fn snapshot() -> Snapshot {
         Snapshot {
+            holding_revisions: Default::default(),
             profile: FinancialProfile::default(),
             goals: Vec::new(),
             holdings: vec![Holding {
@@ -829,6 +832,7 @@ mod tests {
             retrieval: None,
         }];
         let request = AnalysisRequest {
+            daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "检查指数集中度".into(),
@@ -950,6 +954,7 @@ mod tests {
         };
         let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
+            daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "只做快速风险摘要".into(),
@@ -1022,6 +1027,7 @@ mod tests {
         };
         let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
+            daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "只讨论目标".into(),
@@ -1056,6 +1062,7 @@ mod tests {
         };
         let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
+            daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "快速检查风险".into(),
@@ -1094,6 +1101,7 @@ mod tests {
         };
         let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
+            daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "快速检查风险".into(),
@@ -1171,6 +1179,7 @@ mod tests {
         .unwrap();
         let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
+            daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "快速检查风险".into(),
@@ -1262,6 +1271,7 @@ mod tests {
             searches: AtomicUsize::new(0),
         };
         let request = AnalysisRequest {
+            daily_asset_range: None,
             web_search: true,
             user_message: None,
             question: "结合外部信息检查持仓".into(),

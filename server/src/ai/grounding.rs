@@ -88,6 +88,7 @@ pub fn parse_review(
                         "personalInvestmentRules",
                         "periodicSystemReviews",
                         "portfolioChangeAttribution",
+                        "dailyAssetHistory",
                         "portfolioEvents",
                     ]
                     .contains(&group)

@@ -8,6 +8,7 @@
     "test": "bash scripts/test.sh",
     "desktop:dev": "bash scripts/desktop.sh debug",
     "desktop:build": "bash scripts/desktop.sh release",
+    "build:all": "npm run desktop:build && npm run android:build",
     "android:init": "bash scripts/android.sh init",
     "android:build": "bash scripts/android.sh build",
     "supabase:test": "bash scripts/test-supabase-sync.sh",

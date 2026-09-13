@@ -66,6 +66,24 @@ pub(super) fn normalized_fx_provenance(
     Ok((source.into(), observed_on.into()))
 }
 
+pub(super) fn normalized_holding_fx_provenance(
+    currency: &str,
+    base_currency: &str,
+    rate: Option<f64>,
+    source: &str,
+    observed: &str,
+    effective: &str,
+) -> AppResult<(String, String)> {
+    if !currency.eq_ignore_ascii_case(base_currency)
+        && rate.is_none()
+        && source.trim().is_empty()
+        && observed.trim().is_empty()
+    {
+        return Ok((String::new(), String::new()));
+    }
+    normalized_fx_provenance(currency, base_currency, rate, source, observed, effective)
+}
+
 pub(super) fn validate_portfolio_event(
     input: &PortfolioEventInput,
     base_currency: &str,
@@ -142,8 +160,10 @@ pub(super) fn validate_portfolio_event(
 }
 
 pub(super) fn validate_holding(input: &HoldingInput, base_currency: &str) -> AppResult<()> {
-    if input.name.trim().is_empty() || input.market_value <= 0.0 {
-        return Err(AppError::Validation("资产名称和正数市值为必填项".into()));
+    if input.name.trim().is_empty() || input.market_value < 0.0 || input.market_value > 1e15 {
+        return Err(AppError::Validation(
+            "资产名称和有效的非负市值为必填项".into(),
+        ));
     }
     validate_non_negative(&[input.market_value, input.cost_basis, input.target_pct])?;
     validate_percentage(input.target_pct, "目标权重")?;
@@ -153,24 +173,14 @@ pub(super) fn validate_holding(input: &HoldingInput, base_currency: &str) -> App
     if valuation_date > Local::now().date_naive() {
         return Err(AppError::Validation("持仓估值日期不能晚于今天".into()));
     }
-    if input.currency.eq_ignore_ascii_case(base_currency) {
-        if input
+    if input.currency.eq_ignore_ascii_case(base_currency)
+        && input
             .fx_rate_to_base
             .is_some_and(|rate| !rate.is_finite() || rate <= 0.0)
-        {
-            return Err(AppError::Validation("汇率必须是有效正数".into()));
-        }
-    } else if input
-        .fx_rate_to_base
-        .is_none_or(|rate| !rate.is_finite() || rate <= 0.0)
     {
-        return Err(AppError::Validation(format!(
-            "{} 持仓必须填写折算到基准币种 {} 的汇率",
-            input.currency.trim().to_ascii_uppercase(),
-            base_currency.trim().to_ascii_uppercase()
-        )));
+        return Err(AppError::Validation("汇率必须是有效正数".into()));
     }
-    normalized_fx_provenance(
+    normalized_holding_fx_provenance(
         &input.currency,
         base_currency,
         input.fx_rate_to_base,

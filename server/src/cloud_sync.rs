@@ -215,6 +215,7 @@ pub struct PullInput {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudStatus {
+    pub auto_sync_enabled: bool,
     pub configured: bool,
     pub signed_in: bool,
     pub email: Option<String>,
@@ -238,6 +239,7 @@ pub struct AccountResult {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncResult {
+    pub local_updated: bool,
     pub direction: String,
     pub revision: u64,
     pub content_hash: String,
@@ -269,6 +271,12 @@ struct RemoteBlob {
     updated_at: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct RemoteVersion {
+    revision: u64,
+    content_hash: String,
+}
+
 #[derive(Debug, Clone)]
 struct Session {
     access_token: String,
@@ -288,6 +296,7 @@ trait CloudSyncProvider {
     async fn resend_signup_confirmation(&self, email: &str) -> AppResult<()>;
     async fn refresh(&self, refresh_token: &str) -> AppResult<AuthSession>;
     async fn sign_out(&self, access_token: &str) -> AppResult<()>;
+    async fn fetch_version(&self, session: &Session) -> AppResult<Option<RemoteVersion>>;
     async fn fetch_blob(&self, session: &Session) -> AppResult<Option<RemoteBlob>>;
     async fn write_blob(
         &self,
@@ -300,11 +309,18 @@ trait CloudSyncProvider {
 impl SupabaseProvider {
     fn new(config: CloudConfig) -> Self {
         Self {
-            client: Client::builder()
-                .timeout(Duration::from_secs(20))
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .expect("valid auth client"),
+            client: {
+                static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
+                CLIENT
+                    .get_or_init(|| {
+                        Client::builder()
+                            .timeout(Duration::from_secs(20))
+                            .redirect(reqwest::redirect::Policy::none())
+                            .build()
+                            .expect("valid auth client")
+                    })
+                    .clone()
+            },
             config,
         }
     }
@@ -397,7 +413,8 @@ impl CloudSyncProvider for SupabaseProvider {
     async fn sign_out(&self, access_token: &str) -> AppResult<()> {
         let response = self
             .authenticated_request(
-                self.client.post(self.endpoint("/auth/v1/logout")),
+                self.client
+                    .post(self.endpoint("/auth/v1/logout?scope=local")),
                 access_token,
             )
             .send()
@@ -408,6 +425,23 @@ impl CloudSyncProvider for SupabaseProvider {
         } else {
             Err(cloud_error(response).await)
         }
+    }
+
+    async fn fetch_version(&self, session: &Session) -> AppResult<Option<RemoteVersion>> {
+        let response = self
+            .authenticated_request(
+                self.client.get(self.endpoint(&format!(
+                    "/rest/v1/sync_blobs?select=revision,content_hash&user_id=eq.{}",
+                    session.user.id
+                ))),
+                &session.access_token,
+            )
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(cloud_error(response).await);
+        }
+        Ok(response.json::<Vec<RemoteVersion>>().await?.pop())
     }
 
     async fn fetch_blob(&self, session: &Session) -> AppResult<Option<RemoteBlob>> {
@@ -489,6 +523,7 @@ pub fn config(db: &Database) -> AppResult<Option<CloudConfig>> {
 
 pub fn save_config(db: &Database, next: &CloudConfig) -> AppResult<CloudStatus> {
     validate_config(next)?;
+    bind_legacy_owner(db)?;
     let changed = config(db)?.is_some_and(|current| {
         current.url != next.url.trim_end_matches('/')
             || current.publishable_key != next.publishable_key.trim()
@@ -509,6 +544,7 @@ pub fn status(db: &Database) -> AppResult<CloudStatus> {
     let base_hash = db.setting(SETTING_BASE_HASH)?;
     let local_hash = db.export_sync_data()?.content_hash()?;
     Ok(CloudStatus {
+        auto_sync_enabled: auto_sync_enabled(db)?,
         configured,
         signed_in,
         email: db.setting(SETTING_ACCOUNT_EMAIL)?,
@@ -527,7 +563,7 @@ pub fn status(db: &Database) -> AppResult<CloudStatus> {
         privacy_boundary: vec![
             "云端仅保存端到端加密后的投资数据包".into(),
             "模型与行情 API Key、云端登录令牌保存在本机系统钥匙串且永不同步".into(),
-            "首次版本只允许手动同步；检测到双向修改时停止并提示冲突".into(),
+            "自动合并不同记录的修改；同一记录的双向修改保留并提示冲突".into(),
         ],
     })
 }
@@ -553,7 +589,6 @@ pub async fn sign_up(db: &Database, credentials: &AccountCredentials) -> AppResu
         (_, _, Some(user)) => user,
         _ => return Err(AppError::Auth("账户服务没有返回用户信息".into())),
     };
-    db.set_setting(SETTING_ACCOUNT_ID, &user.id)?;
     db.set_setting(
         SETTING_ACCOUNT_EMAIL,
         user.email.as_deref().unwrap_or(&credentials.email),
@@ -647,110 +682,244 @@ pub fn import_recovery_key(db: &Database, input: &RecoveryKeyInput) -> AppResult
     secrets::set_cloud_encryption_key(&user_id, &canonical)
 }
 
+pub fn auto_sync_enabled(db: &Database) -> AppResult<bool> {
+    Ok(db.setting("cloud.auto_sync")?.as_deref() != Some("false"))
+}
+#[derive(Deserialize)]
+pub struct AutoSyncSettings {
+    pub enabled: bool,
+}
+pub fn save_auto_sync_settings(db: &Database, input: &AutoSyncSettings) -> AppResult<CloudStatus> {
+    db.set_setting(
+        "cloud.auto_sync",
+        if input.enabled { "true" } else { "false" },
+    )?;
+    status(db)
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoSyncResult {
+    pub state: &'static str,
+    pub sync: Option<SyncResult>,
+}
+pub async fn auto_sync(db: &Database) -> AppResult<AutoSyncResult> {
+    if !auto_sync_enabled(db)? {
+        return Ok(AutoSyncResult {
+            state: "disabled",
+            sync: None,
+        });
+    }
+    if config(db)?.is_none()
+        || db.setting(SETTING_ACCOUNT_ID)?.is_none()
+        || secrets::cloud_tokens()?.is_none()
+    {
+        return Ok(AutoSyncResult {
+            state: "signed_out",
+            sync: None,
+        });
+    }
+    // Only retry a compare-and-swap race. Record conflicts need human review.
+    let result = match push(db).await {
+        Err(AppError::Conflict(message))
+            if message == "其他设备已先完成同步，请先拉取最新云端版本" =>
+        {
+            push(db).await?
+        }
+        result => result?,
+    };
+    Ok(AutoSyncResult {
+        state: "synced",
+        sync: Some(result),
+    })
+}
+
 pub async fn push(db: &Database) -> AppResult<SyncResult> {
     let (provider, session) = authenticated_provider(db).await?;
-    let dataset = db.export_sync_data()?;
-    let local_hash = dataset.content_hash()?;
-    let remote = provider.fetch_blob(&session).await?;
-    let expected_revision = base_revision(db)?;
-    let base_hash = db.setting(SETTING_BASE_HASH)?;
-
-    match &remote {
-        Some(remote) if remote.revision != expected_revision => {
-            let detail = if base_hash.as_deref() == Some(local_hash.as_str()) {
-                "云端有较新版本，请先拉取"
-            } else {
-                "本机与云端都已修改，已停止上传以避免覆盖"
-            };
-            return Err(AppError::Conflict(detail.into()));
-        }
-        None if expected_revision > 0 => {
-            return Err(AppError::Conflict(
-                "云端数据已被移除，无法基于旧版本继续上传".into(),
-            ));
-        }
-        _ => {}
-    }
-    if let Some(remote) = &remote {
-        if remote.content_hash == local_hash {
-            finish_sync(db, remote.revision, &local_hash)?;
-            return Ok(SyncResult {
-                direction: "push".into(),
-                revision: remote.revision,
-                content_hash: local_hash,
-                record_count: dataset.record_count(),
-                synced_at: Utc::now().to_rfc3339(),
-                message: "本机与云端已经一致，无需重复上传".into(),
-            });
-        }
-    }
-
+    let scope = sync_scope(db, &session.user.id)?;
+    ensure_data_owner(db, &scope)?;
     let recovery_key = match secrets::cloud_encryption_key(&session.user.id)? {
-        Some(value) => {
-            let canonical = canonical_recovery_key(&value)?;
-            if canonical != value {
-                secrets::set_cloud_encryption_key(&session.user.id, &canonical)?;
-            }
-            canonical
-        }
+        Some(value) => canonical_recovery_key(&value)?,
         None => {
+            if provider.fetch_version(&session).await?.is_some() {
+                return Err(AppError::Validation(
+                    "云端已有加密数据，请先导入原设备恢复密钥，不能用新密钥覆盖".into(),
+                ));
+            }
             let value = generate_recovery_key();
             secrets::set_cloud_encryption_key(&session.user.id, &value)?;
             value
         }
     };
-    let key = parse_recovery_key(&recovery_key)?;
-    let mut blob = encrypt_dataset(&dataset, &key)?;
-    blob.revision = expected_revision + 1;
-    let revision = provider
-        .write_blob(&session, expected_revision, &blob)
-        .await?;
-    finish_sync(db, revision, &local_hash)?;
+    sync_device(db, &provider, &session, &scope, &recovery_key).await
+}
+
+async fn sync_device(
+    db: &Database,
+    provider: &impl CloudSyncProvider,
+    session: &Session,
+    scope: &str,
+    recovery_key: &str,
+) -> AppResult<SyncResult> {
+    ensure_data_owner(db, scope)?;
+    let local = db.export_sync_data()?;
+    let local_hash = local.content_hash()?;
+    if db.setting(SETTING_BASE_HASH)?.as_deref() == Some(local_hash.as_str())
+        && base_revision(db)? > 0
+    {
+        if let Some(version) = provider.fetch_version(session).await? {
+            if version.revision == base_revision(db)? && version.content_hash == local_hash {
+                return Ok(SyncResult {
+                    local_updated: false,
+                    direction: "push".into(),
+                    revision: version.revision,
+                    content_hash: local_hash,
+                    record_count: local.record_count(),
+                    synced_at: Utc::now().to_rfc3339(),
+                    message: "已是最新，无需传输数据".into(),
+                });
+            }
+        }
+    }
+    let remote = provider.fetch_blob(session).await?;
+    let key = parse_recovery_key(recovery_key)?;
+    let (merged, expected_revision, remote_hash) = if let Some(remote) = &remote {
+        if remote.revision < base_revision(db)? {
+            return Err(AppError::Conflict(
+                "云端版本低于本机同步基线，请核对云端是否发生恢复".into(),
+            ));
+        }
+        let cloud = decrypt_dataset(remote, &key)?;
+        let base = load_sync_base(db, scope, &local)?;
+        let merged = Database::merge_sync_data(base.as_ref(), &local, &cloud)?;
+        (merged, remote.revision, Some(remote.content_hash.clone()))
+    } else {
+        if base_revision(db)? > 0 {
+            return Err(AppError::Conflict(
+                "云端数据已被移除，无法基于旧版本继续上传".into(),
+            ));
+        }
+        (local, 0, None)
+    };
+    let merged_hash = merged.content_hash()?;
+    let revision = if remote_hash.as_deref() == Some(merged_hash.as_str()) {
+        expected_revision
+    } else {
+        let mut blob = encrypt_dataset(&merged, &key)?;
+        blob.revision = expected_revision + 1;
+        provider
+            .write_blob(session, expected_revision, &blob)
+            .await?
+    };
+    finish_sync(db, scope, revision, &merged, &merged)?;
     Ok(SyncResult {
+        local_updated: merged_hash != local_hash,
         direction: "push".into(),
         revision,
-        content_hash: local_hash,
-        record_count: dataset.record_count(),
+        content_hash: merged_hash,
+        record_count: merged.record_count(),
         synced_at: Utc::now().to_rfc3339(),
-        message: "已上传端到端加密快照；请安全备份恢复密钥".into(),
+        message: "已合并双方无冲突的记录变更，并同步加密数据；删除与修改冲突不会被覆盖".into(),
     })
 }
 
 pub async fn pull(db: &Database, input: &PullInput) -> AppResult<SyncResult> {
     let (provider, session) = authenticated_provider(db).await?;
+    let scope = sync_scope(db, &session.user.id)?;
+    if !input.confirm_replace {
+        ensure_data_owner(db, &scope)?;
+    }
     let remote = provider
         .fetch_blob(&session)
         .await?
         .ok_or_else(|| AppError::Validation("云端还没有可拉取的数据".into()))?;
+    if remote.revision < base_revision(db)? {
+        return Err(AppError::Conflict(
+            "云端版本低于本机同步基线，请核对云端是否发生恢复".into(),
+        ));
+    }
     let recovery_key = secrets::cloud_encryption_key(&session.user.id)?.ok_or_else(|| {
         AppError::Validation("本机没有恢复密钥，请先从已同步设备导出并在此导入".into())
     })?;
     let key = parse_recovery_key(&recovery_key)?;
-    let dataset = decrypt_dataset(&remote, &key)?;
-    let local_hash = db.export_sync_data()?.content_hash()?;
-    let remote_hash = dataset.content_hash()?;
-
-    if local_hash != remote_hash && !input.confirm_replace {
-        return Err(AppError::Conflict(
-            "拉取会替换本机投资数据，请确认后重试；模型/行情密钥和账户配置不会被替换".into(),
-        ));
-    }
-    if local_hash != remote_hash {
-        db.import_sync_data(&dataset)?;
-    }
-    finish_sync(db, remote.revision, &remote_hash)?;
+    let cloud = Database::normalize_sync_dataset(&decrypt_dataset(&remote, &key)?)?;
+    let local = db.export_sync_data()?;
+    let merged = if input.confirm_replace {
+        // Explicit recovery remains available; preserve the displaced local dataset.
+        db.set_setting(
+            &format!("cloud.pre_restore_backup.{}", uuid::Uuid::new_v4()),
+            &serde_json::to_string(&local)?,
+        )?;
+        cloud.clone()
+    } else {
+        let base = load_sync_base(db, &scope, &local)?;
+        Database::merge_sync_data(base.as_ref(), &local, &cloud)?
+    };
+    // The baseline is the remote version, NOT the locally merged result: local
+    // changes still need uploading and must remain identifiable on the next run.
+    finish_sync(db, &scope, remote.revision, &merged, &cloud)?;
     Ok(SyncResult {
+        local_updated: merged.content_hash()? != local.content_hash()?,
         direction: "pull".into(),
         revision: remote.revision,
-        content_hash: remote_hash,
-        record_count: dataset.record_count(),
+        content_hash: merged.content_hash()?,
+        record_count: merged.record_count(),
         synced_at: Utc::now().to_rfc3339(),
-        message: if local_hash == remote.content_hash {
-            "本机与云端已经一致".into()
+        message: if input.confirm_replace {
+            "已备份本机原数据并恢复云端版本"
         } else {
-            "已验证并恢复云端加密快照".into()
-        },
+            "已增量合并云端记录，保留本机未上传的修改"
+        }
+        .into(),
     })
+}
+
+const SETTING_DATA_OWNER: &str = "cloud.data_owner";
+#[derive(Serialize, Deserialize)]
+struct SyncBase {
+    revision: u64,
+    dataset: SyncDataset,
+    synced_at: String,
+}
+fn sync_scope(db: &Database, user_id: &str) -> AppResult<String> {
+    let url = config(db)?
+        .ok_or_else(|| AppError::Validation("请先配置云端服务".into()))?
+        .url;
+    Ok(hash_bytes(
+        format!("{}\n{}", url.trim_end_matches('/'), user_id).as_bytes(),
+    ))
+}
+fn bind_legacy_owner(db: &Database) -> AppResult<()> {
+    if db.setting(SETTING_DATA_OWNER)?.is_none() {
+        if let Some(id) = db.setting(SETTING_ACCOUNT_ID)? {
+            db.set_setting(SETTING_DATA_OWNER, &sync_scope(db, &id)?)?;
+        }
+    }
+    Ok(())
+}
+fn ensure_data_owner(db: &Database, scope: &str) -> AppResult<()> {
+    if db
+        .setting(SETTING_DATA_OWNER)?
+        .is_some_and(|owner| owner != scope)
+    {
+        return Err(AppError::Conflict("本机数据属于另一账户或云端项目，已阻止混入当前账户。请切回原账户，或在备份后明确选择用当前账户云端数据恢复本机。".into()));
+    }
+    Ok(())
+}
+fn load_sync_base(
+    db: &Database,
+    scope: &str,
+    local: &SyncDataset,
+) -> AppResult<Option<SyncDataset>> {
+    if let Some(value) = db.setting(&format!("cloud.sync_base.{scope}"))? {
+        let base: SyncBase = serde_json::from_str(&value)?;
+        return Ok(Some(base.dataset));
+    }
+    // Old clients kept only a hash. It is safe to reconstruct the base only when
+    // the local snapshot still exactly matches that hash; never guess deletions.
+    if db.setting(SETTING_BASE_HASH)?.as_deref() == Some(local.content_hash()?.as_str()) {
+        return Ok(Some(local.clone()));
+    }
+    Ok(None)
 }
 
 fn provider(db: &Database) -> AppResult<SupabaseProvider> {
@@ -768,10 +937,39 @@ fn current_account_id(db: &Database) -> AppResult<String> {
         .ok_or_else(|| AppError::Auth("请先登录云端账户".into()))
 }
 
+// This only schedules refresh. Supabase still verifies the signature and RLS
+// on every request; decoded claims never grant local authorization.
+fn access_token_is_current(token: &str, user_id: &str) -> bool {
+    token
+        .split('.')
+        .nth(1)
+        .and_then(|part| URL_SAFE_NO_PAD.decode(part).ok())
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .is_some_and(|claims| {
+            claims["sub"].as_str() == Some(user_id)
+                && claims["exp"]
+                    .as_i64()
+                    .is_some_and(|expires| expires > Utc::now().timestamp() + 60)
+        })
+}
+
 async fn authenticated_provider(db: &Database) -> AppResult<(SupabaseProvider, Session)> {
     let provider = provider(db)?;
-    let (_, refresh_token) =
+    let (cached_access, refresh_token) =
         secrets::cloud_tokens()?.ok_or_else(|| AppError::Auth("请先登录云端账户".into()))?;
+    let user_id = current_account_id(db)?;
+    if access_token_is_current(&cached_access, &user_id) {
+        return Ok((
+            provider,
+            Session {
+                access_token: cached_access,
+                user: AuthUser {
+                    id: user_id,
+                    email: db.setting(SETTING_ACCOUNT_EMAIL)?,
+                },
+            },
+        ));
+    }
     let response = provider.refresh(&refresh_token).await?;
     let access_token = response
         .access_token
@@ -782,6 +980,11 @@ async fn authenticated_provider(db: &Database) -> AppResult<(SupabaseProvider, S
     let user = response
         .user
         .ok_or_else(|| AppError::Auth("刷新登录状态时缺少用户信息".into()))?;
+    if db.setting(SETTING_ACCOUNT_ID)?.as_deref() != Some(user.id.as_str()) {
+        return Err(AppError::Auth(
+            "刷新后的账户与本机登录账户不一致，请重新登录".into(),
+        ));
+    }
     persist_session(db, &access_token, &next_refresh_token, &user)?;
     Ok((provider, Session { access_token, user }))
 }
@@ -792,9 +995,22 @@ fn persist_session(
     refresh_token: &str,
     user: &AuthUser,
 ) -> AppResult<()> {
+    bind_legacy_owner(db)?;
     let previous_user = db.setting(SETTING_ACCOUNT_ID)?;
     if previous_user.as_deref().is_some_and(|id| id != user.id) {
         clear_sync_base(db)?;
+    }
+    let scope = sync_scope(db, &user.id)?;
+    if previous_user.as_deref() != Some(&user.id) {
+        if let Some(value) = db.setting(&format!("cloud.sync_base.{scope}"))? {
+            let base: SyncBase = serde_json::from_str(&value)?;
+            db.set_setting(SETTING_BASE_REVISION, &base.revision.to_string())?;
+            db.set_setting(SETTING_BASE_HASH, &base.dataset.content_hash()?)?;
+            db.set_setting(SETTING_LAST_SYNCED_AT, &base.synced_at)?;
+        }
+    }
+    if db.setting(SETTING_DATA_OWNER)?.is_none() {
+        db.set_setting(SETTING_DATA_OWNER, &scope)?;
     }
     secrets::set_cloud_tokens(access_token, refresh_token)?;
     db.set_setting(SETTING_ACCOUNT_ID, &user.id)?;
@@ -807,6 +1023,7 @@ fn persist_session(
 }
 
 fn clear_account_state(db: &Database) -> AppResult<()> {
+    bind_legacy_owner(db)?;
     secrets::delete_cloud_tokens()?;
     for key in [
         SETTING_ACCOUNT_ID,
@@ -829,10 +1046,32 @@ fn clear_sync_base(db: &Database) -> AppResult<()> {
     Ok(())
 }
 
-fn finish_sync(db: &Database, revision: u64, hash: &str) -> AppResult<()> {
-    db.set_setting(SETTING_BASE_REVISION, &revision.to_string())?;
-    db.set_setting(SETTING_BASE_HASH, hash)?;
-    db.set_setting(SETTING_LAST_SYNCED_AT, &Utc::now().to_rfc3339())
+fn finish_sync(
+    db: &Database,
+    scope: &str,
+    revision: u64,
+    local: &SyncDataset,
+    base: &SyncDataset,
+) -> AppResult<()> {
+    let synced_at = Utc::now().to_rfc3339();
+    let record = SyncBase {
+        revision,
+        dataset: base.clone(),
+        synced_at: synced_at.clone(),
+    };
+    db.apply_sync_update(
+        local,
+        &[
+            (SETTING_BASE_REVISION.into(), revision.to_string()),
+            (SETTING_BASE_HASH.into(), base.content_hash()?),
+            (SETTING_LAST_SYNCED_AT.into(), synced_at),
+            (SETTING_DATA_OWNER.into(), scope.into()),
+            (
+                format!("cloud.sync_base.{scope}"),
+                serde_json::to_string(&record)?,
+            ),
+        ],
+    )
 }
 
 fn base_revision(db: &Database) -> AppResult<u64> {
@@ -1063,6 +1302,9 @@ fn localized_auth_detail(detail: &str) -> String {
 
 async fn cloud_error(response: reqwest::Response) -> AppError {
     let status = response.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return AppError::Auth("云端登录已失效，请重新登录".into());
+    }
     let body = response.text().await.unwrap_or_default();
     let detail = error_detail(&body);
     AppError::Cloud(format!("{}（HTTP {}）", detail, status.as_u16()))
@@ -1095,6 +1337,120 @@ pub fn hash_bytes(value: &[u8]) -> String {
 mod tests {
     use super::*;
     use axum::{http::HeaderMap, routing::get, routing::post, Json, Router};
+
+    #[test]
+    fn baseline_is_remote_after_pull_and_is_scoped_by_project_and_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("sync.db")).unwrap();
+        db.set_setting(SETTING_CLOUD_URL, "https://project-a.example")
+            .unwrap();
+        db.set_setting(SETTING_CLOUD_KEY, "public").unwrap();
+        let a = sync_scope(&db, "user-a").unwrap();
+        let b = sync_scope(&db, "user-b").unwrap();
+        let remote = db.export_sync_data().unwrap();
+        db.save_profile(&crate::models::FinancialProfile::default())
+            .unwrap();
+        let local = db.export_sync_data().unwrap();
+        finish_sync(&db, &a, 3, &local, &remote).unwrap();
+        assert_ne!(
+            local.content_hash().unwrap(),
+            db.setting(SETTING_BASE_HASH).unwrap().unwrap()
+        );
+        assert_eq!(
+            load_sync_base(&db, &a, &local)
+                .unwrap()
+                .unwrap()
+                .content_hash()
+                .unwrap(),
+            remote.content_hash().unwrap()
+        );
+        assert!(ensure_data_owner(&db, &b).is_err());
+        assert!(db
+            .setting(&format!("cloud.sync_base.{b}"))
+            .unwrap()
+            .is_none());
+        clear_sync_base(&db).unwrap();
+        assert!(load_sync_base(&db, &a, &local).unwrap().is_some());
+        db.set_setting(SETTING_CLOUD_URL, "https://project-b.example")
+            .unwrap();
+        assert_ne!(a, sync_scope(&db, "user-a").unwrap());
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            local.content_hash().unwrap()
+        );
+    }
+
+    #[test]
+    fn two_devices_converge_through_encrypted_snapshots_and_reject_same_record_edits() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = Database::open(&dir.path().join("device-a.db")).unwrap();
+        let b = Database::open(&dir.path().join("device-b.db")).unwrap();
+        let base = a.export_sync_data().unwrap();
+        finish_sync(&a, "same-user", 1, &base, &base).unwrap();
+        finish_sync(&b, "same-user", 1, &base, &base).unwrap();
+        let mut local_a = base.clone();
+        let mut local_b = base.clone();
+        fn append_goal(data: &mut SyncDataset, id: &str) {
+            use crate::db::SyncValue::*;
+            data.tables
+                .iter_mut()
+                .find(|t| t.name == "goals")
+                .unwrap()
+                .rows
+                .push(vec![
+                    Text(id.into()),
+                    Text(id.into()),
+                    Real(100.0),
+                    Real(0.0),
+                    Real(1.0),
+                    Text("2027-01-01".into()),
+                    Text("高".into()),
+                    Text("2026-01-01T00:00:00Z".into()),
+                    Text("2026-01-01T00:00:00Z".into()),
+                ]);
+        }
+        append_goal(&mut local_a, "goal-a");
+        append_goal(&mut local_b, "goal-b");
+        a.apply_sync_update(&local_a, &[]).unwrap();
+        b.apply_sync_update(&local_b, &[]).unwrap();
+        let key = parse_recovery_key(&generate_recovery_key()).unwrap();
+        let cloud_a = encrypt_dataset(&local_a, &key).unwrap();
+        let merged_b = Database::merge_sync_data(
+            Some(&base),
+            &local_b,
+            &decrypt_dataset(&cloud_a, &key).unwrap(),
+        )
+        .unwrap();
+        finish_sync(&b, "same-user", 3, &merged_b, &merged_b).unwrap();
+        let cloud_b = encrypt_dataset(&merged_b, &key).unwrap();
+        let remote_b = decrypt_dataset(&cloud_b, &key).unwrap();
+        let merged_a = Database::merge_sync_data(Some(&base), &local_a, &remote_b).unwrap();
+        finish_sync(&a, "same-user", 3, &merged_a, &remote_b).unwrap();
+        assert_eq!(
+            a.export_sync_data().unwrap().content_hash().unwrap(),
+            b.export_sync_data().unwrap().content_hash().unwrap()
+        );
+        assert_eq!(merged_a.record_count(), 2);
+        let mut modified_a = merged_a.clone();
+        let mut modified_b = merged_b.clone();
+        modified_a
+            .tables
+            .iter_mut()
+            .find(|t| t.name == "goals")
+            .unwrap()
+            .rows[0][2] = crate::db::SyncValue::Real(200.0);
+        modified_b
+            .tables
+            .iter_mut()
+            .find(|t| t.name == "goals")
+            .unwrap()
+            .rows[0][2] = crate::db::SyncValue::Real(300.0);
+        assert!(Database::merge_sync_data(Some(&merged_a), &modified_a, &modified_b).is_err());
+        assert_eq!(
+            a.export_sync_data().unwrap().content_hash().unwrap(),
+            merged_a.content_hash().unwrap()
+        );
+    }
 
     fn dataset() -> SyncDataset {
         let directory = tempfile::tempdir().unwrap();
@@ -1133,6 +1489,7 @@ mod tests {
     fn decrypts_legacy_v1_through_v8_bundles_and_rejects_mismatched_markers() {
         let key = parse_recovery_key(&generate_recovery_key()).unwrap();
         let mut v8_source = dataset();
+        v8_source.tables.truncate(14); // Authentic pre-daily schema.
         v8_source.schema_version = 8;
         assert_eq!(v8_source.tables.pop().unwrap().name, "holding_valuations");
         v8_source.validate().unwrap();
@@ -1494,5 +1851,266 @@ mod tests {
             .await
             .is_err());
         task.abort();
+    }
+}
+
+#[cfg(test)]
+mod automatic_sync_tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
+    };
+    #[derive(Default)]
+    struct Remote {
+        blob: Mutex<Option<RemoteBlob>>,
+        reads: AtomicUsize,
+        versions: AtomicUsize,
+        writes: AtomicUsize,
+    }
+    #[async_trait]
+    impl CloudSyncProvider for Remote {
+        async fn sign_up(&self, _: &AccountCredentials) -> AppResult<AuthSession> {
+            unreachable!()
+        }
+        async fn sign_in(&self, _: &AccountCredentials) -> AppResult<AuthSession> {
+            unreachable!()
+        }
+        async fn resend_signup_confirmation(&self, _: &str) -> AppResult<()> {
+            unreachable!()
+        }
+        async fn refresh(&self, _: &str) -> AppResult<AuthSession> {
+            unreachable!()
+        }
+        async fn sign_out(&self, _: &str) -> AppResult<()> {
+            unreachable!()
+        }
+        async fn fetch_version(&self, _: &Session) -> AppResult<Option<RemoteVersion>> {
+            self.versions.fetch_add(1, Ordering::SeqCst);
+            Ok(self
+                .blob
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|blob| RemoteVersion {
+                    revision: blob.revision,
+                    content_hash: blob.content_hash.clone(),
+                }))
+        }
+        async fn fetch_blob(&self, _: &Session) -> AppResult<Option<RemoteBlob>> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            Ok(self.blob.lock().unwrap().clone())
+        }
+        async fn write_blob(
+            &self,
+            _: &Session,
+            expected: u64,
+            blob: &RemoteBlob,
+        ) -> AppResult<u64> {
+            let mut remote = self.blob.lock().unwrap();
+            if remote.as_ref().map_or(0, |b| b.revision) != expected {
+                return Err(AppError::Conflict(
+                    "其他设备已先完成同步，请先拉取最新云端版本".into(),
+                ));
+            }
+            self.writes.fetch_add(1, Ordering::SeqCst);
+            let mut next = blob.clone();
+            next.revision = expected + 1;
+            *remote = Some(next);
+            Ok(expected + 1)
+        }
+    }
+    fn add_goal(db: &Database, id: &str) {
+        use crate::db::SyncValue::*;
+        let mut data = db.export_sync_data().unwrap();
+        data.tables
+            .iter_mut()
+            .find(|t| t.name == "goals")
+            .unwrap()
+            .rows
+            .push(vec![
+                Text(id.into()),
+                Text(id.into()),
+                Real(100.0),
+                Real(0.0),
+                Real(1.0),
+                Text("2027-01-01".into()),
+                Text("高".into()),
+                Text("2026-01-01T00:00:00Z".into()),
+                Text("2026-01-01T00:00:00Z".into()),
+            ]);
+        db.apply_sync_update(&data, &[]).unwrap();
+    }
+    fn change_goal(db: &Database, value: f64) {
+        let mut data = db.export_sync_data().unwrap();
+        data.tables
+            .iter_mut()
+            .find(|t| t.name == "goals")
+            .unwrap()
+            .rows[0][2] = crate::db::SyncValue::Real(value);
+        db.apply_sync_update(&data, &[]).unwrap();
+    }
+    #[tokio::test]
+    async fn bidirectional_auto_sync_skips_unchanged_blobs_and_preserves_conflicts_across_restart()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let a = Database::open(&dir.path().join("a.db")).unwrap();
+        let b = Database::open(&dir.path().join("b.db")).unwrap();
+        let provider = Remote::default();
+        let session = Session {
+            access_token: "test".into(),
+            user: AuthUser {
+                id: "same-account".into(),
+                email: None,
+            },
+        };
+        let key = generate_recovery_key();
+        sync_device(&a, &provider, &session, "scope", &key)
+            .await
+            .unwrap();
+        sync_device(&b, &provider, &session, "scope", &key)
+            .await
+            .unwrap();
+        add_goal(&a, "A");
+        add_goal(&b, "B");
+        sync_device(&a, &provider, &session, "scope", &key)
+            .await
+            .unwrap();
+        assert!(
+            sync_device(&b, &provider, &session, "scope", &key)
+                .await
+                .unwrap()
+                .local_updated
+        );
+        sync_device(&a, &provider, &session, "scope", &key)
+            .await
+            .unwrap();
+        assert_eq!(
+            a.export_sync_data().unwrap().content_hash().unwrap(),
+            b.export_sync_data().unwrap().content_hash().unwrap()
+        );
+        let reads = provider.reads.load(Ordering::SeqCst);
+        let writes = provider.writes.load(Ordering::SeqCst);
+        let versions = provider.versions.load(Ordering::SeqCst);
+        let unchanged = sync_device(&a, &provider, &session, "scope", &key)
+            .await
+            .unwrap();
+        assert!(!unchanged.local_updated);
+        assert_eq!(provider.reads.load(Ordering::SeqCst), reads);
+        assert_eq!(provider.writes.load(Ordering::SeqCst), writes);
+        assert_eq!(provider.versions.load(Ordering::SeqCst), versions + 1);
+        change_goal(&a, 200.0);
+        change_goal(&b, 300.0);
+        sync_device(&a, &provider, &session, "scope", &key)
+            .await
+            .unwrap();
+        let pending = b.export_sync_data().unwrap().content_hash().unwrap();
+        drop(b);
+        let b = Database::open(&dir.path().join("b.db")).unwrap();
+        assert!(matches!(
+            sync_device(&b, &provider, &session, "scope", &key).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert_eq!(
+            b.export_sync_data().unwrap().content_hash().unwrap(),
+            pending
+        );
+        assert!(sync_device(&a, &provider, &session, "other-account", &key)
+            .await
+            .is_err());
+        assert_eq!(provider.writes.load(Ordering::SeqCst), writes + 1);
+    }
+    #[tokio::test]
+    async fn provider_reads_metadata_only_and_signs_out_this_device_only() {
+        use axum::{
+            extract::Query,
+            http::{HeaderMap, StatusCode},
+            routing::{get, post},
+            Json, Router,
+        };
+        use std::collections::HashMap;
+        let router = Router::new()
+            .route(
+                "/rest/v1/sync_blobs",
+                get(
+                    |Query(q): Query<HashMap<String, String>>, headers: HeaderMap| async move {
+                        assert_eq!(q["select"], "revision,content_hash");
+                        assert_eq!(q["user_id"], "eq.test-user");
+                        assert_eq!(headers["authorization"], "Bearer test-access");
+                        Json(serde_json::json!([{"revision":4,"content_hash":"hash"}]))
+                    },
+                ),
+            )
+            .route(
+                "/auth/v1/logout",
+                post(|Query(q): Query<HashMap<String, String>>| async move {
+                    assert_eq!(q["scope"], "local");
+                    StatusCode::NO_CONTENT
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let provider = SupabaseProvider::new(CloudConfig {
+            url: format!("http://{address}"),
+            publishable_key: "public-fixture".into(),
+        });
+        let session = Session {
+            access_token: "test-access".into(),
+            user: AuthUser {
+                id: "test-user".into(),
+                email: None,
+            },
+        };
+        assert_eq!(
+            provider
+                .fetch_version(&session)
+                .await
+                .unwrap()
+                .unwrap()
+                .revision,
+            4
+        );
+        provider.sign_out(&session.access_token).await.unwrap();
+        server.abort();
+    }
+
+    #[test]
+    fn refresh_only_when_expiring_or_account_does_not_match() {
+        let token = |sub: &str, exp: i64| {
+            format!(
+                "test.{}.signature",
+                URL_SAFE_NO_PAD
+                    .encode(serde_json::to_vec(&serde_json::json!({"sub":sub,"exp":exp})).unwrap())
+            )
+        };
+        assert!(access_token_is_current(
+            &token("a", Utc::now().timestamp() + 3600),
+            "a"
+        ));
+        assert!(!access_token_is_current(
+            &token("a", Utc::now().timestamp() + 30),
+            "a"
+        ));
+        assert!(!access_token_is_current(
+            &token("b", Utc::now().timestamp() + 3600),
+            "a"
+        ));
+        assert!(!access_token_is_current("invalid", "a"));
+    }
+    #[tokio::test]
+    async fn disabled_auto_sync_does_not_require_a_cloud_account_or_touch_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("local.db")).unwrap();
+        db.set_setting("cloud.auto_sync", "false").unwrap();
+        let before = db.export_sync_data().unwrap().content_hash().unwrap();
+        assert_eq!(auto_sync(&db).await.unwrap().state, "disabled");
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            before
+        );
+        assert!(!serde_json::to_string(&db.export_sync_data().unwrap())
+            .unwrap()
+            .contains("cloud.auto_sync"));
     }
 }

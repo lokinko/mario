@@ -41,7 +41,7 @@
 │ local data   │ │ OpenAI-compatible API │
 └──────┬───────┘ └──────────────────────┘
        │
-┌──────▼─────────────┐       explicit manual sync
+┌──────▼─────────────┐       authenticated automatic sync
 │ OS Keychain        │ ┌─────────────────────────────┐
 │ model key / tokens ├─┤ Account + ciphertext store  │
 │ / recovery key     │ │ Supabase or self-hosted     │

@@ -150,3 +150,31 @@ it("does not offer confirmation for contradictory or unchecked advice", () => {
       .every((button) => (button as HTMLButtonElement).disabled),
   ).toBe(true);
 });
+
+it("keeps the simple answer to one next step and asks the model to resolve missing evidence", () => {
+  const onAsk = vi.fn();
+  render(
+    <AdviceCards
+      compact
+      report={report}
+      evidence={evidence}
+      analysisId="a1"
+      onAsk={onAsk}
+      onCreateDecisionDraft={vi.fn()}
+      grounding={[
+        {
+          actionIndex: 0,
+          status: "insufficient",
+          reason: "资料需要更新",
+          checks: [],
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByText("先核实一件事")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "确认行动草稿" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "请继续帮我核实" }));
+  expect(onAsk).toHaveBeenCalledWith(
+    expect.stringContaining("你能查到的资料请自行查找"),
+  );
+});

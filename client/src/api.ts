@@ -1,3 +1,10 @@
+import {
+  beforeDataWrite,
+  markDataWrite,
+  isDataWrite,
+  DATA_SAVED,
+  CLOUD_CHANGED,
+} from "./lib/syncEvents";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AnalysisRequest,
@@ -67,23 +74,40 @@ function getLocalServiceConfig(): Promise<LocalServiceConfig> {
 }
 
 async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const service = await getLocalServiceConfig();
-  return requestJson<T>(`${service.baseUrl}${path}`, {
-    ...init,
-    timeoutMs:
-      path === "/analysis" || path === "/model-config/test"
-        ? 300000
-        : path.startsWith("/cloud/")
-          ? 120000
-          : 15000,
-    headers: {
-      "Content-Type": "application/json",
-      ...(service.authToken
-        ? { Authorization: `Bearer ${service.authToken}` }
-        : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
+  const dataWrite = isDataWrite(path, init?.method);
+  const release = dataWrite ? markDataWrite() : () => {};
+  try {
+    if (dataWrite) await beforeDataWrite();
+    const service = await getLocalServiceConfig();
+    const result = await requestJson<T>(`${service.baseUrl}${path}`, {
+      ...init,
+      timeoutMs:
+        path === "/analysis" ||
+        path === "/model-config/test" ||
+        path === "/model-config/codex"
+          ? 300000
+          : path.startsWith("/cloud/")
+            ? 120000
+            : 15000,
+      headers: {
+        "Content-Type": "application/json",
+        ...(service.authToken
+          ? { Authorization: `Bearer ${service.authToken}` }
+          : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+    if (dataWrite) window.dispatchEvent(new Event(DATA_SAVED));
+    if (
+      path.startsWith("/cloud/") &&
+      init?.method &&
+      path !== "/cloud/sync/auto"
+    )
+      window.dispatchEvent(new Event(CLOUD_CHANGED));
+    return result;
+  } finally {
+    release();
+  }
 }
 
 export async function getSnapshot(): Promise<Snapshot> {
@@ -556,3 +580,60 @@ export async function setResearchEvidenceStatus(
   );
 }
 import { requestJson } from "./lib/transport";
+
+export async function readCodexCredentials(): Promise<ModelConfig> {
+  return httpRequest<ModelConfig>("/model-config/codex", { method: "POST" });
+}
+
+export async function autoCloudSync(): Promise<
+  import("./types").AutoSyncResult
+> {
+  return httpRequest("/cloud/sync/auto", { method: "POST" });
+}
+export async function saveAutoSyncSettings(
+  enabled: boolean,
+): Promise<CloudStatus> {
+  return httpRequest("/cloud/sync/settings", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function ensureDailyAssets(timezone: string) {
+  return httpRequest<import("./types").DailyHistory>("/daily-assets/ensure", {
+    method: "POST",
+    body: JSON.stringify({ timezone }),
+  });
+}
+export function getDailyAssets(
+  query: { from?: string; to?: string; before?: string; limit?: number } = {},
+) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query))
+    if (value != null) params.set(key, String(value));
+  return httpRequest<import("./types").DailyHistory>(`/daily-assets?${params}`);
+}
+export function compareDailyAssets(from: string, to: string) {
+  return httpRequest<import("./types").DailyComparison>(
+    `/daily-assets/compare?${new URLSearchParams({ from, to })}`,
+  );
+}
+// Serialize quick edits so late responses cannot replace a newer portfolio in React.
+let amountQueue: Promise<unknown> = Promise.resolve();
+export function updateHoldingAmount(
+  id: string,
+  amount: number,
+  expectedRevision: string,
+  requestId: string,
+) {
+  const result = amountQueue
+    .catch(() => undefined)
+    .then(() =>
+      httpRequest<Snapshot>(`/holdings/${encodeURIComponent(id)}/amount`, {
+        method: "PUT",
+        body: JSON.stringify({ amount, expectedRevision, requestId }),
+      }),
+    );
+  amountQueue = result;
+  return result;
+}

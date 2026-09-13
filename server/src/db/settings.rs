@@ -42,7 +42,11 @@ impl Database {
             },
             base_url: value("model.base_url", "https://api.openai.com/v1")?,
             model: value("model.name", "gpt-4.1-mini")?,
-            has_api_key: crate::secrets::has_api_key(),
+            has_api_key: if value("model.provider", "")? == "codex" {
+                value("model.codex_ready", "false")? == "true"
+            } else {
+                crate::secrets::has_api_key()
+            },
         })
     }
 
@@ -54,17 +58,19 @@ impl Database {
     ) -> AppResult<()> {
         if !matches!(
             provider,
-            "openai-responses" | "anthropic" | "openai-compatible"
+            "openai-responses" | "anthropic" | "openai-compatible" | "codex"
         ) {
             return Err(AppError::Validation(
-                "请选择 OpenAI Responses 或 Anthropic Messages".into(),
+                "请选择 OpenAI Responses、Anthropic Messages 或 Codex".into(),
             ));
         }
         let url = reqwest::Url::parse(base_url)
             .map_err(|_| AppError::Validation("模型地址无效".into()))?;
-        if !(url.scheme() == "https"
-            || (url.scheme() == "http"
-                && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))))
+        if !(provider == "codex" && base_url == "codex://local"
+            || provider != "codex"
+                && (url.scheme() == "https"
+                    || (url.scheme() == "http"
+                        && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]")))))
             || !url.username().is_empty()
             || url.password().is_some()
             || url.query().is_some()

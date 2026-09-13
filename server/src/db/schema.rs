@@ -7,6 +7,17 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
     connection.execute_batch(
         "PRAGMA journal_mode=WAL;
          PRAGMA foreign_keys=ON;
+         CREATE TABLE IF NOT EXISTS daily_settings (
+           id TEXT PRIMARY KEY, timezone TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS daily_entries (
+           id TEXT PRIMARY KEY, day TEXT NOT NULL, entity_id TEXT NOT NULL,
+           payload TEXT NOT NULL, UNIQUE(day, entity_id)
+         );
+         CREATE INDEX IF NOT EXISTS daily_entries_day ON daily_entries(day);
+         CREATE TABLE IF NOT EXISTS daily_totals (
+           day TEXT PRIMARY KEY, payload TEXT NOT NULL
+         );
          CREATE TABLE IF NOT EXISTS profile (
            id INTEGER PRIMARY KEY CHECK (id = 1),
            payload TEXT NOT NULL,

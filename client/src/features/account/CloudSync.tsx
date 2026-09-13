@@ -1,3 +1,5 @@
+import type { SyncState } from "../../lib/autoSync";
+import { CLOUD_DATA_UPDATED } from "../../lib/syncEvents";
 import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -25,6 +27,7 @@ import {
   requestCloudPasswordReset,
   resetCloudPassword,
   saveCloudConfig,
+  saveAutoSyncSettings,
   signInCloud,
   signOutCloud,
   signUpCloud,
@@ -32,21 +35,20 @@ import {
 } from "../../api";
 import type { CloudStatus } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
+import { resolveBundledCloudConfig } from "../../lib/cloudConfig";
 
-const bundledCloudConfig = (() => {
-  const url = String(import.meta.env.VITE_SUPABASE_URL ?? "").trim();
-  const publishableKey = String(
-    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
-  ).trim();
-  return url && publishableKey ? { url, publishableKey } : null;
-})();
+const bundledCloudConfig = resolveBundledCloudConfig(import.meta.env);
 
 export function CloudSync({
   flash,
   onRestore,
+  autoState,
+  onRetryAuto,
 }: {
   flash: (message: string) => void;
   onRestore: () => Promise<void>;
+  autoState?: SyncState;
+  onRetryAuto?: () => void;
 }) {
   const [status, setStatus] = useState<CloudStatus | null>(null);
   const [url, setUrl] = useState("");
@@ -111,6 +113,17 @@ export function CloudSync({
       initialization.current += 1;
     };
   }, []);
+
+  useEffect(() => {
+    const update = () => {
+      void refresh().catch(() => undefined);
+    };
+    window.addEventListener(CLOUD_DATA_UPDATED, update);
+    return () => window.removeEventListener(CLOUD_DATA_UPDATED, update);
+  }, []);
+  useEffect(() => {
+    if (autoState?.phase === "synced") void refresh().catch(() => undefined);
+  }, [autoState?.phase]);
 
   const execute = async (name: string, action: () => Promise<string>) => {
     setBusy(name);
@@ -224,22 +237,24 @@ export function CloudSync({
     execute("push", async () => {
       const response = await pushCloudSync();
       await refresh();
-      flash(`已上传云端版本 ${response.revision}`);
+      await onRestore();
+      flash(`已同步云端版本 ${response.revision}`);
       return `${response.message}（${response.recordCount} 条记录）`;
     });
 
-  const pull = async () => {
+  const pull = async (replace = false) => {
     if (
+      replace &&
       !window.confirm(
         "拉取会以云端快照替换本机的投资域数据。模型配置、模型密钥和账户配置不会改变。确认继续？",
       )
     )
       return;
     await execute("pull", async () => {
-      const response = await pullCloudSync(true);
+      const response = await pullCloudSync(replace);
       await refresh();
       await onRestore();
-      flash(`已恢复云端版本 ${response.revision}`);
+      flash(`已合并云端版本 ${response.revision}`);
       return `${response.message}（${response.recordCount} 条记录）`;
     });
   };
@@ -426,7 +441,9 @@ export function CloudSync({
                       }
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
-                      placeholder="至少 8 个字符"
+                      placeholder={
+                        authMode === "signup" ? "至少 8 个字符" : "输入登录密码"
+                      }
                     />
                   </div>
                 </label>
@@ -491,6 +508,20 @@ export function CloudSync({
             {authMode === "login" && status.emailConfirmationPending && (
               <p>请先点击注册确认邮件中的链接，再返回登录。</p>
             )}
+            {!status.configured ? (
+              <p id="auth-requirements" role="alert">
+                尚未连接账户服务，请先在上方保存云端服务配置后登录。
+              </p>
+            ) : (authMode === "login" || authMode === "signup") &&
+              (!email.trim() ||
+                !password ||
+                (authMode === "signup" && password.length < 8)) ? (
+              <p id="auth-requirements">
+                {authMode === "signup"
+                  ? "请输入邮箱和至少 8 个字符的密码。"
+                  : "请输入邮箱和密码后登录。"}
+              </p>
+            ) : null}
             <div className="form-actions">
               <p>
                 {authMode === "login"
@@ -540,6 +571,7 @@ export function CloudSync({
                   <button
                     className="primary"
                     onClick={() => authenticate(authMode)}
+                    aria-describedby="auth-requirements"
                     disabled={
                       busy !== "" ||
                       !status.configured ||
@@ -607,7 +639,7 @@ export function CloudSync({
       <section className="panel form-panel">
         <div className="panel-title">
           <div>
-            <h2>同步控制台</h2>
+            <h2>自动同步</h2>
           </div>
           <div
             className={`status-dot ${!status.localChangedSinceSync && status.baseRevision > 0 ? "connected" : ""}`}
@@ -617,6 +649,40 @@ export function CloudSync({
               : "尚未同步"}
           </div>
         </div>
+        <label className="auto-external-option">
+          <input
+            type="checkbox"
+            checked={status.autoSyncEnabled !== false}
+            disabled={busy !== ""}
+            onChange={(event) => {
+              const enabled = event.target.checked;
+              void execute("auto", async () => {
+                setStatus(await saveAutoSyncSettings(enabled));
+                return enabled ? "自动同步已开启" : "自动同步已关闭";
+              });
+            }}
+          />
+          保存后自动同步到其他设备
+        </label>
+        <p className="section-intro">
+          修改先保存在本机，短时间的多次修改会合并同步。打开应用、回到前台或重新联网时自动检查更新。
+        </p>
+        {autoState && (
+          <div
+            role="status"
+            className={
+              autoState.phase === "attention" ? "error-box" : "sync-live-status"
+            }
+          >
+            {autoState.message}
+            {(autoState.phase === "attention" ||
+              autoState.phase === "offline") && (
+              <button className="secondary" onClick={onRetryAuto}>
+                重试同步
+              </button>
+            )}
+          </div>
+        )}
         <div className="sync-summary">
           <article>
             <span>本机状态</span>
@@ -639,24 +705,44 @@ export function CloudSync({
             </strong>
           </article>
         </div>
-        <div className="sync-actions">
-          <button
-            className="primary"
-            onClick={push}
-            disabled={busy !== "" || !status.signedIn}
-          >
-            <Upload size={16} />
-            上传加密快照
-          </button>
-          <button
-            className="secondary"
-            onClick={pull}
-            disabled={busy !== "" || !status.signedIn || !status.hasRecoveryKey}
-          >
-            <Download size={16} />
-            拉取并替换本机数据
-          </button>
-        </div>
+        <details className="payload-details">
+          <summary>手动同步与恢复</summary>
+          <div className="sync-actions">
+            <button
+              className="primary"
+              onClick={push}
+              disabled={busy !== "" || !status.signedIn}
+            >
+              <Upload size={16} />
+              合并并上传
+            </button>
+            <button
+              className="secondary"
+              onClick={() => void pull()}
+              disabled={
+                busy !== "" || !status.signedIn || !status.hasRecoveryKey
+              }
+            >
+              <Download size={16} />
+              拉取并合并
+            </button>
+          </div>
+          <details className="payload-details">
+            <summary>用云端版本恢复本机</summary>
+            <p>
+              仅在确认舍弃本机修改时使用。将备份当前本机数据，再用云端版本替换；日常同步请使用上方的合并按钮。
+            </p>
+            <button
+              className="danger-text"
+              onClick={() => void pull(true)}
+              disabled={
+                busy !== "" || !status.signedIn || !status.hasRecoveryKey
+              }
+            >
+              拉取并替换本机数据
+            </button>
+          </details>
+        </details>
         <div className="privacy-boundary">
           {status.privacyBoundary.map((item) => (
             <div key={item}>

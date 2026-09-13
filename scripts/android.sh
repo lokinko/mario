@@ -60,6 +60,9 @@ case "$action" in
     configure_android_manifest
     ;;
   build)
+    if [[ ! -f "$root_dir/client/src-tauri/gen/android/app/src/main/AndroidManifest.xml" ]]; then
+      npm run tauri --prefix "$root_dir/client" -- android init --ci --skip-targets-install
+    fi
     configure_android_manifest
     find "$root_dir/client/src-tauri/gen/android/app/src/main/jniLibs" \
       -type l -name 'libmario_client_lib.so' -delete 2>/dev/null || true

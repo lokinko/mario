@@ -19,6 +19,8 @@ node --test "$root_dir/scripts/test-auth-page.mjs"
 cargo fmt --manifest-path "$root_dir/server/Cargo.toml" -- --check
 cargo fmt --manifest-path "$root_dir/client/src-tauri/Cargo.toml" -- --check
 cargo test --manifest-path "$root_dir/server/Cargo.toml"
+cargo clippy --manifest-path "$root_dir/server/Cargo.toml" --all-targets -- -D warnings
 cargo build --manifest-path "$root_dir/server/Cargo.toml"
+(cd "$root_dir" && node scripts/test-functional-api.mjs)
 "$root_dir/scripts/test-local-auth.sh"
 cargo test --manifest-path "$root_dir/client/src-tauri/Cargo.toml"

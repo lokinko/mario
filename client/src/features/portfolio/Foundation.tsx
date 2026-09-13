@@ -59,6 +59,7 @@ export function Foundation({
   const [holding, setHolding] = useState<Omit<Holding, "id">>(() =>
     emptyHolding(snapshot.profile.baseCurrency),
   );
+  const [holdingAmount, setHoldingAmount] = useState("");
   const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
   const [holdingDetailsOpen, setHoldingDetailsOpen] = useState(false);
   const holdingNameRef = useRef<HTMLInputElement>(null);
@@ -79,12 +80,13 @@ export function Foundation({
     !holdingBusy &&
     Boolean(holding.name.trim()) &&
     Number.isFinite(holding.marketValue) &&
-    holding.marketValue > 0 &&
+    Boolean(holdingAmount.trim()) &&
+    holding.marketValue >= 0 &&
+    holding.marketValue <= 1e15 &&
     Boolean(holding.valuationDate) &&
     holding.valuationDate <= localDateValue(new Date()) &&
-    (holding.currency === profile.baseCurrency ||
-      (Number.isFinite(holding.fxRateToBase) &&
-        (holding.fxRateToBase ?? 0) > 0));
+    (holding.fxRateToBase == null ||
+      (Number.isFinite(holding.fxRateToBase) && holding.fxRateToBase > 0));
 
   const updateNumber = (key: keyof FinancialProfile, value: string) =>
     setProfile({ ...profile, [key]: Number(value) });
@@ -114,6 +116,7 @@ export function Foundation({
           })
         : await saveHolding({ ...holding, name: holding.name.trim() });
       onUpdate(next);
+      setHoldingAmount("");
       setHolding(
         editingHoldingId
           ? emptyHolding(profile.baseCurrency)
@@ -143,6 +146,7 @@ export function Foundation({
   const editHolding = (item: Holding) => {
     const { id, ...values } = item;
     setHolding(values);
+    setHoldingAmount(String(values.marketValue));
     setHoldingDetailsOpen(true);
     holdingNameRef.current?.focus();
     holdingNameRef.current?.scrollIntoView?.({
@@ -207,6 +211,7 @@ export function Foundation({
       if (updated) {
         const { id: _id, ...values } = updated;
         setHolding(values);
+        setHoldingAmount(String(values.marketValue));
       }
       setHoldingFxQuote(null);
       flash("已冻结数量、日收盘价和来源；外币汇率如失效需重新查询");
@@ -227,6 +232,7 @@ export function Foundation({
       if (editingHoldingId === item.id) {
         setEditingHoldingId(null);
         setHolding(emptyHolding(profile.baseCurrency));
+        setHoldingAmount("");
       }
       flash("资产已从组合删除");
     } catch (nextError) {
@@ -334,14 +340,25 @@ export function Foundation({
                   placeholder="例如：宽基指数基金"
                 />
               </label>
-              <NumberField
-                label={`当前市值（${holding.currency}）`}
-                value={holding.marketValue}
-                onChange={(v) =>
-                  setHolding({ ...holding, marketValue: Number(v) })
-                }
-                prefix={holding.currency}
-              />
+              <label>
+                <span>{`当前市值（${holding.currency}）`}</span>
+                <div className="input-affix">
+                  <i>{holding.currency}</i>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="any"
+                    value={holdingAmount}
+                    onChange={(e) => {
+                      setHoldingAmount(e.target.value);
+                      setHolding({
+                        ...holding,
+                        marketValue: Number(e.target.value),
+                      });
+                    }}
+                  />
+                </div>
+              </label>
               <label>
                 <span>资产类别</span>
                 <select
@@ -397,7 +414,7 @@ export function Foundation({
                     setHoldingFxError("");
                   }}
                 />
-                <small>所有持仓请使用同一估值日</small>
+                <small>日常记录可分批更新；手动组合检查点需同一估值日</small>
               </label>
             </div>
             <details
@@ -587,6 +604,7 @@ export function Foundation({
                     setHoldingDetailsOpen(false);
                     setEditingHoldingId(null);
                     setHolding(emptyHolding(profile.baseCurrency));
+                    setHoldingAmount("");
                     setHoldingFxQuote(null);
                     setHoldingFxError("");
                     setValuationQuantity(0);

@@ -117,6 +117,13 @@ pub(super) fn validate_synced_fx_provenance(dataset: &SyncDataset) -> AppResult<
         .find(|table| table.name == "holdings")
         .ok_or_else(|| AppError::Validation("数据快照缺少 holdings".into()))?;
     for row in &holdings.rows {
+        if !sync_text(row, 7, "持仓币种")?.eq_ignore_ascii_case(&profile.base_currency)
+            && matches!(row.get(8), Some(SyncValue::Null))
+            && sync_text(row, 10, "汇率来源")?.is_empty()
+            && sync_text(row, 11, "汇率日期")?.is_empty()
+        {
+            continue;
+        }
         validate_synced_fx_row(row, 7, 8, 10, 11, &profile.base_currency, 9)?;
     }
 

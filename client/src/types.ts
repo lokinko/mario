@@ -219,6 +219,7 @@ export interface RiskFinding {
 }
 
 export interface Snapshot {
+  holdingRevisions?: Record<string, string>;
   profile: FinancialProfile;
   goals: Goal[];
   holdings: Holding[];
@@ -279,7 +280,7 @@ export interface RebalanceAction {
 }
 
 export interface ModelConfig {
-  provider: "openai-responses" | "anthropic" | "openai-compatible";
+  provider: "openai-responses" | "anthropic" | "openai-compatible" | "codex";
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
@@ -297,6 +298,7 @@ export interface CloudConfig {
 }
 
 export interface CloudStatus {
+  autoSyncEnabled?: boolean;
   configured: boolean;
   signedIn: boolean;
   email?: string;
@@ -316,6 +318,7 @@ export interface AccountResult {
 }
 
 export interface SyncResult {
+  localUpdated?: boolean;
   direction: "push" | "pull";
   revision: number;
   contentHash: string;
@@ -330,6 +333,7 @@ export interface RecoveryKeyResult {
 }
 
 export interface AnalysisRequest {
+  dailyAssetRange?: { from: string; to: string };
   webSearch?: boolean;
   userMessage?: string;
   question: string;
@@ -719,4 +723,54 @@ export interface ResearchEvidence extends ResearchEvidenceInput {
   id: string;
   active: boolean;
   capturedAt: string;
+}
+
+export interface AutoSyncResult {
+  state: "synced" | "disabled" | "signed_out" | "busy";
+  sync?: SyncResult | null;
+}
+
+export interface DailyAsset {
+  holding: Holding;
+  confirmedOn: string | null;
+  carried: boolean;
+  removed: boolean;
+  baseValue: number | null;
+  previousDayChange?: number | null;
+  pctPointChange?: number | null;
+  changeKind?: string;
+}
+export interface DailyRecord {
+  day: string;
+  baseCurrency: string;
+  totalAssets: number | null;
+  liabilities: number;
+  netAssets: number | null;
+  carried: boolean;
+  assets: DailyAsset[];
+  missingFx: string[];
+  previousDayChange: number | null;
+  lastUpdatedDay: string | null;
+  sinceLastUpdateChange: number | null;
+}
+export interface DailyHistory {
+  timezone: string;
+  today: string;
+  records: DailyRecord[];
+  nextBefore: string | null;
+}
+export interface DailyComparison {
+  from: DailyRecord;
+  to: DailyRecord;
+  amountChange: number | null;
+  assets: {
+    id: string;
+    name: string;
+    status: "added" | "removed" | "existing";
+    previous: DailyAsset | null;
+    current: DailyAsset | null;
+    amountChange: number | null;
+    pctPointChange: number | null;
+  }[];
+  allocationChanges: PortfolioAllocationChange[];
 }

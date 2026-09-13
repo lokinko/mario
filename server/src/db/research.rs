@@ -4,6 +4,67 @@ use super::{
 };
 
 impl Database {
+    /// Reuse provider search records from saved answers, without promoting an
+    /// assistant's verdict or personal-data inference into a verified fact.
+    pub fn automatic_research_evidence(&self) -> AppResult<Vec<ResearchEvidence>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT trace FROM analyses WHERE created_at >= ?1 ORDER BY created_at DESC, id DESC LIMIT 50",
+        )?;
+        let cutoff = (Utc::now() - chrono::Duration::days(30)).to_rfc3339();
+        let traces = statement.query_map([cutoff], |row| row.get::<_, Option<String>>(0))?;
+        let mut seen = std::collections::HashSet::new();
+        let mut evidence = Vec::new();
+        for trace in traces {
+            let Some(trace) = trace?.and_then(|text| {
+                serde_json::from_str::<crate::models::AnalysisWorkflowTrace>(&text).ok()
+            }) else {
+                continue;
+            };
+            for source in trace.evidence_catalog {
+                if !source.id.starts_with("web-")
+                    || !matches!(
+                        source.evidence_type.as_str(),
+                        "native_web_excerpt" | "native_web_summary"
+                    )
+                    || source.claim.trim().is_empty()
+                    || !chrono::DateTime::parse_from_rfc3339(&source.captured_at)
+                        .is_ok_and(|date| date >= Utc::now() - chrono::Duration::days(30))
+                    || !reqwest::Url::parse(&source.source_url).is_ok_and(|url| {
+                        matches!(url.scheme(), "http" | "https")
+                            && url.username().is_empty()
+                            && url.password().is_none()
+                    })
+                    || !seen.insert((source.source_url.clone(), source.claim.clone()))
+                {
+                    continue;
+                }
+                evidence.push(ResearchEvidence {
+                    id: source.id,
+                    asset_name: source.asset_name,
+                    title: source.title,
+                    publisher: source.publisher,
+                    source_url: source.source_url,
+                    source_tier: source.source_tier,
+                    evidence_type: source.evidence_type,
+                    stance: source.stance,
+                    as_of_date: source.as_of_date,
+                    claim: source.claim,
+                    notes: format!(
+                        "mario 自动整理的历史搜索资料；不是当前行情，使用前需核对时效。{}",
+                        source.notes
+                    ),
+                    active: true,
+                    captured_at: source.captured_at,
+                });
+                if evidence.len() >= 200 {
+                    return Ok(evidence);
+                }
+            }
+        }
+        Ok(evidence)
+    }
+
     pub fn research_evidence(&self) -> AppResult<Vec<ResearchEvidence>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
@@ -214,5 +275,51 @@ impl Database {
                 .as_deref()
                 .and_then(|value| serde_json::from_str(value).ok()),
         })
+    }
+}
+
+#[cfg(test)]
+mod automatic_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn automatic_library_deduplicates_sources_without_promoting_answers_or_refreshing_old_captures()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("research.db")).unwrap();
+        let now = Utc::now().to_rfc3339();
+        let old = (Utc::now() - chrono::Duration::days(40)).to_rfc3339();
+        let source = json!({"id":"web-original","assetName":"","evidenceType":"native_web_summary","claim":"Search summary, not verified original text","notes":"Original qualification","stance":"背景","capturedAt":now,"title":"Documentation","publisher":"example.com","sourceUrl":"https://example.com/docs","sourceTier":"网页来源（待核实）","asOfDate":""});
+        let mut stale = source.clone();
+        stale["id"] = json!("web-old");
+        stale["capturedAt"] = json!(old);
+        stale["claim"] = json!("Old quote copied into a new answer");
+        let mut manual = source.clone();
+        manual["id"] = json!("manual-source");
+        manual["claim"] = json!("Manual source is not automatically reactivated");
+        let mut unsafe_url = source.clone();
+        unsafe_url["sourceUrl"] = json!("file:///private");
+        let trace = crate::models::AnalysisWorkflowTrace {
+            evidence_catalog: serde_json::from_value(json!([
+                source.clone(),
+                source,
+                stale,
+                manual,
+                unsafe_url
+            ]))
+            .unwrap(),
+            ..Default::default()
+        };
+        db.conn().unwrap().execute("INSERT INTO analyses (id,question,answer,trace,created_at) VALUES ('a','question','An invented model conclusion',?1,?2)", params![serde_json::to_string(&trace).unwrap(),now]).unwrap();
+        let before = db.snapshot().unwrap().holdings;
+        let results = db.automatic_research_evidence().unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].evidence_type, "native_web_summary");
+        assert_eq!(results[0].captured_at, now);
+        assert!(results[0].as_of_date.is_empty());
+        assert!(results[0].notes.contains("不是当前行情"));
+        assert!(db.research_evidence().unwrap().is_empty());
+        assert_eq!(db.snapshot().unwrap().holdings.len(), before.len());
     }
 }

@@ -13,10 +13,11 @@ mod snapshot;
 use snapshot::build_snapshot;
 mod validation;
 use validation::{
-    normalized_fx_provenance, validate_and_canonicalize_rule_checks, validate_currency,
-    validate_goal, validate_holding, validate_holding_valuation_evidence, validate_investment_rule,
-    validate_non_negative, validate_portfolio_event, validate_research_evidence,
-    validate_stored_holding_valuation, validate_system_review,
+    normalized_fx_provenance, normalized_holding_fx_provenance,
+    validate_and_canonicalize_rule_checks, validate_currency, validate_goal, validate_holding,
+    validate_holding_valuation_evidence, validate_investment_rule, validate_non_negative,
+    validate_portfolio_event, validate_research_evidence, validate_stored_holding_valuation,
+    validate_system_review,
 };
 mod ledger_values;
 use ledger_values::{
@@ -26,6 +27,7 @@ use ledger_values::{
 };
 mod rule_values;
 use rule_values::{average, rule_effectiveness_signal, store_rule_revision};
+pub(crate) mod daily;
 mod decisions;
 mod ledger;
 mod memory;
@@ -34,6 +36,7 @@ mod reminders;
 mod research;
 mod reviews;
 mod settings;
+mod sync_merge;
 mod sync_store;
 use std::{
     collections::{HashMap, HashSet},

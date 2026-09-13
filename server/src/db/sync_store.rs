@@ -115,6 +115,7 @@ impl Database {
                 statement.execute(rusqlite::params_from_iter(values.iter()))?;
             }
         }
+        super::daily::validate(&transaction)?;
         transaction.commit()?;
         Ok(())
     }

@@ -22,7 +22,7 @@ use std::{
     sync::Arc,
 };
 
-use ai::{ChatMessage, InvestmentOrchestrator, ModelProvider, NativeModelProvider};
+use ai::{ChatMessage, CodexProvider, InvestmentOrchestrator, ModelProvider, NativeModelProvider};
 use axum::{
     extract::{Path, Query, Request, State},
     http::{header, HeaderValue, Method},
@@ -60,6 +60,7 @@ use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 struct AppState {
+    mutation_lock: tokio::sync::Mutex<()>,
     db: Database,
     password_recovery: cloud_sync::PasswordRecovery,
     auth_token: Option<String>,
@@ -126,6 +127,7 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     let state = Arc::new(AppState {
+        mutation_lock: tokio::sync::Mutex::new(()),
         db: Database::open(&data_dir.join("mario.db"))?,
         password_recovery: cloud_sync::PasswordRecovery::default(),
         auth_token: auth_token.clone(),
@@ -145,6 +147,10 @@ where
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/snapshot", get(snapshot))
+        .route("/api/daily-assets/ensure", post(ensure_daily_assets))
+        .route("/api/daily-assets", get(daily_assets))
+        .route("/api/daily-assets/compare", get(compare_daily_assets))
+        .route("/api/holdings/{id}/amount", put(update_holding_amount))
         .route("/api/market-data/fx-rate", get(fx_rate_quote))
         .route("/api/market-data/security-price", get(security_price_quote))
         .route(
@@ -227,6 +233,7 @@ where
             get(model_config).put(save_model_config),
         )
         .route("/api/model-config/test", post(test_model_config))
+        .route("/api/model-config/codex", post(read_codex_credentials))
         .route("/api/model-key", axum::routing::delete(delete_model_key))
         .route(
             "/api/cloud/config",
@@ -246,6 +253,11 @@ where
         .route(
             "/api/cloud/recovery-key",
             get(export_cloud_recovery_key).put(import_cloud_recovery_key),
+        )
+        .route("/api/cloud/sync/auto", post(cloud_auto_sync))
+        .route(
+            "/api/cloud/sync/settings",
+            axum::routing::put(cloud_auto_settings),
         )
         .route("/api/cloud/sync/push", post(cloud_push))
         .route("/api/cloud/sync/pull", post(cloud_pull))
@@ -278,17 +290,35 @@ async fn require_local_auth(
     request: Request,
     next: Next,
 ) -> Response {
-    let Some(expected) = state.auth_token.as_deref() else {
-        return next.run(request).await;
-    };
-    let provided = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
-    if !provided.is_some_and(|value| token_matches(expected, value)) {
-        return AppError::LocalAuth("请求缺少本次应用启动生成的访问令牌".into()).into_response();
+    if let Some(expected) = state.auth_token.as_deref() {
+        let provided = request
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "));
+        if !provided.is_some_and(|value| token_matches(expected, value)) {
+            return AppError::LocalAuth("请求缺少本次应用启动生成的访问令牌".into())
+                .into_response();
+        }
     }
+    // Serialize mutations across network waits: a sync or login cannot overwrite
+    // an edit, nor use another account's tokens midway through a request.
+    let _guard = if request.uri().path() == "/api/cloud/sync/auto" {
+        match state.mutation_lock.try_lock() {
+            Ok(guard) => Some(guard),
+            Err(_) => {
+                return Json(cloud_sync::AutoSyncResult {
+                    state: "busy",
+                    sync: None,
+                })
+                .into_response()
+            }
+        }
+    } else if request.method() != Method::GET || request.uri().path().starts_with("/api/cloud/") {
+        Some(state.mutation_lock.lock().await)
+    } else {
+        None
+    };
     next.run(request).await
 }
 
@@ -569,10 +599,50 @@ async fn model_config(State(state): State<Arc<AppState>>) -> AppResult<Json<Mode
     Ok(Json(state.db.model_config()?))
 }
 
+async fn read_codex_credentials(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<ModelConfig>> {
+    let model = CodexProvider::detect().await?;
+    save_codex_config(&state.db, &model)?;
+    Ok(Json(state.db.model_config()?))
+}
+
+fn save_codex_config(db: &Database, model: &str) -> AppResult<()> {
+    let previous = db.model_config()?;
+    if previous.provider != "codex" && db.setting("model.key_binding")?.is_none() {
+        db.set_setting(
+            "model.key_binding",
+            &model_key_binding(&previous.provider, &previous.base_url),
+        )?;
+    }
+    db.save_model_metadata("codex", "codex://local", model)?;
+    db.set_setting("model.codex_ready", "true")
+}
+
+fn configured_model_provider(
+    db: &Database,
+    config: &ModelConfig,
+) -> AppResult<Box<dyn ModelProvider>> {
+    if config.provider == "codex" {
+        return Ok(Box::new(CodexProvider::new(config.model.clone())));
+    }
+    Ok(Box::new(NativeModelProvider::new(
+        config.provider.clone(),
+        config.base_url.clone(),
+        config.model.clone(),
+        configured_model_key(db, config)?,
+    )?))
+}
+
 async fn save_model_config(
     State(state): State<Arc<AppState>>,
     Json(input): Json<ModelConfigInput>,
 ) -> AppResult<Json<ModelConfig>> {
+    if input.provider == "codex" {
+        CodexProvider::detect().await?;
+        save_codex_config(&state.db, &input.model)?;
+        return Ok(Json(state.db.model_config()?));
+    }
     let previous = state.db.model_config()?;
     let protocol = if input.provider == "openai-compatible" {
         "openai-responses"
@@ -636,13 +706,7 @@ async fn test_model_config(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<ModelConnectionTest>> {
     let config = state.db.model_config()?;
-    let api_key = configured_model_key(&state.db, &config)?;
-    let provider = NativeModelProvider::new(
-        config.provider,
-        config.base_url,
-        config.model.clone(),
-        api_key,
-    )?;
+    let provider = configured_model_provider(&state.db, &config)?;
     let started = std::time::Instant::now();
     provider
         .complete(vec![
@@ -749,6 +813,20 @@ async fn import_cloud_recovery_key(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+async fn cloud_auto_sync(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<cloud_sync::AutoSyncResult>> {
+    Ok(Json(cloud_sync::auto_sync(&state.db).await?))
+}
+async fn cloud_auto_settings(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<cloud_sync::AutoSyncSettings>,
+) -> AppResult<Json<CloudStatus>> {
+    Ok(Json(cloud_sync::save_auto_sync_settings(
+        &state.db, &input,
+    )?))
+}
+
 async fn cloud_push(State(state): State<Arc<AppState>>) -> AppResult<Json<SyncResult>> {
     Ok(Json(cloud_sync::push(&state.db).await?))
 }
@@ -799,10 +877,12 @@ async fn run_analysis(
         .take(100)
         .collect::<Vec<_>>();
     let evidence_candidates = relevant_evidence(&state.db, &request, &snapshot)?;
+    let daily_assets = state.db.daily_analysis_context(&request)?;
     let built_context = context::ContextBuilder::build(
         &request,
         &snapshot,
         &context::ContextSources {
+            daily_assets: Some(&daily_assets),
             rules: &rules,
             system_reviews: &system_reviews,
             portfolio_checkins: &portfolio_checkins,
@@ -816,10 +896,8 @@ async fn run_analysis(
             "本地数据或上下文选择已变化，请重新预览后再确认分析".into(),
         ));
     }
-    let api_key = configured_model_key(&state.db, &config)?;
-    let provider =
-        NativeModelProvider::new(config.provider, config.base_url, config.model, api_key)?;
-    let orchestrator = InvestmentOrchestrator::new(&provider, &retriever);
+    let provider = configured_model_provider(&state.db, &config)?;
+    let orchestrator = InvestmentOrchestrator::new(provider.as_ref(), &retriever);
     let result = orchestrator
         .run(&request, &built_context, &memories)
         .await?;
@@ -866,10 +944,12 @@ async fn preview_analysis(
         .take(100)
         .collect::<Vec<_>>();
     let evidence_candidates = relevant_evidence(&state.db, &request, &snapshot)?;
+    let daily_assets = state.db.daily_analysis_context(&request)?;
     let built_context = context::ContextBuilder::build(
         &request,
         &snapshot,
         &context::ContextSources {
+            daily_assets: Some(&daily_assets),
             rules: &rules,
             system_reviews: &system_reviews,
             portfolio_checkins: &portfolio_checkins,
@@ -936,7 +1016,16 @@ fn relevant_evidence(
         .collect::<Vec<_>>()
         .join(" ");
     let query = format!("{} {}", request.question, holdings);
-    let items = db.research_evidence()?;
+    let mut items = db.research_evidence()?;
+    let existing = items
+        .iter()
+        .map(|item| (item.source_url.clone(), item.claim.clone()))
+        .collect::<HashSet<_>>();
+    items.extend(
+        db.automatic_research_evidence()?
+            .into_iter()
+            .filter(|item| !existing.contains(&(item.source_url.clone(), item.claim.clone()))),
+    );
     Ok(LexicalEvidenceRetriever.search(&query, &items, 12))
 }
 
@@ -1135,6 +1224,32 @@ async fn shutdown_signal(mut parent_exit: watch::Receiver<bool>) {
     tokio::select! { _ = ctrl_c => {}, _ = terminate => {}, _ = parent_stopped => {} }
 }
 
+async fn ensure_daily_assets(
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<db::daily::EnsureInput>,
+) -> AppResult<Json<db::daily::DailyHistory>> {
+    Ok(Json(state.db.ensure_daily(&input)?))
+}
+async fn daily_assets(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<db::daily::HistoryQuery>,
+) -> AppResult<Json<db::daily::DailyHistory>> {
+    Ok(Json(state.db.daily_history(&query)?))
+}
+async fn compare_daily_assets(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<db::daily::CompareQuery>,
+) -> AppResult<Json<db::daily::DailyComparison>> {
+    Ok(Json(state.db.daily_compare(&query)?))
+}
+async fn update_holding_amount(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(input): Json<db::daily::AmountInput>,
+) -> AppResult<Json<Snapshot>> {
+    Ok(Json(state.db.update_holding_amount(&id, &input)?))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -1169,6 +1284,7 @@ mod tests {
 
     fn request(excluded_memory_ids: Vec<String>) -> AnalysisRequest {
         AnalysisRequest {
+            daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "复盘指数集中风险".into(),

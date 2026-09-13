@@ -23,7 +23,7 @@ embedded mario-server Rust library
 - `ANDROID_HOME=/opt/homebrew/share/android-commandlinetools`
 - `NDK_HOME` 自动选择 `ANDROID_HOME/ndk` 下最新版本
 
-首次初始化：
+构建脚本会在缺少 Android 工程时自动初始化，也可以单独执行：
 
 ```bash
 npm run android:init
@@ -38,7 +38,9 @@ npm run android:build
 adb install -r outputs/mario_0.5.0_android-aarch64-debug.apk
 ```
 
-需要让调试 APK 首次启动即绑定某个 Supabase 项目时，在构建进程中传入公开客户端配置：
+APK 默认内置 mario 的公开账户服务配置，新安装后进入“账户与同步”即可用邮箱和密码登录，无需手工配置服务地址。默认值位于 `client/src/lib/cloudConfig.ts`，与 `site/auth/auth.js` 的公开回调服务保持一致。
+
+需要改用自建 Supabase 项目时，在构建进程中成对传入公开客户端配置：
 
 ```bash
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co \

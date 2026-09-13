@@ -395,6 +395,8 @@ pub struct RiskFinding {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    #[serde(default)]
+    pub holding_revisions: std::collections::BTreeMap<String, String>,
     pub profile: FinancialProfile,
     pub goals: Vec<Goal>,
     pub holdings: Vec<Holding>,
@@ -500,6 +502,8 @@ pub struct ModelConnectionTest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisRequest {
+    #[serde(default)]
+    pub daily_asset_range: Option<crate::db::daily::CompareQuery>,
     #[serde(default)]
     pub web_search: bool,
     #[serde(default)]

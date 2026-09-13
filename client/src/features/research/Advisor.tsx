@@ -1,18 +1,16 @@
+import { CLOUD_DATA_UPDATED } from "../../lib/syncEvents";
 import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Bot,
-  BrainCircuit,
   Check,
   ChevronRight,
-  Database,
   Eye,
   History,
   KeyRound,
   LoaderCircle,
   LockKeyhole,
   Send,
-  ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import {
@@ -32,7 +30,6 @@ import type {
   StoredAnalysis,
 } from "../../types";
 import { View } from "../../app/navigation";
-import { Toggle } from "../../components/Toggle";
 import {
   AdviceCards,
   WebSearchStatus,
@@ -62,6 +59,10 @@ export function Advisor({
   const historyRequest = useRequestGuard();
   const analysisRequest = useRequestGuard();
   const [question, setQuestion] = useState("");
+  const [dailyAssetRange, setDailyAssetRange] = useState<{
+    from: string;
+    to: string;
+  }>();
   const latestAnswerRef = useRef<HTMLElement>(null);
   const previewRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -69,10 +70,10 @@ export function Advisor({
     { question: string; result: AnalysisResult }[]
   >([]);
   const [followUp, setFollowUp] = useState(false);
-  const [deep, setDeep] = useState(true);
-  const [memory, setMemory] = useState(true);
-  const [reflection, setReflection] = useState(true);
-  const [alternatives, setAlternatives] = useState(true);
+  const deep = true;
+  const memory = true;
+  const reflection = true;
+  const alternatives = true;
   const [excludedMemoryIds, setExcludedMemoryIds] = useState<string[]>([]);
   const [contextSelection, setContextSelection] = useState<ContextSelection>({
     includeProfile: true,
@@ -106,6 +107,20 @@ export function Advisor({
       window.sessionStorage.getItem("mario.advisorQuestion") ??
       window.sessionStorage.getItem("compass.advisorQuestion");
     if (queued) {
+      const range = window.sessionStorage.getItem("mario.dailyAssetRange");
+      window.sessionStorage.removeItem("mario.dailyAssetRange");
+      try {
+        const parsed = range ? JSON.parse(range) : undefined;
+        setDailyAssetRange(
+          parsed &&
+            typeof parsed.from === "string" &&
+            typeof parsed.to === "string"
+            ? parsed
+            : undefined,
+        );
+      } catch {
+        setDailyAssetRange(undefined);
+      }
       invalidatePreview(() => setQuestion(queued));
       setFollowUp(false);
       window.sessionStorage.removeItem("mario.advisorQuestion");
@@ -115,15 +130,19 @@ export function Advisor({
 
   useEffect(() => {
     let active = true;
-    getAnalysisHistory()
-      .then((items) => {
-        if (active) setHistory(items);
-      })
-      .catch((nextError) => {
-        if (active) setHistoryError(String(nextError));
-      });
+    const refreshHistory = () =>
+      getAnalysisHistory()
+        .then((items) => {
+          if (active) setHistory(items);
+        })
+        .catch((nextError) => {
+          if (active) setHistoryError(String(nextError));
+        });
+    void refreshHistory();
+    window.addEventListener(CLOUD_DATA_UPDATED, refreshHistory);
     return () => {
       active = false;
+      window.removeEventListener(CLOUD_DATA_UPDATED, refreshHistory);
     };
   }, []);
 
@@ -152,6 +171,7 @@ export function Advisor({
 
   const request = (previewRevision?: string): AnalysisRequest => ({
     webSearch,
+    dailyAssetRange,
     userMessage: question,
     question:
       followUp && turns.length
@@ -297,7 +317,7 @@ export function Advisor({
           <KeyRound size={20} />
           <div>
             <strong>连接模型，开始问答</strong>
-            <p>使用你自己的模型密钥，已有资料会帮助它理解你的情况。</p>
+            <p>连接 Codex 或自己的模型，之后直接聊就可以。</p>
           </div>
           <button className="secondary" onClick={() => navigate("settings")}>
             连接模型
@@ -324,7 +344,7 @@ export function Advisor({
                 (review) => review.status !== "supported",
               ) && (
                 <p className="advice-gap" role="status">
-                  这次核对发现证据缺口；请先查看各条建议的核对结果。
+                  有些依据还需要核实，暂时不宜据此行动。
                 </p>
               )}
               <p className="answer">
@@ -362,6 +382,7 @@ export function Advisor({
               )}
               {turn.result.workflowTrace.structuredReport && (
                 <AdviceCards
+                  compact
                   onAsk={(prompt) => {
                     if (running) return;
                     invalidatePreview(() => setQuestion(prompt));
@@ -413,6 +434,21 @@ export function Advisor({
         />
       )}
       <section className="panel advisor-panel conversation-composer">
+        {dailyAssetRange && (
+          <p className="holding-hint">
+            资产比较区间：{dailyAssetRange.from} 至 {dailyAssetRange.to} ·
+            发送仍受“组合变化”授权控制。
+            <button
+              className="text-button"
+              disabled={running}
+              onClick={() =>
+                invalidatePreview(() => setDailyAssetRange(undefined))
+              }
+            >
+              取消区间
+            </button>
+          </p>
+        )}
         <label className="question-box">
           <span>{turns.length ? "继续聊聊" : "这次希望解决什么问题？"}</span>
           <textarea
@@ -463,7 +499,7 @@ export function Advisor({
           <span>
             {turns.length && followUp
               ? "会参考上一轮问答摘要"
-              : "发送前可确认使用的资料"}
+              : "mario 会查资料，回答会自动保存"}
           </span>
           {turns.length > 0 && (
             <button
@@ -514,16 +550,11 @@ export function Advisor({
             <div>
               <h2>确认这次使用的资料</h2>
             </div>
-            <div className="preview-size">
-              {(preview.payloadBytes / 1024).toFixed(1)} KB
-            </div>
           </div>
           <div className="preview-provider">
             <Bot size={16} />
             <span>
               <strong>{preview.model}</strong>
-              {preview.provider} ·{" "}
-              {preview.workflow === "deep" ? "深度工作流" : "快速工作流"}
             </span>
           </div>
           {previewStale && (
@@ -650,9 +681,10 @@ export function Advisor({
       )}
 
       <details className="conversation-context">
-        <summary>供模型参考的资料与偏好</summary>
+        <summary>隐私与资料范围</summary>
         <p>
-          你已有的资料用于理解你的情况；需要时再补充。每次发送前都可以检查。
+          mario
+          会自动整理问答中的搜索来源，后续按需参考并重新核对。你可以在这里控制发送的个人资料。
         </p>
         <div className="external-background">
           <label className="auto-external-option">
@@ -671,53 +703,10 @@ export function Advisor({
           </p>
         </div>
         <div className="context-shortcuts">
-          <button className="secondary" onClick={() => navigate("foundation")}>
-            我的持仓与目标
-          </button>
-          <button className="secondary" onClick={() => navigate("memory")}>
-            记忆与规则
-          </button>
-          <button className="secondary" onClick={() => navigate("evidence")}>
-            参考资料
+          <button className="secondary" onClick={() => navigate("facts")}>
+            更新我的收支、存款与持仓
           </button>
         </div>
-        <details className="workflow-advanced">
-          <summary>高级分析选项</summary>
-          <div className="workflow-options">
-            <Toggle
-              icon={<BrainCircuit size={17} />}
-              title="深度编排"
-              detail="构建计划并分阶段分析"
-              checked={deep}
-              onChange={(value) => invalidatePreview(() => setDeep(value))}
-            />
-            <Toggle
-              icon={<Database size={17} />}
-              title="本地记忆"
-              detail="检索相关历史决策"
-              checked={memory}
-              onChange={(value) => invalidatePreview(() => setMemory(value))}
-            />
-            <Toggle
-              icon={<ShieldCheck size={17} />}
-              title="纠错反思"
-              detail="独立检查遗漏和过度自信"
-              checked={reflection}
-              onChange={(value) =>
-                invalidatePreview(() => setReflection(value))
-              }
-            />
-            <Toggle
-              icon={<Sparkles size={17} />}
-              title="多方案探索"
-              detail="比较至少两条可行路径"
-              checked={alternatives}
-              onChange={(value) =>
-                invalidatePreview(() => setAlternatives(value))
-              }
-            />
-          </div>
-        </details>
         <details className="context-control">
           <summary>模型可以参考哪些资料</summary>
           <div>
@@ -761,8 +750,7 @@ export function Advisor({
           <span className="history-count">最近 {history.length} 条</span>
         </div>
         <p className="analysis-history-boundary">
-          历史 AI
-          分析是未经结果验证的研究产物。它可以被重开、追溯或转成待确认草稿，但不会自动成为事实、规则或交易指令。
+          回答和来源已自动整理在这里，随时可以接着聊。历史判断仍需结合新信息核对。
         </p>
         {history.length === 0 && !historyError && (
           <div className="empty">

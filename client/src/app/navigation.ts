@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 export type View =
+  | "facts"
   | "dashboard"
   | "foundation"
   | "ledger"
@@ -24,6 +25,7 @@ export type View =
 export type FoundationSection = "holdings" | "profile" | "goals";
 
 export const views: View[] = [
+  "facts",
   "dashboard",
   "foundation",
   "ledger",
@@ -43,6 +45,7 @@ export function initialView(): View {
 
 export const nav = [
   { id: "advisor" as const, label: "问答", icon: MessageCircle },
+  { id: "facts" as const, label: "我的情况", icon: WalletCards },
 ];
 
 export const supportingNav = [

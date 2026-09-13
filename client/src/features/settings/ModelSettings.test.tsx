@@ -15,6 +15,7 @@ vi.mock("../../api", () => ({
   saveModelConfig: vi
     .fn()
     .mockImplementation(async (input) => ({ ...input, hasApiKey: true })),
+  readCodexCredentials: vi.fn(),
   deleteModelKey: vi.fn(),
   deleteSecurityPriceKey: vi.fn(),
   getSecurityPrice: vi.fn(),
@@ -67,4 +68,56 @@ it("migrates the legacy selection and saves Anthropic with its endpoint and repl
     apiKey: "test-only-key",
   });
   expect((screen.getByLabelText("API Key") as HTMLInputElement).value).toBe("");
+});
+
+const existingModel = {
+  provider: "openai-responses" as const,
+  baseUrl: "https://api.openai.com/v1",
+  model: "existing-model",
+  hasApiKey: true,
+};
+
+it("reads Codex in one click and selects its detected model without copying a key", async () => {
+  const detected = {
+    provider: "codex" as const,
+    baseUrl: "codex://local",
+    model: "detected-model",
+    hasApiKey: true,
+  };
+  vi.mocked(api.readCodexCredentials).mockResolvedValue(detected);
+  const onUpdate = vi.fn();
+  render(
+    <ModelSettings model={existingModel} onUpdate={onUpdate} flash={vi.fn()} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "一键读取 Codex 凭证" }));
+  await screen.findByText(/Codex 凭证读取成功/);
+  expect(onUpdate).toHaveBeenCalledWith(detected);
+  expect((screen.getByLabelText("模型接口") as HTMLSelectElement).value).toBe(
+    "codex",
+  );
+  expect((screen.getByLabelText("模型名称") as HTMLInputElement).value).toBe(
+    "detected-model",
+  );
+  expect(screen.queryByLabelText("API Key")).toBeNull();
+  expect(api.saveModelConfig).not.toHaveBeenCalled();
+});
+
+it("shows a missing-login failure and preserves the existing model", async () => {
+  vi.mocked(api.readCodexCredentials).mockRejectedValue(
+    new Error("未找到已登录的 Codex 凭证"),
+  );
+  const onUpdate = vi.fn();
+  render(
+    <ModelSettings model={existingModel} onUpdate={onUpdate} flash={vi.fn()} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "一键读取 Codex 凭证" }));
+  await screen.findByText(/Codex 凭证读取失败.*未找到已登录/);
+  expect(onUpdate).not.toHaveBeenCalled();
+  expect((screen.getByLabelText("模型接口") as HTMLSelectElement).value).toBe(
+    "openai-responses",
+  );
+  expect((screen.getByLabelText("模型名称") as HTMLInputElement).value).toBe(
+    "existing-model",
+  );
+  expect(screen.queryByText(/Codex 凭证读取成功/)).toBeNull();
 });

@@ -1,3 +1,13 @@
+export class HttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
+
 export interface RequestOptions extends RequestInit {
   timeoutMs?: number;
 }
@@ -47,7 +57,10 @@ export async function requestJson<T>(
         } catch {
           /* Non-JSON provider failure. */
         }
-        throw new Error(message || `本地服务返回 ${response.status}`);
+        throw new HttpError(
+          message || `本地服务返回 ${response.status}`,
+          response.status,
+        );
       }
       if (response.status === 204) return undefined as T;
       return (await response.json()) as T;

@@ -1,3 +1,5 @@
+mod codex;
+pub use codex::CodexProvider;
 pub(crate) mod grounding;
 mod native_provider;
 mod orchestrator;

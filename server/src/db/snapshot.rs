@@ -147,6 +147,7 @@ pub(super) fn build_snapshot(
         });
     }
     Snapshot {
+        holding_revisions: Default::default(),
         profile,
         goals,
         holdings,

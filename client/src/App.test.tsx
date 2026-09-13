@@ -12,6 +12,12 @@ import * as api from "./api";
 
 vi.mock("./api", async (original) => ({
   ...(await original<typeof import("./api")>()),
+  ensureDailyAssets: vi.fn().mockResolvedValue({
+    timezone: "UTC",
+    today: new Date().toISOString().slice(0, 10),
+    records: [],
+    nextBefore: null,
+  }),
   getSnapshot: vi.fn(),
   getModelConfig: vi.fn(),
   getAnalysisHistory: vi.fn().mockResolvedValue([]),
@@ -87,4 +93,45 @@ it("opens on questions and preserves a draft when returning from supporting page
   expect(screen.queryByRole("textbox")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "问答" }));
   expect(screen.getByDisplayValue("暂存的问题")).toBeTruthy();
+});
+
+it("keeps everyday navigation to questions and personal facts", async () => {
+  vi.mocked(api.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+  );
+  vi.mocked(api.getModelConfig).mockResolvedValue({
+    provider: "codex",
+    model: "test",
+    baseUrl: "codex://local",
+    hasApiKey: true,
+  });
+  render(<App />);
+  await screen.findByRole("button", { name: "问答" });
+  expect(screen.getByRole("button", { name: "我的情况" })).toBeTruthy();
+  for (const name of [
+    "决策确认",
+    "参考资料",
+    "记忆与规则",
+    "复盘记录",
+    "组合流水",
+    "资料与确认",
+  ])
+    expect(screen.queryByRole("button", { name })).toBeNull();
+});
+it("responds to hash navigation without leaving the old page on screen", async () => {
+  vi.mocked(api.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+  );
+  vi.mocked(api.getModelConfig).mockResolvedValue({
+    provider: "openai-responses",
+    baseUrl: "https://api.openai.com/v1",
+    model: "test",
+    hasApiKey: false,
+  });
+  render(<App />);
+  await screen.findByRole("button", { name: "测试恢复数据" });
+  window.location.hash = "advisor";
+  fireEvent(window, new HashChangeEvent("hashchange"));
+  await screen.findByRole("textbox", { name: "这次希望解决什么问题？" });
+  expect(screen.queryByRole("button", { name: "测试恢复数据" })).toBeNull();
 });

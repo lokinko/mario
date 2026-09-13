@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   deleteModelKey,
+  readCodexCredentials,
   deleteSecurityPriceKey,
   getSecurityPrice,
   getSecurityPriceConfig,
@@ -81,6 +82,26 @@ export function ModelSettings({
       flash("模型配置已安全保存");
     } catch (nextError) {
       setError(String(nextError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const readCodex = async () => {
+    setSaving(true);
+    setError("");
+    setConnectionResult("");
+    try {
+      const next = await readCodexCredentials();
+      onUpdate(next);
+      setProvider(next.provider);
+      setBaseUrl(next.baseUrl);
+      setModelName(next.model);
+      setApiKey("");
+      setConnectionResult("Codex 凭证读取成功，已启用 " + next.model);
+      flash("已启用本机 Codex 登录");
+    } catch (error) {
+      setError("Codex 凭证读取失败：" + String(error));
     } finally {
       setSaving(false);
     }
@@ -177,6 +198,22 @@ export function ModelSettings({
             {model.hasApiKey ? "已配置" : "未配置"}
           </div>
         </div>
+        <button
+          className="secondary"
+          onClick={() => void readCodex()}
+          disabled={saving || testing}
+        >
+          {saving ? (
+            <LoaderCircle size={16} className="spin" />
+          ) : (
+            <KeyRound size={16} />
+          )}
+          一键读取 Codex 凭证
+        </button>
+        <p className="section-intro">
+          使用这台电脑上已登录的 Codex
+          调用模型，无需复制密钥。未找到登录凭证时会显示失败。
+        </p>
         <div className="form-grid single-column">
           <label>
             <span>模型接口</span>
@@ -186,9 +223,11 @@ export function ModelSettings({
                 const next = event.target.value as ModelConfig["provider"];
                 setProvider(next);
                 setBaseUrl(
-                  next === "anthropic"
-                    ? "https://api.anthropic.com/v1"
-                    : "https://api.openai.com/v1",
+                  next === "codex"
+                    ? "codex://local"
+                    : next === "anthropic"
+                      ? "https://api.anthropic.com/v1"
+                      : "https://api.openai.com/v1",
                 );
                 setModelName("");
                 setApiKey("");
@@ -197,12 +236,14 @@ export function ModelSettings({
             >
               <option value="openai-responses">OpenAI Responses</option>
               <option value="anthropic">Anthropic Messages</option>
+              <option value="codex">Codex 本机登录</option>
             </select>
           </label>
           <label>
             <span>API Base URL</span>
             <input
               value={baseUrl}
+              disabled={provider === "codex"}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="https://api.openai.com/v1"
             />
@@ -219,29 +260,33 @@ export function ModelSettings({
               }
             />
           </label>
-          <label>
-            <span>API Key</span>
-            <div className="secure-input">
-              <KeyRound size={16} />
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={
-                  model.hasApiKey
-                    ? "已保存在系统钥匙串；留空则不修改"
-                    : "输入模型供应商密钥"
-                }
-              />
-            </div>
-          </label>
+          {provider !== "codex" && (
+            <label>
+              <span>API Key</span>
+              <div className="secure-input">
+                <KeyRound size={16} />
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={
+                    model.hasApiKey
+                      ? "已保存在系统钥匙串；留空则不修改"
+                      : "输入模型供应商密钥"
+                  }
+                />
+              </div>
+            </label>
+          )}
         </div>
         <div className="privacy-note">
           <LockKeyhole size={18} />
           <div>
             <strong>密钥与业务数据分离</strong>
             <p>
-              密钥保存在系统钥匙串，不进入投资数据库。切换接口或地址时请填写对应密钥。所选模型和服务需支持原生网页搜索；连接测试只验证普通调用。
+              {provider === "codex"
+                ? "复用本机 Codex 登录，凭证由 Codex 保管和刷新，不复制到 mario，也不参与账户同步。支持 Codex 内置网页搜索；连接测试只验证普通调用。"
+                : "密钥保存在系统钥匙串，不进入投资数据库。切换接口或地址时请填写对应密钥。所选模型和服务需支持原生网页搜索；连接测试只验证普通调用。"}
             </p>
           </div>
         </div>
@@ -255,14 +300,16 @@ export function ModelSettings({
           <div className="connection-success">
             <Check size={16} />
             <span>
-              <strong>连接成功</strong>
+              <strong>
+                {model.provider === "codex" ? "Codex 状态" : "连接成功"}
+              </strong>
               {connectionResult}
             </span>
           </div>
         )}
         <div className="form-actions">
           <div className="key-actions">
-            {model.hasApiKey && (
+            {model.hasApiKey && model.provider !== "codex" && (
               <button
                 className="danger-text"
                 onClick={clearKey}
@@ -275,7 +322,7 @@ export function ModelSettings({
             <button
               className="secondary"
               onClick={testConnection}
-              disabled={testing || !model.hasApiKey}
+              disabled={saving || testing || !model.hasApiKey}
             >
               {testing ? (
                 <LoaderCircle size={15} className="spin" />

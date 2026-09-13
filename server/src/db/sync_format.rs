@@ -289,9 +289,19 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         ],
         order_by: "holding_id",
     },
+    SyncTableSpec {
+        name: "daily_settings",
+        columns: &["id", "timezone"],
+        order_by: "id",
+    },
+    SyncTableSpec {
+        name: "daily_entries",
+        columns: &["id", "day", "entity_id", "payload"],
+        order_by: "day, entity_id",
+    },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 9;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 10;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
@@ -337,6 +347,10 @@ pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpe
         }
         8 => {
             specs.truncate(V8_SYNC_TABLE_COUNT);
+            Ok(specs)
+        }
+        9 => {
+            specs.truncate(14);
             Ok(specs)
         }
         SYNC_DATASET_SCHEMA_VERSION => Ok(specs),

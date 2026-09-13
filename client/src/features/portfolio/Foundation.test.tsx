@@ -114,7 +114,7 @@ it("saves with only name and market value and retains context for the next holdi
   ).toBe("");
 });
 
-it("requires a foreign currency rate and clears it when the date changes", async () => {
+it("allows an unknown foreign currency rate and clears known provenance when the date changes", async () => {
   vi.mocked(api.saveHolding).mockResolvedValue(emptySnapshot as Snapshot);
   renderFoundation();
   fillHolding();
@@ -124,7 +124,7 @@ it("requires a foreign currency rate and clears it when the date changes", async
   const add = screen.getByRole("button", {
     name: "加入组合",
   }) as HTMLButtonElement;
-  expect(add.disabled).toBe(true);
+  expect(add.disabled).toBe(false);
   fireEvent.change(
     screen.getByRole("spinbutton", { name: "折算汇率（1 USD = ? CNY） CNY" }),
     { target: { value: "7.2" } },
@@ -216,4 +216,32 @@ it("keeps financial inputs visible and reports failed saves", async () => {
   expect((await screen.findByRole("alert")).textContent).toContain("保存失败");
   expect(screen.getByDisplayValue("12345")).toBeTruthy();
   expect(onUpdate).not.toHaveBeenCalled();
+});
+it("preserves an explicit zero while editing an existing holding", async () => {
+  const holding = {
+    ...emptyHolding(),
+    id: "zero",
+    name: "清零账户",
+    marketValue: 0,
+  };
+  vi.mocked(api.updateHolding).mockResolvedValue({
+    ...emptySnapshot,
+    holdings: [holding],
+  } as Snapshot);
+  renderFoundation({ ...emptySnapshot, holdings: [holding] } as Snapshot);
+  fireEvent.click(screen.getByRole("button", { name: "编辑资产" }));
+  const field = screen.getByRole("spinbutton", {
+    name: "当前市值（CNY） CNY",
+  }) as HTMLInputElement;
+  expect(field.value).toBe("0");
+  fireEvent.change(screen.getByLabelText("资产名称"), {
+    target: { value: "清零后账户" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  await waitFor(() =>
+    expect(api.updateHolding).toHaveBeenCalledWith(
+      "zero",
+      expect.objectContaining({ marketValue: 0, name: "清零后账户" }),
+    ),
+  );
 });
