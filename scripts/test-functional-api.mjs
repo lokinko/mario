@@ -41,7 +41,7 @@ async function api(path, method = "GET", body, status = 200) {
 }
 async function startServer() {
   child = spawn(
-    resolve("server/target/debug/mario-server"),
+    resolve(process.platform === "win32" ? "server/target/debug/mario-server.exe" : "server/target/debug/mario-server"),
     ["--port", String(port)],
     {
       env: { ...process.env, MARIO_DATA_DIR: dir, MARIO_AUTH_TOKEN: token },

@@ -250,7 +250,7 @@ export function PortfolioLedger({
 
   return (
     <div className="page narrow ledger-page">
-      <PageHeader title="组合流水" description="记录资金进出与交易。" />
+      <PageHeader title="组合流水" />
 
       <section className="ledger-summary">
         <article>

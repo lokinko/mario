@@ -130,7 +130,10 @@ fn binary() -> AppResult<PathBuf> {
         PathBuf::from("/usr/local/bin/codex"),
     ]);
     if let Some(path) = std::env::var_os("PATH") {
-        candidates.extend(std::env::split_paths(&path).map(|dir| dir.join("codex")));
+        candidates.extend(
+            std::env::split_paths(&path)
+                .map(|dir| dir.join(if cfg!(windows) { "codex.exe" } else { "codex" })),
+        );
     }
     candidates.into_iter().find(|p| p.is_file()).ok_or_else(|| {
         AppError::Validation("读取失败：没有找到 Codex，请先安装并登录 Codex".into())

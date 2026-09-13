@@ -132,7 +132,6 @@ export function EvidenceWorkbench({
     <div className="page narrow">
       <PageHeader
         title="研究证据"
-        description="保存来源，核对事实。"
         action={
           <button
             className="primary"

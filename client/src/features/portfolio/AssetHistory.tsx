@@ -119,10 +119,7 @@ function Trend({
           {money(max, points.at(-1)?.baseCurrency ?? "CNY")}
         </text>
       </svg>
-      <small>
-        虚线 /
-        空心点为沿用值；币种变化或总额不完整时断开。详细金额见下方日记录。
-      </small>
+      <small>虚线：沿用值</small>
     </div>
   );
 }
@@ -236,9 +233,8 @@ export function AssetHistory({
       <div className="panel-title">
         <div>
           <h2>我的资产</h2>
-          <p className="section-intro">更新金额即可，每天保留一份记录。</p>
         </div>
-        <small>
+        <small title={`记账时区：${history?.timezone ?? ""}`}>
           {latest?.day}
           {latest?.day === history?.today ? " · 更新中" : ""}
         </small>
@@ -287,11 +283,9 @@ export function AssetHistory({
             )}
           </div>
           <p className="daily-freshness">
-            {latest.carried
-              ? "今日沿用上次余额，尚无新更新。"
-              : "已合并本日更新。"}{" "}
+            {latest.carried ? "今日沿用上次余额。" : "今日已更新。"}{" "}
             {latest.assets.filter((a) => a.carried && !a.removed).length}{" "}
-            项资产沿用原值 · 记账时区 {history?.timezone}
+            项资产沿用原值
           </p>
           {latest.missingFx.length > 0 && (
             <p className="daily-freshness">
@@ -463,9 +457,13 @@ export function AssetHistory({
               </div>
             )}
           </details>
-          <p className="holding-hint">
-            金额和占比变化不等于投资收益；沿用值不代表当日重新估值。
-          </p>
+          <details className="history-method">
+            <summary>统计口径</summary>
+            <p>
+              资产金额变化不等于投资收益；沿用值保留上次确认日期。记账时区：
+              {history?.timezone}
+            </p>
+          </details>
         </>
       ) : (
         <p className="empty">

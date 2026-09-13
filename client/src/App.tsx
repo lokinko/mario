@@ -12,7 +12,6 @@ import {
   Check,
   Cloud,
   LoaderCircle,
-  LockKeyhole,
   Menu,
   Settings2,
   X,
@@ -53,6 +52,46 @@ function App() {
   const [analysisToOpen, setAnalysisToOpen] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [modelError, setModelError] = useState("");
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusTimer = window.setTimeout(() =>
+      sidebarRef.current?.querySelector<HTMLButtonElement>("button")?.focus(),
+    );
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileNavOpen(false);
+      if (event.key !== "Tab") return;
+      const buttons = Array.from(
+        sidebarRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+      );
+      const first = buttons[0],
+        last = buttons.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    window.addEventListener("keydown", keyboard);
+    return () => {
+      clearTimeout(focusTimer);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", keyboard);
+      menuTrigger.current?.focus();
+    };
+  }, [mobileNavOpen]);
+  useEffect(() => {
+    const resize = () => {
+      if (window.innerWidth > 900) setMobileNavOpen(false);
+    };
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
   const startupRequest = useRef(0);
   const currentView = useRef(view);
   currentView.current = view;
@@ -201,7 +240,7 @@ function App() {
     return (
       <div className="center-screen">
         <LoaderCircle className="spin" />
-        <span>正在加载本地投资档案…</span>
+        <span>正在加载投资档案…</span>
       </div>
     );
   }
@@ -210,8 +249,8 @@ function App() {
     return (
       <div className="center-screen service-error">
         <AlertTriangle size={28} />
-        <strong>本地服务尚未就绪</strong>
-        <span>客户端没有连接到本次启动的本地服务。你的数据没有丢失。</span>
+        <strong>服务暂不可用</strong>
+        <span>请检查服务是否运行，然后重试。</span>
         <button className="primary" onClick={loadApplication}>
           重新连接
         </button>
@@ -222,23 +261,70 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}>
+      <header className="mobile-topbar" inert={mobileNavOpen}>
+        <button
+          ref={menuTrigger}
+          className="mobile-menu"
+          aria-label="打开导航"
+          aria-expanded={mobileNavOpen}
+          aria-controls="main-navigation"
+          onClick={() => setMobileNavOpen(true)}
+        >
+          <Menu size={22} />
+        </button>
+        <strong>mario</strong>
+        <span>
+          {
+            [
+              ...nav,
+              ...supportingNav,
+              { id: "cloud", label: "账户与同步" },
+              { id: "settings", label: "模型与隐私" },
+            ].find((item) => item.id === view)?.label
+          }
+        </span>
+      </header>
+      {mobileNavOpen && (
+        <button
+          className="nav-backdrop"
+          aria-label="收起导航"
+          onClick={() => setMobileNavOpen(false)}
+          tabIndex={-1}
+        />
+      )}
+      <aside
+        ref={sidebarRef}
+        onTransitionEnd={(event) => {
+          if (
+            mobileNavOpen &&
+            event.propertyName === "transform" &&
+            !sidebarRef.current?.contains(document.activeElement)
+          )
+            sidebarRef.current
+              ?.querySelector<HTMLButtonElement>("button")
+              ?.focus();
+        }}
+        id="main-navigation"
+        aria-label="主导航"
+        role={mobileNavOpen ? "dialog" : undefined}
+        aria-modal={mobileNavOpen || undefined}
+        className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}
+      >
         <div className="brand">
           <div className="brand-mark">
             <img src="/mario-mark.svg" alt="" />
           </div>
           <div>
             <strong>mario</strong>
-            <span>本地投资决策助手</span>
           </div>
           <button
             className="mobile-menu"
             type="button"
-            aria-label={mobileNavOpen ? "关闭导航" : "打开导航"}
+            aria-label="关闭导航"
             aria-expanded={mobileNavOpen}
             onClick={() => setMobileNavOpen((open) => !open)}
           >
-            {mobileNavOpen ? <X size={21} /> : <Menu size={21} />}
+            <X size={21} />
           </button>
         </div>
 
@@ -257,12 +343,6 @@ function App() {
         </nav>
 
         <div className="sidebar-spacer" />
-        <div className="privacy-card">
-          <LockKeyhole size={18} />
-          <div>
-            <strong>本地优先</strong>
-          </div>
-        </div>
         <button
           className={`settings-link ${view === "cloud" ? "active" : ""}`}
           onClick={() => navigate("cloud")}
@@ -283,6 +363,7 @@ function App() {
       </aside>
 
       <main
+        inert={mobileNavOpen}
         onChangeCapture={() => {
           edited.current = true;
         }}
@@ -419,10 +500,6 @@ function App() {
             <ModelSettings model={model} onUpdate={setModel} flash={flash} />
             <details className="page narrow archive-tools">
               <summary>查看已有的资料与记录</summary>
-              <p>
-                mario
-                会在问答中查找相关资料。需要核对或修正历史记录时，可以从这里打开。
-              </p>
               <div className="archive-links">
                 {supportingNav.map((item) => (
                   <button

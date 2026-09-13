@@ -208,7 +208,7 @@ export function DecisionJournal({
 
   return (
     <div className="page narrow">
-      <PageHeader title="决策日志" description="记录判断，按期复盘。" />
+      <PageHeader title="决策日志" />
       <section className="review-metrics">
         <article>
           <span>决策记录</span>
