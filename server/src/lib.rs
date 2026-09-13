@@ -17,7 +17,7 @@ mod valuation;
 use std::{
     collections::HashSet,
     future::Future,
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path as FilePath, PathBuf},
     sync::Arc,
 };
@@ -88,10 +88,33 @@ pub async fn run_from_env() -> AppResult<()> {
     if let Some(pid) = options.parent_pid {
         tokio::spawn(watch_parent(pid, parent_exit_tx));
     }
-    serve_local(
+    let web_dir = std::env::var_os("MARIO_WEB_DIR").map(PathBuf::from);
+    let host: IpAddr = std::env::var("MARIO_HOST")
+        .unwrap_or_else(|_| "127.0.0.1".into())
+        .parse()
+        .map_err(|_| AppError::Validation("MARIO_HOST 必须是有效 IP 地址".into()))?;
+    if (web_dir.is_some() || !host.is_loopback())
+        && options
+            .auth_token
+            .as_ref()
+            .is_none_or(|token| !(32..=256).contains(&token.len()))
+    {
+        return Err(AppError::Validation(
+            "Web 服务必须设置 32–256 字符的 MARIO_AUTH_TOKEN".into(),
+        ));
+    }
+    if let Some(dir) = &web_dir {
+        if !dir.join("index.html").is_file() {
+            return Err(AppError::Validation(
+                "MARIO_WEB_DIR 中没有 index.html，请先构建 Web 页面".into(),
+            ));
+        }
+    }
+    serve_configured(
         data_dir,
-        options.port,
+        SocketAddr::new(host, options.port),
         options.auth_token,
+        web_dir,
         shutdown_signal(parent_exit_rx),
     )
     .await
@@ -126,6 +149,26 @@ async fn serve_local<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
+    serve_configured(
+        data_dir,
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+        auth_token,
+        None,
+        shutdown,
+    )
+    .await
+}
+
+async fn serve_configured<F>(
+    data_dir: PathBuf,
+    address: SocketAddr,
+    auth_token: Option<String>,
+    web_dir: Option<PathBuf>,
+    shutdown: F,
+) -> AppResult<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
     let state = Arc::new(AppState {
         mutation_lock: tokio::sync::Mutex::new(()),
         db: Database::open(&data_dir.join("mario.db"))?,
@@ -140,6 +183,7 @@ where
             "http://127.0.0.1:1420".parse::<HeaderValue>().unwrap(),
             "tauri://localhost".parse::<HeaderValue>().unwrap(),
             "http://tauri.localhost".parse::<HeaderValue>().unwrap(),
+            "https://tauri.localhost".parse::<HeaderValue>().unwrap(),
         ])
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
@@ -273,7 +317,12 @@ where
         .layer(cors)
         .with_state(state);
 
-    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    // Only compiled public assets are served outside the authenticated API routes.
+    let app = if let Some(dir) = web_dir {
+        app.fallback_service(tower_http::services::ServeDir::new(dir))
+    } else {
+        app
+    };
     tracing::info!(%address, data_dir = %data_dir.display(), authenticated = auth_token.is_some(), "local service started");
     let listener = tokio::net::TcpListener::bind(address)
         .await

@@ -15,7 +15,7 @@ chrono-tz = "0.10"
 iana-time-zone = "0.1"
 csv = "1"
 dirs = "6"
-keyring = { version = "3", features = ["apple-native"] }
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -25,7 +25,7 @@ sha2 = "0.10"
 subtle = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "process", "io-util"] }
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }

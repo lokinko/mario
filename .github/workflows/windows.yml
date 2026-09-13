@@ -1,0 +1,37 @@
+name: Windows build
+on:
+  push:
+    branches: [main, 'codex/**']
+    paths: ['client/**', 'server/**', 'scripts/windows.ps1', 'scripts/test-functional-api.mjs', '.github/workflows/windows.yml']
+  pull_request:
+    paths: ['client/**', 'server/**', 'scripts/windows.ps1', 'scripts/test-functional-api.mjs', '.github/workflows/windows.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            server
+            client/src-tauri
+      - run: npm ci --prefix client
+      - run: npm test --prefix client
+      - run: cargo test --locked --manifest-path server/Cargo.toml
+      - run: cargo build --locked --manifest-path server/Cargo.toml
+      - run: node scripts/test-functional-api.mjs
+      - run: npm run windows:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mario-windows
+          path: outputs/*-setup.exe
+          if-no-files-found: error

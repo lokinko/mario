@@ -97,6 +97,7 @@ export function AssetAmountRow({
             type="text"
             inputMode="decimal"
             aria-label={`${holding.name}金额`}
+            title="回车或离开输入框保存"
             value={draft}
             readOnly={busy}
             onChange={(e) => {
@@ -129,9 +130,7 @@ export function AssetAmountRow({
             }}
           />
         </label>
-        <small role={failed ? "alert" : "status"}>
-          {status || "离开输入框自动保存"}
-        </small>
+        <small role={failed ? "alert" : "status"}>{status}</small>
         {failed && (
           <span className="asset-save-actions">
             <button className="text-button" onClick={() => void save()}>

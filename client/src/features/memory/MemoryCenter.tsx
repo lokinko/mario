@@ -124,7 +124,7 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
 
   return (
     <div className="page narrow memory-page">
-      <PageHeader title="长期记忆" description="管理 AI 可以参考的历史经验。" />
+      <PageHeader title="长期记忆" />
 
       <section className="memory-overview">
         <article>

@@ -45,7 +45,7 @@ export function MyFacts({
     setError("");
     try {
       onUpdate(await saveProfile(profile));
-      flash("收支已保存，可以继续聊了");
+      flash("收支已保存");
     } catch (e) {
       setError(String(e));
     } finally {
@@ -86,15 +86,8 @@ export function MyFacts({
   };
   return (
     <div className="page narrow facts-page">
-      <PageHeader
-        title="我的情况"
-        description="填你确定的，暂时不清楚的可以先留空。"
-      />
+      <PageHeader title="我的情况" />
       <AssetHistory snapshot={snapshot} navigate={navigate} />
-      <p className="facts-intro">
-        你记下实际的收支和资产，mario
-        在问答时查资料、整理分析，有需要再向你了解。
-      </p>
       <div className="section-switcher" role="group" aria-label="我的情况分类">
         {(
           [
@@ -124,9 +117,6 @@ export function MyFacts({
       {section === "income" ? (
         <section className="panel form-panel">
           <h2>每个月大概收支多少？</h2>
-          <p className="section-intro">
-            金额单位：{currency}。大致金额就可以，以后随时修改。
-          </p>
           <fieldset className="holding-fields" disabled={busy}>
             <div className="form-grid">
               <NumberField
@@ -195,11 +185,6 @@ export function MyFacts({
               {section === "savings" ? "添加存款" : "添加持仓"}
             </button>
           </div>
-          <p className="section-intro">
-            {section === "savings"
-              ? "按账户记录余额即可。这里的存款也计入你的资产，不用在持仓中重复填写。"
-              : "填名称和当前金额即可。没有投资也没关系，可以直接开始问答。"}
-          </p>
           <div className="facts-assets">
             {(section === "savings" ? cash : investments).map((item) => (
               <AssetAmountRow
@@ -215,7 +200,7 @@ export function MyFacts({
               />
             ))}
             {(section === "savings" ? cash : investments).length === 0 && (
-              <p className="empty">还没有记录，想好了再填也可以。</p>
+              <p className="empty">暂无资产，点击上方添加。</p>
             )}
           </div>
         </section>
@@ -378,14 +363,12 @@ export function MyFacts({
         </section>
       )}
       <div className="facts-next">
-        <p>先填一项也可以，不用完成整份档案。</p>
         <button className="primary" onClick={() => navigate("advisor")}>
           去聊聊 <ArrowRight size={16} />
         </button>
       </div>
       <details className="facts-advanced">
         <summary>更多资料与记录</summary>
-        <p>需要管理目标、核对流水或复盘时，从这里打开。</p>
         <div className="archive-links">
           {supportingNav.map((item) => (
             <button

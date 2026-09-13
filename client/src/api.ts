@@ -6,6 +6,7 @@ import {
   CLOUD_CHANGED,
 } from "./lib/syncEvents";
 import { invoke } from "@tauri-apps/api/core";
+import { webToken } from "./lib/webSession";
 import type {
   AnalysisRequest,
   AnalysisPreview,
@@ -67,7 +68,8 @@ function getLocalServiceConfig(): Promise<LocalServiceConfig> {
           })
         : Promise.resolve({
             baseUrl:
-              import.meta.env.VITE_API_URL ?? "http://127.0.0.1:4217/api",
+              import.meta.env.VITE_API_URL ??
+              (import.meta.env.DEV ? "http://127.0.0.1:4217/api" : "/api"),
           });
   }
   return localServiceConfig;
@@ -79,6 +81,7 @@ async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     if (dataWrite) await beforeDataWrite();
     const service = await getLocalServiceConfig();
+    const authToken = service.authToken ?? webToken();
     const result = await requestJson<T>(`${service.baseUrl}${path}`, {
       ...init,
       timeoutMs:
@@ -91,9 +94,7 @@ async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
             : 15000,
       headers: {
         "Content-Type": "application/json",
-        ...(service.authToken
-          ? { Authorization: `Bearer ${service.authToken}` }
-          : {}),
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...(init?.headers ?? {}),
       },
     });

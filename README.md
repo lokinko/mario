@@ -18,7 +18,8 @@ mario 在问答时使用供应商原生网页搜索，自动保存回答和来�
 
 ## 当前能力
 
-- macOS 桌面客户端：Tauri + React + TypeScript
+- macOS / Windows 桌面客户端：Tauri + React + TypeScript
+- Web：独立启动、同源 API 与访问密钥，详见 [Windows 与 Web](docs/windows-web.md)
 - 独立且可嵌入的本地服务端：Rust + Axum；原生客户端使用随机回环端口和每次启动的认证令牌
 - 本地 SQLite：财务档案、目标、可编辑持仓、决策与分析历史
 - 每日资产自动追踪：列表内改金额即保存，同日合并、跨日沿用，查看总资产与净资产趋势、逐项变化和区间分析；详细规则见 [每日资产追踪](docs/daily-assets.md)

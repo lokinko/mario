@@ -304,20 +304,17 @@ export function Advisor({
   return (
     <div className="page narrow conversation-page">
       <header className="conversation-heading">
-        <span className="conversation-eyebrow">和 mario 聊聊</span>
         <h1>
           {turns.length
             ? "把问题聊清楚，再做决定。"
             : "最近有什么投资上的困惑？"}
         </h1>
-        <p>说说你的想法，或从一个小问题开始。</p>
       </header>
       {!model.hasApiKey && (
         <div className="setup-banner">
           <KeyRound size={20} />
           <div>
             <strong>连接模型，开始问答</strong>
-            <p>连接 Codex 或自己的模型，之后直接聊就可以。</p>
           </div>
           <button className="secondary" onClick={() => navigate("settings")}>
             连接模型
@@ -496,11 +493,7 @@ export function Advisor({
           </div>
         )}
         <div className="composer-footer">
-          <span>
-            {turns.length && followUp
-              ? "会参考上一轮问答摘要"
-              : "mario 会查资料，回答会自动保存"}
-          </span>
+          <span>{turns.length && followUp ? "会参考上一轮问答摘要" : ""}</span>
           {turns.length > 0 && (
             <button
               className="text-button"

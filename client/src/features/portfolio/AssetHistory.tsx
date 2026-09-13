@@ -119,10 +119,7 @@ function Trend({
           {money(max, points.at(-1)?.baseCurrency ?? "CNY")}
         </text>
       </svg>
-      <small>
-        虚线 /
-        空心点为沿用值；币种变化或总额不完整时断开。详细金额见下方日记录。
-      </small>
+      <small>虚线：沿用值</small>
     </div>
   );
 }
@@ -236,7 +233,6 @@ export function AssetHistory({
       <div className="panel-title">
         <div>
           <h2>我的资产</h2>
-          <p className="section-intro">更新金额即可，每天保留一份记录。</p>
         </div>
         <small>
           {latest?.day}

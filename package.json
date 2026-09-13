@@ -13,7 +13,11 @@
     "android:build": "bash scripts/android.sh build",
     "supabase:test": "bash scripts/test-supabase-sync.sh",
     "sidecar:debug": "bash scripts/prepare-sidecar.sh debug",
-    "sidecar:release": "bash scripts/prepare-sidecar.sh release"
+    "sidecar:release": "bash scripts/prepare-sidecar.sh release",
+    "windows:dev": "powershell -NoProfile -File scripts/windows.ps1 dev",
+    "windows:build": "powershell -NoProfile -File scripts/windows.ps1 build",
+    "web:build": "node scripts/web-build.mjs",
+    "web:start": "node scripts/web.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

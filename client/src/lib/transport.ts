@@ -41,7 +41,7 @@ export async function requestJson<T>(
       } catch (error) {
         controller.signal.throwIfAborted();
         if (attempt === attempts - 1)
-          throw new Error("无法连接本地服务，请检查客户端是否正常运行", {
+          throw new Error("无法连接服务，请检查服务是否正在运行", {
             cause: error,
           });
         await new Promise((resolve) =>
@@ -58,14 +58,14 @@ export async function requestJson<T>(
           /* Non-JSON provider failure. */
         }
         throw new HttpError(
-          message || `本地服务返回 ${response.status}`,
+          message || `服务返回 ${response.status}`,
           response.status,
         );
       }
       if (response.status === 204) return undefined as T;
       return (await response.json()) as T;
     }
-    throw new Error("无法连接本地服务");
+    throw new Error("无法连接服务");
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", abort);

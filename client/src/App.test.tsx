@@ -135,3 +135,29 @@ it("responds to hash navigation without leaving the old page on screen", async (
   await screen.findByRole("textbox", { name: "这次希望解决什么问题？" });
   expect(screen.queryByRole("button", { name: "测试恢复数据" })).toBeNull();
 });
+
+it("closes the left drawer with Escape and restores focus without changing the page", async () => {
+  vi.mocked(api.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+  );
+  vi.mocked(api.getModelConfig).mockResolvedValue({
+    provider: "codex",
+    model: "test",
+    baseUrl: "codex://local",
+    hasApiKey: true,
+  });
+  render(<App />);
+  const trigger = await screen.findByRole("button", { name: "打开导航" });
+  fireEvent.click(trigger);
+  expect(
+    document.querySelector("aside")?.classList.contains("mobile-open"),
+  ).toBe(true);
+  expect(document.querySelector("main")?.hasAttribute("inert")).toBe(true);
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(
+    document.querySelector("aside")?.classList.contains("mobile-open"),
+  ).toBe(false);
+  expect(document.activeElement).toBe(trigger);
+  expect(document.querySelector("main")?.hasAttribute("inert")).toBe(false);
+  expect(screen.getByRole("button", { name: "测试恢复数据" })).toBeTruthy();
+});
