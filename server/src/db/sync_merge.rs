@@ -130,7 +130,7 @@ impl Database {
                             quote_identifier(&old.name),
                             predicate
                         ),
-                        rusqlite::params_from_iter(sql_values(&row[..count])),
+                        sql_values(&row[..count]),
                     )?;
                 }
             }
@@ -166,7 +166,7 @@ impl Database {
             );
             for row in &new.rows {
                 if old_rows.get(&row_key(new, row)?) != Some(row) {
-                    tx.execute(&sql, rusqlite::params_from_iter(sql_values(row)))?;
+                    tx.execute(&sql, sql_values(row))?;
                 }
             }
         }

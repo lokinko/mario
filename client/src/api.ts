@@ -3,18 +3,20 @@ import {
   markDataWrite,
   isDataWrite,
   DATA_SAVED,
-  CLOUD_CHANGED,
 } from "./lib/syncEvents";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  serviceUrl,
+  dataRevision,
+  acceptRevision,
+  isLocalDev,
+} from "./lib/service";
+import { HttpError } from "./lib/transport";
 import { webToken } from "./lib/webSession";
 import type {
   AnalysisRequest,
   AnalysisPreview,
   AnalysisResult,
   AnalysisHistoryItem,
-  AccountResult,
-  CloudConfig,
-  CloudStatus,
   DecisionEntry,
   DecisionRecord,
   DecisionReview,
@@ -43,69 +45,49 @@ import type {
   ReminderSettings,
   ReviewReminderSummary,
   RuleEffectivenessSummary,
-  RecoveryKeyResult,
   Snapshot,
   SystemReviewInput,
   SystemReviewRecord,
-  SyncResult,
   StoredAnalysis,
 } from "./types";
-
-interface LocalServiceConfig {
-  baseUrl: string;
-  authToken?: string;
-}
-
-let localServiceConfig: Promise<LocalServiceConfig> | undefined;
-
-function getLocalServiceConfig(): Promise<LocalServiceConfig> {
-  if (!localServiceConfig) {
-    localServiceConfig =
-      "__TAURI_INTERNALS__" in window
-        ? invoke<LocalServiceConfig>("local_service_config").catch((error) => {
-            localServiceConfig = undefined;
-            throw error;
-          })
-        : Promise.resolve({
-            baseUrl:
-              import.meta.env.VITE_API_URL ??
-              (import.meta.env.DEV ? "http://127.0.0.1:4217/api" : "/api"),
-          });
-  }
-  return localServiceConfig;
-}
 
 async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const dataWrite = isDataWrite(path, init?.method);
   const release = dataWrite ? markDataWrite() : () => {};
   try {
     if (dataWrite) await beforeDataWrite();
-    const service = await getLocalServiceConfig();
-    const authToken = service.authToken ?? webToken();
-    const result = await requestJson<T>(`${service.baseUrl}${path}`, {
+    const authToken = webToken();
+    const baseRevision = dataRevision();
+    const result = await requestJson<T>(`${serviceUrl()}${path}`, {
       ...init,
       timeoutMs:
         path === "/analysis" ||
         path === "/model-config/test" ||
         path === "/model-config/codex"
           ? 300000
-          : path.startsWith("/cloud/")
-            ? 120000
-            : 15000,
+          : 15000,
+      onResponse: (response) => {
+        if (webToken() !== authToken) return;
+        if (path === "/snapshot" || (dataWrite && path !== "/analysis")) {
+          acceptRevision(
+            response.headers.get("x-data-revision") ?? baseRevision,
+          );
+        }
+      },
       headers: {
         "Content-Type": "application/json",
+        ...(baseRevision ? { "If-Match": baseRevision } : {}),
         ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...(init?.headers ?? {}),
       },
     });
     if (dataWrite) window.dispatchEvent(new Event(DATA_SAVED));
-    if (
-      path.startsWith("/cloud/") &&
-      init?.method &&
-      path !== "/cloud/sync/auto"
-    )
-      window.dispatchEvent(new Event(CLOUD_CHANGED));
+
     return result;
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 401)
+      window.dispatchEvent(new Event("mario:session-expired"));
+    throw error;
   } finally {
     release();
   }
@@ -331,112 +313,6 @@ export async function deleteModelKey(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-key", { method: "DELETE" });
 }
 
-export async function getCloudConfig(): Promise<CloudConfig | null> {
-  return httpRequest<CloudConfig | null>("/cloud/config");
-}
-
-export async function getCloudStatus(): Promise<CloudStatus> {
-  return httpRequest<CloudStatus>("/cloud/status");
-}
-
-export async function saveCloudConfig(
-  config: CloudConfig,
-): Promise<CloudStatus> {
-  return httpRequest<CloudStatus>("/cloud/config", {
-    method: "PUT",
-    body: JSON.stringify(config),
-  });
-}
-
-export async function signUpCloud(
-  email: string,
-  password: string,
-): Promise<AccountResult> {
-  return httpRequest<AccountResult>("/cloud/signup", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-}
-
-export async function signInCloud(
-  email: string,
-  password: string,
-): Promise<AccountResult> {
-  return httpRequest<AccountResult>("/cloud/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-}
-
-export async function resendCloudConfirmation(
-  email: string,
-): Promise<AccountResult> {
-  return httpRequest<AccountResult>("/cloud/confirmation/resend", {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  });
-}
-
-export async function requestCloudPasswordReset(
-  email: string,
-): Promise<{ message: string }> {
-  return httpRequest("/cloud/password/recover", {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  });
-}
-
-export async function verifyCloudPasswordReset(
-  email: string,
-  proof: string,
-): Promise<{ recoveryId: string }> {
-  return httpRequest("/cloud/password/verify", {
-    method: "POST",
-    body: JSON.stringify({ email, proof }),
-  });
-}
-
-export async function resetCloudPassword(
-  recoveryId: string,
-  password: string,
-): Promise<{ message: string }> {
-  return httpRequest("/cloud/password/reset", {
-    method: "POST",
-    body: JSON.stringify({ recoveryId, password }),
-  });
-}
-
-export async function signOutCloud(): Promise<CloudStatus> {
-  return httpRequest<CloudStatus>("/cloud/session", { method: "DELETE" });
-}
-
-export async function pushCloudSync(): Promise<SyncResult> {
-  return httpRequest<SyncResult>("/cloud/sync/push", { method: "POST" });
-}
-
-export async function pullCloudSync(
-  confirmReplace: boolean,
-): Promise<SyncResult> {
-  return httpRequest<SyncResult>("/cloud/sync/pull", {
-    method: "POST",
-    body: JSON.stringify({ confirmReplace }),
-  });
-}
-
-export async function exportCloudRecoveryKey(): Promise<RecoveryKeyResult> {
-  return httpRequest<RecoveryKeyResult>("/cloud/recovery-key");
-}
-
-export async function importCloudRecoveryKey(
-  recoveryKey: string,
-  confirmReplace: boolean,
-): Promise<void> {
-  await httpRequest<void>("/cloud/recovery-key", {
-    method: "PUT",
-    body: JSON.stringify({ recoveryKey, confirmReplace }),
-  });
-}
-
 export async function runAnalysis(
   request: AnalysisRequest,
 ): Promise<AnalysisResult> {
@@ -586,17 +462,24 @@ export async function readCodexCredentials(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-config/codex", { method: "POST" });
 }
 
-export async function autoCloudSync(): Promise<
+export async function checkServerVersion(): Promise<
   import("./types").AutoSyncResult
 > {
-  return httpRequest("/cloud/sync/auto", { method: "POST" });
+  if (isLocalDev()) return { state: "disabled" };
+  const baseline = dataRevision();
+  const result = await httpRequest<{ revision: string }>("/sync/version");
+  return {
+    state: "synced",
+    sync: { localUpdated: baseline !== result.revision },
+  };
 }
-export async function saveAutoSyncSettings(
-  enabled: boolean,
-): Promise<CloudStatus> {
-  return httpRequest("/cloud/sync/settings", {
-    method: "PUT",
-    body: JSON.stringify({ enabled }),
+export function exportData() {
+  return httpRequest<unknown>("/data/export");
+}
+export function importData(data: unknown) {
+  return httpRequest("/data/import", {
+    method: "POST",
+    body: JSON.stringify(data),
   });
 }
 

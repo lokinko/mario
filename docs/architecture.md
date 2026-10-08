@@ -1,136 +1,26 @@
-# 架构说明
+# 架构
 
-## 设计目标
+当前生产结构：React Web / Tauri → Rust API → PostgreSQL；Rust API → 独立 AI Agent → 模型提供方。完整配置与运行边界见 [自建部署](self-hosting.md)。
 
-1. **本地优先**：投资数据默认停留在用户设备。
-2. **客户端与服务端解耦**：UI 不直接访问数据库、密钥或模型。
-3. **规则与模型解耦**：能够确定计算的风险先由代码完成，大模型处理解释、比较和反思。
-4. **模型可替换**：业务工作流只依赖 `ModelProvider` 接口。
-5. **工作流可组合**：记忆、检索、多方案和反思是独立阶段，可以关闭或替换。
-6. **同步可替换且零明文托管**：账户 Provider 可替换，云端对象存储只接触密文和版本元数据。
-
-## 运行拓扑
-
-```text
-┌───────────────────────────────┐
-│ Tauri Desktop / Android Client│
-│ React UI + typed HTTP client  │
-└───────────────┬───────────────┘
-                │ random loopback port + bearer token
-┌───────────────▼───────────────┐
-│ Local Axum Server             │
-│                               │
-│ API ─┬─ deterministic rules   │
-│      ├─ planning simulation   │
-│      ├─ valuation integrity   │
-│      ├─ event ledger/performance│
-│      ├─ CSV import preview    │
-│      ├─ review snapshots      │
-│      ├─ versioned user rules  │
-│      ├─ evidence retriever    │
-│      ├─ context builder       │
-│      ├─ workflow definition   │
-│      ├─ AI orchestrator       │
-│      ├─ memory retriever      │
-│      ├─ provider adapter      │
-│      └─ encrypted sync       │
-└──────┬───────────────┬──────────────┘
-       │               │ explicit analysis only
-┌──────▼───────┐ ┌─────▼────────────────┐
-│ SQLite       │ │ User-selected model   │
-│ local data   │ │ OpenAI-compatible API │
-└──────┬───────┘ └──────────────────────┘
-       │
-┌──────▼─────────────┐       authenticated automatic sync
-│ OS Keychain        │ ┌─────────────────────────────┐
-│ model key / tokens ├─┤ Account + ciphertext store  │
-│ / recovery key     │ │ Supabase or self-hosted     │
-└────────────────────┘ └─────────────────────────────┘
+```mermaid
+flowchart LR
+    W[网页] --> G[Caddy HTTPS]
+    C[Tauri 客户端] --> G
+    G --> A[API：认证、业务规则、上下文授权]
+    A --> P[(PostgreSQL：账号与用户关系表)]
+    A --> R[无状态 AI Agent]
+    R --> M[模型提供方]
 ```
 
-桌面端把服务构建为受控 sidecar；Android 端受平台限制不能执行桌面 sidecar，因此将同一个 `mario-server` Rust 库编译进应用进程。两端仍通过随机 loopback 端口、单次启动令牌与同一套 HTTP 契约通信，UI、领域规则和同步协议不分叉。Android 的 SQLite 位于应用沙盒，秘密通过 Android Keystore 加密存储。详见 [Android 调试构建](android.md)。
+- `client/src/api.ts` 是统一 HTTP 客户端；`lib/service.ts` 管理服务器地址、已展示版本。前端不依赖桌面 sidecar 或数据库实现。
+- `server/src/hosted.rs` 根据服务端会话选择用户数据库，执行版本检查、数据库 advisory lock、导出和导入。用户请求不能指定租户。
+- `server/src/accounts.rs` 管理 Argon2 密码、随机会话及撤销、注册邀请码和登录限速。会话在数据库仅保存哈希。
+- `server/src/db/` 保留领域仓储和事务校验；`storage.rs` 隔离 SQL 引擎。PostgreSQL 保存关系表，SQLite 仅用于旧文件迁移和本地开发回归。
+- `server/src/agent.rs` 定义冻结上下文的执行接口，可连接独立进程或在本地开发内联执行。工作流、Provider、输出验证仍在 `server/src/ai/`，其代码不调用仓储。
+- `server/src/secrets.rs` 在托管模式用主密钥加密用户凭据，AAD 包含用户 schema 和密钥用途；本地开发兼容系统钥匙串。
 
-## 应用与持久化职责
+账号使用独立 PostgreSQL schema，而不是共用单用户 AppState。每个请求只持有已认证用户的连接；连接关闭即释放任何未显式释放的会话锁。业务写入和数据版本在同一事务推进，避免应用崩溃造成“数据已变而版本未变”。多个 API 实例使用同一数据库锁，客户端旧版本写入返回 409。
 
-`client/src/App.tsx` 只负责启动、导航和跨页面交接。页面按账户、首页、决策、财务与流水、研究、复盘、记忆、设置组织在 `features/` 下；导航定义、显示口径和小组件独立维护。核心本地快照与可选模型配置分别加载，模型服务失败不阻断本地决策工作。
+AI 分析准备阶段读取并冻结用户授权的数据；外部模型工作期间释放账户锁，避免长时间阻塞其他设备。结果保留输入版本与分析轨迹，随后通过 API 写入分析历史。独立 Agent 的 Compose 服务既没有数据库连接信息，也不在数据库网络。
 
-`client/src/lib/transport.ts` 统一请求总时限与取消：只对读取的网络失败重试，写入不自动重放；写入超时会提醒检查状态后再提交。`useRequestGuard` 用于相关页面的读取和分析结果更新，忽略已卸载或被新请求替代的结果；它不撤销已被服务端接受的写入。账户恢复通过根应用刷新数据并清理跨页草稿引用，不重载整个窗口。决策只有在规则成功加载后才能冻结，失败重试不清空用户编辑。
-
-`server/src/db.rs` 保留 `Database` 对外接口和连接边界。`db/schema.rs` 维护原顺序的建表与兼容迁移；各领域文件分别处理财务、流水、决策、复盘、研究、记忆、设置、提醒和同步读写。同步格式及表白名单在 `sync_format.rs`，导入校验在 `sync_validation.rs`，领域输入校验在 `validation.rs`。本次拆分不改变 SQL、事务边界或同步数据版本，不引入额外服务或通用 Repository 层。
-
-前端交互测试覆盖失败重试、草稿保留、陈旧响应隔离、无账户/模型的人工决策与复盘，以及首页行动和校准样本口径；数据库测试保留同步往返、旧数据迁移和不可变历史等回归约束。
-
-## AI 模块边界
-
-`server/src/ai/provider.rs` 定义模型接口：
-
-```rust
-#[async_trait]
-pub trait ModelProvider: Send + Sync {
-    async fn complete(&self, messages: Vec<ChatMessage>) -> AppResult<ModelCompletion>;
-    fn model_name(&self) -> &str;
-    fn provider_name(&self) -> &str;
-}
-```
-
-新增供应商时实现这个接口即可，不需要修改投资方法论或 HTTP 层。当前的 `OpenAiCompatibleProvider` 是第一个适配器。
-
-`server/src/ai/workflow.rs` 中的 `AnalysisWorkflow` 定义阶段职责和提示契约，`InvestmentWorkflowV4` 是当前实现。`InvestmentOrchestrator` 通过 `with_workflow` 接受替代实现，并只负责执行、检索、计时、汇总与审计：
-
-1. 读取规则引擎已经计算的风险事实。
-2. 读取本地规划引擎生成的目标情景、风险预算和再平衡偏差。
-3. 让模型形成研究计划和检索线索。
-4. 从结构化记忆候选中，使用原问题与计划分别进行一次可解释混合检索并合并去重。
-5. 让彼此隔离的“稳健基准”和“目标推进”模块分别生成候选方案。
-6. 使用独立提示词进行反方审查。
-7. 最后整合结论、未知项、行动和证伪条件。
-8. 用独立模块校验结构化输出和证据 ID；失败时只修复一次，再失败则拒绝保存。
-
-编排器不知道 API Key 的存储方式，也不直接访问数据库。它只接收 Workflow、Provider、Retriever、BuiltContext 和 MemoryItem，因此可以单元测试并在未来替换为图式工作流。每个模型调用返回统一的正文与可选 usage；执行器记录阶段耗时，完整研究计划、候选方案、批判和调用轨迹由 SQLite 本地保存。详细契约见 [AI 分析工作流](ai-workflow.md)。
-
-`server/src/memory.rs` 的 `MemoryRetriever` 不依赖数据库或模型。当前 `HybridMemoryRetriever` 综合字段/内容匹配、投资概念关联、复盘可信度、时间衰减和用户长期偏好，并为每条结果生成可见命中原因。决策记忆由不可变原始快照与独立复盘动态构造，历史 AI 回答始终标为未经结果验证；用户只能为来源记录增加长期保留、屏蔽和注释，不能改写源内容。详细契约见 [长期记忆与多轮检索](long-term-memory.md)。
-
-`ContextBuilder` 位于 `server/src/context.rs`，负责在编排前执行最小披露策略。规则、复盘、组合检查点、资金流水、证据和记忆通过单一 `ContextSources` 契约注入，新增数据组不会继续膨胀编排器参数。编排器不再接收完整 `Snapshot`，只接收经过用户选择、发送前预览和一致性指纹校验的 `BuiltContext`。候选记忆也在预览阶段冻结，后续检索不能越出该集合。详细契约见 [AI 数据边界](ai-data-boundary.md)。
-
-周期系统复盘、个人投资规则、组合流水与组合检查点属于独立的本地领域模型。复盘写入时冻结组合和方法指标；规则更新采用追加版本；流水只追加并冻结原币、汇率、来源、观察日和口径；检查点冻结当时持仓、所消费的流水 ID 与分类汇总。它们都保留历史且由 `ContextBuilder` 分组控制，用户可以在每次 AI 分析前选择是否发送。详细契约见 [复盘与规则闭环](review-and-rules.md) 与 [组合变化归因](portfolio-attribution.md)。
-
-`server/src/evidence.rs` 定义独立的 `EvidenceRetriever`。当前词法实现按问题与持仓名称筛选最多 12 条有效记录；候选集合在预览时冻结，归档或新增相关证据会使旧指纹失效。证据内容由用户整理，服务端校验 HTTPS、日期和结构，但不声称已核验来源正文。证券日收盘价使用更严格的持仓估值证据契约；未来公司基本面、监管披露和宏观数据 Provider 应写入统一的研究证据契约。详细说明见 [研究证据与引用](research-evidence.md) 与 [市场数据](market-data.md)。
-
-`server/src/valuation.rs` 是不依赖数据库或模型的估值口径模块，负责基准币种折算、汇率缺失检测、估值日期对齐和资产类别变化。数据库只负责持久化原始输入与调用该模块；风险、规划、组合检查点和 AI 上下文共同消费同一份口径状态，避免各层自行解释币种。
-
-`server/src/market_data.rs` 定义彼此独立的 `FxRateProvider` 与 `SecurityPriceProvider`。ECB 适配器按请求日回看日度参考汇率，只使用两个币种共同存在的最近观察日计算交叉汇率；Twelve Data 适配器用用户自己的密钥查询未复权日收盘价，返回币种、交易所、MIC 和实际观察日。数据库以独立估值证据记录冻结“数量 × 单价 = 市值”及完整来源，手工改动关键字段会使当前核验失效，组合检查点则保留当时证据。详细说明见 [可追溯市场数据](market-data.md)。
-
-`server/src/performance.rs` 只处理已经冻结的组合流水：将外部入出金、内部现金收入、费用税费和交易换手分开汇总，并按发生日期计算 Modified Dietz 期间近似回报。流水与检查点由数据库保证只追加和按日期分段；该模块不读取持仓、不调用模型，也不把近似回报冒充时间加权收益率。
-
-`server/src/event_import.rs` 把 CSV 当作不可信输入，负责大小和行数上限、表头映射、类型解析与行级结构错误。数据库领域层复用手工流水校验，增加稳定来源编号去重、内容冲突检测、预览版本绑定和事务写入。解析器不知道 HTTP、SQLite 或 AI；机构适配器未来可以统一输出这份中间契约。详细说明见 [组合流水 CSV 导入](portfolio-event-import.md)。
-
-## 数据与安全边界
-
-- 服务端只监听 loopback 地址，不暴露局域网端口。
-- 原生客户端每次启动选择随机回环端口并生成 256 位访问令牌；桌面端经子进程环境启动 sidecar，Android 端在应用进程内启动相同服务库；令牌经受控 Tauri command 交给当前 WebView，不写入磁盘或进程参数。
-- 所有本地 API（包括健康检查）都要求当前启动令牌；令牌比较使用固定长度摘要和常数时间比较。无认证模式只能通过显式开发参数开启。
-- 桌面端把自身进程号传给 sidecar；桌面进程退出后，本地服务会自动停止。Android 内嵌服务随应用进程结束。
-- CORS 只允许 Tauri WebView 和本地开发地址。
-- 模型与行情密钥使用不同条目，在桌面端保存在系统钥匙串，在 Android 端由 Android Keystore 保护。
-- API Key 只进入对应 Provider 的 HTTP Authorization 请求头，不进入 URL、SQLite、提示词、预览、分析审计或同步包。
-- AI 分析必须携带与当前本地上下文一致的预览指纹。
-- Base URL 默认要求 HTTPS，本机模型例外。
-- 模型提示词明确禁止编造实时市场数据、收益保证和确定性买卖指令。
-- 规则层输出与模型推理分离，降低大模型覆盖基础风险事实的概率。
-- 所有组合级数值先按财务档案的基准币种折算；外币汇率缺失时风险、规划、再平衡和归因安全降级，不对原币金额求和。
-- 云同步使用固定数据表白名单与 XChaCha20-Poly1305；组合流水和导入去重标识随投资域数据同步，恢复密钥不上传。
-- 同步写入以云端 revision 做原子比较；并发修改不会静默覆盖。
-- 拉取完成解密、结构和内容指纹检查后，才在一个 SQLite 事务中替换投资域数据；本地设置和密钥不在事务范围内。
-
-账户与云同步的协议、冲突语义和 Supabase RLS 参考迁移见 [账户与端到端加密云同步](cloud-sync.md)。
-
-后续安全工作：数据库加密、应用签名与公证、更完整的 Prompt Injection 防护和自动更新签名。当前威胁边界见 [本地原生应用威胁模型](threat-model.md)。
-
-## 推荐扩展顺序
-
-1. 用数据库迁移工具替代当前幂等建表脚本。
-2. 在已落地的可靠价格 Provider 之上增加券商原始格式适配与持仓导入，并在外部现金流时点取得可验证全组合估值后实现时间加权收益率。
-3. 新增本地嵌入向量 Retriever，与当前可解释检索融合并保留离线降级。
-4. 在已落地的 ECB 汇率和 Twelve Data 证券价格 Provider 之上增加公司行动、基准指数、基本面与宏观 Provider；外部数据必须标注来源和时间。
-5. 为工作流增加可恢复 checkpoint 与版本评测。
-6. 扩展 HTTP 级 Mock Provider 场景，覆盖超时、限流和中途断线。
+当前同步是在线版本检查及按需刷新，没有离线写入队列、实时推送或持久 AI 作业队列。连接按请求创建，业务请求并发有上限；此实现面向小规模自建，进一步扩大并发应增加连接池、分页/增量资源接口和任务队列。

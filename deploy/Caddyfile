@@ -1,0 +1,16 @@
+{$MARIO_DOMAIN:localhost} {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		X-Frame-Options DENY
+		Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'"
+	}
+	handle /api/* {
+		reverse_proxy api:4217
+	}
+	handle {
+		root * /srv
+		file_server
+	}
+}

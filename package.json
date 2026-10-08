@@ -3,21 +3,27 @@
   "private": true,
   "version": "0.5.0",
   "scripts": {
+    "start:native": "node scripts/start-native.mjs",
+    "start:docker": "node scripts/start-docker.mjs",
+    "test:startup": "node scripts/test-startup.mjs",
+    "data:backup": "node scripts/backup.mjs",
+    "data:download": "node scripts/download-backup.mjs",
+    "data:restore": "node scripts/restore-backup.mjs",
+    "test:backup": "node scripts/test-backup.mjs",
     "install:all": "npm install --ignore-scripts && npm install --prefix client --ignore-scripts",
     "dev": "concurrently -k -n server,client -c green,blue \"cargo run --manifest-path server/Cargo.toml -- --allow-unauthenticated-dev\" \"npm run dev --prefix client\"",
     "test": "bash scripts/test.sh",
-    "desktop:dev": "bash scripts/desktop.sh debug",
-    "desktop:build": "bash scripts/desktop.sh release",
+    "desktop:dev": "npm run desktop:dev --prefix client",
+    "desktop:build": "npm run desktop:build --prefix client",
     "build:all": "npm run desktop:build && npm run android:build",
     "android:init": "bash scripts/android.sh init",
     "android:build": "bash scripts/android.sh build",
-    "supabase:test": "bash scripts/test-supabase-sync.sh",
-    "sidecar:debug": "bash scripts/prepare-sidecar.sh debug",
-    "sidecar:release": "bash scripts/prepare-sidecar.sh release",
     "windows:dev": "powershell -NoProfile -File scripts/windows.ps1 dev",
     "windows:build": "powershell -NoProfile -File scripts/windows.ps1 build",
     "web:build": "node scripts/web-build.mjs",
-    "web:start": "node scripts/web.mjs"
+    "web:start": "node scripts/web.mjs",
+    "server:check": "cargo check --manifest-path server/Cargo.toml",
+    "test:hosted": "node scripts/test-hosted.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

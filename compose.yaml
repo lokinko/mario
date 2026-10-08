@@ -1,0 +1,77 @@
+services:
+  database:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mario
+      POSTGRES_USER: mario
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mario -d mario"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [database]
+  api:
+    build:
+      context: .
+      target: backend
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: postgresql://mario:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@database:5432/mario
+      MARIO_MASTER_KEY: ${MARIO_MASTER_KEY:?Set MARIO_MASTER_KEY}
+      MARIO_REGISTRATION_KEY: ${MARIO_REGISTRATION_KEY:?Set MARIO_REGISTRATION_KEY}
+      MARIO_AGENT_URL: http://agent:4218
+      MARIO_AGENT_TOKEN: ${MARIO_AGENT_TOKEN:?Set MARIO_AGENT_TOKEN}
+      MARIO_MODEL_HOSTS: ${MARIO_MODEL_HOSTS:-api.openai.com,api.anthropic.com}
+      MARIO_ALLOWED_ORIGINS: ${MARIO_ALLOWED_ORIGINS:-}
+    depends_on:
+      database:
+        condition: service_healthy
+      agent:
+        condition: service_started
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [database, services]
+  agent:
+    build:
+      context: .
+      target: backend
+    restart: unless-stopped
+    init: true
+    environment:
+      MARIO_ROLE: agent
+      MARIO_AGENT_BIND: 0.0.0.0:4218
+      MARIO_AGENT_TOKEN: ${MARIO_AGENT_TOKEN:?Set MARIO_AGENT_TOKEN}
+      MARIO_MODEL_HOSTS: ${MARIO_MODEL_HOSTS:-api.openai.com,api.anthropic.com}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [services]
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    environment:
+      MARIO_DOMAIN: ${MARIO_DOMAIN:-localhost}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [api]
+    networks: [services]
+networks:
+  database:
+    internal: true
+  services:
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

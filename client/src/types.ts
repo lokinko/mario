@@ -292,46 +292,6 @@ export interface ModelConnectionTest {
   latencyMs: number;
 }
 
-export interface CloudConfig {
-  url: string;
-  publishableKey: string;
-}
-
-export interface CloudStatus {
-  autoSyncEnabled?: boolean;
-  configured: boolean;
-  signedIn: boolean;
-  email?: string;
-  emailConfirmationPending: boolean;
-  hasRecoveryKey: boolean;
-  baseRevision: number;
-  localChangedSinceSync: boolean;
-  lastSyncedAt?: string;
-  privacyBoundary: string[];
-}
-
-export interface AccountResult {
-  signedIn: boolean;
-  email: string;
-  emailConfirmationPending: boolean;
-  message: string;
-}
-
-export interface SyncResult {
-  localUpdated?: boolean;
-  direction: "push" | "pull";
-  revision: number;
-  contentHash: string;
-  recordCount: number;
-  syncedAt: string;
-  message: string;
-}
-
-export interface RecoveryKeyResult {
-  recoveryKey: string;
-  warning: string;
-}
-
 export interface AnalysisRequest {
   dailyAssetRange?: { from: string; to: string };
   webSearch?: boolean;
@@ -727,7 +687,7 @@ export interface ResearchEvidence extends ResearchEvidenceInput {
 
 export interface AutoSyncResult {
   state: "synced" | "disabled" | "signed_out" | "busy";
-  sync?: SyncResult | null;
+  sync?: { localUpdated?: boolean } | null;
 }
 
 export interface DailyAsset {

@@ -361,12 +361,12 @@ pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpe
 }
 
 impl SyncDataset {
+    #[cfg(test)]
     pub fn content_hash(&self) -> AppResult<String> {
-        Ok(crate::cloud_sync::hash_bytes(&serde_json::to_vec(
-            &self.tables,
-        )?))
+        Ok(crate::hash_bytes(&serde_json::to_vec(&self.tables)?))
     }
 
+    #[cfg(test)]
     pub fn record_count(&self) -> usize {
         self.tables.iter().map(|table| table.rows.len()).sum()
     }

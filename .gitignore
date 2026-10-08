@@ -11,4 +11,8 @@ server/target
 !/.env.example
 /work
 /outputs
-/supabase/.temp
+/.runtime
+/backups
+*.mario-backup
+*.mario-backup.*.part
+.env.*.restore

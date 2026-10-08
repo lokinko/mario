@@ -1,3 +1,4 @@
+<!-- Historical release notes. Current deployment: self-hosting.md; legacy cloud integration has been removed. -->
 # mario 0.4.3：邮箱确认链路修复
 
 日期：2026-09-09。

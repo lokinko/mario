@@ -1,8 +1,8 @@
 // Real HTTP -> Axum -> SQLite smoke test. Uses only disposable data and no provider calls.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
@@ -15,8 +15,10 @@ socket.listen(0, "127.0.0.1");
 await once(socket, "listening");
 const port = socket.address().port;
 await new Promise((r) => socket.close(r));
-const base = `http://127.0.0.1:${port}/api`;
-const token = randomBytes(32).toString("hex");
+const externalBase = process.env.MARIO_FUNCTIONAL_BASE_URL;
+const base = externalBase ?? `http://127.0.0.1:${port}/api`;
+let revision;
+const token = process.env.MARIO_FUNCTIONAL_TOKEN ?? randomBytes(32).toString("hex");
 let child,
   log = "",
   count = 0;
@@ -31,15 +33,18 @@ async function api(path, method = "GET", body, status = 200) {
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
+      ...(revision ? {"If-Match":revision} : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const value = await response.text();
   assert.equal(response.status, status, `${method} ${path}: ${value}`);
+  if (response.ok) revision=response.headers.get("x-data-revision") ?? revision;
   count++;
   return value ? JSON.parse(value) : undefined;
 }
 async function startServer() {
+  if (externalBase) return;
   child = spawn(
     resolve(process.platform === "win32" ? "server/target/debug/mario-server.exe" : "server/target/debug/mario-server"),
     ["--port", String(port)],
@@ -63,9 +68,10 @@ async function startServer() {
   throw Error(`Server failed to become ready: ${log}`);
 }
 async function stopServer() {
-  if (child?.exitCode === null) {
+  if (child?.exitCode === null && child.signalCode === null) {
+    const exited=once(child, "exit");
     child.kill("SIGTERM");
-    await once(child, "exit");
+    await exited;
   }
 }
 const holding = (name, amount, currency = "CNY") => ({
@@ -379,6 +385,19 @@ try {
   console.log(
     `PASS restart persistence; ${count} authenticated HTTP assertions total`,
   );
+  if (!externalBase) {
+    await stopServer();
+    const exportPath=join(dir,'migration.json');
+    const binary=resolve('server/target/debug/mario-server'+(process.platform==='win32'?'.exe':''));
+    const exportResult=spawnSync(binary,['--export-data',exportPath],{env:{...process.env,MARIO_DATA_DIR:dir},encoding:'utf8'});
+    assert.equal(exportResult.status,0,exportResult.stderr);
+    const exported=JSON.parse(await readFile(exportPath,'utf8'));
+    assert(exported.tables.find(t=>t.name==='holdings').rows.length>0);
+    assert(!exported.tables.some(t=>t.name==='settings'));
+    const overwrite=spawnSync(binary,['--export-data',exportPath],{env:{...process.env,MARIO_DATA_DIR:dir},encoding:'utf8'});
+    assert.notEqual(overwrite.status,0);
+    console.log('PASS legacy SQLite CLI export and overwrite protection');
+  }
 } finally {
   await stopServer();
   await rm(dir, { recursive: true, force: true });

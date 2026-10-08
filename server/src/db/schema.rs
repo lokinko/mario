@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use crate::storage::Connection;
 
 use crate::error::AppResult;
 
@@ -279,6 +279,12 @@ fn ensure_column(
     column: &str,
     definition: &str,
 ) -> AppResult<()> {
+    if connection.is_postgres() {
+        connection.execute_batch(&format!(
+            "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}"
+        ))?;
+        return Ok(());
+    }
     let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
     let columns = statement
         .query_map([], |row| row.get::<_, String>(1))?

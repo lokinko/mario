@@ -26,6 +26,7 @@ impl Database {
     }
 
     pub fn model_config(&self) -> AppResult<ModelConfig> {
+        let has_key = self.secret("model").is_ok();
         let conn = self.conn()?;
         let value = |key: &str, fallback: &str| -> AppResult<String> {
             Ok(conn
@@ -45,7 +46,7 @@ impl Database {
             has_api_key: if value("model.provider", "")? == "codex" {
                 value("model.codex_ready", "false")? == "true"
             } else {
-                crate::secrets::has_api_key()
+                has_key
             },
         })
     }
@@ -63,6 +64,9 @@ impl Database {
             return Err(AppError::Validation(
                 "请选择 OpenAI Responses、Anthropic Messages 或 Codex".into(),
             ));
+        }
+        if self.hosted() {
+            crate::agent::validate_endpoint(base_url)?;
         }
         let url = reqwest::Url::parse(base_url)
             .map_err(|_| AppError::Validation("模型地址无效".into()))?;

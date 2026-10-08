@@ -1,6 +1,6 @@
 export const DATA_SAVED = "mario:data-saved";
-export const CLOUD_CHANGED = "mario:cloud-changed";
-export const CLOUD_DATA_UPDATED = "mario:cloud-data-updated";
+export const SERVER_SESSION_CHANGED = "mario:session-changed";
+export const SERVER_DATA_UPDATED = "mario:server-data-updated";
 let remoteUpdatePending = false;
 let running: Promise<void> | undefined;
 let finish: (() => void) | undefined;
@@ -31,12 +31,7 @@ export async function beforeDataWrite() {
 }
 export function isDataWrite(path: string, method = "GET") {
   return (
-    method !== "GET" &&
-    /^\/(daily-assets|profile|holdings|goals|decisions|investment-rules|memories|system-reviews|portfolio-checkins|portfolio-events|research-evidence|analysis)(\/|$)/.test(
-      path,
-    ) &&
-    path !== "/analysis/preview" &&
-    !path.endsWith("/preview")
+    method !== "GET" && !path.endsWith("/preview") && !path.endsWith("/test")
   );
 }
 

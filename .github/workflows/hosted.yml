@@ -1,0 +1,41 @@
+name: Hosted service
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: mario_test
+          POSTGRES_PASSWORD: test_only_password
+          POSTGRES_DB: mario_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U mario_test -d mario_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - run: npm ci --prefix client
+      - run: npm run build --prefix client
+      - run: npm test --prefix client
+      - run: cargo test --locked --manifest-path server/Cargo.toml
+      - run: cargo clippy --locked --manifest-path server/Cargo.toml --all-targets -- -D warnings
+      - run: cargo build --locked --manifest-path server/Cargo.toml
+      - run: node scripts/test-hosted.mjs
+        env:
+          MARIO_TEST_DATABASE_URL: postgresql://mario_test:test_only_password@127.0.0.1:5432/mario_test
+      - run: docker compose --env-file .env.example config --no-interpolate
+      - run: docker build --target backend .
+      - run: docker build --target web .

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ensureDailyAssets } from "../../api";
-import { CLOUD_DATA_UPDATED } from "../../lib/syncEvents";
+import { SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 
 export function DailyTracking() {
   const [error, setError] = useState("");
@@ -53,13 +53,13 @@ export function DailyTracking() {
     wake();
     const timer = window.setInterval(wake, 30000);
     window.addEventListener("focus", wake);
-    window.addEventListener(CLOUD_DATA_UPDATED, remote);
+    window.addEventListener(SERVER_DATA_UPDATED, remote);
     document.addEventListener("visibilitychange", wake);
     return () => {
       disposed = true;
       clearInterval(timer);
       window.removeEventListener("focus", wake);
-      window.removeEventListener(CLOUD_DATA_UPDATED, remote);
+      window.removeEventListener(SERVER_DATA_UPDATED, remote);
       document.removeEventListener("visibilitychange", wake);
     };
   }, [retry]);

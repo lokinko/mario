@@ -1,3 +1,4 @@
+import { isLocalDev } from "../../lib/service";
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
@@ -122,13 +123,13 @@ export function ModelSettings({
   };
 
   const clearKey = async () => {
-    if (!window.confirm("确认从系统钥匙串中移除模型 API Key？")) return;
+    if (!window.confirm("确认从账户密钥存储中移除模型 API Key？")) return;
     setSaving(true);
     setError("");
     setConnectionResult("");
     try {
       onUpdate(await deleteModelKey());
-      flash("模型密钥已从系统钥匙串移除");
+      flash("模型密钥已从账户密钥存储移除");
     } catch (nextError) {
       setError(String(nextError));
     } finally {
@@ -169,13 +170,14 @@ export function ModelSettings({
   };
 
   const clearSecurityKey = async () => {
-    if (!window.confirm("确认从系统钥匙串中移除 Twelve Data API Key？")) return;
+    if (!window.confirm("确认从账户密钥存储中移除 Twelve Data API Key？"))
+      return;
     setMarketBusy(true);
     setMarketError("");
     setMarketResult("");
     try {
       setSecurityConfig(await deleteSecurityPriceKey());
-      flash("行情密钥已从系统钥匙串移除");
+      flash("行情密钥已从账户密钥存储移除");
     } catch (nextError) {
       setMarketError(String(nextError));
     } finally {
@@ -187,7 +189,7 @@ export function ModelSettings({
     <div className="page narrow">
       <PageHeader
         title="模型与隐私"
-        description="密钥保存在此设备，数据仅在确认后发送。"
+        description="密钥在服务器按账号加密保存，数据仅在确认后发送。"
       />
       <section className="panel form-panel">
         <div className="panel-title">
@@ -198,22 +200,26 @@ export function ModelSettings({
             {model.hasApiKey ? "已配置" : "未配置"}
           </div>
         </div>
-        <button
-          className="secondary"
-          onClick={() => void readCodex()}
-          disabled={saving || testing}
-        >
-          {saving ? (
-            <LoaderCircle size={16} className="spin" />
-          ) : (
-            <KeyRound size={16} />
-          )}
-          一键读取 Codex 凭证
-        </button>
-        <p className="section-intro">
-          使用这台电脑上已登录的 Codex
-          调用模型，无需复制密钥。未找到登录凭证时会显示失败。
-        </p>
+        {isLocalDev() && (
+          <>
+            <button
+              className="secondary"
+              onClick={() => void readCodex()}
+              disabled={saving || testing}
+            >
+              {saving ? (
+                <LoaderCircle size={16} className="spin" />
+              ) : (
+                <KeyRound size={16} />
+              )}
+              一键读取 Codex 凭证
+            </button>
+            <p className="section-intro">
+              使用这台电脑上已登录的 Codex
+              调用模型，无需复制密钥。未找到登录凭证时会显示失败。
+            </p>
+          </>
+        )}
         <div className="form-grid single-column">
           <label>
             <span>模型接口</span>
@@ -236,7 +242,7 @@ export function ModelSettings({
             >
               <option value="openai-responses">OpenAI Responses</option>
               <option value="anthropic">Anthropic Messages</option>
-              <option value="codex">Codex 本机登录</option>
+              {isLocalDev() && <option value="codex">Codex 本机登录</option>}
             </select>
           </label>
           <label>
@@ -271,7 +277,7 @@ export function ModelSettings({
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder={
                     model.hasApiKey
-                      ? "已保存在系统钥匙串；留空则不修改"
+                      ? "已保存在账户密钥存储；留空则不修改"
                       : "输入模型供应商密钥"
                   }
                 />
@@ -286,7 +292,7 @@ export function ModelSettings({
             <p>
               {provider === "codex"
                 ? "复用本机 Codex 登录，凭证由 Codex 保管和刷新，不复制到 mario，也不参与账户同步。支持 Codex 内置网页搜索；连接测试只验证普通调用。"
-                : "密钥保存在系统钥匙串，不进入投资数据库。切换接口或地址时请填写对应密钥。所选模型和服务需支持原生网页搜索；连接测试只验证普通调用。"}
+                : "密钥在服务端加密保存，不进入数据导出或 AI 上下文。切换接口或地址时请填写对应密钥。所选模型和服务需支持原生网页搜索；连接测试只验证普通调用。"}
             </p>
           </div>
         </div>
@@ -367,7 +373,7 @@ export function ModelSettings({
                 onChange={(event) => setSecurityApiKey(event.target.value)}
                 placeholder={
                   securityConfig?.hasApiKey
-                    ? "已保存在系统钥匙串；留空则不修改"
+                    ? "已保存在账户密钥存储；留空则不修改"
                     : "输入个人 Twelve Data 密钥"
                 }
               />

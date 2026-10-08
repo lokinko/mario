@@ -8,7 +8,7 @@ import type {
 } from "../../types";
 import type { View } from "../../app/navigation";
 import { formatMoney } from "../../lib/format";
-import { CLOUD_DATA_UPDATED, DATA_SAVED } from "../../lib/syncEvents";
+import { SERVER_DATA_UPDATED, DATA_SAVED } from "../../lib/syncEvents";
 
 const money = (value: number | null, currency: string) =>
   value == null ? "总额待补全" : formatMoney(value, currency);
@@ -146,10 +146,10 @@ export function AssetHistory({
   useEffect(() => {
     const wake = () => setRefresh((v) => v + 1);
     window.addEventListener(DATA_SAVED, wake);
-    window.addEventListener(CLOUD_DATA_UPDATED, wake);
+    window.addEventListener(SERVER_DATA_UPDATED, wake);
     return () => {
       window.removeEventListener(DATA_SAVED, wake);
-      window.removeEventListener(CLOUD_DATA_UPDATED, wake);
+      window.removeEventListener(SERVER_DATA_UPDATED, wake);
     };
   }, []);
   useEffect(() => {

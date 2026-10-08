@@ -1,0 +1,16 @@
+.git
+**/node_modules
+**/target
+**/dist
+client/src-tauri/binaries
+client/src-tauri/gen
+outputs
+.runtime
+backups
+**/*.mario-backup
+**/*.mario-backup.*.part
+.env
+.env.*
+**/.env
+**/.env.*
+!/.env.example

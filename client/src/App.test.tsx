@@ -25,8 +25,8 @@ vi.mock("./api", async (original) => ({
 vi.mock("./reminders", () => ({
   checkAndSendReviewReminder: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("./features/account/CloudSync", () => ({
-  CloudSync: ({ onRestore }: { onRestore: () => Promise<void> }) => (
+vi.mock("./features/account/ServerData", () => ({
+  ServerData: ({ onRestore }: { onRestore: () => Promise<void> }) => (
     <button onClick={() => void onRestore()}>测试恢复数据</button>
   ),
 }));
@@ -48,7 +48,7 @@ it("keeps local application accessible when optional model configuration fails",
     await screen.findByRole("button", { name: "测试恢复数据" }),
   ).toBeTruthy();
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "本地决策与复盘不受影响",
+    "决策与复盘不受影响",
   );
   expect(screen.queryByText("本地服务尚未就绪")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "测试恢复数据" }));
@@ -88,7 +88,7 @@ it("opens on questions and preserves a draft when returning from supporting page
   fireEvent.change(screen.getByRole("textbox"), {
     target: { value: "暂存的问题" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "账户与同步" }));
+  fireEvent.click(screen.getByRole("button", { name: "账号与数据" }));
   await screen.findByRole("button", { name: "测试恢复数据" });
   expect(screen.queryByRole("textbox")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "问答" }));

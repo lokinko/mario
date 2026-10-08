@@ -11,7 +11,7 @@ impl Database {
         Self::snapshot_on(&conn)
     }
 
-    pub(super) fn snapshot_on(conn: &rusqlite::Connection) -> AppResult<Snapshot> {
+    pub(super) fn snapshot_on(conn: &super::Connection) -> AppResult<Snapshot> {
         let profile = conn
             .query_row("SELECT payload FROM profile WHERE id = 1", [], |row| {
                 row.get::<_, String>(0)

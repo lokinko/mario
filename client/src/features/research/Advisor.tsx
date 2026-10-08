@@ -1,4 +1,4 @@
-import { CLOUD_DATA_UPDATED } from "../../lib/syncEvents";
+import { SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -139,10 +139,10 @@ export function Advisor({
           if (active) setHistoryError(String(nextError));
         });
     void refreshHistory();
-    window.addEventListener(CLOUD_DATA_UPDATED, refreshHistory);
+    window.addEventListener(SERVER_DATA_UPDATED, refreshHistory);
     return () => {
       active = false;
-      window.removeEventListener(CLOUD_DATA_UPDATED, refreshHistory);
+      window.removeEventListener(SERVER_DATA_UPDATED, refreshHistory);
     };
   }, []);
 

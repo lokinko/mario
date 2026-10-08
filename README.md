@@ -1,8 +1,29 @@
 # mario
 
-mario 是一个本地优先、AI-native 的投资决策辅助软件。它不以行情、K 线或荐股作为产品中心，而是通过财务底座、目标配置、风险检查、决策日志和复盘，帮助用户形成可验证的投资方法。
+mario 是一个支持自建服务器、多用户账号和跨设备访问的 AI 投资决策辅助软件。它不以行情、K 线或荐股作为产品中心，而是通过财务底座、目标配置、风险检查、决策日志和复盘，帮助用户形成可验证的投资方法。
 
 > 当前版本用于投资教育与决策支持，不承诺提高收益，也不替代持牌专业人士针对个人情况提供的建议。
+
+## 自建部署
+
+当前采用 **Web / Tauri 客户端 → Rust API → PostgreSQL**，AI Agent 独立部署。账号、会话与数据由自己管理，无第三方账户或云存储依赖。
+
+两种启动方式统一读取根目录 `.env`，所有配置项和中文说明见 [`.env.example`](.env.example)。可先运行 `node scripts/generate-env.mjs` 生成带注释和随机密钥的配置，再修改域名；原生部署还可在文件中设置 PostgreSQL 路径、端口和 HTTPS 开关。
+
+需要频繁搬迁时，运行 `npm run data:download -- --host user@server --remote-dir /srv/mario --mode docker`，可从本机一键在服务器打包并下载加密迁移包。目标恢复、反复覆盖和回退见 [数据迁移指南](docs/data-migration.md)。
+
+```bash
+# Docker：生成配置、构建并后台启动全部服务
+bash scripts/start-docker.sh --domain mario.example.com
+
+# 无 Docker：自动初始化本地 PostgreSQL，构建并前台启动
+bash scripts/start-native.sh
+# 已安装 Caddy 且配置好域名时，可加 --domain mario.example.com 启用 HTTPS
+```
+
+域名指向服务器并开放 80/443 后，网页使用 HTTPS 访问，客户端填写同一服务器地址登录。管理员提供邀请码创建独立账号。部署参数、旧数据迁移、备份与恢复详见 [自建部署指南](docs/self-hosting.md)。
+
+**当前是在线服务模式**：多设备直接读写同一数据库，版本校验防止旧数据覆盖；离线不能保存。服务器可读取业务明文，供应商密钥按账号加密保存。
 
 ## 问答优先的使用方式
 
@@ -19,14 +40,14 @@ mario 在问答时使用供应商原生网页搜索，自动保存回答和来�
 ## 当前能力
 
 - macOS / Windows 桌面客户端：Tauri + React + TypeScript
-- Web：独立启动、同源 API 与访问密钥，详见 [Windows 与 Web](docs/windows-web.md)
-- 独立且可嵌入的本地服务端：Rust + Axum；原生客户端使用随机回环端口和每次启动的认证令牌
-- 本地 SQLite：财务档案、目标、可编辑持仓、决策与分析历史
+- Web：HTTPS 同源 API、独立用户账号，详见 [自建部署](docs/self-hosting.md)
+- Rust + Axum 后端：自建账号、会话、租户隔离与业务 API；Tauri 仅提供客户端外壳
+- PostgreSQL：财务档案、目标、持仓、决策与分析历史；SQLite 仅用于旧数据迁移及本地开发
 - 每日资产自动追踪：列表内改金额即保存，同日合并、跨日沿用，查看总资产与净资产趋势、逐项变化和区间分析；详细规则见 [每日资产追踪](docs/daily-assets.md)
-- 系统钥匙串：模型与行情 API Key 不写入数据库或同步包
+- 服务器按账号加密保存模型与行情 API Key，不进入数据导出和分析上下文
 - 确定性风险规则：应急资金、负债压力、集中度、期限错配
 - 确定性规划：目标路径模拟、月度投入缺口、风险预算与再平衡偏差
-- OpenAI Responses、Anthropic Messages 与 Codex 本机登录适配器
+- OpenAI Responses、Anthropic Messages 独立 Agent 适配器；Codex 本机登录仅限本地开发
 - AI 深度工作流：研究计划 → 两轮结构化长期记忆检索 → 两个独立候选方案 → 独立反思 → 最终裁决
 - 结构化输出校验：事实、推断、未知、方案、行动与复盘条件必须通过机器契约，非法引用自动拦截并允许一次修复
 - 可解释长期记忆：区分已复盘决策、未验证判断与历史 AI 回答，支持时间衰减和反证信号
@@ -52,17 +73,20 @@ mario 在问答时使用供应商原生网页搜索，自动保存回答和来�
 - 研究证据账本：记录来源层级、HTTPS 链接、资料日期、支持/反驳关系与限制
 - 证据检索与引用：按问题和组合筛选，发送前冻结，要求 AI 只引用实际进入载荷的来源
 - 简化概率校准：使用历史置信度与逻辑结果训练概率意识，不用单笔盈亏评价能力
-- 账户与自动云同步：保存后合并同步，前台低频检查版本，端到端加密并保护多设备冲突
+- 多账号与版本同步：前台低频检查版本、变化后刷新；跨 API 实例的写入冲突保护
 
 ## 仓库结构
 
 ```text
 client/                 React 响应式界面与 Tauri 桌面/Android 外壳
   src/                  页面、类型和本地 API 客户端
-  src-tauri/            桌面启动 sidecar，Android 内嵌同一服务库
-server/                 可独立启动、也可嵌入客户端的本地 HTTP 服务
+  src-tauri/            轻量原生外壳，连接远程 API
+server/                 多用户 HTTP API 与独立 AI Agent 运行入口
   src/ai/               可替换工作流、执行器与模型 Provider
-  src/db.rs             SQLite 持久化
+  src/db.rs             领域数据仓储；storage.rs 对接 PostgreSQL / 旧 SQLite
+  src/accounts.rs       自建账号与会话
+  src/hosted.rs         租户认证、版本校验与数据迁移
+  src/agent.rs          无状态 Agent HTTP 服务
   src/memory.rs         可替换、可解释的结构化记忆检索接口
   src/evidence.rs       可替换的研究证据检索接口
   src/valuation.rs      基准币种折算、估值完整性与资产类别变化
@@ -71,91 +95,36 @@ server/                 可独立启动、也可嵌入客户端的本地 HTTP �
   src/event_import.rs   CSV 解析、字段映射与不可信输入边界
   src/risk.rs           不依赖大模型的风险规则
 docs/                   架构与投资方法论
-scripts/                sidecar 构建脚本
+deploy/                 HTTPS 入口配置
+compose.yaml            Web / API / PostgreSQL / Agent 四服务部署
+scripts/                构建、迁移与集成测试
 ```
 
-产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[本地原生应用威胁模型](docs/threat-model.md)、[Android 调试构建](docs/android.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合变化归因](docs/portfolio-attribution.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[可追溯汇率数据](docs/market-data.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账户和端到端加密云同步](docs/cloud-sync.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[自建服务信任边界](docs/threat-model.md)、[Android 调试构建](docs/android.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合变化归因](docs/portfolio-attribution.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[可追溯汇率数据](docs/market-data.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账号与数据同步](docs/cloud-sync.md)。
 
-## 本地开发
+## 开发与验证
 
-桌面要求：Node.js 20+、Rust 1.86、macOS 开发工具。
+生产部署和客户端构建见 [自建部署指南](docs/self-hosting.md)。只调试原有领域功能时仍可使用隔离的本地 SQLite 开发服务：
 
 ```bash
 npm run install:all
 npm run dev
 ```
 
-浏览器开发客户端运行在 `http://localhost:1420`，开发服务默认运行在 `http://127.0.0.1:4217`。打包后的桌面客户端会为每次启动选择独立的随机回环端口，不使用固定端口。
-
-直接启动服务端时必须通过 `MARIO_AUTH_TOKEN` 提供至少 32 字符的随机令牌；只有本地浏览器开发可以显式使用 `--allow-unauthenticated-dev`。
-
-桌面调试：
+多用户开发请配置 PostgreSQL、`MARIO_MASTER_KEY`、`MARIO_REGISTRATION_KEY`；前端设置 `VITE_API_URL=http://127.0.0.1:4217/api`。独立 Agent 使用 `MARIO_ROLE=agent`，后端配置 `MARIO_AGENT_URL` 与共享内部令牌。Compose 默认采用独立 Agent，单进程开发可以不设置 Agent URL。
 
 ```bash
-npm run desktop:dev
-```
-
-运行全部静态检查和单元测试：
-
-```bash
-npm test
-```
-
-## 构建安装包
-
-```bash
-npm run desktop:build
-```
-
-脚本会先把 `server` 编译成当前平台的 Tauri sidecar，再生成 `.app` 与 `.dmg`，并统一复制到根目录 `outputs/`。Android APK 同样输出到 `outputs/`；`target/` 中仅保留构建缓存和打包中间产物。当前使用 ad hoc 签名，适合本机测试；对外发布还需要 Apple Developer 签名、公证和自动更新配置。
-
-在 macOS 上一次构建 DMG 和 Android 调试 APK：
-
-```bash
-npm run build:all
-```
-
-Android 调试 APK：
-
-```bash
-npm run android:init   # 可选：单独初始化；构建时也会自动初始化
-npm run android:build
-adb install -r outputs/mario_0.5.0_android-aarch64-debug.apk
-```
-
-Android 版把同一个 Rust/Axum 服务库编译进应用进程，不依赖桌面 sidecar；SQLite 保存在应用沙盒，API Key、账户令牌与恢复密钥保存在 Android Keystore。详细环境要求、架构和调试边界见 [Android 调试构建](docs/android.md)。
-
-Supabase 云同步部署与真实双设备测试：
-
-```bash
-supabase db query --linked --project-ref <project-ref> \
-  --file server/migrations/supabase-cloud-sync.sql
+npm run build --prefix client
+npm test --prefix client
+cargo test --manifest-path server/Cargo.toml
+cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
 cargo build --manifest-path server/Cargo.toml
-npm run supabase:test -- <project-ref>
+# 设置 MARIO_TEST_DATABASE_URL 为临时 PostgreSQL 后运行：
+node scripts/test-hosted.mjs
 ```
 
-完整的账户、RLS、端到端加密和恢复密钥边界见 [账户和端到端加密云同步](docs/cloud-sync.md)。
+## 模型与数据
 
-## 模型配置
+登录后在“模型与隐私”配置自己的模型、接口地址和 API Key。服务器只允许管理员配置的 HTTPS 模型主机。AI 分析前展示资料范围并冻结上下文，独立 Agent 完成工作流，API 保存可审计结果。Agent 不读取数据库，也不修改资产或执行交易。
 
-已在此电脑登录 Codex 时，可在“模型与隐私”点击“一键读取 Codex 凭证”，自动选择当前账户的默认模型并保存。未安装、未登录或读取超时会明确显示失败，原配置保留；点击“测试已保存连接”可验证真实模型调用。
-
-此方式通过官方 [Codex App Server](https://developers.openai.com/codex/app-server) 复用登录，凭证由 Codex 保管和刷新，不复制令牌、不写入 mario 数据库或云同步包。问答使用临时会话，并支持 Codex 内置网页搜索。macOS 优先发现已安装桌面应用内的 Codex，其次查找 CLI；Android 无法读取另一台电脑的 Codex 登录，请使用 API Key。
-
-在客户端的“模型与隐私”页面填写：
-
-- API Base URL
-- 模型名称
-- API Key
-
-当前支持 OpenAI Responses（`/responses`）和 Anthropic Messages（`/messages`）原生协议及网页搜索。旧 OpenAI-compatible 配置按 Responses 读取，仅支持 Chat Completions 的代理需要更换。允许 HTTPS 远端地址，也允许 `localhost`/`127.0.0.1` 上的 HTTP 本地模型。API Key 由系统钥匙串保存；SQLite 只保存非敏感元数据。
-
-保存后可在页面内测试连接，也可以随时从系统钥匙串移除密钥。
-
-同一页面还可配置个人 Twelve Data API Key。证券价格只在用户主动操作时查询；密钥通过服务端 Authorization 请求头发送，不进入 URL、SQLite、AI 上下文或云端同步。mario 保存的是指定日期的未复权日收盘价及其来源，不把它描述为实时成交价或内在价值。可用市场、额度、展示与再分发权利取决于用户自己的 Twelve Data 方案和交易所条款。
-
-## 数据位置
-
-桌面版数据库默认位于操作系统的本地数据目录 `com.lokinko.mario/mario.db`；Android 版位于应用专属沙盒。开发和测试时可通过 `MARIO_DATA_DIR` 指定隔离目录。桌面升级时会自动迁移旧版数据目录和数据库文件；旧的 `COMPASS_DATA_DIR`、`COMPASS_AUTH_TOKEN` 仍作为过渡兼容别名。
-
-服务端只在用户主动发起 AI 分析时，将完成该任务所需的投资上下文发送给用户配置的模型服务。用户主动查询汇率时，ECB 只收到币种与日期；用户主动查询证券估值时，Twelve Data 收到代码、日期和账户密钥。登录并开启自动同步后，保存数据、回到前台及前台定时检查会触发云同步，模型与行情密钥、登录令牌、恢复密钥与本机提醒设置不会进入同步包。原生应用提醒必须由用户主动开启并授权系统通知；应用关闭后不会在后台运行。当前版本尚未实现本地数据库整体加密、现金流时点全组合估值、严格 TWR 或券商交易执行。
+旧 SQLite 数据可通过服务端 `--export-data` 命令导出，然后在新账号的“账号与数据”导入；密钥和旧账号会话不会导入。迁移步骤、隐私边界、PostgreSQL 备份和密码重置详见 [自建部署指南](docs/self-hosting.md)。

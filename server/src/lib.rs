@@ -1,5 +1,13 @@
+mod accounts;
+mod agent;
 mod ai;
-mod cloud_sync;
+mod hosted;
+mod storage;
+#[cfg(test)]
+fn hash_bytes(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
 mod context;
 mod db;
 mod error;
@@ -29,13 +37,9 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post, put},
-    Json, Router,
+    Extension, Json, Router,
 };
 use chrono::Local;
-use cloud_sync::{
-    AccountCredentials, AccountEmailInput, AccountResult, CloudConfig, CloudStatus, PullInput,
-    RecoveryKeyInput, SyncResult,
-};
 use db::Database;
 pub use error::{AppError, AppResult};
 use evidence::{EvidenceRetriever, LexicalEvidenceRetriever};
@@ -62,7 +66,6 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 struct AppState {
     mutation_lock: tokio::sync::Mutex<()>,
     db: Database,
-    password_recovery: cloud_sync::PasswordRecovery,
     auth_token: Option<String>,
     fx_provider: Arc<dyn FxRateProvider>,
     security_price_provider: Arc<dyn SecurityPriceProvider>,
@@ -82,7 +85,37 @@ pub async fn run_from_env() -> AppResult<()> {
         )
         .init();
 
-    let data_dir = data_directory()?;
+    if std::env::var("MARIO_ROLE").as_deref() == Ok("agent") {
+        return agent::serve().await;
+    }
+    if let Some(path) = std::env::args()
+        .skip_while(|arg| arg != "--export-data")
+        .nth(1)
+    {
+        let db = Database::open(&data_directory()?.join("mario.db"))?;
+        let data = serde_json::to_vec_pretty(&db.export_sync_data()?)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        use std::io::Write;
+        options.open(path)?.write_all(&data)?;
+        return Ok(());
+    }
+    if let Some(email) = std::env::args()
+        .skip_while(|arg| arg != "--reset-password")
+        .nth(1)
+    {
+        let url = std::env::var("DATABASE_URL")
+            .map_err(|_| AppError::Validation("缺少 DATABASE_URL".into()))?;
+        let password = std::env::var("MARIO_RESET_PASSWORD")
+            .map_err(|_| AppError::Validation("缺少 MARIO_RESET_PASSWORD".into()))?;
+        accounts::Accounts::open(url)?.reset_password(&email, &password)?;
+        return Ok(());
+    }
     let options = server_options()?;
     let (parent_exit_tx, parent_exit_rx) = watch::channel(false);
     if let Some(pid) = options.parent_pid {
@@ -93,7 +126,9 @@ pub async fn run_from_env() -> AppResult<()> {
         .unwrap_or_else(|_| "127.0.0.1".into())
         .parse()
         .map_err(|_| AppError::Validation("MARIO_HOST 必须是有效 IP 地址".into()))?;
-    if (web_dir.is_some() || !host.is_loopback())
+    let database_url = std::env::var("DATABASE_URL").ok();
+    if database_url.is_none()
+        && (web_dir.is_some() || !host.is_loopback())
         && options
             .auth_token
             .as_ref()
@@ -110,6 +145,16 @@ pub async fn run_from_env() -> AppResult<()> {
             ));
         }
     }
+    if let Some(url) = database_url {
+        return hosted::serve(
+            url,
+            SocketAddr::new(host, options.port),
+            web_dir,
+            shutdown_signal(parent_exit_rx),
+        )
+        .await;
+    }
+    let data_dir = data_directory()?;
     serve_configured(
         data_dir,
         SocketAddr::new(host, options.port),
@@ -172,7 +217,6 @@ where
     let state = Arc::new(AppState {
         mutation_lock: tokio::sync::Mutex::new(()),
         db: Database::open(&data_dir.join("mario.db"))?,
-        password_recovery: cloud_sync::PasswordRecovery::default(),
         auth_token: auth_token.clone(),
         fx_provider: Arc::new(EcbFxRateProvider::new()?),
         security_price_provider: Arc::new(TwelveDataSecurityPriceProvider::new()?),
@@ -188,7 +232,33 @@ where
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
-    let app = Router::new()
+    let app = api_router()
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_local_auth,
+        ))
+        .layer(TraceLayer::new_for_http())
+        .layer(cors);
+
+    // Only compiled public assets are served outside the authenticated API routes.
+    let app = if let Some(dir) = web_dir {
+        app.fallback_service(tower_http::services::ServeDir::new(dir))
+    } else {
+        app
+    };
+    tracing::info!(%address, data_dir = %data_dir.display(), authenticated = auth_token.is_some(), "local service started");
+    let listener = tokio::net::TcpListener::bind(address)
+        .await
+        .map_err(AppError::Io)?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await
+        .map_err(AppError::Io)?;
+    Ok(())
+}
+
+fn api_router() -> Router {
+    Router::new()
         .route("/api/health", get(health))
         .route("/api/snapshot", get(snapshot))
         .route("/api/daily-assets/ensure", post(ensure_daily_assets))
@@ -279,64 +349,15 @@ where
         .route("/api/model-config/test", post(test_model_config))
         .route("/api/model-config/codex", post(read_codex_credentials))
         .route("/api/model-key", axum::routing::delete(delete_model_key))
-        .route(
-            "/api/cloud/config",
-            get(cloud_config).put(save_cloud_config),
-        )
-        .route("/api/cloud/status", get(cloud_status))
-        .route("/api/cloud/signup", post(cloud_signup))
-        .route("/api/cloud/login", post(cloud_login))
-        .route("/api/cloud/password/recover", post(cloud_password_recover))
-        .route("/api/cloud/password/verify", post(cloud_password_verify))
-        .route("/api/cloud/password/reset", post(cloud_password_reset))
-        .route(
-            "/api/cloud/confirmation/resend",
-            post(cloud_resend_confirmation),
-        )
-        .route("/api/cloud/session", axum::routing::delete(cloud_logout))
-        .route(
-            "/api/cloud/recovery-key",
-            get(export_cloud_recovery_key).put(import_cloud_recovery_key),
-        )
-        .route("/api/cloud/sync/auto", post(cloud_auto_sync))
-        .route(
-            "/api/cloud/sync/settings",
-            axum::routing::put(cloud_auto_settings),
-        )
-        .route("/api/cloud/sync/push", post(cloud_push))
-        .route("/api/cloud/sync/pull", post(cloud_pull))
         .route("/api/analysis/preview", post(preview_analysis))
         .route("/api/analysis", post(run_analysis))
         .route("/api/analyses", get(analyses))
         .route("/api/analyses/{id}", get(analysis))
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            require_local_auth,
-        ))
-        .layer(TraceLayer::new_for_http())
-        .layer(cors)
-        .with_state(state);
-
-    // Only compiled public assets are served outside the authenticated API routes.
-    let app = if let Some(dir) = web_dir {
-        app.fallback_service(tower_http::services::ServeDir::new(dir))
-    } else {
-        app
-    };
-    tracing::info!(%address, data_dir = %data_dir.display(), authenticated = auth_token.is_some(), "local service started");
-    let listener = tokio::net::TcpListener::bind(address)
-        .await
-        .map_err(AppError::Io)?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown)
-        .await
-        .map_err(AppError::Io)?;
-    Ok(())
 }
 
 async fn require_local_auth(
     State(state): State<Arc<AppState>>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Response {
     if let Some(expected) = state.auth_token.as_deref() {
@@ -350,24 +371,12 @@ async fn require_local_auth(
                 .into_response();
         }
     }
-    // Serialize mutations across network waits: a sync or login cannot overwrite
-    // an edit, nor use another account's tokens midway through a request.
-    let _guard = if request.uri().path() == "/api/cloud/sync/auto" {
-        match state.mutation_lock.try_lock() {
-            Ok(guard) => Some(guard),
-            Err(_) => {
-                return Json(cloud_sync::AutoSyncResult {
-                    state: "busy",
-                    sync: None,
-                })
-                .into_response()
-            }
-        }
-    } else if request.method() != Method::GET || request.uri().path().starts_with("/api/cloud/") {
+    let _guard = if request.method() != Method::GET {
         Some(state.mutation_lock.lock().await)
     } else {
         None
     };
+    request.extensions_mut().insert(state.clone());
     next.run(request).await
 }
 
@@ -383,50 +392,55 @@ fn token_matches(expected: &str, provided: &str) -> bool {
 async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
 }
-async fn snapshot(State(state): State<Arc<AppState>>) -> AppResult<Json<Snapshot>> {
+async fn snapshot(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.snapshot()?))
 }
 
 async fn fx_rate_quote(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Query(query): Query<FxRateQuery>,
 ) -> AppResult<Json<FxRateQuote>> {
     Ok(Json(state.fx_provider.quote(&query).await?))
 }
 
 async fn security_price_quote(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Query(query): Query<SecurityPriceQuery>,
 ) -> AppResult<Json<SecurityPriceQuote>> {
-    let key = secrets::get_security_price_api_key()?;
+    let key = state.db.secret("security-price")?;
     Ok(Json(
         state.security_price_provider.quote(&query, &key).await?,
     ))
 }
 
-async fn security_price_config() -> AppResult<Json<SecurityPriceConfig>> {
+async fn security_price_config(
+    Extension(state): Extension<Arc<AppState>>,
+) -> AppResult<Json<SecurityPriceConfig>> {
     Ok(Json(SecurityPriceConfig {
         provider: "twelve-data".into(),
-        has_api_key: secrets::has_security_price_api_key(),
+        has_api_key: state.db.secret("security-price").is_ok(),
     }))
 }
 
 async fn save_security_price_config(
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<SecurityPriceConfigInput>,
 ) -> AppResult<Json<SecurityPriceConfig>> {
     if let Some(key) = input.api_key.as_deref() {
-        secrets::set_security_price_api_key(key)?;
+        state.db.save_secret("security-price", key)?;
     }
-    security_price_config().await
+    security_price_config(Extension(state)).await
 }
 
-async fn delete_security_price_key() -> AppResult<Json<SecurityPriceConfig>> {
-    secrets::delete_security_price_api_key()?;
-    security_price_config().await
+async fn delete_security_price_key(
+    Extension(state): Extension<Arc<AppState>>,
+) -> AppResult<Json<SecurityPriceConfig>> {
+    state.db.remove_secret("security-price")?;
+    security_price_config(Extension(state)).await
 }
 
 async fn apply_verified_holding_valuation(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
     Json(input): Json<VerifiedHoldingValuationInput>,
 ) -> AppResult<Json<Snapshot>> {
@@ -434,7 +448,7 @@ async fn apply_verified_holding_valuation(
         symbol: input.symbol,
         on_date: input.on_date,
     };
-    let key = secrets::get_security_price_api_key()?;
+    let key = state.db.secret("security-price")?;
     let quote = state.security_price_provider.quote(&query, &key).await?;
     Ok(Json(state.db.apply_verified_holding_valuation(
         &id,
@@ -443,112 +457,114 @@ async fn apply_verified_holding_valuation(
     )?))
 }
 async fn save_profile(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<FinancialProfile>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.save_profile(&input)?))
 }
 async fn add_holding(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<HoldingInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.add_holding(&input)?))
 }
 async fn update_holding(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
     Json(input): Json<HoldingInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.update_holding(&id, &input)?))
 }
 async fn delete_holding(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.delete_holding(&id)?))
 }
 async fn portfolio_checkins(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<Vec<PortfolioCheckInRecord>>> {
     Ok(Json(state.db.portfolio_checkins()?))
 }
 async fn save_portfolio_checkin(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<PortfolioCheckInInput>,
 ) -> AppResult<Json<PortfolioCheckInRecord>> {
     Ok(Json(state.db.save_portfolio_checkin(&input)?))
 }
 async fn portfolio_events(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<Vec<PortfolioEventRecord>>> {
     Ok(Json(state.db.portfolio_events()?))
 }
 async fn add_portfolio_event(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<PortfolioEventInput>,
 ) -> AppResult<Json<PortfolioEventRecord>> {
     Ok(Json(state.db.add_portfolio_event(&input)?))
 }
 async fn reverse_portfolio_event(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
     Json(input): Json<PortfolioEventReversalInput>,
 ) -> AppResult<Json<PortfolioEventRecord>> {
     Ok(Json(state.db.reverse_portfolio_event(&id, &input)?))
 }
 async fn preview_portfolio_event_import(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<PortfolioEventImportRequest>,
 ) -> AppResult<Json<PortfolioEventImportPreview>> {
     Ok(Json(state.db.preview_portfolio_event_import(&input)?))
 }
 async fn commit_portfolio_event_import(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<PortfolioEventImportCommitRequest>,
 ) -> AppResult<Json<PortfolioEventImportResult>> {
     Ok(Json(state.db.commit_portfolio_event_import(&input)?))
 }
-async fn memories(State(state): State<Arc<AppState>>) -> AppResult<Json<Vec<MemoryItem>>> {
+async fn memories(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<Vec<MemoryItem>>> {
     Ok(Json(state.db.memories()?))
 }
 async fn save_memory_preference(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
     Json(input): Json<MemoryPreferenceInput>,
 ) -> AppResult<Json<MemoryItem>> {
     Ok(Json(state.db.save_memory_preference(&id, &input)?))
 }
 async fn add_goal(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<GoalInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.add_goal(&input)?))
 }
 async fn update_goal(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
     Json(input): Json<GoalInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.update_goal(&id, &input)?))
 }
 async fn delete_goal(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.delete_goal(&id)?))
 }
 async fn save_decision(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<DecisionEntry>,
 ) -> AppResult<axum::http::StatusCode> {
     state.db.save_decision(&input)?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
-async fn decisions(State(state): State<Arc<AppState>>) -> AppResult<Json<Vec<DecisionRecord>>> {
+async fn decisions(
+    Extension(state): Extension<Arc<AppState>>,
+) -> AppResult<Json<Vec<DecisionRecord>>> {
     Ok(Json(state.db.decisions()?))
 }
 async fn save_decision_review(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
     Json(input): Json<DecisionReviewInput>,
 ) -> AppResult<axum::http::StatusCode> {
@@ -556,58 +572,58 @@ async fn save_decision_review(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 async fn investment_rules(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<Vec<InvestmentRule>>> {
     Ok(Json(state.db.investment_rules()?))
 }
 async fn add_investment_rule(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<InvestmentRuleInput>,
 ) -> AppResult<Json<InvestmentRule>> {
     Ok(Json(state.db.add_investment_rule(&input)?))
 }
 async fn update_investment_rule(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
     Json(input): Json<InvestmentRuleInput>,
 ) -> AppResult<Json<InvestmentRule>> {
     Ok(Json(state.db.update_investment_rule(&id, &input)?))
 }
 async fn investment_rule_history(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> AppResult<Json<Vec<InvestmentRuleRevision>>> {
     Ok(Json(state.db.investment_rule_history(&id)?))
 }
 async fn rule_effectiveness(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<RuleEffectivenessSummary>> {
     Ok(Json(state.db.rule_effectiveness()?))
 }
 async fn system_reviews(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<Vec<SystemReviewRecord>>> {
     Ok(Json(state.db.system_reviews()?))
 }
 async fn save_system_review(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<SystemReviewInput>,
 ) -> AppResult<Json<SystemReviewRecord>> {
     Ok(Json(state.db.save_system_review(&input)?))
 }
 async fn reminder_settings(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<ReminderSettings>> {
     Ok(Json(state.db.reminder_settings()?))
 }
 async fn save_reminder_settings(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<ReminderSettingsInput>,
 ) -> AppResult<Json<ReminderSettings>> {
     Ok(Json(state.db.save_reminder_settings(input.enabled)?))
 }
 async fn review_reminders(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<ReviewReminderSummary>> {
     Ok(Json(
         state
@@ -616,7 +632,7 @@ async fn review_reminders(
     ))
 }
 async fn acknowledge_review_reminder(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<ReviewReminderAcknowledgeInput>,
 ) -> AppResult<Json<ReviewReminderSummary>> {
     Ok(Json(state.db.acknowledge_review_reminder(
@@ -625,18 +641,18 @@ async fn acknowledge_review_reminder(
     )?))
 }
 async fn research_evidence(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<Vec<ResearchEvidence>>> {
     Ok(Json(state.db.research_evidence()?))
 }
 async fn add_research_evidence(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<ResearchEvidenceInput>,
 ) -> AppResult<Json<ResearchEvidence>> {
     Ok(Json(state.db.add_research_evidence(&input)?))
 }
 async fn set_research_evidence_status(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
     Json(input): Json<ResearchEvidenceStatusInput>,
 ) -> AppResult<Json<ResearchEvidence>> {
@@ -644,13 +660,18 @@ async fn set_research_evidence_status(
         state.db.set_research_evidence_status(&id, input.active)?,
     ))
 }
-async fn model_config(State(state): State<Arc<AppState>>) -> AppResult<Json<ModelConfig>> {
+async fn model_config(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<ModelConfig>> {
     Ok(Json(state.db.model_config()?))
 }
 
 async fn read_codex_credentials(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<ModelConfig>> {
+    if state.db.hosted() {
+        return Err(AppError::Validation(
+            "托管服务不允许使用服务器的个人 Codex 登录".into(),
+        ));
+    }
     let model = CodexProvider::detect().await?;
     save_codex_config(&state.db, &model)?;
     Ok(Json(state.db.model_config()?))
@@ -672,7 +693,15 @@ fn configured_model_provider(
     db: &Database,
     config: &ModelConfig,
 ) -> AppResult<Box<dyn ModelProvider>> {
+    if db.hosted() {
+        agent::validate_endpoint(&config.base_url)?;
+    }
     if config.provider == "codex" {
+        if db.hosted() {
+            return Err(AppError::Validation(
+                "托管服务不允许使用 Codex 本机登录".into(),
+            ));
+        }
         return Ok(Box::new(CodexProvider::new(config.model.clone())));
     }
     Ok(Box::new(NativeModelProvider::new(
@@ -684,10 +713,15 @@ fn configured_model_provider(
 }
 
 async fn save_model_config(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<ModelConfigInput>,
 ) -> AppResult<Json<ModelConfig>> {
     if input.provider == "codex" {
+        if state.db.hosted() {
+            return Err(AppError::Validation(
+                "托管服务不允许使用 Codex 本机登录".into(),
+            ));
+        }
         CodexProvider::detect().await?;
         save_codex_config(&state.db, &input.model)?;
         return Ok(Json(state.db.model_config()?));
@@ -722,7 +756,7 @@ async fn save_model_config(
         .db
         .save_model_metadata(&input.provider, &input.base_url, &input.model)?;
     if let Some(key) = input.api_key.as_deref() {
-        secrets::set_api_key(key)?;
+        state.db.save_secret("model", key)?;
         state.db.set_setting(
             "model.key_binding",
             &model_key_binding(protocol, &input.base_url),
@@ -748,11 +782,11 @@ fn configured_model_key(db: &Database, config: &ModelConfig) -> AppResult<String
             "当前密钥不属于这个模型接口，请重新保存对应 API Key".into(),
         ));
     }
-    secrets::get_api_key()
+    db.secret("model")
 }
 
 async fn test_model_config(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<ModelConnectionTest>> {
     let config = state.db.model_config()?;
     let provider = configured_model_provider(&state.db, &config)?;
@@ -770,125 +804,15 @@ async fn test_model_config(
     }))
 }
 
-async fn delete_model_key(State(state): State<Arc<AppState>>) -> AppResult<Json<ModelConfig>> {
-    secrets::delete_api_key()?;
+async fn delete_model_key(
+    Extension(state): Extension<Arc<AppState>>,
+) -> AppResult<Json<ModelConfig>> {
+    state.db.remove_secret("model")?;
     Ok(Json(state.db.model_config()?))
 }
 
-async fn cloud_config(State(state): State<Arc<AppState>>) -> AppResult<Json<Option<CloudConfig>>> {
-    Ok(Json(cloud_sync::config(&state.db)?))
-}
-
-async fn save_cloud_config(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<CloudConfig>,
-) -> AppResult<Json<CloudStatus>> {
-    Ok(Json(cloud_sync::save_config(&state.db, &input)?))
-}
-
-async fn cloud_status(State(state): State<Arc<AppState>>) -> AppResult<Json<CloudStatus>> {
-    Ok(Json(cloud_sync::status(&state.db)?))
-}
-
-async fn cloud_signup(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<AccountCredentials>,
-) -> AppResult<Json<AccountResult>> {
-    Ok(Json(cloud_sync::sign_up(&state.db, &input).await?))
-}
-
-async fn cloud_login(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<AccountCredentials>,
-) -> AppResult<Json<AccountResult>> {
-    Ok(Json(cloud_sync::sign_in(&state.db, &input).await?))
-}
-
-async fn cloud_resend_confirmation(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<AccountEmailInput>,
-) -> AppResult<Json<AccountResult>> {
-    Ok(Json(
-        cloud_sync::resend_signup_confirmation(&state.db, &input).await?,
-    ))
-}
-
-async fn cloud_logout(State(state): State<Arc<AppState>>) -> AppResult<Json<CloudStatus>> {
-    Ok(Json(cloud_sync::sign_out(&state.db).await?))
-}
-
-async fn cloud_password_recover(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<AccountEmailInput>,
-) -> AppResult<Json<serde_json::Value>> {
-    cloud_sync::request_password_reset(&state.db, &input).await?;
-    Ok(Json(
-        serde_json::json!({"message":"如果该邮箱已注册，将收到重置邮件。请检查收件箱和垃圾邮件；未注册请返回创建账户。"}),
-    ))
-}
-
-async fn cloud_password_verify(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<cloud_sync::RecoveryVerificationInput>,
-) -> AppResult<Json<serde_json::Value>> {
-    let recovery_id = state.password_recovery.verify(&state.db, &input).await?;
-    Ok(Json(serde_json::json!({"recoveryId": recovery_id})))
-}
-
-async fn cloud_password_reset(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<cloud_sync::PasswordResetInput>,
-) -> AppResult<Json<serde_json::Value>> {
-    state.password_recovery.reset(&state.db, &input).await?;
-    Ok(Json(
-        serde_json::json!({"message":"密码已更新，请使用新密码登录"}),
-    ))
-}
-
-async fn export_cloud_recovery_key(
-    State(state): State<Arc<AppState>>,
-) -> AppResult<Json<serde_json::Value>> {
-    Ok(Json(serde_json::json!({
-        "recoveryKey": cloud_sync::export_recovery_key(&state.db)?,
-        "warning": "任何获得此密钥的人都可能解密你的云端投资数据，请离线保管。"
-    })))
-}
-
-async fn import_cloud_recovery_key(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<RecoveryKeyInput>,
-) -> AppResult<axum::http::StatusCode> {
-    cloud_sync::import_recovery_key(&state.db, &input)?;
-    Ok(axum::http::StatusCode::NO_CONTENT)
-}
-
-async fn cloud_auto_sync(
-    State(state): State<Arc<AppState>>,
-) -> AppResult<Json<cloud_sync::AutoSyncResult>> {
-    Ok(Json(cloud_sync::auto_sync(&state.db).await?))
-}
-async fn cloud_auto_settings(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<cloud_sync::AutoSyncSettings>,
-) -> AppResult<Json<CloudStatus>> {
-    Ok(Json(cloud_sync::save_auto_sync_settings(
-        &state.db, &input,
-    )?))
-}
-
-async fn cloud_push(State(state): State<Arc<AppState>>) -> AppResult<Json<SyncResult>> {
-    Ok(Json(cloud_sync::push(&state.db).await?))
-}
-
-async fn cloud_pull(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<PullInput>,
-) -> AppResult<Json<SyncResult>> {
-    Ok(Json(cloud_sync::pull(&state.db, &input).await?))
-}
-
 async fn run_analysis(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(request): Json<AnalysisRequest>,
 ) -> AppResult<Json<AnalysisResult>> {
     validate_analysis_request(&request)?;
@@ -945,17 +869,28 @@ async fn run_analysis(
             "本地数据或上下文选择已变化，请重新预览后再确认分析".into(),
         ));
     }
-    let provider = configured_model_provider(&state.db, &config)?;
-    let orchestrator = InvestmentOrchestrator::new(provider.as_ref(), &retriever);
-    let result = orchestrator
-        .run(&request, &built_context, &memories)
-        .await?;
+    // Freeze credentials and their destination under the same account lock;
+    // another device may change its model settings while this analysis runs.
+    if state.db.hosted() {
+        agent::validate_endpoint(&config.base_url)?;
+    }
+    let api_key = if config.provider == "codex" {
+        None
+    } else {
+        Some(configured_model_key(&state.db, &config)?)
+    };
+    // The immutable authorized context is now frozen. Release the account lock
+    // while the remote Agent runs so other devices can continue editing.
+    state.db.unlock_account()?;
+    let result = agent::execute(config, api_key, request.clone(), built_context, memories).await;
+    state.db.lock_account()?;
+    let result = result?;
     state.db.save_analysis(&result, &request.question)?;
     Ok(Json(result))
 }
 
 async fn preview_analysis(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(request): Json<AnalysisRequest>,
 ) -> AppResult<Json<AnalysisPreview>> {
     validate_analysis_request(&request)?;
@@ -1017,12 +952,14 @@ async fn preview_analysis(
     )))
 }
 
-async fn analyses(State(state): State<Arc<AppState>>) -> AppResult<Json<Vec<AnalysisHistoryItem>>> {
+async fn analyses(
+    Extension(state): Extension<Arc<AppState>>,
+) -> AppResult<Json<Vec<AnalysisHistoryItem>>> {
     Ok(Json(state.db.analysis_history()?))
 }
 
 async fn analysis(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> AppResult<Json<StoredAnalysis>> {
     Ok(Json(state.db.analysis(&id)?))
@@ -1218,7 +1155,8 @@ fn server_options() -> AppResult<ServerOptions> {
         .or_else(|_| std::env::var("COMPASS_AUTH_TOKEN"))
         .ok()
         .filter(|value| !value.trim().is_empty());
-    if !allow_unauthenticated_dev
+    if std::env::var("DATABASE_URL").is_err()
+        && !allow_unauthenticated_dev
         && auth_token
             .as_deref()
             .is_none_or(|value| value.len() < 32 || value.len() > 256)
@@ -1274,25 +1212,25 @@ async fn shutdown_signal(mut parent_exit: watch::Receiver<bool>) {
 }
 
 async fn ensure_daily_assets(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<db::daily::EnsureInput>,
 ) -> AppResult<Json<db::daily::DailyHistory>> {
     Ok(Json(state.db.ensure_daily(&input)?))
 }
 async fn daily_assets(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Query(query): Query<db::daily::HistoryQuery>,
 ) -> AppResult<Json<db::daily::DailyHistory>> {
     Ok(Json(state.db.daily_history(&query)?))
 }
 async fn compare_daily_assets(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Query(query): Query<db::daily::CompareQuery>,
 ) -> AppResult<Json<db::daily::DailyComparison>> {
     Ok(Json(state.db.daily_compare(&query)?))
 }
 async fn update_holding_amount(
-    State(state): State<Arc<AppState>>,
+    Extension(state): Extension<Arc<AppState>>,
     Path(id): Path<String>,
     Json(input): Json<db::daily::AmountInput>,
 ) -> AppResult<Json<Snapshot>> {

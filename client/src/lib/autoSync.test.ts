@@ -24,12 +24,6 @@ afterEach(() => {
 const synced: AutoSyncResult = {
   state: "synced",
   sync: {
-    direction: "push",
-    revision: 1,
-    contentHash: "test",
-    recordCount: 1,
-    syncedAt: "now",
-    message: "ok",
     localUpdated: false,
   },
 };
@@ -137,20 +131,20 @@ it("does not poll signed-out accounts and wakes after login", async () => {
   await vi.advanceTimersByTimeAsync(1);
   expect(sync).toHaveBeenCalledTimes(2);
 });
-it("triggers only for persisted investment data, not previews or device secrets", () => {
+it("tracks all server mutations but not read-only previews or connection tests", () => {
   for (const path of [
     "/profile",
     "/holdings/h/verified-valuation",
     "/analysis",
     "/portfolio-events/import/commit",
+    "/model-config/codex",
+    "/reminder-settings",
   ])
     expect(isDataWrite(path, "POST")).toBe(true);
   for (const path of [
     "/analysis/preview",
-    "/model-config/codex",
-    "/cloud/sync/auto",
+    "/model-config/test",
     "/portfolio-events/import/preview",
-    "/reminder-settings",
   ])
     expect(isDataWrite(path, "POST")).toBe(false);
   expect(isDataWrite("/holdings", "GET")).toBe(false);

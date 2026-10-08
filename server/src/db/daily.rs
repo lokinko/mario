@@ -631,7 +631,34 @@ pub fn compare(from: DailyRecord, to: DailyRecord) -> DailyComparison {
         allocation_changes,
     }
 }
-/// Import validation also runs inside a temporary database before a cloud write.
+/// Automatic empty-account initialization must not prevent a first import.
+pub(super) fn only_initial_entries(conn: &Connection) -> AppResult<bool> {
+    let mut statement = conn.prepare("SELECT entity_id,payload FROM daily_entries")?;
+    for row in statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+        let (entity, payload) = row?;
+        let entry: Entry = serde_json::from_str(&payload)?;
+        let initial = match entity.as_str() {
+            "$base" => {
+                entry.base_currency.as_deref()
+                    == Some(FinancialProfile::default().base_currency.as_str())
+                    && entry.liabilities.is_none()
+            }
+            "$liabilities" => entry.liabilities == Some(0.0) && entry.base_currency.is_none(),
+            _ => false,
+        };
+        if !initial
+            || entry.holding.is_some()
+            || entry.removed
+            || entry.actual_update
+            || entry.confirmed_on.is_some()
+            || entry.request_id.is_some()
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+/// Validate imported observations before committing them.
 pub(super) fn validate(conn: &Connection) -> AppResult<()> {
     let settings: i64 = conn.query_row("SELECT COUNT(*) FROM daily_settings", [], |r| r.get(0))?;
     if settings > 1 {

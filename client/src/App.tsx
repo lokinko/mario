@@ -3,8 +3,8 @@ import { startAutoSync, type SyncState } from "./lib/autoSync";
 import {
   blockStaleWrites,
   DATA_SAVED,
-  CLOUD_CHANGED,
-  CLOUD_DATA_UPDATED,
+  SERVER_SESSION_CHANGED,
+  SERVER_DATA_UPDATED,
 } from "./lib/syncEvents";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -16,10 +16,10 @@ import {
   Settings2,
   X,
 } from "lucide-react";
-import { autoCloudSync, getModelConfig, getSnapshot } from "./api";
+import { checkServerVersion, getModelConfig, getSnapshot } from "./api";
 import type { DecisionEntry, ModelConfig, Snapshot } from "./types";
 import { checkAndSendReviewReminder } from "./reminders";
-import { CloudSync } from "./features/account/CloudSync";
+import { ServerData } from "./features/account/ServerData";
 import { DecisionJournal } from "./features/decisions/DecisionJournal";
 import { View, initialView, nav, supportingNav } from "./app/navigation";
 import type { FoundationSection } from "./app/navigation";
@@ -104,26 +104,28 @@ function App() {
   });
   const syncController = useRef<ReturnType<typeof startAutoSync> | null>(null);
   const loadRemoteData = async (protectDrafts = false) => {
-    const next = await getSnapshot();
     if (
       protectDrafts &&
       edited.current &&
-      !["advisor", "cloud", "settings"].includes(currentView.current)
+      !["advisor", "cloud"].includes(currentView.current)
     ) {
       blockStaleWrites(true);
       setRemotePending(true);
       return;
     }
+    const next = await getSnapshot();
+    const nextModel = await getModelConfig().catch(() => null);
+    setModel(nextModel);
     setSnapshot(next);
     setRemoteViewRevision((value) => value + 1);
     setRemotePending(false);
     blockStaleWrites(false);
-    window.dispatchEvent(new Event(CLOUD_DATA_UPDATED));
+    window.dispatchEvent(new Event(SERVER_DATA_UPDATED));
   };
   useEffect(() => {
     if (loading || startupError) return;
     const controller = startAutoSync({
-      sync: autoCloudSync,
+      sync: checkServerVersion,
       visible: () =>
         document.visibilityState !== "hidden" && document.hasFocus(),
       online: () => navigator.onLine,
@@ -132,7 +134,7 @@ function App() {
     });
     syncController.current = controller;
     window.addEventListener(DATA_SAVED, controller.changed);
-    window.addEventListener(CLOUD_CHANGED, controller.retry);
+    window.addEventListener(SERVER_SESSION_CHANGED, controller.retry);
     window.addEventListener("focus", controller.wake);
     window.addEventListener("blur", controller.wake);
     window.addEventListener("online", controller.wake);
@@ -142,7 +144,7 @@ function App() {
       controller.dispose();
       syncController.current = null;
       window.removeEventListener(DATA_SAVED, controller.changed);
-      window.removeEventListener(CLOUD_CHANGED, controller.retry);
+      window.removeEventListener(SERVER_SESSION_CHANGED, controller.retry);
       window.removeEventListener("focus", controller.wake);
       window.removeEventListener("blur", controller.wake);
       window.removeEventListener("online", controller.wake);
@@ -278,7 +280,7 @@ function App() {
             [
               ...nav,
               ...supportingNav,
-              { id: "cloud", label: "账户与同步" },
+              { id: "cloud", label: "账号与数据" },
               { id: "settings", label: "模型与隐私" },
             ].find((item) => item.id === view)?.label
           }
@@ -347,11 +349,11 @@ function App() {
           className={`settings-link ${view === "cloud" ? "active" : ""}`}
           onClick={() => navigate("cloud")}
         >
-          <Cloud size={18} /> 账户与同步
+          <Cloud size={18} /> 账号与数据
         </button>
         <small className="sidebar-sync-state" title={syncState.message}>
           {syncState.phase === "attention"
-            ? "同步需要处理 · 打开账户与同步"
+            ? "同步需要处理 · 打开账号与数据"
             : syncState.message}
         </small>
         <button
@@ -410,7 +412,7 @@ function App() {
         )}
         {modelError && (
           <div className="error-box" role="alert">
-            模型配置暂时不可用，本地决策与复盘不受影响。
+            模型配置暂时不可用，决策与复盘不受影响。
             <button onClick={loadApplication}>重试</button>
           </div>
         )}
@@ -488,7 +490,7 @@ function App() {
           </div>
         )}
         {view === "cloud" && (
-          <CloudSync
+          <ServerData
             flash={flash}
             onRestore={refreshInvestmentData}
             autoState={syncState}
@@ -497,7 +499,12 @@ function App() {
         )}
         {view === "settings" && model && (
           <>
-            <ModelSettings model={model} onUpdate={setModel} flash={flash} />
+            <ModelSettings
+              key={remoteViewRevision}
+              model={model}
+              onUpdate={setModel}
+              flash={flash}
+            />
             <details className="page narrow archive-tools">
               <summary>查看已有的资料与记录</summary>
               <div className="archive-links">
@@ -518,7 +525,7 @@ function App() {
           <div className="center-screen">
             <p>
               {modelError
-                ? "请先重试读取模型配置。其他本地功能仍可使用。"
+                ? "请先重试读取模型配置。其他功能仍可使用。"
                 : "正在读取模型配置…"}
             </p>
           </div>

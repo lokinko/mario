@@ -112,7 +112,7 @@ impl Database {
                         SyncValue::Text(value) => rusqlite::types::Value::Text(value.clone()),
                     })
                     .collect::<Vec<_>>();
-                statement.execute(rusqlite::params_from_iter(values.iter()))?;
+                statement.execute(values)?;
             }
         }
         super::daily::validate(&transaction)?;

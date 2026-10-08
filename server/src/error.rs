@@ -8,7 +8,11 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("本地数据库错误：{0}")]
+    #[error("{0}")]
+    Busy(String),
+    #[error("{0}")]
+    RateLimit(String),
+    #[error("数据库错误：{0}")]
     Database(#[from] rusqlite::Error),
     #[error("无法访问本地文件：{0}")]
     Io(#[from] std::io::Error),
@@ -22,10 +26,8 @@ pub enum AppError {
     Auth(String),
     #[error("本地客户端认证失败：{0}")]
     LocalAuth(String),
-    #[error("云同步冲突：{0}")]
+    #[error("数据版本冲突：{0}")]
     Conflict(String),
-    #[error("云同步服务错误：{0}")]
-    Cloud(String),
     #[error("市场数据服务错误：{0}")]
     MarketData(String),
     #[error("{0}")]
@@ -50,15 +52,22 @@ pub type AppResult<T> = Result<T, AppError>;
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = match self {
+            AppError::Busy(_) => StatusCode::SERVICE_UNAVAILABLE,
+            AppError::RateLimit(_) => StatusCode::TOO_MANY_REQUESTS,
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
             AppError::Auth(_) | AppError::LocalAuth(_) => StatusCode::UNAUTHORIZED,
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Model(_) | AppError::Network(_) => StatusCode::BAD_GATEWAY,
-            AppError::Cloud(_) | AppError::MarketData(_) => StatusCode::BAD_GATEWAY,
+            AppError::MarketData(_) => StatusCode::BAD_GATEWAY,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        let message = self.to_string();
+        let message = if status == StatusCode::INTERNAL_SERVER_ERROR {
+            tracing::error!(error=%self,"request failed");
+            "服务暂时不可用，请联系管理员查看日志".into()
+        } else {
+            self.to_string()
+        };
         (status, Json(serde_json::json!({ "error": message }))).into_response()
     }
 }

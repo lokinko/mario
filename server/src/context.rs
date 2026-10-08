@@ -28,7 +28,7 @@ pub const INVESTMENT_SYSTEM_POLICY: &str = r#"
 17. 标有 mario 自动整理的 researchEvidence 是历史原生搜索资料，保留原始来源、采集时间及摘要属性；不等于当前事实，价格、政策和时效信息需用本次原生搜索核对。自动整理不得改变个人持仓、收支、存款、目标和已确认规则。
 "#;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BuiltContext {
     pub payload: Value,
     pub groups: Vec<ContextGroup>,

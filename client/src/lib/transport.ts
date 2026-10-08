@@ -10,6 +10,7 @@ export class HttpError extends Error {
 
 export interface RequestOptions extends RequestInit {
   timeoutMs?: number;
+  onResponse?: (response: Response) => void;
 }
 
 /** Retry only read requests, within one deadline. Never replay a mutation. */
@@ -17,7 +18,7 @@ export async function requestJson<T>(
   url: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { timeoutMs = 15000, signal, ...init } = options;
+  const { timeoutMs = 15000, signal, onResponse, ...init } = options;
   const controller = new AbortController();
   const abort = () => controller.abort(signal?.reason);
   const timer = setTimeout(
@@ -62,8 +63,13 @@ export async function requestJson<T>(
           response.status,
         );
       }
-      if (response.status === 204) return undefined as T;
-      return (await response.json()) as T;
+      if (response.status === 204) {
+        onResponse?.(response);
+        return undefined as T;
+      }
+      const result = (await response.json()) as T;
+      onResponse?.(response);
+      return result;
     }
     throw new Error("无法连接服务");
   } finally {

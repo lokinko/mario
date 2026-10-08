@@ -36,6 +36,7 @@ mod reminders;
 mod research;
 mod reviews;
 mod settings;
+#[cfg(test)]
 mod sync_merge;
 mod sync_store;
 use std::{
@@ -44,8 +45,9 @@ use std::{
     sync::Mutex,
 };
 
+use crate::storage::{Connection, Row, Transaction};
 use chrono::{Local, NaiveDate, Utc};
-use rusqlite::{params, types::ValueRef, Connection, Row, Transaction};
+use rusqlite::{params, types::ValueRef};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -73,6 +75,68 @@ pub struct Database {
 }
 
 impl Database {
+    pub fn is_empty_for_import(&self) -> AppResult<bool> {
+        if self.export_sync_data()?.tables.iter().any(|t| {
+            !["daily_settings", "daily_entries"].contains(&t.name.as_str()) && !t.rows.is_empty()
+        }) {
+            return Ok(false);
+        }
+        daily::only_initial_entries(&*self.conn()?)
+    }
+    pub fn postgres(url: &str, user_id: &str) -> AppResult<Self> {
+        let id = Uuid::parse_str(user_id).map_err(|_| AppError::Auth("无效账户".into()))?;
+        let connection = Connection::postgres(url, &format!("user_{}", id.simple()))?;
+        connection
+            .execute_batch("SELECT pg_advisory_lock(hashtextextended(current_schema(),0));")?;
+        let initialized = connection
+            .query_row("SELECT to_regclass('data_revision')::text", [], |r| {
+                r.get::<_, Option<String>>(0)
+            })?
+            .is_some();
+        if !initialized {
+            connection.execute_batch("BEGIN")?;
+            schema::initialize(&connection)?;
+            connection.execute_batch(include_str!("../migrations/tenant-revisions.sql"))?;
+            connection.execute_batch("COMMIT")?;
+        }
+        connection
+            .execute_batch("SELECT pg_advisory_unlock(hashtextextended(current_schema(),0));")?;
+        Ok(Self {
+            connection: Mutex::new(connection),
+        })
+    }
+
+    pub fn hosted(&self) -> bool {
+        self.conn().map(|c| c.is_postgres()).unwrap_or(false)
+    }
+
+    pub fn revision(&self) -> AppResult<String> {
+        if !self.hosted() {
+            return Ok("local".into());
+        }
+        Ok(self
+            .conn()?
+            .query_row("SELECT revision FROM data_revision WHERE id=1", [], |r| {
+                r.get::<_, i64>(0)
+            })?
+            .to_string())
+    }
+
+    pub fn lock_account(&self) -> AppResult<()> {
+        if self.hosted() {
+            self.conn()?
+                .execute_batch("SELECT pg_advisory_lock(hashtextextended(current_schema(),0));")?;
+        }
+        Ok(())
+    }
+    pub fn unlock_account(&self) -> AppResult<()> {
+        if self.hosted() {
+            self.conn()?.execute_batch(
+                "SELECT pg_advisory_unlock(hashtextextended(current_schema(),0));",
+            )?;
+        }
+        Ok(())
+    }
     pub fn open(path: &Path) -> AppResult<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -84,7 +148,7 @@ impl Database {
         })
     }
 
-    fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
+    pub(crate) fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
         self.connection
             .lock()
             .map_err(|_| AppError::Database(rusqlite::Error::InvalidQuery))

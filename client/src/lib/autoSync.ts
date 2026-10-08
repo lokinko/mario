@@ -12,7 +12,7 @@ export interface AutoSyncOptions {
   onStatus: (state: SyncState) => void;
   onRemoteUpdate: () => Promise<void>;
 }
-/** One foreground timer, one request in flight. SQLite remains the durable outbox. */
+/** One foreground timer, one request in flight. The server is authoritative; only fetch data after its revision changes. */
 export function startAutoSync(options: AutoSyncOptions) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false,
@@ -40,11 +40,11 @@ export function startAutoSync(options: AutoSyncOptions) {
   const run = async () => {
     if (disposed || busy || suspended || !options.visible()) return;
     if (!options.online()) {
-      status("offline", "已保存在本机，联网后同步");
+      status("offline", "离线：无法保存到服务器，当前未提交输入保留在页面");
       return;
     }
     if (hasDataWrites()) {
-      status("waiting", "本地保存完成后自动同步");
+      status("waiting", "保存完成后检查最新数据");
       schedule(1500);
       return;
     }
@@ -66,12 +66,12 @@ export function startAutoSync(options: AutoSyncOptions) {
       serverBusy = result.state === "busy";
       failures = 0;
       if (serverBusy) {
-        status("waiting", "本地操作完成后自动同步");
+        status("waiting", "操作完成后检查最新数据");
       } else if (result.state !== "synced") {
         suspended = true;
         status(
           "paused",
-          result.state === "disabled" ? "自动同步已关闭" : "登录后自动同步",
+          result.state === "disabled" ? "本地开发模式" : "登录后自动同步",
         );
       } else {
         idle = result.sync?.localUpdated ? 0 : Math.min(idle + 1, 3);
@@ -87,7 +87,10 @@ export function startAutoSync(options: AutoSyncOptions) {
         status("attention", String(error.message));
       } else {
         failures++;
-        status("offline", "暂时无法同步，数据已保存在本机，将自动重试");
+        status(
+          "offline",
+          "暂时无法连接服务器，将自动重试检查；未提交输入仍在页面",
+        );
       }
     } finally {
       endSync();
@@ -108,14 +111,14 @@ export function startAutoSync(options: AutoSyncOptions) {
     idle = 0;
     pending = true;
     if (!firstChange) firstChange = Date.now();
-    if (!suspended) status("waiting", "已保存在本机，等待同步");
+    if (!suspended) status("waiting", "已保存到服务器");
     if (!busy)
       schedule(Math.max(0, Math.min(1500, 10000 - (Date.now() - firstChange))));
   };
   const wake = () => {
     cancel();
     if (!options.online()) {
-      status("offline", "已保存在本机，联网后同步");
+      status("offline", "离线：无法保存到服务器，当前未提交输入保留在页面");
       return;
     }
     if (!busy) schedule(Math.max(0, 10000 - (Date.now() - lastStart)));
@@ -127,7 +130,8 @@ export function startAutoSync(options: AutoSyncOptions) {
     pending = true;
     if (!busy) schedule(0);
   };
-  if (!options.online()) status("offline", "已保存在本机，联网后同步");
+  if (!options.online())
+    status("offline", "离线：无法保存到服务器，当前未提交输入保留在页面");
   schedule(1000);
   return {
     changed,

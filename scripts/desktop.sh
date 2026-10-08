@@ -13,7 +13,6 @@ if [[ "$(uname -s)" == "Darwin" ]] && [[ -x "/Library/Developer/CommandLineTools
   export RANLIB="ranlib"
 fi
 
-bash "$root_dir/scripts/prepare-sidecar.sh" "$profile"
 if [[ "$profile" == "release" ]]; then
   # Finder AppleScript can hang or fail in headless/non-interactive sessions.
   export CI="${CI:-true}"
