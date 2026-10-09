@@ -32,6 +32,7 @@ import { ReviewCenter } from "./features/reviews/ReviewCenter";
 import { MemoryCenter } from "./features/memory/MemoryCenter";
 import { Advisor } from "./features/research/Advisor";
 import { ModelSettings } from "./features/settings/ModelSettings";
+import { RecordLinks } from "./components/RecordLinks";
 
 function App() {
   const [view, setView] = useState<View>(initialView);
@@ -46,6 +47,10 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [startupError, setStartupError] = useState("");
   const [notice, setNotice] = useState("");
+  const noticeTimer = useRef<ReturnType<typeof window.setTimeout> | undefined>(
+    undefined,
+  );
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
   const [decisionDraft, setDecisionDraft] = useState<DecisionEntry | null>(
     null,
   );
@@ -202,8 +207,9 @@ function App() {
   }, [loading, startupError]);
 
   const flash = (message: string) => {
+    window.clearTimeout(noticeTimer.current);
     setNotice(message);
-    window.setTimeout(() => setNotice(""), 2400);
+    noticeTimer.current = window.setTimeout(() => setNotice(""), 2400);
   };
 
   const navigate = (
@@ -215,7 +221,8 @@ function App() {
     setView(nextView);
     if (nextView === "advisor") setAdvisorVisited(true);
     setMobileNavOpen(false);
-    window.history.replaceState(null, "", `#${nextView}`);
+    if (currentView.current !== nextView)
+      window.history.pushState(null, "", `#${nextView}`);
     window.scrollTo({ top: 0, behavior: "auto" });
   };
 
@@ -335,7 +342,13 @@ function App() {
             <button
               key={item.id}
               aria-current={view === item.id ? "page" : undefined}
-              className={view === item.id ? "active" : ""}
+              className={
+                view === item.id ||
+                (item.id === "facts" &&
+                  supportingNav.some((entry) => entry.id === view))
+                  ? "active"
+                  : ""
+              }
               onClick={() => navigate(item.id)}
             >
               <item.icon size={18} />
@@ -347,6 +360,7 @@ function App() {
         <div className="sidebar-spacer" />
         <button
           className={`settings-link ${view === "cloud" ? "active" : ""}`}
+          aria-current={view === "cloud" ? "page" : undefined}
           onClick={() => navigate("cloud")}
         >
           <Cloud size={18} /> 账号与数据
@@ -358,6 +372,7 @@ function App() {
         </small>
         <button
           className={`settings-link ${view === "settings" ? "active" : ""}`}
+          aria-current={view === "settings" ? "page" : undefined}
           onClick={() => navigate("settings")}
         >
           <Settings2 size={18} /> 模型与隐私
@@ -372,13 +387,18 @@ function App() {
       >
         <DailyTracking />
         {supportingNav.some((item) => item.id === view) && (
-          <div className="context-breadcrumb">
+          <nav
+            className={`context-breadcrumb ${view === "dashboard" ? "" : "narrow"}`}
+            aria-label="当前位置"
+          >
             <button className="text-button" onClick={() => navigate("facts")}>
               我的情况
             </button>
             <span aria-hidden="true"> / </span>
-            <span>{supportingNav.find((item) => item.id === view)?.label}</span>
-          </div>
+            <span aria-current="page">
+              {supportingNav.find((item) => item.id === view)?.label}
+            </span>
+          </nav>
         )}
         {remotePending && (
           <div className="remote-update-notice" role="status">
@@ -405,7 +425,7 @@ function App() {
           </div>
         )}
         {notice && (
-          <div className="toast">
+          <div className="toast" role="status">
             <Check size={16} />
             {notice}
           </div>
@@ -506,18 +526,8 @@ function App() {
               flash={flash}
             />
             <details className="page narrow archive-tools">
-              <summary>查看已有的资料与记录</summary>
-              <div className="archive-links">
-                {supportingNav.map((item) => (
-                  <button
-                    className="secondary"
-                    key={item.id}
-                    onClick={() => navigate(item.id)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
+              <summary>更多资料与记录</summary>
+              <RecordLinks navigate={navigate} />
             </details>
           </>
         )}

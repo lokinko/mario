@@ -121,3 +121,37 @@ it("shows a missing-login failure and preserves the existing model", async () =>
   );
   expect(screen.queryByText(/Codex 凭证读取成功/)).toBeNull();
 });
+
+it("locks configuration and key writes during a connection test and releases them on failure", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(api.testModelConnection).mockReturnValue(
+    new Promise((_, fail) => {
+      reject = fail;
+    }),
+  );
+  render(
+    <ModelSettings model={existingModel} onUpdate={vi.fn()} flash={vi.fn()} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "测试已保存连接" }));
+  expect(
+    (screen.getByRole("button", { name: "保存配置" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: "移除密钥" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(
+    (screen.getByLabelText("模型接口") as HTMLSelectElement).matches(
+      ":disabled",
+    ),
+  ).toBe(true);
+  reject(new Error("连接失败"));
+  expect((await screen.findByRole("alert")).textContent).toContain("连接失败");
+  expect(
+    (screen.getByRole("button", { name: "保存配置" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(false);
+  expect(api.saveModelConfig).not.toHaveBeenCalled();
+  expect(api.deleteModelKey).not.toHaveBeenCalled();
+});

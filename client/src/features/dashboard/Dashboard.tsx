@@ -138,7 +138,7 @@ export function Dashboard({
 
   return (
     <div className="page">
-      <PageHeader title="总览" />
+      <PageHeader title="资产概览" />
 
       <section className="panel next-action" aria-label="下一步">
         <div>

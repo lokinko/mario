@@ -96,7 +96,7 @@ export function Foundation({
     setSaving(true);
     try {
       onUpdate(await saveProfile(profile));
-      flash("财务档案已保存在本机");
+      flash("财务档案已保存");
     } catch (nextError) {
       setError(String(nextError));
     } finally {
@@ -286,8 +286,8 @@ export function Foundation({
   };
 
   return (
-    <div className="page narrow">
-      <PageHeader title="财务底座" />
+    <div className="page narrow foundation-page">
+      <PageHeader title="持仓与目标" />
       <div className="section-switcher" role="group" aria-label="财务分类">
         {[
           ["holdings", "持仓", snapshot.holdings.length],

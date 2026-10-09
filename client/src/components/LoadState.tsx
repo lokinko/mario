@@ -7,7 +7,7 @@ export function LoadState({
   error: string;
   onRetry: () => void;
 }) {
-  if (loading) return <p role="status">正在读取本地记录…</p>;
+  if (loading) return <p role="status">正在读取记录…</p>;
   if (!error) return null;
   return (
     <div className="error-box" role="alert">

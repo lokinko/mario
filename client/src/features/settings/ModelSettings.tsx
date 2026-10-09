@@ -186,10 +186,10 @@ export function ModelSettings({
   };
 
   return (
-    <div className="page narrow">
+    <div className="page narrow settings-page">
       <PageHeader
         title="模型与隐私"
-        description="密钥在服务器按账号加密保存，数据仅在确认后发送。"
+        description="密钥按账号加密保存，资料在确认后发送给模型。"
       />
       <section className="panel form-panel">
         <div className="panel-title">
@@ -215,95 +215,96 @@ export function ModelSettings({
               一键读取 Codex 凭证
             </button>
             <p className="section-intro">
-              使用这台电脑上已登录的 Codex
-              调用模型，无需复制密钥。未找到登录凭证时会显示失败。
+              使用本机已登录的 Codex，无需复制密钥。
             </p>
           </>
         )}
-        <div className="form-grid single-column">
-          <label>
-            <span>模型接口</span>
-            <select
-              value={provider}
-              onChange={(event) => {
-                const next = event.target.value as ModelConfig["provider"];
-                setProvider(next);
-                setBaseUrl(
-                  next === "codex"
-                    ? "codex://local"
-                    : next === "anthropic"
-                      ? "https://api.anthropic.com/v1"
-                      : "https://api.openai.com/v1",
-                );
-                setModelName("");
-                setApiKey("");
-                setConnectionResult("");
-              }}
-            >
-              <option value="openai-responses">OpenAI Responses</option>
-              <option value="anthropic">Anthropic Messages</option>
-              {isLocalDev() && <option value="codex">Codex 本机登录</option>}
-            </select>
-          </label>
-          <label>
-            <span>API Base URL</span>
-            <input
-              value={baseUrl}
-              disabled={provider === "codex"}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.openai.com/v1"
-            />
-          </label>
-          <label>
-            <span>模型名称</span>
-            <input
-              value={modelName}
-              onChange={(e) => setModelName(e.target.value)}
-              placeholder={
-                provider === "anthropic"
-                  ? "填写支持网页搜索的 Claude 模型 ID"
-                  : "填写支持网页搜索的 OpenAI 模型 ID"
-              }
-            />
-          </label>
-          {provider !== "codex" && (
+        <fieldset className="holding-fields" disabled={saving || testing}>
+          <div className="form-grid model-fields">
             <label>
-              <span>API Key</span>
-              <div className="secure-input">
-                <KeyRound size={16} />
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={
-                    model.hasApiKey
-                      ? "已保存在账户密钥存储；留空则不修改"
-                      : "输入模型供应商密钥"
-                  }
-                />
-              </div>
+              <span>模型接口</span>
+              <select
+                value={provider}
+                onChange={(event) => {
+                  const next = event.target.value as ModelConfig["provider"];
+                  setProvider(next);
+                  setBaseUrl(
+                    next === "codex"
+                      ? "codex://local"
+                      : next === "anthropic"
+                        ? "https://api.anthropic.com/v1"
+                        : "https://api.openai.com/v1",
+                  );
+                  setModelName("");
+                  setApiKey("");
+                  setConnectionResult("");
+                }}
+              >
+                <option value="openai-responses">OpenAI Responses</option>
+                <option value="anthropic">Anthropic Messages</option>
+                {isLocalDev() && <option value="codex">Codex 本机登录</option>}
+              </select>
             </label>
-          )}
-        </div>
+            <label>
+              <span>API Base URL</span>
+              <input
+                value={baseUrl}
+                disabled={provider === "codex"}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://api.openai.com/v1"
+              />
+            </label>
+            <label>
+              <span>模型名称</span>
+              <input
+                value={modelName}
+                onChange={(e) => setModelName(e.target.value)}
+                placeholder={
+                  provider === "anthropic"
+                    ? "填写支持网页搜索的 Claude 模型 ID"
+                    : "填写支持网页搜索的 OpenAI 模型 ID"
+                }
+              />
+            </label>
+            {provider !== "codex" && (
+              <label>
+                <span>API Key</span>
+                <div className="secure-input">
+                  <KeyRound size={16} />
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder={
+                      model.hasApiKey
+                        ? "已保存在账户密钥存储；留空则不修改"
+                        : "输入模型供应商密钥"
+                    }
+                  />
+                </div>
+              </label>
+            )}
+          </div>
+        </fieldset>
         <div className="privacy-note">
           <LockKeyhole size={18} />
           <div>
             <strong>密钥与业务数据分离</strong>
             <p>
               {provider === "codex"
-                ? "复用本机 Codex 登录，凭证由 Codex 保管和刷新，不复制到 mario，也不参与账户同步。支持 Codex 内置网页搜索；连接测试只验证普通调用。"
-                : "密钥在服务端加密保存，不进入数据导出或 AI 上下文。切换接口或地址时请填写对应密钥。所选模型和服务需支持原生网页搜索；连接测试只验证普通调用。"}
+                ? "凭证由 Codex 保管和刷新，不复制到 mario。连接测试不验证网页搜索能力。"
+                : "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥；模型需支持原生网页搜索，连接测试仅验证普通调用。"}
             </p>
           </div>
         </div>
         {error && (
-          <div className="error-box">
+          <div className="error-box" role="alert">
             <AlertTriangle size={18} />
             {error}
           </div>
         )}
         {connectionResult && (
-          <div className="connection-success">
+          <div className="connection-success" role="status">
             <Check size={16} />
             <span>
               <strong>
@@ -319,7 +320,7 @@ export function ModelSettings({
               <button
                 className="danger-text"
                 onClick={clearKey}
-                disabled={saving}
+                disabled={saving || testing}
               >
                 <Trash2 size={14} />
                 移除密钥
@@ -341,26 +342,26 @@ export function ModelSettings({
           <button
             className="primary"
             onClick={persist}
-            disabled={saving || !baseUrl || !modelName}
+            disabled={saving || testing || !baseUrl.trim() || !modelName.trim()}
           >
             <Save size={16} />
-            保存配置
+            {saving ? "保存中…" : "保存配置"}
           </button>
         </div>
       </section>
-      <section className="panel form-panel">
-        <div className="panel-title">
+      <details className="panel form-panel optional-settings">
+        <summary className="panel-title">
           <div>
-            <h2>Twelve Data 日收盘价</h2>
+            <h2>行情数据 · Twelve Data</h2>
           </div>
           <div
             className={`status-dot ${securityConfig?.hasApiKey ? "connected" : ""}`}
           >
             {securityConfig?.hasApiKey ? "已配置" : "未配置"}
           </div>
-        </div>
+        </summary>
         <p className="section-intro">
-          仅在主动查询时连接 Twelve Data；行情密钥不参与 AI 分析或同步。
+          仅在主动查询时连接；密钥按账号加密保存，不发送给 AI。
         </p>
         <div className="form-grid single-column">
           <label>
@@ -368,6 +369,7 @@ export function ModelSettings({
             <div className="secure-input">
               <KeyRound size={16} />
               <input
+                disabled={marketBusy}
                 type="password"
                 value={securityApiKey}
                 onChange={(event) => setSecurityApiKey(event.target.value)}
@@ -380,49 +382,46 @@ export function ModelSettings({
             </div>
           </label>
         </div>
-        <div className="privacy-note">
-          <LockKeyhole size={18} />
-          <div>
-            <strong>来源透明，许可归用户账户</strong>
-            <p>
-              mario 保存代码、币种、交易所、观察日和未复权收盘价口径。免费 Basic
-              方案当前有每分钟与每日额度；个人方案仅适合个人、内部和非商业用途。
-            </p>
-            <p>
-              <a
-                href="https://twelvedata.com/docs/market-data/time-series"
-                target="_blank"
-                rel="noreferrer"
-              >
-                接口方法
-              </a>{" "}
-              ·{" "}
-              <a
-                href="https://twelvedata.com/pricing"
-                target="_blank"
-                rel="noreferrer"
-              >
-                额度
-              </a>{" "}
-              ·{" "}
-              <a
-                href="https://twelvedata.com/terms"
-                target="_blank"
-                rel="noreferrer"
-              >
-                许可条款
-              </a>
-            </p>
-          </div>
-        </div>
+        <details className="inline-help">
+          <summary>数据来源与许可</summary>
+          <p>
+            保存来源、观察日和未复权收盘价。使用范围和额度以你的 Twelve Data
+            账户条款为准。
+          </p>
+          <p>
+            <a
+              href="https://twelvedata.com/docs/market-data/time-series"
+              target="_blank"
+              rel="noreferrer"
+            >
+              接口方法
+            </a>{" "}
+            ·{" "}
+            <a
+              href="https://twelvedata.com/pricing"
+              target="_blank"
+              rel="noreferrer"
+            >
+              额度
+            </a>{" "}
+            ·{" "}
+            <a
+              href="https://twelvedata.com/terms"
+              target="_blank"
+              rel="noreferrer"
+            >
+              许可条款
+            </a>
+          </p>
+        </details>
         {marketError && (
-          <div className="error-box">
+          <div className="error-box" role="alert">
             <AlertTriangle size={18} />
             {marketError}
           </div>
         )}
         {marketResult && (
-          <div className="connection-success">
+          <div className="connection-success" role="status">
             <Check size={16} />
             <span>
               <strong>价格连接成功</strong>
@@ -464,7 +463,7 @@ export function ModelSettings({
             保存行情密钥
           </button>
         </div>
-      </section>
+      </details>
     </div>
   );
 }

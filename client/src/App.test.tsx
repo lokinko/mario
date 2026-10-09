@@ -9,6 +9,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import * as api from "./api";
+import emptySnapshot from "./test/emptySnapshot.json";
 
 vi.mock("./api", async (original) => ({
   ...(await original<typeof import("./api")>()),
@@ -165,4 +166,31 @@ it("closes the left drawer with Escape and restores focus without changing the p
   expect(document.activeElement).toBe(trigger);
   expect(document.querySelector("main")?.hasAttribute("inert")).toBe(false);
   expect(screen.getByRole("button", { name: "测试恢复数据" })).toBeTruthy();
+});
+
+it("keeps supporting pages in the facts navigation and creates history for returning", async () => {
+  window.location.hash = "facts";
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  const push = vi.spyOn(window.history, "pushState");
+  vi.mocked(api.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof api.getSnapshot>>,
+  );
+  vi.mocked(api.getModelConfig).mockResolvedValue({
+    provider: "openai-responses",
+    model: "test",
+    baseUrl: "",
+    hasApiKey: false,
+  });
+  render(<App />);
+  await screen.findByRole("heading", { name: "我的情况" });
+  fireEvent.click(screen.getByText("更多资料与记录"));
+  fireEvent.click(screen.getByRole("button", { name: "持仓与目标" }));
+  await screen.findByRole("heading", { name: "持仓与目标" });
+  expect(push).toHaveBeenCalledWith(null, "", "#foundation");
+  expect(document.querySelector(".sidebar button.active")?.textContent).toBe(
+    "我的情况",
+  );
+  expect(
+    screen.getByRole("navigation", { name: "当前位置" }).textContent,
+  ).toContain("持仓与目标");
 });

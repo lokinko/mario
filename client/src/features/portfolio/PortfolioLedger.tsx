@@ -295,7 +295,7 @@ export function PortfolioLedger({
           <p>
             {latestCheckin
               ? "为保护归因链，新增流水必须晚于该日期。历史漏项请在说明中保留纠正原因，并从新基线开始。"
-              : "请先在总览冻结当前组合；基线之前的历史变化不会被系统猜测。"}
+              : "请先在资产概览冻结当前组合；基线之前的历史变化不会被系统猜测。"}
           </p>
         </div>
       </div>
@@ -669,7 +669,11 @@ export function PortfolioLedger({
           </div>
           <span className="history-count">{events.length} 笔</span>
         </div>
-        {loading && <div className="empty">正在读取本地流水…</div>}
+        {loading && (
+          <div className="empty" role="status">
+            正在读取流水…
+          </div>
+        )}
         {!loading && events.length === 0 && (
           <div className="empty">
             还没有流水。建立组合基线后，从下一笔真实资金变化开始记录。

@@ -87,7 +87,9 @@ export function AssetAmountRow({
         aria-label={`编辑 ${holding.name}`}
       >
         <strong>{holding.name}</strong>
-        <small>确认于 {holding.valuationDate || "日期待补充"}</small>
+        <small title="余额确认日期">
+          {holding.valuationDate || "日期待补充"}
+        </small>
       </button>
       <div className="asset-amount-editor">
         <label>

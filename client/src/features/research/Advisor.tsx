@@ -433,8 +433,7 @@ export function Advisor({
       <section className="panel advisor-panel conversation-composer">
         {dailyAssetRange && (
           <p className="holding-hint">
-            资产比较区间：{dailyAssetRange.from} 至 {dailyAssetRange.to} ·
-            发送仍受“组合变化”授权控制。
+            资产比较区间：{dailyAssetRange.from} 至 {dailyAssetRange.to}
             <button
               className="text-button"
               disabled={running}
@@ -584,7 +583,7 @@ export function Advisor({
                   <span>
                     {group.included
                       ? `${group.recordCount} 项 · ${group.sensitivity}`
-                      : "留在本机"}
+                      : "不发送"}
                   </span>
                 </div>
               ))}
@@ -592,12 +591,12 @@ export function Advisor({
             <div className="local-only-note">
               <LockKeyhole size={16} />
               <div>
-                <strong>始终留在本机</strong>
+                <strong>不会发送给模型</strong>
                 <p>{preview.localOnly.join("；")}</p>
               </div>
             </div>
             <details className="payload-details">
-              <summary>查看实际本地数据载荷</summary>
+              <summary>查看发送内容</summary>
               <pre>{JSON.stringify(preview.payload, null, 2)}</pre>
             </details>
             {preview.evidenceCandidates.length > 0 && (
@@ -675,10 +674,7 @@ export function Advisor({
 
       <details className="conversation-context">
         <summary>隐私与资料范围</summary>
-        <p>
-          mario
-          会自动整理问答中的搜索来源，后续按需参考并重新核对。你可以在这里控制发送的个人资料。
-        </p>
+        <p>选择允许发送的资料，发送前可再次核对。</p>
         <div className="external-background">
           <label className="auto-external-option">
             <input
@@ -697,15 +693,11 @@ export function Advisor({
         </div>
         <div className="context-shortcuts">
           <button className="secondary" onClick={() => navigate("facts")}>
-            更新我的收支、存款与持仓
+            更新我的情况
           </button>
         </div>
         <details className="context-control">
           <summary>模型可以参考哪些资料</summary>
-          <div>
-            <strong>选择允许发送的本地上下文</strong>
-            <span>取消选择后，该组不会进入模型提示词</span>
-          </div>
           <div className="context-options">
             {(
               [
@@ -723,6 +715,7 @@ export function Advisor({
             ).map(([key, label]) => (
               <button
                 key={key}
+                disabled={running}
                 aria-pressed={contextSelection[key]}
                 className={contextSelection[key] ? "selected" : ""}
                 onClick={() => toggleContext(key)}
@@ -736,19 +729,9 @@ export function Advisor({
       </details>
       <details className="panel analysis-history-panel">
         <summary>以前的问答 · {history.length}</summary>
-        <div className="panel-title">
-          <div>
-            <h2>分析历史</h2>
-          </div>
-          <span className="history-count">最近 {history.length} 条</span>
-        </div>
-        <p className="analysis-history-boundary">
-          回答和来源已自动整理在这里，随时可以接着聊。历史判断仍需结合新信息核对。
-        </p>
+        <p className="analysis-history-boundary">历史判断需结合新信息核对。</p>
         {history.length === 0 && !historyError && (
-          <div className="empty">
-            还没有保存过 AI 分析。成功完成一次分析后，完整工作流会留在本机。
-          </div>
+          <div className="empty">暂无问答记录，完成问答后自动保存。</div>
         )}
         <div className="analysis-history-list">
           {history.map((item) => (

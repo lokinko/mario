@@ -93,7 +93,7 @@ export function EvidenceWorkbench({
       await saveResearchEvidence(draft);
       setDraft(emptyEvidence());
       await refresh();
-      flash("研究证据已保存在本机，原始内容将保持不变");
+      flash("参考资料已保存");
     } catch (nextError) {
       setError(String(nextError));
     } finally {
@@ -131,7 +131,7 @@ export function EvidenceWorkbench({
   return (
     <div className="page narrow">
       <PageHeader
-        title="研究证据"
+        title="参考资料"
         action={
           <button
             className="primary"

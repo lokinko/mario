@@ -149,3 +149,46 @@ it("requires an explicit amount and accepts a zero balance without an FX rate", 
     ),
   );
 });
+
+it("keeps asset categories fixed while an asset form is open, then unlocks on cancel", () => {
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
+  fireEvent.click(screen.getByRole("button", { name: "添加存款" }));
+  expect(
+    (screen.getByRole("button", { name: "投资持仓" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "取消记录资产" }));
+  expect(
+    (screen.getByRole("button", { name: "投资持仓" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(false);
+});
+
+it("blocks negative monthly facts and re-enables saving after correction", async () => {
+  vi.mocked(api.saveProfile).mockResolvedValue(snapshot);
+  mount();
+  const input = screen.getByRole("spinbutton", { name: "月收入 CNY" });
+  fireEvent.change(input, { target: { value: "-1" } });
+  expect(
+    (screen.getByRole("button", { name: "保存收支" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(api.saveProfile).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: "8000" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存收支" }));
+  await waitFor(() => expect(api.saveProfile).toHaveBeenCalledOnce());
+});
+
+it("blocks invalid asset amounts even when a form is submitted with Enter", () => {
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
+  fireEvent.click(screen.getByRole("button", { name: "添加存款" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
+    target: { value: "1000000000000001" },
+  });
+  const save = screen.getByRole("button", { name: "保存这笔资产" });
+  expect((save as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.submit(save.closest("form")!);
+  expect(api.saveHolding).not.toHaveBeenCalled();
+});

@@ -4,10 +4,10 @@ import { useState } from "react";
 import { ArrowRight, Plus, Save, X } from "lucide-react";
 import { saveHolding, updateHolding, saveProfile } from "../../api";
 import type { Holding, Snapshot } from "../../types";
-import { supportingNav, type View } from "../../app/navigation";
+import { type View } from "../../app/navigation";
+import { RecordLinks } from "../../components/RecordLinks";
 import { PageHeader } from "../../components/PageHeader";
 import { NumberField } from "../../components/NumberField";
-import { formatMoney } from "../../lib/format";
 import { localDateValue } from "../../lib/dates";
 import { emptyHolding } from "./forms";
 
@@ -39,8 +39,27 @@ export function MyFacts({
     (item) => item.assetClass !== "现金",
   );
   const currency = snapshot.profile.baseCurrency;
+  const validIncome = [
+    profile.monthlyIncome,
+    profile.monthlyExpense,
+    profile.liabilities,
+    profile.emergencyFund,
+  ].every((value) => Number.isFinite(value) && value >= 0 && value <= 1e15);
+  const validAsset = Boolean(
+    editing &&
+    editing.name.trim() &&
+    assetAmount.trim() &&
+    Number.isFinite(editing.marketValue) &&
+    editing.marketValue >= 0 &&
+    editing.marketValue <= 1e15 &&
+    editing.valuationDate &&
+    editing.valuationDate <= localDateValue(new Date()) &&
+    (editing.fxRateToBase == null ||
+      (Number.isFinite(editing.fxRateToBase) && editing.fxRateToBase > 0)),
+  );
 
   const saveIncome = async () => {
+    if (busy || !validIncome) return;
     setBusy(true);
     setError("");
     try {
@@ -53,13 +72,7 @@ export function MyFacts({
     }
   };
   const saveAsset = async () => {
-    if (
-      !editing ||
-      !assetAmount.trim() ||
-      !Number.isFinite(Number(assetAmount)) ||
-      Number(assetAmount) < 0
-    )
-      return;
+    if (!editing || busy || !validAsset) return;
     setBusy(true);
     setError("");
     try {
@@ -98,7 +111,7 @@ export function MyFacts({
         ).map(([id, label]) => (
           <button
             key={id}
-            disabled={busy}
+            disabled={busy || Boolean(editing)}
             aria-pressed={section === id}
             onClick={() => {
               setSection(id);
@@ -116,7 +129,12 @@ export function MyFacts({
       )}
       {section === "income" ? (
         <section className="panel form-panel">
-          <h2>每个月大概收支多少？</h2>
+          <h2>收入与支出</h2>
+          {!validIncome && (
+            <p className="warning-text" role="alert">
+              请核对金额，输入有效的非负数。
+            </p>
+          )}
           <fieldset className="holding-fields" disabled={busy}>
             <div className="form-grid">
               <NumberField
@@ -161,7 +179,11 @@ export function MyFacts({
               </p>
             </details>
             <div className="form-actions">
-              <button className="primary" onClick={() => void saveIncome()}>
+              <button
+                className="primary"
+                disabled={!validIncome}
+                onClick={() => void saveIncome()}
+              >
                 <Save size={16} />
                 {busy ? "保存中…" : "保存收支"}
               </button>
@@ -171,11 +193,7 @@ export function MyFacts({
       ) : (
         <section className="panel form-panel">
           <div className="panel-title">
-            <h2>
-              {section === "savings"
-                ? "现在有多少存款？"
-                : "已经持有哪些投资？"}
-            </h2>
+            <h2>{section === "savings" ? "存款与现金" : "投资持仓"}</h2>
             <button
               className="secondary"
               disabled={busy || Boolean(editing)}
@@ -250,6 +268,9 @@ export function MyFacts({
                     <i>{editing.currency}</i>
                     <input
                       type="number"
+                      required
+                      min={0}
+                      max={1e15}
                       inputMode="decimal"
                       step="any"
                       value={assetAmount}
@@ -308,7 +329,7 @@ export function MyFacts({
                   </label>
                   {editing.assetClass !== "现金" && (
                     <label>
-                      <span>类别（不确定可选其他）</span>
+                      <span>类别</span>
                       <select
                         value={editing.assetClass}
                         onChange={(e) =>
@@ -344,16 +365,7 @@ export function MyFacts({
                 <button
                   className="primary"
                   type="submit"
-                  disabled={
-                    !editing.name.trim() ||
-                    !assetAmount.trim() ||
-                    !Number.isFinite(editing.marketValue) ||
-                    editing.marketValue < 0 ||
-                    editing.marketValue > 1e15 ||
-                    (editing.fxRateToBase != null &&
-                      (!Number.isFinite(editing.fxRateToBase) ||
-                        editing.fxRateToBase <= 0))
-                  }
+                  disabled={!validAsset}
                 >
                   {busy ? "保存中…" : "保存这笔资产"}
                 </button>
@@ -369,17 +381,7 @@ export function MyFacts({
       </div>
       <details className="facts-advanced">
         <summary>更多资料与记录</summary>
-        <div className="archive-links">
-          {supportingNav.map((item) => (
-            <button
-              className="secondary"
-              key={item.id}
-              onClick={() => navigate(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        <RecordLinks navigate={navigate} />
       </details>
     </div>
   );

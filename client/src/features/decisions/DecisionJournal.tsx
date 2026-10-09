@@ -208,7 +208,7 @@ export function DecisionJournal({
 
   return (
     <div className="page narrow">
-      <PageHeader title="决策日志" />
+      <PageHeader title="决策确认" />
       <section className="review-metrics">
         <article>
           <span>决策记录</span>
@@ -363,9 +363,7 @@ export function DecisionJournal({
             </small>
           </div>
           {activeRules.length === 0 && (
-            <div className="empty">
-              还没有需要确认的个人规则。可在“复盘与规则”中把经验沉淀成可执行约束。
-            </div>
+            <div className="empty">暂无个人规则，可在“复盘记录”中建立。</div>
           )}
           <div className="rule-check-list">
             {(entry.ruleChecks ?? []).map((check) => (

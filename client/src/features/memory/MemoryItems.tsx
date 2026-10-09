@@ -39,7 +39,7 @@ export function MemoryItems({
                     }
                     onClick={() => onToggle(item.id)}
                   >
-                    {selected ? "本次发送" : "留在本机"}
+                    {selected ? "本次发送" : "不发送"}
                   </button>
                 )}
               </div>

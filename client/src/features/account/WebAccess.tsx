@@ -169,6 +169,8 @@ export function WebAccess({ children }: { children: ReactNode }) {
         </button>
         <button
           type="button"
+          className="text-button"
+          disabled={busy}
           onClick={() => {
             setRegister(!register);
             setError("");

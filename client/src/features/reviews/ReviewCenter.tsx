@@ -291,7 +291,7 @@ export function ReviewCenter({
   )
     return (
       <div className="page narrow">
-        <PageHeader title="复盘" />
+        <PageHeader title="复盘记录" />
         <LoadState
           loading={loading}
           error={error}
@@ -303,7 +303,7 @@ export function ReviewCenter({
   return (
     <div className="page narrow">
       <PageHeader
-        title="复盘"
+        title="复盘记录"
         action={
           <button className="primary" onClick={startAiReview}>
             <Sparkles size={16} />
@@ -354,7 +354,7 @@ export function ReviewCenter({
               <h2>到期待复盘</h2>
             </div>
             <button className="secondary" onClick={() => navigate("decision")}>
-              前往决策日志
+              前往决策确认
             </button>
           </div>
           <div className="due-review-list">

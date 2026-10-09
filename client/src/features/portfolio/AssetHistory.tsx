@@ -47,6 +47,8 @@ function Trend({
   );
   if (!values.length)
     return <p className="empty">补齐汇率后显示总资产曲线，原币记录已保存。</p>;
+  if (points.length < 2)
+    return <p className="daily-freshness">记录满两天后显示资产趋势。</p>;
   const min = Math.min(...values),
     max = Math.max(...values),
     span = Math.max(max - min, 1);
@@ -57,7 +59,7 @@ function Trend({
     <div className="asset-trend">
       <svg
         viewBox="0 0 720 174"
-        role="img"
+        role="group"
         aria-label="每日总资产趋势，虚线表示沿用值"
       >
         <line
@@ -94,6 +96,15 @@ function Trend({
                 }
                 stroke="var(--accent, #24876b)"
                 onClick={() => select(r.day)}
+                role="button"
+                tabIndex={0}
+                aria-label={`${r.day} · ${money(r.totalAssets, r.baseCurrency)} · ${r.carried ? "沿用值" : "有更新"}`}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    select(r.day);
+                  }
+                }}
               >
                 <title>
                   {r.day} · {money(r.totalAssets, r.baseCurrency)} ·{" "}
@@ -236,7 +247,7 @@ export function AssetHistory({
         </div>
         <small title={`记账时区：${history?.timezone ?? ""}`}>
           {latest?.day}
-          {latest?.day === history?.today ? " · 更新中" : ""}
+          {loading ? " · 读取中…" : ""}
         </small>
       </div>
       {error && (
@@ -292,36 +303,39 @@ export function AssetHistory({
               待补汇率：{latest.missingFx.join("、")}
             </p>
           )}
-          <div
-            className="section-switcher"
-            role="group"
-            aria-label="资产趋势范围"
-          >
-            {[
-              [30, "30 天"],
-              [90, "90 天"],
-              [365, "1 年"],
-              [0, "全部历史"],
-            ].map(([n, label]) => (
-              <button
-                key={n}
-                aria-pressed={range === n}
-                onClick={() => setRange(Number(n))}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <Trend records={history?.records ?? []} select={setSelected} />
-          {range === 0 && history?.nextBefore && (
-            <button
-              className="secondary"
-              disabled={loading}
-              onClick={() => void loadMore()}
+          <details className="daily-trend-details">
+            <summary>资产趋势</summary>
+            <div
+              className="section-switcher"
+              role="group"
+              aria-label="资产趋势范围"
             >
-              加载更早记录
-            </button>
-          )}
+              {[
+                [30, "30 天"],
+                [90, "90 天"],
+                [365, "1 年"],
+                [0, "全部历史"],
+              ].map(([n, label]) => (
+                <button
+                  key={n}
+                  aria-pressed={range === n}
+                  onClick={() => setRange(Number(n))}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Trend records={history?.records ?? []} select={setSelected} />
+            {range === 0 && history?.nextBefore && (
+              <button
+                className="secondary"
+                disabled={loading}
+                onClick={() => void loadMore()}
+              >
+                加载更早记录
+              </button>
+            )}
+          </details>
           <details
             className="daily-history-details"
             open={selected ? true : undefined}
