@@ -7,7 +7,7 @@ import { createReadStream, createWriteStream, existsSync, readFileSync, mkdirSyn
 import { open, stat, unlink, link, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve, dirname, sep } from 'node:path';
 import { tmpdir } from 'node:os';
-import { readConfig, root, port, postgresBin } from './start-common.mjs';
+import { readConfig, root, port, postgresBin, startPostgres } from './start-common.mjs';
 
 const magic = Buffer.from('MARIOBK1');
 const scrypt = promisify(scryptCallback);
@@ -186,7 +186,7 @@ export async function database(modeOption, { temporaryStart = true, initialize =
       if (temporaryStart) {
         const status = await command(pg('pg_ctl'), ['-D', data, 'status'], { env: baseEnv, accepted: [0, 3] });
         if (status === 3) {
-          await command(pg('pg_ctl'), ['-D', data, '-l', join(root, '.runtime/native/postgres.log'), '-w', '-t', '30', '-o', `-h 127.0.0.1 -p ${port(config.MARIO_PG_PORT ?? '55432', 'MARIO_PG_PORT')}`, 'start'], { env: baseEnv });
+          await startPostgres(pg('pg_ctl'), data, join(root, '.runtime/native/postgres.log'), config.MARIO_PG_PORT ?? '55432', { env: baseEnv }, command);
           ownsPostgres = true;
         }
       }

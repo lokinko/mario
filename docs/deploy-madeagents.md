@@ -24,6 +24,8 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 项目专用 Node 位于 `/opt/mario-tools/node`，不替换宿主机已有 Node。PostgreSQL 包由官方 PGDG 源安装；发行版可能同时创建自己的默认数据库服务，本项目使用独立的 55432 端口和数据目录。其他发行版请预装工具，并将脚本中的 `INSTALL_MISSING_TOOLS` 改成 `false`。
 
+项目 PostgreSQL 只监听 `127.0.0.1` TCP，显式关闭 Unix socket，避免服务用户无权写入发行版默认的 `/var/run/postgresql`。启动和恢复临时启动均使用此设置，不影响系统数据库。
+
 部署脚本以 root 执行系统安装，但运行服务使用普通用户。默认复用已有数据库所有者或 sudo 登录用户；直接 root 登录时创建 `mario`。部署会把当前项目目录归运行用户所有，不移动现有数据库，不更换密钥。旧 Docker 数据不会自动转为宿主机数据；请用旧版本导出加密包后恢复。
 
 安装来源：[Node 官方发行版](https://nodejs.org/dist/latest-v22.x/)、[PostgreSQL 官方源](https://www.postgresql.org/download/linux/ubuntu/)、[Rust 官方安装](https://rust-lang.org/tools/install/)。
@@ -99,6 +101,23 @@ bash deploy.sh check
 ```bash
 bash deploy.sh prepare --ip 47.243.99.21 --domain www.madeagents.ai
 ```
+
+## PostgreSQL 启动失败
+
+`pg_ctl: could not start server` 只是摘要，具体错误在项目日志。先在服务器项目目录停止自动重启并查看：
+
+```bash
+sudo bash deploy.sh stop
+sudo tail -n 80 .runtime/native/postgres.log
+```
+
+若出现 `could not create lock file "/var/run/postgresql/.s.PGSQL.55432.lock": Permission denied`，是系统 socket 目录权限问题；更新包含上述 TCP 配置的脚本后重新部署：
+
+```bash
+sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
+```
+
+新版运行器会把 PostgreSQL 日志末尾最多 16 KiB 输出到服务日志。若仍失败，按其中的 `FATAL`/`PANIC` 排查端口、权限、磁盘空间或数据版本；不要删除 `.runtime/native/postgres` 或 `.env` 来重试。
 
 ## 验收 Web
 

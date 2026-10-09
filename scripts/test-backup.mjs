@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, exis
 import { join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { root, defaults, createConfig, readConfig } from './start-common.mjs';
+import { root, defaults, createConfig, readConfig, startPostgres } from './start-common.mjs';
 import { command } from './backup-common.mjs';
 
 const fixture = mkdtempSync(join(tmpdir(), 'mario-migration-'));
@@ -35,7 +35,7 @@ async function cluster(name, initialize = true) {
   return site;
 }
 async function startDatabase(site) {
-  await command(pg('pg_ctl'), ['-D', site.data, '-l', join(site.directory, 'postgres.log'), '-w', '-t', '30', '-o', `-h 127.0.0.1 -p ${site.config.MARIO_PG_PORT}`, 'start'], { env: cleanEnv });
+  await startPostgres(pg('pg_ctl'), site.data, join(site.directory, 'postgres.log'), site.config.MARIO_PG_PORT, { env: cleanEnv }, command);
 }
 async function stopDatabase(site) {
   if (existsSync(join(site.data, 'postmaster.pid'))) await command(pg('pg_ctl'), ['-D', site.data, '-w', '-t', '30', '-m', 'fast', 'stop'], { env: cleanEnv });

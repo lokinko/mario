@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join, sep } from 'node:path';
 import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { root, defaults, createConfig, readConfig } from './start-common.mjs';
+import { root, defaults, createConfig, readConfig, postgresStartOptions } from './start-common.mjs';
 
 const fixture = mkdtempSync(join(tmpdir(), 'mario-start-'));
 const executable = 'mario-server' + (process.platform === 'win32' ? '.exe' : '');
@@ -83,7 +83,7 @@ try {
   await stopByFailure();
   // An external database skips all local PostgreSQL tools and is never stopped by the launcher.
   const data = join(fixture, '.runtime/native/postgres');
-  const externalStart = spawnSync(actualPgCtl, ['-D', data, '-l', join(fixture, 'external-postgres.log'), '-w', '-t', '30', '-o', `-h 127.0.0.1 -p ${pgPort}`, 'start'], { stdio: 'ignore', timeout: 40000 });
+  const externalStart = spawnSync(actualPgCtl, ['-D', data, '-l', join(fixture, 'external-postgres.log'), '-w', '-t', '30', '-o', postgresStartOptions(pgPort), 'start'], { stdio: 'ignore', timeout: 40000 });
   assert.equal(externalStart.status, 0);
   writeFileSync(configPath, original.replace('DATABASE_URL=\n', `DATABASE_URL=postgresql://mario:${encodeURIComponent(config.POSTGRES_PASSWORD)}@127.0.0.1:${pgPort}/postgres\n`));
   const pgBin = env.PG_BIN;

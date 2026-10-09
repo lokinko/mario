@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync, renameSync, chmodSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, renameSync, chmodSync, readdirSync, openSync, fstatSync, readSync, closeSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -158,6 +158,30 @@ export function run(command, commandArgs, options = {}) {
     child.on('error', error => reject(Error(`无法执行 ${command}: ${error.message}`)));
     child.on('exit', (code, signal) => code === 0 ? resolveRun() : reject(Error(`${command} 失败 (${signal ?? code})`)));
   });
+}
+
+// All project clients use TCP. Avoid distribution-specific socket directories
+// that are writable only by the system postgres account.
+export function postgresStartOptions(number) {
+  return `-h 127.0.0.1 -p ${port(number, 'MARIO_PG_PORT')} -c unix_socket_directories=`;
+}
+
+export async function startPostgres(command, data, log, number, options = {}, runner = run) {
+  try {
+    await runner(command, ['-D', data, '-l', log, '-w', '-t', '30', '-o', postgresStartOptions(number), 'start'], options);
+  } catch (error) {
+    let detail = '';
+    let fd;
+    try {
+      fd = openSync(log, 'r');
+      const size = fstatSync(fd).size;
+      const tail = Buffer.alloc(Math.min(size, 16384));
+      const count = readSync(fd, tail, 0, tail.length, size - tail.length);
+      detail = tail.subarray(0, count).toString('utf8').trim();
+    } catch { /* The server may fail before creating its log. */ }
+    finally { if (fd !== undefined) closeSync(fd); }
+    throw Error(`${error.message}\nPostgreSQL 日志：${log}${detail ? `\n${detail}` : '\n未能读取日志或日志为空；请检查运行用户的目录权限。'}`, { cause: error });
+  }
 }
 
 export function validateSecrets(config) {

@@ -4,6 +4,7 @@
   "version": "0.5.0",
   "scripts": {
     "test:startup": "node scripts/test-startup.mjs",
+    "test:postgres-start": "node scripts/test-postgres-start.mjs",
     "data:backup": "node scripts/backup.mjs",
     "data:download": "node scripts/download-backup.mjs",
     "data:restore": "node scripts/restore-backup.mjs",

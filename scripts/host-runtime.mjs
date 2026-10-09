@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isIP } from 'node:net';
-import { args, assertNoRestore, basePath, createDeploymentConfig, defaults, hostname, migrateNativeConfig, port, postgresBin, readConfig, root, run, updateConfig, validateSecrets } from './start-common.mjs';
+import { args, assertNoRestore, basePath, createDeploymentConfig, defaults, hostname, migrateNativeConfig, port, postgresBin, readConfig, root, run, startPostgres, updateConfig, validateSecrets } from './start-common.mjs';
 
 const runtime = resolve(root, '.runtime/native');
 const configPath = resolve(root, '.env');
@@ -161,7 +161,7 @@ try {
         } finally { unlinkSync(passwordFile); }
       }
       ensureRunning();
-      await run(pg('pg_ctl'), ['-D', pgData, '-l', join(runtime, 'postgres.log'), '-w', '-t', '30', '-o', `-h 127.0.0.1 -p ${pgPort}`, 'start'], { env: baseEnv });
+      await startPostgres(pg('pg_ctl'), pgData, join(runtime, 'postgres.log'), pgPort, { env: baseEnv });
       managedPostgres = true;
       // Use the initial postgres database; the application creates its own schemas.
       databaseUrl = `postgresql://mario:${encodeURIComponent(config.POSTGRES_PASSWORD)}@127.0.0.1:${pgPort}/postgres`;
