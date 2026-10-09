@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, renameSync, chmodSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -9,25 +9,60 @@ export const secret = () => randomBytes(32).toString('hex');
 export function defaults(domain = 'localhost') {
   return {
     MARIO_DOMAIN: domain,
+    MARIO_SERVER_IP: '',
+    MARIO_BASE_PATH: '/',
     POSTGRES_PASSWORD: secret(),
     MARIO_MASTER_KEY: randomBytes(32).toString('base64'),
     MARIO_REGISTRATION_KEY: secret(),
     MARIO_AGENT_TOKEN: secret(),
     MARIO_MODEL_HOSTS: 'api.openai.com,api.anthropic.com',
     MARIO_ALLOWED_ORIGINS: '',
-    MARIO_NATIVE_HTTPS: 'false',
     DATABASE_URL: '',
     PG_BIN: '',
     MARIO_PORT: '4217',
     MARIO_AGENT_PORT: '4218',
     MARIO_PG_PORT: '55432',
-    MARIO_BACKUP_MODE: 'auto',
+    MARIO_BACKUP_MODE: 'native',
     MARIO_BACKUP_DIR: 'backups',
     MARIO_BACKUP_SSH_HOST: '',
     MARIO_BACKUP_REMOTE_DIR: '',
     MARIO_BACKUP_SSH_PORT: '22',
     MARIO_BACKUP_SSH_IDENTITY: '',
   };
+}
+
+// Merge only requested non-secret settings; retain all existing keys and passwords.
+export function updateConfig(path, values) {
+  const remaining = new Map(Object.entries(values));
+  for (const [key, value] of remaining) {
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(key) || /[\r\n\0]/.test(value)) throw Error('配置名称或值无效');
+  }
+  const content = readFileSync(path, 'utf8').replace(/\r\n/g, '\n').replace(/^([A-Z_][A-Z0-9_]*)=.*$/gm, (line, key) => {
+    if (!remaining.has(key)) return line;
+    const value = remaining.get(key); remaining.delete(key); return `${key}=${value}`;
+  }).trimEnd() + '\n' + [...remaining].map(([key, value]) => `${key}=${value}\n`).join('');
+  if (content !== readFileSync(path, 'utf8')) {
+    const temporary = `${path}.${randomBytes(8).toString('hex')}.part`;
+    writeFileSync(temporary, content, { flag: 'wx', mode: 0o600 });
+    renameSync(temporary, path);
+  }
+  chmodSync(path, 0o600);
+}
+
+export function postgresBin(configured = '') {
+  if (configured) return configured;
+  if (existsSync('/usr/lib/postgresql')) {
+    const dataVersion = resolve(root, '.runtime/native/postgres/PG_VERSION');
+    const required = existsSync(dataVersion) ? readFileSync(dataVersion, 'utf8').trim() : undefined;
+    const versions = readdirSync('/usr/lib/postgresql').filter(v => /^\d+$/.test(v)).sort((a, b) => Number(b) - Number(a));
+    for (const version of versions) {
+      if (required && version !== required) continue;
+      const path = resolve('/usr/lib/postgresql', version, 'bin');
+      if (existsSync(resolve(path, 'pg_ctl')) && existsSync(resolve(path, 'initdb'))) return path;
+    }
+    if (required) throw Error(`找不到现有数据对应的 PostgreSQL ${required} 工具；请安装该版本并配置 PG_BIN，不能直接用新主版本打开旧数据目录`);
+  }
+  return '';
 }
 
 // Configuration is data, never shell code. Accept plain or quoted dotenv values.
@@ -104,6 +139,11 @@ export function args(allowed) {
 
 export function hostname(value) {
   if (!/^(localhost|(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?)$/.test(value)) throw Error('域名仅填写主机名，不包含 https://、端口或路径');
+  return value;
+}
+
+export function basePath(value = '/') {
+  if (!/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(value)) throw Error('MARIO_BASE_PATH 必须为 / 或 /mario/ 这样的路径，且以 / 结尾');
   return value;
 }
 

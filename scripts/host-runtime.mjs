@@ -3,7 +3,8 @@ import { resolve, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { args, assertNoRestore, createDeploymentConfig, defaults, hostname, migrateNativeConfig, port, readConfig, root, run, validateSecrets } from './start-common.mjs';
+import { isIP } from 'node:net';
+import { args, assertNoRestore, basePath, createDeploymentConfig, defaults, hostname, migrateNativeConfig, port, postgresBin, readConfig, root, run, updateConfig, validateSecrets } from './start-common.mjs';
 
 const runtime = resolve(root, '.runtime/native');
 const configPath = resolve(root, '.env');
@@ -64,15 +65,48 @@ function acquireLock() {
 }
 
 try {
-  const options = args({ '--help': false, '--domain': true, '--skip-build': false });
+  const options = args({ '--help': false, '--prepare': false, '--build': false, '--skip-build': false });
   if (options['--help']) {
-    console.log(`用法：node scripts/start-native.mjs [--domain mario.example.com] [--skip-build]
-需要 Node.js 20+、Rust/C 编译工具链、PostgreSQL 的 initdb/pg_ctl；--domain 还需要 Caddy。
-PG_BIN 可指定 PostgreSQL bin 目录；设置 DATABASE_URL 可复用已有数据库。
-首次创建统一 .env；可在其中设置域名、HTTPS、PG_BIN 和端口。数据位于 .runtime/native/postgres。
-前台运行，Ctrl+C 停止本次启动的服务并保留数据。默认仅监听本机 4217。`);
+    console.log('内部运行器；服务器部署请使用项目根目录 bash deploy.sh --help。');
+  } else if (options['--prepare']) {
+    assertNoRestore();
+    migrateNativeConfig();
+    const original = existsSync(configPath) ? readConfig(configPath) : {};
+    const setup = process.env;
+    const domain = hostname(setup.MARIO_SETUP_DOMAIN || original.MARIO_DOMAIN || 'localhost');
+    const ip = setup.MARIO_SETUP_IP || original.MARIO_SERVER_IP || '';
+    if (ip && !isIP(ip)) throw Error('公网 IP 格式无效');
+    const prefix = basePath(setup.MARIO_SETUP_BASE_PATH || original.MARIO_BASE_PATH);
+    const values = {
+      MARIO_DOMAIN: domain, MARIO_SERVER_IP: ip, MARIO_BASE_PATH: prefix,
+      MARIO_PORT: String(port(setup.MARIO_SETUP_API_PORT || original.MARIO_PORT || '4217', 'MARIO_PORT')),
+      MARIO_AGENT_PORT: String(port(setup.MARIO_SETUP_AGENT_PORT || original.MARIO_AGENT_PORT || '4218', 'MARIO_AGENT_PORT')),
+      MARIO_PG_PORT: String(port(setup.MARIO_SETUP_PG_PORT || original.MARIO_PG_PORT || '55432', 'MARIO_PG_PORT')),
+      PG_BIN: postgresBin(setup.MARIO_SETUP_PG_BIN || original.PG_BIN),
+      MARIO_BACKUP_MODE: 'native',
+    };
+    if (setup.MARIO_SETUP_DATABASE_URL) values.DATABASE_URL = setup.MARIO_SETUP_DATABASE_URL;
+    if (setup.MARIO_SETUP_MODEL_HOSTS) values.MARIO_MODEL_HOSTS = setup.MARIO_SETUP_MODEL_HOSTS;
+    if (setup.MARIO_SETUP_ORIGINS) values.MARIO_ALLOWED_ORIGINS = setup.MARIO_SETUP_ORIGINS;
+    if (new Set([values.MARIO_PORT, values.MARIO_AGENT_PORT, values.MARIO_PG_PORT]).size !== 3) throw Error('API、Agent、PostgreSQL 必须使用不同端口');
+    createDeploymentConfig({ ...defaults(domain), ...values });
+    validateSecrets(readConfig(configPath));
+    updateConfig(configPath, values);
+    mkdirSync(runtime, { recursive: true, mode: 0o700 });
+    const mount = prefix === '/' ? '' : prefix.slice(0, -1);
+    const redirect = mount ? `location = ${mount} { return 308 ${prefix}$is_args$args; }\n` : '';
+    const nginx = `${redirect}location ^~ ${prefix} {\n    proxy_pass http://127.0.0.1:${values.MARIO_PORT}/;\n    proxy_http_version 1.1;\n    proxy_set_header Host $host;\n    proxy_set_header X-Real-IP $remote_addr;\n    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n    proxy_set_header X-Forwarded-Proto $scheme;\n    proxy_read_timeout 300s;\n    client_max_body_size 8m;\n    add_header X-Content-Type-Options nosniff always;\n    add_header X-Frame-Options DENY always;\n    add_header Referrer-Policy same-origin always;\n    add_header Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'" always;\n}\n`;
+    writeFileSync(join(runtime, 'nginx.conf'), nginx);
+    console.log(`配置已准备：域名 ${domain}，网页路径 ${prefix}${ip ? `，DNS 目标 ${ip}` : ''}\nNginx 配置：${join(runtime, 'nginx.conf')}（加入现有 HTTPS server）`);
+  } else if (options['--build']) {
+    assertNoRestore();
+    const config = readConfig(configPath);
+    validateSecrets(config);
+    const env = { ...cleanEnvironment(), VITE_BASE_PATH: basePath(config.MARIO_BASE_PATH) };
+    await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['ci', '--prefix', 'client'], { env, shell: process.platform === 'win32' });
+    await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--prefix', 'client'], { env, shell: process.platform === 'win32' });
+    await run('cargo', ['build', '--release', '--locked', '--manifest-path', 'server/Cargo.toml'], { env });
   } else {
-    const requestedDomain = options['--domain'] && hostname(options['--domain']);
     acquireLock();
     assertNoRestore();
     process.on('SIGINT', requestStop);
@@ -81,26 +115,23 @@ PG_BIN 可指定 PostgreSQL bin 目录；设置 DATABASE_URL 可复用已有数�
     migrateNativeConfig();
     if (!existsSync(configPath) && existsSync(join(runtime, 'postgres/PG_VERSION'))) throw Error('已有本地数据库但缺少 .env；请恢复原配置，不能重新生成加密密钥');
     const original = existsSync(configPath) ? readConfig(configPath) : {};
-    if (!['true', 'false'].includes(original.MARIO_NATIVE_HTTPS ?? 'false')) throw Error('MARIO_NATIVE_HTTPS 必须为 true 或 false');
-    const domain = requestedDomain || (original.MARIO_NATIVE_HTTPS === 'true' ? hostname(original.MARIO_DOMAIN ?? 'localhost') : undefined);
     const externalDatabase = process.env.DATABASE_URL || original.DATABASE_URL;
-    const pgBin = process.env.PG_BIN || original.PG_BIN;
+    const pgBin = postgresBin(process.env.PG_BIN || original.PG_BIN);
     pg = name => pgBin ? join(pgBin, name + (process.platform === 'win32' ? '.exe' : '')) : name;
     if (!externalDatabase) {
       if (process.getuid?.() === 0) throw Error('PostgreSQL 不允许 root 运行。请使用普通用户启动，或通过 DATABASE_URL 连接已部署的 PostgreSQL');
       await run(pg('initdb'), ['--version'], { env: baseEnv });
       await run(pg('pg_ctl'), ['--version'], { env: baseEnv });
     }
-    if (domain) await run('caddy', ['version'], { env: baseEnv });
     if (!options['--skip-build']) {
       await run('cargo', ['--version'], { env: baseEnv });
       await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['--version'], { env: baseEnv, shell: process.platform === 'win32' });
     }
     ensureRunning();
-    createDeploymentConfig({ ...defaults(domain), DATABASE_URL: externalDatabase ?? '', PG_BIN: pgBin ?? '', MARIO_NATIVE_HTTPS: domain ? 'true' : 'false' });
+    createDeploymentConfig({ ...defaults(), DATABASE_URL: externalDatabase ?? '', PG_BIN: pgBin ?? '' });
     const config = readConfig(configPath);
     validateSecrets(config);
-    if (domain && config.MARIO_DOMAIN !== domain) throw Error('已有 .env 的 MARIO_DOMAIN 与参数不同；请先修改该项，密钥保持不变');
+    const prefix = basePath(config.MARIO_BASE_PATH);
     const apiPort = port(config.MARIO_PORT ?? '4217', 'MARIO_PORT');
     const agentPort = port(config.MARIO_AGENT_PORT ?? '4218', 'MARIO_AGENT_PORT');
     const pgPort = port(config.MARIO_PG_PORT ?? '55432', 'MARIO_PG_PORT');
@@ -109,7 +140,9 @@ PG_BIN 可指定 PostgreSQL bin 目录；设置 DATABASE_URL 可复用已有数�
     if (!options['--skip-build']) {
       await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['ci', '--prefix', 'client'], { env: baseEnv, shell: process.platform === 'win32' });
       ensureRunning();
-      await run(process.execPath, [resolve(root, 'scripts/web-build.mjs')], { env: baseEnv });
+      await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--prefix', 'client'], { env: { ...baseEnv, VITE_BASE_PATH: prefix }, shell: process.platform === 'win32' });
+      ensureRunning();
+      await run('cargo', ['build', '--release', '--locked', '--manifest-path', 'server/Cargo.toml'], { env: baseEnv });
     }
     ensureRunning();
     if (!existsSync(binary) || !existsSync(resolve(root, 'client/dist/index.html'))) throw Error('缺少构建产物；去掉 --skip-build 重新运行');
@@ -142,15 +175,8 @@ PG_BIN 可指定 PostgreSQL bin 目录；设置 DATABASE_URL 可复用已有数�
       MARIO_HOST: '127.0.0.1', MARIO_AGENT_URL: `http://127.0.0.1:${agentPort}`, MARIO_WEB_DIR: resolve(root, 'client/dist'),
     });
     await ready(`http://127.0.0.1:${apiPort}/api/server`, body => body.mode === 'hosted');
-    if (domain) {
-      launch('Caddy', 'caddy', ['run', '--config', resolve(root, 'deploy/Caddyfile.native'), '--adapter', 'caddyfile'], {
-        ...baseEnv, MARIO_DOMAIN: domain, MARIO_PORT: String(apiPort), XDG_DATA_HOME: join(runtime, 'caddy-data'), XDG_CONFIG_HOME: join(runtime, 'caddy-config'),
-      });
-      // Certificate issuance may continue after Caddy opens its listeners.
-      await sleep(1500);
-      ensureRunning();
-    }
-    console.log(`\nAPI 与 Agent 已就绪：${domain ? `https://${domain}（Caddy 正在管理 HTTPS 证书）` : `http://127.0.0.1:${apiPort}`}\n邀请码位于 .env 的 MARIO_REGISTRATION_KEY。\n前台运行，Ctrl+C 停止；数据库与密钥保留。${domain ? '' : '\n公网访问请配置 HTTPS 反向代理，或在 .env 中启用 MARIO_NATIVE_HTTPS。'}`);
+    console.log(`\nAPI 与 Agent 已就绪：http://127.0.0.1:${apiPort}\n公网网页：https://${config.MARIO_DOMAIN}${prefix}\n邀请码位于 .env 的 MARIO_REGISTRATION_KEY。\n前台运行器由 systemd 托管；Ctrl+C/SIGTERM 停止并保留数据。`);
+    if (prefix !== '/') console.log(`公网网页路径：${prefix}（外层代理需移除该前缀，本机上游仍使用根路径）`);
     await stopRequested;
   }
 } catch (error) {

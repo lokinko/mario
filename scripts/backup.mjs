@@ -8,7 +8,7 @@ let db, work;
 try {
   const options = args({ '--help': false, '--mode': true, '--output': true, '--stdout': false, '--password-file': true, '--stdin-password': false });
   if (options['--help']) {
-    console.log(`用法：node scripts/backup.mjs [--mode auto|native|docker] [--output 文件.mario-backup]
+    console.log(`用法：node scripts/backup.mjs [--mode auto|native] [--output 文件.mario-backup]
 读取根目录 .env，默认输出 backups/mario-时间.mario-backup。
 包含全部账号、业务数据和加密主密钥；使用独立密码加密，交互输入不会回显。
 自动化可用 MARIO_BACKUP_PASSWORD 或 --password-file；已有输出不会覆盖。

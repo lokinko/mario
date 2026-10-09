@@ -8,20 +8,17 @@ mario 是一个支持自建服务器、多用户账号和跨设备访问的 AI �
 
 当前采用 **Web / Tauri 客户端 → Rust API → PostgreSQL**，AI Agent 独立部署。账号、会话与数据由自己管理，无第三方账户或云存储依赖。
 
-两种启动方式统一读取根目录 `.env`，所有配置项和中文说明见 [`.env.example`](.env.example)。可先运行 `node scripts/generate-env.mjs` 生成带注释和随机密钥的配置，再修改域名；原生部署还可在文件中设置 PostgreSQL 路径、端口和 HTTPS 开关。
-
-需要频繁搬迁时，运行 `npm run data:download -- --host user@server --remote-dir /srv/mario --mode docker`，可从本机一键在服务器打包并下载加密迁移包。目标恢复、反复覆盖和回退见 [数据迁移指南](docs/data-migration.md)。
+服务器部署只有一个入口：根目录 [deploy.sh](deploy.sh)。公网 IP、域名和可选参数集中在脚本顶部，逐项附中文注释。默认 Ubuntu/Debian 自动安装缺少的工具、生成持久密钥、构建源码，并通过 systemd 后台运行和开机自启，不需要 Docker。
 
 ```bash
-# Docker：生成配置、构建并后台启动全部服务
-bash scripts/start-docker.sh --domain mario.example.com
-
-# 无 Docker：自动初始化本地 PostgreSQL，构建并前台启动
-bash scripts/start-native.sh
-# 已安装 Caddy 且配置好域名时，可加 --domain mario.example.com 启用 HTTPS
+sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
+# 以后更新源码后重新部署：sudo bash deploy.sh
+# 管理：bash deploy.sh start|stop|restart|status|logs|check
 ```
 
-域名指向服务器并开放 80/443 后，网页使用 HTTPS 访问，客户端填写同一服务器地址登录。管理员提供邀请码创建独立账号。部署参数、旧数据迁移、备份与恢复详见 [自建部署指南](docs/self-hosting.md)。
+默认网页入口是 https://www.madeagents.ai/mario。首次还需将自动生成的 Nginx 片段加入已有 HTTPS 站点，保留原网站和证书，具体步骤见 [部署与验收](docs/deploy-madeagents.md)。
+
+频繁搬迁可执行 `npm run data:download -- --host user@server --remote-dir /srv/mario`，一键打包下载加密迁移包。目标恢复、反复覆盖和回退见 [数据迁移指南](docs/data-migration.md)。
 
 **当前是在线服务模式**：多设备直接读写同一数据库，版本校验防止旧数据覆盖；离线不能保存。服务器可读取业务明文，供应商密钥按账号加密保存。
 
@@ -95,8 +92,7 @@ server/                 多用户 HTTP API 与独立 AI Agent 运行入口
   src/event_import.rs   CSV 解析、字段映射与不可信输入边界
   src/risk.rs           不依赖大模型的风险规则
 docs/                   架构与投资方法论
-deploy/                 HTTPS 入口配置
-compose.yaml            Web / API / PostgreSQL / Agent 四服务部署
+deploy.sh               宿主机部署与服务管理唯一入口
 scripts/                构建、迁移与集成测试
 ```
 
@@ -111,7 +107,7 @@ npm run install:all
 npm run dev
 ```
 
-多用户开发请配置 PostgreSQL、`MARIO_MASTER_KEY`、`MARIO_REGISTRATION_KEY`；前端设置 `VITE_API_URL=http://127.0.0.1:4217/api`。独立 Agent 使用 `MARIO_ROLE=agent`，后端配置 `MARIO_AGENT_URL` 与共享内部令牌。Compose 默认采用独立 Agent，单进程开发可以不设置 Agent URL。
+多用户开发请配置 PostgreSQL、`MARIO_MASTER_KEY`、`MARIO_REGISTRATION_KEY`；前端设置 `VITE_API_URL=http://127.0.0.1:4217/api`。独立 Agent 使用 `MARIO_ROLE=agent`，后端配置 `MARIO_AGENT_URL` 与共享内部令牌。宿主机部署默认采用独立 Agent，单进程开发可以不设置 Agent URL。
 
 ```bash
 npm run build --prefix client

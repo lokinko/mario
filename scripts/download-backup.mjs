@@ -12,7 +12,7 @@ let temporary, work;
 try {
   const options = args({ '--help': false, '--host': true, '--remote-dir': true, '--mode': true, '--output': true, '--port': true, '--identity': true, '--password-file': true });
   if (options['--help']) {
-    console.log(`用法：node scripts/download-backup.mjs --host user@server --remote-dir /srv/mario [--mode docker|native] [--output 本地文件.mario-backup]
+    console.log(`用法：node scripts/download-backup.mjs --host user@server --remote-dir /srv/mario [--mode native] [--output 本地文件.mario-backup]
 在本机运行，通过 SSH 在 Linux/macOS 源服务器打包并直接下载，不在远端保留迁移包。
 需要本机 ssh、远端 Node.js 20+ 与本项目。支持 --port 和 --identity；遵循 SSH 主机密钥验证。
 备份加密密码单独输入，通过 SSH stdin 传递，不进入命令参数或远端配置。`);
@@ -23,7 +23,7 @@ try {
     const mode = options['--mode'] || config.MARIO_BACKUP_MODE || 'auto';
     if (!host || !/^[A-Za-z0-9_.@:[\]-]+$/.test(host) || host.startsWith('-')) throw Error('--host 请填写 user@server 或 SSH 配置别名');
     if (!directory || /[\r\n\0]/.test(directory)) throw Error('--remote-dir 请填写远端项目路径');
-    if (!['auto', 'native', 'docker'].includes(mode)) throw Error('--mode 应为 auto、native 或 docker');
+    if (!['auto', 'native'].includes(mode)) throw Error('--mode 应为 auto 或 native');
     const passphrase = await password(options, true);
     const destination = resolve(options['--output'] ?? join(root, config.MARIO_BACKUP_DIR || 'backups', `download-${timestamp()}.mario-backup`));
     if (existsSync(destination)) throw Error(`输出文件已存在，不会覆盖：${destination}`);

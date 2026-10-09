@@ -24,7 +24,7 @@ async function freePort() {
   return number;
 }
 async function start() {
-  const child = spawn(process.execPath, [join(fixture, 'scripts/start-native.mjs'), '--skip-build'], { env, cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [join(fixture, 'scripts/host-runtime.mjs'), '--skip-build'], { env, cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'] });
   current = { child, log: '', done: once(child, 'exit') };
   const instance = current;
   child.stdout.on('data', data => { instance.log += data; });
@@ -48,7 +48,7 @@ async function stopByFailure(external = false) {
 }
 try {
   for (const dir of ['scripts', 'server/target/release', 'client']) mkdirSync(join(fixture, dir), { recursive: true });
-  for (const name of ['start-common.mjs', 'start-native.mjs']) copyFileSync(join(root, 'scripts', name), join(fixture, 'scripts', name));
+  for (const name of ['start-common.mjs', 'host-runtime.mjs']) copyFileSync(join(root, 'scripts', name), join(fixture, 'scripts', name));
   copyFileSync(join(root, '.env.example'), join(fixture, '.env.example'));
   copyFileSync(join(root, 'server/target/debug', executable), join(fixture, 'server/target/release', executable));
   cpSync(join(root, 'client/dist'), join(fixture, 'client/dist'), { recursive: true });
@@ -71,7 +71,7 @@ try {
   const email = 'launcher@example.test', password = 'launcher-password-123456';
   const registered = await fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, registrationKey: config.MARIO_REGISTRATION_KEY }) });
   assert.equal(registered.status, 200, await registered.text());
-  const duplicate = spawnSync(process.execPath, [join(fixture, 'scripts/start-native.mjs'), '--skip-build'], { env, encoding: 'utf8', timeout: 10000 });
+  const duplicate = spawnSync(process.execPath, [join(fixture, 'scripts/host-runtime.mjs'), '--skip-build'], { env, encoding: 'utf8', timeout: 10000 });
   assert.equal(duplicate.status, 1);
   assert.match(duplicate.stderr, /已有启动进程/);
   assert(existsSync(join(fixture, '.runtime/native/launcher.lock')));
@@ -95,11 +95,11 @@ try {
   assert.equal(spawnSync(actualPgCtl, ['-D', data, '-w', '-m', 'fast', 'stop'], { stdio: 'ignore', timeout: 40000 }).status, 0);
   // Invalid ports must be rejected before any service is started.
   writeFileSync(configPath, original.replace(`MARIO_AGENT_PORT=${agentPort}`, `MARIO_AGENT_PORT=${apiPort}`));
-  const invalid = spawnSync(process.execPath, [join(fixture, 'scripts/start-native.mjs'), '--skip-build'], { env, encoding: 'utf8', timeout: 10000 });
+  const invalid = spawnSync(process.execPath, [join(fixture, 'scripts/host-runtime.mjs'), '--skip-build'], { env, encoding: 'utf8', timeout: 10000 });
   assert.equal(invalid.status, 1);
   assert.match(invalid.stderr, /必须使用不同端口/);
   unlinkSync(configPath);
-  const missingKeys = spawnSync(process.execPath, [join(fixture, 'scripts/start-native.mjs'), '--skip-build'], { env, encoding: 'utf8', timeout: 10000 });
+  const missingKeys = spawnSync(process.execPath, [join(fixture, 'scripts/host-runtime.mjs'), '--skip-build'], { env, encoding: 'utf8', timeout: 10000 });
   assert.equal(missingKeys.status, 1);
   assert.match(missingKeys.stderr, /请恢复原配置/);
   assert(!existsSync(configPath));

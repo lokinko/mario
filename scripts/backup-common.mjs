@@ -7,7 +7,7 @@ import { createReadStream, createWriteStream, existsSync, readFileSync, mkdirSyn
 import { open, stat, unlink, link, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve, dirname, sep } from 'node:path';
 import { tmpdir } from 'node:os';
-import { readConfig, root, port } from './start-common.mjs';
+import { readConfig, root, port, postgresBin } from './start-common.mjs';
 
 const magic = Buffer.from('MARIOBK1');
 const scrypt = promisify(scryptCallback);
@@ -157,14 +157,12 @@ export async function database(modeOption, { temporaryStart = true, initialize =
   let mode = modeOption ?? config.MARIO_BACKUP_MODE ?? 'auto';
   const data = join(root, '.runtime/native/postgres');
   const uri = process.env.DATABASE_URL || config.DATABASE_URL;
-  if (mode === 'auto') mode = uri || existsSync(join(data, 'PG_VERSION')) ? 'native' : 'docker';
-  if (!['native', 'docker'].includes(mode)) throw Error('部署方式应为 auto、native 或 docker');
+  if (mode === 'auto') mode = 'native';
+  if (mode !== 'native') throw Error('当前版本只支持宿主机 native 备份；旧 Docker 实例请用旧版本导出加密包，再在本版本恢复');
   let ownsPostgres = false;
   const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(PG|DATABASE_URL$|MARIO_|POSTGRES_)/i.test(key)));
-  const pgBin = process.env.PG_BIN || config.PG_BIN;
+  const pgBin = postgresBin(process.env.PG_BIN || config.PG_BIN);
   const pg = name => pgBin ? join(pgBin, name + (process.platform === 'win32' ? '.exe' : '')) : name;
-  const compose = ['compose', '--project-directory', root, '--env-file', path, '-f', join(root, 'compose.yaml')];
-  const dockerEnv = { ...baseEnv, ...config };
   let connection, pgEnv = baseEnv;
   if (mode === 'native') {
     if (uri) {
@@ -194,11 +192,9 @@ export async function database(modeOption, { temporaryStart = true, initialize =
       }
     }
   }
-  if (mode === 'docker' && initialize) await command('docker', [...compose, 'up', '-d', '--wait', '--wait-timeout', '120', 'database'], { env: dockerEnv });
   const db = {
     mode, config,
     async tool(name, argv, options = {}) {
-      if (mode === 'docker') return command('docker', [...compose, 'exec', '-T', 'database', name, '-U', 'mario', '-d', 'mario', ...argv], { ...options, env: dockerEnv });
       return command(pg(name), ['--dbname', connection, ...argv], { ...options, env: pgEnv });
     },
     async schemas() { return (await this.tool('psql', ['-X', '-tA', '-v', 'ON_ERROR_STOP=1', '-c', schemasSql], { capture: true })).split(/\r?\n/).filter(Boolean); },
@@ -214,11 +210,9 @@ export async function database(modeOption, { temporaryStart = true, initialize =
     },
     async restoreSql(dump, destination) {
       const argv = ['--no-owner', '--no-privileges', '--file=-'];
-      if (mode === 'docker') return command('docker', [...compose, 'exec', '-T', 'database', 'pg_restore', ...argv], { env: dockerEnv, input: dump, output: destination });
       return command(pg('pg_restore'), argv, { env: pgEnv, input: dump, output: destination });
     },
     async close() { if (ownsPostgres) await command(pg('pg_ctl'), ['-D', data, '-w', '-m', 'fast', 'stop'], { env: baseEnv }); },
-    async docker(argv, options = {}) { return command('docker', [...compose, ...argv], { ...options, env: dockerEnv }); },
   };
   return db;
 }

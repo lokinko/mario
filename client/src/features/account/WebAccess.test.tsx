@@ -12,13 +12,50 @@ import { webToken } from "../../lib/webSession";
 vi.mock("../../lib/service", async (original) => ({
   ...(await original<typeof import("../../lib/service")>()),
   isLocalDev: () => false,
-  serviceUrl: () => "/api",
+  serviceUrl: () => `${import.meta.env.BASE_URL}api`,
 }));
 afterEach(() => {
   cleanup();
   sessionStorage.clear();
   localStorage.clear();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+it("registers and logs out through the mounted API and loads the mounted logo", async () => {
+  vi.stubEnv("BASE_URL", "/mario/");
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(new Response('{"token":"mounted-session"}'))
+    .mockResolvedValueOnce(new Response('{"ok":true}'));
+  vi.stubGlobal("fetch", fetcher);
+  const { container } = render(
+    <WebAccess>
+      <p>个人资产</p>
+    </WebAccess>,
+  );
+  expect(screen.queryByLabelText("服务器地址")).toBeNull();
+  expect(container.querySelector("img")?.getAttribute("src")).toBe(
+    "/mario/mario-mark.svg",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "使用邀请码注册" }));
+  fireEvent.change(screen.getByLabelText("邮箱"), {
+    target: { value: "user@example.test" },
+  });
+  fireEvent.change(screen.getByLabelText("密码"), {
+    target: { value: "long-password-1234" },
+  });
+  fireEvent.change(screen.getByLabelText("邀请码"), {
+    target: { value: "invite" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+  await screen.findByText("个人资产");
+  expect(fetcher.mock.calls[0][0]).toBe("/mario/api/auth/register");
+  expect(sessionStorage.getItem("mario.session:/mario/api")).toBe(
+    "mounted-session",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "退出账号" }));
+  await screen.findByRole("button", { name: "创建账号" });
+  expect(fetcher.mock.calls[1][0]).toBe("/mario/api/auth/logout");
 });
 it("keeps data hidden until login, and revokes the session before disconnecting", async () => {
   const fetcher = vi

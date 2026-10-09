@@ -8,16 +8,15 @@ import { args, root } from './start-common.mjs';
 import { database, makeBackup, password, timestamp, unseal, version, workspace } from './backup-common.mjs';
 
 let db, work, lock, stagedConfig, retainStage = false;
-const restart = [];
 const lockPath = join(root, '.runtime/restore.lock');
 try {
   const options = args({ '--help': false, '--mode': true, '--input': true, '--replace': false, '--password-file': true, '--stdin-password': false });
   if (options['--help']) {
-    console.log(`用法：node scripts/restore-backup.mjs --input 文件.mario-backup [--mode auto|native|docker] [--replace]
-先配置目标服务器 .env；脚本可初始化本地空集群或启动 Docker 数据库，外部数据库需提前创建。
+    console.log(`用法：node scripts/restore-backup.mjs --input 文件.mario-backup [--mode auto|native] [--replace]
+先运行 bash deploy.sh prepare 准备配置；脚本可初始化本地空集群，外部数据库需提前创建。
 默认仅恢复到完全没有 Mario schema 的空库；--replace 会先加密备份目标再覆盖全部 Mario 数据。
 保留目标域名、数据库密码和服务配置，只同步源主密钥；恢复在单事务中完成，旧会话全部撤销。
-原生部署请先停止所有 API；Docker 模式会临时停止并恢复本项目已运行的 API/Agent。`);
+恢复前请用 sudo bash deploy.sh stop 停止目标 API/Agent。`);
   } else {
     if (!options['--input']) throw Error('请用 --input 指定迁移包');
     const passphrase = await password(options);
@@ -37,12 +36,6 @@ try {
     }
     db = await database(options['--mode'], { initialize: true });
     if (await db.serverMajor() < metadata.serverMajor) throw Error('目标 PostgreSQL 主版本不能低于源数据库版本');
-    if (db.mode === 'docker') {
-      for (const service of ['api', 'agent']) {
-        if (await db.docker(['ps', '--status', 'running', '-q', service], { capture: true })) restart.push(service);
-      }
-      if (restart.length) await db.docker(['stop', ...restart]);
-    }
     const clients = Number(await db.tool('psql', ['-X', '-tA', '-c', "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND backend_type='client backend'"], { capture: true }));
     if (clients !== 0) throw Error('目标数据库仍有其他客户端连接，请停止所有 API 实例与管理连接后重试');
     const currentSchemas = await db.schemas();
@@ -71,17 +64,13 @@ try {
     await db.tool('psql', ['-X', '--single-transaction', '--set=ON_ERROR_STOP=1', '--file=-'], { input: transactionPath });
     // Keep services stopped if publishing the master key fails after DB commit.
     try { await rename(stagedConfig, envPath); stagedConfig = null; }
-    catch { restart.length = 0; retainStage = true; throw Error(`数据库已恢复，但配置替换失败；请保持 API 停止，将 ${stagedConfig} 替换为 .env 后再启动`); }
+    catch { retainStage = true; throw Error(`数据库已恢复，但配置替换失败；请保持 API 停止，将 ${stagedConfig} 替换为 .env 后再启动`); }
     console.log(`已恢复 ${metadata.createdAt} 的迁移包；目标服务配置已保留，主密钥已同步，旧会话已撤销。`);
     if (db.mode === 'native') console.log('请运行原生启动脚本，并重新登录。');
   }
 } catch (error) {
   console.error(`恢复失败：${error.message}`); process.exitCode = 1;
 } finally {
-  if (db?.mode === 'docker' && restart.length) {
-    try { await db.docker(['up', '-d', '--no-deps', '--no-build', ...restart]); }
-    catch (error) { console.error(`服务重新启动失败：${error.message}`); process.exitCode = 1; }
-  }
   try { await db?.close(); } catch (error) { console.error(error.message); process.exitCode = 1; }
   // Retain a staged recovery configuration if DB commit succeeded but rename failed.
   if (stagedConfig && !retainStage) await unlink(stagedConfig).catch(() => {});

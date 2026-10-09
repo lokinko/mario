@@ -7,6 +7,7 @@ import {
   isNative,
   normalizeServerUrl,
   saveServerUrl,
+  sameOriginServiceUrl,
   serviceUrl,
 } from "../../lib/service";
 import { blockStaleWrites } from "../../lib/syncEvents";
@@ -14,7 +15,7 @@ import { blockStaleWrites } from "../../lib/syncEvents";
 export function WebAccess({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(() => Boolean(webToken()));
   const [server, setServer] = useState(() =>
-    serviceUrl() === "/api" ? "" : serviceUrl(),
+    serviceUrl() === sameOriginServiceUrl() ? "" : serviceUrl(),
   );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -67,9 +68,11 @@ export function WebAccess({ children }: { children: ReactNode }) {
           setBusy(true);
           setError("");
           try {
-            const base = server.trim() ? normalizeServerUrl(server) : "/api";
+            const base = server.trim()
+              ? normalizeServerUrl(server)
+              : sameOriginServiceUrl();
             if (
-              base === "/api" &&
+              base === sameOriginServiceUrl() &&
               !["localhost", "127.0.0.1", "[::1]"].includes(
                 location.hostname,
               ) &&
@@ -102,7 +105,12 @@ export function WebAccess({ children }: { children: ReactNode }) {
           }
         }}
       >
-        <img src="/mario-mark.svg" width="48" height="48" alt="" />
+        <img
+          src={`${import.meta.env.BASE_URL}mario-mark.svg`}
+          width="48"
+          height="48"
+          alt=""
+        />
         <h1>{register ? "创建 mario 账号" : "登录 mario"}</h1>
         {(isNative() || server) && (
           <label>

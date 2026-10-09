@@ -314,7 +314,7 @@ function App() {
       >
         <div className="brand">
           <div className="brand-mark">
-            <img src="/mario-mark.svg" alt="" />
+            <img src={`${import.meta.env.BASE_URL}mario-mark.svg`} alt="" />
           </div>
           <div>
             <strong>mario</strong>

@@ -1,6 +1,6 @@
-# Windows 与 Web
+# Windows 客户端与 Web
 
-Web 通过自建 HTTPS 服务登录，Windows 使用同一服务地址和账号。完整部署见 [自建部署指南](self-hosting.md)。
+网页通过自建 HTTPS 服务登录，Windows 客户端使用同一服务地址和账号。宿主机部署只有根目录 `deploy.sh`，见 [服务器部署](deploy-madeagents.md)。
 
 ```powershell
 npm ci --prefix client
@@ -8,8 +8,8 @@ npm run windows:dev
 npm run windows:build
 ```
 
-Windows 要求 Rust MSVC、Microsoft C++ Build Tools 和 WebView2。构建出的 NSIS 安装包复制到 `outputs/`。桌面外壳不再启动本地服务或打包 sidecar，在登录页填写服务器 HTTPS 地址即可访问。
+Windows 客户端构建要求 Rust MSVC、Microsoft C++ Build Tools 和 WebView2，安装包位于 `outputs/`。桌面外壳不启动服务或 sidecar，在登录页填写 `https://www.madeagents.ai/mario` 即可连接服务器；旧安装包需重新构建后才能接受子路径。
 
-网页静态资源与 API 可以分别部署；Compose 中 Caddy 将 `/api/*` 反向代理到 API。远程多域名前端需配置 `VITE_API_URL` 与后端 `MARIO_ALLOWED_ORIGINS`。同源部署无需 CORS 配置。
+宿主机 API 同时提供构建后的静态网页，已有 Nginx 提供 HTTPS 并剥离部署前缀。单独调试前端可设置 `VITE_API_URL`，跨域时后端填写 `MARIO_ALLOWED_ORIGINS`；同源网页无需 CORS 配置。
 
-`npm run web:build` 构建前端及独立 API 可执行文件；配置 PostgreSQL 和服务端密钥后，`npm run web:start` 可用单进程静态文件服务进行开发或内部测试。公网推荐使用 Compose 的 HTTPS 入口。
+Windows 本机领域开发仍使用 `npm run dev`；多用户服务的启动集成测试使用内部运行器和隔离 PostgreSQL。生产服务器统一在 Linux 上执行 `deploy.sh`，不再提供独立 Web 或 Docker 启动脚本。

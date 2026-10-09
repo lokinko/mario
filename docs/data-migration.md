@@ -1,91 +1,77 @@
 # 服务器间打包、下载与恢复
 
-频繁搬迁推荐使用 **加密 PostgreSQL 快照包**：一个 `.mario-backup` 文件包含全部账号、密码哈希、业务数据、版本号和解密用户模型密钥所需的主密钥。无需搬运 PostgreSQL 数据目录，Docker 与原生部署之间也能迁移。它是整库复制/替换，不会合并两个服务器各自的修改；需要双向实时同步时应使用同一个中心数据库。
+频繁搬迁使用一个加密 `.mario-backup` 文件，包含全部账号、业务数据、同步版本及解密用户模型凭据的主密钥。它是整库复制/替换，不合并两台服务器独立产生的修改；多设备实时访问请共用一台中心服务。
 
-## 在本机一键打包并下载
+当前部署是宿主机 PostgreSQL，备份默认 `native`，无需填写部署模式。旧 Docker 实例可在旧版本导出同格式加密包，再在本版本宿主机恢复；不会直接搬运 PostgreSQL 数据目录。
 
-本机需要 Node.js 20+ 和 OpenSSH 客户端；Linux/macOS 源服务器需有更新后的项目和可运行的数据库工具。建议使用 SSH 密钥或 SSH agent，主机密钥仍按系统 SSH 规则验证。
+## 从本机一键打包下载
+
+本机需要 Node 22+ 和 OpenSSH；源服务器有当前项目及 PostgreSQL 工具。使用 SSH 密钥或 agent，保留主机密钥校验：
 
 ```bash
-# 在本机的项目根目录执行；在远端打包，直接下载到本机。
-bash scripts/download-backup.sh --host user@server-a --remote-dir /srv/mario --mode docker
-# 无 Docker 的源服务器改为 --mode native。
-# Windows 不需要 Bash：
-node scripts/download-backup.mjs --host user@server-a --remote-dir /srv/mario --mode docker
+npm run data:download -- --host user@server-a --remote-dir /srv/mario
+# Windows/Linux 也可以直接执行：
+node scripts/download-backup.mjs --host user@server-a --remote-dir /srv/mario
 ```
 
-运行时输入独立的备份加密密码，不回显；SSH 密钥保护传输，密码保护落盘的包。默认文件位于本机 `backups/download-时间.mario-backup`。下载会验证完整包的密码与认证标签，通过后才公布最终文件；同名文件不覆盖，失败清理临时文件。远端只使用私有临时目录，不留下长期备份包。
+运行时输入独立的备份加密密码，不回显。默认下载到本机 `backups/download-时间.mario-backup`，验证密码和认证标签后才公布最终文件；远端使用私有临时目录，不留下长期备份。
 
-频繁下载可将以下字段写入**本机** `.env`，之后只需 `bash scripts/download-backup.sh` 或 `npm run data:download`：
+频繁使用可将 `MARIO_BACKUP_SSH_HOST`、`MARIO_BACKUP_REMOTE_DIR`、SSH 端口/私钥路径写入本机 `.env`，之后只需 `npm run data:download`。数据库连接、PG 工具路径及主密钥来自源服务器自己的 `.env`。
 
-```dotenv
-MARIO_BACKUP_MODE=docker
-MARIO_BACKUP_DIR=backups
-MARIO_BACKUP_SSH_HOST=user@server-a
-MARIO_BACKUP_REMOTE_DIR=/srv/mario
-MARIO_BACKUP_SSH_PORT=22
-MARIO_BACKUP_SSH_IDENTITY=
-```
-
-源服务器自己的 `.env` 提供数据库连接、主密钥和 PostgreSQL 工具路径。`MARIO_BACKUP_MODE=auto` 在存在原生数据目录/外部数据库 URL 时选择原生，否则选择 Docker；同一目录使用过两种方式时应显式选择，避免备份错数据库。命令行的 `--host`、`--remote-dir`、`--mode`、`--port`、`--identity`、`--output` 优先于文件设置。
-
-## 只在源服务器打包
+## 源服务器只打包
 
 ```bash
 cd /srv/mario
-bash scripts/backup.sh --mode docker
-# 原生：bash scripts/backup.sh --mode native
-# 自定义输出路径：
-node scripts/backup.mjs --mode native --output /safe/mario-current.mario-backup
+npm run data:backup
+# 或 bash scripts/backup.sh
 ```
 
-默认使用 `.env` 中的 `MARIO_BACKUP_DIR`。脚本调用 `pg_dump` 的一致性快照，只备份 `mario_auth` 和应用的 `user_<uuid>` schemas；数据库角色、其他应用数据、程序代码、HTTPS 证书不在包中。源模型密钥保持原有加密形式，主密钥位于包的加密载荷中。现有本地 PostgreSQL 停止时，脚本可临时启动它并在结束后停止；已经运行的数据库不会被停止。外部数据库需要运行且允许备份账户读取全部应用 schemas。
+备份使用 `pg_dump` 一致性快照，只导出 `mario_auth` 和 `user_<uuid>` schemas。源码、证书、其他应用数据与 PostgreSQL 角色不包含在包里。数据库停止时临时启动，结束后关闭；已运行数据库保持运行。
 
-可以在线生成定期备份。**最终迁移前请停止源服务器的所有 API 实例，等待 AI 操作结束，再生成最后一个包**；备份后产生的写入不会自动进入目标。Docker 可执行 `docker compose stop api agent`；原生一键启动可 Ctrl+C，备份脚本会临时启动数据库。切换完成前保留源服务停止状态，避免两端同时写入产生分叉。
-
-## 在目标服务器恢复
-
-目标需安装相同版本的项目（当前 0.5.0），PostgreSQL 主版本不得低于源数据库。先生成/填写目标 `.env`，保留目标自己的域名、数据库密码、Agent 令牌和邀请码。将迁移包通过 `scp` 等方式上传：
+日常可在线备份。最终搬迁前等待 AI 操作结束并停服，生成最后一份备份，切换期间保持源服务停止，避免数据分叉：
 
 ```bash
-# 本机上传，不会删除本机原包。
-scp ./backups/download-时间.mario-backup user@server-b:/srv/mario/
+sudo bash deploy.sh stop
+npm run data:backup
+```
 
-# 目标服务器：先准备配置，再恢复，最后启动。
+备份、恢复操作应以服务运行用户执行；root 登录部署时默认为 `mario`，可通过 `sudo -u mario` 执行 Node 工具，专用 Node 为 `/opt/mario-tools/node/bin/node`。已有数据库 URL 使用已设置的连接，账户需能读取全部应用 schemas。
+
+## 目标恢复
+
+先在目标安装同版本项目和工具，用 `deploy.sh prepare` 生成配置，保持服务停止。新目标可先完成首次部署再 stop；这样依赖和二进制已准备完毕。PG 主版本不能低于源库。
+
+```bash
 cd /srv/mario
-node scripts/generate-env.mjs server-b.example.com
-bash scripts/restore-backup.sh --mode docker --input ./download-时间.mario-backup
-bash scripts/start-docker.sh
+sudo bash deploy.sh --ip 目标IP --domain 目标域名
+sudo bash deploy.sh stop
+# 上传迁移包后，作为服务运行用户执行：
+node scripts/restore-backup.mjs --input ./最新包.mario-backup
+sudo bash deploy.sh start
 ```
 
-原生目标使用 `--mode native`，在 `.env` 中填写 `PG_BIN`（不在 PATH 时），之后执行 `bash scripts/start-native.sh`。首次恢复会自动初始化本地空 PostgreSQL 集群，或启动 Docker 的 database 容器；外部数据库需提前创建。只有 database 容器的阶段不提供网站，恢复完成后再启动全部服务。
-
-目标已有 Mario schema 时默认拒绝，反复搬运明确加 `--replace`：
+仅准备配置时用 `bash deploy.sh prepare --ip ... --domain ...`，需已有 Node/PG 工具。恢复可初始化空的项目 PostgreSQL 集群，外部数据库需提前创建。已存在 Mario 数据时默认拒绝覆盖，明确替换需加 `--replace`：
 
 ```bash
-bash scripts/restore-backup.sh --mode docker --input ./最新包.mario-backup --replace
-# 原生部署需先停止所有 API，然后运行 --mode native 的同一命令。
+node scripts/restore-backup.mjs --input ./最新包.mario-backup --replace
 ```
 
-覆盖前自动生成 `backups/before-restore-时间.mario-backup`，使用本次输入的备份密码，包含目标原数据与原主密钥。请保留直到验证完成；需要回退时把它作为 `--input` 再恢复。目标若存在不完整的账号 schema 导致无法备份，脚本拒绝继续，需管理员先修复/单独备份。
+覆盖前自动生成 `backups/before-restore-时间.mario-backup`，使用本次输入的备份密码，包含目标原数据和主密钥。保留以便回退。
 
-恢复先验证全部密文、SHA-256 与项目版本，再停止本项目 Docker API/Agent（完成或失败后恢复原先运行的服务）。原生脚本检查启动锁和数据库连接，要求所有 API/管理连接已停止。数据替换在一个 PostgreSQL 事务里完成，SQL 失败回滚；清除所有旧用户 schemas，防止残留目标独有账户的数据。成功后只将源 `MARIO_MASTER_KEY` 合并到目标 `.env`，其余目标配置保持原值。旧会话全部撤销，用户使用原账号密码重新登录，模型密钥可继续解密。
+恢复先验证密文、SHA-256 和版本，再以一个 PostgreSQL 事务替换所有应用 schemas；失败回滚，清除旧会话。成功只把源 `MARIO_MASTER_KEY` 合并到目标 `.env`，目标域名、数据库密码和其他配置保持不变。源用户用原密码重新登录，模型凭据继续可解密。
 
-配置文件与数据库无法跨介质做同一原子事务；如果数据库已提交但 `.env` 替换失败，脚本会保持 API 停止并给出暂存配置路径，按提示将它替换为 `.env` 后再启动。强制终止恢复进程可能留下 `.runtime/restore.lock`；先确认进程停止、核对数据/主密钥，再清理锁。启动脚本检测该锁，避免在恢复过程中启动业务服务。
+数据库与 `.env` 无法跨介质做同一原子事务；如果数据库已提交但配置替换失败，保持服务停止，并按提示将暂存配置替换到 `.env`。强制终止可能留下 `.runtime/restore.lock`，先确认进程停止和数据/主密钥一致再清理；部署脚本会阻止锁存在时启动。
 
-## 密码、权限与容量
+## 密码与空间
 
-迁移包使用 AES-256-GCM，随机盐和 nonce，scrypt 派生加密密钥。密码至少 12 字符，不能与包一起保存，遗失无法恢复；备份包含所有用户数据，不应交给普通账号用户或放入网页公开目录。
+包使用 AES-256-GCM、随机盐/nonce 和 scrypt。密码至少 12 字符，不能与备份一起保存，遗失无法解密。备份含所有用户数据，不放公开目录或交给普通用户。
 
-自动化时可用 `MARIO_BACKUP_PASSWORD` 环境变量，或 `--password-file /private/backup-password`；密码文件应设为只有本人可读。不要用命令参数传入密码，也不要将密码写入 `.env`。数据库密码只通过子进程环境传递，不进入命令参数。SSH 下载时备份密码通过 SSH stdin 传递。源/目标/本机都需要足够磁盘空间；恢复会短暂保存权限受限的解密数据和 SQL，正常完成后清理。
-
-脚本流式处理大文件，不将整库读入内存；scrypt 每次约使用 128 MiB 内存。自定义备份目录需位于非公开路径。Docker 的备份工具来自 PostgreSQL 容器；原生 `pg_dump`、`pg_restore`、`psql` 应使用 PostgreSQL 17 或与源/目标版本兼容的同组工具。备份日志不输出密码或主密钥。
+自动化可设置 `MARIO_BACKUP_PASSWORD` 或 `--password-file`，不把密码写进命令参数/`.env`。流式处理避免整库驻留内存；每次 scrypt 约 128 MiB 内存，源/目标/本机都需足够临时磁盘空间。
 
 ## 验证
 
 ```bash
-# 已构建后端 debug 二进制，PostgreSQL 工具路径按服务器调整。
 MARIO_TEST_PG_BIN=/usr/lib/postgresql/17/bin npm run test:backup
 ```
 
-测试使用两个独立临时集群，覆盖账号/财务数据/凭据迁移、密码错误、密文损坏、空目标恢复、目标配置保留、会话撤销、在线服务保护、SQL 回滚、反复替换、孤立租户清理和自动备份回退。脚本不会操作测试目录以外的数据库。
+测试使用两个独立临时集群，验证加密、凭据迁移、配置保留、会话撤销、服务运行保护、事务回滚、反复替换和回退。禁止将生产数据库传给集成测试。

@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart LR
-    W[网页] --> G[Caddy HTTPS]
+    W[网页] --> G[Nginx HTTPS]
     C[Tauri 客户端] --> G
     G --> A[API：认证、业务规则、上下文授权]
     A --> P[(PostgreSQL：账号与用户关系表)]

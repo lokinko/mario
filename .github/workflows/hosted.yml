@@ -12,7 +12,7 @@ jobs:
           POSTGRES_USER: mario_test
           POSTGRES_PASSWORD: test_only_password
           POSTGRES_DB: mario_test
-        ports: [5432:5432]
+        ports: [55430:5432]
         options: >-
           --health-cmd "pg_isready -U mario_test -d mario_test"
           --health-interval 5s --health-timeout 3s --health-retries 20
@@ -29,13 +29,18 @@ jobs:
           workspaces: server
       - run: npm ci --prefix client
       - run: npm run build --prefix client
+      - run: npm run test:deploy
       - run: npm test --prefix client
       - run: cargo test --locked --manifest-path server/Cargo.toml
       - run: cargo clippy --locked --manifest-path server/Cargo.toml --all-targets -- -D warnings
       - run: cargo build --locked --manifest-path server/Cargo.toml
+      - name: Host startup and backup integration
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql
+          node --input-type=module -e 'import { appendFileSync } from "node:fs"; import { postgresBin } from "./scripts/start-common.mjs"; appendFileSync(process.env.GITHUB_ENV, "MARIO_TEST_PG_BIN=" + postgresBin() + "\n");'
+      - run: npm run test:startup
+      - run: npm run test:backup
       - run: node scripts/test-hosted.mjs
         env:
-          MARIO_TEST_DATABASE_URL: postgresql://mario_test:test_only_password@127.0.0.1:5432/mario_test
-      - run: docker compose --env-file .env.example config --no-interpolate
-      - run: docker build --target backend .
-      - run: docker build --target web .
+          MARIO_TEST_DATABASE_URL: postgresql://mario_test:test_only_password@127.0.0.1:55430/mario_test
