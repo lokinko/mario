@@ -96,6 +96,8 @@ bash deploy.sh check
 
 更改脚本顶部配置后执行 `deploy`，不能只 `restart`：重新部署才会写入新配置和重新构建网页。更改路径/端口后，生成的 Nginx 片段也会更新，需要重新检查并加载 Nginx。部署会先停止当前应用再构建，因此升级期间网站暂时不可用；构建失败保持服务停止，可在排查后重新部署。
 
+升级后，已有账户首次访问 API 时会按数据库结构版本自动补齐表、列和数据版本触发器，保留原有数据；迁移在账户锁和事务内完成，失败会回滚。若旧版本出现 `relation "research_attachments" does not exist` 或 `column r.content does not exist`，将修复后的代码同步到服务器并运行 `sudo bash deploy.sh`，然后刷新网页。`restart` 只重启已有二进制，不会编译修复。请求中的数据库错误可从服务日志和 `sudo tail -n 80 .runtime/native/postgres.log` 查看具体原因。
+
 `prepare` 只准备 `.env` 和 Nginx 片段，适合恢复数据前使用，需已有 Node：
 
 ```bash

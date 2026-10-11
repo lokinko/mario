@@ -2,6 +2,10 @@ use crate::storage::Connection;
 
 use crate::error::AppResult;
 
+// Bump whenever hosted tables/columns change. This is independent of the
+// export format version: an existing tenant must also receive new SQL objects.
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 1;
+
 // Keep legacy migration order intact: opening an old database remains idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
     connection.execute_batch(

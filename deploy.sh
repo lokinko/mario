@@ -74,8 +74,8 @@ fi
 if [[ "$ACTION" == deploy && -e .runtime/restore.lock ]]; then echo '恢复操作尚未完成，请先检查 .runtime/restore.lock' >&2; exit 1; fi
 case "$ACTION" in
     start|stop|restart) exec systemctl "$ACTION" "$SERVICE_NAME.service" ;;
-    status) exec systemctl status "$SERVICE_NAME.service" --no-pager ;;
-    logs) exec journalctl -u "$SERVICE_NAME.service" -n 100 -f ;;
+    status) exec systemctl status "$SERVICE_NAME.service" --no-pager -l ;;
+    logs) exec journalctl -u "$SERVICE_NAME.service" -n 100 -f --no-pager ;;
 esac
 
 node_ready() { command -v node >/dev/null && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' && command -v npm >/dev/null; }

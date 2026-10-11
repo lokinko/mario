@@ -63,7 +63,9 @@ impl IntoResponse for AppError {
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let message = if status == StatusCode::INTERNAL_SERVER_ERROR {
-            tracing::error!(error=%self,"request failed");
+            // PostgreSQL's Display only says "db error"; Debug retains its
+            // SQLSTATE and underlying cause. Keep details in server logs only.
+            tracing::error!(error=%self, cause=?self,"request failed");
             "服务暂时不可用，请联系管理员查看日志".into()
         } else {
             self.to_string()

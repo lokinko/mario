@@ -87,19 +87,38 @@ impl Database {
     }
     pub fn postgres(url: &str, user_id: &str) -> AppResult<Self> {
         let id = Uuid::parse_str(user_id).map_err(|_| AppError::Auth("无效账户".into()))?;
-        let connection = Connection::postgres(url, &format!("user_{}", id.simple()))?;
+        let mut connection = Connection::postgres(url, &format!("user_{}", id.simple()))?;
         connection
             .execute_batch("SELECT pg_advisory_lock(hashtextextended(current_schema(),0));")?;
-        let initialized = connection
-            .query_row("SELECT to_regclass('data_revision')::text", [], |r| {
-                r.get::<_, Option<String>>(0)
-            })?
-            .is_some();
-        if !initialized {
-            connection.execute_batch("BEGIN")?;
-            schema::initialize(&connection)?;
-            connection.execute_batch(include_str!("../migrations/tenant-revisions.sql"))?;
-            connection.execute_batch("COMMIT")?;
+        let has_schema_version = connection.query_row(
+            "SELECT EXISTS (SELECT 1 FROM pg_attribute
+             WHERE attrelid=to_regclass('data_revision')
+               AND attname='schema_version' AND NOT attisdropped)",
+            [],
+            |r| r.get::<_, bool>(0),
+        )?;
+        let version = if has_schema_version {
+            connection.query_row(
+                "SELECT schema_version FROM data_revision WHERE id=1",
+                [],
+                |r| r.get::<_, i64>(0),
+            )?
+        } else {
+            0
+        };
+        if version < schema::POSTGRES_SCHEMA_VERSION {
+            let tx = connection.transaction()?;
+            schema::initialize(&tx)?;
+            // Re-run for existing tenants too, so newly added tables get revision triggers.
+            tx.execute_batch(include_str!("../migrations/tenant-revisions.sql"))?;
+            tx.execute_batch(
+                "ALTER TABLE data_revision ADD COLUMN IF NOT EXISTS schema_version INTEGER NOT NULL DEFAULT 0",
+            )?;
+            tx.execute(
+                "UPDATE data_revision SET schema_version=?1 WHERE id=1",
+                [schema::POSTGRES_SCHEMA_VERSION],
+            )?;
+            tx.commit()?;
         }
         connection
             .execute_batch("SELECT pg_advisory_unlock(hashtextextended(current_schema(),0));")?;
@@ -171,6 +190,8 @@ impl<T> OptionalRow<T> for rusqlite::Result<T> {
     }
 }
 
+#[cfg(test)]
+mod postgres_tests;
 mod schema;
 #[cfg(test)]
 mod tests;
