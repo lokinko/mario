@@ -1,6 +1,6 @@
 [package]
 name = "mario-server"
-version = "0.5.0"
+version = "0.6.0"
 description = "Self-hosted multi-user API and stateless AI execution service"
 edition = "2021"
 rust-version = "1.86"

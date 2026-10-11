@@ -19,6 +19,8 @@ Web、macOS、Windows 和 Android 共用 `client/src` 中的页面与业务 API�
 npm run desktop:build
 # Android：outputs/ 下的 aarch64 调试 APK
 npm run android:build
+# Android：优化后的 aarch64 release APK
+npm run android:release
 # 网页：outputs/web，可通过 VITE_BASE_PATH 设置部署前缀
 VITE_BASE_PATH=/mario/ npm run web:build
 # 本机依次构建 macOS、Android、Web
@@ -33,4 +35,4 @@ Tauri 使用 `build:native`，资源路径固定为 `/`，不受网页部署前�
 
 成功的平台构建会更新 `outputs/build-manifest.json`：每个产物分别记录自己的源码信息、大小和 SHA-256；目录产物按排序后的相对路径及内容计算 SHA-256。旧安装包保留自己的旧提交并标为 `stale`，不会因另一个平台重新打包而被标为最新。如果前端构建后源码发生变化，记录脚本会阻止写入错误的版本信息，要求重新构建。
 
-网页或服务器部署不会自动更新已安装客户端的内置页面；生成新安装包后仍需安装。macOS 当前为临时签名，Android 当前为调试包。
+网页或服务器部署不会自动更新已安装客户端的内置页面；生成新安装包后仍需安装。macOS 当前为临时签名。Android 支持 debug 和 release 构建；默认沿用本机调试密钥签名以兼容已有安装，可通过 `ANDROID_KEYSTORE`、`ANDROID_KEY_ALIAS`、`ANDROID_KEYSTORE_PASSWORD` 和 `ANDROID_KEY_PASSWORD` 配置正式签名。release 构建会压缩代码并关闭调试，使用调试密钥签名仍不等于正式签名。

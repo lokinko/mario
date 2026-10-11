@@ -1,7 +1,7 @@
 {
   "name": "mario-workspace",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "scripts": {
     "test:startup": "node scripts/test-startup.mjs",
     "test:postgres-start": "node scripts/test-postgres-start.mjs",
@@ -19,6 +19,7 @@
     "build:all": "npm run desktop:build && npm run android:build && npm run web:build",
     "android:init": "bash scripts/android.sh init",
     "android:build": "bash scripts/android.sh build",
+    "android:release": "bash scripts/android.sh release",
     "windows:dev": "powershell -NoProfile -File scripts/windows.ps1 dev",
     "windows:build": "powershell -NoProfile -File scripts/windows.ps1 build",
     "server:check": "cargo check --manifest-path server/Cargo.toml",

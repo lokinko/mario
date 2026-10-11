@@ -59,7 +59,13 @@ case "$action" in
     npm run tauri --prefix "$root_dir/client" -- android init --ci --skip-targets-install "$@"
     configure_android_manifest
     ;;
-  build)
+  build|release)
+    build_profile="debug"
+    profile_args=(--debug)
+    if [[ "$action" == "release" ]]; then
+      build_profile="release"
+      profile_args=()
+    fi
     if [[ ! -f "$root_dir/client/src-tauri/gen/android/app/src/main/AndroidManifest.xml" ]]; then
       npm run tauri --prefix "$root_dir/client" -- android init --ci --skip-targets-install
     fi
@@ -67,15 +73,18 @@ case "$action" in
     find "$root_dir/client/src-tauri/gen/android/app/src/main/jniLibs" \
       -type l -name 'libmario_client_lib.so' -delete 2>/dev/null || true
     read -r -a android_targets <<< "${MARIO_ANDROID_TARGETS:-aarch64}"
-    npm run tauri --prefix "$root_dir/client" -- android build --debug --apk --ci --target "${android_targets[@]}" "$@"
-    source_apk="$root_dir/client/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
+    npm run tauri --prefix "$root_dir/client" -- android build "${profile_args[@]}" --apk --ci --target "${android_targets[@]}" "$@"
+    source_apk="$root_dir/client/src-tauri/gen/android/app/build/outputs/apk/universal/$build_profile/app-universal-$build_profile.apk"
+    if [[ "$build_profile" == "release" && ! -f "$source_apk" ]]; then
+      source_apk="${source_apk%.apk}-unsigned.apk"
+    fi
     if [[ ! -f "$source_apk" ]]; then
-      echo "未找到预期的通用调试 APK: $source_apk" >&2
+      echo "未找到预期的通用 APK: $source_apk" >&2
       exit 1
     fi
     app_version="$(node -p 'require(process.argv[1]).version' "$root_dir/client/package.json")"
     target_label="$(IFS=-; echo "${android_targets[*]}")"
-    destination_apk="$root_dir/outputs/mario_${app_version}_android-${target_label}-debug.apk"
+    destination_apk="$root_dir/outputs/mario_${app_version}_android-${target_label}-${build_profile}.apk"
     mkdir -p "$root_dir/outputs"
 
     package_dir="$(mktemp -d)"
@@ -96,16 +105,21 @@ case "$action" in
     done
 
     build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-    debug_keystore="${ANDROID_DEBUG_KEYSTORE:-$HOME/.android/debug.keystore}"
-    "$build_tools/zipalign" -f -p 4 "$working_apk" "$aligned_apk"
+    signing_keystore="${ANDROID_KEYSTORE:-${ANDROID_DEBUG_KEYSTORE:-$HOME/.android/debug.keystore}}"
+    if [[ "$build_profile" == "release" && -z "${ANDROID_KEYSTORE:-}" ]]; then
+      echo "Release APK 使用现有调试密钥签名，与此前安装包保持兼容；正式分发密钥可通过 ANDROID_KEYSTORE 配置。"
+    fi
+    "$build_tools/zipalign" -f -P 16 4 "$working_apk" "$aligned_apk"
     if [[ -f "$destination_apk" ]]; then
       unlink "$destination_apk"
     fi
+    export ANDROID_SIGNING_STORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:-${ANDROID_DEBUG_KEYSTORE_PASSWORD:-android}}"
+    export ANDROID_SIGNING_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-${ANDROID_DEBUG_KEY_PASSWORD:-android}}"
     "$build_tools/apksigner" sign \
-      --ks "$debug_keystore" \
-      --ks-key-alias "${ANDROID_DEBUG_KEY_ALIAS:-androiddebugkey}" \
-      --ks-pass "pass:${ANDROID_DEBUG_KEYSTORE_PASSWORD:-android}" \
-      --key-pass "pass:${ANDROID_DEBUG_KEY_PASSWORD:-android}" \
+      --ks "$signing_keystore" \
+      --ks-key-alias "${ANDROID_KEY_ALIAS:-${ANDROID_DEBUG_KEY_ALIAS:-androiddebugkey}}" \
+      --ks-pass "env:ANDROID_SIGNING_STORE_PASSWORD" \
+      --key-pass "env:ANDROID_SIGNING_KEY_PASSWORD" \
       --out "$destination_apk" \
       "$aligned_apk"
     "$build_tools/apksigner" verify "$destination_apk"
@@ -113,7 +127,7 @@ case "$action" in
     echo "Prepared APK: $destination_apk"
     ;;
   *)
-    echo "用法: scripts/android.sh init|build [额外 Tauri 参数]" >&2
+    echo "用法: scripts/android.sh init|build|release [额外 Tauri 参数]" >&2
     exit 2
     ;;
 esac
