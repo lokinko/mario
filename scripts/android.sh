@@ -34,6 +34,12 @@ if [[ -z "${NDK_HOME:-}" ]]; then
   export NDK_HOME="$ndk_home"
 fi
 
+# NDK r27 defaults to 4 KB ELF alignment. Support Android devices using
+# 16 KB pages as well as traditional 4 KB devices.
+for rustflags_var in CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS; do
+  export "$rustflags_var=${!rustflags_var:-} -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384"
+done
+
 configure_android_manifest() {
   manifest="$root_dir/client/src-tauri/gen/android/app/src/main/AndroidManifest.xml"
   gradle_file="$root_dir/client/src-tauri/gen/android/app/build.gradle.kts"
@@ -123,6 +129,7 @@ case "$action" in
       --out "$destination_apk" \
       "$aligned_apk"
     "$build_tools/apksigner" verify "$destination_apk"
+    "$build_tools/zipalign" -c -P 16 4 "$destination_apk"
     node "$root_dir/scripts/record-client-build.mjs" android "outputs/$(basename "$destination_apk")"
     echo "Prepared APK: $destination_apk"
     ;;
