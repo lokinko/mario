@@ -106,7 +106,7 @@ export function ServerData({
             </h2>
           </div>
           <p className="section-intro">
-            仅适用于空账号，支持 JSON 文件，最大 8 MB。
+            仅适用于空账号，支持 JSON 文件，最大 64 MB。
           </p>
           <label
             className={`secondary file-import-button ${busy ? "disabled" : ""}`}
@@ -128,8 +128,8 @@ export function ServerData({
                 setOperation("import");
                 setError("");
                 try {
-                  if (file.size > 8 * 1024 * 1024)
-                    throw new Error("文件超过 8 MB");
+                  if (file.size > 64 * 1024 * 1024)
+                    throw new Error("文件超过 64 MB");
                   const data = JSON.parse(await file.text());
                   if (!confirm("将把此文件导入当前空账号，是否继续？")) return;
                   await importData(data);

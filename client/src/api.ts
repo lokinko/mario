@@ -19,8 +19,9 @@ import type {
   AnalysisResult,
   AnalysisHistoryItem,
   DecisionEntry,
+  DecisionTextInput,
   DecisionRecord,
-  DecisionReview,
+  DecisionReviewInput,
   FinancialProfile,
   FxRateQuote,
   FxBook,
@@ -48,7 +49,7 @@ import type {
   ReviewReminderSummary,
   RuleEffectivenessSummary,
   Snapshot,
-  SystemReviewInput,
+  SystemReviewDraft,
   SystemReviewRecord,
   StoredAnalysis,
 } from "./types";
@@ -74,7 +75,9 @@ async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
               path.startsWith("/market-data/fx-rate") ||
               path === "/portfolio-events"
             ? 30000
-            : 15000,
+            : path.startsWith("/research-evidence") || path.startsWith("/data/")
+              ? 60000
+              : 15000,
       onResponse: (response) => {
         if (webToken() !== authToken) return;
         if (
@@ -365,7 +368,9 @@ export async function saveAnalysisSettings(
   });
 }
 
-export async function saveDecision(entry: DecisionEntry): Promise<void> {
+export async function saveDecision(
+  entry: DecisionEntry | DecisionTextInput,
+): Promise<void> {
   await httpRequest<void>("/decisions", {
     method: "POST",
     body: JSON.stringify(entry),
@@ -378,7 +383,7 @@ export async function getDecisions(): Promise<DecisionRecord[]> {
 
 export async function saveDecisionReview(
   id: string,
-  review: DecisionReview,
+  review: DecisionReviewInput,
 ): Promise<void> {
   await httpRequest<void>(`/decisions/${encodeURIComponent(id)}/review`, {
     method: "PUT",
@@ -452,7 +457,7 @@ export async function getSystemReviews(): Promise<SystemReviewRecord[]> {
 }
 
 export async function saveSystemReview(
-  review: SystemReviewInput,
+  review: SystemReviewDraft,
 ): Promise<SystemReviewRecord> {
   return httpRequest<SystemReviewRecord>("/system-reviews", {
     method: "POST",
@@ -471,6 +476,15 @@ export async function saveResearchEvidence(
     method: "POST",
     body: JSON.stringify(evidence),
   });
+}
+
+export async function getResearchAttachment(
+  evidenceId: string,
+  attachmentId: string,
+): Promise<{ name: string; dataBase64: string }> {
+  return httpRequest(
+    `/research-evidence/${encodeURIComponent(evidenceId)}/attachments/${encodeURIComponent(attachmentId)}`,
+  );
 }
 
 export async function setResearchEvidenceStatus(

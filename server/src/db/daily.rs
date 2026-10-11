@@ -1100,6 +1100,15 @@ mod tests {
         let data = db.export_sync_data().unwrap();
         let mut legacy = data.clone();
         legacy.schema_version = 9;
+        let legacy_reviews = legacy
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "decision_reviews")
+            .unwrap();
+        legacy_reviews.columns.pop();
+        for row in &mut legacy_reviews.rows {
+            row.pop();
+        }
         legacy.tables.truncate(14);
         let restored = super::tests::db();
         restored.import_sync_data(&legacy).unwrap();

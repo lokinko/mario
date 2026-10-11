@@ -58,11 +58,11 @@ it("restores export and import controls after an export failure", async () => {
 it("blocks oversized and malformed imports before confirmation or writing", async () => {
   const confirm = vi.spyOn(window, "confirm");
   mount();
-  chooseFile("{}", 8 * 1024 * 1024 + 1);
-  expect((await screen.findByRole("alert")).textContent).toContain("8 MB");
+  chooseFile("{}", 64 * 1024 * 1024 + 1);
+  expect((await screen.findByRole("alert")).textContent).toContain("64 MB");
   chooseFile("invalid json");
   await waitFor(() =>
-    expect(screen.getByRole("alert").textContent).not.toContain("8 MB"),
+    expect(screen.getByRole("alert").textContent).not.toContain("64 MB"),
   );
   expect(confirm).not.toHaveBeenCalled();
   expect(api.importData).not.toHaveBeenCalled();

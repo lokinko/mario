@@ -117,6 +117,16 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            active INTEGER NOT NULL,
            captured_at TEXT NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS research_attachments (
+           id TEXT PRIMARY KEY,
+           evidence_id TEXT NOT NULL REFERENCES research_evidence(id) ON DELETE CASCADE,
+           name TEXT NOT NULL,
+           byte_size INTEGER NOT NULL,
+           data_base64 TEXT NOT NULL,
+           extracted_text TEXT NOT NULL,
+           extraction_note TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS research_attachments_evidence ON research_attachments(evidence_id);
          CREATE TABLE IF NOT EXISTS portfolio_checkins (
            id TEXT PRIMARY KEY,
            payload TEXT NOT NULL,
@@ -229,6 +239,7 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
          CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolio_events_fingerprint
            ON portfolio_events(fingerprint) WHERE fingerprint <> '';",
     )?;
+    ensure_column(connection, "decision_reviews", "content", "TEXT")?;
     ensure_column(connection, "holdings", "fx_rate_to_base", "REAL")?;
     ensure_column(
         connection,

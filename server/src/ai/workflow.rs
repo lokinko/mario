@@ -4,7 +4,7 @@ use super::structured_output::STRUCTURED_ANALYSIS_CONTRACT;
 use super::ChatMessage;
 use crate::context::INVESTMENT_SYSTEM_POLICY;
 
-pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v5";
+pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v6";
 
 pub struct StagePrompt {
     pub key: &'static str,
@@ -50,9 +50,9 @@ pub trait AnalysisWorkflow: Send + Sync {
     ) -> StagePrompt;
 }
 
-pub struct InvestmentWorkflowV5;
+pub struct InvestmentWorkflowV6;
 
-impl AnalysisWorkflow for InvestmentWorkflowV5 {
+impl AnalysisWorkflow for InvestmentWorkflowV6 {
     fn version(&self) -> &'static str {
         INVESTMENT_WORKFLOW_VERSION
     }
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn exploration_uses_independent_and_distinct_lenses() {
-        let workflow = InvestmentWorkflowV5;
+        let workflow = InvestmentWorkflowV6;
         let alternatives = workflow.alternative_specs(true);
         assert_eq!(alternatives.len(), 2);
         assert_ne!(alternatives[0].id, alternatives[1].id);
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn disabling_exploration_preserves_a_no_action_baseline() {
-        let workflow = InvestmentWorkflowV5;
+        let workflow = InvestmentWorkflowV6;
         let alternatives = workflow.alternative_specs(false);
         assert_eq!(alternatives.len(), 1);
         assert_eq!(alternatives[0].id, "baseline");
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn every_model_stage_inherits_the_untrusted_data_boundary() {
-        let workflow = InvestmentWorkflowV5;
+        let workflow = InvestmentWorkflowV6;
         let prompts = [
             workflow.quick("问题", "上下文"),
             workflow.research_plan("问题", &serde_json::json!({})),
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn final_stages_require_the_machine_readable_contract() {
-        let workflow = InvestmentWorkflowV5;
+        let workflow = InvestmentWorkflowV6;
         assert!(workflow.quick("问题", "上下文").messages[1]
             .content
             .contains("evidenceIds"));

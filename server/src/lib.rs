@@ -1,6 +1,7 @@
 mod accounts;
 mod agent;
 mod ai;
+mod attachments;
 mod hosted;
 mod storage;
 #[cfg(test)]
@@ -340,7 +341,13 @@ fn api_router() -> Router {
         )
         .route(
             "/api/research-evidence",
-            get(research_evidence).post(add_research_evidence),
+            get(research_evidence)
+                .post(add_research_evidence)
+                .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
+        .route(
+            "/api/research-evidence/{id}/attachments/{attachment_id}",
+            get(research_attachment),
         )
         .route(
             "/api/research-evidence/{id}/status",
@@ -688,6 +695,12 @@ async fn set_research_evidence_status(
 async fn model_config(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<ModelConfig>> {
     Ok(Json(state.db.model_config()?))
 }
+async fn research_attachment(
+    Extension(state): Extension<Arc<AppState>>,
+    Path((id, attachment_id)): Path<(String, String)>,
+) -> AppResult<Json<models::ResearchAttachmentDownload>> {
+    Ok(Json(state.db.research_attachment(&id, &attachment_id)?))
+}
 
 async fn read_codex_credentials(
     Extension(state): Extension<Arc<AppState>>,
@@ -857,7 +870,7 @@ async fn run_analysis(
     let config = state.db.model_config()?;
     let snapshot = state.db.snapshot()?;
     let retriever = HybridMemoryRetriever::default();
-    let memory_candidates = if request.workflow == "deep" && request.use_memory {
+    let memory_candidates = if request.use_memory {
         initial_memory_candidates(
             &retriever,
             &request.question,
@@ -938,7 +951,7 @@ async fn preview_analysis(
     let config = state.db.model_config()?;
     let snapshot = state.db.snapshot()?;
     let retriever = HybridMemoryRetriever::default();
-    let memory_candidates = if request.workflow == "deep" && request.use_memory {
+    let memory_candidates = if request.use_memory {
         initial_memory_candidates(
             &retriever,
             &request.question,
@@ -1053,7 +1066,7 @@ fn relevant_evidence(
             .into_iter()
             .filter(|item| !existing.contains(&(item.source_url.clone(), item.claim.clone()))),
     );
-    Ok(LexicalEvidenceRetriever.search(&query, &items, 12))
+    Ok(LexicalEvidenceRetriever.search(&query, &items, 30))
 }
 
 fn initial_memory_candidates(

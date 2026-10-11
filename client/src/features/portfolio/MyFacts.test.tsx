@@ -13,6 +13,7 @@ import * as api from "../../api";
 import type { Snapshot } from "../../types";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
+import { formatMoney } from "../../lib/format";
 vi.mock("../../api", () => ({
   ensureDailyAssets: vi.fn().mockResolvedValue({
     timezone: "Asia/Shanghai",
@@ -90,6 +91,7 @@ it("stores deposits once as cash holdings, without adding them again to the prof
   mount();
   fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
   fireEvent.click(screen.getByRole("button", { name: "添加存款" }));
+  expect(screen.queryByRole("spinbutton", { name: /持仓成本/ })).toBeNull();
   fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
     target: { value: "50000" },
   });
@@ -208,6 +210,114 @@ const investment = {
   name: "指数基金",
   marketValue: 1000,
 };
+
+it("records investment cost in the holding's currency and shows the saved profit", async () => {
+  const saved = {
+    ...investment,
+    currency: "USD",
+    costBasis: 800,
+    targetPct: 12,
+  };
+  const updated = { ...snapshot, holdings: [saved] };
+  vi.mocked(api.updateHolding).mockResolvedValue(updated);
+  const { onUpdate, flash, rerender } = mount({
+    ...snapshot,
+    holdings: [{ ...saved, costBasis: 0 }],
+  });
+  expect(screen.getByText("待补成本")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金成本" }));
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "持仓成本（选填） USD" }),
+    { target: { value: "800" } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
+  const { id, ...input } = saved;
+  await waitFor(() =>
+    expect(api.updateHolding).toHaveBeenCalledWith(id, input),
+  );
+  expect(onUpdate).toHaveBeenCalledWith(updated);
+  rerender(
+    <MyFacts
+      snapshot={updated}
+      onUpdate={onUpdate}
+      navigate={vi.fn()}
+      flash={flash}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: "编辑 指数基金成本" }).textContent,
+  ).toBe(formatMoney(800, "USD"));
+  expect(screen.getByText("+25.0%")).toBeTruthy();
+  expect(screen.queryByText("待补成本")).toBeNull();
+});
+
+it("includes cost when adding an investment and keeps it optional", async () => {
+  vi.mocked(api.saveHolding).mockResolvedValue(snapshot);
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
+  fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
+    target: { value: "新基金" },
+  });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
+    target: { value: "1000" },
+  });
+  const save = screen.getByRole("button", { name: "保存这笔资产" });
+  expect((save as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "持仓成本（选填） CNY" }),
+    { target: { value: "1200" } },
+  );
+  fireEvent.click(save);
+  await waitFor(() =>
+    expect(api.saveHolding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "新基金",
+        marketValue: 1000,
+        costBasis: 1200,
+      }),
+    ),
+  );
+});
+
+it("blocks negative or excessive costs, then allows clearing an unrecorded cost", async () => {
+  vi.mocked(api.updateHolding).mockResolvedValue(snapshot);
+  mount({ ...snapshot, holdings: [{ ...investment, costBasis: 800 }] });
+  fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金成本" }));
+  const cost = screen.getByRole("spinbutton", { name: "持仓成本（选填） CNY" });
+  const save = screen.getByRole("button", { name: "保存这笔资产" });
+  expect((cost as HTMLInputElement).value).toBe("800");
+  for (const value of ["-1", "1000000000000001"]) {
+    fireEvent.change(cost, { target: { value } });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.submit(save.closest("form")!);
+    expect(api.updateHolding).not.toHaveBeenCalled();
+  }
+  fireEvent.change(cost, { target: { value: "" } });
+  expect((save as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(save);
+  await waitFor(() =>
+    expect(api.updateHolding).toHaveBeenCalledWith(
+      investment.id,
+      expect.objectContaining({ costBasis: 0, marketValue: 1000 }),
+    ),
+  );
+});
+
+it("preserves an edited cost after a save failure", async () => {
+  vi.mocked(api.updateHolding).mockRejectedValue(new Error("保存失败"));
+  mount({ ...snapshot, holdings: [investment] });
+  fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金成本" }));
+  const cost = screen.getByRole("spinbutton", { name: "持仓成本（选填） CNY" });
+  fireEvent.change(cost, { target: { value: "800" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
+  await screen.findByRole("alert");
+  expect((cost as HTMLInputElement).value).toBe("800");
+  expect(api.updateHolding).toHaveBeenCalledWith(
+    investment.id,
+    expect.objectContaining({ costBasis: 800 }),
+  );
+});
 
 it("leaves holdings unchanged when deletion is cancelled", () => {
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);

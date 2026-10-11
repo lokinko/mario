@@ -4,6 +4,7 @@ pub(crate) mod grounding;
 mod native_provider;
 mod orchestrator;
 mod provider;
+pub(crate) mod selection;
 mod structured_output;
 mod workflow;
 

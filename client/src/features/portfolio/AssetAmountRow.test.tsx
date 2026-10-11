@@ -13,6 +13,7 @@ import * as api from "../../api";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 import type { Snapshot } from "../../types";
+import { formatMoney } from "../../lib/format";
 vi.mock("../../api", () => ({
   updateHoldingAmount: vi.fn(),
   getSnapshot: vi.fn(),
@@ -43,6 +44,64 @@ function mount() {
   );
   return onUpdate;
 }
+it.each([
+  { marketValue: 1000, costBasis: 800, pnl: 200, pct: "+25.0%" },
+  { marketValue: 800, costBasis: 1000, pnl: -200, pct: "-20.0%" },
+  { marketValue: 1000, costBasis: 1000, pnl: 0, pct: "0.0%" },
+  { marketValue: 0, costBasis: 1000, pnl: -1000, pct: "-100.0%" },
+])(
+  "shows saved investment P/L for $marketValue against cost $costBasis",
+  ({ marketValue, costBasis, pnl, pct }) => {
+    const onEdit = vi.fn();
+    render(
+      <AssetAmountRow
+        holding={{
+          ...holding,
+          name: "基金",
+          currency: "USD",
+          marketValue,
+          costBasis,
+        }}
+        revision="v1"
+        onEdit={onEdit}
+        onDelete={vi.fn()}
+        onUpdate={vi.fn()}
+      />,
+    );
+    const cost = screen.getByRole("button", { name: "编辑 基金成本" });
+    expect(cost.textContent).toBe(formatMoney(costBasis, "USD"));
+    expect(
+      screen.getByText(`${pnl > 0 ? "+" : ""}${formatMoney(pnl, "USD")}`),
+    ).toBeTruthy();
+    expect(screen.getByText(pct)).toBeTruthy();
+    fireEvent.click(cost);
+    expect(onEdit).toHaveBeenCalledOnce();
+    fireEvent.change(screen.getByLabelText("基金金额"), {
+      target: { value: "2000" },
+    });
+    expect(screen.getByText(pct)).toBeTruthy();
+  },
+);
+
+it("does not calculate P/L for an unrecorded cost or show cost for cash", () => {
+  const props = {
+    holding,
+    onEdit: vi.fn(),
+    onDelete: vi.fn(),
+    onUpdate: vi.fn(),
+  };
+  const { rerender } = render(<AssetAmountRow {...props} />);
+  expect(screen.getByText("待补成本")).toBeTruthy();
+  expect(screen.getByText("—")).toBeTruthy();
+  rerender(
+    <AssetAmountRow
+      {...props}
+      holding={{ ...holding, assetClass: "现金", costBasis: 80 }}
+    />,
+  );
+  expect(screen.queryByRole("button", { name: /成本/ })).toBeNull();
+  expect(screen.queryByText("浮动盈亏")).toBeNull();
+});
 it("saves explicit zero on blur and preserves blank or invalid drafts", async () => {
   vi.mocked(api.updateHoldingAmount).mockResolvedValue(snapshot);
   const update = mount();

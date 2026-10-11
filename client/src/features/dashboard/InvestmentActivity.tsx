@@ -90,12 +90,14 @@ export function InvestmentActivity({
   const due = decisions.value?.filter(
     (decision) => !decision.review && decision.reviewDate <= today,
   );
-  const scored = reviewed?.filter((decision) =>
-    Number.isFinite(decision.review!.processRating),
+  const scored = reviewed?.filter(
+    (decision) =>
+      decision.review!.processRating != null &&
+      Number.isFinite(decision.review!.processRating),
   );
   const average = scored?.length
     ? scored.reduce(
-        (sum, decision) => sum + decision.review!.processRating,
+        (sum, decision) => sum + (decision.review!.processRating ?? 0),
         0,
       ) / scored.length
     : null;

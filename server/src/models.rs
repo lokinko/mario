@@ -679,6 +679,8 @@ pub struct AnalysisClaim {
     pub statement: String,
     pub basis: String,
     pub evidence_ids: Vec<String>,
+    #[serde(default)]
+    pub source_refs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -716,6 +718,8 @@ pub struct OutputValidationTrace {
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisEvidenceReference {
     #[serde(default)]
+    pub attachments: Vec<ResearchAttachment>,
+    #[serde(default)]
     pub asset_name: String,
     #[serde(default)]
     pub evidence_type: String,
@@ -738,6 +742,8 @@ pub struct AnalysisEvidenceReference {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisWorkflowTrace {
+    #[serde(default)]
+    pub information_selection: Vec<crate::ai::selection::SelectedInformation>,
     #[serde(default)]
     pub web_search: Option<WebSearchTrace>,
     #[serde(default)]
@@ -830,17 +836,28 @@ pub struct StoredAnalysis {
 pub struct DecisionEntry {
     pub id: Option<String>,
     #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
     pub source_analysis_id: Option<String>,
     #[serde(default)]
     pub source_action_index: Option<usize>,
+    #[serde(default)]
     pub asset_name: String,
+    #[serde(default)]
     pub thesis: String,
+    #[serde(default)]
     pub counter_thesis: String,
+    #[serde(default)]
     pub expected_return_pct: f64,
+    #[serde(default)]
     pub downside_pct: f64,
+    #[serde(default)]
     pub confidence_pct: f64,
+    #[serde(default)]
     pub position_pct: f64,
+    #[serde(default)]
     pub invalidation: String,
+    #[serde(default)]
     pub review_date: String,
     #[serde(default)]
     pub rule_checks: Vec<DecisionRuleCheck>,
@@ -862,10 +879,12 @@ pub struct DecisionRuleCheck {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionReview {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     pub outcome_summary: String,
     pub actual_return_pct: Option<f64>,
     pub thesis_status: String,
-    pub process_rating: i64,
+    pub process_rating: Option<i64>,
     pub lessons: String,
     pub reviewed_at: String,
 }
@@ -873,10 +892,17 @@ pub struct DecisionReview {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionReviewInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default)]
     pub outcome_summary: String,
+    #[serde(default)]
     pub actual_return_pct: Option<f64>,
+    #[serde(default)]
     pub thesis_status: String,
-    pub process_rating: i64,
+    #[serde(default)]
+    pub process_rating: Option<i64>,
+    #[serde(default)]
     pub lessons: String,
 }
 
@@ -884,6 +910,7 @@ pub struct DecisionReviewInput {
 #[serde(rename_all = "camelCase")]
 pub struct DecisionRecord {
     pub id: String,
+    pub content: Option<String>,
     pub source_analysis_id: Option<String>,
     pub source_action_index: Option<usize>,
     pub asset_name: String,
@@ -1050,12 +1077,21 @@ pub struct InvestmentRuleRevision {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemReviewInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default)]
     pub period_label: String,
-    pub adherence_score: i64,
+    #[serde(default)]
+    pub adherence_score: Option<i64>,
+    #[serde(default)]
     pub process_summary: String,
+    #[serde(default)]
     pub rule_violations: String,
+    #[serde(default)]
     pub lessons: String,
+    #[serde(default)]
     pub next_actions: String,
+    #[serde(default)]
     pub next_review_date: String,
 }
 
@@ -1081,9 +1117,11 @@ pub struct SystemReviewSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemReviewRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     pub id: String,
     pub period_label: String,
-    pub adherence_score: i64,
+    pub adherence_score: Option<i64>,
     pub process_summary: String,
     pub rule_violations: String,
     pub lessons: String,
@@ -1093,9 +1131,11 @@ pub struct SystemReviewRecord {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct ResearchEvidenceInput {
+    pub content: Option<String>,
+    pub attachments: Vec<ResearchAttachmentInput>,
     pub asset_name: String,
     pub title: String,
     pub publisher: String,
@@ -1111,6 +1151,8 @@ pub struct ResearchEvidenceInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchEvidence {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<ResearchAttachment>,
     pub id: String,
     pub asset_name: String,
     pub title: String,
@@ -1130,6 +1172,31 @@ pub struct ResearchEvidence {
 #[serde(rename_all = "camelCase")]
 pub struct ResearchEvidenceStatusInput {
     pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchAttachmentInput {
+    pub name: String,
+    pub data_base64: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchAttachment {
+    pub id: String,
+    pub name: String,
+    pub byte_size: usize,
+    #[serde(default, skip_serializing)]
+    pub extracted_text: String,
+    pub extraction_note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchAttachmentDownload {
+    pub name: String,
+    pub data_base64: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

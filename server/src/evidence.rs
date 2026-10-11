@@ -26,8 +26,25 @@ impl EvidenceRetriever for LexicalEvidenceRetriever {
             .iter()
             .filter(|item| item.active)
             .map(|item| {
-                let identity =
-                    format!("{} {} {}", item.asset_name, item.title, item.publisher).to_lowercase();
+                let mut item = item.clone();
+                for file in &item.attachments {
+                    item.claim.push_str(&format!(
+                        "\n\n[附件：{}]\n{}\n{}",
+                        file.name, file.extraction_note, file.extracted_text
+                    ));
+                }
+                let identity = format!(
+                    "{} {} {} {}",
+                    item.asset_name,
+                    item.title,
+                    item.publisher,
+                    item.attachments
+                        .iter()
+                        .map(|f| f.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
+                .to_lowercase();
                 let details = format!("{} {}", item.claim, item.notes).to_lowercase();
                 let identity_score = query_tokens
                     .iter()
@@ -54,7 +71,7 @@ impl EvidenceRetriever for LexicalEvidenceRetriever {
             .into_iter()
             .filter(|(score, _)| *score > 0)
             .take(limit)
-            .map(|(_, item)| item.clone())
+            .map(|(_, item)| item)
             .collect()
     }
 }
@@ -83,6 +100,7 @@ mod tests {
 
     fn evidence(id: &str, asset: &str, claim: &str, active: bool) -> ResearchEvidence {
         ResearchEvidence {
+            attachments: Vec::new(),
             id: id.into(),
             asset_name: asset.into(),
             title: format!("{asset} 年报"),

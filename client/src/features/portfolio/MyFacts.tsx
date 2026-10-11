@@ -1,7 +1,7 @@
 import { ExchangeRates } from "./ExchangeRates";
 import { AssetAmountRow } from "./AssetAmountRow";
 import { AssetHistory } from "./AssetHistory";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ArrowRight, Plus, Save, X } from "lucide-react";
 import {
   deleteHolding,
@@ -30,6 +30,8 @@ export function MyFacts({
   const [profile, setProfile] = useState(snapshot.profile);
   const [editing, setEditing] = useState<Holding | null>(null);
   const [assetAmount, setAssetAmount] = useState("");
+  const [assetCost, setAssetCost] = useState("");
+  const costHelpId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [section, setSection] = useState<"income" | "savings" | "holdings">(
@@ -57,6 +59,9 @@ export function MyFacts({
     Number.isFinite(editing.marketValue) &&
     editing.marketValue >= 0 &&
     editing.marketValue <= 1e15 &&
+    Number.isFinite(editing.costBasis) &&
+    editing.costBasis >= 0 &&
+    editing.costBasis <= 1e15 &&
     editing.valuationDate &&
     editing.valuationDate <= localDateValue(new Date()),
   );
@@ -83,7 +88,9 @@ export function MyFacts({
       const input = { ...values, name: values.name.trim() };
       onUpdate(id ? await updateHolding(id, input) : await saveHolding(input));
       setEditing(null);
-      flash("已保存你的实际余额");
+      flash(
+        editing.assetClass === "现金" ? "已保存你的实际余额" : "持仓已保存",
+      );
     } catch (e) {
       setError(String(e));
     } finally {
@@ -92,6 +99,7 @@ export function MyFacts({
   };
   const add = () => {
     setAssetAmount("");
+    setAssetCost("");
     setEditing({
       ...emptyHolding(currency),
       id: "",
@@ -223,6 +231,14 @@ export function MyFacts({
             </button>
           </div>
           <div className="facts-assets">
+            {section === "holdings" && investments.length > 0 && (
+              <div className="investment-amount-head" aria-hidden="true">
+                <span>资产</span>
+                <span>当前市值</span>
+                <span>持仓成本</span>
+                <span>浮动盈亏</span>
+              </div>
+            )}
             {(section === "savings" ? cash : investments).map((item) => (
               <AssetAmountRow
                 key={item.id}
@@ -233,6 +249,9 @@ export function MyFacts({
                 onDelete={() => void removeAsset(item)}
                 onEdit={() => {
                   setAssetAmount(String(item.marketValue));
+                  setAssetCost(
+                    item.costBasis > 0 ? String(item.costBasis) : "",
+                  );
                   setEditing({ ...item });
                   setError("");
                 }}
@@ -242,6 +261,13 @@ export function MyFacts({
               <p className="empty">暂无资产，点击上方添加。</p>
             )}
           </div>
+          {section === "holdings" && (
+            <p className="section-intro">
+              金额以各持仓币种显示。浮动盈亏按已保存市值减持仓成本计算，成本为 0
+              或未填写时不计算；不含已实现盈亏、分红及卖出税费。
+              成本可用于观察账面盈亏，安全边际还需结合资产估值判断。
+            </p>
+          )}
         </section>
       )}
       {editing && (
@@ -249,7 +275,9 @@ export function MyFacts({
           <div className="panel-title">
             <h2>
               {editing.id
-                ? "更新实际余额"
+                ? editing.assetClass === "现金"
+                  ? "更新实际余额"
+                  : "更新持仓"
                 : editing.assetClass === "现金"
                   ? "记一笔存款"
                   : "记一笔持仓"}
@@ -305,6 +333,36 @@ export function MyFacts({
                     />
                   </div>
                 </label>
+                {editing.assetClass !== "现金" && (
+                  <div className="asset-cost-field">
+                    <label>
+                      <span>持仓成本（选填）</span>
+                      <div className="input-affix">
+                        <i>{editing.currency}</i>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1e15}
+                          inputMode="decimal"
+                          step="any"
+                          placeholder="未填写"
+                          aria-describedby={costHelpId}
+                          value={assetCost}
+                          onChange={(e) => {
+                            setAssetCost(e.target.value);
+                            setEditing({
+                              ...editing,
+                              costBasis: Number(e.target.value),
+                            });
+                          }}
+                        />
+                      </div>
+                    </label>
+                    <small id={costHelpId}>
+                      填写当前仍持有部分的总成本（含买入费用），与市值使用同一币种；已卖出部分的成本请扣除。
+                    </small>
+                  </div>
+                )}
               </div>
               <details className="holding-details">
                 <summary>

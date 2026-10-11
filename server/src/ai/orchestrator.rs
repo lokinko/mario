@@ -2,12 +2,12 @@ use std::{collections::HashSet, time::Instant};
 
 use super::{
     structured_output::{parse_structured_analysis, render_report},
-    workflow::{AnalysisWorkflow, CandidateContext, InvestmentWorkflowV5, StagePrompt},
+    workflow::{AnalysisWorkflow, CandidateContext, InvestmentWorkflowV6, StagePrompt},
     ModelProvider,
 };
 use crate::{
     context::BuiltContext,
-    error::AppResult,
+    error::{AppError, AppResult},
     memory::MemoryRetriever,
     models::{
         AnalysisAlternative, AnalysisEvidenceReference, AnalysisRequest, AnalysisResult,
@@ -22,7 +22,7 @@ pub struct InvestmentOrchestrator<'a> {
     workflow: &'a dyn AnalysisWorkflow,
 }
 
-static DEFAULT_WORKFLOW: InvestmentWorkflowV5 = InvestmentWorkflowV5;
+static DEFAULT_WORKFLOW: InvestmentWorkflowV6 = InvestmentWorkflowV6;
 
 impl<'a> InvestmentOrchestrator<'a> {
     pub fn new(provider: &'a dyn ModelProvider, retriever: &'a dyn MemoryRetriever) -> Self {
@@ -60,6 +60,12 @@ impl<'a> InvestmentOrchestrator<'a> {
             "goals",
             "currentUserMessage",
             "dailyAssetHistory",
+            "deterministicPlan",
+            "riskFindings",
+            "personalInvestmentRules",
+            "periodicSystemReviews",
+            "portfolioChangeAttribution",
+            "portfolioEvents",
         ]
         .into_iter()
         .filter_map(|key| {
@@ -108,7 +114,9 @@ impl<'a> InvestmentOrchestrator<'a> {
             let sources = searched
                 .sources
                 .into_iter()
+                .take(30)
                 .map(|source| AnalysisEvidenceReference {
+                    attachments: Vec::new(),
                     id: format!("web-{}", uuid::Uuid::new_v4()),
                     title: source.title,
                     publisher: reqwest::Url::parse(&source.url)
@@ -141,21 +149,107 @@ impl<'a> InvestmentOrchestrator<'a> {
             trace.evidence_catalog.extend(sources);
             stages.push("供应商原生网页搜索与引用归档".into());
         }
+        // Classification is confined to the frozen, authorized candidates. It
+        // never reloads the database or rewrites any original source fields.
+        let eligible_memories = memory_pool
+            .iter()
+            .filter(|item| {
+                request.use_memory
+                    && item.selected
+                    && item.preference != "hidden"
+                    && !request.excluded_memory_ids.contains(&item.id)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        trace
+            .evidence_catalog
+            .extend(eligible_memories.iter().map(memory_reference));
+        if !trace.evidence_catalog.is_empty() {
+            let candidates = trace.evidence_catalog.clone();
+            let (content, call) = self
+                .call_stage(super::selection::prompt(&request.question, &candidates))
+                .await?;
+            trace.calls.push(call);
+            let items = match super::selection::parse(&content, &candidates) {
+                Ok(items) => items,
+                Err(error) => {
+                    let (content, call) = self
+                        .call_stage(super::selection::repair(
+                            &request.question,
+                            &candidates,
+                            &error,
+                        ))
+                        .await?;
+                    trace.calls.push(call);
+                    super::selection::parse(&content, &candidates).map_err(|error| {
+                        AppError::Model(format!("信息筛选两次未通过校验：{error}"))
+                    })?
+                }
+            };
+            // Keep originals in model-selected order; metadata cannot substitute
+            // its own summary, date, publisher or URL for the original record.
+            trace.evidence_catalog = items
+                .iter()
+                .filter_map(|item| {
+                    candidates
+                        .iter()
+                        .find(|source| source.id == item.source_id)
+                        .cloned()
+                })
+                .collect();
+            trace.information_selection = items;
+            stages.push("模型自动分类并筛选最多10条相关信息".into());
+        }
+        let selected_ids = trace
+            .evidence_catalog
+            .iter()
+            .map(|source| source.id.as_str())
+            .collect::<HashSet<_>>();
+        let selected_memory_pool = eligible_memories
+            .into_iter()
+            .filter(|item| selected_ids.contains(format!("memory-{}", item.id).as_str()))
+            .collect::<Vec<_>>();
+        trace.memory_items = selected_memory_pool.clone();
+        // Remove the entire preliminary pool from subsequent prompts, including
+        // the research planner and the independent evidence reviewer.
+        if let Some(object) = prompt_context.as_object_mut() {
+            object.remove("researchEvidence");
+            object.remove("nativeWebEvidence");
+        }
+        let model_sources = trace
+            .evidence_catalog
+            .iter()
+            .cloned()
+            .map(|mut source| {
+                if let Some(item) = trace
+                    .information_selection
+                    .iter()
+                    .find(|item| item.source_id == source.id)
+                {
+                    source.claim = item.excerpt.clone();
+                }
+                // Full originals and attachment text stay in the frozen catalog for
+                // citation inspection, while analysis sees only relevant excerpts.
+                source.attachments.clear();
+                source
+            })
+            .collect::<Vec<_>>();
+        prompt_context["selectedInformation"] = serde_json::to_value(model_sources)?;
+        prompt_context["informationMetadata"] = serde_json::to_value(&trace.information_selection)?;
         let context = serde_json::to_string_pretty(&prompt_context)?;
         let allowed_evidence_ids = trace
             .evidence_catalog
             .iter()
             .map(|item| item.id.clone())
             .collect::<Vec<_>>();
-        if built_context.evidence_items > 0 {
-            stages.push("冻结带来源研究证据".into());
-        }
 
         if request.workflow == "quick" {
             let (report, calls, validation) = self
                 .call_structured_stage(
                     self.workflow.quick(&request.question, &context),
                     &allowed_evidence_ids,
+                    &trace.evidence_catalog,
+                    &built_context.payload,
                 )
                 .await?;
             trace.calls.extend(calls);
@@ -175,7 +269,7 @@ impl<'a> InvestmentOrchestrator<'a> {
                 answer,
                 stages,
                 built_context,
-                &[],
+                &selected_memory_pool,
                 trace,
             ));
         }
@@ -191,9 +285,11 @@ impl<'a> InvestmentOrchestrator<'a> {
         stages.push("生成研究计划".into());
 
         let memories = if request.use_memory {
-            let mut first = self.retriever.search(&request.question, memory_pool, 4);
+            let mut first = self
+                .retriever
+                .search(&request.question, &selected_memory_pool, 4);
             mark_retrieval_pass(&mut first, "用户问题复核");
-            let mut second = self.retriever.search(&plan, memory_pool, 6);
+            let mut second = self.retriever.search(&plan, &selected_memory_pool, 6);
             mark_retrieval_pass(&mut second, "研究计划扩展");
             merge_memories(first, second, 8)
         } else {
@@ -207,7 +303,13 @@ impl<'a> InvestmentOrchestrator<'a> {
         } else {
             serde_json::to_string_pretty(&memories)?
         };
-        trace.memory_items = memories.clone();
+        // The frozen catalog already includes all model-selected memories.
+        // This second lookup only focuses the candidate researchers.
+        for item in &mut trace.memory_items {
+            if let Some(focused) = memories.iter().find(|focused| focused.id == item.id) {
+                item.retrieval = focused.retrieval.clone();
+            }
+        }
 
         if request.explore_alternatives {
             stages.push("探索多个可行方案".into());
@@ -263,6 +365,8 @@ impl<'a> InvestmentOrchestrator<'a> {
                     critique_context,
                 ),
                 &allowed_evidence_ids,
+                &trace.evidence_catalog,
+                &built_context.payload,
             )
             .await?;
         trace.calls.extend(calls);
@@ -282,7 +386,7 @@ impl<'a> InvestmentOrchestrator<'a> {
             answer,
             stages,
             built_context,
-            &memories,
+            &selected_memory_pool,
             trace,
         ))
     }
@@ -300,7 +404,10 @@ impl<'a> InvestmentOrchestrator<'a> {
                 super::ChatMessage::system(super::grounding::REVIEW_POLICY),
                 super::ChatMessage::user(format!(
                     "授权档案：{}\n来源摘要：{}\n待核对报告：{}",
-                    context.payload,
+                    trace
+                        .personal_context
+                        .as_ref()
+                        .unwrap_or(&serde_json::Value::Null),
                     serde_json::to_string(&trace.evidence_catalog).unwrap_or_default(),
                     serde_json::to_string(report).unwrap_or_default()
                 )),
@@ -352,6 +459,8 @@ impl<'a> InvestmentOrchestrator<'a> {
         &self,
         prompt: StagePrompt,
         allowed_evidence_ids: &[String],
+        sources: &[AnalysisEvidenceReference],
+        context: &serde_json::Value,
     ) -> AppResult<(
         StructuredAnalysis,
         Vec<ModelCallTrace>,
@@ -360,7 +469,12 @@ impl<'a> InvestmentOrchestrator<'a> {
         let stage_label = prompt.label;
         let allowed = allowed_evidence_ids.iter().cloned().collect::<HashSet<_>>();
         let (content, first_call) = self.call_stage(prompt).await?;
-        match parse_structured_analysis(&content, &allowed) {
+        let parse = |content: &str| {
+            let report = parse_structured_analysis(content, &allowed)?;
+            super::structured_output::validate_source_types(&report, sources, context)?;
+            Ok::<_, String>(report)
+        };
+        match parse(&content) {
             Ok(report) => Ok((
                 report,
                 vec![first_call],
@@ -378,13 +492,11 @@ impl<'a> InvestmentOrchestrator<'a> {
                     allowed_evidence_ids,
                 );
                 let (repaired_content, repair_call) = self.call_stage(repair_prompt).await?;
-                let report = parse_structured_analysis(&repaired_content, &allowed).map_err(
-                    |second_error| {
-                        crate::error::AppError::Model(format!(
-                            "模型输出两次未通过结构化校验：首次 {first_error}；修复后 {second_error}"
-                        ))
-                    },
-                )?;
+                let report = parse(&repaired_content).map_err(|second_error| {
+                    crate::error::AppError::Model(format!(
+                        "模型输出两次未通过结构化校验：首次 {first_error}；修复后 {second_error}"
+                    ))
+                })?;
                 Ok((
                     report,
                     vec![first_call, repair_call],
@@ -407,6 +519,7 @@ fn evidence_catalog(payload: &serde_json::Value) -> Vec<AnalysisEvidenceReferenc
         .flatten()
         .filter_map(|value| serde_json::from_value::<ResearchEvidence>(value.clone()).ok())
         .map(|item| AnalysisEvidenceReference {
+            attachments: item.attachments,
             asset_name: item.asset_name,
             evidence_type: item.evidence_type,
             claim: item.claim,
@@ -421,6 +534,50 @@ fn evidence_catalog(payload: &serde_json::Value) -> Vec<AnalysisEvidenceReferenc
             as_of_date: item.as_of_date,
         })
         .collect()
+}
+
+fn memory_reference(item: &MemoryItem) -> AnalysisEvidenceReference {
+    AnalysisEvidenceReference {
+        attachments: Vec::new(),
+        id: format!("memory-{}", item.id),
+        title: item.title.clone(),
+        publisher: if item.kind == "analysis" {
+            "历史模型回答"
+        } else {
+            "用户决策与复盘"
+        }
+        .into(),
+        source_url: String::new(),
+        source_tier: "历史记录（不代表当前事实）".into(),
+        as_of_date: String::new(),
+        asset_name: String::new(),
+        evidence_type: if item.kind == "analysis" {
+            "historical_ai"
+        } else {
+            "historical_decision"
+        }
+        .into(),
+        // Preserve the complete stored content, including the original decision
+        // and review; do not turn the retrieval summary into source material.
+        claim: serde_json::to_string_pretty(&item.content).unwrap_or_default(),
+        notes: format!(
+            "{}；记录时点：{}；{}",
+            item.status,
+            item.occurred_at,
+            if item.contradiction {
+                "复盘包含反证，须同时说明原判断与复盘"
+            } else {
+                "历史信息仅在适用范围内使用"
+            }
+        ),
+        stance: if item.contradiction {
+            "反证"
+        } else {
+            "背景"
+        }
+        .into(),
+        captured_at: item.created_at.clone(),
+    }
 }
 
 fn merge_memories(
@@ -560,14 +717,17 @@ fn result(
                 .filter(|item| item.contradiction)
                 .count(),
             evidence_items_used: workflow_trace.evidence_catalog.len(),
-            citations_required: built_context.evidence_items > 0,
+            citations_required: !workflow_trace.evidence_catalog.is_empty(),
             model_calls,
             total_latency_ms,
             input_tokens,
             output_tokens,
             structured_output_validated,
             output_repairs,
-            external_data_used: built_context.evidence_items > 0,
+            external_data_used: workflow_trace
+                .evidence_catalog
+                .iter()
+                .any(|source| !source.evidence_type.starts_with("historical_")),
             api_key_sent: false,
         },
         workflow_trace,
@@ -686,11 +846,25 @@ mod tests {
             &self,
             messages: Vec<ChatMessage>,
         ) -> AppResult<super::super::ModelCompletion> {
-            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            self.calls.fetch_add(1, Ordering::SeqCst);
             let requires_structured_output = messages
                 .iter()
                 .any(|message| message.content.contains("\"reviewTriggers\""));
             let content = if messages
+                .iter()
+                .any(|message| message.content.contains("你是信息整理与筛选员"))
+            {
+                let candidates: Vec<AnalysisEvidenceReference> =
+                    serde_json::from_str(messages[1].content.split("候选资料：").nth(1).unwrap())
+                        .unwrap();
+                serde_json::json!({"items": candidates.iter().take(10).map(|source|
+                    serde_json::json!({"sourceId":source.id,"topic":"指数","entities":[],
+                        "informationType": if source.evidence_type == "historical_ai" { "historical_ai" } else { "fact" },
+                        "eventDate":null,"dateQuote":null,"timeSensitivity":"unknown",
+                        "excerpt":source.claim.chars().take(200).collect::<String>(),
+                        "relevance":0.9,"reason":"与本次指数集中度问题相关"})
+                ).collect::<Vec<_>>()}).to_string()
+            } else if messages
                 .iter()
                 .any(|message| message.content.contains("你是建议证据核对员"))
             {
@@ -701,14 +875,13 @@ mod tests {
                         .iter()
                         .any(|message| message.content.contains("\"id\": \"e1\"")),
                 )
+            } else if messages
+                .iter()
+                .any(|message| message.content.contains("研究规划模块"))
+            {
+                "研究计划：检索指数和集中度".into()
             } else {
-                match call {
-                    0 => "研究计划：检索指数和集中度".into(),
-                    1 => "稳健基准：先不行动".into(),
-                    2 => "目标方案：逐步降低集中度".into(),
-                    3 => "审查：需要说明未知信息".into(),
-                    _ => "额外阶段".into(),
-                }
+                "候选方案与风险审查：先核实集中度".into()
             };
             Ok(super::super::ModelCompletion {
                 content,
@@ -846,6 +1019,7 @@ mod tests {
         };
         let snapshot = snapshot();
         let evidence = vec![ResearchEvidence {
+            attachments: Vec::new(),
             id: "e1".into(),
             asset_name: "指数".into(),
             title: "指数方法说明".into(),
@@ -873,7 +1047,7 @@ mod tests {
             .run(&request, &context, &memory)
             .await
             .unwrap();
-        assert_eq!(provider.calls.load(Ordering::SeqCst), 6);
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 7);
         assert!(output
             .stages
             .iter()
@@ -895,7 +1069,7 @@ mod tests {
             vec!["用户问题复核", "研究计划扩展"]
         );
         assert!(output.workflow_trace.critique.is_some());
-        assert_eq!(output.workflow_trace.calls.len(), 6);
+        assert_eq!(output.workflow_trace.calls.len(), 7);
         assert!(output.workflow_trace.structured_report.is_some());
         assert_eq!(
             output
@@ -919,7 +1093,7 @@ mod tests {
             output.workflow_trace.calls.last().unwrap().stage,
             "advice_grounding"
         );
-        assert_eq!(output.workflow_trace.evidence_catalog.len(), 1);
+        assert_eq!(output.workflow_trace.evidence_catalog.len(), 2);
         assert_eq!(
             output.workflow_trace.evidence_catalog[0].claim,
             evidence[0].claim
@@ -933,13 +1107,13 @@ mod tests {
             context.payload["portfolio"]
         );
 
-        assert_eq!(output.transparency.model_calls, 6);
-        assert_eq!(output.transparency.input_tokens, Some(600));
-        assert_eq!(output.transparency.output_tokens, Some(120));
+        assert_eq!(output.transparency.model_calls, 7);
+        assert_eq!(output.transparency.input_tokens, Some(700));
+        assert_eq!(output.transparency.output_tokens, Some(140));
         assert_eq!(output.transparency.memory_items_used, 1);
         assert_eq!(output.transparency.reviewed_memory_items_used, 1);
         assert_eq!(output.transparency.conflicting_memory_items_used, 0);
-        assert_eq!(output.transparency.evidence_items_used, 1);
+        assert_eq!(output.transparency.evidence_items_used, 2);
         assert!(output.transparency.citations_required);
         assert!(output.transparency.structured_output_validated);
         assert_eq!(output.transparency.output_repairs, 0);
@@ -1214,6 +1388,160 @@ mod tests {
             .unwrap()
             .contains("结构化输出修复模块"));
     }
+    struct SelectingProvider {
+        prompts: Mutex<Vec<Vec<ChatMessage>>>,
+        selection: String,
+        report: String,
+    }
+    #[async_trait]
+    impl ModelProvider for SelectingProvider {
+        async fn complete(
+            &self,
+            messages: Vec<ChatMessage>,
+        ) -> AppResult<super::super::ModelCompletion> {
+            let content = if messages[0].content.contains("你是信息整理与筛选员") {
+                self.selection.clone()
+            } else if messages[0].content.contains("你是建议证据核对员") {
+                serde_json::json!({"reviews":[{"actionIndex":0,"status":"insufficient",
+                    "reason":"还需要确认期限","checks":[]}]})
+                .to_string()
+            } else {
+                self.report.clone()
+            };
+            self.prompts.lock().unwrap().push(messages);
+            Ok(super::super::ModelCompletion {
+                content,
+                usage: Default::default(),
+            })
+        }
+        fn provider_name(&self) -> &str {
+            "selection-fixture"
+        }
+        fn model_name(&self) -> &str {
+            "fixture"
+        }
+    }
+    fn selection_fixture() -> (AnalysisRequest, BuiltContext) {
+        let request: AnalysisRequest = serde_json::from_value(serde_json::json!({
+            "question":"检查指数方法", "workflow":"quick", "useMemory":false,
+            "reflect":false, "exploreAlternatives":false
+        }))
+        .unwrap();
+        let items = (1..=12).map(|index| serde_json::from_value::<ResearchEvidence>(serde_json::json!({
+            "id":format!("e{index}"),"assetName":"指数","title":"指数资料","publisher":"用户",
+            "sourceUrl":"","sourceTier":"用户资料","evidenceType":"user_source_text",
+            "stance":"背景","asOfDate":"","claim":if index == 1 { "指数采用公开方法编制\n保留完整原文末段" } else { "未入选的原始资料不得进入后续分析" },
+            "notes":"","active":true,"capturedAt":"2026-09-20"
+        })).unwrap()).collect::<Vec<_>>();
+        let context = ContextBuilder::build(
+            &request,
+            &snapshot(),
+            &ContextSources {
+                evidence_candidates: &items,
+                ..Default::default()
+            },
+        );
+        (request, context)
+    }
+    fn fixture_selection() -> serde_json::Value {
+        serde_json::json!({"items":[{"sourceId":"e1","topic":"指数方法","entities":["指数"],
+            "informationType":"fact","eventDate":null,"dateQuote":null,
+            "timeSensitivity":"stable","excerpt":"指数采用公开方法编制",
+            "relevance":0.9,"reason":"直接涉及本次问题"}]})
+    }
+    #[tokio::test]
+    async fn selected_excerpts_reach_analysis_and_originals_remain_frozen_for_citations() {
+        let (request, context) = selection_fixture();
+        let original_payload = context.payload.clone();
+        let provider = SelectingProvider {
+            prompts: Mutex::new(vec![]),
+            selection: fixture_selection().to_string(),
+            report: valid_report_json(true),
+        };
+        let retriever = HybridMemoryRetriever::default();
+        let result = InvestmentOrchestrator::new(&provider, &retriever)
+            .run(&request, &context, &[])
+            .await
+            .unwrap();
+        assert_eq!(context.payload, original_payload);
+        assert_eq!(result.workflow_trace.evidence_catalog.len(), 1);
+        assert_eq!(
+            result.workflow_trace.information_selection[0].source_id,
+            "e1"
+        );
+        assert!(result.workflow_trace.evidence_catalog[0]
+            .claim
+            .contains("保留完整原文末段"));
+        let prompts = provider.prompts.lock().unwrap();
+        assert!(prompts[0][1].content.contains("未入选的原始资料"));
+        for prompt in &prompts[1..] {
+            assert!(!prompt
+                .iter()
+                .any(|message| message.content.contains("未入选的原始资料")));
+        }
+        assert!(!prompts[1][1].content.contains("保留完整原文末段"));
+        assert!(prompts[2][1].content.contains("保留完整原文末段"));
+        drop(prompts);
+        let directory = tempfile::tempdir().unwrap();
+        let db = crate::db::Database::open(&directory.path().join("selection.db")).unwrap();
+        db.save_analysis(&result, &request.question).unwrap();
+        let reopened = db.analysis(&result.id).unwrap().workflow_trace.unwrap();
+        assert_eq!(reopened.information_selection[0].source_id, "e1");
+        assert_eq!(
+            reopened.evidence_catalog[0].claim,
+            result.workflow_trace.evidence_catalog[0].claim
+        );
+    }
+    #[tokio::test]
+    async fn an_empty_selection_does_not_fall_back_to_the_full_candidate_pool() {
+        let (request, context) = selection_fixture();
+        let provider = SelectingProvider {
+            prompts: Mutex::new(vec![]),
+            selection: "{\"items\":[]}".into(),
+            report: valid_report_json(false),
+        };
+        let result = InvestmentOrchestrator::new(&provider, &HybridMemoryRetriever::default())
+            .run(&request, &context, &[])
+            .await
+            .unwrap();
+        assert!(result.workflow_trace.evidence_catalog.is_empty());
+        assert!(!result.transparency.citations_required);
+        assert!(!result.transparency.external_data_used);
+        for prompt in provider.prompts.lock().unwrap().iter().skip(1) {
+            assert!(!prompt
+                .iter()
+                .any(|message| message.content.contains("未入选的原始资料")));
+        }
+    }
+    #[tokio::test]
+    async fn rejects_citing_unselected_sources_and_invalid_selection_before_analysis() {
+        let (request, context) = selection_fixture();
+        let provider = SelectingProvider {
+            prompts: Mutex::new(vec![]),
+            selection: fixture_selection().to_string(),
+            report: valid_report_json(true).replace("e1", "e2"),
+        };
+        let retriever = HybridMemoryRetriever::default();
+        let error = InvestmentOrchestrator::new(&provider, &retriever)
+            .run(&request, &context, &[])
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("未授权的证据 ID：e2"));
+        let mut invalid = fixture_selection();
+        invalid["items"][0]["sourceId"] = serde_json::json!("unapproved");
+        let provider = SelectingProvider {
+            prompts: Mutex::new(vec![]),
+            selection: invalid.to_string(),
+            report: valid_report_json(true),
+        };
+        let error = InvestmentOrchestrator::new(&provider, &retriever)
+            .run(&request, &context, &[])
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("信息筛选两次未通过校验"));
+        assert_eq!(provider.prompts.lock().unwrap().len(), 2);
+    }
+
     struct SearchMock {
         messages: Mutex<Vec<Vec<ChatMessage>>>,
         searches: AtomicUsize,
@@ -1250,7 +1578,15 @@ mod tests {
                 .find("web-")
                 .map(|start| &text[start..start + 40])
                 .unwrap_or("missing");
-            let content = valid_report_json(true).replace("e1", id);
+            let content = if text.contains("你是信息整理与筛选员") {
+                serde_json::json!({"items":[{"sourceId":id,"topic":"指数编制","entities":["指数"],
+                    "informationType":"fact","eventDate":null,"dateQuote":null,
+                    "timeSensitivity":"stable","excerpt":"指数采用公开方法编制",
+                    "relevance":0.9,"reason":"公开方法与本次问题相关"}]})
+                .to_string()
+            } else {
+                valid_report_json(true).replace("e1", id)
+            };
             self.messages.lock().unwrap().push(messages);
             Ok(super::super::ModelCompletion {
                 content,
@@ -1306,7 +1642,13 @@ mod tests {
         let calls = provider.messages.lock().unwrap();
         assert!(calls[1]
             .iter()
-            .any(|m| m.content.contains("nativeWebEvidence")));
+            .any(|m| m.content.contains("你是信息整理与筛选员")));
+        assert!(calls[2]
+            .iter()
+            .any(|m| m.content.contains("selectedInformation")));
+        assert!(!calls[2]
+            .iter()
+            .any(|m| m.content.contains("\"nativeWebEvidence\"")));
         assert!(context.payload.get("nativeWebEvidence").is_none());
         assert!(!calls[0][1].content.contains("marketValue"));
     }

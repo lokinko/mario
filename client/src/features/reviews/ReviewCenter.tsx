@@ -26,7 +26,6 @@ import type {
   InvestmentRule,
   InvestmentRuleInput,
   InvestmentRuleRevision,
-  SystemReviewInput,
   SystemReviewRecord,
   ReviewReminderSummary,
   RuleEffectivenessSummary,
@@ -40,7 +39,7 @@ import {
 import { PageHeader } from "../../components/PageHeader";
 import { localDateValue } from "../../lib/dates";
 import { View } from "../../app/navigation";
-import { formatMoney } from "../../lib/format";
+import { systemReviewText } from "../../lib/reviewText";
 
 export const emptyRule: InvestmentRuleInput = {
   category: "风险",
@@ -49,22 +48,6 @@ export const emptyRule: InvestmentRuleInput = {
   rationale: "",
   active: true,
 };
-
-export function defaultSystemReview(): SystemReviewInput {
-  const now = new Date();
-  const quarter = Math.floor(now.getMonth() / 3) + 1;
-  const next = new Date(now);
-  next.setMonth(next.getMonth() + 3);
-  return {
-    periodLabel: `${now.getFullYear()} Q${quarter}`,
-    adherenceScore: 3,
-    processSummary: "",
-    ruleViolations: "",
-    lessons: "",
-    nextActions: "",
-    nextReviewDate: localDateValue(next),
-  };
-}
 
 export function ruleInput(rule: InvestmentRule): InvestmentRuleInput {
   return {
@@ -87,7 +70,7 @@ export function ReviewCenter({
   const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
   const [rules, setRules] = useState<InvestmentRule[]>([]);
   const [reviews, setReviews] = useState<SystemReviewRecord[]>([]);
-  const [review, setReview] = useState<SystemReviewInput>(defaultSystemReview);
+  const [reviewContent, setReviewContent] = useState("");
   const [rule, setRule] = useState<InvestmentRuleInput>(emptyRule);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
@@ -101,6 +84,7 @@ export function ReviewCenter({
   const [reminderSaving, setReminderSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const loadRequest = useRequestGuard();
 
   const refresh = async () => {
@@ -121,6 +105,7 @@ export function ReviewCenter({
         getRuleEffectiveness().catch(() => null),
       ]);
       if (!isCurrent()) return;
+      setLoaded(true);
       setDecisions(nextDecisions);
       setRules(nextRules);
       setReviews(nextReviews);
@@ -143,30 +128,22 @@ export function ReviewCenter({
     (item) => !item.review && item.reviewDate && item.reviewDate <= today,
   );
   const activeRules = rules.filter((item) => item.active);
-  const averageAdherence = reviews.length
-    ? reviews.reduce((sum, item) => sum + item.adherenceScore, 0) /
-      reviews.length
-    : null;
   const latestReview = reviews[0];
   const periodicReviewDue =
-    !latestReview || latestReview.nextReviewDate <= today;
+    !latestReview ||
+    Boolean(
+      latestReview.nextReviewDate && latestReview.nextReviewDate <= today,
+    );
 
   const persistSystemReview = async () => {
-    if (
-      !review.periodLabel ||
-      !review.processSummary ||
-      !review.lessons ||
-      !review.nextActions ||
-      !review.nextReviewDate
-    )
-      return;
+    if (saving || !reviewContent.trim()) return;
     setSaving(true);
     setError("");
     try {
-      await saveSystemReview(review);
-      setReview(defaultSystemReview());
+      await saveSystemReview({ content: reviewContent });
+      setReviewContent("");
       await refresh();
-      flash("周期复盘已冻结，并保留当时的组合与方法快照");
+      flash("复盘记录已保存");
     } catch (nextError) {
       setError(String(nextError));
     } finally {
@@ -246,10 +223,13 @@ export function ReviewCenter({
       category: "复盘",
       statement: "",
       trigger: "下次遇到相似决策时",
-      rationale: item.lessons,
+      rationale: item.lessons || systemReviewText(item),
       active: true,
       sourceReviewId: item.id,
     });
+    const workbench =
+      document.querySelector<HTMLDetailsElement>(".rule-workbench");
+    if (workbench) workbench.open = true;
     window.requestAnimationFrame(() =>
       document
         .querySelector(".rule-editor")
@@ -285,10 +265,7 @@ export function ReviewCenter({
     }
   };
 
-  if (
-    loading ||
-    (error && !decisions.length && !rules.length && !reviews.length)
-  )
+  if (!loaded && (loading || error))
     return (
       <div className="page narrow">
         <PageHeader title="复盘记录" />
@@ -319,25 +296,20 @@ export function ReviewCenter({
           </strong>
         </article>
         <article>
-          <span>周期复盘</span>
+          <span>复盘记录</span>
           <strong>{reviews.length}</strong>
           <small className={periodicReviewDue ? "warning-text" : ""}>
             {periodicReviewDue
               ? "现在需要安排一次"
-              : `下次 ${latestReview.nextReviewDate}`}
+              : latestReview.nextReviewDate
+                ? `下次 ${latestReview.nextReviewDate}`
+                : "随时写下新的思考"}
           </small>
         </article>
         <article>
           <span>有效规则</span>
           <strong>{activeRules.length}</strong>
           <small>{rules.length - activeRules.length} 条历史停用规则</small>
-        </article>
-        <article>
-          <span>平均纪律评分</span>
-          <strong>
-            {averageAdherence === null ? "—" : averageAdherence.toFixed(1)}
-          </strong>
-          <small>流程遵守情况</small>
         </article>
       </section>
 
@@ -373,324 +345,235 @@ export function ReviewCenter({
       <section className="panel form-panel system-review-form">
         <div className="panel-title">
           <div>
-            <h2>周期复盘</h2>
+            <h2>新建复盘</h2>
           </div>
         </div>
-        <div className="form-grid">
-          <label>
-            <span>复盘周期</span>
-            <input
-              value={review.periodLabel}
-              onChange={(e) =>
-                setReview({ ...review, periodLabel: e.target.value })
-              }
-              placeholder="例如 2026 Q3"
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void persistSystemReview();
+          }}
+        >
+          <label className="decision-content-field">
+            <span>我的观点、顾虑和思考</span>
+            <textarea
+              value={reviewContent}
+              rows={10}
+              required
+              disabled={saving}
+              onChange={(event) => setReviewContent(event.target.value)}
+              placeholder="自由写下你想表达的内容：你的观点、有哪些顾虑，以及这次复盘带来的思考。"
             />
           </label>
-          <label>
-            <span>纪律执行评分</span>
-            <select
-              value={review.adherenceScore}
-              onChange={(e) =>
-                setReview({ ...review, adherenceScore: Number(e.target.value) })
-              }
+          <div className="form-actions">
+            <button
+              className="primary"
+              type="submit"
+              disabled={saving || !reviewContent.trim()}
             >
-              {[1, 2, 3, 4, 5].map((value) => (
-                <option key={value} value={value}>
-                  {value} / 5
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>下次复盘日</span>
-            <input
-              type="date"
-              value={review.nextReviewDate}
-              onChange={(e) =>
-                setReview({ ...review, nextReviewDate: e.target.value })
-              }
-            />
-          </label>
-          <label className="span-3">
-            <span>这一周期实际执行了什么？</span>
-            <textarea
-              value={review.processSummary}
-              onChange={(e) =>
-                setReview({ ...review, processSummary: e.target.value })
-              }
-              placeholder="只写事实：投入、再平衡、研究和计划外交易。"
-            />
-          </label>
-          <label className="span-3">
-            <span>违反了哪些预设规则？</span>
-            <textarea
-              value={review.ruleViolations}
-              onChange={(e) =>
-                setReview({ ...review, ruleViolations: e.target.value })
-              }
-              placeholder="没有则写“无”；不要用盈利为违规行为辩护。"
-            />
-          </label>
-          <label className="span-3">
-            <span>哪些认知需要修正？</span>
-            <textarea
-              value={review.lessons}
-              onChange={(e) =>
-                setReview({ ...review, lessons: e.target.value })
-              }
-              placeholder="区分可重复的经验与一次性噪声。"
-            />
-          </label>
-          <label className="span-3">
-            <span>下一周期只做哪些行动？</span>
-            <textarea
-              value={review.nextActions}
-              onChange={(e) =>
-                setReview({ ...review, nextActions: e.target.value })
-              }
-              placeholder="使用可检查的动作、期限和触发条件。"
-            />
-          </label>
+              <Save size={16} />
+              {saving ? "保存中…" : "保存复盘"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="panel system-review-history">
+        <div className="panel-title">
+          <div>
+            <h2>历史复盘</h2>
+          </div>
+          <span className="history-count">{reviews.length} 条</span>
         </div>
-        <div className="form-actions">
-          <p>保存时会同时冻结组合、目标、风险和决策完成度摘要。</p>
-          <button
-            className="primary"
-            disabled={
-              saving ||
-              !review.processSummary ||
-              !review.lessons ||
-              !review.nextActions
-            }
-            onClick={persistSystemReview}
-          >
-            <Save size={16} />
-            冻结周期复盘
-          </button>
+        {reviews.length === 0 && (
+          <div className="empty">
+            还没有复盘记录，写下你的第一段观点、顾虑和思考。
+          </div>
+        )}
+        <div className="system-review-list">
+          {reviews.map((item) => (
+            <article key={item.id}>
+              <div className="system-review-head">
+                <small>
+                  {new Date(item.createdAt).toLocaleDateString("zh-CN")}
+                </small>
+              </div>
+              <p className="review-content">{systemReviewText(item)}</p>
+              <button
+                className="text-button"
+                onClick={() => convertLessonToRule(item)}
+              >
+                把思考沉淀为规则 <ChevronRight size={14} />
+              </button>
+            </article>
+          ))}
         </div>
       </section>
 
-      <section className="panel rule-workbench">
-        <div className="panel-title">
-          <div>
-            <h2>投资规则</h2>
+      <details className="panel disclosure-panel rule-workbench">
+        <summary>投资规则</summary>
+        <div className="disclosure-content">
+          <div className="panel-title">
+            <div>
+              <h2>投资规则</h2>
+            </div>
+            <span className="history-count">{activeRules.length} 条有效</span>
           </div>
-          <span className="history-count">{activeRules.length} 条有效</span>
-        </div>
-        <div className="rule-layout">
-          <div className="rule-list">
-            {rules.length === 0 && (
-              <div className="empty">
-                还没有个人规则。好的规则应说明“何时触发、具体做什么、为什么”。
-              </div>
-            )}
-            {rules.map((item) => (
-              <article key={item.id} className={item.active ? "" : "inactive"}>
-                <div>
-                  <span>
-                    {item.category} · v{item.revision}
-                  </span>
-                  <strong>{item.statement}</strong>
-                  <p>
-                    <b>触发</b>
-                    {item.trigger}
-                  </p>
-                  <small>{item.rationale}</small>
+          <div className="rule-layout">
+            <div className="rule-list">
+              {rules.length === 0 && (
+                <div className="empty">
+                  还没有个人规则。好的规则应说明“何时触发、具体做什么、为什么”。
                 </div>
-                <div className="rule-actions">
-                  <button
-                    className="text-button"
-                    onClick={() => toggleRuleHistory(item)}
-                  >
-                    历史
-                  </button>
+              )}
+              {rules.map((item) => (
+                <article
+                  key={item.id}
+                  className={item.active ? "" : "inactive"}
+                >
+                  <div>
+                    <span>
+                      {item.category} · v{item.revision}
+                    </span>
+                    <strong>{item.statement}</strong>
+                    <p>
+                      <b>触发</b>
+                      {item.trigger}
+                    </p>
+                    <small>{item.rationale}</small>
+                  </div>
+                  <div className="rule-actions">
+                    <button
+                      className="text-button"
+                      onClick={() => toggleRuleHistory(item)}
+                    >
+                      历史
+                    </button>
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        setEditingRuleId(item.id);
+                        setRule(ruleInput(item));
+                      }}
+                    >
+                      修订
+                    </button>
+                    <button
+                      className="text-button"
+                      disabled={saving}
+                      onClick={() => toggleRule(item)}
+                    >
+                      {item.active ? "停用" : "启用"}
+                    </button>
+                  </div>
+                  {expandedRuleId === item.id && (
+                    <div className="rule-history">
+                      {(ruleHistories[item.id] ?? []).map((revision) => (
+                        <div key={revision.revision}>
+                          <span>
+                            v{revision.revision} ·{" "}
+                            {new Date(revision.changedAt).toLocaleDateString(
+                              "zh-CN",
+                            )}
+                          </span>
+                          <strong>{revision.statement}</strong>
+                          <small>
+                            {revision.active ? "当时启用" : "当时停用"}
+                          </small>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+            <div className="rule-editor">
+              <strong>
+                {editingRuleId
+                  ? "修订规则"
+                  : rule.sourceReviewId
+                    ? "从复盘沉淀规则"
+                    : "建立一条规则"}
+              </strong>
+              <label>
+                <span>类别</span>
+                <select
+                  value={rule.category}
+                  onChange={(e) =>
+                    setRule({
+                      ...rule,
+                      category: e.target
+                        .value as InvestmentRuleInput["category"],
+                    })
+                  }
+                >
+                  {["资产配置", "风险", "研究", "仓位", "行为", "复盘"].map(
+                    (value) => (
+                      <option key={value}>{value}</option>
+                    ),
+                  )}
+                </select>
+              </label>
+              <label>
+                <span>规则内容</span>
+                <textarea
+                  value={rule.statement}
+                  onChange={(e) =>
+                    setRule({ ...rule, statement: e.target.value })
+                  }
+                  placeholder="例如：单一主动仓位不得超过 8%。"
+                />
+              </label>
+              <label>
+                <span>触发条件</span>
+                <textarea
+                  value={rule.trigger}
+                  onChange={(e) =>
+                    setRule({ ...rule, trigger: e.target.value })
+                  }
+                  placeholder="什么时候必须检查这条规则？"
+                />
+              </label>
+              <label>
+                <span>依据</span>
+                <textarea
+                  value={rule.rationale}
+                  onChange={(e) =>
+                    setRule({ ...rule, rationale: e.target.value })
+                  }
+                  placeholder="它避免哪一种重复错误？"
+                />
+              </label>
+              <div className="rule-editor-actions">
+                {(editingRuleId || rule.sourceReviewId) && (
                   <button
                     className="text-button"
                     onClick={() => {
-                      setEditingRuleId(item.id);
-                      setRule(ruleInput(item));
+                      setEditingRuleId(null);
+                      setRule(emptyRule);
                     }}
                   >
-                    修订
+                    取消
                   </button>
-                  <button
-                    className="text-button"
-                    disabled={saving}
-                    onClick={() => toggleRule(item)}
-                  >
-                    {item.active ? "停用" : "启用"}
-                  </button>
-                </div>
-                {expandedRuleId === item.id && (
-                  <div className="rule-history">
-                    {(ruleHistories[item.id] ?? []).map((revision) => (
-                      <div key={revision.revision}>
-                        <span>
-                          v{revision.revision} ·{" "}
-                          {new Date(revision.changedAt).toLocaleDateString(
-                            "zh-CN",
-                          )}
-                        </span>
-                        <strong>{revision.statement}</strong>
-                        <small>
-                          {revision.active ? "当时启用" : "当时停用"}
-                        </small>
-                      </div>
-                    ))}
-                  </div>
                 )}
-              </article>
-            ))}
-          </div>
-          <div className="rule-editor">
-            <strong>
-              {editingRuleId
-                ? "修订规则"
-                : rule.sourceReviewId
-                  ? "从复盘沉淀规则"
-                  : "建立一条规则"}
-            </strong>
-            <label>
-              <span>类别</span>
-              <select
-                value={rule.category}
-                onChange={(e) =>
-                  setRule({
-                    ...rule,
-                    category: e.target.value as InvestmentRuleInput["category"],
-                  })
-                }
-              >
-                {["资产配置", "风险", "研究", "仓位", "行为", "复盘"].map(
-                  (value) => (
-                    <option key={value}>{value}</option>
-                  ),
-                )}
-              </select>
-            </label>
-            <label>
-              <span>规则内容</span>
-              <textarea
-                value={rule.statement}
-                onChange={(e) =>
-                  setRule({ ...rule, statement: e.target.value })
-                }
-                placeholder="例如：单一主动仓位不得超过 8%。"
-              />
-            </label>
-            <label>
-              <span>触发条件</span>
-              <textarea
-                value={rule.trigger}
-                onChange={(e) => setRule({ ...rule, trigger: e.target.value })}
-                placeholder="什么时候必须检查这条规则？"
-              />
-            </label>
-            <label>
-              <span>依据</span>
-              <textarea
-                value={rule.rationale}
-                onChange={(e) =>
-                  setRule({ ...rule, rationale: e.target.value })
-                }
-                placeholder="它避免哪一种重复错误？"
-              />
-            </label>
-            <div className="rule-editor-actions">
-              {(editingRuleId || rule.sourceReviewId) && (
                 <button
-                  className="text-button"
-                  onClick={() => {
-                    setEditingRuleId(null);
-                    setRule(emptyRule);
-                  }}
+                  className="secondary"
+                  disabled={
+                    saving ||
+                    !rule.statement ||
+                    !rule.trigger ||
+                    !rule.rationale
+                  }
+                  onClick={persistRule}
                 >
-                  取消
+                  {editingRuleId ? "保存新版本" : "建立规则"}
                 </button>
-              )}
-              <button
-                className="secondary"
-                disabled={
-                  saving || !rule.statement || !rule.trigger || !rule.rationale
-                }
-                onClick={persistRule}
-              >
-                {editingRuleId ? "保存新版本" : "建立规则"}
-              </button>
+              </div>
             </div>
           </div>
         </div>
-      </section>
+      </details>
 
-      {reviews.length > 0 && (
-        <section className="panel system-review-history">
-          <div className="panel-title">
-            <div>
-              <h2>复盘记录</h2>
-            </div>
-            <span className="history-count">{reviews.length} 期</span>
-          </div>
-          <div className="system-review-list">
-            {reviews.map((item) => (
-              <article key={item.id}>
-                <div className="system-review-head">
-                  <div>
-                    <span>{item.periodLabel}</span>
-                    <strong>纪律 {item.adherenceScore}/5</strong>
-                  </div>
-                  <small>
-                    {new Date(item.createdAt).toLocaleDateString("zh-CN")}
-                  </small>
-                </div>
-                <p>
-                  <b>过程事实</b>
-                  {item.processSummary}
-                </p>
-                <p>
-                  <b>规则违反</b>
-                  {item.ruleViolations || "无"}
-                </p>
-                <p>
-                  <b>经验修正</b>
-                  {item.lessons}
-                </p>
-                <p>
-                  <b>下一步</b>
-                  {item.nextActions}
-                </p>
-                <div className="frozen-snapshot">
-                  <span>
-                    组合{" "}
-                    {item.snapshot.portfolioComparable
-                      ? formatMoney(
-                          item.snapshot.portfolioValue,
-                          item.snapshot.baseCurrency,
-                        )
-                      : "待补汇率"}
-                  </span>
-                  <span>
-                    集中度{" "}
-                    {item.snapshot.portfolioComparable
-                      ? `${item.snapshot.concentrationPct.toFixed(1)}%`
-                      : "—"}
-                  </span>
-                  <span>高风险 {item.snapshot.highRiskFindings}</span>
-                  <span>
-                    目标 {item.snapshot.goalsOnTrack}/{item.snapshot.goalTotal}
-                  </span>
-                </div>
-                <button
-                  className="text-button"
-                  onClick={() => convertLessonToRule(item)}
-                >
-                  把经验沉淀为规则 <ChevronRight size={14} />
-                </button>
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
       <details className="panel disclosure-panel">
         <summary>复盘提醒设置</summary>
         <div className="disclosure-content">
@@ -752,7 +635,7 @@ export function ReviewCenter({
           </div>
           {!effectiveness?.rules.length && (
             <div className="empty">
-              建立个人投资规则后，每次冻结决策都会先要求逐条确认。
+              这里汇总历史决策中的规则检查；新增纯文本决策可直接写下对规则的思考。
             </div>
           )}
           <div className="effectiveness-list">

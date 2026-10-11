@@ -259,7 +259,38 @@ try {
     (await api("/research-evidence")).find((e) => e.id === source.id).active,
     false,
   );
-  console.log("PASS evidence: save, unsafe source rejection, archive");
+  const originalFile = Buffer.from("黄金储备：原始重要信息\n\n下一段", "utf8");
+  const fileSource = await api("/research-evidence", "POST", {
+    content: "", attachments: [{ name: "资料.txt", dataBase64: originalFile.toString("base64") }],
+  });
+  assert.equal(fileSource.claim, "");
+  assert.equal(fileSource.attachments.length, 1);
+  const attachment = fileSource.attachments[0];
+  assert.equal(attachment.byteSize, originalFile.length);
+  assert.match(attachment.extractionNote, /已提取文字/);
+  assert.equal("dataBase64" in attachment, false);
+  const downloadPath = `/research-evidence/${fileSource.id}/attachments/${attachment.id}`;
+  assert.equal((await fetch(base + downloadPath)).status, 401);
+  const download = await api(downloadPath);
+  assert.equal(download.name, "资料.txt");
+  assert.deepEqual(Buffer.from(download.dataBase64, "base64"), originalFile);
+  await api(`/research-evidence/${source.id}/attachments/${attachment.id}`, "GET", undefined, 404);
+  const filePreview = await api("/analysis/preview", "POST", {
+    question: "黄金储备", workflow: "quick", useMemory: false, reflect: false,
+    exploreAlternatives: false, webSearch: false,
+  });
+  assert(filePreview.evidenceCandidates.some(item => item.id === fileSource.id && item.claim.includes("原始重要信息")));
+  assert(!JSON.stringify(filePreview).includes(originalFile.toString("base64")));
+  await api("/research-evidence", "POST", {content: "", attachments: [{name: "bad.txt", dataBase64: "bad!"}]}, 400);
+  await api(`/research-evidence/${fileSource.id}/status`, "PUT", { active: false });
+  assert.deepEqual(Buffer.from((await api(downloadPath)).dataBase64, "base64"), originalFile);
+  const largeFile = Buffer.alloc(2 * 1024 * 1024, 65);
+  const largeSource = await api("/research-evidence", "POST", {
+    content: "", attachments: [{ name: "large.txt", dataBase64: largeFile.toString("base64") }],
+  });
+  assert.equal(largeSource.attachments[0].byteSize, largeFile.length);
+  assert.match(largeSource.attachments[0].extractionNote, /前 20000/);
+  console.log("PASS evidence: text, file upload/download, attachment retrieval, authentication, archive, body limit");
 
   const ruleInput = {
     category: "风险",
@@ -344,6 +375,36 @@ try {
     "PASS decisions/reviews/rules/memory/reminders: workflow and immutable original judgment",
   );
 
+  const decisionContent = "观点：保持观察。\n\n顾虑：资料尚不完整。\n思考：先核对下一期报告。";
+  await api("/decisions", "POST", { content: " \n\t " }, 400);
+  await api("/decisions", "POST", { content: decisionContent }, 204);
+  const textDecision = (await api("/decisions")).find((item) => item.content === decisionContent);
+  assert.ok(textDecision);
+  assert.equal(textDecision.reviewDate, "");
+  assert.deepEqual(textDecision.ruleChecks, []);
+  const textMemory = (await api("/memories")).find((item) => item.id === textDecision.id);
+  assert.equal(textMemory.content.content, decisionContent);
+  assert.equal(textMemory.content.confidencePct, undefined);
+  assert.equal((await api("/review-reminders")).dueDecisionCount, 0);
+  console.log("PASS text decisions: content-only save, blank rejection, complete memory and no invented due date");
+
+  const reviewContent = " 我的观点：继续跟踪。\n\n顾虑：证据不足。\n思考：保留 <原文> 和 **标记**。 ";
+  await api(`/decisions/${textDecision.id}/review`, "PUT", { content: " \n\t " }, 400);
+  await api(`/decisions/${textDecision.id}/review`, "PUT", { content: reviewContent }, 204);
+  const reviewedText = (await api("/decisions")).find((item) => item.id === textDecision.id);
+  assert.equal(reviewedText.content, decisionContent);
+  assert.equal(reviewedText.review.content, reviewContent);
+  assert.equal(reviewedText.review.processRating, null);
+  assert.equal((await api("/memories")).find((item) => item.id === textDecision.id).content.review.content, reviewContent);
+  await api("/system-reviews", "POST", { content: " \n\t " }, 400);
+  const textReview = await api("/system-reviews", "POST", { content: reviewContent });
+  assert.equal(textReview.content, reviewContent);
+  assert.equal(textReview.adherenceScore, null);
+  assert.equal(textReview.nextReviewDate, "");
+  assert.equal((await api("/system-reviews")).find((item) => item.id === textReview.id).content, reviewContent);
+  assert.equal((await api("/review-reminders")).periodicReviewDue, false);
+  console.log("PASS text reviews: content-only save, full original text, no invented scores or due dates");
+
   const request = {
     question: "分析我的现金资产变化",
     workflow: "quick",
@@ -393,7 +454,11 @@ try {
   assert.deepEqual(await api("/analysis-settings"), configured);
   assert.equal((await api("/snapshot")).holdings[0].marketValue, 102200);
   assert.equal((await api("/daily-assets")).records[0].totalAssets, 102200);
-  assert.equal((await api("/decisions"))[0].review.processRating, 4);
+  const persistedDecisions = await api("/decisions");
+  assert.equal(persistedDecisions.find((item) => item.id === decision.id).review.processRating, 4);
+  assert.equal(persistedDecisions.find((item) => item.id === textDecision.id).content, decisionContent);
+  assert.equal(persistedDecisions.find((item) => item.id === textDecision.id).review.content, reviewContent);
+  assert.equal((await api("/system-reviews")).find((item) => item.id === textReview.id).content, reviewContent);
   console.log(
     `PASS restart persistence; ${count} authenticated HTTP assertions total`,
   );

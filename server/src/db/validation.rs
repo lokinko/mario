@@ -386,6 +386,13 @@ pub(super) fn validate_investment_rule(input: &InvestmentRuleInput) -> AppResult
 }
 
 pub(super) fn validate_system_review(input: &SystemReviewInput) -> AppResult<()> {
+    if let Some(content) = &input.content {
+        return if content.trim().is_empty() {
+            Err(AppError::Validation("复盘内容不能为空".into()))
+        } else {
+            Ok(())
+        };
+    }
     if input.period_label.trim().is_empty()
         || input.process_summary.trim().is_empty()
         || input.lessons.trim().is_empty()
@@ -396,7 +403,10 @@ pub(super) fn validate_system_review(input: &SystemReviewInput) -> AppResult<()>
             "复盘周期、过程事实、经验、下一步和下次复盘日均为必填项".into(),
         ));
     }
-    if !(1..=5).contains(&input.adherence_score) {
+    if !input
+        .adherence_score
+        .is_some_and(|score| (1..=5).contains(&score))
+    {
         return Err(AppError::Validation("纪律执行评分必须在 1—5 之间".into()));
     }
     chrono::NaiveDate::parse_from_str(&input.next_review_date, "%Y-%m-%d")
@@ -405,6 +415,17 @@ pub(super) fn validate_system_review(input: &SystemReviewInput) -> AppResult<()>
 }
 
 pub(super) fn validate_research_evidence(input: &ResearchEvidenceInput) -> AppResult<()> {
+    crate::attachments::validate(&input.attachments)?;
+    if input.content.is_some() || !input.attachments.is_empty() {
+        let content = input.content.as_deref().unwrap_or_default();
+        if content.trim().is_empty() && input.attachments.is_empty() {
+            return Err(AppError::Validation("请填写原始资料内容".into()));
+        }
+        if content.chars().count() > 20_000 {
+            return Err(AppError::Validation("原始资料不能超过 20000 个字符".into()));
+        }
+        return Ok(());
+    }
     if input.asset_name.trim().is_empty()
         || input.title.trim().is_empty()
         || input.publisher.trim().is_empty()

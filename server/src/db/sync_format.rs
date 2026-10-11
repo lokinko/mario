@@ -149,6 +149,16 @@ const CURRENT_EVENT_COLUMNS: &[&str] = &[
 
 const V7_SYNC_TABLE_COUNT: usize = 12;
 
+const LEGACY_DECISION_REVIEW_COLUMNS: &[&str] = &[
+    "decision_id",
+    "outcome_summary",
+    "actual_return_pct",
+    "thesis_status",
+    "process_rating",
+    "lessons",
+    "reviewed_at",
+];
+
 pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
     SyncTableSpec {
         name: "profile",
@@ -190,6 +200,7 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
             "process_rating",
             "lessons",
             "reviewed_at",
+            "content",
         ],
         order_by: "decision_id",
     },
@@ -304,15 +315,34 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         columns: &["key", "value"],
         order_by: "key",
     },
+    SyncTableSpec {
+        name: "research_attachments",
+        columns: &[
+            "id",
+            "evidence_id",
+            "name",
+            "byte_size",
+            "data_base64",
+            "extracted_text",
+            "extraction_note",
+        ],
+        order_by: "id",
+    },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 11;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 13;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
 
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
+    if version <= 12 {
+        specs.pop();
+    }
+    if version <= 11 {
+        specs[4].columns = LEGACY_DECISION_REVIEW_COLUMNS;
+    }
     match version {
         1 => {
             specs.truncate(V1_SYNC_TABLE_COUNT);
@@ -362,7 +392,7 @@ pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpe
             specs.truncate(16);
             Ok(specs)
         }
-        SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
+        11 | 12 | SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
         _ => Err(AppError::Validation(format!(
             "不支持的数据快照版本 {version}"
         ))),
@@ -417,15 +447,20 @@ impl SyncDataset {
                         spec.name
                     )));
                 }
-                for value in row {
+                for (index, value) in row.iter().enumerate() {
                     match value {
                         SyncValue::Real(number) if !number.is_finite() => {
                             return Err(AppError::Validation("同步数据包含无效数字".into()));
                         }
-                        SyncValue::Text(text) if text.len() > 2 * 1024 * 1024 => {
-                            return Err(AppError::Validation(
-                                "单个同步字段超过 2 MB 安全上限".into(),
-                            ));
+                        SyncValue::Text(text)
+                            if text.len()
+                                > if spec.name == "research_attachments" && index == 4 {
+                                    crate::attachments::MAX_BYTES.div_ceil(3) * 4
+                                } else {
+                                    2 * 1024 * 1024
+                                } =>
+                        {
+                            return Err(AppError::Validation("同步字段超过大小上限".into()));
                         }
                         _ => {}
                     }
@@ -433,6 +468,7 @@ impl SyncDataset {
             }
         }
         super::fx::validate_sync(self)?;
+        crate::attachments::validate_sync(self)?;
         Ok(())
     }
 }

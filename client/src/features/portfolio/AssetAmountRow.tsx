@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { getSnapshot, updateHoldingAmount } from "../../api";
 import type { Holding, Snapshot } from "../../types";
+import { formatMoney } from "../../lib/format";
 
 export function AssetAmountRow({
   holding,
@@ -26,6 +27,9 @@ export function AssetAmountRow({
   const pending = useRef(false);
   const version = useRef(revision);
   const attempt = useRef<{ value: number; id: string } | undefined>(undefined);
+  const investment = holding.assetClass !== "现金";
+  const pnl =
+    holding.costBasis > 0 ? holding.marketValue - holding.costBasis : null;
   useEffect(() => {
     // A remote refresh must never silently authorize a draft based on old data.
     if (!dirty.current && !pending.current) {
@@ -85,7 +89,9 @@ export function AssetAmountRow({
     }
   };
   return (
-    <div className="asset-amount-row">
+    <div
+      className={`asset-amount-row${investment ? " investment-amount-row" : ""}`}
+    >
       <div className="asset-row-info">
         <button
           className="text-button asset-name"
@@ -94,7 +100,7 @@ export function AssetAmountRow({
           aria-label={`编辑 ${holding.name}`}
         >
           <strong>{holding.name}</strong>
-          <small title="余额确认日期">
+          <small title={investment ? "市值确认日期" : "余额确认日期"}>
             {holding.valuationDate || "日期待补充"}
           </small>
         </button>
@@ -110,6 +116,7 @@ export function AssetAmountRow({
         </button>
       </div>
       <div className="asset-amount-editor">
+        {investment && <span className="asset-column-label">当前市值</span>}
         <label>
           <span className="sr-only">{holding.name}金额</span>
           <small>{holding.currency}</small>
@@ -170,6 +177,38 @@ export function AssetAmountRow({
           </span>
         )}
       </div>
+      {investment && (
+        <>
+          <div className="asset-cost">
+            <span className="asset-column-label">持仓成本</span>
+            <button
+              className="text-button"
+              disabled={busy || disabled}
+              onClick={onEdit}
+              aria-label={`编辑 ${holding.name}成本`}
+              title="点击编辑持仓成本"
+            >
+              {holding.costBasis > 0
+                ? formatMoney(holding.costBasis, holding.currency)
+                : "待补成本"}
+            </button>
+          </div>
+          <div className="asset-pnl">
+            <span className="asset-column-label">浮动盈亏</span>
+            <span className={pnl == null ? "" : pnl >= 0 ? "gain" : "loss"}>
+              {pnl == null
+                ? "—"
+                : `${pnl > 0 ? "+" : ""}${formatMoney(pnl, holding.currency)}`}
+              {pnl != null && (
+                <small>
+                  {pnl > 0 ? "+" : ""}
+                  {((pnl / holding.costBasis) * 100).toFixed(1)}%
+                </small>
+              )}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

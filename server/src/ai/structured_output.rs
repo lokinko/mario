@@ -6,14 +6,14 @@ pub const STRUCTURED_ANALYSIS_CONTRACT: &str = r#"
 只返回一个 JSON 对象，不要使用 Markdown 代码块或添加前后说明。结构必须严格为：
 {
   "verdict": "当前最重要判断",
-  "facts": [{"statement":"已知事实","basis":"user_data 或 research_evidence","evidenceIds":["证据 ID"]}],
-  "inferences": [{"statement":"基于事实的推断","basis":"user_data 或 research_evidence","evidenceIds":[]}],
+  "facts": [{"statement":"已知事实","basis":"user_data 或 research_evidence","evidenceIds":["证据 ID"],"sourceRefs":[]}],
+  "inferences": [{"statement":"基于事实的推断","basis":"user_data 或 research_evidence","evidenceIds":[],"sourceRefs":[]}],
   "unknowns": ["仍需核实的信息"],
   "options": [{"name":"方案名称","suitableWhen":"适用条件","tradeoffs":["机会成本或取舍"],"risks":["主要风险"]}],
   "actions": [{"supportingFactIndices":[0],"evidenceLimits":["这条建议的证据局限与尚需核实的条件"],"action":"下一步行动","rationale":"为什么","reversible":true,"reviewTrigger":"何时复盘或停止"}],
   "reviewTriggers": ["未来复盘或证伪条件"]
 }
-facts、unknowns、options、actions、reviewTriggers 均至少一项。basis 只能是 user_data 或 research_evidence；basis 为 research_evidence 时必须引用本次上下文里的证据 ID，basis 为 user_data 时 evidenceIds 必须为空。不得编造证据 ID。inferences 可以为空。所有字段都必须存在。
+facts、unknowns、options、actions、reviewTriggers 均至少一项。basis 只能是 user_data 或 research_evidence；basis 为 research_evidence 时必须引用本次上下文里的证据 ID，sourceRefs 必须为空；basis 为 user_data 时 evidenceIds 必须为空，sourceRefs 填写实际使用的个人原值 JSON Pointer（例如 /portfolio/holdings/0/marketValue 或 /currentUserMessage），只能指向本次提供的授权档案标量值，不得引用 /question、元数据或未提供的路径。综合推断无法直接对应个人原值时 sourceRefs 可为空，不强行配引用。不得编造证据 ID 或路径。inferences 可以为空。所有字段都必须存在。
 每条 actions 必须通过 supportingFactIndices 引用 facts 中至少一条真正支持该行动的事实（从 0 开始，不得越界或重复），不得把所有事实无差别挂在每条建议上。rationale 必须解释这些事实如何结合用户持仓、目标或风险约束推出该行动，并区分事实与判断；涉及外部环境的建议须关联带 research_evidence 引用的事实。evidenceLimits 必须逐条列出该建议的口径、时效、反方证据或缺失信息，至少一条。来源不足时应建议核实/补充资料或暂缓行动，不得为了显得专业而编造事实、补齐引用或承诺收益。"#;
 
 pub fn parse_structured_analysis(
@@ -28,6 +28,56 @@ pub fn parse_structured_analysis(
         serde_json::from_str(payload).map_err(|error| format!("JSON 结构无效：{error}"))?;
     validate_report(&report, allowed_evidence_ids)?;
     Ok(report)
+}
+
+pub fn validate_source_types(
+    report: &StructuredAnalysis,
+    sources: &[crate::models::AnalysisEvidenceReference],
+    context: &serde_json::Value,
+) -> Result<(), String> {
+    for claim in report.facts.iter().chain(&report.inferences) {
+        if claim.source_refs.len() > 12
+            || (claim.basis != "user_data" && !claim.source_refs.is_empty())
+        {
+            return Err("个人原始资料引用数量或类别无效".into());
+        }
+        let mut seen = HashSet::new();
+        for path in &claim.source_refs {
+            let group = path.split('/').nth(1).unwrap_or_default();
+            if !path.starts_with('/')
+                || !seen.insert(path)
+                || ![
+                    "financialProfile",
+                    "portfolio",
+                    "goals",
+                    "currentUserMessage",
+                    "dailyAssetHistory",
+                    "deterministicPlan",
+                    "riskFindings",
+                    "personalInvestmentRules",
+                    "periodicSystemReviews",
+                    "portfolioChangeAttribution",
+                    "portfolioEvents",
+                ]
+                .contains(&group)
+                || !context.pointer(path).is_some_and(|value| {
+                    !value.is_null() && !value.is_object() && !value.is_array()
+                })
+            {
+                return Err(format!("个人原始资料引用路径无效或未授权：{path}"));
+            }
+        }
+    }
+    for fact in &report.facts {
+        if fact.evidence_ids.iter().any(|id| {
+            sources
+                .iter()
+                .any(|source| source.id == *id && source.evidence_type == "historical_ai")
+        }) {
+            return Err("历史模型回答只能作为线索或合理推断，不能作为已知事实依据".into());
+        }
+    }
+    Ok(())
 }
 
 pub fn render_report(report: &StructuredAnalysis) -> String {
@@ -267,6 +317,43 @@ mod tests {
             parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
         assert!(render_report(&report).contains("先降低集中风险"));
         assert!(render_report(&report).contains("证据：e1"));
+    }
+
+    #[test]
+    fn validates_personal_references_against_frozen_scalars_and_source_groups() {
+        let mut report =
+            parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
+        let context = serde_json::json!({"portfolio":{"holdings":[{"marketValue":120000}]},"question":"旧模型回答"});
+        report.facts[0].source_refs = vec!["/portfolio/holdings/0/marketValue".into()];
+        assert!(validate_source_types(&report, &[], &context).is_ok());
+        for path in [
+            "/question",
+            "/portfolio/holdings",
+            "/portfolio/holdings/1/marketValue",
+            "/researchEvidence/0/claim",
+        ] {
+            report.facts[0].source_refs = vec![path.into()];
+            assert!(validate_source_types(&report, &[], &context).is_err());
+        }
+    }
+
+    #[test]
+    fn historical_ai_citations_may_support_inferences_but_never_known_facts() {
+        let source = serde_json::from_value(serde_json::json!({"id":"e1","title":"历史问答",
+            "publisher":"历史模型","sourceUrl":"","sourceTier":"未验证","asOfDate":"",
+            "evidenceType":"historical_ai"}))
+        .unwrap();
+        let sources = vec![source];
+        let mut report =
+            parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
+        assert!(validate_source_types(&report, &sources, &serde_json::json!({})).is_ok());
+        report.facts[0].basis = "research_evidence".into();
+        report.facts[0].evidence_ids = vec!["e1".into()];
+        assert!(
+            validate_source_types(&report, &sources, &serde_json::json!({}))
+                .unwrap_err()
+                .contains("历史模型回答")
+        );
     }
 
     #[test]

@@ -1,38 +1,39 @@
-import { useEffect, useState } from "react";
-import { useRequestGuard } from "../../lib/useRequestGuard";
-import { LoadState } from "../../components/LoadState";
-import { AlertTriangle, Database, Save, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Paperclip, Save, Sparkles, X } from "lucide-react";
 import {
   getResearchEvidence,
+  getResearchAttachment,
   saveResearchEvidence,
   setResearchEvidenceStatus,
 } from "../../api";
-import type { ResearchEvidence, ResearchEvidenceInput } from "../../types";
+import type { ResearchEvidence } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
+import { LoadState } from "../../components/LoadState";
 import { localDateValue } from "../../lib/dates";
-import { View } from "../../app/navigation";
+import { useRequestGuard } from "../../lib/useRequestGuard";
+import type { View } from "../../app/navigation";
+import {
+  encodeResearchFiles,
+  formatFileSize,
+  validateResearchFiles,
+} from "../../lib/researchFiles";
 
-export function emptyEvidence(): ResearchEvidenceInput {
-  return {
-    assetName: "",
-    title: "",
-    publisher: "",
-    sourceUrl: "",
-    sourceTier: "一手来源",
-    evidenceType: "公司披露",
-    stance: "背景",
-    asOfDate: localDateValue(new Date()),
-    claim: "",
-    notes: "",
-  };
-}
-
-export function sourceHost(value: string) {
-  try {
-    return new URL(value).hostname;
-  } catch {
-    return value;
-  }
+export function evidenceText(item: ResearchEvidence): string {
+  if (item.evidenceType === "user_source_text") return item.claim;
+  return [
+    item.assetName && `主题：${item.assetName}`,
+    item.title,
+    item.publisher && `来源：${item.publisher}`,
+    item.sourceUrl,
+    item.asOfDate && `资料日期：${item.asOfDate}`,
+    item.sourceTier && `来源层级：${item.sourceTier}`,
+    item.evidenceType && `资料类型：${item.evidenceType}`,
+    item.stance && `与原假设的关系：${item.stance}`,
+    item.claim,
+    item.notes && `限制与待核实项：${item.notes}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function EvidenceWorkbench({
@@ -42,7 +43,11 @@ export function EvidenceWorkbench({
   navigate: (v: View) => void;
   flash: (s: string) => void;
 }) {
-  const [draft, setDraft] = useState<ResearchEvidenceInput>(emptyEvidence);
+  const [content, setContent] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [fileError, setFileError] = useState("");
   const [items, setItems] = useState<ResearchEvidence[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -53,9 +58,9 @@ export function EvidenceWorkbench({
     const isCurrent = loadRequest.begin();
     setLoading(true);
     try {
-      const items = await getResearchEvidence();
+      const nextItems = await getResearchEvidence();
       if (!isCurrent()) return;
-      setItems(items);
+      setItems(nextItems);
       setError("");
     } catch (nextError) {
       if (isCurrent()) setError(String(nextError));
@@ -69,31 +74,22 @@ export function EvidenceWorkbench({
   }, []);
 
   const active = items.filter((item) => item.active);
-  const primary = active.filter((item) => item.sourceTier === "一手来源");
-  const counter = active.filter((item) => item.stance === "反驳");
-  const oneYearAgo = new Date();
-  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  const aging = active.filter(
-    (item) => new Date(`${item.asOfDate}T00:00:00`) < oneYearAgo,
-  );
 
   const persist = async () => {
-    if (
-      !draft.assetName ||
-      !draft.title ||
-      !draft.publisher ||
-      !draft.sourceUrl ||
-      !draft.asOfDate ||
-      !draft.claim
-    )
-      return;
+    if (saving || (!content.trim() && !files.length)) return;
     setSaving(true);
     setError("");
     try {
-      await saveResearchEvidence(draft);
-      setDraft(emptyEvidence());
-      await refresh();
+      const attachments = await encodeResearchFiles(files);
+      await saveResearchEvidence({
+        content,
+        ...(attachments.length ? { attachments } : {}),
+      });
+      setContent("");
+      setFiles([]);
+      setFileError("");
       flash("参考资料已保存");
+      await refresh();
     } catch (nextError) {
       setError(String(nextError));
     } finally {
@@ -101,15 +97,49 @@ export function EvidenceWorkbench({
     }
   };
 
+  const addFiles = (selected: File[]) => {
+    const next = [...files, ...selected];
+    const message = validateResearchFiles(next);
+    setFileError(message);
+    if (!message) setFiles(next);
+  };
+
+  const download = async (evidenceId: string, attachmentId: string) => {
+    if (downloading) return;
+    setDownloading(attachmentId);
+    setError("");
+    try {
+      const file = await getResearchAttachment(evidenceId, attachmentId);
+      const bytes = Uint8Array.from(atob(file.dataBase64), (c) =>
+        c.charCodeAt(0),
+      );
+      const browserURL = URL;
+      const url = browserURL.createObjectURL(
+        new Blob([bytes], { type: "application/octet-stream" }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // Allow the browser to begin the download before releasing its URL.
+      window.setTimeout(() => browserURL.revokeObjectURL(url), 1000);
+    } catch (nextError) {
+      setError(String(nextError));
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   const toggleStatus = async (item: ResearchEvidence) => {
+    if (saving) return;
     setSaving(true);
     setError("");
     try {
       await setResearchEvidenceStatus(item.id, !item.active);
       await refresh();
-      flash(
-        item.active ? "证据已归档，不再进入 AI 检索" : "证据已恢复为有效状态",
-      );
+      flash(item.active ? "资料已归档" : "资料已恢复");
     } catch (nextError) {
       setError(String(nextError));
     } finally {
@@ -118,12 +148,14 @@ export function EvidenceWorkbench({
   };
 
   const startEvidenceAnalysis = () => {
-    const assets = [...new Set(active.map((item) => item.assetName))].join(
-      "、",
-    );
+    const topics = active
+      .slice(0, 12)
+      .map((item) => item.title)
+      .filter(Boolean)
+      .join("、");
     window.sessionStorage.setItem(
       "mario.advisorQuestion",
-      `请基于我保存的带来源研究证据，审查${assets || "当前组合"}的投资假设：区分一手事实、二手解释与未知项，优先寻找反方证据，只引用载荷中实际存在的 HTTPS 来源，并给出下一步需要补齐的证据。`,
+      `请结合我保存的原始资料与资讯${topics ? `（${topics}）` : ""}，梳理其中的重要信息、局限和待核实事项，再分析它们对当前投资判断的影响。引用实际提供的资料，不要补造来源信息。`,
     );
     navigate("advisor");
   };
@@ -139,239 +171,142 @@ export function EvidenceWorkbench({
             disabled={!active.length}
           >
             <Sparkles size={16} />
-            用证据开始分析
+            用资料提问
           </button>
         }
       />
-      <section className="review-metrics">
-        <article>
-          <span>有效证据</span>
-          <strong>{active.length}</strong>
-          <small>{items.length - active.length} 条已归档</small>
-        </article>
-        <article>
-          <span>一手来源</span>
-          <strong>{primary.length}</strong>
-          <small>披露、监管或原始数据</small>
-        </article>
-        <article>
-          <span>反方证据</span>
-          <strong>{counter.length}</strong>
-        </article>
-        <article>
-          <span>超过一年</span>
-          <strong className={aging.length ? "warning-text" : ""}>
-            {aging.length}
-          </strong>
-          <small>待核对时效</small>
-        </article>
-      </section>
-
       <section className="panel evidence-form">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void persist();
+          }}
+        >
+          <label className="evidence-content-field">
+            <span>原始资料与资讯</span>
+            <textarea
+              rows={12}
+              required={!files.length}
+              disabled={saving}
+              maxLength={20000}
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              placeholder="直接粘贴或写下你获取到的重要原始信息。来源、链接和日期也可以一起放在这段文字里。"
+            />
+          </label>
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            aria-label="选择附件"
+            disabled={saving}
+            onChange={(event) => {
+              addFiles(Array.from(event.target.files ?? []));
+              event.target.value = "";
+            }}
+          />
+          {files.length > 0 && (
+            <ul className="research-attachments" aria-label="待保存的附件">
+              {files.map((file, index) => (
+                <li key={`${file.name}-${index}`}>
+                  <span>
+                    {file.name} <small>{formatFileSize(file.size)}</small>
+                  </span>
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={saving}
+                    aria-label={`移除附件 ${file.name}`}
+                    onClick={() => {
+                      setFiles(files.filter((_, i) => i !== index));
+                      setFileError("");
+                    }}
+                  >
+                    <X size={16} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {fileError && (
+            <p className="error-box" role="alert">
+              {fileError}
+            </p>
+          )}
+          <div className="form-actions">
+            <button
+              type="button"
+              className="secondary"
+              disabled={saving}
+              onClick={() => fileInput.current?.click()}
+            >
+              <Paperclip size={16} />
+              添加文件
+            </button>
+            <small>最多 5 个文件，总计 5 MB</small>
+            <button
+              className="primary"
+              type="submit"
+              disabled={saving || (!content.trim() && !files.length)}
+            >
+              <Save size={16} />
+              {saving ? "保存中…" : "保存资料"}
+            </button>
+          </div>
+        </form>
+      </section>
+      <section className="panel evidence-library">
         <div className="panel-title">
-          <div>
-            <h2>添加证据</h2>
-          </div>
+          <h2>已保存的资料</h2>
+          <span className="history-count">{items.length} 条</span>
         </div>
-        <div className="evidence-entry-layout">
-          <div className="form-grid">
-            <label>
-              <span>关联资产或主题</span>
-              <input
-                maxLength={120}
-                value={draft.assetName}
-                onChange={(e) =>
-                  setDraft({ ...draft, assetName: e.target.value })
-                }
-                placeholder="例如：全球指数、黄金、某家公司"
-              />
-            </label>
-            <label>
-              <span>资料标题</span>
-              <input
-                maxLength={300}
-                value={draft.title}
-                onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                placeholder="使用来源页面的准确标题"
-              />
-            </label>
-            <label>
-              <span>发布方</span>
-              <input
-                maxLength={200}
-                value={draft.publisher}
-                onChange={(e) =>
-                  setDraft({ ...draft, publisher: e.target.value })
-                }
-                placeholder="公司、监管机构或研究机构"
-              />
-            </label>
-            <label>
-              <span>HTTPS 来源链接</span>
-              <input
-                type="url"
-                maxLength={2048}
-                value={draft.sourceUrl}
-                onChange={(e) =>
-                  setDraft({ ...draft, sourceUrl: e.target.value })
-                }
-                placeholder="https://…（不要包含访问令牌）"
-              />
-            </label>
-            <label>
-              <span>来源层级</span>
-              <select
-                value={draft.sourceTier}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    sourceTier: e.target
-                      .value as ResearchEvidenceInput["sourceTier"],
-                  })
-                }
-              >
-                <option>一手来源</option>
-                <option>二手研究</option>
-                <option>媒体报道</option>
-              </select>
-            </label>
-            <label>
-              <span>证据类型</span>
-              <select
-                value={draft.evidenceType}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    evidenceType: e.target
-                      .value as ResearchEvidenceInput["evidenceType"],
-                  })
-                }
-              >
-                {[
-                  "公司披露",
-                  "监管文件",
-                  "数据发布",
-                  "研究报告",
-                  "新闻",
-                  "其他",
-                ].map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>与当前假设的关系</span>
-              <select
-                value={draft.stance}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    stance: e.target.value as ResearchEvidenceInput["stance"],
-                  })
-                }
-              >
-                <option>支持</option>
-                <option>反驳</option>
-                <option>背景</option>
-              </select>
-            </label>
-            <label>
-              <span>资料日期</span>
-              <input
-                type="date"
-                max={localDateValue(new Date())}
-                value={draft.asOfDate}
-                onChange={(e) =>
-                  setDraft({ ...draft, asOfDate: e.target.value })
-                }
-              />
-            </label>
-            <label className="span-2">
-              <span>这条来源实际支持什么事实？</span>
-              <textarea
-                maxLength={4000}
-                value={draft.claim}
-                onChange={(e) => setDraft({ ...draft, claim: e.target.value })}
-                placeholder="只记录来源能够直接支持的内容，不写买卖结论。"
-              />
-            </label>
-            <label className="span-2">
-              <span>限制与待核实项（可选）</span>
-              <textarea
-                maxLength={4000}
-                value={draft.notes}
-                onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
-                placeholder="口径差异、样本限制、尚未核验的解释。"
-              />
-            </label>
-          </div>
-        </div>
-        <details className="inline-help">
-          <summary>记录说明</summary>
-          <p>
-            来源内容需自行核验；一手来源不代表结论正确。支持与反方材料分开记录，错误记录归档后重建。
-          </p>
-        </details>
         <LoadState
           loading={loading}
           error={error}
           onRetry={() => void refresh()}
         />
-        <div className="form-actions">
-          <p>保存后内容不可编辑；归档是可恢复操作。</p>
-          <button
-            className="primary"
-            onClick={persist}
-            disabled={
-              saving ||
-              !draft.assetName ||
-              !draft.title ||
-              !draft.publisher ||
-              !draft.sourceUrl ||
-              !draft.asOfDate ||
-              !draft.claim
-            }
-          >
-            <Save size={16} />
-            保存证据
-          </button>
-        </div>
-      </section>
-
-      <section className="panel evidence-library">
-        <div className="panel-title">
-          <div>
-            <h2>证据目录</h2>
-          </div>
-          <span className="history-count">{items.length} 条</span>
-        </div>
         {!loading && !error && items.length === 0 && (
-          <div className="empty">暂无证据，先添加一条来源。</div>
+          <div className="empty">还没有资料，保存一段你获取到的重要信息。</div>
         )}
         <div className="evidence-list">
           {items.map((item) => (
             <article key={item.id} className={item.active ? "" : "inactive"}>
-              <div className="evidence-head">
-                <div>
-                  <span className={`stance-${item.stance}`}>{item.stance}</span>
-                  <strong>{item.assetName}</strong>
-                  <em>{item.sourceTier}</em>
-                </div>
-                <small>{item.asOfDate}</small>
-              </div>
-              <h3>{item.title}</h3>
-              <p>{item.claim}</p>
-              {item.notes && (
-                <small className="evidence-notes">限制：{item.notes}</small>
+              {evidenceText(item) && (
+                <p className="evidence-content">{evidenceText(item)}</p>
+              )}
+              {!!item.attachments?.length && (
+                <ul className="research-attachments" aria-label="已保存的附件">
+                  {item.attachments.map((file) => (
+                    <li key={file.id}>
+                      <div>
+                        <button
+                          type="button"
+                          className="text-button"
+                          disabled={!!downloading}
+                          onClick={() => void download(item.id, file.id)}
+                        >
+                          <Paperclip size={14} />
+                          {downloading === file.id ? "下载中…" : file.name}
+                        </button>
+                        <small>
+                          {formatFileSize(file.byteSize)} ·{" "}
+                          {file.extractionNote}
+                        </small>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
               <footer>
-                <a href={item.sourceUrl} target="_blank" rel="noreferrer">
-                  {item.publisher} · {sourceHost(item.sourceUrl)}
-                </a>
+                <small>
+                  保存于 {localDateValue(new Date(item.capturedAt))}
+                  {!item.active && " · 已归档"}
+                </small>
                 <button
                   className="text-button"
                   disabled={saving}
-                  onClick={() => toggleStatus(item)}
+                  onClick={() => void toggleStatus(item)}
                 >
                   {item.active ? "归档" : "恢复"}
                 </button>

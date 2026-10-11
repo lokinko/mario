@@ -283,6 +283,7 @@ fn dialect(sql: &str) -> String {
     if sql.contains("CREATE TABLE") || sql.contains("ADD COLUMN") {
         for target in [
             "decisions(id)",
+            "research_evidence(id)",
             "system_reviews(id)",
             "investment_rules(id)",
             "holdings(id)",

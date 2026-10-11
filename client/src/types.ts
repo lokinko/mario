@@ -488,6 +488,7 @@ export interface AnalysisClaim {
   statement: string;
   basis: "user_data" | "research_evidence";
   evidenceIds: string[];
+  sourceRefs?: string[];
 }
 
 export interface AnalysisOption {
@@ -513,6 +514,7 @@ export interface OutputValidationTrace {
 }
 
 export interface AnalysisEvidenceReference {
+  attachments?: ResearchAttachment[];
   assetName?: string;
   evidenceType?: string;
   claim?: string;
@@ -542,7 +544,14 @@ export interface ModelCallTrace {
   outputTokens?: number;
 }
 
+export interface DecisionTextInput {
+  content: string;
+  sourceAnalysisId?: string;
+  sourceActionIndex?: number;
+}
+
 export interface DecisionEntry {
+  content?: string | null;
   id?: string;
   sourceAnalysisId?: string;
   sourceActionIndex?: number;
@@ -571,13 +580,16 @@ export interface DecisionRuleCheck {
 }
 
 export interface DecisionReview {
+  content?: string | null;
   outcomeSummary: string;
   actualReturnPct?: number | null;
-  thesisStatus: "成立" | "部分成立" | "失效" | "尚不明确";
-  processRating: number;
+  thesisStatus: "成立" | "部分成立" | "失效" | "尚不明确" | "";
+  processRating?: number | null;
   lessons: string;
   reviewedAt?: string;
 }
+
+export type DecisionReviewInput = { content: string } | DecisionReview;
 
 export interface DecisionRecord extends Omit<DecisionEntry, "id"> {
   id: string;
@@ -649,14 +661,17 @@ export interface InvestmentRuleRevision extends InvestmentRuleInput {
 }
 
 export interface SystemReviewInput {
+  content?: string | null;
   periodLabel: string;
-  adherenceScore: number;
+  adherenceScore?: number | null;
   processSummary: string;
   ruleViolations: string;
   lessons: string;
   nextActions: string;
   nextReviewDate: string;
 }
+
+export type SystemReviewDraft = { content: string } | SystemReviewInput;
 
 export interface SystemReviewSnapshot {
   portfolioValue: number;
@@ -679,21 +694,40 @@ export interface SystemReviewRecord extends SystemReviewInput {
   createdAt: string;
 }
 
-export interface ResearchEvidenceInput {
+export type ResearchEvidenceInput = {
+  content: string;
+  attachments?: { name: string; dataBase64: string }[];
+};
+
+export interface ResearchAttachment {
+  id: string;
+  name: string;
+  byteSize: number;
+  extractionNote: string;
+}
+
+export interface ResearchEvidenceFields {
   assetName: string;
   title: string;
   publisher: string;
   sourceUrl: string;
-  sourceTier: "一手来源" | "二手研究" | "媒体报道";
+  sourceTier: "一手来源" | "二手研究" | "媒体报道" | "用户资料（待核实）";
   evidenceType:
-    "公司披露" | "监管文件" | "数据发布" | "研究报告" | "新闻" | "其他";
+    | "公司披露"
+    | "监管文件"
+    | "数据发布"
+    | "研究报告"
+    | "新闻"
+    | "其他"
+    | "user_source_text";
   stance: "支持" | "反驳" | "背景";
   asOfDate: string;
   claim: string;
   notes: string;
 }
 
-export interface ResearchEvidence extends ResearchEvidenceInput {
+export interface ResearchEvidence extends ResearchEvidenceFields {
+  attachments?: ResearchAttachment[];
   id: string;
   active: boolean;
   capturedAt: string;

@@ -12,6 +12,11 @@ argon2 = "0.5"
 async-trait = "0.1"
 axum = "0.8"
 base64 = "0.22"
+pdf-extract = "0.10"
+# Keep PDF decoding compatible with the declared Rust 1.86 toolchain.
+encoding_rs = "=0.8.35"
+quick-xml = "0.38"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
 chacha20poly1305 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"

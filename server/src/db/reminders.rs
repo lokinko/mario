@@ -31,9 +31,10 @@ impl Database {
 
         let latest_review = self.system_reviews()?.into_iter().next();
         let periodic_review_due = latest_review.as_ref().is_none_or(|review| {
-            NaiveDate::parse_from_str(&review.next_review_date, "%Y-%m-%d")
-                .map(|date| date <= today)
-                .unwrap_or(true)
+            !review.next_review_date.is_empty()
+                && NaiveDate::parse_from_str(&review.next_review_date, "%Y-%m-%d")
+                    .map(|date| date <= today)
+                    .unwrap_or(true)
         });
         let periodic_marker = latest_review
             .as_ref()

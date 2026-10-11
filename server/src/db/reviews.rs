@@ -181,11 +181,15 @@ impl Database {
                 .collect::<Vec<_>>();
             let followed_process = followed
                 .iter()
-                .filter_map(|(_, review)| review.map(|value| value.process_rating as f64))
+                .filter_map(|(_, review)| {
+                    review.and_then(|value| value.process_rating.map(|rating| rating as f64))
+                })
                 .collect::<Vec<_>>();
             let deviated_process = deviated
                 .iter()
-                .filter_map(|(_, review)| review.map(|value| value.process_rating as f64))
+                .filter_map(|(_, review)| {
+                    review.and_then(|value| value.process_rating.map(|rating| rating as f64))
+                })
                 .collect::<Vec<_>>();
             let mut observed_revisions = checks
                 .iter()
@@ -216,7 +220,7 @@ impl Database {
                 followed_process_average,
                 deviated_process_average,
                 signal: rule_effectiveness_signal(
-                    reviewed_count,
+                    followed_process.len() + deviated_process.len(),
                     followed_process_average,
                     deviated_process_average,
                     followed_process.len(),
@@ -281,6 +285,7 @@ impl Database {
         };
         let record = SystemReviewRecord {
             id,
+            content: input.content.clone(),
             period_label: input.period_label.trim().into(),
             adherence_score: input.adherence_score,
             process_summary: input.process_summary.trim().into(),
@@ -291,7 +296,22 @@ impl Database {
             snapshot,
             created_at,
         };
+        let record = if input.content.is_some() {
+            SystemReviewRecord {
+                period_label: String::new(),
+                adherence_score: None,
+                process_summary: String::new(),
+                rule_violations: String::new(),
+                lessons: String::new(),
+                next_actions: String::new(),
+                next_review_date: String::new(),
+                ..record
+            }
+        } else {
+            record
+        };
         let normalized_input = SystemReviewInput {
+            content: record.content.clone(),
             period_label: record.period_label.clone(),
             adherence_score: record.adherence_score,
             process_summary: record.process_summary.clone(),
@@ -334,6 +354,7 @@ impl Database {
             let input: SystemReviewInput = serde_json::from_str(&payload)?;
             reviews.push(SystemReviewRecord {
                 id,
+                content: input.content,
                 period_label: input.period_label,
                 adherence_score: input.adherence_score,
                 process_summary: input.process_summary,

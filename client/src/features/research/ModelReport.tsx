@@ -1,4 +1,6 @@
+import { useId, useRef, useState } from "react";
 import type { AnalysisClaim, AnalysisWorkflowTrace } from "../../types";
+import { reportSources, SourceDetail } from "./ReportSources";
 
 export function ModelReport({
   answer,
@@ -7,31 +9,47 @@ export function ModelReport({
   answer: string;
   trace?: AnalysisWorkflowTrace;
 }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const regionId = useId();
+  const lastTrigger = useRef<HTMLButtonElement | null>(null);
   const report = trace?.structuredReport;
   if (!report) return <div className="answer model-report">{answer}</div>;
 
-  const sources = new Map(
-    (trace?.evidenceCatalog ?? []).map((source) => [source.id, source]),
+  const { sources, localByFact, localByInference } = reportSources(trace);
+  const sourceById = new Map(
+    sources.map((source, index) => [source.id, { source, number: index + 1 }]),
   );
-  const claims = (items: AnalysisClaim[]) => (
+  const selected = selectedId ? sourceById.get(selectedId)?.source : undefined;
+  const citation = (id: string) => {
+    const item = sourceById.get(id);
+    return item ? (
+      <button
+        type="button"
+        className="report-source"
+        key={id}
+        aria-label={`查看引用 ${item.number}：${item.source.title || "原始资料"}`}
+        aria-expanded={selectedId === id}
+        aria-controls={regionId}
+        onClick={(event) => {
+          lastTrigger.current = event.currentTarget;
+          setSelectedId(id);
+        }}
+      >
+        [{item.number}]
+      </button>
+    ) : null;
+  };
+  const claims = (items: AnalysisClaim[], facts = false) => (
     <ul>
       {items.map((claim, index) => (
         <li key={index}>
           {claim.statement}
-          {claim.evidenceIds.map((id) => {
-            const source = sources.get(id);
-            return source ? (
-              <a
-                className="report-source"
-                key={id}
-                href={source.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {source.title}
-              </a>
-            ) : null;
-          })}
+          {[
+            ...new Set([
+              ...claim.evidenceIds,
+              ...((facts ? localByFact : localByInference).get(index) ?? []),
+            ]),
+          ].map(citation)}
         </li>
       ))}
     </ul>
@@ -52,7 +70,7 @@ export function ModelReport({
       </section>
       <section>
         <h2>已知事实</h2>
-        {claims(report.facts)}
+        {claims(report.facts, true)}
       </section>
       {report.inferences.length > 0 && (
         <section>
@@ -102,6 +120,29 @@ export function ModelReport({
         <h2>复盘与证伪条件</h2>
         {list(report.reviewTriggers)}
       </section>
+      {sources.length > 0 && (
+        <section className="report-citations" aria-label="本次回答引用">
+          <h2>引用的信息</h2>
+          <ul>
+            {sources.map((source) => (
+              <li key={source.id}>
+                {citation(source.id)} {source.title || "原始资料"}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {selected && (
+        <SourceDetail
+          key={selected.id}
+          source={selected}
+          regionId={regionId}
+          close={() => {
+            setSelectedId(null);
+            lastTrigger.current?.focus();
+          }}
+        />
+      )}
     </div>
   );
 }

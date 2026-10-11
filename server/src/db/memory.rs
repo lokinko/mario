@@ -14,26 +14,36 @@ impl Database {
             let (summary, occurred_at, status, reviewed, contradiction, review_payload) =
                 if let Some(review) = &record.review {
                     (
-                        format!(
-                            "复盘结论：{}；经验修正：{}",
-                            review.outcome_summary, review.lessons
-                        ),
+                        review.content.clone().unwrap_or_else(|| {
+                            format!(
+                                "复盘结论：{}；经验修正：{}",
+                                review.outcome_summary, review.lessons
+                            )
+                        }),
                         if review.reviewed_at.is_empty() {
                             record.created_at.clone()
                         } else {
                             review.reviewed_at.clone()
                         },
-                        format!("复盘：{}", review.thesis_status),
+                        if review.content.is_some() {
+                            "已复盘".into()
+                        } else {
+                            format!("复盘：{}", review.thesis_status)
+                        },
                         true,
                         matches!(review.thesis_status.as_str(), "失效" | "部分成立"),
                         serde_json::to_value(review)?,
                     )
                 } else {
                     (
-                        format!(
-                            "尚未复盘；原始置信度 {:.0}%，计划仓位 {:.1}%",
-                            record.confidence_pct, record.position_pct
-                        ),
+                        if let Some(content) = &record.content {
+                            truncate_chars(content, 240)
+                        } else {
+                            format!(
+                                "尚未复盘；原始置信度 {:.0}%，计划仓位 {:.1}%",
+                                record.confidence_pct, record.position_pct
+                            )
+                        },
                         record.created_at.clone(),
                         "待复盘的原始判断".into(),
                         false,
@@ -46,7 +56,16 @@ impl Database {
                 kind: "decision".into(),
                 title: record.asset_name.clone(),
                 summary,
-                content: serde_json::json!({
+                content: if let Some(content) = &record.content {
+                    serde_json::json!({
+                        "content": content,
+                        "originalThesis": content,
+                        "sourceAnalysisId": record.source_analysis_id,
+                        "sourceActionIndex": record.source_action_index,
+                        "review": review_payload,
+                    })
+                } else {
+                    serde_json::json!({
                     "originalThesis": record.thesis,
                     "counterThesis": record.counter_thesis,
                     "invalidation": record.invalidation,
@@ -59,7 +78,8 @@ impl Database {
                     "sourceActionIndex": record.source_action_index,
                     "ruleChecks": record.rule_checks,
                     "review": review_payload,
-                }),
+                    })
+                },
                 created_at: record.created_at,
                 occurred_at,
                 status: status.clone(),

@@ -37,7 +37,7 @@ where
         .route("/api/server",get(|| async { Json(serde_json::json!({"mode":"hosted","database":"postgresql","protocol":1})) }))
         .layer(axum::extract::DefaultBodyLimit::max(16*1024))
         .with_state(state))
-        .layer(axum::extract::DefaultBodyLimit::max(8*1024*1024))
+        .layer(axum::extract::DefaultBodyLimit::max(64*1024*1024))
         .layer(cors)
         .layer(middleware::map_response(no_store))
         .layer(TraceLayer::new_for_http());
