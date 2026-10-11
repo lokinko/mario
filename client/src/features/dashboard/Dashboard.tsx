@@ -1,13 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowRight,
-  ChevronRight,
-  CircleDollarSign,
-  History,
-  ShieldCheck,
-  Target,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, ArrowRight, History } from "lucide-react";
 import {
   getPortfolioCheckins,
   getReviewReminders,
@@ -22,13 +14,14 @@ import type {
 import { nextAction } from "./nextAction";
 import { PageHeader } from "../../components/PageHeader";
 import { View, FoundationSection } from "../../app/navigation";
-import { holdingValueInBase } from "../portfolio/valuation";
+import { AssetHistory } from "../portfolio/AssetHistory";
+import { FinancialSummary } from "./FinancialSummary";
+import { HoldingAnalysis } from "./HoldingAnalysis";
+import { InvestmentActivity } from "./InvestmentActivity";
+import { ScenarioAnalysis } from "./ScenarioAnalysis";
+import { DATA_SAVED, SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 import { formatMoney } from "../../lib/format";
-import {
-  allocationGradient,
-  goalStatus,
-  riskStatus,
-} from "../portfolio/presentation";
+import { goalStatus, riskStatus } from "../portfolio/presentation";
 
 export function Dashboard({
   snapshot,
@@ -40,6 +33,7 @@ export function Dashboard({
   flash: (message: string) => void;
 }) {
   const [allFindings, setAllFindings] = useState(false);
+  const [refresh, setRefresh] = useState(0);
   const [checkins, setCheckins] = useState<PortfolioCheckInRecord[]>([]);
   const [reminders, setReminders] = useState<ReviewReminderSummary | null>(
     null,
@@ -47,6 +41,7 @@ export function Dashboard({
   const action = nextAction(snapshot, reminders);
   useEffect(() => {
     let active = true;
+    setReminders(null);
     getReviewReminders()
       .then((value) => {
         if (active) setReminders(value);
@@ -57,7 +52,7 @@ export function Dashboard({
     return () => {
       active = false;
     };
-  }, []);
+  }, [snapshot.updatedAt, refresh]);
   const [checkin, setCheckin] = useState<PortfolioCheckInInput>({
     periodLabel: new Intl.DateTimeFormat("zh-CN", {
       year: "numeric",
@@ -70,22 +65,18 @@ export function Dashboard({
   });
   const [checkinSaving, setCheckinSaving] = useState(false);
   const [checkinError, setCheckinError] = useState("");
-  const allocation = useMemo(() => {
-    if (!snapshot.valuationStatus.comparable) return [];
-    const totals = new Map<string, number>();
-    snapshot.holdings.forEach((h) =>
-      totals.set(
-        h.assetClass,
-        (totals.get(h.assetClass) ?? 0) +
-          holdingValueInBase(h, snapshot.profile.baseCurrency),
-      ),
-    );
-    return [...totals.entries()].map(([name, value]) => ({
-      name,
-      value,
-      pct: snapshot.totalValue ? (value / snapshot.totalValue) * 100 : 0,
-    }));
-  }, [snapshot]);
+  const [checkinsLoading, setCheckinsLoading] = useState(true);
+  const [checkinLoadError, setCheckinLoadError] = useState("");
+  const checkinRequest = useRef(0);
+  useEffect(() => {
+    const wake = () => setRefresh((value) => value + 1);
+    window.addEventListener(DATA_SAVED, wake);
+    window.addEventListener(SERVER_DATA_UPDATED, wake);
+    return () => {
+      window.removeEventListener(DATA_SAVED, wake);
+      window.removeEventListener(SERVER_DATA_UPDATED, wake);
+    };
+  }, []);
 
   const latestCheckin = checkins[0];
   const baselineMode =
@@ -95,16 +86,35 @@ export function Dashboard({
     checkin.resetBaseline;
 
   useEffect(() => {
+    const request = ++checkinRequest.current;
+    setCheckinsLoading(true);
+    setCheckinLoadError("");
     getPortfolioCheckins()
       .then((records) => {
+        if (request !== checkinRequest.current) return;
         setCheckins(records);
-        setCheckinError("");
       })
-      .catch((error) => setCheckinError(String(error)));
-  }, []);
+      .catch((error) => {
+        if (request !== checkinRequest.current) return;
+        setCheckins([]);
+        setCheckinLoadError(String(error));
+      })
+      .finally(() => {
+        if (request === checkinRequest.current) setCheckinsLoading(false);
+      });
+    return () => {
+      checkinRequest.current++;
+    };
+  }, [snapshot.updatedAt, refresh]);
 
   const persistCheckin = async () => {
-    if (!checkin.periodLabel) return;
+    if (
+      !checkin.periodLabel.trim() ||
+      checkinSaving ||
+      checkinsLoading ||
+      checkinLoadError
+    )
+      return;
     setCheckinSaving(true);
     setCheckinError("");
     try {
@@ -137,8 +147,32 @@ export function Dashboard({
   };
 
   return (
-    <div className="page">
-      <PageHeader title="资产概览" />
+    <div className="page dashboard-page">
+      <PageHeader
+        title="分析看板"
+        description="基于你已提供的资产、收支、目标和投资记录，观察财务状况与投资过程。"
+        action={
+          <div className="dashboard-actions">
+            <button className="secondary" onClick={() => navigate("facts")}>
+              更新我的情况
+            </button>
+            <button
+              className="primary"
+              onClick={() => {
+                window.sessionStorage.setItem(
+                  "mario.advisorQuestion",
+                  "请基于我已提供的资产、负债、收支、持仓成本、目标、组合流水和复盘记录，做一次整体资产与投资分析。分析资产配置、流动性、集中度、外币风险、投入能力、目标缺口和投资纪律，区分资产变化、现金流与投资收益，指出数据不足，并给出有依据、可复核的下一步建议。",
+                );
+                window.sessionStorage.removeItem("mario.dailyAssetRange");
+                navigate("advisor");
+              }}
+            >
+              继续做整体分析
+            </button>
+          </div>
+        }
+      />
+      <FinancialSummary snapshot={snapshot} />
 
       <section className="panel next-action" aria-label="下一步">
         <div>
@@ -154,55 +188,6 @@ export function Dashboard({
             {action.label}
           </button>
         )}
-      </section>
-
-      <section className="metric-grid">
-        <article className="metric hero-metric">
-          <span>持仓总值 · {snapshot.profile.baseCurrency}</span>
-          <strong>
-            {snapshot.valuationStatus.comparable
-              ? formatMoney(snapshot.totalValue, snapshot.profile.baseCurrency)
-              : "等待汇率"}
-          </strong>
-          <small>
-            {snapshot.valuationStatus.comparable
-              ? `最近更新 · ${new Date(snapshot.updatedAt).toLocaleDateString("zh-CN")}`
-              : `${snapshot.valuationStatus.missingFxHoldings.length} 项外币持仓未折算`}
-          </small>
-        </article>
-        <article className="metric">
-          <span>应急覆盖</span>
-          <strong>
-            {snapshot.emergencyMonths.toFixed(1)} <em>个月</em>
-          </strong>
-          <meter
-            className="coverage-meter"
-            aria-label="应急资金覆盖月数"
-            min={0}
-            max={12}
-            low={6}
-            optimum={12}
-            value={Math.max(0, snapshot.emergencyMonths)}
-          />
-          <small
-            className={snapshot.emergencyMonths >= 6 ? "positive" : "warning"}
-          >
-            {snapshot.emergencyMonths >= 6 ? "处于建议区间" : "建议优先补足"}
-          </small>
-        </article>
-        <article className="metric">
-          <span>最大资产占比</span>
-          <strong>
-            {snapshot.valuationStatus.comparable
-              ? `${snapshot.concentrationPct.toFixed(1)}%`
-              : "—"}
-          </strong>
-          <small>
-            {snapshot.valuationStatus.comparable
-              ? "单项持仓占总值"
-              : "补齐汇率后再计算"}
-          </small>
-        </article>
       </section>
 
       {snapshot.valuationStatus.warnings.length > 0 && (
@@ -228,73 +213,41 @@ export function Dashboard({
         </section>
       )}
 
-      <section className="two-columns">
+      <AssetHistory snapshot={snapshot} />
+      <HoldingAnalysis snapshot={snapshot} navigate={navigate} />
+      <section className="two-columns dashboard-section">
         <article className="panel">
           <div className="panel-title">
-            <div>
-              <h2>资产分布</h2>
-            </div>
-            <button
-              className="text-button"
-              onClick={() => navigate("foundation")}
-            >
-              管理资产 <ChevronRight size={15} />
-            </button>
+            <h2>分析数据完整度</h2>
           </div>
-          {allocation.length === 0 ? (
-            <div className="empty-state">
-              <CircleDollarSign size={32} />
-              <p>
-                {snapshot.holdings.length ? "补齐汇率后查看分布" : "还没有持仓"}
-              </p>
-              <button
-                className="secondary"
-                onClick={() => navigate("foundation")}
-              >
-                {snapshot.holdings.length ? "完善持仓" : "添加持仓"}
-              </button>
+          <dl className="dashboard-facts">
+            <div>
+              <dt>基准币种</dt>
+              <dd>{snapshot.profile.baseCurrency}</dd>
             </div>
-          ) : (
-            <div className="allocation">
-              <div
-                className="donut"
-                style={{
-                  background: allocation.length
-                    ? allocationGradient(allocation)
-                    : "#dedfd9",
-                }}
-              >
-                <div>
-                  <strong>
-                    {snapshot.valuationStatus.comparable
-                      ? allocation.length
-                      : "—"}
-                  </strong>
-                  <span>
-                    {snapshot.valuationStatus.comparable
-                      ? "类资产"
-                      : "等待汇率"}
-                  </span>
-                </div>
-              </div>
-              <div className="legend">
-                {allocation.map((item, index) => (
-                  <div key={item.name}>
-                    <i className={`color-${index % 5}`} />
-                    <span>{item.name}</span>
-                    <strong>
-                      {item.pct.toFixed(1)}%
-                      <small>
-                        {formatMoney(item.value, snapshot.profile.baseCurrency)}
-                      </small>
-                    </strong>
-                  </div>
-                ))}
-              </div>
+            <div>
+              <dt>最近资料更新</dt>
+              <dd>{new Date(snapshot.updatedAt).toLocaleString("zh-CN")}</dd>
             </div>
-          )}
+            <div>
+              <dt>缺少汇率的持仓</dt>
+              <dd>{snapshot.valuationStatus.missingFxHoldings.length} 项</dd>
+            </div>
+            <div>
+              <dt>缺少估值日期</dt>
+              <dd>{snapshot.valuationStatus.undatedHoldingCount} 项</dd>
+            </div>
+            <div>
+              <dt>统一估值日</dt>
+              <dd>
+                {snapshot.valuationStatus.alignedValuationDate ?? "尚未对齐"}
+              </dd>
+            </div>
+          </dl>
+          <p className="dashboard-note">
+            汇率完整时可汇总资产。冻结期间回报还需要同日估值、相邻快照和完整流水。
+          </p>
         </article>
-
         <article className="panel">
           <div className="panel-title">
             <div>
@@ -342,12 +295,18 @@ export function Dashboard({
         </article>
       </section>
 
-      <section className="planning-grid">
+      <section className="planning-grid dashboard-section">
         <article className="panel">
           <div className="panel-title">
             <div>
               <h2>目标进度</h2>
             </div>
+            <button
+              className="text-button"
+              onClick={() => navigate("foundation", "goals")}
+            >
+              管理目标 →
+            </button>
           </div>
           {snapshot.plan.goalProjections.length === 0 ? (
             <div className="empty">
@@ -368,11 +327,14 @@ export function Dashboard({
                   <div className="projection-bar">
                     <i
                       style={{
-                        width: `${Math.min(100, goal.estimatedSuccessPct)}%`,
+                        width: `${Math.max(0, Math.min(100, goal.fundedPct))}%`,
                       }}
                     />
                   </div>
                   <div className="projection-stats">
+                    <span>
+                      已筹备 <b>{goal.fundedPct.toFixed(1)}%</b>
+                    </span>
                     <span>
                       模拟达成率 <b>{goal.estimatedSuccessPct.toFixed(0)}%</b>
                     </span>
@@ -389,6 +351,29 @@ export function Dashboard({
                       剩余 <b>{goal.monthsRemaining} 个月</b>
                     </span>
                   </div>
+                  <details className="inline-help">
+                    <summary>投入缺口与模拟金额</summary>
+                    <p>
+                      所需月投入{" "}
+                      {formatMoney(
+                        goal.requiredMonthlyContribution,
+                        snapshot.profile.baseCurrency,
+                      )}{" "}
+                      · 保守情景金额{" "}
+                      {formatMoney(
+                        goal.conservativeAmount,
+                        snapshot.profile.baseCurrency,
+                      )}{" "}
+                      · 中位情景金额{" "}
+                      {formatMoney(
+                        goal.medianAmount,
+                        snapshot.profile.baseCurrency,
+                      )}
+                    </p>
+                    <p>
+                      上述金额与达成率来自示例模型，不是实际收益预测或保证。
+                    </p>
+                  </details>
                 </div>
               ))}
             </div>
@@ -470,6 +455,14 @@ export function Dashboard({
         </article>
       </section>
 
+      <ScenarioAnalysis snapshot={snapshot} />
+      <InvestmentActivity
+        snapshot={snapshot}
+        checkins={checkins}
+        checkinsLoading={checkinsLoading}
+        checkinError={checkinLoadError}
+        navigate={navigate}
+      />
       <details className="panel disclosure-panel portfolio-attribution">
         <summary>
           组合变化与快照
@@ -642,6 +635,8 @@ export function Dashboard({
               className="secondary"
               disabled={
                 checkinSaving ||
+                checkinsLoading ||
+                Boolean(checkinLoadError) ||
                 !snapshot.holdings.length ||
                 !snapshot.valuationStatus.comparable ||
                 !snapshot.valuationStatus.alignedValuationDate ||
@@ -679,6 +674,17 @@ export function Dashboard({
                   : "估值口径变化？重新建立基线"}
               </button>
             )}
+          {checkinLoadError && (
+            <div className="error-box" role="alert">
+              组合快照读取失败，暂时不能冻结新记录。
+              <button
+                className="text-button"
+                onClick={() => setRefresh((value) => value + 1)}
+              >
+                重试读取快照
+              </button>
+            </div>
+          )}
           {checkinError && (
             <div className="error-box">
               <AlertTriangle size={16} />

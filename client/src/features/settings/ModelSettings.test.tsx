@@ -11,6 +11,8 @@ import { ModelSettings } from "./ModelSettings";
 import * as api from "../../api";
 
 vi.mock("../../api", () => ({
+  getAnalysisSettings: vi.fn().mockResolvedValue(null),
+  saveAnalysisSettings: vi.fn(),
   getSecurityPriceConfig: vi.fn().mockResolvedValue({ hasApiKey: false }),
   saveModelConfig: vi
     .fn()

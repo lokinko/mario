@@ -1,45 +1,26 @@
 import { SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 import { useEffect, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  Bot,
-  Check,
-  ChevronRight,
-  Eye,
-  History,
-  KeyRound,
-  LoaderCircle,
-  LockKeyhole,
-  Send,
-  Sparkles,
-} from "lucide-react";
+import { AlertTriangle, ChevronRight, LoaderCircle, Send } from "lucide-react";
 import {
   getAnalysis,
   getAnalysisHistory,
+  getAnalysisSettings,
   previewAnalysis,
   runAnalysis,
 } from "../../api";
 import type {
-  AnalysisPreview,
   AnalysisRequest,
   AnalysisResult,
   AnalysisHistoryItem,
-  ContextSelection,
   DecisionEntry,
   ModelConfig,
   StoredAnalysis,
 } from "../../types";
 import { View } from "../../app/navigation";
-import {
-  AdviceCards,
-  WebSearchStatus,
-  EvidenceOverview,
-  StoredAnalysisView,
-  StoredWorkflowTrace,
-  StructuredReportView,
-} from "./AnalysisReport";
-import { MemoryItems } from "../memory/MemoryItems";
+import { ModelReport } from "./ModelReport";
 import { useRequestGuard } from "../../lib/useRequestGuard";
+
+type Turn = { question: string; result: AnalysisResult | StoredAnalysis };
 
 export function Advisor({
   model,
@@ -47,7 +28,6 @@ export function Advisor({
   navigate,
   requestedAnalysisId,
   clearRequestedAnalysis,
-  onCreateDecisionDraft,
 }: {
   model: ModelConfig;
   active?: boolean;
@@ -64,86 +44,59 @@ export function Advisor({
     to: string;
   }>();
   const latestAnswerRef = useRef<HTMLElement>(null);
-  const previewRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [turns, setTurns] = useState<
-    { question: string; result: AnalysisResult }[]
-  >([]);
-  const [followUp, setFollowUp] = useState(false);
-  const deep = true;
-  const memory = true;
-  const reflection = true;
-  const alternatives = true;
-  const [excludedMemoryIds, setExcludedMemoryIds] = useState<string[]>([]);
-  const [contextSelection, setContextSelection] = useState<ContextSelection>({
-    includeProfile: true,
-    includeGoals: true,
-    includeHoldings: true,
-    includePlanning: true,
-    includeRiskFindings: true,
-    includeRules: true,
-    includeSystemReviews: true,
-    includePortfolioCheckins: true,
-    includePortfolioEvents: true,
-    includeEvidence: true,
-  });
-  const [preview, setPreview] = useState<AnalysisPreview | null>(null);
-  const [previewStale, setPreviewStale] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
+  const sendingRef = useRef(false);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [running, setRunning] = useState(false);
-
-  const [webSearch, setWebSearch] = useState(true);
-  const supportsWebSearch = model.provider !== "openai-chat";
-  const useWebSearch = supportsWebSearch && webSearch;
   const [error, setError] = useState("");
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
-  const [storedAnalysis, setStoredAnalysis] = useState<StoredAnalysis | null>(
-    null,
-  );
   const [historyBusy, setHistoryBusy] = useState("");
   const [historyError, setHistoryError] = useState("");
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || running) return;
     const queued =
       window.sessionStorage.getItem("mario.advisorQuestion") ??
       window.sessionStorage.getItem("compass.advisorQuestion");
-    if (queued) {
-      const range = window.sessionStorage.getItem("mario.dailyAssetRange");
-      window.sessionStorage.removeItem("mario.dailyAssetRange");
-      try {
-        const parsed = range ? JSON.parse(range) : undefined;
-        setDailyAssetRange(
-          parsed &&
-            typeof parsed.from === "string" &&
-            typeof parsed.to === "string"
-            ? parsed
-            : undefined,
-        );
-      } catch {
-        setDailyAssetRange(undefined);
-      }
-      invalidatePreview(() => setQuestion(queued));
-      setFollowUp(false);
-      window.sessionStorage.removeItem("mario.advisorQuestion");
-      window.sessionStorage.removeItem("compass.advisorQuestion");
+    if (!queued) return;
+    const range = window.sessionStorage.getItem("mario.dailyAssetRange");
+    window.sessionStorage.removeItem("mario.dailyAssetRange");
+    try {
+      const parsed = range ? JSON.parse(range) : undefined;
+      setDailyAssetRange(
+        parsed &&
+          typeof parsed.from === "string" &&
+          typeof parsed.to === "string"
+          ? parsed
+          : undefined,
+      );
+    } catch {
+      setDailyAssetRange(undefined);
     }
-  }, [active]);
+    setQuestion(queued);
+    setTurns([]);
+    setError("");
+    window.sessionStorage.removeItem("mario.advisorQuestion");
+    window.sessionStorage.removeItem("compass.advisorQuestion");
+  }, [active, running]);
 
   useEffect(() => {
-    let active = true;
+    let mounted = true;
     const refreshHistory = () =>
       getAnalysisHistory()
         .then((items) => {
-          if (active) setHistory(items);
+          if (mounted) {
+            setHistory(items);
+            setHistoryError("");
+          }
         })
         .catch((nextError) => {
-          if (active) setHistoryError(String(nextError));
+          if (mounted) setHistoryError(String(nextError));
         });
     void refreshHistory();
     window.addEventListener(SERVER_DATA_UPDATED, refreshHistory);
     return () => {
-      active = false;
+      mounted = false;
       window.removeEventListener(SERVER_DATA_UPDATED, refreshHistory);
     };
   }, []);
@@ -153,15 +106,7 @@ export function Advisor({
     void openStoredAnalysis(requestedAnalysisId).then((accepted) => {
       if (accepted) clearRequestedAnalysis();
     });
-  }, [requestedAnalysisId]);
-
-  useEffect(() => {
-    if (preview && active)
-      previewRef.current?.scrollIntoView?.({
-        behavior: "smooth",
-        block: "nearest",
-      });
-  }, [preview, active]);
+  }, [requestedAnalysisId, running]);
 
   useEffect(() => {
     if (active && turns.length)
@@ -169,359 +114,189 @@ export function Advisor({
         behavior: "smooth",
         block: "start",
       });
-  }, [turns.length]);
+  }, [turns, active]);
 
-  const request = (previewRevision?: string): AnalysisRequest => ({
-    webSearch: useWebSearch,
-    dailyAssetRange,
-    userMessage: question,
-    question:
-      followUp && turns.length
-        ? `以下是上一轮问答，仅用于理解追问，模型回答不是已核实事实。\n上次问题：${turns[turns.length - 1].question}\n上次回答摘要：${turns[turns.length - 1].result.answer.slice(0, 6000)}\n\n本次问题：${question}`
-        : question,
-    workflow: deep ? "deep" : "quick",
-    useMemory: memory,
-    reflect: reflection,
-    exploreAlternatives: alternatives,
-    excludedMemoryIds,
-    contextSelection,
-    previewRevision,
-  });
-
-  const invalidatePreview = (action: () => void) => {
-    if (running) return;
-    analysisRequest.invalidate();
-    setPreviewing(false);
-    setRunning(false);
-    historyRequest.invalidate();
-    setHistoryBusy("");
-    action();
-    setExcludedMemoryIds([]);
-    setPreview(null);
-    setPreviewStale(false);
-    setStoredAnalysis(null);
-  };
-
-  const prepare = async () => {
-    if (!question.trim() || running || previewing) return;
+  const send = async () => {
+    if (
+      !question.trim() ||
+      sendingRef.current ||
+      historyBusy ||
+      !model.hasApiKey
+    )
+      return;
+    sendingRef.current = true;
     const isCurrent = analysisRequest.begin();
-    setPreviewing(true);
-    setError("");
-    try {
-      const nextPreview = await previewAnalysis(request());
-      if (!isCurrent()) return;
-      setPreview(nextPreview);
-      setPreviewStale(false);
-    } catch (e) {
-      if (isCurrent()) setError(String(e));
-    } finally {
-      if (isCurrent()) setPreviewing(false);
-    }
-  };
-
-  const analyze = async () => {
-    const isCurrent = analysisRequest.begin();
+    const message = question.trim();
+    const previous = turns.at(-1);
     setRunning(true);
     setError("");
     try {
-      if (!preview) throw new Error("请先预览将发送的数据");
-      if (previewStale) throw new Error("记忆选择已变化，请重新预览后再确认");
-      const nextResult = await runAnalysis(request(preview.contextRevision));
+      // Read the account's saved defaults for every turn, including after a
+      // settings change on this device or another device.
+      const settings = await getAnalysisSettings();
       if (!isCurrent()) return;
-      setTurns((current) => [...current, { question, result: nextResult }]);
+      const request: AnalysisRequest = {
+        ...settings,
+        webSearch: settings.webSearch && model.provider !== "openai-chat",
+        dailyAssetRange,
+        userMessage: message,
+        question: previous
+          ? `以下是上一轮问答，仅用于理解追问，模型回答不是已核实事实。\n上次问题：${previous.question}\n上次回答摘要：${previous.result.answer.slice(0, 6000)}\n\n本次问题：${message}`
+          : message,
+        excludedMemoryIds: [],
+      };
+      // Keep the server's immutable context check without an extra UI step.
+      const preview = await previewAnalysis(request);
+      if (!isCurrent()) return;
+      const result = await runAnalysis({
+        ...request,
+        previewRevision: preview.contextRevision,
+      });
+      if (!isCurrent()) return;
+      setTurns((current) => [...current, { question: message, result }]);
       setQuestion("");
-      setFollowUp(true);
-      setStoredAnalysis(null);
-      setPreview(null);
-      getAnalysisHistory()
+      void getAnalysisHistory()
         .then((items) => {
-          if (isCurrent()) setHistory(items);
+          if (isCurrent()) {
+            setHistory(items);
+            setHistoryError("");
+          }
         })
-        .catch(() => undefined);
-    } catch (e) {
-      if (isCurrent()) setError(String(e));
+        .catch((nextError) => {
+          if (isCurrent()) setHistoryError(String(nextError));
+        });
+    } catch (nextError) {
+      if (isCurrent()) setError(String(nextError));
     } finally {
+      sendingRef.current = false;
       if (isCurrent()) setRunning(false);
     }
   };
 
-  const toggleContext = (key: keyof ContextSelection) =>
-    invalidatePreview(() =>
-      setContextSelection((current) => ({ ...current, [key]: !current[key] })),
-    );
-  const toggleMemoryCandidate = (id: string) => {
-    if (running) return;
-    analysisRequest.invalidate();
-    setPreviewing(false);
-    setRunning(false);
-    setExcludedMemoryIds((current) =>
-      current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id],
-    );
-    setPreviewStale(true);
-  };
-
   const openStoredAnalysis = async (id: string) => {
-    analysisRequest.invalidate();
-    setPreviewing(false);
-    setRunning(false);
+    if (sendingRef.current) return false;
     const isCurrent = historyRequest.begin();
     setHistoryBusy(id);
     setHistoryError("");
-    setPreview(null);
-    setStoredAnalysis(null);
     try {
       const item = await getAnalysis(id);
       if (!isCurrent()) return false;
-      setStoredAnalysis(item);
-      window.setTimeout(() => {
-        if (isCurrent())
-          document
-            .getElementById("stored-analysis")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 50);
+      setTurns([{ question: item.question, result: item }]);
+      setQuestion("");
+      setDailyAssetRange(undefined);
+      setError("");
     } catch (nextError) {
       if (isCurrent()) setHistoryError(String(nextError));
+      return false;
     } finally {
       if (isCurrent()) setHistoryBusy("");
     }
     return isCurrent();
   };
 
-  const reuseStoredQuestion = (item: StoredAnalysis) => {
-    analysisRequest.invalidate();
-    setPreviewing(false);
-    setRunning(false);
+  const newConversation = () => {
+    if (sendingRef.current) return;
     historyRequest.invalidate();
     setHistoryBusy("");
-    setQuestion(item.question);
-    setFollowUp(false);
-    setStoredAnalysis(null);
-    setPreview(null);
-    setPreviewStale(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setTurns([]);
+    setQuestion("");
+    setDailyAssetRange(undefined);
+    setError("");
+    inputRef.current?.focus();
   };
 
   return (
     <div className="page narrow conversation-page">
-      <header className="conversation-heading">
-        <h1>
-          {turns.length
-            ? "把问题聊清楚，再做决定。"
-            : "最近有什么投资上的困惑？"}
-        </h1>
+      <header className="conversation-heading chat-heading">
+        <h1>问答</h1>
+        <button
+          className="secondary"
+          onClick={newConversation}
+          disabled={running}
+        >
+          新对话
+        </button>
       </header>
-      {!model.hasApiKey && (
-        <div className="setup-banner">
-          <KeyRound size={20} />
-          <div>
-            <strong>连接模型，开始问答</strong>
-          </div>
-          <button className="secondary" onClick={() => navigate("settings")}>
-            连接模型
-          </button>
-        </div>
-      )}
-      <div className="conversation-turns" aria-label="本次问答">
-        {turns.map((turn) => (
+      <div className="conversation-turns" aria-label="当前对话">
+        {turns.map((turn, index) => (
           <article
             className="conversation-turn"
             key={turn.result.id}
-            ref={turn === turns[turns.length - 1] ? latestAnswerRef : undefined}
+            ref={index === turns.length - 1 ? latestAnswerRef : undefined}
           >
             <div className="user-question">
               <span>你</span>
               <p>{turn.question}</p>
             </div>
             <div className="assistant-answer">
-              <span className="answer-author">
-                <Sparkles size={16} /> mario
-              </span>
-              <WebSearchStatus trace={turn.result.workflowTrace} />
-              {turn.result.workflowTrace.adviceGrounding?.some(
-                (review) => review.status !== "supported",
-              ) && (
-                <p className="advice-gap" role="status">
-                  有些依据还需要核实，暂时不宜据此行动。
-                </p>
-              )}
-              <p className="answer">
-                {turn.result.workflowTrace.structuredReport?.verdict ??
-                  turn.result.answer}
-              </p>
-              {turn.result.workflowTrace.structuredReport?.unknowns.length ? (
-                <div className="conversation-clarification">
-                  <strong>还需要了解</strong>
-                  <p>
-                    {turn.result.workflowTrace.structuredReport.unknowns[0]}
-                  </p>
-                  <button
-                    className="text-button"
-                    disabled={running}
-                    onClick={() => {
-                      invalidatePreview(() =>
-                        setQuestion(
-                          `关于“${turn.result.workflowTrace.structuredReport!.unknowns[0]}”，我的情况是：`,
-                        ),
-                      );
-                      setFollowUp(turn === turns[turns.length - 1]);
-                      inputRef.current?.focus();
-                    }}
-                  >
-                    补充我的情况
-                  </button>
-                </div>
-              ) : null}
-              {turn.result.workflowTrace.structuredReport && (
-                <EvidenceOverview
-                  report={turn.result.workflowTrace.structuredReport}
-                  evidence={turn.result.workflowTrace.evidenceCatalog ?? []}
-                />
-              )}
-              {turn.result.workflowTrace.structuredReport && (
-                <AdviceCards
-                  compact
-                  onAsk={(prompt) => {
-                    if (running) return;
-                    invalidatePreview(() => setQuestion(prompt));
-                    setFollowUp(turn === turns[turns.length - 1]);
-                    inputRef.current?.focus();
-                  }}
-                  report={turn.result.workflowTrace.structuredReport}
-                  personalContext={turn.result.workflowTrace.personalContext}
-                  grounding={turn.result.workflowTrace.adviceGrounding}
-                  evidence={turn.result.workflowTrace.evidenceCatalog ?? []}
-                  analysisId={turn.result.id}
-                  onCreateDecisionDraft={onCreateDecisionDraft}
-                />
-              )}
-              {turn.result.workflowTrace.structuredReport && (
-                <details className="answer-details">
-                  <summary>查看完整分析与方案比较</summary>
-                  <StructuredReportView
-                    report={turn.result.workflowTrace.structuredReport}
-                    personalContext={turn.result.workflowTrace.personalContext}
-                    grounding={turn.result.workflowTrace.adviceGrounding}
-                    evidence={turn.result.workflowTrace.evidenceCatalog ?? []}
-                    analysisId={turn.result.id}
-                    onCreateDecisionDraft={onCreateDecisionDraft}
-                  />
-                </details>
-              )}
-              <details className="answer-details">
-                <summary>分析过程与使用的资料</summary>
-                <p>
-                  {turn.result.transparency.model} ·{" "}
-                  {turn.result.transparency.modelCalls} 次调用 ·{" "}
-                  {(turn.result.transparency.totalLatencyMs / 1000).toFixed(1)}{" "}
-                  秒
-                </p>
-                <StoredWorkflowTrace trace={turn.result.workflowTrace} />
-              </details>
-              <p className="disclaimer">{turn.result.disclaimer}</p>
+              <span className="answer-author">mario</span>
+              <ModelReport
+                answer={turn.result.answer}
+                trace={turn.result.workflowTrace}
+              />
             </div>
           </article>
         ))}
       </div>
-      {storedAnalysis && (
-        <StoredAnalysisView
-          item={storedAnalysis}
-          onClose={() => setStoredAnalysis(null)}
-          onReuse={() => reuseStoredQuestion(storedAnalysis)}
-          onCreateDecisionDraft={onCreateDecisionDraft}
-        />
-      )}
-      <section className="panel advisor-panel conversation-composer">
-        {dailyAssetRange && (
-          <p className="holding-hint">
-            资产比较区间：{dailyAssetRange.from} 至 {dailyAssetRange.to}
-            <button
-              className="text-button"
-              disabled={running}
-              onClick={() =>
-                invalidatePreview(() => setDailyAssetRange(undefined))
-              }
-            >
-              取消区间
-            </button>
-          </p>
-        )}
+      <form
+        className="panel conversation-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
         <label className="question-box">
-          <span>{turns.length ? "继续聊聊" : "这次希望解决什么问题？"}</span>
+          <span className="visually-hidden">输入问题</span>
           <textarea
-            disabled={running}
+            disabled={running || Boolean(historyBusy)}
             ref={inputRef}
             value={question}
-            placeholder={
-              turns.length
-                ? "补充一点情况，或继续追问…"
-                : "例如：我想开始投资，但不知道该先考虑什么…"
-            }
-            onChange={(e) =>
-              invalidatePreview(() => setQuestion(e.target.value))
-            }
-            onKeyDown={(e) => {
+            placeholder={turns.length ? "继续追问…" : "输入你的问题…"}
+            onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(event) => {
               if (
-                e.key === "Enter" &&
-                (e.metaKey || e.ctrlKey) &&
-                !e.nativeEvent.isComposing
+                event.key === "Enter" &&
+                (event.metaKey || event.ctrlKey) &&
+                !event.nativeEvent.isComposing
               ) {
-                e.preventDefault();
-                void prepare();
+                event.preventDefault();
+                void send();
               }
             }}
           />
         </label>
-        {!turns.length && (
-          <div className="research-tasks" aria-label="从一个问题开始">
-            {[
-              "我现在适合开始投资吗？",
-              "我的持仓有哪些需要注意的风险？",
-              "帮我理清最近的一次投资决定",
-            ].map((task) => (
-              <button
-                key={task}
-                className="secondary"
-                onClick={() => {
-                  invalidatePreview(() => setQuestion(task));
-                  inputRef.current?.focus();
-                }}
-              >
-                {task}
-              </button>
-            ))}
-          </div>
-        )}
         <div className="composer-footer">
-          <span>{turns.length && followUp ? "会参考上一轮问答摘要" : ""}</span>
-          {turns.length > 0 && (
-            <button
-              className="text-button"
-              disabled={running}
-              onClick={() => {
-                invalidatePreview(() => setQuestion(""));
-                setFollowUp(!followUp);
-                inputRef.current?.focus();
-              }}
-            >
-              {followUp ? "换个话题" : "接着上轮聊"}
-            </button>
-          )}
+          <span role="status">
+            {running ? "正在生成 report…" : ""}
+            {!model.hasApiKey && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => navigate("settings")}
+              >
+                前往设置连接模型
+              </button>
+            )}
+          </span>
           <button
+            type="submit"
             className="primary"
-            onClick={prepare}
-            disabled={previewing || running || !question.trim()}
+            disabled={
+              running ||
+              Boolean(historyBusy) ||
+              !question.trim() ||
+              !model.hasApiKey
+            }
           >
-            {previewing ? (
+            {running ? (
               <LoaderCircle size={17} className="spin" />
             ) : (
               <Send size={17} />
             )}
-            {previewing ? "准备中…" : "提问"}
+            {running ? "生成中…" : "发送"}
           </button>
         </div>
-      </section>
+      </form>
       {error && (
         <div className="error-box" role="alert">
           <AlertTriangle size={18} />
@@ -534,249 +309,34 @@ export function Advisor({
           {historyError}
         </div>
       )}
-      {preview && (
-        <section
-          ref={previewRef}
-          className="panel preview-panel"
-          aria-label="发送确认"
-        >
-          <div className="panel-title">
-            <div>
-              <h2>确认这次使用的资料</h2>
-            </div>
-          </div>
-          <div className="preview-provider">
-            <Bot size={16} />
-            <span>
-              <strong>{preview.model}</strong>
-            </span>
-          </div>
-          {previewStale && (
-            <div className="preview-stale">
-              <AlertTriangle size={15} />
-              <div>
-                <strong>记忆授权已变化</strong>
-                <span>下方显示的是新选择，但需要重新确认。</span>
-              </div>
-            </div>
-          )}
-          <p className="confirmation-summary">
-            将把你的问题和{" "}
-            {preview.groups.filter((group) => group.included).length}{" "}
-            组资料发送给上述模型。
-            {useWebSearch
-              ? "确认后将启用供应商网页搜索，搜索查询可能交给其搜索服务，且可能产生额外费用。"
-              : "本次不启用网页搜索，仅使用已选资料。"}
-            {followUp ? "本次也会附上上一轮问题与回答摘要。" : ""}
-          </p>
-          <details className="payload-details">
-            <summary>查看本次发送的资料</summary>
-            <div className="context-group-list">
-              {preview.groups.map((group) => (
-                <div
-                  className={group.included ? "included" : "omitted"}
-                  key={group.key}
-                >
-                  <i>{group.included ? <Check size={12} /> : "—"}</i>
-                  <div>
-                    <strong>{group.label}</strong>
-                    <small>{group.description}</small>
-                  </div>
-                  <span>
-                    {group.included
-                      ? `${group.recordCount} 项 · ${group.sensitivity}`
-                      : "不发送"}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="local-only-note">
-              <LockKeyhole size={16} />
-              <div>
-                <strong>不会发送给模型</strong>
-                <p>{preview.localOnly.join("；")}</p>
-              </div>
-            </div>
-            <details className="payload-details">
-              <summary>查看发送内容</summary>
-              <pre>{JSON.stringify(preview.payload, null, 2)}</pre>
-            </details>
-            {preview.evidenceCandidates.length > 0 && (
-              <details className="payload-details">
-                <summary>
-                  查看本次可引用证据（{preview.evidenceCandidates.length} 条）
-                </summary>
-                <pre>{JSON.stringify(preview.evidenceCandidates, null, 2)}</pre>
-              </details>
-            )}
-            {preview.memoryCandidates.length > 0 && (
-              <details className="payload-details memory-disclosure">
-                <summary>
-                  逐条选择候选记忆（授权{" "}
-                  {
-                    preview.memoryCandidates.filter(
-                      (item) => !excludedMemoryIds.includes(item.id),
-                    ).length
-                  }
-                  /{preview.memoryCandidates.length} 条）
-                </summary>
-                <MemoryItems
-                  items={preview.memoryCandidates}
-                  excludedIds={excludedMemoryIds}
-                  onToggle={toggleMemoryCandidate}
-                />
-              </details>
-            )}
-            <details className="payload-details">
-              <summary>查看固定投资方法论提示</summary>
-              <pre>{preview.systemPolicy}</pre>
-            </details>
-            <p className="memory-policy">{preview.memoryPolicy}</p>
-          </details>
-          <div className="preview-actions">
-            <button
-              className="text-button"
-              disabled={running}
-              onClick={() => setPreview(null)}
-            >
-              返回修改
-            </button>
-            <button
-              className="primary"
-              onClick={previewStale ? prepare : analyze}
-              disabled={
-                running || previewing || (!previewStale && !model.hasApiKey)
-              }
-            >
-              {previewing ? (
-                <>
-                  <LoaderCircle size={15} className="spin" />
-                  正在更新预览…
-                </>
-              ) : previewStale ? (
-                <>
-                  <Eye size={15} />
-                  按新选择重新预览
-                </>
-              ) : running ? (
-                <>
-                  <LoaderCircle size={15} className="spin" />
-                  正在分析…
-                </>
-              ) : (
-                <>
-                  <Send size={15} />
-                  确认发送
-                </>
-              )}
-            </button>
-          </div>
-        </section>
-      )}
-
-      <details className="conversation-context">
-        <summary>隐私与资料范围</summary>
-        <p>选择允许发送的资料，发送前可再次核对。</p>
-        <div className="external-background">
-          <label className="auto-external-option">
-            <input
-              type="checkbox"
-              checked={useWebSearch}
-              disabled={running || !supportsWebSearch}
-              onChange={(event) =>
-                invalidatePreview(() => setWebSearch(event.target.checked))
-              }
-            />
-            联网查找相关资料
-          </label>
-          <p>
-            {supportsWebSearch
-              ? "确认发送后由模型供应商搜索网页，回答会附上来源链接。关闭后仅参考已有资料。"
-              : "当前 Chat Completions 接口仅参考已有资料，不支持原生网页搜索。"}
-          </p>
-        </div>
-        <div className="context-shortcuts">
-          <button className="secondary" onClick={() => navigate("facts")}>
-            更新我的情况
-          </button>
-        </div>
-        <details className="context-control">
-          <summary>模型可以参考哪些资料</summary>
-          <div className="context-options">
-            {(
-              [
-                ["includeProfile", "财务档案"],
-                ["includeGoals", "目标计划"],
-                ["includeHoldings", "持仓明细"],
-                ["includePlanning", "规划结果"],
-                ["includeRiskFindings", "风险检查"],
-                ["includeRules", "个人规则"],
-                ["includeSystemReviews", "周期复盘"],
-                ["includePortfolioCheckins", "组合变化"],
-                ["includePortfolioEvents", "组合流水"],
-                ["includeEvidence", "研究证据"],
-              ] as [keyof ContextSelection, string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                disabled={running}
-                aria-pressed={contextSelection[key]}
-                className={contextSelection[key] ? "selected" : ""}
-                onClick={() => toggleContext(key)}
-              >
-                <i>{contextSelection[key] && <Check size={11} />}</i>
-                {label}
-              </button>
-            ))}
-          </div>
-        </details>
-      </details>
-      <details className="panel analysis-history-panel">
-        <summary>以前的问答 · {history.length}</summary>
-        <p className="analysis-history-boundary">历史判断需结合新信息核对。</p>
+      <section className="chat-history" aria-label="历史对话">
+        <h2>历史对话</h2>
         {history.length === 0 && !historyError && (
-          <div className="empty">暂无问答记录，完成问答后自动保存。</div>
+          <p className="empty">暂无历史对话</p>
         )}
-        <div className="analysis-history-list">
+        <div className="chat-history-list">
           {history.map((item) => (
             <button
               key={item.id}
-              className={storedAnalysis?.id === item.id ? "active" : ""}
+              className={
+                turns.some((turn) => turn.result.id === item.id) ? "active" : ""
+              }
               onClick={() => void openStoredAnalysis(item.id)}
               disabled={running || Boolean(historyBusy)}
             >
-              <div>
-                <History size={15} />
-                <span>{item.workflowVersion || "旧版分析"}</span>
-              </div>
               <strong>{item.question}</strong>
-              <small>
-                {item.groundingStatus === "supported"
-                  ? "资料范围内支持 · 模型核对"
-                  : item.groundingStatus === "contradicted"
-                    ? "发现证据矛盾"
-                    : item.groundingStatus === "insufficient"
-                      ? "证据不足"
-                      : "尚未完成证据核对"}
-              </small>
-              <p>
-                {item.verdict || "旧记录没有结构化裁决，可打开查看原回答。"}
-              </p>
-              <small>
-                {new Date(item.createdAt).toLocaleString("zh-CN")} ·{" "}
-                {item.transparency?.model || "无模型审计"}
-              </small>
-              <em>
-                {historyBusy === item.id ? (
-                  <LoaderCircle size={14} className="spin" />
-                ) : (
-                  <ChevronRight size={14} />
-                )}
-              </em>
+              <time dateTime={item.createdAt}>
+                {new Date(item.createdAt).toLocaleString("zh-CN")}
+              </time>
+              {historyBusy === item.id ? (
+                <LoaderCircle size={14} className="spin" />
+              ) : (
+                <ChevronRight size={14} />
+              )}
             </button>
           ))}
         </div>
-      </details>
+      </section>
     </div>
   );
 }

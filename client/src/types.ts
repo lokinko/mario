@@ -324,6 +324,15 @@ export interface ContextSelection {
   includeEvidence: boolean;
 }
 
+export interface AnalysisSettings {
+  workflow: "quick" | "deep";
+  useMemory: boolean;
+  reflect: boolean;
+  exploreAlternatives: boolean;
+  webSearch: boolean;
+  contextSelection: ContextSelection;
+}
+
 export interface ContextGroup {
   key: string;
   label: string;

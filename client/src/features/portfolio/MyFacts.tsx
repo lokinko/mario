@@ -11,7 +11,6 @@ import {
 } from "../../api";
 import type { Holding, Snapshot } from "../../types";
 import { type View } from "../../app/navigation";
-import { RecordLinks } from "../../components/RecordLinks";
 import { PageHeader } from "../../components/PageHeader";
 import { NumberField } from "../../components/NumberField";
 import { localDateValue } from "../../lib/dates";
@@ -120,7 +119,7 @@ export function MyFacts({
   return (
     <div className="page narrow facts-page">
       <PageHeader title="我的情况" />
-      <AssetHistory snapshot={snapshot} navigate={navigate} />
+      <AssetHistory snapshot={snapshot} />
       <div className="section-switcher" role="group" aria-label="我的情况分类">
         {(
           [
@@ -393,10 +392,6 @@ export function MyFacts({
           去聊聊 <ArrowRight size={16} />
         </button>
       </div>
-      <details className="facts-advanced">
-        <summary>更多资料与记录</summary>
-        <RecordLinks navigate={navigate} />
-      </details>
     </div>
   );
 }

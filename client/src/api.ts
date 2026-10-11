@@ -14,6 +14,7 @@ import { HttpError } from "./lib/transport";
 import { webToken } from "./lib/webSession";
 import type {
   AnalysisRequest,
+  AnalysisSettings,
   AnalysisPreview,
   AnalysisResult,
   AnalysisHistoryItem,
@@ -348,6 +349,19 @@ export async function previewAnalysis(
   return httpRequest<AnalysisPreview>("/analysis/preview", {
     method: "POST",
     body: JSON.stringify(request),
+  });
+}
+
+export async function getAnalysisSettings(): Promise<AnalysisSettings> {
+  return httpRequest<AnalysisSettings>("/analysis-settings");
+}
+
+export async function saveAnalysisSettings(
+  settings: AnalysisSettings,
+): Promise<AnalysisSettings> {
+  return httpRequest<AnalysisSettings>("/analysis-settings", {
+    method: "PUT",
+    body: JSON.stringify(settings),
   });
 }
 

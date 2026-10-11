@@ -21,7 +21,7 @@ import type { DecisionEntry, ModelConfig, Snapshot } from "./types";
 import { checkAndSendReviewReminder } from "./reminders";
 import { ServerData } from "./features/account/ServerData";
 import { DecisionJournal } from "./features/decisions/DecisionJournal";
-import { View, initialView, nav, supportingNav } from "./app/navigation";
+import { View, initialView, nav, viewLabels } from "./app/navigation";
 import type { FoundationSection } from "./app/navigation";
 import { Dashboard } from "./features/dashboard/Dashboard";
 import { MyFacts } from "./features/portfolio/MyFacts";
@@ -32,7 +32,6 @@ import { ReviewCenter } from "./features/reviews/ReviewCenter";
 import { MemoryCenter } from "./features/memory/MemoryCenter";
 import { Advisor } from "./features/research/Advisor";
 import { ModelSettings } from "./features/settings/ModelSettings";
-import { RecordLinks } from "./components/RecordLinks";
 
 function App() {
   const [view, setView] = useState<View>(initialView);
@@ -288,16 +287,7 @@ function App() {
           <Menu size={22} />
         </button>
         <strong>mario</strong>
-        <span>
-          {
-            [
-              ...nav,
-              ...supportingNav,
-              { id: "cloud", label: "账号与数据" },
-              { id: "settings", label: "模型与隐私" },
-            ].find((item) => item.id === view)?.label
-          }
-        </span>
+        <span>{viewLabels[view]}</span>
       </header>
       {mobileNavOpen && (
         <button
@@ -348,13 +338,7 @@ function App() {
             <button
               key={item.id}
               aria-current={view === item.id ? "page" : undefined}
-              className={
-                view === item.id ||
-                (item.id === "facts" &&
-                  supportingNav.some((entry) => entry.id === view))
-                  ? "active"
-                  : ""
-              }
+              className={view === item.id ? "active" : ""}
               onClick={() => navigate(item.id)}
             >
               <item.icon size={18} />
@@ -381,7 +365,7 @@ function App() {
           aria-current={view === "settings" ? "page" : undefined}
           onClick={() => navigate("settings")}
         >
-          <Settings2 size={18} /> 模型与隐私
+          <Settings2 size={18} /> 设置
         </button>
       </aside>
 
@@ -392,20 +376,6 @@ function App() {
         }}
       >
         <DailyTracking onNewDay={refreshForNewDay} />
-        {supportingNav.some((item) => item.id === view) && (
-          <nav
-            className={`context-breadcrumb ${view === "dashboard" ? "" : "narrow"}`}
-            aria-label="当前位置"
-          >
-            <button className="text-button" onClick={() => navigate("facts")}>
-              我的情况
-            </button>
-            <span aria-hidden="true"> / </span>
-            <span aria-current="page">
-              {supportingNav.find((item) => item.id === view)?.label}
-            </span>
-          </nav>
-        )}
         {remotePending && (
           <div className="remote-update-notice" role="status">
             其他设备的资料已同步，当前输入暂时保留。
@@ -443,7 +413,12 @@ function App() {
           </div>
         )}
         {view === "dashboard" && (
-          <Dashboard snapshot={snapshot} navigate={navigate} flash={flash} />
+          <Dashboard
+            key={remoteViewRevision}
+            snapshot={snapshot}
+            navigate={navigate}
+            flash={flash}
+          />
         )}
         {view === "facts" && (
           <MyFacts
@@ -524,18 +499,12 @@ function App() {
           />
         )}
         {view === "settings" && model && (
-          <>
-            <ModelSettings
-              key={remoteViewRevision}
-              model={model}
-              onUpdate={setModel}
-              flash={flash}
-            />
-            <details className="page narrow archive-tools">
-              <summary>更多资料与记录</summary>
-              <RecordLinks navigate={navigate} />
-            </details>
-          </>
+          <ModelSettings
+            key={remoteViewRevision}
+            model={model}
+            onUpdate={setModel}
+            flash={flash}
+          />
         )}
         {(view === "advisor" || view === "settings") && !model && (
           <div className="center-screen">

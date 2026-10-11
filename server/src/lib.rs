@@ -49,10 +49,10 @@ use market_data::{
 };
 use memory::{HybridMemoryRetriever, MemoryRetriever};
 use models::{
-    AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, DecisionEntry,
-    DecisionRecord, DecisionReviewInput, FinancialProfile, FxRateQuery, FxRateQuote, GoalInput,
-    HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, MemoryItem,
-    MemoryPreferenceInput, ModelConfig, ModelConfigInput, ModelConnectionTest,
+    AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, AnalysisSettings,
+    DecisionEntry, DecisionRecord, DecisionReviewInput, FinancialProfile, FxRateQuery, FxRateQuote,
+    GoalInput, HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision,
+    MemoryItem, MemoryPreferenceInput, ModelConfig, ModelConfigInput, ModelConnectionTest,
     PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventImportCommitRequest,
     PortfolioEventImportPreview, PortfolioEventImportRequest, PortfolioEventImportResult,
     PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, ReminderSettings,
@@ -354,6 +354,10 @@ fn api_router() -> Router {
         .route("/api/model-config/codex", post(read_codex_credentials))
         .route("/api/model-key", axum::routing::delete(delete_model_key))
         .route("/api/analysis/preview", post(preview_analysis))
+        .route(
+            "/api/analysis-settings",
+            get(analysis_settings).put(save_analysis_settings),
+        )
         .route("/api/analysis", post(run_analysis))
         .route("/api/analyses", get(analyses))
         .route("/api/analyses/{id}", get(analysis))
@@ -832,6 +836,19 @@ async fn delete_model_key(
     Ok(Json(state.db.model_config()?))
 }
 
+async fn analysis_settings(
+    Extension(state): Extension<Arc<AppState>>,
+) -> AppResult<Json<AnalysisSettings>> {
+    Ok(Json(state.db.analysis_settings()?))
+}
+
+async fn save_analysis_settings(
+    Extension(state): Extension<Arc<AppState>>,
+    Json(settings): Json<AnalysisSettings>,
+) -> AppResult<Json<AnalysisSettings>> {
+    Ok(Json(state.db.save_analysis_settings(settings)?))
+}
+
 async fn run_analysis(
     Extension(state): Extension<Arc<AppState>>,
     Json(request): Json<AnalysisRequest>,
@@ -906,7 +923,10 @@ async fn run_analysis(
     let result = agent::execute(config, api_key, request.clone(), built_context, memories).await;
     state.db.lock_account()?;
     let result = result?;
-    state.db.save_analysis(&result, &request.question)?;
+    state.db.save_analysis(
+        &result,
+        request.user_message.as_deref().unwrap_or(&request.question),
+    )?;
     Ok(Json(result))
 }
 

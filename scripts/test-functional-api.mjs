@@ -92,6 +92,14 @@ try {
   assert.equal((await fetch(base + "/daily-assets")).status, 401);
   let snap = await api("/snapshot");
   assert.equal(snap.holdings.length, 0);
+  const defaults = await api("/analysis-settings");
+  assert.equal(defaults.workflow, "deep");
+  assert.equal(defaults.contextSelection.includeProfile, true);
+  const configured = { ...defaults, webSearch: false, useMemory: false, contextSelection: { ...defaults.contextSelection, includeProfile: false } };
+  assert.deepEqual(await api("/analysis-settings", "PUT", configured), configured);
+  assert.deepEqual(await api("/analysis-settings"), configured);
+  await api("/analysis-settings", "PUT", { ...configured, workflow: "invalid" }, 400);
+  assert.deepEqual(await api("/analysis-settings"), configured);
   const profile = {
     ...snap.profile,
     monthlyIncome: 18000,
@@ -382,6 +390,7 @@ try {
 
   await stopServer();
   await startServer();
+  assert.deepEqual(await api("/analysis-settings"), configured);
   assert.equal((await api("/snapshot")).holdings[0].marketValue, 102200);
   assert.equal((await api("/daily-assets")).records[0].totalAssets, 102200);
   assert.equal((await api("/decisions"))[0].review.processRating, 4);

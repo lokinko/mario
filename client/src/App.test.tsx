@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
@@ -22,6 +23,14 @@ vi.mock("./api", async (original) => ({
   getSnapshot: vi.fn(),
   getModelConfig: vi.fn(),
   getAnalysisHistory: vi.fn().mockResolvedValue([]),
+  getPortfolioCheckins: vi.fn().mockResolvedValue([]),
+  getReviewReminders: vi.fn().mockResolvedValue(null),
+  getDailyAssets: vi.fn().mockResolvedValue({ records: [], nextBefore: null }),
+  getPortfolioEvents: vi.fn().mockResolvedValue([]),
+  getDecisions: vi.fn().mockResolvedValue([]),
+  getRuleEffectiveness: vi
+    .fn()
+    .mockResolvedValue({ applicableChecks: 0, adherencePct: null }),
 }));
 vi.mock("./reminders", () => ({
   checkAndSendReviewReminder: vi.fn().mockResolvedValue(undefined),
@@ -36,6 +45,23 @@ beforeEach(() => {
   window.location.hash = "cloud";
 });
 afterEach(cleanup);
+
+it("opens the analysis dashboard directly from the sidebar with its own active state", async () => {
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  vi.mocked(api.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof api.getSnapshot>>,
+  );
+  vi.mocked(api.getModelConfig).mockRejectedValue(
+    new Error("optional model unavailable"),
+  );
+  render(<App />);
+  const entry = await screen.findByRole("button", { name: "分析看板" });
+  fireEvent.click(entry);
+  await screen.findByRole("heading", { name: "分析看板" });
+  expect(entry.getAttribute("aria-current")).toBe("page");
+  expect(window.location.hash).toBe("#dashboard");
+  expect(screen.getByRole("region", { name: "资产核心指标" })).toBeTruthy();
+});
 
 it("keeps local application accessible when optional model configuration fails", async () => {
   vi.mocked(api.getSnapshot).mockResolvedValue(
@@ -83,9 +109,7 @@ it("opens on questions and preserves a draft when returning from supporting page
     hasApiKey: true,
   });
   render(<App />);
-  expect(
-    await screen.findByRole("heading", { name: "最近有什么投资上的困惑？" }),
-  ).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "问答" })).toBeTruthy();
   fireEvent.change(screen.getByRole("textbox"), {
     target: { value: "暂存的问题" },
   });
@@ -96,7 +120,7 @@ it("opens on questions and preserves a draft when returning from supporting page
   expect(screen.getByDisplayValue("暂存的问题")).toBeTruthy();
 });
 
-it("keeps everyday navigation to questions and personal facts", async () => {
+it("shows frequently used records in primary navigation", async () => {
   vi.mocked(api.getSnapshot).mockResolvedValue(
     {} as Awaited<ReturnType<typeof api.getSnapshot>>,
   );
@@ -109,14 +133,12 @@ it("keeps everyday navigation to questions and personal facts", async () => {
   render(<App />);
   await screen.findByRole("button", { name: "问答" });
   expect(screen.getByRole("button", { name: "我的情况" })).toBeTruthy();
-  for (const name of [
-    "决策确认",
-    "参考资料",
-    "记忆与规则",
-    "复盘记录",
-    "组合流水",
-    "资料与确认",
-  ])
+  for (const name of ["决策确认", "复盘记录", "参考资料"]) {
+    const entry = screen.getByRole("button", { name });
+    expect(entry.closest("aside")).toBeTruthy();
+    expect(entry.closest("details")).toBeNull();
+  }
+  for (const name of ["记忆与规则", "组合流水", "资料与确认"])
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
 it("responds to hash navigation without leaving the old page on screen", async () => {
@@ -133,7 +155,7 @@ it("responds to hash navigation without leaving the old page on screen", async (
   await screen.findByRole("button", { name: "测试恢复数据" });
   window.location.hash = "advisor";
   fireEvent(window, new HashChangeEvent("hashchange"));
-  await screen.findByRole("textbox", { name: "这次希望解决什么问题？" });
+  await screen.findByRole("textbox", { name: "输入问题" });
   expect(screen.queryByRole("button", { name: "测试恢复数据" })).toBeNull();
 });
 
@@ -168,29 +190,47 @@ it("closes the left drawer with Escape and restores focus without changing the p
   expect(screen.getByRole("button", { name: "测试恢复数据" })).toBeTruthy();
 });
 
-it("keeps supporting pages in the facts navigation and creates history for returning", async () => {
-  window.location.hash = "facts";
-  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-  const push = vi.spyOn(window.history, "pushState");
-  vi.mocked(api.getSnapshot).mockResolvedValue(
-    emptySnapshot as Awaited<ReturnType<typeof api.getSnapshot>>,
-  );
-  vi.mocked(api.getModelConfig).mockResolvedValue({
-    provider: "openai-responses",
-    model: "test",
-    baseUrl: "",
-    hasApiKey: false,
-  });
-  render(<App />);
-  await screen.findByRole("heading", { name: "我的情况" });
-  fireEvent.click(screen.getByText("更多资料与记录"));
-  fireEvent.click(screen.getByRole("button", { name: "持仓与目标" }));
-  await screen.findByRole("heading", { name: "持仓与目标" });
-  expect(push).toHaveBeenCalledWith(null, "", "#foundation");
-  expect(document.querySelector(".sidebar button.active")?.textContent).toBe(
-    "我的情况",
-  );
-  expect(
-    screen.getByRole("navigation", { name: "当前位置" }).textContent,
-  ).toContain("持仓与目标");
-});
+it.each([
+  ["decision", "决策确认"],
+  ["review", "复盘记录"],
+  ["evidence", "参考资料"],
+])(
+  "opens %s directly from primary navigation with its own active state",
+  async (view, label) => {
+    window.location.hash = "facts";
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const push = vi.spyOn(window.history, "pushState");
+    vi.mocked(api.getSnapshot).mockResolvedValue(
+      emptySnapshot as Awaited<ReturnType<typeof api.getSnapshot>>,
+    );
+    vi.mocked(api.getModelConfig).mockResolvedValue({
+      provider: "openai-responses",
+      model: "test",
+      baseUrl: "",
+      hasApiKey: false,
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "我的情况" });
+    expect(screen.queryByText("更多资料与记录")).toBeNull();
+    for (const name of ["持仓与目标", "资产概览", "组合流水", "记忆与规则"])
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    const sidebar = screen.getByRole("complementary", { name: "主导航" });
+    fireEvent.click(within(sidebar).getByRole("button", { name: label }));
+    await screen.findByRole("heading", { name: label });
+    expect(push).toHaveBeenCalledWith(null, "", `#${view}`);
+    expect(
+      within(sidebar)
+        .getByRole("button", { name: label })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      within(sidebar)
+        .getByRole("button", { name: "我的情况" })
+        .hasAttribute("aria-current"),
+    ).toBe(false);
+    expect(document.querySelector(".sidebar button.active")?.textContent).toBe(
+      label,
+    );
+    expect(screen.queryByRole("navigation", { name: "当前位置" })).toBeNull();
+  },
+);

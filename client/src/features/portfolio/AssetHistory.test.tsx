@@ -10,15 +10,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AssetHistory } from "./AssetHistory";
 import * as api from "../../api";
 import fixture from "../../test/emptySnapshot.json";
-import type {
-  DailyComparison,
-  DailyHistory,
-  DailyRecord,
-  Snapshot,
-} from "../../types";
+import type { DailyHistory, DailyRecord, Snapshot } from "../../types";
 vi.mock("../../api", () => ({
   getDailyAssets: vi.fn(),
-  compareDailyAssets: vi.fn(),
 }));
 const day: DailyRecord = {
   day: "2026-09-13",
@@ -44,38 +38,20 @@ const history: DailyHistory = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
-  window.sessionStorage.clear();
   vi.mocked(api.getDailyAssets).mockResolvedValue(history);
 });
 afterEach(cleanup);
-it("shows carry-forward labels and passes the selected dates to the advisor without calling AI", async () => {
-  const navigate = vi.fn();
-  render(<AssetHistory snapshot={fixture as Snapshot} navigate={navigate} />);
+it("shows carry-forward labels with the trend expanded and the removed sections absent", async () => {
+  render(<AssetHistory snapshot={fixture as Snapshot} />);
   await screen.findByText(/今日沿用上次余额/);
-  fireEvent.click(screen.getByText("资产趋势"));
+  expect(screen.getByText("资产趋势").closest("details")?.open).toBe(true);
   expect(
     screen
       .getByRole("group", { name: /每日总资产趋势/ })
       .getAttribute("aria-label"),
   ).toContain("沿用值");
-  const comparison: DailyComparison = {
-    from: history.records[1],
-    to: day,
-    amountChange: 20,
-    assets: [],
-    allocationChanges: [],
-  };
-  vi.mocked(api.compareDailyAssets).mockResolvedValue(comparison);
-  fireEvent.click(screen.getByText("比较变化"));
-  fireEvent.click(await screen.findByText("分析这段变化"));
-  expect(navigate).toHaveBeenCalledWith("advisor");
-  expect(
-    JSON.parse(window.sessionStorage.getItem("mario.dailyAssetRange")!),
-  ).toEqual({ from: "2026-09-12", to: "2026-09-13" });
-  fireEvent.change(screen.getByLabelText("开始日期"), {
-    target: { value: "2026-09-11" },
-  });
-  expect(screen.queryByText("分析这段变化")).toBeNull();
+  expect(screen.queryByText("资产历史与区间比较")).toBeNull();
+  expect(screen.queryByText("统计口径")).toBeNull();
 });
 it("shows incomplete totals and loads older records with a cursor", async () => {
   vi.mocked(api.getDailyAssets).mockResolvedValue({
@@ -85,9 +61,8 @@ it("shows incomplete totals and loads older records with a cursor", async () => 
     ],
     nextBefore: "2026-09-13",
   });
-  render(<AssetHistory snapshot={fixture as Snapshot} navigate={vi.fn()} />);
+  render(<AssetHistory snapshot={fixture as Snapshot} />);
   await screen.findByText("待补汇率：美元账户");
-  fireEvent.click(screen.getByText("资产趋势"));
   expect(screen.queryByRole("group", { name: /每日总资产趋势/ })).toBeNull();
   fireEvent.click(screen.getByText("全部历史"));
   await waitFor(() =>
@@ -104,19 +79,5 @@ it("shows incomplete totals and loads older records with a cursor", async () => 
       limit: 400,
       before: "2026-09-13",
     }),
-  );
-});
-
-it("opens a day's detail from the trend with the keyboard", async () => {
-  render(<AssetHistory snapshot={fixture as Snapshot} navigate={vi.fn()} />);
-  await screen.findByText(/今日沿用上次余额/);
-  fireEvent.click(screen.getByText("资产趋势"));
-  const point = screen.getByRole("button", { name: /2026-09-12 ·/ });
-  fireEvent.keyDown(point, { key: "Enter" });
-  expect(screen.getByText("资产历史与区间比较").closest("details")?.open).toBe(
-    true,
-  );
-  expect((screen.getByLabelText("查看日记录") as HTMLSelectElement).value).toBe(
-    "2026-09-12",
   );
 });

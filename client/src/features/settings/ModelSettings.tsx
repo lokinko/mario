@@ -24,6 +24,7 @@ import {
 import type { ModelConfig, SecurityPriceConfig } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
 import { localDateValue } from "../../lib/dates";
+import { AnalysisDefaults } from "./AnalysisDefaults";
 
 export function ModelSettings({
   model,
@@ -188,8 +189,8 @@ export function ModelSettings({
   return (
     <div className="page narrow settings-page">
       <PageHeader
-        title="模型与隐私"
-        description="密钥按账号加密保存，资料在确认后发送给模型。"
+        title="设置"
+        description="配置模型连接与问答预设，保存后每次提问自动使用。"
       />
       <section className="panel form-panel">
         <div className="panel-title">
@@ -355,6 +356,7 @@ export function ModelSettings({
           </button>
         </div>
       </section>
+      <AnalysisDefaults model={model} flash={flash} />
       <details className="panel form-panel optional-settings">
         <summary className="panel-title">
           <div>

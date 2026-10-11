@@ -1,6 +1,24 @@
 use super::{params, AppError, AppResult, Database, ModelConfig, OptionalRow};
+use crate::models::AnalysisSettings;
 
 impl Database {
+    pub fn analysis_settings(&self) -> AppResult<AnalysisSettings> {
+        self.setting("analysis.settings")?
+            .map(|value| serde_json::from_str(&value).map_err(AppError::from))
+            .unwrap_or_else(|| Ok(AnalysisSettings::default()))
+    }
+
+    pub fn save_analysis_settings(
+        &self,
+        settings: AnalysisSettings,
+    ) -> AppResult<AnalysisSettings> {
+        if !matches!(settings.workflow.as_str(), "quick" | "deep") {
+            return Err(AppError::Validation("请选择快速或深度分析".into()));
+        }
+        self.set_setting("analysis.settings", &serde_json::to_string(&settings)?)?;
+        Ok(settings)
+    }
+
     pub fn setting(&self, key: &str) -> AppResult<Option<String>> {
         Ok(self
             .conn()?
@@ -89,6 +107,31 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn analysis_defaults_persist_across_restarts_and_reject_invalid_workflows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.db");
+        let db = Database::open(&path).unwrap();
+        let mut settings = db.analysis_settings().unwrap();
+        assert_eq!(settings.workflow, "deep");
+        assert!(settings.context_selection.include_profile);
+        settings.web_search = false;
+        settings.use_memory = false;
+        settings.context_selection.include_profile = false;
+        settings.context_selection.include_evidence = false;
+        db.save_analysis_settings(settings).unwrap();
+        drop(db);
+        let db = Database::open(&path).unwrap();
+        let mut restored = db.analysis_settings().unwrap();
+        assert!(!restored.web_search);
+        assert!(!restored.use_memory);
+        assert!(!restored.context_selection.include_profile);
+        assert!(!restored.context_selection.include_evidence);
+        restored.workflow = "invalid".into();
+        assert!(db.save_analysis_settings(restored).is_err());
+        assert_eq!(db.analysis_settings().unwrap().workflow, "deep");
+    }
+
     #[test]
     fn saves_both_native_protocols_and_reads_legacy_as_responses() {
         let dir = tempfile::tempdir().unwrap();

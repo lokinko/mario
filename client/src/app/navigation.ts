@@ -1,12 +1,10 @@
 import {
-  BookMarked,
   MessageCircle,
-  CircleDollarSign,
   Database,
   FilePenLine,
   History,
-  LayoutDashboard,
   WalletCards,
+  LayoutDashboard,
 } from "lucide-react";
 
 export type View =
@@ -46,14 +44,22 @@ export function initialView(): View {
 export const nav = [
   { id: "advisor" as const, label: "问答", icon: MessageCircle },
   { id: "facts" as const, label: "我的情况", icon: WalletCards },
-];
-
-export const supportingNav = [
+  { id: "dashboard" as const, label: "分析看板", icon: LayoutDashboard },
   { id: "decision" as const, label: "决策确认", icon: FilePenLine },
   { id: "review" as const, label: "复盘记录", icon: History },
-  { id: "foundation" as const, label: "持仓与目标", icon: WalletCards },
-  { id: "dashboard" as const, label: "资产概览", icon: LayoutDashboard },
-  { id: "ledger" as const, label: "组合流水", icon: CircleDollarSign },
   { id: "evidence" as const, label: "参考资料", icon: Database },
-  { id: "memory" as const, label: "记忆与规则", icon: BookMarked },
 ];
+
+export const viewLabels: Record<View, string> = {
+  advisor: "问答",
+  facts: "我的情况",
+  decision: "决策确认",
+  review: "复盘记录",
+  evidence: "参考资料",
+  foundation: "持仓与目标",
+  dashboard: "分析看板",
+  ledger: "组合流水",
+  memory: "记忆与规则",
+  cloud: "账号与数据",
+  settings: "设置",
+};

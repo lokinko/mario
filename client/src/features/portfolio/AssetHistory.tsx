@@ -1,12 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { compareDailyAssets, getDailyAssets } from "../../api";
-import type {
-  DailyComparison,
-  DailyHistory,
-  DailyRecord,
-  Snapshot,
-} from "../../types";
-import type { View } from "../../app/navigation";
+import { getDailyAssets } from "../../api";
+import type { DailyHistory, DailyRecord, Snapshot } from "../../types";
 import { formatMoney } from "../../lib/format";
 import { SERVER_DATA_UPDATED, DATA_SAVED } from "../../lib/syncEvents";
 
@@ -17,13 +11,7 @@ const change = (value: number | null, currency: string) =>
     ? "暂不可比较"
     : `${value > 0 ? "+" : ""}${formatMoney(value, currency)}`;
 
-function Trend({
-  records,
-  select,
-}: {
-  records: DailyRecord[];
-  select: (day: string) => void;
-}) {
+function Trend({ records }: { records: DailyRecord[] }) {
   const segments: DailyRecord[][] = [];
   for (const record of records) {
     if (segments.at(-1)?.[0].baseCurrency !== record.baseCurrency)
@@ -36,7 +24,7 @@ function Trend({
         {segments.map((segment) => (
           <div key={segment[0].day}>
             <small>{segment[0].baseCurrency} 记账区间</small>
-            <Trend records={segment} select={select} />
+            <Trend records={segment} />
           </div>
         ))}
       </>
@@ -95,16 +83,6 @@ function Trend({
                   r.carried ? "var(--surface, #fff)" : "var(--accent, #24876b)"
                 }
                 stroke="var(--accent, #24876b)"
-                onClick={() => select(r.day)}
-                role="button"
-                tabIndex={0}
-                aria-label={`${r.day} · ${money(r.totalAssets, r.baseCurrency)} · ${r.carried ? "沿用值" : "有更新"}`}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    select(r.day);
-                  }
-                }}
               >
                 <title>
                   {r.day} · {money(r.totalAssets, r.baseCurrency)} ·{" "}
@@ -134,26 +112,13 @@ function Trend({
     </div>
   );
 }
-export function AssetHistory({
-  snapshot,
-  navigate,
-}: {
-  snapshot: Snapshot;
-  navigate: (view: View) => void;
-}) {
+export function AssetHistory({ snapshot }: { snapshot: Snapshot }) {
   const [history, setHistory] = useState<DailyHistory>();
   const [range, setRange] = useState(30);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [comparison, setComparison] = useState<DailyComparison>();
-  const [compareError, setCompareError] = useState("");
-  const [comparing, setComparing] = useState(false);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [selected, setSelected] = useState("");
   const [refresh, setRefresh] = useState(0);
-  const request = useRef(0),
-    compareRequest = useRef(0);
+  const request = useRef(0);
   useEffect(() => {
     const wake = () => setRefresh((v) => v + 1);
     window.addEventListener(DATA_SAVED, wake);
@@ -165,18 +130,12 @@ export function AssetHistory({
   }, []);
   useEffect(() => {
     const current = ++request.current;
-    ++compareRequest.current;
-    setComparison(undefined);
-    setCompareError("");
-    setComparing(false);
     setLoading(true);
     setError("");
     getDailyAssets({ limit: range || 400 })
       .then((data) => {
         if (current !== request.current) return;
         setHistory(data);
-        setTo(data.records[0]?.day ?? "");
-        setFrom(data.records.at(-1)?.day ?? "");
       })
       .catch((e) => {
         if (current === request.current) setError(String(e));
@@ -205,40 +164,7 @@ export function AssetHistory({
       if (current === request.current) setLoading(false);
     }
   };
-  const compare = async () => {
-    const current = ++compareRequest.current;
-    setComparing(true);
-    setComparison(undefined);
-    setCompareError("");
-    try {
-      const result = await compareDailyAssets(from, to);
-      if (current === compareRequest.current) setComparison(result);
-    } catch (e) {
-      if (current === compareRequest.current) setCompareError(String(e));
-    } finally {
-      if (current === compareRequest.current) setComparing(false);
-    }
-  };
-  const editRange = (value: string, side: "from" | "to") => {
-    ++compareRequest.current;
-    setComparing(false);
-    setComparison(undefined);
-    side === "from" ? setFrom(value) : setTo(value);
-  };
-  const analyze = () => {
-    if (!comparison) return;
-    window.sessionStorage.setItem(
-      "mario.advisorQuestion",
-      `请分析 ${comparison.from.day} 至 ${comparison.to.day} 的资产金额与配置变化，区分实际更新和沿用值，说明变化最大的资产。结合已有流水分析可能原因；缺少依据时不要推断收益或买卖行为。`,
-    );
-    window.sessionStorage.setItem(
-      "mario.dailyAssetRange",
-      JSON.stringify({ from: comparison.from.day, to: comparison.to.day }),
-    );
-    navigate("advisor");
-  };
   const latest = history?.records[0];
-  const detail = history?.records.find((r) => r.day === selected) ?? latest;
   return (
     <section className="panel daily-assets" aria-label="每日资产追踪">
       <div className="panel-title">
@@ -303,7 +229,7 @@ export function AssetHistory({
               待补汇率：{latest.missingFx.join("、")}
             </p>
           )}
-          <details className="daily-trend-details">
+          <details className="daily-trend-details" open>
             <summary>资产趋势</summary>
             <div
               className="section-switcher"
@@ -325,7 +251,7 @@ export function AssetHistory({
                 </button>
               ))}
             </div>
-            <Trend records={history?.records ?? []} select={setSelected} />
+            <Trend records={history?.records ?? []} />
             {range === 0 && history?.nextBefore && (
               <button
                 className="secondary"
@@ -335,148 +261,6 @@ export function AssetHistory({
                 加载更早记录
               </button>
             )}
-          </details>
-          <details
-            className="daily-history-details"
-            open={selected ? true : undefined}
-          >
-            <summary>资产历史与区间比较</summary>
-            <div className="daily-compare-controls">
-              <label>
-                开始日期
-                <input
-                  type="date"
-                  value={from}
-                  max={to}
-                  onChange={(e) => editRange(e.target.value, "from")}
-                />
-              </label>
-              <label>
-                结束日期
-                <input
-                  type="date"
-                  value={to}
-                  min={from}
-                  max={history?.today}
-                  onChange={(e) => editRange(e.target.value, "to")}
-                />
-              </label>
-              <button
-                className="secondary"
-                disabled={!from || !to || from > to || comparing || loading}
-                onClick={() => void compare()}
-              >
-                {comparing ? "比较中…" : "比较变化"}
-              </button>
-            </div>
-            {compareError && <p role="alert">{compareError}</p>}
-            {comparison && (
-              <div className="daily-comparison">
-                <div className="panel-title">
-                  <strong>
-                    区间资产金额变化{" "}
-                    {change(
-                      comparison.amountChange,
-                      comparison.to.baseCurrency,
-                    )}
-                  </strong>
-                  <button className="secondary" onClick={analyze}>
-                    分析这段变化
-                  </button>
-                </div>
-                <p>按金额变化绝对值排序；新增或移除记录不代表买卖。</p>
-                {comparison.assets.map((a) => (
-                  <div className="daily-change-row" key={a.id}>
-                    <span>
-                      {a.name}{" "}
-                      {a.status === "added"
-                        ? "· 新增记录"
-                        : a.status === "removed"
-                          ? "· 移除记录"
-                          : ""}
-                    </span>
-                    <strong>
-                      {change(a.amountChange, comparison.to.baseCurrency)}
-                    </strong>
-                    <small>
-                      {a.pctPointChange == null
-                        ? "占比暂不可比较"
-                        : `占比 ${a.pctPointChange > 0 ? "+" : ""}${a.pctPointChange.toFixed(2)} 个百分点`}
-                    </small>
-                  </div>
-                ))}
-                {comparison.allocationChanges.length > 0 && (
-                  <details>
-                    <summary>资产类别占比变化</summary>
-                    {comparison.allocationChanges.map((a) => (
-                      <p key={a.assetClass}>
-                        {a.assetClass} · {a.previousPct.toFixed(1)}% →{" "}
-                        {a.currentPct.toFixed(1)}% ·{" "}
-                        {change(a.valueChange, comparison.to.baseCurrency)}
-                      </p>
-                    ))}
-                  </details>
-                )}
-              </div>
-            )}
-            <label className="daily-date-select">
-              查看日记录
-              <select
-                value={detail?.day ?? ""}
-                onChange={(e) => setSelected(e.target.value)}
-              >
-                {history?.records.map((r) => (
-                  <option key={r.day} value={r.day}>
-                    {r.day} · {r.carried ? "沿用值" : "有更新"} ·{" "}
-                    {money(r.totalAssets, r.baseCurrency)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {detail && (
-              <div className="daily-detail">
-                <p>
-                  {detail.day} · 总资产{" "}
-                  {money(detail.totalAssets, detail.baseCurrency)} · 负债{" "}
-                  {money(detail.liabilities, detail.baseCurrency)} · 净资产{" "}
-                  {money(detail.netAssets, detail.baseCurrency)}
-                </p>
-                {detail.assets.map((a) => (
-                  <div className="daily-change-row" key={a.holding.id}>
-                    <span>
-                      {a.holding.name}
-                      {a.removed ? " · 移除记录" : a.carried ? " · 沿用值" : ""}
-                    </span>
-                    <strong>
-                      {money(a.holding.marketValue, a.holding.currency)}
-                    </strong>
-                    <small>
-                      {a.changeKind === "added" ? "新增记录 · " : ""}
-                      较昨日{" "}
-                      {change(
-                        a.previousDayChange ?? null,
-                        detail.baseCurrency,
-                      )}{" "}
-                      ·
-                      {a.pctPointChange != null
-                        ? ` 占比 ${a.pctPointChange > 0 ? "+" : ""}${a.pctPointChange.toFixed(2)} 个百分点 · `
-                        : " "}
-                      确认于 {a.confirmedOn ?? "未知日期"}
-                      {a.holding.currency !== detail.baseCurrency
-                        ? ` · 汇率 ${a.holding.fxRateToBase ?? "待补"} · 观察于 ${a.holding.fxRateObservedOn || "未知日期"}`
-                        : ""}
-                    </small>
-                  </div>
-                ))}
-              </div>
-            )}
-          </details>
-          <details className="history-method">
-            <summary>统计口径</summary>
-            <p>
-              资产金额变化不等于投资收益；沿用值保留上次确认日期。记账时区：
-              {history?.timezone}
-            </p>
           </details>
         </>
       ) : (

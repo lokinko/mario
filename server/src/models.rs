@@ -522,6 +522,30 @@ pub struct AnalysisRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AnalysisSettings {
+    pub workflow: String,
+    pub use_memory: bool,
+    pub reflect: bool,
+    pub explore_alternatives: bool,
+    pub web_search: bool,
+    pub context_selection: ContextSelection,
+}
+
+impl Default for AnalysisSettings {
+    fn default() -> Self {
+        Self {
+            workflow: "deep".into(),
+            use_memory: true,
+            reflect: true,
+            explore_alternatives: true,
+            web_search: true,
+            context_selection: ContextSelection::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextSelection {
     #[serde(default = "enabled")]
