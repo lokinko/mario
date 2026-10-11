@@ -133,3 +133,37 @@ fn postgres_migrations_roll_back_failed_upgrade_and_allow_retry() {
     assert_eq!(db.snapshot().unwrap().profile.monthly_income, 12345.0);
     drop(db);
 }
+
+#[test]
+#[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
+fn postgres_migrates_version_one_holdings_and_persists_manual_unit_prices() {
+    let mut tenant = Tenant::legacy();
+    drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
+    tenant.sql("ALTER TABLE holdings DROP COLUMN cost_price; ALTER TABLE holdings DROP COLUMN quantity; ALTER TABLE holdings DROP COLUMN current_price; UPDATE data_revision SET schema_version=1 WHERE id=1;");
+    let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
+    let input: HoldingInput = serde_json::from_value(serde_json::json!({
+        "symbol":"IDX", "name":"手动持仓", "assetClass":"基金", "marketValue":0,
+        "costBasis":0, "costPrice":1.2345, "quantity":100.5, "currentPrice":1.4567,
+        "targetPct":0, "currency":"CNY", "valuationDate":"2026-01-01"
+    }))
+    .unwrap();
+    let snapshot = db.add_holding(&input).unwrap();
+    let holding = &snapshot.holdings[0];
+    assert_eq!(holding.cost_price, Some(1.2345));
+    assert_eq!(holding.quantity, Some(100.5));
+    assert_eq!(holding.current_price, Some(1.4567));
+    assert_eq!(holding.market_value, 100.5 * 1.4567);
+    assert_eq!(holding.cost_basis, 100.5 * 1.2345);
+    let exported = db.export_sync_data().unwrap();
+    db.import_sync_data(&exported).unwrap();
+    drop(db);
+    assert_eq!(
+        Database::postgres(&tenant.url, &tenant.user)
+            .unwrap()
+            .snapshot()
+            .unwrap()
+            .holdings[0]
+            .current_price,
+        Some(1.4567)
+    );
+}

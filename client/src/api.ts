@@ -57,9 +57,10 @@ import type {
 async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const dataWrite = isDataWrite(path, init?.method);
   const release = dataWrite ? markDataWrite() : () => {};
+  let authToken: string | undefined;
   try {
     if (dataWrite) await beforeDataWrite();
-    const authToken = webToken();
+    authToken = webToken();
     const baseRevision = dataRevision();
     const result = await requestJson<T>(`${serviceUrl()}${path}`, {
       ...init,
@@ -101,8 +102,11 @@ async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
     return result;
   } catch (error) {
-    if (error instanceof HttpError && error.status === 401)
-      window.dispatchEvent(new Event("mario:session-expired"));
+    if (error instanceof HttpError && error.status === 401) {
+      const currentToken = webToken();
+      if (!currentToken || currentToken === authToken)
+        window.dispatchEvent(new Event("mario:session-expired"));
+    }
     throw error;
   } finally {
     release();

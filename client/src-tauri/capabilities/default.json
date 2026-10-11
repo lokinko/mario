@@ -12,6 +12,19 @@
   ],
   "permissions": [
     "core:default",
-    "notification:default"
+    "notification:default",
+    "dialog:allow-save",
+    "fs:allow-write-file",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://*"
+        }
+      ]
+    }
   ]
 }

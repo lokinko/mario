@@ -60,6 +60,23 @@ const V3_HOLDING_COLUMNS: &[&str] = &[
     "updated_at",
 ];
 
+const V13_HOLDING_COLUMNS: &[&str] = &[
+    "id",
+    "symbol",
+    "name",
+    "asset_class",
+    "market_value",
+    "cost_basis",
+    "target_pct",
+    "currency",
+    "fx_rate_to_base",
+    "valuation_date",
+    "fx_rate_source",
+    "fx_rate_observed_on",
+    "created_at",
+    "updated_at",
+];
+
 const CURRENT_HOLDING_COLUMNS: &[&str] = &[
     "id",
     "symbol",
@@ -75,6 +92,9 @@ const CURRENT_HOLDING_COLUMNS: &[&str] = &[
     "fx_rate_observed_on",
     "created_at",
     "updated_at",
+    "cost_price",
+    "quantity",
+    "current_price",
 ];
 
 const LEGACY_EVENT_COLUMNS: &[&str] = &[
@@ -330,13 +350,16 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 13;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 14;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
 
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
+    if version <= 13 {
+        specs[2].columns = V13_HOLDING_COLUMNS;
+    }
     if version <= 12 {
         specs.pop();
     }
@@ -392,7 +415,7 @@ pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpe
             specs.truncate(16);
             Ok(specs)
         }
-        11 | 12 | SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
+        11 | 12 | 13 | SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
         _ => Err(AppError::Validation(format!(
             "不支持的数据快照版本 {version}"
         ))),

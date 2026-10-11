@@ -250,6 +250,17 @@ pub(super) fn validate_synced_holding_valuations(dataset: &SyncDataset) -> AppRe
         .iter()
         .find(|table| table.name == "holdings")
         .ok_or_else(|| AppError::Validation("数据快照缺少 holdings".into()))?;
+    if dataset.schema_version >= 14 {
+        for row in &holdings.rows {
+            super::portfolio::validate_detail_totals(
+                sync_optional_real(row, 14, "成本价")?,
+                sync_optional_real(row, 15, "持仓数")?,
+                sync_optional_real(row, 16, "当前价格")?,
+                sync_real(row, 4, "市值")?,
+                sync_real(row, 5, "总成本")?,
+            )?;
+        }
+    }
     let holdings_by_id = holdings
         .rows
         .iter()
@@ -320,6 +331,15 @@ pub(super) fn validate_synced_holding_valuations(dataset: &SyncDataset) -> AppRe
     for row in &checkins.rows {
         let record: PortfolioCheckInRecord = serde_json::from_str(sync_text(row, 1, "组合检查点")?)
             .map_err(|_| AppError::Validation("同步组合检查点格式无效".into()))?;
+        for holding in &record.holdings {
+            super::portfolio::validate_detail_totals(
+                holding.cost_price,
+                holding.quantity,
+                holding.current_price,
+                holding.market_value,
+                holding.cost_basis,
+            )?;
+        }
         for evidence in &record.holding_valuations {
             validate_stored_holding_valuation(evidence)?;
             let holding = record

@@ -69,7 +69,10 @@ it.each([
       />,
     );
     const cost = screen.getByRole("button", { name: "编辑 基金成本" });
-    expect(cost.textContent).toBe(formatMoney(costBasis, "USD"));
+    expect(cost.textContent).toBe("待补成本价");
+    expect(
+      screen.getByText(`总成本 ${formatMoney(costBasis, "USD")}`),
+    ).toBeTruthy();
     expect(
       screen.getByText(`${pnl > 0 ? "+" : ""}${formatMoney(pnl, "USD")}`),
     ).toBeTruthy();

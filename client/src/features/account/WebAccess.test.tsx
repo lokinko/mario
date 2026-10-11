@@ -8,7 +8,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { WebAccess } from "./WebAccess";
-import { webToken } from "../../lib/webSession";
+import { setWebToken, webToken } from "../../lib/webSession";
+import { useState } from "react";
 vi.mock("../../lib/service", async (original) => ({
   ...(await original<typeof import("../../lib/service")>()),
   isLocalDev: () => false,
@@ -50,12 +51,14 @@ it("registers and logs out through the mounted API and loads the mounted logo", 
   fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
   await screen.findByText("个人资产");
   expect(fetcher.mock.calls[0][0]).toBe("/mario/api/auth/register");
-  expect(sessionStorage.getItem("mario.session:/mario/api")).toBe(
-    "mounted-session",
-  );
+  expect(
+    JSON.parse(localStorage.getItem("mario.session:/mario/api")!).token,
+  ).toBe("mounted-session");
+  expect(sessionStorage.getItem("mario.session:/mario/api")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "退出账号" }));
   await screen.findByRole("button", { name: "创建账号" });
   expect(fetcher.mock.calls[1][0]).toBe("/mario/api/auth/logout");
+  expect(localStorage.getItem("mario.session:/mario/api")).toBeNull();
 });
 it("keeps data hidden until login, and revokes the session before disconnecting", async () => {
   const fetcher = vi
@@ -101,4 +104,97 @@ it("a revoked or expired session unmounts account data", async () => {
   fireEvent(window, new Event("mario:session-expired"));
   await screen.findByRole("button", { name: "登录" });
   expect(screen.queryByText("个人资产")).toBeNull();
+  expect(webToken()).toBeUndefined();
+  expect(localStorage.getItem("mario.session:/api")).toBeNull();
+  expect(sessionStorage.getItem("mario.session:/api")).toBeNull();
+});
+
+it("restores a login after remounting and reopening without logging in again", async () => {
+  const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(
+      new Response(JSON.stringify({ token: "saved-session", expiresAt })),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const { unmount } = render(
+    <WebAccess>
+      <p>个人资产</p>
+    </WebAccess>,
+  );
+  fireEvent.change(screen.getByLabelText("邮箱"), {
+    target: { value: "person@example.test" },
+  });
+  fireEvent.change(screen.getByLabelText("密码"), {
+    target: { value: "long-password-1234" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "登录" }));
+  await screen.findByText("个人资产");
+  expect(JSON.parse(localStorage.getItem("mario.session:/api")!)).toEqual({
+    token: "saved-session",
+    expiresAt,
+  });
+  unmount();
+  sessionStorage.clear();
+  render(
+    <WebAccess>
+      <p>个人资产</p>
+    </WebAccess>,
+  );
+  expect(screen.getByText("个人资产")).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("resets account data when another tab changes accounts or logs out", () => {
+  function AccountData() {
+    const [account] = useState(webToken);
+    return <p>{account}</p>;
+  }
+  setWebToken("account-a");
+  render(
+    <WebAccess>
+      <AccountData />
+    </WebAccess>,
+  );
+  expect(screen.getByText("account-a")).toBeTruthy();
+  setWebToken("account-b");
+  fireEvent(
+    window,
+    new StorageEvent("storage", {
+      key: "mario.session:/api",
+      storageArea: localStorage,
+    }),
+  );
+  expect(screen.queryByText("account-a")).toBeNull();
+  expect(screen.getByText("account-b")).toBeTruthy();
+  localStorage.clear();
+  fireEvent(window, new StorageEvent("storage", { storageArea: localStorage }));
+  expect(screen.queryByText("account-b")).toBeNull();
+  expect(screen.getByRole("button", { name: "登录" })).toBeTruthy();
+});
+
+it("does not clear a new login when an earlier logout finishes", async () => {
+  let complete!: (response: Response) => void;
+  const fetcher = vi.fn().mockImplementation(
+    () =>
+      new Promise<Response>((resolve) => {
+        complete = resolve;
+      }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  setWebToken("old-session");
+  render(
+    <WebAccess>
+      <p>个人资产</p>
+    </WebAccess>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "退出账号" }));
+  setWebToken("new-session");
+  fireEvent(window, new StorageEvent("storage", { storageArea: localStorage }));
+  complete(new Response('{"ok":true}'));
+  await waitFor(() => expect(webToken()).toBe("new-session"));
+  expect(screen.getByText("个人资产")).toBeTruthy();
+  expect(fetcher.mock.calls[0][1].headers.Authorization).toBe(
+    "Bearer old-session",
+  );
 });

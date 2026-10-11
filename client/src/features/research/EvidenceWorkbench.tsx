@@ -9,6 +9,7 @@ import {
 import type { ResearchEvidence } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
 import { LoadState } from "../../components/LoadState";
+import { saveAttachmentDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import type { View } from "../../app/navigation";
@@ -110,21 +111,7 @@ export function EvidenceWorkbench({
     setError("");
     try {
       const file = await getResearchAttachment(evidenceId, attachmentId);
-      const bytes = Uint8Array.from(atob(file.dataBase64), (c) =>
-        c.charCodeAt(0),
-      );
-      const browserURL = URL;
-      const url = browserURL.createObjectURL(
-        new Blob([bytes], { type: "application/octet-stream" }),
-      );
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = file.name;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      // Allow the browser to begin the download before releasing its URL.
-      window.setTimeout(() => browserURL.revokeObjectURL(url), 1000);
+      await saveAttachmentDownload(file);
     } catch (nextError) {
       setError(String(nextError));
     } finally {

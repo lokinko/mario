@@ -38,7 +38,7 @@ impl Database {
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on FROM holdings ORDER BY created_at")?;
+        let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on, cost_price, quantity, current_price FROM holdings ORDER BY created_at")?;
         let holdings = holding_stmt
             .query_map([], |row| {
                 Ok(Holding {
@@ -48,6 +48,9 @@ impl Database {
                     asset_class: row.get(3)?,
                     market_value: row.get(4)?,
                     cost_basis: row.get(5)?,
+                    cost_price: row.get(12)?,
+                    quantity: row.get(13)?,
+                    current_price: row.get(14)?,
                     target_pct: row.get(6)?,
                     currency: row.get(7)?,
                     fx_rate_to_base: row.get(8)?,
@@ -161,7 +164,8 @@ impl Database {
         let transaction = conn.transaction()?;
         let before = super::daily::prepare(&transaction)?;
         let base_currency = before.profile.base_currency.clone();
-        let input = super::fx::holding_input(&transaction, input, &base_currency)?;
+        let mut input = super::fx::holding_input(&transaction, input, &base_currency)?;
+        normalize_holding_details(&mut input)?;
         let input = &input;
         validate_holding(input, &base_currency)?;
         let fx_rate_to_base = if input.currency.eq_ignore_ascii_case(&base_currency) {
@@ -179,9 +183,9 @@ impl Database {
         )?;
         let now = Utc::now().to_rfc3339();
         transaction.execute(
-            "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
-            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, now],
+            "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on, created_at, updated_at, cost_price, quantity, current_price)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?14, ?15, ?16)",
+            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, now, input.cost_price, input.quantity, input.current_price],
         )?;
         super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
@@ -195,7 +199,8 @@ impl Database {
         let transaction = conn.transaction()?;
         let before = super::daily::prepare(&transaction)?;
         let base_currency = before.profile.base_currency.clone();
-        let input = super::fx::holding_input(&transaction, input, &base_currency)?;
+        let mut input = super::fx::holding_input(&transaction, input, &base_currency)?;
+        normalize_holding_details(&mut input)?;
         let input = &input;
         validate_holding(input, &base_currency)?;
         let fx_rate_to_base = if input.currency.eq_ignore_ascii_case(&base_currency) {
@@ -213,7 +218,7 @@ impl Database {
         )?;
         let previous = transaction
             .query_row(
-                "SELECT symbol, market_value, currency, valuation_date FROM holdings WHERE id=?1",
+                "SELECT symbol, market_value, currency, valuation_date, quantity, current_price FROM holdings WHERE id=?1",
                 [id],
                 |row| {
                     Ok((
@@ -221,6 +226,8 @@ impl Database {
                         row.get::<_, f64>(1)?,
                         row.get::<_, String>(2)?,
                         row.get::<_, String>(3)?,
+                        row.get::<_, Option<f64>>(4)?,
+                        row.get::<_, Option<f64>>(5)?,
                     ))
                 },
             )
@@ -229,8 +236,8 @@ impl Database {
             return Err(AppError::Validation("找不到要更新的资产".into()));
         };
         let affected = transaction.execute(
-            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, fx_rate_to_base=?9, valuation_date=?10, fx_rate_source=?11, fx_rate_observed_on=?12, updated_at=?13 WHERE id=?1",
-            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, Utc::now().to_rfc3339()],
+            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, fx_rate_to_base=?9, valuation_date=?10, fx_rate_source=?11, fx_rate_observed_on=?12, updated_at=?13, cost_price=?14, quantity=?15, current_price=?16 WHERE id=?1",
+            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, Utc::now().to_rfc3339(), input.cost_price, input.quantity, input.current_price],
         )?;
         if affected == 0 {
             return Err(AppError::Validation("找不到要更新的资产".into()));
@@ -238,7 +245,9 @@ impl Database {
         let valuation_changed = previous.0 != input.symbol.trim()
             || (previous.1 - input.market_value).abs() > 0.005
             || !previous.2.eq_ignore_ascii_case(input.currency.trim())
-            || previous.3 != input.valuation_date.trim();
+            || previous.3 != input.valuation_date.trim()
+            || previous.4 != input.quantity
+            || previous.5 != input.current_price;
         if valuation_changed {
             transaction.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
         }
@@ -276,15 +285,30 @@ impl Database {
                 quote.currency, holding_currency
             )));
         }
+        let holding = before
+            .holdings
+            .iter()
+            .find(|holding| holding.id == id)
+            .ok_or_else(|| AppError::Validation("找不到要估值的资产".into()))?;
+        validate_detail_totals(
+            holding.cost_price,
+            Some(quantity),
+            Some(quote.close),
+            market_value,
+            holding
+                .cost_price
+                .map_or(holding.cost_basis, |cost| cost * quantity),
+        )?;
         transaction.execute(
             "UPDATE holdings
              SET symbol=?2, market_value=?3, valuation_date=?4,
                  fx_rate_to_base=CASE WHEN valuation_date=?4 THEN fx_rate_to_base ELSE NULL END,
                  fx_rate_source=CASE WHEN valuation_date=?4 THEN fx_rate_source ELSE '' END,
                  fx_rate_observed_on=CASE WHEN valuation_date=?4 THEN fx_rate_observed_on ELSE '' END,
-                 updated_at=?5
+                 updated_at=?5, quantity=?6, current_price=?7,
+                 cost_basis=CASE WHEN cost_price IS NOT NULL THEN cost_price * ?6 ELSE cost_basis END
              WHERE id=?1",
-            params![id, quote.symbol.trim(), market_value, quote.requested_on, captured_at],
+            params![id, quote.symbol.trim(), market_value, quote.requested_on, captured_at, quantity, quote.close],
         )?;
         transaction.execute(
             "INSERT INTO holding_valuations (
@@ -378,4 +402,83 @@ impl Database {
         }
         self.snapshot()
     }
+}
+
+fn normalize_holding_details(input: &mut HoldingInput) -> AppResult<()> {
+    validate_non_negative(
+        &input
+            .cost_price
+            .into_iter()
+            .chain(input.quantity)
+            .chain(input.current_price)
+            .collect::<Vec<_>>(),
+    )?;
+    if input
+        .cost_price
+        .into_iter()
+        .chain(input.quantity)
+        .chain(input.current_price)
+        .any(|value| value > 1e15)
+    {
+        return Err(AppError::Validation(
+            "成本价、持仓数和当前价格超过允许范围".into(),
+        ));
+    }
+    if input.quantity.is_some() != input.current_price.is_some() {
+        return Err(AppError::Validation("持仓数和当前价格需一起填写".into()));
+    }
+    if input.cost_price.is_some() && input.quantity.is_none() {
+        return Err(AppError::Validation(
+            "填写成本价时请补充持仓数和当前价格".into(),
+        ));
+    }
+    if let (Some(quantity), Some(price)) = (input.quantity, input.current_price) {
+        input.market_value = quantity * price;
+        if let Some(cost) = input.cost_price {
+            input.cost_basis = quantity * cost;
+        }
+    }
+    validate_detail_totals(
+        input.cost_price,
+        input.quantity,
+        input.current_price,
+        input.market_value,
+        input.cost_basis,
+    )?;
+    if input.cost_basis > 1e15 {
+        return Err(AppError::Validation("持仓总成本超过允许范围".into()));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_detail_totals(
+    cost_price: Option<f64>,
+    quantity: Option<f64>,
+    current_price: Option<f64>,
+    market_value: f64,
+    cost_basis: f64,
+) -> AppResult<()> {
+    let values = cost_price.into_iter().chain(quantity).chain(current_price);
+    if values
+        .clone()
+        .any(|value| !value.is_finite() || !(0.0..=1e15).contains(&value))
+        || quantity.is_some() != current_price.is_some()
+        || (cost_price.is_some() && quantity.is_none())
+    {
+        return Err(AppError::Validation("持仓数量和价格无效或不完整".into()));
+    }
+    if let (Some(quantity), Some(price)) = (quantity, current_price) {
+        let matches = |actual: f64, expected: f64| {
+            actual.is_finite()
+                && expected.is_finite()
+                && expected <= 1e15
+                && (actual - expected).abs() <= 0.005_f64.max(expected.abs() * 1e-10)
+        };
+        if !matches(market_value, quantity * price)
+            || cost_price.is_some_and(|cost| !matches(cost_basis, quantity * cost))
+        {
+            return Err(AppError::Validation("持仓总金额与数量、价格不一致".into()));
+        }
+    }
+    Ok(())
 }

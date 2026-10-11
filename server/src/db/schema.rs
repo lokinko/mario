@@ -4,7 +4,7 @@ use crate::error::AppResult;
 
 // Bump whenever hosted tables/columns change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 1;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 2;
 
 // Keep legacy migration order intact: opening an old database remains idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -245,6 +245,9 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
     )?;
     ensure_column(connection, "decision_reviews", "content", "TEXT")?;
     ensure_column(connection, "holdings", "fx_rate_to_base", "REAL")?;
+    ensure_column(connection, "holdings", "cost_price", "REAL")?;
+    ensure_column(connection, "holdings", "quantity", "REAL")?;
+    ensure_column(connection, "holdings", "current_price", "REAL")?;
     ensure_column(
         connection,
         "holdings",

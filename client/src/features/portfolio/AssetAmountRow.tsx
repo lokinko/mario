@@ -115,6 +115,53 @@ export function AssetAmountRow({
           <Trash2 size={14} /> 删除
         </button>
       </div>
+      {investment && (
+        <>
+          <div className="asset-cost">
+            <span className="asset-column-label">成本价</span>
+            <button
+              className="text-button"
+              disabled={busy || disabled}
+              onClick={onEdit}
+              aria-label={`编辑 ${holding.name}成本`}
+              title="点击编辑成本价"
+            >
+              {holding.costPrice != null
+                ? `${holding.costPrice} ${holding.currency}`
+                : "待补成本价"}
+            </button>
+            <small>
+              {holding.costBasis > 0
+                ? `总成本 ${formatMoney(holding.costBasis, holding.currency)}`
+                : "待补成本"}
+            </small>
+          </div>
+          <div className="asset-cost">
+            <span className="asset-column-label">持仓数</span>
+            <button
+              className="text-button"
+              disabled={busy || disabled}
+              onClick={onEdit}
+              aria-label={`编辑 ${holding.name}持仓数`}
+            >
+              {holding.quantity ?? "待补数量"}
+            </button>
+          </div>
+          <div className="asset-cost">
+            <span className="asset-column-label">当前价格</span>
+            <button
+              className="text-button"
+              disabled={busy || disabled}
+              onClick={onEdit}
+              aria-label={`编辑 ${holding.name}当前价格`}
+            >
+              {holding.currentPrice != null
+                ? `${holding.currentPrice} ${holding.currency}`
+                : "待补价格"}
+            </button>
+          </div>
+        </>
+      )}
       <div className="asset-amount-editor">
         {investment && <span className="asset-column-label">当前市值</span>}
         <label>
@@ -124,9 +171,17 @@ export function AssetAmountRow({
             type="text"
             inputMode="decimal"
             aria-label={`${holding.name}金额`}
-            title="回车或离开输入框保存"
+            title={
+              holding.quantity != null
+                ? "根据持仓数和当前价格自动计算"
+                : "回车或离开输入框保存"
+            }
             value={draft}
-            readOnly={busy || disabled}
+            readOnly={
+              busy ||
+              disabled ||
+              (holding.quantity != null && holding.currentPrice != null)
+            }
             onChange={(e) => {
               setDraft(e.target.value);
               dirty.current = true;
@@ -179,20 +234,6 @@ export function AssetAmountRow({
       </div>
       {investment && (
         <>
-          <div className="asset-cost">
-            <span className="asset-column-label">持仓成本</span>
-            <button
-              className="text-button"
-              disabled={busy || disabled}
-              onClick={onEdit}
-              aria-label={`编辑 ${holding.name}成本`}
-              title="点击编辑持仓成本"
-            >
-              {holding.costBasis > 0
-                ? formatMoney(holding.costBasis, holding.currency)
-                : "待补成本"}
-            </button>
-          </div>
           <div className="asset-pnl">
             <span className="asset-column-label">浮动盈亏</span>
             <span className={pnl == null ? "" : pnl >= 0 ? "gain" : "loss"}>

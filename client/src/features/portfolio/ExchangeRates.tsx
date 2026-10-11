@@ -1,3 +1,4 @@
+import { ExternalLink } from "../../components/ExternalLink";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import { useState } from "react";
 import {
@@ -158,13 +159,13 @@ export function ExchangeRates({
           </div>
           <p className="section-intro">
             参考汇率按实际发布日标注，周末和节假日沿用最近工作日。
-            <a
+            <ExternalLink
               href="https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html"
               target="_blank"
               rel="noreferrer"
             >
               查看来源
-            </a>
+            </ExternalLink>
           </p>
         </>
       )}

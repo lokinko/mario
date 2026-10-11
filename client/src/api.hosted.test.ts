@@ -9,7 +9,7 @@ import {
   commitPortfolioEventImport,
 } from "./api";
 import { acceptRevision, dataRevision } from "./lib/service";
-import { setWebToken } from "./lib/webSession";
+import { setWebToken, webToken } from "./lib/webSession";
 import { blockStaleWrites } from "./lib/syncEvents";
 import type { FinancialProfile } from "./types";
 import type { AnalysisRequest } from "./types";
@@ -24,7 +24,78 @@ beforeEach(() => {
 });
 afterEach(() => {
   sessionStorage.clear();
+  localStorage.clear();
   vi.unstubAllGlobals();
+});
+
+it("keeps the session after a temporary server failure", async () => {
+  const expired = vi.fn();
+  window.addEventListener("mario:session-expired", expired);
+  try {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          response({ error: "database unavailable" }, "", 500),
+        ),
+    );
+    await expect(getSnapshot()).rejects.toThrow("database unavailable");
+    expect(expired).not.toHaveBeenCalled();
+    expect(webToken()).toBe("test-session");
+  } finally {
+    window.removeEventListener("mario:session-expired", expired);
+  }
+});
+
+it("ignores a late 401 from an old session but expires the current session", async () => {
+  const expired = vi.fn();
+  window.addEventListener("mario:session-expired", expired);
+  try {
+    let complete!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            complete = resolve;
+          }),
+      ),
+    );
+    const pending = getSnapshot();
+    setWebToken("new-session");
+    complete(response({ error: "expired" }, "", 401));
+    await expect(pending).rejects.toThrow("expired");
+    expect(expired).not.toHaveBeenCalled();
+    expect(webToken()).toBe("new-session");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({ error: "expired" }, "", 401)),
+    );
+    await expect(getSnapshot()).rejects.toThrow("expired");
+    expect(expired).toHaveBeenCalledTimes(1);
+  } finally {
+    window.removeEventListener("mario:session-expired", expired);
+  }
+});
+
+it("returns to login if the token expires while a request is in flight", async () => {
+  const expired = vi.fn();
+  window.addEventListener("mario:session-expired", expired);
+  try {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => {
+        setWebToken("test-session", 0);
+        return response({ error: "expired" }, "", 401);
+      }),
+    );
+    await expect(getSnapshot()).rejects.toThrow("expired");
+    expect(expired).toHaveBeenCalledTimes(1);
+    expect(webToken()).toBeUndefined();
+  } finally {
+    window.removeEventListener("mario:session-expired", expired);
+  }
 });
 const response = (body: unknown, revision: string, status = 200) =>
   new Response(JSON.stringify(body), {

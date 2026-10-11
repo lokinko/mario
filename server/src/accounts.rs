@@ -149,7 +149,10 @@ impl Accounts {
                 params![digest(token), chrono::Utc::now().timestamp()],
                 |r| r.get(0),
             )
-            .map_err(|_| AppError::Auth("请重新登录".into()))
+            .map_err(|error| match error {
+                rusqlite::Error::QueryReturnedNoRows => AppError::Auth("请重新登录".into()),
+                error => AppError::Database(error),
+            })
     }
     pub fn logout(&self, token: &str) -> AppResult<()> {
         self.conn()?
@@ -200,4 +203,72 @@ fn validate(input: &Credentials) -> AppResult<String> {
         ));
     }
     Ok(email)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{http::StatusCode, response::IntoResponse};
+
+    fn accounts() -> Accounts {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("CREATE TABLE sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,expires_at BIGINT NOT NULL);").unwrap();
+        Accounts {
+            connection: Mutex::new(connection),
+            url: String::new(),
+            dummy_hash: String::new(),
+        }
+    }
+
+    #[test]
+    fn valid_sessions_survive_repeated_checks_and_revoked_or_expired_sessions_return_401() {
+        let accounts = accounts();
+        let session = accounts
+            .session(&accounts.conn().unwrap(), "user", "user@example.test")
+            .unwrap();
+        for _ in 0..2 {
+            assert_eq!(accounts.authenticate(&session.token).unwrap(), "user");
+        }
+        accounts.logout(&session.token).unwrap();
+        assert_eq!(
+            accounts
+                .authenticate(&session.token)
+                .unwrap_err()
+                .into_response()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        accounts
+            .conn()
+            .unwrap()
+            .execute(
+                "INSERT INTO sessions VALUES (?1,'user',0)",
+                [digest("expired")],
+            )
+            .unwrap();
+        assert_eq!(
+            accounts
+                .authenticate("expired")
+                .unwrap_err()
+                .into_response()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[test]
+    fn session_query_failures_return_500_instead_of_invalidating_login() {
+        let accounts = accounts();
+        accounts
+            .conn()
+            .unwrap()
+            .execute_batch("DROP TABLE sessions")
+            .unwrap();
+        let error = accounts.authenticate("valid-token").unwrap_err();
+        assert!(matches!(error, AppError::Database(_)));
+        assert_eq!(
+            error.into_response().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
 }

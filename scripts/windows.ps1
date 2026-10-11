@@ -16,5 +16,9 @@ if ($Mode -eq "build") {
   $installers = Get-ChildItem "client/src-tauri/target/release/bundle/nsis/*-setup.exe"
   if (-not $installers) { throw "The Windows installer was not generated." }
   $installers | Copy-Item -Destination outputs -Force
+  foreach ($installer in $installers) {
+    & node scripts/record-client-build.mjs windows "outputs/$($installer.Name)"
+    if ($LASTEXITCODE -ne 0) { throw "Windows build manifest failed." }
+  }
   Write-Host "Windows installers are ready in outputs/."
 }

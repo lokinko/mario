@@ -1,4 +1,6 @@
+import { ExternalLink } from "../../components/ExternalLink";
 import { useEffect, useRef, useState } from "react";
+import { saveAttachmentDownload } from "../../lib/download";
 import { getResearchAttachment } from "../../api";
 import type {
   AnalysisEvidenceReference,
@@ -215,19 +217,7 @@ export function SourceDetail({
     setError("");
     try {
       const file = await getResearchAttachment(source.id, id);
-      const bytes = Uint8Array.from(atob(file.dataBase64), (c) =>
-        c.charCodeAt(0),
-      );
-      const objectUrl = URL.createObjectURL(
-        new Blob([bytes], { type: "application/octet-stream" }),
-      );
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = file.name;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      await saveAttachmentDownload(file);
     } catch (error) {
       setError(String(error));
     } finally {
@@ -278,9 +268,9 @@ export function SourceDetail({
       </div>
       {source.notes && <p className="source-qualification">{source.notes}</p>}
       {url && (
-        <a href={url} target="_blank" rel="noreferrer">
+        <ExternalLink href={url} target="_blank" rel="noreferrer">
           打开来源网页：{source.title || "原始来源"}
-        </a>
+        </ExternalLink>
       )}
       {!!source.attachments?.length && (
         <ul aria-label="原始附件">

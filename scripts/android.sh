@@ -109,6 +109,7 @@ case "$action" in
       --out "$destination_apk" \
       "$aligned_apk"
     "$build_tools/apksigner" verify "$destination_apk"
+    node "$root_dir/scripts/record-client-build.mjs" android "outputs/$(basename "$destination_apk")"
     echo "Prepared APK: $destination_apk"
     ;;
   *)

@@ -4,6 +4,7 @@ import { exportData, importData } from "../../api";
 import { PageHeader } from "../../components/PageHeader";
 import type { SyncState } from "../../lib/autoSync";
 import { serviceUrl } from "../../lib/service";
+import { saveTextDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
 export function ServerData({
   flash,
@@ -73,16 +74,11 @@ export function ServerData({
               setError("");
               try {
                 const data = await exportData();
-                const url = URL.createObjectURL(
-                  new Blob([JSON.stringify(data)], {
-                    type: "application/json",
-                  }),
+                await saveTextDownload(
+                  `mario-data-${localDateValue(new Date())}.json`,
+                  JSON.stringify(data),
+                  "application/json",
                 );
-                const link = document.createElement("a");
-                link.href = url;
-                link.download = `mario-data-${localDateValue(new Date())}.json`;
-                link.click();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
               } catch (e) {
                 setError(String(e));
               } finally {

@@ -5085,8 +5085,8 @@ button:focus-visible {
 .asset-amount-row.investment-amount-row {
   display: grid;
   grid-template-columns:
-    minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1fr)
-    minmax(0, 1fr);
+    minmax(0, 1.3fr) repeat(3, minmax(0, 0.8fr))
+    minmax(0, 1.2fr) minmax(0, 1fr);
   gap: 16px;
 }
 .investment-amount-head {
@@ -5122,6 +5122,12 @@ button:focus-visible {
 .asset-pnl > span:last-child {
   display: block;
   padding-top: 10px;
+}
+.asset-cost > small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 6px;
 }
 .asset-pnl small {
   display: block;
@@ -5347,8 +5353,7 @@ button:focus-visible {
     grid-column: 1 / -1;
   }
   .investment-amount-row .asset-amount-editor {
-    grid-column: 1;
-    grid-row: 2 / 4;
+    grid-column: auto;
   }
   .asset-column-label {
     display: block;

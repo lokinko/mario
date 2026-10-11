@@ -536,9 +536,28 @@ impl Database {
                 "该资产已更新，请核对最新金额后重试；输入已保留".into(),
             ));
         }
+        if holding.quantity == Some(0.0) && input.amount > 0.0 {
+            return Err(AppError::Validation(
+                "持仓数为 0，请先更新持仓数和当前价格".into(),
+            ));
+        }
+        let current_price = holding.quantity.and_then(|quantity| {
+            if quantity > 0.0 {
+                Some(input.amount / quantity)
+            } else {
+                holding.current_price
+            }
+        });
+        super::portfolio::validate_detail_totals(
+            holding.cost_price,
+            holding.quantity,
+            current_price,
+            input.amount,
+            holding.cost_basis,
+        )?;
         // FX provenance has its own observation date; manual amounts do not refresh it.
         tx.execute(
-            "UPDATE holdings SET market_value=?2, valuation_date=?3, updated_at=?4 WHERE id=?1",
+            "UPDATE holdings SET market_value=?2, valuation_date=?3, updated_at=?4, current_price=CASE WHEN quantity > 0 THEN ?2 / quantity WHEN quantity = 0 THEN current_price ELSE NULL END WHERE id=?1",
             params![id, input.amount, day, Utc::now().to_rfc3339()],
         )?;
         tx.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
@@ -718,6 +737,13 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
             {
                 let h = entry.holding.unwrap();
                 validate_non_negative(&[h.market_value, h.cost_basis])?;
+                super::portfolio::validate_detail_totals(
+                    h.cost_price,
+                    h.quantity,
+                    h.current_price,
+                    h.market_value,
+                    h.cost_basis,
+                )?;
                 validate_currency(&h.currency)?;
                 if h.fx_rate_to_base
                     .is_some_and(|v| !v.is_finite() || v <= 0.0 || v > 1e15)
@@ -1099,6 +1125,7 @@ mod tests {
         db.add_holding(&input("银行", 100.0)).unwrap();
         let data = db.export_sync_data().unwrap();
         let mut legacy = data.clone();
+        super::super::tests::strip_holding_details_for_legacy(&mut legacy);
         legacy.schema_version = 9;
         let legacy_reviews = legacy
             .tables

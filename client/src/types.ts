@@ -29,6 +29,9 @@ export interface Holding {
   assetClass: "现金" | "债券" | "股票" | "基金" | "黄金" | "其他";
   marketValue: number;
   costBasis: number;
+  costPrice?: number | null;
+  quantity?: number | null;
+  currentPrice?: number | null;
   targetPct: number;
   currency: string;
   fxRateToBase: number | null;

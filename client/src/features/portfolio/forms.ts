@@ -5,6 +5,7 @@ import type {
   PortfolioEventInput,
   PortfolioEventType,
 } from "../../types";
+import { saveTextDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
 
 export const emptyProfile: FinancialProfile = {
@@ -26,6 +27,9 @@ export function emptyHolding(baseCurrency = "CNY"): Omit<Holding, "id"> {
     assetClass: "基金",
     marketValue: 0,
     costBasis: 0,
+    costPrice: null,
+    quantity: null,
+    currentPrice: null,
     targetPct: 0,
     currency: baseCurrency,
     fxRateToBase: null,
@@ -64,14 +68,11 @@ export const portfolioEventLabels: Record<PortfolioEventType, string> = {
 
 export function downloadPortfolioEventCsvTemplate(baseCurrency: string) {
   const portfolioEventCsvTemplate = `\ufeffsource,external_id,event_type,occurred_on,amount,currency,asset_name,note\n券商账户,trade-001,buy,${localDateValue(new Date())},10000,${baseCurrency},全球指数基金,定投买入\n`;
-  const url = URL.createObjectURL(
-    new Blob([portfolioEventCsvTemplate], { type: "text/csv;charset=utf-8" }),
+  return saveTextDownload(
+    "mario_组合流水模板.csv",
+    portfolioEventCsvTemplate,
+    "text/csv;charset=utf-8",
   );
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "mario_组合流水模板.csv";
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 export function nextCalendarDate(value: string) {

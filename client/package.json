@@ -9,6 +9,7 @@
     "test": "vitest run",
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:native": "tsc && vite build --mode native",
     "preview": "vite preview",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
@@ -16,7 +17,10 @@
   },
   "dependencies": {
     "@tauri-apps/api": "2.8.0",
+    "@tauri-apps/plugin-dialog": "2.4.0",
+    "@tauri-apps/plugin-fs": "2.4.2",
     "@tauri-apps/plugin-notification": "2.3.3",
+    "@tauri-apps/plugin-opener": "2.5.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

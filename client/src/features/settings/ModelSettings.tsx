@@ -1,3 +1,4 @@
+import { ExternalLink } from "../../components/ExternalLink";
 import { isLocalDev } from "../../lib/service";
 import { useEffect, useState } from "react";
 import {
@@ -397,29 +398,29 @@ export function ModelSettings({
             账户条款为准。
           </p>
           <p>
-            <a
+            <ExternalLink
               href="https://twelvedata.com/docs/market-data/time-series"
               target="_blank"
               rel="noreferrer"
             >
               接口方法
-            </a>{" "}
+            </ExternalLink>{" "}
             ·{" "}
-            <a
+            <ExternalLink
               href="https://twelvedata.com/pricing"
               target="_blank"
               rel="noreferrer"
             >
               额度
-            </a>{" "}
+            </ExternalLink>{" "}
             ·{" "}
-            <a
+            <ExternalLink
               href="https://twelvedata.com/terms"
               target="_blank"
               rel="noreferrer"
             >
               许可条款
-            </a>
+            </ExternalLink>
           </p>
         </details>
         {marketError && (

@@ -120,7 +120,7 @@ it("preserves the user's entered balance on failure and keeps existing cost and 
   mount({ ...snapshot, holdings: [holding] });
   fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
   fireEvent.click(screen.getByRole("button", { name: "编辑 已有基金" }));
-  fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
+  fireEvent.change(screen.getByRole("spinbutton", { name: "当前市值 CNY" }), {
     target: { value: "1200" },
   });
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
@@ -227,7 +227,7 @@ it("records investment cost in the holding's currency and shows the saved profit
   expect(screen.getByText("待补成本")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金成本" }));
   fireEvent.change(
-    screen.getByRole("spinbutton", { name: "持仓成本（选填） USD" }),
+    screen.getByRole("spinbutton", { name: "持仓总成本（选填） USD" }),
     { target: { value: "800" } },
   );
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
@@ -246,7 +246,8 @@ it("records investment cost in the holding's currency and shows the saved profit
   );
   expect(
     screen.getByRole("button", { name: "编辑 指数基金成本" }).textContent,
-  ).toBe(formatMoney(800, "USD"));
+  ).toBe("待补成本价");
+  expect(screen.getByText(`总成本 ${formatMoney(800, "USD")}`)).toBeTruthy();
   expect(screen.getByText("+25.0%")).toBeTruthy();
   expect(screen.queryByText("待补成本")).toBeNull();
 });
@@ -259,13 +260,13 @@ it("includes cost when adding an investment and keeps it optional", async () => 
   fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
     target: { value: "新基金" },
   });
-  fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
+  fireEvent.change(screen.getByRole("spinbutton", { name: "当前市值 CNY" }), {
     target: { value: "1000" },
   });
   const save = screen.getByRole("button", { name: "保存这笔资产" });
   expect((save as HTMLButtonElement).disabled).toBe(false);
   fireEvent.change(
-    screen.getByRole("spinbutton", { name: "持仓成本（选填） CNY" }),
+    screen.getByRole("spinbutton", { name: "持仓总成本（选填） CNY" }),
     { target: { value: "1200" } },
   );
   fireEvent.click(save);
@@ -284,7 +285,9 @@ it("blocks negative or excessive costs, then allows clearing an unrecorded cost"
   vi.mocked(api.updateHolding).mockResolvedValue(snapshot);
   mount({ ...snapshot, holdings: [{ ...investment, costBasis: 800 }] });
   fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金成本" }));
-  const cost = screen.getByRole("spinbutton", { name: "持仓成本（选填） CNY" });
+  const cost = screen.getByRole("spinbutton", {
+    name: "持仓总成本（选填） CNY",
+  });
   const save = screen.getByRole("button", { name: "保存这笔资产" });
   expect((cost as HTMLInputElement).value).toBe("800");
   for (const value of ["-1", "1000000000000001"]) {
@@ -308,7 +311,9 @@ it("preserves an edited cost after a save failure", async () => {
   vi.mocked(api.updateHolding).mockRejectedValue(new Error("保存失败"));
   mount({ ...snapshot, holdings: [investment] });
   fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金成本" }));
-  const cost = screen.getByRole("spinbutton", { name: "持仓成本（选填） CNY" });
+  const cost = screen.getByRole("spinbutton", {
+    name: "持仓总成本（选填） CNY",
+  });
   fireEvent.change(cost, { target: { value: "800" } });
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
   await screen.findByRole("alert");
@@ -396,4 +401,141 @@ it("also supports deleting cash and blocks duplicate actions during deletion", a
   fireEvent.click(remove);
   expect(api.deleteHolding).toHaveBeenCalledExactlyOnceWith("cash");
   await act(async () => resolve(snapshot));
+});
+
+it("saves manually entered unit prices and fractional quantities with calculated totals", async () => {
+  vi.mocked(api.saveHolding).mockResolvedValue(snapshot);
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
+  fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
+    target: { value: "新基金" },
+  });
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "成本价（选填） CNY" }),
+    { target: { value: "8" } },
+  );
+  const save = screen.getByRole("button", {
+    name: "保存这笔资产",
+  }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "持仓数 份 / 股 / 单位" }),
+    { target: { value: "100.5" } },
+  );
+  expect(save.disabled).toBe(true);
+  fireEvent.change(screen.getByRole("spinbutton", { name: "当前价格 CNY" }), {
+    target: { value: "10" },
+  });
+  const value = screen.getByRole("spinbutton", {
+    name: "当前市值 CNY",
+  }) as HTMLInputElement;
+  expect(value.value).toBe("1005");
+  expect(value.readOnly).toBe(true);
+  expect(save.disabled).toBe(false);
+  fireEvent.click(save);
+  await waitFor(() =>
+    expect(api.saveHolding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        costPrice: 8,
+        quantity: 100.5,
+        currentPrice: 10,
+        costBasis: 804,
+        marketValue: 1005,
+      }),
+    ),
+  );
+});
+
+it("keeps detailed inputs on failure and validates zero values, missing prices and total limits", async () => {
+  const detailed = {
+    ...investment,
+    costPrice: 8,
+    quantity: 100,
+    currentPrice: 10,
+    costBasis: 800,
+  };
+  vi.mocked(api.updateHolding).mockRejectedValue(new Error("保存失败"));
+  mount({ ...snapshot, holdings: [detailed] });
+  fireEvent.click(
+    screen.getByRole("button", { name: "编辑 指数基金当前价格" }),
+  );
+  const price = screen.getByRole("spinbutton", { name: "当前价格 CNY" });
+  const quantity = screen.getByRole("spinbutton", {
+    name: "持仓数 份 / 股 / 单位",
+  });
+  const save = screen.getByRole("button", {
+    name: "保存这笔资产",
+  }) as HTMLButtonElement;
+  for (const value of ["-1", "", "1000000000000000"]) {
+    fireEvent.change(price, { target: { value } });
+    expect(save.disabled).toBe(true);
+    fireEvent.submit(save.closest("form")!);
+    expect(api.updateHolding).not.toHaveBeenCalled();
+  }
+  fireEvent.change(price, { target: { value: "0" } });
+  fireEvent.change(quantity, { target: { value: "0" } });
+  expect(save.disabled).toBe(false);
+  fireEvent.click(save);
+  await screen.findByRole("alert");
+  expect((price as HTMLInputElement).value).toBe("0");
+  expect((quantity as HTMLInputElement).value).toBe("0");
+  expect(api.updateHolding).toHaveBeenCalledWith(
+    investment.id,
+    expect.objectContaining({
+      currentPrice: 0,
+      quantity: 0,
+      marketValue: 0,
+      costBasis: 0,
+    }),
+  );
+});
+
+it("shows and saves the same total when returning from detailed prices to legacy amounts", async () => {
+  vi.mocked(api.updateHolding).mockResolvedValue(snapshot);
+  mount({
+    ...snapshot,
+    holdings: [
+      {
+        ...investment,
+        quantity: 100,
+        costPrice: 8,
+        currentPrice: 10,
+        costBasis: 800,
+      },
+    ],
+  });
+  fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "当前价格 CNY" }), {
+    target: { value: "12" },
+  });
+  for (const name of [
+    "成本价（选填） CNY",
+    "持仓数 份 / 股 / 单位",
+    "当前价格 CNY",
+  ]) {
+    fireEvent.change(screen.getByRole("spinbutton", { name }), {
+      target: { value: "" },
+    });
+  }
+  expect(
+    (
+      screen.getByRole("spinbutton", {
+        name: "当前市值 CNY",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("1200");
+  fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
+  await waitFor(() =>
+    expect(api.updateHolding).toHaveBeenCalledWith(
+      investment.id,
+      expect.objectContaining({
+        marketValue: 1200,
+        costBasis: 800,
+        costPrice: null,
+        quantity: null,
+        currentPrice: null,
+      }),
+    ),
+  );
 });

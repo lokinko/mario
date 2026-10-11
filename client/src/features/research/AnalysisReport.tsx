@@ -1,3 +1,4 @@
+import { ExternalLink } from "../../components/ExternalLink";
 import {
   AlertTriangle,
   BrainCircuit,
@@ -371,7 +372,7 @@ export function ClaimList({
             {claim.evidenceIds.map((id) => {
               const source = evidenceById.get(id);
               return source ? (
-                <a
+                <ExternalLink
                   key={id}
                   href={source.sourceUrl}
                   target="_blank"
@@ -380,7 +381,7 @@ export function ClaimList({
                 >
                   {source.title} · {source.sourceTier} ·{" "}
                   {source.asOfDate || "资料日期未提供"}
-                </a>
+                </ExternalLink>
               ) : (
                 <em key={id}>证据 {id}</em>
               );
@@ -641,14 +642,14 @@ export function SourceEvidence({
         </span>
         <strong>
           {safeUrl ? (
-            <a
+            <ExternalLink
               href={safeUrl}
               target="_blank"
               rel="noreferrer"
               onClick={(event) => event.stopPropagation()}
             >
               {source.title} ↗
-            </a>
+            </ExternalLink>
           ) : (
             source.title
           )}
@@ -680,9 +681,9 @@ export function SourceEvidence({
         资料日期不代表实时行情。摘要与原文的一致性仍需核对。
       </p>
       {safeUrl ? (
-        <a href={safeUrl} target="_blank" rel="noreferrer">
+        <ExternalLink href={safeUrl} target="_blank" rel="noreferrer">
           打开原始来源 ↗
-        </a>
+        </ExternalLink>
       ) : (
         <span>来源链接不可用</span>
       )}

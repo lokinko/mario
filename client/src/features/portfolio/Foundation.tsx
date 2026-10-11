@@ -1,3 +1,4 @@
+import { ExternalLink } from "../../components/ExternalLink";
 import { useRef, useState } from "react";
 import {
   CircleDollarSign,
@@ -33,6 +34,11 @@ import type { FoundationSection } from "../../app/navigation";
 import { NumberField } from "../../components/NumberField";
 import { localDateValue } from "../../lib/dates";
 import { emptyProfile, emptyHolding, emptyGoal } from "./forms";
+import {
+  HoldingFields,
+  hasHoldingDetails,
+  validHoldingDetails,
+} from "./HoldingFields";
 import { fxSourceLabel, holdingValueInBase } from "./valuation";
 import { formatMoney } from "../../lib/format";
 
@@ -68,7 +74,11 @@ export function Foundation({
     !holdingBusy &&
     Boolean(holding.name.trim()) &&
     Number.isFinite(holding.marketValue) &&
-    Boolean(holdingAmount.trim()) &&
+    (Boolean(holdingAmount.trim()) || hasHoldingDetails(holding)) &&
+    validHoldingDetails(holding) &&
+    Number.isFinite(holding.costBasis) &&
+    holding.costBasis >= 0 &&
+    holding.costBasis <= 1e15 &&
     holding.marketValue >= 0 &&
     holding.marketValue <= 1e15 &&
     Boolean(holding.valuationDate) &&
@@ -141,8 +151,10 @@ export function Foundation({
     setEditingHoldingId(id);
 
     setValuationQuantity(
-      snapshot.holdingValuations.find((value) => value.holdingId === id)
-        ?.quantity ?? 0,
+      values.quantity ??
+        snapshot.holdingValuations.find((value) => value.holdingId === id)
+          ?.quantity ??
+        0,
     );
     setValuationError("");
   };
@@ -276,7 +288,9 @@ export function Foundation({
             <h2>{editingHoldingId ? "修改资产" : "管理资产组合"}</h2>
           </div>
         </div>
-        <p className="holding-hint">名称、市值必填。</p>
+        <p className="holding-hint">
+          成本价、持仓数和当前价格可手动输入，市值和总成本自动计算。旧记录可暂时保留总金额。
+        </p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -300,6 +314,15 @@ export function Foundation({
                   placeholder="例如：宽基指数基金"
                 />
               </label>
+              {holding.assetClass !== "现金" && (
+                <HoldingFields
+                  holding={holding}
+                  onChange={(next) => {
+                    setHolding(next);
+                    setHoldingAmount(String(next.marketValue));
+                  }}
+                />
+              )}
               <label>
                 <span>{`当前市值（${holding.currency}）`}</span>
                 <div className="input-affix">
@@ -308,7 +331,12 @@ export function Foundation({
                     type="number"
                     inputMode="decimal"
                     step="any"
-                    value={holdingAmount}
+                    readOnly={hasHoldingDetails(holding)}
+                    value={
+                      hasHoldingDetails(holding)
+                        ? holding.marketValue
+                        : holdingAmount
+                    }
                     onChange={(e) => {
                       setHoldingAmount(e.target.value);
                       setHolding({
@@ -392,14 +420,20 @@ export function Foundation({
                     placeholder="例如：000300"
                   />
                 </label>
-                <NumberField
-                  label={`累计成本（${holding.currency}）`}
-                  value={holding.costBasis}
-                  onChange={(v) =>
-                    setHolding({ ...holding, costBasis: Number(v) })
-                  }
-                  prefix={holding.currency}
-                />
+                {holding.costPrice == null ? (
+                  <NumberField
+                    label={`累计成本（${holding.currency}）`}
+                    value={holding.costBasis}
+                    onChange={(v) =>
+                      setHolding({ ...holding, costBasis: Number(v) })
+                    }
+                    prefix={holding.currency}
+                  />
+                ) : (
+                  <p>
+                    总成本：{formatMoney(holding.costBasis, holding.currency)}
+                  </p>
+                )}
                 <NumberField
                   label="目标权重"
                   value={holding.targetPct}
@@ -461,13 +495,13 @@ export function Foundation({
                                 : ""}{" "}
                               · 未复权日收盘价
                             </span>
-                            <a
+                            <ExternalLink
                               href={valuation.sourceUrl}
                               target="_blank"
                               rel="noreferrer"
                             >
                               核对请求来源
-                            </a>
+                            </ExternalLink>
                           </p>
                         ))(
                           snapshot.holdingValuations.find(
@@ -553,6 +587,23 @@ export function Foundation({
                   </strong>
                   <span>
                     {item.assetClass}
+                    {item.assetClass !== "现金" && (
+                      <>
+                        <small>
+                          成本价：
+                          {item.costPrice == null
+                            ? "待补充"
+                            : `${item.costPrice} ${item.currency}`}
+                        </small>
+                        <small>持仓数：{item.quantity ?? "待补充"}</small>
+                        <small>
+                          当前价格：
+                          {item.currentPrice == null
+                            ? "待补充"
+                            : `${item.currentPrice} ${item.currency}`}
+                        </small>
+                      </>
+                    )}
                     <small>
                       {item.currency}
                       {item.currency !== profile.baseCurrency &&

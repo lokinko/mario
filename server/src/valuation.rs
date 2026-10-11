@@ -13,6 +13,8 @@ pub fn normalize_holding(holding: &Holding, base_currency: &str) -> Option<Holdi
     let mut normalized = holding.clone();
     normalized.market_value *= rate;
     normalized.cost_basis *= rate;
+    normalized.cost_price = normalized.cost_price.map(|value| value * rate);
+    normalized.current_price = normalized.current_price.map(|value| value * rate);
     normalized.currency = base_currency.to_ascii_uppercase();
     normalized.fx_rate_to_base = Some(1.0);
     Some(normalized)
@@ -136,6 +138,9 @@ mod tests {
             asset_class: "基金".into(),
             market_value: value,
             cost_basis: value,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 0.0,
             currency: currency.into(),
             fx_rate_to_base: rate,

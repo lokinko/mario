@@ -63,6 +63,7 @@ export function PortfolioLedger({
   const [importPreview, setImportPreview] =
     useState<PortfolioEventImportPreview | null>(null);
   const [importing, setImporting] = useState(false);
+  const [templateSaving, setTemplateSaving] = useState(false);
   const [importError, setImportError] = useState("");
   const [reversingEventId, setReversingEventId] = useState<string | null>(null);
   const [reversalDate, setReversalDate] = useState(() =>
@@ -430,12 +431,23 @@ export function PortfolioLedger({
             </label>
             <button
               className="secondary"
-              onClick={() =>
-                downloadPortfolioEventCsvTemplate(snapshot.profile.baseCurrency)
-              }
+              disabled={templateSaving}
+              onClick={async () => {
+                setTemplateSaving(true);
+                setError("");
+                try {
+                  await downloadPortfolioEventCsvTemplate(
+                    snapshot.profile.baseCurrency,
+                  );
+                } catch (nextError) {
+                  setError(String(nextError));
+                } finally {
+                  setTemplateSaving(false);
+                }
+              }}
             >
               <Download size={16} />
-              下载模板
+              {templateSaving ? "保存中…" : "下载模板"}
             </button>
             <button
               className="secondary"

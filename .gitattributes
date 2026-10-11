@@ -1,2 +1,1 @@
-scripts/*.sh text eol=lf
-deploy.sh text eol=lf
+* text=auto eol=lf

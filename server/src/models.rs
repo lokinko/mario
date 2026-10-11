@@ -159,6 +159,12 @@ pub struct Holding {
     pub asset_class: String,
     pub market_value: f64,
     pub cost_basis: f64,
+    #[serde(default)]
+    pub cost_price: Option<f64>,
+    #[serde(default)]
+    pub quantity: Option<f64>,
+    #[serde(default)]
+    pub current_price: Option<f64>,
     pub target_pct: f64,
     pub currency: String,
     #[serde(default)]
@@ -179,6 +185,12 @@ pub struct HoldingInput {
     pub asset_class: String,
     pub market_value: f64,
     pub cost_basis: f64,
+    #[serde(default)]
+    pub cost_price: Option<f64>,
+    #[serde(default)]
+    pub quantity: Option<f64>,
+    #[serde(default)]
+    pub current_price: Option<f64>,
     pub target_pct: f64,
     pub currency: String,
     #[serde(default)]

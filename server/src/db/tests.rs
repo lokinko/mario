@@ -36,6 +36,9 @@ fn persists_profile_and_holding() {
         asset_class: "基金".into(),
         market_value: 100_000.0,
         cost_basis: 90_000.0,
+        cost_price: None,
+        quantity: None,
+        current_price: None,
         target_pct: 100.0,
         currency: "CNY".into(),
         fx_rate_to_base: None,
@@ -65,6 +68,9 @@ fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
             asset_class: "股票".into(),
             market_value: 900.0,
             cost_basis: 800.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 100.0,
             currency: "USD".into(),
             fx_rate_to_base: None,
@@ -106,6 +112,9 @@ fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
         asset_class: "股票".into(),
         market_value: 1_012.5,
         cost_basis: 810.0,
+        cost_price: None,
+        quantity: Some(10.0),
+        current_price: Some(101.25),
         target_pct: 100.0,
         currency: "USD".into(),
         fx_rate_to_base: None,
@@ -121,7 +130,7 @@ fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
         1
     );
     let changed = HoldingInput {
-        market_value: 1_020.0,
+        current_price: Some(102.0),
         ..unchanged
     };
     assert!(db
@@ -142,6 +151,9 @@ fn rejects_verified_price_when_provider_currency_differs_from_holding() {
             asset_class: "股票".into(),
             market_value: 1_000.0,
             cost_basis: 900.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 100.0,
             currency: "CNY".into(),
             fx_rate_to_base: None,
@@ -166,6 +178,9 @@ fn reverses_only_open_period_events_and_preserves_the_audit_chain() {
         asset_class: "现金".into(),
         market_value: 100_000.0,
         cost_basis: 100_000.0,
+        cost_price: None,
+        quantity: None,
+        current_price: None,
         target_pct: 100.0,
         currency: "CNY".into(),
         fx_rate_to_base: None,
@@ -267,6 +282,9 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
             asset_class: "基金".into(),
             market_value: 120_000.0,
             cost_basis: 100_000.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 100.0,
             currency: "CNY".into(),
             fx_rate_to_base: None,
@@ -479,6 +497,7 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
             }
         }
     }
+    strip_holding_details_for_legacy(&mut legacy_v8);
     legacy_v8.schema_version = 8;
     assert_eq!(legacy_v8.tables.pop().unwrap().name, "holding_valuations");
     legacy_v8.validate().unwrap();
@@ -628,6 +647,9 @@ fn updates_and_deletes_holding() {
         asset_class: "基金".into(),
         market_value: 100_000.0,
         cost_basis: 90_000.0,
+        cost_price: None,
+        quantity: None,
+        current_price: None,
         target_pct: 100.0,
         currency: "CNY".into(),
         fx_rate_to_base: None,
@@ -665,6 +687,9 @@ fn portfolio_checkins_separate_external_flows_from_valuation_residuals() {
             asset_class: "基金".into(),
             market_value: 100_000.0,
             cost_basis: 90_000.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 90.0,
             currency: "CNY".into(),
             fx_rate_to_base: None,
@@ -704,6 +729,9 @@ fn portfolio_checkins_separate_external_flows_from_valuation_residuals() {
             asset_class: "基金".into(),
             market_value: 102_000.0,
             cost_basis: 90_000.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 90.0,
             currency: "CNY".into(),
             fx_rate_to_base: None,
@@ -719,6 +747,9 @@ fn portfolio_checkins_separate_external_flows_from_valuation_residuals() {
         asset_class: "现金".into(),
         market_value: 10_000.0,
         cost_basis: 10_000.0,
+        cost_price: None,
+        quantity: None,
+        current_price: None,
         target_pct: 10.0,
         currency: "CNY".into(),
         fx_rate_to_base: None,
@@ -753,6 +784,9 @@ fn portfolio_checkins_separate_external_flows_from_valuation_residuals() {
             asset_class: "基金".into(),
             market_value: 120_000.0,
             cost_basis: 90_000.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 90.0,
             currency: "CNY".into(),
             fx_rate_to_base: None,
@@ -799,6 +833,9 @@ fn ledger_drives_checkin_cash_flows_and_preserves_frozen_periods() {
             asset_class: "基金".into(),
             market_value: 100_000.0,
             cost_basis: 90_000.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 100.0,
             currency: "CNY".into(),
             fx_rate_to_base: None,
@@ -881,6 +918,9 @@ fn ledger_drives_checkin_cash_flows_and_preserves_frozen_periods() {
             asset_class: "基金".into(),
             market_value: 120_450.0,
             cost_basis: 110_000.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 100.0,
             currency: "CNY".into(),
             fx_rate_to_base: None,
@@ -935,6 +975,9 @@ fn csv_event_import_is_previewed_atomic_deduplicated_and_revision_bound() {
         asset_class: "现金".into(),
         market_value: 10_000.0,
         cost_basis: 10_000.0,
+        cost_price: None,
+        quantity: None,
+        current_price: None,
         target_pct: 100.0,
         currency: "CNY".into(),
         fx_rate_to_base: None,
@@ -1057,6 +1100,9 @@ fn foreign_currency_events_require_and_freeze_the_declared_rate() {
         asset_class: "现金".into(),
         market_value: 10_000.0,
         cost_basis: 10_000.0,
+        cost_price: None,
+        quantity: None,
+        current_price: None,
         target_pct: 100.0,
         currency: "CNY".into(),
         fx_rate_to_base: None,
@@ -1123,6 +1169,9 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
             asset_class: "股票".into(),
             market_value: 100.0,
             cost_basis: 90.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 70.0,
             currency: "USD".into(),
             fx_rate_to_base: None,
@@ -1140,6 +1189,9 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
             asset_class: "股票".into(),
             market_value: 100.0,
             cost_basis: 90.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 70.0,
             currency: "USD".into(),
             fx_rate_to_base: Some(7.0),
@@ -1158,6 +1210,9 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
             asset_class: "现金".into(),
             market_value: 300.0,
             cost_basis: 300.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 30.0,
             currency: "CNY".into(),
             fx_rate_to_base: None,
@@ -1197,6 +1252,9 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
             asset_class: "股票".into(),
             market_value: 100.0,
             cost_basis: 90.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 70.0,
             currency: "USD".into(),
             fx_rate_to_base: Some(7.0),
@@ -1242,6 +1300,9 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
                 asset_class: "现金".into(),
                 market_value: 300.0,
                 cost_basis: 300.0,
+                cost_price: None,
+                quantity: None,
+                current_price: None,
                 target_pct: 30.0,
                 currency: "CNY".into(),
                 fx_rate_to_base: Some(0.14),
@@ -1957,6 +2018,9 @@ fn system_review_freezes_portfolio_and_method_snapshot() {
         asset_class: "基金".into(),
         market_value: 100_000.0,
         cost_basis: 90_000.0,
+        cost_price: None,
+        quantity: None,
+        current_price: None,
         target_pct: 100.0,
         currency: "CNY".into(),
         fx_rate_to_base: None,
@@ -1995,6 +2059,9 @@ fn system_review_freezes_portfolio_and_method_snapshot() {
             asset_class: "基金".into(),
             market_value: 200_000.0,
             cost_basis: 90_000.0,
+            cost_price: None,
+            quantity: None,
+            current_price: None,
             target_pct: 100.0,
             currency: "CNY".into(),
             fx_rate_to_base: None,
@@ -2257,6 +2324,7 @@ fn version_11_review_data_imports_without_content_and_migrates_idempotently() {
     })).unwrap();
     db.save_decision_review("legacy-review", &input).unwrap();
     let mut legacy = db.export_sync_data().unwrap();
+    strip_holding_details_for_legacy(&mut legacy);
     legacy.schema_version = 11;
     legacy
         .tables
@@ -2295,4 +2363,169 @@ fn version_11_review_data_imports_without_content_and_migrates_idempotently() {
             "完整旧经验"
         );
     }
+}
+
+fn detailed_holding_input() -> HoldingInput {
+    HoldingInput {
+        symbol: "IDX".into(),
+        name: "手动持仓".into(),
+        asset_class: "基金".into(),
+        market_value: 999.0,
+        cost_basis: 999.0,
+        cost_price: Some(8.0),
+        quantity: Some(100.5),
+        current_price: Some(10.0),
+        target_pct: 0.0,
+        currency: "CNY".into(),
+        fx_rate_to_base: None,
+        valuation_date: "2026-01-01".into(),
+        fx_rate_source: String::new(),
+        fx_rate_observed_on: String::new(),
+    }
+}
+
+#[test]
+fn manual_holding_details_survive_restart_history_and_sync() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("details.db");
+    let db = Database::open(&file).unwrap();
+    let created = db.add_holding(&detailed_holding_input()).unwrap();
+    let holding = &created.holdings[0];
+    assert_eq!(holding.market_value, 1005.0);
+    assert_eq!(holding.cost_basis, 804.0);
+    let id = holding.id.clone();
+    let mut input = detailed_holding_input();
+    input.current_price = Some(12.0);
+    let updated = db.update_holding(&id, &input).unwrap();
+    assert_eq!(updated.holdings[0].market_value, 1206.0);
+    let history = db
+        .daily_history(&super::daily::HistoryQuery::default())
+        .unwrap();
+    assert_eq!(
+        history.records[0].assets[0].holding.current_price,
+        Some(12.0)
+    );
+    let export = db.export_sync_data().unwrap();
+    let copy = Database::open(&dir.path().join("copy.db")).unwrap();
+    copy.import_sync_data(&export).unwrap();
+    assert_eq!(copy.snapshot().unwrap().holdings[0].quantity, Some(100.5));
+    drop(db);
+    let db = Database::open(&file).unwrap();
+    let persisted = &db.snapshot().unwrap().holdings[0];
+    assert_eq!(persisted.cost_price, Some(8.0));
+    assert_eq!(persisted.current_price, Some(12.0));
+    let mut old_export = export.clone();
+    old_export.schema_version = 13;
+    let table = old_export
+        .tables
+        .iter_mut()
+        .find(|t| t.name == "holdings")
+        .unwrap();
+    table.columns.truncate(14);
+    for row in &mut table.rows {
+        row.truncate(14);
+    }
+    copy.import_sync_data(&old_export).unwrap();
+    let legacy = &copy.snapshot().unwrap().holdings[0];
+    assert_eq!(legacy.quantity, None);
+    assert_eq!(legacy.market_value, 1206.0);
+}
+
+#[test]
+fn manual_holding_details_reject_invalid_values_and_inconsistent_sync() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("details.db")).unwrap();
+    for (quantity, price) in [
+        (None, Some(10.0)),
+        (Some(10.0), None),
+        (Some(-1.0), Some(10.0)),
+        (Some(1e15), Some(10.0)),
+        (Some(1.0), Some(f64::INFINITY)),
+    ] {
+        let mut input = detailed_holding_input();
+        input.quantity = quantity;
+        input.current_price = price;
+        assert!(db.add_holding(&input).is_err());
+    }
+    let mut zero = detailed_holding_input();
+    zero.quantity = Some(0.0);
+    zero.current_price = Some(0.0);
+    assert_eq!(db.add_holding(&zero).unwrap().holdings[0].market_value, 0.0);
+    let mut dataset = db.export_sync_data().unwrap();
+    let table = dataset
+        .tables
+        .iter_mut()
+        .find(|t| t.name == "holdings")
+        .unwrap();
+    table.rows[0][16] = SyncValue::Real(-1.0);
+    assert!(db.import_sync_data(&dataset).is_err());
+    assert_eq!(db.snapshot().unwrap().holdings[0].current_price, Some(0.0));
+}
+
+pub(super) fn strip_holding_details_for_legacy(dataset: &mut SyncDataset) {
+    let table = dataset
+        .tables
+        .iter_mut()
+        .find(|table| table.name == "holdings")
+        .unwrap();
+    table.columns.truncate(14);
+    for row in &mut table.rows {
+        row.truncate(14);
+    }
+}
+
+#[test]
+fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quantities() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("amount-details.db")).unwrap();
+    let created = db.add_holding(&detailed_holding_input()).unwrap();
+    let id = &created.holdings[0].id;
+    let updated = db
+        .update_holding_amount(
+            id,
+            &super::daily::AmountInput {
+                amount: 2010.0,
+                expected_revision: created.holding_revisions[id].clone(),
+                request_id: "price-update".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(updated.holdings[0].current_price, Some(20.0));
+    assert_eq!(updated.holdings[0].cost_basis, 804.0);
+    let mut input = detailed_holding_input();
+    input.quantity = Some(1e-10);
+    let tiny = db.update_holding(id, &input).unwrap();
+    assert!(db
+        .update_holding_amount(
+            id,
+            &super::daily::AmountInput {
+                amount: 1e15,
+                expected_revision: tiny.holding_revisions[id].clone(),
+                request_id: "oversized-unit-price".into(),
+            }
+        )
+        .is_err());
+    input.quantity = Some(0.0);
+    let zero = db.update_holding(id, &input).unwrap();
+    let saved_zero = db
+        .update_holding_amount(
+            id,
+            &super::daily::AmountInput {
+                amount: 0.0,
+                expected_revision: zero.holding_revisions[id].clone(),
+                request_id: "zero-quantity".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(saved_zero.holdings[0].current_price, Some(10.0));
+    assert!(db
+        .update_holding_amount(
+            id,
+            &super::daily::AmountInput {
+                amount: 1.0,
+                expected_revision: saved_zero.holding_revisions[id].clone(),
+                request_id: "impossible-total".into(),
+            }
+        )
+        .is_err());
 }

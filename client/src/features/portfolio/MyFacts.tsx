@@ -15,6 +15,11 @@ import { PageHeader } from "../../components/PageHeader";
 import { NumberField } from "../../components/NumberField";
 import { localDateValue } from "../../lib/dates";
 import { emptyHolding } from "./forms";
+import {
+  HoldingFields,
+  hasHoldingDetails,
+  validHoldingDetails,
+} from "./HoldingFields";
 
 export function MyFacts({
   snapshot,
@@ -55,7 +60,8 @@ export function MyFacts({
   const validAsset = Boolean(
     editing &&
     editing.name.trim() &&
-    assetAmount.trim() &&
+    (assetAmount.trim() || hasHoldingDetails(editing)) &&
+    validHoldingDetails(editing) &&
     Number.isFinite(editing.marketValue) &&
     editing.marketValue >= 0 &&
     editing.marketValue <= 1e15 &&
@@ -234,8 +240,10 @@ export function MyFacts({
             {section === "holdings" && investments.length > 0 && (
               <div className="investment-amount-head" aria-hidden="true">
                 <span>资产</span>
+                <span>成本价</span>
+                <span>持仓数</span>
+                <span>当前价格</span>
                 <span>当前市值</span>
-                <span>持仓成本</span>
                 <span>浮动盈亏</span>
               </div>
             )}
@@ -263,9 +271,10 @@ export function MyFacts({
           </div>
           {section === "holdings" && (
             <p className="section-intro">
-              金额以各持仓币种显示。浮动盈亏按已保存市值减持仓成本计算，成本为 0
-              或未填写时不计算；不含已实现盈亏、分红及卖出税费。
-              成本可用于观察账面盈亏，安全边际还需结合资产估值判断。
+              成本价、持仓数和当前价格均手动输入；持仓数与当前价格需一起填写，成本价可稍后补充。市值
+              = 持仓数 × 当前价格， 总成本 = 持仓数 ×
+              成本价；价格以持仓币种计价。
+              浮动盈亏不含已实现盈亏、分红及卖出税费。旧记录可保留总金额，补充数量和价格后自动计算。
             </p>
           )}
         </section>
@@ -311,18 +320,37 @@ export function MyFacts({
                     }
                   />
                 </label>
+                {editing.assetClass !== "现金" && (
+                  <HoldingFields
+                    holding={editing}
+                    onChange={(next) => {
+                      setEditing(next);
+                      setAssetAmount(String(next.marketValue));
+                      setAssetCost(
+                        next.costBasis === 0 ? "" : String(next.costBasis),
+                      );
+                    }}
+                  />
+                )}
                 <label>
-                  <span>当前金额</span>
+                  <span>
+                    {editing.assetClass === "现金" ? "当前金额" : "当前市值"}
+                  </span>
                   <div className="input-affix">
                     <i>{editing.currency}</i>
                     <input
                       type="number"
-                      required
+                      required={!hasHoldingDetails(editing)}
+                      readOnly={hasHoldingDetails(editing)}
                       min={0}
                       max={1e15}
                       inputMode="decimal"
                       step="any"
-                      value={assetAmount}
+                      value={
+                        hasHoldingDetails(editing)
+                          ? editing.marketValue
+                          : assetAmount
+                      }
                       onChange={(e) => {
                         setAssetAmount(e.target.value);
                         setEditing({
@@ -336,7 +364,7 @@ export function MyFacts({
                 {editing.assetClass !== "现金" && (
                   <div className="asset-cost-field">
                     <label>
-                      <span>持仓成本（选填）</span>
+                      <span>持仓总成本（选填）</span>
                       <div className="input-affix">
                         <i>{editing.currency}</i>
                         <input
@@ -347,7 +375,12 @@ export function MyFacts({
                           step="any"
                           placeholder="未填写"
                           aria-describedby={costHelpId}
-                          value={assetCost}
+                          readOnly={editing.costPrice != null}
+                          value={
+                            editing.costPrice != null
+                              ? editing.costBasis
+                              : assetCost
+                          }
                           onChange={(e) => {
                             setAssetCost(e.target.value);
                             setEditing({
@@ -359,7 +392,7 @@ export function MyFacts({
                       </div>
                     </label>
                     <small id={costHelpId}>
-                      填写当前仍持有部分的总成本（含买入费用），与市值使用同一币种；已卖出部分的成本请扣除。
+                      成本价为当前持仓每单位的平均买入成本（可含买入费用）；填入成本价和数量后自动计算总成本。旧记录也可直接填写总成本。
                     </small>
                   </div>
                 )}

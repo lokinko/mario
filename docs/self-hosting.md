@@ -14,7 +14,7 @@ Web 与 Tauri 客户端共用 Rust API，PostgreSQL 保存独立账号、会话�
 
 服务器 `.env` 的 `MARIO_REGISTRATION_KEY` 是注册邀请码。每个人有独立邮箱、密码与模型密钥；邮箱作为账号名，不做邮件验证/邮件重置。轮换邀请码不影响已有账号。网页和新客户端可使用 `https://www.madeagents.ai/mario`；旧客户端安装包需要更新才能接受部署路径。
 
-会话保存在当前窗口的 `sessionStorage`，关闭窗口后需重新登录；服务端会话有效期 7 天，退出会撤销当前会话。网页、API 和资源统一使用构建时的部署前缀，Nginx 转发时剥离前缀。
+登录凭证及过期时间按服务器地址保存在浏览器的 `localStorage`，刷新、关闭后重开仍可恢复登录；服务端会话有效期 7 天，到期需重新登录。退出会撤销当前会话并清除本机凭证，同一浏览器的其他标签页同步更新登录状态。数据库临时错误不会被当作会话失效。网页、API 和资源统一使用构建时的部署前缀，Nginx 转发时剥离前缀。
 
 ## 数据与同步
 
@@ -41,7 +41,11 @@ Web 与 Tauri 客户端共用 Rust API，PostgreSQL 保存独立账号、会话�
 ```bash
 npm ci --prefix client
 npm run windows:build    # Windows/MSVC/WebView2
-npm run desktop:build    # 在目标桌面系统构建
+npm run desktop:build    # macOS
+npm run android:build
+VITE_BASE_PATH=/mario/ npm run web:build
 ```
+
+各端共用页面与 API；产物的源码版本与校验值见 `outputs/build-manifest.json`。构建与原生文件交互说明见 [客户端同步构建](client-builds.md)。
 
 开发前端可通过 `VITE_API_URL=http://127.0.0.1:4217/api` 连接临时多用户 API；无此变量的 Vite 开发模式保留隔离的 SQLite 调试路径，不是生产服务。不要把线上数据库传给集成测试。

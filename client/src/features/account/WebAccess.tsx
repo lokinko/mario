@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { setWebToken, webToken } from "../../lib/webSession";
 import { requestJson } from "../../lib/transport";
 import {
@@ -13,7 +13,7 @@ import {
 import { blockStaleWrites } from "../../lib/syncEvents";
 
 export function WebAccess({ children }: { children: ReactNode }) {
-  const [connected, setConnected] = useState(() => Boolean(webToken()));
+  const [connected, setConnected] = useState(webToken);
   const [server, setServer] = useState(() =>
     serviceUrl() === sameOriginServiceUrl() ? "" : serviceUrl(),
   );
@@ -28,12 +28,26 @@ export function WebAccess({ children }: { children: ReactNode }) {
     acceptRevision();
     blockStaleWrites(false);
     setPassword("");
-    setConnected(false);
+    setConnected(undefined);
   };
   useEffect(() => {
     window.addEventListener("mario:session-expired", clear);
     return () => window.removeEventListener("mario:session-expired", clear);
   }, []);
+  useEffect(() => {
+    const restore = (event: StorageEvent) => {
+      if (event.storageArea !== localStorage) return;
+      const token = webToken();
+      if (token === connected) return;
+      acceptRevision();
+      blockStaleWrites(false);
+      setPassword("");
+      setError("");
+      setConnected(token);
+    };
+    window.addEventListener("storage", restore);
+    return () => window.removeEventListener("storage", restore);
+  }, [connected]);
   if (isLocalDev()) return children;
   if (connected)
     return (
@@ -44,9 +58,10 @@ export function WebAccess({ children }: { children: ReactNode }) {
             try {
               await requestJson(`${serviceUrl()}/auth/logout`, {
                 method: "POST",
-                headers: { Authorization: `Bearer ${webToken()}` },
+                headers: { Authorization: `Bearer ${connected}` },
               });
-              clear();
+              const currentToken = webToken();
+              if (!currentToken || currentToken === connected) clear();
             } catch {
               setError("退出失败，请联网后重试以撤销服务端会话。");
             }
@@ -55,7 +70,7 @@ export function WebAccess({ children }: { children: ReactNode }) {
           退出账号
         </button>
         {error && <p role="alert">{error}</p>}
-        {children}
+        <Fragment key={connected}>{children}</Fragment>
       </>
     );
   return (
@@ -79,25 +94,25 @@ export function WebAccess({ children }: { children: ReactNode }) {
               location.protocol !== "https:"
             )
               throw new Error("远程访问请使用 HTTPS");
-            const result = await requestJson<{ token: string }>(
-              `${base}/auth/${register ? "register" : "login"}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  email,
-                  password,
-                  ...(register ? { registrationKey: invite } : {}),
-                }),
-              },
-            );
+            const result = await requestJson<{
+              token: string;
+              expiresAt: number;
+            }>(`${base}/auth/${register ? "register" : "login"}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                email,
+                password,
+                ...(register ? { registrationKey: invite } : {}),
+              }),
+            });
             if (server.trim()) saveServerUrl(server);
             acceptRevision();
             blockStaleWrites(false);
-            setWebToken(result.token);
+            setWebToken(result.token, result.expiresAt);
             setPassword("");
             setInvite("");
-            setConnected(true);
+            setConnected(result.token);
           } catch (error) {
             setError(error instanceof Error ? error.message : String(error));
           } finally {
