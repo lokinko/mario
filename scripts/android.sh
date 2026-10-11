@@ -61,10 +61,10 @@ case "$action" in
     ;;
   build|release)
     build_profile="debug"
-    profile_args=(--debug)
+    profile_args=(--apk --ci --debug)
     if [[ "$action" == "release" ]]; then
       build_profile="release"
-      profile_args=()
+      profile_args=(--apk --ci)
     fi
     if [[ ! -f "$root_dir/client/src-tauri/gen/android/app/src/main/AndroidManifest.xml" ]]; then
       npm run tauri --prefix "$root_dir/client" -- android init --ci --skip-targets-install
@@ -73,7 +73,7 @@ case "$action" in
     find "$root_dir/client/src-tauri/gen/android/app/src/main/jniLibs" \
       -type l -name 'libmario_client_lib.so' -delete 2>/dev/null || true
     read -r -a android_targets <<< "${MARIO_ANDROID_TARGETS:-aarch64}"
-    npm run tauri --prefix "$root_dir/client" -- android build "${profile_args[@]}" --apk --ci --target "${android_targets[@]}" "$@"
+    npm run tauri --prefix "$root_dir/client" -- android build "${profile_args[@]}" --target "${android_targets[@]}" "$@"
     source_apk="$root_dir/client/src-tauri/gen/android/app/build/outputs/apk/universal/$build_profile/app-universal-$build_profile.apk"
     if [[ "$build_profile" == "release" && ! -f "$source_apk" ]]; then
       source_apk="${source_apk%.apk}-unsigned.apk"
