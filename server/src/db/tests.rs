@@ -1420,7 +1420,11 @@ fn reminder_settings_are_device_local_and_never_cloud_synced() {
     target.import_sync_data(&dataset).unwrap();
 
     assert!(!target.reminder_settings().unwrap().enabled);
-    assert!(dataset.tables.iter().all(|table| table.name != "settings"));
+    assert!(dataset
+        .tables
+        .iter()
+        .filter(|table| table.name == "settings")
+        .all(|table| table.rows.is_empty()));
 }
 
 #[test]

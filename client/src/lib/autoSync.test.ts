@@ -137,15 +137,12 @@ it("tracks all server mutations but not read-only previews or connection tests",
     "/holdings/h/verified-valuation",
     "/analysis",
     "/portfolio-events/import/commit",
+    "/portfolio-events/import/preview",
     "/model-config/codex",
     "/reminder-settings",
   ])
     expect(isDataWrite(path, "POST")).toBe(true);
-  for (const path of [
-    "/analysis/preview",
-    "/model-config/test",
-    "/portfolio-events/import/preview",
-  ])
+  for (const path of ["/analysis/preview", "/model-config/test"])
     expect(isDataWrite(path, "POST")).toBe(false);
   expect(isDataWrite("/holdings", "GET")).toBe(false);
 });

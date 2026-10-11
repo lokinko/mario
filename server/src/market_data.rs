@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, sync::OnceLock, time::Duration};
 
 use async_trait::async_trait;
 use chrono::{Local, NaiveDate, Utc};
@@ -15,10 +15,16 @@ const ECB_METHODOLOGY_URL: &str =
     "https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates";
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const LOOKBACK_DAYS: i64 = 7;
-const SUPPORTED_CURRENCIES: &[&str] = &["CNY", "USD", "HKD", "EUR", "JPY", "GBP"];
+pub(crate) const SUPPORTED_CURRENCIES: &[&str] = &["CNY", "USD", "HKD", "EUR", "JPY", "GBP"];
 const TWELVE_DATA_API_BASE: &str = "https://api.twelvedata.com";
 const TWELVE_DATA_METHODOLOGY_URL: &str = "https://twelvedata.com/docs/market-data/time-series";
 const PRICE_LOOKBACK_DAYS: i64 = 10;
+
+type FxCache = BTreeMap<String, (std::time::Instant, Result<Vec<u8>, String>)>;
+static FX_CACHE: OnceLock<tokio::sync::Mutex<FxCache>> = OnceLock::new();
+pub(crate) async fn invalidate_fx_cache() {
+    FX_CACHE.get_or_init(Default::default).lock().await.clear();
+}
 
 #[async_trait]
 pub trait FxRateProvider: Send + Sync {
@@ -293,7 +299,11 @@ impl FxRateProvider for EcbFxRateProvider {
         let to = normalized_currency(&query.to_currency)?;
         let requested_on = NaiveDate::parse_from_str(query.on_date.trim(), "%Y-%m-%d")
             .map_err(|_| AppError::Validation("汇率日期必须使用 YYYY-MM-DD".into()))?;
-        if requested_on > Local::now().date_naive() {
+        if requested_on
+            > Utc::now()
+                .with_timezone(&chrono_tz::Asia::Shanghai)
+                .date_naive()
+        {
             return Err(AppError::Validation("汇率日期不能晚于今天".into()));
         }
         if requested_on < NaiveDate::from_ymd_opt(1999, 1, 4).expect("valid ECB start date") {
@@ -317,41 +327,56 @@ impl FxRateProvider for EcbFxRateProvider {
             });
         }
 
-        let mut currencies = [&from, &to]
-            .into_iter()
-            .filter(|currency| currency.as_str() != "EUR")
-            .cloned()
-            .collect::<Vec<_>>();
-        currencies.sort();
-        currencies.dedup();
+        // One bounded request supplies all supported pairs, including historical dates.
+        let mut cache = FX_CACHE.get_or_init(Default::default).lock().await;
+        let cache_key = format!("{}:{}", self.base_url, requested_on);
         let start = requested_on - chrono::Duration::days(LOOKBACK_DAYS);
+        let currencies = SUPPORTED_CURRENCIES
+            .iter()
+            .filter(|c| **c != "EUR")
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>();
         let url = self.request_url(&currencies, start, requested_on)?;
-        let response = self.client.get(url.clone()).send().await?;
-        let status = response.status();
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
-        {
-            return Err(AppError::MarketData(
-                "ECB 返回内容超过 1 MB 安全上限".into(),
-            ));
-        }
-        let body = response.bytes().await?;
-        if !status.is_success() {
-            return Err(AppError::MarketData(format!(
-                "ECB 返回 HTTP {}：{}",
-                status,
-                String::from_utf8_lossy(&body)
-                    .chars()
-                    .take(240)
-                    .collect::<String>()
-            )));
-        }
-        if body.len() > MAX_RESPONSE_BYTES {
-            return Err(AppError::MarketData(
-                "ECB 返回内容超过 1 MB 安全上限".into(),
-            ));
-        }
+        let cached = cache.get(&cache_key).filter(|(at, result)| {
+            at.elapsed() < Duration::from_secs(if result.is_ok() { 3600 } else { 60 })
+        });
+        let body = if let Some((_, result)) = cached {
+            result.clone().map_err(AppError::MarketData)?
+        } else {
+            let fetched = async {
+                let response = self.client.get(url.clone()).send().await?;
+                if !response.status().is_success() {
+                    return Err(AppError::MarketData(format!(
+                        "ECB 返回 HTTP {}",
+                        response.status()
+                    )));
+                }
+                if response
+                    .content_length()
+                    .is_some_and(|len| len > MAX_RESPONSE_BYTES as u64)
+                {
+                    return Err(AppError::MarketData(
+                        "ECB 返回内容超过 1 MB 安全上限".into(),
+                    ));
+                }
+                let body = response.bytes().await?;
+                if body.len() > MAX_RESPONSE_BYTES {
+                    return Err(AppError::MarketData(
+                        "ECB 返回内容超过 1 MB 安全上限".into(),
+                    ));
+                }
+                Ok::<_, AppError>(body.to_vec())
+            }
+            .await
+            .map_err(|error| error.to_string());
+            // Bound memory even when many different historical dates are requested.
+            if cache.len() >= 128 {
+                cache.clear();
+            }
+            cache.insert(cache_key, (std::time::Instant::now(), fetched.clone()));
+            fetched.map_err(AppError::MarketData)?
+        };
+        drop(cache);
         let (rate, observed_on) = parse_ecb_quote(&body, &from, &to, requested_on)?;
         Ok(FxRateQuote {
             from_currency: from,

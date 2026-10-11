@@ -22,6 +22,7 @@ import type {
   DecisionReview,
   FinancialProfile,
   FxRateQuote,
+  FxBook,
   Goal,
   Holding,
   SecurityPriceConfig,
@@ -63,12 +64,23 @@ async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
       timeoutMs:
         path === "/analysis" ||
         path === "/model-config/test" ||
-        path === "/model-config/codex"
+        path === "/model-config/codex" ||
+        path === "/portfolio-events/import/preview" ||
+        path === "/portfolio-events/import/commit"
           ? 300000
-          : 15000,
+          : path === "/snapshot" ||
+              path.startsWith("/fx-settings") ||
+              path.startsWith("/market-data/fx-rate") ||
+              path === "/portfolio-events"
+            ? 30000
+            : 15000,
       onResponse: (response) => {
         if (webToken() !== authToken) return;
-        if (path === "/snapshot" || (dataWrite && path !== "/analysis")) {
+        if (
+          path === "/snapshot" ||
+          path === "/fx-settings" ||
+          (dataWrite && path !== "/analysis")
+        ) {
           acceptRevision(
             response.headers.get("x-data-revision") ?? baseRevision,
           );
@@ -520,4 +532,20 @@ export function updateHoldingAmount(
     );
   amountQueue = result;
   return result;
+}
+
+export function getFxSettings(): Promise<FxBook> {
+  return httpRequest<FxBook>("/fx-settings");
+}
+export function refreshFxSettings(): Promise<FxBook> {
+  return httpRequest<FxBook>("/fx-settings/refresh", { method: "POST" });
+}
+export function setFxOverride(
+  currency: string,
+  rate: number | null,
+): Promise<FxBook> {
+  return httpRequest<FxBook>("/fx-settings", {
+    method: "PUT",
+    body: JSON.stringify({ currency, rate }),
+  });
 }

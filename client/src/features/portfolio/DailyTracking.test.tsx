@@ -18,10 +18,12 @@ it("checks day boundaries in the saved timezone without saving on every foregrou
     records: [],
     nextBefore: null,
   });
+  const onNewDay = vi.fn();
   await act(async () => {
-    render(<DailyTracking />);
+    render(<DailyTracking onNewDay={onNewDay} />);
   });
   expect(api.ensureDailyAssets).toHaveBeenCalledTimes(1);
+  expect(onNewDay).not.toHaveBeenCalled();
   await act(async () => {
     window.dispatchEvent(new Event("focus"));
     vi.advanceTimersByTime(30000);
@@ -37,5 +39,6 @@ it("checks day boundaries in the saved timezone without saving on every foregrou
     vi.advanceTimersByTime(30000);
   });
   expect(api.ensureDailyAssets).toHaveBeenCalledTimes(2);
+  expect(onNewDay).toHaveBeenCalledTimes(1);
   expect(api.ensureDailyAssets).toHaveBeenLastCalledWith("Asia/Shanghai");
 });

@@ -86,7 +86,6 @@ try {
       MARIO_BACKUP_MODE: 'native',
     };
     if (setup.MARIO_SETUP_DATABASE_URL) values.DATABASE_URL = setup.MARIO_SETUP_DATABASE_URL;
-    if (setup.MARIO_SETUP_MODEL_HOSTS) values.MARIO_MODEL_HOSTS = setup.MARIO_SETUP_MODEL_HOSTS;
     if (setup.MARIO_SETUP_ORIGINS) values.MARIO_ALLOWED_ORIGINS = setup.MARIO_SETUP_ORIGINS;
     if (new Set([values.MARIO_PORT, values.MARIO_AGENT_PORT, values.MARIO_PG_PORT]).size !== 3) throw Error('API、Agent、PostgreSQL 必须使用不同端口');
     createDeploymentConfig({ ...defaults(domain), ...values });
@@ -166,7 +165,7 @@ try {
       // Use the initial postgres database; the application creates its own schemas.
       databaseUrl = `postgresql://mario:${encodeURIComponent(config.POSTGRES_PASSWORD)}@127.0.0.1:${pgPort}/postgres`;
     }
-    const shared = { MARIO_AGENT_TOKEN: config.MARIO_AGENT_TOKEN, MARIO_MODEL_HOSTS: config.MARIO_MODEL_HOSTS ?? 'api.openai.com,api.anthropic.com' };
+    const shared = { MARIO_AGENT_TOKEN: config.MARIO_AGENT_TOKEN };
     launch('Agent', binary, [], { ...baseEnv, ...shared, MARIO_ROLE: 'agent', MARIO_AGENT_BIND: `127.0.0.1:${agentPort}` });
     await ready(`http://127.0.0.1:${agentPort}/health`, body => body.status === 'ok', { Authorization: `Bearer ${config.MARIO_AGENT_TOKEN}` });
     launch('API', binary, ['--port', String(apiPort)], {

@@ -31,7 +31,10 @@ export async function beforeDataWrite() {
 }
 export function isDataWrite(path: string, method = "GET") {
   return (
-    method !== "GET" && !path.endsWith("/preview") && !path.endsWith("/test")
+    method !== "GET" &&
+    (path === "/portfolio-events/import/preview" ||
+      !path.endsWith("/preview")) &&
+    !path.endsWith("/test")
   );
 }
 

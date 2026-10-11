@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -30,6 +31,7 @@ vi.mock("../../api", () => ({
   saveProfile: vi.fn(),
   saveHolding: vi.fn(),
   updateHolding: vi.fn(),
+  deleteHolding: vi.fn(),
 }));
 beforeEach(() => {
   vi.mocked(api.getDailyAssets).mockResolvedValue({
@@ -42,17 +44,24 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  vi.restoreAllMocks();
 });
 const snapshot = fixture as Snapshot;
 function mount(value = snapshot) {
-  return render(
-    <MyFacts
-      snapshot={value}
-      onUpdate={vi.fn()}
-      navigate={vi.fn()}
-      flash={vi.fn()}
-    />,
-  );
+  const onUpdate = vi.fn();
+  const flash = vi.fn();
+  return {
+    ...render(
+      <MyFacts
+        snapshot={value}
+        onUpdate={onUpdate}
+        navigate={vi.fn()}
+        flash={flash}
+      />,
+    ),
+    onUpdate,
+    flash,
+  };
 }
 it("only asks for monthly facts and preserves existing investment preferences", async () => {
   vi.mocked(api.saveProfile).mockResolvedValue(snapshot);
@@ -108,7 +117,7 @@ it("preserves the user's entered balance on failure and keeps existing cost and 
   vi.mocked(api.updateHolding).mockRejectedValue(new Error("保存失败"));
   mount({ ...snapshot, holdings: [holding] });
   fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
-  fireEvent.click(screen.getByRole("button", { name: /已有基金/ }));
+  fireEvent.click(screen.getByRole("button", { name: "编辑 已有基金" }));
   fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
     target: { value: "1200" },
   });
@@ -191,4 +200,90 @@ it("blocks invalid asset amounts even when a form is submitted with Enter", () =
   expect((save as HTMLButtonElement).disabled).toBe(true);
   fireEvent.submit(save.closest("form")!);
   expect(api.saveHolding).not.toHaveBeenCalled();
+});
+
+const investment = {
+  ...emptyHolding(),
+  id: "investment",
+  name: "指数基金",
+  marketValue: 1000,
+};
+
+it("leaves holdings unchanged when deletion is cancelled", () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const { onUpdate } = mount({ ...snapshot, holdings: [investment] });
+  fireEvent.click(screen.getByRole("button", { name: "删除 指数基金" }));
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("指数基金"));
+  expect(api.deleteHolding).not.toHaveBeenCalled();
+  expect(onUpdate).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "编辑 指数基金" })).toBeTruthy();
+});
+
+it("refreshes the portfolio after deletion and closes the deleted asset's edit form", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(api.deleteHolding).mockResolvedValue(snapshot);
+  const { onUpdate, flash, rerender } = mount({
+    ...snapshot,
+    holdings: [investment],
+  });
+  fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金" }));
+  fireEvent.click(screen.getByRole("button", { name: "删除 指数基金" }));
+  await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(snapshot));
+  expect(api.deleteHolding).toHaveBeenCalledExactlyOnceWith("investment");
+  expect(flash).toHaveBeenCalledWith("资产已删除");
+  expect(screen.queryByRole("region", { name: "记录资产" })).toBeNull();
+  rerender(
+    <MyFacts
+      snapshot={snapshot}
+      onUpdate={onUpdate}
+      navigate={vi.fn()}
+      flash={flash}
+    />,
+  );
+  expect(screen.queryByRole("button", { name: "删除 指数基金" })).toBeNull();
+  expect(screen.getByText("暂无资产，点击上方添加。")).toBeTruthy();
+});
+
+it("shows deletion failures and allows retrying without losing the holding", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(api.deleteHolding).mockRejectedValueOnce(new Error("网络中断"));
+  const { onUpdate } = mount({ ...snapshot, holdings: [investment] });
+  fireEvent.click(screen.getByRole("button", { name: "删除 指数基金" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("删除失败");
+  expect(onUpdate).not.toHaveBeenCalled();
+  vi.mocked(api.deleteHolding).mockResolvedValue(snapshot);
+  fireEvent.click(screen.getByRole("button", { name: "删除 指数基金" }));
+  await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(snapshot));
+  expect(api.deleteHolding).toHaveBeenCalledTimes(2);
+});
+
+it("also supports deleting cash and blocks duplicate actions during deletion", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  let resolve!: (value: Snapshot) => void;
+  vi.mocked(api.deleteHolding).mockImplementationOnce(
+    () =>
+      new Promise((yes) => {
+        resolve = yes;
+      }),
+  );
+  const cash = {
+    ...investment,
+    id: "cash",
+    name: "银行存款",
+    assetClass: "现金" as const,
+  };
+  mount({ ...snapshot, holdings: [cash] });
+  const remove = screen.getByRole("button", { name: "删除 银行存款" });
+  fireEvent.click(remove);
+  expect((remove as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    (screen.getByLabelText("银行存款金额") as HTMLInputElement).readOnly,
+  ).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: "编辑 银行存款" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  fireEvent.click(remove);
+  expect(api.deleteHolding).toHaveBeenCalledExactlyOnceWith("cash");
+  await act(async () => resolve(snapshot));
 });

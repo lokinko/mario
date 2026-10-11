@@ -1,4 +1,4 @@
-// Real HTTP -> Axum -> SQLite smoke test. Uses only disposable data and no provider calls.
+// Real HTTP -> Axum -> SQLite smoke test. Uses disposable data; automatic ECB requests may occur.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
@@ -102,11 +102,14 @@ try {
   await api("/profile", "PUT", profile);
   snap = await api("/holdings", "POST", holding("现金", 100000));
   const cash = snap.holdings[0].id;
-  let unknown = await api("/holdings", "POST", holding("美元账户", 100, "USD"));
-  assert.equal(unknown.valuationStatus.comparable, false);
-  const fxId = unknown.holdings.find((h) => h.currency === "USD").id;
-  assert.equal((await api("/daily-assets")).records[0].totalAssets, null);
-  await api(`/holdings/${fxId}`, "DELETE");
+  await api("/fx-settings", "PUT", { currency: "USD", rate: 7 });
+  const foreign = await api("/holdings", "POST", holding("美元账户", 100, "USD"));
+  assert.equal(foreign.valuationStatus.comparable, true);
+  const fxHolding = foreign.holdings.find((h) => h.currency === "USD");
+  assert.equal(fxHolding.fxRateToBase, 7);
+  assert.equal(fxHolding.fxRateSource, "central_manual");
+  assert.equal((await api("/daily-assets")).records[0].totalAssets, 100700);
+  await api(`/holdings/${fxHolding.id}`, "DELETE");
   await api("/daily-assets/ensure", "POST", { timezone: "UTC" });
   const day = (await api("/daily-assets")).today;
   snap = await api("/snapshot");
@@ -132,7 +135,7 @@ try {
   assert.equal(same.amountChange, 0);
   await api("/daily-assets?from=bad", "GET", undefined, 400);
   console.log(
-    "PASS assets: FX incompleteness, zero, version conflict, idempotency, daily history",
+    "PASS assets: unified FX, zero, version conflict, idempotency, daily history",
   );
 
   const goal = {
@@ -393,7 +396,9 @@ try {
     assert.equal(exportResult.status,0,exportResult.stderr);
     const exported=JSON.parse(await readFile(exportPath,'utf8'));
     assert(exported.tables.find(t=>t.name==='holdings').rows.length>0);
-    assert(!exported.tables.some(t=>t.name==='settings'));
+    const fxSettings=exported.tables.find(t=>t.name==='settings');
+    assert(fxSettings.rows.length>0);
+    assert(fxSettings.rows.every(row=>row[0].Text?.startsWith('fx.')));
     const overwrite=spawnSync(binary,['--export-data',exportPath],{env:{...process.env,MARIO_DATA_DIR:dir},encoding:'utf8'});
     assert.notEqual(overwrite.status,0);
     console.log('PASS legacy SQLite CLI export and overwrite protection');

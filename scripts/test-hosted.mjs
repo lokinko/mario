@@ -13,6 +13,15 @@ const binary=resolve('server/target/debug/mario-server'+(process.platform==='win
 const master=randomBytes(32).toString('base64'), invite=randomBytes(32).toString('hex');
 const children=[]; let logs=''; let assertions=0;
 const agentToken=randomBytes(32).toString('hex');
+const modelRequests=[];
+const mockModel=httpServer(async(req,res)=>{
+  let body='';for await(const chunk of req)body+=chunk;
+  modelRequests.push({path:req.url,auth:req.headers.authorization,body:JSON.parse(body)});
+  res.setHeader('Content-Type','application/json');
+  res.end(JSON.stringify({choices:[{message:{role:'assistant',content:'OK'},finish_reason:'stop'}],usage:{prompt_tokens:8,completion_tokens:1}}));
+}).listen(0,'127.0.0.1');
+await once(mockModel,'listening');
+const modelUrl=`http://127.0.0.1:${mockModel.address().port}/custom/v1`;
 let receivedJob, releaseAgent, receivedResolve;
 const received=new Promise(resolve=>receivedResolve=resolve);
 const mockAgent=httpServer(async(req,res)=>{
@@ -73,16 +82,26 @@ try{
   const race=await Promise.all([base,replica].map((endpoint,i)=>fetch(endpoint+'/profile',{method:'PUT',headers:{Authorization:`Bearer ${a.token}`,'Content-Type':'application/json','If-Match':rev},body:JSON.stringify({...profile,monthlyIncome:30000+i})})));
   assert.deepEqual(race.map(r=>r.status).sort(),[200,409]);assertions++;
   await request(base,'/snapshot',a);
-  await request(base,'/model-config',a,'PUT',{provider:'openai-responses',baseUrl:'https://api.openai.com/v1',model:'test-model',apiKey:'test-secret-never-export'});
+  await request(base,'/model-config',a,'PUT',{provider:'openai-responses',baseUrl:'https://gateway.example.test:8443/custom/v1',model:'test-model',apiKey:'test-secret-never-export'});
   assert.equal((await request(base,'/model-config',a)).hasApiKey,true);
   assert.equal((await request(base,'/model-config',b)).hasApiKey,false);
   await request(base,'/model-config/codex',a,'POST',{},400);
-  await request(base,'/model-config',a,'PUT',{provider:'openai-responses',baseUrl:'http://127.0.0.1:1234',model:'test',apiKey:'secret'},400);
+  await request(base,'/model-config',a,'PUT',{provider:'openai-responses',baseUrl:'https://gateway.example.test/v1?key=secret',model:'test',apiKey:'secret'},400);
+  await request(base,'/model-config',b,'PUT',{provider:'openai-chat',baseUrl:modelUrl,model:'third-party-model',apiKey:'third-party-key'});
+  assert.equal((await request(base,'/model-config',b)).provider,'openai-chat');
+  assert.equal((await request(base,'/model-config/test',b,'POST')).ok,true);
+  assert.equal(modelRequests[0].path,'/custom/v1/chat/completions');
+  assert.equal(modelRequests[0].auth,'Bearer third-party-key');
+  assert.equal(modelRequests[0].body.model,'third-party-model');
+  assert.equal(modelRequests[0].body.messages[0].role,'system');
+  assert.equal(modelRequests[0].body.stream,false);
+  assert(!('input' in modelRequests[0].body));
   const analysisRequest={question:'test authorized context',workflow:'quick',useMemory:false,reflect:false,exploreAlternatives:false,contextSelection:{includeProfile:false}};
   const preview=await request(base,'/analysis/preview',a,'POST',analysisRequest);
   const running=request(base,'/analysis',a,'POST',{...analysisRequest,previewRevision:preview.contextRevision});
   await Promise.race([received,new Promise((_,reject)=>{const t=setTimeout(()=>reject(Error('Agent never received job')),10000);t.unref();})]);
   assert.equal(receivedJob.api_key,'test-secret-never-export');
+  assert.equal(receivedJob.config.baseUrl,'https://gateway.example.test:8443/custom/v1');
   assert.equal(receivedJob.context.payload.financialProfile,undefined);
   assert.deepEqual(Object.keys(receivedJob).sort(),['api_key','config','context','memories','request']);
   const concurrent={...a};await request(replica,'/snapshot',concurrent);
@@ -97,8 +116,15 @@ try{
   for(let i=0;i<100;i++){try{if((await fetch(workerUrl+'/health',{headers:{Authorization:`Bearer ${agentToken}`}})).ok)break;}catch{} await sleep(50);}
   assert.equal((await fetch(workerUrl+'/health')).status,401);
   assert.equal((await fetch(workerUrl+'/api/snapshot',{headers:{Authorization:`Bearer ${agentToken}`}})).status,404);
-  assert.equal((await fetch(workerUrl+'/execute',{method:'POST',headers:{Authorization:`Bearer ${agentToken}`,'Content-Type':'application/json'},body:JSON.stringify({...receivedJob,config:{...receivedJob.config,baseUrl:'http://127.0.0.1'}})})).status,400);
-  console.log('PASS Agent isolation: authentication, no data API, endpoint allowlist, authorized context and non-blocking analysis');
+  assert.equal((await fetch(workerUrl+'/execute',{method:'POST',headers:{Authorization:`Bearer ${agentToken}`,'Content-Type':'application/json'},body:JSON.stringify({...receivedJob,config:{...receivedJob.config,baseUrl:'file:///etc/passwd'}})})).status,400);
+  // The actual Agent must reach the same custom endpoint; this deliberately plain
+  // response fails structured analysis validation after the model request succeeds.
+  const beforeAgentCalls=modelRequests.length;
+  await fetch(workerUrl+'/execute',{method:'POST',headers:{Authorization:`Bearer ${agentToken}`,'Content-Type':'application/json'},body:JSON.stringify({...receivedJob,api_key:'third-party-key',config:{provider:'openai-chat',baseUrl:modelUrl,model:'third-party-model',hasApiKey:true},request:{...receivedJob.request,webSearch:false}})});
+  assert(modelRequests.length>beforeAgentCalls,'Agent must call the custom model URL');
+  assert.equal(modelRequests.at(-1).path,'/custom/v1/chat/completions');
+  assert.equal(modelRequests.at(-1).auth,'Bearer third-party-key');
+  console.log('PASS custom model API and Agent isolation: custom hosts/ports/paths, Chat Completions, authentication, no data API, endpoint validation, authorized context and non-blocking analysis');
   const backup=await request(base,'/data/export',a);
   assert(!JSON.stringify(backup).includes('test-secret'));
   const c=await register(base);await request(base,'/snapshot',c);await request(base,'/daily-assets/ensure',c,'POST',{timezone:'UTC'});
@@ -133,5 +159,5 @@ try{
   assert.equal((await request(restart,'/snapshot',c)).holdings[0].id,id);
   console.log(`PASS hosted PostgreSQL: ${assertions} HTTP checks; tenant isolation, replica conflicts, durable revisions, secrets, migration, sessions and restart persistence`);
 } catch(error){console.error(logs.slice(-5000));throw error;}
-finally{releaseAgent?.();mockAgent.closeAllConnections();await new Promise(r=>mockAgent.close(r));for(const child of children){if(child.exitCode===null && child.signalCode===null){const ended=once(child,'exit');child.kill();await ended;}}}
+finally{releaseAgent?.();mockAgent.closeAllConnections();await new Promise(r=>mockAgent.close(r));mockModel.closeAllConnections();await new Promise(r=>mockModel.close(r));for(const child of children){if(child.exitCode===null && child.signalCode===null){const ended=once(child,'exit');child.kill();await ended;}}}
 

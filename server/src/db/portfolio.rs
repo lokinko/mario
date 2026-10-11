@@ -149,6 +149,7 @@ impl Database {
                 params![Utc::now().to_rfc3339()],
             )?;
         }
+        super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
         drop(conn);
@@ -160,6 +161,8 @@ impl Database {
         let transaction = conn.transaction()?;
         let before = super::daily::prepare(&transaction)?;
         let base_currency = before.profile.base_currency.clone();
+        let input = super::fx::holding_input(&transaction, input, &base_currency)?;
+        let input = &input;
         validate_holding(input, &base_currency)?;
         let fx_rate_to_base = if input.currency.eq_ignore_ascii_case(&base_currency) {
             None
@@ -180,6 +183,7 @@ impl Database {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
             params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, now],
         )?;
+        super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
         drop(conn);
@@ -191,6 +195,8 @@ impl Database {
         let transaction = conn.transaction()?;
         let before = super::daily::prepare(&transaction)?;
         let base_currency = before.profile.base_currency.clone();
+        let input = super::fx::holding_input(&transaction, input, &base_currency)?;
+        let input = &input;
         validate_holding(input, &base_currency)?;
         let fx_rate_to_base = if input.currency.eq_ignore_ascii_case(&base_currency) {
             None
@@ -236,6 +242,7 @@ impl Database {
         if valuation_changed {
             transaction.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
         }
+        super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
         drop(conn);
@@ -318,6 +325,7 @@ impl Database {
                 captured_at,
             ],
         )?;
+        super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
         drop(conn);
@@ -332,6 +340,7 @@ impl Database {
         if affected == 0 {
             return Err(AppError::Validation("找不到要删除的资产".into()));
         }
+        super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
         drop(conn);

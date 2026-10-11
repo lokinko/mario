@@ -60,7 +60,11 @@ pub(super) fn normalized_fx_provenance(
             "汇率观察日期不能晚于对应的估值或流水日期".into(),
         ));
     }
-    if observed_date > Local::now().date_naive() {
+    if observed_date
+        > Utc::now()
+            .with_timezone(&chrono_tz::Asia::Shanghai)
+            .date_naive()
+    {
         return Err(AppError::Validation("汇率观察日期不能晚于今天".into()));
     }
     Ok((source.into(), observed_on.into()))
@@ -81,7 +85,18 @@ pub(super) fn normalized_holding_fx_provenance(
     {
         return Ok((String::new(), String::new()));
     }
-    normalized_fx_provenance(currency, base_currency, rate, source, observed, effective)
+    normalized_fx_provenance(
+        currency,
+        base_currency,
+        rate,
+        source,
+        observed,
+        if matches!(source, "central_daily" | "central_manual") {
+            observed
+        } else {
+            effective
+        },
+    )
 }
 
 pub(super) fn validate_portfolio_event(
@@ -107,7 +122,7 @@ pub(super) fn validate_portfolio_event(
             .is_some_and(|rate| rate.is_finite() && rate > 0.0 && rate <= 1e9)
     {
         return Err(AppError::Validation(
-            "外币流水必须填写折算到当前基准币种的有效汇率".into(),
+            "外币流水缺少可用汇率，请在“我的情况 → 汇率设置”检查自动更新或修改汇率".into(),
         ));
     }
     let occurred_on = NaiveDate::parse_from_str(input.occurred_on.trim(), "%Y-%m-%d")

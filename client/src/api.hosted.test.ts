@@ -5,6 +5,8 @@ import {
   saveProfile,
   checkServerVersion,
   previewAnalysis,
+  previewPortfolioEventImport,
+  commitPortfolioEventImport,
 } from "./api";
 import { acceptRevision, dataRevision } from "./lib/service";
 import { setWebToken } from "./lib/webSession";
@@ -74,4 +76,19 @@ it("advances the revision after an acknowledged save and leaves unsent drafts bl
     "查看最新资料",
   );
   expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("acknowledges currency caching during CSV preview before committing its frozen rows", async () => {
+  acceptRevision("10");
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(response({ previewRevision: "fx-rows" }, "12"))
+    .mockResolvedValueOnce(response({ insertedCount: 1 }, "13"));
+  vi.stubGlobal("fetch", fetcher);
+  const preview = await previewPortfolioEventImport("csv");
+  expect(dataRevision()).toBe("12");
+  await commitPortfolioEventImport("csv", preview.previewRevision);
+  expect(fetcher.mock.calls[0][1].headers["If-Match"]).toBe("10");
+  expect(fetcher.mock.calls[1][1].headers["If-Match"]).toBe("12");
+  expect(dataRevision()).toBe("13");
 });

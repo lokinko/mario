@@ -93,6 +93,8 @@ export function Advisor({
   const [running, setRunning] = useState(false);
 
   const [webSearch, setWebSearch] = useState(true);
+  const supportsWebSearch = model.provider !== "openai-chat";
+  const useWebSearch = supportsWebSearch && webSearch;
   const [error, setError] = useState("");
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
   const [storedAnalysis, setStoredAnalysis] = useState<StoredAnalysis | null>(
@@ -170,7 +172,7 @@ export function Advisor({
   }, [turns.length]);
 
   const request = (previewRevision?: string): AnalysisRequest => ({
-    webSearch,
+    webSearch: useWebSearch,
     dailyAssetRange,
     userMessage: question,
     question:
@@ -562,7 +564,7 @@ export function Advisor({
             将把你的问题和{" "}
             {preview.groups.filter((group) => group.included).length}{" "}
             组资料发送给上述模型。
-            {webSearch
+            {useWebSearch
               ? "确认后将启用供应商网页搜索，搜索查询可能交给其搜索服务，且可能产生额外费用。"
               : "本次不启用网页搜索，仅使用已选资料。"}
             {followUp ? "本次也会附上上一轮问题与回答摘要。" : ""}
@@ -679,8 +681,8 @@ export function Advisor({
           <label className="auto-external-option">
             <input
               type="checkbox"
-              checked={webSearch}
-              disabled={running}
+              checked={useWebSearch}
+              disabled={running || !supportsWebSearch}
               onChange={(event) =>
                 invalidatePreview(() => setWebSearch(event.target.checked))
               }
@@ -688,7 +690,9 @@ export function Advisor({
             联网查找相关资料
           </label>
           <p>
-            确认发送后由模型供应商搜索网页，回答会附上来源链接。关闭后仅参考已有资料。
+            {supportsWebSearch
+              ? "确认发送后由模型供应商搜索网页，回答会附上来源链接。关闭后仅参考已有资料。"
+              : "当前 Chat Completions 接口仅参考已有资料，不支持原生网页搜索。"}
           </p>
         </div>
         <div className="context-shortcuts">

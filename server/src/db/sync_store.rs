@@ -17,9 +17,14 @@ impl Database {
                 .map(|column| quote_identifier(column))
                 .collect::<Vec<_>>();
             let sql = format!(
-                "SELECT {} FROM {} ORDER BY {}",
+                "SELECT {} FROM {} {} ORDER BY {}",
                 columns.join(","),
                 quote_identifier(spec.name),
+                if spec.name == "settings" {
+                    "WHERE key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%'"
+                } else {
+                    ""
+                },
                 spec.order_by
             );
             let mut statement = conn.prepare(&sql)?;
@@ -79,7 +84,15 @@ impl Database {
         transaction.execute_batch("PRAGMA defer_foreign_keys=ON;")?;
 
         for spec in SYNC_TABLES.iter().rev() {
-            transaction.execute(&format!("DELETE FROM {}", quote_identifier(spec.name)), [])?;
+            let filter = if spec.name == "settings" {
+                " WHERE key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%'"
+            } else {
+                ""
+            };
+            transaction.execute(
+                &format!("DELETE FROM {}{filter}", quote_identifier(spec.name)),
+                [],
+            )?;
         }
         for spec in sync_specs_for_version(dataset.schema_version)? {
             let table = dataset

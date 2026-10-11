@@ -36,7 +36,7 @@ Web 与 Tauri 客户端共用 Rust API，PostgreSQL 保存独立账号、会话�
 
 通常无需手动设置内部参数。服务运行器自动配置 `MARIO_HOST=127.0.0.1`、网页目录、Agent URL 和 Agent 模式。PostgreSQL 当前驱动不启用数据库连接 TLS；外部数据库放在受保护的专用网络/隧道，不直接暴露公网。
 
-用户模型 API Key 在服务端按账号加密，浏览器不能读取原值；配置和调用经 HTTPS。添加自定义模型主机前核对其信任边界。内置登录每账号每分钟最多 10 次，每个 API 进程最多同时执行 2 次密码运算。
+用户模型 API Key 在服务端按账号加密，浏览器不能读取原值。用户在“模型与隐私”选择接口并填写任意 HTTP/HTTPS Base URL、模型名称和密钥，无需配置 `MARIO_MODEL_HOSTS`。Base URL 包含供应商要求的路径（如 `/v1`），不包含 `/chat/completions`、`/responses` 或 `/messages` 端点。自建网关可使用自定义端口和 HTTP；请求从服务器发出，本机地址指服务器本机。公网模型连接建议使用 HTTPS。内置登录每账号每分钟最多 10 次，每个 API 进程最多同时执行 2 次密码运算。
 
 ```bash
 npm ci --prefix client

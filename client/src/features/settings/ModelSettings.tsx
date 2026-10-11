@@ -240,6 +240,9 @@ export function ModelSettings({
                   setConnectionResult("");
                 }}
               >
+                <option value="openai-chat">
+                  OpenAI 兼容 · Chat Completions
+                </option>
                 <option value="openai-responses">OpenAI Responses</option>
                 <option value="anthropic">Anthropic Messages</option>
                 {isLocalDev() && <option value="codex">Codex 本机登录</option>}
@@ -248,22 +251,23 @@ export function ModelSettings({
             <label>
               <span>API Base URL</span>
               <input
+                aria-label="API Base URL"
                 value={baseUrl}
                 disabled={provider === "codex"}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 placeholder="https://api.openai.com/v1"
               />
+              <small>
+                填写供应商的 HTTP/HTTPS
+                基础地址，支持自定义域名、端口和路径，无需配置服务器白名单。
+              </small>
             </label>
             <label>
               <span>模型名称</span>
               <input
                 value={modelName}
                 onChange={(e) => setModelName(e.target.value)}
-                placeholder={
-                  provider === "anthropic"
-                    ? "填写支持网页搜索的 Claude 模型 ID"
-                    : "填写支持网页搜索的 OpenAI 模型 ID"
-                }
+                placeholder="填写供应商提供的模型 ID"
               />
             </label>
             {provider !== "codex" && (
@@ -293,7 +297,9 @@ export function ModelSettings({
             <p>
               {provider === "codex"
                 ? "凭证由 Codex 保管和刷新，不复制到 mario。连接测试不验证网页搜索能力。"
-                : "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥；模型需支持原生网页搜索，连接测试仅验证普通调用。"}
+                : provider === "openai-chat"
+                  ? "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥。第三方服务可选择 OpenAI 兼容接口；Chat Completions 问答仅使用已选资料，不启用原生网页搜索。"
+                  : "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥；联网查找需模型支持原生网页搜索，连接测试仅验证普通调用。"}
             </p>
           </div>
         </div>

@@ -18,6 +18,7 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     crate::secrets::validate_master_key()?;
+    fx::start_daily_refresh();
     let state = Arc::new(HostedState {
         accounts: Arc::new(Accounts::open(url)?),
         slots: tokio::sync::Semaphore::new(24),
@@ -113,7 +114,7 @@ async fn authenticate(
         let db=Database::postgres(&host.accounts.url,&user)?;
         db.lock_account()?;
         let revision=db.revision()?;
-        let is_write=request.method()!=Method::GET && !request.uri().path().ends_with("/preview") && !request.uri().path().ends_with("/test");
+        let is_write=request.method()!=Method::GET && (request.uri().path()=="/api/portfolio-events/import/preview" || !request.uri().path().ends_with("/preview")) && !request.uri().path().ends_with("/test");
         if is_write && request.headers().get(header::IF_MATCH).and_then(|v|v.to_str().ok())!=Some(revision.as_str()) {
             return Ok::<_,AppError>((StatusCode::CONFLICT,Json(serde_json::json!({"error":"资料已变化，请刷新核对后再保存；当前输入不会自动提交。","revision":revision}))).into_response());
         }
@@ -168,6 +169,7 @@ async fn logout(
     Ok(Json(serde_json::json!({"ok":true})))
 }
 async fn version(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<serde_json::Value>> {
+    fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
     Ok(Json(serde_json::json!({"revision":state.db.revision()?})))
 }
 async fn export(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<db::SyncDataset>> {

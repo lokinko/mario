@@ -6,7 +6,7 @@ import {
   SERVER_SESSION_CHANGED,
   SERVER_DATA_UPDATED,
 } from "./lib/syncEvents";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -189,6 +189,12 @@ function App() {
     return () => {
       startupRequest.current += 1;
     };
+  }, []);
+
+  const refreshForNewDay = useCallback(() => {
+    void loadRemoteData(true).catch(() => {
+      setNotice("今日汇率已检查，页面暂时刷新失败，请稍后重试。");
+    });
   }, []);
 
   const refreshInvestmentData = async () => {
@@ -385,7 +391,7 @@ function App() {
           edited.current = true;
         }}
       >
-        <DailyTracking />
+        <DailyTracking onNewDay={refreshForNewDay} />
         {supportingNav.some((item) => item.id === view) && (
           <nav
             className={`context-breadcrumb ${view === "dashboard" ? "" : "narrow"}`}

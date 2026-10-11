@@ -37,6 +37,7 @@ function mount() {
       holding={holding}
       revision="v1"
       onEdit={vi.fn()}
+      onDelete={vi.fn()}
       onUpdate={onUpdate}
     />,
   );
@@ -85,7 +86,13 @@ it("deduplicates Enter followed by blur and reuses the request ID after failure"
   expect(vi.mocked(api.updateHoldingAmount).mock.calls[1]).toEqual(first);
 });
 it("does not silently authorize an old draft after a remote revision", async () => {
-  const props = { holding, revision: "v1", onEdit: vi.fn(), onUpdate: vi.fn() };
+  const props = {
+    holding,
+    revision: "v1",
+    onEdit: vi.fn(),
+    onDelete: vi.fn(),
+    onUpdate: vi.fn(),
+  };
   const view = render(<AssetAmountRow {...props} />);
   const field = screen.getByLabelText("工资卡金额");
   fireEvent.change(field, { target: { value: "120" } });
@@ -128,12 +135,14 @@ it("Tab saves the current amount and focuses the next amount field", async () =>
         holding={holding}
         revision="v1"
         onEdit={vi.fn()}
+        onDelete={vi.fn()}
         onUpdate={vi.fn()}
       />
       <AssetAmountRow
         holding={{ ...holding, id: "b", name: "基金" }}
         revision="b1"
         onEdit={vi.fn()}
+        onDelete={vi.fn()}
         onUpdate={vi.fn()}
       />
     </>,
@@ -144,4 +153,34 @@ it("Tab saves the current amount and focuses the next amount field", async () =>
   fireEvent.keyDown(first, { key: "Tab" });
   expect(document.activeElement).toBe(screen.getByLabelText("基金金额"));
   await screen.findByText("已保存");
+});
+
+it("blocks deletion while an amount save is pending", async () => {
+  let resolve!: (value: Snapshot) => void;
+  vi.mocked(api.updateHoldingAmount).mockImplementationOnce(
+    () =>
+      new Promise((yes) => {
+        resolve = yes;
+      }),
+  );
+  const onDelete = vi.fn();
+  render(
+    <AssetAmountRow
+      holding={holding}
+      revision="v1"
+      onEdit={vi.fn()}
+      onDelete={onDelete}
+      onUpdate={vi.fn()}
+    />,
+  );
+  const field = screen.getByLabelText("工资卡金额");
+  fireEvent.change(field, { target: { value: "130" } });
+  fireEvent.blur(field);
+  const remove = screen.getByRole("button", { name: "删除 工资卡" });
+  expect((remove as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(remove);
+  expect(onDelete).not.toHaveBeenCalled();
+  await act(async () => resolve(snapshot));
+  fireEvent.click(remove);
+  expect(onDelete).toHaveBeenCalledOnce();
 });

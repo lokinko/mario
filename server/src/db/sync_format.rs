@@ -299,9 +299,14 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         columns: &["id", "day", "entity_id", "payload"],
         order_by: "day, entity_id",
     },
+    SyncTableSpec {
+        name: "settings",
+        columns: &["key", "value"],
+        order_by: "key",
+    },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 10;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 11;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
@@ -351,6 +356,10 @@ pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpe
         }
         9 => {
             specs.truncate(14);
+            Ok(specs)
+        }
+        10 => {
+            specs.truncate(16);
             Ok(specs)
         }
         SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
@@ -423,6 +432,7 @@ impl SyncDataset {
                 }
             }
         }
+        super::fx::validate_sync(self)?;
         Ok(())
     }
 }

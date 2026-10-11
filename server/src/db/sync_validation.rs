@@ -80,6 +80,12 @@ fn validate_synced_fx_row(
             "同步数据中的同币种记录不能携带折算汇率".into(),
         ));
     }
+    let effective_on = if source_index == 10 && matches!(source, "central_daily" | "central_manual")
+    {
+        observed_on
+    } else {
+        effective_on
+    };
     let canonical = normalized_fx_provenance(
         currency,
         base_currency,

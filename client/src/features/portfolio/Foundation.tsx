@@ -15,7 +15,6 @@ import {
   applyVerifiedHoldingValuation,
   deleteHolding,
   deleteGoal,
-  getFxRate,
   saveGoal,
   saveHolding,
   saveProfile,
@@ -24,7 +23,6 @@ import {
 } from "../../api";
 import type {
   FinancialProfile,
-  FxRateQuote,
   Goal,
   Holding,
   HoldingValuationEvidence,
@@ -35,12 +33,7 @@ import type { FoundationSection } from "../../app/navigation";
 import { NumberField } from "../../components/NumberField";
 import { localDateValue } from "../../lib/dates";
 import { emptyProfile, emptyHolding, emptyGoal } from "./forms";
-import {
-  normalizedQuoteRate,
-  fxSourceLabel,
-  holdingValueInBase,
-  ecbFxMethodologyUrl,
-} from "./valuation";
+import { fxSourceLabel, holdingValueInBase } from "./valuation";
 import { formatMoney } from "../../lib/format";
 
 export function Foundation({
@@ -67,15 +60,10 @@ export function Foundation({
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [holdingFxQuote, setHoldingFxQuote] = useState<FxRateQuote | null>(
-    null,
-  );
-  const [holdingFxLoading, setHoldingFxLoading] = useState(false);
-  const [holdingFxError, setHoldingFxError] = useState("");
   const [valuationQuantity, setValuationQuantity] = useState(0);
   const [valuationLoading, setValuationLoading] = useState(false);
   const [valuationError, setValuationError] = useState("");
-  const holdingBusy = saving || holdingFxLoading || valuationLoading;
+  const holdingBusy = saving || valuationLoading;
   const canSaveHolding =
     !holdingBusy &&
     Boolean(holding.name.trim()) &&
@@ -84,9 +72,7 @@ export function Foundation({
     holding.marketValue >= 0 &&
     holding.marketValue <= 1e15 &&
     Boolean(holding.valuationDate) &&
-    holding.valuationDate <= localDateValue(new Date()) &&
-    (holding.fxRateToBase == null ||
-      (Number.isFinite(holding.fxRateToBase) && holding.fxRateToBase > 0));
+    holding.valuationDate <= localDateValue(new Date());
 
   const updateNumber = (key: keyof FinancialProfile, value: string) =>
     setProfile({ ...profile, [key]: Number(value) });
@@ -130,8 +116,7 @@ export function Foundation({
             },
       );
       setHoldingDetailsOpen(false);
-      setHoldingFxQuote(null);
-      setHoldingFxError("");
+
       setValuationQuantity(0);
       setValuationError("");
       setEditingHoldingId(null);
@@ -154,37 +139,12 @@ export function Foundation({
       behavior: "smooth",
     });
     setEditingHoldingId(id);
-    setHoldingFxQuote(null);
-    setHoldingFxError("");
+
     setValuationQuantity(
       snapshot.holdingValuations.find((value) => value.holdingId === id)
         ?.quantity ?? 0,
     );
     setValuationError("");
-  };
-
-  const lookupHoldingFx = async () => {
-    setHoldingFxLoading(true);
-    setHoldingFxError("");
-    try {
-      const quote = await getFxRate(
-        holding.currency,
-        profile.baseCurrency,
-        holding.valuationDate,
-      );
-      setHolding((value) => ({
-        ...value,
-        fxRateToBase: normalizedQuoteRate(quote.rate),
-        fxRateSource: quote.providerCode,
-        fxRateObservedOn: quote.observedOn,
-      }));
-      setHoldingFxQuote(quote);
-    } catch (nextError) {
-      setHoldingFxQuote(null);
-      setHoldingFxError(String(nextError));
-    } finally {
-      setHoldingFxLoading(false);
-    }
   };
 
   const applyMarketValuation = async () => {
@@ -213,8 +173,8 @@ export function Foundation({
         setHolding(values);
         setHoldingAmount(String(values.marketValue));
       }
-      setHoldingFxQuote(null);
-      flash("已冻结数量、日收盘价和来源；外币汇率如失效需重新查询");
+
+      flash("已冻结数量、日收盘价和来源；外币汇率由统一设置自动提供");
     } catch (nextError) {
       setValuationError(String(nextError));
     } finally {
@@ -325,7 +285,7 @@ export function Foundation({
         >
           <fieldset
             className="holding-fields"
-            disabled={saving || holdingFxLoading || valuationLoading}
+            disabled={saving || valuationLoading}
           >
             <div className="form-grid compact-grid">
               <label>
@@ -387,8 +347,6 @@ export function Foundation({
                       fxRateSource: "",
                       fxRateObservedOn: "",
                     });
-                    setHoldingFxQuote(null);
-                    setHoldingFxError("");
                   }}
                 >
                   {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => (
@@ -410,8 +368,6 @@ export function Foundation({
                       fxRateSource: "",
                       fxRateObservedOn: "",
                     });
-                    setHoldingFxQuote(null);
-                    setHoldingFxError("");
                   }}
                 />
                 <small>日常记录可分批更新；手动组合检查点需同一估值日</small>
@@ -526,75 +482,11 @@ export function Foundation({
                 成本和目标权重可以稍后补充。查询证券收盘价需先保存持仓，再点击编辑。
               </p>
             </details>
-            <div className="form-grid compact-grid">
-              {holding.currency !== profile.baseCurrency && (
-                <>
-                  <NumberField
-                    label={`折算汇率（1 ${holding.currency} = ? ${profile.baseCurrency}）`}
-                    value={holding.fxRateToBase ?? 0}
-                    onChange={(v) => {
-                      setHolding({
-                        ...holding,
-                        fxRateToBase: v ? Number(v) : null,
-                        fxRateSource: "",
-                        fxRateObservedOn: "",
-                      });
-                      setHoldingFxQuote(null);
-                    }}
-                    suffix={profile.baseCurrency}
-                  />
-                  <div className="fx-lookup">
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={holdingFxLoading || !holding.valuationDate}
-                      onClick={lookupHoldingFx}
-                    >
-                      {holdingFxLoading ? (
-                        <LoaderCircle className="spin" size={15} />
-                      ) : (
-                        <Cloud size={15} />
-                      )}
-                      查询 ECB 当日参考汇率
-                    </button>
-                    {holdingFxError && (
-                      <small className="fx-error">{holdingFxError}</small>
-                    )}
-                    {holding.fxRateSource && (
-                      <small>
-                        已采用 {fxSourceLabel(holding.fxRateSource)} · 观察日{" "}
-                        {holding.fxRateObservedOn}
-                      </small>
-                    )}
-                    {holdingFxQuote && (
-                      <p>
-                        {holdingFxQuote.stalenessDays
-                          ? `非工作日，使用此前 ${holdingFxQuote.stalenessDays} 天的共同观察值。`
-                          : "已取得当日共同观察值。"}
-                        <a
-                          href={holdingFxQuote.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          核对原始数据
-                        </a>
-                      </p>
-                    )}
-                    {holding.fxRateSource === "ecb_reference" &&
-                      !holdingFxQuote && (
-                        <a
-                          className="fx-method-link"
-                          href={ecbFxMethodologyUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          查看 ECB 参考汇率方法
-                        </a>
-                      )}
-                  </div>
-                </>
-              )}
-            </div>
+            {holding.currency !== profile.baseCurrency && (
+              <p className="section-intro">
+                汇率由系统自动更新，统一在“我的情况 → 汇率设置”修改。
+              </p>
+            )}
             <div className="form-actions">
               {editingHoldingId ? (
                 <button
@@ -605,8 +497,7 @@ export function Foundation({
                     setEditingHoldingId(null);
                     setHolding(emptyHolding(profile.baseCurrency));
                     setHoldingAmount("");
-                    setHoldingFxQuote(null);
-                    setHoldingFxError("");
+
                     setValuationQuantity(0);
                     setValuationError("");
                   }}
@@ -703,7 +594,7 @@ export function Foundation({
                   <span className="row-actions">
                     <button
                       type="button"
-                      disabled={saving || holdingFxLoading || valuationLoading}
+                      disabled={saving || valuationLoading}
                       aria-label="编辑资产"
                       onClick={() => editHolding(item)}
                     >
@@ -711,7 +602,7 @@ export function Foundation({
                     </button>
                     <button
                       type="button"
-                      disabled={saving || holdingFxLoading || valuationLoading}
+                      disabled={saving || valuationLoading}
                       aria-label="删除资产"
                       onClick={() => removeHolding(item)}
                     >

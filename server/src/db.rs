@@ -29,6 +29,7 @@ mod rule_values;
 use rule_values::{average, rule_effectiveness_signal, store_rule_revision};
 pub(crate) mod daily;
 mod decisions;
+mod fx;
 mod ledger;
 mod memory;
 mod portfolio;
@@ -77,7 +78,8 @@ pub struct Database {
 impl Database {
     pub fn is_empty_for_import(&self) -> AppResult<bool> {
         if self.export_sync_data()?.tables.iter().any(|t| {
-            !["daily_settings", "daily_entries"].contains(&t.name.as_str()) && !t.rows.is_empty()
+            !["daily_settings", "daily_entries", "settings"].contains(&t.name.as_str())
+                && !t.rows.is_empty()
         }) {
             return Ok(false);
         }

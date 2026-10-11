@@ -77,6 +77,34 @@ const existingModel = {
   hasApiKey: true,
 };
 
+it("saves a third-party Chat Completions connection with a custom URL, port and model", async () => {
+  const onUpdate = vi.fn();
+  render(
+    <ModelSettings model={existingModel} onUpdate={onUpdate} flash={vi.fn()} />,
+  );
+  fireEvent.change(screen.getByLabelText("模型接口"), {
+    target: { value: "openai-chat" },
+  });
+  fireEvent.change(screen.getByLabelText("API Base URL", { exact: false }), {
+    target: { value: "http://gateway.example.test:8080/custom/v1" },
+  });
+  fireEvent.change(screen.getByLabelText("模型名称"), {
+    target: { value: "third-party-model" },
+  });
+  fireEvent.change(screen.getByLabelText("API Key"), {
+    target: { value: "third-party-key" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+  await waitFor(() => expect(onUpdate).toHaveBeenCalled());
+  expect(api.saveModelConfig).toHaveBeenCalledWith({
+    provider: "openai-chat",
+    baseUrl: "http://gateway.example.test:8080/custom/v1",
+    model: "third-party-model",
+    apiKey: "third-party-key",
+  });
+  expect((screen.getByLabelText("API Key") as HTMLInputElement).value).toBe("");
+});
+
 it("reads Codex in one click and selects its detected model without copying a key", async () => {
   const detected = {
     provider: "codex" as const,

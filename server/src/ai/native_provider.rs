@@ -7,7 +7,8 @@ use super::provider::{
 };
 use crate::error::{AppError, AppResult};
 
-/// Both tools execute at the provider. This client never fetches search-result URLs.
+/// Native search tools execute at the provider; Chat Completions supports generation only.
+/// This client never fetches search-result URLs.
 pub struct NativeModelProvider {
     client: Client,
     protocol: String,
@@ -25,16 +26,18 @@ impl NativeModelProvider {
     ) -> AppResult<Self> {
         let protocol = match protocol.as_str() {
             "openai-compatible" | "openai-responses" => "openai-responses",
+            "openai-chat" => "openai-chat",
             "anthropic" => "anthropic",
             _ => {
                 return Err(AppError::Validation(
-                    "请选择 OpenAI Responses 或 Anthropic Messages".into(),
+                    "请选择 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages".into(),
                 ))
             }
         };
         if api_key.trim().is_empty() || model.trim().is_empty() {
             return Err(AppError::Validation("请先配置模型名称和 API Key".into()));
         }
+        crate::agent::validate_endpoint(&base_url)?;
         Ok(Self {
             client: Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
@@ -54,6 +57,12 @@ impl NativeModelProvider {
         search: bool,
     ) -> AppResult<SearchCompletion> {
         let anthropic = self.protocol == "anthropic";
+        let chat = self.protocol == "openai-chat";
+        if chat && search {
+            return Err(AppError::Validation(
+                "Chat Completions 接口不支持原生网页搜索，请关闭联网查找或使用支持搜索的 Responses / Messages 接口".into(),
+            ));
+        }
         let mut body = if anthropic {
             let system = messages
                 .iter()
@@ -66,6 +75,8 @@ impl NativeModelProvider {
                 .filter(|m| m.role != "system")
                 .collect::<Vec<_>>();
             json!({"model":self.model,"system":system,"messages":turns,"max_tokens":8192})
+        } else if chat {
+            json!({"model":self.model,"messages":messages,"stream":false})
         } else {
             json!({"model":self.model,"input":messages,"store":false})
         };
@@ -82,7 +93,13 @@ impl NativeModelProvider {
             let url = format!(
                 "{}/{}",
                 self.base_url,
-                if anthropic { "messages" } else { "responses" }
+                if anthropic {
+                    "messages"
+                } else if chat {
+                    "chat/completions"
+                } else {
+                    "responses"
+                }
             );
             let request = self.client.post(url).json(&body);
             let response = if anthropic {
@@ -108,11 +125,21 @@ impl NativeModelProvider {
             }
             add_usage(
                 &mut result.usage.input_tokens,
-                parsed["usage"]["input_tokens"].as_u64(),
+                parsed["usage"][if chat {
+                    "prompt_tokens"
+                } else {
+                    "input_tokens"
+                }]
+                .as_u64(),
             );
             add_usage(
                 &mut result.usage.output_tokens,
-                parsed["usage"]["output_tokens"].as_u64(),
+                parsed["usage"][if chat {
+                    "completion_tokens"
+                } else {
+                    "output_tokens"
+                }]
+                .as_u64(),
             );
             if anthropic {
                 parse_anthropic(&parsed, &mut result);
@@ -134,6 +161,18 @@ impl NativeModelProvider {
                         ))
                     }
                 }
+            } else if chat {
+                let choice = &parsed["choices"][0];
+                if choice["finish_reason"] != "stop" {
+                    return Err(AppError::Model(
+                        "Chat Completions 输出未完成，请重试或缩小问题".into(),
+                    ));
+                }
+                result.content = choice["message"]["content"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .into();
+                return finish(result, false);
             } else {
                 if parsed["status"] != "completed" {
                     return Err(AppError::Model(
@@ -343,6 +382,8 @@ mod tests {
             .route(
                 if protocol == "anthropic" {
                     "/v1/messages"
+                } else if protocol == "openai-chat" {
+                    "/custom/v1/chat/completions"
                 } else {
                     "/v1/responses"
                 },
@@ -356,7 +397,14 @@ mod tests {
         });
         let provider = NativeModelProvider::new(
             protocol.into(),
-            format!("http://{address}/v1"),
+            format!(
+                "http://{address}{}/",
+                if protocol == "openai-chat" {
+                    "/custom/v1"
+                } else {
+                    "/v1"
+                }
+            ),
             "test-model".into(),
             "test-key".into(),
         )
@@ -371,6 +419,48 @@ mod tests {
             {"type":"web_search_call","status":"completed"},
             {"type":"message","content":[{"type":"output_text","text":"利率为2%。[来源]","annotations":[{"type":"url_citation","start_index":6,"end_index":10,"url":"https://example.com/rate","title":"Rate"}]}]}
         ],"usage":{"input_tokens":12,"output_tokens":4}})
+    }
+    #[tokio::test]
+    async fn chat_completions_uses_custom_endpoint_messages_auth_and_usage() {
+        let (provider, state, server) = mock("openai-chat", vec![json!({
+            "choices":[{"message":{"role":"assistant","content":"第三方回复"},"finish_reason":"stop"}],
+            "usage":{"prompt_tokens":15,"completion_tokens":6}
+        })]).await;
+        let result = provider.complete(messages()).await.unwrap();
+        assert_eq!(result.content, "第三方回复");
+        assert_eq!(result.usage.input_tokens, Some(15));
+        assert_eq!(result.usage.output_tokens, Some(6));
+        assert_eq!(provider.provider_name(), "openai-chat");
+        assert!(provider
+            .search(messages())
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("不支持原生网页搜索"));
+        server.abort();
+        let requests = state.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0["authorization"], "Bearer test-key");
+        assert_eq!(requests[0].1["model"], "test-model");
+        assert_eq!(requests[0].1["messages"][0]["role"], "system");
+        assert_eq!(requests[0].1["messages"][1]["content"], "research");
+        assert_eq!(requests[0].1["stream"], false);
+        assert!(requests[0].1.get("input").is_none());
+        assert!(requests[0].1.get("tools").is_none());
+    }
+
+    #[tokio::test]
+    async fn chat_completions_rejects_truncated_empty_and_error_outputs() {
+        for reply in [
+            json!({"choices":[{"message":{"content":"partial"},"finish_reason":"length"}]}),
+            json!({"choices":[{"message":{"content":""},"finish_reason":"stop"}]}),
+            json!({"error":{"message":"secret upstream details"}}),
+        ] {
+            let (provider, _, server) = mock("openai-chat", vec![reply]).await;
+            let error = provider.complete(messages()).await.unwrap_err().to_string();
+            assert!(!error.contains("secret upstream details"));
+            server.abort();
+        }
     }
     #[tokio::test]
     async fn responses_uses_native_search_auth_and_annotations() {

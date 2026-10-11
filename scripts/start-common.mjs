@@ -15,7 +15,6 @@ export function defaults(domain = 'localhost') {
     MARIO_MASTER_KEY: randomBytes(32).toString('base64'),
     MARIO_REGISTRATION_KEY: secret(),
     MARIO_AGENT_TOKEN: secret(),
-    MARIO_MODEL_HOSTS: 'api.openai.com,api.anthropic.com',
     MARIO_ALLOWED_ORIGINS: '',
     DATABASE_URL: '',
     PG_BIN: '',

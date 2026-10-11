@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ensureDailyAssets } from "../../api";
 import { SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 
-export function DailyTracking() {
+export function DailyTracking({ onNewDay }: { onNewDay?: () => void } = {}) {
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -36,7 +36,9 @@ export function DailyTracking() {
         const history = await ensureDailyAssets(timezone);
         timezone = history.timezone;
         if (!disposed) {
+          const changed = lastDay !== "" && lastDay !== history.today;
           lastDay = history.today;
+          if (changed) onNewDay?.();
           setError("");
         }
       } catch (e) {
@@ -62,7 +64,7 @@ export function DailyTracking() {
       window.removeEventListener(SERVER_DATA_UPDATED, remote);
       document.removeEventListener("visibilitychange", wake);
     };
-  }, [retry]);
+  }, [retry, onNewDay]);
   return error ? (
     <div className="daily-tracking-error" role="status">
       {error}{" "}

@@ -63,7 +63,7 @@ export const portfolioEventLabels: Record<PortfolioEventType, string> = {
 };
 
 export function downloadPortfolioEventCsvTemplate(baseCurrency: string) {
-  const portfolioEventCsvTemplate = `\ufeffsource,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,fx_rate_source,fx_rate_observed_on,asset_name,note\n券商账户,trade-001,buy,${localDateValue(new Date())},10000,${baseCurrency},,,,全球指数基金,定投买入\n`;
+  const portfolioEventCsvTemplate = `\ufeffsource,external_id,event_type,occurred_on,amount,currency,asset_name,note\n券商账户,trade-001,buy,${localDateValue(new Date())},10000,${baseCurrency},全球指数基金,定投买入\n`;
   const url = URL.createObjectURL(
     new Blob([portfolioEventCsvTemplate], { type: "text/csv;charset=utf-8" }),
   );

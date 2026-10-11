@@ -59,29 +59,20 @@ impl Database {
     ) -> AppResult<()> {
         if !matches!(
             provider,
-            "openai-responses" | "anthropic" | "openai-compatible" | "codex"
+            "openai-responses" | "openai-chat" | "anthropic" | "openai-compatible" | "codex"
         ) {
             return Err(AppError::Validation(
-                "请选择 OpenAI Responses、Anthropic Messages 或 Codex".into(),
+                "请选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或 Codex"
+                    .into(),
             ));
         }
-        if self.hosted() {
+        if provider != "codex" {
             crate::agent::validate_endpoint(base_url)?;
+        } else if self.hosted() || base_url != "codex://local" {
+            return Err(AppError::Validation("Codex 登录仅支持本机开发模式".into()));
         }
-        let url = reqwest::Url::parse(base_url)
-            .map_err(|_| AppError::Validation("模型地址无效".into()))?;
-        if !(provider == "codex" && base_url == "codex://local"
-            || provider != "codex"
-                && (url.scheme() == "https"
-                    || (url.scheme() == "http"
-                        && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]")))))
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-            || model.trim().is_empty()
-        {
-            return Err(AppError::Validation("请填写模型名称和 HTTPS API 基础地址；仅本机允许 HTTP，地址不能包含凭据、查询或片段".into()));
+        if model.trim().is_empty() {
+            return Err(AppError::Validation("请填写模型名称".into()));
         }
         let conn = self.conn()?;
         for (key, value) in [
@@ -115,10 +106,20 @@ mod tests {
         assert!(db
             .save_model_metadata("other", "https://example.com", "test")
             .is_err());
+        db.save_model_metadata(
+            "openai-chat",
+            "http://models.example.test:8080/custom/v1/",
+            "third-party-model",
+        )
+        .unwrap();
+        let config = db.model_config().unwrap();
+        assert_eq!(config.provider, "openai-chat");
+        assert_eq!(config.base_url, "http://models.example.test:8080/custom/v1");
+        assert_eq!(config.model, "third-party-model");
         assert!(db
             .save_model_metadata(
-                "openai-responses",
-                "http://localhost.evil.example/v1",
+                "openai-chat",
+                "https://models.example.test?key=secret",
                 "test"
             )
             .is_err());

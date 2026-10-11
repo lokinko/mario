@@ -60,7 +60,7 @@ pub(super) fn build_snapshot(
                 valuation_status.missing_fx_holdings.join("、"),
                 valuation_status.base_currency
             ),
-            action: "补充估值日对应的汇率；不要把不同币种的原始金额直接相加。".into(),
+            action: "在“我的情况 → 汇率设置”重试自动更新或统一修改汇率。".into(),
         });
     }
     if valuation_status.undated_holding_count > 0 || valuation_status.valuation_dates.len() > 1 {
@@ -111,7 +111,7 @@ pub(super) fn build_snapshot(
         );
     } else if !holdings.is_empty() {
         plan.assumptions = format!(
-            "组合数值已按 {} 折算；{}/{} 项持仓冻结了带来源证券价格，其余市值、汇率与日期仍依赖用户确认。{}",
+            "组合数值已按 {} 折算；{}/{} 项持仓冻结了带来源证券价格，汇率来自统一设置，其余市值与日期仍依赖用户确认。{}",
             valuation_status.base_currency,
             holding_valuations.len(),
             holdings.len(),

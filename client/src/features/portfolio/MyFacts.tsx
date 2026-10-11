@@ -1,8 +1,14 @@
+import { ExchangeRates } from "./ExchangeRates";
 import { AssetAmountRow } from "./AssetAmountRow";
 import { AssetHistory } from "./AssetHistory";
 import { useState } from "react";
 import { ArrowRight, Plus, Save, X } from "lucide-react";
-import { saveHolding, updateHolding, saveProfile } from "../../api";
+import {
+  deleteHolding,
+  saveHolding,
+  updateHolding,
+  saveProfile,
+} from "../../api";
 import type { Holding, Snapshot } from "../../types";
 import { type View } from "../../app/navigation";
 import { RecordLinks } from "../../components/RecordLinks";
@@ -53,9 +59,7 @@ export function MyFacts({
     editing.marketValue >= 0 &&
     editing.marketValue <= 1e15 &&
     editing.valuationDate &&
-    editing.valuationDate <= localDateValue(new Date()) &&
-    (editing.fxRateToBase == null ||
-      (Number.isFinite(editing.fxRateToBase) && editing.fxRateToBase > 0)),
+    editing.valuationDate <= localDateValue(new Date()),
   );
 
   const saveIncome = async () => {
@@ -97,6 +101,22 @@ export function MyFacts({
     });
     setError("");
   };
+  const removeAsset = async (item: Holding) => {
+    if (busy) return;
+    if (!window.confirm(`确认删除“${item.name}”？相关决策日志不会被删除。`))
+      return;
+    setBusy(true);
+    setError("");
+    try {
+      onUpdate(await deleteHolding(item.id));
+      if (editing?.id === item.id) setEditing(null);
+      flash("资产已删除");
+    } catch (e) {
+      setError(`删除失败：${String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="page narrow facts-page">
       <PageHeader title="我的情况" />
@@ -124,7 +144,7 @@ export function MyFacts({
       </div>
       {error && (
         <div className="error-box" role="alert">
-          {error}。输入已保留，请重试。
+          {error}。请重试。
         </div>
       )}
       {section === "income" ? (
@@ -210,6 +230,8 @@ export function MyFacts({
                 holding={item}
                 revision={snapshot.holdingRevisions?.[item.id]}
                 onUpdate={onUpdate}
+                disabled={busy}
+                onDelete={() => void removeAsset(item)}
                 onEdit={() => {
                   setAssetAmount(String(item.marketValue));
                   setEditing({ ...item });
@@ -348,18 +370,9 @@ export function MyFacts({
                 </div>
               </details>
               {editing.currency !== currency && (
-                <NumberField
-                  label={`折算汇率（1 ${editing.currency} 对应 ${currency}）`}
-                  value={editing.fxRateToBase ?? 0}
-                  onChange={(v) =>
-                    setEditing({
-                      ...editing,
-                      fxRateToBase: Number(v) || null,
-                      fxRateSource: "",
-                      fxRateObservedOn: "",
-                    })
-                  }
-                />
+                <p className="section-intro">
+                  汇率自动读取；如需调整，可在下方“汇率设置”统一修改。
+                </p>
               )}
               <div className="form-actions">
                 <button
@@ -374,6 +387,7 @@ export function MyFacts({
           </form>
         </section>
       )}
+      <ExchangeRates baseCurrency={currency} onUpdate={onUpdate} />
       <div className="facts-next">
         <button className="primary" onClick={() => navigate("advisor")}>
           去聊聊 <ArrowRight size={16} />

@@ -5032,6 +5032,13 @@ summary:focus-visible {
   color: inherit;
   min-width: 0;
 }
+.asset-row-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
 .asset-name small {
   font-size: 11px;
   color: var(--muted, #66706e);
@@ -5392,4 +5399,30 @@ button:focus-visible {
     flex: 1;
     min-width: 120px;
   }
+}
+
+.exchange-settings summary {
+  cursor: pointer;
+}
+.exchange-rate-list {
+  display: grid;
+  gap: 16px;
+  margin: 16px 0;
+}
+.exchange-rate-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+.exchange-rate-row > div {
+  flex: 1 1 240px;
+}
+.exchange-rate-row small {
+  display: block;
+  margin-top: 6px;
+  color: #66706e;
+}
+.exchange-rate-row label {
+  flex: 0 1 180px;
 }

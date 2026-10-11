@@ -16,7 +16,6 @@ PG_PORT="55432"                 # 项目独立 PostgreSQL 的本机端口，不�
 PG_BIN=""                       # 可选 PostgreSQL bin 路径；自动查找 /usr/lib/postgresql/*/bin。
 DATABASE_URL=""                 # 可选已有数据库 URL；空值复用已有配置，首次为空则使用项目本地 PG。
 # URL 中若有 $ 等 Shell 字符，赋值使用单引号，密码需按 URL 规则编码。
-MODEL_HOSTS=""                  # 可选模型 HTTPS 主机白名单，逗号分隔；默认 OpenAI/Anthropic。
 ALLOWED_ORIGINS=""              # 可选跨域网页 Origin，逗号分隔；当前同源网页无需填写。
 RUN_USER=""                     # 服务用户；默认复用数据库所有者或 sudo 登录用户，root 登录则创建 mario。
 SERVICE_NAME="mario"            # systemd 服务名；一台服务器部署多份时需使用不同名称和端口。
@@ -161,7 +160,7 @@ if [[ "$ACTION" == check ]]; then exec "$NODE" scripts/test-deployment.mjs; fi
 export MARIO_SETUP_IP="$SERVER_IP" MARIO_SETUP_DOMAIN="$DOMAIN" MARIO_SETUP_BASE_PATH="$BASE_PATH"
 export MARIO_SETUP_API_PORT="$API_PORT" MARIO_SETUP_AGENT_PORT="$AGENT_PORT" MARIO_SETUP_PG_PORT="$PG_PORT"
 export MARIO_SETUP_PG_BIN="$PG_BIN" MARIO_SETUP_DATABASE_URL="$DATABASE_URL"
-export MARIO_SETUP_MODEL_HOSTS="$MODEL_HOSTS" MARIO_SETUP_ORIGINS="$ALLOWED_ORIGINS"
+export MARIO_SETUP_ORIGINS="$ALLOWED_ORIGINS"
 if [[ "$ACTION" == prepare ]]; then exec "$NODE" scripts/host-runtime.mjs --prepare; fi
 as_user "$NODE" scripts/host-runtime.mjs --prepare
 as_user "$NODE" scripts/host-runtime.mjs --build

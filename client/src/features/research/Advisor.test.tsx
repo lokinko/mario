@@ -145,6 +145,30 @@ const props = {
   onCreateDecisionDraft: vi.fn(),
   requestedAnalysisId: null,
 };
+
+it("previews and runs Chat Completions analysis without native web search", async () => {
+  vi.mocked(api.previewAnalysis).mockResolvedValue(preview);
+  vi.mocked(api.runAnalysis).mockResolvedValue(result);
+  render(
+    <Advisor {...props} model={{ ...props.model, provider: "openai-chat" }} />,
+  );
+  const search = screen.getByLabelText("联网查找相关资料") as HTMLInputElement;
+  expect(search.checked).toBe(false);
+  expect(search.disabled).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "我现在适合开始投资吗？" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "提问" }));
+  const confirm = await screen.findByRole("button", { name: "确认发送" });
+  expect(api.previewAnalysis).toHaveBeenCalledWith(
+    expect.objectContaining({ webSearch: false }),
+  );
+  fireEvent.click(confirm);
+  await screen.findByText(result.answer);
+  expect(api.runAnalysis).toHaveBeenCalledWith(
+    expect.objectContaining({ webSearch: false }),
+  );
+});
 it("requires confirmation, keeps the answer while composing, and sends follow-up context only when selected", async () => {
   vi.mocked(api.previewAnalysis).mockResolvedValue(preview);
   vi.mocked(api.runAnalysis).mockResolvedValue(result);

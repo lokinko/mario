@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { getSnapshot, updateHoldingAmount } from "../../api";
 import type { Holding, Snapshot } from "../../types";
 
@@ -7,11 +8,15 @@ export function AssetAmountRow({
   revision,
   onUpdate,
   onEdit,
+  onDelete,
+  disabled = false,
 }: {
   holding: Holding;
   revision?: string;
   onUpdate: (snapshot: Snapshot) => void;
   onEdit: () => void;
+  onDelete: () => void;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState(String(holding.marketValue));
   const [status, setStatus] = useState("");
@@ -29,7 +34,7 @@ export function AssetAmountRow({
     }
   }, [holding.marketValue, revision]);
   const save = async () => {
-    if (pending.current || !dirty.current) return;
+    if (disabled || pending.current || !dirty.current) return;
     const value = Number(draft);
     if (!draft.trim() || !Number.isFinite(value) || value < 0 || value > 1e15) {
       setStatus("请输入有效金额；清零请填 0");
@@ -81,16 +86,29 @@ export function AssetAmountRow({
   };
   return (
     <div className="asset-amount-row">
-      <button
-        className="text-button asset-name"
-        onClick={onEdit}
-        aria-label={`编辑 ${holding.name}`}
-      >
-        <strong>{holding.name}</strong>
-        <small title="余额确认日期">
-          {holding.valuationDate || "日期待补充"}
-        </small>
-      </button>
+      <div className="asset-row-info">
+        <button
+          className="text-button asset-name"
+          disabled={busy || disabled}
+          onClick={onEdit}
+          aria-label={`编辑 ${holding.name}`}
+        >
+          <strong>{holding.name}</strong>
+          <small title="余额确认日期">
+            {holding.valuationDate || "日期待补充"}
+          </small>
+        </button>
+        <button
+          className="text-button danger-text"
+          disabled={busy || disabled}
+          onClick={() => {
+            if (!pending.current && !disabled) onDelete();
+          }}
+          aria-label={`删除 ${holding.name}`}
+        >
+          <Trash2 size={14} /> 删除
+        </button>
+      </div>
       <div className="asset-amount-editor">
         <label>
           <span className="sr-only">{holding.name}金额</span>
@@ -101,7 +119,7 @@ export function AssetAmountRow({
             aria-label={`${holding.name}金额`}
             title="回车或离开输入框保存"
             value={draft}
-            readOnly={busy}
+            readOnly={busy || disabled}
             onChange={(e) => {
               setDraft(e.target.value);
               dirty.current = true;
@@ -135,10 +153,18 @@ export function AssetAmountRow({
         <small role={failed ? "alert" : "status"}>{status}</small>
         {failed && (
           <span className="asset-save-actions">
-            <button className="text-button" onClick={() => void save()}>
+            <button
+              className="text-button"
+              disabled={busy || disabled}
+              onClick={() => void save()}
+            >
               重试
             </button>
-            <button className="text-button" onClick={() => void refresh()}>
+            <button
+              className="text-button"
+              disabled={busy || disabled}
+              onClick={() => void refresh()}
+            >
               核对最新金额
             </button>
           </span>

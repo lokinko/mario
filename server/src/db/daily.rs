@@ -542,6 +542,7 @@ impl Database {
             params![id, input.amount, day, Utc::now().to_rfc3339()],
         )?;
         tx.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
+        super::fx::apply_holdings(&tx)?;
         finish_at(&tx, &before, Some(id), now)?;
         let mut entry = latest_entry(&tx, &day, id)?.unwrap();
         entry.request_id = Some(input.request_id.clone());

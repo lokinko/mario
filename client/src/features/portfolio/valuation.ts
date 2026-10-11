@@ -9,6 +9,8 @@ export const ecbFxMethodologyUrl =
   "https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates";
 
 export function fxSourceLabel(source: string) {
+  if (source === "central_daily") return "自动日度汇率（ECB）";
+  if (source === "central_manual") return "统一手动汇率";
   if (source === "ecb_reference") return "ECB 参考汇率";
   if (source === "user_declared") return "用户声明汇率";
   return source || "待确认来源";

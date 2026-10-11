@@ -15,7 +15,6 @@ import {
   Upload,
 } from "lucide-react";
 import {
-  getFxRate,
   getPortfolioCheckins,
   getPortfolioEvents,
   previewPortfolioEventImport,
@@ -24,7 +23,6 @@ import {
   commitPortfolioEventImport,
 } from "../../api";
 import type {
-  FxRateQuote,
   PortfolioCheckInRecord,
   PortfolioEventInput,
   PortfolioEventImportPreview,
@@ -41,7 +39,7 @@ import {
   nextCalendarDate,
   downloadPortfolioEventCsvTemplate,
 } from "./forms";
-import { normalizedQuoteRate, fxSourceLabel } from "./valuation";
+import { fxSourceLabel } from "./valuation";
 import { formatMoney } from "../../lib/format";
 
 export function PortfolioLedger({
@@ -66,9 +64,6 @@ export function PortfolioLedger({
     useState<PortfolioEventImportPreview | null>(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
-  const [eventFxQuote, setEventFxQuote] = useState<FxRateQuote | null>(null);
-  const [eventFxLoading, setEventFxLoading] = useState(false);
-  const [eventFxError, setEventFxError] = useState("");
   const [reversingEventId, setReversingEventId] = useState<string | null>(null);
   const [reversalDate, setReversalDate] = useState(() =>
     localDateValue(new Date()),
@@ -130,38 +125,13 @@ export function PortfolioLedger({
     try {
       await savePortfolioEvent(draft);
       setDraft(emptyPortfolioEvent(snapshot.profile.baseCurrency));
-      setEventFxQuote(null);
-      setEventFxError("");
+
       await load();
       flash("组合流水已冻结；后续检查点会按日期自动汇总");
     } catch (nextError) {
       setError(String(nextError));
     } finally {
       setSaving(false);
-    }
-  };
-
-  const lookupEventFx = async () => {
-    setEventFxLoading(true);
-    setEventFxError("");
-    try {
-      const quote = await getFxRate(
-        draft.currency,
-        snapshot.profile.baseCurrency,
-        draft.occurredOn,
-      );
-      setDraft((value) => ({
-        ...value,
-        fxRateToBase: normalizedQuoteRate(quote.rate),
-        fxRateSource: quote.providerCode,
-        fxRateObservedOn: quote.observedOn,
-      }));
-      setEventFxQuote(quote);
-    } catch (nextError) {
-      setEventFxQuote(null);
-      setEventFxError(String(nextError));
-    } finally {
-      setEventFxLoading(false);
     }
   };
 
@@ -368,8 +338,6 @@ export function PortfolioLedger({
                   fxRateSource: "",
                   fxRateObservedOn: "",
                 });
-                setEventFxQuote(null);
-                setEventFxError("");
               }}
             >
               {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => (
@@ -378,59 +346,9 @@ export function PortfolioLedger({
             </select>
           </label>
           {draft.currency !== snapshot.profile.baseCurrency && (
-            <>
-              <NumberField
-                label={`折算汇率（1 ${draft.currency} = ? ${snapshot.profile.baseCurrency}）`}
-                value={draft.fxRateToBase ?? 0}
-                onChange={(value) => {
-                  setDraft({
-                    ...draft,
-                    fxRateToBase: value ? Number(value) : null,
-                    fxRateSource: "",
-                    fxRateObservedOn: "",
-                  });
-                  setEventFxQuote(null);
-                }}
-                suffix={snapshot.profile.baseCurrency}
-              />
-              <div className="fx-lookup">
-                <button
-                  className="secondary"
-                  disabled={eventFxLoading || !draft.occurredOn}
-                  onClick={lookupEventFx}
-                >
-                  {eventFxLoading ? (
-                    <LoaderCircle className="spin" size={15} />
-                  ) : (
-                    <Cloud size={15} />
-                  )}
-                  查询 ECB 当日参考汇率
-                </button>
-                {eventFxError && (
-                  <small className="fx-error">{eventFxError}</small>
-                )}
-                {draft.fxRateSource && (
-                  <small>
-                    已采用 {fxSourceLabel(draft.fxRateSource)} · 观察日{" "}
-                    {draft.fxRateObservedOn}
-                  </small>
-                )}
-                {eventFxQuote && (
-                  <p>
-                    {eventFxQuote.stalenessDays
-                      ? `非工作日，使用此前 ${eventFxQuote.stalenessDays} 天的共同观察值。`
-                      : "已取得当日共同观察值。"}
-                    <a
-                      href={eventFxQuote.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      核对原始数据
-                    </a>
-                  </p>
-                )}
-              </div>
-            </>
+            <p className="section-intro">
+              保存时自动读取发生日汇率；统一在“我的情况 → 汇率设置”管理。
+            </p>
           )}
           <label>
             <span>发生日期</span>
@@ -451,8 +369,6 @@ export function PortfolioLedger({
                   fxRateSource: "",
                   fxRateObservedOn: "",
                 });
-                setEventFxQuote(null);
-                setEventFxError("");
               }}
             />
             <small>日期用于自动分段和现金流权重。</small>
@@ -483,11 +399,7 @@ export function PortfolioLedger({
               draft.amount <= 0 ||
               !draft.occurredOn ||
               !draft.note.trim() ||
-              (requiresAsset && !draft.assetName.trim()) ||
-              Boolean(
-                draft.currency !== snapshot.profile.baseCurrency &&
-                (!draft.fxRateToBase || draft.fxRateToBase <= 0),
-              )
+              (requiresAsset && !draft.assetName.trim())
             }
             onClick={persist}
           >
@@ -539,7 +451,7 @@ export function PortfolioLedger({
             </button>
           </div>
           <p className="import-hint">
-            必填列：source、external_id、event_type、occurred_on、amount、currency、note；可选列：fx_rate_to_base、fx_rate_source、fx_rate_observed_on、asset_name。单次最多
+            必填列：source、external_id、event_type、occurred_on、amount、currency、note；可选列：asset_name。外币汇率自动读取，无需填写。单次最多
             1000 行、2 MB。
           </p>
           {importError && (

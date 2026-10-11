@@ -42,9 +42,9 @@ mario 不把新闻流或模型知识当作自动可信的事实。研究证据�
 
 ## 原生网页搜索
 
-模型接口支持 OpenAI Responses（`POST /responses`，Bearer 认证）和 Anthropic Messages（`POST /messages`，`x-api-key` 和 `anthropic-version`）。Base URL 包含 `/v1`，不包含具体端点。旧 `openai-compatible` 设置按 Responses 读取；仅实现 Chat Completions 的代理需要更换。切换协议或地址且已有密钥时，必须填写对应密钥，避免沿用另一供应商凭据。
+模型接口支持 OpenAI 兼容 Chat Completions（`openai-chat`，`POST /chat/completions`，Bearer 认证）、OpenAI Responses（`POST /responses`，Bearer 认证）和 Anthropic Messages（`POST /messages`，`x-api-key` 和 `anthropic-version`）。用户可自行填写任意 HTTP/HTTPS Base URL、端口、路径和模型名称，无需服务器主机白名单。Base URL 包含供应商要求的路径（通常为 `/v1`），不包含具体端点。旧 `openai-compatible` 设置仍按 Responses 读取；仅实现 Chat Completions 的第三方服务请选择“OpenAI 兼容 · Chat Completions”。切换协议或地址且已有密钥时，必须填写对应密钥，避免沿用另一供应商凭据。
 
-问答默认启用“联网查找相关资料”，可关闭。预览只构建本地上下文，搜索开关写入预览指纹；确认后先执行原生搜索，再生成结构化建议并核对。OpenAI 使用 `web_search`，Anthropic 使用 `web_search_20250305`。普通生成、结构修复、建议核对和连接测试不启用搜索工具。网页搜索权限和费用由供应商控制；预览明确说明查询可能交给其搜索服务。
+Responses / Messages 问答默认启用“联网查找相关资料”，可关闭；Chat Completions 接口禁用该开关，仅使用已选资料。预览只构建本地上下文，搜索开关写入预览指纹；确认后先执行原生搜索，再生成结构化建议并核对。OpenAI 使用 `web_search`，Anthropic 使用 `web_search_20250305`。普通生成、结构修复、建议核对和连接测试不启用搜索工具。网页搜索权限和费用由供应商控制；预览明确说明查询可能交给其搜索服务。
 
 搜索模型收到当前问题和已授权持仓的名称/代码，系统要求查询只使用公开研究主题；这是模型指令约束，不是对任意用户文本的确定性脱敏。关闭持仓后不传入其名称/代码。前轮回答仅作为追问上下文，不作为事实证据。
 

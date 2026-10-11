@@ -184,7 +184,8 @@ impl Database {
         let mut rows = parsed.issues;
 
         for parsed_row in parsed.rows {
-            let input = &parsed_row.input;
+            let resolved = self.centralized_event(&parsed_row.input, &base_currency)?;
+            let input = &resolved;
             let mut status = "ready";
             let mut message = "校验通过，确认后写入".to_owned();
             let validation =
@@ -277,15 +278,25 @@ impl Database {
             .map(|row| row.row_number)
             .collect::<HashSet<_>>();
         let parsed = event_import::parse(&request.csv_text)?;
+        let resolved_rows = parsed
+            .rows
+            .into_iter()
+            .map(|row| {
+                Ok((
+                    row.row_number,
+                    self.centralized_event(&row.input, &preview.base_currency)?,
+                ))
+            })
+            .collect::<AppResult<Vec<_>>>()?;
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
         let mut inserted_count = 0;
-        for row in parsed.rows {
-            if !ready_rows.contains(&row.row_number) {
+        for (row_number, input) in resolved_rows {
+            if !ready_rows.contains(&row_number) {
                 continue;
             }
-            let record = portfolio_event_record(&row.input, &preview.base_currency)?;
-            let fingerprint = portfolio_event_fingerprint(&row.input);
+            let record = portfolio_event_record(&input, &preview.base_currency)?;
+            let fingerprint = portfolio_event_fingerprint(&input);
             insert_portfolio_event(&transaction, &record, &fingerprint)?;
             inserted_count += 1;
         }

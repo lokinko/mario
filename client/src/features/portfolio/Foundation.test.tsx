@@ -114,42 +114,25 @@ it("saves with only name and market value and retains context for the next holdi
   ).toBe("");
 });
 
-it("allows an unknown foreign currency rate and clears known provenance when the date changes", async () => {
+it("saves foreign assets without a manual rate input", async () => {
   vi.mocked(api.saveHolding).mockResolvedValue(emptySnapshot as Snapshot);
   renderFoundation();
   fillHolding();
   fireEvent.change(screen.getByLabelText("持仓币种"), {
     target: { value: "USD" },
   });
+  expect(screen.queryByRole("spinbutton", { name: /折算汇率/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /查询 ECB/ })).toBeNull();
   const add = screen.getByRole("button", {
     name: "加入组合",
   }) as HTMLButtonElement;
   expect(add.disabled).toBe(false);
-  fireEvent.change(
-    screen.getByRole("spinbutton", { name: "折算汇率（1 USD = ? CNY） CNY" }),
-    { target: { value: "7.2" } },
-  );
-  expect(add.disabled).toBe(false);
   fireEvent.click(add);
   await waitFor(() =>
-    expect((screen.getByLabelText("资产名称") as HTMLInputElement).value).toBe(
-      "",
+    expect(api.saveHolding).toHaveBeenCalledWith(
+      expect.objectContaining({ currency: "USD", fxRateToBase: null }),
     ),
   );
-  expect((screen.getByLabelText("持仓币种") as HTMLSelectElement).value).toBe(
-    "USD",
-  );
-  expect(screen.getByDisplayValue("7.2")).toBeTruthy();
-  fireEvent.change(screen.getByLabelText(/^估值日期/), {
-    target: { value: "2025-03-11" },
-  });
-  expect(
-    (
-      screen.getByRole("spinbutton", {
-        name: "折算汇率（1 USD = ? CNY） CNY",
-      }) as HTMLInputElement
-    ).value,
-  ).toBe("");
 });
 
 it("preserves input after a failed holding save", async () => {

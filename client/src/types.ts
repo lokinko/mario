@@ -280,7 +280,12 @@ export interface RebalanceAction {
 }
 
 export interface ModelConfig {
-  provider: "openai-responses" | "anthropic" | "openai-compatible" | "codex";
+  provider:
+    | "openai-responses"
+    | "openai-chat"
+    | "anthropic"
+    | "openai-compatible"
+    | "codex";
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
@@ -733,4 +738,13 @@ export interface DailyComparison {
     pctPointChange: number | null;
   }[];
   allocationChanges: PortfolioAllocationChange[];
+}
+
+export interface FxBook {
+  baseCurrency: string;
+  checkedAt: number;
+  requestedOn: string;
+  quotes: FxRateQuote[];
+  manual: Record<string, { rate: number; observedOn: string }>;
+  error: string;
 }

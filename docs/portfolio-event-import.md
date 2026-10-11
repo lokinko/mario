@@ -20,17 +20,16 @@
 
 可选表头：
 
-- `fx_rate_to_base`：外币必填，含义是 1 单位原币折合多少基准币种；
-- `fx_rate_source`：汇率来源；留空时规范化为 `user_declared`；
-- `fx_rate_observed_on`：汇率实际观察日；留空时使用流水发生日，且不得晚于发生日；
 - `asset_name`：买入、卖出、分红和利息必须填写。
 
 模板示例：
 
 ```csv
-source,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,fx_rate_source,fx_rate_observed_on,asset_name,note
-券商账户,trade-001,buy,2026-09-01,1000,USD,6.72,ecb_reference,2026-09-01,全球指数基金,定投买入
+source,external_id,event_type,occurred_on,amount,currency,asset_name,note
+券商账户,trade-001,buy,2026-09-01,1000,USD,全球指数基金,定投买入
 ```
+
+汇率由服务端按发生日期从统一来源自动补齐，不需要填写。旧文件的汇率列继续允许解析，但新写入记录统一使用系统汇率；手动修改在“我的情况 → 汇率设置”进行。
 
 ## 预览状态与写入语义
 

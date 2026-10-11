@@ -13,6 +13,7 @@ mod db;
 mod error;
 mod event_import;
 mod evidence;
+mod fx;
 mod market_data;
 mod memory;
 mod models;
@@ -214,6 +215,7 @@ async fn serve_configured<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
+    fx::start_daily_refresh();
     let state = Arc::new(AppState {
         mutation_lock: tokio::sync::Mutex::new(()),
         db: Database::open(&data_dir.join("mario.db"))?,
@@ -266,6 +268,8 @@ fn api_router() -> Router {
         .route("/api/daily-assets/compare", get(compare_daily_assets))
         .route("/api/holdings/{id}/amount", put(update_holding_amount))
         .route("/api/market-data/fx-rate", get(fx_rate_quote))
+        .route("/api/fx-settings", get(fx_settings).put(save_fx_override))
+        .route("/api/fx-settings/refresh", post(refresh_fx_settings))
         .route("/api/market-data/security-price", get(security_price_quote))
         .route(
             "/api/market-data/security/config",
@@ -371,7 +375,11 @@ async fn require_local_auth(
                 .into_response();
         }
     }
-    let _guard = if request.method() != Method::GET {
+    let _guard = if request.method() != Method::GET
+        || matches!(
+            request.uri().path(),
+            "/api/snapshot" | "/api/fx-settings" | "/api/market-data/fx-rate"
+        ) {
         Some(state.mutation_lock.lock().await)
     } else {
         None
@@ -393,6 +401,7 @@ async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
 }
 async fn snapshot(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<Snapshot>> {
+    fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
     Ok(Json(state.db.snapshot()?))
 }
 
@@ -400,7 +409,9 @@ async fn fx_rate_quote(
     Extension(state): Extension<Arc<AppState>>,
     Query(query): Query<FxRateQuery>,
 ) -> AppResult<Json<FxRateQuote>> {
-    Ok(Json(state.fx_provider.quote(&query).await?))
+    Ok(Json(
+        fx::historical_quote(&state.db, state.fx_provider.as_ref(), &query).await?,
+    ))
 }
 
 async fn security_price_quote(
@@ -460,12 +471,15 @@ async fn save_profile(
     Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<FinancialProfile>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.save_profile(&input)?))
+    state.db.save_profile(&input)?;
+    fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
+    Ok(Json(state.db.snapshot()?))
 }
 async fn add_holding(
     Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<HoldingInput>,
 ) -> AppResult<Json<Snapshot>> {
+    fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
     Ok(Json(state.db.add_holding(&input)?))
 }
 async fn update_holding(
@@ -473,6 +487,7 @@ async fn update_holding(
     Path(id): Path<String>,
     Json(input): Json<HoldingInput>,
 ) -> AppResult<Json<Snapshot>> {
+    fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
     Ok(Json(state.db.update_holding(&id, &input)?))
 }
 async fn delete_holding(
@@ -501,6 +516,10 @@ async fn add_portfolio_event(
     Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<PortfolioEventInput>,
 ) -> AppResult<Json<PortfolioEventRecord>> {
+    cache_event_fx(&state, &input).await?;
+    let input = state
+        .db
+        .centralized_event(&input, &state.db.snapshot()?.profile.base_currency)?;
     Ok(Json(state.db.add_portfolio_event(&input)?))
 }
 async fn reverse_portfolio_event(
@@ -514,12 +533,14 @@ async fn preview_portfolio_event_import(
     Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<PortfolioEventImportRequest>,
 ) -> AppResult<Json<PortfolioEventImportPreview>> {
+    cache_import_fx(&state, &input.csv_text).await?;
     Ok(Json(state.db.preview_portfolio_event_import(&input)?))
 }
 async fn commit_portfolio_event_import(
     Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<PortfolioEventImportCommitRequest>,
 ) -> AppResult<Json<PortfolioEventImportResult>> {
+    cache_import_fx(&state, &input.csv_text).await?;
     Ok(Json(state.db.commit_portfolio_event_import(&input)?))
 }
 async fn memories(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<Vec<MemoryItem>>> {
@@ -1215,7 +1236,13 @@ async fn ensure_daily_assets(
     Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<db::daily::EnsureInput>,
 ) -> AppResult<Json<db::daily::DailyHistory>> {
-    Ok(Json(state.db.ensure_daily(&input)?))
+    state.db.ensure_daily(&input)?;
+    fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
+    Ok(Json(
+        state
+            .db
+            .daily_history(&db::daily::HistoryQuery::default())?,
+    ))
 }
 async fn daily_assets(
     Extension(state): Extension<Arc<AppState>>,
@@ -1235,6 +1262,62 @@ async fn update_holding_amount(
     Json(input): Json<db::daily::AmountInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.update_holding_amount(&id, &input)?))
+}
+
+async fn fx_settings(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<fx::FxBook>> {
+    Ok(Json(
+        fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?,
+    ))
+}
+async fn refresh_fx_settings(
+    Extension(state): Extension<Arc<AppState>>,
+) -> AppResult<Json<fx::FxBook>> {
+    Ok(Json(
+        fx::refresh(&state.db, state.fx_provider.as_ref(), true).await?,
+    ))
+}
+async fn save_fx_override(
+    Extension(state): Extension<Arc<AppState>>,
+    Json(input): Json<fx::FxOverrideInput>,
+) -> AppResult<Json<fx::FxBook>> {
+    // Allow a manual rate to repair a failed provider connection.
+    state.db.set_fx_override(&input)?;
+    Ok(Json(
+        fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?,
+    ))
+}
+async fn cache_event_fx(state: &AppState, input: &PortfolioEventInput) -> AppResult<()> {
+    let base = state.db.snapshot()?.profile.base_currency;
+    fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
+    if !input.currency.eq_ignore_ascii_case(&base) {
+        let query = FxRateQuery {
+            from_currency: input.currency.clone(),
+            to_currency: base,
+            on_date: input.occurred_on.clone(),
+        };
+        let quote = fx::historical_quote(&state.db, state.fx_provider.as_ref(), &query).await?;
+        let key = format!(
+            "fx.quote.{}.{}.{}",
+            quote.from_currency, quote.to_currency, query.on_date
+        );
+        state
+            .db
+            .set_setting(&key, &serde_json::to_string(&quote)?)?;
+    }
+    Ok(())
+}
+async fn cache_import_fx(state: &AppState, csv: &str) -> AppResult<()> {
+    let parsed = event_import::parse(csv)?;
+    let mut seen = HashSet::new();
+    for row in parsed.rows {
+        if seen.insert((row.input.currency.clone(), row.input.occurred_on.clone())) {
+            // Invalid/missing historical quotes are reported on the affected preview rows.
+            if let Err(error) = cache_event_fx(state, &row.input).await {
+                tracing::warn!(%error, "CSV FX lookup failed");
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
