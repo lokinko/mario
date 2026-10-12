@@ -8,21 +8,23 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ModelSettings } from "./ModelSettings";
-import * as api from "../../api";
+import * as settingsApi from "../../api/settings";
 
-vi.mock("../../api", () => ({
+vi.mock("../../api/settings", () => ({
   getAnalysisSettings: vi.fn().mockResolvedValue(null),
   saveAnalysisSettings: vi.fn(),
-  getSecurityPriceConfig: vi.fn().mockResolvedValue({ hasApiKey: false }),
   saveModelConfig: vi
     .fn()
     .mockImplementation(async (input) => ({ ...input, hasApiKey: true })),
   readCodexCredentials: vi.fn(),
   deleteModelKey: vi.fn(),
+  testModelConnection: vi.fn(),
+}));
+vi.mock("../../api/portfolio", () => ({
+  getSecurityPriceConfig: vi.fn().mockResolvedValue({ hasApiKey: false }),
   deleteSecurityPriceKey: vi.fn(),
   getSecurityPrice: vi.fn(),
   saveSecurityPriceConfig: vi.fn(),
-  testModelConnection: vi.fn(),
 }));
 afterEach(() => {
   cleanup();
@@ -63,7 +65,7 @@ it("migrates the legacy selection and saves Anthropic with its endpoint and repl
   });
   fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalled());
-  expect(api.saveModelConfig).toHaveBeenCalledWith({
+  expect(settingsApi.saveModelConfig).toHaveBeenCalledWith({
     provider: "anthropic",
     baseUrl: "https://api.anthropic.com/v1",
     model: "claude-fixture",
@@ -98,7 +100,7 @@ it("saves a third-party Chat Completions connection with a custom URL, port and 
   });
   fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalled());
-  expect(api.saveModelConfig).toHaveBeenCalledWith({
+  expect(settingsApi.saveModelConfig).toHaveBeenCalledWith({
     provider: "openai-chat",
     baseUrl: "http://gateway.example.test:8080/custom/v1",
     model: "third-party-model",
@@ -114,7 +116,7 @@ it("reads Codex in one click and selects its detected model without copying a ke
     model: "detected-model",
     hasApiKey: true,
   };
-  vi.mocked(api.readCodexCredentials).mockResolvedValue(detected);
+  vi.mocked(settingsApi.readCodexCredentials).mockResolvedValue(detected);
   const onUpdate = vi.fn();
   render(
     <ModelSettings model={existingModel} onUpdate={onUpdate} flash={vi.fn()} />,
@@ -129,11 +131,11 @@ it("reads Codex in one click and selects its detected model without copying a ke
     "detected-model",
   );
   expect(screen.queryByLabelText("API Key")).toBeNull();
-  expect(api.saveModelConfig).not.toHaveBeenCalled();
+  expect(settingsApi.saveModelConfig).not.toHaveBeenCalled();
 });
 
 it("shows a missing-login failure and preserves the existing model", async () => {
-  vi.mocked(api.readCodexCredentials).mockRejectedValue(
+  vi.mocked(settingsApi.readCodexCredentials).mockRejectedValue(
     new Error("未找到已登录的 Codex 凭证"),
   );
   const onUpdate = vi.fn();
@@ -154,7 +156,7 @@ it("shows a missing-login failure and preserves the existing model", async () =>
 
 it("locks configuration and key writes during a connection test and releases them on failure", async () => {
   let reject!: (error: Error) => void;
-  vi.mocked(api.testModelConnection).mockReturnValue(
+  vi.mocked(settingsApi.testModelConnection).mockReturnValue(
     new Promise((_, fail) => {
       reject = fail;
     }),
@@ -182,6 +184,6 @@ it("locks configuration and key writes during a connection test and releases the
     (screen.getByRole("button", { name: "保存配置" }) as HTMLButtonElement)
       .disabled,
   ).toBe(false);
-  expect(api.saveModelConfig).not.toHaveBeenCalled();
-  expect(api.deleteModelKey).not.toHaveBeenCalled();
+  expect(settingsApi.saveModelConfig).not.toHaveBeenCalled();
+  expect(settingsApi.deleteModelKey).not.toHaveBeenCalled();
 });

@@ -1,8 +1,3 @@
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    Json,
-};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -46,28 +41,3 @@ impl Serialize for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let status = match self {
-            AppError::Busy(_) => StatusCode::SERVICE_UNAVAILABLE,
-            AppError::RateLimit(_) => StatusCode::TOO_MANY_REQUESTS,
-            AppError::Validation(_) => StatusCode::BAD_REQUEST,
-            AppError::Auth(_) | AppError::LocalAuth(_) => StatusCode::UNAUTHORIZED,
-            AppError::Conflict(_) => StatusCode::CONFLICT,
-            AppError::NotFound(_) => StatusCode::NOT_FOUND,
-            AppError::Model(_) | AppError::Network(_) => StatusCode::BAD_GATEWAY,
-            AppError::MarketData(_) => StatusCode::BAD_GATEWAY,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-        let message = if status == StatusCode::INTERNAL_SERVER_ERROR {
-            // PostgreSQL's Display only says "db error"; Debug retains its
-            // SQLSTATE and underlying cause. Keep details in server logs only.
-            tracing::error!(error=%self, cause=?self,"request failed");
-            "服务暂时不可用，请联系管理员查看日志".into()
-        } else {
-            self.to_string()
-        };
-        (status, Json(serde_json::json!({ "error": message }))).into_response()
-    }
-}

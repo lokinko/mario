@@ -38,7 +38,7 @@ fn validate(t: &HoldingTrade) -> AppResult<()> {
     Uuid::parse_str(&t.id).map_err(|_| invalid("交易请求编号无效"))?;
     let date = chrono::NaiveDate::parse_from_str(&t.occurred_on, "%Y-%m-%d")
         .map_err(|_| invalid("交易日期无效"))?;
-    if date.to_string() != t.occurred_on || t.occurred_on > crate::fx::today() {
+    if date.to_string() != t.occurred_on || t.occurred_on > crate::models::market::today() {
         return Err(invalid("交易日期不能晚于今天"));
     }
     chrono::DateTime::parse_from_rfc3339(&t.created_at).map_err(|_| invalid("交易创建时间无效"))?;
@@ -345,7 +345,7 @@ impl Database {
             }
             let id = Uuid::new_v4().to_string();
             tx.execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,fx_rate_to_base,valuation_date,fx_rate_source,fx_rate_observed_on,created_at,updated_at,quantity,current_price) VALUES (?1,?2,?3,?4,0,0,0,?5,NULL,?6,'','',?7,?7,0,0)",
-                params![id,h.symbol.trim(),h.name.trim(),h.asset_class,h.currency.trim().to_ascii_uppercase(),crate::fx::today(),now])?;
+                params![id,h.symbol.trim(),h.name.trim(),h.asset_class,h.currency.trim().to_ascii_uppercase(),crate::models::market::today(),now])?;
             Database::snapshot_on(&tx)?
                 .holdings
                 .into_iter()
@@ -659,7 +659,7 @@ mod tests {
         assert_eq!(summary.total_taxes, "8");
         assert_eq!(summary.profits[&sale.request_id], "70");
         assert_eq!(summary.cash_flows[&d.request_id], "16");
-        assert_eq!(s.holdings[0].valuation_date, crate::fx::today());
+        assert_eq!(s.holdings[0].valuation_date, crate::models::market::today());
         assert_eq!(s.holdings[0].market_value, 0.0);
         assert_eq!(db.save_holding_trade(&d).unwrap().holding_trades.len(), 4);
         let copy = Database::open(&dir.path().join("copy.db")).unwrap();
@@ -818,7 +818,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("manual.db")).unwrap();
         let h:HoldingInput=serde_json::from_value(serde_json::json!({"name":"旧快照","symbol":"","assetClass":"股票","currency":"CNY",
-            "valuationDate":crate::fx::today(),"quantity":100,"currentPrice":23,"costPrice":10,"costBasis":1000,"marketValue":2300,"targetPct":0})).unwrap();
+            "valuationDate":crate::models::market::today(),"quantity":100,"currentPrice":23,"costPrice":10,"costBasis":1000,"marketValue":2300,"targetPct":0})).unwrap();
         let s = db.add_holding(&h).unwrap();
         let s = db
             .save_holding_trade(&next(&s, "buy", "2", "10", "2026-01-01"))
@@ -827,7 +827,7 @@ mod tests {
         assert_eq!(s.holdings[0].quantity, Some(2.0));
         assert_eq!(s.holdings[0].cost_basis, 20.0);
         assert_eq!(s.holdings[0].market_value, 46.0);
-        assert_eq!(s.holdings[0].valuation_date, crate::fx::today());
+        assert_eq!(s.holdings[0].valuation_date, crate::models::market::today());
         let mut forbidden = h;
         forbidden.quantity = Some(100.0);
         assert!(db.update_holding(&s.holdings[0].id, &forbidden).is_err());

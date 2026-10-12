@@ -8,12 +8,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Foundation } from "./Foundation";
-import * as api from "../../api";
+import * as portfolioApi from "../../api/portfolio";
 import type { Snapshot } from "../../types";
 import emptySnapshot from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
-vi.mock("../../api", async (original) => ({
-  ...(await original<typeof import("../../api")>()),
+vi.mock("../../api/portfolio", async (original) => ({
+  ...(await original<typeof import("../../api/portfolio")>()),
   saveProfile: vi.fn(),
   saveHolding: vi.fn(),
   updateHolding: vi.fn(),
@@ -68,7 +68,9 @@ it("opens goals directly when arriving from the overview goal action", () => {
 });
 
 it("saves with only name and market value and retains context for the next holding", async () => {
-  vi.mocked(api.saveHolding).mockResolvedValue(emptySnapshot as Snapshot);
+  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(
+    emptySnapshot as Snapshot,
+  );
   const { container } = renderFoundation();
   expect(container.querySelector("section h2")?.textContent).toBe(
     "管理资产组合",
@@ -83,7 +85,7 @@ it("saves with only name and market value and retains context for the next holdi
   });
   fireEvent.click(screen.getByRole("button", { name: "加入组合" }));
   await waitFor(() =>
-    expect(api.saveHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "测试基金",
         marketValue: 1234.56,
@@ -115,7 +117,9 @@ it("saves with only name and market value and retains context for the next holdi
 });
 
 it("saves foreign assets without a manual rate input", async () => {
-  vi.mocked(api.saveHolding).mockResolvedValue(emptySnapshot as Snapshot);
+  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(
+    emptySnapshot as Snapshot,
+  );
   renderFoundation();
   fillHolding();
   fireEvent.change(screen.getByLabelText("持仓币种"), {
@@ -129,14 +133,14 @@ it("saves foreign assets without a manual rate input", async () => {
   expect(add.disabled).toBe(false);
   fireEvent.click(add);
   await waitFor(() =>
-    expect(api.saveHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({ currency: "USD", fxRateToBase: null }),
     ),
   );
 });
 
 it("preserves input after a failed holding save", async () => {
-  vi.mocked(api.saveHolding).mockRejectedValue(new Error("保存失败"));
+  vi.mocked(portfolioApi.saveHolding).mockRejectedValue(new Error("保存失败"));
   renderFoundation();
   fillHolding();
   fireEvent.click(screen.getByRole("button", { name: "加入组合" }));
@@ -157,7 +161,9 @@ it("opens optional details for editing and preserves existing values", async () 
     targetPct: 20,
     symbol: "TEST",
   };
-  vi.mocked(api.updateHolding).mockResolvedValue(emptySnapshot as Snapshot);
+  vi.mocked(portfolioApi.updateHolding).mockResolvedValue(
+    emptySnapshot as Snapshot,
+  );
   const { container } = renderFoundation({
     ...(emptySnapshot as Snapshot),
     holdings: [holding],
@@ -171,7 +177,7 @@ it("opens optional details for editing and preserves existing values", async () 
   );
   fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() =>
-    expect(api.updateHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.updateHolding).toHaveBeenCalledWith(
       "holding-1",
       expect.objectContaining({
         marketValue: 1100,
@@ -183,7 +189,7 @@ it("opens optional details for editing and preserves existing values", async () 
   );
 });
 it("keeps financial inputs visible and reports failed saves", async () => {
-  vi.mocked(api.saveProfile).mockRejectedValue(new Error("保存失败"));
+  vi.mocked(portfolioApi.saveProfile).mockRejectedValue(new Error("保存失败"));
   const onUpdate = vi.fn();
   render(
     <Foundation
@@ -207,7 +213,7 @@ it("preserves an explicit zero while editing an existing holding", async () => {
     name: "清零账户",
     marketValue: 0,
   };
-  vi.mocked(api.updateHolding).mockResolvedValue({
+  vi.mocked(portfolioApi.updateHolding).mockResolvedValue({
     ...emptySnapshot,
     holdings: [holding],
   } as Snapshot);
@@ -222,7 +228,7 @@ it("preserves an explicit zero while editing an existing holding", async () => {
   });
   fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() =>
-    expect(api.updateHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.updateHolding).toHaveBeenCalledWith(
       "zero",
       expect.objectContaining({ marketValue: 0, name: "清零后账户" }),
     ),

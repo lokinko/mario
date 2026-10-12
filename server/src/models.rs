@@ -1,3 +1,8 @@
+mod endpoint;
+pub(crate) mod information;
+pub(crate) mod market;
+pub(crate) use endpoint::validate_endpoint;
+pub(crate) mod daily;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -553,7 +558,7 @@ pub struct ModelConnectionTest {
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisRequest {
     #[serde(default)]
-    pub daily_asset_range: Option<crate::db::daily::CompareQuery>,
+    pub daily_asset_range: Option<crate::models::daily::CompareQuery>,
     #[serde(default)]
     pub web_search: bool,
     #[serde(default)]
@@ -789,11 +794,11 @@ pub struct AnalysisEvidenceReference {
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisWorkflowTrace {
     #[serde(default)]
-    pub information_selection: Vec<crate::ai::selection::SelectedInformation>,
+    pub information_selection: Vec<information::SelectedInformation>,
     #[serde(default)]
     pub web_search: Option<WebSearchTrace>,
     #[serde(default)]
-    pub advice_grounding: Vec<crate::ai::grounding::AdviceGrounding>,
+    pub advice_grounding: Vec<information::AdviceGrounding>,
     #[serde(default)]
     pub personal_context: Option<serde_json::Value>,
     #[serde(default)]
@@ -1100,4 +1105,29 @@ pub struct WebSearchTrace {
     pub status: String,
     pub search_calls: usize,
     pub warnings: Vec<String>,
+}
+
+impl AnalysisRequest {
+    pub fn validate(&self) -> crate::AppResult<()> {
+        if self.question.trim().is_empty() {
+            return Err(crate::AppError::Validation("分析问题不能为空".into()));
+        }
+        if !matches!(self.workflow.as_str(), "quick" | "deep") {
+            return Err(crate::AppError::Validation("未知的分析工作流".into()));
+        }
+        if self.excluded_memory_ids.len() > 64 {
+            return Err(crate::AppError::Validation(
+                "单次最多排除 64 条候选记忆".into(),
+            ));
+        }
+        let mut unique_ids = std::collections::HashSet::new();
+        for id in &self.excluded_memory_ids {
+            if id.trim().is_empty() || id.chars().count() > 128 || !unique_ids.insert(id) {
+                return Err(crate::AppError::Validation(
+                    "排除记忆 ID 必须非空、不重复且不超过 128 个字符".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
 }

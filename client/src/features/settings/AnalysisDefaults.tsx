@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, LoaderCircle, Save } from "lucide-react";
-import { getAnalysisSettings, saveAnalysisSettings } from "../../api";
+import { getAnalysisSettings, saveAnalysisSettings } from "../../api/settings";
 import type {
   AnalysisSettings,
   ContextSelection,

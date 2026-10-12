@@ -8,9 +8,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ServerData } from "./ServerData";
-import * as api from "../../api";
+import * as accountApi from "../../api/account";
 
-vi.mock("../../api", () => ({ exportData: vi.fn(), importData: vi.fn() }));
+vi.mock("../../api/account", () => ({
+  exportData: vi.fn(),
+  importData: vi.fn(),
+}));
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -37,7 +40,7 @@ function chooseFile(value: string, size = value.length) {
 }
 
 it("restores export and import controls after an export failure", async () => {
-  vi.mocked(api.exportData).mockRejectedValue(new Error("网络不可用"));
+  vi.mocked(accountApi.exportData).mockRejectedValue(new Error("网络不可用"));
   mount();
   fireEvent.click(screen.getByRole("button", { name: "导出我的数据" }));
   expect(
@@ -65,7 +68,7 @@ it("blocks oversized and malformed imports before confirmation or writing", asyn
     expect(screen.getByRole("alert").textContent).not.toContain("64 MB"),
   );
   expect(confirm).not.toHaveBeenCalled();
-  expect(api.importData).not.toHaveBeenCalled();
+  expect(accountApi.importData).not.toHaveBeenCalled();
 });
 
 it("cancels an import without writing or refreshing and allows another selection", async () => {
@@ -78,17 +81,17 @@ it("cancels an import without writing or refreshing and allows another selection
       (screen.getByLabelText("导入到空账号") as HTMLInputElement).disabled,
     ).toBe(false),
   );
-  expect(api.importData).not.toHaveBeenCalled();
+  expect(accountApi.importData).not.toHaveBeenCalled();
   expect(onRestore).not.toHaveBeenCalled();
   expect(flash).not.toHaveBeenCalled();
 });
 
 it("refreshes application data only after a confirmed import succeeds", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
-  vi.mocked(api.importData).mockResolvedValue(undefined);
+  vi.mocked(accountApi.importData).mockResolvedValue(undefined);
   const { onRestore, flash } = mount();
   chooseFile('{"profile":{}}');
   await waitFor(() => expect(flash).toHaveBeenCalledWith("数据已导入"));
-  expect(api.importData).toHaveBeenCalledWith({ profile: {} });
+  expect(accountApi.importData).toHaveBeenCalledWith({ profile: {} });
   expect(onRestore).toHaveBeenCalledOnce();
 });

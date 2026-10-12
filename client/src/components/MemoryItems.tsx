@@ -1,4 +1,4 @@
-import type { MemoryCandidate } from "../../types";
+import type { MemoryCandidate } from "../types";
 
 export function MemoryItems({
   items,

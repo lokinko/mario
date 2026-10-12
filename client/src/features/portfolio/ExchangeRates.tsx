@@ -7,7 +7,7 @@ import {
   getSnapshot,
   refreshFxSettings,
   setFxOverride,
-} from "../../api";
+} from "../../api/portfolio";
 import type { FxBook, Snapshot } from "../../types";
 
 const currencies = ["CNY", "USD", "HKD", "EUR", "JPY", "GBP"];

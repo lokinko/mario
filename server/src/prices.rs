@@ -18,8 +18,7 @@ use crate::{
     AppError, AppResult,
 };
 
-pub(crate) const METHODOLOGY_URL: &str =
-    "https://help.yahoo.com/kb/finance/article-exchanges-data-delays-sln2310.html";
+use crate::models::market::{canonical_symbol, METHODOLOGY_URL};
 const SUCCESS_TTL: Duration = Duration::from_secs(3600);
 const FAILURE_TTL: Duration = Duration::from_secs(60);
 const MAX_ENTRIES: usize = 512;
@@ -181,40 +180,6 @@ impl SecurityPriceProvider for FreeSecurityPriceProvider {
         quote.symbol = query.symbol.trim().into();
         Ok(quote)
     }
-}
-
-pub(crate) fn canonical_symbol(value: &str) -> AppResult<String> {
-    let code = value.trim().to_ascii_uppercase();
-    if code.is_empty()
-        || code.len() > 40
-        || !code
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b".-^=".contains(&b))
-    {
-        return Err(AppError::Validation(
-            "请填写有效证券代码，例如 AAPL、0700.HK、600519.SS、000001.SZ".into(),
-        ));
-    }
-    for (prefix, suffix) in [("SH", "SS"), ("SZ", "SZ")] {
-        if let Some(digits) = code
-            .strip_prefix(prefix)
-            .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_digit()))
-        {
-            return Ok(format!("{digits}.{suffix}"));
-        }
-    }
-    if let Some(digits) = code.strip_suffix(".HK") {
-        if (1..=5).contains(&digits.len()) && digits.bytes().all(|b| b.is_ascii_digit()) {
-            return Ok(format!("{:04}.HK", digits.parse::<u32>().unwrap()));
-        }
-    }
-    // Bare numeric symbols are ambiguous (stock, fund or another exchange).
-    if code.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(AppError::Validation(
-            "数字代码请带交易所后缀：.HK、.SS 或 .SZ".into(),
-        ));
-    }
-    Ok(code)
 }
 
 #[derive(Deserialize)]
@@ -847,7 +812,7 @@ mod tests {
         };
         assert_eq!(refresh(&db, &next).await.unwrap().updated_count, 1);
         let history = db
-            .daily_history(&crate::db::daily::HistoryQuery::default())
+            .daily_history(&crate::models::daily::HistoryQuery::default())
             .unwrap();
         let before = history.records.iter().find(|r| r.day == yesterday).unwrap();
         assert_eq!(

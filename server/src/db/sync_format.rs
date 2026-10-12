@@ -516,7 +516,7 @@ impl SyncDataset {
             }
         }
         super::fx::validate_sync(self)?;
-        crate::attachments::validate_sync(self)?;
+        super::sync_validation::validate_synced_attachments(self)?;
         Ok(())
     }
 }

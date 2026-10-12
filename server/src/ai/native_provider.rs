@@ -37,7 +37,7 @@ impl NativeModelProvider {
         if api_key.trim().is_empty() || model.trim().is_empty() {
             return Err(AppError::Validation("请先配置模型名称和 API Key".into()));
         }
-        crate::agent::validate_endpoint(&base_url)?;
+        crate::models::validate_endpoint(&base_url)?;
         Ok(Self {
             client: Client::builder()
                 .redirect(reqwest::redirect::Policy::none())

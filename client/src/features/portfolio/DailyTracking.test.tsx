@@ -2,8 +2,10 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { DailyTracking } from "./DailyTracking";
-import * as api from "../../api";
-vi.mock("../../api", () => ({ ensureDailyAssets: vi.fn() }));
+import * as portfolioApi from "../../api/portfolio";
+vi.mock("../../api/portfolio", () => ({
+  ensureDailyAssets: vi.fn(),
+}));
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -12,7 +14,7 @@ afterEach(() => {
 it("checks day boundaries in the saved timezone without saving on every foreground tick", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-01-31T15:59:00Z"));
-  vi.mocked(api.ensureDailyAssets).mockResolvedValue({
+  vi.mocked(portfolioApi.ensureDailyAssets).mockResolvedValue({
     timezone: "Asia/Shanghai",
     today: "2026-01-31",
     records: [],
@@ -22,14 +24,14 @@ it("checks day boundaries in the saved timezone without saving on every foregrou
   await act(async () => {
     render(<DailyTracking onNewDay={onNewDay} />);
   });
-  expect(api.ensureDailyAssets).toHaveBeenCalledTimes(1);
+  expect(portfolioApi.ensureDailyAssets).toHaveBeenCalledTimes(1);
   expect(onNewDay).not.toHaveBeenCalled();
   await act(async () => {
     window.dispatchEvent(new Event("focus"));
     vi.advanceTimersByTime(30000);
   });
-  expect(api.ensureDailyAssets).toHaveBeenCalledTimes(1);
-  vi.mocked(api.ensureDailyAssets).mockResolvedValue({
+  expect(portfolioApi.ensureDailyAssets).toHaveBeenCalledTimes(1);
+  vi.mocked(portfolioApi.ensureDailyAssets).mockResolvedValue({
     timezone: "Asia/Shanghai",
     today: "2026-02-01",
     records: [],
@@ -38,7 +40,9 @@ it("checks day boundaries in the saved timezone without saving on every foregrou
   await act(async () => {
     vi.advanceTimersByTime(30000);
   });
-  expect(api.ensureDailyAssets).toHaveBeenCalledTimes(2);
+  expect(portfolioApi.ensureDailyAssets).toHaveBeenCalledTimes(2);
   expect(onNewDay).toHaveBeenCalledTimes(1);
-  expect(api.ensureDailyAssets).toHaveBeenLastCalledWith("Asia/Shanghai");
+  expect(portfolioApi.ensureDailyAssets).toHaveBeenLastCalledWith(
+    "Asia/Shanghai",
+  );
 });

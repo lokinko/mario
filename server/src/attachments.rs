@@ -10,7 +10,7 @@ use crate::{
 
 pub const MAX_FILES: usize = 5;
 pub const MAX_BYTES: usize = 5 * 1024 * 1024;
-const MAX_TEXT_CHARS: usize = 20_000;
+pub(crate) const MAX_TEXT_CHARS: usize = 20_000;
 
 pub fn decode(input: &ResearchAttachmentInput) -> AppResult<Vec<u8>> {
     if input.name.trim().is_empty()
@@ -177,60 +177,6 @@ fn docx_text(bytes: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
         }
     }
     Ok(text)
-}
-
-pub fn validate_sync(dataset: &crate::db::SyncDataset) -> AppResult<()> {
-    use crate::db::SyncValue;
-    let Some(table) = dataset
-        .tables
-        .iter()
-        .find(|t| t.name == "research_attachments")
-    else {
-        return Ok(());
-    };
-    let evidence = dataset
-        .tables
-        .iter()
-        .find(|t| t.name == "research_evidence")
-        .ok_or_else(|| AppError::Validation("快照缺少资料表".into()))?;
-    let ids = evidence
-        .rows
-        .iter()
-        .filter_map(|row| match &row[0] {
-            SyncValue::Text(id) => Some(id.as_str()),
-            _ => None,
-        })
-        .collect::<std::collections::HashSet<_>>();
-    let mut seen = std::collections::HashSet::new();
-    let mut totals = std::collections::HashMap::<String, (usize, usize)>::new();
-    for row in &table.rows {
-        let string = |i| match &row[i] {
-            SyncValue::Text(s) => Ok(s.as_str()),
-            _ => Err(AppError::Validation("附件快照字段无效".into())),
-        };
-        let id = string(0)?;
-        let parent = string(1)?;
-        if uuid::Uuid::parse_str(id).is_err() || !seen.insert(id) || !ids.contains(parent) {
-            return Err(AppError::Validation("附件快照的资料关联无效".into()));
-        }
-        let bytes = decode(&ResearchAttachmentInput {
-            name: string(2)?.into(),
-            data_base64: string(4)?.into(),
-        })?;
-        if row[3] != SyncValue::Integer(bytes.len() as i64)
-            || string(5)?.chars().count() > MAX_TEXT_CHARS
-            || string(6)?.chars().count() > 500
-        {
-            return Err(AppError::Validation("附件快照内容无效".into()));
-        }
-        let total = totals.entry(parent.into()).or_default();
-        total.0 += 1;
-        total.1 += bytes.len();
-        if total.0 > MAX_FILES || total.1 > MAX_BYTES {
-            return Err(AppError::Validation("附件快照超过数量或大小限制".into()));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

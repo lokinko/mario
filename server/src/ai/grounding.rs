@@ -1,24 +1,9 @@
 use crate::models::{AnalysisEvidenceReference, StructuredAnalysis};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashSet;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct GroundingCheck {
-    pub fact_index: usize,
-    pub source_kind: String,
-    pub source_ref: String,
-    pub quote: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AdviceGrounding {
-    pub action_index: usize,
-    pub status: String,
-    pub reason: String,
-    pub checks: Vec<GroundingCheck>,
-}
+pub use crate::models::information::AdviceGrounding;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ReviewOutput {

@@ -1,14 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import {
-  getSnapshot,
-  saveProfile,
-  checkServerVersion,
-  previewAnalysis,
-  previewPortfolioEventImport,
-  commitPortfolioEventImport,
-  updateHoldingAmount,
-} from "./api";
+import { getSnapshot, saveProfile, previewPortfolioEventImport, commitPortfolioEventImport, updateHoldingAmount } from "./api/portfolio";
+import { checkServerVersion } from "./api/account";
+import { previewAnalysis } from "./api/research";
 import { acceptRevision, dataRevision, serviceUrl } from "./lib/service";
 import { setWebToken, webToken } from "./lib/webSession";
 import { beginSync, endSync, blockStaleWrites } from "./lib/syncEvents";

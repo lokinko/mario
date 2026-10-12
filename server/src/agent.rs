@@ -1,7 +1,24 @@
 //! Stateless AI service. Receives only the backend's frozen, authorized context.
 //! It has no database connection, session store, or mutation API.
-use super::*;
+use crate::models::validate_endpoint;
+use crate::{
+    ai::{CodexProvider, InvestmentOrchestrator, ModelProvider, NativeModelProvider},
+    authentication::token_matches,
+    context,
+    memory::HybridMemoryRetriever,
+    models::{self, AnalysisRequest, AnalysisResult, ModelConfig},
+    AppError, AppResult,
+};
+use axum::{
+    extract::Request,
+    http::header,
+    middleware::{self, Next},
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Serialize, Deserialize)]
 struct Job {
@@ -12,71 +29,59 @@ struct Job {
     api_key: String,
 }
 
-pub fn validate_endpoint(base_url: &str) -> AppResult<()> {
-    let url =
-        reqwest::Url::parse(base_url).map_err(|_| AppError::Validation("模型地址无效".into()))?;
-    if !matches!(url.scheme(), "http" | "https")
-        || url.host_str().is_none()
-        || url.port() == Some(0)
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(AppError::Validation(
-            "请填写有效的 HTTP/HTTPS API 基础地址，地址不能包含凭据、查询参数或片段".into(),
-        ));
-    }
-    Ok(())
-}
+pub(crate) struct AgentExecutor;
 
-pub async fn execute(
-    config: ModelConfig,
-    api_key: Option<String>,
-    request: AnalysisRequest,
-    context: context::BuiltContext,
-    memories: Vec<models::MemoryItem>,
-) -> AppResult<AnalysisResult> {
-    if let Ok(endpoint) = std::env::var("MARIO_AGENT_URL") {
-        let token = std::env::var("MARIO_AGENT_TOKEN")
-            .map_err(|_| AppError::Validation("缺少 Agent 服务令牌".into()))?;
-        let job = Job {
-            api_key: api_key
-                .ok_or_else(|| AppError::Validation("独立 Agent 需要模型 API Key".into()))?,
-            config,
-            request,
-            context,
-            memories,
-        };
-        let response = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(280))
-            .redirect(reqwest::redirect::Policy::none())
-            .build()?
-            .post(format!("{}/execute", endpoint.trim_end_matches('/')))
-            .bearer_auth(token)
-            .json(&job)
-            .send()
-            .await?;
-        if !response.status().is_success() {
-            return Err(AppError::Model(
-                "AI Agent 执行失败，请检查 Agent 服务日志及模型配置".into(),
-            ));
+#[async_trait::async_trait]
+impl crate::ai::AnalysisExecutor for AgentExecutor {
+    async fn execute(
+        &self,
+        config: ModelConfig,
+        api_key: Option<String>,
+        request: AnalysisRequest,
+        context: context::BuiltContext,
+        memories: Vec<models::MemoryItem>,
+    ) -> AppResult<AnalysisResult> {
+        if let Ok(endpoint) = std::env::var("MARIO_AGENT_URL") {
+            let token = std::env::var("MARIO_AGENT_TOKEN")
+                .map_err(|_| AppError::Validation("缺少 Agent 服务令牌".into()))?;
+            let job = Job {
+                api_key: api_key
+                    .ok_or_else(|| AppError::Validation("独立 Agent 需要模型 API Key".into()))?,
+                config,
+                request,
+                context,
+                memories,
+            };
+            let response = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(280))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?
+                .post(format!("{}/execute", endpoint.trim_end_matches('/')))
+                .bearer_auth(token)
+                .json(&job)
+                .send()
+                .await?;
+            if !response.status().is_success() {
+                return Err(AppError::Model(
+                    "AI Agent 执行失败，请检查 Agent 服务日志及模型配置".into(),
+                ));
+            }
+            return Ok(response.json().await?);
         }
-        return Ok(response.json().await?);
+        let provider: Box<dyn ModelProvider> = if config.provider == "codex" {
+            Box::new(CodexProvider::new(config.model))
+        } else {
+            Box::new(NativeModelProvider::new(
+                config.provider,
+                config.base_url,
+                config.model,
+                api_key.ok_or_else(|| AppError::Validation("请配置 API Key".into()))?,
+            )?)
+        };
+        InvestmentOrchestrator::new(provider.as_ref(), &HybridMemoryRetriever::default())
+            .run(&request, &context, &memories)
+            .await
     }
-    let provider: Box<dyn ModelProvider> = if config.provider == "codex" {
-        Box::new(CodexProvider::new(config.model))
-    } else {
-        Box::new(NativeModelProvider::new(
-            config.provider,
-            config.base_url,
-            config.model,
-            api_key.ok_or_else(|| AppError::Validation("请配置 API Key".into()))?,
-        )?)
-    };
-    InvestmentOrchestrator::new(provider.as_ref(), &HybridMemoryRetriever::default())
-        .run(&request, &context, &memories)
-        .await
 }
 pub async fn serve() -> AppResult<()> {
     let token = std::env::var("MARIO_AGENT_TOKEN").unwrap_or_default();
@@ -131,7 +136,7 @@ pub async fn serve() -> AppResult<()> {
 }
 async fn run(Json(job): Json<Job>) -> AppResult<Json<AnalysisResult>> {
     validate_endpoint(&job.config.base_url)?;
-    validate_analysis_request(&job.request)?;
+    job.request.validate()?;
     let provider = NativeModelProvider::new(
         job.config.provider,
         job.config.base_url,
@@ -148,35 +153,6 @@ async fn run(Json(job): Json<Job>) -> AppResult<Json<AnalysisResult>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn accepts_custom_model_hosts_ports_and_paths() {
-        for endpoint in [
-            "https://api.example.test/v1",
-            "https://gateway.example.test:8443/proxy/models/v1/",
-            "http://models.example.test:8080/api/v1",
-            "http://192.168.1.10:8000/v1",
-            "http://localhost:11434/v1",
-            "http://[::1]:1234/v1",
-        ] {
-            validate_endpoint(endpoint).unwrap();
-        }
-    }
-
-    #[test]
-    fn rejects_invalid_urls_and_embedded_credentials() {
-        for endpoint in [
-            "not-a-url",
-            "file:///etc/passwd",
-            "ftp://models.example.test/v1",
-            "https://user:secret@models.example.test/v1",
-            "https://models.example.test/v1?api_key=secret",
-            "https://models.example.test/v1#fragment",
-            "http://models.example.test:0/v1",
-        ] {
-            assert!(validate_endpoint(endpoint).is_err(), "{endpoint}");
-        }
-    }
 
     #[tokio::test]
     async fn agent_runs_analysis_against_custom_chat_completions_endpoint() {

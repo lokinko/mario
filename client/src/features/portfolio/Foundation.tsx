@@ -21,7 +21,7 @@ import {
   saveProfile,
   updateHolding,
   updateGoal,
-} from "../../api";
+} from "../../api/portfolio";
 import type {
   FinancialProfile,
   Goal,

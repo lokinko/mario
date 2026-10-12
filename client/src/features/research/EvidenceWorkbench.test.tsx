@@ -7,11 +7,11 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import * as api from "../../api";
+import * as researchApi from "../../api/research";
 import type { ResearchEvidence } from "../../types";
 import { EvidenceWorkbench } from "./EvidenceWorkbench";
 
-vi.mock("../../api", () => ({
+vi.mock("../../api/research", () => ({
   getResearchEvidence: vi.fn(),
   getResearchAttachment: vi.fn(),
   saveResearchEvidence: vi.fn(),
@@ -41,8 +41,8 @@ const saved: ResearchEvidence = {
 };
 
 it("saves complete source text with one field and clears it after success", async () => {
-  vi.mocked(api.getResearchEvidence).mockResolvedValue([]);
-  vi.mocked(api.saveResearchEvidence).mockResolvedValue(saved);
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([]);
+  vi.mocked(researchApi.saveResearchEvidence).mockResolvedValue(saved);
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
   const input = screen.getByRole("textbox", { name: "原始资料与资讯" });
   expect(screen.getAllByRole("textbox")).toHaveLength(1);
@@ -50,7 +50,7 @@ it("saves complete source text with one field and clears it after success", asyn
   fireEvent.change(input, { target: { value: saved.claim } });
   fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
   await waitFor(() =>
-    expect(api.saveResearchEvidence).toHaveBeenCalledWith({
+    expect(researchApi.saveResearchEvidence).toHaveBeenCalledWith({
       content: saved.claim,
     }),
   );
@@ -58,8 +58,8 @@ it("saves complete source text with one field and clears it after success", asyn
 });
 
 it("blocks blank content and keeps the draft when saving fails", async () => {
-  vi.mocked(api.getResearchEvidence).mockResolvedValue([]);
-  vi.mocked(api.saveResearchEvidence)
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([]);
+  vi.mocked(researchApi.saveResearchEvidence)
     .mockRejectedValueOnce(new Error("保存失败"))
     .mockResolvedValue(saved);
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
@@ -70,7 +70,7 @@ it("blocks blank content and keeps the draft when saving fails", async () => {
   }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
   fireEvent.submit(button.closest("form")!);
-  expect(api.saveResearchEvidence).not.toHaveBeenCalled();
+  expect(researchApi.saveResearchEvidence).not.toHaveBeenCalled();
   fireEvent.change(input, { target: { value: saved.claim } });
   fireEvent.click(button);
   expect((await screen.findByRole("alert")).textContent).toContain("保存失败");
@@ -94,10 +94,10 @@ it("shows original text and all legacy information, with reversible archiving", 
     claim: "旧资料全文",
     notes: "原有限制",
   };
-  vi.mocked(api.getResearchEvidence)
+  vi.mocked(researchApi.getResearchEvidence)
     .mockResolvedValueOnce([saved, legacy])
     .mockResolvedValue([{ ...saved, active: false }, legacy]);
-  vi.mocked(api.setResearchEvidenceStatus).mockResolvedValue({
+  vi.mocked(researchApi.setResearchEvidenceStatus).mockResolvedValue({
     ...saved,
     active: false,
   });
@@ -121,13 +121,16 @@ it("shows original text and all legacy information, with reversible archiving", 
   }
   fireEvent.click(screen.getAllByRole("button", { name: "归档" })[0]);
   await waitFor(() =>
-    expect(api.setResearchEvidenceStatus).toHaveBeenCalledWith("text", false),
+    expect(researchApi.setResearchEvidenceStatus).toHaveBeenCalledWith(
+      "text",
+      false,
+    ),
   );
   expect(await screen.findByRole("button", { name: "恢复" })).toBeTruthy();
 });
 
 it("carries source topics into the question so saved text can be retrieved", async () => {
-  vi.mocked(api.getResearchEvidence).mockResolvedValue([
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([
     { ...saved, title: "黄金储备变化" },
     { ...saved, id: "archived", title: "旧资料", active: false },
   ]);
@@ -142,8 +145,8 @@ it("carries source topics into the question so saved text can be retrieved", asy
 });
 
 it("saves attachments without requiring text and preserves them for retry", async () => {
-  vi.mocked(api.getResearchEvidence).mockResolvedValue([]);
-  vi.mocked(api.saveResearchEvidence)
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([]);
+  vi.mocked(researchApi.saveResearchEvidence)
     .mockRejectedValueOnce(new Error("上传失败"))
     .mockResolvedValue(saved);
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
@@ -158,7 +161,8 @@ it("saves attachments without requiring text and preserves them for retry", asyn
   fireEvent.click(button);
   expect((await screen.findByRole("alert")).textContent).toContain("上传失败");
   expect(screen.getByText("报告.txt")).toBeTruthy();
-  const submission = vi.mocked(api.saveResearchEvidence).mock.calls[0][0];
+  const submission = vi.mocked(researchApi.saveResearchEvidence).mock
+    .calls[0][0];
   expect(submission.content).toBe("");
   expect(submission.attachments?.[0].name).toBe("报告.txt");
   expect(
@@ -173,7 +177,7 @@ it("saves attachments without requiring text and preserves them for retry", asyn
 });
 
 it("can remove a selected file and rejects too many or oversized attachments", async () => {
-  vi.mocked(api.getResearchEvidence).mockResolvedValue([]);
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([]);
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
   const picker = screen.getByLabelText("选择附件");
   fireEvent.change(picker, {
@@ -199,11 +203,11 @@ it("can remove a selected file and rejects too many or oversized attachments", a
     },
   });
   expect(screen.getByRole("alert").textContent).toContain("不能超过 5 MB");
-  expect(api.saveResearchEvidence).not.toHaveBeenCalled();
+  expect(researchApi.saveResearchEvidence).not.toHaveBeenCalled();
 });
 
 it("downloads the original file through the authenticated API", async () => {
-  vi.mocked(api.getResearchEvidence).mockResolvedValue([
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([
     {
       ...saved,
       attachments: [
@@ -216,7 +220,7 @@ it("downloads the original file through the authenticated API", async () => {
       ],
     },
   ]);
-  vi.mocked(api.getResearchAttachment).mockResolvedValue({
+  vi.mocked(researchApi.getResearchAttachment).mockResolvedValue({
     name: "报告.txt",
     dataBase64: btoa("original"),
   });
@@ -239,7 +243,10 @@ it("downloads the original file through the authenticated API", async () => {
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "报告.txt" }));
   await waitFor(() =>
-    expect(api.getResearchAttachment).toHaveBeenCalledWith("text", "file"),
+    expect(researchApi.getResearchAttachment).toHaveBeenCalledWith(
+      "text",
+      "file",
+    ),
   );
   await waitFor(() => expect(downloaded).toBe("报告.txt"));
   expect(createObjectURL).toHaveBeenCalledOnce();

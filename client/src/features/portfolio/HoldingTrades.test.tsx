@@ -10,11 +10,11 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { HoldingTrades } from "./HoldingTrades";
 import { MyFacts } from "./MyFacts";
-import * as api from "../../api";
+import * as portfolioApi from "../../api/portfolio";
 import type { HoldingTrade, HoldingTradeSummary, Snapshot } from "../../types";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
-vi.mock("../../api", () => ({
+vi.mock("../../api/portfolio", () => ({
   saveHoldingTrade: vi.fn(),
   updateHoldingTrade: vi.fn(),
   getFxSettings: vi.fn().mockResolvedValue({
@@ -99,7 +99,7 @@ const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 it("records exact real executions, separated charges and retry identity without an artificial opening", async () => {
   const onUpdate = vi.fn();
-  vi.mocked(api.saveHoldingTrade)
+  vi.mocked(portfolioApi.saveHoldingTrade)
     .mockRejectedValueOnce(new Error("连接中断"))
     .mockResolvedValueOnce(base);
   render(<HoldingTrades snapshot={base} onUpdate={onUpdate} flash={vi.fn()} />);
@@ -113,7 +113,7 @@ it("records exact real executions, separated charges and retry identity without 
   fireEvent.click(screen.getByRole("button", { name: "保存交易并更新持仓" }));
   await screen.findByRole("alert");
   expect(screen.getByLabelText("成交数量")).toHaveProperty("value", "0.1");
-  const first = vi.mocked(api.saveHoldingTrade).mock.calls[0][0];
+  const first = vi.mocked(portfolioApi.saveHoldingTrade).mock.calls[0][0];
   expect(first).toMatchObject({
     kind: "buy",
     sequence: 1,
@@ -133,13 +133,13 @@ it("records exact real executions, separated charges and retry identity without 
   expect(first.newHolding).not.toHaveProperty("currentPrice");
   fireEvent.click(screen.getByRole("button", { name: "保存交易并更新持仓" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(base));
-  expect(vi.mocked(api.saveHoldingTrade).mock.calls[1][0].requestId).toBe(
-    first.requestId,
-  );
+  expect(
+    vi.mocked(portfolioApi.saveHoldingTrade).mock.calls[1][0].requestId,
+  ).toBe(first.requestId);
 });
 it("edits the original record and freezes its revision across a background refresh", async () => {
   const onUpdate = vi.fn();
-  vi.mocked(api.updateHoldingTrade)
+  vi.mocked(portfolioApi.updateHoldingTrade)
     .mockRejectedValueOnce(new Error("连接中断"))
     .mockResolvedValueOnce(value);
   const { rerender } = render(
@@ -168,7 +168,7 @@ it("edits the original record and freezes its revision across a background refre
   );
   fireEvent.click(screen.getByRole("button", { name: "保存修改并更新持仓" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalled());
-  expect(api.updateHoldingTrade).toHaveBeenNthCalledWith(2, buy.id, {
+  expect(portfolioApi.updateHoldingTrade).toHaveBeenNthCalledWith(2, buy.id, {
     expectedRevision: "initial",
     kind: "buy",
     occurredOn: buy.occurredOn,
@@ -182,11 +182,11 @@ it("edits the original record and freezes its revision across a background refre
     externalId: "receipt",
     note: "修正",
   });
-  expect(api.saveHoldingTrade).not.toHaveBeenCalled();
+  expect(portfolioApi.saveHoldingTrade).not.toHaveBeenCalled();
   expect(screen.queryByRole("form")).toBeNull();
 });
 it("records cash dividends with zero share movement, using net income after both charges", async () => {
-  vi.mocked(api.saveHoldingTrade).mockResolvedValue(value);
+  vi.mocked(portfolioApi.saveHoldingTrade).mockResolvedValue(value);
   render(
     <HoldingTrades
       snapshot={value}
@@ -204,8 +204,8 @@ it("records cash dividends with zero share movement, using net income after both
   expect(screen.getByLabelText("当日顺序")).toHaveProperty("value", "2");
   expect(screen.getByText("¥16")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "保存交易并更新持仓" }));
-  await waitFor(() => expect(api.saveHoldingTrade).toHaveBeenCalled());
-  expect(api.saveHoldingTrade).toHaveBeenCalledWith(
+  await waitFor(() => expect(portfolioApi.saveHoldingTrade).toHaveBeenCalled());
+  expect(portfolioApi.saveHoldingTrade).toHaveBeenCalledWith(
     expect.objectContaining({
       kind: "dividend",
       quantity: "0",
@@ -238,7 +238,7 @@ it("permits historical sells on a closed position and cancels edits without a wr
   fireEvent.click(screen.getByRole("button", { name: "关闭交易录入" }));
   fireEvent.click(screen.getByRole("button", { name: "编辑交易" }));
   fireEvent.click(screen.getByRole("button", { name: "关闭交易录入" }));
-  expect(api.updateHoldingTrade).not.toHaveBeenCalled();
+  expect(portfolioApi.updateHoldingTrade).not.toHaveBeenCalled();
 });
 it("shows authoritative sell profits and dividends in the holding overview and detail, including cleared-record notices", () => {
   const total = {

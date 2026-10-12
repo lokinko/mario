@@ -9,7 +9,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Advisor } from "./Advisor";
-import * as api from "../../api";
+import * as researchApi from "../../api/research";
+import * as settingsApi from "../../api/settings";
 import type {
   AnalysisPreview,
   AnalysisResult,
@@ -17,12 +18,14 @@ import type {
 } from "../../types";
 import { analysisSettings } from "../../test/analysisSettings";
 
-vi.mock("../../api", () => ({
+vi.mock("../../api/research", () => ({
   getAnalysis: vi.fn(),
   getAnalysisHistory: vi.fn().mockResolvedValue([]),
-  getAnalysisSettings: vi.fn(),
   previewAnalysis: vi.fn(),
   runAnalysis: vi.fn(),
+}));
+vi.mock("../../api/settings", () => ({
+  getAnalysisSettings: vi.fn(),
 }));
 
 const preview = { contextRevision: "revision-1" } as AnalysisPreview;
@@ -42,10 +45,12 @@ const props = {
 };
 
 beforeEach(() => {
-  vi.mocked(api.getAnalysisSettings).mockResolvedValue(analysisSettings);
-  vi.mocked(api.previewAnalysis).mockResolvedValue(preview);
-  vi.mocked(api.runAnalysis).mockResolvedValue(result);
-  vi.mocked(api.getAnalysisHistory).mockResolvedValue([]);
+  vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(
+    analysisSettings,
+  );
+  vi.mocked(researchApi.previewAnalysis).mockResolvedValue(preview);
+  vi.mocked(researchApi.runAnalysis).mockResolvedValue(result);
+  vi.mocked(researchApi.getAnalysisHistory).mockResolvedValue([]);
 });
 afterEach(() => {
   cleanup();
@@ -70,22 +75,22 @@ it("sends once using saved defaults and the frozen revision without a confirmati
       includeEvidence: false,
     },
   };
-  vi.mocked(api.getAnalysisSettings).mockResolvedValue(settings);
+  vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(settings);
   render(<Advisor {...props} />);
   ask("我的持仓有什么风险？");
   await screen.findByText(result.answer);
-  expect(api.previewAnalysis).toHaveBeenCalledWith({
+  expect(researchApi.previewAnalysis).toHaveBeenCalledWith({
     ...settings,
     userMessage: "我的持仓有什么风险？",
     question: "我的持仓有什么风险？",
     dailyAssetRange: undefined,
     excludedMemoryIds: [],
   });
-  expect(api.runAnalysis).toHaveBeenCalledWith({
-    ...vi.mocked(api.previewAnalysis).mock.calls[0][0],
+  expect(researchApi.runAnalysis).toHaveBeenCalledWith({
+    ...vi.mocked(researchApi.previewAnalysis).mock.calls[0][0],
     previewRevision: "revision-1",
   });
-  expect(api.runAnalysis).toHaveBeenCalledTimes(1);
+  expect(researchApi.runAnalysis).toHaveBeenCalledTimes(1);
   for (const label of [
     "确认发送",
     "隐私与资料范围",
@@ -98,14 +103,16 @@ it("sends once using saved defaults and the frozen revision without a confirmati
 
 it("prevents duplicate sends and preserves the draft if preparing data fails", async () => {
   let reject!: (error: Error) => void;
-  vi.mocked(api.previewAnalysis).mockReturnValue(
+  vi.mocked(researchApi.previewAnalysis).mockReturnValue(
     new Promise((_, fail) => {
       reject = fail;
     }),
   );
   render(<Advisor {...props} />);
   ask("待回答的问题");
-  await waitFor(() => expect(api.previewAnalysis).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(researchApi.previewAnalysis).toHaveBeenCalledTimes(1),
+  );
   const input = screen.getByRole("textbox") as HTMLTextAreaElement;
   expect(input.disabled).toBe(true);
   fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
@@ -117,11 +124,11 @@ it("prevents duplicate sends and preserves the draft if preparing data fails", a
   );
   expect(input.value).toBe("待回答的问题");
   expect(input.disabled).toBe(false);
-  expect(api.runAnalysis).not.toHaveBeenCalled();
+  expect(researchApi.runAnalysis).not.toHaveBeenCalled();
 });
 
 it("does not send if saved settings cannot be read", async () => {
-  vi.mocked(api.getAnalysisSettings).mockRejectedValue(
+  vi.mocked(settingsApi.getAnalysisSettings).mockRejectedValue(
     new Error("预设读取失败"),
   );
   render(<Advisor {...props} />);
@@ -129,15 +136,15 @@ it("does not send if saved settings cannot be read", async () => {
   expect((await screen.findByRole("alert")).textContent).toContain(
     "预设读取失败",
   );
-  expect(api.previewAnalysis).not.toHaveBeenCalled();
-  expect(api.runAnalysis).not.toHaveBeenCalled();
+  expect(researchApi.previewAnalysis).not.toHaveBeenCalled();
+  expect(researchApi.runAnalysis).not.toHaveBeenCalled();
 });
 
 it("opens the complete saved report from history without a decision handoff", async () => {
-  vi.mocked(api.getAnalysisHistory).mockResolvedValue([
+  vi.mocked(researchApi.getAnalysisHistory).mockResolvedValue([
     { id: "a", question: "历史问题", createdAt: "2026-10-12T00:00:00Z" },
   ]);
-  vi.mocked(api.getAnalysis).mockResolvedValue({
+  vi.mocked(researchApi.getAnalysis).mockResolvedValue({
     id: "a",
     question: "历史问题",
     answer: "完整历史 report",
@@ -145,8 +152,8 @@ it("opens the complete saved report from history without a decision handoff", as
   render(<Advisor {...props} />);
   fireEvent.click(await screen.findByRole("button", { name: /历史问题/ }));
   await screen.findByText("完整历史 report");
-  expect(api.getAnalysis).toHaveBeenCalledWith("a");
-  expect(api.runAnalysis).not.toHaveBeenCalled();
+  expect(researchApi.getAnalysis).toHaveBeenCalledWith("a");
+  expect(researchApi.runAnalysis).not.toHaveBeenCalled();
 });
 
 it("disables native search for Chat Completions even when enabled in saved defaults", async () => {
@@ -155,10 +162,10 @@ it("disables native search for Chat Completions even when enabled in saved defau
   );
   ask("问题");
   await screen.findByText(result.answer);
-  expect(api.previewAnalysis).toHaveBeenCalledWith(
+  expect(researchApi.previewAnalysis).toHaveBeenCalledWith(
     expect.objectContaining({ webSearch: false }),
   );
-  expect(api.runAnalysis).toHaveBeenCalledWith(
+  expect(researchApi.runAnalysis).toHaveBeenCalledWith(
     expect.objectContaining({ webSearch: false }),
   );
 });
@@ -167,11 +174,11 @@ it("automatically carries previous context and rereads saved defaults, then clea
   render(<Advisor {...props} />);
   ask("第一次提问");
   await screen.findByText(result.answer);
-  vi.mocked(api.getAnalysisSettings).mockResolvedValue({
+  vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue({
     ...analysisSettings,
     useMemory: false,
   });
-  vi.mocked(api.runAnalysis).mockResolvedValue({
+  vi.mocked(researchApi.runAnalysis).mockResolvedValue({
     ...result,
     id: "answer-2",
     answer: "第二次 report",
@@ -179,7 +186,7 @@ it("automatically carries previous context and rereads saved defaults, then clea
   ask("三年内需要用钱");
   await screen.findByText("第二次 report");
   expect(screen.getByText(result.answer)).toBeTruthy();
-  const followUp = vi.mocked(api.previewAnalysis).mock.lastCall?.[0];
+  const followUp = vi.mocked(researchApi.previewAnalysis).mock.lastCall?.[0];
   expect(followUp?.question).toContain(result.answer);
   expect(followUp?.question).toContain("三年内需要用钱");
   expect(followUp?.userMessage).toBe("三年内需要用钱");
@@ -188,16 +195,16 @@ it("automatically carries previous context and rereads saved defaults, then clea
   expect(screen.queryByText(result.answer)).toBeNull();
   ask("一个新问题");
   await screen.findByText("第二次 report");
-  expect(vi.mocked(api.previewAnalysis).mock.lastCall?.[0].question).toBe(
-    "一个新问题",
-  );
+  expect(
+    vi.mocked(researchApi.previewAnalysis).mock.lastCall?.[0].question,
+  ).toBe("一个新问题");
 });
 
 it("reopens a historical answer in the same report view and allows continuing that conversation", async () => {
-  vi.mocked(api.getAnalysisHistory).mockResolvedValue([
+  vi.mocked(researchApi.getAnalysisHistory).mockResolvedValue([
     { id: "saved", question: "旧问题", createdAt: "2026-10-10T10:00:00Z" },
   ]);
-  vi.mocked(api.getAnalysis).mockResolvedValue({
+  vi.mocked(researchApi.getAnalysis).mockResolvedValue({
     id: "saved",
     question: "旧问题",
     answer: "历史 report",
@@ -208,9 +215,9 @@ it("reopens a historical answer in the same report view and allows continuing th
   await screen.findByText("历史 report");
   ask("继续旧问题");
   await screen.findByText(result.answer);
-  expect(vi.mocked(api.previewAnalysis).mock.lastCall?.[0].question).toContain(
-    "历史 report",
-  );
+  expect(
+    vi.mocked(researchApi.previewAnalysis).mock.lastCall?.[0].question,
+  ).toContain("历史 report");
 });
 
 it("accepts a queued question and its asset range when returning from supporting pages", async () => {
@@ -228,7 +235,7 @@ it("accepts a queued question and its asset range when returning from supporting
   expect(window.sessionStorage.getItem("mario.advisorQuestion")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
   await screen.findByText(result.answer);
-  expect(api.previewAnalysis).toHaveBeenCalledWith(
+  expect(researchApi.previewAnalysis).toHaveBeenCalledWith(
     expect.objectContaining({
       dailyAssetRange: { from: "2026-10-01", to: "2026-10-10" },
     }),

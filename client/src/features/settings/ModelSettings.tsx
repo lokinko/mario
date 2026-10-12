@@ -15,25 +15,29 @@ import {
 import {
   deleteModelKey,
   readCodexCredentials,
+  saveModelConfig,
+  testModelConnection,
+} from "../../api/settings";
+import {
   deleteSecurityPriceKey,
   getSecurityPrice,
   getSecurityPriceConfig,
-  saveModelConfig,
   saveSecurityPriceConfig,
-  testModelConnection,
-} from "../../api";
+} from "../../api/portfolio";
 import type { ModelConfig, SecurityPriceConfig } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
 import { localDateValue } from "../../lib/dates";
 import { AnalysisDefaults } from "./AnalysisDefaults";
-import { AccountSettings } from "../account/WebAccess";
+import type { ReactNode } from "react";
 
 export function ModelSettings({
   model,
+  accountSettings,
   onUpdate,
   flash,
 }: {
   model: ModelConfig;
+  accountSettings?: ReactNode;
   onUpdate: (m: ModelConfig) => void;
   flash: (s: string) => void;
 }) {
@@ -191,7 +195,7 @@ export function ModelSettings({
   return (
     <div className="page narrow settings-page">
       <PageHeader title="设置" description="管理账号、模型连接与问答预设。" />
-      <AccountSettings />
+      {accountSettings}
       <section className="panel form-panel">
         <div className="panel-title">
           <div>

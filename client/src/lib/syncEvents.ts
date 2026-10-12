@@ -1,3 +1,4 @@
+export { isDataWrite } from "./requestPolicy";
 export const DATA_SAVED = "mario:data-saved";
 export const SERVER_SESSION_CHANGED = "mario:session-changed";
 export const SERVER_DATA_UPDATED = "mario:server-data-updated";
@@ -28,14 +29,6 @@ export async function beforeDataWrite() {
     throw new Error(
       "其他设备已更新资料。请先点击‘查看最新资料’，核对后再保存；你的输入仍保留在页面中。",
     );
-}
-export function isDataWrite(path: string, method = "GET") {
-  return (
-    method !== "GET" &&
-    (path === "/portfolio-events/import/preview" ||
-      !path.endsWith("/preview")) &&
-    !path.endsWith("/test")
-  );
 }
 
 let dataWrites = 0;

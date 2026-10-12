@@ -85,7 +85,7 @@ impl Database {
             ));
         }
         if provider != "codex" {
-            crate::agent::validate_endpoint(base_url)?;
+            crate::models::validate_endpoint(base_url)?;
         } else if self.hosted() || base_url != "codex://local" {
             return Err(AppError::Validation("Codex 登录仅支持本机开发模式".into()));
         }

@@ -8,10 +8,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AssetHistory } from "./AssetHistory";
-import * as api from "../../api";
+import * as portfolioApi from "../../api/portfolio";
 import fixture from "../../test/emptySnapshot.json";
 import type { DailyHistory, DailyRecord, Snapshot } from "../../types";
-vi.mock("../../api", () => ({
+vi.mock("../../api/portfolio", () => ({
   getDailyAssets: vi.fn(),
 }));
 const day: DailyRecord = {
@@ -38,7 +38,7 @@ const history: DailyHistory = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(api.getDailyAssets).mockResolvedValue(history);
+  vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue(history);
 });
 afterEach(cleanup);
 it("shows carry-forward labels with the trend expanded and the removed sections absent", async () => {
@@ -54,7 +54,7 @@ it("shows carry-forward labels with the trend expanded and the removed sections 
   expect(screen.queryByText("统计口径")).toBeNull();
 });
 it("shows incomplete totals and loads older records with a cursor", async () => {
-  vi.mocked(api.getDailyAssets).mockResolvedValue({
+  vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue({
     ...history,
     records: [
       { ...day, totalAssets: null, netAssets: null, missingFx: ["美元账户"] },
@@ -66,16 +66,16 @@ it("shows incomplete totals and loads older records with a cursor", async () => 
   expect(screen.queryByRole("group", { name: /每日总资产趋势/ })).toBeNull();
   fireEvent.click(screen.getByText("全部历史"));
   await waitFor(() =>
-    expect(api.getDailyAssets).toHaveBeenCalledWith({ limit: 400 }),
+    expect(portfolioApi.getDailyAssets).toHaveBeenCalledWith({ limit: 400 }),
   );
-  vi.mocked(api.getDailyAssets).mockResolvedValue({
+  vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue({
     ...history,
     records: [{ ...day, day: "2026-09-12" }],
     nextBefore: null,
   });
   fireEvent.click(screen.getByText("加载更早记录"));
   await waitFor(() =>
-    expect(api.getDailyAssets).toHaveBeenCalledWith({
+    expect(portfolioApi.getDailyAssets).toHaveBeenCalledWith({
       limit: 400,
       before: "2026-09-13",
     }),

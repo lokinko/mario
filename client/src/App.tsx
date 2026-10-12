@@ -1,11 +1,5 @@
 import { DailyTracking } from "./features/portfolio/DailyTracking";
-import { startAutoSync, type SyncState } from "./lib/autoSync";
-import {
-  blockStaleWrites,
-  DATA_SAVED,
-  SERVER_SESSION_CHANGED,
-  SERVER_DATA_UPDATED,
-} from "./lib/syncEvents";
+import { useApplicationData } from "./app/useApplicationData";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -16,10 +10,8 @@ import {
   Settings2,
   X,
 } from "lucide-react";
-import { checkServerVersion, getModelConfig, getSnapshot } from "./api";
-import type { ModelConfig, Snapshot } from "./types";
 import { ServerData } from "./features/account/ServerData";
-import { View, initialView, nav, viewLabels } from "./app/navigation";
+import { View, initialView, navGroups, viewLabels } from "./app/navigation";
 import type { FoundationSection } from "./app/navigation";
 import { MyFacts } from "./features/portfolio/MyFacts";
 import { Foundation } from "./features/portfolio/Foundation";
@@ -37,20 +29,35 @@ function App() {
   const [advisorVisited, setAdvisorVisited] = useState(
     () => initialView() === "advisor",
   );
-  const [dataRevision, setDataRevision] = useState(0);
   const [foundationSection, setFoundationSection] =
     useState<FoundationSection>("holdings");
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [model, setModel] = useState<ModelConfig | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [startupError, setStartupError] = useState("");
+  const {
+    snapshot,
+    setSnapshot,
+    model,
+    setModel,
+    modelError,
+    loading,
+    startupError,
+    remotePending,
+    remoteViewRevision,
+    dataRevision,
+    syncState,
+    loadApplication,
+    loadRemoteData,
+    acceptRemoteData,
+    refreshInvestmentData,
+    hasDraft,
+    markEdited,
+    clearDraft,
+    retrySync,
+  } = useApplicationData(view);
   const [notice, setNotice] = useState("");
   const noticeTimer = useRef<ReturnType<typeof window.setTimeout> | undefined>(
     undefined,
   );
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [modelError, setModelError] = useState("");
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -91,113 +98,14 @@ function App() {
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, []);
-  const startupRequest = useRef(0);
   const currentView = useRef(view);
   currentView.current = view;
-  const edited = useRef(false);
-  const [remotePending, setRemotePending] = useState(false);
-  const [remoteViewRevision, setRemoteViewRevision] = useState(0);
-  const [syncState, setSyncState] = useState<SyncState>({
-    phase: "waiting",
-    message: "正在检查同步状态",
-  });
-  const syncController = useRef<ReturnType<typeof startAutoSync> | null>(null);
-  const loadRemoteData = async (protectDrafts = false) => {
-    if (
-      protectDrafts &&
-      edited.current &&
-      !["advisor", "cloud"].includes(currentView.current)
-    ) {
-      blockStaleWrites(true);
-      setRemotePending(true);
-      return;
-    }
-    const next = await getSnapshot();
-    const nextModel = await getModelConfig().catch(() => null);
-    setModel(nextModel);
-    setSnapshot(next);
-    setRemoteViewRevision((value) => value + 1);
-    setRemotePending(false);
-    blockStaleWrites(false);
-    window.dispatchEvent(new Event(SERVER_DATA_UPDATED));
-  };
-  useEffect(() => {
-    if (loading || startupError) return;
-    const controller = startAutoSync({
-      sync: checkServerVersion,
-      visible: () =>
-        document.visibilityState !== "hidden" && document.hasFocus(),
-      online: () => navigator.onLine,
-      onStatus: setSyncState,
-      onRemoteUpdate: () => loadRemoteData(true),
-    });
-    syncController.current = controller;
-    window.addEventListener(DATA_SAVED, controller.changed);
-    window.addEventListener(SERVER_SESSION_CHANGED, controller.retry);
-    window.addEventListener("focus", controller.wake);
-    window.addEventListener("blur", controller.wake);
-    window.addEventListener("online", controller.wake);
-    window.addEventListener("offline", controller.wake);
-    document.addEventListener("visibilitychange", controller.wake);
-    return () => {
-      controller.dispose();
-      syncController.current = null;
-      window.removeEventListener(DATA_SAVED, controller.changed);
-      window.removeEventListener(SERVER_SESSION_CHANGED, controller.retry);
-      window.removeEventListener("focus", controller.wake);
-      window.removeEventListener("blur", controller.wake);
-      window.removeEventListener("online", controller.wake);
-      window.removeEventListener("offline", controller.wake);
-      document.removeEventListener("visibilitychange", controller.wake);
-    };
-  }, [loading, startupError]);
-
-  const loadApplication = () => {
-    setLoading(true);
-    setStartupError("");
-    const request = ++startupRequest.current;
-    getSnapshot()
-      .then((nextSnapshot) => {
-        if (request === startupRequest.current) setSnapshot(nextSnapshot);
-      })
-      .catch((error) => {
-        if (request === startupRequest.current) setStartupError(String(error));
-      })
-      .finally(() => {
-        if (request === startupRequest.current) setLoading(false);
-      });
-    getModelConfig()
-      .then((nextModel) => {
-        if (request === startupRequest.current) {
-          setModel(nextModel);
-          setModelError("");
-        }
-      })
-      .catch((error) => {
-        if (request === startupRequest.current) setModelError(String(error));
-      });
-  };
-
-  useEffect(() => {
-    loadApplication();
-    return () => {
-      startupRequest.current += 1;
-    };
-  }, []);
 
   const refreshForNewDay = useCallback(() => {
     void loadRemoteData(true).catch(() => {
       setNotice("今日汇率已检查，页面暂时刷新失败，请稍后重试。");
     });
-  }, []);
-
-  const refreshInvestmentData = async () => {
-    blockStaleWrites(false);
-    setRemotePending(false);
-    edited.current = false;
-    setSnapshot(await getSnapshot());
-    setDataRevision((current) => current + 1);
-  };
+  }, [loadRemoteData]);
 
   const flash = (message: string) => {
     window.clearTimeout(noticeTimer.current);
@@ -209,7 +117,7 @@ function App() {
     nextView: View,
     section: FoundationSection = "holdings",
   ) => {
-    edited.current = false;
+    clearDraft();
     setFoundationSection(section);
     setView(nextView);
     if (nextView === "advisor") setAdvisorVisited(true);
@@ -223,7 +131,7 @@ function App() {
     const followLocation = () => {
       const next = initialView();
       if (next !== currentView.current) {
-        edited.current = false;
+        clearDraft();
         setView(next);
         if (next === "advisor") setAdvisorVisited(true);
         setMobileNavOpen(false);
@@ -322,45 +230,52 @@ function App() {
         </div>
 
         <nav>
-          {nav.map((item) => (
-            <button
-              key={item.id}
-              aria-current={view === item.id ? "page" : undefined}
-              className={view === item.id ? "active" : ""}
-              onClick={() => navigate(item.id)}
-            >
-              <item.icon size={18} />
-              {item.label}
-            </button>
+          {navGroups.map((group) => (
+            <div className="nav-group" key={group.caption}>
+              <p className="nav-caption">{group.caption}</p>
+              {group.items.map((item) => (
+                <button
+                  key={item.id}
+                  aria-current={view === item.id ? "page" : undefined}
+                  className={view === item.id ? "active" : ""}
+                  onClick={() => navigate(item.id)}
+                >
+                  <item.icon size={18} />
+                  {item.label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
 
         <div className="sidebar-spacer" />
-        <button
-          className={`settings-link ${view === "cloud" ? "active" : ""}`}
-          aria-current={view === "cloud" ? "page" : undefined}
-          onClick={() => navigate("cloud")}
-        >
-          <Cloud size={18} /> 账号与数据
-        </button>
-        <small className="sidebar-sync-state" title={syncState.message}>
-          {syncState.phase === "attention"
-            ? "同步需要处理 · 打开账号与数据"
-            : syncState.message}
-        </small>
-        <button
-          className={`settings-link ${view === "settings" ? "active" : ""}`}
-          aria-current={view === "settings" ? "page" : undefined}
-          onClick={() => navigate("settings")}
-        >
-          <Settings2 size={18} /> 设置
-        </button>
+        <div className="sidebar-footer">
+          <button
+            className={`settings-link ${view === "cloud" ? "active" : ""}`}
+            aria-current={view === "cloud" ? "page" : undefined}
+            onClick={() => navigate("cloud")}
+          >
+            <Cloud size={18} /> 账号与数据
+          </button>
+          <button
+            className={`settings-link ${view === "settings" ? "active" : ""}`}
+            aria-current={view === "settings" ? "page" : undefined}
+            onClick={() => navigate("settings")}
+          >
+            <Settings2 size={18} /> 设置
+          </button>
+          <small className="sidebar-sync-state" title={syncState.message}>
+            {syncState.phase === "attention"
+              ? "同步需要处理 · 打开账号与数据"
+              : syncState.message}
+          </small>
+        </div>
       </aside>
 
       <main
         inert={mobileNavOpen}
         onChangeCapture={() => {
-          edited.current = true;
+          markEdited();
         }}
       >
         <DailyTracking onNewDay={refreshForNewDay} />
@@ -371,17 +286,13 @@ function App() {
               className="secondary"
               onClick={() => {
                 if (
-                  edited.current &&
+                  hasDraft() &&
                   !window.confirm(
                     "查看最新资料会重载当前表单，未保存的输入将丢弃。可先复制需要保留的内容。继续？",
                   )
                 )
                   return;
-                void loadRemoteData()
-                  .then(() => {
-                    edited.current = false;
-                  })
-                  .catch((error) => flash(String(error)));
+                void acceptRemoteData().catch((error) => flash(String(error)));
               }}
             >
               查看最新资料
@@ -457,11 +368,12 @@ function App() {
             flash={flash}
             onRestore={refreshInvestmentData}
             autoState={syncState}
-            onRetryAuto={() => syncController.current?.retry()}
+            onRetryAuto={retrySync}
           />
         )}
         {view === "settings" && model && (
           <ModelSettings
+            accountSettings={<AccountSettings />}
             key={remoteViewRevision}
             model={model}
             onUpdate={setModel}

@@ -1,5 +1,5 @@
 use super::*;
-use crate::fx::{FxBook, FxOverrideInput, ManualRate};
+use crate::models::market::{FxBook, FxOverrideInput, ManualRate};
 
 fn key(base: &str) -> String {
     format!("fx.book.{base}")
@@ -92,7 +92,7 @@ impl Database {
         let base = self.snapshot()?.profile.base_currency;
         let currency = input.currency.trim().to_ascii_uppercase();
         if currency == base
-            || !crate::market_data::SUPPORTED_CURRENCIES.contains(&currency.as_str())
+            || !crate::models::market::SUPPORTED_CURRENCIES.contains(&currency.as_str())
         {
             return Err(AppError::Validation("请选择需要换算的外币".into()));
         }
@@ -107,7 +107,7 @@ impl Database {
                 currency,
                 ManualRate {
                     rate: value,
-                    observed_on: crate::fx::today(),
+                    observed_on: crate::models::market::today(),
                 },
             );
         } else {
@@ -191,10 +191,11 @@ pub(super) fn validate_sync(dataset: &SyncDataset) -> AppResult<()> {
         return Ok(());
     };
     let invalid = || AppError::Validation("统一汇率设置无效".into());
-    let supported = |c: &str| crate::market_data::SUPPORTED_CURRENCIES.contains(&c);
+    let supported = |c: &str| crate::models::market::SUPPORTED_CURRENCIES.contains(&c);
     let valid_rate = |v: f64| v.is_finite() && v > 0.0 && v <= 1e9;
     let valid_day = |s: &str| {
-        NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok() && s <= crate::fx::today().as_str()
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
+            && s <= crate::models::market::today().as_str()
     };
     let valid_quote = |q: &crate::models::FxRateQuote| {
         supported(&q.from_currency)

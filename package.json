@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.6.0",
   "scripts": {
+    "check:architecture": "node scripts/check-architecture.mjs && node --test scripts/check-architecture.test.mjs",
     "test:startup": "node scripts/test-startup.mjs",
     "test:postgres-start": "node scripts/test-postgres-start.mjs",
     "data:backup": "node scripts/backup.mjs",

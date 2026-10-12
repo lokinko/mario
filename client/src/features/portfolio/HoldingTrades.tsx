@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
-import { saveHoldingTrade, updateHoldingTrade } from "../../api";
+import { saveHoldingTrade, updateHoldingTrade } from "../../api/portfolio";
 import type {
   Holding,
   HoldingTrade,

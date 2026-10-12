@@ -227,7 +227,7 @@ fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
         .unwrap();
     assert_eq!(valued.holdings[0].market_value, 1_012.5);
     assert_eq!(
-        db.daily_history(&super::daily::HistoryQuery::default())
+        db.daily_history(&crate::models::daily::HistoryQuery::default())
             .unwrap()
             .records[0]
             .total_assets,
@@ -1368,12 +1368,13 @@ fn stores_analysis_transparency_audit() {
     );
     let mut reviewed_result = result.clone();
     reviewed_result.id = "analysis-checked".into();
-    reviewed_result.workflow_trace.advice_grounding = vec![crate::ai::grounding::AdviceGrounding {
-        action_index: 0,
-        status: "contradicted".into(),
-        reason: "与原始资料相反".into(),
-        checks: vec![],
-    }];
+    reviewed_result.workflow_trace.advice_grounding =
+        vec![crate::models::information::AdviceGrounding {
+            action_index: 0,
+            status: "contradicted".into(),
+            reason: "与原始资料相反".into(),
+            checks: vec![],
+        }];
     db.save_analysis(&reviewed_result, "核对结论").unwrap();
     let checked_history = db
         .analysis_history()
@@ -1675,7 +1676,7 @@ fn manual_holding_details_survive_restart_history_and_sync() {
     let updated = db.update_holding(&id, &input).unwrap();
     assert_eq!(updated.holdings[0].market_value, 1206.0);
     let history = db
-        .daily_history(&super::daily::HistoryQuery::default())
+        .daily_history(&crate::models::daily::HistoryQuery::default())
         .unwrap();
     assert_eq!(
         history.records[0].assets[0].holding.current_price,
@@ -1762,7 +1763,7 @@ fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quanti
     let updated = db
         .update_holding_amount(
             id,
-            &super::daily::AmountInput {
+            &crate::models::daily::AmountInput {
                 amount: 2010.0,
                 expected_revision: created.holding_revisions[id].clone(),
                 request_id: "price-update".into(),
@@ -1777,7 +1778,7 @@ fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quanti
     assert!(db
         .update_holding_amount(
             id,
-            &super::daily::AmountInput {
+            &crate::models::daily::AmountInput {
                 amount: 1e15,
                 expected_revision: tiny.holding_revisions[id].clone(),
                 request_id: "oversized-unit-price".into(),
@@ -1789,7 +1790,7 @@ fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quanti
     let saved_zero = db
         .update_holding_amount(
             id,
-            &super::daily::AmountInput {
+            &crate::models::daily::AmountInput {
                 amount: 0.0,
                 expected_revision: zero.holding_revisions[id].clone(),
                 request_id: "zero-quantity".into(),
@@ -1800,7 +1801,7 @@ fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quanti
     assert!(db
         .update_holding_amount(
             id,
-            &super::daily::AmountInput {
+            &crate::models::daily::AmountInput {
                 amount: 1.0,
                 expected_revision: saved_zero.holding_revisions[id].clone(),
                 request_id: "impossible-total".into(),

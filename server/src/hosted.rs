@@ -1,11 +1,30 @@
-use super::*;
+use crate::{
+    accounts,
+    application::portfolio::MarketServices,
+    db::{self, Database},
+    fx,
+    http::{api_router, policy, RequestContext},
+    prices, AppError, AppResult,
+};
 use accounts::{Accounts, Credentials};
 use axum::http::StatusCode;
+use axum::{
+    extract::{Request, State},
+    http::{header, HeaderValue, Method},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Extension, Json, Router,
+};
+use std::{future::Future, net::SocketAddr, path::PathBuf, sync::Arc};
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 struct HostedState {
     accounts: Arc<Accounts>,
     slots: tokio::sync::Semaphore,
     auth_slots: tokio::sync::Semaphore,
+    market: Arc<MarketServices>,
+    analysis_executor: Arc<dyn crate::ai::AnalysisExecutor>,
 }
 
 pub async fn serve<F>(
@@ -24,6 +43,8 @@ where
         accounts: Arc::new(Accounts::open(url)?),
         slots: tokio::sync::Semaphore::new(24),
         auth_slots: tokio::sync::Semaphore::new(2),
+        market: Arc::new(MarketServices::new()?),
+        analysis_executor: Arc::new(crate::agent::AgentExecutor),
     });
     let private = api_router()
         .route("/api/sync/version", get(version))
@@ -31,14 +52,21 @@ where
         .route("/api/data/import", post(import))
         .route_layer(middleware::from_fn_with_state(state.clone(), authenticate));
     let cors = cors_layer()?;
-    let app=private.merge(Router::new()
-        .route("/api/auth/login",post(login))
-        .route("/api/auth/register",post(register))
-        .route("/api/auth/logout",post(logout))
-        .route("/api/server",get(|| async { Json(serde_json::json!({"mode":"hosted","database":"postgresql","protocol":1})) }))
-        .layer(axum::extract::DefaultBodyLimit::max(16*1024))
-        .with_state(state))
-        .layer(axum::extract::DefaultBodyLimit::max(64*1024*1024))
+    let public = Router::new()
+        .route("/api/auth/login", post(login))
+        .route("/api/auth/register", post(register))
+        .route("/api/auth/logout", post(logout))
+        .route(
+            "/api/server",
+            get(|| async {
+                Json(serde_json::json!({"mode":"hosted", "database":"postgresql", "protocol":1}))
+            }),
+        )
+        .layer(axum::extract::DefaultBodyLimit::max(16 * 1024))
+        .with_state(state);
+    let app = private
+        .merge(public)
+        .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(cors)
         .layer(middleware::map_response(no_store))
         .layer(TraceLayer::new_for_http());
@@ -103,24 +131,54 @@ async fn authenticate(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let result=async {
-        let _permit=host.slots.try_acquire().map_err(|_|AppError::Busy("服务繁忙，请稍后重试".into()))?;
-        let user=host.accounts.authenticate(bearer(request.headers())?)?;
-        let db=Database::postgres(&host.accounts.url,&user)?;
+    let result = async {
+        let _permit = host
+            .slots
+            .try_acquire()
+            .map_err(|_| AppError::Busy("服务繁忙，请稍后重试".into()))?;
+        let user = host.accounts.authenticate(bearer(request.headers())?)?;
+        let db = Database::postgres(&host.accounts.url, &user)?;
         db.lock_account()?;
-        let revision=db.revision()?;
-        let is_write=request.method()!=Method::GET && (request.uri().path()=="/api/portfolio-events/import/preview" || !request.uri().path().ends_with("/preview")) && !request.uri().path().ends_with("/test");
-        if is_write && request.headers().get(header::IF_MATCH).and_then(|v|v.to_str().ok())!=Some(revision.as_str()) {
-            return Ok::<_,AppError>((StatusCode::CONFLICT,Json(serde_json::json!({"error":"资料已变化，请刷新核对后再保存；当前输入不会自动提交。","revision":revision}))).into_response());
+        let revision = db.revision()?;
+        let is_write = policy::requires_revision(request.method(), request.uri().path());
+        let expected = request
+            .headers()
+            .get(header::IF_MATCH)
+            .and_then(|v| v.to_str().ok());
+        if is_write && expected != Some(revision.as_str()) {
+            return Ok::<_, AppError>(
+                (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({
+                        "error":"资料已变化，请刷新核对后再保存；当前输入不会自动提交。",
+                        "revision":revision
+                    })),
+                )
+                    .into_response(),
+            );
         }
-        let state=Arc::new(AppState { mutation_lock:tokio::sync::Mutex::new(()),db,auth_token:None,fx_provider:Arc::new(EcbFxRateProvider::new()?),security_price_provider:Arc::new(prices::FreeSecurityPriceProvider::new()?) });
+        let state = Arc::new(RequestContext {
+            db,
+            market: host.market.clone(),
+            analysis_executor: host.analysis_executor.clone(),
+        });
         request.extensions_mut().insert(state.clone());
-        let mut response=next.run(request).await;
-        response.headers_mut().insert(header::CACHE_CONTROL,HeaderValue::from_static("no-store"));
-        response.headers_mut().insert("x-data-revision",state.db.revision()?.parse().map_err(|_|AppError::Validation("数据版本无效".into()))?);
+        let mut response = next.run(request).await;
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        let revision_header = state
+            .db
+            .revision()?
+            .parse()
+            .map_err(|_| AppError::Validation("数据版本无效".into()))?;
+        response
+            .headers_mut()
+            .insert("x-data-revision", revision_header);
         state.db.unlock_account()?;
         Ok(response)
-    }.await;
+    }
+    .await;
     result.unwrap_or_else(IntoResponse::into_response)
 }
 async fn login(
@@ -163,16 +221,19 @@ async fn logout(
     state.accounts.logout(bearer(&headers)?)?;
     Ok(Json(serde_json::json!({"ok":true})))
 }
-async fn version(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<serde_json::Value>> {
-    fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
-    prices::refresh(&state.db, state.security_price_provider.as_ref()).await?;
+async fn version(
+    Extension(state): Extension<Arc<RequestContext>>,
+) -> AppResult<Json<serde_json::Value>> {
+    state.portfolio().snapshot().await?;
     Ok(Json(serde_json::json!({"revision":state.db.revision()?})))
 }
-async fn export(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<db::SyncDataset>> {
+async fn export(
+    Extension(state): Extension<Arc<RequestContext>>,
+) -> AppResult<Json<db::SyncDataset>> {
     Ok(Json(state.db.export_sync_data()?))
 }
 async fn import(
-    Extension(state): Extension<Arc<AppState>>,
+    Extension(state): Extension<Arc<RequestContext>>,
     Json(data): Json<db::SyncDataset>,
 ) -> AppResult<Json<serde_json::Value>> {
     if !state.db.is_empty_for_import()? {

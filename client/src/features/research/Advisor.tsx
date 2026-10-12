@@ -4,10 +4,10 @@ import { AlertTriangle, ChevronRight, LoaderCircle, Send } from "lucide-react";
 import {
   getAnalysis,
   getAnalysisHistory,
-  getAnalysisSettings,
   previewAnalysis,
   runAnalysis,
-} from "../../api";
+} from "../../api/research";
+import { getAnalysisSettings } from "../../api/settings";
 import type {
   AnalysisRequest,
   AnalysisResult,

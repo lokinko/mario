@@ -252,7 +252,7 @@ pub(super) fn validate_holding_valuation_evidence(
         )
         && source_url.username().is_empty()
         && source_url.password().is_none()
-        && crate::prices::canonical_symbol(&quote.symbol)
+        && crate::models::market::canonical_symbol(&quote.symbol)
             .is_ok_and(|symbol| source_url.path() == format!("/v8/finance/chart/{symbol}"))
         && source_url
             .query_pairs()
@@ -266,7 +266,7 @@ pub(super) fn validate_holding_valuation_evidence(
             && quote.provider_code == "yahoo_daily_close"
             && quote.provider_name == "Yahoo Finance"
             && quote.price_basis == "split_adjusted_daily_close"
-            && quote.methodology_url == crate::prices::METHODOLOGY_URL);
+            && quote.methodology_url == crate::models::market::METHODOLOGY_URL);
     if quote.symbol.trim().is_empty()
         || quote.symbol.chars().count() > 80
         || !supported

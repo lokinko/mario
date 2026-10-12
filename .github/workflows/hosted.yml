@@ -28,6 +28,7 @@ jobs:
         with:
           workspaces: server
       - run: npm ci --prefix client
+      - run: npm run check:architecture
       - run: npm run web:build
       - run: npm run test:deploy
       - run: npm test --prefix client

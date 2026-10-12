@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Cloud, Download, LoaderCircle, RefreshCw, Upload } from "lucide-react";
-import { exportData, importData } from "../../api";
+import { exportData, importData } from "../../api/account";
 import { PageHeader } from "../../components/PageHeader";
 import type { SyncState } from "../../lib/autoSync";
 import { serviceUrl } from "../../lib/service";

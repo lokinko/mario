@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getDailyAssets } from "../../api";
+import { getDailyAssets } from "../../api/portfolio";
 import type { DailyHistory, DailyRecord, Snapshot } from "../../types";
 import { formatMoney } from "../../lib/format";
 import { SERVER_DATA_UPDATED, DATA_SAVED } from "../../lib/syncEvents";

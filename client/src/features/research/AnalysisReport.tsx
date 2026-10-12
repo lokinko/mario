@@ -16,7 +16,7 @@ import type {
   StoredAnalysis,
 } from "../../types";
 import { formatMoney, formatNumber } from "../../lib/format";
-import { MemoryItems } from "../memory/MemoryItems";
+import { MemoryItems } from "../../components/MemoryItems";
 
 export function StoredAnalysisView({
   item,

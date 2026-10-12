@@ -9,15 +9,16 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
-import * as api from "./api";
+import * as portfolioApi from "./api/portfolio";
+import * as settingsApi from "./api/settings";
 import emptySnapshot from "./test/emptySnapshot.json";
 import { analysisSettings as defaultAnalysisSettings } from "./test/analysisSettings";
 import { WebAccess } from "./features/account/WebAccess";
 import * as service from "./lib/service";
 import { setWebToken, webToken } from "./lib/webSession";
 
-vi.mock("./api", async (original) => ({
-  ...(await original<typeof import("./api")>()),
+vi.mock("./api/portfolio", async (original) => ({
+  ...(await original<typeof import("./api/portfolio")>()),
   ensureDailyAssets: vi.fn().mockResolvedValue({
     timezone: "UTC",
     today: new Date().toISOString().slice(0, 10),
@@ -25,11 +26,20 @@ vi.mock("./api", async (original) => ({
     nextBefore: null,
   }),
   getSnapshot: vi.fn(),
-  getModelConfig: vi.fn(),
-  getAnalysisHistory: vi.fn().mockResolvedValue([]),
-  getReviewReminders: vi.fn().mockResolvedValue(null),
   getDailyAssets: vi.fn().mockResolvedValue({ records: [], nextBefore: null }),
   getPortfolioEvents: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("./api/settings", async (original) => ({
+  ...(await original<typeof import("./api/settings")>()),
+  getModelConfig: vi.fn(),
+}));
+vi.mock("./api/research", async (original) => ({
+  ...(await original<typeof import("./api/research")>()),
+  getAnalysisHistory: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("./api/reviews", async (original) => ({
+  ...(await original<typeof import("./api/reviews")>()),
+  getReviewReminders: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("./features/account/ServerData", () => ({
   ServerData: ({ onRestore }: { onRestore: () => Promise<void> }) => (
@@ -47,28 +57,28 @@ it.each([true, false])(
   async (modelAvailable) => {
     const localDev = vi.spyOn(service, "isLocalDev").mockReturnValue(false);
     const securityConfig = vi
-      .spyOn(api, "getSecurityPriceConfig")
+      .spyOn(portfolioApi, "getSecurityPriceConfig")
       .mockResolvedValue({ provider: "twelve-data", hasApiKey: false });
     const analysisSettings = vi
-      .spyOn(api, "getAnalysisSettings")
+      .spyOn(settingsApi, "getAnalysisSettings")
       .mockResolvedValue(defaultAnalysisSettings);
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const fetcher = vi.fn().mockResolvedValue(new Response('{"ok":true}'));
     vi.stubGlobal("fetch", fetcher);
     setWebToken("account-b", undefined, { email: "b@example.test" });
     setWebToken("account-a", undefined, { email: "a@example.test" });
-    vi.mocked(api.getSnapshot).mockResolvedValue(
-      {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+    vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+      {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
     );
     if (modelAvailable)
-      vi.mocked(api.getModelConfig).mockResolvedValue({
+      vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
         provider: "openai-responses",
         model: "test",
         baseUrl: "https://api.openai.com/v1",
         hasApiKey: false,
       });
     else
-      vi.mocked(api.getModelConfig).mockRejectedValue(
+      vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
         new Error("model unavailable"),
       );
     try {
@@ -92,7 +102,9 @@ it.each([true, false])(
       fireEvent.click(
         within(account).getByRole("button", { name: "切换到 b@example.test" }),
       );
-      await waitFor(() => expect(api.getSnapshot).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(portfolioApi.getSnapshot).toHaveBeenCalledTimes(2),
+      );
       expect(
         screen.queryByRole("complementary", { name: "主导航" }),
       ).toBeTruthy();
@@ -127,10 +139,10 @@ it.each([true, false])(
 
 it("falls back to questions when an old dashboard bookmark is opened", async () => {
   window.location.hash = "dashboard";
-  vi.mocked(api.getSnapshot).mockResolvedValue(
-    emptySnapshot as Awaited<ReturnType<typeof api.getSnapshot>>,
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
-  vi.mocked(api.getModelConfig).mockRejectedValue(
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
     new Error("optional model unavailable"),
   );
   render(<App />);
@@ -140,10 +152,10 @@ it("falls back to questions when an old dashboard bookmark is opened", async () 
 });
 
 it("keeps local application accessible when optional model configuration fails", async () => {
-  vi.mocked(api.getSnapshot).mockResolvedValue(
-    {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
-  vi.mocked(api.getModelConfig).mockRejectedValue(
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
     new Error("keychain unavailable"),
   );
   render(<App />);
@@ -155,14 +167,18 @@ it("keeps local application accessible when optional model configuration fails",
   );
   expect(screen.queryByText("本地服务尚未就绪")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "测试恢复数据" }));
-  await waitFor(() => expect(api.getSnapshot).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(portfolioApi.getSnapshot).toHaveBeenCalledTimes(2),
+  );
 });
 
 it("offers retry when required local data fails to load", async () => {
-  vi.mocked(api.getSnapshot)
+  vi.mocked(portfolioApi.getSnapshot)
     .mockRejectedValueOnce(new Error("local unavailable"))
-    .mockResolvedValue({} as Awaited<ReturnType<typeof api.getSnapshot>>);
-  vi.mocked(api.getModelConfig).mockRejectedValue(
+    .mockResolvedValue(
+      {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+    );
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
     new Error("model unavailable"),
   );
   render(<App />);
@@ -175,10 +191,10 @@ it("offers retry when required local data fails to load", async () => {
 it("opens on questions and preserves a draft when returning from supporting pages", async () => {
   window.location.hash = "";
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-  vi.mocked(api.getSnapshot).mockResolvedValue(
-    {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
-  vi.mocked(api.getModelConfig).mockResolvedValue({
+  vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
     provider: "openai-compatible",
     model: "test",
     baseUrl: "",
@@ -197,10 +213,10 @@ it("opens on questions and preserves a draft when returning from supporting page
 });
 
 it("shows frequently used records in primary navigation", async () => {
-  vi.mocked(api.getSnapshot).mockResolvedValue(
-    {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
-  vi.mocked(api.getModelConfig).mockResolvedValue({
+  vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
     provider: "codex",
     model: "test",
     baseUrl: "codex://local",
@@ -209,19 +225,25 @@ it("shows frequently used records in primary navigation", async () => {
   render(<App />);
   await screen.findByRole("button", { name: "问答" });
   expect(screen.getByRole("button", { name: "我的情况" })).toBeTruthy();
-  for (const name of ["复盘记录", "参考资料"]) {
+  for (const name of [
+    "复盘记录",
+    "参考资料",
+    "持仓与目标",
+    "组合流水",
+    "记忆与规则",
+  ]) {
     const entry = screen.getByRole("button", { name });
     expect(entry.closest("aside")).toBeTruthy();
     expect(entry.closest("details")).toBeNull();
   }
-  for (const name of ["决策确认", "记忆与规则", "组合流水", "资料与确认"])
+  for (const name of ["决策确认", "资料与确认"])
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
 it("responds to hash navigation without leaving the old page on screen", async () => {
-  vi.mocked(api.getSnapshot).mockResolvedValue(
-    {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
-  vi.mocked(api.getModelConfig).mockResolvedValue({
+  vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
     provider: "openai-responses",
     baseUrl: "https://api.openai.com/v1",
     model: "test",
@@ -236,10 +258,10 @@ it("responds to hash navigation without leaving the old page on screen", async (
 });
 
 it("closes the left drawer with Escape and restores focus without changing the page", async () => {
-  vi.mocked(api.getSnapshot).mockResolvedValue(
-    {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
-  vi.mocked(api.getModelConfig).mockResolvedValue({
+  vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
     provider: "codex",
     model: "test",
     baseUrl: "codex://local",
@@ -275,10 +297,10 @@ it.each([
     window.location.hash = "facts";
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const push = vi.spyOn(window.history, "pushState");
-    vi.mocked(api.getSnapshot).mockResolvedValue(
-      emptySnapshot as Awaited<ReturnType<typeof api.getSnapshot>>,
+    vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+      emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
     );
-    vi.mocked(api.getModelConfig).mockResolvedValue({
+    vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
       provider: "openai-responses",
       model: "test",
       baseUrl: "",
@@ -287,7 +309,7 @@ it.each([
     render(<App />);
     await screen.findByRole("heading", { name: "我的情况" });
     expect(screen.queryByText("更多资料与记录")).toBeNull();
-    for (const name of ["持仓与目标", "资产概览", "组合流水", "记忆与规则"])
+    for (const name of ["资产概览"])
       expect(screen.queryByRole("button", { name })).toBeNull();
     const sidebar = screen.getByRole("complementary", { name: "主导航" });
     fireEvent.click(within(sidebar).getByRole("button", { name: label }));

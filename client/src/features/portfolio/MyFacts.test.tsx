@@ -9,12 +9,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MyFacts } from "./MyFacts";
-import * as api from "../../api";
+import * as portfolioApi from "../../api/portfolio";
 import type { Snapshot } from "../../types";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 import { formatMoney } from "../../lib/format";
-vi.mock("../../api", () => ({
+vi.mock("../../api/portfolio", () => ({
   ensureDailyAssets: vi.fn().mockResolvedValue({
     timezone: "Asia/Shanghai",
     today: "2026-09-13",
@@ -37,7 +37,7 @@ vi.mock("../../api", () => ({
   getFxSettings: vi.fn(),
 }));
 beforeEach(() => {
-  vi.mocked(api.getFxSettings).mockResolvedValue({
+  vi.mocked(portfolioApi.getFxSettings).mockResolvedValue({
     baseCurrency: "CNY",
     checkedAt: 0,
     requestedOn: "",
@@ -45,7 +45,7 @@ beforeEach(() => {
     manual: {},
     error: "",
   });
-  vi.mocked(api.getDailyAssets).mockResolvedValue({
+  vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue({
     timezone: "UTC",
     today: "2026-09-13",
     records: [],
@@ -81,7 +81,7 @@ it("shows exchange rates above asset history and prioritizes currencies in holdi
 });
 
 it("saves a code and quantity without requiring a manual price", async () => {
-  vi.mocked(api.saveHolding).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
   fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
@@ -98,7 +98,7 @@ it("saves a code and quantity without requiring a manual price", async () => {
   );
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
   await waitFor(() =>
-    expect(api.saveHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({
         symbol: "600519.SS",
         quantity: 100,
@@ -147,7 +147,7 @@ it("refreshes prices and displays the source date and partial failures", async (
       },
     ],
   };
-  vi.mocked(api.refreshSecurityPrices).mockResolvedValue({
+  vi.mocked(portfolioApi.refreshSecurityPrices).mockResolvedValue({
     snapshot: value,
     updatedCount: 1,
     errors: value.priceRefreshErrors,
@@ -224,7 +224,7 @@ it.each([
       ...value,
       holdings: [{ ...holding, symbol: nextSymbol }],
     };
-    vi.mocked(api.updateHolding).mockResolvedValue(updated);
+    vi.mocked(portfolioApi.updateHolding).mockResolvedValue(updated);
     const { onUpdate } = mount(value);
     fireEvent.click(screen.getByRole("button", { name: "编辑 贵州茅台" }));
     const code = screen.getByRole("textbox", {
@@ -240,7 +240,7 @@ it.each([
     fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
     const { id, ...input } = holding;
     await waitFor(() =>
-      expect(api.updateHolding).toHaveBeenCalledWith(id, {
+      expect(portfolioApi.updateHolding).toHaveBeenCalledWith(id, {
         ...input,
         symbol: nextSymbol,
       }),
@@ -250,7 +250,7 @@ it.each([
 );
 
 it("only asks for monthly facts and preserves existing investment preferences", async () => {
-  vi.mocked(api.saveProfile).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.saveProfile).mockResolvedValue(snapshot);
   mount();
   expect(
     screen
@@ -265,14 +265,14 @@ it("only asks for monthly facts and preserves existing investment preferences", 
   });
   fireEvent.click(screen.getByRole("button", { name: "保存收支" }));
   await waitFor(() =>
-    expect(api.saveProfile).toHaveBeenCalledWith({
+    expect(portfolioApi.saveProfile).toHaveBeenCalledWith({
       ...snapshot.profile,
       monthlyIncome: 8000,
     }),
   );
 });
 it("stores deposits once as cash holdings, without adding them again to the profile", async () => {
-  vi.mocked(api.saveHolding).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
   fireEvent.click(screen.getByRole("button", { name: "添加存款" }));
@@ -282,7 +282,7 @@ it("stores deposits once as cash holdings, without adding them again to the prof
   });
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
   await waitFor(() =>
-    expect(api.saveHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "银行存款",
         assetClass: "现金",
@@ -290,7 +290,7 @@ it("stores deposits once as cash holdings, without adding them again to the prof
       }),
     ),
   );
-  expect(api.saveProfile).not.toHaveBeenCalled();
+  expect(portfolioApi.saveProfile).not.toHaveBeenCalled();
 });
 it("preserves the user's entered balance on failure and keeps existing cost and target intact", async () => {
   const holding = {
@@ -301,7 +301,9 @@ it("preserves the user's entered balance on failure and keeps existing cost and 
     costBasis: 750,
     targetPct: 12,
   };
-  vi.mocked(api.updateHolding).mockRejectedValue(new Error("保存失败"));
+  vi.mocked(portfolioApi.updateHolding).mockRejectedValue(
+    new Error("保存失败"),
+  );
   mount({ ...snapshot, holdings: [holding] });
   fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
   fireEvent.click(screen.getByRole("button", { name: "编辑 已有基金" }));
@@ -311,7 +313,7 @@ it("preserves the user's entered balance on failure and keeps existing cost and 
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
   await screen.findByRole("alert");
   expect(screen.getByDisplayValue("1200")).toBeTruthy();
-  expect(api.updateHolding).toHaveBeenCalledWith(
+  expect(portfolioApi.updateHolding).toHaveBeenCalledWith(
     "existing",
     expect.objectContaining({
       marketValue: 1200,
@@ -321,7 +323,7 @@ it("preserves the user's entered balance on failure and keeps existing cost and 
   );
 });
 it("requires an explicit amount and accepts a zero balance without an FX rate", async () => {
-  vi.mocked(api.saveHolding).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
   fireEvent.click(screen.getByRole("button", { name: "添加存款" }));
@@ -336,7 +338,7 @@ it("requires an explicit amount and accepts a zero balance without an FX rate", 
   expect((save as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(save);
   await waitFor(() =>
-    expect(api.saveHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({
         marketValue: 0,
         currency: "USD",
@@ -362,7 +364,7 @@ it("keeps asset categories fixed while an asset form is open, then unlocks on ca
 });
 
 it("blocks negative monthly facts and re-enables saving after correction", async () => {
-  vi.mocked(api.saveProfile).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.saveProfile).mockResolvedValue(snapshot);
   mount();
   const input = screen.getByRole("spinbutton", { name: "月收入 CNY" });
   fireEvent.change(input, { target: { value: "-1" } });
@@ -370,10 +372,10 @@ it("blocks negative monthly facts and re-enables saving after correction", async
     (screen.getByRole("button", { name: "保存收支" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-  expect(api.saveProfile).not.toHaveBeenCalled();
+  expect(portfolioApi.saveProfile).not.toHaveBeenCalled();
   fireEvent.change(input, { target: { value: "8000" } });
   fireEvent.click(screen.getByRole("button", { name: "保存收支" }));
-  await waitFor(() => expect(api.saveProfile).toHaveBeenCalledOnce());
+  await waitFor(() => expect(portfolioApi.saveProfile).toHaveBeenCalledOnce());
 });
 
 it("blocks invalid asset amounts even when a form is submitted with Enter", () => {
@@ -386,7 +388,7 @@ it("blocks invalid asset amounts even when a form is submitted with Enter", () =
   const save = screen.getByRole("button", { name: "保存这笔资产" });
   expect((save as HTMLButtonElement).disabled).toBe(true);
   fireEvent.submit(save.closest("form")!);
-  expect(api.saveHolding).not.toHaveBeenCalled();
+  expect(portfolioApi.saveHolding).not.toHaveBeenCalled();
 });
 
 const investment = {
@@ -404,7 +406,7 @@ it("records investment cost in the holding's currency and shows the saved profit
     targetPct: 12,
   };
   const updated = { ...snapshot, holdings: [saved] };
-  vi.mocked(api.updateHolding).mockResolvedValue(updated);
+  vi.mocked(portfolioApi.updateHolding).mockResolvedValue(updated);
   const { onUpdate, flash, rerender } = mount({
     ...snapshot,
     holdings: [{ ...saved, costBasis: 0 }],
@@ -418,7 +420,7 @@ it("records investment cost in the holding's currency and shows the saved profit
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
   const { id, ...input } = saved;
   await waitFor(() =>
-    expect(api.updateHolding).toHaveBeenCalledWith(id, input),
+    expect(portfolioApi.updateHolding).toHaveBeenCalledWith(id, input),
   );
   expect(onUpdate).toHaveBeenCalledWith(updated);
   rerender(
@@ -438,7 +440,7 @@ it("records investment cost in the holding's currency and shows the saved profit
 });
 
 it("includes cost when adding an investment and keeps it optional", async () => {
-  vi.mocked(api.saveHolding).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
   fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
@@ -456,7 +458,7 @@ it("includes cost when adding an investment and keeps it optional", async () => 
   );
   fireEvent.click(save);
   await waitFor(() =>
-    expect(api.saveHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "新基金",
         marketValue: 1000,
@@ -467,7 +469,7 @@ it("includes cost when adding an investment and keeps it optional", async () => 
 });
 
 it("blocks negative or excessive costs, then allows clearing an unrecorded cost", async () => {
-  vi.mocked(api.updateHolding).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.updateHolding).mockResolvedValue(snapshot);
   mount({ ...snapshot, holdings: [{ ...investment, costBasis: 800 }] });
   fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金成本" }));
   const cost = screen.getByRole("spinbutton", {
@@ -479,13 +481,13 @@ it("blocks negative or excessive costs, then allows clearing an unrecorded cost"
     fireEvent.change(cost, { target: { value } });
     expect((save as HTMLButtonElement).disabled).toBe(true);
     fireEvent.submit(save.closest("form")!);
-    expect(api.updateHolding).not.toHaveBeenCalled();
+    expect(portfolioApi.updateHolding).not.toHaveBeenCalled();
   }
   fireEvent.change(cost, { target: { value: "" } });
   expect((save as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(save);
   await waitFor(() =>
-    expect(api.updateHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.updateHolding).toHaveBeenCalledWith(
       investment.id,
       expect.objectContaining({ costBasis: 0, marketValue: 1000 }),
     ),
@@ -493,7 +495,9 @@ it("blocks negative or excessive costs, then allows clearing an unrecorded cost"
 });
 
 it("preserves an edited cost after a save failure", async () => {
-  vi.mocked(api.updateHolding).mockRejectedValue(new Error("保存失败"));
+  vi.mocked(portfolioApi.updateHolding).mockRejectedValue(
+    new Error("保存失败"),
+  );
   mount({ ...snapshot, holdings: [investment] });
   fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金成本" }));
   const cost = screen.getByRole("spinbutton", {
@@ -503,7 +507,7 @@ it("preserves an edited cost after a save failure", async () => {
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
   await screen.findByRole("alert");
   expect((cost as HTMLInputElement).value).toBe("800");
-  expect(api.updateHolding).toHaveBeenCalledWith(
+  expect(portfolioApi.updateHolding).toHaveBeenCalledWith(
     investment.id,
     expect.objectContaining({ costBasis: 800 }),
   );
@@ -514,14 +518,14 @@ it("leaves holdings unchanged when deletion is cancelled", () => {
   const { onUpdate } = mount({ ...snapshot, holdings: [investment] });
   fireEvent.click(screen.getByRole("button", { name: "删除 指数基金" }));
   expect(confirm).toHaveBeenCalledWith(expect.stringContaining("指数基金"));
-  expect(api.deleteHolding).not.toHaveBeenCalled();
+  expect(portfolioApi.deleteHolding).not.toHaveBeenCalled();
   expect(onUpdate).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "编辑 指数基金" })).toBeTruthy();
 });
 
 it("refreshes the portfolio after deletion and closes the deleted asset's edit form", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
-  vi.mocked(api.deleteHolding).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.deleteHolding).mockResolvedValue(snapshot);
   const { onUpdate, flash, rerender } = mount({
     ...snapshot,
     holdings: [investment],
@@ -529,7 +533,9 @@ it("refreshes the portfolio after deletion and closes the deleted asset's edit f
   fireEvent.click(screen.getByRole("button", { name: "编辑 指数基金" }));
   fireEvent.click(screen.getByRole("button", { name: "删除 指数基金" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(snapshot));
-  expect(api.deleteHolding).toHaveBeenCalledExactlyOnceWith("investment");
+  expect(portfolioApi.deleteHolding).toHaveBeenCalledExactlyOnceWith(
+    "investment",
+  );
   expect(flash).toHaveBeenCalledWith("资产已删除");
   expect(screen.queryByRole("region", { name: "记录资产" })).toBeNull();
   rerender(
@@ -546,21 +552,23 @@ it("refreshes the portfolio after deletion and closes the deleted asset's edit f
 
 it("shows deletion failures and allows retrying without losing the holding", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
-  vi.mocked(api.deleteHolding).mockRejectedValueOnce(new Error("网络中断"));
+  vi.mocked(portfolioApi.deleteHolding).mockRejectedValueOnce(
+    new Error("网络中断"),
+  );
   const { onUpdate } = mount({ ...snapshot, holdings: [investment] });
   fireEvent.click(screen.getByRole("button", { name: "删除 指数基金" }));
   expect((await screen.findByRole("alert")).textContent).toContain("删除失败");
   expect(onUpdate).not.toHaveBeenCalled();
-  vi.mocked(api.deleteHolding).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.deleteHolding).mockResolvedValue(snapshot);
   fireEvent.click(screen.getByRole("button", { name: "删除 指数基金" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(snapshot));
-  expect(api.deleteHolding).toHaveBeenCalledTimes(2);
+  expect(portfolioApi.deleteHolding).toHaveBeenCalledTimes(2);
 });
 
 it("also supports deleting cash and blocks duplicate actions during deletion", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
   let resolve!: (value: Snapshot) => void;
-  vi.mocked(api.deleteHolding).mockImplementationOnce(
+  vi.mocked(portfolioApi.deleteHolding).mockImplementationOnce(
     () =>
       new Promise((yes) => {
         resolve = yes;
@@ -584,12 +592,12 @@ it("also supports deleting cash and blocks duplicate actions during deletion", a
       .disabled,
   ).toBe(true);
   fireEvent.click(remove);
-  expect(api.deleteHolding).toHaveBeenCalledExactlyOnceWith("cash");
+  expect(portfolioApi.deleteHolding).toHaveBeenCalledExactlyOnceWith("cash");
   await act(async () => resolve(snapshot));
 });
 
 it("saves manually entered unit prices and fractional quantities with calculated totals", async () => {
-  vi.mocked(api.saveHolding).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
   fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
@@ -620,7 +628,7 @@ it("saves manually entered unit prices and fractional quantities with calculated
   expect(save.disabled).toBe(false);
   fireEvent.click(save);
   await waitFor(() =>
-    expect(api.saveHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({
         costPrice: 8,
         quantity: 100.5,
@@ -640,7 +648,9 @@ it("keeps detailed inputs on failure and validates zero values, missing prices a
     currentPrice: 10,
     costBasis: 800,
   };
-  vi.mocked(api.updateHolding).mockRejectedValue(new Error("保存失败"));
+  vi.mocked(portfolioApi.updateHolding).mockRejectedValue(
+    new Error("保存失败"),
+  );
   mount({ ...snapshot, holdings: [detailed] });
   fireEvent.click(
     screen.getByRole("button", { name: "编辑 指数基金当前价格" }),
@@ -656,7 +666,7 @@ it("keeps detailed inputs on failure and validates zero values, missing prices a
     fireEvent.change(price, { target: { value } });
     expect(save.disabled).toBe(true);
     fireEvent.submit(save.closest("form")!);
-    expect(api.updateHolding).not.toHaveBeenCalled();
+    expect(portfolioApi.updateHolding).not.toHaveBeenCalled();
   }
   fireEvent.change(price, { target: { value: "0" } });
   fireEvent.change(quantity, { target: { value: "0" } });
@@ -665,7 +675,7 @@ it("keeps detailed inputs on failure and validates zero values, missing prices a
   await screen.findByRole("alert");
   expect((price as HTMLInputElement).value).toBe("0");
   expect((quantity as HTMLInputElement).value).toBe("0");
-  expect(api.updateHolding).toHaveBeenCalledWith(
+  expect(portfolioApi.updateHolding).toHaveBeenCalledWith(
     investment.id,
     expect.objectContaining({
       currentPrice: 0,
@@ -677,7 +687,7 @@ it("keeps detailed inputs on failure and validates zero values, missing prices a
 });
 
 it("shows and saves the same total when returning from detailed prices to legacy amounts", async () => {
-  vi.mocked(api.updateHolding).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.updateHolding).mockResolvedValue(snapshot);
   mount({
     ...snapshot,
     holdings: [
@@ -712,7 +722,7 @@ it("shows and saves the same total when returning from detailed prices to legacy
   ).toBe("1200");
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
   await waitFor(() =>
-    expect(api.updateHolding).toHaveBeenCalledWith(
+    expect(portfolioApi.updateHolding).toHaveBeenCalledWith(
       investment.id,
       expect.objectContaining({
         marketValue: 1200,

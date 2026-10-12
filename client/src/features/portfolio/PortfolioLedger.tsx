@@ -19,7 +19,7 @@ import {
   reversePortfolioEvent,
   savePortfolioEvent,
   commitPortfolioEventImport,
-} from "../../api";
+} from "../../api/portfolio";
 import type {
   PortfolioEventInput,
   PortfolioEventImportPreview,

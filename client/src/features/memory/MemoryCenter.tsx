@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import { AlertTriangle, BookMarked } from "lucide-react";
-import { getMemories, saveMemoryPreference } from "../../api";
+import { getMemories, saveMemoryPreference } from "../../api/memory";
 import type { MemoryCandidate } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
 

@@ -10,7 +10,7 @@ import {
   updateHolding,
   saveProfile,
   refreshSecurityPrices,
-} from "../../api";
+} from "../../api/portfolio";
 import type { Holding, Snapshot } from "../../types";
 import { type View } from "../../app/navigation";
 import { PageHeader } from "../../components/PageHeader";

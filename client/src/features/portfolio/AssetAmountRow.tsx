@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { getSnapshot, updateHoldingAmount } from "../../api";
+import { getSnapshot, updateHoldingAmount } from "../../api/portfolio";
 import type { Holding, HoldingValuationEvidence, Snapshot } from "../../types";
 import { formatMoney, formatNumber } from "../../lib/format";
 

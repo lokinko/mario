@@ -1,29 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use super::{workflow::StagePrompt, ChatMessage};
 use crate::models::AnalysisEvidenceReference;
 
 pub const INFORMATION_LIMIT: usize = 10;
 
-// Model annotations are internal, query-specific aids. Original source fields
-// remain immutable and are stored separately in the analysis's frozen catalog.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SelectedInformation {
-    pub source_id: String,
-    pub topic: String,
-    pub entities: Vec<String>,
-    pub information_type: String,
-    pub event_date: Option<String>,
-    pub date_quote: Option<String>,
-    pub time_sensitivity: String,
-    pub excerpt: String,
-    pub relevance: f64,
-    pub reason: String,
-}
+pub use crate::models::information::SelectedInformation;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

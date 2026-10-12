@@ -6,37 +6,8 @@ use crate::{
     AppError, AppResult,
 };
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
-pub fn today() -> String {
-    Utc::now()
-        .with_timezone(&chrono_tz::Asia::Shanghai)
-        .date_naive()
-        .to_string()
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ManualRate {
-    pub rate: f64,
-    pub observed_on: String,
-}
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FxBook {
-    pub base_currency: String,
-    pub checked_at: i64,
-    pub requested_on: String,
-    pub quotes: Vec<FxRateQuote>,
-    pub manual: BTreeMap<String, ManualRate>,
-    pub error: String,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct FxOverrideInput {
-    pub currency: String,
-    pub rate: Option<f64>,
-}
+pub use crate::models::market::{today, FxBook, FxOverrideInput};
 
 pub async fn refresh(
     db: &Database,
@@ -220,7 +191,7 @@ mod tests {
             0
         );
         assert_eq!(
-            db.ensure_daily(&crate::db::daily::EnsureInput {
+            db.ensure_daily(&crate::models::daily::EnsureInput {
                 timezone: "Asia/Shanghai".into()
             })
             .unwrap()
@@ -333,158 +304,5 @@ mod tests {
             ]);
         assert!(db.import_sync_data(&data).is_err());
         assert!(db.setting("model.name").unwrap().is_none());
-    }
-}
-
-#[cfg(test)]
-mod integration_tests {
-    use super::*;
-    use crate::models::{
-        HoldingInput, PortfolioEventImportCommitRequest, PortfolioEventImportRequest,
-        PortfolioEventInput,
-    };
-    use axum::{Extension, Json};
-    use std::sync::Arc;
-    struct Provider;
-    #[async_trait::async_trait]
-    impl FxRateProvider for Provider {
-        async fn quote(&self, q: &FxRateQuery) -> AppResult<FxRateQuote> {
-            Ok(FxRateQuote {
-                from_currency: q.from_currency.clone(),
-                to_currency: q.to_currency.clone(),
-                rate: 7.0,
-                requested_on: q.on_date.clone(),
-                observed_on: q.on_date.clone(),
-                staleness_days: 0,
-                provider_code: "ecb_reference".into(),
-                provider_name: "ECB".into(),
-                source_url: String::new(),
-                methodology_url: String::new(),
-                disclaimer: String::new(),
-            })
-        }
-    }
-    fn holding(currency: &str) -> HoldingInput {
-        serde_json::from_value(serde_json::json!({"name":"账户","symbol":"","assetClass":"现金","marketValue":100,"costBasis":0,"targetPct":0,"currency":currency,"valuationDate":"2026-01-01"})).unwrap()
-    }
-    #[tokio::test]
-    async fn ledger_and_csv_without_rate_share_the_source_and_frozen_records_survive_overrides() {
-        let db = Database::open(std::path::Path::new(":memory:")).unwrap();
-        db.add_holding(&holding("CNY")).unwrap();
-        let state = Arc::new(crate::AppState {
-            db,
-            mutation_lock: tokio::sync::Mutex::new(()),
-            auth_token: None,
-            fx_provider: Arc::new(Provider),
-            security_price_provider: Arc::new(
-                crate::market_data::TwelveDataSecurityPriceProvider::new().unwrap(),
-            ),
-        });
-        let csv = "source,external_id,event_type,occurred_on,amount,currency,note\nbroker,id-1,deposit,2026-01-02,100,USD,deposit\n";
-        let preview = crate::preview_portfolio_event_import(
-            Extension(state.clone()),
-            Json(PortfolioEventImportRequest {
-                csv_text: csv.into(),
-            }),
-        )
-        .await
-        .unwrap()
-        .0;
-        assert_eq!(preview.ready_count, 1);
-        assert_eq!(preview.rows[0].fx_rate_to_base, Some(7.0));
-        let committed = crate::commit_portfolio_event_import(
-            Extension(state.clone()),
-            Json(PortfolioEventImportCommitRequest {
-                csv_text: csv.into(),
-                preview_revision: preview.preview_revision,
-            }),
-        )
-        .await
-        .unwrap();
-        assert_eq!(committed.0.inserted_count, 1);
-        let frozen = state.db.portfolio_events().unwrap()[0].clone();
-        assert_eq!(frozen.base_amount, 700.0);
-        state
-            .db
-            .set_fx_override(&FxOverrideInput {
-                currency: "USD".into(),
-                rate: Some(8.0),
-            })
-            .unwrap();
-        let event:PortfolioEventInput=serde_json::from_value(serde_json::json!({"eventType":"deposit","source":"manual","externalId":"id-2","assetName":"","amount":100,"currency":"USD","occurredOn":today(),"note":"new deposit"})).unwrap();
-        let saved = crate::add_portfolio_event(Extension(state.clone()), Json(event))
-            .await
-            .unwrap()
-            .0;
-        assert_eq!(saved.base_amount, 800.0);
-        let events = state.db.portfolio_events().unwrap();
-        assert_eq!(
-            serde_json::to_value(events.iter().find(|e| e.id == frozen.id).unwrap()).unwrap(),
-            serde_json::to_value(&frozen).unwrap()
-        );
-        let preview = crate::preview_portfolio_event_import(
-            Extension(state.clone()),
-            Json(PortfolioEventImportRequest {
-                csv_text: csv.into(),
-            }),
-        )
-        .await
-        .unwrap()
-        .0;
-        assert_eq!(preview.duplicate_count, 1);
-        state
-            .db
-            .set_fx_override(&FxOverrideInput {
-                currency: "USD".into(),
-                rate: Some(9.0),
-            })
-            .unwrap();
-        let today_csv=format!("source,external_id,event_type,occurred_on,amount,currency,note\nmanual,id-2,deposit,{},100,USD,new deposit\n",today());
-        let preview = crate::preview_portfolio_event_import(
-            Extension(state.clone()),
-            Json(PortfolioEventImportRequest {
-                csv_text: today_csv,
-            }),
-        )
-        .await
-        .unwrap()
-        .0;
-        assert_eq!(preview.duplicate_count, 1);
-        assert_eq!(preview.rows[0].fx_rate_to_base, Some(8.0));
-    }
-    #[tokio::test]
-    async fn changing_today_rate_preserves_prior_daily_totals_and_balance_confirmation() {
-        let db = Database::open(std::path::Path::new(":memory:")).unwrap();
-        refresh(&db, &Provider, false).await.unwrap();
-        db.add_holding(&holding("USD")).unwrap();
-        let yesterday = (Utc::now()
-            .with_timezone(&chrono_tz::Asia::Shanghai)
-            .date_naive()
-            - chrono::Duration::days(1))
-        .to_string();
-        {
-            let c = db.conn().unwrap();
-            c.execute(
-                "UPDATE daily_entries SET day=?1,id=?1 || ':' || entity_id",
-                [&yesterday],
-            )
-            .unwrap();
-            c.execute("DELETE FROM daily_totals", []).unwrap();
-        }
-        db.set_fx_override(&FxOverrideInput {
-            currency: "USD".into(),
-            rate: Some(8.0),
-        })
-        .unwrap();
-        let history = db
-            .daily_history(&crate::db::daily::HistoryQuery::default())
-            .unwrap();
-        assert_eq!(history.records[0].total_assets, Some(800.0));
-        assert_eq!(history.records[1].total_assets, Some(700.0));
-        assert!(history.records[0].assets[0].carried);
-        assert_eq!(
-            history.records[0].assets[0].confirmed_on.as_deref(),
-            Some("2026-01-01")
-        );
     }
 }

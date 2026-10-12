@@ -8,10 +8,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ReviewCenter } from "./ReviewCenter";
-import * as api from "../../api";
+import * as reviewsApi from "../../api/reviews";
 import type { SystemReviewRecord } from "../../types";
 
-vi.mock("../../api", () => ({
+vi.mock("../../api/reviews", () => ({
   getInvestmentRules: vi.fn(),
   getInvestmentRuleHistory: vi.fn(),
   getSystemReviews: vi.fn(),
@@ -20,8 +20,8 @@ vi.mock("../../api", () => ({
   updateInvestmentRule: vi.fn(),
 }));
 beforeEach(() => {
-  vi.mocked(api.getInvestmentRules).mockResolvedValue([]);
-  vi.mocked(api.getSystemReviews).mockResolvedValue([]);
+  vi.mocked(reviewsApi.getInvestmentRules).mockResolvedValue([]);
+  vi.mocked(reviewsApi.getSystemReviews).mockResolvedValue([]);
 });
 afterEach(() => {
   cleanup();
@@ -50,7 +50,7 @@ it("saves the complete text from a single input and displays it literally", asyn
     adherenceScore: null,
     nextReviewDate: "",
   };
-  vi.mocked(api.saveSystemReview).mockResolvedValue(stored);
+  vi.mocked(reviewsApi.saveSystemReview).mockResolvedValue(stored);
   const flash = vi.fn();
   render(<ReviewCenter flash={flash} navigate={vi.fn()} />);
   const input = await screen.findByRole("textbox", {
@@ -64,10 +64,10 @@ it("saves the complete text from a single input and displays it literally", asyn
   ).toBe(false);
   expect(screen.queryByLabelText("下次复盘日")).toBeNull();
   fireEvent.change(input, { target: { value: content } });
-  vi.mocked(api.getSystemReviews).mockResolvedValue([stored]);
+  vi.mocked(reviewsApi.getSystemReviews).mockResolvedValue([stored]);
   fireEvent.click(screen.getByRole("button", { name: "保存复盘" }));
   await waitFor(() =>
-    expect(api.saveSystemReview).toHaveBeenCalledWith({ content }),
+    expect(reviewsApi.saveSystemReview).toHaveBeenCalledWith({ content }),
   );
   await waitFor(() => expect(flash).toHaveBeenCalledWith("复盘记录已保存"));
   expect(
@@ -84,7 +84,7 @@ it("saves the complete text from a single input and displays it literally", asyn
 });
 
 it("rejects whitespace and retains the draft when saving fails", async () => {
-  vi.mocked(api.saveSystemReview).mockRejectedValueOnce(
+  vi.mocked(reviewsApi.saveSystemReview).mockRejectedValueOnce(
     new Error("复盘保存失败"),
   );
   render(<ReviewCenter flash={vi.fn()} navigate={vi.fn()} />);
@@ -97,7 +97,7 @@ it("rejects whitespace and retains the draft when saving fails", async () => {
   fireEvent.change(input, { target: { value: " \n " } });
   expect(save.disabled).toBe(true);
   fireEvent.submit(save.closest("form")!);
-  expect(api.saveSystemReview).not.toHaveBeenCalled();
+  expect(reviewsApi.saveSystemReview).not.toHaveBeenCalled();
   const content = "保留我的顾虑与思考";
   fireEvent.change(input, { target: { value: content } });
   fireEvent.click(save);
@@ -114,7 +114,7 @@ it("rejects whitespace and retains the draft when saving fails", async () => {
 });
 
 it("shows every legacy field together as plain text", async () => {
-  vi.mocked(api.getSystemReviews).mockResolvedValue([legacy]);
+  vi.mocked(reviewsApi.getSystemReviews).mockResolvedValue([legacy]);
   render(<ReviewCenter flash={vi.fn()} navigate={vi.fn()} />);
   await screen.findByRole("textbox", { name: "我的观点、顾虑和思考" });
   const content = document.querySelector(".review-content")?.textContent;

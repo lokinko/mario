@@ -15,7 +15,7 @@ const ECB_METHODOLOGY_URL: &str =
     "https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates";
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const LOOKBACK_DAYS: i64 = 7;
-pub(crate) const SUPPORTED_CURRENCIES: &[&str] = &["CNY", "USD", "HKD", "EUR", "JPY", "GBP"];
+pub(crate) use crate::models::market::SUPPORTED_CURRENCIES;
 const TWELVE_DATA_API_BASE: &str = "https://api.twelvedata.com";
 const TWELVE_DATA_METHODOLOGY_URL: &str = "https://twelvedata.com/docs/market-data/time-series";
 const PRICE_LOOKBACK_DAYS: i64 = 10;

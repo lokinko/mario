@@ -9,7 +9,7 @@ import {
   saveInvestmentRule,
   saveSystemReview,
   updateInvestmentRule,
-} from "../../api";
+} from "../../api/reviews";
 import type {
   InvestmentRule,
   InvestmentRuleInput,

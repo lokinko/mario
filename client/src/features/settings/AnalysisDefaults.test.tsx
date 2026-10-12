@@ -8,10 +8,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { AnalysisDefaults } from "./AnalysisDefaults";
-import * as api from "../../api";
+import * as settingsApi from "../../api/settings";
 import { analysisSettings } from "../../test/analysisSettings";
 
-vi.mock("../../api", () => ({
+vi.mock("../../api/settings", () => ({
   getAnalysisSettings: vi.fn(),
   saveAnalysisSettings: vi.fn(),
 }));
@@ -34,8 +34,8 @@ it("loads saved permissions and saves one preset for future questions", async ()
       includeProfile: false,
     },
   };
-  vi.mocked(api.getAnalysisSettings).mockResolvedValue(stored);
-  vi.mocked(api.saveAnalysisSettings).mockImplementation(
+  vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(stored);
+  vi.mocked(settingsApi.saveAnalysisSettings).mockImplementation(
     async (settings) => settings,
   );
   const flash = vi.fn();
@@ -49,7 +49,7 @@ it("loads saved permissions and saves one preset for future questions", async ()
   fireEvent.click(screen.getByLabelText("联网查找相关资料"));
   fireEvent.click(screen.getByRole("button", { name: "保存问答预设" }));
   await waitFor(() => expect(flash).toHaveBeenCalled());
-  expect(api.saveAnalysisSettings).toHaveBeenCalledWith({
+  expect(settingsApi.saveAnalysisSettings).toHaveBeenCalledWith({
     ...stored,
     useMemory: false,
     webSearch: false,
@@ -58,7 +58,9 @@ it("loads saved permissions and saves one preset for future questions", async ()
 });
 
 it("keeps deep-only options while switching to quick analysis", async () => {
-  vi.mocked(api.getAnalysisSettings).mockResolvedValue(analysisSettings);
+  vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(
+    analysisSettings,
+  );
   render(
     <AnalysisDefaults
       model={{ ...model, provider: "openai-chat" }}
@@ -81,7 +83,7 @@ it("keeps deep-only options while switching to quick analysis", async () => {
 });
 
 it("shows a read failure and retries without overwriting saved permissions", async () => {
-  vi.mocked(api.getAnalysisSettings)
+  vi.mocked(settingsApi.getAnalysisSettings)
     .mockRejectedValueOnce(new Error("无法读取预设"))
     .mockResolvedValue(analysisSettings);
   render(<AnalysisDefaults model={model} flash={vi.fn()} />);
@@ -94,12 +96,16 @@ it("shows a read failure and retries without overwriting saved permissions", asy
   ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "重试" }));
   await screen.findByLabelText("财务档案");
-  expect(api.saveAnalysisSettings).not.toHaveBeenCalled();
+  expect(settingsApi.saveAnalysisSettings).not.toHaveBeenCalled();
 });
 
 it("preserves edited selections when saving fails", async () => {
-  vi.mocked(api.getAnalysisSettings).mockResolvedValue(analysisSettings);
-  vi.mocked(api.saveAnalysisSettings).mockRejectedValue(new Error("保存失败"));
+  vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(
+    analysisSettings,
+  );
+  vi.mocked(settingsApi.saveAnalysisSettings).mockRejectedValue(
+    new Error("保存失败"),
+  );
   const flash = vi.fn();
   render(<AnalysisDefaults model={model} flash={flash} />);
   fireEvent.click(await screen.findByLabelText("财务档案"));

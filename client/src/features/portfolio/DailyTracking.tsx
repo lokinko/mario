@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ensureDailyAssets } from "../../api";
+import { ensureDailyAssets } from "../../api/portfolio";
 import { SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 
 export function DailyTracking({ onNewDay }: { onNewDay?: () => void } = {}) {

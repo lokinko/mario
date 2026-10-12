@@ -9,12 +9,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AssetAmountRow } from "./AssetAmountRow";
-import * as api from "../../api";
+import * as portfolioApi from "../../api/portfolio";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 import type { Snapshot } from "../../types";
 import { formatMoney } from "../../lib/format";
-vi.mock("../../api", () => ({
+vi.mock("../../api/portfolio", () => ({
   updateHoldingAmount: vi.fn(),
   getSnapshot: vi.fn(),
 }));
@@ -74,7 +74,7 @@ it("rounds displayed prices and computed totals without saving rounded values", 
   fireEvent.focus(field);
   expect(field.value).toBe("28.96");
   fireEvent.blur(field);
-  expect(api.updateHoldingAmount).not.toHaveBeenCalled();
+  expect(portfolioApi.updateHoldingAmount).not.toHaveBeenCalled();
 
   view.rerender(
     <AssetAmountRow
@@ -86,13 +86,13 @@ it("rounds displayed prices and computed totals without saving rounded values", 
   fireEvent.focus(field);
   expect(field.value).toBe("100.123456");
   fireEvent.blur(field);
-  expect(api.updateHoldingAmount).not.toHaveBeenCalled();
-  vi.mocked(api.updateHoldingAmount).mockResolvedValue(snapshot);
+  expect(portfolioApi.updateHoldingAmount).not.toHaveBeenCalled();
+  vi.mocked(portfolioApi.updateHoldingAmount).mockResolvedValue(snapshot);
   fireEvent.focus(field);
   fireEvent.change(field, { target: { value: "120.123456" } });
   fireEvent.blur(field);
   await screen.findByText("已保存");
-  expect(api.updateHoldingAmount).toHaveBeenCalledWith(
+  expect(portfolioApi.updateHoldingAmount).toHaveBeenCalledWith(
     "a",
     120.123456,
     "v1",
@@ -162,18 +162,18 @@ it("does not calculate P/L for an unrecorded cost or show cost for cash", () => 
   expect(screen.queryByText("浮动盈亏")).toBeNull();
 });
 it("saves explicit zero on blur and preserves blank or invalid drafts", async () => {
-  vi.mocked(api.updateHoldingAmount).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.updateHoldingAmount).mockResolvedValue(snapshot);
   const update = mount();
   const field = screen.getByLabelText("工资卡金额");
   for (const value of ["", "-1", "abc"]) {
     fireEvent.change(field, { target: { value } });
     fireEvent.blur(field);
-    expect(api.updateHoldingAmount).not.toHaveBeenCalled();
+    expect(portfolioApi.updateHoldingAmount).not.toHaveBeenCalled();
   }
   fireEvent.change(field, { target: { value: "0" } });
   fireEvent.blur(field);
   await screen.findByText("已保存");
-  expect(api.updateHoldingAmount).toHaveBeenCalledWith(
+  expect(portfolioApi.updateHoldingAmount).toHaveBeenCalledWith(
     "a",
     0,
     "v1",
@@ -183,7 +183,7 @@ it("saves explicit zero on blur and preserves blank or invalid drafts", async ()
 });
 it("deduplicates Enter followed by blur and reuses the request ID after failure", async () => {
   let reject!: (error: Error) => void;
-  vi.mocked(api.updateHoldingAmount).mockImplementationOnce(
+  vi.mocked(portfolioApi.updateHoldingAmount).mockImplementationOnce(
     () =>
       new Promise((_, no) => {
         reject = no;
@@ -194,14 +194,16 @@ it("deduplicates Enter followed by blur and reuses the request ID after failure"
   fireEvent.change(field, { target: { value: "120" } });
   fireEvent.keyDown(field, { key: "Enter" });
   fireEvent.blur(field);
-  expect(api.updateHoldingAmount).toHaveBeenCalledTimes(1);
+  expect(portfolioApi.updateHoldingAmount).toHaveBeenCalledTimes(1);
   await act(async () => reject(new Error("连接中断")));
   expect((field as HTMLInputElement).value).toBe("120");
-  const first = vi.mocked(api.updateHoldingAmount).mock.calls[0];
-  vi.mocked(api.updateHoldingAmount).mockResolvedValue(snapshot);
+  const first = vi.mocked(portfolioApi.updateHoldingAmount).mock.calls[0];
+  vi.mocked(portfolioApi.updateHoldingAmount).mockResolvedValue(snapshot);
   fireEvent.click(screen.getByText("重试"));
   await screen.findByText("已保存");
-  expect(vi.mocked(api.updateHoldingAmount).mock.calls[1]).toEqual(first);
+  expect(vi.mocked(portfolioApi.updateHoldingAmount).mock.calls[1]).toEqual(
+    first,
+  );
 });
 it("does not silently authorize an old draft after a remote revision", async () => {
   const props = {
@@ -221,16 +223,18 @@ it("does not silently authorize an old draft after a remote revision", async () 
       revision="remote"
     />,
   );
-  vi.mocked(api.updateHoldingAmount).mockRejectedValue(new Error("资产已更新"));
+  vi.mocked(portfolioApi.updateHoldingAmount).mockRejectedValue(
+    new Error("资产已更新"),
+  );
   fireEvent.blur(field);
   await screen.findByRole("alert");
-  expect(api.updateHoldingAmount).toHaveBeenCalledWith(
+  expect(portfolioApi.updateHoldingAmount).toHaveBeenCalledWith(
     "a",
     120,
     "v1",
     expect.any(String),
   );
-  vi.mocked(api.getSnapshot).mockResolvedValue({
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue({
     ...snapshot,
     holdingRevisions: { a: "remote" },
   });
@@ -238,15 +242,15 @@ it("does not silently authorize an old draft after a remote revision", async () 
   await waitFor(() =>
     expect(screen.getByRole("alert").textContent).toContain("核对后"),
   );
-  vi.mocked(api.updateHoldingAmount).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.updateHoldingAmount).mockResolvedValue(snapshot);
   fireEvent.click(screen.getByText("重试"));
   await screen.findByText("已保存");
-  expect(vi.mocked(api.updateHoldingAmount).mock.calls.at(-1)?.[2]).toBe(
-    "remote",
-  );
+  expect(
+    vi.mocked(portfolioApi.updateHoldingAmount).mock.calls.at(-1)?.[2],
+  ).toBe("remote");
 });
 it("Tab saves the current amount and focuses the next amount field", async () => {
-  vi.mocked(api.updateHoldingAmount).mockResolvedValue(snapshot);
+  vi.mocked(portfolioApi.updateHoldingAmount).mockResolvedValue(snapshot);
   render(
     <>
       <AssetAmountRow
@@ -275,7 +279,7 @@ it("Tab saves the current amount and focuses the next amount field", async () =>
 
 it("blocks deletion while an amount save is pending", async () => {
   let resolve!: (value: Snapshot) => void;
-  vi.mocked(api.updateHoldingAmount).mockImplementationOnce(
+  vi.mocked(portfolioApi.updateHoldingAmount).mockImplementationOnce(
     () =>
       new Promise((yes) => {
         resolve = yes;

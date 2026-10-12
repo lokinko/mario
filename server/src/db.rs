@@ -26,7 +26,7 @@ use ledger_values::{
 };
 mod rule_values;
 use rule_values::store_rule_revision;
-pub(crate) mod daily;
+mod daily;
 mod fx;
 mod ledger;
 mod memory;

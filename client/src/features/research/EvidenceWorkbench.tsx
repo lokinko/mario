@@ -5,7 +5,7 @@ import {
   getResearchAttachment,
   saveResearchEvidence,
   setResearchEvidenceStatus,
-} from "../../api";
+} from "../../api/research";
 import type { ResearchEvidence } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
 import { LoadState } from "../../components/LoadState";

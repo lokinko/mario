@@ -1,7 +1,7 @@
 import { ExternalLink } from "../../components/ExternalLink";
 import { useEffect, useRef, useState } from "react";
 import { saveAttachmentDownload } from "../../lib/download";
-import { getResearchAttachment } from "../../api";
+import { getResearchAttachment } from "../../api/research";
 import type {
   AnalysisEvidenceReference,
   AnalysisWorkflowTrace,
