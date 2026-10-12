@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { setWebToken, webToken } from "./webSession";
+import {
+  forgetWebAccount,
+  savedWebAccounts,
+  setWebToken,
+  switchWebAccount,
+  webToken,
+} from "./webSession";
+import { saveServerUrl } from "./service";
 
 afterEach(() => {
   localStorage.clear();
@@ -53,4 +60,94 @@ it("discards damaged storage and allows a fresh login", () => {
   }
   setWebToken("fresh");
   expect(webToken()).toBe("fresh");
+});
+
+it("switches between saved accounts across reloads without extending their expiry or storing passwords", async () => {
+  configure();
+  const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+  setWebToken("account-a", expiresAt, { email: "A@example.test", userId: "a" });
+  setWebToken("account-b", expiresAt, { email: "b@example.test", userId: "b" });
+  vi.resetModules();
+  const reloaded = await import("./webSession");
+  expect(reloaded.switchWebAccount("account-a")).toBe(true);
+  expect(reloaded.webToken()).toBe("account-a");
+  expect(
+    reloaded.savedWebAccounts().find((a) => a.token === "account-a"),
+  ).toEqual({
+    token: "account-a",
+    expiresAt,
+    email: "a@example.test",
+    userId: "a",
+  });
+  expect(reloaded.switchWebAccount("account-b")).toBe(true);
+  expect(reloaded.webToken()).toBe("account-b");
+  expect(Object.keys(reloaded.savedWebAccounts()[0]).sort()).toEqual([
+    "email",
+    "expiresAt",
+    "token",
+    "userId",
+  ]);
+});
+
+it("preserves an older active session when adding another account", () => {
+  configure();
+  const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+  localStorage.setItem(
+    "mario.session:/mario/api",
+    JSON.stringify({ token: "legacy-active", expiresAt }),
+  );
+  setWebToken("account-b", expiresAt, { email: "b@example.test" });
+  expect(switchWebAccount("legacy-active")).toBe(true);
+  expect(webToken()).toBe("legacy-active");
+});
+
+it("forgets only the logged-out account, including a late logout of an inactive account", () => {
+  configure();
+  setWebToken("account-a");
+  setWebToken("account-b");
+  forgetWebAccount("account-a");
+  expect(webToken()).toBe("account-b");
+  expect(switchWebAccount("account-a")).toBe(false);
+  forgetWebAccount("account-b");
+  expect(webToken()).toBeUndefined();
+  expect(savedWebAccounts()).toEqual([]);
+});
+
+it("drops expired saved sessions without logging out a different active account", () => {
+  configure();
+  vi.useFakeTimers();
+  setWebToken("account-a", Date.now() / 1000 + 1);
+  setWebToken("account-b", Date.now() / 1000 + 3600);
+  vi.advanceTimersByTime(1000);
+  expect(switchWebAccount("account-a")).toBe(false);
+  expect(savedWebAccounts().map((a) => a.token)).toEqual(["account-b"]);
+  expect(webToken()).toBe("account-b");
+});
+
+it("replaces an account's previous session when it logs in again", () => {
+  configure();
+  setWebToken("old", undefined, { email: "a@example.test", userId: "a" });
+  setWebToken("new", undefined, { email: "a@example.test", userId: "a" });
+  expect(savedWebAccounts().map((a) => a.token)).toEqual(["new"]);
+  expect(switchWebAccount("old")).toBe(false);
+});
+
+it("isolates saved accounts by server and ignores damaged account lists", () => {
+  configure();
+  saveServerUrl("https://a.example.test");
+  setWebToken("account-a");
+  saveServerUrl("https://b.example.test");
+  expect(savedWebAccounts()).toEqual([]);
+  expect(switchWebAccount("account-a")).toBe(false);
+  for (const damaged of [
+    "{broken",
+    "null",
+    '[{"token":"expired","expiresAt":0}]',
+  ]) {
+    localStorage.setItem("mario.accounts:https://b.example.test/api", damaged);
+    expect(savedWebAccounts()).toEqual([]);
+  }
+  setWebToken("account-b");
+  saveServerUrl("https://a.example.test");
+  expect(savedWebAccounts().map((a) => a.token)).toEqual(["account-a"]);
 });

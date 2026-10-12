@@ -54,15 +54,23 @@ import type {
   StoredAnalysis,
 } from "./types";
 
-async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function httpRequest<T>(
+  path: string,
+  init?: RequestInit,
+  account = { token: webToken(), baseUrl: serviceUrl() },
+): Promise<T> {
   const dataWrite = isDataWrite(path, init?.method);
   const release = dataWrite ? markDataWrite() : () => {};
-  let authToken: string | undefined;
+  const { token: authToken, baseUrl } = account;
+  const ensureCurrentAccount = () => {
+    if (webToken() !== authToken || serviceUrl() !== baseUrl)
+      throw new Error("账号已切换，请在当前账号中重新操作。");
+  };
   try {
     if (dataWrite) await beforeDataWrite();
-    authToken = webToken();
+    ensureCurrentAccount();
     const baseRevision = dataRevision();
-    const result = await requestJson<T>(`${serviceUrl()}${path}`, {
+    const result = await requestJson<T>(`${baseUrl}${path}`, {
       ...init,
       timeoutMs:
         path === "/analysis" ||
@@ -80,7 +88,7 @@ async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
               ? 60000
               : 15000,
       onResponse: (response) => {
-        if (webToken() !== authToken) return;
+        if (webToken() !== authToken || serviceUrl() !== baseUrl) return;
         if (
           path === "/snapshot" ||
           path === "/fx-settings" ||
@@ -98,6 +106,7 @@ async function httpRequest<T>(path: string, init?: RequestInit): Promise<T> {
         ...(init?.headers ?? {}),
       },
     });
+    ensureCurrentAccount();
     if (dataWrite) window.dispatchEvent(new Event(DATA_SAVED));
 
     return result;
@@ -138,6 +147,14 @@ export async function getSecurityPrice(
 
 export async function getSecurityPriceConfig(): Promise<SecurityPriceConfig> {
   return httpRequest<SecurityPriceConfig>("/market-data/security/config");
+}
+
+export function refreshSecurityPrices(): Promise<{
+  snapshot: Snapshot;
+  updatedCount: number;
+  errors: string[];
+}> {
+  return httpRequest("/market-data/security/refresh", { method: "POST" });
 }
 
 export async function saveSecurityPriceConfig(
@@ -201,6 +218,15 @@ export async function updateHolding(
 export async function deleteHolding(id: string): Promise<Snapshot> {
   return httpRequest<Snapshot>(`/holdings/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  });
+}
+
+export function saveHoldingTrade(
+  input: import("./types").HoldingTradeInput,
+): Promise<Snapshot> {
+  return httpRequest<Snapshot>("/holding-trades", {
+    method: "POST",
+    body: JSON.stringify(input),
   });
 }
 
@@ -554,13 +580,18 @@ export function updateHoldingAmount(
   expectedRevision: string,
   requestId: string,
 ) {
+  const account = { token: webToken(), baseUrl: serviceUrl() };
   const result = amountQueue
     .catch(() => undefined)
     .then(() =>
-      httpRequest<Snapshot>(`/holdings/${encodeURIComponent(id)}/amount`, {
-        method: "PUT",
-        body: JSON.stringify({ amount, expectedRevision, requestId }),
-      }),
+      httpRequest<Snapshot>(
+        `/holdings/${encodeURIComponent(id)}/amount`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ amount, expectedRevision, requestId }),
+        },
+        account,
+      ),
     );
   amountQueue = result;
   return result;

@@ -1,6 +1,7 @@
 import { ExchangeRates } from "./ExchangeRates";
 import { AssetAmountRow } from "./AssetAmountRow";
 import { AssetHistory } from "./AssetHistory";
+import { HoldingTrades } from "./HoldingTrades";
 import { useId, useState } from "react";
 import { ArrowRight, Plus, Save, X } from "lucide-react";
 import {
@@ -8,6 +9,7 @@ import {
   saveHolding,
   updateHolding,
   saveProfile,
+  refreshSecurityPrices,
 } from "../../api";
 import type { Holding, Snapshot } from "../../types";
 import { type View } from "../../app/navigation";
@@ -34,6 +36,10 @@ export function MyFacts({
 }) {
   const [profile, setProfile] = useState(snapshot.profile);
   const [editing, setEditing] = useState<Holding | null>(null);
+  const [addingTrade, setAddingTrade] = useState(false);
+  const tradeManaged = Boolean(
+    editing && snapshot.holdingTrades?.some((t) => t.holdingId === editing.id),
+  );
   const [assetAmount, setAssetAmount] = useState("");
   const [assetCost, setAssetCost] = useState("");
   const costHelpId = useId();
@@ -144,7 +150,7 @@ export function MyFacts({
         ).map(([id, label]) => (
           <button
             key={id}
-            disabled={busy || Boolean(editing)}
+            disabled={busy || Boolean(editing) || addingTrade}
             aria-pressed={section === id}
             onClick={() => {
               setSection(id);
@@ -160,6 +166,13 @@ export function MyFacts({
           {error}。请重试。
         </div>
       )}
+      {section === "holdings" &&
+        Boolean(snapshot.priceRefreshErrors?.length) && (
+          <p className="warning-text" role="status">
+            部分价格更新失败，已保留原值：
+            {snapshot.priceRefreshErrors?.join("；")}
+          </p>
+        )}
       {section === "income" ? (
         <section className="panel form-panel">
           <h2>收入与支出</h2>
@@ -227,14 +240,50 @@ export function MyFacts({
         <section className="panel form-panel">
           <div className="panel-title">
             <h2>{section === "savings" ? "存款与现金" : "投资持仓"}</h2>
-            <button
-              className="secondary"
-              disabled={busy || Boolean(editing)}
-              onClick={add}
-            >
-              <Plus size={16} />
-              {section === "savings" ? "添加存款" : "添加持仓"}
-            </button>
+            {section === "holdings" && investments.length > 0 && (
+              <button
+                className="secondary"
+                disabled={busy || Boolean(editing)}
+                onClick={async () => {
+                  setBusy(true);
+                  setError("");
+                  try {
+                    const result = await refreshSecurityPrices();
+                    onUpdate(result.snapshot);
+                    if (result.errors.length)
+                      setError(result.errors.join("；"));
+                    else
+                      flash(`价格已检查，更新 ${result.updatedCount} 项持仓`);
+                  } catch (e) {
+                    setError(`价格更新失败：${String(e)}`);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {busy ? "更新中…" : "更新自动价格"}
+              </button>
+            )}
+            <div className="trade-toolbar">
+              {section === "holdings" && (
+                <button
+                  className="primary"
+                  disabled={busy || Boolean(editing) || addingTrade}
+                  onClick={() => setAddingTrade(true)}
+                >
+                  <Plus size={16} />
+                  记录买入
+                </button>
+              )}
+              <button
+                className="secondary"
+                disabled={busy || Boolean(editing) || addingTrade}
+                onClick={add}
+              >
+                <Plus size={16} />
+                {section === "savings" ? "添加存款" : "添加持仓"}
+              </button>
+            </div>
           </div>
           <div className="facts-assets">
             {section === "holdings" && investments.length > 0 && (
@@ -248,22 +297,49 @@ export function MyFacts({
               </div>
             )}
             {(section === "savings" ? cash : investments).map((item) => (
-              <AssetAmountRow
-                key={item.id}
-                holding={item}
-                revision={snapshot.holdingRevisions?.[item.id]}
-                onUpdate={onUpdate}
-                disabled={busy}
-                onDelete={() => void removeAsset(item)}
-                onEdit={() => {
-                  setAssetAmount(String(item.marketValue));
-                  setAssetCost(
-                    item.costBasis > 0 ? String(item.costBasis) : "",
-                  );
-                  setEditing({ ...item });
-                  setError("");
-                }}
-              />
+              <div key={item.id} className="facts-asset-entry">
+                <AssetAmountRow
+                  holding={item}
+                  revision={snapshot.holdingRevisions?.[item.id]}
+                  valuation={snapshot.holdingValuations?.find(
+                    (v) => v.holdingId === item.id,
+                  )}
+                  onUpdate={onUpdate}
+                  disabled={busy}
+                  canDelete={
+                    !snapshot.holdingTrades?.some(
+                      (t) => t.holdingId === item.id,
+                    )
+                  }
+                  onDelete={() => void removeAsset(item)}
+                  onEdit={() => {
+                    setAssetAmount(String(item.marketValue));
+                    setAssetCost(
+                      item.costBasis > 0 ? String(item.costBasis) : "",
+                    );
+                    setEditing({ ...item });
+                    setError("");
+                  }}
+                />
+                {item.assetClass !== "现金" && (
+                  <details className="holding-trade-details">
+                    <summary>
+                      交易明细
+                      {snapshot.holdingTrades?.some(
+                        (t) => t.holdingId === item.id,
+                      )
+                        ? ` · ${snapshot.holdingTrades.filter((t) => t.holdingId === item.id && ["buy", "sell"].includes(t.kind)).length} 笔`
+                        : " · 记买入 / 卖出"}
+                    </summary>
+                    <HoldingTrades
+                      snapshot={snapshot}
+                      holding={item}
+                      onUpdate={onUpdate}
+                      flash={flash}
+                    />
+                  </details>
+                )}
+              </div>
             ))}
             {(section === "savings" ? cash : investments).length === 0 && (
               <p className="empty">暂无资产，点击上方添加。</p>
@@ -271,12 +347,19 @@ export function MyFacts({
           </div>
           {section === "holdings" && (
             <p className="section-intro">
-              成本价、持仓数和当前价格均手动输入；持仓数与当前价格需一起填写，成本价可稍后补充。市值
-              = 持仓数 × 当前价格， 总成本 = 持仓数 ×
-              成本价；价格以持仓币种计价。
-              浮动盈亏不含已实现盈亏、分红及卖出税费。旧记录可保留总金额，补充数量和价格后自动计算。
+              用“记录买入”从真实成交开始，数量和平均成本自动计算。点击“交易明细”记录买卖、核对每笔成交；不同账户请分别建立持仓。“添加持仓”可录入已有余额，首次交易会保留该余额作为期初记录。填写证券代码和持仓数后，每小时自动读取最近已完成的日收盘价，无需行情密钥，失败保留原值；无代码的资产仍可手动填写价格。浮动盈亏不含已实现盈亏与分红。
             </p>
           )}
+        </section>
+      )}
+      {addingTrade && (
+        <section className="panel form-panel">
+          <HoldingTrades
+            snapshot={snapshot}
+            onUpdate={onUpdate}
+            flash={flash}
+            onClose={() => setAddingTrade(false)}
+          />
         </section>
       )}
       {editing && (
@@ -321,7 +404,21 @@ export function MyFacts({
                   />
                 </label>
                 {editing.assetClass !== "现金" && (
+                  <label>
+                    <span>证券代码（自动价格，选填）</span>
+                    <input
+                      value={editing.symbol}
+                      placeholder="AAPL / 0700.HK / 600519.SS / 000001.SZ"
+                      readOnly={tradeManaged}
+                      onChange={(e) =>
+                        setEditing({ ...editing, symbol: e.target.value })
+                      }
+                    />
+                  </label>
+                )}
+                {editing.assetClass !== "现金" && (
                   <HoldingFields
+                    tradeManaged={tradeManaged}
                     holding={editing}
                     onChange={(next) => {
                       setEditing(next);
@@ -375,7 +472,7 @@ export function MyFacts({
                           step="any"
                           placeholder="未填写"
                           aria-describedby={costHelpId}
-                          readOnly={editing.costPrice != null}
+                          readOnly={tradeManaged || editing.costPrice != null}
                           value={
                             editing.costPrice != null
                               ? editing.costBasis
@@ -392,7 +489,9 @@ export function MyFacts({
                       </div>
                     </label>
                     <small id={costHelpId}>
-                      成本价为当前持仓每单位的平均买入成本（可含买入费用）；填入成本价和数量后自动计算总成本。旧记录也可直接填写总成本。
+                      {tradeManaged
+                        ? "数量与成本由交易明细计算，请通过买卖或撤销误录调整。当前价格可在下方更新。"
+                        : "成本价为当前持仓每单位的平均买入成本（可含买入费用）；填入成本价和数量后自动计算总成本。旧记录也可直接填写总成本。"}
                     </small>
                   </div>
                 )}
@@ -405,6 +504,7 @@ export function MyFacts({
                   <label>
                     <span>币种</span>
                     <select
+                      disabled={tradeManaged}
                       value={editing.currency}
                       onChange={(e) =>
                         setEditing({
@@ -443,6 +543,7 @@ export function MyFacts({
                     <label>
                       <span>类别</span>
                       <select
+                        disabled={tradeManaged}
                         value={editing.assetClass}
                         onChange={(e) =>
                           setEditing({

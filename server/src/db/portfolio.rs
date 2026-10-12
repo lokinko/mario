@@ -117,6 +117,7 @@ impl Database {
         snapshot.holding_revisions = statement
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<Result<_, _>>()?;
+        snapshot.holding_trades = super::trades::load(conn)?;
         Ok(snapshot)
     }
 
@@ -235,6 +236,7 @@ impl Database {
         let Some(previous) = previous else {
             return Err(AppError::Validation("找不到要更新的资产".into()));
         };
+        super::trades::guard_edit(&transaction, id, input)?;
         let affected = transaction.execute(
             "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, fx_rate_to_base=?9, valuation_date=?10, fx_rate_source=?11, fx_rate_observed_on=?12, updated_at=?13, cost_price=?14, quantity=?15, current_price=?16 WHERE id=?1",
             params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, Utc::now().to_rfc3339(), input.cost_price, input.quantity, input.current_price],
@@ -290,6 +292,20 @@ impl Database {
             .iter()
             .find(|holding| holding.id == id)
             .ok_or_else(|| AppError::Validation("找不到要估值的资产".into()))?;
+        if before.holding_trades.iter().any(|t| t.holding_id == id)
+            && (holding.quantity != Some(quantity) || holding.symbol != quote.symbol.trim())
+        {
+            return Err(AppError::Validation(
+                "交易持仓的数量和证券代码不能通过估值修改".into(),
+            ));
+        }
+        if before
+            .holding_trades
+            .iter()
+            .any(|t| t.holding_id == id && t.occurred_on > quote.requested_on)
+        {
+            return Err(AppError::Validation("估值日期不能早于交易明细日期".into()));
+        }
         validate_detail_totals(
             holding.cost_price,
             Some(quantity),
@@ -360,6 +376,11 @@ impl Database {
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
         let before = super::daily::prepare(&transaction)?;
+        if before.holding_trades.iter().any(|t| t.holding_id == id) {
+            return Err(AppError::Validation(
+                "已有交易明细的持仓需通过卖出清仓，交易记录会保留".into(),
+            ));
+        }
         let affected = transaction.execute("DELETE FROM holdings WHERE id=?1", [id])?;
         if affected == 0 {
             return Err(AppError::Validation("找不到要删除的资产".into()));

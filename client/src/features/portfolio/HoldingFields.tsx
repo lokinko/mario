@@ -10,7 +10,8 @@ export function validHoldingDetails(holding: Omit<Holding, "id">) {
   if (!hasHoldingDetails(holding)) return true;
   return (
     holding.quantity != null &&
-    holding.currentPrice != null &&
+    (holding.currentPrice != null ||
+      (holding.symbol.trim() !== "" && holding.quantity > 0)) &&
     [holding.costPrice, holding.quantity, holding.currentPrice].every(
       (value) =>
         value == null ||
@@ -36,9 +37,11 @@ export function withHoldingTotals<T extends Omit<Holding, "id">>(
 export function HoldingFields<T extends Omit<Holding, "id">>({
   holding,
   onChange,
+  tradeManaged = false,
 }: {
   holding: T;
   onChange: (holding: T) => void;
+  tradeManaged?: boolean;
 }) {
   return (
     <>
@@ -58,18 +61,20 @@ export function HoldingFields<T extends Omit<Holding, "id">>({
               min={0}
               max={1e15}
               step="any"
+              readOnly={tradeManaged && key !== "currentPrice"}
               value={holding[key] ?? ""}
               placeholder="手动输入"
               onChange={(event) =>
-                onChange(
-                  withHoldingTotals({
+                onChange({
+                  ...withHoldingTotals({
                     ...holding,
                     [key]:
                       event.target.value === ""
                         ? null
                         : Number(event.target.value),
                   }),
-                )
+                  ...(tradeManaged ? { costBasis: holding.costBasis } : {}),
+                })
               }
             />
             <i>{unit}</i>

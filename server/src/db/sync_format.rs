@@ -348,15 +348,23 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         ],
         order_by: "id",
     },
+    SyncTableSpec {
+        name: "holding_trades",
+        columns: &["id", "holding_id", "payload", "created_at"],
+        order_by: "created_at, id",
+    },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 14;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 15;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
 
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
+    if version <= 14 {
+        specs.pop();
+    }
     if version <= 13 {
         specs[2].columns = V13_HOLDING_COLUMNS;
     }
@@ -415,7 +423,7 @@ pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpe
             specs.truncate(16);
             Ok(specs)
         }
-        11 | 12 | 13 | SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
+        11 | 12 | 13 | 14 | SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
         _ => Err(AppError::Validation(format!(
             "不支持的数据快照版本 {version}"
         ))),

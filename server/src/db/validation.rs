@@ -220,7 +220,10 @@ pub(super) fn validate_holding_valuation_evidence(
         .map_err(|_| AppError::Validation("证券价格请求日期无效".into()))?;
     let observed_on = NaiveDate::parse_from_str(quote.observed_on.trim(), "%Y-%m-%d")
         .map_err(|_| AppError::Validation("证券价格观察日期无效".into()))?;
-    if requested_on > Local::now().date_naive()
+    if requested_on
+        > Utc::now()
+            .with_timezone(&chrono_tz::Asia::Shanghai)
+            .date_naive()
         || observed_on > requested_on
         || (requested_on - observed_on).num_days() != quote.staleness_days
         || !(0..=10).contains(&quote.staleness_days)
@@ -234,7 +237,7 @@ pub(super) fn validate_holding_valuation_evidence(
         .query_pairs()
         .find(|(key, _)| key == "symbol")
         .map(|(_, value)| value.into_owned());
-    let source_is_canonical = source_url.scheme() == "https"
+    let twelve_is_canonical = source_url.scheme() == "https"
         && source_url.host_str() == Some("api.twelvedata.com")
         && source_url.path() == "/time_series"
         && source_url.username().is_empty()
@@ -243,13 +246,31 @@ pub(super) fn validate_holding_valuation_evidence(
         && !source_url
             .query_pairs()
             .any(|(key, _)| key.eq_ignore_ascii_case("apikey"));
+    let yahoo_is_canonical = source_url.scheme() == "https"
+        && matches!(
+            source_url.host_str(),
+            Some("query1.finance.yahoo.com" | "query2.finance.yahoo.com")
+        )
+        && source_url.username().is_empty()
+        && source_url.password().is_none()
+        && crate::prices::canonical_symbol(&quote.symbol)
+            .is_ok_and(|symbol| source_url.path() == format!("/v8/finance/chart/{symbol}"))
+        && source_url
+            .query_pairs()
+            .any(|(key, value)| key == "interval" && value == "1d");
+    let supported = (twelve_is_canonical
+        && quote.provider_code == "twelve_data_raw_close"
+        && quote.provider_name == "Twelve Data"
+        && quote.price_basis == "unadjusted_daily_close"
+        && quote.methodology_url == "https://twelvedata.com/docs/market-data/time-series")
+        || (yahoo_is_canonical
+            && quote.provider_code == "yahoo_daily_close"
+            && quote.provider_name == "Yahoo Finance"
+            && quote.price_basis == "split_adjusted_daily_close"
+            && quote.methodology_url == crate::prices::METHODOLOGY_URL);
     if quote.symbol.trim().is_empty()
         || quote.symbol.chars().count() > 80
-        || quote.provider_code != "twelve_data_raw_close"
-        || quote.provider_name != "Twelve Data"
-        || quote.price_basis != "unadjusted_daily_close"
-        || !source_is_canonical
-        || quote.methodology_url != "https://twelvedata.com/docs/market-data/time-series"
+        || !supported
         || quote.disclaimer.trim().is_empty()
         || quote.exchange.chars().count() > 120
         || quote.mic_code.chars().count() > 32

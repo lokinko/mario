@@ -19,6 +19,7 @@ where
 {
     crate::secrets::validate_master_key()?;
     fx::start_daily_refresh();
+    prices::start_refresh();
     let state = Arc::new(HostedState {
         accounts: Arc::new(Accounts::open(url)?),
         slots: tokio::sync::Semaphore::new(24),
@@ -118,7 +119,7 @@ async fn authenticate(
         if is_write && request.headers().get(header::IF_MATCH).and_then(|v|v.to_str().ok())!=Some(revision.as_str()) {
             return Ok::<_,AppError>((StatusCode::CONFLICT,Json(serde_json::json!({"error":"资料已变化，请刷新核对后再保存；当前输入不会自动提交。","revision":revision}))).into_response());
         }
-        let state=Arc::new(AppState { mutation_lock:tokio::sync::Mutex::new(()),db,auth_token:None,fx_provider:Arc::new(EcbFxRateProvider::new()?),security_price_provider:Arc::new(TwelveDataSecurityPriceProvider::new()?) });
+        let state=Arc::new(AppState { mutation_lock:tokio::sync::Mutex::new(()),db,auth_token:None,fx_provider:Arc::new(EcbFxRateProvider::new()?),security_price_provider:Arc::new(prices::FreeSecurityPriceProvider::new()?) });
         request.extensions_mut().insert(state.clone());
         let mut response=next.run(request).await;
         response.headers_mut().insert(header::CACHE_CONTROL,HeaderValue::from_static("no-store"));
@@ -170,6 +171,7 @@ async fn logout(
 }
 async fn version(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<serde_json::Value>> {
     fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
+    prices::refresh(&state.db, state.security_price_provider.as_ref()).await?;
     Ok(Json(serde_json::json!({"revision":state.db.revision()?})))
 }
 async fn export(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<db::SyncDataset>> {

@@ -493,7 +493,11 @@ export function Foundation({
                               {valuation.stalenessDays
                                 ? `（回退 ${valuation.stalenessDays} 天）`
                                 : ""}{" "}
-                              · 未复权日收盘价
+                              ·{" "}
+                              {valuation.priceBasis ===
+                              "split_adjusted_daily_close"
+                                ? "日收盘价（拆股调整）"
+                                : "未复权日收盘价"}
                             </span>
                             <ExternalLink
                               href={valuation.sourceUrl}

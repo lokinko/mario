@@ -11,6 +11,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import * as api from "./api";
 import emptySnapshot from "./test/emptySnapshot.json";
+import { analysisSettings as defaultAnalysisSettings } from "./test/analysisSettings";
+import { WebAccess } from "./features/account/WebAccess";
+import * as service from "./lib/service";
+import { setWebToken, webToken } from "./lib/webSession";
 
 vi.mock("./api", async (original) => ({
   ...(await original<typeof import("./api")>()),
@@ -45,6 +49,68 @@ beforeEach(() => {
   window.location.hash = "cloud";
 });
 afterEach(cleanup);
+
+it.each([true, false])(
+  "switches accounts from the settings page even when model configuration is available=%s",
+  async (modelAvailable) => {
+    const localDev = vi.spyOn(service, "isLocalDev").mockReturnValue(false);
+    const securityConfig = vi
+      .spyOn(api, "getSecurityPriceConfig")
+      .mockResolvedValue({ provider: "twelve-data", hasApiKey: false });
+    const analysisSettings = vi
+      .spyOn(api, "getAnalysisSettings")
+      .mockResolvedValue(defaultAnalysisSettings);
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const fetcher = vi.fn().mockResolvedValue(new Response('{"ok":true}'));
+    vi.stubGlobal("fetch", fetcher);
+    setWebToken("account-b", undefined, { email: "b@example.test" });
+    setWebToken("account-a", undefined, { email: "a@example.test" });
+    vi.mocked(api.getSnapshot).mockResolvedValue(
+      {} as Awaited<ReturnType<typeof api.getSnapshot>>,
+    );
+    if (modelAvailable)
+      vi.mocked(api.getModelConfig).mockResolvedValue({
+        provider: "openai-responses",
+        model: "test",
+        baseUrl: "https://api.openai.com/v1",
+        hasApiKey: false,
+      });
+    else
+      vi.mocked(api.getModelConfig).mockRejectedValue(
+        new Error("model unavailable"),
+      );
+    try {
+      render(
+        <WebAccess>
+          <App />
+        </WebAccess>,
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+      await screen.findByRole("heading", { name: "设置" });
+      const account = await screen.findByRole("region", { name: "账号" });
+      fireEvent.click(
+        within(account).getByRole("button", { name: "切换账号" }),
+      );
+      fireEvent.click(
+        within(account).getByRole("button", { name: "切换到 b@example.test" }),
+      );
+      await waitFor(() => expect(api.getSnapshot).toHaveBeenCalledTimes(2));
+      expect(
+        screen.queryByRole("complementary", { name: "主导航" }),
+      ).toBeTruthy();
+      expect(webToken()).toBe("account-b");
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      localDev.mockRestore();
+      securityConfig.mockRestore();
+      analysisSettings.mockRestore();
+      vi.unstubAllGlobals();
+      localStorage.clear();
+      sessionStorage.clear();
+    }
+  },
+);
 
 it("opens the analysis dashboard directly from the sidebar with its own active state", async () => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});

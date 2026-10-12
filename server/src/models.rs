@@ -408,6 +408,10 @@ pub struct RiskFinding {
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     #[serde(default)]
+    pub price_refresh_errors: Vec<String>,
+    #[serde(default)]
+    pub holding_trades: Vec<HoldingTrade>,
+    #[serde(default)]
     pub holding_revisions: std::collections::BTreeMap<String, String>,
     pub profile: FinancialProfile,
     pub goals: Vec<Goal>,
@@ -421,6 +425,45 @@ pub struct Snapshot {
     pub valuation_status: PortfolioValuationStatus,
     pub plan: PortfolioPlan,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoldingTrade {
+    pub id: String,
+    pub holding_id: String,
+    pub kind: String,
+    pub occurred_on: String,
+    pub quantity: f64,
+    pub price: f64,
+    pub fees: f64,
+    pub currency: String,
+    pub account: String,
+    pub external_id: String,
+    pub note: String,
+    pub void_of: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoldingTradeInput {
+    pub request_id: String,
+    #[serde(default)]
+    pub holding_id: String,
+    pub expected_revision: Option<String>,
+    pub new_holding: Option<HoldingInput>,
+    pub kind: String,
+    pub occurred_on: String,
+    pub quantity: f64,
+    pub price: f64,
+    pub fees: f64,
+    pub account: String,
+    #[serde(default)]
+    pub external_id: String,
+    #[serde(default)]
+    pub note: String,
+    pub void_of: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

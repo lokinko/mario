@@ -147,6 +147,8 @@ pub(super) fn build_snapshot(
         });
     }
     Snapshot {
+        price_refresh_errors: Vec::new(),
+        holding_trades: Vec::new(),
         holding_revisions: Default::default(),
         profile,
         goals,

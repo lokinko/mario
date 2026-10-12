@@ -40,6 +40,7 @@ mod settings;
 #[cfg(test)]
 mod sync_merge;
 mod sync_store;
+mod trades;
 use std::{
     collections::{HashMap, HashSet},
     path::Path,

@@ -32,6 +32,8 @@ import { ReviewCenter } from "./features/reviews/ReviewCenter";
 import { MemoryCenter } from "./features/memory/MemoryCenter";
 import { Advisor } from "./features/research/Advisor";
 import { ModelSettings } from "./features/settings/ModelSettings";
+import { AccountSettings } from "./features/account/WebAccess";
+import { PageHeader } from "./components/PageHeader";
 
 function App() {
   const [view, setView] = useState<View>(initialView);
@@ -505,6 +507,15 @@ function App() {
             onUpdate={setModel}
             flash={flash}
           />
+        )}
+        {view === "settings" && !model && (
+          <div className="page narrow settings-page">
+            <PageHeader
+              title="设置"
+              description="管理账号、模型连接与问答预设。"
+            />
+            <AccountSettings />
+          </div>
         )}
         {(view === "advisor" || view === "settings") && !model && (
           <div className="center-screen">

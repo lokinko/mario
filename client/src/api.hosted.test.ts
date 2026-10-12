@@ -7,10 +7,11 @@ import {
   previewAnalysis,
   previewPortfolioEventImport,
   commitPortfolioEventImport,
+  updateHoldingAmount,
 } from "./api";
-import { acceptRevision, dataRevision } from "./lib/service";
+import { acceptRevision, dataRevision, serviceUrl } from "./lib/service";
 import { setWebToken, webToken } from "./lib/webSession";
-import { blockStaleWrites } from "./lib/syncEvents";
+import { beginSync, endSync, blockStaleWrites } from "./lib/syncEvents";
 import type { FinancialProfile } from "./types";
 import type { AnalysisRequest } from "./types";
 vi.mock("./lib/service", async (original) => ({
@@ -102,6 +103,77 @@ const response = (body: unknown, revision: string, status = 200) =>
     status,
     headers: { "x-data-revision": revision },
   });
+it("never sends a queued old-account edit using the new account's session", async () => {
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  beginSync();
+  const pending = saveProfile({} as FinancialProfile);
+  setWebToken("new-session");
+  endSync();
+  await expect(pending).rejects.toThrow("账号已切换");
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+it("rejects late old-account data without changing the new account's revision", async () => {
+  let complete!: (response: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          complete = resolve;
+        }),
+    ),
+  );
+  const pending = getSnapshot();
+  setWebToken("new-session");
+  acceptRevision("new-account-revision");
+  complete(response({ profile: "old-account-data" }, "old-account-revision"));
+  await expect(pending).rejects.toThrow("账号已切换");
+  expect(dataRevision()).toBe("new-account-revision");
+});
+
+it("discards old-account amount edits waiting in the queue and allows new-account edits", async () => {
+  let complete!: (response: Response) => void;
+  const fetcher = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          complete = resolve;
+        }),
+    )
+    .mockResolvedValueOnce(response({}, "new-revision"));
+  vi.stubGlobal("fetch", fetcher);
+  const first = updateHoldingAmount("old-holding", 10, "old-revision", "first");
+  const second = updateHoldingAmount(
+    "old-holding",
+    20,
+    "old-revision",
+    "second",
+  );
+  const firstRejected = expect(first).rejects.toThrow("账号已切换");
+  const secondRejected = expect(second).rejects.toThrow("账号已切换");
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  setWebToken("new-session");
+  const current = updateHoldingAmount(
+    "new-holding",
+    30,
+    "new-revision",
+    "third",
+  );
+  complete(response({}, "old-revision"));
+  await firstRejected;
+  await secondRejected;
+  await current;
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher.mock.calls[1][0]).toBe(
+    `${serviceUrl()}/holdings/new-holding/amount`,
+  );
+  expect(fetcher.mock.calls[1][1].headers.Authorization).toBe(
+    "Bearer new-session",
+  );
+});
 it("does not acknowledge a newer revision from a read-only AI preview", async () => {
   acceptRevision("10");
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, "12")));

@@ -129,6 +129,7 @@ impl Database {
             }
         }
         super::daily::validate(&transaction)?;
+        super::trades::validate_stored(&transaction)?;
         transaction.commit()?;
         Ok(())
     }

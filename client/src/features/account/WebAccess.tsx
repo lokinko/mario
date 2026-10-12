@@ -1,5 +1,21 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { setWebToken, webToken } from "../../lib/webSession";
+import {
+  createContext,
+  Fragment,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { LoaderCircle, UsersRound } from "lucide-react";
+import {
+  forgetWebAccount,
+  savedWebAccounts,
+  setWebToken,
+  switchWebAccount,
+  webToken,
+  type WebAccount,
+} from "../../lib/webSession";
 import { requestJson } from "../../lib/transport";
 import {
   acceptRevision,
@@ -12,8 +28,113 @@ import {
 } from "../../lib/service";
 import { blockStaleWrites } from "../../lib/syncEvents";
 
+const AccountAccess = createContext<{
+  accounts: WebAccount[];
+  connected: string;
+  picking: boolean;
+  openPicker: () => void;
+  closePicker: () => void;
+  selectAccount: (token: string) => void;
+  addAccount: () => void;
+  busy: boolean;
+} | null>(null);
+
+function SavedAccounts({
+  accounts,
+  currentToken,
+  busy,
+  onSelect,
+}: {
+  accounts: WebAccount[];
+  currentToken?: string;
+  busy: boolean;
+  onSelect: (token: string) => void;
+}) {
+  return (
+    <div
+      className="form-grid single-column"
+      role="group"
+      aria-label="已登录账号"
+    >
+      {accounts.map((account) => (
+        <button
+          type="button"
+          className="secondary"
+          key={account.token}
+          disabled={busy || currentToken === account.token}
+          onClick={() => onSelect(account.token)}
+        >
+          <UsersRound size={16} />
+          {currentToken === account.token ? "当前账号：" : "切换到 "}
+          {account.email || "已有账号"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function AccountSettings() {
+  const account = useContext(AccountAccess);
+  if (!account) return null;
+  return (
+    <section className="panel form-panel" aria-label="账号">
+      <div className="panel-title">
+        <h2>账号</h2>
+      </div>
+      <p className="section-intro">
+        已登录账号可直接切换，无需重复输入密码。切换时会清除未保存的输入，已保存的资料保留在各自账号中。
+      </p>
+      {account.picking ? (
+        <>
+          <SavedAccounts
+            accounts={account.accounts}
+            currentToken={account.connected}
+            busy={account.busy}
+            onSelect={account.selectAccount}
+          />
+          <div className="form-actions">
+            <button
+              type="button"
+              className="secondary"
+              disabled={account.busy}
+              onClick={account.addAccount}
+            >
+              登录其他账号
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              disabled={account.busy}
+              onClick={account.closePicker}
+            >
+              取消切换
+            </button>
+          </div>
+        </>
+      ) : (
+        <button
+          type="button"
+          className="secondary"
+          disabled={account.busy}
+          onClick={account.openPicker}
+        >
+          {account.busy ? (
+            <LoaderCircle size={16} className="spin" />
+          ) : (
+            <UsersRound size={16} />
+          )}
+          切换账号
+        </button>
+      )}
+    </section>
+  );
+}
+
 export function WebAccess({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(webToken);
+  const [accounts, setAccounts] = useState(savedWebAccounts);
+  const [picking, setPicking] = useState(false);
+  const [addingAccount, setAddingAccount] = useState(false);
   const [server, setServer] = useState(() =>
     serviceUrl() === sameOriginServiceUrl() ? "" : serviceUrl(),
   );
@@ -23,55 +144,121 @@ export function WebAccess({ children }: { children: ReactNode }) {
   const [register, setRegister] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const clear = () => {
-    setWebToken();
+  const disconnecting = useRef(false);
+  const resetAccountState = () => {
     acceptRevision();
     blockStaleWrites(false);
+    for (const key of [
+      "mario.advisorQuestion",
+      "compass.advisorQuestion",
+      "mario.dailyAssetRange",
+    ])
+      sessionStorage.removeItem(key);
+    setEmail("");
     setPassword("");
+    setInvite("");
+    setRegister(false);
+    setError("");
+  };
+  const clear = () => {
+    const token = webToken();
+    if (token) forgetWebAccount(token);
+    else setWebToken();
+    resetAccountState();
     setConnected(undefined);
+    setAccounts(savedWebAccounts());
+    setAddingAccount(false);
+    setPicking(false);
+  };
+  const selectAccount = (token: string) => {
+    if (busy) return;
+    if (!switchWebAccount(token)) {
+      setAccounts(savedWebAccounts());
+      setError("该账号的登录已过期，请重新登录。");
+      return;
+    }
+    resetAccountState();
+    setConnected(token);
+    setAccounts(savedWebAccounts());
+    setAddingAccount(false);
+    setPicking(false);
+  };
+  const disconnect = async () => {
+    if (disconnecting.current || !connected) return;
+    disconnecting.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await requestJson(`${serviceUrl()}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${connected}` },
+      });
+      const currentToken = webToken();
+      forgetWebAccount(connected);
+      if (!currentToken || currentToken === connected) clear();
+      else setAccounts(savedWebAccounts());
+    } catch {
+      if (webToken() === connected)
+        setError("退出失败，请联网后重试以撤销服务端会话。");
+    } finally {
+      disconnecting.current = false;
+      setBusy(false);
+    }
   };
   useEffect(() => {
-    window.addEventListener("mario:session-expired", clear);
-    return () => window.removeEventListener("mario:session-expired", clear);
+    const expire = () => {
+      clear();
+      setError("该账号的登录已过期，请重新登录，或选择其他已登录账号。");
+    };
+    window.addEventListener("mario:session-expired", expire);
+    return () => window.removeEventListener("mario:session-expired", expire);
   }, []);
   useEffect(() => {
     const restore = (event: StorageEvent) => {
       if (event.storageArea !== localStorage) return;
       const token = webToken();
+      setAccounts(savedWebAccounts());
       if (token === connected) return;
-      acceptRevision();
-      blockStaleWrites(false);
-      setPassword("");
-      setError("");
+      resetAccountState();
       setConnected(token);
+      setAddingAccount(false);
+      setPicking(false);
     };
     window.addEventListener("storage", restore);
     return () => window.removeEventListener("storage", restore);
   }, [connected]);
   if (isLocalDev()) return children;
-  if (connected)
+  if (connected && !addingAccount)
     return (
-      <>
+      <AccountAccess.Provider
+        value={{
+          accounts,
+          connected,
+          picking,
+          busy,
+          openPicker: () => {
+            setAccounts(savedWebAccounts());
+            setPicking(true);
+            setError("");
+          },
+          closePicker: () => setPicking(false),
+          selectAccount,
+          addAccount: () => {
+            resetAccountState();
+            setAddingAccount(true);
+          },
+        }}
+      >
         <button
           className="web-disconnect"
-          onClick={async () => {
-            try {
-              await requestJson(`${serviceUrl()}/auth/logout`, {
-                method: "POST",
-                headers: { Authorization: `Bearer ${connected}` },
-              });
-              const currentToken = webToken();
-              if (!currentToken || currentToken === connected) clear();
-            } catch {
-              setError("退出失败，请联网后重试以撤销服务端会话。");
-            }
-          }}
+          disabled={busy}
+          onClick={() => void disconnect()}
         >
           退出账号
         </button>
         {error && <p role="alert">{error}</p>}
         <Fragment key={connected}>{children}</Fragment>
-      </>
+      </AccountAccess.Provider>
     );
   return (
     <div className="web-access">
@@ -82,6 +269,8 @@ export function WebAccess({ children }: { children: ReactNode }) {
           if (busy) return;
           setBusy(true);
           setError("");
+          const startingToken = webToken();
+          const startingServer = serviceUrl();
           try {
             const base = server.trim()
               ? normalizeServerUrl(server)
@@ -97,6 +286,8 @@ export function WebAccess({ children }: { children: ReactNode }) {
             const result = await requestJson<{
               token: string;
               expiresAt: number;
+              email?: string;
+              userId?: string;
             }>(`${base}/auth/${register ? "register" : "login"}`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -106,13 +297,19 @@ export function WebAccess({ children }: { children: ReactNode }) {
                 ...(register ? { registrationKey: invite } : {}),
               }),
             });
+            // Another tab may have switched accounts while login was in flight.
+            if (webToken() !== startingToken || serviceUrl() !== startingServer)
+              return;
             if (server.trim()) saveServerUrl(server);
-            acceptRevision();
-            blockStaleWrites(false);
-            setWebToken(result.token, result.expiresAt);
-            setPassword("");
-            setInvite("");
+            setWebToken(result.token, result.expiresAt, {
+              email: result.email || email,
+              userId: result.userId,
+            });
+            resetAccountState();
             setConnected(result.token);
+            setAccounts(savedWebAccounts());
+            setAddingAccount(false);
+            setPicking(false);
           } catch (error) {
             setError(error instanceof Error ? error.message : String(error));
           } finally {
@@ -127,6 +324,16 @@ export function WebAccess({ children }: { children: ReactNode }) {
           alt=""
         />
         <h1>{register ? "创建 mario 账号" : "登录 mario"}</h1>
+        {accounts.length > 0 && (
+          <>
+            <p>选择已登录账号，或登录其他账号。</p>
+            <SavedAccounts
+              accounts={accounts}
+              busy={busy}
+              onSelect={selectAccount}
+            />
+          </>
+        )}
         {(isNative() || server) && (
           <label>
             服务器地址
@@ -193,6 +400,18 @@ export function WebAccess({ children }: { children: ReactNode }) {
         >
           {register ? "已有账号，去登录" : "使用邀请码注册"}
         </button>
+        {connected && (
+          <button
+            type="button"
+            className="text-button"
+            disabled={busy}
+            onClick={() => {
+              selectAccount(connected);
+            }}
+          >
+            返回当前账号
+          </button>
+        )}
       </form>
     </div>
   );

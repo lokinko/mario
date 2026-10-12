@@ -4,7 +4,7 @@ use crate::error::AppResult;
 
 // Bump whenever hosted tables/columns change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 2;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 3;
 
 // Keep legacy migration order intact: opening an old database remains idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -287,6 +287,13 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
     connection.execute_batch(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolio_events_single_reversal
            ON portfolio_events(reversal_of_event_id) WHERE reversal_of_event_id IS NOT NULL;",
+    )?;
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS holding_trades (
+           id TEXT PRIMARY KEY, holding_id TEXT NOT NULL REFERENCES holdings(id),
+           payload TEXT NOT NULL, created_at TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_holding_trades_holding ON holding_trades(holding_id);",
     )?;
     Ok(())
 }

@@ -33,6 +33,7 @@ vi.mock("../../api", () => ({
   saveHolding: vi.fn(),
   updateHolding: vi.fn(),
   deleteHolding: vi.fn(),
+  refreshSecurityPrices: vi.fn(),
 }));
 beforeEach(() => {
   vi.mocked(api.getDailyAssets).mockResolvedValue({
@@ -48,6 +49,88 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 const snapshot = fixture as Snapshot;
+
+it("saves a code and quantity without requiring a manual price", async () => {
+  vi.mocked(api.saveHolding).mockResolvedValue(snapshot);
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
+  fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
+    target: { value: "贵州茅台" },
+  });
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "证券代码（自动价格，选填）" }),
+    { target: { value: "600519.SS" } },
+  );
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "持仓数 份 / 股 / 单位" }),
+    { target: { value: "100" } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
+  await waitFor(() =>
+    expect(api.saveHolding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: "600519.SS",
+        quantity: 100,
+        currentPrice: null,
+      }),
+    ),
+  );
+});
+
+it("refreshes prices and displays the source date and partial failures", async () => {
+  const holding = {
+    ...emptyHolding("CNY"),
+    id: "quoted",
+    name: "股票",
+    assetClass: "股票" as const,
+    symbol: "600519.SS",
+    quantity: 100,
+    currentPrice: 1000,
+    marketValue: 100000,
+  };
+  const value = {
+    ...snapshot,
+    holdings: [holding],
+    priceRefreshErrors: ["另一个标的暂时不可用"],
+    holdingValuations: [
+      {
+        holdingId: holding.id,
+        symbol: holding.symbol,
+        quantity: 100,
+        unitPrice: 1000,
+        marketValue: 100000,
+        currency: "CNY",
+        requestedOn: "2026-10-12",
+        observedOn: "2026-10-09",
+        stalenessDays: 3,
+        providerCode: "yahoo_daily_close",
+        providerName: "Yahoo Finance",
+        exchange: "SHH",
+        micCode: "",
+        instrumentType: "EQUITY",
+        priceBasis: "split_adjusted_daily_close",
+        sourceUrl: "https://query1.finance.yahoo.com",
+        methodologyUrl: "",
+        disclaimer: "参考日收盘价",
+        capturedAt: "2026-10-12T00:00:00Z",
+      },
+    ],
+  };
+  vi.mocked(api.refreshSecurityPrices).mockResolvedValue({
+    snapshot: value,
+    updatedCount: 1,
+    errors: value.priceRefreshErrors,
+  });
+  const { onUpdate } = mount(value);
+  expect(screen.getByText("Yahoo Finance · 收盘日 2026-10-09")).toBeTruthy();
+  expect(screen.getByText(/部分价格更新失败，已保留原值/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "更新自动价格" }));
+  await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(value));
+  expect(screen.getByRole("alert").textContent).toContain(
+    "另一个标的暂时不可用",
+  );
+});
 function mount(value = snapshot) {
   const onUpdate = vi.fn();
   const flash = vi.fn();

@@ -2415,6 +2415,7 @@ fn manual_holding_details_survive_restart_history_and_sync() {
     assert_eq!(persisted.cost_price, Some(8.0));
     assert_eq!(persisted.current_price, Some(12.0));
     let mut old_export = export.clone();
+    old_export.tables.retain(|t| t.name != "holding_trades");
     old_export.schema_version = 13;
     let table = old_export
         .tables
@@ -2463,6 +2464,7 @@ fn manual_holding_details_reject_invalid_values_and_inconsistent_sync() {
 }
 
 pub(super) fn strip_holding_details_for_legacy(dataset: &mut SyncDataset) {
+    dataset.tables.retain(|t| t.name != "holding_trades");
     let table = dataset
         .tables
         .iter_mut()

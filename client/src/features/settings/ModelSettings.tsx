@@ -26,6 +26,7 @@ import type { ModelConfig, SecurityPriceConfig } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
 import { localDateValue } from "../../lib/dates";
 import { AnalysisDefaults } from "./AnalysisDefaults";
+import { AccountSettings } from "../account/WebAccess";
 
 export function ModelSettings({
   model,
@@ -189,10 +190,8 @@ export function ModelSettings({
 
   return (
     <div className="page narrow settings-page">
-      <PageHeader
-        title="设置"
-        description="配置模型连接与问答预设，保存后每次提问自动使用。"
-      />
+      <PageHeader title="设置" description="管理账号、模型连接与问答预设。" />
+      <AccountSettings />
       <section className="panel form-panel">
         <div className="panel-title">
           <div>
@@ -370,7 +369,8 @@ export function ModelSettings({
           </div>
         </summary>
         <p className="section-intro">
-          仅在主动查询时连接；密钥按账号加密保存，不发送给 AI。
+          自动价格使用无需密钥的 Yahoo Finance 免费日线。这里可选配置 Twelve
+          Data，供主动查询使用；密钥按账号加密保存，不发送给 AI。
         </p>
         <div className="form-grid single-column">
           <label>

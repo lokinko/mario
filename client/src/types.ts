@@ -222,6 +222,8 @@ export interface RiskFinding {
 }
 
 export interface Snapshot {
+  priceRefreshErrors?: string[];
+  holdingTrades?: HoldingTrade[];
   holdingRevisions?: Record<string, string>;
   profile: FinancialProfile;
   goals: Goal[];
@@ -234,6 +236,38 @@ export interface Snapshot {
   valuationStatus: PortfolioValuationStatus;
   plan: PortfolioPlan;
   updatedAt: string;
+}
+
+export interface HoldingTrade {
+  id: string;
+  holdingId: string;
+  kind: "opening" | "buy" | "sell" | "void";
+  occurredOn: string;
+  quantity: number;
+  price: number;
+  fees: number;
+  currency: string;
+  account: string;
+  externalId: string;
+  note: string;
+  voidOf: string | null;
+  createdAt: string;
+}
+
+export interface HoldingTradeInput {
+  requestId: string;
+  holdingId: string;
+  expectedRevision: string | null;
+  newHolding: Omit<Holding, "id"> | null;
+  kind: "buy" | "sell" | "void";
+  occurredOn: string;
+  quantity: number;
+  price: number;
+  fees: number;
+  account: string;
+  externalId: string;
+  note: string;
+  voidOf: string | null;
 }
 
 export interface PortfolioValuationStatus {

@@ -1,23 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { getSnapshot, updateHoldingAmount } from "../../api";
-import type { Holding, Snapshot } from "../../types";
+import type { Holding, HoldingValuationEvidence, Snapshot } from "../../types";
 import { formatMoney } from "../../lib/format";
 
 export function AssetAmountRow({
   holding,
+  valuation,
   revision,
   onUpdate,
   onEdit,
   onDelete,
   disabled = false,
+  canDelete = true,
 }: {
   holding: Holding;
+  valuation?: HoldingValuationEvidence;
   revision?: string;
   onUpdate: (snapshot: Snapshot) => void;
   onEdit: () => void;
   onDelete: () => void;
   disabled?: boolean;
+  canDelete?: boolean;
 }) {
   const [draft, setDraft] = useState(String(holding.marketValue));
   const [status, setStatus] = useState("");
@@ -104,16 +108,18 @@ export function AssetAmountRow({
             {holding.valuationDate || "日期待补充"}
           </small>
         </button>
-        <button
-          className="text-button danger-text"
-          disabled={busy || disabled}
-          onClick={() => {
-            if (!pending.current && !disabled) onDelete();
-          }}
-          aria-label={`删除 ${holding.name}`}
-        >
-          <Trash2 size={14} /> 删除
-        </button>
+        {canDelete && (
+          <button
+            className="text-button danger-text"
+            disabled={busy || disabled}
+            onClick={() => {
+              if (!pending.current && !disabled) onDelete();
+            }}
+            aria-label={`删除 ${holding.name}`}
+          >
+            <Trash2 size={14} /> 删除
+          </button>
+        )}
       </div>
       {investment && (
         <>
@@ -159,6 +165,11 @@ export function AssetAmountRow({
                 ? `${holding.currentPrice} ${holding.currency}`
                 : "待补价格"}
             </button>
+            {valuation && (
+              <small title={valuation.disclaimer}>
+                {valuation.providerName} · 收盘日 {valuation.observedOn}
+              </small>
+            )}
           </div>
         </>
       )}

@@ -20,6 +20,7 @@ mod memory;
 mod models;
 mod performance;
 mod planning;
+mod prices;
 mod risk;
 mod secrets;
 mod valuation;
@@ -217,12 +218,13 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     fx::start_daily_refresh();
+    prices::start_refresh();
     let state = Arc::new(AppState {
         mutation_lock: tokio::sync::Mutex::new(()),
         db: Database::open(&data_dir.join("mario.db"))?,
         auth_token: auth_token.clone(),
         fx_provider: Arc::new(EcbFxRateProvider::new()?),
-        security_price_provider: Arc::new(TwelveDataSecurityPriceProvider::new()?),
+        security_price_provider: Arc::new(prices::FreeSecurityPriceProvider::new()?),
     });
     let cors = CorsLayer::new()
         .allow_origin([
@@ -282,6 +284,11 @@ fn api_router() -> Router {
         )
         .route("/api/profile", put(save_profile))
         .route("/api/holdings", post(add_holding))
+        .route("/api/holding-trades", post(save_holding_trade))
+        .route(
+            "/api/market-data/security/refresh",
+            post(refresh_security_prices),
+        )
         .route(
             "/api/holdings/{id}",
             put(update_holding).delete(delete_holding),
@@ -413,7 +420,19 @@ async fn health() -> Json<serde_json::Value> {
 }
 async fn snapshot(Extension(state): Extension<Arc<AppState>>) -> AppResult<Json<Snapshot>> {
     fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
-    Ok(Json(state.db.snapshot()?))
+    Ok(Json(
+        prices::refresh(&state.db, state.security_price_provider.as_ref())
+            .await?
+            .snapshot,
+    ))
+}
+
+async fn refresh_security_prices(
+    Extension(state): Extension<Arc<AppState>>,
+) -> AppResult<Json<prices::RefreshResult>> {
+    Ok(Json(
+        prices::refresh(&state.db, state.security_price_provider.as_ref()).await?,
+    ))
 }
 
 async fn fx_rate_quote(
@@ -429,17 +448,32 @@ async fn security_price_quote(
     Extension(state): Extension<Arc<AppState>>,
     Query(query): Query<SecurityPriceQuery>,
 ) -> AppResult<Json<SecurityPriceQuote>> {
-    let key = state.db.secret("security-price")?;
-    Ok(Json(
-        state.security_price_provider.quote(&query, &key).await?,
-    ))
+    Ok(Json(configured_security_quote(&state, &query).await?))
+}
+
+async fn configured_security_quote(
+    state: &AppState,
+    query: &SecurityPriceQuery,
+) -> AppResult<SecurityPriceQuote> {
+    if let Ok(key) = state.db.secret("security-price") {
+        TwelveDataSecurityPriceProvider::new()?
+            .quote(query, &key)
+            .await
+    } else {
+        state.security_price_provider.quote(query, "").await
+    }
 }
 
 async fn security_price_config(
     Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<SecurityPriceConfig>> {
     Ok(Json(SecurityPriceConfig {
-        provider: "twelve-data".into(),
+        provider: if state.db.secret("security-price").is_ok() {
+            "twelve-data"
+        } else {
+            "yahoo-finance"
+        }
+        .into(),
         has_api_key: state.db.secret("security-price").is_ok(),
     }))
 }
@@ -470,8 +504,7 @@ async fn apply_verified_holding_valuation(
         symbol: input.symbol,
         on_date: input.on_date,
     };
-    let key = state.db.secret("security-price")?;
-    let quote = state.security_price_provider.quote(&query, &key).await?;
+    let quote = configured_security_quote(&state, &query).await?;
     Ok(Json(state.db.apply_verified_holding_valuation(
         &id,
         input.quantity,
@@ -491,7 +524,13 @@ async fn add_holding(
     Json(input): Json<HoldingInput>,
 ) -> AppResult<Json<Snapshot>> {
     fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
-    Ok(Json(state.db.add_holding(&input)?))
+    let input = prices::complete_input(input, state.security_price_provider.as_ref()).await?;
+    state.db.add_holding(&input)?;
+    Ok(Json(
+        prices::refresh(&state.db, state.security_price_provider.as_ref())
+            .await?
+            .snapshot,
+    ))
 }
 async fn update_holding(
     Extension(state): Extension<Arc<AppState>>,
@@ -499,7 +538,13 @@ async fn update_holding(
     Json(input): Json<HoldingInput>,
 ) -> AppResult<Json<Snapshot>> {
     fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
-    Ok(Json(state.db.update_holding(&id, &input)?))
+    let input = prices::complete_input(input, state.security_price_provider.as_ref()).await?;
+    state.db.update_holding(&id, &input)?;
+    Ok(Json(
+        prices::refresh(&state.db, state.security_price_provider.as_ref())
+            .await?
+            .snapshot,
+    ))
 }
 async fn delete_holding(
     Extension(state): Extension<Arc<AppState>>,
@@ -518,6 +563,19 @@ async fn save_portfolio_checkin(
 ) -> AppResult<Json<PortfolioCheckInRecord>> {
     Ok(Json(state.db.save_portfolio_checkin(&input)?))
 }
+async fn save_holding_trade(
+    Extension(state): Extension<Arc<AppState>>,
+    Json(input): Json<models::HoldingTradeInput>,
+) -> AppResult<Json<Snapshot>> {
+    state.db.save_holding_trade(&input)?;
+    fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
+    Ok(Json(
+        prices::refresh(&state.db, state.security_price_provider.as_ref())
+            .await?
+            .snapshot,
+    ))
+}
+
 async fn portfolio_events(
     Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<Vec<PortfolioEventRecord>>> {
@@ -1271,6 +1329,7 @@ async fn ensure_daily_assets(
 ) -> AppResult<Json<db::daily::DailyHistory>> {
     state.db.ensure_daily(&input)?;
     fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
+    prices::refresh(&state.db, state.security_price_provider.as_ref()).await?;
     Ok(Json(
         state
             .db
