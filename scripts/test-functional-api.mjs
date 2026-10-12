@@ -47,7 +47,7 @@ async function api(path, method = "GET", body, status = 200) {
 async function startServer() {
   if (externalBase) return;
   child = spawn(
-    resolve(process.platform === "win32" ? "server/target/debug/mario-server.exe" : "server/target/debug/mario-server"),
+    resolve(process.env.MARIO_TEST_SERVER_BIN ?? (process.platform === "win32" ? "server/target/debug/mario-server.exe" : "server/target/debug/mario-server")),
     ["--port", String(port)],
     {
       env: { ...process.env, MARIO_DATA_DIR: dir, MARIO_AUTH_TOKEN: token, MARIO_MASTER_KEY: masterKey },

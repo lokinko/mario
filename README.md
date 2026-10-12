@@ -74,8 +74,15 @@ mario 在问答时使用供应商原生网页搜索，自动保存回答和来�
 
 ```text
 client/                 React 响应式 Web 界面
-  src/                  页面、类型和本地 API 客户端
+  src/features/         按领域隔离的功能页面
+  src/api/              按领域隔离的 HTTP 客户端
+  src/app/              应用组合、导航与数据生命周期
+  src/lib/httpClient.ts 认证、请求政策与版本保护
 server/                 多用户 HTTP API 与独立 AI Agent 运行入口
+  src/runtime.rs        启动配置与维护命令
+  src/http/             按功能注册的 HTTP 适配器
+  src/application/      组合、分析与模型配置用例
+  src/models/           每日资产、行情与分析轨迹共享契约
   src/ai/               可替换工作流、执行器与模型 Provider
   src/db.rs             领域数据仓储；storage.rs 对接 PostgreSQL / 旧 SQLite
   src/accounts.rs       自建账号与会话
@@ -86,7 +93,6 @@ server/                 多用户 HTTP API 与独立 AI Agent 运行入口
   src/valuation.rs      基准币种折算、估值完整性与资产类别变化
   src/market_data.rs    可替换市场数据 Provider、ECB 汇率与 Twelve Data 证券价格适配器
   src/prices.rs         免费证券日线、全局缓存、后台刷新与自动持仓估值
-  src/performance.rs    流水分类汇总与现金流调整后期间回报
   src/event_import.rs   CSV 解析、字段映射与不可信输入边界
   src/risk.rs           不依赖大模型的风险规则
 docs/                   架构与投资方法论
@@ -95,6 +101,8 @@ scripts/                构建、迁移与集成测试
 ```
 
 产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[自建服务信任边界](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[可追溯汇率数据](docs/market-data.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账号与数据同步](docs/cloud-sync.md)。
+
+开发时的模块职责、依赖方向、状态生命周期和扩展约束见 [模块边界与开发约束](docs/module-boundaries.md)。`npm run check:architecture` 检查反向依赖和依赖循环，常规测试入口和 CI 都会执行。
 
 ## 开发与验证
 
@@ -110,6 +118,7 @@ npm run dev
 多用户开发请配置 PostgreSQL、`MARIO_MASTER_KEY`；注册开放，任何用户均可通过邮箱和密码创建账号，无需邀请码。前端设置 `VITE_API_URL=http://127.0.0.1:4217/api`。独立 Agent 使用 `MARIO_ROLE=agent`，后端配置 `MARIO_AGENT_URL` 与共享内部令牌。宿主机部署默认采用独立 Agent，单进程开发可以不设置 Agent URL。
 
 ```bash
+npm run check:architecture
 npm run build --prefix client
 npm test --prefix client
 cargo test --manifest-path server/Cargo.toml

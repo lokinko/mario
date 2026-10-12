@@ -13,7 +13,7 @@ await once(probe, 'listening');
 const port = probe.address().port;
 await new Promise(r => probe.close(r));
 const token = randomBytes(32).toString('hex');
-const binary = resolve('server/target/debug/mario-server' + (process.platform === 'win32' ? '.exe' : ''));
+const binary = resolve(process.env.MARIO_TEST_SERVER_BIN ?? ('server/target/debug/mario-server' + (process.platform === 'win32' ? '.exe' : '')));
 let child, log = '';
 const origin = `http://127.0.0.1:${port}`;
 const headers = { Authorization: `Bearer ${token}`, 'Content-Type':'application/json' };
