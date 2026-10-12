@@ -40,7 +40,7 @@ import {
   validHoldingDetails,
 } from "./HoldingFields";
 import { fxSourceLabel, holdingValueInBase } from "./valuation";
-import { formatMoney } from "../../lib/format";
+import { formatMoney, formatNumber } from "../../lib/format";
 
 export function Foundation({
   snapshot,
@@ -333,7 +333,7 @@ export function Foundation({
                     readOnly={hasHoldingDetails(holding)}
                     value={
                       hasHoldingDetails(holding)
-                        ? holding.marketValue
+                        ? formatNumber(holding.marketValue)
                         : holdingAmount
                     }
                     onChange={(e) => {
@@ -397,7 +397,7 @@ export function Foundation({
                     });
                   }}
                 />
-                <small>日常记录可分批更新；手动组合检查点需同一估值日</small>
+                <small>日常记录可分批更新；估值日期用于核对价格口径</small>
               </label>
             </div>
             <details
@@ -477,7 +477,8 @@ export function Foundation({
                         ((valuation) => (
                           <p>
                             <strong>
-                              {valuation.quantity} × {valuation.unitPrice}{" "}
+                              {formatNumber(valuation.quantity)} ×{" "}
+                              {formatNumber(valuation.unitPrice)}{" "}
                               {valuation.currency} ={" "}
                               {formatMoney(
                                 valuation.marketValue,
@@ -596,14 +597,19 @@ export function Foundation({
                           成本价：
                           {item.costPrice == null
                             ? "待补充"
-                            : `${item.costPrice} ${item.currency}`}
+                            : `${formatNumber(item.costPrice)} ${item.currency}`}
                         </small>
-                        <small>持仓数：{item.quantity ?? "待补充"}</small>
+                        <small>
+                          持仓数：
+                          {item.quantity == null
+                            ? "待补充"
+                            : formatNumber(item.quantity)}
+                        </small>
                         <small>
                           当前价格：
                           {item.currentPrice == null
                             ? "待补充"
-                            : `${item.currentPrice} ${item.currency}`}
+                            : `${formatNumber(item.currentPrice)} ${item.currency}`}
                         </small>
                       </>
                     )}
@@ -611,7 +617,7 @@ export function Foundation({
                       {item.currency}
                       {item.currency !== profile.baseCurrency &&
                       item.fxRateToBase
-                        ? ` · 汇率 ${item.fxRateToBase}`
+                        ? ` · 汇率 ${formatNumber(item.fxRateToBase)}`
                         : ""}
                     </small>
                     {item.fxRateSource && (

@@ -762,7 +762,7 @@ impl Database {
         &self,
         request: &crate::models::AnalysisRequest,
     ) -> AppResult<serde_json::Value> {
-        if !request.context_selection.include_portfolio_checkins {
+        if !request.context_selection.include_daily_assets {
             return Ok(serde_json::Value::Null);
         }
         let history = self.daily_history(&HistoryQuery {
@@ -1196,7 +1196,7 @@ mod tests {
         let redacted = db.daily_analysis_context(&request).unwrap().to_string();
         assert!(!redacted.contains("liabilities"));
         assert!(!redacted.contains("netAssets"));
-        request.context_selection.include_portfolio_checkins = false;
+        request.context_selection.include_daily_assets = false;
         request.daily_asset_range = Some(CompareQuery {
             from: "invalid".into(),
             to: "invalid".into(),

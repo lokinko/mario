@@ -27,7 +27,6 @@ vi.mock("./api", async (original) => ({
   getSnapshot: vi.fn(),
   getModelConfig: vi.fn(),
   getAnalysisHistory: vi.fn().mockResolvedValue([]),
-  getPortfolioCheckins: vi.fn().mockResolvedValue([]),
   getReviewReminders: vi.fn().mockResolvedValue(null),
   getDailyAssets: vi.fn().mockResolvedValue({ records: [], nextBefore: null }),
   getPortfolioEvents: vi.fn().mockResolvedValue([]),
@@ -126,8 +125,8 @@ it.each([true, false])(
   },
 );
 
-it("opens the analysis dashboard directly from the sidebar with its own active state", async () => {
-  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+it("falls back to questions when an old dashboard bookmark is opened", async () => {
+  window.location.hash = "dashboard";
   vi.mocked(api.getSnapshot).mockResolvedValue(
     emptySnapshot as Awaited<ReturnType<typeof api.getSnapshot>>,
   );
@@ -135,12 +134,9 @@ it("opens the analysis dashboard directly from the sidebar with its own active s
     new Error("optional model unavailable"),
   );
   render(<App />);
-  const entry = await screen.findByRole("button", { name: "分析看板" });
-  fireEvent.click(entry);
-  await screen.findByRole("heading", { name: "分析看板" });
-  expect(entry.getAttribute("aria-current")).toBe("page");
-  expect(window.location.hash).toBe("#dashboard");
-  expect(screen.getByRole("region", { name: "资产核心指标" })).toBeTruthy();
+  const questions = await screen.findByRole("button", { name: "问答" });
+  expect(questions.getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByRole("button", { name: "分析看板" })).toBeNull();
 });
 
 it("keeps local application accessible when optional model configuration fails", async () => {

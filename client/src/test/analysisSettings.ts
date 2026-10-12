@@ -14,7 +14,7 @@ export const analysisSettings: AnalysisSettings = {
     includeRiskFindings: true,
     includeRules: true,
     includeSystemReviews: true,
-    includePortfolioCheckins: true,
+    includeDailyAssets: true,
     includePortfolioEvents: true,
     includeEvidence: true,
   },

@@ -42,7 +42,7 @@ async function api(path, method = "GET", body, status = 200) {
   assert.equal(response.status, status, `${method} ${path}: ${value}`);
   if (response.ok) revision=response.headers.get("x-data-revision") ?? revision;
   count++;
-  return value ? JSON.parse(value) : undefined;
+  return value ? (response.headers.get("content-type")?.includes("application/json") ? JSON.parse(value) : value) : undefined;
 }
 async function startServer() {
   if (externalBase) return;
@@ -110,10 +110,14 @@ try {
     assert(!(await readFile(join(dir, "mario.db"))).includes(Buffer.from("test-encrypted-model-key")));
   }
   let snap = await api("/snapshot");
+  await api("/portfolio-checkins", "GET", undefined, 404);
+  await api("/portfolio-checkins", "POST", {}, 404);
   assert.equal(snap.holdings.length, 0);
   const defaults = await api("/analysis-settings");
   assert.equal(defaults.workflow, "deep");
   assert.equal(defaults.contextSelection.includeProfile, true);
+  assert.equal(defaults.contextSelection.includeDailyAssets, true);
+  assert.equal(defaults.contextSelection.includePortfolioCheckins, undefined);
   const configured = { ...defaults, webSearch: false, useMemory: false, contextSelection: { ...defaults.contextSelection, includeProfile: false } };
   assert.deepEqual(await api("/analysis-settings", "PUT", configured), configured);
   assert.deepEqual(await api("/analysis-settings"), configured);
@@ -184,14 +188,6 @@ try {
   await api(`/goals/${goalId}`, "DELETE");
   console.log("PASS goals: create, edit, deterministic projection, delete");
 
-  const checkin = {
-    periodLabel: "基线",
-    externalCashFlow: 0,
-    note: "HTTP 功能测试",
-    resetBaseline: false,
-    useLedgerCashFlows: true,
-  };
-  await api("/portfolio-checkins", "POST", checkin);
   const flow = {
     eventType: "deposit",
     source: "test",
@@ -237,22 +233,7 @@ try {
     ...holding("现金", 102100),
     valuationDate: today,
   });
-  const final = await api("/portfolio-checkins", "POST", {
-    ...checkin,
-    periodLabel: "期末",
-  });
-  assert.equal(final.totalChange, 2100);
-  assert.equal(final.externalCashFlow, 2000);
-  assert.equal(final.valuationResidual, 100);
-  await api(
-    "/portfolio-events",
-    "POST",
-    { ...flow, externalId: "frozen" },
-    400,
-  );
-  console.log(
-    "PASS ledger: baseline, event deduplication, reversal, CSV import, attribution, frozen period",
-  );
+  console.log("PASS ledger: event deduplication, reversal, CSV import");
 
   const evidence = {
     assetName: "现金",
@@ -373,7 +354,7 @@ try {
   const omitted = await api("/analysis/preview", "POST", {
     ...request,
     contextSelection: {
-      includePortfolioCheckins: false,
+      includeDailyAssets: false,
       includePortfolioEvents: false,
     },
   });
@@ -405,6 +386,55 @@ try {
   assert.equal((await api("/snapshot")).holdings[0].marketValue, 102200);
   assert.equal((await api("/daily-assets")).records[0].totalAssets, 102200);
   assert.equal((await api("/system-reviews")).find((item) => item.id === textReview.id).content, reviewContent);
+  const execution = {
+    requestId: randomUUID(), holdingId: "", expectedRevision: null,
+    newHolding: { name: "交易编辑测试", symbol: "", assetClass: "股票", currency: "CNY" },
+    kind: "buy", occurredOn: start, sequence: 1, quantity: "10", price: "10", grossAmount: "100", fees: "2", taxes: "1",
+    account: "测试券商", externalId: "trade-edit-1", note: "",
+  };
+  snap = await api("/holding-trades", "POST", execution);
+  const trade = snap.holdingTrades.find(t => t.id === execution.requestId);
+  assert.equal(snap.holdingTrades.length, 1);
+  assert.equal(snap.holdings.find(h => h.id === trade.holdingId).currentPrice, 0);
+  const correction = {
+    expectedRevision: snap.holdingRevisions[trade.holdingId],
+    kind: "buy", occurredOn: start, sequence: 1, quantity: "12", price: "11", grossAmount: "132", fees: "3", taxes: "1",
+    account: "测试券商", externalId: "trade-edit-corrected", note: "修正录入",
+  };
+  snap = await api(`/holding-trades/${trade.id}`, "PUT", correction);
+  assert.equal(snap.holdingTrades.length, 1);
+  assert.equal(snap.holdingTrades.find(t => t.id === trade.id).createdAt, trade.createdAt);
+  assert.equal(snap.holdings.find(h => h.id === trade.holdingId).costBasis, 136);
+  const correctedRevision = snap.holdingRevisions[trade.holdingId];
+  snap = await api(`/holding-trades/${trade.id}`, "PUT", correction);
+  assert.equal(snap.holdingRevisions[trade.holdingId], correctedRevision);
+  await api(`/holding-trades/${trade.id}`, "PUT", { ...correction, note: "过期修改" }, 409);
+  await api(`/holding-trades/${trade.id}`, "PUT", { ...correction, expectedRevision: correctedRevision, kind: "sell" }, 400);
+  await api("/holding-trades", "POST", { ...execution, requestId: randomUUID(), kind: "opening" }, 400);
+  // The old fields are rejected as a format error, never silently ignored.
+  await api("/holding-trades", "POST", { ...execution, requestId: randomUUID(), voidOf: trade.id }, 422);
+  assert.deepEqual((await api("/snapshot")).holdingTrades, snap.holdingTrades);
+  const dividend = {
+    ...execution, requestId: randomUUID(), holdingId: trade.holdingId, newHolding: null,
+    expectedRevision: correctedRevision, kind: "dividend", occurredOn: today, sequence: 1,
+    quantity: "0", price: "0", grossAmount: "20", fees: "1", taxes: "3", externalId: "dividend-1",
+  };
+  snap = await api("/holding-trades", "POST", dividend);
+  assert.equal(snap.holdingTradeSummaries[trade.holdingId].dividendIncome, "16");
+  assert.equal(snap.holdingTradeSummaries[trade.holdingId].costBasis, "136");
+  assert.equal(snap.holdingTradeSummaries[trade.holdingId].quantity, "12");
+  const sale = {
+    ...dividend, requestId: randomUUID(), expectedRevision: snap.holdingRevisions[trade.holdingId],
+    kind: "sell", sequence: 2, quantity: "12", price: "20", grossAmount: "240", fees: "1", taxes: "2", externalId: "sale-1",
+  };
+  snap = await api("/holding-trades", "POST", sale);
+  assert.equal(snap.holdingTradeSummaries[trade.holdingId].settledProfit, "117");
+  assert.equal(snap.holdings.find(h => h.id === trade.holdingId).quantity, 0);
+  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
+  const records = snap.holdingTrades;
+  await stopServer(); await startServer();
+  assert.deepEqual((await api("/snapshot")).holdingTrades, records);
+  console.log("PASS real trading: exact amounts, in-place edits, dividends, full close, unchanged cash, no legacy format");
   console.log(
     `PASS restart persistence; ${count} authenticated HTTP assertions total`,
   );

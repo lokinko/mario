@@ -16,7 +16,7 @@ use validation::{
     normalized_fx_provenance, normalized_holding_fx_provenance, validate_currency, validate_goal,
     validate_holding, validate_holding_valuation_evidence, validate_investment_rule,
     validate_non_negative, validate_portfolio_event, validate_research_evidence,
-    validate_stored_holding_valuation, validate_system_review,
+    validate_system_review,
 };
 mod ledger_values;
 use ledger_values::{
@@ -58,14 +58,13 @@ use crate::{
         AnalysisHistoryItem, AnalysisResult, FinancialProfile, Goal, GoalInput, Holding,
         HoldingInput, HoldingValuationEvidence, InvestmentRule, InvestmentRuleInput,
         InvestmentRuleRevision, MemoryItem, MemoryPreferenceInput, ModelConfig,
-        PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventImportCommitRequest,
-        PortfolioEventImportPreview, PortfolioEventImportRequest, PortfolioEventImportResult,
-        PortfolioEventImportRow, PortfolioEventInput, PortfolioEventRecord,
-        PortfolioEventReversalInput, PortfolioEventType, ResearchEvidence, ResearchEvidenceInput,
-        ReviewReminderSummary, SecurityPriceQuote, Snapshot, StoredAnalysis, SystemReviewInput,
-        SystemReviewRecord, SystemReviewSnapshot,
+        PortfolioEventImportCommitRequest, PortfolioEventImportPreview,
+        PortfolioEventImportRequest, PortfolioEventImportResult, PortfolioEventImportRow,
+        PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, PortfolioEventType,
+        ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary, SecurityPriceQuote,
+        Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
     },
-    performance, planning, risk, valuation,
+    planning, risk, valuation,
 };
 
 pub struct Database {
@@ -106,6 +105,7 @@ impl Database {
         if version < schema::POSTGRES_SCHEMA_VERSION {
             let tx = connection.transaction()?;
             schema::initialize(&tx)?;
+            trades::clear_invalid(&tx)?;
             // Re-run for existing tenants too, so newly added tables get revision triggers.
             tx.execute_batch(include_str!("../migrations/tenant-revisions.sql"))?;
             tx.execute_batch(
@@ -159,8 +159,11 @@ impl Database {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let connection = Connection::open(path)?;
+        let mut connection = Connection::open(path)?;
         schema::initialize(&connection)?;
+        let tx = connection.transaction()?;
+        trades::clear_invalid(&tx)?;
+        tx.commit()?;
         Ok(Self {
             connection: Mutex::new(connection),
         })

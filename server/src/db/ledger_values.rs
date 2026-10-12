@@ -190,13 +190,11 @@ pub(super) fn portfolio_event_import_row(
 pub(super) fn portfolio_import_revision(
     rows: &[PortfolioEventImportRow],
     base_currency: &str,
-    frozen_through: &str,
     csv_text: &str,
 ) -> AppResult<String> {
     let canonical = serde_json::json!({
         "rows": rows,
         "baseCurrency": base_currency,
-        "frozenThrough": frozen_through,
         "csvSha256": format!("{:x}", Sha256::digest(csv_text.as_bytes())),
     });
     Ok(format!(

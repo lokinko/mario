@@ -1,7 +1,7 @@
 use super::{
-    AppError, AppResult, GoalInput, HoldingInput, HoldingValuationEvidence, InvestmentRuleInput,
-    Local, NaiveDate, PortfolioEventInput, PortfolioEventType, ResearchEvidenceInput,
-    SecurityPriceQuote, SystemReviewInput, Utc,
+    AppError, AppResult, GoalInput, HoldingInput, InvestmentRuleInput, Local, NaiveDate,
+    PortfolioEventInput, PortfolioEventType, ResearchEvidenceInput, SecurityPriceQuote,
+    SystemReviewInput, Utc,
 };
 
 pub(super) fn validate_non_negative(values: &[f64]) -> AppResult<()> {
@@ -278,36 +278,6 @@ pub(super) fn validate_holding_valuation_evidence(
         return Err(AppError::Validation(
             "证券价格来源或元数据不是受支持的规范形式".into(),
         ));
-    }
-    Ok(())
-}
-
-pub(super) fn validate_stored_holding_valuation(
-    evidence: &HoldingValuationEvidence,
-) -> AppResult<()> {
-    let quote = SecurityPriceQuote {
-        symbol: evidence.symbol.clone(),
-        currency: evidence.currency.clone(),
-        close: evidence.unit_price,
-        requested_on: evidence.requested_on.clone(),
-        observed_on: evidence.observed_on.clone(),
-        staleness_days: evidence.staleness_days,
-        provider_code: evidence.provider_code.clone(),
-        provider_name: evidence.provider_name.clone(),
-        exchange: evidence.exchange.clone(),
-        mic_code: evidence.mic_code.clone(),
-        instrument_type: evidence.instrument_type.clone(),
-        price_basis: evidence.price_basis.clone(),
-        source_url: evidence.source_url.clone(),
-        methodology_url: evidence.methodology_url.clone(),
-        disclaimer: evidence.disclaimer.clone(),
-    };
-    validate_holding_valuation_evidence(evidence.quantity, &quote)?;
-    let expected = evidence.quantity * evidence.unit_price;
-    if (evidence.market_value - expected).abs() > 0.005_f64.max(expected.abs() * 1e-10)
-        || chrono::DateTime::parse_from_rfc3339(&evidence.captured_at).is_err()
-    {
-        return Err(AppError::Validation("持仓估值证据内容无效".into()));
     }
     Ok(())
 }

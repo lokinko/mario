@@ -43,12 +43,7 @@ afterEach(() => {
 });
 async function open() {
   const onUpdate = vi.fn();
-  const { container } = render(
-    <ExchangeRates baseCurrency="CNY" onUpdate={onUpdate} />,
-  );
-  const details = container.querySelector("details")!;
-  details.open = true;
-  fireEvent(details, new Event("toggle"));
+  render(<ExchangeRates baseCurrency="CNY" onUpdate={onUpdate} />);
   await screen.findByText("1 USD = 7 CNY");
   await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   return onUpdate;
@@ -73,7 +68,42 @@ it("shows automatically loaded values and saves a persistent manual rate then re
   fireEvent.click(screen.getByRole("button", { name: "恢复自动" }));
   await screen.findByText("1 USD = 7 CNY");
   expect(api.setFxOverride).toHaveBeenLastCalledWith("USD", null);
-  await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(2));
+});
+it("loads without a disclosure and lists involved currencies first with rounded displays", async () => {
+  vi.mocked(api.getFxSettings).mockResolvedValue({
+    ...book,
+    quotes: [
+      ...book.quotes,
+      { ...book.quotes[0], fromCurrency: "HKD", rate: 0.91234567 },
+    ],
+  });
+  const { container } = render(
+    <ExchangeRates
+      baseCurrency="CNY"
+      usedCurrencies={["HKD", "CNY", "HKD"]}
+      onUpdate={vi.fn()}
+    />,
+  );
+  await screen.findByText("1 HKD = 0.91 CNY");
+  expect(container.querySelector("details")).toBeNull();
+  expect(
+    container.querySelector(".exchange-rate-row strong")?.textContent,
+  ).toBe("1 HKD = 0.91 CNY");
+  expect(screen.getAllByText("1 HKD = 0.91 CNY")).toHaveLength(1);
+  expect(
+    screen
+      .getByRole("spinbutton", { name: "修改 HKD 汇率" })
+      .getAttribute("placeholder"),
+  ).toBe("0.91");
+  expect(api.getSnapshot).not.toHaveBeenCalled();
+  const input = screen.getByRole("spinbutton", { name: "修改 HKD 汇率" });
+  fireEvent.change(input, { target: { value: "0.91234567" } });
+  vi.mocked(api.setFxOverride).mockResolvedValue(book);
+  fireEvent.click(screen.getAllByRole("button", { name: "保存修改" })[0]);
+  await waitFor(() =>
+    expect(api.setFxOverride).toHaveBeenCalledWith("HKD", 0.91234567),
+  );
 });
 it("rejects empty or nonpositive overrides and retains the draft after a failed save", async () => {
   await open();

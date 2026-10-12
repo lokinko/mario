@@ -76,6 +76,16 @@ impl Database {
 
     pub fn import_sync_data(&self, dataset: &SyncDataset) -> AppResult<()> {
         dataset.validate()?;
+        if dataset.schema_version < 18
+            && dataset
+                .tables
+                .iter()
+                .any(|t| t.name == "holding_trades" && !t.rows.is_empty())
+        {
+            return Err(AppError::Validation(
+                "旧交易记录格式已停用，请清空旧交易后按成交单重新录入；本次未覆盖任何数据".into(),
+            ));
+        }
         validate_synced_event_identities(dataset)?;
         validate_synced_fx_provenance(dataset)?;
         validate_synced_event_reversals(dataset)?;
@@ -151,6 +161,7 @@ impl Database {
         }
         super::daily::validate(&transaction)?;
         super::trades::validate_stored(&transaction)?;
+        transaction.execute("DELETE FROM settings WHERE key LIKE 'trading.reset.%'", [])?;
         transaction.commit()?;
         Ok(())
     }

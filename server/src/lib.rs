@@ -18,7 +18,6 @@ mod fx;
 mod market_data;
 mod memory;
 mod models;
-mod performance;
 mod planning;
 mod prices;
 mod risk;
@@ -54,11 +53,10 @@ use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, AnalysisSettings,
     FinancialProfile, FxRateQuery, FxRateQuote, GoalInput, HoldingInput, InvestmentRule,
     InvestmentRuleInput, InvestmentRuleRevision, MemoryItem, MemoryPreferenceInput, ModelConfig,
-    ModelConfigInput, ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord,
-    PortfolioEventImportCommitRequest, PortfolioEventImportPreview, PortfolioEventImportRequest,
-    PortfolioEventImportResult, PortfolioEventInput, PortfolioEventRecord,
-    PortfolioEventReversalInput, ResearchEvidence, ResearchEvidenceInput,
-    ResearchEvidenceStatusInput, ReviewReminderSummary, SecurityPriceConfig,
+    ModelConfigInput, ModelConnectionTest, PortfolioEventImportCommitRequest,
+    PortfolioEventImportPreview, PortfolioEventImportRequest, PortfolioEventImportResult,
+    PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, ResearchEvidence,
+    ResearchEvidenceInput, ResearchEvidenceStatusInput, ReviewReminderSummary, SecurityPriceConfig,
     SecurityPriceConfigInput, SecurityPriceQuery, SecurityPriceQuote, Snapshot, StoredAnalysis,
     SystemReviewInput, SystemReviewRecord, VerifiedHoldingValuationInput,
 };
@@ -236,6 +234,7 @@ fn api_router() -> Router {
         .route("/api/profile", put(save_profile))
         .route("/api/holdings", post(add_holding))
         .route("/api/holding-trades", post(save_holding_trade))
+        .route("/api/holding-trades/{id}", put(update_holding_trade))
         .route(
             "/api/market-data/security/refresh",
             post(refresh_security_prices),
@@ -247,10 +246,6 @@ fn api_router() -> Router {
         .route(
             "/api/holdings/{id}/verified-valuation",
             put(apply_verified_holding_valuation),
-        )
-        .route(
-            "/api/portfolio-checkins",
-            get(portfolio_checkins).post(save_portfolio_checkin),
         )
         .route(
             "/api/portfolio-events",
@@ -492,22 +487,25 @@ async fn delete_holding(
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.delete_holding(&id)?))
 }
-async fn portfolio_checkins(
-    Extension(state): Extension<Arc<AppState>>,
-) -> AppResult<Json<Vec<PortfolioCheckInRecord>>> {
-    Ok(Json(state.db.portfolio_checkins()?))
-}
-async fn save_portfolio_checkin(
-    Extension(state): Extension<Arc<AppState>>,
-    Json(input): Json<PortfolioCheckInInput>,
-) -> AppResult<Json<PortfolioCheckInRecord>> {
-    Ok(Json(state.db.save_portfolio_checkin(&input)?))
-}
 async fn save_holding_trade(
     Extension(state): Extension<Arc<AppState>>,
     Json(input): Json<models::HoldingTradeInput>,
 ) -> AppResult<Json<Snapshot>> {
     state.db.save_holding_trade(&input)?;
+    fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
+    Ok(Json(
+        prices::refresh(&state.db, state.security_price_provider.as_ref())
+            .await?
+            .snapshot,
+    ))
+}
+
+async fn update_holding_trade(
+    Extension(state): Extension<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(input): Json<models::HoldingTradeUpdateInput>,
+) -> AppResult<Json<Snapshot>> {
+    state.db.update_holding_trade(&id, &input)?;
     fx::refresh(&state.db, state.fx_provider.as_ref(), false).await?;
     Ok(Json(
         prices::refresh(&state.db, state.security_price_provider.as_ref())
@@ -841,12 +839,6 @@ async fn run_analysis(
         .into_iter()
         .take(8)
         .collect::<Vec<_>>();
-    let portfolio_checkins = state
-        .db
-        .portfolio_checkins()?
-        .into_iter()
-        .take(12)
-        .collect::<Vec<_>>();
     let portfolio_events = state
         .db
         .portfolio_events()?
@@ -862,7 +854,6 @@ async fn run_analysis(
             daily_assets: Some(&daily_assets),
             rules: &rules,
             system_reviews: &system_reviews,
-            portfolio_checkins: &portfolio_checkins,
             portfolio_events: &portfolio_events,
             evidence_candidates: &evidence_candidates,
             memory_candidates: &memories,
@@ -922,12 +913,6 @@ async fn preview_analysis(
         .into_iter()
         .take(8)
         .collect::<Vec<_>>();
-    let portfolio_checkins = state
-        .db
-        .portfolio_checkins()?
-        .into_iter()
-        .take(12)
-        .collect::<Vec<_>>();
     let portfolio_events = state
         .db
         .portfolio_events()?
@@ -943,7 +928,6 @@ async fn preview_analysis(
             daily_assets: Some(&daily_assets),
             rules: &rules,
             system_reviews: &system_reviews,
-            portfolio_checkins: &portfolio_checkins,
             portfolio_events: &portfolio_events,
             evidence_candidates: &evidence_candidates,
             memory_candidates: &memories,

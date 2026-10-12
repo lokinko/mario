@@ -99,14 +99,6 @@ export interface HoldingValuationEvidence {
   capturedAt: string;
 }
 
-export interface PortfolioCheckInInput {
-  periodLabel: string;
-  externalCashFlow: number;
-  note: string;
-  resetBaseline: boolean;
-  useLedgerCashFlows: boolean;
-}
-
 export type PortfolioEventType =
   | "deposit"
   | "withdrawal"
@@ -171,7 +163,6 @@ export interface PortfolioEventImportPreview {
   errorCount: number;
   previewRevision: string;
   baseCurrency: string;
-  frozenThrough: string;
 }
 
 export interface PortfolioEventImportResult {
@@ -190,30 +181,6 @@ export interface PortfolioAllocationChange {
   pctPointChange: number;
 }
 
-export interface PortfolioCheckInRecord {
-  id: string;
-  periodLabel: string;
-  externalCashFlow: number;
-  note: string;
-  totalValue: number;
-  previousCheckInId: string | null;
-  previousTotalValue: number | null;
-  totalChange: number | null;
-  valuationResidual: number | null;
-  baseCurrency: string;
-  valuationDate: string | null;
-  cashFlowSource: "baseline" | "ledger" | "manual";
-  eventIds: string[];
-  income: number;
-  costs: number;
-  turnover: number;
-  modifiedDietzReturnPct: number | null;
-  holdings: Holding[];
-  holdingValuations: HoldingValuationEvidence[];
-  allocationChanges: PortfolioAllocationChange[];
-  createdAt: string;
-}
-
 export interface RiskFinding {
   level: "high" | "medium" | "low";
   title: string;
@@ -224,6 +191,8 @@ export interface RiskFinding {
 export interface Snapshot {
   priceRefreshErrors?: string[];
   holdingTrades?: HoldingTrade[];
+  holdingTradeSummaries?: Record<string, HoldingTradeSummary>;
+  clearedTradeHoldings?: string[];
   holdingRevisions?: Record<string, string>;
   profile: FinancialProfile;
   goals: Goal[];
@@ -238,36 +207,55 @@ export interface Snapshot {
   updatedAt: string;
 }
 
-export interface HoldingTrade {
-  id: string;
-  holdingId: string;
-  kind: "opening" | "buy" | "sell" | "void";
+export type HoldingTradeKind = "buy" | "sell" | "dividend";
+export interface HoldingTradeFields {
+  kind: HoldingTradeKind;
   occurredOn: string;
-  quantity: number;
-  price: number;
-  fees: number;
-  currency: string;
+  sequence: number;
+  quantity: string;
+  price: string;
+  grossAmount: string;
+  fees: string;
+  taxes: string;
   account: string;
   externalId: string;
   note: string;
-  voidOf: string | null;
-  createdAt: string;
 }
-
-export interface HoldingTradeInput {
+export interface HoldingTrade extends HoldingTradeFields {
+  id: string;
+  holdingId: string;
+  currency: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface TradeSecurityInput {
+  name: string;
+  symbol: string;
+  assetClass: Holding["assetClass"];
+  currency: string;
+}
+export interface HoldingTradeInput extends HoldingTradeFields {
   requestId: string;
   holdingId: string;
   expectedRevision: string | null;
-  newHolding: Omit<Holding, "id"> | null;
-  kind: "buy" | "sell" | "void";
-  occurredOn: string;
-  quantity: number;
-  price: number;
-  fees: number;
+  newHolding: TradeSecurityInput | null;
+}
+export interface HoldingTradeUpdateInput extends HoldingTradeFields {
+  expectedRevision: string;
+}
+export interface HoldingTradeSummary {
   account: string;
-  externalId: string;
-  note: string;
-  voidOf: string | null;
+  quantity: string;
+  costBasis: string;
+  averageCost: string;
+  realizedProfit: string;
+  dividendIncome: string;
+  settledProfit: string;
+  totalFees: string;
+  totalTaxes: string;
+  netCashFlow: string;
+  profits: Record<string, string>;
+  cashFlows: Record<string, string>;
 }
 
 export interface PortfolioValuationStatus {
@@ -356,7 +344,7 @@ export interface ContextSelection {
   includeRiskFindings: boolean;
   includeRules: boolean;
   includeSystemReviews: boolean;
-  includePortfolioCheckins: boolean;
+  includeDailyAssets: boolean;
   includePortfolioEvents: boolean;
   includeEvidence: boolean;
 }

@@ -118,6 +118,12 @@ impl Database {
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<Result<_, _>>()?;
         snapshot.holding_trades = super::trades::load(conn)?;
+        snapshot.holding_trade_summaries = super::trades::summaries(&snapshot.holding_trades)?;
+        let mut notices = conn
+            .prepare("SELECT value FROM settings WHERE key LIKE 'trading.reset.%' ORDER BY key")?;
+        snapshot.cleared_trade_holdings = notices
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(snapshot)
     }
 
@@ -298,13 +304,6 @@ impl Database {
             return Err(AppError::Validation(
                 "交易持仓的数量和证券代码不能通过估值修改".into(),
             ));
-        }
-        if before
-            .holding_trades
-            .iter()
-            .any(|t| t.holding_id == id && t.occurred_on > quote.requested_on)
-        {
-            return Err(AppError::Validation("估值日期不能早于交易明细日期".into()));
         }
         validate_detail_totals(
             holding.cost_price,

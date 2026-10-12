@@ -87,7 +87,6 @@ pub fn parse_review(
                         "riskFindings",
                         "personalInvestmentRules",
                         "periodicSystemReviews",
-                        "portfolioChangeAttribution",
                         "dailyAssetHistory",
                         "portfolioEvents",
                     ]

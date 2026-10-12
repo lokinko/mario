@@ -15,7 +15,7 @@ const contextOptions: [keyof ContextSelection, string][] = [
   ["includeRiskFindings", "风险检查"],
   ["includeRules", "个人规则"],
   ["includeSystemReviews", "周期复盘"],
-  ["includePortfolioCheckins", "组合变化与每日资产"],
+  ["includeDailyAssets", "每日资产记录"],
   ["includePortfolioEvents", "组合流水"],
   ["includeEvidence", "研究证据与历史搜索资料"],
 ];

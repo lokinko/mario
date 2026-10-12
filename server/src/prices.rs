@@ -939,23 +939,27 @@ mod tests {
     #[tokio::test]
     async fn price_refresh_keeps_trade_quantities_costs_and_execution_records() {
         let db = db();
-        let mut new_holding = holding("AAPL", "股票", Some(0.0));
-        new_holding.market_value = 0.0;
-        new_holding.cost_basis = 0.0;
         let trade = crate::models::HoldingTradeInput {
             request_id: uuid::Uuid::new_v4().to_string(),
             holding_id: String::new(),
             expected_revision: None,
-            new_holding: Some(new_holding),
+            new_holding: Some(crate::models::TradeSecurityInput {
+                symbol: "AAPL".into(),
+                name: "Apple".into(),
+                asset_class: "股票".into(),
+                currency: "USD".into(),
+            }),
             kind: "buy".into(),
             occurred_on: crate::fx::today(),
-            quantity: 10.0,
-            price: 10.0,
-            fees: 2.0,
+            sequence: 1,
+            quantity: "10".into(),
+            price: "10".into(),
+            gross_amount: "100".into(),
+            fees: "2".into(),
+            taxes: "0".into(),
             account: "broker".into(),
             external_id: String::new(),
             note: String::new(),
-            void_of: None,
         };
         let before = db.save_holding_trade(&trade).unwrap();
         let provider = FixedProvider {

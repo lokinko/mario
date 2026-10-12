@@ -78,7 +78,7 @@ pub(super) fn build_snapshot(
                     valuation_status.valuation_dates.len()
                 )
             },
-            action: "把全部持仓更新到同一估值日后，再冻结组合检查点。".into(),
+            action: "把全部持仓更新到同一估值日，便于核对组合价值。".into(),
         });
     }
     let verified_ids = holding_valuations
@@ -149,6 +149,8 @@ pub(super) fn build_snapshot(
     Snapshot {
         price_refresh_errors: Vec::new(),
         holding_trades: Vec::new(),
+        holding_trade_summaries: Default::default(),
+        cleared_trade_holdings: Vec::new(),
         holding_revisions: Default::default(),
         profile,
         goals,

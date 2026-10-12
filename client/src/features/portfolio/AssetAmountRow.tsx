@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { getSnapshot, updateHoldingAmount } from "../../api";
 import type { Holding, HoldingValuationEvidence, Snapshot } from "../../types";
-import { formatMoney } from "../../lib/format";
+import { formatMoney, formatNumber } from "../../lib/format";
 
 export function AssetAmountRow({
   holding,
   valuation,
   revision,
+  realizedPnl,
   onUpdate,
   onEdit,
   onDelete,
@@ -17,6 +18,7 @@ export function AssetAmountRow({
   holding: Holding;
   valuation?: HoldingValuationEvidence;
   revision?: string;
+  realizedPnl?: number;
   onUpdate: (snapshot: Snapshot) => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -24,6 +26,7 @@ export function AssetAmountRow({
   canDelete?: boolean;
 }) {
   const [draft, setDraft] = useState(String(holding.marketValue));
+  const [focused, setFocused] = useState(false);
   const [status, setStatus] = useState("");
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,7 +87,7 @@ export function AssetAmountRow({
       const current = result.holdings.find((h) => h.id === holding.id);
       setStatus(
         current
-          ? `最新金额 ${current.marketValue} ${current.currency}；核对后点重试保存你的输入`
+          ? `最新金额 ${formatNumber(current.marketValue)} ${current.currency}；核对后点重试保存你的输入`
           : "该资产已移除，无法保存",
       );
       attempt.current = undefined;
@@ -133,7 +136,7 @@ export function AssetAmountRow({
               title="点击编辑成本价"
             >
               {holding.costPrice != null
-                ? `${holding.costPrice} ${holding.currency}`
+                ? `${formatNumber(holding.costPrice)} ${holding.currency}`
                 : "待补成本价"}
             </button>
             <small>
@@ -150,7 +153,9 @@ export function AssetAmountRow({
               onClick={onEdit}
               aria-label={`编辑 ${holding.name}持仓数`}
             >
-              {holding.quantity ?? "待补数量"}
+              {holding.quantity == null
+                ? "待补数量"
+                : formatNumber(holding.quantity)}
             </button>
           </div>
           <div className="asset-cost">
@@ -162,7 +167,7 @@ export function AssetAmountRow({
               aria-label={`编辑 ${holding.name}当前价格`}
             >
               {holding.currentPrice != null
-                ? `${holding.currentPrice} ${holding.currency}`
+                ? `${formatNumber(holding.currentPrice)} ${holding.currency}`
                 : "待补价格"}
             </button>
             {valuation && (
@@ -187,7 +192,13 @@ export function AssetAmountRow({
                 ? "根据持仓数和当前价格自动计算"
                 : "回车或离开输入框保存"
             }
-            value={draft}
+            value={
+              dirty.current ||
+              (focused &&
+                !(holding.quantity != null && holding.currentPrice != null))
+                ? draft
+                : formatNumber(draft)
+            }
             readOnly={
               busy ||
               disabled ||
@@ -199,7 +210,11 @@ export function AssetAmountRow({
               setFailed(false);
               setStatus("待保存");
             }}
-            onBlur={() => void save()}
+            onFocus={() => setFocused(true)}
+            onBlur={() => {
+              setFocused(false);
+              void save();
+            }}
             onKeyDown={(e) => {
               if (e.key === "Tab") {
                 const fields = Array.from(
@@ -257,6 +272,18 @@ export function AssetAmountRow({
                   {((pnl / holding.costBasis) * 100).toFixed(1)}%
                 </small>
               )}
+            </span>
+          </div>
+          <div className="asset-pnl" aria-label={`${holding.name}已结算盈亏`}>
+            <span className="asset-column-label">已结算盈亏</span>
+            <span
+              className={
+                realizedPnl == null ? "" : realizedPnl >= 0 ? "gain" : "loss"
+              }
+            >
+              {realizedPnl == null
+                ? "未录入交易"
+                : `${realizedPnl > 0 ? "+" : ""}${formatMoney(realizedPnl, holding.currency, 2)}`}
             </span>
           </div>
         </>

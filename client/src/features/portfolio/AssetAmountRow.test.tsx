@@ -44,6 +44,62 @@ function mount() {
   );
   return onUpdate;
 }
+it("rounds displayed prices and computed totals without saving rounded values", async () => {
+  const detailed = {
+    ...holding,
+    quantity: 12.345678,
+    costPrice: 1.234567,
+    currentPrice: 2.345678,
+    marketValue: 28.959860739684,
+    costBasis: 15.241566651426,
+  };
+  const props = {
+    revision: "v1",
+    onEdit: vi.fn(),
+    onDelete: vi.fn(),
+    onUpdate: vi.fn(),
+  };
+  const view = render(<AssetAmountRow {...props} holding={detailed} />);
+  expect(
+    screen.getByRole("button", { name: "编辑 工资卡成本" }).textContent,
+  ).toBe("1.23 CNY");
+  expect(
+    screen.getByRole("button", { name: "编辑 工资卡持仓数" }).textContent,
+  ).toBe("12.35");
+  expect(
+    screen.getByRole("button", { name: "编辑 工资卡当前价格" }).textContent,
+  ).toBe("2.35 CNY");
+  const field = screen.getByLabelText("工资卡金额") as HTMLInputElement;
+  expect(field.value).toBe("28.96");
+  fireEvent.focus(field);
+  expect(field.value).toBe("28.96");
+  fireEvent.blur(field);
+  expect(api.updateHoldingAmount).not.toHaveBeenCalled();
+
+  view.rerender(
+    <AssetAmountRow
+      {...props}
+      holding={{ ...holding, marketValue: 100.123456 }}
+    />,
+  );
+  expect(field.value).toBe("100.12");
+  fireEvent.focus(field);
+  expect(field.value).toBe("100.123456");
+  fireEvent.blur(field);
+  expect(api.updateHoldingAmount).not.toHaveBeenCalled();
+  vi.mocked(api.updateHoldingAmount).mockResolvedValue(snapshot);
+  fireEvent.focus(field);
+  fireEvent.change(field, { target: { value: "120.123456" } });
+  fireEvent.blur(field);
+  await screen.findByText("已保存");
+  expect(api.updateHoldingAmount).toHaveBeenCalledWith(
+    "a",
+    120.123456,
+    "v1",
+    expect.any(String),
+  );
+  expect(field.value).toBe("120.12");
+});
 it.each([
   { marketValue: 1000, costBasis: 800, pnl: 200, pct: "+25.0%" },
   { marketValue: 800, costBasis: 1000, pnl: -200, pct: "-20.0%" },

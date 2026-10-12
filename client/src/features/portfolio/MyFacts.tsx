@@ -16,6 +16,7 @@ import { type View } from "../../app/navigation";
 import { PageHeader } from "../../components/PageHeader";
 import { NumberField } from "../../components/NumberField";
 import { localDateValue } from "../../lib/dates";
+import { formatNumber } from "../../lib/format";
 import { emptyHolding } from "./forms";
 import {
   HoldingFields,
@@ -43,6 +44,7 @@ export function MyFacts({
   const [assetAmount, setAssetAmount] = useState("");
   const [assetCost, setAssetCost] = useState("");
   const costHelpId = useId();
+  const codeHelpId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [section, setSection] = useState<"income" | "savings" | "holdings">(
@@ -138,6 +140,14 @@ export function MyFacts({
   return (
     <div className="page narrow facts-page">
       <PageHeader title="我的情况" />
+      <ExchangeRates
+        baseCurrency={currency}
+        usedCurrencies={[
+          ...snapshot.holdings.map((holding) => holding.currency),
+          ...(snapshot.holdingTrades ?? []).map((trade) => trade.currency),
+        ]}
+        onUpdate={onUpdate}
+      />
       <AssetHistory snapshot={snapshot} />
       <div className="section-switcher" role="group" aria-label="我的情况分类">
         {(
@@ -293,60 +303,68 @@ export function MyFacts({
                 <span>当前价格</span>
                 <span>当前市值</span>
                 <span>浮动盈亏</span>
+                <span>已结算盈亏</span>
               </div>
             )}
-            {(section === "savings" ? cash : investments).map((item) => (
-              <div key={item.id} className="facts-asset-entry">
-                <AssetAmountRow
-                  holding={item}
-                  revision={snapshot.holdingRevisions?.[item.id]}
-                  valuation={snapshot.holdingValuations?.find(
-                    (v) => v.holdingId === item.id,
+            {(section === "savings" ? cash : investments).map((item) => {
+              const trades = (snapshot.holdingTrades ?? []).filter(
+                (t) => t.holdingId === item.id,
+              );
+              const tradeSummary = snapshot.holdingTradeSummaries?.[item.id];
+              return (
+                <div key={item.id} className="facts-asset-entry">
+                  <AssetAmountRow
+                    holding={item}
+                    realizedPnl={
+                      tradeSummary
+                        ? Number(tradeSummary.settledProfit)
+                        : undefined
+                    }
+                    revision={snapshot.holdingRevisions?.[item.id]}
+                    valuation={snapshot.holdingValuations?.find(
+                      (v) => v.holdingId === item.id,
+                    )}
+                    onUpdate={onUpdate}
+                    disabled={busy}
+                    canDelete={!trades.length}
+                    onDelete={() => void removeAsset(item)}
+                    onEdit={() => {
+                      setAssetAmount(String(item.marketValue));
+                      setAssetCost(
+                        item.costBasis > 0 ? String(item.costBasis) : "",
+                      );
+                      setEditing({ ...item });
+                      setError("");
+                    }}
+                  />
+                  {item.assetClass !== "现金" && (
+                    <details className="holding-trade-details">
+                      <summary>
+                        交易明细
+                        {snapshot.clearedTradeHoldings?.includes(item.id)
+                          ? " · 需重新录入"
+                          : trades.length
+                            ? ` · ${trades.length} 笔`
+                            : " · 记买入 / 卖出"}
+                      </summary>
+                      <HoldingTrades
+                        snapshot={snapshot}
+                        holding={item}
+                        onUpdate={onUpdate}
+                        flash={flash}
+                      />
+                    </details>
                   )}
-                  onUpdate={onUpdate}
-                  disabled={busy}
-                  canDelete={
-                    !snapshot.holdingTrades?.some(
-                      (t) => t.holdingId === item.id,
-                    )
-                  }
-                  onDelete={() => void removeAsset(item)}
-                  onEdit={() => {
-                    setAssetAmount(String(item.marketValue));
-                    setAssetCost(
-                      item.costBasis > 0 ? String(item.costBasis) : "",
-                    );
-                    setEditing({ ...item });
-                    setError("");
-                  }}
-                />
-                {item.assetClass !== "现金" && (
-                  <details className="holding-trade-details">
-                    <summary>
-                      交易明细
-                      {snapshot.holdingTrades?.some(
-                        (t) => t.holdingId === item.id,
-                      )
-                        ? ` · ${snapshot.holdingTrades.filter((t) => t.holdingId === item.id && ["buy", "sell"].includes(t.kind)).length} 笔`
-                        : " · 记买入 / 卖出"}
-                    </summary>
-                    <HoldingTrades
-                      snapshot={snapshot}
-                      holding={item}
-                      onUpdate={onUpdate}
-                      flash={flash}
-                    />
-                  </details>
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
             {(section === "savings" ? cash : investments).length === 0 && (
               <p className="empty">暂无资产，点击上方添加。</p>
             )}
           </div>
           {section === "holdings" && (
             <p className="section-intro">
-              用“记录买入”从真实成交开始，数量和平均成本自动计算。点击“交易明细”记录买卖、核对每笔成交；不同账户请分别建立持仓。“添加持仓”可录入已有余额，首次交易会保留该余额作为期初记录。填写证券代码和持仓数后，每小时自动读取最近已完成的日收盘价，无需行情密钥，失败保留原值；无代码的资产仍可手动填写价格。浮动盈亏不含已实现盈亏与分红。
+              用“记录买入”从最早一笔真实成交开始，按账户分别录入买入、卖出和现金分红，数量、成本和已结算盈亏自动计算。首次交易会按成交记录替换手工数量和成本，不自动补期初余额。成交与当前行情分别管理；填写证券代码后自动更新当前价格，无代码的资产请手动核对价格。浮动盈亏反映剩余持仓，已结算盈亏包含卖出盈亏与净现金分红。现金余额需按真实账户余额另行核对。
             </p>
           )}
         </section>
@@ -404,15 +422,23 @@ export function MyFacts({
                 </label>
                 {editing.assetClass !== "现金" && (
                   <label>
-                    <span>证券代码（自动价格，选填）</span>
+                    <span id={`${codeHelpId}-label`}>
+                      证券代码（自动价格，选填）
+                    </span>
                     <input
+                      aria-labelledby={`${codeHelpId}-label`}
+                      aria-describedby={tradeManaged ? codeHelpId : undefined}
                       value={editing.symbol}
                       placeholder="AAPL / 0700.HK / 600519.SS / 000001.SZ"
-                      readOnly={tradeManaged}
                       onChange={(e) =>
                         setEditing({ ...editing, symbol: e.target.value })
                       }
                     />
+                    {tradeManaged && (
+                      <small id={codeHelpId}>
+                        可补填或纠正同一证券的代码；如需记录另一只证券，请新建持仓。
+                      </small>
+                    )}
                   </label>
                 )}
                 {editing.assetClass !== "现金" && (
@@ -444,7 +470,7 @@ export function MyFacts({
                       step="any"
                       value={
                         hasHoldingDetails(editing)
-                          ? editing.marketValue
+                          ? formatNumber(editing.marketValue)
                           : assetAmount
                       }
                       onChange={(e) => {
@@ -474,7 +500,7 @@ export function MyFacts({
                           readOnly={tradeManaged || editing.costPrice != null}
                           value={
                             editing.costPrice != null
-                              ? editing.costBasis
+                              ? formatNumber(editing.costBasis)
                               : assetCost
                           }
                           onChange={(e) => {
@@ -489,7 +515,7 @@ export function MyFacts({
                     </label>
                     <small id={costHelpId}>
                       {tradeManaged
-                        ? "数量与成本由交易明细计算，请通过买卖或撤销误录调整。当前价格可在下方更新。"
+                        ? "数量与成本由交易明细计算，请通过录入或编辑交易调整。当前价格可在下方更新。"
                         : "成本价为当前持仓每单位的平均买入成本（可含买入费用）；填入成本价和数量后自动计算总成本。旧记录也可直接填写总成本。"}
                     </small>
                   </div>
@@ -561,7 +587,7 @@ export function MyFacts({
               </details>
               {editing.currency !== currency && (
                 <p className="section-intro">
-                  汇率自动读取；如需调整，可在下方“汇率设置”统一修改。
+                  汇率自动读取；如需调整，可在顶部“汇率设置”统一修改。
                 </p>
               )}
               <div className="form-actions">
@@ -577,7 +603,6 @@ export function MyFacts({
           </form>
         </section>
       )}
-      <ExchangeRates baseCurrency={currency} onUpdate={onUpdate} />
       <div className="facts-next">
         <button className="primary" onClick={() => navigate("advisor")}>
           去聊聊 <ArrowRight size={16} />

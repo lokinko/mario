@@ -340,8 +340,8 @@ mod tests {
 mod integration_tests {
     use super::*;
     use crate::models::{
-        HoldingInput, PortfolioCheckInInput, PortfolioEventImportCommitRequest,
-        PortfolioEventImportRequest, PortfolioEventInput,
+        HoldingInput, PortfolioEventImportCommitRequest, PortfolioEventImportRequest,
+        PortfolioEventInput,
     };
     use axum::{Extension, Json};
     use std::sync::Arc;
@@ -371,14 +371,6 @@ mod integration_tests {
     async fn ledger_and_csv_without_rate_share_the_source_and_frozen_records_survive_overrides() {
         let db = Database::open(std::path::Path::new(":memory:")).unwrap();
         db.add_holding(&holding("CNY")).unwrap();
-        db.save_portfolio_checkin(&PortfolioCheckInInput {
-            period_label: "baseline".into(),
-            external_cash_flow: 0.0,
-            note: String::new(),
-            reset_baseline: true,
-            use_ledger_cash_flows: false,
-        })
-        .unwrap();
         let state = Arc::new(crate::AppState {
             db,
             mutation_lock: tokio::sync::Mutex::new(()),

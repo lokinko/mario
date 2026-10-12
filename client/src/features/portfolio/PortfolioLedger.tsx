@@ -8,14 +8,12 @@ import {
   Download,
   Eye,
   LoaderCircle,
-  LockKeyhole,
   Plus,
   ShieldCheck,
   Undo2,
   Upload,
 } from "lucide-react";
 import {
-  getPortfolioCheckins,
   getPortfolioEvents,
   previewPortfolioEventImport,
   reversePortfolioEvent,
@@ -23,7 +21,6 @@ import {
   commitPortfolioEventImport,
 } from "../../api";
 import type {
-  PortfolioCheckInRecord,
   PortfolioEventInput,
   PortfolioEventImportPreview,
   PortfolioEventRecord,
@@ -36,11 +33,10 @@ import { localDateValue } from "../../lib/dates";
 import {
   emptyPortfolioEvent,
   portfolioEventLabels,
-  nextCalendarDate,
   downloadPortfolioEventCsvTemplate,
 } from "./forms";
 import { fxSourceLabel } from "./valuation";
-import { formatMoney } from "../../lib/format";
+import { formatMoney, formatNumber } from "../../lib/format";
 
 export function PortfolioLedger({
   snapshot,
@@ -50,7 +46,6 @@ export function PortfolioLedger({
   flash: (message: string) => void;
 }) {
   const [events, setEvents] = useState<PortfolioEventRecord[]>([]);
-  const [checkins, setCheckins] = useState<PortfolioCheckInRecord[]>([]);
   const [draft, setDraft] = useState<PortfolioEventInput>(() =>
     emptyPortfolioEvent(snapshot.profile.baseCurrency),
   );
@@ -71,7 +66,6 @@ export function PortfolioLedger({
   );
   const [reversalNote, setReversalNote] = useState("");
   const [reversalSaving, setReversalSaving] = useState(false);
-  const latestCheckin = checkins[0];
   const requiresAsset = ["buy", "sell", "dividend", "interest"].includes(
     draft.eventType,
   );
@@ -81,13 +75,9 @@ export function PortfolioLedger({
     setLoading(true);
     setError("");
     try {
-      const [nextEvents, nextCheckins] = await Promise.all([
-        getPortfolioEvents(),
-        getPortfolioCheckins(),
-      ]);
+      const nextEvents = await getPortfolioEvents();
       if (!isCurrent()) return;
       setEvents(nextEvents);
-      setCheckins(nextCheckins);
     } catch (nextError) {
       if (isCurrent()) setError(String(nextError));
     } finally {
@@ -128,7 +118,7 @@ export function PortfolioLedger({
       setDraft(emptyPortfolioEvent(snapshot.profile.baseCurrency));
 
       await load();
-      flash("组合流水已冻结；后续检查点会按日期自动汇总");
+      flash("组合流水已保存");
     } catch (nextError) {
       setError(String(nextError));
     } finally {
@@ -255,21 +245,6 @@ export function PortfolioLedger({
         </article>
       </section>
 
-      <div className="ledger-boundary">
-        <LockKeyhole size={16} />
-        <div>
-          <strong>
-            {latestCheckin
-              ? `最近冻结边界：${latestCheckin.valuationDate ?? "旧记录无估值日"}`
-              : "尚未建立组合基线"}
-          </strong>
-          <p>
-            {latestCheckin
-              ? "为保护归因链，新增流水必须晚于该日期。历史漏项请在说明中保留纠正原因，并从新基线开始。"
-              : "请先在资产概览冻结当前组合；基线之前的历史变化不会被系统猜测。"}
-          </p>
-        </div>
-      </div>
       {error && (
         <div className="error-box" role="alert">
           <AlertTriangle size={17} />
@@ -355,11 +330,6 @@ export function PortfolioLedger({
             <span>发生日期</span>
             <input
               type="date"
-              min={
-                latestCheckin?.valuationDate
-                  ? nextCalendarDate(latestCheckin.valuationDate)
-                  : undefined
-              }
               max={localDateValue(new Date())}
               value={draft.occurredOn}
               onChange={(event) => {
@@ -372,7 +342,7 @@ export function PortfolioLedger({
                 });
               }}
             />
-            <small>日期用于自动分段和现金流权重。</small>
+            <small>日期用于核对资金发生时间。</small>
           </label>
           <label className="ledger-note">
             <span>核对说明</span>
@@ -395,8 +365,6 @@ export function PortfolioLedger({
             className="primary"
             disabled={
               saving ||
-              !latestCheckin?.valuationDate ||
-              draft.occurredOn <= (latestCheckin?.valuationDate ?? "") ||
               draft.amount <= 0 ||
               !draft.occurredOn ||
               !draft.note.trim() ||
@@ -451,7 +419,7 @@ export function PortfolioLedger({
             </button>
             <button
               className="secondary"
-              disabled={!csvText || importing || !latestCheckin?.valuationDate}
+              disabled={!csvText || importing}
               onClick={previewCsv}
             >
               {importing ? (
@@ -487,10 +455,7 @@ export function PortfolioLedger({
                   <span className="error-dot" />
                   错误 <strong>{importPreview.errorCount}</strong>
                 </div>
-                <small>
-                  基准币种 {importPreview.baseCurrency} · 冻结至{" "}
-                  {importPreview.frozenThrough}
-                </small>
+                <small>基准币种 {importPreview.baseCurrency}</small>
               </div>
               <div className="import-table-wrap">
                 <table className="import-table">
@@ -542,7 +507,7 @@ export function PortfolioLedger({
                                 row.currency || importPreview.baseCurrency,
                               )}
                           {row.fxRateToBase && (
-                            <small>汇率 {row.fxRateToBase}</small>
+                            <small>汇率 {formatNumber(row.fxRateToBase)}</small>
                           )}
                           {row.fxRateSource && (
                             <small>
@@ -599,18 +564,14 @@ export function PortfolioLedger({
           </div>
         )}
         {!loading && events.length === 0 && (
-          <div className="empty">
-            还没有流水。建立组合基线后，从下一笔真实资金变化开始记录。
-          </div>
+          <div className="empty">还没有流水。从真实资金变化开始记录。</div>
         )}
         <div className="ledger-list">
           {events.map((item) => {
             const canReverse =
               !item.reversalOfEventId &&
               !item.reversedByEventId &&
-              item.amount > 0 &&
-              Boolean(latestCheckin?.valuationDate) &&
-              item.occurredOn > (latestCheckin?.valuationDate ?? "");
+              item.amount > 0;
             return (
               <article
                 key={item.id}
@@ -645,7 +606,7 @@ export function PortfolioLedger({
                   <small>
                     {item.currency === item.baseCurrency
                       ? item.baseCurrency
-                      : `汇率 ${item.fxRateToBase} · ${formatMoney(item.baseAmount, item.baseCurrency)}`}
+                      : `汇率 ${item.fxRateToBase == null ? "待补充" : formatNumber(item.fxRateToBase)} · ${formatMoney(item.baseAmount, item.baseCurrency)}`}
                   </small>
                   {item.fxRateSource && (
                     <small>
@@ -729,7 +690,7 @@ export function PortfolioLedger({
           })}
         </div>
         <p className="analysis-note">
-          这些记录来自用户输入，系统校验结构和口径但不核验银行、券商或市场事实。当前基线之后的误录可追加冲正；已冻结周期不能回写，应建立纠正后的新基线并保留说明。
+          这些记录来自用户输入，系统校验结构和口径但不核验银行、券商或市场事实。误录可追加冲正，原记录与修正说明都会保留；冲正日期不得早于原记录日期。
         </p>
       </section>
     </div>

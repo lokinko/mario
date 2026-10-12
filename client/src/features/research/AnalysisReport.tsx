@@ -15,7 +15,7 @@ import type {
   StructuredAnalysis,
   StoredAnalysis,
 } from "../../types";
-import { formatMoney } from "../../lib/format";
+import { formatMoney, formatNumber } from "../../lib/format";
 import { MemoryItems } from "../memory/MemoryItems";
 
 export function StoredAnalysisView({
@@ -664,8 +664,9 @@ export function PersonalContextEvidence({
       )}
       {profile && (
         <p>
-          风险偏好：{profile.riskLevel} · 可承受回撤：{profile.maxDrawdownPct}%
-          · 投资期限：{profile.horizonYears} 年
+          风险偏好：{profile.riskLevel} · 可承受回撤：
+          {formatNumber(profile.maxDrawdownPct)}% · 投资期限：
+          {formatNumber(profile.horizonYears)} 年
         </p>
       )}
       {holdings.length > 0 ? (
@@ -700,7 +701,7 @@ export function PersonalContextEvidence({
             sourceUrl: quote.sourceUrl,
             sourceTier: "价格数据服务",
             asOfDate: quote.observedOn,
-            claim: `单价 ${quote.unitPrice} ${quote.currency} × 数量 ${quote.quantity} = ${quote.marketValue} ${quote.currency}；${quote.priceBasis}`,
+            claim: `单价 ${formatNumber(quote.unitPrice)} ${quote.currency} × 数量 ${formatNumber(quote.quantity)} = ${formatNumber(quote.marketValue)} ${quote.currency}；${quote.priceBasis}`,
             notes: quote.disclaimer,
             capturedAt: quote.capturedAt,
           }}

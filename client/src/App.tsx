@@ -21,7 +21,6 @@ import type { ModelConfig, Snapshot } from "./types";
 import { ServerData } from "./features/account/ServerData";
 import { View, initialView, nav, viewLabels } from "./app/navigation";
 import type { FoundationSection } from "./app/navigation";
-import { Dashboard } from "./features/dashboard/Dashboard";
 import { MyFacts } from "./features/portfolio/MyFacts";
 import { Foundation } from "./features/portfolio/Foundation";
 import { PortfolioLedger } from "./features/portfolio/PortfolioLedger";
@@ -400,14 +399,6 @@ function App() {
             模型配置暂时不可用，资料与复盘不受影响。
             <button onClick={loadApplication}>重试</button>
           </div>
-        )}
-        {view === "dashboard" && (
-          <Dashboard
-            key={remoteViewRevision}
-            snapshot={snapshot}
-            navigate={navigate}
-            flash={flash}
-          />
         )}
         {view === "facts" && (
           <MyFacts

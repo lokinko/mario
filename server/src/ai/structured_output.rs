@@ -56,7 +56,6 @@ pub fn validate_source_types(
                     "riskFindings",
                     "personalInvestmentRules",
                     "periodicSystemReviews",
-                    "portfolioChangeAttribution",
                     "portfolioEvents",
                 ]
                 .contains(&group)

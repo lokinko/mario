@@ -262,11 +262,6 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         order_by: "id",
     },
     SyncTableSpec {
-        name: "portfolio_checkins",
-        columns: &["id", "payload", "created_at"],
-        order_by: "created_at, id",
-    },
-    SyncTableSpec {
         name: "portfolio_events",
         columns: CURRENT_EVENT_COLUMNS,
         order_by: "occurred_on, created_at, id",
@@ -336,14 +331,26 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 16;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 18;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
 
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
-    if version == SYNC_DATASET_SCHEMA_VERSION {
+    if version == SYNC_DATASET_SCHEMA_VERSION || version == 17 {
+        return Ok(specs);
+    }
+    // Version 1-16 backups carried portfolio snapshots; validate their shape only.
+    specs.insert(
+        8,
+        SyncTableSpec {
+            name: "portfolio_checkins",
+            columns: &["id", "payload", "created_at"],
+            order_by: "created_at, id",
+        },
+    );
+    if version == 16 {
         return Ok(specs);
     }
     // Version 1-15 backups contain retired tables. Validate their structure,

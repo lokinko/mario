@@ -4,8 +4,10 @@ use super::*;
 pub(super) fn add_retired_tables(dataset: &mut SyncDataset) {
     let specs = sync_specs_for_version(15).unwrap();
     for (index, spec) in specs.iter().enumerate() {
-        if matches!(spec.name, "decisions" | "decision_reviews")
-            && !dataset.tables.iter().any(|table| table.name == spec.name)
+        if matches!(
+            spec.name,
+            "decisions" | "decision_reviews" | "portfolio_checkins"
+        ) && !dataset.tables.iter().any(|table| table.name == spec.name)
         {
             dataset.tables.insert(
                 index,
@@ -40,11 +42,11 @@ fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data()
     drop(db);
     let reopened = Database::open(&path).unwrap();
     let exported = reopened.export_sync_data().unwrap();
-    assert_eq!(exported.schema_version, 16);
-    assert!(!exported
-        .tables
-        .iter()
-        .any(|table| matches!(table.name.as_str(), "decisions" | "decision_reviews")));
+    assert_eq!(exported.schema_version, SYNC_DATASET_SCHEMA_VERSION);
+    assert!(!exported.tables.iter().any(|table| matches!(
+        table.name.as_str(),
+        "decisions" | "decision_reviews" | "portfolio_checkins"
+    )));
     let preferences = exported
         .tables
         .iter()
@@ -235,17 +237,6 @@ fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
     assert_eq!(valued.holding_valuations[0].quantity, 10.0);
     assert_eq!(valued.holding_valuations[0].observed_on, "2026-09-04");
 
-    let checkin = db
-        .save_portfolio_checkin(&PortfolioCheckInInput {
-            period_label: "带来源基线".into(),
-            external_cash_flow: 0.0,
-            note: String::new(),
-            reset_baseline: false,
-            use_ledger_cash_flows: true,
-        })
-        .unwrap();
-    assert_eq!(checkin.holding_valuations.len(), 1);
-
     let unchanged = HoldingInput {
         symbol: "AAPL".into(),
         name: "Apple Inc.".into(),
@@ -309,7 +300,118 @@ fn rejects_verified_price_when_provider_currency_differs_from_holding() {
 }
 
 #[test]
-fn reverses_only_open_period_events_and_preserves_the_audit_chain() {
+fn trade_managed_codes_can_be_corrected_cleared_and_filled_without_changing_trades() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("trade-code.db");
+    let db = Database::open(&file).unwrap();
+    db.save_profile(&FinancialProfile {
+        base_currency: "USD".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    let trade: crate::models::HoldingTradeInput = serde_json::from_value(serde_json::json!({
+        "requestId": Uuid::new_v4().to_string(),
+        "newHolding": {
+            "symbol": "AAPL", "name": "Apple", "assetClass": "股票",
+            "currency": "USD"
+        },
+        "kind": "buy", "occurredOn": "2026-09-05",
+        "sequence": 1, "quantity": "10", "price": "100", "grossAmount": "1000", "fees": "2", "taxes": "0", "account": "券商"
+    }))
+    .unwrap();
+    let created = db.save_holding_trade(&trade).unwrap();
+    let id = &created.holdings[0].id;
+    let valued = db
+        .apply_verified_holding_valuation(id, 10.0, &verified_quote())
+        .unwrap();
+    assert_eq!(valued.holding_valuations.len(), 1);
+    let mut edit: HoldingInput =
+        serde_json::from_value(serde_json::to_value(&valued.holdings[0]).unwrap()).unwrap();
+    for symbol in [" NEW ", "", " AAPL "] {
+        edit.symbol = symbol.into();
+        let updated = db.update_holding(id, &edit).unwrap();
+        assert_eq!(updated.holdings[0].symbol, symbol.trim());
+        assert_eq!(updated.holdings[0].quantity, valued.holdings[0].quantity);
+        assert_eq!(
+            updated.holdings[0].cost_price,
+            valued.holdings[0].cost_price
+        );
+        assert_eq!(
+            updated.holdings[0].cost_basis,
+            valued.holdings[0].cost_basis
+        );
+        assert_eq!(
+            updated.holdings[0].market_value,
+            valued.holdings[0].market_value
+        );
+        assert_eq!(updated.holding_trades, valued.holding_trades);
+        assert!(updated.holding_valuations.is_empty());
+        if symbol.trim() != "AAPL" {
+            assert!(db
+                .apply_verified_holding_valuation(id, 10.0, &verified_quote())
+                .is_err());
+            assert_eq!(db.snapshot().unwrap().holdings[0].symbol, symbol.trim());
+        }
+    }
+    assert_eq!(
+        db.apply_verified_holding_valuation(id, 10.0, &verified_quote())
+            .unwrap()
+            .holding_valuations
+            .len(),
+        1
+    );
+    drop(db);
+    let reopened = Database::open(&file).unwrap().snapshot().unwrap();
+    assert_eq!(reopened.holdings[0].symbol, "AAPL");
+    assert_eq!(reopened.holding_trades, valued.holding_trades);
+}
+
+#[test]
+fn v16_backups_skip_retired_portfolio_snapshots_and_keep_active_data() {
+    let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+    db.save_profile(&FinancialProfile {
+        monthly_income: 4321.0,
+        ..Default::default()
+    })
+    .unwrap();
+    let mut legacy = db.export_sync_data().unwrap();
+    legacy.schema_version = 16;
+    let spec = sync_specs_for_version(16)
+        .unwrap()
+        .into_iter()
+        .find(|spec| spec.name == "portfolio_checkins")
+        .unwrap();
+    legacy.tables.push(SyncTable {
+        name: spec.name.into(),
+        columns: spec.columns.iter().map(|column| (*column).into()).collect(),
+        rows: vec![vec![
+            SyncValue::Text("retired-snapshot".into()),
+            SyncValue::Text("{\"totalValue\":999999}".into()),
+            SyncValue::Text("2026-09-01T00:00:00Z".into()),
+        ]],
+    });
+    let target = Database::open(std::path::Path::new(":memory:")).unwrap();
+    target.import_sync_data(&legacy).unwrap();
+    assert_eq!(target.snapshot().unwrap().profile.monthly_income, 4321.0);
+    let exported = target.export_sync_data().unwrap();
+    assert_eq!(exported.schema_version, SYNC_DATASET_SCHEMA_VERSION);
+    assert!(exported
+        .tables
+        .iter()
+        .all(|table| table.name != "portfolio_checkins"));
+    assert!(!target
+        .conn()
+        .unwrap()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='portfolio_checkins')",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .unwrap());
+}
+
+#[test]
+fn reverses_events_without_a_baseline_and_preserves_the_audit_chain() {
     let directory = tempfile::tempdir().unwrap();
     let db = Database::open(&directory.path().join("reversal.db")).unwrap();
     db.add_holding(&HoldingInput {
@@ -327,14 +429,6 @@ fn reverses_only_open_period_events_and_preserves_the_audit_chain() {
         valuation_date: "2026-08-01".into(),
         fx_rate_source: String::new(),
         fx_rate_observed_on: String::new(),
-    })
-    .unwrap();
-    db.save_portfolio_checkin(&PortfolioCheckInInput {
-        period_label: "冲正测试基线".into(),
-        external_cash_flow: 0.0,
-        note: "冻结测试基线".into(),
-        reset_baseline: false,
-        use_ledger_cash_flows: false,
     })
     .unwrap();
     let source = db
@@ -374,7 +468,10 @@ fn reverses_only_open_period_events_and_preserves_the_audit_chain() {
         restored_source.reversed_by_event_id.as_deref(),
         Some(reversal.id.as_str())
     );
-    assert_eq!(performance::summarize(&events).external_cash_flow, 0.0);
+    assert_eq!(
+        events.iter().map(|event| event.base_amount).sum::<f64>(),
+        0.0
+    );
     assert!(matches!(
         db.reverse_portfolio_event(
             &source.id,
@@ -401,7 +498,10 @@ fn reverses_only_open_period_events_and_preserves_the_audit_chain() {
     target.import_sync_data(&dataset).unwrap();
     let restored = target.portfolio_events().unwrap();
     assert_eq!(restored.len(), 2);
-    assert_eq!(performance::summarize(&restored).external_cash_flow, 0.0);
+    assert_eq!(
+        restored.iter().map(|event| event.base_amount).sum::<f64>(),
+        0.0
+    );
 }
 
 #[test]
@@ -487,15 +587,6 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
                 note: "跨设备保留的能力圈经验".into(),
             },
         )
-        .unwrap();
-    source
-        .save_portfolio_checkin(&PortfolioCheckInInput {
-            period_label: "同步基线".into(),
-            external_cash_flow: 0.0,
-            note: "首次组合快照".into(),
-            reset_baseline: false,
-            use_ledger_cash_flows: false,
-        })
         .unwrap();
     source
         .add_portfolio_event(&PortfolioEventInput {
@@ -589,7 +680,6 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
         .unwrap();
     assert_eq!(restored_memory.preference, "pinned");
     assert_eq!(restored_memory.preference_note, "跨设备保留的能力圈经验");
-    assert_eq!(target.portfolio_checkins().unwrap().len(), 1);
     let restored_events = target.portfolio_events().unwrap();
     assert_eq!(restored_events.len(), 1);
     assert_eq!(restored_events[0].source, "同步券商");
@@ -731,7 +821,6 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
     legacy_v2.validate().unwrap();
     let v2_target = Database::open(&directory.path().join("v2-target.db")).unwrap();
     v2_target.import_sync_data(&legacy_v2).unwrap();
-    assert_eq!(v2_target.portfolio_checkins().unwrap().len(), 1);
     assert_eq!(
         v2_target
             .snapshot()
@@ -752,7 +841,6 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
     let legacy_target = Database::open(&directory.path().join("legacy-target.db")).unwrap();
     legacy_target.import_sync_data(&legacy_dataset).unwrap();
     assert_eq!(legacy_target.snapshot().unwrap().holdings.len(), 1);
-    assert!(legacy_target.portfolio_checkins().unwrap().is_empty());
 }
 
 #[test]
@@ -794,305 +882,6 @@ fn updates_and_deletes_holding() {
 }
 
 #[test]
-fn portfolio_checkins_separate_external_flows_from_valuation_residuals() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    assert!(matches!(
-        db.save_portfolio_checkin(&PortfolioCheckInInput {
-            period_label: "基线".into(),
-            external_cash_flow: 0.0,
-            note: "".into(),
-            reset_baseline: false,
-            use_ledger_cash_flows: false,
-        }),
-        Err(AppError::Validation(_))
-    ));
-    let snapshot = db
-        .add_holding(&HoldingInput {
-            symbol: "IDX".into(),
-            name: "宽基指数".into(),
-            asset_class: "基金".into(),
-            market_value: 100_000.0,
-            cost_basis: 90_000.0,
-            cost_price: None,
-            quantity: None,
-            current_price: None,
-            target_pct: 90.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            valuation_date: "2026-01-01".into(),
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-        })
-        .unwrap();
-    assert!(matches!(
-        db.save_portfolio_checkin(&PortfolioCheckInInput {
-            period_label: "错误基线".into(),
-            external_cash_flow: 10_000.0,
-            note: "首次入金".into(),
-            reset_baseline: false,
-            use_ledger_cash_flows: false,
-        }),
-        Err(AppError::Validation(_))
-    ));
-    let baseline = db
-        .save_portfolio_checkin(&PortfolioCheckInInput {
-            period_label: "2026-08 基线".into(),
-            external_cash_flow: 0.0,
-            note: "首次冻结组合".into(),
-            reset_baseline: false,
-            use_ledger_cash_flows: false,
-        })
-        .unwrap();
-    assert_eq!(baseline.total_value, 100_000.0);
-    assert_eq!(baseline.total_change, None);
-
-    let fund_id = snapshot.holdings[0].id.clone();
-    db.update_holding(
-        &fund_id,
-        &HoldingInput {
-            symbol: "IDX".into(),
-            name: "宽基指数".into(),
-            asset_class: "基金".into(),
-            market_value: 102_000.0,
-            cost_basis: 90_000.0,
-            cost_price: None,
-            quantity: None,
-            current_price: None,
-            target_pct: 90.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            valuation_date: "2026-02-01".into(),
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-        },
-    )
-    .unwrap();
-    db.add_holding(&HoldingInput {
-        symbol: "CASH".into(),
-        name: "新增现金".into(),
-        asset_class: "现金".into(),
-        market_value: 10_000.0,
-        cost_basis: 10_000.0,
-        cost_price: None,
-        quantity: None,
-        current_price: None,
-        target_pct: 10.0,
-        currency: "CNY".into(),
-        fx_rate_to_base: None,
-        valuation_date: "2026-02-01".into(),
-        fx_rate_source: String::new(),
-        fx_rate_observed_on: String::new(),
-    })
-    .unwrap();
-    let next = db
-        .save_portfolio_checkin(&PortfolioCheckInInput {
-            period_label: "2026-09".into(),
-            external_cash_flow: 10_000.0,
-            note: "工资结余入金".into(),
-            reset_baseline: false,
-            use_ledger_cash_flows: false,
-        })
-        .unwrap();
-    assert_eq!(
-        next.previous_check_in_id.as_deref(),
-        Some(baseline.id.as_str())
-    );
-    assert_eq!(next.total_value, 112_000.0);
-    assert_eq!(next.total_change, Some(12_000.0));
-    assert_eq!(next.valuation_residual, Some(2_000.0));
-    assert_eq!(next.allocation_changes.len(), 2);
-
-    db.update_holding(
-        &fund_id,
-        &HoldingInput {
-            symbol: "IDX".into(),
-            name: "宽基指数".into(),
-            asset_class: "基金".into(),
-            market_value: 120_000.0,
-            cost_basis: 90_000.0,
-            cost_price: None,
-            quantity: None,
-            current_price: None,
-            target_pct: 90.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            valuation_date: "2026-03-01".into(),
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-        },
-    )
-    .unwrap();
-    let history = db.portfolio_checkins().unwrap();
-    assert_eq!(
-        history[0].holdings[0]
-            .market_value
-            .max(history[0].holdings[1].market_value),
-        102_000.0
-    );
-    assert_eq!(history[1].holdings[0].market_value, 100_000.0);
-}
-
-#[test]
-fn ledger_drives_checkin_cash_flows_and_preserves_frozen_periods() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("ledger.db")).unwrap();
-    assert!(matches!(
-        db.add_portfolio_event(&PortfolioEventInput {
-            event_type: PortfolioEventType::Deposit,
-            source: "manual".into(),
-            external_id: String::new(),
-            asset_name: String::new(),
-            amount: 1_000.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-            occurred_on: "2026-01-01".into(),
-            note: "没有基线".into(),
-        }),
-        Err(AppError::Validation(_))
-    ));
-    let created = db
-        .add_holding(&HoldingInput {
-            symbol: "IDX".into(),
-            name: "宽基指数".into(),
-            asset_class: "基金".into(),
-            market_value: 100_000.0,
-            cost_basis: 90_000.0,
-            cost_price: None,
-            quantity: None,
-            current_price: None,
-            target_pct: 100.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            valuation_date: "2026-01-01".into(),
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-        })
-        .unwrap();
-    db.save_portfolio_checkin(&PortfolioCheckInInput {
-        period_label: "一月基线".into(),
-        external_cash_flow: 0.0,
-        note: "开始记录".into(),
-        reset_baseline: false,
-        use_ledger_cash_flows: true,
-    })
-    .unwrap();
-
-    for input in [
-        PortfolioEventInput {
-            event_type: PortfolioEventType::Deposit,
-            source: "manual".into(),
-            external_id: String::new(),
-            asset_name: String::new(),
-            amount: 10_000.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-            occurred_on: "2026-01-16".into(),
-            note: "工资结余入金".into(),
-        },
-        PortfolioEventInput {
-            event_type: PortfolioEventType::Dividend,
-            source: "manual".into(),
-            external_id: String::new(),
-            asset_name: "宽基指数".into(),
-            amount: 500.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-            occurred_on: "2026-01-20".into(),
-            note: "现金分红".into(),
-        },
-        PortfolioEventInput {
-            event_type: PortfolioEventType::Fee,
-            source: "manual".into(),
-            external_id: String::new(),
-            asset_name: "宽基指数".into(),
-            amount: 50.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-            occurred_on: "2026-01-21".into(),
-            note: "交易费用".into(),
-        },
-        PortfolioEventInput {
-            event_type: PortfolioEventType::Buy,
-            source: "manual".into(),
-            external_id: String::new(),
-            asset_name: "宽基指数".into(),
-            amount: 20_000.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-            occurred_on: "2026-01-22".into(),
-            note: "账户内部调仓".into(),
-        },
-    ] {
-        db.add_portfolio_event(&input).unwrap();
-    }
-
-    db.update_holding(
-        &created.holdings[0].id,
-        &HoldingInput {
-            symbol: "IDX".into(),
-            name: "宽基指数".into(),
-            asset_class: "基金".into(),
-            market_value: 120_450.0,
-            cost_basis: 110_000.0,
-            cost_price: None,
-            quantity: None,
-            current_price: None,
-            target_pct: 100.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            valuation_date: "2026-01-31".into(),
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-        },
-    )
-    .unwrap();
-    let checkin = db
-        .save_portfolio_checkin(&PortfolioCheckInInput {
-            period_label: "一月".into(),
-            external_cash_flow: 999_999.0,
-            note: "流水自动汇总".into(),
-            reset_baseline: false,
-            use_ledger_cash_flows: true,
-        })
-        .unwrap();
-    assert_eq!(checkin.cash_flow_source, "ledger");
-    assert_eq!(checkin.external_cash_flow, 10_000.0);
-    assert_eq!(checkin.income, 500.0);
-    assert_eq!(checkin.costs, 50.0);
-    assert_eq!(checkin.turnover, 20_000.0);
-    assert_eq!(checkin.event_ids.len(), 4);
-    assert!((checkin.modified_dietz_return_pct.unwrap() - 9.952_380_952).abs() < 1e-6);
-
-    assert!(matches!(
-        db.add_portfolio_event(&PortfolioEventInput {
-            event_type: PortfolioEventType::Withdrawal,
-            source: "manual".into(),
-            external_id: String::new(),
-            asset_name: String::new(),
-            amount: 100.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-            occurred_on: "2026-01-30".into(),
-            note: "迟到记录".into(),
-        }),
-        Err(AppError::Validation(_))
-    ));
-}
-
-#[test]
 fn csv_event_import_is_previewed_atomic_deduplicated_and_revision_bound() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("event-import.db")).unwrap();
@@ -1111,14 +900,6 @@ fn csv_event_import_is_previewed_atomic_deduplicated_and_revision_bound() {
         valuation_date: "2026-08-31".into(),
         fx_rate_source: String::new(),
         fx_rate_observed_on: String::new(),
-    })
-    .unwrap();
-    db.save_portfolio_checkin(&PortfolioCheckInInput {
-        period_label: "导入基线".into(),
-        external_cash_flow: 0.0,
-        note: String::new(),
-        reset_baseline: false,
-        use_ledger_cash_flows: true,
     })
     .unwrap();
 
@@ -1238,14 +1019,6 @@ fn foreign_currency_events_require_and_freeze_the_declared_rate() {
         fx_rate_observed_on: String::new(),
     })
     .unwrap();
-    db.save_portfolio_checkin(&PortfolioCheckInInput {
-        period_label: "基线".into(),
-        external_cash_flow: 0.0,
-        note: String::new(),
-        reset_baseline: false,
-        use_ledger_cash_flows: true,
-    })
-    .unwrap();
     let mut input = PortfolioEventInput {
         event_type: PortfolioEventType::Withdrawal,
         source: "manual".into(),
@@ -1362,14 +1135,6 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
         snapshot.valuation_status.aligned_valuation_date.as_deref(),
         Some("2026-08-31")
     );
-    db.save_portfolio_checkin(&PortfolioCheckInInput {
-        period_label: "CNY 基线".into(),
-        external_cash_flow: 0.0,
-        note: "统一估值日".into(),
-        reset_baseline: false,
-        use_ledger_cash_flows: false,
-    })
-    .unwrap();
 
     db.update_holding(
         &usd_id,
@@ -1391,16 +1156,6 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
         },
     )
     .unwrap();
-    assert!(matches!(
-        db.save_portfolio_checkin(&PortfolioCheckInInput {
-            period_label: "错位日期".into(),
-            external_cash_flow: 0.0,
-            note: "".into(),
-            reset_baseline: false,
-            use_ledger_cash_flows: false,
-        }),
-        Err(AppError::Validation(_))
-    ));
 
     profile.base_currency = "USD".into();
     let changed = db.save_profile(&profile).unwrap();
@@ -1440,17 +1195,6 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
         )
         .unwrap();
     assert_eq!(normalized.total_value, 142.0);
-    let reset = db
-        .save_portfolio_checkin(&PortfolioCheckInInput {
-            period_label: "USD 新基线".into(),
-            external_cash_flow: 0.0,
-            note: "切换基准币种后重新开始比较".into(),
-            reset_baseline: true,
-            use_ledger_cash_flows: false,
-        })
-        .unwrap();
-    assert_eq!(reset.base_currency, "USD");
-    assert_eq!(reset.total_change, None);
 }
 
 #[test]

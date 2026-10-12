@@ -32,8 +32,6 @@ import type {
   ModelConnectionTest,
   MemoryCandidate,
   MemoryPreferenceInput,
-  PortfolioCheckInInput,
-  PortfolioCheckInRecord,
   PortfolioEventInput,
   PortfolioEventImportPreview,
   PortfolioEventImportResult,
@@ -224,17 +222,12 @@ export function saveHoldingTrade(
   });
 }
 
-export async function getPortfolioCheckins(): Promise<
-  PortfolioCheckInRecord[]
-> {
-  return httpRequest<PortfolioCheckInRecord[]>("/portfolio-checkins");
-}
-
-export async function savePortfolioCheckin(
-  input: PortfolioCheckInInput,
-): Promise<PortfolioCheckInRecord> {
-  return httpRequest<PortfolioCheckInRecord>("/portfolio-checkins", {
-    method: "POST",
+export function updateHoldingTrade(
+  id: string,
+  input: import("./types").HoldingTradeUpdateInput,
+): Promise<Snapshot> {
+  return httpRequest<Snapshot>(`/holding-trades/${encodeURIComponent(id)}`, {
+    method: "PUT",
     body: JSON.stringify(input),
   });
 }

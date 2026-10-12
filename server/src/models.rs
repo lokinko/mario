@@ -314,7 +314,6 @@ pub struct PortfolioEventImportPreview {
     pub error_count: usize,
     pub preview_revision: String,
     pub base_currency: String,
-    pub frozen_through: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -323,29 +322,6 @@ pub struct PortfolioEventImportResult {
     pub inserted_count: usize,
     pub duplicate_count: usize,
     pub preview_revision: String,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioEventSummary {
-    pub event_ids: Vec<String>,
-    pub external_cash_flow: f64,
-    pub income: f64,
-    pub costs: f64,
-    pub turnover: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioCheckInInput {
-    pub period_label: String,
-    pub external_cash_flow: f64,
-    #[serde(default)]
-    pub note: String,
-    #[serde(default)]
-    pub reset_baseline: bool,
-    #[serde(default)]
-    pub use_ledger_cash_flows: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -358,41 +334,6 @@ pub struct PortfolioAllocationChange {
     pub previous_pct: f64,
     pub current_pct: f64,
     pub pct_point_change: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioCheckInRecord {
-    pub id: String,
-    pub period_label: String,
-    pub external_cash_flow: f64,
-    pub note: String,
-    pub total_value: f64,
-    pub previous_check_in_id: Option<String>,
-    pub previous_total_value: Option<f64>,
-    pub total_change: Option<f64>,
-    pub valuation_residual: Option<f64>,
-    #[serde(default = "default_currency")]
-    pub base_currency: String,
-    #[serde(default)]
-    pub valuation_date: Option<String>,
-    #[serde(default = "default_cash_flow_source")]
-    pub cash_flow_source: String,
-    #[serde(default)]
-    pub event_ids: Vec<String>,
-    #[serde(default)]
-    pub income: f64,
-    #[serde(default)]
-    pub costs: f64,
-    #[serde(default)]
-    pub turnover: f64,
-    #[serde(default)]
-    pub modified_dietz_return_pct: Option<f64>,
-    pub holdings: Vec<Holding>,
-    #[serde(default)]
-    pub holding_valuations: Vec<HoldingValuationEvidence>,
-    pub allocation_changes: Vec<PortfolioAllocationChange>,
-    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -412,6 +353,10 @@ pub struct Snapshot {
     #[serde(default)]
     pub holding_trades: Vec<HoldingTrade>,
     #[serde(default)]
+    pub holding_trade_summaries: std::collections::BTreeMap<String, HoldingTradeSummary>,
+    #[serde(default)]
+    pub cleared_trade_holdings: Vec<String>,
+    #[serde(default)]
     pub holding_revisions: std::collections::BTreeMap<String, String>,
     pub profile: FinancialProfile,
     pub goals: Vec<Goal>,
@@ -428,42 +373,92 @@ pub struct Snapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HoldingTrade {
     pub id: String,
     pub holding_id: String,
     pub kind: String,
     pub occurred_on: String,
-    pub quantity: f64,
-    pub price: f64,
-    pub fees: f64,
+    pub sequence: u32,
+    pub quantity: String,
+    pub price: String,
+    pub gross_amount: String,
+    pub fees: String,
+    pub taxes: String,
     pub currency: String,
     pub account: String,
     pub external_id: String,
     pub note: String,
-    pub void_of: Option<String>,
     pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TradeSecurityInput {
+    pub name: String,
+    pub symbol: String,
+    pub asset_class: String,
+    pub currency: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoldingTradeSummary {
+    pub account: String,
+    pub quantity: String,
+    pub cost_basis: String,
+    pub average_cost: String,
+    pub realized_profit: String,
+    pub dividend_income: String,
+    pub settled_profit: String,
+    pub total_fees: String,
+    pub total_taxes: String,
+    pub net_cash_flow: String,
+    pub profits: std::collections::BTreeMap<String, String>,
+    pub cash_flows: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HoldingTradeInput {
     pub request_id: String,
     #[serde(default)]
     pub holding_id: String,
     pub expected_revision: Option<String>,
-    pub new_holding: Option<HoldingInput>,
+    pub new_holding: Option<TradeSecurityInput>,
     pub kind: String,
     pub occurred_on: String,
-    pub quantity: f64,
-    pub price: f64,
-    pub fees: f64,
+    pub sequence: u32,
+    pub quantity: String,
+    pub price: String,
+    pub gross_amount: String,
+    pub fees: String,
+    pub taxes: String,
     pub account: String,
     #[serde(default)]
     pub external_id: String,
     #[serde(default)]
     pub note: String,
-    pub void_of: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HoldingTradeUpdateInput {
+    pub expected_revision: String,
+    pub kind: String,
+    pub occurred_on: String,
+    pub sequence: u32,
+    pub quantity: String,
+    pub price: String,
+    pub gross_amount: String,
+    pub fees: String,
+    pub taxes: String,
+    pub account: String,
+    #[serde(default)]
+    pub external_id: String,
+    #[serde(default)]
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -617,8 +612,8 @@ pub struct ContextSelection {
     pub include_rules: bool,
     #[serde(default = "enabled")]
     pub include_system_reviews: bool,
-    #[serde(default = "enabled")]
-    pub include_portfolio_checkins: bool,
+    #[serde(default = "enabled", alias = "includePortfolioCheckins")]
+    pub include_daily_assets: bool,
     #[serde(default = "enabled")]
     pub include_portfolio_events: bool,
     #[serde(default = "enabled")]
@@ -635,7 +630,7 @@ impl Default for ContextSelection {
             include_risk_findings: true,
             include_rules: true,
             include_system_reviews: true,
-            include_portfolio_checkins: true,
+            include_daily_assets: true,
             include_portfolio_events: true,
             include_evidence: true,
         }
@@ -644,10 +639,6 @@ impl Default for ContextSelection {
 
 fn enabled() -> bool {
     true
-}
-
-fn default_cash_flow_source() -> String {
-    "manual".into()
 }
 
 fn default_manual_source() -> String {

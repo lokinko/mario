@@ -64,7 +64,6 @@ impl<'a> InvestmentOrchestrator<'a> {
             "riskFindings",
             "personalInvestmentRules",
             "periodicSystemReviews",
-            "portfolioChangeAttribution",
             "portfolioEvents",
         ]
         .into_iter()
@@ -917,6 +916,8 @@ mod tests {
         Snapshot {
             price_refresh_errors: Vec::new(),
             holding_trades: Vec::new(),
+            holding_trade_summaries: Default::default(),
+            cleared_trade_holdings: Vec::new(),
             holding_revisions: Default::default(),
             profile: FinancialProfile::default(),
             goals: Vec::new(),

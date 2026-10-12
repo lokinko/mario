@@ -1,8 +1,7 @@
 use super::{
     normalized_fx_provenance, portfolio_event_identity_fingerprint,
-    validate_holding_valuation_evidence, validate_stored_holding_valuation, AppError, AppResult,
-    FinancialProfile, HashMap, HashSet, PortfolioCheckInRecord, SecurityPriceQuote, SyncDataset,
-    SyncValue,
+    validate_holding_valuation_evidence, AppError, AppResult, FinancialProfile, HashMap, HashSet,
+    SecurityPriceQuote, SyncDataset, SyncValue,
 };
 
 pub(super) fn quote_identifier(value: &str) -> String {
@@ -325,39 +324,6 @@ pub(super) fn validate_synced_holding_valuations(dataset: &SyncDataset) -> AppRe
         }
     }
 
-    let checkins = dataset
-        .tables
-        .iter()
-        .find(|table| table.name == "portfolio_checkins")
-        .ok_or_else(|| AppError::Validation("数据快照缺少 portfolio_checkins".into()))?;
-    for row in &checkins.rows {
-        let record: PortfolioCheckInRecord = serde_json::from_str(sync_text(row, 1, "组合检查点")?)
-            .map_err(|_| AppError::Validation("同步组合检查点格式无效".into()))?;
-        for holding in &record.holdings {
-            super::portfolio::validate_detail_totals(
-                holding.cost_price,
-                holding.quantity,
-                holding.current_price,
-                holding.market_value,
-                holding.cost_basis,
-            )?;
-        }
-        for evidence in &record.holding_valuations {
-            validate_stored_holding_valuation(evidence)?;
-            let holding = record
-                .holdings
-                .iter()
-                .find(|holding| holding.id == evidence.holding_id)
-                .ok_or_else(|| AppError::Validation("检查点行情证据找不到对应持仓".into()))?;
-            if holding.symbol != evidence.symbol
-                || !holding.currency.eq_ignore_ascii_case(&evidence.currency)
-                || holding.valuation_date != evidence.requested_on
-                || (holding.market_value - evidence.market_value).abs() > 0.005
-            {
-                return Err(AppError::Validation("检查点持仓与行情证据不一致".into()));
-            }
-        }
-    }
     Ok(())
 }
 

@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { formatNumber } from "../lib/format";
+
 export function NumberField({
   label,
   value,
@@ -11,6 +14,7 @@ export function NumberField({
   prefix?: string;
   suffix?: string;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <label>
       <span>{label}</span>
@@ -19,7 +23,9 @@ export function NumberField({
         <input
           type="number"
           step="any"
-          value={value || ""}
+          value={value ? (focused ? value : formatNumber(value)) : ""}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           onChange={(e) => onChange(e.target.value)}
         />
         {suffix && <i>{suffix}</i>}

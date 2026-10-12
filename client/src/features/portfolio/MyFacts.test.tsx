@@ -34,8 +34,17 @@ vi.mock("../../api", () => ({
   updateHolding: vi.fn(),
   deleteHolding: vi.fn(),
   refreshSecurityPrices: vi.fn(),
+  getFxSettings: vi.fn(),
 }));
 beforeEach(() => {
+  vi.mocked(api.getFxSettings).mockResolvedValue({
+    baseCurrency: "CNY",
+    checkedAt: 0,
+    requestedOn: "",
+    quotes: [],
+    manual: {},
+    error: "",
+  });
   vi.mocked(api.getDailyAssets).mockResolvedValue({
     timezone: "UTC",
     today: "2026-09-13",
@@ -49,6 +58,27 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 const snapshot = fixture as Snapshot;
+
+it("shows exchange rates above asset history and prioritizes currencies in holdings", async () => {
+  const { container } = render(
+    <MyFacts
+      snapshot={{
+        ...snapshot,
+        holdings: [{ ...emptyHolding("HKD"), id: "hk", name: "港币账户" }],
+      }}
+      onUpdate={vi.fn()}
+      navigate={vi.fn()}
+      flash={vi.fn()}
+    />,
+  );
+  await screen.findByRole("spinbutton", { name: "修改 HKD 汇率" });
+  const panels = Array.from(container.querySelectorAll(".panel"));
+  expect(panels[0].getAttribute("aria-label")).toBe("汇率设置");
+  expect(panels[1].getAttribute("aria-label")).toBe("每日资产追踪");
+  expect(
+    panels[0].querySelector(".exchange-rate-row strong")?.textContent,
+  ).toBe("1 HKD = 待更新 CNY");
+});
 
 it("saves a code and quantity without requiring a manual price", async () => {
   vi.mocked(api.saveHolding).mockResolvedValue(snapshot);
@@ -147,6 +177,78 @@ function mount(value = snapshot) {
     flash,
   };
 }
+it.each([
+  ["", "600519.SS"],
+  ["600519.SZ", "600519.SS"],
+  ["600519.SS", ""],
+])(
+  "edits a trade-managed security code from %s to %s",
+  async (symbol, nextSymbol) => {
+    const holding = {
+      ...emptyHolding("CNY"),
+      id: "traded",
+      name: "贵州茅台",
+      assetClass: "股票" as const,
+      symbol,
+      quantity: 100,
+      costPrice: 8,
+      currentPrice: 10,
+      costBasis: 800,
+      marketValue: 1000,
+    };
+    const value: Snapshot = {
+      ...snapshot,
+      holdings: [holding],
+      holdingTrades: [
+        {
+          id: "buy-1",
+          holdingId: holding.id,
+          kind: "buy",
+          occurredOn: holding.valuationDate,
+          sequence: 1,
+          quantity: "100",
+          price: "8",
+          grossAmount: "800",
+          fees: "0",
+          taxes: "0",
+          currency: "CNY",
+          account: "券商",
+          externalId: "",
+          note: "",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    };
+    const updated = {
+      ...value,
+      holdings: [{ ...holding, symbol: nextSymbol }],
+    };
+    vi.mocked(api.updateHolding).mockResolvedValue(updated);
+    const { onUpdate } = mount(value);
+    fireEvent.click(screen.getByRole("button", { name: "编辑 贵州茅台" }));
+    const code = screen.getByRole("textbox", {
+      name: "证券代码（自动价格，选填）",
+    }) as HTMLInputElement;
+    expect(code.readOnly).toBe(false);
+    for (const name of ["成本价（选填） CNY", "持仓数 份 / 股 / 单位"]) {
+      expect(
+        (screen.getByRole("spinbutton", { name }) as HTMLInputElement).readOnly,
+      ).toBe(true);
+    }
+    fireEvent.change(code, { target: { value: nextSymbol } });
+    fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
+    const { id, ...input } = holding;
+    await waitFor(() =>
+      expect(api.updateHolding).toHaveBeenCalledWith(id, {
+        ...input,
+        symbol: nextSymbol,
+      }),
+    );
+    expect(onUpdate).toHaveBeenCalledWith(updated);
+  },
+);
+
 it("only asks for monthly facts and preserves existing investment preferences", async () => {
   vi.mocked(api.saveProfile).mockResolvedValue(snapshot);
   mount();

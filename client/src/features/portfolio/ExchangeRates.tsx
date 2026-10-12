@@ -1,6 +1,7 @@
 import { ExternalLink } from "../../components/ExternalLink";
 import { useRequestGuard } from "../../lib/useRequestGuard";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { formatNumber } from "../../lib/format";
 import {
   getFxSettings,
   getSnapshot,
@@ -12,9 +13,11 @@ import type { FxBook, Snapshot } from "../../types";
 const currencies = ["CNY", "USD", "HKD", "EUR", "JPY", "GBP"];
 export function ExchangeRates({
   baseCurrency,
+  usedCurrencies = [],
   onUpdate,
 }: {
   baseCurrency: string;
+  usedCurrencies?: string[];
   onUpdate: (snapshot: Snapshot) => void;
 }) {
   const request = useRequestGuard();
@@ -22,6 +25,25 @@ export function ExchangeRates({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const isCurrent = request.begin();
+    setBusy(true);
+    setBook(null);
+    setDrafts({});
+    setError("");
+    getFxSettings()
+      .then((next) => {
+        if (isCurrent()) setBook(next);
+      })
+      .catch((e) => {
+        if (isCurrent()) setError(String(e));
+      })
+      .finally(() => {
+        if (isCurrent()) setBusy(false);
+      });
+    return () => request.invalidate();
+  }, [baseCurrency, request]);
+  const involved = new Set(usedCurrencies);
   const run = async (action: () => Promise<FxBook>) => {
     if (busy) return;
     const isCurrent = request.begin();
@@ -40,13 +62,8 @@ export function ExchangeRates({
     }
   };
   return (
-    <details
-      className="panel facts-advanced exchange-settings"
-      onToggle={(e) => {
-        if (e.currentTarget.open && !book && !busy) void run(getFxSettings);
-      }}
-    >
-      <summary>汇率设置</summary>
+    <section className="panel exchange-settings" aria-label="汇率设置">
+      <h2>汇率设置</h2>
       <p className="section-intro">
         汇率每天自动更新，所有外币资产统一使用这里的值。手动修改会保持生效，直到恢复自动；已保存的历史流水不变。
       </p>
@@ -71,12 +88,15 @@ export function ExchangeRates({
             </p>
           )}
           <div className="exchange-rate-list">
-            {currencies
+            {[...new Set([...currencies, ...usedCurrencies])]
               .filter((c) => c !== baseCurrency)
+              .sort((a, b) => Number(involved.has(b)) - Number(involved.has(a)))
               .map((currency) => {
                 const manual = book.manual[currency];
                 const quote = book.quotes.find(
-                  (q) => q.fromCurrency === currency,
+                  (q) =>
+                    q.fromCurrency === currency &&
+                    q.toCurrency === baseCurrency,
                 );
                 const value = manual?.rate ?? quote?.rate;
                 const draft = drafts[currency];
@@ -91,12 +111,11 @@ export function ExchangeRates({
                     <div>
                       <strong>
                         1 {currency} ={" "}
-                        {value == null
-                          ? "待更新"
-                          : Number(value.toPrecision(10))}{" "}
+                        {value == null ? "待更新" : formatNumber(value)}{" "}
                         {baseCurrency}
                       </strong>
                       <small>
+                        {involved.has(currency) && "当前涉及 · "}
                         {manual ? "手动汇率" : "自动 · ECB"} · 观察日{" "}
                         {manual?.observedOn ?? quote?.observedOn ?? "暂无"}
                         {!manual &&
@@ -116,7 +135,9 @@ export function ExchangeRates({
                         inputMode="decimal"
                         disabled={busy}
                         value={draft ?? ""}
-                        placeholder={value == null ? "输入汇率" : String(value)}
+                        placeholder={
+                          value == null ? "输入汇率" : formatNumber(value)
+                        }
                         onChange={(e) =>
                           setDrafts({ ...drafts, [currency]: e.target.value })
                         }
@@ -176,6 +197,6 @@ export function ExchangeRates({
       >
         更新自动汇率
       </button>
-    </details>
+    </section>
   );
 }

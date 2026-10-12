@@ -17,7 +17,6 @@ const labels: Record<string, string> = {
   riskFindings: "风险检查",
   personalInvestmentRules: "投资规则",
   periodicSystemReviews: "原始复盘",
-  portfolioChangeAttribution: "组合变化记录",
   portfolioEvents: "原始流水",
   marketValue: "市值",
   costBasis: "成本",
