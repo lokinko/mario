@@ -15,11 +15,8 @@ const snapshot: Pick<Snapshot, "goals" | "valuationStatus" | "findings"> = {
   },
 };
 const reminder: ReviewReminderSummary = {
-  enabled: false,
   dueDecisionCount: 0,
   periodicReviewDue: false,
-  fingerprint: "",
-  shouldNotify: false,
   checkedOn: "2026-09-09",
 };
 it("does not equate missing reminders with no work", () => {

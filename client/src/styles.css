@@ -2190,46 +2190,6 @@ form + .holding-list {
   margin-left: auto;
   color: #47685c;
 }
-.reminder-panel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 15px;
-}
-.reminder-copy {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-}
-.reminder-copy strong {
-  display: block;
-  font-size: 12px;
-}
-.reminder-copy p {
-  margin: 4px 0 2px;
-  color: #63716a;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.reminder-copy small {
-  color: #929a96;
-  font-size: 12px;
-}
-.reminder-icon {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  color: #837f74;
-  background: #ece9e1;
-}
-.reminder-icon.enabled {
-  color: #2f6b53;
-  background: #dfede6;
-}
 .rule-effectiveness-panel {
   margin-bottom: 15px;
 }
@@ -4043,7 +4003,6 @@ form + .holding-list {
   .form-actions,
   .sync-actions,
   .account-card,
-  .reminder-panel,
   .import-controls,
   .import-actions,
   .memory-toolbar {

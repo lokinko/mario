@@ -19,6 +19,7 @@ const externalBase = process.env.MARIO_FUNCTIONAL_BASE_URL;
 const base = externalBase ?? `http://127.0.0.1:${port}/api`;
 let revision;
 const token = process.env.MARIO_FUNCTIONAL_TOKEN ?? randomBytes(32).toString("hex");
+const masterKey = randomBytes(32).toString("base64");
 let child,
   log = "",
   count = 0;
@@ -49,7 +50,7 @@ async function startServer() {
     resolve(process.platform === "win32" ? "server/target/debug/mario-server.exe" : "server/target/debug/mario-server"),
     ["--port", String(port)],
     {
-      env: { ...process.env, MARIO_DATA_DIR: dir, MARIO_AUTH_TOKEN: token },
+      env: { ...process.env, MARIO_DATA_DIR: dir, MARIO_AUTH_TOKEN: token, MARIO_MASTER_KEY: masterKey },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -90,6 +91,24 @@ const holding = (name, amount, currency = "CNY") => ({
 try {
   await startServer();
   assert.equal((await fetch(base + "/daily-assets")).status, 401);
+  if (!externalBase) {
+    const preflight = await fetch(base + "/health", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://localhost:1420",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization",
+      },
+    });
+    assert.equal(preflight.headers.get("access-control-allow-origin"), "http://localhost:1420");
+    for (const path of ["/reminder-settings", "/review-reminders/acknowledge"])
+      assert.equal((await fetch(base + path, { method: "POST", headers: { Authorization: `Bearer ${token}` } })).status, 404);
+    await api("/model-config", "PUT", {
+      provider: "openai-chat", baseUrl: "https://example.test/v1", model: "test-model", apiKey: "test-encrypted-model-key",
+    });
+    assert.equal((await api("/model-config")).hasApiKey, true);
+    assert(!(await readFile(join(dir, "mario.db"))).includes(Buffer.from("test-encrypted-model-key")));
+  }
   let snap = await api("/snapshot");
   assert.equal(snap.holdings.length, 0);
   const defaults = await api("/analysis-settings");
@@ -325,13 +344,8 @@ try {
   };
   await api("/decisions", "POST", { ...decision, ruleChecks: [] }, 400);
   await api("/decisions", "POST", decision, 204);
-  await api("/reminder-settings", "PUT", { enabled: true });
   let reminder = await api("/review-reminders");
   assert.equal(reminder.dueDecisionCount, 1);
-  await api("/review-reminders/acknowledge", "POST", {
-    fingerprint: reminder.fingerprint,
-  });
-  assert.equal((await api("/review-reminders")).shouldNotify, false);
   await api(
     `/decisions/${decision.id}/review`,
     "PUT",
@@ -451,6 +465,11 @@ try {
 
   await stopServer();
   await startServer();
+  if (!externalBase) {
+    assert.equal((await api("/model-config")).hasApiKey, true);
+    await api("/model-key", "DELETE");
+    assert.equal((await api("/model-config")).hasApiKey, false);
+  }
   assert.deepEqual(await api("/analysis-settings"), configured);
   assert.equal((await api("/snapshot")).holdings[0].marketValue, 102200);
   assert.equal((await api("/daily-assets")).records[0].totalAssets, 102200);

@@ -36,9 +36,6 @@ vi.mock("./api", async (original) => ({
     .fn()
     .mockResolvedValue({ applicableChecks: 0, adherencePct: null }),
 }));
-vi.mock("./reminders", () => ({
-  checkAndSendReviewReminder: vi.fn().mockResolvedValue(undefined),
-}));
 vi.mock("./features/account/ServerData", () => ({
   ServerData: ({ onRestore }: { onRestore: () => Promise<void> }) => (
     <button onClick={() => void onRestore()}>测试恢复数据</button>

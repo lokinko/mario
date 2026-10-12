@@ -61,16 +61,10 @@ async fn no_store(mut response: Response) -> Response {
     response
 }
 pub fn cors_layer() -> AppResult<CorsLayer> {
-    let mut origins = vec![
-        "http://localhost:1420",
-        "http://127.0.0.1:1420",
-        "tauri://localhost",
-        "http://tauri.localhost",
-        "https://tauri.localhost",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect::<Vec<_>>();
+    let mut origins = vec!["http://localhost:1420", "http://127.0.0.1:1420"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
     if let Ok(extra) = std::env::var("MARIO_ALLOWED_ORIGINS") {
         origins.extend(
             extra

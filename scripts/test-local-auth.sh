@@ -60,12 +60,12 @@ else
 fi
 
 preflight="$(curl -sS -i -X OPTIONS \
-  -H 'Origin: tauri://localhost' \
+  -H 'Origin: http://localhost:1420' \
   -H 'Access-Control-Request-Method: GET' \
   -H 'Access-Control-Request-Headers: authorization' \
   "http://127.0.0.1:$port/api/health")"
 if ! grep -qi 'access-control-allow-headers: content-type,authorization' <<<"$preflight"; then
-  echo "CORS preflight did not allow the authenticated desktop request" >&2
+  echo "CORS preflight did not allow the authenticated browser request" >&2
   exit 1
 fi
 

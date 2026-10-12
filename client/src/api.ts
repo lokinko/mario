@@ -45,7 +45,6 @@ import type {
   PortfolioEventReversalInput,
   ResearchEvidence,
   ResearchEvidenceInput,
-  ReminderSettings,
   ReviewReminderSummary,
   RuleEffectivenessSummary,
   Snapshot,
@@ -421,30 +420,8 @@ export async function saveDecisionReview(
   });
 }
 
-export async function getReminderSettings(): Promise<ReminderSettings> {
-  return httpRequest<ReminderSettings>("/reminder-settings");
-}
-
-export async function saveReminderSettings(
-  enabled: boolean,
-): Promise<ReminderSettings> {
-  return httpRequest<ReminderSettings>("/reminder-settings", {
-    method: "PUT",
-    body: JSON.stringify({ enabled }),
-  });
-}
-
 export async function getReviewReminders(): Promise<ReviewReminderSummary> {
   return httpRequest<ReviewReminderSummary>("/review-reminders");
-}
-
-export async function acknowledgeReviewReminder(
-  fingerprint: string,
-): Promise<ReviewReminderSummary> {
-  return httpRequest<ReviewReminderSummary>("/review-reminders/acknowledge", {
-    method: "POST",
-    body: JSON.stringify({ fingerprint }),
-  });
 }
 
 export async function getInvestmentRules(): Promise<InvestmentRule[]> {

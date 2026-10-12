@@ -5,8 +5,7 @@ import { readFileSync } from "node:fs";
 
 export default defineConfig(({ mode }) => {
   const source = clientSource();
-  const base =
-    mode === "native" ? "/" : loadEnv(mode, ".", "VITE_").VITE_BASE_PATH || "/";
+  const base = loadEnv(mode, ".", "VITE_").VITE_BASE_PATH || "/";
   if (!/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(base))
     throw new Error(
       "VITE_BASE_PATH 必须为 / 或 /mario/ 这样的路径，且以 / 结尾",
@@ -31,7 +30,7 @@ export default defineConfig(({ mode }) => {
                     ),
                   ).version,
                   ...source,
-                  target: mode === "native" ? "native" : "web",
+                  target: "web",
                   basePath: base,
                   builtAt: new Date().toISOString(),
                 },
@@ -46,7 +45,6 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 1420,
       strictPort: true,
-      watch: { ignored: ["**/src-tauri/**"] },
     },
   };
 });

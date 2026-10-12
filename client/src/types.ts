@@ -635,16 +635,9 @@ export interface DecisionRecord extends Omit<DecisionEntry, "id"> {
   review?: DecisionReview;
 }
 
-export interface ReminderSettings {
-  enabled: boolean;
-}
-
 export interface ReviewReminderSummary {
-  enabled: boolean;
   dueDecisionCount: number;
   periodicReviewDue: boolean;
-  fingerprint: string;
-  shouldNotify: boolean;
   checkedOn: string;
 }
 

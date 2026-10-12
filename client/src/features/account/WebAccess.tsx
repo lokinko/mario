@@ -17,15 +17,7 @@ import {
   type WebAccount,
 } from "../../lib/webSession";
 import { requestJson } from "../../lib/transport";
-import {
-  acceptRevision,
-  isLocalDev,
-  isNative,
-  normalizeServerUrl,
-  saveServerUrl,
-  sameOriginServiceUrl,
-  serviceUrl,
-} from "../../lib/service";
+import { acceptRevision, isLocalDev, serviceUrl } from "../../lib/service";
 import { blockStaleWrites } from "../../lib/syncEvents";
 
 const AccountAccess = createContext<{
@@ -135,9 +127,6 @@ export function WebAccess({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState(savedWebAccounts);
   const [picking, setPicking] = useState(false);
   const [addingAccount, setAddingAccount] = useState(false);
-  const [server, setServer] = useState(() =>
-    serviceUrl() === sameOriginServiceUrl() ? "" : serviceUrl(),
-  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [register, setRegister] = useState(false);
@@ -270,15 +259,11 @@ export function WebAccess({ children }: { children: ReactNode }) {
           const startingToken = webToken();
           const startingServer = serviceUrl();
           try {
-            const base = server.trim()
-              ? normalizeServerUrl(server)
-              : sameOriginServiceUrl();
+            const base = serviceUrl();
+            const apiUrl = new URL(base, location.href);
             if (
-              base === sameOriginServiceUrl() &&
-              !["localhost", "127.0.0.1", "[::1]"].includes(
-                location.hostname,
-              ) &&
-              location.protocol !== "https:"
+              !["localhost", "127.0.0.1", "[::1]"].includes(apiUrl.hostname) &&
+              apiUrl.protocol !== "https:"
             )
               throw new Error("远程访问请使用 HTTPS");
             const result = await requestJson<{
@@ -297,7 +282,6 @@ export function WebAccess({ children }: { children: ReactNode }) {
             // Another tab may have switched accounts while login was in flight.
             if (webToken() !== startingToken || serviceUrl() !== startingServer)
               return;
-            if (server.trim()) saveServerUrl(server);
             setWebToken(result.token, result.expiresAt, {
               email: result.email || email,
               userId: result.userId,
@@ -331,18 +315,6 @@ export function WebAccess({ children }: { children: ReactNode }) {
             />
           </>
         )}
-        {(isNative() || server) && (
-          <label>
-            服务器地址
-            <input
-              type="url"
-              required
-              value={server}
-              placeholder="https://mario.example.com"
-              onChange={(e) => setServer(e.target.value)}
-            />
-          </label>
-        )}
         <label>
           邮箱
           <input
@@ -365,7 +337,7 @@ export function WebAccess({ children }: { children: ReactNode }) {
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
-        <p>资料存储在你的服务器，同一账号可在网页和客户端访问。</p>
+        <p>资料存储在你的服务器，同一账号可在不同设备的浏览器访问。</p>
         {error && (
           <div className="error-box" role="alert">
             {error}

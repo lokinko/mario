@@ -1,8 +1,7 @@
 node_modules
 dist
-client/src-tauri/target
-client/src-tauri/binaries
-client/src-tauri/gen
+# Ignore build caches left by earlier native clients.
+/client/src-tauri/
 server/target
 .DS_Store
 *.log

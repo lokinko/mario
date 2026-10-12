@@ -20,8 +20,6 @@ pub enum AppError {
     Network(#[from] reqwest::Error),
     #[error("模型返回了无法识别的数据：{0}")]
     Json(#[from] serde_json::Error),
-    #[error("系统钥匙串错误：{0}")]
-    Keyring(String),
     #[error("账户认证失败：{0}")]
     Auth(String),
     #[error("本地客户端认证失败：{0}")]

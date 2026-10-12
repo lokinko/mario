@@ -8,11 +8,11 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 完整的依赖安装、非 root 服务账号、Nginx 接入、升级和验收步骤见 [服务器部署指南](deploy-madeagents.md)。不再维护 Docker/Caddy 或独立 Web 启动入口。`.env` 由部署器自动生成，保存运行参数和持久密钥；日常改 `deploy.sh` 后重新部署，密码和主密钥保持不变。真实 `.env` 不提交 Git。
 
-Web 与 Tauri 客户端共用 Rust API，PostgreSQL 保存独立账号、会话及各用户关系数据，AI Agent 是独立无状态进程。三个服务仅监听回环地址，公网访问由已有 Nginx 提供 HTTPS。Agent 不获得数据库 URL 或主密钥，它仅收到本次授权上下文和模型请求所需凭据。
+Web 通过 Rust API 读写数据，PostgreSQL 保存独立账号、会话及各用户关系数据，AI Agent 是独立无状态进程。三个服务仅监听回环地址，公网访问由已有 Nginx 提供 HTTPS。Agent 不获得数据库 URL 或主密钥，它仅收到本次授权上下文和模型请求所需凭据。
 
 ## 账号与客户端
 
-注册开放，任何用户均可用邮箱和密码直接创建账号，无需邀请码。旧 `.env` 中遗留的 `MARIO_REGISTRATION_KEY` 不再使用，无需为升级修改它。每个人有独立邮箱、密码与模型密钥；邮箱作为账号名，不做邮件验证/邮件重置。网页和新客户端可使用 `https://www.madeagents.ai/mario`；旧客户端安装包需要更新才能接受部署路径。
+注册开放，任何用户均可用邮箱和密码直接创建账号，无需邀请码。旧 `.env` 中遗留的 `MARIO_REGISTRATION_KEY` 不再使用，无需为升级修改它。每个人有独立邮箱、密码与模型密钥；邮箱作为账号名，不做邮件验证/邮件重置。通过浏览器访问 `https://www.madeagents.ai/mario`。
 
 登录凭证及过期时间按服务器地址保存在浏览器的 `localStorage`，刷新、关闭后重开仍可恢复登录；服务端会话有效期 7 天，到期需重新登录。退出会撤销当前会话并清除本机凭证，同一浏览器的其他标签页同步更新登录状态。数据库临时错误不会被当作会话失效。网页、API 和资源统一使用构建时的部署前缀，Nginx 转发时剥离前缀。
 
@@ -40,12 +40,9 @@ Web 与 Tauri 客户端共用 Rust API，PostgreSQL 保存独立账号、会话�
 
 ```bash
 npm ci --prefix client
-npm run windows:build    # Windows/MSVC/WebView2
-npm run desktop:build    # macOS
-npm run android:build
 VITE_BASE_PATH=/mario/ npm run web:build
 ```
 
-各端共用页面与 API；产物的源码版本与校验值见 `outputs/build-manifest.json`。构建与原生文件交互说明见 [客户端同步构建](client-builds.md)。
+Web 产物的源码版本与校验值见 `outputs/build-manifest.json`。构建、浏览器文件交互与子路径配置见 [Web 构建](client-builds.md)。
 
-开发前端可通过 `VITE_API_URL=http://127.0.0.1:4217/api` 连接临时多用户 API；无此变量的 Vite 开发模式保留隔离的 SQLite 调试路径，不是生产服务。不要把线上数据库传给集成测试。
+开发前端可通过 `VITE_API_URL=http://127.0.0.1:4217/api` 连接临时多用户 API；无此变量的 Vite 开发模式保留隔离的 SQLite 调试路径，不是生产服务。本地保存模型/行情密钥也需配置 `MARIO_MASTER_KEY`，密钥按用途加密存入本地数据库；旧钥匙串密钥需重新填写。不要把线上数据库传给集成测试。

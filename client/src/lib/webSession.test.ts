@@ -7,7 +7,6 @@ import {
   switchWebAccount,
   webToken,
 } from "./webSession";
-import { saveServerUrl } from "./service";
 
 afterEach(() => {
   localStorage.clear();
@@ -134,9 +133,9 @@ it("replaces an account's previous session when it logs in again", () => {
 
 it("isolates saved accounts by server and ignores damaged account lists", () => {
   configure();
-  saveServerUrl("https://a.example.test");
+  vi.stubEnv("VITE_API_URL", "https://a.example.test/api");
   setWebToken("account-a");
-  saveServerUrl("https://b.example.test");
+  vi.stubEnv("VITE_API_URL", "https://b.example.test/api");
   expect(savedWebAccounts()).toEqual([]);
   expect(switchWebAccount("account-a")).toBe(false);
   for (const damaged of [
@@ -148,6 +147,6 @@ it("isolates saved accounts by server and ignores damaged account lists", () => 
     expect(savedWebAccounts()).toEqual([]);
   }
   setWebToken("account-b");
-  saveServerUrl("https://a.example.test");
+  vi.stubEnv("VITE_API_URL", "https://a.example.test/api");
   expect(savedWebAccounts().map((a) => a.token)).toEqual(["account-a"]);
 });

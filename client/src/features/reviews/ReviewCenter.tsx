@@ -3,8 +3,6 @@ import { useRequestGuard } from "../../lib/useRequestGuard";
 import { LoadState } from "../../components/LoadState";
 import {
   AlertTriangle,
-  Bell,
-  BellOff,
   ChevronRight,
   History,
   Save,
@@ -14,7 +12,6 @@ import {
   getDecisions,
   getInvestmentRules,
   getInvestmentRuleHistory,
-  getReviewReminders,
   getRuleEffectiveness,
   getSystemReviews,
   saveInvestmentRule,
@@ -27,15 +24,8 @@ import type {
   InvestmentRuleInput,
   InvestmentRuleRevision,
   SystemReviewRecord,
-  ReviewReminderSummary,
   RuleEffectivenessSummary,
 } from "../../types";
-import {
-  checkAndSendReviewReminder,
-  disableReviewReminders,
-  enableReviewReminders,
-  isNativeApp,
-} from "../../reminders";
 import { PageHeader } from "../../components/PageHeader";
 import { localDateValue } from "../../lib/dates";
 import { View } from "../../app/navigation";
@@ -78,10 +68,8 @@ export function ReviewCenter({
     Record<string, InvestmentRuleRevision[]>
   >({});
   const [saving, setSaving] = useState(false);
-  const [reminder, setReminder] = useState<ReviewReminderSummary | null>(null);
   const [effectiveness, setEffectiveness] =
     useState<RuleEffectivenessSummary | null>(null);
-  const [reminderSaving, setReminderSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -91,25 +79,18 @@ export function ReviewCenter({
     const isCurrent = loadRequest.begin();
     setLoading(true);
     try {
-      const [
-        nextDecisions,
-        nextRules,
-        nextReviews,
-        nextReminder,
-        nextEffectiveness,
-      ] = await Promise.all([
-        getDecisions(),
-        getInvestmentRules(),
-        getSystemReviews(),
-        getReviewReminders().catch(() => null),
-        getRuleEffectiveness().catch(() => null),
-      ]);
+      const [nextDecisions, nextRules, nextReviews, nextEffectiveness] =
+        await Promise.all([
+          getDecisions(),
+          getInvestmentRules(),
+          getSystemReviews(),
+          getRuleEffectiveness().catch(() => null),
+        ]);
       if (!isCurrent()) return;
       setLoaded(true);
       setDecisions(nextDecisions);
       setRules(nextRules);
       setReviews(nextReviews);
-      setReminder(nextReminder);
       setEffectiveness(nextEffectiveness);
       setError("");
     } catch (nextError) {
@@ -243,26 +224,6 @@ export function ReviewCenter({
       "请基于我的个人投资规则、最近周期复盘、财务目标、当前组合和历史决策，完成一次系统复盘：先核对规则违反与风险边界，再识别重复错误，比较至少两种改进路径，并给出下一周期可验证的行动与证伪条件。",
     );
     navigate("advisor");
-  };
-
-  const toggleReminders = async () => {
-    setReminderSaving(true);
-    setError("");
-    try {
-      if (reminder?.enabled) {
-        await disableReviewReminders();
-        flash("桌面复盘提醒已关闭，本机到期队列仍会保留");
-      } else {
-        await enableReviewReminders();
-        await checkAndSendReviewReminder();
-        flash("桌面复盘提醒已开启");
-      }
-      await refresh();
-    } catch (nextError) {
-      setError(String(nextError));
-    } finally {
-      setReminderSaving(false);
-    }
   };
 
   if (!loaded && (loading || error))
@@ -571,37 +532,6 @@ export function ReviewCenter({
               </div>
             </div>
           </div>
-        </div>
-      </details>
-
-      <details className="panel disclosure-panel">
-        <summary>复盘提醒设置</summary>
-        <div className="disclosure-content">
-          <div className="reminder-copy">
-            <div
-              className={`reminder-icon ${reminder?.enabled ? "enabled" : ""}`}
-            >
-              {reminder?.enabled ? <Bell size={18} /> : <BellOff size={18} />}
-            </div>
-            <div>
-              <strong>桌面复盘提醒</strong>
-              <p>应用打开时检查，每天最多提醒一次。</p>
-              <small>仅此设备生效；关闭应用后不提醒。</small>
-            </div>
-          </div>
-          <button
-            className={reminder?.enabled ? "secondary" : "primary"}
-            disabled={reminderSaving || !isNativeApp()}
-            onClick={toggleReminders}
-          >
-            {reminderSaving
-              ? "处理中…"
-              : reminder?.enabled
-                ? "关闭提醒"
-                : isNativeApp()
-                  ? "开启提醒"
-                  : "仅原生应用可用"}
-          </button>
         </div>
       </details>
 

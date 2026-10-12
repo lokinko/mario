@@ -6,7 +6,7 @@ mario 是一个支持自建服务器、多用户账号和跨设备访问的 AI �
 
 ## 自建部署
 
-当前采用 **Web / Tauri 客户端 → Rust API → PostgreSQL**，AI Agent 独立部署。账号、会话与数据由自己管理，无第三方账户或云存储依赖。
+当前采用 **React Web → Rust API → PostgreSQL**，AI Agent 独立部署。账号、会话与数据由自己管理，无第三方账户或云存储依赖。
 
 服务器部署只有一个入口：根目录 [deploy.sh](deploy.sh)。公网 IP、域名和可选参数集中在脚本顶部，逐项附中文注释。默认 Ubuntu/Debian 自动安装缺少的工具、生成持久密钥、构建源码，并通过 systemd 后台运行和开机自启，不需要 Docker。
 
@@ -39,9 +39,8 @@ mario 在问答时使用供应商原生网页搜索，自动保存回答和来�
 ## 当前能力
 
 - 综合分析看板：净资产与收支、现金和备用金、配置及币种分布、持仓成本与浮盈、目标与风险、假设情景、流水归因和投资纪律；详细口径见 [分析看板](docs/analysis-dashboard.md)
-- macOS / Windows 桌面客户端：Tauri + React + TypeScript
 - Web：HTTPS 同源 API、独立用户账号，详见 [自建部署](docs/self-hosting.md)
-- Rust + Axum 后端：自建账号、会话、租户隔离与业务 API；Tauri 仅提供客户端外壳
+- Rust + Axum 后端：自建账号、会话、租户隔离与业务 API
 - PostgreSQL：财务档案、目标、持仓、决策与分析历史；SQLite 仅用于旧数据迁移及本地开发
 - 每日资产自动追踪：列表内改金额即保存，同日合并、跨日沿用，查看总资产与净资产趋势、逐项变化和区间分析；详细规则见 [每日资产追踪](docs/daily-assets.md)
 - 服务器按账号加密保存模型与行情 API Key，不进入数据导出和分析上下文
@@ -61,7 +60,7 @@ mario 在问答时使用供应商原生网页搜索，自动保存回答和来�
 - 分析到决策闭环：用户选择一条 AI 行动后生成可编辑文字草稿，保存时保留原分析来源
 - 决策复盘：原始判断不可变，复盘用一段纯文本记录观点、顾虑和思考
 - 复盘记录：只需自由文字，保留完整原文与换行，并保存当时组合、目标与风险摘要
-- 可选桌面复盘提醒：启动时检查到期决策与周期复盘，相同状态每天至多通知一次，不在锁屏暴露资产名称
+- 页面内复盘提示：查看到期决策与周期复盘事项
 - 个人投资规则：从复盘沉淀触发条件与行动，任何修订都保留历史版本
 - 历史规则检查与有效性追踪：保留旧决策的规则版本、遵守或偏离状态，用复盘后的过程评分寻找需要保留或修订的规则；新文本记录不强制逐条检查
 - 不可变组合流水：按日期记录入金、出金、分红、利息、费用、税费与买卖额，冻结原币、汇率和基准币种
@@ -75,14 +74,13 @@ mario 在问答时使用供应商原生网页搜索，自动保存回答和来�
 - 证据检索与引用：按问题和组合筛选，发送前冻结，要求 AI 只引用实际进入载荷的来源
 - 简化概率校准：使用历史置信度与逻辑结果训练概率意识，不用单笔盈亏评价能力
 - 多账号与版本同步：前台低频检查版本、变化后刷新；跨 API 实例的写入冲突保护
-- 各端共用页面与 API；原生端使用系统文件保存与浏览器打开来源，构建产物按源码指纹分别记录，见 [客户端同步构建](docs/client-builds.md)
+- 浏览器下载备份和附件、打开来源网页；Web 产物记录源码指纹与校验值，见 [Web 构建](docs/client-builds.md)
 
 ## 仓库结构
 
 ```text
-client/                 React 响应式界面与 Tauri 桌面/Android 外壳
+client/                 React 响应式 Web 界面
   src/                  页面、类型和本地 API 客户端
-  src-tauri/            轻量原生外壳，连接远程 API
 server/                 多用户 HTTP API 与独立 AI Agent 运行入口
   src/ai/               可替换工作流、执行器与模型 Provider
   src/db.rs             领域数据仓储；storage.rs 对接 PostgreSQL / 旧 SQLite
@@ -102,16 +100,18 @@ deploy.sh               宿主机部署与服务管理唯一入口
 scripts/                构建、迁移与集成测试
 ```
 
-产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[自建服务信任边界](docs/threat-model.md)、[Android 调试构建](docs/android.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合变化归因](docs/portfolio-attribution.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[可追溯汇率数据](docs/market-data.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账号与数据同步](docs/cloud-sync.md)。
+产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[自建服务信任边界](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[从 AI 分析到用户决策](docs/analysis-to-decision.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合变化归因](docs/portfolio-attribution.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[可追溯汇率数据](docs/market-data.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账号与数据同步](docs/cloud-sync.md)。
 
 ## 开发与验证
 
-生产部署和客户端构建见 [自建部署指南](docs/self-hosting.md)。只调试原有领域功能时仍可使用隔离的本地 SQLite 开发服务：
+生产部署和 Web 构建见 [自建部署指南](docs/self-hosting.md)。只调试原有领域功能时仍可使用隔离的本地 SQLite 开发服务：
 
 ```bash
 npm run install:all
 npm run dev
 ```
+
+本地 SQLite 开发模式保存模型/行情密钥前也需配置 `MARIO_MASTER_KEY`（Base64 编码的 32 字节随机密钥）；密钥加密保存在本地数据库，不使用操作系统钥匙串。旧钥匙串密钥需在设置中重新填写。
 
 多用户开发请配置 PostgreSQL、`MARIO_MASTER_KEY`；注册开放，任何用户均可通过邮箱和密码创建账号，无需邀请码。前端设置 `VITE_API_URL=http://127.0.0.1:4217/api`。独立 Agent 使用 `MARIO_ROLE=agent`，后端配置 `MARIO_AGENT_URL` 与共享内部令牌。宿主机部署默认采用独立 Agent，单进程开发可以不设置 Agent URL。
 

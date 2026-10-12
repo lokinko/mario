@@ -16,23 +16,15 @@ vi.mock("../../api", () => ({
   getInvestmentRules: vi.fn(),
   getInvestmentRuleHistory: vi.fn(),
   getSystemReviews: vi.fn(),
-  getReviewReminders: vi.fn(),
   getRuleEffectiveness: vi.fn(),
   saveSystemReview: vi.fn(),
   saveInvestmentRule: vi.fn(),
   updateInvestmentRule: vi.fn(),
 }));
-vi.mock("../../reminders", () => ({
-  checkAndSendReviewReminder: vi.fn(),
-  disableReviewReminders: vi.fn(),
-  enableReviewReminders: vi.fn(),
-  isNativeApp: () => false,
-}));
 beforeEach(() => {
   vi.mocked(api.getDecisions).mockResolvedValue([]);
   vi.mocked(api.getInvestmentRules).mockResolvedValue([]);
   vi.mocked(api.getSystemReviews).mockResolvedValue([]);
-  vi.mocked(api.getReviewReminders).mockRejectedValue(new Error("未开启提醒"));
   vi.mocked(api.getRuleEffectiveness).mockRejectedValue(new Error("暂无样本"));
 });
 afterEach(() => {

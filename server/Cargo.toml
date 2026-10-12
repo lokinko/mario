@@ -23,7 +23,6 @@ chrono-tz = "0.10"
 iana-time-zone = "0.1"
 csv = "1"
 dirs = "6"
-keyring = { version = "3", features = ["apple-native", "windows-native"] }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -37,7 +36,6 @@ tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-sysinfo = { version = "=0.33.1", default-features = false, features = ["system"] }
 # reqwest/url currently allow newer ICU4X releases requiring Rust 1.88.
 # These exact constraints keep builds reproducible on the declared toolchain.
 icu_collections = "=2.2.0"

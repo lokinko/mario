@@ -14,7 +14,8 @@ import { useState } from "react";
 vi.mock("../../lib/service", async (original) => ({
   ...(await original<typeof import("../../lib/service")>()),
   isLocalDev: () => false,
-  serviceUrl: () => `${import.meta.env.BASE_URL}api`,
+  serviceUrl: () =>
+    import.meta.env.VITE_API_URL || `${import.meta.env.BASE_URL}api`,
 }));
 afterEach(() => {
   cleanup();
@@ -22,6 +23,26 @@ afterEach(() => {
   localStorage.clear();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+});
+it("rejects a remote cleartext API before sending login credentials", async () => {
+  vi.stubEnv("VITE_API_URL", "http://remote.example.test/api");
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  render(
+    <WebAccess>
+      <p>个人资产</p>
+    </WebAccess>,
+  );
+  fireEvent.change(screen.getByLabelText("邮箱"), {
+    target: { value: "user@example.test" },
+  });
+  fireEvent.change(screen.getByLabelText("密码"), {
+    target: { value: "long-password-1234" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "登录" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("HTTPS");
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("服务器地址")).toBeNull();
 });
 it("registers and logs out through the mounted API and loads the mounted logo", async () => {
   vi.stubEnv("BASE_URL", "/mario/");

@@ -774,9 +774,7 @@ mod tests {
         let base_url = std::env::var("MARIO_EVAL_BASE_URL").expect("set MARIO_EVAL_BASE_URL");
         let model = std::env::var("MARIO_EVAL_MODEL").expect("set MARIO_EVAL_MODEL");
         // The key is read in-process and is never written into the report or logs.
-        let api_key = std::env::var("MARIO_EVAL_API_KEY")
-            .or_else(|_| crate::secrets::get_api_key())
-            .expect("configure a model key in mario or MARIO_EVAL_API_KEY");
+        let api_key = std::env::var("MARIO_EVAL_API_KEY").expect("set MARIO_EVAL_API_KEY");
         let provider = crate::ai::NativeModelProvider::new(
             std::env::var("MARIO_EVAL_PROVIDER").unwrap_or("openai-responses".into()),
             base_url,

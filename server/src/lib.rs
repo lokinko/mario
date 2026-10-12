@@ -28,7 +28,7 @@ mod valuation;
 use std::{
     collections::HashSet,
     future::Future,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     path::{Path as FilePath, PathBuf},
     sync::Arc,
 };
@@ -57,13 +57,12 @@ use models::{
     MemoryItem, MemoryPreferenceInput, ModelConfig, ModelConfigInput, ModelConnectionTest,
     PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventImportCommitRequest,
     PortfolioEventImportPreview, PortfolioEventImportRequest, PortfolioEventImportResult,
-    PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, ReminderSettings,
-    ReminderSettingsInput, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
-    ReviewReminderAcknowledgeInput, ReviewReminderSummary, RuleEffectivenessSummary,
-    SecurityPriceConfig, SecurityPriceConfigInput, SecurityPriceQuery, SecurityPriceQuote,
-    Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord, VerifiedHoldingValuationInput,
+    PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, ResearchEvidence,
+    ResearchEvidenceInput, ResearchEvidenceStatusInput, ReviewReminderSummary,
+    RuleEffectivenessSummary, SecurityPriceConfig, SecurityPriceConfigInput, SecurityPriceQuery,
+    SecurityPriceQuote, Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
+    VerifiedHoldingValuationInput,
 };
-use tokio::sync::watch;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 struct AppState {
@@ -75,7 +74,6 @@ struct AppState {
 }
 
 struct ServerOptions {
-    parent_pid: Option<u32>,
     port: u16,
     auth_token: Option<String>,
 }
@@ -120,10 +118,6 @@ pub async fn run_from_env() -> AppResult<()> {
         return Ok(());
     }
     let options = server_options()?;
-    let (parent_exit_tx, parent_exit_rx) = watch::channel(false);
-    if let Some(pid) = options.parent_pid {
-        tokio::spawn(watch_parent(pid, parent_exit_tx));
-    }
     let web_dir = std::env::var_os("MARIO_WEB_DIR").map(PathBuf::from);
     let host: IpAddr = std::env::var("MARIO_HOST")
         .unwrap_or_else(|_| "127.0.0.1".into())
@@ -153,7 +147,7 @@ pub async fn run_from_env() -> AppResult<()> {
             url,
             SocketAddr::new(host, options.port),
             web_dir,
-            shutdown_signal(parent_exit_rx),
+            shutdown_signal(),
         )
         .await;
     }
@@ -163,46 +157,7 @@ pub async fn run_from_env() -> AppResult<()> {
         SocketAddr::new(host, options.port),
         options.auth_token,
         web_dir,
-        shutdown_signal(parent_exit_rx),
-    )
-    .await
-}
-
-pub async fn serve_embedded<F>(
-    data_dir: PathBuf,
-    port: u16,
-    auth_token: String,
-    shutdown: F,
-) -> AppResult<()>
-where
-    F: Future<Output = ()> + Send + 'static,
-{
-    if port == 0 {
-        return Err(AppError::Validation("嵌入式本地服务端口不能为 0".into()));
-    }
-    if !(32..=256).contains(&auth_token.len()) {
-        return Err(AppError::Validation(
-            "嵌入式本地服务必须使用 32–256 字符的随机认证令牌".into(),
-        ));
-    }
-    serve_local(data_dir, port, Some(auth_token), shutdown).await
-}
-
-async fn serve_local<F>(
-    data_dir: PathBuf,
-    port: u16,
-    auth_token: Option<String>,
-    shutdown: F,
-) -> AppResult<()>
-where
-    F: Future<Output = ()> + Send + 'static,
-{
-    serve_configured(
-        data_dir,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
-        auth_token,
-        None,
-        shutdown,
+        shutdown_signal(),
     )
     .await
 }
@@ -230,9 +185,6 @@ where
         .allow_origin([
             "http://localhost:1420".parse::<HeaderValue>().unwrap(),
             "http://127.0.0.1:1420".parse::<HeaderValue>().unwrap(),
-            "tauri://localhost".parse::<HeaderValue>().unwrap(),
-            "http://tauri.localhost".parse::<HeaderValue>().unwrap(),
-            "https://tauri.localhost".parse::<HeaderValue>().unwrap(),
         ])
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
@@ -337,15 +289,7 @@ fn api_router() -> Router {
             "/api/system-reviews",
             get(system_reviews).post(save_system_review),
         )
-        .route(
-            "/api/reminder-settings",
-            get(reminder_settings).put(save_reminder_settings),
-        )
         .route("/api/review-reminders", get(review_reminders))
-        .route(
-            "/api/review-reminders/acknowledge",
-            post(acknowledge_review_reminder),
-        )
         .route(
             "/api/research-evidence",
             get(research_evidence)
@@ -701,17 +645,6 @@ async fn save_system_review(
 ) -> AppResult<Json<SystemReviewRecord>> {
     Ok(Json(state.db.save_system_review(&input)?))
 }
-async fn reminder_settings(
-    Extension(state): Extension<Arc<AppState>>,
-) -> AppResult<Json<ReminderSettings>> {
-    Ok(Json(state.db.reminder_settings()?))
-}
-async fn save_reminder_settings(
-    Extension(state): Extension<Arc<AppState>>,
-    Json(input): Json<ReminderSettingsInput>,
-) -> AppResult<Json<ReminderSettings>> {
-    Ok(Json(state.db.save_reminder_settings(input.enabled)?))
-}
 async fn review_reminders(
     Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<ReviewReminderSummary>> {
@@ -720,15 +653,6 @@ async fn review_reminders(
             .db
             .review_reminder_summary(Local::now().date_naive())?,
     ))
-}
-async fn acknowledge_review_reminder(
-    Extension(state): Extension<Arc<AppState>>,
-    Json(input): Json<ReviewReminderAcknowledgeInput>,
-) -> AppResult<Json<ReviewReminderSummary>> {
-    Ok(Json(state.db.acknowledge_review_reminder(
-        Local::now().date_naive(),
-        &input.fingerprint,
-    )?))
 }
 async fn research_evidence(
     Extension(state): Extension<Arc<AppState>>,
@@ -840,7 +764,7 @@ async fn save_model_config(
             "切换模型接口或地址时，请填写对应 API Key".into(),
         ));
     }
-    // Bind legacy credentials before changing metadata. A failed keychain write must
+    // Bind legacy credentials before changing metadata. A failed secret write must
     // never leave an old provider's key usable at the newly selected destination.
     if state.db.setting("model.key_binding")?.is_none() {
         state.db.set_setting(
@@ -1235,20 +1159,10 @@ fn migrate_legacy_database_filename(directory: &FilePath) -> AppResult<()> {
 
 fn server_options() -> AppResult<ServerOptions> {
     let mut arguments = std::env::args();
-    let mut parent_pid = None;
     let mut port = 4217_u16;
     let mut allow_unauthenticated_dev = false;
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
-            "--parent-pid" => {
-                parent_pid = Some(
-                    arguments
-                        .next()
-                        .ok_or_else(|| AppError::Validation("--parent-pid 缺少参数".into()))?
-                        .parse::<u32>()
-                        .map_err(|_| AppError::Validation("--parent-pid 参数无效".into()))?,
-                );
-            }
             "--port" => {
                 port = arguments
                     .next()
@@ -1274,31 +1188,14 @@ fn server_options() -> AppResult<ServerOptions> {
             .is_none_or(|value| value.len() < 32 || value.len() > 256)
     {
         return Err(AppError::Validation(
-            "本地服务必须由桌面客户端携带随机认证令牌启动；开发模式请显式使用 --allow-unauthenticated-dev"
+            "本地服务必须配置 32–256 字符的 MARIO_AUTH_TOKEN；开发模式请显式使用 --allow-unauthenticated-dev"
                 .into(),
         ));
     }
-    Ok(ServerOptions {
-        parent_pid,
-        port,
-        auth_token,
-    })
+    Ok(ServerOptions { port, auth_token })
 }
 
-async fn watch_parent(parent_pid: u32, exit: watch::Sender<bool>) {
-    let pid = sysinfo::Pid::from_u32(parent_pid);
-    let mut system = sysinfo::System::new();
-    loop {
-        system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
-        if system.process(pid).is_none() {
-            let _ = exit.send(true);
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    }
-}
-
-async fn shutdown_signal(mut parent_exit: watch::Receiver<bool>) {
+async fn shutdown_signal() {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -1313,14 +1210,7 @@ async fn shutdown_signal(mut parent_exit: watch::Receiver<bool>) {
     };
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
-    let parent_stopped = async {
-        while parent_exit.changed().await.is_ok() {
-            if *parent_exit.borrow() {
-                break;
-            }
-        }
-    };
-    tokio::select! { _ = ctrl_c => {}, _ = terminate => {}, _ = parent_stopped => {} }
+    tokio::select! { _ = ctrl_c => {}, _ = terminate => {} }
 }
 
 async fn ensure_daily_assets(
@@ -1510,17 +1400,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn embedded_server_uses_the_same_authenticated_health_api() {
+    async fn local_web_server_requires_authentication() {
         let data_dir = tempfile::tempdir().unwrap();
         let probe = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = probe.local_addr().unwrap().port();
         drop(probe);
         let token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-        let server = tokio::spawn(serve_embedded(
+        let server = tokio::spawn(serve_configured(
             data_dir.path().to_path_buf(),
-            port,
-            token.into(),
+            format!("127.0.0.1:{port}").parse().unwrap(),
+            Some(token.into()),
+            None,
             async move {
                 let _ = shutdown_rx.await;
             },

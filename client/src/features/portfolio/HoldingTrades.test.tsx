@@ -15,22 +15,18 @@ import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 vi.mock("../../api", () => ({
   saveHoldingTrade: vi.fn(),
-  getDailyAssets: vi
-    .fn()
-    .mockResolvedValue({
-      timezone: "Asia/Shanghai",
-      today: "2026-10-12",
-      records: [],
-      nextBefore: null,
-    }),
-  ensureDailyAssets: vi
-    .fn()
-    .mockResolvedValue({
-      timezone: "Asia/Shanghai",
-      today: "2026-10-12",
-      records: [],
-      nextBefore: null,
-    }),
+  getDailyAssets: vi.fn().mockResolvedValue({
+    timezone: "Asia/Shanghai",
+    today: "2026-10-12",
+    records: [],
+    nextBefore: null,
+  }),
+  ensureDailyAssets: vi.fn().mockResolvedValue({
+    timezone: "Asia/Shanghai",
+    today: "2026-10-12",
+    records: [],
+    nextBefore: null,
+  }),
 }));
 afterEach(() => {
   cleanup();

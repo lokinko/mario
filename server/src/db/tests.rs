@@ -1400,17 +1400,14 @@ fn requires_every_decision_to_have_a_review_date() {
 }
 
 #[test]
-fn review_reminders_are_opt_in_deduplicated_and_follow_due_work() {
+fn review_reminders_follow_due_work() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("test.db")).unwrap();
     let today = NaiveDate::from_ymd_opt(2026, 9, 6).unwrap();
 
     let initial = db.review_reminder_summary(today).unwrap();
-    assert!(!initial.enabled);
     assert!(initial.periodic_review_due);
-    assert!(!initial.should_notify);
 
-    db.save_reminder_settings(true).unwrap();
     db.save_decision(&DecisionEntry {
         content: None,
         id: Some("due-decision".into()),
@@ -1448,15 +1445,6 @@ fn review_reminders_are_opt_in_deduplicated_and_follow_due_work() {
 
     let due = db.review_reminder_summary(today).unwrap();
     assert_eq!(due.due_decision_count, 1);
-    assert!(due.should_notify);
-    assert!(matches!(
-        db.acknowledge_review_reminder(today, "stale-fingerprint"),
-        Err(AppError::Validation(_))
-    ));
-    let acknowledged = db
-        .acknowledge_review_reminder(today, &due.fingerprint)
-        .unwrap();
-    assert!(!acknowledged.should_notify);
 
     db.save_decision_review(
         "due-decision",
@@ -1473,8 +1461,6 @@ fn review_reminders_are_opt_in_deduplicated_and_follow_due_work() {
     let changed = db.review_reminder_summary(today).unwrap();
     assert_eq!(changed.due_decision_count, 0);
     assert!(changed.periodic_review_due);
-    assert!(changed.should_notify);
-    assert_ne!(changed.fingerprint, due.fingerprint);
 
     db.save_system_review(&SystemReviewInput {
         content: None,
@@ -1490,29 +1476,6 @@ fn review_reminders_are_opt_in_deduplicated_and_follow_due_work() {
     let clear = db.review_reminder_summary(today).unwrap();
     assert_eq!(clear.due_decision_count, 0);
     assert!(!clear.periodic_review_due);
-    assert!(!clear.should_notify);
-
-    db.save_reminder_settings(false).unwrap();
-    assert!(!db.review_reminder_summary(today).unwrap().should_notify);
-}
-
-#[test]
-fn reminder_settings_are_device_local_and_never_cloud_synced() {
-    let directory = tempfile::tempdir().unwrap();
-    let source = Database::open(&directory.path().join("source.db")).unwrap();
-    source.save_reminder_settings(true).unwrap();
-    let dataset = source.export_sync_data().unwrap();
-
-    let target = Database::open(&directory.path().join("target.db")).unwrap();
-    target.save_reminder_settings(false).unwrap();
-    target.import_sync_data(&dataset).unwrap();
-
-    assert!(!target.reminder_settings().unwrap().enabled);
-    assert!(dataset
-        .tables
-        .iter()
-        .filter(|table| table.name == "settings")
-        .all(|table| table.rows.is_empty()));
 }
 
 #[test]

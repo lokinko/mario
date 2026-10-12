@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { checkServerVersion, getModelConfig, getSnapshot } from "./api";
 import type { DecisionEntry, ModelConfig, Snapshot } from "./types";
-import { checkAndSendReviewReminder } from "./reminders";
 import { ServerData } from "./features/account/ServerData";
 import { DecisionJournal } from "./features/decisions/DecisionJournal";
 import { View, initialView, nav, viewLabels } from "./app/navigation";
@@ -207,11 +206,6 @@ function App() {
     setDecisionDraft(null);
     setAnalysisToOpen(null);
   };
-
-  useEffect(() => {
-    if (!loading && !startupError)
-      void checkAndSendReviewReminder().catch(() => undefined);
-  }, [loading, startupError]);
 
   const flash = (message: string) => {
     window.clearTimeout(noticeTimer.current);

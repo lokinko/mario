@@ -57,8 +57,6 @@ export function forgetWebAccount(token: string) {
   if (webToken() === token) setWebToken();
   localStorage.setItem(accountsKey(), JSON.stringify(accounts));
 }
-export const isWebApp = () =>
-  !("__TAURI_INTERNALS__" in window) && !import.meta.env.DEV;
 export function webToken(): string | undefined {
   const stored = localStorage.getItem(key());
   if (stored !== null) {
