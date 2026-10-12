@@ -17,7 +17,7 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 默认执行以下工作：
 
 - Ubuntu/Debian 安装编译依赖和 PostgreSQL 17；缺少 Node 22+ 时安装项目专用 Node，并验证下载校验和；缺少 Rust 时为服务用户安装官方 rustup。
-- 自动选择非 root 运行用户，首次生成数据库密码、主密钥、邀请码与 Agent 令牌，持久保存在权限受限的 `.env`。
+- 自动选择非 root 运行用户，首次生成数据库密码、主密钥与 Agent 令牌，持久保存在权限受限的 `.env`。
 - 按 `/mario/` 构建 React 网页，编译 Rust 服务，自动初始化或复用 `.runtime/native/postgres`。
 - 创建 `mario.service`，由 systemd 托管 PostgreSQL、API 和独立 Agent。断开 SSH 不停止服务，开机自动启动。
 - 生成 `.runtime/native/nginx.conf`，供现有 HTTPS 站点接入。
@@ -136,7 +136,7 @@ curl -fsS http://127.0.0.1:4217/api/server
 # hosted / postgresql / protocol 1
 ```
 
-浏览器打开 **https://www.madeagents.ai/mario**，将规范为 `/mario/`。使用服务器 `.env` 中的 `MARIO_REGISTRATION_KEY` 注册：
+浏览器打开 **https://www.madeagents.ai/mario**，将规范为 `/mario/`。使用邮箱和密码直接注册，无需邀请码：
 
 1. 账号 A 修改一条测试资料，刷新确认保留；另一设备登录 A，确认同步。
 2. 注册 B，确认看不到 A 的数据；两个设备提交旧表单时应提示刷新/冲突。

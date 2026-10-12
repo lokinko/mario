@@ -14,7 +14,7 @@ flowchart LR
 
 - `client/src/api.ts` 是统一 HTTP 客户端；`lib/service.ts` 管理服务器地址、已展示版本。前端不依赖桌面 sidecar 或数据库实现。
 - `server/src/hosted.rs` 根据服务端会话选择用户数据库，执行版本检查、数据库 advisory lock、导出和导入。用户请求不能指定租户。
-- `server/src/accounts.rs` 管理 Argon2 密码、随机会话及撤销、注册邀请码和登录限速。会话在数据库仅保存哈希。
+- `server/src/accounts.rs` 管理公开注册、Argon2 密码、随机会话及撤销和登录限速。任何用户均可通过邮箱和密码注册，会话在数据库仅保存哈希。
 - `server/src/db/` 保留领域仓储和事务校验；`storage.rs` 隔离 SQL 引擎。PostgreSQL 保存关系表，SQLite 仅用于旧文件迁移和本地开发回归。
 - `server/src/agent.rs` 定义冻结上下文的执行接口，可连接独立进程或在本地开发内联执行。工作流、Provider、输出验证仍在 `server/src/ai/`，其代码不调用仓储。
 - `server/src/secrets.rs` 在托管模式用主密钥加密用户凭据，AAD 包含用户 schema 和密钥用途；本地开发兼容系统钥匙串。

@@ -39,19 +39,21 @@ it("registers and logs out through the mounted API and loads the mounted logo", 
   expect(container.querySelector("img")?.getAttribute("src")).toBe(
     "/mario/mario-mark.svg",
   );
-  fireEvent.click(screen.getByRole("button", { name: "使用邀请码注册" }));
+  fireEvent.click(screen.getByRole("button", { name: "注册新账号" }));
+  expect(screen.queryByLabelText("邀请码")).toBeNull();
   fireEvent.change(screen.getByLabelText("邮箱"), {
     target: { value: "user@example.test" },
   });
   fireEvent.change(screen.getByLabelText("密码"), {
     target: { value: "long-password-1234" },
   });
-  fireEvent.change(screen.getByLabelText("邀请码"), {
-    target: { value: "invite" },
-  });
   fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
   await screen.findByText("个人资产");
   expect(fetcher.mock.calls[0][0]).toBe("/mario/api/auth/register");
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
+    email: "user@example.test",
+    password: "long-password-1234",
+  });
   expect(
     JSON.parse(localStorage.getItem("mario.session:/mario/api")!).token,
   ).toBe("mounted-session");

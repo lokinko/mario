@@ -170,11 +170,11 @@ try {
     await ready(`http://127.0.0.1:${agentPort}/health`, body => body.status === 'ok', { Authorization: `Bearer ${config.MARIO_AGENT_TOKEN}` });
     launch('API', binary, ['--port', String(apiPort)], {
       ...baseEnv, ...shared, DATABASE_URL: databaseUrl, MARIO_MASTER_KEY: config.MARIO_MASTER_KEY,
-      MARIO_REGISTRATION_KEY: config.MARIO_REGISTRATION_KEY, MARIO_ALLOWED_ORIGINS: config.MARIO_ALLOWED_ORIGINS ?? '',
+      MARIO_ALLOWED_ORIGINS: config.MARIO_ALLOWED_ORIGINS ?? '',
       MARIO_HOST: '127.0.0.1', MARIO_AGENT_URL: `http://127.0.0.1:${agentPort}`, MARIO_WEB_DIR: resolve(root, 'client/dist'),
     });
     await ready(`http://127.0.0.1:${apiPort}/api/server`, body => body.mode === 'hosted');
-    console.log(`\nAPI 与 Agent 已就绪：http://127.0.0.1:${apiPort}\n公网网页：https://${config.MARIO_DOMAIN}${prefix}\n邀请码位于 .env 的 MARIO_REGISTRATION_KEY。\n前台运行器由 systemd 托管；Ctrl+C/SIGTERM 停止并保留数据。`);
+    console.log(`\nAPI 与 Agent 已就绪：http://127.0.0.1:${apiPort}\n公网网页：https://${config.MARIO_DOMAIN}${prefix}\n注册已开放，使用邮箱和密码即可创建账号。\n前台运行器由 systemd 托管；Ctrl+C/SIGTERM 停止并保留数据。`);
     if (prefix !== '/') console.log(`公网网页路径：${prefix}（外层代理需移除该前缀，本机上游仍使用根路径）`);
     await stopRequested;
   }

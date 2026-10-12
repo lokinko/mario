@@ -10,7 +10,7 @@ import {setTimeout as sleep} from 'node:timers/promises';
 const database=process.env.MARIO_TEST_DATABASE_URL;
 assert(database,'Set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database');
 const binary=resolve('server/target/debug/mario-server'+(process.platform==='win32'?'.exe':''));
-const master=randomBytes(32).toString('base64'), invite=randomBytes(32).toString('hex');
+const master=randomBytes(32).toString('base64');
 const children=[]; let logs=''; let assertions=0;
 const agentToken=randomBytes(32).toString('hex');
 const modelRequests=[];
@@ -38,7 +38,7 @@ const agentUrl=`http://127.0.0.1:${mockAgent.address().port}`;
 
 async function start(){
   const socket=createServer().listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(r=>socket.close(r));
-  const child=spawn(binary,['--port',String(port)],{env:{...process.env,DATABASE_URL:database,MARIO_MASTER_KEY:master,MARIO_REGISTRATION_KEY:invite,MARIO_HOST:'127.0.0.1',MARIO_WEB_DIR:resolve('client/dist'),MARIO_AGENT_URL:agentUrl,MARIO_AGENT_TOKEN:agentToken},stdio:['ignore','pipe','pipe']});
+  const child=spawn(binary,['--port',String(port)],{env:{...process.env,DATABASE_URL:database,MARIO_MASTER_KEY:master,MARIO_HOST:'127.0.0.1',MARIO_WEB_DIR:resolve('client/dist'),MARIO_AGENT_URL:agentUrl,MARIO_AGENT_TOKEN:agentToken},stdio:['ignore','pipe','pipe']});
   children.push(child);child.stdout.on('data',b=>logs+=b);child.stderr.on('data',b=>logs+=b);
   const base=`http://127.0.0.1:${port}/api`;
   for(let i=0;i<150;i++){try {if((await fetch(base+'/server')).ok)return base;}catch{} if(child.exitCode!==null)throw Error(logs);await sleep(100);}
@@ -50,11 +50,13 @@ async function request(base,path,session,method='GET',body,expected=200,revision
   if(session&&response.ok&&response.headers.get('x-data-revision')) session.revision=response.headers.get('x-data-revision');
   return text?JSON.parse(text):undefined;
 }
-async function register(base){return request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'test-password-0123456789',registrationKey:invite});}
+async function register(base){return request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'test-password-0123456789'});}
 try{
   const base=await start(), replica=await start();
   await request(base,'/snapshot',null,'GET',undefined,401);
-  await request(base,'/auth/register',null,'POST',{email:'blocked@example.test',password:'test-password-0123456789',registrationKey:'wrong'},401);
+  const legacy=await request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'test-password-0123456789',registrationKey:'obsolete'});
+  assert(legacy.token);
+  await request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'short'},400);
   const a=await register(base),b=await register(base);
   const first=await request(base,'/snapshot',a); assert.equal(first.holdings.length,0);
   assert.equal((await request(base,'/snapshot',b)).holdings.length,0);

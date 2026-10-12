@@ -13,7 +13,6 @@ export function defaults(domain = 'localhost') {
     MARIO_BASE_PATH: '/',
     POSTGRES_PASSWORD: secret(),
     MARIO_MASTER_KEY: randomBytes(32).toString('base64'),
-    MARIO_REGISTRATION_KEY: secret(),
     MARIO_AGENT_TOKEN: secret(),
     MARIO_ALLOWED_ORIGINS: '',
     DATABASE_URL: '',
@@ -185,7 +184,7 @@ export async function startPostgres(command, data, log, number, options = {}, ru
 
 export function validateSecrets(config) {
   if (Buffer.from(config.MARIO_MASTER_KEY ?? '', 'base64').length !== 32) throw Error('MARIO_MASTER_KEY 必须是 Base64 编码的 32 字节密钥');
-  for (const key of ['MARIO_REGISTRATION_KEY', 'MARIO_AGENT_TOKEN']) {
+  for (const key of ['MARIO_AGENT_TOKEN']) {
     if ((config[key] ?? '').length < 32) throw Error(`${key} 至少需要 32 字符`);
   }
 }

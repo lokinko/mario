@@ -4,7 +4,7 @@
 
 ## 协议
 
-1. `POST /api/auth/register`：邮箱、密码、管理员邀请码。
+1. `POST /api/auth/register`：邮箱、密码；公开注册，无需邀请码。兼容旧客户端的 `registrationKey` 字段，但忽略其值。
 2. `POST /api/auth/login`：邮箱、密码，返回随机会话令牌、账户 ID 与过期时间。
 3. 私有请求携带 `Authorization: Bearer <token>`；后端查数据库验证会话，服务器自行确定租户。
 4. `GET /api/snapshot` 响应头 `x-data-revision` 表示本次快照的用户数据版本。

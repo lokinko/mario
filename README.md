@@ -113,7 +113,7 @@ npm run install:all
 npm run dev
 ```
 
-多用户开发请配置 PostgreSQL、`MARIO_MASTER_KEY`、`MARIO_REGISTRATION_KEY`；前端设置 `VITE_API_URL=http://127.0.0.1:4217/api`。独立 Agent 使用 `MARIO_ROLE=agent`，后端配置 `MARIO_AGENT_URL` 与共享内部令牌。宿主机部署默认采用独立 Agent，单进程开发可以不设置 Agent URL。
+多用户开发请配置 PostgreSQL、`MARIO_MASTER_KEY`；注册开放，任何用户均可通过邮箱和密码创建账号，无需邀请码。前端设置 `VITE_API_URL=http://127.0.0.1:4217/api`。独立 Agent 使用 `MARIO_ROLE=agent`，后端配置 `MARIO_AGENT_URL` 与共享内部令牌。宿主机部署默认采用独立 Agent，单进程开发可以不设置 Agent URL。
 
 ```bash
 npm run build --prefix client

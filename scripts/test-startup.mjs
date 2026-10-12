@@ -69,7 +69,7 @@ try {
   assert.equal((await fetch(`${base}/api/snapshot`)).status, 401);
   assert.equal((await fetch(`http://127.0.0.1:${agentPort}/health`)).status, 401);
   const email = 'launcher@example.test', password = 'launcher-password-123456';
-  const registered = await fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, registrationKey: config.MARIO_REGISTRATION_KEY }) });
+  const registered = await fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
   assert.equal(registered.status, 200, await registered.text());
   const duplicate = spawnSync(process.execPath, [join(fixture, 'scripts/host-runtime.mjs'), '--skip-build'], { env, encoding: 'utf8', timeout: 10000 });
   assert.equal(duplicate.status, 1);

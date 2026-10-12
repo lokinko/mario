@@ -43,7 +43,7 @@ async function stopDatabase(site) {
 async function startApi(site) {
   const actual = readConfig(join(site.directory, '.env'));
   const binary = join(root, 'server/target/debug/mario-server' + (process.platform === 'win32' ? '.exe' : ''));
-  const child = spawn(binary, ['--port', actual.MARIO_PORT], { env: { ...cleanEnv, DATABASE_URL: `postgresql://mario:${actual.POSTGRES_PASSWORD}@127.0.0.1:${actual.MARIO_PG_PORT}/postgres`, MARIO_HOST: '127.0.0.1', MARIO_MASTER_KEY: actual.MARIO_MASTER_KEY, MARIO_REGISTRATION_KEY: actual.MARIO_REGISTRATION_KEY }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(binary, ['--port', actual.MARIO_PORT], { env: { ...cleanEnv, DATABASE_URL: `postgresql://mario:${actual.POSTGRES_PASSWORD}@127.0.0.1:${actual.MARIO_PG_PORT}/postgres`, MARIO_HOST: '127.0.0.1', MARIO_MASTER_KEY: actual.MARIO_MASTER_KEY }, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = ''; child.stdout.on('data', chunk => { logs += chunk; }); child.stderr.on('data', chunk => { logs += chunk; });
   children.push(child); site.child = child; site.base = `http://127.0.0.1:${actual.MARIO_PORT}/api`;
   for (let i = 0; i < 150; i++) {
@@ -64,7 +64,7 @@ async function request(site, path, session, method = 'GET', body, expected = 200
 }
 const accountPassword = 'test-account-password-123';
 async function register(site, email) {
-  return request(site, '/auth/register', null, 'POST', { email, password: accountPassword, registrationKey: site.config.MARIO_REGISTRATION_KEY });
+  return request(site, '/auth/register', null, 'POST', { email, password: accountPassword });
 }
 async function login(site, email) { return request(site, '/auth/login', null, 'POST', { email, password: accountPassword }); }
 async function cli(site, name, argv, expected = 0, pwd = passphrase) {
@@ -106,7 +106,7 @@ try {
   const restoredConfig = readConfig(join(target.directory, '.env'));
   const restoredEnvText = readFileSync(join(target.directory, '.env'), 'utf8');
   assert.equal(restoredConfig.MARIO_MASTER_KEY, source.config.MARIO_MASTER_KEY);
-  for (const key of ['MARIO_DOMAIN', 'POSTGRES_PASSWORD', 'MARIO_REGISTRATION_KEY', 'MARIO_AGENT_TOKEN', 'MARIO_PG_PORT']) assert.equal(restoredConfig[key], target.config[key]);
+  for (const key of ['MARIO_DOMAIN', 'POSTGRES_PASSWORD', 'MARIO_AGENT_TOKEN', 'MARIO_PG_PORT']) assert.equal(restoredConfig[key], target.config[key]);
   await startDatabase(target); await startApi(target);
   await request(target, '/snapshot', a, 'GET', undefined, 401); // Source session revoked.
   const restored = await login(target, a.email);

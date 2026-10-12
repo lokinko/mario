@@ -19,7 +19,9 @@ pub struct Accounts {
 pub struct Credentials {
     pub email: String,
     pub password: String,
-    pub registration_key: Option<String>,
+    // Older clients still submit this field; it no longer controls registration.
+    #[serde(default, rename = "registrationKey")]
+    _legacy_registration_key: Option<serde::de::IgnoredAny>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,15 +62,6 @@ impl Accounts {
         })
     }
     pub fn register(&self, input: &Credentials) -> AppResult<Session> {
-        let key = std::env::var("MARIO_REGISTRATION_KEY").unwrap_or_default();
-        if key.len() < 32
-            || !input
-                .registration_key
-                .as_deref()
-                .is_some_and(|v| crate::token_matches(&key, v))
-        {
-            return Err(AppError::Auth("注册需要管理员提供的有效邀请码".into()));
-        }
         let email = validate(input)?;
         let hash = hash_password(&input.password)?;
         let id = uuid::Uuid::new_v4().to_string();
@@ -163,7 +156,7 @@ impl Accounts {
         let email = validate(&Credentials {
             email: email.into(),
             password: password.into(),
-            registration_key: None,
+            _legacy_registration_key: None,
         })?;
         let hash = hash_password(password)?;
         let mut connection = self.conn()?;
@@ -212,12 +205,94 @@ mod tests {
 
     fn accounts() -> Accounts {
         let connection = Connection::open_in_memory().unwrap();
-        connection.execute_batch("CREATE TABLE sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,expires_at BIGINT NOT NULL);").unwrap();
+        connection.execute_batch("CREATE TABLE users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL); CREATE TABLE sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,expires_at BIGINT NOT NULL);").unwrap();
         Accounts {
             connection: Mutex::new(connection),
             url: String::new(),
             dummy_hash: String::new(),
         }
+    }
+
+    #[test]
+    fn public_registration_needs_only_email_and_password_and_ignores_legacy_keys() {
+        let accounts = accounts();
+        for (index, legacy_key) in [None, Some("obsolete-or-wrong-key")].iter().enumerate() {
+            let mut payload = serde_json::json!({
+                "email": format!(" USER{index}@Example.Test "),
+                "password": "long-password-1234",
+            });
+            if let Some(key) = legacy_key {
+                payload["registrationKey"] = (*key).into();
+            }
+            let input: Credentials = serde_json::from_value(payload).unwrap();
+            let session = accounts.register(&input).unwrap();
+            assert_eq!(session.email, format!("user{index}@example.test"));
+            assert_eq!(
+                accounts.authenticate(&session.token).unwrap(),
+                session.user_id
+            );
+            let stored = accounts
+                .conn()
+                .unwrap()
+                .query_row(
+                    "SELECT password_hash FROM users WHERE id=?1",
+                    [session.user_id.as_str()],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap();
+            assert!(Argon2::default()
+                .verify_password(
+                    input.password.as_bytes(),
+                    &PasswordHash::new(&stored).unwrap()
+                )
+                .is_ok());
+            assert!(matches!(
+                accounts.register(&input),
+                Err(AppError::Validation(_))
+            ));
+        }
+        assert_eq!(
+            accounts
+                .conn()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM users", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+    }
+
+    #[test]
+    fn public_registration_still_rejects_invalid_credentials_before_writing() {
+        let accounts = accounts();
+        for (email, password) in [
+            ("invalid", "long-password-1234"),
+            ("user@example.test", "short"),
+        ] {
+            let input: Credentials =
+                serde_json::from_value(serde_json::json!({"email":email,"password":password}))
+                    .unwrap();
+            assert!(matches!(
+                accounts.register(&input),
+                Err(AppError::Validation(_))
+            ));
+        }
+        assert_eq!(
+            accounts
+                .conn()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM users", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            accounts
+                .conn()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM sessions", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
     }
 
     #[test]

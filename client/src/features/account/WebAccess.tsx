@@ -140,7 +140,6 @@ export function WebAccess({ children }: { children: ReactNode }) {
   );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [invite, setInvite] = useState("");
   const [register, setRegister] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -156,7 +155,6 @@ export function WebAccess({ children }: { children: ReactNode }) {
       sessionStorage.removeItem(key);
     setEmail("");
     setPassword("");
-    setInvite("");
     setRegister(false);
     setError("");
   };
@@ -294,7 +292,6 @@ export function WebAccess({ children }: { children: ReactNode }) {
               body: JSON.stringify({
                 email,
                 password,
-                ...(register ? { registrationKey: invite } : {}),
               }),
             });
             // Another tab may have switched accounts while login was in flight.
@@ -368,18 +365,6 @@ export function WebAccess({ children }: { children: ReactNode }) {
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
-        {register && (
-          <label>
-            邀请码
-            <input
-              type="password"
-              required
-              autoComplete="off"
-              value={invite}
-              onChange={(e) => setInvite(e.target.value)}
-            />
-          </label>
-        )}
         <p>资料存储在你的服务器，同一账号可在网页和客户端访问。</p>
         {error && (
           <div className="error-box" role="alert">
@@ -398,7 +383,7 @@ export function WebAccess({ children }: { children: ReactNode }) {
             setError("");
           }}
         >
-          {register ? "已有账号，去登录" : "使用邀请码注册"}
+          {register ? "已有账号，去登录" : "注册新账号"}
         </button>
         {connected && (
           <button
