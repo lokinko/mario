@@ -147,27 +147,3 @@ export function rangeStart(today: string, days: number) {
   date.setUTCDate(date.getUTCDate() - days + 1);
   return date.toISOString().slice(0, 10);
 }
-
-export function simulateShock(
-  snapshot: Snapshot,
-  investmentDropPct: number,
-  foreignDropPct: number,
-) {
-  const analysis = analyzePortfolio(snapshot);
-  if (!analysis.comparable || analysis.total == null) return null;
-  const total = analysis.rows.reduce((sum, row) => {
-    const marketFactor =
-      row.holding.assetClass === "现金" ? 1 : 1 - investmentDropPct / 100;
-    const fxFactor =
-      row.holding.currency === snapshot.profile.baseCurrency
-        ? 1
-        : 1 - foreignDropPct / 100;
-    return sum + row.value! * marketFactor * fxFactor;
-  }, 0);
-  return {
-    total,
-    netAssets: total - snapshot.profile.liabilities,
-    loss: analysis.total - total,
-    lossPct: ratio(analysis.total - total, analysis.total),
-  };
-}

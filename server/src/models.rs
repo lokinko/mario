@@ -888,135 +888,7 @@ pub struct StoredAnalysis {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DecisionEntry {
-    pub id: Option<String>,
-    #[serde(default)]
-    pub content: Option<String>,
-    #[serde(default)]
-    pub source_analysis_id: Option<String>,
-    #[serde(default)]
-    pub source_action_index: Option<usize>,
-    #[serde(default)]
-    pub asset_name: String,
-    #[serde(default)]
-    pub thesis: String,
-    #[serde(default)]
-    pub counter_thesis: String,
-    #[serde(default)]
-    pub expected_return_pct: f64,
-    #[serde(default)]
-    pub downside_pct: f64,
-    #[serde(default)]
-    pub confidence_pct: f64,
-    #[serde(default)]
-    pub position_pct: f64,
-    #[serde(default)]
-    pub invalidation: String,
-    #[serde(default)]
-    pub review_date: String,
-    #[serde(default)]
-    pub rule_checks: Vec<DecisionRuleCheck>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionRuleCheck {
-    pub rule_id: String,
-    pub rule_revision: i64,
-    pub category: String,
-    pub statement: String,
-    pub trigger: String,
-    pub status: String,
-    #[serde(default)]
-    pub note: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionReview {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    pub outcome_summary: String,
-    pub actual_return_pct: Option<f64>,
-    pub thesis_status: String,
-    pub process_rating: Option<i64>,
-    pub lessons: String,
-    pub reviewed_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionReviewInput {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(default)]
-    pub outcome_summary: String,
-    #[serde(default)]
-    pub actual_return_pct: Option<f64>,
-    #[serde(default)]
-    pub thesis_status: String,
-    #[serde(default)]
-    pub process_rating: Option<i64>,
-    #[serde(default)]
-    pub lessons: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionRecord {
-    pub id: String,
-    pub content: Option<String>,
-    pub source_analysis_id: Option<String>,
-    pub source_action_index: Option<usize>,
-    pub asset_name: String,
-    pub thesis: String,
-    pub counter_thesis: String,
-    pub expected_return_pct: f64,
-    pub downside_pct: f64,
-    pub confidence_pct: f64,
-    pub position_pct: f64,
-    pub invalidation: String,
-    pub review_date: String,
-    pub rule_checks: Vec<DecisionRuleCheck>,
-    pub created_at: String,
-    pub review: Option<DecisionReview>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RuleEffectivenessSummary {
-    pub total_decisions: usize,
-    pub evaluated_decisions: usize,
-    pub applicable_checks: usize,
-    pub followed_checks: usize,
-    pub adherence_pct: Option<f64>,
-    pub reviewed_checks: usize,
-    pub rules: Vec<RuleEffectivenessItem>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RuleEffectivenessItem {
-    pub rule_id: String,
-    pub current_revision: i64,
-    pub observed_revisions: Vec<i64>,
-    pub category: String,
-    pub statement: String,
-    pub active: bool,
-    pub decision_count: usize,
-    pub applicable_count: usize,
-    pub followed_count: usize,
-    pub deviated_count: usize,
-    pub reviewed_count: usize,
-    pub followed_process_average: Option<f64>,
-    pub deviated_process_average: Option<f64>,
-    pub signal: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ReviewReminderSummary {
-    pub due_decision_count: usize,
     pub periodic_review_due: bool,
     pub checked_on: String,
 }
@@ -1143,8 +1015,6 @@ pub struct SystemReviewSnapshot {
     pub high_risk_findings: usize,
     pub goal_total: usize,
     pub goals_on_track: usize,
-    pub decision_total: usize,
-    pub reviewed_decisions: usize,
     pub active_rules: usize,
 }
 

@@ -38,7 +38,6 @@ impl Tenant {
         // Old releases already have revision tracking, but not the newer table/column.
         tenant.sql(
             "DROP TABLE research_attachments;
-                    ALTER TABLE decision_reviews DROP COLUMN content;
                     ALTER TABLE data_revision DROP COLUMN schema_version;",
         );
         tenant
@@ -85,8 +84,6 @@ fn postgres_migrations_upgrade_existing_tenant_once_across_replicas() {
             // These are the two queries that failed on the deployed server.
             db.conn().unwrap().prepare("SELECT evidence_id, id, name, byte_size, extracted_text, extraction_note FROM research_attachments ORDER BY id").unwrap()
                 .query_map([], |_| Ok(())).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
-            db.conn().unwrap().prepare("SELECT r.content FROM decisions d LEFT JOIN decision_reviews r ON r.decision_id=d.id").unwrap()
-                .query_map([], |_| Ok(())).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
         })
     }).collect::<Vec<_>>();
     for handle in handles {
@@ -124,7 +121,6 @@ fn postgres_migrations_roll_back_failed_upgrade_and_allow_retry() {
         .expect("upgrade must fail");
     assert!(format!("{error:?}").contains("test migration failure"));
     assert!(tenant.check("SELECT to_regclass('research_attachments') IS NULL"));
-    assert!(!tenant.check("SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid='decision_reviews'::regclass AND attname='content' AND NOT attisdropped)"));
     assert!(!tenant.check("SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid='data_revision'::regclass AND attname='schema_version' AND NOT attisdropped)"));
     tenant.sql(
         "DROP TRIGGER reject_schema_stamp ON data_revision; DROP FUNCTION reject_schema_stamp();",

@@ -54,6 +54,7 @@ it("registers and logs out through the mounted API and loads the mounted logo", 
   const { container } = render(
     <WebAccess>
       <p>个人资产</p>
+      <AccountSettings />
     </WebAccess>,
   );
   expect(screen.queryByLabelText("服务器地址")).toBeNull();
@@ -360,6 +361,7 @@ it("keeps data hidden until login, and revokes the session before disconnecting"
   render(
     <WebAccess>
       <p>个人资产</p>
+      <AccountSettings />
     </WebAccess>,
   );
   expect(screen.queryByText("个人资产")).toBeNull();
@@ -475,6 +477,7 @@ it("does not clear a new login when an earlier logout finishes", async () => {
   render(
     <WebAccess>
       <p>个人资产</p>
+      <AccountSettings />
     </WebAccess>,
   );
   fireEvent.click(screen.getByRole("button", { name: "退出账号" }));

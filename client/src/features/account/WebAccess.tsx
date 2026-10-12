@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { LoaderCircle, UsersRound } from "lucide-react";
+import { LoaderCircle, LogOut, UsersRound } from "lucide-react";
 import {
   forgetWebAccount,
   savedWebAccounts,
@@ -28,6 +28,7 @@ const AccountAccess = createContext<{
   closePicker: () => void;
   selectAccount: (token: string) => void;
   addAccount: () => void;
+  disconnect: () => void;
   busy: boolean;
 } | null>(null);
 
@@ -103,21 +104,33 @@ export function AccountSettings() {
             </button>
           </div>
         </>
-      ) : (
+      ) : null}
+      <div className="form-actions">
+        {!account.picking && (
+          <button
+            type="button"
+            className="secondary"
+            disabled={account.busy}
+            onClick={account.openPicker}
+          >
+            <UsersRound size={16} />
+            切换账号
+          </button>
+        )}
         <button
           type="button"
           className="secondary"
           disabled={account.busy}
-          onClick={account.openPicker}
+          onClick={account.disconnect}
         >
           {account.busy ? (
             <LoaderCircle size={16} className="spin" />
           ) : (
-            <UsersRound size={16} />
+            <LogOut size={16} />
           )}
-          切换账号
+          退出账号
         </button>
-      )}
+      </div>
     </section>
   );
 }
@@ -223,6 +236,7 @@ export function WebAccess({ children }: { children: ReactNode }) {
           connected,
           picking,
           busy,
+          disconnect: () => void disconnect(),
           openPicker: () => {
             setAccounts(savedWebAccounts());
             setPicking(true);
@@ -236,13 +250,6 @@ export function WebAccess({ children }: { children: ReactNode }) {
           },
         }}
       >
-        <button
-          className="web-disconnect"
-          disabled={busy}
-          onClick={() => void disconnect()}
-        >
-          退出账号
-        </button>
         {error && <p role="alert">{error}</p>}
         <Fragment key={connected}>{children}</Fragment>
       </AccountAccess.Provider>

@@ -4,34 +4,28 @@ import {
   BrainCircuit,
   Check,
   ChevronRight,
-  FilePenLine,
   History,
   Sparkles,
 } from "lucide-react";
 import type {
   AdviceGrounding,
   AnalysisClaim,
-  AnalysisAction,
   AnalysisEvidenceReference,
   AnalysisWorkflowTrace,
-  DecisionEntry,
   StructuredAnalysis,
   StoredAnalysis,
 } from "../../types";
 import { formatMoney } from "../../lib/format";
-import { emptyDecision } from "../decisions/DecisionJournal";
 import { MemoryItems } from "../memory/MemoryItems";
 
 export function StoredAnalysisView({
   item,
   onClose,
   onReuse,
-  onCreateDecisionDraft,
 }: {
   item: StoredAnalysis;
   onClose: () => void;
   onReuse: () => void;
-  onCreateDecisionDraft: (draft: DecisionEntry) => void;
 }) {
   const trace = item.workflowTrace;
   const audit = item.transparency;
@@ -129,8 +123,6 @@ export function StoredAnalysisView({
           personalContext={trace.personalContext}
           grounding={trace.adviceGrounding}
           evidence={trace.evidenceCatalog ?? []}
-          analysisId={item.id}
-          onCreateDecisionDraft={onCreateDecisionDraft}
         />
       ) : (
         <div className="answer">{item.answer}</div>
@@ -251,15 +243,11 @@ export function StructuredReportView({
   evidence,
   personalContext,
   grounding,
-  analysisId,
-  onCreateDecisionDraft,
 }: {
   report: StructuredAnalysis;
   personalContext?: AnalysisWorkflowTrace["personalContext"];
   grounding?: AdviceGrounding[];
   evidence: AnalysisEvidenceReference[];
-  analysisId: string;
-  onCreateDecisionDraft: (draft: DecisionEntry) => void;
 }) {
   const evidenceById = new Map(evidence.map((item) => [item.id, item]));
   return (
@@ -334,8 +322,6 @@ export function StructuredReportView({
         personalContext={personalContext}
         grounding={grounding}
         evidence={evidence}
-        analysisId={analysisId}
-        onCreateDecisionDraft={onCreateDecisionDraft}
       />
       <section className="report-section trigger-section">
         <div className="report-section-title">
@@ -400,8 +386,6 @@ export function AdviceCards({
   evidence,
   personalContext,
   grounding,
-  analysisId,
-  onCreateDecisionDraft,
 }: {
   compact?: boolean;
   onAsk?: (question: string) => void;
@@ -409,8 +393,6 @@ export function AdviceCards({
   personalContext?: AnalysisWorkflowTrace["personalContext"];
   grounding?: AdviceGrounding[];
   evidence: AnalysisEvidenceReference[];
-  analysisId: string;
-  onCreateDecisionDraft: (draft: DecisionEntry) => void;
 }) {
   if (compact) {
     const action = report.actions[0];
@@ -448,28 +430,6 @@ export function AdviceCards({
     );
   }
   const evidenceById = new Map(evidence.map((item) => [item.id, item]));
-  const createDecisionDraft = (action: AnalysisAction, index: number) => {
-    const counterPoints = [
-      ...report.options.flatMap((option) => option.risks),
-      ...report.unknowns,
-    ].filter(
-      (item, itemIndex, all) => item.trim() && all.indexOf(item) === itemIndex,
-    );
-    const invalidation = [action.reviewTrigger, ...report.reviewTriggers]
-      .filter(
-        (item, itemIndex, all) =>
-          item.trim() && all.indexOf(item) === itemIndex,
-      )
-      .join("\n");
-    onCreateDecisionDraft({
-      ...emptyDecision,
-      sourceAnalysisId: analysisId,
-      sourceActionIndex: index,
-      thesis: `${report.verdict}\n\n拟采取行动：${action.action}\n理由：${action.rationale}\n\n依据：${(action.supportingFactIndices ?? []).flatMap((i) => (report.facts[i] ? [report.facts[i].statement] : [])).join("；")}\n证据局限：${(action.evidenceLimits ?? []).join("；")}`,
-      counterThesis: counterPoints.join("\n"),
-      invalidation,
-    });
-  };
 
   return (
     <section className="advice-cards" aria-label="建议与依据">
@@ -595,19 +555,6 @@ export function AdviceCards({
             )}
             <footer>
               <span>重新评估：{action.reviewTrigger}</span>
-              <button
-                className="decision-draft-button"
-                disabled={review?.status !== "supported"}
-                title={
-                  review?.status !== "supported"
-                    ? "补充或核对证据后重新分析"
-                    : undefined
-                }
-                onClick={() => createDecisionDraft(action, index)}
-              >
-                <FilePenLine size={12} />
-                确认行动草稿
-              </button>
             </footer>
           </article>
         );

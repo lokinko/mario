@@ -18,10 +18,6 @@ import type {
   AnalysisPreview,
   AnalysisResult,
   AnalysisHistoryItem,
-  DecisionEntry,
-  DecisionTextInput,
-  DecisionRecord,
-  DecisionReviewInput,
   FinancialProfile,
   FxRateQuote,
   FxBook,
@@ -46,7 +42,6 @@ import type {
   ResearchEvidence,
   ResearchEvidenceInput,
   ReviewReminderSummary,
-  RuleEffectivenessSummary,
   Snapshot,
   SystemReviewDraft,
   SystemReviewRecord,
@@ -397,39 +392,12 @@ export async function saveAnalysisSettings(
   });
 }
 
-export async function saveDecision(
-  entry: DecisionEntry | DecisionTextInput,
-): Promise<void> {
-  await httpRequest<void>("/decisions", {
-    method: "POST",
-    body: JSON.stringify(entry),
-  });
-}
-
-export async function getDecisions(): Promise<DecisionRecord[]> {
-  return httpRequest<DecisionRecord[]>("/decisions");
-}
-
-export async function saveDecisionReview(
-  id: string,
-  review: DecisionReviewInput,
-): Promise<void> {
-  await httpRequest<void>(`/decisions/${encodeURIComponent(id)}/review`, {
-    method: "PUT",
-    body: JSON.stringify(review),
-  });
-}
-
 export async function getReviewReminders(): Promise<ReviewReminderSummary> {
   return httpRequest<ReviewReminderSummary>("/review-reminders");
 }
 
 export async function getInvestmentRules(): Promise<InvestmentRule[]> {
   return httpRequest<InvestmentRule[]>("/investment-rules");
-}
-
-export async function getRuleEffectiveness(): Promise<RuleEffectivenessSummary> {
-  return httpRequest<RuleEffectivenessSummary>("/rule-effectiveness");
 }
 
 export async function saveInvestmentRule(

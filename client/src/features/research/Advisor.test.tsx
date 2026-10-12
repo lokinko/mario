@@ -39,9 +39,6 @@ const props = {
     hasApiKey: true,
   },
   navigate: vi.fn(),
-  clearRequestedAnalysis: vi.fn(),
-  onCreateDecisionDraft: vi.fn(),
-  requestedAnalysisId: null,
 };
 
 beforeEach(() => {
@@ -136,33 +133,20 @@ it("does not send if saved settings cannot be read", async () => {
   expect(api.runAnalysis).not.toHaveBeenCalled();
 });
 
-it("keeps the latest selected historical report when requests finish out of order", async () => {
-  const pending: Record<string, (value: StoredAnalysis) => void> = {};
-  vi.mocked(api.getAnalysis).mockImplementation(
-    (id) =>
-      new Promise((resolve) => {
-        pending[id] = resolve;
-      }),
-  );
-  const view = render(<Advisor {...props} requestedAnalysisId="a" />);
-  view.rerender(<Advisor {...props} requestedAnalysisId="b" />);
-  await act(async () => {
-    pending.b({
-      id: "b",
-      question: "最新问题",
-      answer: "最新 report",
-    } as StoredAnalysis);
-  });
-  await act(async () => {
-    pending.a({
-      id: "a",
-      question: "过期问题",
-      answer: "过期 report",
-    } as StoredAnalysis);
-  });
-  expect(screen.getByText("最新 report")).toBeTruthy();
-  expect(screen.queryByText("过期 report")).toBeNull();
-  expect(props.clearRequestedAnalysis).toHaveBeenCalledTimes(1);
+it("opens the complete saved report from history without a decision handoff", async () => {
+  vi.mocked(api.getAnalysisHistory).mockResolvedValue([
+    { id: "a", question: "历史问题", createdAt: "2026-10-12T00:00:00Z" },
+  ]);
+  vi.mocked(api.getAnalysis).mockResolvedValue({
+    id: "a",
+    question: "历史问题",
+    answer: "完整历史 report",
+  } as StoredAnalysis);
+  render(<Advisor {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: /历史问题/ }));
+  await screen.findByText("完整历史 report");
+  expect(api.getAnalysis).toHaveBeenCalledWith("a");
+  expect(api.runAnalysis).not.toHaveBeenCalled();
 });
 
 it("disables native search for Chat Completions even when enabled in saved defaults", async () => {

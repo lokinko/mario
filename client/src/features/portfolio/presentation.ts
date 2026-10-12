@@ -12,15 +12,6 @@ export function goalStatus(
   }[status];
 }
 
-export function riskStatus(status: Snapshot["plan"]["riskStatus"]) {
-  return {
-    within: "边界内",
-    near: "接近上限",
-    over: "超出边界",
-    insufficient: "等待持仓",
-  }[status];
-}
-
 export function allocationGradient(allocation: { pct: number }[]) {
   const colors = ["#cf5c3b", "#23443b", "#c99a45", "#80948f", "#774936"];
   let cursor = 0;

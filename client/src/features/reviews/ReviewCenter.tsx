@@ -1,30 +1,20 @@
 import { useEffect, useState } from "react";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import { LoadState } from "../../components/LoadState";
+import { ChevronRight, Save, Sparkles } from "lucide-react";
 import {
-  AlertTriangle,
-  ChevronRight,
-  History,
-  Save,
-  Sparkles,
-} from "lucide-react";
-import {
-  getDecisions,
   getInvestmentRules,
   getInvestmentRuleHistory,
-  getRuleEffectiveness,
   getSystemReviews,
   saveInvestmentRule,
   saveSystemReview,
   updateInvestmentRule,
 } from "../../api";
 import type {
-  DecisionRecord,
   InvestmentRule,
   InvestmentRuleInput,
   InvestmentRuleRevision,
   SystemReviewRecord,
-  RuleEffectivenessSummary,
 } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
 import { localDateValue } from "../../lib/dates";
@@ -57,7 +47,6 @@ export function ReviewCenter({
   navigate: (v: View) => void;
   flash: (s: string) => void;
 }) {
-  const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
   const [rules, setRules] = useState<InvestmentRule[]>([]);
   const [reviews, setReviews] = useState<SystemReviewRecord[]>([]);
   const [reviewContent, setReviewContent] = useState("");
@@ -68,8 +57,6 @@ export function ReviewCenter({
     Record<string, InvestmentRuleRevision[]>
   >({});
   const [saving, setSaving] = useState(false);
-  const [effectiveness, setEffectiveness] =
-    useState<RuleEffectivenessSummary | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -79,19 +66,14 @@ export function ReviewCenter({
     const isCurrent = loadRequest.begin();
     setLoading(true);
     try {
-      const [nextDecisions, nextRules, nextReviews, nextEffectiveness] =
-        await Promise.all([
-          getDecisions(),
-          getInvestmentRules(),
-          getSystemReviews(),
-          getRuleEffectiveness().catch(() => null),
-        ]);
+      const [nextRules, nextReviews] = await Promise.all([
+        getInvestmentRules(),
+        getSystemReviews(),
+      ]);
       if (!isCurrent()) return;
       setLoaded(true);
-      setDecisions(nextDecisions);
       setRules(nextRules);
       setReviews(nextReviews);
-      setEffectiveness(nextEffectiveness);
       setError("");
     } catch (nextError) {
       if (isCurrent()) setError(String(nextError));
@@ -105,9 +87,6 @@ export function ReviewCenter({
   }, []);
 
   const today = localDateValue(new Date());
-  const dueDecisions = decisions.filter(
-    (item) => !item.review && item.reviewDate && item.reviewDate <= today,
-  );
   const activeRules = rules.filter((item) => item.active);
   const latestReview = reviews[0];
   const periodicReviewDue =
@@ -221,7 +200,7 @@ export function ReviewCenter({
   const startAiReview = () => {
     window.sessionStorage.setItem(
       "mario.advisorQuestion",
-      "请基于我的个人投资规则、最近周期复盘、财务目标、当前组合和历史决策，完成一次系统复盘：先核对规则违反与风险边界，再识别重复错误，比较至少两种改进路径，并给出下一周期可验证的行动与证伪条件。",
+      "请基于我的个人投资规则、最近周期复盘、财务目标、当前组合和历史分析，完成一次系统复盘：先核对规则违反与风险边界，再识别重复错误，比较至少两种改进路径，并给出下一周期可验证的行动与证伪条件。",
     );
     navigate("advisor");
   };
@@ -251,12 +230,6 @@ export function ReviewCenter({
       />
       <section className="review-metrics">
         <article>
-          <span>到期待复盘</span>
-          <strong className={dueDecisions.length ? "warning-text" : ""}>
-            {dueDecisions.length}
-          </strong>
-        </article>
-        <article>
           <span>复盘记录</span>
           <strong>{reviews.length}</strong>
           <small className={periodicReviewDue ? "warning-text" : ""}>
@@ -280,29 +253,6 @@ export function ReviewCenter({
         onRetry={() => void refresh()}
       />
 
-      {dueDecisions.length > 0 && (
-        <section className="panel due-review-panel">
-          <div className="panel-title">
-            <div>
-              <h2>到期待复盘</h2>
-            </div>
-            <button className="secondary" onClick={() => navigate("decision")}>
-              前往决策确认
-            </button>
-          </div>
-          <div className="due-review-list">
-            {dueDecisions.map((item) => (
-              <div key={item.id}>
-                <strong>{item.assetName}</strong>
-                <span>置信度 {item.confidencePct}%</span>
-                <span>计划复盘日 {item.reviewDate}</span>
-                <small>{item.invalidation}</small>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       <section className="panel form-panel system-review-form">
         <div className="panel-title">
           <div>
@@ -315,7 +265,7 @@ export function ReviewCenter({
             void persistSystemReview();
           }}
         >
-          <label className="decision-content-field">
+          <label className="review-content-field">
             <span>我的观点、顾虑和思考</span>
             <textarea
               value={reviewContent}
@@ -532,105 +482,6 @@ export function ReviewCenter({
               </div>
             </div>
           </div>
-        </div>
-      </details>
-
-      <details className="panel disclosure-panel">
-        <summary>规则表现与样本统计</summary>
-        <div className="disclosure-content">
-          <div className="effectiveness-summary">
-            <article>
-              <span>规则检查覆盖</span>
-              <strong>
-                {effectiveness?.totalDecisions
-                  ? `${effectiveness.evaluatedDecisions}/${effectiveness.totalDecisions}`
-                  : "—"}
-              </strong>
-              <small>启用此能力后的决策才计入</small>
-            </article>
-            <article>
-              <span>适用规则遵守率</span>
-              <strong>
-                {effectiveness?.adherencePct == null
-                  ? "—"
-                  : `${effectiveness.adherencePct.toFixed(0)}%`}
-              </strong>
-              <small>不适用规则不进入分母</small>
-            </article>
-            <article>
-              <span>已复盘规则样本</span>
-              <strong>{effectiveness?.reviewedChecks ?? 0}</strong>
-              <small>按决策过程评分比较</small>
-            </article>
-          </div>
-          {!effectiveness?.rules.length && (
-            <div className="empty">
-              这里汇总历史决策中的规则检查；新增纯文本决策可直接写下对规则的思考。
-            </div>
-          )}
-          <div className="effectiveness-list">
-            {effectiveness?.rules.map((item) => (
-              <article
-                key={item.ruleId}
-                className={item.active ? "" : "inactive"}
-              >
-                <div className="effectiveness-rule">
-                  <span>
-                    {item.category} · 当前 v{item.currentRevision}
-                    {item.active ? "" : " · 已停用"}
-                  </span>
-                  <strong>{item.statement}</strong>
-                  <small>
-                    {item.observedRevisions.length
-                      ? `已有决策覆盖版本 ${item.observedRevisions.join("、")}`
-                      : "尚无决策样本"}
-                  </small>
-                </div>
-                <div className="effectiveness-counts">
-                  <span>
-                    适用 <b>{item.applicableCount}</b>
-                  </span>
-                  <span>
-                    遵守 <b>{item.followedCount}</b>
-                  </span>
-                  <span>
-                    偏离 <b>{item.deviatedCount}</b>
-                  </span>
-                  <span>
-                    已复盘 <b>{item.reviewedCount}</b>
-                  </span>
-                </div>
-                <div className="process-comparison">
-                  <span>
-                    遵守后的过程评分{" "}
-                    <b>
-                      {item.followedProcessAverage == null
-                        ? "—"
-                        : item.followedProcessAverage.toFixed(1)}
-                    </b>
-                  </span>
-                  <span>
-                    偏离后的过程评分{" "}
-                    <b>
-                      {item.deviatedProcessAverage == null
-                        ? "—"
-                        : item.deviatedProcessAverage.toFixed(1)}
-                    </b>
-                  </span>
-                  <strong
-                    className={
-                      item.signal.startsWith("反常") ? "warning-text" : ""
-                    }
-                  >
-                    {item.signal}
-                  </strong>
-                </div>
-              </article>
-            ))}
-          </div>
-          <p className="effectiveness-disclaimer">
-            过程评分也可能受规则本身影响，样本存在选择偏差。这里用于发现值得复核的规则，不用于证明某条规则提高收益。
-          </p>
         </div>
       </details>
     </div>

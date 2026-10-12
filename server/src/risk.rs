@@ -104,7 +104,7 @@ pub fn analyze(
             level: "low".into(),
             title: "未发现明显的规则型风险".into(),
             detail: "这不表示组合没有风险，只表示当前输入未触发基础检查。".into(),
-            action: "继续完善目标、持仓和决策记录。".into(),
+            action: "继续完善目标、持仓和复盘记录。".into(),
         });
     }
     findings

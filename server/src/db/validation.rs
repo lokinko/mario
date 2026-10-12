@@ -1,8 +1,7 @@
 use super::{
-    AppError, AppResult, DecisionRuleCheck, GoalInput, HashSet, HoldingInput,
-    HoldingValuationEvidence, InvestmentRule, InvestmentRuleInput, Local, NaiveDate,
-    PortfolioEventInput, PortfolioEventType, ResearchEvidenceInput, SecurityPriceQuote,
-    SystemReviewInput, Utc,
+    AppError, AppResult, GoalInput, HoldingInput, HoldingValuationEvidence, InvestmentRuleInput,
+    Local, NaiveDate, PortfolioEventInput, PortfolioEventType, ResearchEvidenceInput,
+    SecurityPriceQuote, SystemReviewInput, Utc,
 };
 
 pub(super) fn validate_non_negative(values: &[f64]) -> AppResult<()> {
@@ -311,56 +310,6 @@ pub(super) fn validate_stored_holding_valuation(
         return Err(AppError::Validation("持仓估值证据内容无效".into()));
     }
     Ok(())
-}
-
-pub(super) fn validate_and_canonicalize_rule_checks(
-    checks: &[DecisionRuleCheck],
-    active_rules: &[InvestmentRule],
-) -> AppResult<Vec<DecisionRuleCheck>> {
-    if checks.len() != active_rules.len() {
-        return Err(AppError::Validation(
-            "请逐条确认当前所有有效投资规则后再冻结决策".into(),
-        ));
-    }
-    let mut seen = HashSet::new();
-    let mut canonical = Vec::with_capacity(active_rules.len());
-    for rule in active_rules {
-        let check = checks
-            .iter()
-            .find(|check| check.rule_id == rule.id)
-            .ok_or_else(|| AppError::Validation("缺少当前有效规则的确认结果".into()))?;
-        if !seen.insert(check.rule_id.as_str()) {
-            return Err(AppError::Validation("投资规则确认不能重复".into()));
-        }
-        if check.rule_revision != rule.revision {
-            return Err(AppError::Validation(
-                "投资规则已修订，请刷新并按最新版本重新确认".into(),
-            ));
-        }
-        if !matches!(check.status.as_str(), "遵守" | "偏离" | "不适用") {
-            return Err(AppError::Validation(
-                "每条有效规则必须明确标记为遵守、偏离或不适用".into(),
-            ));
-        }
-        if check.status == "偏离" && check.note.trim().is_empty() {
-            return Err(AppError::Validation("偏离规则时必须记录原因".into()));
-        }
-        if check.note.chars().count() > 1_000 {
-            return Err(AppError::Validation(
-                "规则确认备注不能超过 1000 个字符".into(),
-            ));
-        }
-        canonical.push(DecisionRuleCheck {
-            rule_id: rule.id.clone(),
-            rule_revision: rule.revision,
-            category: rule.category.clone(),
-            statement: rule.statement.clone(),
-            trigger: rule.trigger.clone(),
-            status: check.status.clone(),
-            note: check.note.trim().into(),
-        });
-    }
-    Ok(canonical)
 }
 
 fn validate_percentage(value: f64, label: &str) -> AppResult<()> {

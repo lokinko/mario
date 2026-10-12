@@ -19,10 +19,6 @@ vi.mock("../../api", () => ({
   savePortfolioCheckin: vi.fn(),
   getDailyAssets: vi.fn().mockResolvedValue({ records: [], nextBefore: null }),
   getPortfolioEvents: vi.fn().mockResolvedValue([]),
-  getDecisions: vi.fn().mockResolvedValue([]),
-  getRuleEffectiveness: vi
-    .fn()
-    .mockResolvedValue({ applicableChecks: 0, adherencePct: null }),
 }));
 afterEach(cleanup);
 
@@ -43,7 +39,7 @@ it("prepares an overall analysis question without running a model", () => {
   window.sessionStorage.clear();
 });
 
-it("adjusts the hypothetical loss and sorts holdings while preserving missing cost labels", async () => {
+it("sorts holdings while preserving missing cost labels", async () => {
   const snapshot: Snapshot = {
     ...(emptySnapshot as Snapshot),
     totalValue: 30000,
@@ -79,15 +75,6 @@ it("adjusts the hypothetical loss and sorts holdings while preserving missing co
     ],
   };
   render(<Dashboard snapshot={snapshot} navigate={vi.fn()} flash={vi.fn()} />);
-  const scenario = screen.getByRole("region", { name: "假设情景分析" });
-  expect(within(scenario).getByText("¥4,000")).toBeTruthy();
-  fireEvent.change(screen.getByRole("slider", { name: "投资市值下跌百分比" }), {
-    target: { value: "50" },
-  });
-  expect(within(scenario).getByText("¥10,000")).toBeTruthy();
-  expect(
-    within(scenario).getByText("该假设下的资产降幅超过已填写的回撤容忍度。"),
-  ).toBeTruthy();
   expect(screen.getByText("待补成本")).toBeTruthy();
   const rows = screen.getAllByRole("row");
   expect(rows[1].textContent).toContain("股票测试");
@@ -114,7 +101,7 @@ it("shows a failed ledger as unavailable without hiding other analysis, and retr
   const ledger = screen.getByRole("article", { name: "资金流水分析" });
   await within(ledger).findByRole("alert");
   expect(within(ledger).queryByText("¥0")).toBeNull();
-  expect(await screen.findByText("已记录决策")).toBeTruthy();
+  expect(screen.queryByText("已记录决策")).toBeNull();
   fireEvent.click(within(ledger).getByRole("button", { name: "重试读取" }));
   await within(ledger).findByText(
     "所选区间没有当前币种流水，零值只表示未记录。",
@@ -145,51 +132,6 @@ it("blocks new check-ins when existing snapshots could not be loaded", async () 
   );
 });
 
-it("prioritizes high risks and keeps additional findings reachable", async () => {
-  const snapshot = {
-    ...(emptySnapshot as Snapshot),
-    findings: [
-      {
-        level: "low" as const,
-        title: "一般提示",
-        detail: "提示依据",
-        action: "继续观察",
-      },
-      {
-        level: "medium" as const,
-        title: "中等风险",
-        detail: "风险依据",
-        action: "检查",
-      },
-      {
-        level: "high" as const,
-        title: "优先风险",
-        detail: "风险依据",
-        action: "处理",
-      },
-      {
-        level: "low" as const,
-        title: "更多提示",
-        detail: "提示依据",
-        action: "观察",
-      },
-    ],
-  };
-  const { container } = render(
-    <Dashboard snapshot={snapshot} navigate={vi.fn()} flash={vi.fn()} />,
-  );
-  await waitFor(() =>
-    expect(container.querySelector(".finding strong")?.textContent).toBe(
-      "优先风险",
-    ),
-  );
-  expect(screen.queryByText("更多提示")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "查看全部 4 项" }));
-  expect(screen.getByText("更多提示")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "收起" }));
-  expect(screen.queryByText("更多提示")).toBeNull();
-});
-
 it("directs the first goal action to the goals section", async () => {
   const navigate = vi.fn();
   render(
@@ -205,7 +147,7 @@ it("directs the first goal action to the goals section", async () => {
   expect(navigate).toHaveBeenCalledWith("foundation", "goals");
 });
 
-it("does not present unconverted allocations or risk estimates", async () => {
+it("does not present unconverted allocations", () => {
   const snapshot = {
     ...(emptySnapshot as Snapshot),
     valuationStatus: { ...emptySnapshot.valuationStatus, comparable: false },
@@ -213,15 +155,67 @@ it("does not present unconverted allocations or risk estimates", async () => {
   const { container } = render(
     <Dashboard snapshot={snapshot} navigate={vi.fn()} flash={vi.fn()} />,
   );
-  await waitFor(() =>
-    expect(
-      screen.getByText("等待汇率", { selector: ".risk-status" }),
-    ).toBeTruthy(),
-  );
   expect(container.querySelector(".donut")).toBeNull();
-  expect(
-    [...container.querySelectorAll(".risk-comparison-row strong")].map(
-      (node) => node.textContent,
-    ),
-  ).toEqual(["—", "—"]);
+  expect(screen.getByText("补齐汇率后查看目标进度")).toBeTruthy();
+});
+
+it("removes the four modules and their controls even when analysis data exists", async () => {
+  const snapshot: Snapshot = {
+    ...(emptySnapshot as Snapshot),
+    goals: [
+      {
+        id: "goal",
+        name: "目标",
+        targetAmount: 10000,
+        currentAmount: 0,
+        monthlyContribution: 0,
+        targetDate: "2028-01-01",
+        priority: "刚性",
+      },
+    ],
+    findings: [
+      {
+        level: "high",
+        title: "旧风险提示",
+        detail: "旧风险依据",
+        action: "旧风险操作",
+      },
+    ],
+    plan: {
+      ...emptySnapshot.plan,
+      riskStatus: "over",
+      stressLossPct: 30,
+      riskCapacityPct: 10,
+      rebalancing: [
+        {
+          holdingId: "stock",
+          name: "旧再平衡项目",
+          currentPct: 90,
+          targetPct: 50,
+          deviationPct: 40,
+          direction: "减少",
+          amount: 10000,
+        },
+      ],
+    },
+  };
+  render(<Dashboard snapshot={snapshot} navigate={vi.fn()} flash={vi.fn()} />);
+  for (const name of [
+    "风险提醒",
+    "风险预算",
+    "如果资产下跌，会影响多少？",
+    "最近一期投资变化",
+  ]) {
+    expect(screen.queryByRole("heading", { name })).toBeNull();
+  }
+  expect(screen.queryByRole("slider")).toBeNull();
+  expect(screen.queryByRole("region", { name: "投资变化归因" })).toBeNull();
+  expect(screen.queryByText("旧风险提示")).toBeNull();
+  expect(screen.queryByText("旧风险操作")).toBeNull();
+  expect(screen.queryByText("旧再平衡项目")).toBeNull();
+  expect(screen.getByRole("heading", { name: "分析数据完整度" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "目标进度" })).toBeTruthy();
+  expect(screen.getByText("组合变化与快照")).toBeTruthy();
+  expect(screen.queryByText("已记录决策")).toBeNull();
+  expect(screen.getByRole("article", { name: "资金流水分析" })).toBeTruthy();
 });

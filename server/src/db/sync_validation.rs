@@ -212,7 +212,9 @@ pub(super) fn validate_synced_memory_preferences(dataset: &SyncDataset) -> AppRe
     let source_ids = dataset
         .tables
         .iter()
-        .filter(|table| matches!(table.name.as_str(), "decisions" | "analyses"))
+        .filter(|table| {
+            table.name == "analyses" || (dataset.schema_version < 16 && table.name == "decisions")
+        })
         .flat_map(|table| table.rows.iter())
         .map(|row| sync_text(row, 0, "记忆来源 ID"))
         .collect::<AppResult<HashSet<_>>>()?;

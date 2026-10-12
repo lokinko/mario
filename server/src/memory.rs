@@ -104,17 +104,12 @@ fn score_item(
         366..=1095 => 0.8,
         _ => 0.7,
     };
-    let source_weight = if item.reviewed {
-        3.0
-    } else if item.kind == "decision" {
-        1.5
-    } else {
-        0.5
-    } + if item.preference == "pinned" {
-        4.0
-    } else {
-        0.0
-    };
+    let source_weight = if item.reviewed { 3.0 } else { 0.5 }
+        + if item.preference == "pinned" {
+            4.0
+        } else {
+            0.0
+        };
     let score = ((relevance as f64 * decay + source_weight) * 100.0).round() / 100.0;
     let mut reasons = Vec::new();
     if exact_title || identity_matches > 0 {
@@ -229,7 +224,7 @@ mod tests {
     ) -> MemoryItem {
         MemoryItem {
             id: id.into(),
-            kind: "decision".into(),
+            kind: "analysis".into(),
             title: title.into(),
             summary: content.into(),
             content: json!({ "thesis": content }),
@@ -252,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn retrieves_relevant_decision_and_explains_the_match() {
+    fn retrieves_relevant_analysis_and_explains_the_match() {
         let items = vec![
             memory(
                 "1",

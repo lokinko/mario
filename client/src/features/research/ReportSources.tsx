@@ -179,16 +179,8 @@ function originalBody(source: AnalysisEvidenceReference) {
   try {
     const content = JSON.parse(source.claim ?? "");
     if (source.evidenceType === "historical_ai") return content.answer;
-    const original = content.content ?? content.originalThesis;
-    const review = content.review?.content;
-    if (
-      typeof original === "string" &&
-      (!content.review || typeof review === "string")
-    ) {
-      return `${original}${review ? `\n\n原始复盘\n${review}` : ""}`;
-    }
   } catch {
-    // Older records may store plain text rather than a serialized decision.
+    // Older records may store plain text rather than a serialized answer.
   }
   return source.claim;
 }

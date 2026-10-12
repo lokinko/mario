@@ -1,9 +1,7 @@
 use super::{
-    average, params, rule_effectiveness_signal, store_rule_revision, validate_investment_rule,
-    validate_system_review, AppError, AppResult, Database, HashSet, InvestmentRule,
-    InvestmentRuleInput, InvestmentRuleRevision, OptionalRow, RuleEffectivenessItem,
-    RuleEffectivenessSummary, SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot, Utc,
-    Uuid,
+    params, store_rule_revision, validate_investment_rule, validate_system_review, AppError,
+    AppResult, Database, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, OptionalRow,
+    SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot, Utc, Uuid,
 };
 
 impl Database {
@@ -151,109 +149,9 @@ impl Database {
         Ok(revisions)
     }
 
-    pub fn rule_effectiveness(&self) -> AppResult<RuleEffectivenessSummary> {
-        let decisions = self.decisions()?;
-        let rules = self.investment_rules()?;
-        let mut items = Vec::with_capacity(rules.len());
-
-        for rule in rules {
-            let checks = decisions
-                .iter()
-                .filter_map(|decision| {
-                    decision
-                        .rule_checks
-                        .iter()
-                        .find(|check| check.rule_id == rule.id)
-                        .map(|check| (check, decision.review.as_ref()))
-                })
-                .collect::<Vec<_>>();
-            let applicable = checks
-                .iter()
-                .filter(|(check, _)| check.status != "不适用")
-                .collect::<Vec<_>>();
-            let followed = applicable
-                .iter()
-                .filter(|(check, _)| check.status == "遵守")
-                .collect::<Vec<_>>();
-            let deviated = applicable
-                .iter()
-                .filter(|(check, _)| check.status == "偏离")
-                .collect::<Vec<_>>();
-            let followed_process = followed
-                .iter()
-                .filter_map(|(_, review)| {
-                    review.and_then(|value| value.process_rating.map(|rating| rating as f64))
-                })
-                .collect::<Vec<_>>();
-            let deviated_process = deviated
-                .iter()
-                .filter_map(|(_, review)| {
-                    review.and_then(|value| value.process_rating.map(|rating| rating as f64))
-                })
-                .collect::<Vec<_>>();
-            let mut observed_revisions = checks
-                .iter()
-                .map(|(check, _)| check.rule_revision)
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>();
-            observed_revisions.sort_unstable();
-            let reviewed_count = applicable
-                .iter()
-                .filter(|(_, review)| review.is_some())
-                .count();
-            let followed_process_average = average(&followed_process);
-            let deviated_process_average = average(&deviated_process);
-
-            items.push(RuleEffectivenessItem {
-                rule_id: rule.id,
-                current_revision: rule.revision,
-                observed_revisions,
-                category: rule.category,
-                statement: rule.statement,
-                active: rule.active,
-                decision_count: checks.len(),
-                applicable_count: applicable.len(),
-                followed_count: followed.len(),
-                deviated_count: deviated.len(),
-                reviewed_count,
-                followed_process_average,
-                deviated_process_average,
-                signal: rule_effectiveness_signal(
-                    followed_process.len() + deviated_process.len(),
-                    followed_process_average,
-                    deviated_process_average,
-                    followed_process.len(),
-                    deviated_process.len(),
-                ),
-            });
-        }
-
-        let evaluated_decisions = decisions
-            .iter()
-            .filter(|decision| !decision.rule_checks.is_empty())
-            .count();
-        let applicable_checks = items.iter().map(|item| item.applicable_count).sum();
-        let followed_checks = items.iter().map(|item| item.followed_count).sum();
-        let reviewed_checks = items.iter().map(|item| item.reviewed_count).sum();
-        let adherence_pct = (applicable_checks > 0)
-            .then(|| followed_checks as f64 / applicable_checks as f64 * 100.0);
-
-        Ok(RuleEffectivenessSummary {
-            total_decisions: decisions.len(),
-            evaluated_decisions,
-            applicable_checks,
-            followed_checks,
-            adherence_pct,
-            reviewed_checks,
-            rules: items,
-        })
-    }
-
     pub fn save_system_review(&self, input: &SystemReviewInput) -> AppResult<SystemReviewRecord> {
         validate_system_review(input)?;
         let portfolio = self.snapshot()?;
-        let decisions = self.decisions()?;
         let rules = self.investment_rules()?;
         let id = Uuid::new_v4().to_string();
         let created_at = Utc::now().to_rfc3339();
@@ -275,11 +173,6 @@ impl Database {
                 .goal_projections
                 .iter()
                 .filter(|goal| matches!(goal.status.as_str(), "on-track" | "reached"))
-                .count(),
-            decision_total: decisions.len(),
-            reviewed_decisions: decisions
-                .iter()
-                .filter(|decision| decision.review.is_some())
                 .count(),
             active_rules: rules.iter().filter(|rule| rule.active).count(),
         };

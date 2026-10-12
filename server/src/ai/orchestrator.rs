@@ -541,24 +541,13 @@ fn memory_reference(item: &MemoryItem) -> AnalysisEvidenceReference {
         attachments: Vec::new(),
         id: format!("memory-{}", item.id),
         title: item.title.clone(),
-        publisher: if item.kind == "analysis" {
-            "历史模型回答"
-        } else {
-            "用户决策与复盘"
-        }
-        .into(),
+        publisher: "历史模型回答".into(),
         source_url: String::new(),
         source_tier: "历史记录（不代表当前事实）".into(),
         as_of_date: String::new(),
         asset_name: String::new(),
-        evidence_type: if item.kind == "analysis" {
-            "historical_ai"
-        } else {
-            "historical_decision"
-        }
-        .into(),
-        // Preserve the complete stored content, including the original decision
-        // and review; do not turn the retrieval summary into source material.
+        evidence_type: "historical_ai".into(),
+        // Preserve the complete answer rather than its retrieval summary.
         claim: serde_json::to_string_pretty(&item.content).unwrap_or_default(),
         notes: format!(
             "{}；记录时点：{}；{}",
@@ -991,8 +980,8 @@ mod tests {
         let retriever = HybridMemoryRetriever::default();
         let memory = vec![MemoryItem {
             id: "m1".into(),
-            kind: "decision".into(),
-            title: "指数决策".into(),
+            kind: "analysis".into(),
+            title: "指数分析".into(),
             summary: "集中度复盘".into(),
             content: serde_json::json!({ "lesson": "集中度复盘" }),
             created_at: "2026-01-01".into(),

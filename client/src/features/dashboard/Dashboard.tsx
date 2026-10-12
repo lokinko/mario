@@ -18,10 +18,9 @@ import { AssetHistory } from "../portfolio/AssetHistory";
 import { FinancialSummary } from "./FinancialSummary";
 import { HoldingAnalysis } from "./HoldingAnalysis";
 import { InvestmentActivity } from "./InvestmentActivity";
-import { ScenarioAnalysis } from "./ScenarioAnalysis";
 import { DATA_SAVED, SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 import { formatMoney } from "../../lib/format";
-import { goalStatus, riskStatus } from "../portfolio/presentation";
+import { goalStatus } from "../portfolio/presentation";
 
 export function Dashboard({
   snapshot,
@@ -32,7 +31,6 @@ export function Dashboard({
   navigate: (view: View, section?: FoundationSection) => void;
   flash: (message: string) => void;
 }) {
-  const [allFindings, setAllFindings] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [checkins, setCheckins] = useState<PortfolioCheckInRecord[]>([]);
   const [reminders, setReminders] = useState<ReviewReminderSummary | null>(
@@ -215,254 +213,120 @@ export function Dashboard({
 
       <AssetHistory snapshot={snapshot} />
       <HoldingAnalysis snapshot={snapshot} navigate={navigate} />
-      <section className="two-columns dashboard-section">
-        <article className="panel">
-          <div className="panel-title">
-            <h2>分析数据完整度</h2>
+      <section className="panel dashboard-section">
+        <div className="panel-title">
+          <h2>分析数据完整度</h2>
+        </div>
+        <dl className="dashboard-facts">
+          <div>
+            <dt>基准币种</dt>
+            <dd>{snapshot.profile.baseCurrency}</dd>
           </div>
-          <dl className="dashboard-facts">
-            <div>
-              <dt>基准币种</dt>
-              <dd>{snapshot.profile.baseCurrency}</dd>
-            </div>
-            <div>
-              <dt>最近资料更新</dt>
-              <dd>{new Date(snapshot.updatedAt).toLocaleString("zh-CN")}</dd>
-            </div>
-            <div>
-              <dt>缺少汇率的持仓</dt>
-              <dd>{snapshot.valuationStatus.missingFxHoldings.length} 项</dd>
-            </div>
-            <div>
-              <dt>缺少估值日期</dt>
-              <dd>{snapshot.valuationStatus.undatedHoldingCount} 项</dd>
-            </div>
-            <div>
-              <dt>统一估值日</dt>
-              <dd>
-                {snapshot.valuationStatus.alignedValuationDate ?? "尚未对齐"}
-              </dd>
-            </div>
-          </dl>
-          <p className="dashboard-note">
-            汇率完整时可汇总资产。冻结期间回报还需要同日估值、相邻快照和完整流水。
-          </p>
-        </article>
-        <article className="panel">
-          <div className="panel-title">
-            <div>
-              <h2>风险提醒</h2>
-            </div>
+          <div>
+            <dt>最近资料更新</dt>
+            <dd>{new Date(snapshot.updatedAt).toLocaleString("zh-CN")}</dd>
           </div>
-          <div className="finding-list">
-            {snapshot.findings.length === 0 && (
-              <div className="empty">暂无风险提醒</div>
-            )}
-            {[...snapshot.findings]
-              .sort(
-                (a, b) =>
-                  ({ high: 0, medium: 1, low: 2 })[a.level] -
-                  { high: 0, medium: 1, low: 2 }[b.level],
-              )
-              .slice(0, allFindings ? undefined : 3)
-              .map((finding, index) => (
-                <div
-                  className={`finding ${finding.level}`}
-                  key={`${finding.title}-${index}`}
-                >
-                  <AlertTriangle size={17} />
-                  <div>
-                    <strong>{finding.title}</strong>
-                    <details className="inline-help">
-                      <summary>查看依据</summary>
-                      <p>{finding.detail}</p>
-                    </details>
-                    <small>{finding.action}</small>
-                  </div>
-                </div>
-              ))}
-            {snapshot.findings.length > 3 && (
-              <button
-                className="text-button"
-                onClick={() => setAllFindings(!allFindings)}
-              >
-                {allFindings
-                  ? "收起"
-                  : "查看全部 " + snapshot.findings.length + " 项"}
-              </button>
-            )}
+          <div>
+            <dt>缺少汇率的持仓</dt>
+            <dd>{snapshot.valuationStatus.missingFxHoldings.length} 项</dd>
           </div>
-        </article>
+          <div>
+            <dt>缺少估值日期</dt>
+            <dd>{snapshot.valuationStatus.undatedHoldingCount} 项</dd>
+          </div>
+          <div>
+            <dt>统一估值日</dt>
+            <dd>
+              {snapshot.valuationStatus.alignedValuationDate ?? "尚未对齐"}
+            </dd>
+          </div>
+        </dl>
+        <p className="dashboard-note">
+          汇率完整时可汇总资产。冻结期间回报还需要同日估值、相邻快照和完整流水。
+        </p>
       </section>
 
-      <section className="planning-grid dashboard-section">
-        <article className="panel">
-          <div className="panel-title">
-            <div>
-              <h2>目标进度</h2>
-            </div>
-            <button
-              className="text-button"
-              onClick={() => navigate("foundation", "goals")}
-            >
-              管理目标 →
-            </button>
+      <section className="panel dashboard-section">
+        <div className="panel-title">
+          <div>
+            <h2>目标进度</h2>
           </div>
-          {snapshot.plan.goalProjections.length === 0 ? (
-            <div className="empty">
-              {snapshot.valuationStatus.comparable
-                ? "添加目标后查看模拟进度"
-                : "补齐汇率后查看目标进度"}
-            </div>
-          ) : (
-            <div className="projection-list">
-              {snapshot.plan.goalProjections.map((goal) => (
-                <div key={goal.goalId}>
-                  <div className="projection-head">
-                    <strong>{goal.name}</strong>
-                    <span className={goal.status}>
-                      {goalStatus(goal.status)}
-                    </span>
-                  </div>
-                  <div className="projection-bar">
-                    <i
-                      style={{
-                        width: `${Math.max(0, Math.min(100, goal.fundedPct))}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="projection-stats">
-                    <span>
-                      已筹备 <b>{goal.fundedPct.toFixed(1)}%</b>
-                    </span>
-                    <span>
-                      模拟达成率 <b>{goal.estimatedSuccessPct.toFixed(0)}%</b>
-                    </span>
-                    <span>
-                      月度缺口{" "}
-                      <b>
-                        {formatMoney(
-                          goal.monthlyGap,
-                          snapshot.profile.baseCurrency,
-                        )}
-                      </b>
-                    </span>
-                    <span>
-                      剩余 <b>{goal.monthsRemaining} 个月</b>
-                    </span>
-                  </div>
-                  <details className="inline-help">
-                    <summary>投入缺口与模拟金额</summary>
-                    <p>
-                      所需月投入{" "}
-                      {formatMoney(
-                        goal.requiredMonthlyContribution,
-                        snapshot.profile.baseCurrency,
-                      )}{" "}
-                      · 保守情景金额{" "}
-                      {formatMoney(
-                        goal.conservativeAmount,
-                        snapshot.profile.baseCurrency,
-                      )}{" "}
-                      · 中位情景金额{" "}
-                      {formatMoney(
-                        goal.medianAmount,
-                        snapshot.profile.baseCurrency,
-                      )}
-                    </p>
-                    <p>
-                      上述金额与达成率来自示例模型，不是实际收益预测或保证。
-                    </p>
-                  </details>
+          <button
+            className="text-button"
+            onClick={() => navigate("foundation", "goals")}
+          >
+            管理目标 →
+          </button>
+        </div>
+        {snapshot.plan.goalProjections.length === 0 ? (
+          <div className="empty">
+            {snapshot.valuationStatus.comparable
+              ? "添加目标后查看模拟进度"
+              : "补齐汇率后查看目标进度"}
+          </div>
+        ) : (
+          <div className="projection-list">
+            {snapshot.plan.goalProjections.map((goal) => (
+              <div key={goal.goalId}>
+                <div className="projection-head">
+                  <strong>{goal.name}</strong>
+                  <span className={goal.status}>{goalStatus(goal.status)}</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </article>
-        <article className="panel">
-          <div className="panel-title">
-            <div>
-              <h2>风险预算</h2>
-            </div>
-          </div>
-          <div className={"risk-comparison " + snapshot.plan.riskStatus}>
-            {[
-              ["压力损失估计", snapshot.plan.stressLossPct],
-              ["风险容量", snapshot.plan.riskCapacityPct],
-            ].map(([label, value], index) => (
-              <div className="risk-comparison-row" key={label}>
-                <span>{label}</span>
-                <strong>
-                  {snapshot.valuationStatus.comparable &&
-                  snapshot.holdings.length
-                    ? Number(value).toFixed(1) + "%"
-                    : "—"}
-                </strong>
-                <div className="risk-track" aria-hidden="true">
+                <div className="projection-bar">
                   <i
-                    className={index ? "capacity" : "stress"}
                     style={{
-                      width:
-                        snapshot.valuationStatus.comparable &&
-                        snapshot.holdings.length
-                          ? (Math.max(0, Number(value)) /
-                              Math.max(
-                                30,
-                                snapshot.plan.stressLossPct,
-                                snapshot.plan.riskCapacityPct,
-                              )) *
-                              100 +
-                            "%"
-                          : "0%",
+                      width: `${Math.max(0, Math.min(100, goal.fundedPct))}%`,
                     }}
                   />
                 </div>
+                <div className="projection-stats">
+                  <span>
+                    已筹备 <b>{goal.fundedPct.toFixed(1)}%</b>
+                  </span>
+                  <span>
+                    模拟达成率 <b>{goal.estimatedSuccessPct.toFixed(0)}%</b>
+                  </span>
+                  <span>
+                    月度缺口{" "}
+                    <b>
+                      {formatMoney(
+                        goal.monthlyGap,
+                        snapshot.profile.baseCurrency,
+                      )}
+                    </b>
+                  </span>
+                  <span>
+                    剩余 <b>{goal.monthsRemaining} 个月</b>
+                  </span>
+                </div>
+                <details className="inline-help">
+                  <summary>投入缺口与模拟金额</summary>
+                  <p>
+                    所需月投入{" "}
+                    {formatMoney(
+                      goal.requiredMonthlyContribution,
+                      snapshot.profile.baseCurrency,
+                    )}{" "}
+                    · 保守情景金额{" "}
+                    {formatMoney(
+                      goal.conservativeAmount,
+                      snapshot.profile.baseCurrency,
+                    )}{" "}
+                    · 中位情景金额{" "}
+                    {formatMoney(
+                      goal.medianAmount,
+                      snapshot.profile.baseCurrency,
+                    )}
+                  </p>
+                  <p>上述金额与达成率来自示例模型，不是实际收益预测或保证。</p>
+                </details>
               </div>
             ))}
-            <span className="risk-status">
-              {snapshot.valuationStatus.comparable
-                ? riskStatus(snapshot.plan.riskStatus)
-                : "等待汇率"}
-            </span>
           </div>
-          {snapshot.plan.rebalancing.length > 0 ? (
-            <div className="rebalance-list">
-              {snapshot.plan.rebalancing.slice(0, 4).map((item) => (
-                <div key={item.holdingId}>
-                  <span>{item.name}</span>
-                  <small>
-                    {item.currentPct.toFixed(1)}% → {item.targetPct.toFixed(1)}%
-                  </small>
-                  <strong>
-                    {item.direction}{" "}
-                    {formatMoney(item.amount, snapshot.profile.baseCurrency)}
-                  </strong>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="planning-empty">
-              {snapshot.valuationStatus.comparable && snapshot.holdings.length
-                ? "暂无再平衡提示"
-                : "完善持仓后检查再平衡"}
-            </p>
-          )}
-          <details className="inline-help">
-            <summary>计算假设</summary>
-            <p>{snapshot.plan.assumptions}</p>
-            <p>目标权重合计 100% 后，显示偏差超过 3 个百分点的再平衡项。</p>
-          </details>
-        </article>
+        )}
       </section>
 
-      <ScenarioAnalysis snapshot={snapshot} />
-      <InvestmentActivity
-        snapshot={snapshot}
-        checkins={checkins}
-        checkinsLoading={checkinsLoading}
-        checkinError={checkinLoadError}
-        navigate={navigate}
-      />
+      <InvestmentActivity snapshot={snapshot} navigate={navigate} />
       <details className="panel disclosure-panel portfolio-attribution">
         <summary>
           组合变化与快照
@@ -718,7 +582,7 @@ export function Dashboard({
               </div>
             </details>
           )}
-          <p className="effectiveness-disclaimer">
+          <p className="analysis-note">
             若持仓缺失、币种未换算、估值日期不同或录入错误，残差也会变化。它只能帮助分离外部现金流，不能替代时间加权收益率或完整业绩归因。
           </p>
         </div>

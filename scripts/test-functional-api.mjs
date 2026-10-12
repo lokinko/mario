@@ -101,7 +101,7 @@ try {
       },
     });
     assert.equal(preflight.headers.get("access-control-allow-origin"), "http://localhost:1420");
-    for (const path of ["/reminder-settings", "/review-reminders/acknowledge"])
+    for (const path of ["/reminder-settings", "/review-reminders/acknowledge", "/decisions", "/decisions/retired/review", "/rule-effectiveness"])
       assert.equal((await fetch(base + path, { method: "POST", headers: { Authorization: `Bearer ${token}` } })).status, 404);
     await api("/model-config", "PUT", {
       provider: "openai-chat", baseUrl: "https://example.test/v1", model: "test-model", apiKey: "test-encrypted-model-key",
@@ -319,48 +319,10 @@ try {
     active: true,
   };
   const rule = await api("/investment-rules", "POST", ruleInput);
-  const decision = {
-    id: randomUUID(),
-    assetName: "现金",
-    thesis: "保持流动性",
-    counterThesis: "机会成本",
-    expectedReturnPct: 2,
-    downsidePct: 1,
-    confidencePct: 70,
-    positionPct: 20,
-    invalidation: "支出增加",
-    reviewDate: start,
-    ruleChecks: [
-      {
-        ruleId: rule.id,
-        ruleRevision: rule.revision,
-        category: rule.category,
-        statement: rule.statement,
-        trigger: rule.trigger,
-        status: "遵守",
-        note: "",
-      },
-    ],
-  };
-  await api("/decisions", "POST", { ...decision, ruleChecks: [] }, 400);
-  await api("/decisions", "POST", decision, 204);
-  let reminder = await api("/review-reminders");
-  assert.equal(reminder.dueDecisionCount, 1);
-  await api(
-    `/decisions/${decision.id}/review`,
-    "PUT",
-    {
-      outcomeSummary: "保留了流动性",
-      actualReturnPct: null,
-      thesisStatus: "成立",
-      processRating: 4,
-      lessons: "继续检查预算",
-    },
-    204,
-  );
-  const recorded = (await api("/decisions"))[0];
-  assert.equal(recorded.thesis, decision.thesis);
-  assert.equal(recorded.review.processRating, 4);
+  await api("/decisions", "GET", undefined, 404);
+  await api("/decisions/retired/review", "PUT", {}, 404);
+  await api("/rule-effectiveness", "GET", undefined, 404);
+  assert.equal("dueDecisionCount" in (await api("/review-reminders")), false);
   await api(`/investment-rules/${rule.id}`, "PUT", {
     ...ruleInput,
     statement: "每月检查应急资金",
@@ -376,40 +338,9 @@ try {
     nextReviewDate: date(30),
   });
   assert.equal(periodic.snapshot.portfolioValue, 102100);
-  const memories = await api("/memories");
-  assert.ok(memories.length > 0);
-  const memory = await api(
-    `/memories/${encodeURIComponent(memories[0].id)}/preference`,
-    "PUT",
-    { preference: "hidden", note: "测试屏蔽" },
-  );
-  assert.equal(memory.preference, "hidden");
-  assert.equal((await api("/rule-effectiveness")).reviewedChecks, 1);
-  console.log(
-    "PASS decisions/reviews/rules/memory/reminders: workflow and immutable original judgment",
-  );
-
-  const decisionContent = "观点：保持观察。\n\n顾虑：资料尚不完整。\n思考：先核对下一期报告。";
-  await api("/decisions", "POST", { content: " \n\t " }, 400);
-  await api("/decisions", "POST", { content: decisionContent }, 204);
-  const textDecision = (await api("/decisions")).find((item) => item.content === decisionContent);
-  assert.ok(textDecision);
-  assert.equal(textDecision.reviewDate, "");
-  assert.deepEqual(textDecision.ruleChecks, []);
-  const textMemory = (await api("/memories")).find((item) => item.id === textDecision.id);
-  assert.equal(textMemory.content.content, decisionContent);
-  assert.equal(textMemory.content.confidencePct, undefined);
-  assert.equal((await api("/review-reminders")).dueDecisionCount, 0);
-  console.log("PASS text decisions: content-only save, blank rejection, complete memory and no invented due date");
-
-  const reviewContent = " 我的观点：继续跟踪。\n\n顾虑：证据不足。\n思考：保留 <原文> 和 **标记**。 ";
-  await api(`/decisions/${textDecision.id}/review`, "PUT", { content: " \n\t " }, 400);
-  await api(`/decisions/${textDecision.id}/review`, "PUT", { content: reviewContent }, 204);
-  const reviewedText = (await api("/decisions")).find((item) => item.id === textDecision.id);
-  assert.equal(reviewedText.content, decisionContent);
-  assert.equal(reviewedText.review.content, reviewContent);
-  assert.equal(reviewedText.review.processRating, null);
-  assert.equal((await api("/memories")).find((item) => item.id === textDecision.id).content.review.content, reviewContent);
+  assert.equal("decisionTotal" in periodic.snapshot, false);
+  assert.equal("reviewedDecisions" in periodic.snapshot, false);
+  const reviewContent = "我的观点：继续观察。\n\n顾虑：资料不足。";
   await api("/system-reviews", "POST", { content: " \n\t " }, 400);
   const textReview = await api("/system-reviews", "POST", { content: reviewContent });
   assert.equal(textReview.content, reviewContent);
@@ -473,10 +404,6 @@ try {
   assert.deepEqual(await api("/analysis-settings"), configured);
   assert.equal((await api("/snapshot")).holdings[0].marketValue, 102200);
   assert.equal((await api("/daily-assets")).records[0].totalAssets, 102200);
-  const persistedDecisions = await api("/decisions");
-  assert.equal(persistedDecisions.find((item) => item.id === decision.id).review.processRating, 4);
-  assert.equal(persistedDecisions.find((item) => item.id === textDecision.id).content, decisionContent);
-  assert.equal(persistedDecisions.find((item) => item.id === textDecision.id).review.content, reviewContent);
   assert.equal((await api("/system-reviews")).find((item) => item.id === textReview.id).content, reviewContent);
   console.log(
     `PASS restart persistence; ${count} authenticated HTTP assertions total`,

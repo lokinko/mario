@@ -53,13 +53,11 @@ const report: StructuredAnalysis = {
     },
   ],
 };
-it("shows advice-specific facts, sources, caveats and carries them into the confirmation draft", () => {
-  const onCreateDecisionDraft = vi.fn();
+it("shows advice-specific facts, sources and caveats without a confirmation draft", () => {
   render(
     <AdviceCards
       report={report}
       evidence={evidence}
-      analysisId="a1"
       grounding={[
         {
           actionIndex: 0,
@@ -68,7 +66,6 @@ it("shows advice-specific facts, sources, caveats and carries them into the conf
           checks: [],
         },
       ]}
-      onCreateDecisionDraft={onCreateDecisionDraft}
     />,
   );
   expect(
@@ -80,17 +77,8 @@ it("shows advice-specific facts, sources, caveats and carries them into the conf
       "未关联外部来源；这条建议不能据此说明当前市场或产品状况。",
     ),
   ).toBeTruthy();
-  fireEvent.click(screen.getAllByRole("button", { name: "确认行动草稿" })[0]);
-  expect(onCreateDecisionDraft.mock.calls[0][0]).toMatchObject({
-    sourceAnalysisId: "a1",
-    sourceActionIndex: 0,
-  });
-  expect(onCreateDecisionDraft.mock.calls[0][0].thesis).toContain(
-    "基金自身也存在集中度",
-  );
-  expect(onCreateDecisionDraft.mock.calls[0][0].thesis).toContain(
-    "年报不能代表今天的仓位",
-  );
+
+  expect(screen.queryByRole("button", { name: "确认行动草稿" })).toBeNull();
 });
 it("labels older advice as missing provenance instead of assigning unrelated facts", () => {
   render(
@@ -107,8 +95,6 @@ it("labels older advice as missing provenance instead of assigning unrelated fac
         ],
       }}
       evidence={evidence}
-      analysisId="old"
-      onCreateDecisionDraft={vi.fn()}
     />,
   );
   expect(screen.getByText(/旧回答没有保存逐条建议的证据关联/)).toBeTruthy();
@@ -125,12 +111,11 @@ it("does not open unsafe source URLs from old or imported records", () => {
   expect(screen.getByText("来源链接不可用")).toBeTruthy();
 });
 
-it("does not offer confirmation for contradictory or unchecked advice", () => {
+it("labels contradictory and unchecked advice", () => {
   render(
     <AdviceCards
       report={report}
       evidence={evidence}
-      analysisId="a1"
       grounding={[
         {
           actionIndex: 0,
@@ -139,16 +124,10 @@ it("does not offer confirmation for contradictory or unchecked advice", () => {
           checks: [],
         },
       ]}
-      onCreateDecisionDraft={vi.fn()}
     />,
   );
   expect(screen.getByText("发现证据矛盾")).toBeTruthy();
   expect(screen.getByText("尚未完成证据核对")).toBeTruthy();
-  expect(
-    screen
-      .getAllByRole("button", { name: "确认行动草稿" })
-      .every((button) => (button as HTMLButtonElement).disabled),
-  ).toBe(true);
 });
 
 it("keeps the simple answer to one next step and asks the model to resolve missing evidence", () => {
@@ -158,9 +137,7 @@ it("keeps the simple answer to one next step and asks the model to resolve missi
       compact
       report={report}
       evidence={evidence}
-      analysisId="a1"
       onAsk={onAsk}
-      onCreateDecisionDraft={vi.fn()}
       grounding={[
         {
           actionIndex: 0,

@@ -4,7 +4,7 @@ use crate::error::AppResult;
 
 // Bump whenever hosted tables/columns change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 3;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 4;
 
 // Keep legacy migration order intact: opening an old database remains idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -53,22 +53,6 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            fx_rate_observed_on TEXT NOT NULL DEFAULT '',
            created_at TEXT NOT NULL,
            updated_at TEXT NOT NULL
-         );
-         CREATE TABLE IF NOT EXISTS decisions (
-           id TEXT PRIMARY KEY,
-           asset_name TEXT NOT NULL,
-           payload TEXT NOT NULL,
-           review_date TEXT NOT NULL,
-           created_at TEXT NOT NULL
-         );
-         CREATE TABLE IF NOT EXISTS decision_reviews (
-           decision_id TEXT PRIMARY KEY REFERENCES decisions(id) ON DELETE CASCADE,
-           outcome_summary TEXT NOT NULL,
-           actual_return_pct REAL,
-           thesis_status TEXT NOT NULL,
-           process_rating INTEGER NOT NULL,
-           lessons TEXT NOT NULL,
-           reviewed_at TEXT NOT NULL
          );
          CREATE TABLE IF NOT EXISTS analyses (
            id TEXT PRIMARY KEY,
@@ -243,7 +227,6 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
          CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolio_events_fingerprint
            ON portfolio_events(fingerprint) WHERE fingerprint <> '';",
     )?;
-    ensure_column(connection, "decision_reviews", "content", "TEXT")?;
     ensure_column(connection, "holdings", "fx_rate_to_base", "REAL")?;
     ensure_column(connection, "holdings", "cost_price", "REAL")?;
     ensure_column(connection, "holdings", "quantity", "REAL")?;

@@ -12,7 +12,6 @@ import type {
   AnalysisRequest,
   AnalysisResult,
   AnalysisHistoryItem,
-  DecisionEntry,
   ModelConfig,
   StoredAnalysis,
 } from "../../types";
@@ -26,15 +25,10 @@ export function Advisor({
   model,
   active = true,
   navigate,
-  requestedAnalysisId,
-  clearRequestedAnalysis,
 }: {
   model: ModelConfig;
   active?: boolean;
   navigate: (v: View) => void;
-  requestedAnalysisId: string | null;
-  clearRequestedAnalysis: () => void;
-  onCreateDecisionDraft: (draft: DecisionEntry) => void;
 }) {
   const historyRequest = useRequestGuard();
   const analysisRequest = useRequestGuard();
@@ -100,13 +94,6 @@ export function Advisor({
       window.removeEventListener(SERVER_DATA_UPDATED, refreshHistory);
     };
   }, []);
-
-  useEffect(() => {
-    if (!requestedAnalysisId) return;
-    void openStoredAnalysis(requestedAnalysisId).then((accepted) => {
-      if (accepted) clearRequestedAnalysis();
-    });
-  }, [requestedAnalysisId, running]);
 
   useEffect(() => {
     if (active && turns.length)

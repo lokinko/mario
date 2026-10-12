@@ -12,20 +12,16 @@ import * as api from "../../api";
 import type { SystemReviewRecord } from "../../types";
 
 vi.mock("../../api", () => ({
-  getDecisions: vi.fn(),
   getInvestmentRules: vi.fn(),
   getInvestmentRuleHistory: vi.fn(),
   getSystemReviews: vi.fn(),
-  getRuleEffectiveness: vi.fn(),
   saveSystemReview: vi.fn(),
   saveInvestmentRule: vi.fn(),
   updateInvestmentRule: vi.fn(),
 }));
 beforeEach(() => {
-  vi.mocked(api.getDecisions).mockResolvedValue([]);
   vi.mocked(api.getInvestmentRules).mockResolvedValue([]);
   vi.mocked(api.getSystemReviews).mockResolvedValue([]);
-  vi.mocked(api.getRuleEffectiveness).mockRejectedValue(new Error("暂无样本"));
 });
 afterEach(() => {
   cleanup();

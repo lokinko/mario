@@ -196,8 +196,7 @@ export function Foundation({
 
   const removeHolding = async (item: Holding) => {
     setError("");
-    if (!window.confirm(`确认删除“${item.name}”？相关决策日志不会被删除。`))
-      return;
+    if (!window.confirm(`确认删除“${item.name}”？`)) return;
     setSaving(true);
     try {
       onUpdate(await deleteHolding(item.id));

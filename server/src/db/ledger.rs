@@ -38,7 +38,7 @@ impl Database {
             .portfolio_checkins()?
             .into_iter()
             .next()
-            .ok_or_else(|| AppError::Validation("请先在决策总览建立组合基线".into()))?;
+            .ok_or_else(|| AppError::Validation("请先在分析看板建立组合基线".into()))?;
         if !latest.base_currency.eq_ignore_ascii_case(&base_currency) {
             return Err(AppError::Validation(
                 "基准币种已改变；请先建立新的组合基线，再记录流水".into(),
@@ -92,7 +92,7 @@ impl Database {
             .portfolio_checkins()?
             .into_iter()
             .next()
-            .ok_or_else(|| AppError::Validation("请先在决策总览建立组合基线".into()))?;
+            .ok_or_else(|| AppError::Validation("请先在分析看板建立组合基线".into()))?;
         let frozen_through = latest.valuation_date.ok_or_else(|| {
             AppError::Validation("旧组合检查点没有估值日期；请先明确建立新的比较基线".into())
         })?;
@@ -170,7 +170,7 @@ impl Database {
             .portfolio_checkins()?
             .into_iter()
             .next()
-            .ok_or_else(|| AppError::Validation("请先在决策总览建立组合基线".into()))?;
+            .ok_or_else(|| AppError::Validation("请先在分析看板建立组合基线".into()))?;
         if !latest.base_currency.eq_ignore_ascii_case(&base_currency) {
             return Err(AppError::Validation(
                 "基准币种已改变；请先建立新的组合基线，再导入流水".into(),

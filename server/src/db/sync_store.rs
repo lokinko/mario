@@ -2,8 +2,8 @@ use super::{
     quote_identifier, sync_specs_for_version, validate_synced_event_identities,
     validate_synced_event_reversals, validate_synced_fx_provenance,
     validate_synced_holding_valuations, validate_synced_memory_preferences, AppError, AppResult,
-    Database, SyncDataset, SyncTable, SyncValue, Utc, ValueRef, SYNC_DATASET_SCHEMA_VERSION,
-    SYNC_TABLES,
+    Database, HashSet, SyncDataset, SyncTable, SyncValue, Utc, ValueRef,
+    SYNC_DATASET_SCHEMA_VERSION, SYNC_TABLES,
 };
 
 impl Database {
@@ -22,6 +22,8 @@ impl Database {
                 quote_identifier(spec.name),
                 if spec.name == "settings" {
                     "WHERE key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%'"
+                } else if spec.name == "memory_preferences" {
+                    "WHERE memory_id IN (SELECT id FROM analyses)"
                 } else {
                     ""
                 },
@@ -94,7 +96,20 @@ impl Database {
                 [],
             )?;
         }
+        let analysis_ids = dataset
+            .tables
+            .iter()
+            .filter(|table| table.name == "analyses")
+            .flat_map(|table| table.rows.iter())
+            .filter_map(|row| match row.first() {
+                Some(SyncValue::Text(id)) => Some(id.as_str()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
         for spec in sync_specs_for_version(dataset.schema_version)? {
+            if !SYNC_TABLES.iter().any(|current| current.name == spec.name) {
+                continue;
+            }
             let table = dataset
                 .tables
                 .iter()
@@ -116,6 +131,12 @@ impl Database {
             );
             let mut statement = transaction.prepare(&sql)?;
             for row in &table.rows {
+                if spec.name == "memory_preferences"
+                    && dataset.schema_version < 16
+                    && !matches!(row.first(), Some(SyncValue::Text(id)) if analysis_ids.contains(id.as_str()))
+                {
+                    continue;
+                }
                 let values = row
                     .iter()
                     .map(|value| match value {

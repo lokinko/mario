@@ -31,10 +31,6 @@ vi.mock("./api", async (original) => ({
   getReviewReminders: vi.fn().mockResolvedValue(null),
   getDailyAssets: vi.fn().mockResolvedValue({ records: [], nextBefore: null }),
   getPortfolioEvents: vi.fn().mockResolvedValue([]),
-  getDecisions: vi.fn().mockResolvedValue([]),
-  getRuleEffectiveness: vi
-    .fn()
-    .mockResolvedValue({ applicableChecks: 0, adherencePct: null }),
 }));
 vi.mock("./features/account/ServerData", () => ({
   ServerData: ({ onRestore }: { onRestore: () => Promise<void> }) => (
@@ -85,9 +81,15 @@ it.each([true, false])(
       fireEvent.click(await screen.findByRole("button", { name: "设置" }));
       await screen.findByRole("heading", { name: "设置" });
       const account = await screen.findByRole("region", { name: "账号" });
+      expect(
+        within(account).getByRole("button", { name: "退出账号" }),
+      ).toBeTruthy();
       fireEvent.click(
         within(account).getByRole("button", { name: "切换账号" }),
       );
+      expect(
+        within(account).getByRole("button", { name: "退出账号" }),
+      ).toBeTruthy();
       fireEvent.click(
         within(account).getByRole("button", { name: "切换到 b@example.test" }),
       );
@@ -97,6 +99,21 @@ it.each([true, false])(
       ).toBeTruthy();
       expect(webToken()).toBe("account-b");
       expect(fetcher).not.toHaveBeenCalled();
+      const switchedAccount = await screen.findByRole("region", {
+        name: "账号",
+      });
+      fireEvent.click(
+        within(switchedAccount).getByRole("button", { name: "退出账号" }),
+      );
+      await screen.findByRole("button", { name: "登录" });
+      expect(webToken()).toBeUndefined();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(fetcher.mock.calls[0][1].headers.Authorization).toBe(
+        "Bearer account-b",
+      );
+      expect(
+        screen.getByRole("button", { name: "切换到 a@example.test" }),
+      ).toBeTruthy();
     } finally {
       cleanup();
       localDev.mockRestore();
@@ -138,7 +155,7 @@ it("keeps local application accessible when optional model configuration fails",
     await screen.findByRole("button", { name: "测试恢复数据" }),
   ).toBeTruthy();
   expect((await screen.findByRole("alert")).textContent).toContain(
-    "决策与复盘不受影响",
+    "资料与复盘不受影响",
   );
   expect(screen.queryByText("本地服务尚未就绪")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "测试恢复数据" }));
@@ -196,12 +213,12 @@ it("shows frequently used records in primary navigation", async () => {
   render(<App />);
   await screen.findByRole("button", { name: "问答" });
   expect(screen.getByRole("button", { name: "我的情况" })).toBeTruthy();
-  for (const name of ["决策确认", "复盘记录", "参考资料"]) {
+  for (const name of ["复盘记录", "参考资料"]) {
     const entry = screen.getByRole("button", { name });
     expect(entry.closest("aside")).toBeTruthy();
     expect(entry.closest("details")).toBeNull();
   }
-  for (const name of ["记忆与规则", "组合流水", "资料与确认"])
+  for (const name of ["决策确认", "记忆与规则", "组合流水", "资料与确认"])
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
 it("responds to hash navigation without leaving the old page on screen", async () => {
@@ -254,7 +271,6 @@ it("closes the left drawer with Escape and restores focus without changing the p
 });
 
 it.each([
-  ["decision", "决策确认"],
   ["review", "复盘记录"],
   ["evidence", "参考资料"],
 ])(

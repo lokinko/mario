@@ -192,7 +192,7 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
           </div>
         )}
         {!loading && !error && visibleItems.length === 0 && (
-          <div className="empty">暂无记忆，完成决策或分析后自动生成。</div>
+          <div className="empty">暂无记忆，完成分析后自动生成。</div>
         )}
         <div className="memory-manager-list">
           {visibleItems.map((item) => {
@@ -210,7 +210,7 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
               >
                 <div className="managed-memory-head">
                   <div>
-                    <span>{item.kind === "decision" ? "决策" : "AI 分析"}</span>
+                    <span>AI 分析</span>
                     <strong>{item.title}</strong>
                   </div>
                   <div>

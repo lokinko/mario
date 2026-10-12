@@ -1,7 +1,6 @@
 import {
   MessageCircle,
   Database,
-  FilePenLine,
   History,
   WalletCards,
   LayoutDashboard,
@@ -13,7 +12,6 @@ export type View =
   | "foundation"
   | "ledger"
   | "evidence"
-  | "decision"
   | "review"
   | "memory"
   | "advisor"
@@ -28,7 +26,6 @@ export const views: View[] = [
   "foundation",
   "ledger",
   "evidence",
-  "decision",
   "review",
   "memory",
   "advisor",
@@ -45,7 +42,6 @@ export const nav = [
   { id: "advisor" as const, label: "问答", icon: MessageCircle },
   { id: "facts" as const, label: "我的情况", icon: WalletCards },
   { id: "dashboard" as const, label: "分析看板", icon: LayoutDashboard },
-  { id: "decision" as const, label: "决策确认", icon: FilePenLine },
   { id: "review" as const, label: "复盘记录", icon: History },
   { id: "evidence" as const, label: "参考资料", icon: Database },
 ];
@@ -53,7 +49,6 @@ export const nav = [
 export const viewLabels: Record<View, string> = {
   advisor: "问答",
   facts: "我的情况",
-  decision: "决策确认",
   review: "复盘记录",
   evidence: "参考资料",
   foundation: "持仓与目标",

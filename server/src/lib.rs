@@ -52,16 +52,15 @@ use market_data::{
 use memory::{HybridMemoryRetriever, MemoryRetriever};
 use models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, AnalysisSettings,
-    DecisionEntry, DecisionRecord, DecisionReviewInput, FinancialProfile, FxRateQuery, FxRateQuote,
-    GoalInput, HoldingInput, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision,
-    MemoryItem, MemoryPreferenceInput, ModelConfig, ModelConfigInput, ModelConnectionTest,
-    PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventImportCommitRequest,
-    PortfolioEventImportPreview, PortfolioEventImportRequest, PortfolioEventImportResult,
-    PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, ResearchEvidence,
-    ResearchEvidenceInput, ResearchEvidenceStatusInput, ReviewReminderSummary,
-    RuleEffectivenessSummary, SecurityPriceConfig, SecurityPriceConfigInput, SecurityPriceQuery,
-    SecurityPriceQuote, Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
-    VerifiedHoldingValuationInput,
+    FinancialProfile, FxRateQuery, FxRateQuote, GoalInput, HoldingInput, InvestmentRule,
+    InvestmentRuleInput, InvestmentRuleRevision, MemoryItem, MemoryPreferenceInput, ModelConfig,
+    ModelConfigInput, ModelConnectionTest, PortfolioCheckInInput, PortfolioCheckInRecord,
+    PortfolioEventImportCommitRequest, PortfolioEventImportPreview, PortfolioEventImportRequest,
+    PortfolioEventImportResult, PortfolioEventInput, PortfolioEventRecord,
+    PortfolioEventReversalInput, ResearchEvidence, ResearchEvidenceInput,
+    ResearchEvidenceStatusInput, ReviewReminderSummary, SecurityPriceConfig,
+    SecurityPriceConfigInput, SecurityPriceQuery, SecurityPriceQuote, Snapshot, StoredAnalysis,
+    SystemReviewInput, SystemReviewRecord, VerifiedHoldingValuationInput,
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
@@ -271,8 +270,6 @@ fn api_router() -> Router {
         )
         .route("/api/goals", post(add_goal))
         .route("/api/goals/{id}", put(update_goal).delete(delete_goal))
-        .route("/api/decisions", get(decisions).post(save_decision))
-        .route("/api/decisions/{id}/review", put(save_decision_review))
         .route(
             "/api/investment-rules",
             get(investment_rules).post(add_investment_rule),
@@ -282,7 +279,6 @@ fn api_router() -> Router {
             "/api/investment-rules/{id}/history",
             get(investment_rule_history),
         )
-        .route("/api/rule-effectiveness", get(rule_effectiveness))
         .route("/api/memories", get(memories))
         .route("/api/memories/{id}/preference", put(save_memory_preference))
         .route(
@@ -585,26 +581,6 @@ async fn delete_goal(
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.delete_goal(&id)?))
 }
-async fn save_decision(
-    Extension(state): Extension<Arc<AppState>>,
-    Json(input): Json<DecisionEntry>,
-) -> AppResult<axum::http::StatusCode> {
-    state.db.save_decision(&input)?;
-    Ok(axum::http::StatusCode::NO_CONTENT)
-}
-async fn decisions(
-    Extension(state): Extension<Arc<AppState>>,
-) -> AppResult<Json<Vec<DecisionRecord>>> {
-    Ok(Json(state.db.decisions()?))
-}
-async fn save_decision_review(
-    Extension(state): Extension<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(input): Json<DecisionReviewInput>,
-) -> AppResult<axum::http::StatusCode> {
-    state.db.save_decision_review(&id, &input)?;
-    Ok(axum::http::StatusCode::NO_CONTENT)
-}
 async fn investment_rules(
     Extension(state): Extension<Arc<AppState>>,
 ) -> AppResult<Json<Vec<InvestmentRule>>> {
@@ -628,11 +604,6 @@ async fn investment_rule_history(
     Path(id): Path<String>,
 ) -> AppResult<Json<Vec<InvestmentRuleRevision>>> {
     Ok(Json(state.db.investment_rule_history(&id)?))
-}
-async fn rule_effectiveness(
-    Extension(state): Extension<Arc<AppState>>,
-) -> AppResult<Json<RuleEffectivenessSummary>> {
-    Ok(Json(state.db.rule_effectiveness()?))
 }
 async fn system_reviews(
     Extension(state): Extension<Arc<AppState>>,
@@ -1353,7 +1324,7 @@ mod tests {
     fn memory() -> MemoryItem {
         MemoryItem {
             id: "memory-1".into(),
-            kind: "decision".into(),
+            kind: "analysis".into(),
             title: "指数".into(),
             summary: "集中风险".into(),
             content: json!({ "lesson": "降低集中度" }),

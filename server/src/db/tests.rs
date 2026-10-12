@@ -1,5 +1,145 @@
 use super::*;
 
+// Construct an authentic old backup from today's export for compatibility tests.
+pub(super) fn add_retired_tables(dataset: &mut SyncDataset) {
+    let specs = sync_specs_for_version(15).unwrap();
+    for (index, spec) in specs.iter().enumerate() {
+        if matches!(spec.name, "decisions" | "decision_reviews")
+            && !dataset.tables.iter().any(|table| table.name == spec.name)
+        {
+            dataset.tables.insert(
+                index,
+                SyncTable {
+                    name: spec.name.into(),
+                    columns: spec.columns.iter().map(|column| (*column).into()).collect(),
+                    rows: Vec::new(),
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("old.db");
+    let db = Database::open(&path).unwrap();
+    db.save_profile(&FinancialProfile {
+        monthly_income: 12345.0,
+        ..Default::default()
+    })
+    .unwrap();
+    db.conn().unwrap().execute_batch(
+        "CREATE TABLE decisions(id TEXT PRIMARY KEY, payload TEXT);
+         CREATE TABLE decision_reviews(decision_id TEXT PRIMARY KEY, payload TEXT);
+         INSERT INTO decisions VALUES ('retired', '{}');
+         INSERT INTO analyses(id,question,answer,created_at) VALUES ('active','历史问题','完整原文','2026-10-12T00:00:00Z');
+         INSERT INTO memory_preferences VALUES ('active','pinned','保留分析','2026-10-12T00:00:00Z');
+         INSERT INTO memory_preferences VALUES ('retired','hidden','旧偏好','2026-10-12T00:00:00Z');"
+    ).unwrap();
+    drop(db);
+    let reopened = Database::open(&path).unwrap();
+    let exported = reopened.export_sync_data().unwrap();
+    assert_eq!(exported.schema_version, 16);
+    assert!(!exported
+        .tables
+        .iter()
+        .any(|table| matches!(table.name.as_str(), "decisions" | "decision_reviews")));
+    let preferences = exported
+        .tables
+        .iter()
+        .find(|table| table.name == "memory_preferences")
+        .unwrap();
+    assert_eq!(preferences.rows.len(), 1);
+    let mut legacy = exported;
+    legacy.schema_version = 15;
+    add_retired_tables(&mut legacy);
+    legacy
+        .tables
+        .iter_mut()
+        .find(|table| table.name == "decisions")
+        .unwrap()
+        .rows
+        .push(vec![
+            SyncValue::Text("retired".into()),
+            SyncValue::Text("旧记录".into()),
+            SyncValue::Text("{}".into()),
+            SyncValue::Text("2026-10-12".into()),
+            SyncValue::Text("2026-10-12T00:00:00Z".into()),
+        ]);
+    legacy
+        .tables
+        .iter_mut()
+        .find(|table| table.name == "memory_preferences")
+        .unwrap()
+        .rows
+        .push(vec![
+            SyncValue::Text("retired".into()),
+            SyncValue::Text("hidden".into()),
+            SyncValue::Text("旧偏好".into()),
+            SyncValue::Text("2026-10-12T00:00:00Z".into()),
+        ]);
+    let restored = Database::open(&directory.path().join("restored.db")).unwrap();
+    restored.import_sync_data(&legacy).unwrap();
+    assert_eq!(restored.snapshot().unwrap().profile.monthly_income, 12345.0);
+    let memories = restored.memories().unwrap();
+    assert_eq!(memories.len(), 1);
+    assert_eq!(memories[0].id, "active");
+    assert_eq!(memories[0].content["answer"], "完整原文");
+    assert_eq!(memories[0].preference, "pinned");
+    let retired_tables: i64 = restored.conn().unwrap().query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('decisions','decision_reviews')", [], |row| row.get(0)
+    ).unwrap();
+    assert_eq!(retired_tables, 0);
+    restored.export_sync_data().unwrap().validate().unwrap();
+}
+
+#[test]
+fn independent_text_reviews_preserve_content_through_restart_and_import() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("reviews.db");
+    let db = Database::open(&path).unwrap();
+    for content in ["", " \n\t "] {
+        let input: SystemReviewInput =
+            serde_json::from_value(serde_json::json!({"content": content})).unwrap();
+        assert!(matches!(
+            db.save_system_review(&input),
+            Err(AppError::Validation(_))
+        ));
+    }
+    assert!(
+        db.review_reminder_summary(NaiveDate::from_ymd_opt(2026, 10, 12).unwrap())
+            .unwrap()
+            .periodic_review_due
+    );
+    let content = " 我的观点：继续观察。\n\n顾虑：资料不足。\n思考：<原文> **保留**。 ";
+    let input: SystemReviewInput =
+        serde_json::from_value(serde_json::json!({"content": content})).unwrap();
+    let review = db.save_system_review(&input).unwrap();
+    assert_eq!(review.content.as_deref(), Some(content));
+    assert!(review.next_review_date.is_empty());
+    assert_eq!(review.adherence_score, None);
+    assert!(
+        !db.review_reminder_summary(NaiveDate::from_ymd_opt(2026, 10, 12).unwrap())
+            .unwrap()
+            .periodic_review_due
+    );
+    drop(db);
+    let reopened = Database::open(&path).unwrap();
+    assert_eq!(
+        reopened.system_reviews().unwrap()[0].content.as_deref(),
+        Some(content)
+    );
+    let target = Database::open(&directory.path().join("target.db")).unwrap();
+    target
+        .import_sync_data(&reopened.export_sync_data().unwrap())
+        .unwrap();
+    assert_eq!(
+        target.system_reviews().unwrap()[0].content.as_deref(),
+        Some(content)
+    );
+}
+
 fn verified_quote() -> SecurityPriceQuote {
     SecurityPriceQuote {
         symbol: "AAPL".into(),
@@ -305,7 +445,7 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
     source
         .apply_verified_holding_valuation(&holding_id, 10_000.0, &quote)
         .unwrap();
-    let rule = source
+    let _rule = source
         .add_investment_rule(&InvestmentRuleInput {
             category: "仓位".into(),
             statement: "单一主动仓位不超过 8%".into(),
@@ -315,35 +455,23 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
             source_review_id: None,
         })
         .unwrap();
+    let analysis_id = "synced-analysis".to_string();
     source
-        .save_decision(&DecisionEntry {
-            content: None,
-            id: Some("synced-decision".into()),
-            source_analysis_id: None,
-            source_action_index: None,
-            asset_name: "宽基指数".into(),
-            thesis: "长期风险溢价".into(),
-            counter_thesis: "估值偏高".into(),
-            expected_return_pct: 8.0,
-            downside_pct: 20.0,
-            confidence_pct: 60.0,
-            position_pct: 8.0,
-            invalidation: "风险容量下降".into(),
-            review_date: "2026-12-01".into(),
-            rule_checks: vec![DecisionRuleCheck {
-                rule_id: rule.id,
-                rule_revision: rule.revision,
-                category: rule.category,
-                statement: rule.statement,
-                trigger: rule.trigger,
-                status: "遵守".into(),
-                note: "".into(),
-            }],
-        })
+        .conn()
+        .unwrap()
+        .execute(
+            "INSERT INTO analyses(id, question, answer, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                analysis_id,
+                "指数研究",
+                "指数集中度分析",
+                "2026-01-01T00:00:00Z"
+            ],
+        )
         .unwrap();
     let hidden_memory = source
         .save_memory_preference(
-            "synced-decision",
+            &analysis_id,
             &MemoryPreferenceInput {
                 preference: "hidden".into(),
                 note: "先验证永久屏蔽".into(),
@@ -353,7 +481,7 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
     assert!(!hidden_memory.selected);
     source
         .save_memory_preference(
-            "synced-decision",
+            &analysis_id,
             &MemoryPreferenceInput {
                 preference: "pinned".into(),
                 note: "跨设备保留的能力圈经验".into(),
@@ -453,14 +581,11 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
     assert_eq!(restored.holding_valuations.len(), 1);
     assert_eq!(restored.holding_valuations[0].quantity, 10_000.0);
     assert_eq!(restored.profile.emergency_fund, 48_000.0);
-    let restored_decision = target.decisions().unwrap().remove(0);
-    assert_eq!(restored_decision.rule_checks.len(), 1);
-    assert_eq!(restored_decision.rule_checks[0].status, "遵守");
     let restored_memory = target
         .memories()
         .unwrap()
         .into_iter()
-        .find(|item| item.id == "synced-decision")
+        .find(|item| item.id == analysis_id)
         .unwrap();
     assert_eq!(restored_memory.preference, "pinned");
     assert_eq!(restored_memory.preference_note, "跨设备保留的能力圈经验");
@@ -477,6 +602,7 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
     );
 
     let mut legacy_v8 = dataset.clone();
+    add_retired_tables(&mut legacy_v8);
     let legacy_reviews = legacy_v8
         .tables
         .iter_mut()
@@ -616,6 +742,7 @@ fn sync_snapshot_round_trips_domain_data_but_never_settings() {
     );
 
     let mut legacy_dataset = legacy_v2;
+    add_retired_tables(&mut legacy_dataset);
     legacy_dataset.schema_version = 1;
     assert_eq!(
         legacy_dataset.tables.pop().unwrap().name,
@@ -1327,223 +1454,6 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
 }
 
 #[test]
-fn stores_decision_review_separately_from_original_snapshot() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    db.save_decision(&DecisionEntry {
-        content: None,
-        id: None,
-        source_analysis_id: None,
-        source_action_index: None,
-        asset_name: "指数".into(),
-        thesis: "长期风险溢价".into(),
-        counter_thesis: "估值过高".into(),
-        expected_return_pct: 12.0,
-        downside_pct: 20.0,
-        confidence_pct: 65.0,
-        position_pct: 30.0,
-        invalidation: "风险容量改变".into(),
-        review_date: "2026-12-01".into(),
-        rule_checks: vec![],
-    })
-    .unwrap();
-    let id = db.decisions().unwrap()[0].id.clone();
-    db.save_decision_review(
-        &id,
-        &DecisionReviewInput {
-            content: None,
-            outcome_summary: "价格下跌但逻辑未破坏".into(),
-            actual_return_pct: Some(-8.0),
-            thesis_status: "部分成立".into(),
-            process_rating: Some(4),
-            lessons: "进一步区分价格与逻辑".into(),
-        },
-    )
-    .unwrap();
-    let record = db.decisions().unwrap().remove(0);
-    assert_eq!(record.thesis, "长期风险溢价");
-    assert_eq!(record.review.unwrap().process_rating, Some(4));
-    let memory = db
-        .memories()
-        .unwrap()
-        .into_iter()
-        .find(|item| item.kind == "decision")
-        .unwrap();
-    assert!(memory.reviewed);
-    assert!(memory.contradiction);
-    assert_eq!(memory.status, "复盘：部分成立");
-    assert_eq!(memory.content["originalThesis"], "长期风险溢价");
-    assert_eq!(memory.content["review"]["processRating"], 4);
-}
-
-#[test]
-fn requires_every_decision_to_have_a_review_date() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    let result = db.save_decision(&DecisionEntry {
-        content: None,
-        id: None,
-        source_analysis_id: None,
-        source_action_index: None,
-        asset_name: "指数".into(),
-        thesis: "长期风险溢价".into(),
-        counter_thesis: "估值过高".into(),
-        expected_return_pct: 8.0,
-        downside_pct: 20.0,
-        confidence_pct: 60.0,
-        position_pct: 30.0,
-        invalidation: "风险容量下降".into(),
-        review_date: "".into(),
-        rule_checks: vec![],
-    });
-    assert!(matches!(result, Err(AppError::Validation(_))));
-}
-
-#[test]
-fn review_reminders_follow_due_work() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    let today = NaiveDate::from_ymd_opt(2026, 9, 6).unwrap();
-
-    let initial = db.review_reminder_summary(today).unwrap();
-    assert!(initial.periodic_review_due);
-
-    db.save_decision(&DecisionEntry {
-        content: None,
-        id: Some("due-decision".into()),
-        source_analysis_id: None,
-        source_action_index: None,
-        asset_name: "宽基指数".into(),
-        thesis: "长期配置".into(),
-        counter_thesis: "风险容量下降".into(),
-        expected_return_pct: 7.0,
-        downside_pct: 20.0,
-        confidence_pct: 60.0,
-        position_pct: 30.0,
-        invalidation: "应急金不足".into(),
-        review_date: "2026-09-06".into(),
-        rule_checks: vec![],
-    })
-    .unwrap();
-    db.save_decision(&DecisionEntry {
-        content: None,
-        id: Some("future-decision".into()),
-        source_analysis_id: None,
-        source_action_index: None,
-        asset_name: "债券基金".into(),
-        thesis: "降低波动".into(),
-        counter_thesis: "利率快速上行".into(),
-        expected_return_pct: 3.0,
-        downside_pct: 5.0,
-        confidence_pct: 70.0,
-        position_pct: 20.0,
-        invalidation: "久期风险变化".into(),
-        review_date: "2026-10-01".into(),
-        rule_checks: vec![],
-    })
-    .unwrap();
-
-    let due = db.review_reminder_summary(today).unwrap();
-    assert_eq!(due.due_decision_count, 1);
-
-    db.save_decision_review(
-        "due-decision",
-        &DecisionReviewInput {
-            content: None,
-            outcome_summary: "按计划复核".into(),
-            actual_return_pct: None,
-            thesis_status: "尚不明确".into(),
-            process_rating: Some(4),
-            lessons: "继续观察证伪条件".into(),
-        },
-    )
-    .unwrap();
-    let changed = db.review_reminder_summary(today).unwrap();
-    assert_eq!(changed.due_decision_count, 0);
-    assert!(changed.periodic_review_due);
-
-    db.save_system_review(&SystemReviewInput {
-        content: None,
-        period_label: "2026 Q3".into(),
-        adherence_score: Some(4),
-        process_summary: "按计划执行".into(),
-        rule_violations: "无".into(),
-        lessons: "保持低频复盘".into(),
-        next_actions: "下季度复核".into(),
-        next_review_date: "2026-12-31".into(),
-    })
-    .unwrap();
-    let clear = db.review_reminder_summary(today).unwrap();
-    assert_eq!(clear.due_decision_count, 0);
-    assert!(!clear.periodic_review_due);
-}
-
-#[test]
-fn decision_provenance_must_reference_an_existing_analysis() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    let base = DecisionEntry {
-        content: None,
-        id: None,
-        source_analysis_id: Some("analysis-1".into()),
-        source_action_index: Some(0),
-        asset_name: "指数".into(),
-        thesis: "长期风险溢价".into(),
-        counter_thesis: "估值过高".into(),
-        expected_return_pct: 8.0,
-        downside_pct: 20.0,
-        confidence_pct: 60.0,
-        position_pct: 30.0,
-        invalidation: "风险容量下降".into(),
-        review_date: "2026-12-01".into(),
-        rule_checks: vec![],
-    };
-    assert!(matches!(
-        db.save_decision(&base),
-        Err(AppError::Validation(_))
-    ));
-
-    let now = Utc::now().to_rfc3339();
-    db.conn()
-        .unwrap()
-        .execute(
-            "INSERT INTO analyses (id, question, answer, audit, trace, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                "analysis-1",
-                "如何处理风险",
-                "先降低脆弱性",
-                "{}",
-                r#"{"structuredReport":{"verdict":"降低脆弱性","facts":[],"inferences":[],"unknowns":["估值"],"options":[],"actions":[{"action":"再平衡","rationale":"集中度过高","reversible":true,"reviewTrigger":"集中度下降"}],"reviewTriggers":["一个月后"]}}"#,
-                now
-            ],
-        )
-        .unwrap();
-    let mut invalid_action = base.clone();
-    invalid_action.source_action_index = Some(1);
-    assert!(matches!(
-        db.save_decision(&invalid_action),
-        Err(AppError::Validation(_))
-    ));
-    db.save_decision(&base).unwrap();
-    let record = db.decisions().unwrap().remove(0);
-    assert_eq!(record.source_analysis_id.as_deref(), Some("analysis-1"));
-    assert_eq!(record.source_action_index, Some(0));
-}
-
-#[test]
-fn old_decision_payload_deserializes_without_provenance() {
-    let payload = r#"{
-        "id":null,"assetName":"指数","thesis":"长期持有","counterThesis":"估值风险",
-        "expectedReturnPct":8,"downsidePct":20,"confidencePct":60,"positionPct":30,
-        "invalidation":"目标变化","reviewDate":"2026-12-01"
-    }"#;
-    let entry: DecisionEntry = serde_json::from_str(payload).unwrap();
-    assert_eq!(entry.source_analysis_id, None);
-    assert_eq!(entry.source_action_index, None);
-    assert!(entry.rule_checks.is_empty());
-}
-
-#[test]
 fn updates_goal_funding_and_recalculates_projection() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("test.db")).unwrap();
@@ -1870,108 +1780,6 @@ fn versions_investment_rules_without_overwriting_history() {
 }
 
 #[test]
-fn freezes_rule_checks_and_tracks_process_association_after_review() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    let input = InvestmentRuleInput {
-        category: "仓位".into(),
-        statement: "单一主动仓位不超过 8%".into(),
-        trigger: "任何新建或加仓决定".into(),
-        rationale: "限制单一判断错误的永久损失".into(),
-        active: true,
-        source_review_id: None,
-    };
-    let rule = db.add_investment_rule(&input).unwrap();
-    let decision = |id: &str, status: &str, note: &str| DecisionEntry {
-        content: None,
-        id: Some(id.into()),
-        source_analysis_id: None,
-        source_action_index: None,
-        asset_name: "主动基金".into(),
-        thesis: "策略存在长期超额".into(),
-        counter_thesis: "超额可能只是风格暴露".into(),
-        expected_return_pct: 10.0,
-        downside_pct: 20.0,
-        confidence_pct: 60.0,
-        position_pct: 8.0,
-        invalidation: "连续两期风格调整后仍无超额".into(),
-        review_date: "2026-12-01".into(),
-        rule_checks: vec![DecisionRuleCheck {
-            rule_id: rule.id.clone(),
-            rule_revision: rule.revision,
-            category: "伪造类别".into(),
-            statement: "伪造规则".into(),
-            trigger: "伪造触发条件".into(),
-            status: status.into(),
-            note: note.into(),
-        }],
-    };
-
-    let mut missing_check = decision("missing-check", "遵守", "");
-    missing_check.rule_checks.clear();
-    assert!(matches!(
-        db.save_decision(&missing_check),
-        Err(AppError::Validation(_))
-    ));
-    assert!(matches!(
-        db.save_decision(&decision("missing-note", "偏离", "")),
-        Err(AppError::Validation(_))
-    ));
-
-    for (id, status, note, rating) in [
-        ("followed-1", "遵守", "", 5),
-        ("followed-2", "遵守", "", 4),
-        ("deviated-1", "偏离", "因为已有相关敞口", 2),
-    ] {
-        db.save_decision(&decision(id, status, note)).unwrap();
-        db.save_decision_review(
-            id,
-            &DecisionReviewInput {
-                content: None,
-                outcome_summary: "按原计划完成复核".into(),
-                actual_return_pct: None,
-                thesis_status: "尚不明确".into(),
-                process_rating: Some(rating),
-                lessons: "继续记录规则与过程之间的关系".into(),
-            },
-        )
-        .unwrap();
-    }
-
-    let stored = db
-        .decisions()
-        .unwrap()
-        .into_iter()
-        .find(|item| item.id == "followed-1")
-        .unwrap();
-    assert_eq!(stored.rule_checks[0].category, "仓位");
-    assert_eq!(stored.rule_checks[0].statement, input.statement);
-    assert_eq!(stored.rule_checks[0].trigger, input.trigger);
-
-    let revised = db
-        .update_investment_rule(
-            &rule.id,
-            &InvestmentRuleInput {
-                statement: "单一主动仓位不超过 6%".into(),
-                ..input
-            },
-        )
-        .unwrap();
-    let summary = db.rule_effectiveness().unwrap();
-    assert_eq!(summary.total_decisions, 3);
-    assert_eq!(summary.evaluated_decisions, 3);
-    assert!((summary.adherence_pct.unwrap() - 200.0 / 3.0).abs() < 1e-10);
-    let item = &summary.rules[0];
-    assert_eq!(item.current_revision, revised.revision);
-    assert_eq!(item.observed_revisions, vec![1]);
-    assert_eq!(item.followed_count, 2);
-    assert_eq!(item.deviated_count, 1);
-    assert_eq!(item.followed_process_average, Some(4.5));
-    assert_eq!(item.deviated_process_average, Some(2.0));
-    assert_eq!(item.signal, "遵守时过程评分更高");
-}
-
-#[test]
 fn system_review_freezes_portfolio_and_method_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("test.db")).unwrap();
@@ -2089,245 +1897,6 @@ fn rejects_non_https_research_sources() {
     assert!(matches!(result, Err(AppError::Validation(_))));
 }
 
-#[test]
-fn text_decisions_preserve_content_without_structured_requirements() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    db.add_investment_rule(&InvestmentRuleInput {
-        category: "行为".into(),
-        statement: "先核对依据".into(),
-        trigger: "新增观点时".into(),
-        rationale: "保留思考".into(),
-        active: true,
-        source_review_id: None,
-    })
-    .unwrap();
-    let content = " 我暂时保持观察。\n\n顾虑：信息不足。\n思考：核对下一期报告。 ";
-    let entry: DecisionEntry =
-        serde_json::from_value(serde_json::json!({"content": content})).unwrap();
-    db.save_decision(&entry).unwrap();
-    let record = db.decisions().unwrap().remove(0);
-    assert_eq!(record.content.as_deref(), Some(content));
-    assert_eq!(record.thesis, content);
-    assert_eq!(record.asset_name, "我暂时保持观察。");
-    assert!(record.review_date.is_empty());
-    assert!(record.rule_checks.is_empty());
-    let memory = db
-        .memories()
-        .unwrap()
-        .into_iter()
-        .find(|item| item.id == record.id)
-        .unwrap();
-    assert_eq!(memory.content["content"], content);
-    assert_eq!(memory.content["originalThesis"], content);
-    assert!(memory.content.get("confidencePct").is_none());
-    assert!(memory.content.get("positionPct").is_none());
-    let reminders = db
-        .review_reminder_summary(NaiveDate::from_ymd_opt(2026, 10, 11).unwrap())
-        .unwrap();
-    assert_eq!(reminders.due_decision_count, 0);
-    db.save_decision_review(
-        &record.id,
-        &DecisionReviewInput {
-            content: None,
-            outcome_summary: "补齐资料后重新观察".into(),
-            actual_return_pct: None,
-            thesis_status: "尚不明确".into(),
-            process_rating: Some(3),
-            lessons: "继续核对来源".into(),
-        },
-    )
-    .unwrap();
-    let reviewed = db.decisions().unwrap().remove(0);
-    assert_eq!(reviewed.content.as_deref(), Some(content));
-    assert_eq!(reviewed.review.unwrap().lessons, "继续核对来源");
-    drop(db);
-    let reopened = Database::open(&dir.path().join("test.db")).unwrap();
-    assert_eq!(
-        reopened.decisions().unwrap()[0].content.as_deref(),
-        Some(content)
-    );
-}
-
-#[test]
-fn text_decisions_reject_blank_content_and_invalid_provenance() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    for content in ["", " \n \t"] {
-        let entry: DecisionEntry =
-            serde_json::from_value(serde_json::json!({"content": content})).unwrap();
-        assert!(matches!(
-            db.save_decision(&entry),
-            Err(AppError::Validation(_))
-        ));
-    }
-    for payload in [
-        serde_json::json!({"content": "我的思考", "sourceAnalysisId": "missing"}),
-        serde_json::json!({"content": "我的思考", "sourceActionIndex": 0}),
-    ] {
-        let entry: DecisionEntry = serde_json::from_value(payload).unwrap();
-        assert!(matches!(
-            db.save_decision(&entry),
-            Err(AppError::Validation(_))
-        ));
-    }
-    assert!(db.decisions().unwrap().is_empty());
-}
-
-#[test]
-fn free_text_reviews_preserve_full_content_across_updates_restart_and_sync() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("reviews.db");
-    let db = Database::open(&path).unwrap();
-    let entry: DecisionEntry = serde_json::from_value(serde_json::json!({
-        "id": "text-reviewed", "content": "我的原始观点、顾虑和思考"
-    }))
-    .unwrap();
-    db.save_decision(&entry).unwrap();
-    let content = " 我的观点：继续观察。\n\n顾虑：资料不足。\n思考：保留 <原文> 与 **标记**。 ";
-    let input: DecisionReviewInput =
-        serde_json::from_value(serde_json::json!({"content": content})).unwrap();
-    db.save_decision_review("text-reviewed", &input).unwrap();
-    let record = db.decisions().unwrap().remove(0);
-    assert_eq!(record.content.as_deref(), Some("我的原始观点、顾虑和思考"));
-    let review = record.review.unwrap();
-    assert_eq!(review.content.as_deref(), Some(content));
-    assert_eq!(review.process_rating, None);
-    assert!(review.thesis_status.is_empty());
-    let memory = db.memories().unwrap().remove(0);
-    assert_eq!(memory.content["review"]["content"], content);
-    assert_eq!(memory.summary, content);
-    assert_eq!(memory.status, "已复盘");
-    assert!(!memory.contradiction);
-    let system_input: SystemReviewInput =
-        serde_json::from_value(serde_json::json!({"content": content})).unwrap();
-    let system = db.save_system_review(&system_input).unwrap();
-    assert_eq!(system.content.as_deref(), Some(content));
-    assert_eq!(system.adherence_score, None);
-    assert!(system.next_review_date.is_empty());
-    let reminders = db
-        .review_reminder_summary(NaiveDate::from_ymd_opt(2026, 10, 11).unwrap())
-        .unwrap();
-    assert!(!reminders.periodic_review_due);
-    let revised = format!("{content}\n补充：重新考虑这个观点。");
-    let input: DecisionReviewInput =
-        serde_json::from_value(serde_json::json!({"content": revised})).unwrap();
-    db.save_decision_review("text-reviewed", &input).unwrap();
-    drop(db);
-    let reopened = Database::open(&path).unwrap();
-    assert_eq!(
-        reopened.decisions().unwrap()[0]
-            .review
-            .as_ref()
-            .unwrap()
-            .content
-            .as_deref(),
-        Some(revised.as_str())
-    );
-    assert_eq!(
-        reopened.system_reviews().unwrap()[0].content.as_deref(),
-        Some(content)
-    );
-    let dataset = reopened.export_sync_data().unwrap();
-    let target = Database::open(&dir.path().join("target.db")).unwrap();
-    target.import_sync_data(&dataset).unwrap();
-    assert_eq!(
-        target.decisions().unwrap()[0]
-            .review
-            .as_ref()
-            .unwrap()
-            .content
-            .as_deref(),
-        Some(revised.as_str())
-    );
-    assert_eq!(
-        target.system_reviews().unwrap()[0].content.as_deref(),
-        Some(content)
-    );
-}
-
-#[test]
-fn free_text_reviews_reject_blank_content_and_missing_decisions() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    for content in ["", " \n \t"] {
-        let decision: DecisionReviewInput =
-            serde_json::from_value(serde_json::json!({"content": content})).unwrap();
-        assert!(matches!(
-            db.save_decision_review("missing", &decision),
-            Err(AppError::Validation(_))
-        ));
-        let system: SystemReviewInput =
-            serde_json::from_value(serde_json::json!({"content": content})).unwrap();
-        assert!(matches!(
-            db.save_system_review(&system),
-            Err(AppError::Validation(_))
-        ));
-    }
-    let decision: DecisionReviewInput =
-        serde_json::from_value(serde_json::json!({"content": "完整复盘"})).unwrap();
-    assert!(matches!(
-        db.save_decision_review("missing", &decision),
-        Err(AppError::Validation(_))
-    ));
-    assert!(db.system_reviews().unwrap().is_empty());
-}
-
-#[test]
-fn version_11_review_data_imports_without_content_and_migrates_idempotently() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("source.db");
-    let db = Database::open(&path).unwrap();
-    let entry: DecisionEntry =
-        serde_json::from_value(serde_json::json!({"id": "legacy-review", "content": "原判断"}))
-            .unwrap();
-    db.save_decision(&entry).unwrap();
-    let input: DecisionReviewInput = serde_json::from_value(serde_json::json!({
-        "outcomeSummary": "旧结果", "thesisStatus": "部分成立", "processRating": 4, "lessons": "完整旧经验", "actualReturnPct": 0
-    })).unwrap();
-    db.save_decision_review("legacy-review", &input).unwrap();
-    let mut legacy = db.export_sync_data().unwrap();
-    strip_holding_details_for_legacy(&mut legacy);
-    legacy.schema_version = 11;
-    legacy
-        .tables
-        .retain(|table| table.name != "research_attachments");
-    let reviews = legacy
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "decision_reviews")
-        .unwrap();
-    reviews.columns.pop();
-    for row in &mut reviews.rows {
-        row.pop();
-    }
-    let target_path = dir.path().join("target.db");
-    let target = Database::open(&target_path).unwrap();
-    target.import_sync_data(&legacy).unwrap();
-    let review = target.decisions().unwrap().remove(0).review.unwrap();
-    assert!(review.content.is_none());
-    assert_eq!(review.outcome_summary, "旧结果");
-    assert_eq!(review.lessons, "完整旧经验");
-    assert_eq!(review.process_rating, Some(4));
-    target
-        .conn()
-        .unwrap()
-        .execute_batch("ALTER TABLE decision_reviews DROP COLUMN content;")
-        .unwrap();
-    drop(target);
-    for _ in 0..2 {
-        let target = Database::open(&target_path).unwrap();
-        assert_eq!(
-            target.decisions().unwrap()[0]
-                .review
-                .as_ref()
-                .unwrap()
-                .lessons,
-            "完整旧经验"
-        );
-    }
-}
-
 fn detailed_holding_input() -> HoldingInput {
     HoldingInput {
         symbol: "IDX".into(),
@@ -2378,6 +1947,7 @@ fn manual_holding_details_survive_restart_history_and_sync() {
     assert_eq!(persisted.cost_price, Some(8.0));
     assert_eq!(persisted.current_price, Some(12.0));
     let mut old_export = export.clone();
+    add_retired_tables(&mut old_export);
     old_export.tables.retain(|t| t.name != "holding_trades");
     old_export.schema_version = 13;
     let table = old_export

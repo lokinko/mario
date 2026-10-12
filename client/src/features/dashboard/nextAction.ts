@@ -10,7 +10,7 @@ export interface NextAction {
 }
 
 export function nextAction(
-  snapshot: Pick<Snapshot, "goals" | "valuationStatus" | "findings">,
+  snapshot: Pick<Snapshot, "goals" | "valuationStatus">,
   reminders: ReviewReminderSummary | null,
 ): NextAction {
   if (!snapshot.goals.length)
@@ -29,28 +29,12 @@ export function nextAction(
       section: "holdings",
       label: "完善持仓资料",
     };
-  const risk = snapshot.findings.find((finding) => finding.level === "high");
-  if (risk)
-    return {
-      title: risk.title,
-      detail: risk.action,
-      destination: "foundation",
-      section: "profile",
-      label: "检查财务与风险约束",
-    };
   if (!reminders)
     return {
       title: "复盘状态尚未确认",
       detail: "尚未取得到期检查结果，不据此判断今天是否有待办。",
       destination: "review",
       label: "查看复盘状态",
-    };
-  if (reminders.dueDecisionCount > 0)
-    return {
-      title: `${reminders.dueDecisionCount} 条判断到了复盘时间`,
-      detail: "先对照当时的假设与证伪条件，再决定是否调整。",
-      destination: "review",
-      label: "完成到期复盘",
     };
   if (reminders.periodicReviewDue)
     return {

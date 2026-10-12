@@ -13,11 +13,10 @@ mod snapshot;
 use snapshot::build_snapshot;
 mod validation;
 use validation::{
-    normalized_fx_provenance, normalized_holding_fx_provenance,
-    validate_and_canonicalize_rule_checks, validate_currency, validate_goal, validate_holding,
-    validate_holding_valuation_evidence, validate_investment_rule, validate_non_negative,
-    validate_portfolio_event, validate_research_evidence, validate_stored_holding_valuation,
-    validate_system_review,
+    normalized_fx_provenance, normalized_holding_fx_provenance, validate_currency, validate_goal,
+    validate_holding, validate_holding_valuation_evidence, validate_investment_rule,
+    validate_non_negative, validate_portfolio_event, validate_research_evidence,
+    validate_stored_holding_valuation, validate_system_review,
 };
 mod ledger_values;
 use ledger_values::{
@@ -26,9 +25,8 @@ use ledger_values::{
     portfolio_event_record_from_row, portfolio_import_revision,
 };
 mod rule_values;
-use rule_values::{average, rule_effectiveness_signal, store_rule_revision};
+use rule_values::store_rule_revision;
 pub(crate) mod daily;
-mod decisions;
 mod fx;
 mod ledger;
 mod memory;
@@ -57,16 +55,15 @@ use crate::{
     error::{AppError, AppResult},
     event_import,
     models::{
-        AnalysisHistoryItem, AnalysisResult, DecisionEntry, DecisionRecord, DecisionReview,
-        DecisionReviewInput, DecisionRuleCheck, FinancialProfile, Goal, GoalInput, Holding,
+        AnalysisHistoryItem, AnalysisResult, FinancialProfile, Goal, GoalInput, Holding,
         HoldingInput, HoldingValuationEvidence, InvestmentRule, InvestmentRuleInput,
         InvestmentRuleRevision, MemoryItem, MemoryPreferenceInput, ModelConfig,
         PortfolioCheckInInput, PortfolioCheckInRecord, PortfolioEventImportCommitRequest,
         PortfolioEventImportPreview, PortfolioEventImportRequest, PortfolioEventImportResult,
         PortfolioEventImportRow, PortfolioEventInput, PortfolioEventRecord,
         PortfolioEventReversalInput, PortfolioEventType, ResearchEvidence, ResearchEvidenceInput,
-        ReviewReminderSummary, RuleEffectivenessItem, RuleEffectivenessSummary, SecurityPriceQuote,
-        Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
+        ReviewReminderSummary, SecurityPriceQuote, Snapshot, StoredAnalysis, SystemReviewInput,
+        SystemReviewRecord, SystemReviewSnapshot,
     },
     performance, planning, risk, valuation,
 };

@@ -206,25 +206,6 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         order_by: "id",
     },
     SyncTableSpec {
-        name: "decisions",
-        columns: &["id", "asset_name", "payload", "review_date", "created_at"],
-        order_by: "id",
-    },
-    SyncTableSpec {
-        name: "decision_reviews",
-        columns: &[
-            "decision_id",
-            "outcome_summary",
-            "actual_return_pct",
-            "thesis_status",
-            "process_rating",
-            "lessons",
-            "reviewed_at",
-            "content",
-        ],
-        order_by: "decision_id",
-    },
-    SyncTableSpec {
         name: "analyses",
         columns: &["id", "question", "answer", "audit", "trace", "created_at"],
         order_by: "id",
@@ -355,13 +336,42 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 15;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 16;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
 
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
+    if version == SYNC_DATASET_SCHEMA_VERSION {
+        return Ok(specs);
+    }
+    // Version 1-15 backups contain retired tables. Validate their structure,
+    // but the importer skips these records instead of restoring the removed feature.
+    specs.splice(
+        3..3,
+        [
+            SyncTableSpec {
+                name: "decisions",
+                columns: &["id", "asset_name", "payload", "review_date", "created_at"],
+                order_by: "id",
+            },
+            SyncTableSpec {
+                name: "decision_reviews",
+                columns: &[
+                    "decision_id",
+                    "outcome_summary",
+                    "actual_return_pct",
+                    "thesis_status",
+                    "process_rating",
+                    "lessons",
+                    "reviewed_at",
+                    "content",
+                ],
+                order_by: "decision_id",
+            },
+        ],
+    );
     if version <= 14 {
         specs.pop();
     }
@@ -423,7 +433,7 @@ pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpe
             specs.truncate(16);
             Ok(specs)
         }
-        11 | 12 | 13 | 14 | SYNC_DATASET_SCHEMA_VERSION => Ok(specs),
+        11..=15 => Ok(specs),
         _ => Err(AppError::Validation(format!(
             "不支持的数据快照版本 {version}"
         ))),

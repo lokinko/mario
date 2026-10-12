@@ -122,8 +122,7 @@ export function MyFacts({
   };
   const removeAsset = async (item: Holding) => {
     if (busy) return;
-    if (!window.confirm(`确认删除“${item.name}”？相关决策日志不会被删除。`))
-      return;
+    if (!window.confirm(`确认删除“${item.name}”？`)) return;
     setBusy(true);
     setError("");
     try {

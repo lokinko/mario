@@ -566,6 +566,7 @@ mod tests {
             s.holding_trades
         );
         let mut legacy = export;
+        super::super::tests::add_retired_tables(&mut legacy);
         legacy.schema_version = 14;
         legacy.tables.retain(|t| t.name != "holding_trades");
         copy.import_sync_data(&legacy).unwrap();

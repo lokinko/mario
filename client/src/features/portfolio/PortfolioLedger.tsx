@@ -728,7 +728,7 @@ export function PortfolioLedger({
             );
           })}
         </div>
-        <p className="effectiveness-disclaimer">
+        <p className="analysis-note">
           这些记录来自用户输入，系统校验结构和口径但不核验银行、券商或市场事实。当前基线之后的误录可追加冲正；已冻结周期不能回写，应建立纠正后的新基线并保留说明。
         </p>
       </section>

@@ -1,17 +1,4 @@
-import type { DecisionReview, SystemReviewRecord } from "../types";
-
-export function decisionReviewText(review: DecisionReview): string {
-  if (review.content != null) return review.content;
-  return [
-    review.outcomeSummary,
-    review.lessons && `经验与思考：${review.lessons}`,
-    review.thesisStatus && `原始逻辑结果：${review.thesisStatus}`,
-    review.actualReturnPct != null && `实际收益：${review.actualReturnPct}%`,
-    review.processRating != null && `过程评分：${review.processRating}/5`,
-  ]
-    .filter((part) => typeof part === "string" && part.length > 0)
-    .join("\n\n");
-}
+import type { SystemReviewRecord } from "../types";
 
 export function systemReviewText(review: SystemReviewRecord): string {
   if (review.content != null) return review.content;

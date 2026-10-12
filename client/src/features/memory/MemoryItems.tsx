@@ -24,7 +24,7 @@ export function MemoryItems({
           >
             <div className="memory-head">
               <div>
-                <span>{item.kind === "decision" ? "决策" : "AI 分析"}</span>
+                <span>AI 分析</span>
                 <strong>{item.title}</strong>
               </div>
               <div>

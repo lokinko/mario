@@ -581,91 +581,9 @@ export interface ModelCallTrace {
   outputTokens?: number;
 }
 
-export interface DecisionTextInput {
-  content: string;
-  sourceAnalysisId?: string;
-  sourceActionIndex?: number;
-}
-
-export interface DecisionEntry {
-  content?: string | null;
-  id?: string;
-  sourceAnalysisId?: string;
-  sourceActionIndex?: number;
-  assetName: string;
-  thesis: string;
-  counterThesis: string;
-  expectedReturnPct: number;
-  downsidePct: number;
-  confidencePct: number;
-  positionPct: number;
-  invalidation: string;
-  reviewDate: string;
-  ruleChecks?: DecisionRuleCheck[];
-}
-
-export type RuleCheckStatus = "待确认" | "遵守" | "偏离" | "不适用";
-
-export interface DecisionRuleCheck {
-  ruleId: string;
-  ruleRevision: number;
-  category: string;
-  statement: string;
-  trigger: string;
-  status: RuleCheckStatus;
-  note: string;
-}
-
-export interface DecisionReview {
-  content?: string | null;
-  outcomeSummary: string;
-  actualReturnPct?: number | null;
-  thesisStatus: "成立" | "部分成立" | "失效" | "尚不明确" | "";
-  processRating?: number | null;
-  lessons: string;
-  reviewedAt?: string;
-}
-
-export type DecisionReviewInput = { content: string } | DecisionReview;
-
-export interface DecisionRecord extends Omit<DecisionEntry, "id"> {
-  id: string;
-  ruleChecks: DecisionRuleCheck[];
-  createdAt: string;
-  review?: DecisionReview;
-}
-
 export interface ReviewReminderSummary {
-  dueDecisionCount: number;
   periodicReviewDue: boolean;
   checkedOn: string;
-}
-
-export interface RuleEffectivenessSummary {
-  totalDecisions: number;
-  evaluatedDecisions: number;
-  applicableChecks: number;
-  followedChecks: number;
-  adherencePct: number | null;
-  reviewedChecks: number;
-  rules: RuleEffectivenessItem[];
-}
-
-export interface RuleEffectivenessItem {
-  ruleId: string;
-  currentRevision: number;
-  observedRevisions: number[];
-  category: string;
-  statement: string;
-  active: boolean;
-  decisionCount: number;
-  applicableCount: number;
-  followedCount: number;
-  deviatedCount: number;
-  reviewedCount: number;
-  followedProcessAverage: number | null;
-  deviatedProcessAverage: number | null;
-  signal: string;
 }
 
 export interface InvestmentRuleInput {
@@ -713,8 +631,6 @@ export interface SystemReviewSnapshot {
   highRiskFindings: number;
   goalTotal: number;
   goalsOnTrack: number;
-  decisionTotal: number;
-  reviewedDecisions: number;
   activeRules: number;
 }
 

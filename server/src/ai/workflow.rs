@@ -79,7 +79,7 @@ impl AnalysisWorkflow for InvestmentWorkflowV6 {
                     "{INVESTMENT_SYSTEM_POLICY}\n你现在是研究规划模块，只制定分析计划和检索线索，不给最终结论。"
                 )),
                 ChatMessage::user(format!(
-                    "问题：{question}\n已知档案摘要：{payload}\n请列出需要核实的假设、反方问题、缺失信息，以及用于检索历史决策的关键词。"
+                    "问题：{question}\n已知档案摘要：{payload}\n请列出需要核实的假设、反方问题、缺失信息，以及用于检索历史分析的关键词。"
                 )),
             ],
         }

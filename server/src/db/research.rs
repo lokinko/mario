@@ -575,6 +575,7 @@ mod attachment_tests {
         assert!(restored.import_sync_data(&corrupt).is_err());
         assert!(restored.research_attachment(&saved.id, &file.id).is_ok());
         let mut legacy = dataset.clone();
+        super::super::tests::add_retired_tables(&mut legacy);
         super::super::tests::strip_holding_details_for_legacy(&mut legacy);
         legacy.schema_version = 12;
         legacy.tables.retain(|t| t.name != "research_attachments");

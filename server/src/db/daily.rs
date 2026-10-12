@@ -1125,6 +1125,7 @@ mod tests {
         db.add_holding(&input("银行", 100.0)).unwrap();
         let data = db.export_sync_data().unwrap();
         let mut legacy = data.clone();
+        super::super::tests::add_retired_tables(&mut legacy);
         super::super::tests::strip_holding_details_for_legacy(&mut legacy);
         legacy.schema_version = 9;
         let legacy_reviews = legacy

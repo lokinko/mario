@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Holding, PortfolioEventRecord, Snapshot } from "../../types";
 import emptySnapshot from "../../test/emptySnapshot.json";
-import {
-  analyzePortfolio,
-  rangeStart,
-  simulateShock,
-  summarizeEvents,
-} from "./analytics";
+import { analyzePortfolio, rangeStart, summarizeEvents } from "./analytics";
 
 export const holding = (values: Partial<Holding> = {}): Holding => ({
   id: "cash",
@@ -112,7 +107,6 @@ describe("portfolio analysis", () => {
     expect(a.byClass).toEqual([]);
     expect(a.rows[2].value).toBeNull();
     expect(a.surplus).toBe(4000);
-    expect(simulateShock(snapshot, 20, 5)).toBeNull();
   });
   it("avoids ratios with no denominator and flags overcommitted cash", () => {
     const snapshot = portfolio();
@@ -140,13 +134,6 @@ describe("portfolio analysis", () => {
       },
     ];
     expect(analyzePortfolio(snapshot).uncommittedMonthly).toBe(-1000);
-  });
-  it("applies market and FX shocks multiplicatively without changing cash or debt", () => {
-    const result = simulateShock(portfolio(), 20, 10)!;
-    expect(result.total).toBe(10000 + 20000 * 0.8 + 15000 * 0.8 * 0.9);
-    expect(result.netAssets).toBe(result.total - 5000);
-    expect(result.loss).toBe(8200);
-    expect(result.lossPct).toBeCloseTo((8200 / 45000) * 100);
   });
 });
 

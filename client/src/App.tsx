@@ -17,9 +17,8 @@ import {
   X,
 } from "lucide-react";
 import { checkServerVersion, getModelConfig, getSnapshot } from "./api";
-import type { DecisionEntry, ModelConfig, Snapshot } from "./types";
+import type { ModelConfig, Snapshot } from "./types";
 import { ServerData } from "./features/account/ServerData";
-import { DecisionJournal } from "./features/decisions/DecisionJournal";
 import { View, initialView, nav, viewLabels } from "./app/navigation";
 import type { FoundationSection } from "./app/navigation";
 import { Dashboard } from "./features/dashboard/Dashboard";
@@ -51,10 +50,6 @@ function App() {
     undefined,
   );
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
-  const [decisionDraft, setDecisionDraft] = useState<DecisionEntry | null>(
-    null,
-  );
-  const [analysisToOpen, setAnalysisToOpen] = useState<string | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [modelError, setModelError] = useState("");
   const menuTrigger = useRef<HTMLButtonElement>(null);
@@ -203,8 +198,6 @@ function App() {
     edited.current = false;
     setSnapshot(await getSnapshot());
     setDataRevision((current) => current + 1);
-    setDecisionDraft(null);
-    setAnalysisToOpen(null);
   };
 
   const flash = (message: string) => {
@@ -404,7 +397,7 @@ function App() {
         )}
         {modelError && (
           <div className="error-box" role="alert">
-            模型配置暂时不可用，决策与复盘不受影响。
+            模型配置暂时不可用，资料与复盘不受影响。
             <button onClick={loadApplication}>重试</button>
           </div>
         )}
@@ -448,18 +441,6 @@ function App() {
             flash={flash}
           />
         )}
-        {view === "decision" && (
-          <DecisionJournal
-            key={remoteViewRevision}
-            flash={flash}
-            seed={decisionDraft}
-            clearSeed={() => setDecisionDraft(null)}
-            onOpenAnalysis={(id) => {
-              setAnalysisToOpen(id);
-              navigate("advisor");
-            }}
-          />
-        )}
         {view === "review" && (
           <ReviewCenter
             key={remoteViewRevision}
@@ -477,12 +458,6 @@ function App() {
               active={view === "advisor"}
               model={model}
               navigate={navigate}
-              requestedAnalysisId={analysisToOpen}
-              clearRequestedAnalysis={() => setAnalysisToOpen(null)}
-              onCreateDecisionDraft={(draft) => {
-                setDecisionDraft(draft);
-                navigate("decision");
-              }}
             />
           </div>
         )}
