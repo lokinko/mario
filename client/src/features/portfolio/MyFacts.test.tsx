@@ -447,8 +447,12 @@ it("includes cost when adding an investment and keeps it optional", async () => 
   fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
     target: { value: "新基金" },
   });
-  fireEvent.change(screen.getByRole("spinbutton", { name: "当前市值 CNY" }), {
-    target: { value: "1000" },
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "持仓数 份 / 股 / 单位" }),
+    { target: { value: "100" } },
+  );
+  fireEvent.change(screen.getByRole("spinbutton", { name: "当前价格 CNY" }), {
+    target: { value: "10" },
   });
   const save = screen.getByRole("button", { name: "保存这笔资产" });
   expect((save as HTMLButtonElement).disabled).toBe(false);

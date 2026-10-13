@@ -1,5 +1,5 @@
 import { ExternalLink } from "../../components/ExternalLink";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import {
   CircleDollarSign,
   Cloud,
@@ -62,6 +62,7 @@ export function Foundation({
   const [editingHoldingId, setEditingHoldingId] = useState<string | null>(null);
   const [holdingDetailsOpen, setHoldingDetailsOpen] = useState(false);
   const holdingNameRef = useRef<HTMLInputElement>(null);
+  const marketValueHelpId = useId();
   const [goal, setGoal] = useState<Omit<Goal, "id">>(emptyGoal);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -70,11 +71,20 @@ export function Foundation({
   const [valuationLoading, setValuationLoading] = useState(false);
   const [valuationError, setValuationError] = useState("");
   const holdingBusy = saving || valuationLoading;
+  const manualHoldingAmount =
+    holding.assetClass === "现金" ||
+    (Boolean(editingHoldingId) && !hasHoldingDetails(holding));
+  const calculatedMarketValue =
+    holding.quantity != null && holding.currentPrice != null
+      ? formatNumber(holding.quantity * holding.currentPrice)
+      : "";
   const canSaveHolding =
     !holdingBusy &&
     Boolean(holding.name.trim()) &&
     Number.isFinite(holding.marketValue) &&
-    (Boolean(holdingAmount.trim()) || hasHoldingDetails(holding)) &&
+    (manualHoldingAmount
+      ? Boolean(holdingAmount.trim())
+      : hasHoldingDetails(holding)) &&
     validHoldingDetails(holding) &&
     Number.isFinite(holding.costBasis) &&
     holding.costBasis >= 0 &&
@@ -288,8 +298,15 @@ export function Foundation({
           </div>
         </div>
         <p className="holding-hint">
-          成本价、持仓数和当前价格可手动输入，市值和总成本自动计算。旧记录可暂时保留总金额。
+          当前市值随持仓数 ×
+          当前价格自动计算，无需手动输入。有证券代码时可留空价格，保存后自动获取日收盘价。现金和缺少持仓明细的旧记录可填写总金额。
         </p>
+        {Boolean(snapshot.priceRefreshErrors?.length) && (
+          <p className="warning-text" role="status">
+            部分价格更新失败，已保留原值：
+            {snapshot.priceRefreshErrors?.join("；")}
+          </p>
+        )}
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -314,6 +331,18 @@ export function Foundation({
                 />
               </label>
               {holding.assetClass !== "现金" && (
+                <label>
+                  <span>证券代码（自动价格，选填）</span>
+                  <input
+                    value={holding.symbol}
+                    onChange={(e) =>
+                      setHolding({ ...holding, symbol: e.target.value })
+                    }
+                    placeholder="例如：601988 / 0700.HK / AAPL"
+                  />
+                </label>
+              )}
+              {holding.assetClass !== "现金" && (
                 <HoldingFields
                   holding={holding}
                   onChange={(next) => {
@@ -323,18 +352,27 @@ export function Foundation({
                 />
               )}
               <label>
-                <span>{`当前市值（${holding.currency}）`}</span>
+                <span>{`${holding.assetClass === "现金" ? "当前金额" : "当前市值"}（${holding.currency}）`}</span>
                 <div className="input-affix">
                   <i>{holding.currency}</i>
                   <input
                     type="number"
                     inputMode="decimal"
                     step="any"
-                    readOnly={hasHoldingDetails(holding)}
+                    aria-label={`${holding.assetClass === "现金" ? "当前金额" : "当前市值"}（${holding.currency}） ${holding.currency}`}
+                    aria-describedby={
+                      manualHoldingAmount ? undefined : marketValueHelpId
+                    }
+                    readOnly={!manualHoldingAmount}
+                    placeholder={
+                      manualHoldingAmount
+                        ? "手动输入"
+                        : "根据持仓数和当前价格自动计算"
+                    }
                     value={
-                      hasHoldingDetails(holding)
-                        ? formatNumber(holding.marketValue)
-                        : holdingAmount
+                      manualHoldingAmount
+                        ? holdingAmount
+                        : calculatedMarketValue
                     }
                     onChange={(e) => {
                       setHoldingAmount(e.target.value);
@@ -345,17 +383,41 @@ export function Foundation({
                     }}
                   />
                 </div>
+                {!manualHoldingAmount && (
+                  <small id={marketValueHelpId}>
+                    {holding.quantity == null
+                      ? "填写持仓数后自动计算"
+                      : holding.currentPrice == null
+                        ? holding.symbol.trim()
+                          ? "保存后获取价格并计算市值"
+                          : "填写当前价格后自动计算"
+                        : "当前市值 = 持仓数 × 当前价格"}
+                  </small>
+                )}
               </label>
               <label>
                 <span>资产类别</span>
                 <select
                   value={holding.assetClass}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    if (
+                      e.target.value === "现金" &&
+                      hasHoldingDetails(holding)
+                    ) {
+                      setHoldingAmount(String(holding.marketValue));
+                    }
                     setHolding({
                       ...holding,
                       assetClass: e.target.value as Holding["assetClass"],
-                    })
-                  }
+                      ...(e.target.value === "现金"
+                        ? {
+                            costPrice: null,
+                            quantity: null,
+                            currentPrice: null,
+                          }
+                        : {}),
+                    });
+                  }}
                 >
                   {["现金", "债券", "股票", "基金", "黄金", "其他"].map((v) => (
                     <option key={v}>{v}</option>
@@ -409,16 +471,6 @@ export function Foundation({
             >
               <summary>更多信息</summary>
               <div className="form-grid compact-grid">
-                <label>
-                  <span>代码（可选）</span>
-                  <input
-                    value={holding.symbol}
-                    onChange={(e) =>
-                      setHolding({ ...holding, symbol: e.target.value })
-                    }
-                    placeholder="例如：000300"
-                  />
-                </label>
                 {holding.costPrice == null ? (
                   <NumberField
                     label={`累计成本（${holding.currency}）`}

@@ -25,12 +25,14 @@ export function validHoldingDetails(holding: Omit<Holding, "id">) {
 export function withHoldingTotals<T extends Omit<Holding, "id">>(
   holding: T,
 ): T {
-  if (holding.quantity == null || holding.currentPrice == null) return holding;
   return {
     ...holding,
-    marketValue: holding.quantity * holding.currentPrice,
+    marketValue:
+      holding.quantity == null || holding.currentPrice == null
+        ? holding.marketValue
+        : holding.quantity * holding.currentPrice,
     costBasis:
-      holding.costPrice == null
+      holding.quantity == null || holding.costPrice == null
         ? holding.costBasis
         : holding.quantity * holding.costPrice,
   };
@@ -74,7 +76,11 @@ export function HoldingFields<T extends Omit<Holding, "id">>({
               }
               onFocus={() => setFocused(key)}
               onBlur={() => setFocused(null)}
-              placeholder="手动输入"
+              placeholder={
+                key === "currentPrice" && holding.symbol.trim()
+                  ? "留空自动获取日收盘价"
+                  : "手动输入"
+              }
               onChange={(event) =>
                 onChange({
                   ...withHoldingTotals({

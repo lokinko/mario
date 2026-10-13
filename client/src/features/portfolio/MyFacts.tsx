@@ -65,10 +65,15 @@ export function MyFacts({
     profile.liabilities,
     profile.emergencyFund,
   ].every((value) => Number.isFinite(value) && value >= 0 && value <= 1e15);
+  const manualAssetAmount = Boolean(
+    editing &&
+    (editing.assetClass === "现金" ||
+      (editing.id && !hasHoldingDetails(editing))),
+  );
   const validAsset = Boolean(
     editing &&
     editing.name.trim() &&
-    (assetAmount.trim() || hasHoldingDetails(editing)) &&
+    (manualAssetAmount ? assetAmount.trim() : hasHoldingDetails(editing)) &&
     validHoldingDetails(editing) &&
     Number.isFinite(editing.marketValue) &&
     editing.marketValue >= 0 &&
@@ -462,16 +467,26 @@ export function MyFacts({
                     <i>{editing.currency}</i>
                     <input
                       type="number"
-                      required={!hasHoldingDetails(editing)}
-                      readOnly={hasHoldingDetails(editing)}
+                      required={manualAssetAmount}
+                      readOnly={!manualAssetAmount}
+                      placeholder={
+                        manualAssetAmount
+                          ? "手动输入"
+                          : "根据持仓数和当前价格自动计算"
+                      }
                       min={0}
                       max={1e15}
                       inputMode="decimal"
                       step="any"
                       value={
-                        hasHoldingDetails(editing)
-                          ? formatNumber(editing.marketValue)
-                          : assetAmount
+                        manualAssetAmount
+                          ? assetAmount
+                          : editing.quantity != null &&
+                              editing.currentPrice != null
+                            ? formatNumber(
+                                editing.quantity * editing.currentPrice,
+                              )
+                            : ""
                       }
                       onChange={(e) => {
                         setAssetAmount(e.target.value);

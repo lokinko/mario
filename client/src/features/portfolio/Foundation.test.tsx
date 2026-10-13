@@ -34,9 +34,12 @@ function fillHolding() {
     target: { value: " 测试基金 " },
   });
   fireEvent.change(
-    screen.getByRole("spinbutton", { name: "当前市值（CNY） CNY" }),
-    { target: { value: "1234.56" } },
+    screen.getByRole("spinbutton", { name: "持仓数 份 / 股 / 单位" }),
+    { target: { value: "100" } },
   );
+  fireEvent.change(screen.getByRole("spinbutton", { name: "当前价格 CNY" }), {
+    target: { value: "12.3456" },
+  });
 }
 
 it("keeps unsaved holding input while switching financial sections", () => {
@@ -67,7 +70,112 @@ it("opens goals directly when arriving from the overview goal action", () => {
   expect(screen.queryByRole("textbox", { name: "资产名称" })).toBeNull();
 });
 
-it("saves with only name and market value and retains context for the next holding", async () => {
+it("calculates market value immediately and clears the preview when details are missing", () => {
+  renderFoundation();
+  const amount = screen.getByRole("spinbutton", {
+    name: "当前市值（CNY） CNY",
+  }) as HTMLInputElement;
+  const quantity = screen.getByRole("spinbutton", {
+    name: "持仓数 份 / 股 / 单位",
+  });
+  const price = screen.getByRole("spinbutton", { name: "当前价格 CNY" });
+  const save = screen.getByRole("button", {
+    name: "加入组合",
+  }) as HTMLButtonElement;
+  expect(amount.readOnly).toBe(true);
+  expect(amount.value).toBe("");
+  fillHolding();
+  expect(amount.value).toBe("1234.56");
+  fireEvent.change(quantity, { target: { value: "800" } });
+  fireEvent.change(price, { target: { value: "5.13" } });
+  expect(amount.value).toBe("4104");
+  fireEvent.change(price, { target: { value: "" } });
+  expect(amount.value).toBe("");
+  expect(save.disabled).toBe(true);
+  fireEvent.change(price, { target: { value: "0" } });
+  expect(amount.value).toBe("0");
+  expect(save.disabled).toBe(false);
+  fireEvent.change(quantity, { target: { value: "" } });
+  expect(amount.value).toBe("");
+  expect(save.disabled).toBe(true);
+});
+
+it("saves code and quantity without a placeholder price or manual market value", async () => {
+  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(
+    emptySnapshot as Snapshot,
+  );
+  renderFoundation();
+  fireEvent.change(screen.getByLabelText("资产名称"), {
+    target: { value: "中国银行" },
+  });
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "证券代码（自动价格，选填）" }),
+    {
+      target: { value: "601988" },
+    },
+  );
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "成本价（选填） CNY" }),
+    {
+      target: { value: "4.92" },
+    },
+  );
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "持仓数 份 / 股 / 单位" }),
+    {
+      target: { value: "800" },
+    },
+  );
+  expect(
+    (
+      screen.getByRole("spinbutton", {
+        name: "当前市值（CNY） CNY",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("");
+  expect(screen.getByText("保存后获取价格并计算市值")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "加入组合" }));
+  await waitFor(() =>
+    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: "601988",
+        quantity: 800,
+        currentPrice: null,
+        costPrice: 4.92,
+        costBasis: 3936,
+      }),
+    ),
+  );
+});
+
+it("allows entering cash balances and clears investment details when switching to cash", async () => {
+  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(
+    emptySnapshot as Snapshot,
+  );
+  renderFoundation();
+  fillHolding();
+  fireEvent.change(screen.getByLabelText("资产类别"), {
+    target: { value: "现金" },
+  });
+  const amount = screen.getByRole("spinbutton", {
+    name: "当前金额（CNY） CNY",
+  }) as HTMLInputElement;
+  expect(amount.readOnly).toBe(false);
+  fireEvent.change(amount, { target: { value: "2000" } });
+  fireEvent.click(screen.getByRole("button", { name: "加入组合" }));
+  await waitFor(() =>
+    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assetClass: "现金",
+        marketValue: 2000,
+        quantity: null,
+        currentPrice: null,
+      }),
+    ),
+  );
+});
+
+it("saves calculated market value and retains context for the next holding", async () => {
   vi.mocked(portfolioApi.saveHolding).mockResolvedValue(
     emptySnapshot as Snapshot,
   );
@@ -89,6 +197,8 @@ it("saves with only name and market value and retains context for the next holdi
       expect.objectContaining({
         name: "测试基金",
         marketValue: 1234.56,
+        quantity: 100,
+        currentPrice: 12.3456,
         costBasis: 0,
         targetPct: 0,
         assetClass: "股票",
