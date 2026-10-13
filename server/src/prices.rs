@@ -2,14 +2,17 @@
 use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, Semaphore};
+use tokio::{
+    sync::{Mutex, Semaphore},
+    time::Instant,
+};
 
 use crate::{
     db::Database,
@@ -540,6 +543,10 @@ mod tests {
             ("sh601988", "601988.SS"),
             ("000001.SS", "000001.SS"), // Shanghai Composite index, not a stock.
             ("510300.SS", "510300.SS"),
+            ("513380.SS", "513380.SS"),
+            ("sh513380", "513380.SS"),
+            ("159330.SZ", "159330.SZ"),
+            ("sz159330", "159330.SZ"),
         ] {
             assert_eq!(canonical_symbol(input).unwrap(), expected);
         }
@@ -562,6 +569,22 @@ mod tests {
             assert!(matches!(error, AppError::Validation(_)));
             assert!(error.to_string().contains("交易所后缀不匹配"));
             assert!(error.to_string().contains(".SS"));
+        }
+    }
+    #[test]
+    fn etf_exchange_errors_give_the_correct_listing_suffix() {
+        for (input, expected) in [
+            ("513380.SZ", "513380.SS"),
+            ("sz513380", "513380.SS"),
+            ("510300.SZ", "510300.SS"),
+            ("560800.SZ", "560800.SS"),
+            ("588000.SZ", "588000.SS"),
+            ("159330.SS", "159330.SZ"),
+            ("sh159330", "159330.SZ"),
+        ] {
+            let error = canonical_symbol(input).unwrap_err();
+            assert!(matches!(error, AppError::Validation(_)));
+            assert!(error.to_string().contains(&format!("请改为 {expected}")));
         }
     }
     #[test]
@@ -656,8 +679,15 @@ mod tests {
             symbol: "601988.SZ".into(),
             on_date: "2026-09-08".into(),
         };
-        let error = provider.quote(&query, "").await.unwrap_err();
-        assert!(error.to_string().contains("请改为 601988.SS"));
+        for (symbol, expected) in [
+            ("601988.SZ", "601988.SS"),
+            ("513380.SZ", "513380.SS"),
+            ("159330.SS", "159330.SZ"),
+        ] {
+            query.symbol = symbol.into();
+            let error = provider.quote(&query, "").await.unwrap_err();
+            assert!(error.to_string().contains(&format!("请改为 {expected}")));
+        }
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         query.symbol = "601988.SS".into();
         let quote = provider.quote(&query, "").await.unwrap();
@@ -676,7 +706,7 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 3); // Two hosts, then cached failure.
         task.abort();
     }
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn concurrent_accounts_share_one_fetch_and_failures_back_off_then_recover() {
         let (provider, calls, failed, task) = mock_provider().await;
         let mut jobs = tokio::task::JoinSet::new();
@@ -716,14 +746,14 @@ mod tests {
             .get(&("AAPL".into(), query.on_date.clone()))
             .unwrap()
             .clone();
-        entry.lock().await.fetched.as_mut().unwrap().0 = Instant::now() - SUCCESS_TTL;
+        tokio::time::advance(SUCCESS_TTL).await;
         failed.store(true, Ordering::SeqCst);
         assert!(provider.quote(&query, "").await.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), 3); // primary and fallback
         failed.store(false, Ordering::SeqCst);
         assert!(provider.quote(&query, "").await.is_err());
         assert_eq!(calls.load(Ordering::SeqCst), 3);
-        entry.lock().await.fetched.as_mut().unwrap().0 = Instant::now() - FAILURE_TTL;
+        tokio::time::advance(FAILURE_TTL).await;
         assert_eq!(provider.quote(&query, "").await.unwrap().close, 230.0);
         assert_eq!(calls.load(Ordering::SeqCst), 4);
         // All entries busy: enforce the capacity without splitting in-flight keys.

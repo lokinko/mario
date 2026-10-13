@@ -56,18 +56,23 @@ pub(crate) fn canonical_symbol(value: &str) -> AppResult<String> {
             break;
         }
     }
-    // These Shanghai equity prefixes cannot identify a Shenzhen listing.
-    // Do not infer an exchange for bare codes or index/fund codes.
-    if let Some(digits) = code.strip_suffix(".SZ").filter(|digits| {
-        digits.len() == 6
-            && digits.bytes().all(|b| b.is_ascii_digit())
-            && ["600", "601", "603", "605", "688", "689"]
+    // Check known stock/ETF ranges without inferring bare codes or ambiguous indices.
+    if let Some((digits, suffix)) = code.rsplit_once('.') {
+        if digits.len() == 6 && digits.bytes().all(|b| b.is_ascii_digit()) {
+            let shanghai = ["600", "601", "603", "605", "688", "689", "51", "56", "58"]
                 .iter()
-                .any(|prefix| digits.starts_with(prefix))
-    }) {
-        return Err(AppError::Validation(format!(
-            "证券代码 {code} 的交易所后缀不匹配：该代码属于上交所，请改为 {digits}.SS"
-        )));
+                .any(|prefix| digits.starts_with(prefix));
+            let correction = match suffix {
+                "SZ" if shanghai => Some(("上交所", "SS")),
+                "SS" if digits.starts_with("159") => Some(("深交所", "SZ")),
+                _ => None,
+            };
+            if let Some((exchange, correct_suffix)) = correction {
+                return Err(AppError::Validation(format!(
+                    "证券代码 {code} 的交易所后缀不匹配：该代码属于{exchange}，请改为 {digits}.{correct_suffix}"
+                )));
+            }
+        }
     }
     if let Some(digits) = code.strip_suffix(".HK") {
         if (1..=5).contains(&digits.len()) && digits.bytes().all(|b| b.is_ascii_digit()) {

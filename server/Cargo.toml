@@ -49,3 +49,4 @@ icu_provider = "=2.2.0"
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["test-util"] }
