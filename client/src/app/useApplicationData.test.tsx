@@ -91,6 +91,50 @@ it("ignores an older refresh even if it completes after the latest refresh", asy
   expect(result.current.snapshot).toBe(newer);
   expect(result.current.remoteViewRevision).toBe(1);
 });
+it.each(["snapshot", "model"] as const)(
+  "keeps a saved first trade when an older refresh is waiting for %s",
+  async (stage) => {
+    const { result } = await start();
+    const pendingSnapshot = deferred<Snapshot>();
+    const pendingModel = deferred<ModelConfig>();
+    if (stage === "snapshot")
+      vi.mocked(getSnapshot).mockReturnValueOnce(pendingSnapshot.promise);
+    else vi.mocked(getModelConfig).mockReturnValueOnce(pendingModel.promise);
+    const saved = {
+      ...original,
+      updatedAt: "saved-first-trade",
+      holdings: [{ id: "first-holding", quantity: 10 }],
+      holdingTrades: [{ id: "first-trade", holdingId: "first-holding" }],
+    } as Snapshot;
+    const updated = vi.fn();
+    window.addEventListener(SERVER_DATA_UPDATED, updated);
+    try {
+      let refresh!: Promise<boolean>;
+      await act(async () => {
+        refresh = result.current.loadRemoteData();
+      });
+      act(() => result.current.setSnapshot(saved));
+      await act(async () => {
+        pendingSnapshot.resolve(original);
+        pendingModel.resolve(configured);
+        expect(await refresh).toBe(false);
+      });
+      expect(result.current.snapshot).toBe(saved);
+      expect(result.current.snapshot?.holdingTrades).toHaveLength(1);
+      expect(result.current.snapshot?.holdings).toHaveLength(1);
+      expect(result.current.remoteViewRevision).toBe(0);
+      expect(updated).not.toHaveBeenCalled();
+      await act(async () => {
+        vi.mocked(getSnapshot).mockResolvedValueOnce(saved);
+        expect(await result.current.loadRemoteData()).toBe(true);
+      });
+      expect(result.current.snapshot).toBe(saved);
+      expect(result.current.remoteViewRevision).toBe(1);
+    } finally {
+      window.removeEventListener(SERVER_DATA_UPDATED, updated);
+    }
+  },
+);
 it("preserves usable model configuration and reports its independent refresh failure", async () => {
   const { result } = await start();
   const newer = { ...original, updatedAt: "newer" };

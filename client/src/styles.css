@@ -4183,22 +4183,12 @@ button:focus-visible {
 .facts-assets {
   margin-top: 16px;
 }
-.investment-amount-head,
 .asset-amount-row.investment-amount-row {
   display: grid;
-  grid-template-columns:
-    minmax(0, 1.3fr) repeat(3, minmax(0, 0.8fr))
-    minmax(0, 1.2fr) repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-.investment-amount-head {
-  color: var(--muted);
-  font-size: 13px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-}
-.investment-amount-head > span:not(:first-child) {
-  text-align: right;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px 24px;
+  padding: 22px 24px 18px;
+  border-bottom: 0;
 }
 .investment-amount-row .asset-amount-editor {
   width: 100%;
@@ -4430,19 +4420,6 @@ button:focus-visible {
   }
   .asset-amount-editor {
     width: 100%;
-  }
-  .investment-amount-head {
-    display: none;
-  }
-  .asset-amount-row.investment-amount-row {
-    grid-template-columns: minmax(0, 1fr) minmax(140px, 50%);
-    gap: 12px;
-  }
-  .investment-amount-row .asset-row-info {
-    grid-column: 1 / -1;
-  }
-  .investment-amount-row .asset-amount-editor {
-    grid-column: auto;
   }
   .asset-column-label {
     display: block;
@@ -4749,6 +4726,314 @@ button:focus-visible {
 
 .facts-asset-entry + .facts-asset-entry {
   border-top: 1px solid var(--line);
+}
+.page.narrow.facts-page {
+  max-width: 1120px;
+}
+.investment-panel .panel-title {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.investment-panel-heading h2 {
+  font-size: 20px;
+}
+.investment-panel-heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.investment-panel .trade-toolbar {
+  gap: 8px;
+}
+.investment-overview {
+  margin: 24px 0;
+}
+.investment-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid #dbe5df;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f6f8f6;
+}
+.investment-overview-metric {
+  padding: 20px;
+  min-width: 0;
+}
+.investment-overview-metric + .investment-overview-metric {
+  border-left: 1px solid #dbe5df;
+}
+.investment-overview-metric > span {
+  font-size: 13px;
+  color: #53635a;
+}
+.investment-overview-metric.metric-value {
+  background: #eaf2ec;
+}
+.investment-overview-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.investment-overview-value strong {
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
+}
+.investment-overview-value small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.investment-overview-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.investment-sort-note {
+  margin: -8px 0 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.position-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.position-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: #53635a;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+.position-filters button[aria-pressed="true"] {
+  background: var(--green);
+  border-color: var(--green);
+  color: white;
+}
+.position-filters button span {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.investment-assets {
+  display: grid;
+  gap: 14px;
+}
+.investment-assets .facts-asset-entry {
+  border: 1px solid #dce4df;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--paper);
+  box-shadow: 0 2px 6px rgba(20, 42, 35, 0.03);
+}
+.investment-amount-row .asset-row-info {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.investment-amount-row .asset-name strong {
+  font-size: 18px;
+  font-weight: 650;
+}
+.investment-amount-row .asset-name {
+  align-items: flex-start;
+  padding: 0;
+}
+.investment-identity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.investment-identity-meta .position-badge {
+  padding: 2px 8px;
+  background: #eaf3ed;
+  color: #27634c;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.investment-identity-meta .position-badge.is-closed {
+  background: #f0f2f0;
+  color: #5c685f;
+}
+.investment-amount-row .danger-text {
+  margin-left: auto;
+  font-size: 12px;
+}
+.investment-amount-row .asset-column-label {
+  display: block;
+  color: #53635a;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.investment-amount-row .asset-amount-editor {
+  grid-column: 1;
+  grid-row: 2;
+  gap: 0;
+}
+.investment-amount-row .asset-amount-editor label {
+  flex-direction: row-reverse;
+  gap: 6px;
+}
+.investment-amount-row .asset-amount-editor label:has(input[readonly]) {
+  width: fit-content;
+  max-width: 100%;
+}
+.investment-amount-row .asset-amount-editor label > small {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.investment-amount-row .asset-amount-editor input {
+  text-align: left;
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+  height: 38px;
+  padding: 2px 6px;
+}
+.investment-amount-row .asset-amount-editor input[readonly] {
+  border-color: transparent;
+  background: transparent;
+  padding-left: 0;
+}
+.investment-amount-row .asset-pnl {
+  grid-row: 2;
+  text-align: left;
+}
+.investment-amount-row .asset-pnl > span:last-child {
+  padding-top: 0;
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 38px;
+  overflow-wrap: anywhere;
+}
+.investment-amount-row .asset-pnl small {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  margin-top: 2px;
+}
+.investment-amount-row .asset-cost {
+  grid-row: 3;
+  text-align: left;
+  border-top: 1px solid #edf0ed;
+  padding-top: 12px;
+}
+.investment-amount-row .asset-cost > button {
+  min-height: 0;
+  padding: 0;
+  font-size: 15px;
+  text-align: left;
+}
+.investment-amount-row .asset-cost > small {
+  margin-top: 4px;
+  font-size: 12px;
+}
+.investment-assets .holding-trade-details {
+  padding: 12px 24px;
+  border-top: 1px solid #edf0ed;
+  background: #f9fbf9;
+}
+.investment-assets .holding-trade-details > summary {
+  color: #476353;
+  font-weight: 500;
+}
+.investment-help {
+  margin-top: 20px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.investment-help > summary {
+  cursor: pointer;
+  width: fit-content;
+}
+@media (max-width: 1000px) {
+  .investment-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .investment-overview-metric:nth-child(3) {
+    border-left: 0;
+  }
+  .investment-overview-metric:nth-child(n + 3) {
+    border-top: 1px solid #dbe5df;
+  }
+}
+@media (max-width: 600px) {
+  .investment-overview-metric {
+    padding: 14px;
+  }
+  .investment-overview-value strong {
+    font-size: 20px;
+  }
+  .asset-amount-row.investment-amount-row {
+    padding: 18px 16px 14px;
+    gap: 16px 12px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .investment-amount-row .asset-row-info {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .investment-amount-row .asset-name {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .investment-amount-row .danger-text {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .investment-identity-meta {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    gap: 6px 10px;
+  }
+  .investment-amount-row .asset-amount-editor {
+    grid-column: 1 / -1;
+  }
+  .investment-amount-row .asset-amount-editor label {
+    width: fit-content;
+    max-width: 100%;
+  }
+  .investment-amount-row .asset-amount-editor input {
+    width: min(240px, 100%);
+    font-size: 26px;
+  }
+  .investment-amount-row .asset-pnl {
+    grid-row: 3;
+    grid-column: span 3;
+  }
+  .investment-amount-row .asset-pnl > span:last-child {
+    font-size: 20px;
+  }
+  .investment-amount-row .asset-cost {
+    grid-row: 4;
+    grid-column: span 2;
+  }
+  .investment-amount-row .asset-cost > button {
+    font-size: 14px;
+  }
+  .investment-assets .holding-trade-details {
+    padding: 12px 16px;
+  }
 }
 .holding-trade-details {
   padding: 0 12px 12px;

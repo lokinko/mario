@@ -20,6 +20,35 @@ vi.mock("../../api/portfolio", () => ({
 }));
 afterEach(cleanup);
 beforeEach(() => vi.clearAllMocks());
+it("distinguishes a closed position from missing cost and retains settled profit", () => {
+  render(
+    <AssetAmountRow
+      holding={{
+        ...emptyHolding(),
+        id: "closed",
+        name: "中国银行",
+        quantity: 0,
+        costPrice: 0,
+        costBasis: 0,
+        currentPrice: 6.77,
+        marketValue: 0,
+      }}
+      realizedPnl={1190}
+      onUpdate={vi.fn()}
+      onEdit={vi.fn()}
+      onDelete={vi.fn()}
+      canDelete={false}
+    />,
+  );
+  expect(screen.getByText("已清仓")).toBeTruthy();
+  expect(screen.queryByText("待补成本")).toBeNull();
+  expect(screen.getByText(`总成本 ${formatMoney(0)}`)).toBeTruthy();
+  expect(screen.getByLabelText("中国银行已结算盈亏").textContent).toContain(
+    `+${formatMoney(1190)}`,
+  );
+  expect(screen.getByText(formatMoney(0))).toBeTruthy();
+  expect(screen.queryByText(/NaN|Infinity/)).toBeNull();
+});
 const holding = {
   ...emptyHolding(),
   id: "a",
@@ -70,9 +99,9 @@ it("rounds displayed prices and computed totals without saving rounded values", 
     screen.getByRole("button", { name: "编辑 工资卡当前价格" }).textContent,
   ).toBe("2.35 CNY");
   const field = screen.getByLabelText("工资卡金额") as HTMLInputElement;
-  expect(field.value).toBe("28.96");
+  expect(field.value).toBe(formatMoney(detailed.marketValue));
   fireEvent.focus(field);
-  expect(field.value).toBe("28.96");
+  expect(field.value).toBe(formatMoney(detailed.marketValue));
   fireEvent.blur(field);
   expect(portfolioApi.updateHoldingAmount).not.toHaveBeenCalled();
 

@@ -2,8 +2,10 @@ import { ExchangeRates } from "./ExchangeRates";
 import { AssetAmountRow } from "./AssetAmountRow";
 import { AssetHistory } from "./AssetHistory";
 import { HoldingTrades } from "./HoldingTrades";
+import { InvestmentOverview } from "./InvestmentOverview";
+import { isClosedHolding, sortInvestmentHoldings } from "./holdingMetrics";
 import { useId, useState } from "react";
-import { ArrowRight, Plus, Save, X } from "lucide-react";
+import { ArrowRight, Plus, RefreshCw, Save, X } from "lucide-react";
 import {
   deleteHolding,
   saveHolding,
@@ -38,6 +40,9 @@ export function MyFacts({
   const [profile, setProfile] = useState(snapshot.profile);
   const [editing, setEditing] = useState<Holding | null>(null);
   const [addingTrade, setAddingTrade] = useState(false);
+  const [positionFilter, setPositionFilter] = useState<
+    "all" | "open" | "closed"
+  >("all");
   const tradeManaged = Boolean(
     editing && snapshot.holdingTrades?.some((t) => t.holdingId === editing.id),
   );
@@ -55,10 +60,27 @@ export function MyFacts({
         : "income",
   );
   const cash = snapshot.holdings.filter((item) => item.assetClass === "现金");
-  const investments = snapshot.holdings.filter(
-    (item) => item.assetClass !== "现金",
+  const investments = sortInvestmentHoldings(
+    snapshot.holdings.filter((item) => item.assetClass !== "现金"),
+    snapshot,
   );
   const currency = snapshot.profile.baseCurrency;
+  const closedInvestments = investments.filter((item) =>
+    isClosedHolding(item, Boolean(snapshot.holdingTradeSummaries?.[item.id])),
+  );
+  const effectivePositionFilter = closedInvestments.length
+    ? positionFilter
+    : "all";
+  const visibleInvestments = investments.filter((item) => {
+    const closed = isClosedHolding(
+      item,
+      Boolean(snapshot.holdingTradeSummaries?.[item.id]),
+    );
+    return (
+      effectivePositionFilter === "all" ||
+      (effectivePositionFilter === "closed" ? closed : !closed)
+    );
+  });
   const validIncome = [
     profile.monthlyIncome,
     profile.monthlyExpense,
@@ -251,34 +273,45 @@ export function MyFacts({
           </fieldset>
         </section>
       ) : (
-        <section className="panel form-panel">
+        <section
+          className={`panel form-panel${section === "holdings" ? " investment-panel" : ""}`}
+        >
           <div className="panel-title">
-            <h2>{section === "savings" ? "存款与现金" : "投资持仓"}</h2>
-            {section === "holdings" && investments.length > 0 && (
-              <button
-                className="secondary"
-                disabled={busy || Boolean(editing)}
-                onClick={async () => {
-                  setBusy(true);
-                  setError("");
-                  try {
-                    const result = await refreshSecurityPrices();
-                    onUpdate(result.snapshot);
-                    if (result.errors.length)
-                      setError(result.errors.join("；"));
-                    else
-                      flash(`价格已检查，更新 ${result.updatedCount} 项持仓`);
-                  } catch (e) {
-                    setError(`价格更新失败：${String(e)}`);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                {busy ? "更新中…" : "更新自动价格"}
-              </button>
-            )}
+            <div className="investment-panel-heading">
+              <h2>{section === "savings" ? "存款与现金" : "投资持仓"}</h2>
+              {section === "holdings" && (
+                <p>
+                  {investments.length} 项资产 · {closedInvestments.length}{" "}
+                  项已清仓
+                </p>
+              )}
+            </div>
             <div className="trade-toolbar">
+              {section === "holdings" && investments.length > 0 && (
+                <button
+                  className="secondary"
+                  disabled={busy || Boolean(editing)}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    try {
+                      const result = await refreshSecurityPrices();
+                      onUpdate(result.snapshot);
+                      if (result.errors.length)
+                        setError(result.errors.join("；"));
+                      else
+                        flash(`价格已检查，更新 ${result.updatedCount} 项持仓`);
+                    } catch (e) {
+                      setError(`价格更新失败：${String(e)}`);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <RefreshCw size={15} />
+                  {busy ? "更新中…" : "更新自动价格"}
+                </button>
+              )}
               {section === "holdings" && (
                 <button
                   className="primary"
@@ -299,19 +332,58 @@ export function MyFacts({
               </button>
             </div>
           </div>
-          <div className="facts-assets">
-            {section === "holdings" && investments.length > 0 && (
-              <div className="investment-amount-head" aria-hidden="true">
-                <span>资产</span>
-                <span>成本价</span>
-                <span>持仓数</span>
-                <span>当前价格</span>
-                <span>当前市值</span>
-                <span>浮动盈亏</span>
-                <span>已结算盈亏</span>
-              </div>
-            )}
-            {(section === "savings" ? cash : investments).map((item) => {
+          {section === "holdings" && investments.length > 0 && (
+            <InvestmentOverview
+              holdings={investments}
+              summaries={snapshot.holdingTradeSummaries}
+            />
+          )}
+          {section === "holdings" && investments.length > 0 && (
+            <p className="investment-sort-note">
+              按折合 {currency} 市值从高到低排列 · 已清仓按最近交易排列
+              {investments.some(
+                (item) =>
+                  !isClosedHolding(
+                    item,
+                    Boolean(snapshot.holdingTradeSummaries?.[item.id]),
+                  ) &&
+                  item.currency !== currency &&
+                  !(item.fxRateToBase != null && item.fxRateToBase > 0),
+              ) && " · 缺少汇率的资产排在未清仓资产末尾"}
+            </p>
+          )}
+          {section === "holdings" && closedInvestments.length > 0 && (
+            <div
+              className="position-filters"
+              role="group"
+              aria-label="持仓状态筛选"
+            >
+              {(
+                [
+                  ["all", "全部", investments.length],
+                  [
+                    "open",
+                    "未清仓",
+                    investments.length - closedInvestments.length,
+                  ],
+                  ["closed", "已清仓", closedInvestments.length],
+                ] as const
+              ).map(([id, label, count]) => (
+                <button
+                  key={id}
+                  aria-pressed={effectivePositionFilter === id}
+                  onClick={() => setPositionFilter(id)}
+                >
+                  {label}
+                  <span>{count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div
+            className={`facts-assets${section === "holdings" ? " investment-assets" : ""}`}
+          >
+            {(section === "savings" ? cash : visibleInvestments).map((item) => {
               const trades = (snapshot.holdingTrades ?? []).filter(
                 (t) => t.holdingId === item.id,
               );
@@ -363,14 +435,22 @@ export function MyFacts({
                 </div>
               );
             })}
+            {section === "holdings" &&
+              investments.length > 0 &&
+              visibleInvestments.length === 0 && (
+                <p className="empty-state">当前筛选下没有持仓。</p>
+              )}
             {(section === "savings" ? cash : investments).length === 0 && (
               <p className="empty">暂无资产，点击上方添加。</p>
             )}
           </div>
           {section === "holdings" && (
-            <p className="section-intro">
-              用“记录买入”从最早一笔真实成交开始，按账户分别录入买入、卖出和现金分红，数量、成本和已结算盈亏自动计算。首次交易会按成交记录替换手工数量和成本，不自动补期初余额。成交与当前行情分别管理；填写证券代码后自动更新当前价格，无代码的资产请手动核对价格。浮动盈亏反映剩余持仓，已结算盈亏包含卖出盈亏与净现金分红。现金余额需按真实账户余额另行核对。
-            </p>
+            <details className="investment-help">
+              <summary>持仓与盈亏说明</summary>
+              <p className="section-intro">
+                用“记录买入”从最早一笔真实成交开始，按账户分别录入买入、卖出和现金分红，数量、成本和已结算盈亏自动计算。首次交易会按成交记录替换手工数量和成本，不自动补期初余额。成交与当前行情分别管理；填写证券代码后自动更新当前价格，无代码的资产请手动核对价格。浮动盈亏反映剩余持仓，已结算盈亏包含卖出盈亏与净现金分红。现金余额需按真实账户余额另行核对。
+              </p>
+            </details>
           )}
         </section>
       )}

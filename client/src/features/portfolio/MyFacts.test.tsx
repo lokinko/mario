@@ -10,7 +10,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MyFacts } from "./MyFacts";
 import * as portfolioApi from "../../api/portfolio";
-import type { Snapshot } from "../../types";
+import type { HoldingTrade, HoldingTradeSummary, Snapshot } from "../../types";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 import { formatMoney } from "../../lib/format";
@@ -58,6 +58,147 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 const snapshot = fixture as Snapshot;
+
+it("displays sorted positions in all filters and reorders after values or trade dates change", async () => {
+  const holdings = [
+    { ...emptyHolding(), id: "old", name: "较早清仓", quantity: 0 },
+    {
+      ...emptyHolding(),
+      id: "small",
+      name: "小额持仓",
+      quantity: 1,
+      marketValue: 100,
+    },
+    { ...emptyHolding(), id: "new", name: "近期清仓", quantity: 0 },
+    {
+      ...emptyHolding(),
+      id: "large",
+      name: "大额持仓",
+      quantity: 10,
+      marketValue: 1000,
+    },
+  ];
+  const trades: HoldingTrade[] = ["old", "new"].map((id, index) => ({
+    id: `trade-${id}`,
+    holdingId: id,
+    kind: "sell",
+    currency: "CNY",
+    occurredOn: index ? "2026-10-12" : "2026-10-10",
+    sequence: 1,
+    quantity: "1",
+    price: "1",
+    grossAmount: "1",
+    fees: "0",
+    taxes: "0",
+    account: "账户",
+    externalId: "",
+    note: "",
+    createdAt: "2026-10-13T12:00:00Z",
+    updatedAt: "2026-10-13T12:00:00Z",
+  }));
+  const next = {
+    ...snapshot,
+    holdings,
+    holdingTrades: trades,
+    holdingTradeSummaries: {
+      old: {
+        settledProfit: "0",
+        cashFlows: {},
+        profits: {},
+      } as HoldingTradeSummary,
+      new: {
+        settledProfit: "0",
+        cashFlows: {},
+        profits: {},
+      } as HoldingTradeSummary,
+    },
+  };
+  const view = mount(next);
+  const order = () =>
+    Array.from(
+      view.container.querySelectorAll(".investment-assets .asset-name strong"),
+    ).map((el) => el.textContent);
+  await screen.findByLabelText("投资持仓概览");
+  expect(order()).toEqual(["大额持仓", "小额持仓", "近期清仓", "较早清仓"]);
+  fireEvent.click(screen.getByRole("button", { name: "未清仓 2" }));
+  expect(order()).toEqual(["大额持仓", "小额持仓"]);
+  fireEvent.click(screen.getByRole("button", { name: "已清仓 2" }));
+  expect(order()).toEqual(["近期清仓", "较早清仓"]);
+  view.rerender(
+    <MyFacts
+      snapshot={{
+        ...next,
+        holdings: holdings.map((h) =>
+          h.id === "small" ? { ...h, marketValue: 2000 } : h,
+        ),
+        holdingTrades: trades.map((t) =>
+          t.holdingId === "old" ? { ...t, occurredOn: "2026-10-13" } : t,
+        ),
+      }}
+      onUpdate={vi.fn()}
+      navigate={vi.fn()}
+      flash={vi.fn()}
+    />,
+  );
+  expect(order()).toEqual(["较早清仓", "近期清仓"]);
+  fireEvent.click(screen.getByRole("button", { name: "全部 4" }));
+  expect(order()).toEqual(["小额持仓", "大额持仓", "较早清仓", "近期清仓"]);
+});
+
+it("filters closed positions without changing the full portfolio overview", async () => {
+  const closed = {
+    ...emptyHolding(),
+    id: "closed",
+    name: "中国银行",
+    quantity: 0,
+    marketValue: 0,
+  };
+  const open = {
+    ...emptyHolding(),
+    id: "open",
+    name: "持有基金",
+    quantity: 100,
+    marketValue: 1000,
+    costBasis: 800,
+  };
+  const view = mount({
+    ...snapshot,
+    holdings: [closed, open],
+    holdingTradeSummaries: {
+      closed: { settledProfit: "1190" } as HoldingTradeSummary,
+    },
+  });
+  await screen.findByLabelText("投资持仓概览");
+  fireEvent.click(screen.getByRole("button", { name: "未清仓 1" }));
+  expect(screen.queryByRole("button", { name: "编辑 中国银行" })).toBeNull();
+  expect(screen.getByRole("button", { name: "编辑 持有基金" })).toBeTruthy();
+  expect(screen.getByLabelText("投资持仓概览").textContent).toContain(
+    `+${formatMoney(1190)}`,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "已清仓 1" }));
+  expect(screen.queryByRole("button", { name: "编辑 持有基金" })).toBeNull();
+  expect(screen.getByRole("button", { name: "编辑 中国银行" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "全部 2" }));
+  expect(screen.getByRole("button", { name: "编辑 持有基金" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "已清仓 1" }));
+  view.rerender(
+    <MyFacts
+      snapshot={{
+        ...snapshot,
+        holdings: [{ ...closed, quantity: 100, marketValue: 677 }, open],
+        holdingTradeSummaries: {
+          closed: { settledProfit: "1190" } as HoldingTradeSummary,
+        },
+      }}
+      onUpdate={vi.fn()}
+      navigate={vi.fn()}
+      flash={vi.fn()}
+    />,
+  );
+  expect(screen.queryByLabelText("持仓状态筛选")).toBeNull();
+  expect(screen.getByRole("button", { name: "编辑 中国银行" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "编辑 持有基金" })).toBeTruthy();
+});
 
 it("shows exchange rates above asset history and prioritizes currencies in holdings", async () => {
   const { container } = render(

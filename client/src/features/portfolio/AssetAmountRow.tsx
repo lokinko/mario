@@ -3,6 +3,7 @@ import { Trash2 } from "lucide-react";
 import { getSnapshot, updateHoldingAmount } from "../../api/portfolio";
 import type { Holding, HoldingValuationEvidence, Snapshot } from "../../types";
 import { formatMoney, formatNumber } from "../../lib/format";
+import { isClosedHolding, unrealizedProfit } from "./holdingMetrics";
 
 export function AssetAmountRow({
   holding,
@@ -35,8 +36,13 @@ export function AssetAmountRow({
   const version = useRef(revision);
   const attempt = useRef<{ value: number; id: string } | undefined>(undefined);
   const investment = holding.assetClass !== "现金";
-  const pnl =
-    holding.costBasis > 0 ? holding.marketValue - holding.costBasis : null;
+  const closed = isClosedHolding(holding, realizedPnl != null);
+  const pnl = unrealizedProfit(holding, realizedPnl != null);
+  const calculatedAmount =
+    investment && holding.quantity != null && holding.currentPrice != null;
+  const displayedAmount = calculatedAmount
+    ? formatMoney(Number(draft), holding.currency)
+    : formatNumber(draft);
   useEffect(() => {
     // A remote refresh must never silently authorize a draft based on old data.
     if (!dirty.current && !pending.current) {
@@ -97,7 +103,7 @@ export function AssetAmountRow({
   };
   return (
     <div
-      className={`asset-amount-row${investment ? " investment-amount-row" : ""}`}
+      className={`asset-amount-row${investment ? " investment-amount-row" : ""}${closed ? " closed-position" : ""}`}
     >
       <div className="asset-row-info">
         <button
@@ -107,10 +113,28 @@ export function AssetAmountRow({
           aria-label={`编辑 ${holding.name}`}
         >
           <strong>{holding.name}</strong>
-          <small title={investment ? "市值确认日期" : "余额确认日期"}>
-            {holding.valuationDate || "日期待补充"}
-          </small>
+          {!investment && (
+            <small title="余额确认日期">
+              {holding.valuationDate || "日期待补充"}
+            </small>
+          )}
         </button>
+        {investment && (
+          <div className="investment-identity-meta">
+            <span className={`position-badge${closed ? " is-closed" : ""}`}>
+              {closed
+                ? "已清仓"
+                : holding.quantity != null && holding.quantity > 0
+                  ? "持有中"
+                  : "待完善"}
+            </span>
+            {holding.symbol && <span>{holding.symbol}</span>}
+            <span>{holding.currency}</span>
+            <span title="市值确认日期">
+              估值 {holding.valuationDate || "日期待补充"}
+            </span>
+          </div>
+        )}
         {canDelete && (
           <button
             className="text-button danger-text"
@@ -126,7 +150,7 @@ export function AssetAmountRow({
       </div>
       {investment && (
         <>
-          <div className="asset-cost">
+          <div className="asset-cost asset-unit-cost">
             <span className="asset-column-label">成本价</span>
             <button
               className="text-button"
@@ -137,15 +161,17 @@ export function AssetAmountRow({
             >
               {holding.costPrice != null
                 ? `${formatNumber(holding.costPrice)} ${holding.currency}`
-                : "待补成本价"}
+                : closed
+                  ? "—"
+                  : "待补成本价"}
             </button>
             <small>
-              {holding.costBasis > 0
+              {holding.costBasis > 0 || closed
                 ? `总成本 ${formatMoney(holding.costBasis, holding.currency)}`
                 : "待补成本"}
             </small>
           </div>
-          <div className="asset-cost">
+          <div className="asset-cost asset-quantity">
             <span className="asset-column-label">持仓数</span>
             <button
               className="text-button"
@@ -158,7 +184,7 @@ export function AssetAmountRow({
                 : formatNumber(holding.quantity)}
             </button>
           </div>
-          <div className="asset-cost">
+          <div className="asset-cost asset-price">
             <span className="asset-column-label">当前价格</span>
             <button
               className="text-button"
@@ -197,7 +223,15 @@ export function AssetAmountRow({
               (focused &&
                 !(holding.quantity != null && holding.currentPrice != null))
                 ? draft
-                : formatNumber(draft)
+                : displayedAmount
+            }
+            style={
+              calculatedAmount
+                ? {
+                    width: `${displayedAmount.length + 1}ch`,
+                    fontSize: displayedAmount.length > 13 ? "17px" : undefined,
+                  }
+                : undefined
             }
             readOnly={
               busy ||
@@ -266,7 +300,7 @@ export function AssetAmountRow({
               {pnl == null
                 ? "—"
                 : `${pnl > 0 ? "+" : ""}${formatMoney(pnl, holding.currency)}`}
-              {pnl != null && (
+              {pnl != null && holding.costBasis > 0 && (
                 <small>
                   {pnl > 0 ? "+" : ""}
                   {((pnl / holding.costBasis) * 100).toFixed(1)}%

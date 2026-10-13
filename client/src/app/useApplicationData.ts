@@ -14,7 +14,7 @@ import type { View } from "./navigation";
 
 /** Owns the server-data lifecycle. Pages own their forms; the shell owns navigation. */
 export function useApplicationData(view: View) {
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [snapshot, setSnapshotState] = useState<Snapshot | null>(null);
   const [model, setModel] = useState<ModelConfig | null>(null);
   const [modelError, setModelError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -27,6 +27,11 @@ export function useApplicationData(view: View) {
     message: "正在检查同步状态",
   });
   const generation = useRef(0);
+  const setSnapshot = useCallback((next: Snapshot) => {
+    // A saved response supersedes every refresh that started before it.
+    generation.current += 1;
+    setSnapshotState(next);
+  }, []);
   const edited = useRef(false);
   const currentView = useRef(view);
   currentView.current = view;
@@ -64,7 +69,7 @@ export function useApplicationData(view: View) {
       if (protectDrafts && protectDraft()) return false;
       if (nextModel) setModel(nextModel);
       setModelError(nextModelError);
-      setSnapshot(next);
+      setSnapshotState(next);
       setRemoteViewRevision((value) => value + 1);
       setRemotePending(false);
       blockStaleWrites(false);
@@ -80,7 +85,7 @@ export function useApplicationData(view: View) {
     const request = ++generation.current;
     getSnapshot()
       .then((next) => {
-        if (request === generation.current) setSnapshot(next);
+        if (request === generation.current) setSnapshotState(next);
       })
       .catch((error) => {
         if (request === generation.current) setStartupError(String(error));
