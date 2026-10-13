@@ -11,6 +11,23 @@ import {
 import type { FxBook, Snapshot } from "../../types";
 
 const currencies = ["CNY", "USD", "HKD", "EUR", "JPY", "GBP"];
+const visibilityKey = "mario.exchange.visible-currencies";
+function readVisibility(): Record<string, boolean> {
+  try {
+    const saved: unknown = JSON.parse(
+      localStorage.getItem(visibilityKey) ?? "{}",
+    );
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    return Object.fromEntries(
+      Object.entries(saved).filter(
+        ([currency, visible]) =>
+          /^[A-Z]{3}$/.test(currency) && typeof visible === "boolean",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
 export function ExchangeRates({
   baseCurrency,
   usedCurrencies = [],
@@ -25,6 +42,7 @@ export function ExchangeRates({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [visibility, setVisibility] = useState(readVisibility);
   useEffect(() => {
     const isCurrent = request.begin();
     setBusy(true);
@@ -61,11 +79,18 @@ export function ExchangeRates({
       if (isCurrent()) setBusy(false);
     }
   };
-  const allCurrencies = [...new Set([...currencies, ...usedCurrencies])].filter(
-    (c) => c !== baseCurrency,
-  );
+  const allCurrencies = [
+    ...new Set([
+      ...currencies,
+      ...usedCurrencies,
+      ...(book?.quotes
+        .filter((quote) => quote.toCurrency === baseCurrency)
+        .map((quote) => quote.fromCurrency) ?? []),
+      ...Object.keys(book?.manual ?? {}),
+    ]),
+  ].filter((c) => c !== baseCurrency);
   const hasForeignCurrency = allCurrencies.some((c) => involved.has(c));
-  const primaryCurrencies = allCurrencies.filter(
+  const defaultCurrencies = allCurrencies.filter(
     (c) =>
       involved.has(c) ||
       book?.manual[c] ||
@@ -74,10 +99,44 @@ export function ExchangeRates({
           (q) => q.fromCurrency === c && q.toCurrency === baseCurrency,
         )),
   );
-  const otherCurrencies = allCurrencies.filter(
-    (c) => !primaryCurrencies.includes(c),
+  const selectedCurrencies = allCurrencies.filter(
+    (c) => visibility[c] ?? defaultCurrencies.includes(c),
   );
+  const toggleCurrency = (currency: string, visible: boolean) => {
+    const next = { ...visibility, [currency]: visible };
+    setVisibility(next);
+    try {
+      localStorage.setItem(visibilityKey, JSON.stringify(next));
+    } catch {
+      // Display preferences remain usable when browser storage is unavailable.
+    }
+  };
   const renderRate = (currency: string) => {
+    if (!book) return null;
+    const value =
+      book.manual[currency]?.rate ??
+      book.quotes.find(
+        (quote) =>
+          quote.fromCurrency === currency && quote.toCurrency === baseCurrency,
+      )?.rate;
+    return (
+      <article
+        className="exchange-rate-card"
+        aria-label={`${currency} 兑 ${baseCurrency} 汇率`}
+        key={currency}
+      >
+        <span className="exchange-currency-pair">
+          {currency} <span aria-hidden="true">→</span> {baseCurrency}
+        </span>
+        <strong
+          aria-label={`1 ${currency} = ${value == null ? "待更新" : formatNumber(value)} ${baseCurrency}`}
+        >
+          {value == null ? "待更新" : formatNumber(value)}
+        </strong>
+      </article>
+    );
+  };
+  const renderEditor = (currency: string) => {
     if (!book) return null;
     const manual = book.manual[currency];
     const quote = book.quotes.find(
@@ -93,23 +152,16 @@ export function ExchangeRates({
       Number(draft) <= 1e9;
     return (
       <article
-        className={`exchange-rate-row${involved.has(currency) ? " is-involved" : ""}`}
-        aria-label={`${currency} 兑 ${baseCurrency} 汇率`}
+        className="exchange-management-row"
+        aria-label={`${currency} 汇率管理`}
         key={currency}
       >
         <div className="exchange-card-heading">
           <span className="exchange-currency-pair">
             {currency} <span aria-hidden="true">→</span> {baseCurrency}
           </span>
-          {involved.has(currency) && (
-            <span className="exchange-involved-badge">当前涉及</span>
-          )}
         </div>
         <div className="exchange-card-quote">
-          <strong>
-            1 {currency} = {value == null ? "待更新" : formatNumber(value)}{" "}
-            {baseCurrency}
-          </strong>
           <small>
             {manual ? "手动汇率" : "自动 · ECB"} · 观察日{" "}
             {manual?.observedOn ?? quote?.observedOn ?? "暂无"}
@@ -172,25 +224,33 @@ export function ExchangeRates({
     <section className="panel exchange-settings" aria-label="汇率设置">
       <div className="panel-title exchange-settings-heading">
         <div>
-          <h2>汇率设置</h2>
-          <p className="exchange-settings-meta">
-            基准币种 {baseCurrency} · 最近检查：
-            {book?.checkedAt
-              ? new Date(book.checkedAt * 1000).toLocaleString("zh-CN")
-              : "尚未更新"}
-          </p>
+          <p className="exchange-settings-meta">基准币种 {baseCurrency}</p>
         </div>
         <button
           className="secondary"
           disabled={busy}
           onClick={() => void run(refreshFxSettings)}
         >
-          更新自动汇率
+          更新汇率
         </button>
       </div>
-      <p className="section-intro">
-        汇率每天自动更新，所有外币资产统一使用这里的值。手动修改会保持生效，直到恢复自动；已保存的历史流水不变。
-      </p>
+      <fieldset className="exchange-currency-picker">
+        <legend>展示币种</legend>
+        <div>
+          {allCurrencies.map((currency) => (
+            <label key={currency}>
+              <input
+                type="checkbox"
+                checked={selectedCurrencies.includes(currency)}
+                onChange={(event) =>
+                  toggleCurrency(currency, event.target.checked)
+                }
+              />
+              <span>{currency}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
       {error && (
         <p className="error-box" role="alert">
           {error}。输入已保留，可重试。
@@ -205,29 +265,35 @@ export function ExchangeRates({
               {book.error}
             </p>
           )}
-          {primaryCurrencies.length > 0 && (
+          {selectedCurrencies.length > 0 ? (
             <div className="exchange-rate-list">
-              {primaryCurrencies.map(renderRate)}
+              {selectedCurrencies.map(renderRate)}
             </div>
+          ) : (
+            <p className="empty">勾选币种后显示汇率。</p>
           )}
-          {otherCurrencies.length > 0 && (
-            <details className="exchange-other-currencies">
-              <summary>其他币种汇率与设置</summary>
-              <div className="exchange-rate-list">
-                {otherCurrencies.map(renderRate)}
-              </div>
-            </details>
-          )}
-          <p className="section-intro exchange-source-note">
-            参考汇率按实际发布日标注，周末和节假日沿用最近工作日。
-            <ExternalLink
-              href="https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html"
-              target="_blank"
-              rel="noreferrer"
-            >
-              查看来源
-            </ExternalLink>
-          </p>
+          <details className="exchange-management">
+            <summary>管理汇率</summary>
+            <p className="exchange-settings-meta">
+              最近检查：
+              {book.checkedAt
+                ? new Date(book.checkedAt * 1000).toLocaleString("zh-CN")
+                : "尚未更新"}
+            </p>
+            <div className="exchange-management-list">
+              {selectedCurrencies.map(renderEditor)}
+            </div>
+            <p className="section-intro exchange-source-note">
+              每日自动更新，周末沿用最近工作日。展示选择不影响资产换算。手动修改持续生效，历史流水保持原值。
+              <ExternalLink
+                href="https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html"
+                target="_blank"
+                rel="noreferrer"
+              >
+                查看来源
+              </ExternalLink>
+            </p>
+          </details>
         </>
       )}
     </section>

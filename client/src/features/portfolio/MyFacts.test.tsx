@@ -199,7 +199,7 @@ it("filters closed positions without changing the full portfolio overview", asyn
   expect(screen.getByRole("button", { name: "编辑 持有基金" })).toBeTruthy();
 });
 
-it("shows exchange rates above asset history and prioritizes currencies in holdings", async () => {
+it("keeps asset history first without reserving page space for exchange rates", async () => {
   const { container } = render(
     <MyFacts
       snapshot={{
@@ -211,13 +211,10 @@ it("shows exchange rates above asset history and prioritizes currencies in holdi
       flash={vi.fn()}
     />,
   );
-  await screen.findByRole("spinbutton", { name: "修改 HKD 汇率" });
+  await screen.findByRole("region", { name: "每日资产追踪" });
   const panels = Array.from(container.querySelectorAll(".panel"));
-  expect(panels[0].getAttribute("aria-label")).toBe("汇率设置");
-  expect(panels[1].getAttribute("aria-label")).toBe("每日资产追踪");
-  expect(
-    panels[0].querySelector(".exchange-rate-row strong")?.textContent,
-  ).toBe("1 HKD = 待更新 CNY");
+  expect(panels[0].getAttribute("aria-label")).toBe("每日资产追踪");
+  expect(screen.queryByRole("region", { name: "汇率设置" })).toBeNull();
 });
 
 it("saves a code and quantity without requiring a manual price", async () => {

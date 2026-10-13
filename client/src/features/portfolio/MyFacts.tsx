@@ -1,4 +1,3 @@
-import { ExchangeRates } from "./ExchangeRates";
 import { AssetAmountRow } from "./AssetAmountRow";
 import { AssetHistory } from "./AssetHistory";
 import { HoldingTrades } from "./HoldingTrades";
@@ -187,10 +186,7 @@ export function MyFacts({
   };
   return (
     <div className="page narrow facts-page">
-      <PageHeader
-        title="我的情况"
-        description="统一管理收支、现金和投资持仓。"
-      />
+      <PageHeader title="我的情况" />
       {addingTrade && (
         <section
           ref={tradeForm}
@@ -205,14 +201,6 @@ export function MyFacts({
           />
         </section>
       )}
-      <ExchangeRates
-        baseCurrency={currency}
-        usedCurrencies={[
-          ...snapshot.holdings.map((holding) => holding.currency),
-          ...(snapshot.holdingTrades ?? []).map((trade) => trade.currency),
-        ]}
-        onUpdate={onUpdate}
-      />
       <AssetHistory snapshot={snapshot} />
       <div className="section-switcher" role="group" aria-label="我的情况分类">
         {(

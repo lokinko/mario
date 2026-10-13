@@ -22,6 +22,7 @@ import { Advisor } from "./features/research/Advisor";
 import { ModelSettings } from "./features/settings/ModelSettings";
 import { AccountSettings } from "./features/account/WebAccess";
 import { PageHeader } from "./components/PageHeader";
+import { FloatingExchangeRates } from "./features/portfolio/FloatingExchangeRates";
 
 function App() {
   const [view, setView] = useState<View>(initialView);
@@ -374,10 +375,7 @@ function App() {
         )}
         {view === "settings" && !model && (
           <div className="page narrow settings-page">
-            <PageHeader
-              title="设置"
-              description="管理账号、模型连接与问答预设。"
-            />
+            <PageHeader title="设置" />
             <AccountSettings />
           </div>
         )}
@@ -391,6 +389,18 @@ function App() {
           </div>
         )}
       </main>
+      {snapshot.profile && (
+        <div inert={mobileNavOpen}>
+          <FloatingExchangeRates
+            baseCurrency={snapshot.profile.baseCurrency}
+            usedCurrencies={[
+              ...snapshot.holdings.map((holding) => holding.currency),
+              ...(snapshot.holdingTrades ?? []).map((trade) => trade.currency),
+            ]}
+            onUpdate={setSnapshot}
+          />
+        </div>
+      )}
     </div>
   );
 }

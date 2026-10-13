@@ -28,6 +28,14 @@ vi.mock("./api/portfolio", async (original) => ({
   getSnapshot: vi.fn(),
   getDailyAssets: vi.fn().mockResolvedValue({ records: [], nextBefore: null }),
   getPortfolioEvents: vi.fn().mockResolvedValue([]),
+  getFxSettings: vi.fn().mockResolvedValue({
+    baseCurrency: "CNY",
+    checkedAt: 0,
+    requestedOn: "2026-10-13",
+    quotes: [],
+    manual: {},
+    error: "",
+  }),
 }));
 vi.mock("./api/settings", async (original) => ({
   ...(await original<typeof import("./api/settings")>()),
@@ -50,6 +58,24 @@ beforeEach(() => {
   window.location.hash = "cloud";
 });
 afterEach(cleanup);
+
+it("keeps exchange rates outside the main page and available across navigation", async () => {
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
+    new Error("optional model unavailable"),
+  );
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "展开汇率浮窗" }));
+  const rates = await screen.findByRole("region", { name: "汇率设置" });
+  expect(rates.closest("main")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "我的情况" }));
+  await screen.findByRole("heading", { name: "我的情况" });
+  expect(screen.getAllByRole("region", { name: "汇率设置" })).toHaveLength(1);
+  expect(screen.getByRole("region", { name: "汇率设置" })).toBe(rates);
+});
 
 it.each([true, false])(
   "switches accounts from the settings page even when model configuration is available=%s",
