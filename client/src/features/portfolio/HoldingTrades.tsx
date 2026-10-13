@@ -16,6 +16,7 @@ const names: Record<HoldingTradeKind, string> = {
   sell: "卖出",
   dividend: "现金分红",
 };
+const pageSize = 5;
 const decimal = /^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/;
 const validNumber = (s: string) => decimal.test(s) && Number(s) <= 1e15;
 // Only estimate the broker's gross amount here; all accounting is performed on the server.
@@ -68,8 +69,13 @@ export function HoldingTrades({
   );
   const ordered = [...trades].sort(
     (a, b) =>
-      a.occurredOn.localeCompare(b.occurredOn) || a.sequence - b.sequence,
+      b.occurredOn.localeCompare(a.occurredOn) || b.sequence - a.sequence,
   );
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(ordered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * pageSize;
+  const visibleTrades = ordered.slice(pageStart, pageStart + pageSize);
   const summary = holding
     ? snapshot.holdingTradeSummaries?.[holding.id]
     : undefined;
@@ -183,6 +189,7 @@ export function HoldingTrades({
           })
         : await saveHoldingTrade({ ...input, requestId: attempt.current!.id });
       onUpdate(next);
+      setPage(1);
       attempt.current = null;
       setDraft(emptyDraft(fields.account));
       close();
@@ -473,67 +480,101 @@ export function HoldingTrades({
         </p>
       )}
       {ordered.length > 0 && (
-        <div className="table-scroll">
-          <table className="trade-table">
-            <thead>
-              <tr>
-                <th>日期 / 顺序</th>
-                <th>类型 / 数量</th>
-                <th>成交 / 分红金额</th>
-                <th>费用 / 税费</th>
-                <th>实际现金收支</th>
-                <th>账户 / 凭据</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...ordered].reverse().map((t) => (
-                <tr key={t.id}>
-                  <td>
-                    {t.occurredOn}
-                    <small>第 {t.sequence} 笔</small>
-                  </td>
-                  <td>
-                    {names[t.kind]}
-                    {t.kind !== "dividend" && (
-                      <small>
-                        {formatNumber(t.quantity)} × {formatNumber(t.price)}
-                      </small>
-                    )}
-                  </td>
-                  <td>
-                    {money(t.grossAmount)}
-                    <small>{t.currency}</small>
-                  </td>
-                  <td>
-                    {money(t.fees)}
-                    <small>税费 {money(t.taxes)}</small>
-                  </td>
-                  <td>
-                    {money(summary?.cashFlows[t.id] ?? "0")}
-                    {summary?.profits[t.id] !== undefined && (
-                      <small>卖出盈亏 {money(summary.profits[t.id])}</small>
-                    )}
-                  </td>
-                  <td>
-                    {t.account}
-                    <small>{t.externalId}</small>
-                    <small>{t.note}</small>
-                  </td>
-                  <td>
-                    <button
-                      className="text-button"
-                      disabled={busy || open}
-                      onClick={() => begin(t.kind, t)}
-                    >
-                      编辑交易
-                    </button>
-                  </td>
+        <>
+          <div className="table-scroll">
+            <table className="trade-table">
+              <thead>
+                <tr>
+                  <th>日期 / 顺序</th>
+                  <th>类型 / 数量</th>
+                  <th>成交 / 分红金额</th>
+                  <th>费用 / 税费</th>
+                  <th>实际现金收支</th>
+                  <th>账户 / 凭据</th>
+                  <th>操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {visibleTrades.map((t) => (
+                  <tr key={t.id}>
+                    <td>
+                      {t.occurredOn}
+                      <small>第 {t.sequence} 笔</small>
+                    </td>
+                    <td>
+                      {t.kind === "dividend" ? (
+                        names[t.kind]
+                      ) : (
+                        <strong className={`trade-kind-${t.kind}`}>
+                          {names[t.kind]}
+                        </strong>
+                      )}
+                      {t.kind !== "dividend" && (
+                        <small>
+                          {formatNumber(t.quantity)} × {formatNumber(t.price)}
+                        </small>
+                      )}
+                    </td>
+                    <td>
+                      {money(t.grossAmount)}
+                      <small>{t.currency}</small>
+                    </td>
+                    <td>
+                      {money(t.fees)}
+                      <small>税费 {money(t.taxes)}</small>
+                    </td>
+                    <td>
+                      {money(summary?.cashFlows[t.id] ?? "0")}
+                      {summary?.profits[t.id] !== undefined && (
+                        <small>卖出盈亏 {money(summary.profits[t.id])}</small>
+                      )}
+                    </td>
+                    <td>
+                      {t.account}
+                      <small>{t.externalId}</small>
+                      <small>{t.note}</small>
+                    </td>
+                    <td>
+                      <button
+                        className="text-button"
+                        disabled={busy || open}
+                        onClick={() => begin(t.kind, t)}
+                      >
+                        编辑交易
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <nav className="trade-pagination" aria-label="交易明细分页">
+            <span>
+              共 {ordered.length} 条 · 最新在前 · 每页 {pageSize} 条
+            </span>
+            <div>
+              <button
+                type="button"
+                className="secondary"
+                disabled={currentPage === 1 || busy || open}
+                onClick={() => setPage(currentPage - 1)}
+              >
+                上一页
+              </button>
+              <span aria-live="polite">
+                第 {currentPage} / {pageCount} 页
+              </span>
+              <button
+                type="button"
+                className="secondary"
+                disabled={currentPage === pageCount || busy || open}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                下一页
+              </button>
+            </div>
+          </nav>
+        </>
       )}
       {!trades.length && holding && !open && (
         <p className="empty">

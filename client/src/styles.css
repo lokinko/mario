@@ -5197,6 +5197,32 @@ button:focus-visible {
   color: #748079;
   overflow-wrap: anywhere;
 }
+.trade-kind-buy {
+  color: var(--red);
+  font-weight: 700;
+}
+.trade-kind-sell {
+  color: var(--gain);
+  font-weight: 700;
+}
+.trade-pagination,
+.trade-pagination > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.trade-pagination {
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+.trade-pagination .secondary {
+  padding: 7px 12px;
+}
 .holding-trades .table-scroll {
   overflow-x: auto;
 }

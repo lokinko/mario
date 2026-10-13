@@ -97,6 +97,79 @@ const value: Snapshot = {
 };
 const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
+it("pages five newest executions per holding and can edit older pages without losing the full history", () => {
+  const trades: HoldingTrade[] = Array.from({ length: 12 }, (_, index) => ({
+    ...buy,
+    id: `record-${index + 1}`,
+    kind: index % 2 ? "sell" : "buy",
+    occurredOn: `2026-01-${String(Math.floor(index / 2) + 1).padStart(2, "0")}`,
+    sequence: (index % 2) + 1,
+    externalId: `receipt-${index + 1}`,
+    note: `note-${index + 1}`,
+  }));
+  const props = { holding, onUpdate: vi.fn(), flash: vi.fn() };
+  const { container, rerender } = render(
+    <HoldingTrades
+      {...props}
+      snapshot={{
+        ...value,
+        holdingTrades: [
+          ...trades,
+          { ...buy, holdingId: "other", externalId: "other" },
+        ],
+      }}
+    />,
+  );
+  const receipts = () =>
+    Array.from(container.querySelectorAll("tbody tr")).map(
+      (row) => row.textContent?.match(/receipt-\d+/)?.[0],
+    );
+  expect(receipts()).toEqual([
+    "receipt-12",
+    "receipt-11",
+    "receipt-10",
+    "receipt-9",
+    "receipt-8",
+  ]);
+  expect(screen.getByText("第 1 / 3 页")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "上一页" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(container.querySelector("strong.trade-kind-buy")?.textContent).toBe(
+    "买入",
+  );
+  expect(container.querySelector("strong.trade-kind-sell")?.textContent).toBe(
+    "卖出",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  expect(receipts()).toEqual([
+    "receipt-7",
+    "receipt-6",
+    "receipt-5",
+    "receipt-4",
+    "receipt-3",
+  ]);
+  fireEvent.click(screen.getAllByRole("button", { name: "编辑交易" })[0]);
+  expect(screen.getByLabelText("交易备注")).toHaveProperty("value", "note-7");
+  fireEvent.click(screen.getByRole("button", { name: "关闭交易录入" }));
+  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  expect(receipts()).toEqual(["receipt-2", "receipt-1"]);
+  expect(screen.getByRole("button", { name: "下一页" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "上一页" }));
+  expect(receipts()).toHaveLength(5);
+  rerender(
+    <HoldingTrades
+      {...props}
+      snapshot={{ ...value, holdingTrades: trades.slice(0, 2) }}
+    />,
+  );
+  expect(screen.getByText("第 1 / 1 页")).toBeTruthy();
+  expect(receipts()).toEqual(["receipt-2", "receipt-1"]);
+});
 it("records exact real executions, separated charges and retry identity without an artificial opening", async () => {
   const onUpdate = vi.fn();
   vi.mocked(portfolioApi.saveHoldingTrade)
