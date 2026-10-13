@@ -194,7 +194,7 @@ export function ModelSettings({
 
   return (
     <div className="page narrow settings-page">
-      <PageHeader title="设置" description="管理账号、模型连接与问答预设。" />
+      <PageHeader title="设置" />
       {accountSettings}
       <section className="panel form-panel">
         <div className="panel-title">
@@ -219,9 +219,6 @@ export function ModelSettings({
               )}
               一键读取 Codex 凭证
             </button>
-            <p className="section-intro">
-              使用本机已登录的 Codex，无需复制密钥。
-            </p>
           </>
         )}
         <fieldset className="holding-fields" disabled={saving || testing}>

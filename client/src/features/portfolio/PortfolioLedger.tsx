@@ -218,28 +218,24 @@ export function PortfolioLedger({
             {summary.external >= 0 ? "+" : ""}
             {formatMoney(summary.external, snapshot.profile.baseCurrency)}
           </strong>
-          <small>入金减出金</small>
         </article>
         <article>
           <span>累计现金收入</span>
           <strong>
             {formatMoney(summary.income, snapshot.profile.baseCurrency)}
           </strong>
-          <small>分红与利息</small>
         </article>
         <article>
           <span>累计费用税费</span>
           <strong>
             {formatMoney(summary.costs, snapshot.profile.baseCurrency)}
           </strong>
-          <small>不与外部现金流混合</small>
         </article>
         <article>
           <span>累计交易额</span>
           <strong>
             {formatMoney(summary.turnover, snapshot.profile.baseCurrency)}
           </strong>
-          <small>买入与卖出，仅衡量换手</small>
         </article>
       </section>
 
@@ -281,7 +277,6 @@ export function PortfolioLedger({
                 </option>
               ))}
             </select>
-            <small>入金/出金属于外部现金流；其他项目属于组合内部活动。</small>
           </label>
           <label>
             <span>关联资产{requiresAsset ? "" : "（可选）"}</span>
@@ -321,7 +316,7 @@ export function PortfolioLedger({
           </label>
           {draft.currency !== snapshot.profile.baseCurrency && (
             <p className="section-intro">
-              保存时自动读取发生日汇率；统一在“我的情况 → 汇率设置”管理。
+              保存时自动读取发生日汇率；统一在右侧“汇率”浮窗管理。
             </p>
           )}
           <label>
@@ -340,7 +335,6 @@ export function PortfolioLedger({
                 });
               }}
             />
-            <small>日期用于核对资金发生时间。</small>
           </label>
           <label className="ledger-note">
             <span>核对说明</span>

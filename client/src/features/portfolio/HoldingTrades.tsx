@@ -413,12 +413,6 @@ export function HoldingTrades({
                     setDraft((d) => ({ ...d, grossAmount: e.target.value }))
                   }
                 />
-                {!isDividend && (
-                  <small>
-                    不含费用和税费；留空按数量 ×
-                    单价计算，可填写成交单的实际金额。
-                  </small>
-                )}
               </label>
               {field("fees", `交易费用（${currency}）`)}
               {field("taxes", `税费（${currency}）`)}

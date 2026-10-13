@@ -108,7 +108,6 @@ function Trend({ records }: { records: DailyRecord[] }) {
           {money(max, points.at(-1)?.baseCurrency ?? "CNY")}
         </text>
       </svg>
-      <small>虚线：沿用值</small>
     </div>
   );
 }

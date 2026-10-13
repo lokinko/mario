@@ -237,7 +237,7 @@ export function ReviewCenter({
               ? "现在需要安排一次"
               : latestReview.nextReviewDate
                 ? `下次 ${latestReview.nextReviewDate}`
-                : "随时写下新的思考"}
+                : ""}
           </small>
         </article>
         <article>

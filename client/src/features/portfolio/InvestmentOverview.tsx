@@ -83,13 +83,15 @@ export function InvestmentOverview({
           </div>
         ))}
       </div>
-      <p className="investment-overview-note">
-        按持仓币种分别汇总
-        {missingCost > 0 &&
-          ` · ${missingCost} 项成本待补，成本与浮动盈亏仅含已知部分`}
-        {missingTrades > 0 &&
-          ` · ${missingTrades} 项未录入交易，已结算盈亏仅含已记录部分`}
-      </p>
+      {missingCost > 0 || missingTrades > 0 ? (
+        <p className="investment-overview-note">
+          {missingCost > 0 &&
+            `${missingCost} 项成本待补，成本与浮动盈亏仅含已知部分`}
+          {missingCost > 0 && missingTrades > 0 ? " · " : ""}
+          {missingTrades > 0 &&
+            `${missingTrades} 项未录入交易，已结算盈亏仅含已记录部分`}
+        </p>
+      ) : null}
     </div>
   );
 }

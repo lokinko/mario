@@ -76,7 +76,6 @@ export function Goals({
     <div className="page narrow goals-page">
       <PageHeader
         title="投资目标"
-        description="记录想实现的计划，以及你准备投入的金额。"
         action={
           <button
             className="primary"

@@ -137,12 +137,10 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
         <article>
           <span>长期保留</span>
           <strong>{pinnedCount}</strong>
-          <small>相关时优先参考</small>
         </article>
         <article>
           <span>永久屏蔽</span>
           <strong>{hiddenCount}</strong>
-          <small>不再提供给 AI</small>
         </article>
       </section>
 
