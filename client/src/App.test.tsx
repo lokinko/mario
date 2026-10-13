@@ -39,7 +39,6 @@ vi.mock("./api/research", async (original) => ({
 }));
 vi.mock("./api/reviews", async (original) => ({
   ...(await original<typeof import("./api/reviews")>()),
-  getReviewReminders: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("./features/account/ServerData", () => ({
   ServerData: ({ onRestore }: { onRestore: () => Promise<void> }) => (
@@ -228,9 +227,9 @@ it("shows frequently used records in primary navigation", async () => {
   for (const name of [
     "复盘记录",
     "参考资料",
-    "持仓与目标",
+    "投资目标",
     "组合流水",
-    "记忆与规则",
+    "长期记忆",
   ]) {
     const entry = screen.getByRole("button", { name });
     expect(entry.closest("aside")).toBeTruthy();

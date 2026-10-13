@@ -1,5 +1,4 @@
 import type {
-  FinancialProfile,
   Goal,
   Holding,
   PortfolioEventInput,
@@ -7,18 +6,6 @@ import type {
 } from "../../types";
 import { saveTextDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
-
-export const emptyProfile: FinancialProfile = {
-  monthlyIncome: 0,
-  monthlyExpense: 0,
-  emergencyFund: 0,
-  liabilities: 0,
-  investableAssets: 0,
-  horizonYears: 5,
-  maxDrawdownPct: 15,
-  riskLevel: "稳健",
-  baseCurrency: "CNY",
-};
 
 export function emptyHolding(baseCurrency = "CNY"): Omit<Holding, "id"> {
   return {

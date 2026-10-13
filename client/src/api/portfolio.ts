@@ -1,7 +1,6 @@
 import { httpRequest } from "../lib/httpClient";
 import type {
   FinancialProfile,
-  FxRateQuote,
   FxBook,
   Goal,
   Holding,
@@ -20,15 +19,6 @@ import { webToken } from "../lib/webSession";
 let amountQueue: Promise<unknown> = Promise.resolve();
 export async function getSnapshot(): Promise<Snapshot> {
   return httpRequest<Snapshot>("/snapshot");
-}
-
-export async function getFxRate(
-  fromCurrency: string,
-  toCurrency: string,
-  onDate: string,
-): Promise<FxRateQuote> {
-  const query = new URLSearchParams({ fromCurrency, toCurrency, onDate });
-  return httpRequest<FxRateQuote>(`/market-data/fx-rate?${query.toString()}`);
 }
 
 export async function getSecurityPrice(
@@ -66,21 +56,6 @@ export async function deleteSecurityPriceKey(): Promise<SecurityPriceConfig> {
   return httpRequest<SecurityPriceConfig>("/market-data/security/key", {
     method: "DELETE",
   });
-}
-
-export async function applyVerifiedHoldingValuation(
-  id: string,
-  symbol: string,
-  quantity: number,
-  onDate: string,
-): Promise<Snapshot> {
-  return httpRequest<Snapshot>(
-    `/holdings/${encodeURIComponent(id)}/verified-valuation`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ symbol, quantity, onDate }),
-    },
-  );
 }
 
 export async function saveProfile(
@@ -225,12 +200,6 @@ export function getDailyAssets(
     if (value != null) params.set(key, String(value));
   return httpRequest<import("../types").DailyHistory>(
     `/daily-assets?${params}`,
-  );
-}
-
-export function compareDailyAssets(from: string, to: string) {
-  return httpRequest<import("../types").DailyComparison>(
-    `/daily-assets/compare?${new URLSearchParams({ from, to })}`,
   );
 }
 

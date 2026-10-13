@@ -4,10 +4,6 @@ use chrono::{NaiveDate, Utc};
 
 use crate::models::{MemoryItem, MemoryRetrieval};
 
-pub trait MemoryRetriever: Send + Sync {
-    fn search(&self, query: &str, items: &[MemoryItem], limit: usize) -> Vec<MemoryItem>;
-}
-
 #[derive(Default)]
 pub struct HybridMemoryRetriever {
     as_of: Option<NaiveDate>,
@@ -18,10 +14,7 @@ impl HybridMemoryRetriever {
     fn at(as_of: NaiveDate) -> Self {
         Self { as_of: Some(as_of) }
     }
-}
-
-impl MemoryRetriever for HybridMemoryRetriever {
-    fn search(&self, query: &str, items: &[MemoryItem], limit: usize) -> Vec<MemoryItem> {
+    pub fn search(&self, query: &str, items: &[MemoryItem], limit: usize) -> Vec<MemoryItem> {
         let query_tokens = tokens(query);
         let normalized_query = normalize(query);
         let as_of = self.as_of.unwrap_or_else(|| Utc::now().date_naive());

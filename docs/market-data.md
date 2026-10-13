@@ -43,7 +43,7 @@ ECB 的 [Data Portal API](https://data.ecb.europa.eu/help/api/data-examples) 提
 
 `SecurityPriceProvider` 与汇率接口彼此独立。默认使用 Yahoo Finance 的公开日线接口 `https://query1.finance.yahoo.com/v8/finance/chart/{symbol}`，不可用时尝试同一来源的 `query2` 域名，无需注册或 API Key。这是非正式公开接口，没有稳定性或覆盖保证；市场后缀、数据延迟和供应商见 [Yahoo 数据说明](https://help.yahoo.com/kb/finance/article-exchanges-data-delays-sln2310.html)。
 
-“我的情况 → 投资持仓”填写证券代码和正数持仓数量即可自动更新：支持 `AAPL`、`0700.HK`、`600519.SS`、`000001.SZ` 等 Yahoo 代码，也支持 `sh600519` / `sz000001` 及带前导零的港股代码。纯数字代码有歧义，必须带交易所后缀。新增持仓可以留空价格，服务端保存前补齐；无代码、无数量、零数量及现金持仓不自动估值。代码能否查询取决于来源覆盖，场外基金等不可用标的继续手工记录。
+“我的情况 → 投资持仓”填写证券代码和正数持仓数量即可自动更新：支持 `AAPL`、`0700.HK`、`600519.SS`、`000001.SZ` 等 Yahoo 代码，也支持 `sh600519` / `sz000001` 及带前导零的港股代码。上海 `.SH` 后缀查询时转换为 Yahoo 的 `.SS`；已知股票和 ETF 代码段的交易所填错时，在请求行情前提示正确后缀，例如歌尔股份 `002241.SH` 应改为 `002241.SZ`。不根据 `000xxx` 推断交易所，保留上海指数与深圳股票的区别。纯数字代码有歧义，必须带交易所后缀。新增持仓可以留空价格，服务端保存前补齐；无代码、无数量、零数量及现金持仓不自动估值。代码能否查询取决于来源覆盖，场外基金等不可用标的继续手工记录。
 
 原有 Twelve Data [`/time_series`](https://twelvedata.com/docs/market-data/time-series) 保留为主动查询的可选来源。配置个人 Key 后，主动查询采用 Twelve Data；自动更新始终用免费公共来源。密钥按账号加密保存，通过 `Authorization: apikey …` 请求头发送，不进入行情公共缓存、AI 载荷或同步包。
 

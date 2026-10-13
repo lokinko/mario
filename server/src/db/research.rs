@@ -431,7 +431,7 @@ mod automatic_tests {
 #[cfg(test)]
 mod source_text_tests {
     use super::*;
-    use crate::evidence::{EvidenceRetriever, LexicalEvidenceRetriever};
+    use crate::evidence::search_evidence;
     use serde_json::json;
 
     #[test]
@@ -448,7 +448,7 @@ mod source_text_tests {
         assert!(created.source_url.is_empty());
         assert!(created.as_of_date.is_empty());
         let items = db.research_evidence().unwrap();
-        let found = LexicalEvidenceRetriever.search("黄金储备", &items, 12);
+        let found = search_evidence("黄金储备", &items, 12);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].claim, content);
         let serialized = serde_json::to_value(&found[0]).unwrap();
@@ -461,9 +461,7 @@ mod source_text_tests {
             .unwrap();
         assert_eq!(target.research_evidence().unwrap()[0].claim, content);
         db.set_research_evidence_status(&created.id, false).unwrap();
-        assert!(LexicalEvidenceRetriever
-            .search("黄金储备", &db.research_evidence().unwrap(), 12)
-            .is_empty());
+        assert!(search_evidence("黄金储备", &db.research_evidence().unwrap(), 12).is_empty());
         let restored = db.set_research_evidence_status(&created.id, true).unwrap();
         assert_eq!(restored.claim, content);
     }
@@ -490,10 +488,7 @@ mod source_text_tests {
 #[cfg(test)]
 mod attachment_tests {
     use super::*;
-    use crate::{
-        db::SyncValue,
-        evidence::{EvidenceRetriever, LexicalEvidenceRetriever},
-    };
+    use crate::{db::SyncValue, evidence::search_evidence};
     use base64::{engine::general_purpose::STANDARD, Engine};
     use serde_json::json;
 
@@ -518,16 +513,14 @@ mod attachment_tests {
         ));
         let records = db.research_evidence().unwrap();
         assert_eq!(records[0].attachments[0].extracted_text.as_bytes(), bytes);
-        let found = LexicalEvidenceRetriever.search("黄金储备", &records, 12);
+        let found = search_evidence("黄金储备", &records, 12);
         assert_eq!(found.len(), 1);
         assert!(found[0].claim.contains("黄金储备：本期变动"));
         let payload = serde_json::to_string(&found).unwrap();
         assert!(!payload.contains("dataBase64"));
         assert!(!payload.contains(&STANDARD.encode(bytes)));
         db.set_research_evidence_status(&saved.id, false).unwrap();
-        assert!(LexicalEvidenceRetriever
-            .search("黄金储备", &db.research_evidence().unwrap(), 12)
-            .is_empty());
+        assert!(search_evidence("黄金储备", &db.research_evidence().unwrap(), 12).is_empty());
         assert!(db.research_attachment(&saved.id, &file.id).is_ok());
 
         let bad: ResearchEvidenceInput = serde_json::from_value(json!({"content":"must not save", "attachments":[{"name":"bad.txt","dataBase64":"bad!"}]})).unwrap();

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRequestGuard } from "../../lib/useRequestGuard";
-import { AlertTriangle, BookMarked } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { getMemories, saveMemoryPreference } from "../../api/memory";
 import type { MemoryCandidate } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
@@ -124,7 +124,10 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
 
   return (
     <div className="page narrow memory-page">
-      <PageHeader title="记忆与规则" />
+      <PageHeader
+        title="长期记忆"
+        description="选择问答中可以参考的历史记录。投资规则在复盘记录中管理。"
+      />
 
       <section className="memory-overview">
         <article>

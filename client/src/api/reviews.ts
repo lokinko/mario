@@ -3,14 +3,9 @@ import type {
   InvestmentRule,
   InvestmentRuleInput,
   InvestmentRuleRevision,
-  ReviewReminderSummary,
   SystemReviewDraft,
   SystemReviewRecord,
 } from "../types";
-export async function getReviewReminders(): Promise<ReviewReminderSummary> {
-  return httpRequest<ReviewReminderSummary>("/review-reminders");
-}
-
 export async function getInvestmentRules(): Promise<InvestmentRule[]> {
   return httpRequest<InvestmentRule[]>("/investment-rules");
 }

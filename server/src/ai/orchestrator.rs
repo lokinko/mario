@@ -8,7 +8,7 @@ use super::{
 use crate::{
     context::BuiltContext,
     error::{AppError, AppResult},
-    memory::MemoryRetriever,
+    memory::HybridMemoryRetriever,
     models::{
         AnalysisAlternative, AnalysisEvidenceReference, AnalysisRequest, AnalysisResult,
         AnalysisTransparency, AnalysisWorkflowTrace, MemoryItem, ModelCallTrace,
@@ -18,20 +18,20 @@ use crate::{
 
 pub struct InvestmentOrchestrator<'a> {
     provider: &'a dyn ModelProvider,
-    retriever: &'a dyn MemoryRetriever,
+    retriever: &'a HybridMemoryRetriever,
     workflow: &'a dyn AnalysisWorkflow,
 }
 
 static DEFAULT_WORKFLOW: InvestmentWorkflowV6 = InvestmentWorkflowV6;
 
 impl<'a> InvestmentOrchestrator<'a> {
-    pub fn new(provider: &'a dyn ModelProvider, retriever: &'a dyn MemoryRetriever) -> Self {
+    pub fn new(provider: &'a dyn ModelProvider, retriever: &'a HybridMemoryRetriever) -> Self {
         Self::with_workflow(provider, retriever, &DEFAULT_WORKFLOW)
     }
 
     pub fn with_workflow(
         provider: &'a dyn ModelProvider,
-        retriever: &'a dyn MemoryRetriever,
+        retriever: &'a HybridMemoryRetriever,
         workflow: &'a dyn AnalysisWorkflow,
     ) -> Self {
         Self {

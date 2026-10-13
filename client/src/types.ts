@@ -569,11 +569,6 @@ export interface ModelCallTrace {
   outputTokens?: number;
 }
 
-export interface ReviewReminderSummary {
-  periodicReviewDue: boolean;
-  checkedOn: string;
-}
-
 export interface InvestmentRuleInput {
   category: "资产配置" | "风险" | "研究" | "仓位" | "行为" | "复盘";
   statement: string;
@@ -701,22 +696,6 @@ export interface DailyHistory {
   records: DailyRecord[];
   nextBefore: string | null;
 }
-export interface DailyComparison {
-  from: DailyRecord;
-  to: DailyRecord;
-  amountChange: number | null;
-  assets: {
-    id: string;
-    name: string;
-    status: "added" | "removed" | "existing";
-    previous: DailyAsset | null;
-    current: DailyAsset | null;
-    amountChange: number | null;
-    pctPointChange: number | null;
-  }[];
-  allocationChanges: PortfolioAllocationChange[];
-}
-
 export interface FxBook {
   baseCurrency: string;
   checkedAt: number;

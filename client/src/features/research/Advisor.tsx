@@ -254,7 +254,7 @@ export function Advisor({
         </label>
         <div className="composer-footer">
           <span role="status">
-            {running ? "正在生成 report…" : ""}
+            {running ? "正在分析…" : "Ctrl / ⌘ + Enter 发送"}
             {!model.hasApiKey && (
               <button
                 type="button"

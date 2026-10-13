@@ -229,7 +229,7 @@ export function AssetHistory({ snapshot }: { snapshot: Snapshot }) {
               待补汇率：{latest.missingFx.join("、")}
             </p>
           )}
-          <details className="daily-trend-details" open>
+          <details className="daily-trend-details">
             <summary>资产趋势</summary>
             <div
               className="section-switcher"

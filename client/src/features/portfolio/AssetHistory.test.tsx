@@ -41,10 +41,11 @@ beforeEach(() => {
   vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue(history);
 });
 afterEach(cleanup);
-it("shows carry-forward labels with the trend expanded and the removed sections absent", async () => {
+it("shows carry-forward labels with the trend collapsed until requested and the removed sections absent", async () => {
   render(<AssetHistory snapshot={fixture as Snapshot} />);
   await screen.findByText(/今日沿用上次余额/);
-  expect(screen.getByText("资产趋势").closest("details")?.open).toBe(true);
+  expect(screen.getByText("资产趋势").closest("details")?.open).toBe(false);
+  fireEvent.click(screen.getByText("资产趋势"));
   expect(
     screen
       .getByRole("group", { name: /每日总资产趋势/ })

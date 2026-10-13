@@ -25,7 +25,6 @@ export function clientViolation(source, target) {
     return 'shared modules cannot depend on application pages';
   if (from === 'lib' && to === 'api') return 'transport and sync primitives cannot import domain API clients';
   if (from === 'api' && to === 'api' && source !== target) return 'domain clients cannot import another domain client';
-  if (from === 'features' && target === 'api.ts') return 'features must import their owning domain API';
   return undefined;
 }
 export function cycles(graph) {
@@ -156,6 +155,16 @@ export function checkArchitecture() {
       ts.forEachChild(node, inspect);
     };
     inspect(ast); clientGraph.set(name, dependencies);
+  }
+  const reachable = new Set();
+  const visitClient = name => {
+    if (reachable.has(name)) return;
+    reachable.add(name);
+    for (const dependency of clientGraph.get(name) ?? []) visitClient(dependency);
+  };
+  visitClient('main.tsx');
+  for (const name of clientGraph.keys()) {
+    if (!reachable.has(name)) violations.push(`${name}: unused module, not reachable from main.tsx`);
   }
   const serverRoot = resolve(root, 'server/src');
   const known = new Set([...readFileSync(resolve(serverRoot, 'lib.rs'), 'utf8').matchAll(/^mod (\w+);/gm)].map(m => m[1]));

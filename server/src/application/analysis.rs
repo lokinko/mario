@@ -4,8 +4,8 @@ use crate::{
     ai::AnalysisExecutor,
     context,
     db::Database,
-    evidence::{EvidenceRetriever, LexicalEvidenceRetriever},
-    memory::{HybridMemoryRetriever, MemoryRetriever},
+    evidence::search_evidence,
+    memory::HybridMemoryRetriever,
     models::{
         AnalysisPreview, AnalysisRequest, AnalysisResult, MemoryItem, ModelConfig,
         ResearchEvidence, Snapshot,
@@ -158,11 +158,11 @@ fn relevant_evidence(
             .into_iter()
             .filter(|item| !existing.contains(&(item.source_url.clone(), item.claim.clone()))),
     );
-    Ok(LexicalEvidenceRetriever.search(&query, &items, 30))
+    Ok(search_evidence(&query, &items, 30))
 }
 
 fn initial_memory_candidates(
-    retriever: &dyn MemoryRetriever,
+    retriever: &HybridMemoryRetriever,
     question: &str,
     pool: &[MemoryItem],
     excluded_memory_ids: &[String],

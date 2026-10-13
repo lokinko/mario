@@ -8,7 +8,7 @@ mario 是一个支持自建服务器、多用户账号和跨设备访问的 AI �
 
 当前采用 **React Web → Rust API → PostgreSQL**，AI Agent 独立部署。账号、会话与数据由自己管理，无第三方账户或云存储依赖。
 
-服务器部署只有一个入口：根目录 [deploy.sh](deploy.sh)。公网 IP、域名和可选参数集中在脚本顶部，逐项附中文注释。默认 Ubuntu/Debian 自动安装缺少的工具、生成持久密钥、构建源码，并通过 systemd 后台运行和开机自启，不需要 Docker。
+服务器部署只有一个入口：根目录 [deploy.sh](deploy.sh)，在服务器手动执行。仓库不配置 GitHub Actions，推送或创建 PR 不会触发自动构建、测试或部署。公网 IP、域名和可选参数集中在脚本顶部，逐项附中文注释。默认 Ubuntu/Debian 自动安装缺少的工具、生成持久密钥、构建源码，并通过 systemd 后台运行和开机自启，不需要 Docker。
 
 ```bash
 sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
@@ -70,6 +70,8 @@ mario 在问答时使用供应商原生网页搜索，自动保存回答和来�
 - 多账号与版本同步：前台低频检查版本、变化后刷新；跨 API 实例的写入冲突保护
 - 浏览器下载备份和附件、打开来源网页；Web 产物记录源码指纹与校验值，见 [Web 构建](docs/client-builds.md)
 
+资产录入统一在“我的情况”：收支、存款与现金、投资持仓分别管理；风险偏好与基准币种在收支的可选详情中。“投资目标”单独显示已投入金额、目标金额、日期和每月计划，编辑时展开表单。“长期记忆”管理问答参考的历史记录，投资规则在“复盘记录”中维护。
+
 ## 仓库结构
 
 ```text
@@ -88,8 +90,8 @@ server/                 多用户 HTTP API 与独立 AI Agent 运行入口
   src/accounts.rs       自建账号与会话
   src/hosted.rs         租户认证、版本校验与数据迁移
   src/agent.rs          无状态 Agent HTTP 服务
-  src/memory.rs         可替换、可解释的结构化记忆检索接口
-  src/evidence.rs       可替换的研究证据检索接口
+  src/memory.rs         本地可解释的结构化记忆检索
+  src/evidence.rs       本地研究证据检索
   src/valuation.rs      基准币种折算、估值完整性与资产类别变化
   src/market_data.rs    可替换市场数据 Provider、ECB 汇率与 Twelve Data 证券价格适配器
   src/prices.rs         免费证券日线、全局缓存、后台刷新与自动持仓估值
@@ -102,7 +104,7 @@ scripts/                构建、迁移与集成测试
 
 产品为什么存在、长期不应偏离什么，见 [产品目标与长期原则](docs/product-vision.md)。详细设计见 [架构说明](docs/architecture.md)、[自建服务信任边界](docs/threat-model.md)、[AI 工作流契约](docs/ai-workflow.md)、[可审计的 AI 分析档案](docs/analysis-history.md)、[长期记忆与多轮检索](docs/long-term-memory.md)、[投资方法论](docs/methodology.md)、[研究证据与引用](docs/research-evidence.md)、[复盘与规则闭环](docs/review-and-rules.md)、[组合流水 CSV 导入](docs/portfolio-event-import.md)、[可追溯汇率数据](docs/market-data.md)、[确定性规划模型](docs/planning-model.md)、[AI 数据边界](docs/ai-data-boundary.md) 与 [账号与数据同步](docs/cloud-sync.md)。
 
-开发时的模块职责、依赖方向、状态生命周期和扩展约束见 [模块边界与开发约束](docs/module-boundaries.md)。`npm run check:architecture` 检查反向依赖和依赖循环，常规测试入口和 CI 都会执行。
+开发时的模块职责、依赖方向、状态生命周期和扩展约束见 [模块边界与开发约束](docs/module-boundaries.md)。`npm run check:architecture` 检查反向依赖和依赖循环，常规测试入口会执行。
 
 ## 开发与验证
 

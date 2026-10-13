@@ -27,7 +27,6 @@ vi.mock("../../api/portfolio", () => ({
     records: [],
     nextBefore: null,
   }),
-  compareDailyAssets: vi.fn(),
   updateHoldingAmount: vi.fn(),
   saveProfile: vi.fn(),
   saveHolding: vi.fn(),
@@ -432,6 +431,37 @@ it("stores deposits once as cash holdings, without adding them again to the prof
     ),
   );
   expect(portfolioApi.saveProfile).not.toHaveBeenCalled();
+});
+it("edits all investment preferences at the unified facts entry and validates before submission", async () => {
+  vi.mocked(portfolioApi.saveProfile).mockResolvedValue(snapshot);
+  mount();
+  fireEvent.click(screen.getByText("投资偏好与记账币种"));
+  const horizon = screen.getByRole("spinbutton", { name: "投资期限 年" });
+  fireEvent.change(horizon, { target: { value: "81" } });
+  fireEvent.submit(horizon.closest("form")!);
+  expect(portfolioApi.saveProfile).not.toHaveBeenCalled();
+  fireEvent.change(horizon, { target: { value: "12" } });
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "可承受最大回撤 %" }),
+    { target: { value: "20" } },
+  );
+  fireEvent.change(screen.getByRole("combobox", { name: "风险倾向" }), {
+    target: { value: "均衡" },
+  });
+  fireEvent.change(screen.getByRole("combobox", { name: "基准币种" }), {
+    target: { value: "USD" },
+  });
+  fireEvent.submit(horizon.closest("form")!);
+  await waitFor(() =>
+    expect(portfolioApi.saveProfile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        horizonYears: 12,
+        maxDrawdownPct: 20,
+        riskLevel: "均衡",
+        baseCurrency: "USD",
+      }),
+    ),
+  );
 });
 it("preserves the user's entered balance on failure and keeps existing cost and target intact", async () => {
   const holding = {

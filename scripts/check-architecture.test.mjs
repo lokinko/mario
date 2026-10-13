@@ -5,8 +5,7 @@ import { clientViolation, serverViolation, cycles, rustDependencies, checkArchit
 test('rejects reverse dependencies and cross-feature UI while allowing ports and domain data', () => {
   assert(clientViolation('features/research/Report.tsx', 'features/memory/List.tsx'));
   assert(clientViolation('lib/transport.ts', 'api/research.ts'));
-  assert(clientViolation('features/portfolio/Page.tsx', 'api.ts'));
-  assert.equal(clientViolation('features/research/Report.tsx', 'components/MemoryItems.tsx'), undefined);
+  assert.equal(clientViolation('features/research/Report.tsx', 'components/PageHeader.tsx'), undefined);
   for (const [from, to] of [['models','ai'], ['ai','db'], ['db','prices'], ['db','market_data'], ['application','agent'], ['agent','db']]) assert(serverViolation(from, to));
   assert.equal(serverViolation('application', 'ai'), undefined);
   assert.equal(serverViolation('db', 'models'), undefined);

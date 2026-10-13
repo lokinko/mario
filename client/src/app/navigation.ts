@@ -10,7 +10,7 @@ import {
 
 export type View =
   | "facts"
-  | "foundation"
+  | "goals"
   | "ledger"
   | "evidence"
   | "review"
@@ -19,11 +19,9 @@ export type View =
   | "cloud"
   | "settings";
 
-export type FoundationSection = "holdings" | "profile" | "goals";
-
 export const views: View[] = [
   "facts",
-  "foundation",
+  "goals",
   "ledger",
   "evidence",
   "review",
@@ -35,6 +33,7 @@ export const views: View[] = [
 
 export function initialView(): View {
   const candidate = window.location.hash.replace("#", "") as View;
+  if ((candidate as string) === "foundation") return "goals";
   return views.includes(candidate) ? candidate : "advisor";
 }
 
@@ -52,7 +51,7 @@ export const navGroups: {
   {
     caption: "投资",
     items: [
-      { id: "foundation" as const, label: "持仓与目标", icon: Target },
+      { id: "goals", label: "投资目标", icon: Target },
       { id: "ledger" as const, label: "组合流水", icon: ArrowLeftRight },
     ],
   },
@@ -61,21 +60,19 @@ export const navGroups: {
     items: [
       { id: "review" as const, label: "复盘记录", icon: History },
       { id: "evidence" as const, label: "参考资料", icon: Database },
-      { id: "memory" as const, label: "记忆与规则", icon: BookMarked },
+      { id: "memory", label: "长期记忆", icon: BookMarked },
     ],
   },
 ];
-
-export const nav = navGroups.flatMap((group) => group.items);
 
 export const viewLabels: Record<View, string> = {
   advisor: "问答",
   facts: "我的情况",
   review: "复盘记录",
   evidence: "参考资料",
-  foundation: "持仓与目标",
+  goals: "投资目标",
   ledger: "组合流水",
-  memory: "记忆与规则",
+  memory: "长期记忆",
   cloud: "账号与数据",
   settings: "设置",
 };

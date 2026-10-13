@@ -62,15 +62,23 @@ pub(crate) fn canonical_symbol(value: &str) -> AppResult<String> {
             let shanghai = ["600", "601", "603", "605", "688", "689", "51", "56", "58"]
                 .iter()
                 .any(|prefix| digits.starts_with(prefix));
+            // Do not infer 000xxx: these also identify Shanghai indices.
+            let shenzhen = ["002", "003", "300", "301", "159"]
+                .iter()
+                .any(|prefix| digits.starts_with(prefix));
             let correction = match suffix {
                 "SZ" if shanghai => Some(("上交所", "SS")),
-                "SS" if digits.starts_with("159") => Some(("深交所", "SZ")),
+                "SS" | "SH" if shenzhen => Some(("深交所", "SZ")),
                 _ => None,
             };
             if let Some((exchange, correct_suffix)) = correction {
                 return Err(AppError::Validation(format!(
                     "证券代码 {code} 的交易所后缀不匹配：该代码属于{exchange}，请改为 {digits}.{correct_suffix}"
                 )));
+            }
+            // Shanghai .SH is a common input alias; Yahoo uses .SS.
+            if suffix == "SH" {
+                code = format!("{digits}.SS");
             }
         }
     }

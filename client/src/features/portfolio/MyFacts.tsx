@@ -13,7 +13,7 @@ import {
   saveProfile,
   refreshSecurityPrices,
 } from "../../api/portfolio";
-import type { Holding, Snapshot } from "../../types";
+import type { FinancialProfile, Holding, Snapshot } from "../../types";
 import { type View } from "../../app/navigation";
 import { PageHeader } from "../../components/PageHeader";
 import { NumberField } from "../../components/NumberField";
@@ -41,6 +41,12 @@ export function MyFacts({
   const [editing, setEditing] = useState<Holding | null>(null);
   const [addingTrade, setAddingTrade] = useState(false);
   const tradeForm = useRef<HTMLElement>(null);
+  const assetForm = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!editing) return;
+    assetForm.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    assetForm.current?.querySelector("input")?.focus({ preventScroll: true });
+  }, [editing?.id, Boolean(editing)]);
   useEffect(() => {
     if (!addingTrade) return;
     tradeForm.current?.scrollIntoView({ block: "start" });
@@ -56,6 +62,7 @@ export function MyFacts({
   const [assetCost, setAssetCost] = useState("");
   const costHelpId = useId();
   const codeHelpId = useId();
+  const currencyHelpId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [section, setSection] = useState<"income" | "savings" | "holdings">(
@@ -87,12 +94,20 @@ export function MyFacts({
       (effectivePositionFilter === "closed" ? closed : !closed)
     );
   });
-  const validIncome = [
-    profile.monthlyIncome,
-    profile.monthlyExpense,
-    profile.liabilities,
-    profile.emergencyFund,
-  ].every((value) => Number.isFinite(value) && value >= 0 && value <= 1e15);
+  const validIncome =
+    [
+      profile.monthlyIncome,
+      profile.monthlyExpense,
+      profile.liabilities,
+      profile.emergencyFund,
+      profile.investableAssets,
+    ].every((value) => Number.isFinite(value) && value >= 0 && value <= 1e15) &&
+    Number.isInteger(profile.horizonYears) &&
+    profile.horizonYears >= 0 &&
+    profile.horizonYears <= 80 &&
+    Number.isFinite(profile.maxDrawdownPct) &&
+    profile.maxDrawdownPct >= 0 &&
+    profile.maxDrawdownPct <= 100;
   const manualAssetAmount = Boolean(
     editing &&
     (editing.assetClass === "现金" ||
@@ -172,7 +187,10 @@ export function MyFacts({
   };
   return (
     <div className="page narrow facts-page">
-      <PageHeader title="我的情况" />
+      <PageHeader
+        title="我的情况"
+        description="统一管理收支、现金和投资持仓。"
+      />
       {addingTrade && (
         <section
           ref={tradeForm}
@@ -230,67 +248,147 @@ export function MyFacts({
           </p>
         )}
       {section === "income" ? (
-        <section className="panel form-panel">
+        <section className="panel form-panel" aria-label="收支与风险设置">
           <h2>收入与支出</h2>
           {!validIncome && (
             <p className="warning-text" role="alert">
-              请核对金额，输入有效的非负数。
+              请核对金额和投资偏好：金额不能为负，投资期限为 0—80 年，回撤为
+              0—100%。
             </p>
           )}
-          <fieldset className="holding-fields" disabled={busy}>
-            <div className="form-grid">
-              <NumberField
-                label="月收入"
-                value={profile.monthlyIncome}
-                onChange={(v) =>
-                  setProfile({ ...profile, monthlyIncome: Number(v) })
-                }
-                prefix={currency}
-              />
-              <NumberField
-                label="月支出"
-                value={profile.monthlyExpense}
-                onChange={(v) =>
-                  setProfile({ ...profile, monthlyExpense: Number(v) })
-                }
-                prefix={currency}
-              />
-            </div>
-            <details className="holding-details">
-              <summary>有负债或预留备用金？（选填）</summary>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveIncome();
+            }}
+          >
+            <fieldset className="holding-fields" disabled={busy}>
               <div className="form-grid">
                 <NumberField
-                  label="尚未还清的负债"
-                  value={profile.liabilities}
+                  label="月收入"
+                  value={profile.monthlyIncome}
                   onChange={(v) =>
-                    setProfile({ ...profile, liabilities: Number(v) })
+                    setProfile({ ...profile, monthlyIncome: Number(v) })
                   }
-                  prefix={currency}
+                  prefix={profile.baseCurrency}
                 />
                 <NumberField
-                  label="存款中预留的备用金"
-                  value={profile.emergencyFund}
+                  label="月支出"
+                  value={profile.monthlyExpense}
                   onChange={(v) =>
-                    setProfile({ ...profile, emergencyFund: Number(v) })
+                    setProfile({ ...profile, monthlyExpense: Number(v) })
                   }
-                  prefix={currency}
+                  prefix={profile.baseCurrency}
                 />
               </div>
-              <p className="section-intro">
-                备用金是存款中留作急用的部分，不会再次计入资产。
-              </p>
-            </details>
-            <div className="form-actions">
-              <button
-                className="primary"
-                disabled={!validIncome}
-                onClick={() => void saveIncome()}
-              >
-                <Save size={16} />
-                {busy ? "保存中…" : "保存收支"}
-              </button>
-            </div>
-          </fieldset>
+              <details className="holding-details">
+                <summary>有负债或预留备用金？（选填）</summary>
+                <div className="form-grid">
+                  <NumberField
+                    label="尚未还清的负债"
+                    value={profile.liabilities}
+                    onChange={(v) =>
+                      setProfile({ ...profile, liabilities: Number(v) })
+                    }
+                    prefix={profile.baseCurrency}
+                  />
+                  <NumberField
+                    label="存款中预留的备用金"
+                    value={profile.emergencyFund}
+                    onChange={(v) =>
+                      setProfile({ ...profile, emergencyFund: Number(v) })
+                    }
+                    prefix={profile.baseCurrency}
+                  />
+                </div>
+                <p className="section-intro">
+                  备用金是存款中留作急用的部分，不会再次计入资产。
+                </p>
+              </details>
+              <details className="holding-details">
+                <summary>投资偏好与记账币种</summary>
+                <div className="form-grid">
+                  <label>
+                    <span>基准币种</span>
+                    <select
+                      aria-label="基准币种"
+                      aria-describedby={currencyHelpId}
+                      value={profile.baseCurrency}
+                      onChange={(event) =>
+                        setProfile({
+                          ...profile,
+                          baseCurrency: event.target.value,
+                        })
+                      }
+                    >
+                      {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map(
+                        (value) => (
+                          <option key={value}>{value}</option>
+                        ),
+                      )}
+                    </select>
+                    <small id={currencyHelpId}>
+                      汇总和目标使用此币种；切换不会自动换算已填金额。
+                    </small>
+                  </label>
+                  <NumberField
+                    label="可投资资产"
+                    value={profile.investableAssets}
+                    prefix={profile.baseCurrency}
+                    onChange={(value) =>
+                      setProfile({
+                        ...profile,
+                        investableAssets: Number(value),
+                      })
+                    }
+                  />
+                  <NumberField
+                    label="投资期限"
+                    value={profile.horizonYears}
+                    suffix="年"
+                    onChange={(value) =>
+                      setProfile({ ...profile, horizonYears: Number(value) })
+                    }
+                  />
+                  <NumberField
+                    label="可承受最大回撤"
+                    value={profile.maxDrawdownPct}
+                    suffix="%"
+                    onChange={(value) =>
+                      setProfile({ ...profile, maxDrawdownPct: Number(value) })
+                    }
+                  />
+                  <label>
+                    <span>风险倾向</span>
+                    <select
+                      value={profile.riskLevel}
+                      onChange={(event) =>
+                        setProfile({
+                          ...profile,
+                          riskLevel: event.target
+                            .value as FinancialProfile["riskLevel"],
+                        })
+                      }
+                    >
+                      {["保守", "稳健", "均衡", "进取"].map((value) => (
+                        <option key={value}>{value}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </details>
+              <div className="form-actions">
+                <button
+                  className="primary"
+                  type="submit"
+                  disabled={!validIncome}
+                >
+                  <Save size={16} />
+                  {busy ? "保存中…" : "保存收支"}
+                </button>
+              </div>
+            </fieldset>
+          </form>
         </section>
       ) : (
         <section
@@ -475,7 +573,11 @@ export function MyFacts({
         </section>
       )}
       {editing && (
-        <section className="panel form-panel" aria-label="记录资产">
+        <section
+          ref={assetForm}
+          className="panel form-panel"
+          aria-label="记录资产"
+        >
           <div className="panel-title">
             <h2>
               {editing.id

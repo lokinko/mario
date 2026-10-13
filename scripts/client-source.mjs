@@ -17,7 +17,7 @@ export function clientSource() {
     ),
   ]
     .filter((name) =>
-      /^(client\/|server\/|scripts\/|\.github\/workflows\/|\.gitattributes$|package(?:-lock)?\.json$)/.test(
+      /^(client\/|server\/|scripts\/|\.gitattributes$|package(?:-lock)?\.json$)/.test(
         name,
       ),
     )

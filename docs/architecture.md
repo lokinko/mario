@@ -11,7 +11,7 @@ flowchart LR
     R --> M[模型提供方]
 ```
 
-- `client/src/api/` 按领域提供接口；`lib/httpClient.ts` 统一处理认证、超时、版本和账号切换保护。`api.ts` 仅保留旧导入兼容出口。`app/useApplicationData.ts` 管理启动、同步、草稿保护和数据刷新。
+- `client/src/api/` 按领域提供接口；`lib/httpClient.ts` 统一处理认证、超时、版本和账号切换保护。`app/useApplicationData.ts` 管理启动、同步、草稿保护和数据刷新。
 - `server/src/hosted.rs` 根据服务端会话选择用户数据库，执行版本检查、数据库 advisory lock、导出和导入。用户请求不能指定租户。
 - `server/src/accounts.rs` 管理公开注册、Argon2 密码、随机会话及撤销和登录限速。任何用户均可通过邮箱和密码注册，会话在数据库仅保存哈希。
 - `server/src/db/` 保留领域仓储和事务校验；`storage.rs` 隔离 SQL 引擎。PostgreSQL 保存关系表，SQLite 仅用于旧文件迁移和本地开发回归。
@@ -26,4 +26,4 @@ AI 分析的预览与执行共享同一准备过程，读取并冻结用户授�
 
 当前同步是在线版本检查及按需刷新，没有离线写入队列、实时推送或持久 AI 作业队列。连接按请求创建，业务请求并发有上限；此实现面向小规模自建，进一步扩大并发应增加连接池、分页/增量资源接口和任务队列。
 
-源码层面的职责、依赖方向、生命周期、扩展步骤与本轮验证见 [模块边界与开发约束](module-boundaries.md)。运行 `npm run check:architecture` 可检查反向依赖、跨功能页面引用和依赖循环；常规测试入口与 CI 都执行该检查。
+源码层面的职责、依赖方向、生命周期、扩展步骤与本轮验证见 [模块边界与开发约束](module-boundaries.md)。运行 `npm run check:architecture` 可检查反向依赖、跨功能页面引用和依赖循环；常规测试入口执行该检查。

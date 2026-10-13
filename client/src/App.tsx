@@ -12,9 +12,8 @@ import {
 } from "lucide-react";
 import { ServerData } from "./features/account/ServerData";
 import { View, initialView, navGroups, viewLabels } from "./app/navigation";
-import type { FoundationSection } from "./app/navigation";
 import { MyFacts } from "./features/portfolio/MyFacts";
-import { Foundation } from "./features/portfolio/Foundation";
+import { Goals } from "./features/portfolio/Goals";
 import { PortfolioLedger } from "./features/portfolio/PortfolioLedger";
 import { EvidenceWorkbench } from "./features/research/EvidenceWorkbench";
 import { ReviewCenter } from "./features/reviews/ReviewCenter";
@@ -29,8 +28,6 @@ function App() {
   const [advisorVisited, setAdvisorVisited] = useState(
     () => initialView() === "advisor",
   );
-  const [foundationSection, setFoundationSection] =
-    useState<FoundationSection>("holdings");
   const {
     snapshot,
     setSnapshot,
@@ -113,12 +110,8 @@ function App() {
     noticeTimer.current = window.setTimeout(() => setNotice(""), 2400);
   };
 
-  const navigate = (
-    nextView: View,
-    section: FoundationSection = "holdings",
-  ) => {
+  const navigate = (nextView: View) => {
     clearDraft();
-    setFoundationSection(section);
     setView(nextView);
     if (nextView === "advisor") setAdvisorVisited(true);
     setMobileNavOpen(false);
@@ -320,10 +313,9 @@ function App() {
             flash={flash}
           />
         )}
-        {view === "foundation" && (
-          <Foundation
+        {view === "goals" && (
+          <Goals
             key={remoteViewRevision}
-            initialSection={foundationSection}
             snapshot={snapshot}
             onUpdate={setSnapshot}
             flash={flash}

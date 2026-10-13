@@ -538,6 +538,11 @@ mod tests {
             (" aapl ", "AAPL"),
             ("00700.HK", "0700.HK"),
             ("sh600519", "600519.SS"),
+            ("600519.SH", "600519.SS"),
+            ("601988.sh", "601988.SS"),
+            ("000001.SH", "000001.SS"),
+            ("002241.SZ", "002241.SZ"),
+            ("sz002241", "002241.SZ"),
             ("sz000001", "000001.SZ"),
             ("601988.SS", "601988.SS"),
             ("sh601988", "601988.SS"),
@@ -572,6 +577,22 @@ mod tests {
         }
     }
     #[test]
+    fn shenzhen_equities_with_shanghai_suffix_give_a_correction() {
+        for (input, expected) in [
+            ("002241.SH", "002241.SZ"),
+            ("002241.SS", "002241.SZ"),
+            ("sh002241", "002241.SZ"),
+            ("003816.SH", "003816.SZ"),
+            ("300750.SS", "300750.SZ"),
+            ("301308.SH", "301308.SZ"),
+        ] {
+            let error = canonical_symbol(input).unwrap_err();
+            assert!(matches!(error, AppError::Validation(_)));
+            assert!(error.to_string().contains("深交所"));
+            assert!(error.to_string().contains(&format!("请改为 {expected}")));
+        }
+    }
+    #[test]
     fn etf_exchange_errors_give_the_correct_listing_suffix() {
         for (input, expected) in [
             ("513380.SZ", "513380.SS"),
@@ -580,6 +601,7 @@ mod tests {
             ("560800.SZ", "560800.SS"),
             ("588000.SZ", "588000.SS"),
             ("159330.SS", "159330.SZ"),
+            ("159330.SH", "159330.SZ"),
             ("sh159330", "159330.SZ"),
         ] {
             let error = canonical_symbol(input).unwrap_err();
@@ -683,6 +705,9 @@ mod tests {
             ("601988.SZ", "601988.SS"),
             ("513380.SZ", "513380.SS"),
             ("159330.SS", "159330.SZ"),
+            ("002241.SH", "002241.SZ"),
+            ("002241.SS", "002241.SZ"),
+            ("sh002241", "002241.SZ"),
         ] {
             query.symbol = symbol.into();
             let error = provider.quote(&query, "").await.unwrap_err();

@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ExchangeRates } from "./ExchangeRates";
@@ -48,6 +49,11 @@ async function open() {
   render(<ExchangeRates baseCurrency="CNY" onUpdate={onUpdate} />);
   await screen.findByText("1 USD = 7 CNY");
   await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  fireEvent.click(
+    within(screen.getByRole("article", { name: "USD 兑 CNY 汇率" })).getByText(
+      "修改汇率",
+    ),
+  );
   return onUpdate;
 }
 it("shows automatically loaded values and saves a persistent manual rate then restores automatic", async () => {
@@ -72,7 +78,7 @@ it("shows automatically loaded values and saves a persistent manual rate then re
   expect(portfolioApi.setFxOverride).toHaveBeenLastCalledWith("USD", null);
   await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(2));
 });
-it("loads without a disclosure and lists involved currencies first with rounded displays", async () => {
+it("shows involved rates directly with optional editors and other currencies", async () => {
   vi.mocked(portfolioApi.getFxSettings).mockResolvedValue({
     ...book,
     quotes: [
@@ -88,7 +94,18 @@ it("loads without a disclosure and lists involved currencies first with rounded 
     />,
   );
   await screen.findByText("1 HKD = 0.91 CNY");
-  expect(container.querySelector("details")).toBeNull();
+  expect(
+    screen.getByRole("article", { name: "HKD 兑 CNY 汇率" }).closest("details"),
+  ).toBeNull();
+  expect(
+    screen.getByRole("article", { name: "USD 兑 CNY 汇率" }).closest("details")
+      ?.open,
+  ).toBe(false);
+  fireEvent.click(
+    within(screen.getByRole("article", { name: "HKD 兑 CNY 汇率" })).getByText(
+      "修改汇率",
+    ),
+  );
   expect(
     container.querySelector(".exchange-rate-row strong")?.textContent,
   ).toBe("1 HKD = 0.91 CNY");
