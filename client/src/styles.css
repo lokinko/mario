@@ -514,6 +514,14 @@ main {
 .form-panel {
   margin-bottom: 15px;
 }
+.new-trade-panel {
+  scroll-margin-top: 24px;
+}
+@media (max-width: 900px) {
+  .new-trade-panel {
+    scroll-margin-top: calc(84px + env(safe-area-inset-top));
+  }
+}
 .holding-fields {
   border: 0;
   padding: 0;
@@ -4455,27 +4463,111 @@ button:focus-visible {
 .exchange-settings h2 {
   margin-top: 0;
 }
+.exchange-settings-heading {
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.exchange-settings-meta {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
 .exchange-rate-list {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 16px;
-  margin: 16px 0;
+  margin: 20px 0 16px;
 }
 .exchange-rate-row {
   display: flex;
+  flex-direction: column;
   gap: 12px;
-  flex-wrap: wrap;
-  align-items: end;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
 }
-.exchange-rate-row > div {
-  flex: 1 1 240px;
+.exchange-rate-row.is-involved {
+  border-color: #cadbcf;
+  background: #f6f9f6;
+}
+.exchange-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.exchange-currency-pair {
+  font-size: 13px;
+  font-weight: 600;
+  color: #53635a;
+}
+.exchange-currency-pair > span {
+  padding: 0 5px;
+  color: var(--muted);
+}
+.exchange-involved-badge {
+  border-radius: 5px;
+  padding: 3px 6px;
+  background: #e4eee6;
+  color: #43634d;
+  font-size: 11px;
+}
+.exchange-card-quote {
+  flex: 1;
+}
+.exchange-card-quote strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 22px;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 .exchange-rate-row small {
   display: block;
-  margin-top: 6px;
+  margin-top: 8px;
   color: #66706e;
+  font-size: 12px;
+  line-height: 1.6;
 }
 .exchange-rate-row label {
-  flex: 0 1 180px;
+  width: 100%;
+  min-width: 0;
+}
+.exchange-rate-row label > span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #53635a;
+}
+.exchange-rate-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.exchange-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.exchange-card-actions .secondary {
+  flex: 1;
+}
+.exchange-source-note {
+  margin-bottom: 0;
+  font-size: 12px;
 }
 
 /* A single composer, reports, and saved conversations. */
@@ -4728,7 +4820,7 @@ button:focus-visible {
   border-top: 1px solid var(--line);
 }
 .page.narrow.facts-page {
-  max-width: 1120px;
+  max-width: 1440px;
 }
 .investment-panel .panel-title {
   align-items: flex-start;

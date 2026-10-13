@@ -4,7 +4,7 @@ import { AssetHistory } from "./AssetHistory";
 import { HoldingTrades } from "./HoldingTrades";
 import { InvestmentOverview } from "./InvestmentOverview";
 import { isClosedHolding, sortInvestmentHoldings } from "./holdingMetrics";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ArrowRight, Plus, RefreshCw, Save, X } from "lucide-react";
 import {
   deleteHolding,
@@ -40,6 +40,12 @@ export function MyFacts({
   const [profile, setProfile] = useState(snapshot.profile);
   const [editing, setEditing] = useState<Holding | null>(null);
   const [addingTrade, setAddingTrade] = useState(false);
+  const tradeForm = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!addingTrade) return;
+    tradeForm.current?.scrollIntoView({ block: "start" });
+    tradeForm.current?.querySelector("input")?.focus({ preventScroll: true });
+  }, [addingTrade]);
   const [positionFilter, setPositionFilter] = useState<
     "all" | "open" | "closed"
   >("all");
@@ -167,6 +173,20 @@ export function MyFacts({
   return (
     <div className="page narrow facts-page">
       <PageHeader title="我的情况" />
+      {addingTrade && (
+        <section
+          ref={tradeForm}
+          className="panel form-panel new-trade-panel"
+          aria-label="记录买入"
+        >
+          <HoldingTrades
+            snapshot={snapshot}
+            onUpdate={onUpdate}
+            flash={flash}
+            onClose={() => setAddingTrade(false)}
+          />
+        </section>
+      )}
       <ExchangeRates
         baseCurrency={currency}
         usedCurrencies={[
@@ -452,16 +472,6 @@ export function MyFacts({
               </p>
             </details>
           )}
-        </section>
-      )}
-      {addingTrade && (
-        <section className="panel form-panel">
-          <HoldingTrades
-            snapshot={snapshot}
-            onUpdate={onUpdate}
-            flash={flash}
-            onClose={() => setAddingTrade(false)}
-          />
         </section>
       )}
       {editing && (

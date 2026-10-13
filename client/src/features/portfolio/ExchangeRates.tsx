@@ -63,7 +63,24 @@ export function ExchangeRates({
   };
   return (
     <section className="panel exchange-settings" aria-label="汇率设置">
-      <h2>汇率设置</h2>
+      <div className="panel-title exchange-settings-heading">
+        <div>
+          <h2>汇率设置</h2>
+          <p className="exchange-settings-meta">
+            基准币种 {baseCurrency} · 最近检查：
+            {book?.checkedAt
+              ? new Date(book.checkedAt * 1000).toLocaleString("zh-CN")
+              : "尚未更新"}
+          </p>
+        </div>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => void run(refreshFxSettings)}
+        >
+          更新自动汇率
+        </button>
+      </div>
       <p className="section-intro">
         汇率每天自动更新，所有外币资产统一使用这里的值。手动修改会保持生效，直到恢复自动；已保存的历史流水不变。
       </p>
@@ -75,12 +92,6 @@ export function ExchangeRates({
       {busy && <p role="status">正在更新汇率…</p>}
       {book && (
         <>
-          <p className="section-intro">
-            基准币种：{book.baseCurrency} · 最近检查：
-            {book.checkedAt
-              ? new Date(book.checkedAt * 1000).toLocaleString("zh-CN")
-              : "尚未更新"}
-          </p>
           {book.error && (
             <p className="warning-text" role="alert">
               自动更新暂未成功，沿用上次可用值；没有可用值的币种暂停换算。
@@ -107,15 +118,29 @@ export function ExchangeRates({
                   Number(draft) > 0 &&
                   Number(draft) <= 1e9;
                 return (
-                  <div className="exchange-rate-row" key={currency}>
-                    <div>
+                  <article
+                    className={`exchange-rate-row${involved.has(currency) ? " is-involved" : ""}`}
+                    aria-label={`${currency} 兑 ${baseCurrency} 汇率`}
+                    key={currency}
+                  >
+                    <div className="exchange-card-heading">
+                      <span className="exchange-currency-pair">
+                        {currency} <span aria-hidden="true">→</span>{" "}
+                        {baseCurrency}
+                      </span>
+                      {involved.has(currency) && (
+                        <span className="exchange-involved-badge">
+                          当前涉及
+                        </span>
+                      )}
+                    </div>
+                    <div className="exchange-card-quote">
                       <strong>
                         1 {currency} ={" "}
                         {value == null ? "待更新" : formatNumber(value)}{" "}
                         {baseCurrency}
                       </strong>
                       <small>
-                        {involved.has(currency) && "当前涉及 · "}
                         {manual ? "手动汇率" : "自动 · ECB"} · 观察日{" "}
                         {manual?.observedOn ?? quote?.observedOn ?? "暂无"}
                         {!manual &&
@@ -143,42 +168,44 @@ export function ExchangeRates({
                         }
                       />
                     </label>
-                    <button
-                      className="secondary"
-                      disabled={busy || !valid}
-                      onClick={() =>
-                        void run(async () => {
-                          const next = await setFxOverride(
-                            currency,
-                            Number(draft),
-                          );
-                          setDrafts((current) => {
-                            const result = { ...current };
-                            delete result[currency];
-                            return result;
-                          });
-                          return next;
-                        })
-                      }
-                    >
-                      保存修改
-                    </button>
-                    {manual && (
+                    <div className="exchange-card-actions">
                       <button
-                        className="text-button"
-                        disabled={busy}
+                        className="secondary"
+                        disabled={busy || !valid}
                         onClick={() =>
-                          void run(() => setFxOverride(currency, null))
+                          void run(async () => {
+                            const next = await setFxOverride(
+                              currency,
+                              Number(draft),
+                            );
+                            setDrafts((current) => {
+                              const result = { ...current };
+                              delete result[currency];
+                              return result;
+                            });
+                            return next;
+                          })
                         }
                       >
-                        恢复自动
+                        保存修改
                       </button>
-                    )}
-                  </div>
+                      {manual && (
+                        <button
+                          className="text-button"
+                          disabled={busy}
+                          onClick={() =>
+                            void run(() => setFxOverride(currency, null))
+                          }
+                        >
+                          恢复自动
+                        </button>
+                      )}
+                    </div>
+                  </article>
                 );
               })}
           </div>
-          <p className="section-intro">
+          <p className="section-intro exchange-source-note">
             参考汇率按实际发布日标注，周末和节假日沿用最近工作日。
             <ExternalLink
               href="https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html"
@@ -190,13 +217,6 @@ export function ExchangeRates({
           </p>
         </>
       )}
-      <button
-        className="secondary"
-        disabled={busy}
-        onClick={() => void run(refreshFxSettings)}
-      >
-        更新自动汇率
-      </button>
     </section>
   );
 }
