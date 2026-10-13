@@ -72,7 +72,7 @@ impl FreeSecurityPriceProvider {
             .map_err(|_| AppError::MarketData("行情服务已停止".into()))?;
         let end = day.min(Utc::now().date_naive() - chrono::Duration::days(1));
         let start = day - chrono::Duration::days(10);
-        let mut last_error = String::new();
+        let mut last_error = None;
         for host in &self.hosts {
             let mut url =
                 Url::parse(host).map_err(|_| AppError::MarketData("行情地址无效".into()))?;
@@ -122,10 +122,10 @@ impl FreeSecurityPriceProvider {
             .await;
             match result {
                 Ok(quote) => return Ok(quote),
-                Err(error) => last_error = error.to_string(),
+                Err(error) => last_error = Some(error),
             }
         }
-        Err(AppError::MarketData(last_error))
+        Err(last_error.unwrap_or_else(|| AppError::MarketData("行情来源未配置".into())))
     }
 }
 
@@ -171,7 +171,10 @@ impl SecurityPriceProvider for FreeSecurityPriceProvider {
         }) {
             result.clone()
         } else {
-            let result = self.fetch(&symbol, day).await.map_err(|e| e.to_string());
+            let result = self.fetch(&symbol, day).await.map_err(|error| match error {
+                AppError::MarketData(message) => message,
+                other => other.to_string(),
+            });
             entry.fetched = Some((Instant::now(), result.clone()));
             result
         };
@@ -533,6 +536,10 @@ mod tests {
             ("00700.HK", "0700.HK"),
             ("sh600519", "600519.SS"),
             ("sz000001", "000001.SZ"),
+            ("601988.SS", "601988.SS"),
+            ("sh601988", "601988.SS"),
+            ("000001.SS", "000001.SS"), // Shanghai Composite index, not a stock.
+            ("510300.SS", "510300.SS"),
         ] {
             assert_eq!(canonical_symbol(input).unwrap(), expected);
         }
@@ -546,6 +553,15 @@ mod tests {
             "中文",
         ] {
             assert!(canonical_symbol(input).is_err());
+        }
+    }
+    #[test]
+    fn shanghai_equities_with_shenzhen_suffix_give_a_correction() {
+        for input in ["601988.SZ", "sz601988", "600519.SZ", "688981.SZ"] {
+            let error = canonical_symbol(input).unwrap_err();
+            assert!(matches!(error, AppError::Validation(_)));
+            assert!(error.to_string().contains("交易所后缀不匹配"));
+            assert!(error.to_string().contains(".SS"));
         }
     }
     #[test]
@@ -604,6 +620,61 @@ mod tests {
             failed,
             task,
         )
+    }
+    #[tokio::test]
+    async fn wrong_exchange_is_rejected_before_fetch_and_cached_http_errors_are_not_rewrapped() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = calls.clone();
+        let router = axum::Router::new().route(
+            "/v8/finance/chart/{symbol}",
+            axum::routing::get(
+                move |axum::extract::Path(symbol): axum::extract::Path<String>| {
+                    let counter = counter.clone();
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        if symbol == "601988.SS" {
+                            (
+                                axum::http::StatusCode::OK,
+                                payload(&symbol, "CNY", &[("2026-09-07", Some(5.13))]),
+                            )
+                        } else {
+                            (axum::http::StatusCode::NOT_FOUND, Vec::new())
+                        }
+                    }
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let provider = FreeSecurityPriceProvider {
+            client: Client::new(),
+            hosts: vec![url.clone(), url],
+            cache: Arc::new(Cache::default()),
+        };
+        let mut query = SecurityPriceQuery {
+            symbol: "601988.SZ".into(),
+            on_date: "2026-09-08".into(),
+        };
+        let error = provider.quote(&query, "").await.unwrap_err();
+        assert!(error.to_string().contains("请改为 601988.SS"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        query.symbol = "601988.SS".into();
+        let quote = provider.quote(&query, "").await.unwrap();
+        assert_eq!(quote.symbol, "601988.SS");
+        assert_eq!(quote.currency, "CNY");
+        assert_eq!(quote.close, 5.13);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        query.symbol = "UNKNOWN".into();
+        for _ in 0..2 {
+            let error = provider.quote(&query, "").await.unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "市场数据服务错误：Yahoo Finance 返回 HTTP 404 Not Found"
+            );
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 3); // Two hosts, then cached failure.
+        task.abort();
     }
     #[tokio::test]
     async fn concurrent_accounts_share_one_fetch_and_failures_back_off_then_recover() {

@@ -36,7 +36,7 @@ pub struct FxOverrideInput {
 pub(crate) const METHODOLOGY_URL: &str =
     "https://help.yahoo.com/kb/finance/article-exchanges-data-delays-sln2310.html";
 pub(crate) fn canonical_symbol(value: &str) -> AppResult<String> {
-    let code = value.trim().to_ascii_uppercase();
+    let mut code = value.trim().to_ascii_uppercase();
     if code.is_empty()
         || code.len() > 40
         || !code
@@ -52,8 +52,22 @@ pub(crate) fn canonical_symbol(value: &str) -> AppResult<String> {
             .strip_prefix(prefix)
             .filter(|s| s.len() == 6 && s.bytes().all(|b| b.is_ascii_digit()))
         {
-            return Ok(format!("{digits}.{suffix}"));
+            code = format!("{digits}.{suffix}");
+            break;
         }
+    }
+    // These Shanghai equity prefixes cannot identify a Shenzhen listing.
+    // Do not infer an exchange for bare codes or index/fund codes.
+    if let Some(digits) = code.strip_suffix(".SZ").filter(|digits| {
+        digits.len() == 6
+            && digits.bytes().all(|b| b.is_ascii_digit())
+            && ["600", "601", "603", "605", "688", "689"]
+                .iter()
+                .any(|prefix| digits.starts_with(prefix))
+    }) {
+        return Err(AppError::Validation(format!(
+            "证券代码 {code} 的交易所后缀不匹配：该代码属于上交所，请改为 {digits}.SS"
+        )));
     }
     if let Some(digits) = code.strip_suffix(".HK") {
         if (1..=5).contains(&digits.len()) && digits.bytes().all(|b| b.is_ascii_digit()) {
@@ -63,7 +77,7 @@ pub(crate) fn canonical_symbol(value: &str) -> AppResult<String> {
     // Bare numeric symbols are ambiguous (stock, fund or another exchange).
     if code.bytes().all(|b| b.is_ascii_digit()) {
         return Err(AppError::Validation(
-            "数字代码请带交易所后缀：.HK、.SS 或 .SZ".into(),
+            "数字代码请带交易所后缀：.HK、.SS 或 .SZ，例如中国银行 601988.SS".into(),
         ));
     }
     Ok(code)

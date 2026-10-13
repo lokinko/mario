@@ -111,7 +111,7 @@ it("saves code and quantity without a placeholder price or manual market value",
   fireEvent.change(
     screen.getByRole("textbox", { name: "证券代码（自动价格，选填）" }),
     {
-      target: { value: "601988" },
+      target: { value: "601988.SS" },
     },
   );
   fireEvent.change(
@@ -138,7 +138,7 @@ it("saves code and quantity without a placeholder price or manual market value",
   await waitFor(() =>
     expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({
-        symbol: "601988",
+        symbol: "601988.SS",
         quantity: 800,
         currentPrice: null,
         costPrice: 4.92,

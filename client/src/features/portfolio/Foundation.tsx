@@ -338,7 +338,7 @@ export function Foundation({
                     onChange={(e) =>
                       setHolding({ ...holding, symbol: e.target.value })
                     }
-                    placeholder="例如：601988 / 0700.HK / AAPL"
+                    placeholder="例如：601988.SS / 0700.HK / AAPL"
                   />
                 </label>
               )}
