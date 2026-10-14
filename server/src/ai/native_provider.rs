@@ -15,6 +15,7 @@ pub struct NativeModelProvider {
     base_url: String,
     model: String,
     api_key: String,
+    events: Option<super::streaming::EventSender>,
 }
 
 impl NativeModelProvider {
@@ -48,10 +49,104 @@ impl NativeModelProvider {
             base_url: base_url.trim_end_matches('/').into(),
             model,
             api_key,
+            events: None,
         })
     }
 
+    pub(crate) fn with_events(mut self, events: Option<super::streaming::EventSender>) -> Self {
+        self.events = events;
+        self
+    }
+
+    // Retry only explicit HTTP rejections before accepting a response. Network
+    // failures and errors after streaming begins never replay the model call.
+    async fn send_request(&self, body: &Value) -> AppResult<(reqwest::Response, usize)> {
+        let url = format!(
+            "{}/{}",
+            self.base_url,
+            match self.protocol.as_str() {
+                "anthropic" => "messages",
+                "openai-chat" => "chat/completions",
+                _ => "responses",
+            }
+        );
+        let started = tokio::time::Instant::now();
+        for attempt in 0..3 {
+            let request = self.client.post(&url).json(body);
+            let request = if self.protocol == "anthropic" {
+                request
+                    .header("x-api-key", &self.api_key)
+                    .header("anthropic-version", "2023-06-01")
+            } else {
+                request.bearer_auth(&self.api_key)
+            };
+            let response = if attempt == 0 {
+                request.send().await?
+            } else {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(45).saturating_sub(started.elapsed()),
+                    request.send(),
+                )
+                .await
+                .map_err(|_| {
+                    AppError::Model("模型服务重试等待超时（45 秒），请稍后重试".into())
+                })??
+            };
+            if response.status().is_success() {
+                if attempt > 0 {
+                    super::streaming::status(&self.events, "模型服务已恢复，正在继续处理…");
+                }
+                return Ok((response, attempt + 1));
+            }
+            let failure = UpstreamFailure::read(response).await;
+            if !failure.retryable() || attempt == 2 {
+                return Err(failure.error(&self.protocol, attempt + 1));
+            }
+            let delay = failure
+                .retry_after
+                .unwrap_or_else(|| std::time::Duration::from_secs(2_u64 << attempt))
+                .saturating_add(std::time::Duration::from_millis(
+                    rand::random::<u64>() % 251,
+                ));
+            // A long server delay is never shortened. Return a visible failure
+            // instead of retrying earlier or exceeding the retry budget.
+            if delay > std::time::Duration::from_secs(30)
+                || started.elapsed().saturating_add(delay) > std::time::Duration::from_secs(45)
+            {
+                return Err(failure.error(&self.protocol, attempt + 1));
+            }
+            super::streaming::status(
+                &self.events,
+                format!(
+                    "{}，等待约 {} 秒后自动重试（{}/2），可停止生成…",
+                    if failure.status == 429 {
+                        "模型服务暂时限流"
+                    } else {
+                        "模型服务暂时繁忙"
+                    },
+                    delay.as_secs().saturating_add(1),
+                    attempt + 1
+                ),
+            );
+            tokio::time::sleep(delay).await;
+        }
+        unreachable!("bounded retries always return")
+    }
+
     async fn generate(
+        &self,
+        messages: Vec<ChatMessage>,
+        search: bool,
+    ) -> AppResult<SearchCompletion> {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            self.generate_inner(messages, search),
+        )
+        .await
+        .map_err(|_| AppError::Model("模型请求超时（含限流等待），请稍后重试或缩小问题".into()))?
+    }
+
+    async fn generate_inner(
         &self,
         messages: Vec<ChatMessage>,
         search: bool,
@@ -89,39 +184,11 @@ impl NativeModelProvider {
         }
         let mut result = SearchCompletion::default();
         for _ in 0..3 {
-            result.api_calls += 1;
-            let url = format!(
-                "{}/{}",
-                self.base_url,
-                if anthropic {
-                    "messages"
-                } else if chat {
-                    "chat/completions"
-                } else {
-                    "responses"
-                }
-            );
-            let request = self.client.post(url).json(&body);
-            let response = if anthropic {
-                request
-                    .header("x-api-key", &self.api_key)
-                    .header("anthropic-version", "2023-06-01")
-            } else {
-                request.bearer_auth(&self.api_key)
-            }
-            .send()
-            .await?;
-            let status = response.status();
-            if !status.is_success() {
-                // Do not echo upstream bodies: proxies may include credentials or private prompts.
-                return Err(AppError::Model(format!(
-                    "{} 服务返回 HTTP {}，请检查协议、模型、密钥和网页搜索权限",
-                    self.protocol, status
-                )));
-            }
+            let (response, attempts) = self.send_request(&body).await?;
+            result.api_calls += attempts;
             let parsed: Value = response.json().await?;
             if parsed.get("error").is_some_and(|v| !v.is_null()) {
-                return Err(AppError::Model("模型服务返回错误，未完成本次请求".into()));
+                return Err(event_error(&parsed, &self.protocol, result.api_calls));
             }
             add_usage(
                 &mut result.usage.input_tokens,
@@ -186,6 +253,141 @@ impl NativeModelProvider {
         Err(AppError::Model(
             "网页搜索多次暂停仍未完成，请缩小问题后重试".into(),
         ))
+    }
+}
+
+struct UpstreamFailure {
+    status: u16,
+    quota: bool,
+    known_rate_limit: bool,
+    retry_after: Option<std::time::Duration>,
+}
+impl UpstreamFailure {
+    async fn read(mut response: reqwest::Response) -> Self {
+        let mut failure = Self {
+            status: response.status().as_u16(),
+            quota: false,
+            known_rate_limit: false,
+            retry_after: retry_after(response.headers(), std::time::SystemTime::now()),
+        };
+        let mut bytes = Vec::new();
+        // Inspect only bounded error metadata; never log or forward a provider's
+        // message/body, which can contain credentials or the user's prompt.
+        while let Ok(Some(chunk)) = response.chunk().await {
+            if bytes.len() + chunk.len() > 64 * 1024 {
+                break;
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
+            failure.observe(&value);
+        }
+        failure
+    }
+    fn observe(&mut self, value: &Value) {
+        for code in [
+            &value["error"]["code"],
+            &value["error"]["type"],
+            &value["code"],
+            &value["type"],
+        ]
+        .into_iter()
+        .filter_map(Value::as_str)
+        {
+            let code = code.to_ascii_lowercase();
+            self.quota |= matches!(
+                code.as_str(),
+                "insufficient_quota"
+                    | "credit_balance_exhausted"
+                    | "organization_spend_limit_exceeded"
+                    | "project_spend_limit_exceeded"
+                    | "organization_usage_limit_exceeded"
+                    | "billing_hard_limit_reached"
+                    | "billing_not_active"
+                    | "quota_exceeded"
+                    | "insufficient_balance"
+            );
+            self.known_rate_limit |= matches!(
+                code.as_str(),
+                "rate_limit_exceeded" | "rate_limit_error" | "slow_down"
+            );
+        }
+    }
+    fn retryable(&self) -> bool {
+        !self.quota && matches!(self.status, 429 | 503)
+    }
+    fn error(&self, protocol: &str, attempts: usize) -> AppError {
+        let message = if self.quota {
+            format!("{protocol} 模型服务的余额、额度或消费上限不足（HTTP {}）。请在模型服务商账户中检查余额、API 额度及项目/组织限额；自动重试无法恢复额度。", self.status)
+        } else if self.status == 429 {
+            let reason = if self.known_rate_limit {
+                "模型服务请求或 token 频率受限"
+            } else {
+                "模型服务拒绝请求，可能是限流或额度限制"
+            };
+            let wait = self
+                .retry_after
+                .map(|delay| {
+                    format!(
+                        "服务要求至少等待 {} 秒。",
+                        delay
+                            .as_secs()
+                            .saturating_add(u64::from(delay.subsec_nanos() > 0))
+                    )
+                })
+                .unwrap_or_default();
+            format!("{protocol} {reason}（HTTP 429，已请求 {attempts} 次）。{wait}请稍后再试；也可在问答预设中使用快速分析、减少联网查找，或检查服务商 API 额度与限额。")
+        } else if self.status == 503 {
+            format!("{protocol} 模型服务暂时繁忙（HTTP 503，已请求 {attempts} 次），请稍后重试。")
+        } else {
+            format!(
+                "{protocol} 服务返回 HTTP {}，请检查协议、模型、密钥和网页搜索权限",
+                self.status
+            )
+        };
+        if self.status == 429 {
+            AppError::RateLimit(message)
+        } else {
+            AppError::Model(message)
+        }
+    }
+}
+fn retry_after(
+    headers: &reqwest::header::HeaderMap,
+    now: std::time::SystemTime,
+) -> Option<std::time::Duration> {
+    let value = headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim();
+    if let Ok(seconds) = value.parse::<f64>() {
+        if seconds.is_finite() && seconds >= 0.0 {
+            return Some(
+                std::time::Duration::try_from_secs_f64(seconds).unwrap_or(std::time::Duration::MAX),
+            );
+        }
+        return None;
+    }
+    httpdate::parse_http_date(value)
+        .ok()
+        .map(|date| date.duration_since(now).unwrap_or_default())
+}
+
+fn event_error(value: &Value, protocol: &str, attempts: usize) -> AppError {
+    let mut failure = UpstreamFailure {
+        status: 502,
+        quota: false,
+        known_rate_limit: false,
+        retry_after: None,
+    };
+    failure.observe(value);
+    failure.observe(&value["response"]);
+    if failure.quota || failure.known_rate_limit {
+        failure.status = 429;
+        failure.error(protocol, attempts)
+    } else {
+        AppError::Model("模型服务返回错误或未完成输出，请重试或缩小问题".into())
     }
 }
 
@@ -324,6 +526,7 @@ impl ModelProvider for NativeModelProvider {
         messages: Vec<ChatMessage>,
         on_delta: super::streaming::DeltaCallback,
     ) -> AppResult<ModelCompletion> {
+        tokio::time::timeout(std::time::Duration::from_secs(120), async {
         let anthropic = self.protocol == "anthropic";
         let chat = self.protocol == "openai-chat";
         let body = if anthropic {
@@ -343,36 +546,7 @@ impl ModelProvider for NativeModelProvider {
         } else {
             json!({"model":self.model,"input":messages,"store":false,"stream":true})
         };
-        let request = self
-            .client
-            .post(format!(
-                "{}/{}",
-                self.base_url,
-                if anthropic {
-                    "messages"
-                } else if chat {
-                    "chat/completions"
-                } else {
-                    "responses"
-                }
-            ))
-            .json(&body);
-        let mut response = if anthropic {
-            request
-                .header("x-api-key", &self.api_key)
-                .header("anthropic-version", "2023-06-01")
-        } else {
-            request.bearer_auth(&self.api_key)
-        }
-        .send()
-        .await?;
-        if !response.status().is_success() {
-            return Err(AppError::Model(format!(
-                "{} 服务返回 HTTP {}，请检查模型流式支持和配置",
-                self.protocol,
-                response.status()
-            )));
-        }
+        let (mut response, request_count) = self.send_request(&body).await?;
         let mut decoder = super::streaming::SseDecoder::default();
         let mut content = String::new();
         let mut usage = super::provider::ModelUsage::default();
@@ -381,7 +555,7 @@ impl ModelProvider for NativeModelProvider {
             for data in decoder.feed(&bytes)? {
                 if data == "[DONE]" {
                     if chat && stopped && !content.trim().is_empty() {
-                        return Ok(ModelCompletion { content, usage });
+                        return Ok(ModelCompletion { content, usage, request_count });
                     }
                     return Err(AppError::Model("模型流未正常完成".into()));
                 }
@@ -393,9 +567,7 @@ impl ModelProvider for NativeModelProvider {
                         Some("error" | "response.failed" | "response.incomplete")
                     )
                 {
-                    return Err(AppError::Model(
-                        "模型流式输出失败或被截断，请重试或缩小问题".into(),
-                    ));
+                    return Err(event_error(&event, &self.protocol, request_count));
                 }
                 let delta = if chat {
                     let choice = event["choices"]
@@ -451,7 +623,7 @@ impl ModelProvider for NativeModelProvider {
                         }
                         Some("message_stop") => {
                             if stopped && !content.trim().is_empty() {
-                                return Ok(ModelCompletion { content, usage });
+                                return Ok(ModelCompletion { content, usage, request_count });
                             }
                             return Err(AppError::Model("模型流未正常完成".into()));
                         }
@@ -476,7 +648,7 @@ impl ModelProvider for NativeModelProvider {
                             if content.trim().is_empty() {
                                 return Err(AppError::Model("模型没有返回有效内容".into()));
                             }
-                            return Ok(ModelCompletion { content, usage });
+                            return Ok(ModelCompletion { content, usage, request_count });
                         }
                         _ => None,
                     }
@@ -491,12 +663,14 @@ impl ModelProvider for NativeModelProvider {
             }
         }
         Err(AppError::Model("模型流连接中断，回答尚未完成".into()))
+        }).await.map_err(|_| AppError::Model("模型流式请求超时（含限流等待），请稍后重试或缩小问题".into()))?
     }
     async fn complete(&self, messages: Vec<ChatMessage>) -> AppResult<ModelCompletion> {
         let result = self.generate(messages, false).await?;
         Ok(ModelCompletion {
             content: result.content,
             usage: result.usage,
+            request_count: result.api_calls.max(1),
         })
     }
     async fn search(&self, messages: Vec<ChatMessage>) -> AppResult<SearchCompletion> {
@@ -518,6 +692,263 @@ mod tests {
         collections::VecDeque,
         sync::{Arc, Mutex},
     };
+
+    type HttpReply = (u16, Option<String>, String, &'static str);
+    async fn rejection_fixture(
+        protocol: &str,
+        replies: Vec<HttpReply>,
+    ) -> (
+        NativeModelProvider,
+        Arc<Mutex<Vec<Value>>>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = requests.clone();
+        let replies = Arc::new(Mutex::new(VecDeque::from(replies)));
+        let app = Router::new().route(
+            "/v1/{*path}",
+            post(move |Json(body): Json<Value>| {
+                let captured = captured.clone();
+                let replies = replies.clone();
+                async move {
+                    captured.lock().unwrap().push(body);
+                    let (status, retry, body, content_type) = replies
+                        .lock()
+                        .unwrap()
+                        .pop_front()
+                        .expect("unexpected retry");
+                    let mut builder = axum::response::Response::builder()
+                        .status(status)
+                        .header("content-type", content_type);
+                    if let Some(retry) = retry {
+                        builder = builder.header("retry-after", retry);
+                    }
+                    builder.body(axum::body::Body::from(body)).unwrap()
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let provider = NativeModelProvider::new(
+            protocol.into(),
+            format!("http://{address}/v1"),
+            "gpt-6.1-sol".into(),
+            "fixture-key".into(),
+        )
+        .unwrap();
+        (provider, requests, server)
+    }
+    fn rejection(status: u16, code: &str, after: &str) -> HttpReply {
+        (
+            status,
+            Some(after.into()),
+            json!({"error":{"code":code,"message":"sk-private-secret original private prompt"}})
+                .to_string(),
+            "application/json",
+        )
+    }
+    fn successful_reply() -> HttpReply {
+        (200, None, openai_reply().to_string(), "application/json")
+    }
+
+    #[tokio::test]
+    async fn temporary_limit_recovers_for_search_and_tracks_every_attempt() {
+        let (provider, requests, server) = rejection_fixture(
+            "openai-responses",
+            vec![
+                rejection(429, "rate_limit_exceeded", "0"),
+                rejection(503, "server_is_overloaded", "0"),
+                successful_reply(),
+            ],
+        )
+        .await;
+        let result = provider.search(messages()).await.unwrap();
+        assert_eq!(result.api_calls, 3);
+        assert!(!result.sources.is_empty());
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert!(requests.windows(2).all(|r| r[0] == r[1]));
+        assert!(requests[0]["tools"].is_array());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn retries_before_streaming_without_repeating_deltas_and_counts_attempts() {
+        let text = format!(
+            "data: {}\n\ndata: {}\n\n",
+            json!({"type":"response.output_text.delta","delta":"中文正文"}),
+            json!({"type":"response.completed","response":{"status":"completed"}})
+        );
+        let (provider, requests, server) = rejection_fixture(
+            "openai-responses",
+            vec![
+                rejection(429, "slow_down", "0"),
+                (200, None, text, "text/event-stream"),
+            ],
+        )
+        .await;
+        let deltas = Arc::new(Mutex::new(Vec::new()));
+        let captured = deltas.clone();
+        let result = provider
+            .complete_stream(
+                messages(),
+                Box::new(move |delta| {
+                    captured.lock().unwrap().push(delta.to_string());
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.content, "中文正文");
+        assert_eq!(result.request_count, 2);
+        assert_eq!(*deltas.lock().unwrap(), vec!["中文正文"]);
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0], requests[1]);
+        assert_eq!(requests[0]["stream"], true);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn quota_billing_and_auth_failures_are_not_retried_or_echoed() {
+        for (status, code) in [
+            (429, "insufficient_quota"),
+            (429, "credit_balance_exhausted"),
+            (429, "project_spend_limit_exceeded"),
+            (429, "organization_usage_limit_exceeded"),
+            (401, "invalid_api_key"),
+        ] {
+            let (provider, requests, server) =
+                rejection_fixture("openai-responses", vec![rejection(status, code, "0")]).await;
+            let error = provider.complete(messages()).await.unwrap_err().to_string();
+            assert!(!error.contains("sk-private-secret"));
+            assert!(!error.contains("original private prompt"));
+            if status == 429 {
+                assert!(error.contains("余额、额度或消费上限"));
+            }
+            assert_eq!(requests.lock().unwrap().len(), 1);
+            server.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn retries_are_bounded_and_long_server_delay_is_not_shortened() {
+        let (provider, requests, server) = rejection_fixture(
+            "openai-responses",
+            vec![
+                rejection(429, "rate_limit_exceeded", "0"),
+                rejection(429, "rate_limit_exceeded", "0"),
+                rejection(429, "rate_limit_exceeded", "0"),
+            ],
+        )
+        .await;
+        let error = provider.complete(messages()).await.unwrap_err().to_string();
+        assert!(error.contains("已请求 3 次"));
+        assert_eq!(requests.lock().unwrap().len(), 3);
+        server.abort();
+        let (provider, requests, server) = rejection_fixture(
+            "openai-responses",
+            vec![rejection(429, "rate_limit_exceeded", "120")],
+        )
+        .await;
+        let error = provider.complete(messages()).await.unwrap_err().to_string();
+        assert!(error.contains("至少等待 120 秒"));
+        assert_eq!(requests.lock().unwrap().len(), 1);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn dropping_execution_cancels_backoff_before_another_request() {
+        let (provider, requests, server) = rejection_fixture(
+            "openai-responses",
+            vec![rejection(429, "rate_limit_exceeded", "5")],
+        )
+        .await;
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(32);
+        let provider = provider.with_events(Some(sender));
+        let pending =
+            tokio::spawn(
+                async move { provider.complete_stream(messages(), Box::new(|_| {})).await },
+            );
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(event, super::super::streaming::AnalysisEvent::Status { message } if message.contains("自动重试"))
+        );
+        pending.abort();
+        assert!(pending.await.unwrap_err().is_cancelled());
+        assert_eq!(requests.lock().unwrap().len(), 1);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn quota_or_limit_events_after_output_never_replay_generation() {
+        let body = format!(
+            "data: {}\n\ndata: {}\n\n",
+            json!({"type":"response.output_text.delta","delta":"已收到的草稿"}),
+            json!({"type":"error","error":{"code":"insufficient_quota","message":"sk-private-secret"}})
+        );
+        let (provider, requests, server) = rejection_fixture(
+            "openai-responses",
+            vec![(200, None, body, "text/event-stream")],
+        )
+        .await;
+        let deltas = Arc::new(Mutex::new(Vec::new()));
+        let captured = deltas.clone();
+        let error = provider
+            .complete_stream(
+                messages(),
+                Box::new(move |delta| {
+                    captured.lock().unwrap().push(delta.to_string());
+                }),
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("余额、额度或消费上限"));
+        assert!(!error.contains("sk-private-secret"));
+        assert_eq!(*deltas.lock().unwrap(), vec!["已收到的草稿"]);
+        assert_eq!(requests.lock().unwrap().len(), 1);
+        server.abort();
+    }
+
+    #[test]
+    fn parses_retry_after_seconds_http_dates_and_invalid_values() {
+        let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        let mut headers = reqwest::header::HeaderMap::new();
+        for (input, expected) in [
+            ("0".to_string(), Some(std::time::Duration::ZERO)),
+            ("1.5".into(), Some(std::time::Duration::from_millis(1500))),
+            (
+                httpdate::fmt_http_date(now + std::time::Duration::from_secs(10)),
+                Some(std::time::Duration::from_secs(10)),
+            ),
+            ("invalid".into(), None),
+            ("NaN".into(), None),
+            ("-1".into(), None),
+            ("1e100".into(), Some(std::time::Duration::MAX)),
+        ] {
+            headers.insert("retry-after", input.parse().unwrap());
+            assert_eq!(retry_after(&headers, now), expected);
+        }
+        let mut failure = UpstreamFailure {
+            status: 429,
+            quota: false,
+            known_rate_limit: false,
+            retry_after: None,
+        };
+        failure
+            .observe(&json!({"error":{"type":"insufficient_quota","code":"unknown_gateway_code"}}));
+        assert!(!failure.retryable());
+        assert!(failure
+            .error("openai-responses", 1)
+            .to_string()
+            .contains("额度"));
+    }
 
     async fn stream_fixture(
         protocol: &str,

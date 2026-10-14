@@ -104,6 +104,7 @@ impl ModelProvider for CodexProvider {
         Ok(ModelCompletion {
             content: result.content,
             usage: result.usage,
+            request_count: result.api_calls.max(1),
         })
     }
     async fn search(&self, messages: Vec<ChatMessage>) -> AppResult<SearchCompletion> {
@@ -118,6 +119,7 @@ impl ModelProvider for CodexProvider {
         Ok(ModelCompletion {
             content: result.content,
             usage: result.usage,
+            request_count: result.api_calls.max(1),
         })
     }
     fn provider_name(&self) -> &str {

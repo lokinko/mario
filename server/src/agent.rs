@@ -123,12 +123,15 @@ impl AgentExecutor {
         let provider: Box<dyn ModelProvider> = if config.provider == "codex" {
             Box::new(CodexProvider::new(config.model))
         } else {
-            Box::new(NativeModelProvider::new(
-                config.provider,
-                config.base_url,
-                config.model,
-                api_key.ok_or_else(|| AppError::Validation("请配置 API Key".into()))?,
-            )?)
+            Box::new(
+                NativeModelProvider::new(
+                    config.provider,
+                    config.base_url,
+                    config.model,
+                    api_key.ok_or_else(|| AppError::Validation("请配置 API Key".into()))?,
+                )?
+                .with_events(events.clone()),
+            )
         };
         let retriever = HybridMemoryRetriever::default();
         let mut orchestrator = InvestmentOrchestrator::new(provider.as_ref(), &retriever);
@@ -226,6 +229,7 @@ async fn run_stream(
         job.api_key,
     )?;
     let (sender, receiver) = tokio::sync::mpsc::channel(32);
+    let provider = provider.with_events(Some(sender.clone()));
     let future = Box::pin(async move {
         let _permit = permit;
         let retriever = HybridMemoryRetriever::default();

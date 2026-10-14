@@ -13,6 +13,7 @@ pub struct ModelUsage {
 pub struct ModelCompletion {
     pub content: String,
     pub usage: ModelUsage,
+    pub request_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
