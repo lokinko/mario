@@ -23,6 +23,7 @@ export function sortInvestmentHoldings(
     Snapshot,
     "profile" | "holdingTradeSummaries" | "holdingTrades"
   >,
+  order: "value-desc" | "value-asc" | "name" = "value-desc",
 ) {
   const lastTrades = new Map<string, HoldingTrade>();
   for (const trade of snapshot.holdingTrades ?? []) {
@@ -33,7 +34,9 @@ export function sortInvestmentHoldings(
   const valueInBase = (holding: Holding) => {
     if (holding.currency === snapshot.profile.baseCurrency)
       return holding.marketValue;
-    return holding.fxRateToBase != null && holding.fxRateToBase > 0
+    return holding.fxRateToBase != null &&
+      Number.isFinite(holding.fxRateToBase) &&
+      holding.fxRateToBase > 0
       ? holding.marketValue * holding.fxRateToBase
       : null;
   };
@@ -47,6 +50,7 @@ export function sortInvestmentHoldings(
       Boolean(snapshot.holdingTradeSummaries?.[b.id]),
     );
     if (aClosed !== bClosed) return aClosed ? 1 : -1;
+    if (order === "name") return a.name.localeCompare(b.name, "zh-CN");
     if (aClosed) {
       const aTrade = lastTrades.get(a.id);
       const bTrade = lastTrades.get(b.id);
@@ -58,6 +62,6 @@ export function sortInvestmentHoldings(
     // Keep assets without a usable conversion after comparable open positions.
     if (aValue == null || bValue == null)
       return aValue == null ? (bValue == null ? 0 : 1) : -1;
-    return bValue - aValue;
+    return order === "value-asc" ? aValue - bValue : bValue - aValue;
   });
 }

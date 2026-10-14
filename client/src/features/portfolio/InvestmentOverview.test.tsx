@@ -1,93 +1,94 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { InvestmentOverview } from "./InvestmentOverview";
+import { portfolioOverview } from "./portfolioOverview";
 import { emptyHolding } from "./forms";
 import type { HoldingTradeSummary } from "../../types";
-import { formatMoney } from "../../lib/format";
-
 afterEach(cleanup);
-const summary = { settledProfit: "1190" } as HoldingTradeSummary;
-it("separates currencies, includes settled profit from closed positions, and marks incomplete totals", () => {
-  render(
-    <InvestmentOverview
-      holdings={[
-        {
-          ...emptyHolding(),
-          id: "closed",
-          name: "已清仓股票",
-          quantity: 0,
-          marketValue: 0,
-          costBasis: 0,
-        },
-        {
-          ...emptyHolding(),
-          id: "open",
-          name: "持有股票",
-          quantity: 100,
-          marketValue: 1000,
-          costBasis: 800,
-        },
-        {
-          ...emptyHolding("USD"),
-          id: "usd",
-          name: "美元基金",
-          marketValue: 200,
-          costBasis: 150,
-        },
-        {
-          ...emptyHolding(),
-          id: "missing",
-          name: "成本待补",
-          marketValue: 300,
-          costBasis: 0,
-        },
-      ]}
-      summaries={{ closed: summary }}
-    />,
+const usd = {
+  ...emptyHolding("USD"),
+  id: "usd",
+  marketValue: 100,
+  costBasis: 80,
+  fxRateToBase: 7,
+  fxRateObservedOn: "2026-10-12",
+};
+const cny = { ...emptyHolding(), id: "cny", marketValue: 300, costBasis: 200 };
+const summary = { settledProfit: "10" } as HoldingTradeSummary;
+it("converts all four metrics using each holding's valuation rate", () => {
+  const { totals } = portfolioOverview(
+    [usd, cny],
+    { usd: summary, cny: summary },
+    "CNY",
   );
-  const metrics = Array.from(
-    screen
-      .getByLabelText("投资持仓概览")
-      .querySelectorAll(".investment-overview-metric"),
+  expect(totals).toEqual({
+    value: { value: 1000, missing: 0 },
+    cost: { value: 760, missing: 0 },
+    unrealized: { value: 240, missing: 0 },
+    realized: { value: 80, missing: 0 },
+  });
+  const changed = portfolioOverview(
+    [
+      { ...usd, fxRateToBase: 99 },
+      { ...cny, fxRateToBase: 1 / 7 },
+    ],
+    { usd: summary },
+    "USD",
   );
-  expect(
-    within(metrics[0] as HTMLElement).getByText(formatMoney(1300)),
-  ).toBeTruthy();
-  expect(
-    within(metrics[0] as HTMLElement).getByText(formatMoney(200, "USD")),
-  ).toBeTruthy();
-  expect(
-    within(metrics[1] as HTMLElement).getByText(formatMoney(800)),
-  ).toBeTruthy();
-  expect(
-    within(metrics[2] as HTMLElement).getByText(`+${formatMoney(200)}`),
-  ).toBeTruthy();
-  expect(
-    within(metrics[3] as HTMLElement).getByText(`+${formatMoney(1190)}`),
-  ).toBeTruthy();
-  expect(within(metrics[3] as HTMLElement).getByText("—")).toBeTruthy();
-  expect(screen.getByText(/1 项成本待补/).textContent).toContain(
-    "3 项未录入交易",
-  );
+  expect(changed.totals.value.value).toBeCloseTo(100 + 300 / 7);
 });
-
-it("shows zero cost and unrealized profit for an entirely closed portfolio", () => {
-  render(
+it("marks missing FX, cost and trades separately and never fabricates zero", () => {
+  const { totals } = portfolioOverview(
+    [{ ...usd, fxRateToBase: null }, cny],
+    {},
+    "CNY",
+  );
+  expect(totals.value).toEqual({ value: 300, missing: 1 });
+  expect(totals.realized).toEqual({ value: null, missing: 2 });
+  const missing = portfolioOverview([{ ...cny, costBasis: 0 }], {}, "CNY");
+  expect(missing.totals.cost.value).toBeNull();
+  expect(missing.totals.unrealized.value).toBeNull();
+  expect(
+    portfolioOverview([{ ...usd, fxRateToBase: NaN }], {}, "CNY").totals.value
+      .value,
+  ).toBeNull();
+});
+it("retains realized profit for closed positions with zero cost and unrealized profit", () => {
+  const { totals } = portfolioOverview(
+    [{ ...usd, quantity: 0, costBasis: 0, marketValue: 0 }],
+    { usd: summary },
+    "CNY",
+  );
+  expect(totals.value.value).toBe(0);
+  expect(totals.cost.value).toBe(0);
+  expect(totals.unrealized.value).toBe(0);
+  expect(totals.realized.value).toBe(70);
+});
+it("renders four independent cards and discloses original currencies and valuation dates", () => {
+  const { container } = render(
     <InvestmentOverview
-      holdings={[
-        {
-          ...emptyHolding(),
-          id: "closed",
-          name: "股票",
-          quantity: 0,
-          marketValue: 0,
-          costBasis: 0,
-        },
-      ]}
-      summaries={{ closed: summary }}
+      holdings={[usd, cny]}
+      summaries={{ usd: summary }}
+      baseCurrency="CNY"
     />,
   );
-  expect(screen.getAllByText(formatMoney(0))).toHaveLength(3);
-  expect(screen.queryByText(/成本待补/)).toBeNull();
+  expect(
+    container.querySelectorAll(".investment-overview-metric"),
+  ).toHaveLength(4);
+  expect(screen.getByText("¥1,000")).toBeTruthy();
+  expect(screen.getByText("US$100")).toBeTruthy();
+  expect(screen.getByText("2026-10-12")).toBeTruthy();
+  expect(screen.getByText(/1 项交易或汇率待补/)).toBeTruthy();
+  expect(container.querySelector("details")?.open).toBe(false);
+});
+it("shows zero for an empty portfolio and preserves a known zero without FX", () => {
+  expect(portfolioOverview([], {}, "CNY").totals.value.value).toBe(0);
+  expect(
+    portfolioOverview(
+      [{ ...usd, marketValue: 0, fxRateToBase: null }],
+      {},
+      "CNY",
+    ).totals.value,
+  ).toEqual({ value: 0, missing: 0 });
 });

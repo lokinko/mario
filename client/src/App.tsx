@@ -19,7 +19,7 @@ import { MemoryCenter } from "./features/memory/MemoryCenter";
 import { Advisor } from "./features/research/Advisor";
 import { ModelSettings } from "./features/settings/ModelSettings";
 import { AccountSettings } from "./features/account/WebAccess";
-import { PageHeader } from "./components/PageHeader";
+import { PageHeader, PageStatus } from "./components/PageHeader";
 import { FloatingExchangeRates } from "./features/portfolio/FloatingExchangeRates";
 
 function App() {
@@ -162,229 +162,248 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <header className="mobile-topbar" inert={mobileNavOpen}>
+    <PageStatus.Provider
+      value={
         <button
-          ref={menuTrigger}
-          className="mobile-menu"
-          aria-label="打开导航"
-          aria-expanded={mobileNavOpen}
-          aria-controls="main-navigation"
-          onClick={() => setMobileNavOpen(true)}
+          className={`workspace-sync ${syncState.phase === "attention" ? "needs-attention" : ""}`}
+          onClick={() => navigate("cloud")}
+          title={syncState.message}
         >
-          <Menu size={22} />
+          <Cloud size={15} />
+          {syncState.phase === "attention" ? "同步需要处理" : "账号与同步"}
         </button>
-        <strong>mario</strong>
-        <span>{viewLabels[view]}</span>
-      </header>
-      {mobileNavOpen && (
-        <button
-          className="nav-backdrop"
-          aria-label="收起导航"
-          onClick={() => setMobileNavOpen(false)}
-          tabIndex={-1}
-        />
-      )}
-      <aside
-        ref={sidebarRef}
-        onTransitionEnd={(event) => {
-          if (
-            mobileNavOpen &&
-            event.propertyName === "transform" &&
-            !sidebarRef.current?.contains(document.activeElement)
-          )
-            sidebarRef.current
-              ?.querySelector<HTMLButtonElement>("button")
-              ?.focus();
-        }}
-        id="main-navigation"
-        aria-label="主导航"
-        role={mobileNavOpen ? "dialog" : undefined}
-        aria-modal={mobileNavOpen || undefined}
-        className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}
-      >
-        <div className="brand">
-          <div className="brand-mark">
-            <img src={`${import.meta.env.BASE_URL}mario-mark.svg`} alt="" />
-          </div>
-          <div>
-            <strong>mario</strong>
-          </div>
+      }
+    >
+      <div className="app-shell">
+        <header className="mobile-topbar" inert={mobileNavOpen}>
           <button
+            ref={menuTrigger}
             className="mobile-menu"
-            type="button"
-            aria-label="关闭导航"
+            aria-label="打开导航"
             aria-expanded={mobileNavOpen}
-            onClick={() => setMobileNavOpen((open) => !open)}
+            aria-controls="main-navigation"
+            onClick={() => setMobileNavOpen(true)}
           >
-            <X size={21} />
+            <Menu size={22} />
           </button>
-        </div>
-
-        <nav>
-          {navGroups.map((group) => (
-            <div className="nav-group" key={group.caption}>
-              <p className="nav-caption">{group.caption}</p>
-              {group.items.map((item) => (
-                <button
-                  key={item.id}
-                  aria-current={view === item.id ? "page" : undefined}
-                  className={view === item.id ? "active" : ""}
-                  onClick={() => navigate(item.id)}
-                >
-                  <item.icon size={18} />
-                  {item.label}
-                </button>
-              ))}
+          <strong>mario</strong>
+          <span>{viewLabels[view]}</span>
+        </header>
+        {mobileNavOpen && (
+          <button
+            className="nav-backdrop"
+            aria-label="收起导航"
+            onClick={() => setMobileNavOpen(false)}
+            tabIndex={-1}
+          />
+        )}
+        <aside
+          ref={sidebarRef}
+          onTransitionEnd={(event) => {
+            if (
+              mobileNavOpen &&
+              event.propertyName === "transform" &&
+              !sidebarRef.current?.contains(document.activeElement)
+            )
+              sidebarRef.current
+                ?.querySelector<HTMLButtonElement>("button")
+                ?.focus();
+          }}
+          id="main-navigation"
+          aria-label="主导航"
+          role={mobileNavOpen ? "dialog" : undefined}
+          aria-modal={mobileNavOpen || undefined}
+          className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}
+        >
+          <div className="brand">
+            <div className="brand-mark">
+              <img src={`${import.meta.env.BASE_URL}mario-mark.svg`} alt="" />
             </div>
-          ))}
-        </nav>
-
-        <div className="sidebar-spacer" />
-        <div className="sidebar-footer">
-          <button
-            className={`settings-link ${view === "cloud" ? "active" : ""}`}
-            aria-current={view === "cloud" ? "page" : undefined}
-            onClick={() => navigate("cloud")}
-          >
-            <Cloud size={18} /> 账号与数据
-          </button>
-          <button
-            className={`settings-link ${view === "settings" ? "active" : ""}`}
-            aria-current={view === "settings" ? "page" : undefined}
-            onClick={() => navigate("settings")}
-          >
-            <Settings2 size={18} /> 设置
-          </button>
-          <small className="sidebar-sync-state" title={syncState.message}>
-            {syncState.phase === "attention"
-              ? "同步需要处理 · 打开账号与数据"
-              : syncState.message}
-          </small>
-        </div>
-      </aside>
-
-      <main
-        inert={mobileNavOpen}
-        onChangeCapture={() => {
-          markEdited();
-        }}
-      >
-        <DailyTracking onNewDay={refreshForNewDay} />
-        {remotePending && (
-          <div className="remote-update-notice" role="status">
-            其他设备的资料已同步，当前输入暂时保留。
+            <div>
+              <strong>mario</strong>
+              <span>个人投资工作台</span>
+            </div>
             <button
-              className="secondary"
-              onClick={() => {
-                if (
-                  hasDraft() &&
-                  !window.confirm(
-                    "查看最新资料会重载当前表单，未保存的输入将丢弃。可先复制需要保留的内容。继续？",
-                  )
-                )
-                  return;
-                void acceptRemoteData().catch((error) => flash(String(error)));
-              }}
+              className="mobile-menu"
+              type="button"
+              aria-label="关闭导航"
+              aria-expanded={mobileNavOpen}
+              onClick={() => setMobileNavOpen((open) => !open)}
             >
-              查看最新资料
+              <X size={21} />
             </button>
           </div>
-        )}
-        {notice && (
-          <div className="toast" role="status">
-            <Check size={16} />
-            {notice}
+
+          <nav>
+            {navGroups.map((group) => (
+              <div className="nav-group" key={group.caption}>
+                <p className="nav-caption">{group.caption}</p>
+                {group.items.map((item) => (
+                  <button
+                    key={item.id}
+                    aria-current={view === item.id ? "page" : undefined}
+                    className={view === item.id ? "active" : ""}
+                    onClick={() => navigate(item.id)}
+                  >
+                    <item.icon size={18} />
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+
+          <div className="sidebar-spacer" />
+          <div className="sidebar-footer">
+            <button
+              className={`settings-link ${view === "cloud" ? "active" : ""}`}
+              aria-current={view === "cloud" ? "page" : undefined}
+              onClick={() => navigate("cloud")}
+            >
+              <Cloud size={18} /> 账号与数据
+            </button>
+            <button
+              className={`settings-link ${view === "settings" ? "active" : ""}`}
+              aria-current={view === "settings" ? "page" : undefined}
+              onClick={() => navigate("settings")}
+            >
+              <Settings2 size={18} /> 设置
+            </button>
+            <small className="sidebar-sync-state" title={syncState.message}>
+              {syncState.phase === "attention"
+                ? "同步需要处理 · 打开账号与数据"
+                : syncState.message}
+            </small>
           </div>
-        )}
-        {modelError && (
-          <div className="error-box" role="alert">
-            模型配置暂时不可用，资料与复盘不受影响。
-            <button onClick={loadApplication}>重试</button>
-          </div>
-        )}
-        {view === "facts" && (
-          <MyFacts
-            key={remoteViewRevision}
-            snapshot={snapshot}
-            onUpdate={setSnapshot}
-            navigate={navigate}
-            flash={flash}
-          />
-        )}
-        {view === "evidence" && (
-          <EvidenceWorkbench
-            key={remoteViewRevision}
-            navigate={navigate}
-            flash={flash}
-          />
-        )}
-        {view === "review" && (
-          <ReviewCenter
-            key={remoteViewRevision}
-            navigate={navigate}
-            flash={flash}
-          />
-        )}
-        {view === "memory" && (
-          <MemoryCenter key={remoteViewRevision} flash={flash} />
-        )}
-        {model && advisorVisited && (
-          <div hidden={view !== "advisor"}>
-            <Advisor
-              key={dataRevision}
-              active={view === "advisor"}
-              model={model}
+        </aside>
+
+        <main
+          inert={mobileNavOpen}
+          onChangeCapture={(event) => {
+            if (!(event.target as HTMLElement).closest("[data-presentation]"))
+              markEdited();
+          }}
+        >
+          <DailyTracking onNewDay={refreshForNewDay} />
+          {remotePending && (
+            <div className="remote-update-notice" role="status">
+              其他设备的资料已同步，当前输入暂时保留。
+              <button
+                className="secondary"
+                onClick={() => {
+                  if (
+                    hasDraft() &&
+                    !window.confirm(
+                      "查看最新资料会重载当前表单，未保存的输入将丢弃。可先复制需要保留的内容。继续？",
+                    )
+                  )
+                    return;
+                  void acceptRemoteData().catch((error) =>
+                    flash(String(error)),
+                  );
+                }}
+              >
+                查看最新资料
+              </button>
+            </div>
+          )}
+          {notice && (
+            <div className="toast" role="status">
+              <Check size={16} />
+              {notice}
+            </div>
+          )}
+          {modelError && (
+            <div className="error-box" role="alert">
+              模型配置暂时不可用，资料与复盘不受影响。
+              <button onClick={loadApplication}>重试</button>
+            </div>
+          )}
+          {view === "facts" && (
+            <MyFacts
+              key={remoteViewRevision}
+              snapshot={snapshot}
+              onUpdate={setSnapshot}
               navigate={navigate}
+              flash={flash}
+            />
+          )}
+          {view === "evidence" && (
+            <EvidenceWorkbench
+              key={remoteViewRevision}
+              navigate={navigate}
+              flash={flash}
+            />
+          )}
+          {view === "review" && (
+            <ReviewCenter
+              key={remoteViewRevision}
+              navigate={navigate}
+              flash={flash}
+            />
+          )}
+          {view === "memory" && (
+            <MemoryCenter key={remoteViewRevision} flash={flash} />
+          )}
+          {model && advisorVisited && (
+            <div hidden={view !== "advisor"}>
+              <Advisor
+                key={dataRevision}
+                active={view === "advisor"}
+                model={model}
+                navigate={navigate}
+              />
+            </div>
+          )}
+          {view === "cloud" && (
+            <ServerData
+              flash={flash}
+              onRestore={refreshInvestmentData}
+              autoState={syncState}
+              onRetryAuto={retrySync}
+            />
+          )}
+          {view === "settings" && model && (
+            <ModelSettings
+              accountSettings={<AccountSettings />}
+              key={remoteViewRevision}
+              model={model}
+              onUpdate={setModel}
+              flash={flash}
+            />
+          )}
+          {view === "settings" && !model && (
+            <div className="page narrow settings-page">
+              <PageHeader title="设置" />
+              <AccountSettings />
+            </div>
+          )}
+          {(view === "advisor" || view === "settings") && !model && (
+            <div className="center-screen">
+              <p>
+                {modelError
+                  ? "请先重试读取模型配置。其他功能仍可使用。"
+                  : "正在读取模型配置…"}
+              </p>
+            </div>
+          )}
+        </main>
+        {snapshot.profile && (
+          <div inert={mobileNavOpen}>
+            <FloatingExchangeRates
+              baseCurrency={snapshot.profile.baseCurrency}
+              usedCurrencies={[
+                ...snapshot.holdings.map((holding) => holding.currency),
+                ...(snapshot.holdingTrades ?? []).map(
+                  (trade) => trade.currency,
+                ),
+              ]}
+              onUpdate={setSnapshot}
             />
           </div>
         )}
-        {view === "cloud" && (
-          <ServerData
-            flash={flash}
-            onRestore={refreshInvestmentData}
-            autoState={syncState}
-            onRetryAuto={retrySync}
-          />
-        )}
-        {view === "settings" && model && (
-          <ModelSettings
-            accountSettings={<AccountSettings />}
-            key={remoteViewRevision}
-            model={model}
-            onUpdate={setModel}
-            flash={flash}
-          />
-        )}
-        {view === "settings" && !model && (
-          <div className="page narrow settings-page">
-            <PageHeader title="设置" />
-            <AccountSettings />
-          </div>
-        )}
-        {(view === "advisor" || view === "settings") && !model && (
-          <div className="center-screen">
-            <p>
-              {modelError
-                ? "请先重试读取模型配置。其他功能仍可使用。"
-                : "正在读取模型配置…"}
-            </p>
-          </div>
-        )}
-      </main>
-      {snapshot.profile && (
-        <div inert={mobileNavOpen}>
-          <FloatingExchangeRates
-            baseCurrency={snapshot.profile.baseCurrency}
-            usedCurrencies={[
-              ...snapshot.holdings.map((holding) => holding.currency),
-              ...(snapshot.holdingTrades ?? []).map((trade) => trade.currency),
-            ]}
-            onUpdate={setSnapshot}
-          />
-        </div>
-      )}
-    </div>
+      </div>
+    </PageStatus.Provider>
   );
 }
 

@@ -21,7 +21,7 @@ export const views: View[] = [
 
 export function initialView(): View {
   const candidate = window.location.hash.replace("#", "") as View;
-  return views.includes(candidate) ? candidate : "advisor";
+  return views.includes(candidate) ? candidate : "facts";
 }
 
 export const navGroups: {
@@ -31,8 +31,8 @@ export const navGroups: {
   {
     caption: "总览",
     items: [
-      { id: "advisor" as const, label: "问答", icon: MessageCircle },
       { id: "facts" as const, label: "我的情况", icon: WalletCards },
+      { id: "advisor" as const, label: "问答", icon: MessageCircle },
     ],
   },
   {

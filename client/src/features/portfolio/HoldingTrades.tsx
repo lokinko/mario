@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useDrawerControls } from "../../components/Drawer";
+import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import {
   deleteHoldingTrade,
@@ -60,12 +61,14 @@ export function HoldingTrades({
   holding,
   onUpdate,
   onClose,
+  onEditingChange,
   flash,
 }: {
   snapshot: Snapshot;
   holding?: Holding;
   onUpdate: (snapshot: Snapshot) => void;
   onClose?: () => void;
+  onEditingChange?: (editing: boolean) => void;
   flash: (message: string) => void;
 }) {
   const trades = (snapshot.holdingTrades ?? []).filter(
@@ -84,6 +87,10 @@ export function HoldingTrades({
     ? snapshot.holdingTradeSummaries?.[holding.id]
     : undefined;
   const [open, setOpen] = useState(!holding);
+  useEffect(() => {
+    onEditingChange?.(open);
+    return () => onEditingChange?.(false);
+  }, [open, onEditingChange]);
   const [editing, setEditing] = useState<HoldingTrade | null>(null);
   const [draft, setDraft] = useState(() => emptyDraft(summary?.account));
   const [name, setName] = useState("");
@@ -94,6 +101,11 @@ export function HoldingTrades({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const drawer = useDrawerControls();
+  useEffect(() => {
+    drawer.setBusy(busy);
+    return () => drawer.setBusy(false);
+  }, [busy, drawer]);
   const pending = useRef(false);
   const attempt = useRef<{ key: string; id: string } | null>(null);
   const revision = useRef(
@@ -192,6 +204,7 @@ export function HoldingTrades({
             expectedRevision: revision.current ?? "",
           })
         : await saveHoldingTrade({ ...input, requestId: attempt.current!.id });
+      drawer.markClean();
       onUpdate(next);
       setPage(1);
       attempt.current = null;
@@ -320,7 +333,12 @@ export function HoldingTrades({
               className="text-button"
               aria-label="关闭交易录入"
               disabled={busy}
-              onClick={close}
+              onClick={() => {
+                if (drawer.confirmDiscard()) {
+                  drawer.markClean();
+                  close();
+                }
+              }}
             >
               <X size={16} />
             </button>

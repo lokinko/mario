@@ -168,7 +168,7 @@ export function AssetHistory({ snapshot }: { snapshot: Snapshot }) {
     <section className="panel daily-assets" aria-label="每日资产追踪">
       <div className="panel-title">
         <div>
-          <h2>我的资产</h2>
+          <h2>每日资产记录 · 含现金</h2>
         </div>
         <small title={`记账时区：${history?.timezone ?? ""}`}>
           {latest?.day}

@@ -5,6 +5,43 @@ import fixture from "../../test/emptySnapshot.json";
 import type { HoldingTrade, HoldingTradeSummary, Snapshot } from "../../types";
 
 const snapshot = fixture as Snapshot;
+
+it("sorts ascending in base currency with missing conversions and closed positions last", () => {
+  const holdings = [
+    {
+      ...emptyHolding("USD"),
+      id: "unknown",
+      name: "Gamma",
+      marketValue: 1,
+      fxRateToBase: null,
+    },
+    {
+      ...emptyHolding(),
+      id: "closed",
+      name: "Delta",
+      quantity: 0,
+      marketValue: 0,
+    },
+    {
+      ...emptyHolding("USD"),
+      id: "usd",
+      name: "Alpha",
+      marketValue: 50,
+      fxRateToBase: 7,
+    },
+    { ...emptyHolding(), id: "cny", name: "Beta", marketValue: 200 },
+  ];
+  const next = {
+    ...snapshot,
+    holdingTradeSummaries: { closed: {} as HoldingTradeSummary },
+  };
+  expect(
+    sortInvestmentHoldings(holdings, next, "value-asc").map((h) => h.id),
+  ).toEqual(["cny", "usd", "unknown", "closed"]);
+  expect(
+    sortInvestmentHoldings(holdings, next, "name").map((h) => h.id),
+  ).toEqual(["usd", "cny", "unknown", "closed"]);
+});
 function trade(
   holdingId: string,
   occurredOn: string,

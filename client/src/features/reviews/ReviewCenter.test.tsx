@@ -53,15 +53,14 @@ it("saves the complete text from a single input and displays it literally", asyn
   vi.mocked(reviewsApi.saveSystemReview).mockResolvedValue(stored);
   const flash = vi.fn();
   render(<ReviewCenter flash={flash} navigate={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "新建复盘" }));
   const input = await screen.findByRole("textbox", {
     name: "我的观点、顾虑和思考",
   });
   const form = input.closest("form")!;
   expect(form.querySelectorAll("textarea")).toHaveLength(1);
   expect(form.querySelectorAll("input, select")).toHaveLength(0);
-  expect(
-    document.querySelector<HTMLDetailsElement>(".rule-workbench")?.open,
-  ).toBe(false);
+  expect(document.querySelector(".rule-workbench")).toBeNull();
   expect(screen.queryByLabelText("下次复盘日")).toBeNull();
   fireEvent.change(input, { target: { value: content } });
   vi.mocked(reviewsApi.getSystemReviews).mockResolvedValue([stored]);
@@ -70,14 +69,9 @@ it("saves the complete text from a single input and displays it literally", asyn
     expect(reviewsApi.saveSystemReview).toHaveBeenCalledWith({ content }),
   );
   await waitFor(() => expect(flash).toHaveBeenCalledWith("复盘记录已保存"));
-  expect(
-    (
-      screen.getByRole("textbox", {
-        name: "我的观点、顾虑和思考",
-      }) as HTMLTextAreaElement
-    ).value,
-  ).toBe("");
-  const body = document.querySelector(".review-content");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "我的观点：保持观察。" }));
+  const body = document.querySelector(".detail-prose");
   expect(body?.textContent).toBe(content);
   expect(body?.children).toHaveLength(0);
   expect(screen.queryByText("纪律 null/5")).toBeNull();
@@ -88,6 +82,7 @@ it("rejects whitespace and retains the draft when saving fails", async () => {
     new Error("复盘保存失败"),
   );
   render(<ReviewCenter flash={vi.fn()} navigate={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "新建复盘" }));
   const input = await screen.findByRole("textbox", {
     name: "我的观点、顾虑和思考",
   });
@@ -116,8 +111,8 @@ it("rejects whitespace and retains the draft when saving fails", async () => {
 it("shows every legacy field together as plain text", async () => {
   vi.mocked(reviewsApi.getSystemReviews).mockResolvedValue([legacy]);
   render(<ReviewCenter flash={vi.fn()} navigate={vi.fn()} />);
-  await screen.findByRole("textbox", { name: "我的观点、顾虑和思考" });
-  const content = document.querySelector(".review-content")?.textContent;
+  fireEvent.click(await screen.findByRole("button", { name: /2026 Q3/ }));
+  const content = document.querySelector(".detail-prose")?.textContent;
   for (const text of [
     "2026 Q3",
     "先检查依据",

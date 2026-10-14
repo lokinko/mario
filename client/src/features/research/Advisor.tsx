@@ -1,3 +1,4 @@
+import { PageHeader } from "../../components/PageHeader";
 import { SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -244,170 +245,221 @@ export function Advisor({
     inputRef.current?.focus();
   };
 
+  const [historyOpen, setHistoryOpen] = useState(false);
   return (
     <div className="page narrow conversation-page">
-      <header className="conversation-heading chat-heading">
-        <h1>问答</h1>
-        <button
-          className="secondary"
-          onClick={newConversation}
-          disabled={running}
-        >
-          新对话
-        </button>
-      </header>
-      <div className="conversation-turns" aria-label="当前对话">
-        {turns.map((turn, index) => (
-          <article
-            className="conversation-turn"
-            key={turn.result.id}
-            ref={index === turns.length - 1 ? latestAnswerRef : undefined}
-          >
-            <div className="user-question">
-              <span>你</span>
-              <p>{turn.question}</p>
-            </div>
-            <div className="assistant-answer">
-              <span className="answer-author">mario</span>
-              <ModelReport
-                answer={turn.result.answer}
-                trace={turn.result.workflowTrace}
-              />
-            </div>
-          </article>
-        ))}
-        {draft && (
-          <article className="conversation-turn" ref={latestAnswerRef}>
-            <div className="user-question">
-              <span>你</span>
-              <p>{draft.question}</p>
-            </div>
-            <div className="assistant-answer" aria-busy={running}>
-              <span className="answer-author">
-                mario ·{" "}
-                {running
-                  ? "正在生成，内容尚待校验"
-                  : stopped
-                    ? "已停止生成"
-                    : "回复未完成"}
-              </span>
-              <ModelReport
-                answer={
-                  draft.answer ||
-                  (running
-                    ? stage
-                    : stopped
-                      ? "已停止生成。"
-                      : "未收到完整回复，请重试。")
-                }
-              />
-            </div>
-          </article>
-        )}
-      </div>
-      <form
-        className="panel conversation-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void send();
-        }}
-      >
-        <label className="question-box">
-          <span className="visually-hidden">输入问题</span>
-          <textarea
-            disabled={running || Boolean(historyBusy)}
-            ref={inputRef}
-            value={question}
-            placeholder={turns.length ? "继续追问…" : "输入你的问题…"}
-            onChange={(event) => setQuestion(event.target.value)}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                (event.metaKey || event.ctrlKey) &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault();
-                void send();
-              }
-            }}
-          />
-        </label>
-        <div className="composer-footer">
-          <span role="status">
-            {running
-              ? stage
-              : stopped
-                ? "已停止，已显示的内容尚未完成"
-                : "Ctrl / ⌘ + Enter 发送"}
-            {!model.hasApiKey && (
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => navigate("settings")}
-              >
-                前往设置连接模型
-              </button>
-            )}
-          </span>
-          {running ? (
-            <button type="button" className="secondary" onClick={stop}>
-              <Square size={17} />
-              停止生成
-            </button>
-          ) : (
+      <PageHeader
+        title="问答"
+        action={
+          <>
             <button
-              type="submit"
-              className="primary"
-              disabled={
-                Boolean(historyBusy) || !question.trim() || !model.hasApiKey
-              }
+              className="secondary history-toggle"
+              aria-expanded={historyOpen}
+              onClick={() => setHistoryOpen((v) => !v)}
             >
-              <Send size={17} />
-              发送
+              历史对话
             </button>
+            <button
+              className="secondary"
+              onClick={newConversation}
+              disabled={running}
+            >
+              新对话
+            </button>
+          </>
+        }
+      />
+      <div className="chat-workspace">
+        <section
+          className={"chat-history" + (historyOpen ? " is-open" : "")}
+          aria-label="历史对话"
+        >
+          <h2>历史对话</h2>
+          {history.length === 0 && !historyError && (
+            <p className="empty">暂无历史对话</p>
+          )}
+          <div className="chat-history-list">
+            {history.map((item) => (
+              <button
+                key={item.id}
+                className={
+                  turns.some((turn) => turn.result.id === item.id)
+                    ? "active"
+                    : ""
+                }
+                onClick={() => {
+                  setHistoryOpen(false);
+                  void openStoredAnalysis(item.id);
+                }}
+                disabled={running || Boolean(historyBusy)}
+              >
+                <strong>{item.question}</strong>
+                <time dateTime={item.createdAt}>
+                  {new Date(item.createdAt).toLocaleString("zh-CN")}
+                </time>
+                {historyBusy === item.id ? (
+                  <LoaderCircle size={14} className="spin" />
+                ) : (
+                  <ChevronRight size={14} />
+                )}
+              </button>
+            ))}
+          </div>
+        </section>
+        <div className="chat-main">
+          {turns.length === 0 && !draft && !running && (
+            <section className="conversation-welcome" aria-label="开始问答">
+              <span>思考 · 记录 · 复盘</span>
+              <h2>从一个问题开始</h2>
+              <p>结合你的资产与记录，梳理判断的依据和下一步行动。</p>
+              <div className="conversation-starters">
+                {[
+                  "帮我梳理当前持仓的主要风险",
+                  "我的现金和投资配置是否合理？",
+                  "如何复盘最近的一次投资决策？",
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    disabled={Boolean(historyBusy)}
+                    onClick={() => {
+                      setQuestion(prompt);
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    {prompt}
+                    <ChevronRight size={14} />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          <div className="conversation-turns" aria-label="当前对话">
+            {turns.map((turn, index) => (
+              <article
+                className="conversation-turn"
+                key={turn.result.id}
+                ref={index === turns.length - 1 ? latestAnswerRef : undefined}
+              >
+                <div className="user-question">
+                  <span>你</span>
+                  <p>{turn.question}</p>
+                </div>
+                <div className="assistant-answer">
+                  <span className="answer-author">mario</span>
+                  <ModelReport
+                    answer={turn.result.answer}
+                    trace={turn.result.workflowTrace}
+                  />
+                </div>
+              </article>
+            ))}
+            {draft && (
+              <article className="conversation-turn" ref={latestAnswerRef}>
+                <div className="user-question">
+                  <span>你</span>
+                  <p>{draft.question}</p>
+                </div>
+                <div className="assistant-answer" aria-busy={running}>
+                  <span className="answer-author">
+                    mario ·{" "}
+                    {running
+                      ? "正在生成，内容尚待校验"
+                      : stopped
+                        ? "已停止生成"
+                        : "回复未完成"}
+                  </span>
+                  <ModelReport
+                    answer={
+                      draft.answer ||
+                      (running
+                        ? stage
+                        : stopped
+                          ? "已停止生成。"
+                          : "未收到完整回复，请重试。")
+                    }
+                  />
+                </div>
+              </article>
+            )}
+          </div>
+          <form
+            className="panel conversation-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void send();
+            }}
+          >
+            <label className="question-box">
+              <span className="visually-hidden">输入问题</span>
+              <textarea
+                disabled={running || Boolean(historyBusy)}
+                ref={inputRef}
+                value={question}
+                placeholder={turns.length ? "继续追问…" : "输入你的问题…"}
+                onChange={(event) => setQuestion(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    (event.metaKey || event.ctrlKey) &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    void send();
+                  }
+                }}
+              />
+            </label>
+            <div className="composer-footer">
+              <span role="status">
+                {running
+                  ? stage
+                  : stopped
+                    ? "已停止，已显示的内容尚未完成"
+                    : "Ctrl / ⌘ + Enter 发送"}
+                {!model.hasApiKey && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => navigate("settings")}
+                  >
+                    前往设置连接模型
+                  </button>
+                )}
+              </span>
+              {running ? (
+                <button type="button" className="secondary" onClick={stop}>
+                  <Square size={17} />
+                  停止生成
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="primary"
+                  disabled={
+                    Boolean(historyBusy) || !question.trim() || !model.hasApiKey
+                  }
+                >
+                  <Send size={17} />
+                  发送
+                </button>
+              )}
+            </div>
+          </form>
+          {error && (
+            <div className="error-box" role="alert">
+              <AlertTriangle size={18} />
+              {error}
+            </div>
+          )}
+          {historyError && (
+            <div className="error-box" role="alert">
+              <AlertTriangle size={18} />
+              {historyError}
+            </div>
           )}
         </div>
-      </form>
-      {error && (
-        <div className="error-box" role="alert">
-          <AlertTriangle size={18} />
-          {error}
-        </div>
-      )}
-      {historyError && (
-        <div className="error-box" role="alert">
-          <AlertTriangle size={18} />
-          {historyError}
-        </div>
-      )}
-      <section className="chat-history" aria-label="历史对话">
-        <h2>历史对话</h2>
-        {history.length === 0 && !historyError && (
-          <p className="empty">暂无历史对话</p>
-        )}
-        <div className="chat-history-list">
-          {history.map((item) => (
-            <button
-              key={item.id}
-              className={
-                turns.some((turn) => turn.result.id === item.id) ? "active" : ""
-              }
-              onClick={() => void openStoredAnalysis(item.id)}
-              disabled={running || Boolean(historyBusy)}
-            >
-              <strong>{item.question}</strong>
-              <time dateTime={item.createdAt}>
-                {new Date(item.createdAt).toLocaleString("zh-CN")}
-              </time>
-              {historyBusy === item.id ? (
-                <LoaderCircle size={14} className="spin" />
-              ) : (
-                <ChevronRight size={14} />
-              )}
-            </button>
-          ))}
-        </div>
-      </section>
+      </div>
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { createContext, useContext, type ReactNode } from "react";
+export const PageStatus = createContext<ReactNode>(null);
 export function PageHeader({
   title,
   description,
@@ -5,15 +7,19 @@ export function PageHeader({
 }: {
   title: string;
   description?: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
 }) {
+  const status = useContext(PageStatus);
   return (
     <header className="page-header">
       <div>
-        <h1>{title}</h1>
+        <h1 tabIndex={-1}>{title}</h1>
         {description && <p>{description}</p>}
       </div>
-      {action}
+      <div className="page-actions">
+        {status}
+        {action}
+      </div>
     </header>
   );
 }

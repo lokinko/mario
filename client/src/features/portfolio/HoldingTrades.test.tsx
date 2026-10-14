@@ -428,9 +428,11 @@ it("shows authoritative sell profits and dividends in the holding overview and d
   const s = { ...value, holdingTradeSummaries: { [holding.id]: total } };
   const props = { onUpdate: vi.fn(), navigate: vi.fn(), flash: vi.fn() };
   const { rerender } = render(<MyFacts {...props} snapshot={s} />);
-  const settled = screen.getByLabelText("指数基金已结算盈亏");
+  const settled = screen.getByLabelText("投资持仓概览");
   expect(within(settled).getByText("+¥115")).toBeTruthy();
-  expect(screen.getByText("交易明细 · 1 笔")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "查看 指数基金" }));
+  expect(screen.getByRole("heading", { name: "交易明细" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   rerender(
     <MyFacts
       {...props}
@@ -443,7 +445,7 @@ it("shows authoritative sell profits and dividends in the holding overview and d
     />,
   );
   expect(
-    within(screen.getByLabelText("指数基金已结算盈亏")).getByText("+¥120"),
+    within(screen.getByLabelText("投资持仓概览")).getByText("+¥120"),
   ).toBeTruthy();
   cleanup();
   render(
@@ -462,4 +464,26 @@ it("shows authoritative sell profits and dividends in the holding overview and d
   expect(screen.getByRole("status").textContent).toContain("旧交易记录");
   expect(screen.queryByText("期初余额")).toBeNull();
   expect(screen.queryByRole("button", { name: "撤销误录" })).toBeNull();
+});
+
+it("keeps the asset editor unavailable while a transaction draft is open", async () => {
+  render(
+    <MyFacts
+      snapshot={value}
+      onUpdate={vi.fn()}
+      flash={vi.fn()}
+      navigate={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "查看 指数基金" }));
+  fireEvent.click(screen.getByRole("button", { name: "编辑交易" }));
+  expect(screen.getByRole("button", { name: "编辑资产" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "关闭交易录入" }));
+  expect(screen.getByRole("button", { name: "编辑资产" })).toHaveProperty(
+    "disabled",
+    false,
+  );
 });

@@ -1,10 +1,11 @@
+import { Drawer } from "../../components/Drawer";
 import { AssetAmountRow } from "./AssetAmountRow";
 import { AssetHistory } from "./AssetHistory";
 import { HoldingTrades } from "./HoldingTrades";
 import { InvestmentOverview } from "./InvestmentOverview";
 import { isClosedHolding, sortInvestmentHoldings } from "./holdingMetrics";
-import { useEffect, useId, useRef, useState } from "react";
-import { ArrowRight, Plus, RefreshCw, Save, X } from "lucide-react";
+import { useId, useState } from "react";
+import { Plus, RefreshCw, Save, Search } from "lucide-react";
 import {
   deleteHolding,
   saveHolding,
@@ -17,7 +18,7 @@ import { type View } from "../../app/navigation";
 import { PageHeader } from "../../components/PageHeader";
 import { NumberField } from "../../components/NumberField";
 import { localDateValue } from "../../lib/dates";
-import { formatNumber } from "../../lib/format";
+import { formatMoney, formatNumber } from "../../lib/format";
 import { emptyHolding } from "./forms";
 import {
   HoldingFields,
@@ -28,7 +29,6 @@ import {
 export function MyFacts({
   snapshot,
   onUpdate,
-  navigate,
   flash,
 }: {
   snapshot: Snapshot;
@@ -39,21 +39,16 @@ export function MyFacts({
   const [profile, setProfile] = useState(snapshot.profile);
   const [editing, setEditing] = useState<Holding | null>(null);
   const [addingTrade, setAddingTrade] = useState(false);
-  const tradeForm = useRef<HTMLElement>(null);
-  const assetForm = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!editing) return;
-    assetForm.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
-    assetForm.current?.querySelector("input")?.focus({ preventScroll: true });
-  }, [editing?.id, Boolean(editing)]);
-  useEffect(() => {
-    if (!addingTrade) return;
-    tradeForm.current?.scrollIntoView({ block: "start" });
-    tradeForm.current?.querySelector("input")?.focus({ preventScroll: true });
-  }, [addingTrade]);
+  const [editingTrade, setEditingTrade] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = snapshot.holdings.find((item) => item.id === selectedId);
   const [positionFilter, setPositionFilter] = useState<
     "all" | "open" | "closed"
   >("all");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"value-desc" | "value-asc" | "name">(
+    "value-desc",
+  );
   const tradeManaged = Boolean(
     editing && snapshot.holdingTrades?.some((t) => t.holdingId === editing.id),
   );
@@ -65,16 +60,13 @@ export function MyFacts({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [section, setSection] = useState<"income" | "savings" | "holdings">(
-    snapshot.holdings.some((h) => h.assetClass !== "现金")
-      ? "holdings"
-      : snapshot.holdings.length
-        ? "savings"
-        : "income",
+    "holdings",
   );
   const cash = snapshot.holdings.filter((item) => item.assetClass === "现金");
   const investments = sortInvestmentHoldings(
     snapshot.holdings.filter((item) => item.assetClass !== "现金"),
     snapshot,
+    sort,
   );
   const currency = snapshot.profile.baseCurrency;
   const closedInvestments = investments.filter((item) =>
@@ -89,8 +81,11 @@ export function MyFacts({
       Boolean(snapshot.holdingTradeSummaries?.[item.id]),
     );
     return (
-      effectivePositionFilter === "all" ||
-      (effectivePositionFilter === "closed" ? closed : !closed)
+      (effectivePositionFilter === "all" ||
+        (effectivePositionFilter === "closed" ? closed : !closed)) &&
+      `${item.name} ${item.symbol} ${item.assetClass} ${item.currency}`
+        .toLocaleLowerCase()
+        .includes(search.trim().toLocaleLowerCase())
     );
   });
   const validIncome =
@@ -177,6 +172,7 @@ export function MyFacts({
     try {
       onUpdate(await deleteHolding(item.id));
       if (editing?.id === item.id) setEditing(null);
+      if (selectedId === item.id) setSelectedId(null);
       flash("资产已删除");
     } catch (e) {
       setError(`删除失败：${String(e)}`);
@@ -186,28 +182,74 @@ export function MyFacts({
   };
   return (
     <div className="page narrow facts-page">
-      <PageHeader title="我的情况" />
+      <PageHeader
+        title="我的情况"
+        action={
+          section !== "income" ? (
+            <div className="trade-toolbar">
+              {section === "holdings" && investments.length > 0 && (
+                <button
+                  className="secondary"
+                  disabled={busy || Boolean(editing)}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    try {
+                      const result = await refreshSecurityPrices();
+                      onUpdate(result.snapshot);
+                      if (result.errors.length)
+                        setError(result.errors.join("；"));
+                      else
+                        flash(`价格已检查，更新 ${result.updatedCount} 项持仓`);
+                    } catch (e) {
+                      setError(`价格更新失败：${String(e)}`);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <RefreshCw size={15} />
+                  {busy ? "更新中…" : "更新自动价格"}
+                </button>
+              )}
+              {section === "holdings" && (
+                <button
+                  className="primary"
+                  disabled={busy || Boolean(editing) || addingTrade}
+                  onClick={() => setAddingTrade(true)}
+                >
+                  <Plus size={16} />
+                  记录买入
+                </button>
+              )}
+              <button
+                className="secondary"
+                disabled={busy || Boolean(editing) || addingTrade}
+                onClick={add}
+              >
+                <Plus size={16} />
+                {section === "savings" ? "添加存款" : "添加持仓"}
+              </button>
+            </div>
+          ) : undefined
+        }
+      />
       {addingTrade && (
-        <section
-          ref={tradeForm}
-          className="panel form-panel new-trade-panel"
-          aria-label="记录买入"
-        >
+        <Drawer title="记录买入" onClose={() => setAddingTrade(false)}>
           <HoldingTrades
             snapshot={snapshot}
             onUpdate={onUpdate}
             flash={flash}
             onClose={() => setAddingTrade(false)}
           />
-        </section>
+        </Drawer>
       )}
-      <AssetHistory snapshot={snapshot} />
       <div className="section-switcher" role="group" aria-label="我的情况分类">
         {(
           [
-            ["income", "收入与支出"],
-            ["savings", "存款与现金"],
             ["holdings", "投资持仓"],
+            ["savings", "存款与现金"],
+            ["income", "收入与支出"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -223,7 +265,7 @@ export function MyFacts({
           </button>
         ))}
       </div>
-      {error && (
+      {error && !editing && !selected && (
         <div className="error-box" role="alert">
           {error}。请重试。
         </div>
@@ -235,6 +277,14 @@ export function MyFacts({
             {snapshot.priceRefreshErrors?.join("；")}
           </p>
         )}
+      {section !== "income" && (
+        <InvestmentOverview
+          holdings={section === "holdings" ? investments : cash}
+          summaries={snapshot.holdingTradeSummaries}
+          baseCurrency={currency}
+          cash={section === "savings"}
+        />
+      )}
       {section === "income" ? (
         <section className="panel form-panel" aria-label="收支与风险设置">
           <h2>收入与支出</h2>
@@ -382,120 +432,121 @@ export function MyFacts({
         <section
           className={`panel form-panel${section === "holdings" ? " investment-panel" : ""}`}
         >
-          <div className="panel-title">
-            <div className="investment-panel-heading">
-              <h2>{section === "savings" ? "存款与现金" : "投资持仓"}</h2>
-              {section === "holdings" && (
-                <p>
-                  {investments.length} 项资产 · {closedInvestments.length}{" "}
-                  项已清仓
-                </p>
-              )}
-            </div>
-            <div className="trade-toolbar">
-              {section === "holdings" && investments.length > 0 && (
-                <button
-                  className="secondary"
-                  disabled={busy || Boolean(editing)}
-                  onClick={async () => {
-                    setBusy(true);
-                    setError("");
-                    try {
-                      const result = await refreshSecurityPrices();
-                      onUpdate(result.snapshot);
-                      if (result.errors.length)
-                        setError(result.errors.join("；"));
-                      else
-                        flash(`价格已检查，更新 ${result.updatedCount} 项持仓`);
-                    } catch (e) {
-                      setError(`价格更新失败：${String(e)}`);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  <RefreshCw size={15} />
-                  {busy ? "更新中…" : "更新自动价格"}
-                </button>
-              )}
-              {section === "holdings" && (
-                <button
-                  className="primary"
-                  disabled={busy || Boolean(editing) || addingTrade}
-                  onClick={() => setAddingTrade(true)}
-                >
-                  <Plus size={16} />
-                  记录买入
-                </button>
-              )}
-              <button
-                className="secondary"
-                disabled={busy || Boolean(editing) || addingTrade}
-                onClick={add}
-              >
-                <Plus size={16} />
-                {section === "savings" ? "添加存款" : "添加持仓"}
-              </button>
-            </div>
-          </div>
           {section === "holdings" && investments.length > 0 && (
-            <InvestmentOverview
-              holdings={investments}
-              summaries={snapshot.holdingTradeSummaries}
-            />
-          )}
-          {section === "holdings" && investments.length > 0 && (
-            <p className="investment-sort-note">
-              按折合 {currency} 市值从高到低排列 · 已清仓按最近交易排列
-              {investments.some(
-                (item) =>
-                  !isClosedHolding(
-                    item,
-                    Boolean(snapshot.holdingTradeSummaries?.[item.id]),
-                  ) &&
-                  item.currency !== currency &&
-                  !(item.fxRateToBase != null && item.fxRateToBase > 0),
-              ) && " · 缺少汇率的资产排在未清仓资产末尾"}
+            <p className="sr-only" id="holdings-sort-help">
+              {sort === "name"
+                ? "按名称排列 · 已清仓列于末尾"
+                : `按折合 ${currency} 市值${sort === "value-asc" ? "从低到高" : "从高到低"}排列 · 已清仓按最近交易排列`}
+              {sort !== "name" &&
+                investments.some(
+                  (item) =>
+                    !isClosedHolding(
+                      item,
+                      Boolean(snapshot.holdingTradeSummaries?.[item.id]),
+                    ) &&
+                    item.currency !== currency &&
+                    !(item.fxRateToBase != null && item.fxRateToBase > 0),
+                ) &&
+                " · 缺少汇率的资产排在未清仓资产末尾"}
             </p>
           )}
-          {section === "holdings" && closedInvestments.length > 0 && (
-            <div
-              className="position-filters"
-              role="group"
-              aria-label="持仓状态筛选"
-            >
-              {(
-                [
-                  ["all", "全部", investments.length],
+          {section === "holdings" && investments.length > 0 && (
+            <div className="holdings-toolbar" data-presentation="true">
+              <div
+                className="position-filters"
+                role="group"
+                aria-label="持仓状态筛选"
+              >
+                {(
                   [
-                    "open",
-                    "未清仓",
-                    investments.length - closedInvestments.length,
-                  ],
-                  ["closed", "已清仓", closedInvestments.length],
-                ] as const
-              ).map(([id, label, count]) => (
-                <button
-                  key={id}
-                  aria-pressed={effectivePositionFilter === id}
-                  onClick={() => setPositionFilter(id)}
+                    ["all", "全部", investments.length],
+                    [
+                      "open",
+                      "未清仓",
+                      investments.length - closedInvestments.length,
+                    ],
+                    ["closed", "已清仓", closedInvestments.length],
+                  ] as const
+                ).map(([id, label, count]) => (
+                  <button
+                    key={id}
+                    disabled={count === 0}
+                    aria-pressed={effectivePositionFilter === id}
+                    onClick={() => setPositionFilter(id)}
+                  >
+                    {label}
+                    <span>{count}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="holdings-tools">
+                <label className="holdings-search">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    type="search"
+                    aria-label="搜索持仓"
+                    placeholder="搜索名称、代码或币种"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                </label>
+                <select
+                  aria-label="持仓排序"
+                  aria-describedby="holdings-sort-help"
+                  value={sort}
+                  onChange={(event) =>
+                    setSort(event.target.value as typeof sort)
+                  }
                 >
-                  {label}
-                  <span>{count}</span>
-                </button>
-              ))}
+                  <option value="value-desc">市值从高到低</option>
+                  <option value="value-asc">市值从低到高</option>
+                  <option value="name">名称排序</option>
+                </select>
+              </div>
             </div>
           )}
           <div
             className={`facts-assets${section === "holdings" ? " investment-assets" : ""}`}
+            role="table"
+            aria-label={section === "holdings" ? "持仓列表" : "现金列表"}
+            aria-colcount={section === "holdings" ? 6 : 3}
           >
+            {section === "holdings" && investments.length > 0 && (
+              <div role="row" className="holdings-list-header">
+                {[
+                  "资产 / 币种",
+                  "持仓数",
+                  "现价 / 成本价",
+                  "当前市值",
+                  "浮动盈亏",
+                  "操作",
+                ].map((label) => (
+                  <span role="columnheader" key={label}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
+            {section === "savings" && cash.length > 0 && (
+              <div role="row" className="holdings-list-header cash-list-header">
+                {["账户 / 币种", "余额", "操作"].map((label) => (
+                  <span role="columnheader" key={label}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
             {(section === "savings" ? cash : visibleInvestments).map((item) => {
               const trades = (snapshot.holdingTrades ?? []).filter(
                 (t) => t.holdingId === item.id,
               );
               const tradeSummary = snapshot.holdingTradeSummaries?.[item.id];
               return (
-                <div key={item.id} className="facts-asset-entry">
+                <div
+                  key={item.id}
+                  className="facts-asset-entry"
+                  role="rowgroup"
+                >
                   <AssetAmountRow
                     holding={item}
                     realizedPnl={
@@ -503,11 +554,7 @@ export function MyFacts({
                         ? Number(tradeSummary.settledProfit)
                         : undefined
                     }
-                    revision={snapshot.holdingRevisions?.[item.id]}
-                    valuation={snapshot.holdingValuations?.find(
-                      (v) => v.holdingId === item.id,
-                    )}
-                    onUpdate={onUpdate}
+                    onOpen={() => setSelectedId(item.id)}
                     disabled={busy}
                     canDelete={!trades.length}
                     onDelete={() => void removeAsset(item)}
@@ -520,35 +567,41 @@ export function MyFacts({
                       setError("");
                     }}
                   />
-                  {item.assetClass !== "现金" && (
-                    <details className="holding-trade-details">
-                      <summary>
-                        交易明细
-                        {snapshot.clearedTradeHoldings?.includes(item.id)
-                          ? " · 需重新录入"
-                          : trades.length
-                            ? ` · ${trades.length} 笔`
-                            : " · 记买入 / 卖出"}
-                      </summary>
-                      <HoldingTrades
-                        snapshot={snapshot}
-                        holding={item}
-                        onUpdate={onUpdate}
-                        flash={flash}
-                      />
-                    </details>
-                  )}
                 </div>
               );
             })}
             {section === "holdings" &&
               investments.length > 0 &&
               visibleInvestments.length === 0 && (
-                <p className="empty-state">当前筛选下没有持仓。</p>
+                <div className="empty-state" role="row">
+                  <div role="cell" aria-colspan={6}>
+                    <p>
+                      {search.trim()
+                        ? "没有找到匹配的持仓。"
+                        : "当前筛选下没有持仓。"}
+                    </p>
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        setSearch("");
+                        setPositionFilter("all");
+                      }}
+                    >
+                      清除筛选
+                    </button>
+                  </div>
+                </div>
               )}
-            {(section === "savings" ? cash : investments).length === 0 && (
-              <p className="empty">暂无资产，点击上方添加。</p>
-            )}
+            {(section === "savings" ? cash : investments).length === 0 &&
+              (section === "holdings" ? (
+                <div role="row">
+                  <div role="cell" aria-colspan={6}>
+                    <p className="empty">暂无资产，点击上方添加。</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="empty">暂无资产，点击上方添加。</p>
+              ))}
           </div>
           {section === "holdings" && (
             <details className="investment-help">
@@ -560,249 +613,359 @@ export function MyFacts({
           )}
         </section>
       )}
-      {editing && (
-        <section
-          ref={assetForm}
-          className="panel form-panel"
-          aria-label="记录资产"
-        >
-          <div className="panel-title">
-            <h2>
-              {editing.id
-                ? editing.assetClass === "现金"
-                  ? "更新实际余额"
-                  : "更新持仓"
+
+      {(editing || selected) && (
+        <Drawer
+          title={
+            editing
+              ? editing.id
+                ? "编辑 " + editing.name
                 : editing.assetClass === "现金"
-                  ? "记一笔存款"
-                  : "记一笔持仓"}
-            </h2>
-            <button
-              className="text-button"
-              disabled={busy}
-              aria-label="取消记录资产"
-              onClick={() => setEditing(null)}
-            >
-              <X size={18} />
-            </button>
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void saveAsset();
-            }}
-          >
-            <fieldset className="holding-fields" disabled={busy}>
-              <div className="form-grid">
-                <label>
-                  <span>名称</span>
-                  <input
-                    autoFocus
-                    required
-                    value={editing.name}
-                    placeholder="例如：工资卡、某只基金"
-                    onChange={(e) =>
-                      setEditing({ ...editing, name: e.target.value })
-                    }
-                  />
-                </label>
-                {editing.assetClass !== "现金" && (
-                  <label>
-                    <span id={`${codeHelpId}-label`}>
-                      证券代码（自动价格，选填）
-                    </span>
-                    <input
-                      aria-labelledby={`${codeHelpId}-label`}
-                      aria-describedby={tradeManaged ? codeHelpId : undefined}
-                      value={editing.symbol}
-                      placeholder="AAPL / 0700.HK / 600519.SS / 000001.SZ"
-                      onChange={(e) =>
-                        setEditing({ ...editing, symbol: e.target.value })
-                      }
-                    />
-                    {tradeManaged && (
-                      <small id={codeHelpId}>
-                        可补填或纠正同一证券的代码；如需记录另一只证券，请新建持仓。
-                      </small>
-                    )}
-                  </label>
-                )}
-                {editing.assetClass !== "现金" && (
-                  <HoldingFields
-                    tradeManaged={tradeManaged}
-                    holding={editing}
-                    onChange={(next) => {
-                      setEditing(next);
-                      setAssetAmount(String(next.marketValue));
-                      setAssetCost(
-                        next.costBasis === 0 ? "" : String(next.costBasis),
-                      );
-                    }}
-                  />
-                )}
-                <label>
-                  <span>
-                    {editing.assetClass === "现金" ? "当前金额" : "当前市值"}
-                  </span>
-                  <div className="input-affix">
-                    <i>{editing.currency}</i>
-                    <input
-                      type="number"
-                      required={manualAssetAmount}
-                      readOnly={!manualAssetAmount}
-                      placeholder={
-                        manualAssetAmount
-                          ? "手动输入"
-                          : "根据持仓数和当前价格自动计算"
-                      }
-                      min={0}
-                      max={1e15}
-                      inputMode="decimal"
-                      step="any"
-                      value={
-                        manualAssetAmount
-                          ? assetAmount
-                          : editing.quantity != null &&
-                              editing.currentPrice != null
-                            ? formatNumber(
-                                editing.quantity * editing.currentPrice,
-                              )
-                            : ""
-                      }
-                      onChange={(e) => {
-                        setAssetAmount(e.target.value);
-                        setEditing({
-                          ...editing,
-                          marketValue: Number(e.target.value),
-                        });
-                      }}
-                    />
-                  </div>
-                </label>
-                {editing.assetClass !== "现金" && (
-                  <div className="asset-cost-field">
+                  ? "添加存款"
+                  : "添加持仓"
+              : selected!.name
+          }
+          resetKey={editing ? "edit" : "detail"}
+          busy={busy}
+          onClose={() => {
+            setEditing(null);
+            setSelectedId(null);
+            setError("");
+          }}
+        >
+          {editing ? (
+            <>
+              {error && (
+                <div className="error-box" role="alert">
+                  {error}
+                </div>
+              )}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void saveAsset();
+                }}
+              >
+                <fieldset className="holding-fields" disabled={busy}>
+                  <div className="form-grid">
                     <label>
-                      <span>持仓总成本（选填）</span>
+                      <span>名称</span>
+                      <input
+                        autoFocus
+                        required
+                        value={editing.name}
+                        placeholder="例如：工资卡、某只基金"
+                        onChange={(e) =>
+                          setEditing({ ...editing, name: e.target.value })
+                        }
+                      />
+                    </label>
+                    {editing.assetClass !== "现金" && (
+                      <label>
+                        <span id={`${codeHelpId}-label`}>
+                          证券代码（自动价格，选填）
+                        </span>
+                        <input
+                          aria-labelledby={`${codeHelpId}-label`}
+                          aria-describedby={
+                            tradeManaged ? codeHelpId : undefined
+                          }
+                          value={editing.symbol}
+                          placeholder="AAPL / 0700.HK / 600519.SS / 000001.SZ"
+                          onChange={(e) =>
+                            setEditing({ ...editing, symbol: e.target.value })
+                          }
+                        />
+                        {tradeManaged && (
+                          <small id={codeHelpId}>
+                            可补填或纠正同一证券的代码；如需记录另一只证券，请新建持仓。
+                          </small>
+                        )}
+                      </label>
+                    )}
+                    {editing.assetClass !== "现金" && (
+                      <HoldingFields
+                        tradeManaged={tradeManaged}
+                        holding={editing}
+                        onChange={(next) => {
+                          setEditing(next);
+                          setAssetAmount(String(next.marketValue));
+                          setAssetCost(
+                            next.costBasis === 0 ? "" : String(next.costBasis),
+                          );
+                        }}
+                      />
+                    )}
+                    <label>
+                      <span>
+                        {editing.assetClass === "现金"
+                          ? "当前金额"
+                          : "当前市值"}
+                      </span>
                       <div className="input-affix">
                         <i>{editing.currency}</i>
                         <input
                           type="number"
+                          required={manualAssetAmount}
+                          readOnly={!manualAssetAmount}
+                          placeholder={
+                            manualAssetAmount
+                              ? "手动输入"
+                              : "根据持仓数和当前价格自动计算"
+                          }
                           min={0}
                           max={1e15}
                           inputMode="decimal"
                           step="any"
-                          placeholder="未填写"
-                          aria-describedby={costHelpId}
-                          readOnly={tradeManaged || editing.costPrice != null}
                           value={
-                            editing.costPrice != null
-                              ? formatNumber(editing.costBasis)
-                              : assetCost
+                            manualAssetAmount
+                              ? assetAmount
+                              : editing.quantity != null &&
+                                  editing.currentPrice != null
+                                ? formatNumber(
+                                    editing.quantity * editing.currentPrice,
+                                  )
+                                : ""
                           }
                           onChange={(e) => {
-                            setAssetCost(e.target.value);
+                            setAssetAmount(e.target.value);
                             setEditing({
                               ...editing,
-                              costBasis: Number(e.target.value),
+                              marketValue: Number(e.target.value),
                             });
                           }}
                         />
                       </div>
                     </label>
-                    <small id={costHelpId}>
-                      {tradeManaged
-                        ? "数量与成本由交易明细计算，请通过录入或编辑交易调整。当前价格可在下方更新。"
-                        : "成本价为当前持仓每单位的平均买入成本（可含买入费用）；填入成本价和数量后自动计算总成本。旧记录也可直接填写总成本。"}
-                    </small>
+                    {editing.assetClass !== "现金" && (
+                      <div className="asset-cost-field">
+                        <label>
+                          <span>持仓总成本（选填）</span>
+                          <div className="input-affix">
+                            <i>{editing.currency}</i>
+                            <input
+                              type="number"
+                              min={0}
+                              max={1e15}
+                              inputMode="decimal"
+                              step="any"
+                              placeholder="未填写"
+                              aria-describedby={costHelpId}
+                              readOnly={
+                                tradeManaged || editing.costPrice != null
+                              }
+                              value={
+                                editing.costPrice != null
+                                  ? formatNumber(editing.costBasis)
+                                  : assetCost
+                              }
+                              onChange={(e) => {
+                                setAssetCost(e.target.value);
+                                setEditing({
+                                  ...editing,
+                                  costBasis: Number(e.target.value),
+                                });
+                              }}
+                            />
+                          </div>
+                        </label>
+                        <small id={costHelpId}>
+                          {tradeManaged
+                            ? "数量与成本由交易明细计算，请通过录入或编辑交易调整。当前价格可在下方更新。"
+                            : "成本价为当前持仓每单位的平均买入成本（可含买入费用）；填入成本价和数量后自动计算总成本。旧记录也可直接填写总成本。"}
+                        </small>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <details className="holding-details">
-                <summary>
-                  币种、日期等（{editing.valuationDate} / {editing.currency}）
-                </summary>
-                <div className="form-grid">
-                  <label>
-                    <span>币种</span>
-                    <select
-                      disabled={tradeManaged}
-                      value={editing.currency}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          currency: e.target.value,
-                          fxRateToBase: null,
-                          fxRateSource: "",
-                          fxRateObservedOn: "",
-                        })
-                      }
-                    >
-                      {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((c) => (
-                        <option key={c}>{c}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>余额日期</span>
-                    <input
-                      required
-                      type="date"
-                      max={localDateValue(new Date())}
-                      value={editing.valuationDate}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          valuationDate: e.target.value,
-                          fxRateToBase: null,
-                          fxRateSource: "",
-                          fxRateObservedOn: "",
-                        })
-                      }
-                    />
-                  </label>
-                  {editing.assetClass !== "现金" && (
-                    <label>
-                      <span>类别</span>
-                      <select
-                        disabled={tradeManaged}
-                        value={editing.assetClass}
-                        onChange={(e) =>
-                          setEditing({
-                            ...editing,
-                            assetClass: e.target.value as Holding["assetClass"],
-                          })
-                        }
-                      >
-                        {["股票", "基金", "债券", "黄金", "其他"].map((c) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                    </label>
+                  <details className="holding-details">
+                    <summary>
+                      币种、日期等（{editing.valuationDate} / {editing.currency}
+                      ）
+                    </summary>
+                    <div className="form-grid">
+                      <label>
+                        <span>币种</span>
+                        <select
+                          disabled={tradeManaged}
+                          value={editing.currency}
+                          onChange={(e) =>
+                            setEditing({
+                              ...editing,
+                              currency: e.target.value,
+                              fxRateToBase: null,
+                              fxRateSource: "",
+                              fxRateObservedOn: "",
+                            })
+                          }
+                        >
+                          {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map(
+                            (c) => (
+                              <option key={c}>{c}</option>
+                            ),
+                          )}
+                        </select>
+                      </label>
+                      <label>
+                        <span>余额日期</span>
+                        <input
+                          required
+                          type="date"
+                          max={localDateValue(new Date())}
+                          value={editing.valuationDate}
+                          onChange={(e) =>
+                            setEditing({
+                              ...editing,
+                              valuationDate: e.target.value,
+                              fxRateToBase: null,
+                              fxRateSource: "",
+                              fxRateObservedOn: "",
+                            })
+                          }
+                        />
+                      </label>
+                      {editing.assetClass !== "现金" && (
+                        <label>
+                          <span>类别</span>
+                          <select
+                            disabled={tradeManaged}
+                            value={editing.assetClass}
+                            onChange={(e) =>
+                              setEditing({
+                                ...editing,
+                                assetClass: e.target
+                                  .value as Holding["assetClass"],
+                              })
+                            }
+                          >
+                            {["股票", "基金", "债券", "黄金", "其他"].map(
+                              (c) => (
+                                <option key={c}>{c}</option>
+                              ),
+                            )}
+                          </select>
+                        </label>
+                      )}
+                    </div>
+                  </details>
+                  {editing.currency !== currency && (
+                    <p className="section-intro">
+                      汇率自动读取；如需调整，可在右侧“汇率”浮窗的“管理汇率”中修改。
+                    </p>
                   )}
+                  <div className="form-actions">
+                    <button
+                      className="primary"
+                      type="submit"
+                      disabled={!validAsset}
+                    >
+                      {busy ? "保存中…" : "保存这笔资产"}
+                    </button>
+                  </div>
+                </fieldset>
+              </form>
+            </>
+          ) : selected ? (
+            <>
+              {error && (
+                <div className="error-box" role="alert">
+                  {error}
                 </div>
-              </details>
-              {editing.currency !== currency && (
-                <p className="section-intro">
-                  汇率自动读取；如需调整，可在顶部“汇率设置”统一修改。
-                </p>
               )}
-              <div className="form-actions">
+              <div className="detail-actions">
                 <button
-                  className="primary"
-                  type="submit"
-                  disabled={!validAsset}
+                  className="secondary"
+                  disabled={editingTrade}
+                  title={editingTrade ? "请先保存或取消当前交易" : undefined}
+                  onClick={() => {
+                    setAssetAmount(String(selected.marketValue));
+                    setAssetCost(
+                      selected.costBasis > 0 ? String(selected.costBasis) : "",
+                    );
+                    setEditing({ ...selected });
+                  }}
                 >
-                  {busy ? "保存中…" : "保存这笔资产"}
+                  编辑资产
                 </button>
               </div>
-            </fieldset>
-          </form>
-        </section>
+              <dl className="detail-grid">
+                <div>
+                  <dt>当前市值</dt>
+                  <dd>
+                    {formatMoney(selected.marketValue, selected.currency)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>持仓总成本</dt>
+                  <dd>
+                    {selected.costBasis > 0 ||
+                    isClosedHolding(
+                      selected,
+                      Boolean(snapshot.holdingTradeSummaries?.[selected.id]),
+                    )
+                      ? formatMoney(selected.costBasis, selected.currency)
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>已结算盈亏</dt>
+                  <dd>
+                    {snapshot.holdingTradeSummaries?.[selected.id]
+                      ? formatMoney(
+                          Number(
+                            snapshot.holdingTradeSummaries[selected.id]
+                              .settledProfit,
+                          ),
+                          selected.currency,
+                        )
+                      : "未录入交易"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>估值日期</dt>
+                  <dd>{selected.valuationDate || "待补"}</dd>
+                </div>
+                <div>
+                  <dt>证券代码 / 币种</dt>
+                  <dd>
+                    {selected.symbol || "—"} / {selected.currency}
+                  </dd>
+                </div>
+                <div>
+                  <dt>行情来源</dt>
+                  <dd>
+                    {snapshot.holdingValuations?.find(
+                      (v) => v.holdingId === selected.id,
+                    )?.providerName || "手动记录"}
+                  </dd>
+                </div>
+              </dl>
+              {snapshot.holdingValuations
+                ?.filter((v) => v.holdingId === selected.id)
+                .map((v) => (
+                  <p className="section-intro" key={v.holdingId}>
+                    收盘日 {v.observedOn} · {v.disclaimer}
+                  </p>
+                ))}
+              {selected.assetClass !== "现金" && (
+                <>
+                  <h3>交易明细</h3>
+                  {snapshot.clearedTradeHoldings?.includes(selected.id) && (
+                    <p className="warning-text">交易明细需重新录入</p>
+                  )}
+                  <HoldingTrades
+                    snapshot={snapshot}
+                    holding={selected}
+                    onEditingChange={setEditingTrade}
+                    onUpdate={onUpdate}
+                    flash={flash}
+                  />
+                </>
+              )}
+            </>
+          ) : null}
+        </Drawer>
       )}
-      <div className="facts-next">
-        <button className="primary" onClick={() => navigate("advisor")}>
-          去聊聊 <ArrowRight size={16} />
-        </button>
-      </div>
+      <AssetHistory snapshot={snapshot} />
     </div>
   );
 }

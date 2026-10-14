@@ -64,6 +64,22 @@ const ask = (question: string) => {
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 };
 
+it("fills a starter question and focuses the composer without sending an analysis", async () => {
+  render(<Advisor {...props} />);
+  const prompt = "帮我梳理当前持仓的主要风险";
+  fireEvent.click(screen.getByRole("button", { name: prompt }));
+  const input = screen.getByRole("textbox", {
+    name: "输入问题",
+  }) as HTMLTextAreaElement;
+  expect(input.value).toBe(prompt);
+  expect(document.activeElement).toBe(input);
+  expect(researchApi.previewAnalysis).not.toHaveBeenCalled();
+  expect(researchApi.runAnalysis).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+  await screen.findByText(result.answer);
+  expect(screen.queryByLabelText("开始问答")).toBeNull();
+});
+
 it("shows streamed text before completion and replaces it with the saved report", async () => {
   let finish!: (result: AnalysisResult) => void;
   vi.mocked(researchApi.runAnalysis).mockImplementation(

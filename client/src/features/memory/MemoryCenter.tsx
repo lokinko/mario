@@ -1,3 +1,4 @@
+import { Drawer } from "../../components/Drawer";
 import { useEffect, useMemo, useState } from "react";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import { AlertTriangle } from "lucide-react";
@@ -11,6 +12,7 @@ export type MemoryPreferenceDraft = {
 };
 
 export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [items, setItems] = useState<MemoryCandidate[]>([]);
   const [drafts, setDrafts] = useState<Record<string, MemoryPreferenceDraft>>(
     {},
@@ -101,6 +103,7 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
           note: updated.preferenceNote,
         },
       }));
+      setSelectedId(null);
       flash(
         updated.preference === "pinned"
           ? "已标记为长期保留，相关检索会提高权重"
@@ -174,7 +177,7 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
             ))}
           </div>
         </div>
-        {error && (
+        {error && !selectedId && (
           <div className="error-box" role="alert">
             <AlertTriangle size={17} />
             {error}
@@ -212,7 +215,12 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
                 <div className="managed-memory-head">
                   <div>
                     <span>AI 分析</span>
-                    <strong>{item.title}</strong>
+                    <button
+                      className="text-button record-title"
+                      onClick={() => setSelectedId(item.id)}
+                    >
+                      {item.title}
+                    </button>
                   </div>
                   <div>
                     {item.reviewed && <em>已复盘</em>}
@@ -223,68 +231,102 @@ export function MemoryCenter({ flash }: { flash: (message: string) => void }) {
                     )}
                   </div>
                 </div>
-                <p>{item.summary}</p>
+                <p className="record-preview">{item.summary}</p>
                 <small>
                   {new Date(item.occurredAt).toLocaleDateString("zh-CN")} ·{" "}
                   {item.status}
                 </small>
-                <div className="memory-preference-editor">
-                  <label>
-                    <span>长期策略</span>
-                    <select
-                      value={draft.preference}
-                      onChange={(event) =>
-                        updateDraft(item.id, {
-                          preference: event.target
-                            .value as MemoryCandidate["preference"],
-                        })
-                      }
+                {selectedId === item.id && (
+                  <Drawer
+                    title={item.title}
+                    busy={savingId === item.id}
+                    dirty={changed}
+                    resetKey={item.preference + item.preferenceNote}
+                    onClose={() => {
+                      setSelectedId(null);
+                      updateDraft(item.id, {
+                        preference: item.preference,
+                        note: item.preferenceNote,
+                      });
+                    }}
+                  >
+                    <p className="detail-prose">
+                      {typeof item.content.answer === "string"
+                        ? item.content.answer
+                        : item.summary}
+                    </p>
+                    <p>
+                      {item.status} ·{" "}
+                      {new Date(item.occurredAt).toLocaleString("zh-CN")}
+                    </p>
+                    {error && (
+                      <p className="error-box" role="alert">
+                        {error}
+                      </p>
+                    )}
+                    <fieldset
+                      className="memory-preference-editor holding-fields"
+                      disabled={savingId === item.id}
                     >
-                      <option value="default">默认参与相关检索</option>
-                      <option value="pinned">长期保留并提高权重</option>
-                      <option value="hidden">永久屏蔽</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>我的注释（不会改写原记录）</span>
-                    <input
-                      disabled={draft.preference === "default"}
-                      maxLength={1000}
-                      value={draft.note}
-                      onChange={(event) =>
-                        updateDraft(item.id, { note: event.target.value })
-                      }
-                      placeholder={
-                        draft.preference === "default"
-                          ? "选择长期保留或屏蔽后可填写"
-                          : "例如：只适用于高波动主动仓位"
-                      }
-                    />
-                  </label>
-                  <div>
-                    <button
-                      className="text-button"
-                      disabled={
-                        savingId === item.id ||
-                        (item.preference === "default" && !item.preferenceNote)
-                      }
-                      onClick={() => void persist(item, true)}
-                    >
-                      恢复默认
-                    </button>
-                    <button
-                      className="secondary"
-                      disabled={
-                        savingId === item.id ||
-                        !changed ||
-                        draft.preference === "default"
-                      }
-                      onClick={() => void persist(item)}
-                    >
-                      {savingId === item.id ? "保存中…" : "保存策略"}
-                    </button>
-                  </div>
-                </div>
+                      <label>
+                        <span>长期策略</span>
+                        <select
+                          value={draft.preference}
+                          onChange={(event) =>
+                            updateDraft(item.id, {
+                              preference: event.target
+                                .value as MemoryCandidate["preference"],
+                            })
+                          }
+                        >
+                          <option value="default">默认参与相关检索</option>
+                          <option value="pinned">长期保留并提高权重</option>
+                          <option value="hidden">永久屏蔽</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>我的注释（不会改写原记录）</span>
+                        <input
+                          disabled={draft.preference === "default"}
+                          maxLength={1000}
+                          value={draft.note}
+                          onChange={(event) =>
+                            updateDraft(item.id, { note: event.target.value })
+                          }
+                          placeholder={
+                            draft.preference === "default"
+                              ? "选择长期保留或屏蔽后可填写"
+                              : "例如：只适用于高波动主动仓位"
+                          }
+                        />
+                      </label>
+                      <div>
+                        <button
+                          className="text-button"
+                          disabled={
+                            savingId === item.id ||
+                            (item.preference === "default" &&
+                              !item.preferenceNote)
+                          }
+                          onClick={() => void persist(item, true)}
+                        >
+                          恢复默认
+                        </button>
+                        <button
+                          className="secondary"
+                          disabled={
+                            savingId === item.id ||
+                            !changed ||
+                            draft.preference === "default"
+                          }
+                          onClick={() => void persist(item)}
+                        >
+                          {savingId === item.id ? "保存中…" : "保存策略"}
+                        </button>
+                      </div>
+                    </fieldset>
+                  </Drawer>
+                )}
               </article>
             );
           })}

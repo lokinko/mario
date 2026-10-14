@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import * as researchApi from "../../api/research";
@@ -44,9 +45,10 @@ it("saves complete source text with one field and clears it after success", asyn
   vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([]);
   vi.mocked(researchApi.saveResearchEvidence).mockResolvedValue(saved);
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const input = screen.getByRole("textbox", { name: "原始资料与资讯" });
   expect(screen.getAllByRole("textbox")).toHaveLength(1);
-  expect(screen.queryByRole("combobox")).toBeNull();
+  expect(within(screen.getByRole("dialog")).queryByRole("combobox")).toBeNull();
   fireEvent.change(input, { target: { value: saved.claim } });
   fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
   await waitFor(() =>
@@ -54,7 +56,15 @@ it("saves complete source text with one field and clears it after success", asyn
       content: saved.claim,
     }),
   );
-  await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe(""));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "原始资料与资讯",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("");
 });
 
 it("blocks blank content and keeps the draft when saving fails", async () => {
@@ -63,6 +73,7 @@ it("blocks blank content and keeps the draft when saving fails", async () => {
     .mockRejectedValueOnce(new Error("保存失败"))
     .mockResolvedValue(saved);
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const input = screen.getByRole("textbox", { name: "原始资料与资讯" });
   fireEvent.change(input, { target: { value: " \n " } });
   const button = screen.getByRole("button", {
@@ -76,7 +87,15 @@ it("blocks blank content and keeps the draft when saving fails", async () => {
   expect((await screen.findByRole("alert")).textContent).toContain("保存失败");
   expect((input as HTMLTextAreaElement).value).toBe(saved.claim);
   fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
-  await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe(""));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "原始资料与资讯",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("");
 });
 
 it("shows original text and all legacy information, with reversible archiving", async () => {
@@ -103,8 +122,12 @@ it("shows original text and all legacy information, with reversible archiving", 
   });
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
   await screen.findAllByText("保存于 2026-10-11");
-  const texts = document.querySelectorAll(".evidence-content");
-  expect(texts[0].textContent).toBe(saved.claim);
+  fireEvent.click(screen.getByRole("button", { name: "原始资料" }));
+  expect(document.querySelector(".evidence-content")?.textContent).toBe(
+    saved.claim,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+  fireEvent.click(screen.getByRole("button", { name: "旧报告" }));
   for (const value of [
     legacy.assetName,
     legacy.title,
@@ -117,8 +140,11 @@ it("shows original text and all legacy information, with reversible archiving", 
     legacy.claim,
     legacy.notes,
   ]) {
-    expect(texts[1].textContent).toContain(value);
+    expect(document.querySelector(".evidence-content")?.textContent).toContain(
+      value,
+    );
   }
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   fireEvent.click(screen.getAllByRole("button", { name: "归档" })[0]);
   await waitFor(() =>
     expect(researchApi.setResearchEvidenceStatus).toHaveBeenCalledWith(
@@ -126,6 +152,9 @@ it("shows original text and all legacy information, with reversible archiving", 
       false,
     ),
   );
+  fireEvent.change(screen.getByRole("combobox", { name: "资料状态" }), {
+    target: { value: "archived" },
+  });
   expect(await screen.findByRole("button", { name: "恢复" })).toBeTruthy();
 });
 
@@ -150,6 +179,7 @@ it("saves attachments without requiring text and preserves them for retry", asyn
     .mockRejectedValueOnce(new Error("上传失败"))
     .mockResolvedValue(saved);
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const file = new File(["原文\n第二段"], "报告.txt", { type: "text/plain" });
   fireEvent.change(screen.getByLabelText("选择附件"), {
     target: { files: [file] },
@@ -179,6 +209,7 @@ it("saves attachments without requiring text and preserves them for retry", asyn
 it("can remove a selected file and rejects too many or oversized attachments", async () => {
   vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([]);
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const picker = screen.getByLabelText("选择附件");
   fireEvent.change(picker, {
     target: { files: [new File(["report"], "报告.txt")] },
@@ -241,6 +272,7 @@ it("downloads the original file through the authenticated API", async () => {
     downloaded = this.download;
   });
   render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "原始资料" }));
   fireEvent.click(await screen.findByRole("button", { name: "报告.txt" }));
   await waitFor(() =>
     expect(researchApi.getResearchAttachment).toHaveBeenCalledWith(
