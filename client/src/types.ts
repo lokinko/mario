@@ -243,6 +243,9 @@ export interface HoldingTradeInput extends HoldingTradeFields {
 export interface HoldingTradeUpdateInput extends HoldingTradeFields {
   expectedRevision: string;
 }
+export interface HoldingTradeDeleteInput {
+  expectedRevision: string;
+}
 export interface HoldingTradeSummary {
   account: string;
   quantity: string;

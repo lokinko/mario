@@ -7,8 +7,8 @@ use crate::{
     },
     models,
     models::{
-        FinancialProfile, FxRateQuery, HoldingInput, HoldingTradeInput, HoldingTradeUpdateInput,
-        PortfolioEventImportCommitRequest, PortfolioEventImportPreview,
+        FinancialProfile, FxRateQuery, HoldingInput, HoldingTradeDeleteInput, HoldingTradeInput,
+        HoldingTradeUpdateInput, PortfolioEventImportCommitRequest, PortfolioEventImportPreview,
         PortfolioEventImportRequest, PortfolioEventImportResult, PortfolioEventInput,
         PortfolioEventRecord, SecurityPriceConfig, SecurityPriceQuery, SecurityPriceQuote,
         Snapshot,
@@ -134,6 +134,14 @@ impl PortfolioService<'_> {
         input: &HoldingTradeUpdateInput,
     ) -> AppResult<Snapshot> {
         self.db.update_holding_trade(id, input)?;
+        self.snapshot().await
+    }
+    pub async fn delete_trade(
+        &self,
+        id: &str,
+        input: &HoldingTradeDeleteInput,
+    ) -> AppResult<Snapshot> {
+        self.db.delete_holding_trade(id, input)?;
         self.snapshot().await
     }
     pub async fn ensure_daily(

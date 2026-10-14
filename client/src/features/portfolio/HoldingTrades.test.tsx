@@ -17,6 +17,7 @@ import { emptyHolding } from "./forms";
 vi.mock("../../api/portfolio", () => ({
   saveHoldingTrade: vi.fn(),
   updateHoldingTrade: vi.fn(),
+  deleteHoldingTrade: vi.fn(),
   getFxSettings: vi.fn().mockResolvedValue({
     baseCurrency: "CNY",
     checkedAt: 0,
@@ -169,6 +170,110 @@ it("pages five newest executions per holding and can edit older pages without lo
   );
   expect(screen.getByText("第 1 / 1 页")).toBeTruthy();
   expect(receipts()).toEqual(["receipt-2", "receipt-1"]);
+});
+it("confirms deletion, prevents duplicate writes and refreshes the empty position", async () => {
+  const confirm = vi
+    .spyOn(window, "confirm")
+    .mockReturnValueOnce(false)
+    .mockReturnValue(true);
+  let complete!: (snapshot: Snapshot) => void;
+  vi.mocked(portfolioApi.deleteHoldingTrade).mockImplementationOnce(
+    () =>
+      new Promise<Snapshot>((resolve) => {
+        complete = resolve;
+      }),
+  );
+  const onUpdate = vi.fn();
+  const flash = vi.fn();
+  const props = { holding, onUpdate, flash };
+  const { rerender } = render(<HoldingTrades {...props} snapshot={value} />);
+  fireEvent.click(screen.getByRole("button", { name: "删除交易" }));
+  expect(portfolioApi.deleteHoldingTrade).not.toHaveBeenCalled();
+  expect(confirm).toHaveBeenCalledWith(
+    expect.stringContaining("2026-01-01 的第 1 笔买入"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "删除交易" }));
+  fireEvent.click(screen.getByRole("button", { name: "删除交易" }));
+  expect(portfolioApi.deleteHoldingTrade).toHaveBeenCalledTimes(1);
+  expect(portfolioApi.deleteHoldingTrade).toHaveBeenCalledWith(buy.id, {
+    expectedRevision: "initial",
+  });
+  expect(screen.getByRole("button", { name: "编辑交易" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  const updated = {
+    ...value,
+    holdingTrades: [],
+    holdingTradeSummaries: {},
+    holdings: [{ ...holding, quantity: 0, costBasis: 0, marketValue: 0 }],
+  };
+  complete(updated);
+  await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(updated));
+  expect(flash).toHaveBeenCalledWith("交易已删除，持仓和盈亏已更新");
+  rerender(
+    <HoldingTrades
+      {...props}
+      holding={updated.holdings[0]}
+      snapshot={updated}
+    />,
+  );
+  expect(screen.queryByRole("button", { name: "删除交易" })).toBeNull();
+  expect(screen.getByText(/还没有真实交易记录/)).toBeTruthy();
+});
+it("keeps a rejected deletion visible and allows retry after refreshing the holding", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(portfolioApi.deleteHoldingTrade)
+    .mockRejectedValueOnce(new Error("无法删除这笔交易：卖出超过当时持仓"))
+    .mockResolvedValueOnce(value);
+  const props = { holding, onUpdate: vi.fn(), flash: vi.fn() };
+  const { rerender } = render(<HoldingTrades {...props} snapshot={value} />);
+  fireEvent.click(screen.getByRole("button", { name: "删除交易" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "卖出超过当时持仓",
+  );
+  expect(screen.getByText("receipt")).toBeTruthy();
+  expect(props.onUpdate).not.toHaveBeenCalled();
+  rerender(
+    <HoldingTrades
+      {...props}
+      snapshot={{ ...value, holdingRevisions: { [holding.id]: "refreshed" } }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "删除交易" }));
+  await waitFor(() => expect(props.onUpdate).toHaveBeenCalledWith(value));
+  expect(portfolioApi.deleteHoldingTrade).toHaveBeenLastCalledWith(buy.id, {
+    expectedRevision: "refreshed",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "编辑交易" }));
+  expect(screen.getByRole("button", { name: "删除交易" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+});
+it("deleting the only record on the last page returns to the preceding page", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const trades = Array.from({ length: 6 }, (_, i) => ({
+    ...buy,
+    id: `record-${i}`,
+    sequence: i + 1,
+    externalId: `receipt-${i}`,
+  }));
+  const updated = { ...value, holdingTrades: trades.slice(1) };
+  vi.mocked(portfolioApi.deleteHoldingTrade).mockResolvedValueOnce(updated);
+  const onUpdate = vi.fn();
+  const props = { holding, onUpdate, flash: vi.fn() };
+  const { rerender } = render(
+    <HoldingTrades {...props} snapshot={{ ...value, holdingTrades: trades }} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  expect(screen.getByText("第 2 / 2 页")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "删除交易" }));
+  await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(updated));
+  rerender(<HoldingTrades {...props} snapshot={updated} />);
+  expect(screen.getByText("第 1 / 1 页")).toBeTruthy();
+  expect(screen.getAllByRole("button", { name: "删除交易" })).toHaveLength(5);
+  expect(screen.queryByText("receipt-0")).toBeNull();
 });
 it("records exact real executions, separated charges and retry identity without an artificial opening", async () => {
   const onUpdate = vi.fn();

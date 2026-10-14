@@ -36,7 +36,10 @@ pub(super) fn router() -> Router {
         .route("/api/profile", put(save_profile))
         .route("/api/holdings", post(add_holding))
         .route("/api/holding-trades", post(save_holding_trade))
-        .route("/api/holding-trades/{id}", put(update_holding_trade))
+        .route(
+            "/api/holding-trades/{id}",
+            put(update_holding_trade).delete(delete_holding_trade),
+        )
         .route(
             "/api/market-data/security/refresh",
             post(refresh_security_prices),
@@ -168,6 +171,14 @@ async fn update_holding_trade(
     Json(input): Json<models::HoldingTradeUpdateInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.portfolio().update_trade(&id, &input).await?))
+}
+
+async fn delete_holding_trade(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(id): Path<String>,
+    Json(input): Json<models::HoldingTradeDeleteInput>,
+) -> AppResult<Json<Snapshot>> {
+    Ok(Json(state.portfolio().delete_trade(&id, &input).await?))
 }
 
 async fn portfolio_events(

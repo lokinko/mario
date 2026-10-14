@@ -1,6 +1,10 @@
 import { useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
-import { saveHoldingTrade, updateHoldingTrade } from "../../api/portfolio";
+import {
+  deleteHoldingTrade,
+  saveHoldingTrade,
+  updateHoldingTrade,
+} from "../../api/portfolio";
 import type {
   Holding,
   HoldingTrade,
@@ -205,6 +209,31 @@ export function HoldingTrades({
       setBusy(false);
     }
   }
+  async function remove(t: HoldingTrade) {
+    if (pending.current || open) return;
+    const expectedRevision = snapshot.holdingRevisions?.[t.holdingId];
+    if (
+      !window.confirm(
+        `确认删除“${holding?.name}”在 ${t.occurredOn} 的第 ${t.sequence} 笔${names[t.kind]}？\n` +
+          `账户：${t.account} · 金额：${money(t.grossAmount)}\n` +
+          "删除后会重新计算持仓、成本和盈亏。删除最后一笔交易会将持仓数量和成本归零，保留证券信息。此操作无法撤销。",
+      )
+    )
+      return;
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      if (!expectedRevision) throw new Error("持仓版本缺失，请刷新后重试");
+      onUpdate(await deleteHoldingTrade(t.id, { expectedRevision }));
+      flash("交易已删除，持仓和盈亏已更新");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
   const field = (
     key: keyof Draft,
     label: string,
@@ -265,7 +294,9 @@ export function HoldingTrades({
       {error && (
         <p className="error-box" role="alert">
           {error}
-          。输入已保留，请核对后重试；如持仓已变化，请关闭后重新打开表单。
+          {open
+            ? "。输入已保留，请核对后重试；如持仓已变化，请关闭后重新打开表单。"
+            : "。请核对交易记录后重试；如持仓已变化，请刷新后再操作。"}
         </p>
       )}
       {open && (
@@ -535,6 +566,14 @@ export function HoldingTrades({
                         onClick={() => begin(t.kind, t)}
                       >
                         编辑交易
+                      </button>
+                      <button
+                        type="button"
+                        className="text-button danger-text"
+                        disabled={busy || open}
+                        onClick={() => void remove(t)}
+                      >
+                        删除交易
                       </button>
                     </td>
                   </tr>

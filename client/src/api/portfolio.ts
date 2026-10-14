@@ -111,6 +111,16 @@ export function updateHoldingTrade(
   });
 }
 
+export function deleteHoldingTrade(
+  id: string,
+  input: import("../types").HoldingTradeDeleteInput,
+): Promise<Snapshot> {
+  return httpRequest<Snapshot>(`/holding-trades/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function getPortfolioEvents(): Promise<PortfolioEventRecord[]> {
   return httpRequest<PortfolioEventRecord[]>("/portfolio-events");
 }

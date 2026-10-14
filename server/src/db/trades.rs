@@ -1,6 +1,7 @@
 use super::{params, AppError, AppResult, Connection, Database, HoldingInput, Snapshot, Utc, Uuid};
 use crate::models::{
-    Holding, HoldingTrade, HoldingTradeInput, HoldingTradeSummary, HoldingTradeUpdateInput,
+    Holding, HoldingTrade, HoldingTradeDeleteInput, HoldingTradeInput, HoldingTradeSummary,
+    HoldingTradeUpdateInput,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use std::collections::{BTreeMap, HashSet};
@@ -262,6 +263,47 @@ fn rebuild(conn: &Connection, h: &Holding, s: &HoldingTradeSummary) -> AppResult
     Ok(())
 }
 impl Database {
+    pub fn delete_holding_trade(
+        &self,
+        id: &str,
+        input: &HoldingTradeDeleteInput,
+    ) -> AppResult<Snapshot> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let before = super::daily::prepare(&tx)?;
+        // A retry after a successful deletion must not alter any other record.
+        let Some(trade) = before.holding_trades.iter().find(|t| t.id == id) else {
+            return Ok(before);
+        };
+        let h = before
+            .holdings
+            .iter()
+            .find(|h| h.id == trade.holding_id)
+            .ok_or_else(|| invalid("交易对应持仓不存在"))?;
+        if before.holding_revisions.get(&h.id) != Some(&input.expected_revision) {
+            return Err(AppError::Conflict(
+                "持仓已更新，请刷新并核对后重新删除".into(),
+            ));
+        }
+        let chain: Vec<_> = before
+            .holding_trades
+            .iter()
+            .filter(|t| t.holding_id == h.id && t.id != id)
+            .cloned()
+            .collect();
+        let summary = position(&chain).map_err(|e| match e {
+            AppError::Validation(message) => invalid(&format!(
+                "无法删除这笔交易：{message}；请先编辑或删除依赖它的后续交易"
+            )),
+            other => other,
+        })?;
+        tx.execute("DELETE FROM holding_trades WHERE id=?1", [id])?;
+        rebuild(&tx, h, &summary)?;
+        super::daily::finish(&tx, &before, None)?;
+        tx.commit()?;
+        drop(conn);
+        self.snapshot()
+    }
     pub fn save_holding_trade(&self, input: &HoldingTradeInput) -> AppResult<Snapshot> {
         self.write_holding_trade(None, input)
     }
@@ -700,6 +742,157 @@ mod tests {
         assert_eq!(sum.realized_profit, "4");
         assert_eq!(sum.settled_profit, "5");
         assert_eq!(sum.quantity, "0");
+    }
+    #[test]
+    fn deletions_replay_costs_profits_charges_and_zero_the_last_position() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("delete.db");
+        let db = Database::open(&file).unwrap();
+        let b = first();
+        let s = db.save_holding_trade(&b).unwrap();
+        let second = next(&s, "buy", "10", "20", "2026-01-02");
+        let s = db.save_holding_trade(&second).unwrap();
+        let mut sale = next(&s, "sell", "5", "30", "2026-01-03");
+        sale.fees = "1".into();
+        sale.taxes = "2".into();
+        let s = db.save_holding_trade(&sale).unwrap();
+        let mut d = next(&s, "dividend", "0", "0", "2026-01-04");
+        d.gross_amount = "20".into();
+        d.fees = "1".into();
+        d.taxes = "3".into();
+        let s = db.save_holding_trade(&d).unwrap();
+        let id = s.holdings[0].id.clone();
+        let mut h: HoldingInput =
+            serde_json::from_value(serde_json::to_value(&s.holdings[0]).unwrap()).unwrap();
+        h.current_price = Some(23.0);
+        let mut s = db.update_holding(&id, &h).unwrap();
+        let delete = |s: &Snapshot, trade_id: &str| {
+            db.delete_holding_trade(
+                trade_id,
+                &HoldingTradeDeleteInput {
+                    expected_revision: s.holding_revisions[&id].clone(),
+                },
+            )
+            .unwrap()
+        };
+        let before_revision = s.holding_revisions[&id].clone();
+        s = delete(&s, &second.request_id);
+        let sum = &s.holding_trade_summaries[&id];
+        assert_eq!(sum.quantity, "5");
+        assert_eq!(sum.cost_basis, "51");
+        assert_eq!(sum.realized_profit, "96");
+        assert_eq!(sum.settled_profit, "112");
+        assert_eq!(sum.total_fees, "4");
+        assert_eq!(sum.total_taxes, "5");
+        assert_eq!(sum.net_cash_flow, "61");
+        assert_eq!(s.holdings[0].market_value, 115.0);
+        assert_eq!(s.holdings[0].current_price, Some(23.0));
+        assert_eq!(s.holdings[0].valuation_date, h.valuation_date);
+        assert_ne!(s.holding_revisions[&id], before_revision);
+        assert!(!sum.cash_flows.contains_key(&second.request_id));
+        let daily = db.daily_history(&Default::default()).unwrap();
+        assert_eq!(daily.records[0].assets[0].holding.market_value, 115.0);
+        // An unknown / already deleted ID is a no-op even with the previous revision.
+        let baseline = db.export_sync_data().unwrap().content_hash().unwrap();
+        db.delete_holding_trade(
+            &second.request_id,
+            &HoldingTradeDeleteInput {
+                expected_revision: before_revision,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            baseline
+        );
+        s = delete(&s, &sale.request_id);
+        assert_eq!(s.holdings[0].quantity, Some(10.0));
+        assert_eq!(s.holding_trade_summaries[&id].settled_profit, "16");
+        assert!(s.holding_trade_summaries[&id].profits.is_empty());
+        s = delete(&s, &d.request_id);
+        assert_eq!(s.holding_trade_summaries[&id].dividend_income, "0");
+        assert_eq!(s.holding_trade_summaries[&id].net_cash_flow, "-102");
+        s = delete(&s, &b.request_id);
+        assert!(s.holding_trades.is_empty());
+        assert!(s.holding_trade_summaries.is_empty());
+        assert_eq!(s.holdings.len(), 1);
+        assert_eq!(s.holdings[0].quantity, Some(0.0));
+        assert_eq!(s.holdings[0].cost_price, Some(0.0));
+        assert_eq!(s.holdings[0].cost_basis, 0.0);
+        assert_eq!(s.holdings[0].market_value, 0.0);
+        assert_eq!(s.holdings[0].current_price, Some(23.0));
+        let copy = Database::open(&dir.path().join("copy.db")).unwrap();
+        copy.import_sync_data(&db.export_sync_data().unwrap())
+            .unwrap();
+        assert!(copy.snapshot().unwrap().holding_trades.is_empty());
+        assert_eq!(
+            serde_json::to_value(copy.snapshot().unwrap().holdings).unwrap(),
+            serde_json::to_value(&s.holdings).unwrap()
+        );
+        drop(db);
+        let reopened = Database::open(&file).unwrap();
+        assert!(reopened.snapshot().unwrap().holding_trades.is_empty());
+        assert_eq!(
+            serde_json::to_value(reopened.snapshot().unwrap().holdings).unwrap(),
+            serde_json::to_value(&s.holdings).unwrap()
+        );
+        // The retained empty security can receive a corrected first execution.
+        let s = reopened
+            .save_holding_trade(&next(&s, "buy", "2", "10", "2026-01-01"))
+            .unwrap();
+        assert_eq!(s.holdings[0].quantity, Some(2.0));
+        assert_eq!(s.holdings[0].market_value, 46.0);
+    }
+    #[test]
+    fn deletions_reject_stale_revisions_oversells_and_orphan_dividends_atomically() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("delete-reject.db")).unwrap();
+        let b = first();
+        let initial = db.save_holding_trade(&b).unwrap();
+        let sale = next(&initial, "sell", "10", "20", "2026-01-02");
+        let s = db.save_holding_trade(&sale).unwrap();
+        let id = &s.holdings[0].id;
+        let baseline = db.export_sync_data().unwrap().content_hash().unwrap();
+        let stale = HoldingTradeDeleteInput {
+            expected_revision: initial.holding_revisions[id].clone(),
+        };
+        assert!(matches!(
+            db.delete_holding_trade(&sale.request_id, &stale),
+            Err(AppError::Conflict(_))
+        ));
+        let current = HoldingTradeDeleteInput {
+            expected_revision: s.holding_revisions[id].clone(),
+        };
+        let error = db
+            .delete_holding_trade(&b.request_id, &current)
+            .unwrap_err();
+        assert!(
+            matches!(error, AppError::Validation(ref message) if message.contains("卖出超过当时持仓"))
+        );
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            baseline
+        );
+        let s = db.delete_holding_trade(&sale.request_id, &current).unwrap();
+        let mut d = next(&s, "dividend", "0", "0", "2026-01-03");
+        d.gross_amount = "10".into();
+        let s = db.save_holding_trade(&d).unwrap();
+        let baseline = db.export_sync_data().unwrap().content_hash().unwrap();
+        let error = db
+            .delete_holding_trade(
+                &b.request_id,
+                &HoldingTradeDeleteInput {
+                    expected_revision: s.holding_revisions[id].clone(),
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, AppError::Validation(ref message) if message.contains("现金分红前须有"))
+        );
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            baseline
+        );
     }
     #[test]
     fn corrections_preserve_identity_quote_and_retry_without_extra_records() {
