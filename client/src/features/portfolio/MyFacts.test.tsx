@@ -386,6 +386,70 @@ it.each([
   },
 );
 
+it("updates the manual OPPO price without rounding or recomputing execution costs", async () => {
+  const holding = {
+    ...emptyHolding("CNY"),
+    id: "oppo",
+    name: "OPPO 股票",
+    assetClass: "股票" as const,
+    quantity: 17,
+    costPrice: 221.91 / 17,
+    costBasis: 221.91,
+    currentPrice: 20,
+    marketValue: 340,
+  };
+  const trades: HoldingTrade[] = [
+    { quantity: "10", price: "10", grossAmount: "100", fees: "2" },
+    { quantity: "7", price: "17.13", grossAmount: "119.91", fees: "0" },
+  ].map((values, index) => ({
+    ...values,
+    id: `buy-${index}`,
+    holdingId: holding.id,
+    kind: "buy",
+    occurredOn: holding.valuationDate,
+    sequence: index + 1,
+    taxes: "0",
+    currency: "CNY",
+    account: "内部股票账户",
+    externalId: "",
+    note: "",
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  }));
+  const updated = {
+    ...snapshot,
+    holdings: [
+      { ...holding, currentPrice: 30.12345678, marketValue: 512.09876526 },
+    ],
+    holdingTrades: trades,
+  };
+  vi.mocked(portfolioApi.updateHolding).mockResolvedValue(updated);
+  const { onUpdate } = mount({
+    ...snapshot,
+    holdings: [holding],
+    holdingTrades: trades,
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "编辑 OPPO 股票当前价格" }),
+  );
+  const price = screen.getByRole("spinbutton", { name: "当前价格 CNY" });
+  expect((price as HTMLInputElement).readOnly).toBe(false);
+  fireEvent.focus(price);
+  fireEvent.change(price, { target: { value: "30.12345678" } });
+  fireEvent.blur(price);
+  expect((price as HTMLInputElement).value).toBe("30.12");
+  fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
+  const { id, ...input } = holding;
+  await waitFor(() =>
+    expect(portfolioApi.updateHolding).toHaveBeenCalledWith(id, {
+      ...input,
+      currentPrice: 30.12345678,
+      marketValue: holding.quantity * 30.12345678,
+    }),
+  );
+  expect(onUpdate).toHaveBeenCalledWith(updated);
+});
+
 it("only asks for monthly facts and preserves existing investment preferences", async () => {
   vi.mocked(portfolioApi.saveProfile).mockResolvedValue(snapshot);
   mount();

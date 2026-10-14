@@ -1,10 +1,4 @@
-import type {
-  Goal,
-  Holding,
-  PortfolioEventInput,
-  PortfolioEventType,
-} from "../../types";
-import { saveTextDownload } from "../../lib/download";
+import type { Holding } from "../../types";
 import { localDateValue } from "../../lib/dates";
 
 export function emptyHolding(baseCurrency = "CNY"): Omit<Holding, "id"> {
@@ -25,48 +19,3 @@ export function emptyHolding(baseCurrency = "CNY"): Omit<Holding, "id"> {
     fxRateObservedOn: "",
   };
 }
-
-export function emptyPortfolioEvent(baseCurrency = "CNY"): PortfolioEventInput {
-  return {
-    eventType: "deposit",
-    source: "manual",
-    externalId: "",
-    assetName: "",
-    amount: 0,
-    currency: baseCurrency,
-    fxRateToBase: null,
-    fxRateSource: "",
-    fxRateObservedOn: "",
-    occurredOn: localDateValue(new Date()),
-    note: "",
-  };
-}
-
-export const portfolioEventLabels: Record<PortfolioEventType, string> = {
-  deposit: "入金",
-  withdrawal: "出金",
-  dividend: "分红",
-  interest: "利息",
-  fee: "费用",
-  tax: "税费",
-  buy: "买入",
-  sell: "卖出",
-};
-
-export function downloadPortfolioEventCsvTemplate(baseCurrency: string) {
-  const portfolioEventCsvTemplate = `\ufeffsource,external_id,event_type,occurred_on,amount,currency,asset_name,note\n券商账户,trade-001,buy,${localDateValue(new Date())},10000,${baseCurrency},全球指数基金,定投买入\n`;
-  return saveTextDownload(
-    "mario_组合流水模板.csv",
-    portfolioEventCsvTemplate,
-    "text/csv;charset=utf-8",
-  );
-}
-
-export const emptyGoal: Omit<Goal, "id"> = {
-  name: "",
-  targetAmount: 0,
-  currentAmount: 0,
-  monthlyContribution: 0,
-  targetDate: "",
-  priority: "重要",
-};

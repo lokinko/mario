@@ -7,6 +7,7 @@ mod native_provider;
 mod orchestrator;
 mod provider;
 mod selection;
+pub(crate) mod streaming;
 mod structured_output;
 mod workflow;
 

@@ -199,47 +199,51 @@ mod tests {
             connection: Mutex::new(connection),
         }
     }
-    fn goals(data: &mut SyncDataset) -> &mut Vec<Vec<SyncValue>> {
+    fn evidence_rows(data: &mut SyncDataset) -> &mut Vec<Vec<SyncValue>> {
         &mut data
             .tables
             .iter_mut()
-            .find(|t| t.name == "goals")
+            .find(|t| t.name == "research_evidence")
             .unwrap()
             .rows
     }
-    fn goal(id: &str, name: &str) -> Vec<SyncValue> {
+    fn evidence(id: &str, name: &str) -> Vec<SyncValue> {
         vec![
             SyncValue::Text(id.into()),
+            SyncValue::Text("资产".into()),
             SyncValue::Text(name.into()),
-            SyncValue::Real(100.0),
-            SyncValue::Real(0.0),
-            SyncValue::Real(1.0),
-            SyncValue::Text("2027-01-01".into()),
-            SyncValue::Text("高".into()),
-            SyncValue::Text("2026-01-01T00:00:00Z".into()),
+            SyncValue::Text("来源".into()),
+            SyncValue::Text("https://example.com".into()),
+            SyncValue::Text("用户资料".into()),
+            SyncValue::Text("原文".into()),
+            SyncValue::Text("中性".into()),
+            SyncValue::Text("2026-01-01".into()),
+            SyncValue::Text("事实".into()),
+            SyncValue::Text("".into()),
+            SyncValue::Integer(1),
             SyncValue::Text("2026-01-01T00:00:00Z".into()),
         ]
     }
     #[test]
     fn merges_independent_edits_additions_and_deletions_between_devices() {
         let mut base = db().export_sync_data().unwrap();
-        goals(&mut base).extend([
-            goal("a", "original-a"),
-            goal("b", "original-b"),
-            goal("deleted", "remove"),
+        evidence_rows(&mut base).extend([
+            evidence("a", "original-a"),
+            evidence("b", "original-b"),
+            evidence("deleted", "remove"),
         ]);
         let mut local = base.clone();
         let mut remote = base.clone();
-        goals(&mut local)[0] = goal("a", "local-a");
-        goals(&mut local).push(goal("new-local", "new"));
-        goals(&mut remote)[1] = goal("b", "remote-b");
-        goals(&mut remote).remove(2);
-        goals(&mut remote).push(goal("new-remote", "new"));
+        evidence_rows(&mut local)[0] = evidence("a", "local-a");
+        evidence_rows(&mut local).push(evidence("new-local", "new"));
+        evidence_rows(&mut remote)[1] = evidence("b", "remote-b");
+        evidence_rows(&mut remote).remove(2);
+        evidence_rows(&mut remote).push(evidence("new-remote", "new"));
         let mut merged = Database::merge_sync_data(Some(&base), &local, &remote).unwrap();
-        let records = goals(&mut merged);
+        let records = evidence_rows(&mut merged);
         assert_eq!(records.len(), 4);
-        assert!(records.contains(&goal("a", "local-a")));
-        assert!(records.contains(&goal("b", "remote-b")));
+        assert!(records.contains(&evidence("a", "local-a")));
+        assert!(records.contains(&evidence("b", "remote-b")));
         assert!(!records
             .iter()
             .any(|row| row[0] == SyncValue::Text("deleted".into())));
@@ -252,27 +256,38 @@ mod tests {
     #[test]
     fn conflicts_on_same_record_and_delete_versus_edit_without_writing() {
         let mut base = db().export_sync_data().unwrap();
-        goals(&mut base).push(goal("a", "original"));
+        evidence_rows(&mut base).push(evidence("a", "original"));
         let mut local = base.clone();
         let mut remote = base.clone();
-        goals(&mut local)[0] = goal("a", "local");
-        goals(&mut remote)[0] = goal("a", "remote");
+        evidence_rows(&mut local)[0] = evidence("a", "local");
+        evidence_rows(&mut remote)[0] = evidence("a", "remote");
         assert!(Database::merge_sync_data(Some(&base), &local, &remote)
             .unwrap_err()
             .to_string()
             .contains("双向修改"));
-        goals(&mut remote).clear();
+        evidence_rows(&mut remote).clear();
         assert!(Database::merge_sync_data(Some(&base), &local, &remote).is_err());
-        assert_eq!(goals(&mut local)[0], goal("a", "local"));
+        assert_eq!(evidence_rows(&mut local)[0], evidence("a", "local"));
     }
+
     #[test]
     fn same_content_with_different_update_times_converges() {
-        let base = db().export_sync_data().unwrap();
+        let db = db();
+        db.save_profile(&FinancialProfile::default()).unwrap();
+        let base = db.export_sync_data().unwrap();
         let mut local = base.clone();
         let mut remote = base.clone();
-        goals(&mut local).push(goal("a", "same"));
-        goals(&mut remote).push(goal("a", "same"));
-        goals(&mut remote)[0][8] = SyncValue::Text("2026-01-02T00:00:00Z".into());
+        for (dataset, timestamp) in [
+            (&mut local, "2026-01-01T00:00:00Z"),
+            (&mut remote, "2026-01-02T00:00:00Z"),
+        ] {
+            dataset
+                .tables
+                .iter_mut()
+                .find(|t| t.name == "profile")
+                .unwrap()
+                .rows[0][2] = SyncValue::Text(timestamp.into());
+        }
         let merged = Database::merge_sync_data(Some(&base), &local, &remote).unwrap();
         assert_eq!(
             merged.content_hash().unwrap(),
@@ -284,24 +299,24 @@ mod tests {
     fn missing_baseline_never_guesses_deletions_or_overwrites_same_id() {
         let mut local = db().export_sync_data().unwrap();
         let mut remote = local.clone();
-        goals(&mut local).push(goal("local", "local"));
-        goals(&mut remote).push(goal("remote", "remote"));
+        evidence_rows(&mut local).push(evidence("local", "local"));
+        evidence_rows(&mut remote).push(evidence("remote", "remote"));
         assert_eq!(
             Database::merge_sync_data(None, &local, &remote)
                 .unwrap()
                 .record_count(),
             2
         );
-        goals(&mut remote).push(goal("local", "different"));
+        evidence_rows(&mut remote).push(evidence("local", "different"));
         assert!(Database::merge_sync_data(None, &local, &remote).is_err());
     }
     #[test]
     fn identical_edits_converge_and_repeat_apply_does_not_rewrite_rows() {
         let db = db();
         let mut base = db.export_sync_data().unwrap();
-        goals(&mut base).push(goal("a", "same"));
+        evidence_rows(&mut base).push(evidence("a", "same"));
         db.apply_sync_update(&base, &[]).unwrap();
-        db.conn().unwrap().execute_batch("CREATE TABLE update_audit (id TEXT); CREATE TRIGGER count_goal_updates AFTER UPDATE ON goals BEGIN INSERT INTO update_audit VALUES (NEW.id); END;").unwrap();
+        db.conn().unwrap().execute_batch("CREATE TABLE update_audit (id TEXT); CREATE TRIGGER count_evidence_updates AFTER UPDATE ON research_evidence BEGIN INSERT INTO update_audit VALUES (NEW.id); END;").unwrap();
         let merged = Database::merge_sync_data(Some(&base), &base, &base).unwrap();
         db.apply_sync_update(&merged, &[("test.baseline".into(), "1".into())])
             .unwrap();
@@ -315,7 +330,7 @@ mod tests {
         );
         assert_eq!(db.setting("test.baseline").unwrap().as_deref(), Some("1"));
         let mut next = merged.clone();
-        goals(&mut next)[0] = goal("a", "changed");
+        evidence_rows(&mut next)[0] = evidence("a", "changed");
         db.apply_sync_update(&next, &[]).unwrap();
         assert_eq!(
             db.conn()

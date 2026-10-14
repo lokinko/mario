@@ -1,10 +1,8 @@
 use super::RequestContext;
 use crate::models::{
-    FinancialProfile, FxRateQuery, FxRateQuote, GoalInput, HoldingInput,
-    PortfolioEventImportCommitRequest, PortfolioEventImportPreview, PortfolioEventImportRequest,
-    PortfolioEventImportResult, PortfolioEventInput, PortfolioEventRecord,
-    PortfolioEventReversalInput, SecurityPriceConfig, SecurityPriceConfigInput, SecurityPriceQuery,
-    SecurityPriceQuote, Snapshot, VerifiedHoldingValuationInput,
+    FinancialProfile, FxRateQuery, FxRateQuote, HoldingInput, SecurityPriceConfig,
+    SecurityPriceConfigInput, SecurityPriceQuery, SecurityPriceQuote, Snapshot,
+    VerifiedHoldingValuationInput,
 };
 use crate::{fx, models, prices, AppResult};
 use axum::{
@@ -52,24 +50,6 @@ pub(super) fn router() -> Router {
             "/api/holdings/{id}/verified-valuation",
             put(apply_verified_holding_valuation),
         )
-        .route(
-            "/api/portfolio-events",
-            get(portfolio_events).post(add_portfolio_event),
-        )
-        .route(
-            "/api/portfolio-events/import/preview",
-            post(preview_portfolio_event_import),
-        )
-        .route(
-            "/api/portfolio-events/import/commit",
-            post(commit_portfolio_event_import),
-        )
-        .route(
-            "/api/portfolio-events/{id}/reverse",
-            post(reverse_portfolio_event),
-        )
-        .route("/api/goals", post(add_goal))
-        .route("/api/goals/{id}", put(update_goal).delete(delete_goal))
 }
 
 async fn snapshot(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<Snapshot>> {
@@ -179,63 +159,6 @@ async fn delete_holding_trade(
     Json(input): Json<models::HoldingTradeDeleteInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.portfolio().delete_trade(&id, &input).await?))
-}
-
-async fn portfolio_events(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<Vec<PortfolioEventRecord>>> {
-    Ok(Json(state.db.portfolio_events()?))
-}
-
-async fn add_portfolio_event(
-    Extension(state): Extension<Arc<RequestContext>>,
-    Json(input): Json<PortfolioEventInput>,
-) -> AppResult<Json<PortfolioEventRecord>> {
-    Ok(Json(state.portfolio().add_event(&input).await?))
-}
-
-async fn reverse_portfolio_event(
-    Extension(state): Extension<Arc<RequestContext>>,
-    Path(id): Path<String>,
-    Json(input): Json<PortfolioEventReversalInput>,
-) -> AppResult<Json<PortfolioEventRecord>> {
-    Ok(Json(state.db.reverse_portfolio_event(&id, &input)?))
-}
-
-async fn preview_portfolio_event_import(
-    Extension(state): Extension<Arc<RequestContext>>,
-    Json(input): Json<PortfolioEventImportRequest>,
-) -> AppResult<Json<PortfolioEventImportPreview>> {
-    Ok(Json(state.portfolio().preview_import(&input).await?))
-}
-
-async fn commit_portfolio_event_import(
-    Extension(state): Extension<Arc<RequestContext>>,
-    Json(input): Json<PortfolioEventImportCommitRequest>,
-) -> AppResult<Json<PortfolioEventImportResult>> {
-    Ok(Json(state.portfolio().commit_import(&input).await?))
-}
-
-async fn add_goal(
-    Extension(state): Extension<Arc<RequestContext>>,
-    Json(input): Json<GoalInput>,
-) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.add_goal(&input)?))
-}
-
-async fn update_goal(
-    Extension(state): Extension<Arc<RequestContext>>,
-    Path(id): Path<String>,
-    Json(input): Json<GoalInput>,
-) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.update_goal(&id, &input)?))
-}
-
-async fn delete_goal(
-    Extension(state): Extension<Arc<RequestContext>>,
-    Path(id): Path<String>,
-) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.delete_goal(&id)?))
 }
 
 async fn ensure_daily_assets(

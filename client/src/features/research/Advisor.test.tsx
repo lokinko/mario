@@ -64,6 +64,153 @@ const ask = (question: string) => {
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 };
 
+it("shows streamed text before completion and replaces it with the saved report", async () => {
+  let finish!: (result: AnalysisResult) => void;
+  vi.mocked(researchApi.runAnalysis).mockImplementation(
+    (_request, onUpdate) => {
+      onUpdate?.({ type: "status", message: "正在核对证据…" });
+      onUpdate?.({ type: "draft", answer: "逐步显示的中文回复" });
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+  );
+  render(<Advisor {...props} />);
+  ask("流式问题");
+  await screen.findByText("逐步显示的中文回复");
+  expect(screen.queryByText(result.answer)).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "停止生成" }).hasAttribute("disabled"),
+  ).toBe(false);
+  await act(async () => {
+    finish(result);
+  });
+  await screen.findByText(result.answer);
+  expect(screen.queryByText("逐步显示的中文回复")).toBeNull();
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+});
+
+it("preserves an interrupted draft and original question for retry", async () => {
+  vi.mocked(researchApi.runAnalysis).mockImplementation(
+    async (_request, onUpdate) => {
+      onUpdate?.({ type: "draft", answer: "中断前的部分回复" });
+      throw new Error("回复连接中断");
+    },
+  );
+  render(<Advisor {...props} />);
+  ask("保留问题");
+  await screen.findByRole("alert");
+  expect(screen.getByText("中断前的部分回复")).toBeTruthy();
+  expect(screen.getByText("mario · 回复未完成")).toBeTruthy();
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(
+    "保留问题",
+  );
+});
+
+it("cancels generation on unmount and discards later draft updates", async () => {
+  let signal: AbortSignal | undefined;
+  vi.mocked(researchApi.runAnalysis).mockImplementation(
+    (_request, _onUpdate, nextSignal) => {
+      signal = nextSignal;
+      return new Promise(() => {});
+    },
+  );
+  const view = render(<Advisor {...props} />);
+  ask("流式问题");
+  await waitFor(() => expect(signal).toBeDefined());
+  view.unmount();
+  expect(signal?.aborted).toBe(true);
+});
+
+it("stops the stream, retains the draft and ignores late updates or completion", async () => {
+  let finish!: (result: AnalysisResult) => void;
+  let update!: NonNullable<Parameters<typeof researchApi.runAnalysis>[1]>;
+  let signal!: AbortSignal;
+  vi.mocked(researchApi.runAnalysis).mockImplementation(
+    (_request, onUpdate, nextSignal) => {
+      update = onUpdate!;
+      signal = nextSignal!;
+      update({ type: "draft", answer: "停止前的部分回复" });
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+  );
+  render(<Advisor {...props} />);
+  ask("待中止的问题");
+  await screen.findByText("停止前的部分回复");
+  fireEvent.click(screen.getByRole("button", { name: "停止生成" }));
+  expect(signal.aborted).toBe(true);
+  expect(screen.getByText("mario · 已停止生成")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  expect(input.value).toBe("待中止的问题");
+  expect(input.disabled).toBe(false);
+  await act(async () => {
+    update({ type: "draft", answer: "停止后到达的回复" });
+    finish(result);
+  });
+  expect(screen.getByText("停止前的部分回复")).toBeTruthy();
+  expect(screen.queryByText("停止后到达的回复")).toBeNull();
+  expect(screen.queryByText(result.answer)).toBeNull();
+});
+
+it("stops while preparing data without starting a model request", async () => {
+  let prepare!: (settings: typeof analysisSettings) => void;
+  vi.mocked(settingsApi.getAnalysisSettings).mockReturnValue(
+    new Promise((resolve) => {
+      prepare = resolve;
+    }),
+  );
+  render(<Advisor {...props} />);
+  ask("准备中的问题");
+  fireEvent.click(screen.getByRole("button", { name: "停止生成" }));
+  await act(async () => {
+    prepare(analysisSettings);
+  });
+  expect(researchApi.previewAnalysis).not.toHaveBeenCalled();
+  expect(researchApi.runAnalysis).not.toHaveBeenCalled();
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(
+    false,
+  );
+});
+
+it("does not let a stopped request unlock or overwrite a new generation", async () => {
+  let firstFinish!: (result: AnalysisResult) => void;
+  let secondFinish!: (result: AnalysisResult) => void;
+  vi.mocked(researchApi.runAnalysis)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          firstFinish = resolve;
+        }),
+    )
+    .mockImplementationOnce((_request, onUpdate) => {
+      onUpdate?.({ type: "draft", answer: "新请求的回复" });
+      return new Promise((resolve) => {
+        secondFinish = resolve;
+      });
+    });
+  render(<Advisor {...props} />);
+  ask("旧问题");
+  await waitFor(() => expect(researchApi.runAnalysis).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "停止生成" }));
+  ask("新问题");
+  await screen.findByText("新请求的回复");
+  await act(async () => {
+    firstFinish(result);
+  });
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(
+    true,
+  );
+  expect(screen.getByRole("button", { name: "停止生成" })).toBeTruthy();
+  expect(screen.queryByText(result.answer)).toBeNull();
+  await act(async () => {
+    secondFinish({ ...result, answer: "新请求完整回复" });
+  });
+  await screen.findByText("新请求完整回复");
+});
+
 it("sends once using saved defaults and the frozen revision without a confirmation step", async () => {
   const settings = {
     ...analysisSettings,
@@ -86,10 +233,14 @@ it("sends once using saved defaults and the frozen revision without a confirmati
     dailyAssetRange: undefined,
     excludedMemoryIds: [],
   });
-  expect(researchApi.runAnalysis).toHaveBeenCalledWith({
-    ...vi.mocked(researchApi.previewAnalysis).mock.calls[0][0],
-    previewRevision: "revision-1",
-  });
+  expect(researchApi.runAnalysis).toHaveBeenCalledWith(
+    {
+      ...vi.mocked(researchApi.previewAnalysis).mock.calls[0][0],
+      previewRevision: "revision-1",
+    },
+    expect.any(Function),
+    expect.any(AbortSignal),
+  );
   expect(researchApi.runAnalysis).toHaveBeenCalledTimes(1);
   for (const label of [
     "确认发送",
@@ -167,6 +318,8 @@ it("disables native search for Chat Completions even when enabled in saved defau
   );
   expect(researchApi.runAnalysis).toHaveBeenCalledWith(
     expect.objectContaining({ webSearch: false }),
+    expect.any(Function),
+    expect.any(AbortSignal),
   );
 });
 

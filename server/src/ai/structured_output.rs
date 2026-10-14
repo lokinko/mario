@@ -49,14 +49,12 @@ pub fn validate_source_types(
                 || ![
                     "financialProfile",
                     "portfolio",
-                    "goals",
                     "currentUserMessage",
                     "dailyAssetHistory",
                     "deterministicPlan",
                     "riskFindings",
                     "personalInvestmentRules",
                     "periodicSystemReviews",
-                    "portfolioEvents",
                 ]
                 .contains(&group)
                 || !context.pointer(path).is_some_and(|value| {

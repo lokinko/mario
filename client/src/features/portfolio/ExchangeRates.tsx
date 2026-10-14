@@ -284,7 +284,7 @@ export function ExchangeRates({
               {selectedCurrencies.map(renderEditor)}
             </div>
             <p className="section-intro exchange-source-note">
-              每日自动更新，周末沿用最近工作日。展示选择不影响资产换算。手动修改持续生效，历史流水保持原值。
+              每日自动更新，周末沿用最近工作日。展示选择不影响资产换算。手动修改持续生效，历史资产记录保持原值。
               <ExternalLink
                 href="https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html"
                 target="_blank"

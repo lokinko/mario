@@ -1,7 +1,6 @@
 use super::{
-    AppError, AppResult, GoalInput, HoldingInput, InvestmentRuleInput, Local, NaiveDate,
-    PortfolioEventInput, PortfolioEventType, ResearchEvidenceInput, SecurityPriceQuote,
-    SystemReviewInput, Utc,
+    AppError, AppResult, HoldingInput, InvestmentRuleInput, Local, NaiveDate,
+    ResearchEvidenceInput, SecurityPriceQuote, SystemReviewInput, Utc,
 };
 
 pub(super) fn validate_non_negative(values: &[f64]) -> AppResult<()> {
@@ -46,7 +45,7 @@ pub(super) fn normalized_fx_provenance(
         return Err(AppError::Validation("汇率来源不能超过 120 个字符".into()));
     }
     let effective_date = NaiveDate::parse_from_str(effective_on.trim(), "%Y-%m-%d")
-        .map_err(|_| AppError::Validation("估值或流水日期必须使用 YYYY-MM-DD".into()))?;
+        .map_err(|_| AppError::Validation("估值日期必须使用 YYYY-MM-DD".into()))?;
     let observed_on = if observed_on.trim().is_empty() {
         effective_on.trim()
     } else {
@@ -56,7 +55,7 @@ pub(super) fn normalized_fx_provenance(
         .map_err(|_| AppError::Validation("汇率观察日期必须使用 YYYY-MM-DD".into()))?;
     if observed_date > effective_date {
         return Err(AppError::Validation(
-            "汇率观察日期不能晚于对应的估值或流水日期".into(),
+            "汇率观察日期不能晚于对应的估值日期".into(),
         ));
     }
     if observed_date
@@ -96,81 +95,6 @@ pub(super) fn normalized_holding_fx_provenance(
             effective
         },
     )
-}
-
-pub(super) fn validate_portfolio_event(
-    input: &PortfolioEventInput,
-    base_currency: &str,
-) -> AppResult<()> {
-    if !input.amount.is_finite() || input.amount <= 0.0 || input.amount > 1e15 {
-        return Err(AppError::Validation(
-            "流水金额必须是大于 0 的有效数字".into(),
-        ));
-    }
-    let currency = input.currency.trim();
-    if currency.len() != 3
-        || !currency
-            .chars()
-            .all(|character| character.is_ascii_alphabetic())
-    {
-        return Err(AppError::Validation("流水币种必须是 3 位字母代码".into()));
-    }
-    if !currency.eq_ignore_ascii_case(base_currency)
-        && !input
-            .fx_rate_to_base
-            .is_some_and(|rate| rate.is_finite() && rate > 0.0 && rate <= 1e9)
-    {
-        return Err(AppError::Validation(
-            "外币流水缺少可用汇率，请在“我的情况 → 汇率设置”检查自动更新或修改汇率".into(),
-        ));
-    }
-    let occurred_on = NaiveDate::parse_from_str(input.occurred_on.trim(), "%Y-%m-%d")
-        .map_err(|_| AppError::Validation("流水日期必须使用 YYYY-MM-DD".into()))?;
-    if occurred_on > Local::now().date_naive() {
-        return Err(AppError::Validation("流水日期不能晚于今天".into()));
-    }
-    if input.note.trim().is_empty() {
-        return Err(AppError::Validation(
-            "流水说明为必填项，便于未来核对".into(),
-        ));
-    }
-    let source = input.source.trim();
-    let external_id = input.external_id.trim();
-    if source.is_empty() && !external_id.is_empty() {
-        return Err(AppError::Validation(
-            "填写来源交易 ID 时必须同时填写流水来源".into(),
-        ));
-    }
-    if matches!(
-        input.event_type,
-        PortfolioEventType::Buy
-            | PortfolioEventType::Sell
-            | PortfolioEventType::Dividend
-            | PortfolioEventType::Interest
-    ) && input.asset_name.trim().is_empty()
-    {
-        return Err(AppError::Validation(
-            "买卖、分红或利息流水必须填写关联资产".into(),
-        ));
-    }
-    if source.chars().count() > 120
-        || external_id.chars().count() > 200
-        || input.asset_name.chars().count() > 200
-        || input.note.chars().count() > 2_000
-    {
-        return Err(AppError::Validation(
-            "流水来源、交易 ID、资产名称或说明过长".into(),
-        ));
-    }
-    normalized_fx_provenance(
-        &input.currency,
-        base_currency,
-        input.fx_rate_to_base,
-        &input.fx_rate_source,
-        &input.fx_rate_observed_on,
-        &input.occurred_on,
-    )?;
-    Ok(())
 }
 
 pub(super) fn validate_holding(input: &HoldingInput, base_currency: &str) -> AppResult<()> {
@@ -286,23 +210,6 @@ fn validate_percentage(value: f64, label: &str) -> AppResult<()> {
     if !value.is_finite() || !(0.0..=100.0).contains(&value) {
         return Err(AppError::Validation(format!("{label}必须在 0—100% 之间")));
     }
-    Ok(())
-}
-
-pub(super) fn validate_goal(input: &GoalInput) -> AppResult<()> {
-    if input.name.trim().is_empty()
-        || input.target_amount <= 0.0
-        || input.target_date.trim().is_empty()
-    {
-        return Err(AppError::Validation("目标名称、金额和日期为必填项".into()));
-    }
-    validate_non_negative(&[
-        input.target_amount,
-        input.current_amount,
-        input.monthly_contribution,
-    ])?;
-    chrono::NaiveDate::parse_from_str(&input.target_date, "%Y-%m-%d")
-        .map_err(|_| AppError::Validation("目标日期格式无效".into()))?;
     Ok(())
 }
 

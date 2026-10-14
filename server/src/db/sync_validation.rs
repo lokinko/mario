@@ -1,48 +1,10 @@
 use super::{
-    normalized_fx_provenance, portfolio_event_identity_fingerprint,
-    validate_holding_valuation_evidence, AppError, AppResult, FinancialProfile, HashMap, HashSet,
-    SecurityPriceQuote, SyncDataset, SyncValue,
+    normalized_fx_provenance, validate_holding_valuation_evidence, AppError, AppResult,
+    FinancialProfile, HashMap, HashSet, SecurityPriceQuote, SyncDataset, SyncValue,
 };
 
 pub(super) fn quote_identifier(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
-}
-
-pub(super) fn validate_synced_event_identities(dataset: &SyncDataset) -> AppResult<()> {
-    if dataset.schema_version < 5 {
-        return Ok(());
-    }
-    let table = dataset
-        .tables
-        .iter()
-        .find(|table| table.name == "portfolio_events")
-        .ok_or_else(|| AppError::Validation("数据快照缺少 portfolio_events".into()))?;
-    let mut seen = HashSet::new();
-    for row in &table.rows {
-        let SyncValue::Text(source) = &row[2] else {
-            return Err(AppError::Validation("同步流水来源字段类型无效".into()));
-        };
-        let SyncValue::Text(external_id) = &row[3] else {
-            return Err(AppError::Validation("同步流水交易 ID 字段类型无效".into()));
-        };
-        let SyncValue::Text(fingerprint) = &row[4] else {
-            return Err(AppError::Validation("同步流水去重指纹字段类型无效".into()));
-        };
-        if (!external_id.is_empty() && source.trim().is_empty())
-            || source.chars().count() > 120
-            || external_id.chars().count() > 200
-        {
-            return Err(AppError::Validation("同步流水导入标识无效".into()));
-        }
-        let expected = portfolio_event_identity_fingerprint(source, external_id);
-        if fingerprint != &expected {
-            return Err(AppError::Validation("同步流水去重指纹不匹配".into()));
-        }
-        if !fingerprint.is_empty() && !seen.insert(fingerprint) {
-            return Err(AppError::Validation("同步数据包含重复流水交易 ID".into()));
-        }
-    }
-    Ok(())
 }
 
 fn sync_text<'a>(row: &'a [SyncValue], index: usize, label: &str) -> AppResult<&'a str> {
@@ -73,7 +35,7 @@ fn validate_synced_fx_row(
     let rate = sync_optional_real(row, rate_index, "汇率")?;
     let source = sync_text(row, source_index, "汇率来源")?;
     let observed_on = sync_text(row, observed_index, "汇率观察日")?;
-    let effective_on = sync_text(row, effective_index, "估值或流水日期")?;
+    let effective_on = sync_text(row, effective_index, "估值日期")?;
     if currency.eq_ignore_ascii_case(base_currency) && rate.is_some() {
         return Err(AppError::Validation(
             "同步数据中的同币种记录不能携带折算汇率".into(),
@@ -132,75 +94,6 @@ pub(super) fn validate_synced_fx_provenance(dataset: &SyncDataset) -> AppResult<
         validate_synced_fx_row(row, 7, 8, 10, 11, &profile.base_currency, 9)?;
     }
 
-    let events = dataset
-        .tables
-        .iter()
-        .find(|table| table.name == "portfolio_events")
-        .ok_or_else(|| AppError::Validation("数据快照缺少 portfolio_events".into()))?;
-    for row in &events.rows {
-        let base_currency = sync_text(row, 11, "流水基准币种")?;
-        validate_synced_fx_row(row, 7, 8, 9, 10, base_currency, 13)?;
-    }
-    Ok(())
-}
-
-pub(super) fn validate_synced_event_reversals(dataset: &SyncDataset) -> AppResult<()> {
-    if dataset.schema_version < 7 {
-        return Ok(());
-    }
-    let table = dataset
-        .tables
-        .iter()
-        .find(|table| table.name == "portfolio_events")
-        .ok_or_else(|| AppError::Validation("数据快照缺少 portfolio_events".into()))?;
-    let rows_by_id = table
-        .rows
-        .iter()
-        .map(|row| Ok((sync_text(row, 0, "流水 ID")?, row)))
-        .collect::<AppResult<HashMap<_, _>>>()?;
-    let mut reversed_targets = HashSet::new();
-
-    for row in &table.rows {
-        let target_id = match row.get(16) {
-            Some(SyncValue::Null) => continue,
-            Some(SyncValue::Text(value)) if !value.trim().is_empty() => value,
-            _ => return Err(AppError::Validation("同步流水冲正关联无效".into())),
-        };
-        let event_id = sync_text(row, 0, "流水 ID")?;
-        if target_id == event_id || !reversed_targets.insert(target_id.as_str()) {
-            return Err(AppError::Validation(
-                "同步数据包含重复或自引用的流水冲正".into(),
-            ));
-        }
-        let target = rows_by_id
-            .get(target_id.as_str())
-            .ok_or_else(|| AppError::Validation("同步流水冲正找不到原记录".into()))?;
-        if !matches!(target.get(16), Some(SyncValue::Null)) {
-            return Err(AppError::Validation(
-                "同步数据不能对冲正记录再次冲正".into(),
-            ));
-        }
-        let amount = sync_real(row, 6, "冲正金额")?;
-        let target_amount = sync_real(target, 6, "原流水金额")?;
-        let base_amount = sync_real(row, 12, "冲正折算金额")?;
-        let target_base_amount = sync_real(target, 12, "原流水折算金额")?;
-        if amount >= 0.0
-            || amount != -target_amount
-            || base_amount != -target_base_amount
-            || row[1] != target[1]
-            || row[5] != target[5]
-            || row[7] != target[7]
-            || row[8] != target[8]
-            || row[9] != target[9]
-            || row[10] != target[10]
-            || row[11] != target[11]
-            || sync_text(row, 13, "冲正日期")? < sync_text(target, 13, "原流水日期")?
-        {
-            return Err(AppError::Validation(
-                "同步流水冲正内容与原记录不匹配".into(),
-            ));
-        }
-    }
     Ok(())
 }
 

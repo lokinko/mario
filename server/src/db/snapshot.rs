@@ -1,11 +1,10 @@
 use super::{
-    planning, risk, valuation, FinancialProfile, Goal, HashSet, Holding, HoldingValuationEvidence,
+    planning, risk, valuation, FinancialProfile, HashSet, Holding, HoldingValuationEvidence,
     Snapshot,
 };
 
 pub(super) fn build_snapshot(
     profile: FinancialProfile,
-    goals: Vec<Goal>,
     holdings: Vec<Holding>,
     holding_valuations: Vec<HoldingValuationEvidence>,
     updated_at: String,
@@ -101,12 +100,11 @@ pub(super) fn build_snapshot(
             action: "对有公开代码的证券查询并采用指定估值日收盘价；现金和非上市资产继续保留人工口径说明。".into(),
         });
     }
-    let mut plan = planning::analyze(&profile, &goals, &normalized_holdings);
+    let mut plan = planning::analyze(&profile, &normalized_holdings);
     if !valuation_status.comparable {
-        plan.goal_projections.clear();
         plan.rebalancing.clear();
         plan.assumptions = format!(
-            "存在未折算到 {} 的外币持仓，组合风险、目标路径和再平衡计算已暂停。",
+            "存在未折算到 {} 的外币持仓，组合风险和再平衡计算已暂停。",
             valuation_status.base_currency
         );
     } else if !holdings.is_empty() {
@@ -129,23 +127,6 @@ pub(super) fn build_snapshot(
             action: "检查每项持仓目标权重，避免无意中放大或遗漏风险预算。".into(),
         });
     }
-    if plan.committed_monthly > plan.monthly_surplus
-        && plan.committed_monthly > 0.0
-        && (profile.monthly_income > 0.0 || profile.monthly_expense > 0.0)
-    {
-        findings.push(crate::models::RiskFinding {
-            level: "high".into(),
-            title: "目标投入超过月度结余".into(),
-            detail: format!(
-                "计划每月投入 {:.0} {}，但当前月度结余约 {:.0} {}。",
-                plan.committed_monthly,
-                profile.base_currency,
-                plan.monthly_surplus,
-                profile.base_currency
-            ),
-            action: "调整目标优先级、期限或月度投入，避免计划依赖新增负债。".into(),
-        });
-    }
     Snapshot {
         price_refresh_errors: Vec::new(),
         holding_trades: Vec::new(),
@@ -153,7 +134,6 @@ pub(super) fn build_snapshot(
         cleared_trade_holdings: Vec::new(),
         holding_revisions: Default::default(),
         profile,
-        goals,
         holdings,
         holding_valuations,
         findings,

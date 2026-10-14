@@ -47,7 +47,7 @@ afterEach(() => {
   blockStaleWrites(false);
 });
 async function start() {
-  const hook = renderHook(() => useApplicationData("goals"));
+  const hook = renderHook(() => useApplicationData("facts"));
   await waitFor(() => expect(hook.result.current.loading).toBe(false));
   return hook;
 }

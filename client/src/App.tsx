@@ -13,8 +13,6 @@ import {
 import { ServerData } from "./features/account/ServerData";
 import { View, initialView, navGroups, viewLabels } from "./app/navigation";
 import { MyFacts } from "./features/portfolio/MyFacts";
-import { Goals } from "./features/portfolio/Goals";
-import { PortfolioLedger } from "./features/portfolio/PortfolioLedger";
 import { EvidenceWorkbench } from "./features/research/EvidenceWorkbench";
 import { ReviewCenter } from "./features/reviews/ReviewCenter";
 import { MemoryCenter } from "./features/memory/MemoryCenter";
@@ -311,21 +309,6 @@ function App() {
             snapshot={snapshot}
             onUpdate={setSnapshot}
             navigate={navigate}
-            flash={flash}
-          />
-        )}
-        {view === "goals" && (
-          <Goals
-            key={remoteViewRevision}
-            snapshot={snapshot}
-            onUpdate={setSnapshot}
-            flash={flash}
-          />
-        )}
-        {view === "ledger" && (
-          <PortfolioLedger
-            key={remoteViewRevision}
-            snapshot={snapshot}
             flash={flash}
           />
         )}

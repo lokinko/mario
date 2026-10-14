@@ -701,7 +701,7 @@ impl Database {
             None
         };
         let mut result = serde_json::json!({"history":history,"comparison":comparison,
-            "meaning":"每日已录入资产金额；carried 为沿用值，不是该日重新估值。金额差额不能证明收益、买卖或投资能力。流水可能不完整。"});
+            "meaning":"每日已录入资产金额；carried 为沿用值，不是该日重新估值。金额差额不能证明收益、买卖或投资能力。资产记录可能不完整。"});
         if !request.context_selection.include_profile {
             redact_profile(&mut result);
         }

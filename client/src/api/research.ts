@@ -1,4 +1,4 @@
-import { httpRequest } from "../lib/httpClient";
+import { httpRequest, httpStreamRequest } from "../lib/httpClient";
 import type {
   AnalysisRequest,
   AnalysisPreview,
@@ -10,7 +10,46 @@ import type {
 } from "../types";
 export async function runAnalysis(
   request: AnalysisRequest,
+  onUpdate?: (
+    update:
+      { type: "draft"; answer: string } | { type: "status"; message: string },
+  ) => void,
+  signal?: AbortSignal,
 ): Promise<AnalysisResult> {
+  if (onUpdate)
+    return httpStreamRequest<AnalysisResult>(
+      "/analysis/stream",
+      {
+        method: "POST",
+        body: JSON.stringify(request),
+        signal,
+      },
+      (event) => {
+        if (!event || typeof event !== "object")
+          throw new Error("流式回复格式无效");
+        const update = event as Record<string, unknown>;
+        if (update.type === "draft" && typeof update.answer === "string")
+          onUpdate({ type: "draft", answer: update.answer });
+        else if (update.type === "status" && typeof update.message === "string")
+          onUpdate({ type: "status", message: update.message });
+        else if (update.type === "error" && typeof update.message === "string")
+          throw new Error(update.message);
+        else if (
+          update.type === "complete" &&
+          update.result &&
+          typeof update.result === "object"
+        ) {
+          const result = update.result as AnalysisResult;
+          if (
+            typeof result.id !== "string" ||
+            typeof result.answer !== "string"
+          )
+            throw new Error("完整回复格式无效");
+          return result;
+        } else throw new Error("流式回复格式无效");
+        return undefined;
+      },
+    );
   return httpRequest<AnalysisResult>("/analysis", {
     method: "POST",
     body: JSON.stringify(request),

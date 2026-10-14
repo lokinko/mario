@@ -147,7 +147,7 @@ const V6_EVENT_COLUMNS: &[&str] = &[
     "created_at",
 ];
 
-const CURRENT_EVENT_COLUMNS: &[&str] = &[
+const LEGACY_V7_EVENT_COLUMNS: &[&str] = &[
     "id",
     "event_type",
     "source",
@@ -183,21 +183,6 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
     SyncTableSpec {
         name: "profile",
         columns: &["id", "payload", "updated_at"],
-        order_by: "id",
-    },
-    SyncTableSpec {
-        name: "goals",
-        columns: &[
-            "id",
-            "name",
-            "target_amount",
-            "current_amount",
-            "monthly_contribution",
-            "target_date",
-            "priority",
-            "created_at",
-            "updated_at",
-        ],
         order_by: "id",
     },
     SyncTableSpec {
@@ -260,11 +245,6 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
             "captured_at",
         ],
         order_by: "id",
-    },
-    SyncTableSpec {
-        name: "portfolio_events",
-        columns: CURRENT_EVENT_COLUMNS,
-        order_by: "occurred_on, created_at, id",
     },
     SyncTableSpec {
         name: "memory_preferences",
@@ -331,14 +311,44 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 18;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 19;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
 
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
-    if version == SYNC_DATASET_SCHEMA_VERSION || version == 17 {
+    if version == SYNC_DATASET_SCHEMA_VERSION {
+        return Ok(specs);
+    }
+    // Retired tables are shape metadata only and never restored.
+    specs.insert(
+        1,
+        SyncTableSpec {
+            name: "goals",
+            columns: &[
+                "id",
+                "name",
+                "target_amount",
+                "current_amount",
+                "monthly_contribution",
+                "target_date",
+                "priority",
+                "created_at",
+                "updated_at",
+            ],
+            order_by: "id",
+        },
+    );
+    specs.insert(
+        8,
+        SyncTableSpec {
+            name: "portfolio_events",
+            columns: LEGACY_V7_EVENT_COLUMNS,
+            order_by: "occurred_on, created_at, id",
+        },
+    );
+    if version == 18 || version == 17 {
         return Ok(specs);
     }
     // Version 1-16 backups carried portfolio snapshots; validate their shape only.

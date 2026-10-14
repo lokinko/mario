@@ -3,26 +3,14 @@ import {
   Database,
   History,
   WalletCards,
-  Target,
-  ArrowLeftRight,
   BookMarked,
 } from "lucide-react";
 
 export type View =
-  | "facts"
-  | "goals"
-  | "ledger"
-  | "evidence"
-  | "review"
-  | "memory"
-  | "advisor"
-  | "cloud"
-  | "settings";
+  "facts" | "evidence" | "review" | "memory" | "advisor" | "cloud" | "settings";
 
 export const views: View[] = [
   "facts",
-  "goals",
-  "ledger",
   "evidence",
   "review",
   "memory",
@@ -33,7 +21,6 @@ export const views: View[] = [
 
 export function initialView(): View {
   const candidate = window.location.hash.replace("#", "") as View;
-  if ((candidate as string) === "foundation") return "goals";
   return views.includes(candidate) ? candidate : "advisor";
 }
 
@@ -46,13 +33,6 @@ export const navGroups: {
     items: [
       { id: "advisor" as const, label: "问答", icon: MessageCircle },
       { id: "facts" as const, label: "我的情况", icon: WalletCards },
-    ],
-  },
-  {
-    caption: "投资",
-    items: [
-      { id: "goals", label: "投资目标", icon: Target },
-      { id: "ledger" as const, label: "组合流水", icon: ArrowLeftRight },
     ],
   },
   {
@@ -70,8 +50,6 @@ export const viewLabels: Record<View, string> = {
   facts: "我的情况",
   review: "复盘记录",
   evidence: "参考资料",
-  goals: "投资目标",
-  ledger: "组合流水",
   memory: "长期记忆",
   cloud: "账号与数据",
   settings: "设置",

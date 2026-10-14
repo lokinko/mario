@@ -50,12 +50,6 @@ impl<'a> AnalysisService<'a> {
             .into_iter()
             .take(8)
             .collect::<Vec<_>>();
-        let portfolio_events = self
-            .db
-            .portfolio_events()?
-            .into_iter()
-            .take(100)
-            .collect::<Vec<_>>();
         let evidence_candidates = relevant_evidence(self.db, request, &snapshot)?;
         let daily_assets = self.db.daily_analysis_context(request)?;
         let built_context = context::ContextBuilder::build(
@@ -65,7 +59,6 @@ impl<'a> AnalysisService<'a> {
                 daily_assets: Some(&daily_assets),
                 rules: &rules,
                 system_reviews: &system_reviews,
-                portfolio_events: &portfolio_events,
                 evidence_candidates: &evidence_candidates,
                 memory_candidates: &memories,
             },
@@ -94,6 +87,30 @@ impl<'a> AnalysisService<'a> {
         request: AnalysisRequest,
         executor: &dyn AnalysisExecutor,
     ) -> AppResult<AnalysisResult> {
+        self.execute_with_events(request, executor, None).await
+    }
+
+    pub async fn execute_stream(
+        &self,
+        request: AnalysisRequest,
+        executor: &dyn AnalysisExecutor,
+        events: crate::ai::streaming::EventSender,
+    ) -> AppResult<AnalysisResult> {
+        // Streaming body starts after authentication middleware releases its lock.
+        self.db.lock_account()?;
+        let result = self
+            .execute_with_events(request, executor, Some(events))
+            .await;
+        self.db.unlock_account()?;
+        result
+    }
+
+    async fn execute_with_events(
+        &self,
+        request: AnalysisRequest,
+        executor: &dyn AnalysisExecutor,
+        events: Option<crate::ai::streaming::EventSender>,
+    ) -> AppResult<AnalysisResult> {
         let prepared = self.prepare(&request)?;
         let config = prepared.config;
         if request.preview_revision.as_deref() != Some(prepared.context.revision.as_str()) {
@@ -114,15 +131,28 @@ impl<'a> AnalysisService<'a> {
         // The immutable authorized context is now frozen. Release the account lock
         // while the remote Agent runs so other devices can continue editing.
         self.db.unlock_account()?;
-        let result = executor
-            .execute(
-                config,
-                api_key,
-                request.clone(),
-                prepared.context,
-                prepared.memories,
-            )
-            .await;
+        let result = if let Some(events) = events {
+            executor
+                .execute_stream(
+                    config,
+                    api_key,
+                    request.clone(),
+                    prepared.context,
+                    prepared.memories,
+                    events,
+                )
+                .await
+        } else {
+            executor
+                .execute(
+                    config,
+                    api_key,
+                    request.clone(),
+                    prepared.context,
+                    prepared.memories,
+                )
+                .await
+        };
         self.db.lock_account()?;
         let result = result?;
         self.db.save_analysis(

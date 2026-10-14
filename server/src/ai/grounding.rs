@@ -67,13 +67,11 @@ pub fn parse_review(
                         "currentUserMessage",
                         "financialProfile",
                         "portfolio",
-                        "goals",
                         "deterministicPlan",
                         "riskFindings",
                         "personalInvestmentRules",
                         "periodicSystemReviews",
                         "dailyAssetHistory",
-                        "portfolioEvents",
                     ]
                     .contains(&group)
                     {

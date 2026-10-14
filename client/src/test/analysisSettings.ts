@@ -8,14 +8,12 @@ export const analysisSettings: AnalysisSettings = {
   webSearch: true,
   contextSelection: {
     includeProfile: true,
-    includeGoals: true,
     includeHoldings: true,
     includePlanning: true,
     includeRiskFindings: true,
     includeRules: true,
     includeSystemReviews: true,
     includeDailyAssets: true,
-    includePortfolioEvents: true,
     includeEvidence: true,
   },
 };

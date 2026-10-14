@@ -1,8 +1,8 @@
 use super::{
-    build_snapshot, normalized_holding_fx_provenance, params, validate_currency, validate_goal,
-    validate_holding, validate_holding_valuation_evidence, validate_non_negative, AppError,
-    AppResult, Database, FinancialProfile, Goal, GoalInput, Holding, HoldingInput,
-    HoldingValuationEvidence, OptionalRow, SecurityPriceQuote, Snapshot, Utc, Uuid,
+    build_snapshot, normalized_holding_fx_provenance, params, validate_currency, validate_holding,
+    validate_holding_valuation_evidence, validate_non_negative, AppError, AppResult, Database,
+    FinancialProfile, Holding, HoldingInput, HoldingValuationEvidence, OptionalRow,
+    SecurityPriceQuote, Snapshot, Utc, Uuid,
 };
 
 impl Database {
@@ -20,23 +20,6 @@ impl Database {
             .map(|value| serde_json::from_str(&value))
             .transpose()?
             .unwrap_or_default();
-
-        let mut goal_stmt = conn.prepare(
-            "SELECT id, name, target_amount, current_amount, monthly_contribution, target_date, priority FROM goals ORDER BY created_at",
-        )?;
-        let goals = goal_stmt
-            .query_map([], |row| {
-                Ok(Goal {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    target_amount: row.get(2)?,
-                    current_amount: row.get(3)?,
-                    monthly_contribution: row.get(4)?,
-                    target_date: row.get(5)?,
-                    priority: row.get(6)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
 
         let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on, cost_price, quantity, current_price FROM holdings ORDER BY created_at")?;
         let holdings = holding_stmt
@@ -94,14 +77,11 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()?;
         drop(valuation_stmt);
         drop(holding_stmt);
-        drop(goal_stmt);
 
         let updated_at = conn
             .query_row(
                 "SELECT MAX(value) FROM (
                    SELECT updated_at AS value FROM profile
-                   UNION ALL
-                   SELECT CASE WHEN updated_at='' THEN created_at ELSE updated_at END FROM goals
                    UNION ALL
                    SELECT CASE WHEN updated_at='' THEN created_at ELSE updated_at END FROM holdings
                  )",
@@ -110,7 +90,7 @@ impl Database {
             )?
             .unwrap_or_else(|| Utc::now().to_rfc3339());
 
-        let mut snapshot = build_snapshot(profile, goals, holdings, holding_valuations, updated_at);
+        let mut snapshot = build_snapshot(profile, holdings, holding_valuations, updated_at);
         let mut statement = conn.prepare(
             "SELECT id, CASE WHEN updated_at='' THEN created_at ELSE updated_at END FROM holdings",
         )?;
@@ -172,7 +152,7 @@ impl Database {
         let before = super::daily::prepare(&transaction)?;
         let base_currency = before.profile.base_currency.clone();
         let mut input = super::fx::holding_input(&transaction, input, &base_currency)?;
-        normalize_holding_details(&mut input)?;
+        normalize_holding_details(&mut input, false)?;
         let input = &input;
         validate_holding(input, &base_currency)?;
         let fx_rate_to_base = if input.currency.eq_ignore_ascii_case(&base_currency) {
@@ -207,7 +187,8 @@ impl Database {
         let before = super::daily::prepare(&transaction)?;
         let base_currency = before.profile.base_currency.clone();
         let mut input = super::fx::holding_input(&transaction, input, &base_currency)?;
-        normalize_holding_details(&mut input)?;
+        let trade_managed = super::trades::guard_edit(&transaction, id, &mut input)?;
+        normalize_holding_details(&mut input, trade_managed)?;
         let input = &input;
         validate_holding(input, &base_currency)?;
         let fx_rate_to_base = if input.currency.eq_ignore_ascii_case(&base_currency) {
@@ -242,7 +223,6 @@ impl Database {
         let Some(previous) = previous else {
             return Err(AppError::Validation("找不到要更新的资产".into()));
         };
-        super::trades::guard_edit(&transaction, id, input)?;
         let affected = transaction.execute(
             "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, fx_rate_to_base=?9, valuation_date=?10, fx_rate_source=?11, fx_rate_observed_on=?12, updated_at=?13, cost_price=?14, quantity=?15, current_price=?16 WHERE id=?1",
             params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, Utc::now().to_rfc3339(), input.cost_price, input.quantity, input.current_price],
@@ -390,41 +370,9 @@ impl Database {
         drop(conn);
         self.snapshot()
     }
-
-    pub fn add_goal(&self, input: &GoalInput) -> AppResult<Snapshot> {
-        validate_goal(input)?;
-        let now = Utc::now().to_rfc3339();
-        self.conn()?.execute(
-            "INSERT INTO goals (id, name, target_amount, current_amount, monthly_contribution, target_date, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
-            params![Uuid::new_v4().to_string(), input.name.trim(), input.target_amount, input.current_amount, input.monthly_contribution, input.target_date, input.priority, now],
-        )?;
-        self.snapshot()
-    }
-
-    pub fn update_goal(&self, id: &str, input: &GoalInput) -> AppResult<Snapshot> {
-        validate_goal(input)?;
-        let affected = self.conn()?.execute(
-            "UPDATE goals SET name=?2, target_amount=?3, current_amount=?4, monthly_contribution=?5, target_date=?6, priority=?7, updated_at=?8 WHERE id=?1",
-            params![id, input.name.trim(), input.target_amount, input.current_amount, input.monthly_contribution, input.target_date, input.priority, Utc::now().to_rfc3339()],
-        )?;
-        if affected == 0 {
-            return Err(AppError::Validation("找不到要更新的目标".into()));
-        }
-        self.snapshot()
-    }
-
-    pub fn delete_goal(&self, id: &str) -> AppResult<Snapshot> {
-        let affected = self
-            .conn()?
-            .execute("DELETE FROM goals WHERE id=?1", [id])?;
-        if affected == 0 {
-            return Err(AppError::Validation("找不到要删除的目标".into()));
-        }
-        self.snapshot()
-    }
 }
 
-fn normalize_holding_details(input: &mut HoldingInput) -> AppResult<()> {
+fn normalize_holding_details(input: &mut HoldingInput, trade_managed: bool) -> AppResult<()> {
     validate_non_negative(
         &input
             .cost_price
@@ -454,8 +402,10 @@ fn normalize_holding_details(input: &mut HoldingInput) -> AppResult<()> {
     }
     if let (Some(quantity), Some(price)) = (input.quantity, input.current_price) {
         input.market_value = quantity * price;
-        if let Some(cost) = input.cost_price {
-            input.cost_basis = quantity * cost;
+        if !trade_managed {
+            if let Some(cost) = input.cost_price {
+                input.cost_basis = quantity * cost;
+            }
         }
     }
     validate_detail_totals(

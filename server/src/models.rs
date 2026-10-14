@@ -134,29 +134,6 @@ impl Default for FinancialProfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Goal {
-    pub id: String,
-    pub name: String,
-    pub target_amount: f64,
-    pub current_amount: f64,
-    pub monthly_contribution: f64,
-    pub target_date: String,
-    pub priority: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GoalInput {
-    pub name: String,
-    pub target_amount: f64,
-    pub current_amount: f64,
-    pub monthly_contribution: f64,
-    pub target_date: String,
-    pub priority: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Holding {
     pub id: String,
     pub symbol: String,
@@ -208,127 +185,6 @@ pub struct HoldingInput {
     pub fx_rate_observed_on: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PortfolioEventType {
-    Deposit,
-    Withdrawal,
-    Dividend,
-    Interest,
-    Fee,
-    Tax,
-    Buy,
-    Sell,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioEventInput {
-    pub event_type: PortfolioEventType,
-    #[serde(default = "default_manual_source")]
-    pub source: String,
-    #[serde(default)]
-    pub external_id: String,
-    #[serde(default)]
-    pub asset_name: String,
-    pub amount: f64,
-    pub currency: String,
-    #[serde(default)]
-    pub fx_rate_to_base: Option<f64>,
-    #[serde(default)]
-    pub fx_rate_source: String,
-    #[serde(default)]
-    pub fx_rate_observed_on: String,
-    pub occurred_on: String,
-    pub note: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioEventRecord {
-    pub id: String,
-    pub event_type: PortfolioEventType,
-    #[serde(default = "default_manual_source")]
-    pub source: String,
-    #[serde(default)]
-    pub external_id: String,
-    pub asset_name: String,
-    pub amount: f64,
-    pub currency: String,
-    pub fx_rate_to_base: Option<f64>,
-    #[serde(default)]
-    pub fx_rate_source: String,
-    #[serde(default)]
-    pub fx_rate_observed_on: String,
-    pub base_currency: String,
-    pub base_amount: f64,
-    pub occurred_on: String,
-    pub note: String,
-    #[serde(default)]
-    pub reversal_of_event_id: Option<String>,
-    #[serde(default)]
-    pub reversed_by_event_id: Option<String>,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioEventReversalInput {
-    pub occurred_on: String,
-    pub note: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioEventImportRequest {
-    pub csv_text: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioEventImportCommitRequest {
-    pub csv_text: String,
-    pub preview_revision: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioEventImportRow {
-    pub row_number: usize,
-    pub status: String,
-    pub message: String,
-    pub source: String,
-    pub external_id: String,
-    pub event_type: String,
-    pub occurred_on: String,
-    pub amount: Option<f64>,
-    pub currency: String,
-    pub fx_rate_to_base: Option<f64>,
-    pub fx_rate_source: String,
-    pub fx_rate_observed_on: String,
-    pub asset_name: String,
-    pub note: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioEventImportPreview {
-    pub rows: Vec<PortfolioEventImportRow>,
-    pub ready_count: usize,
-    pub duplicate_count: usize,
-    pub error_count: usize,
-    pub preview_revision: String,
-    pub base_currency: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PortfolioEventImportResult {
-    pub inserted_count: usize,
-    pub duplicate_count: usize,
-    pub preview_revision: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortfolioAllocationChange {
@@ -364,7 +220,6 @@ pub struct Snapshot {
     #[serde(default)]
     pub holding_revisions: std::collections::BTreeMap<String, String>,
     pub profile: FinancialProfile,
-    pub goals: Vec<Goal>,
     pub holdings: Vec<Holding>,
     #[serde(default)]
     pub holding_valuations: Vec<HoldingValuationEvidence>,
@@ -496,30 +351,13 @@ fn default_true() -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct PortfolioPlan {
     pub monthly_surplus: f64,
-    pub committed_monthly: f64,
     pub modeled_annual_return_pct: f64,
     pub modeled_annual_volatility_pct: f64,
     pub stress_loss_pct: f64,
     pub risk_capacity_pct: f64,
     pub risk_status: String,
-    pub goal_projections: Vec<GoalProjection>,
     pub rebalancing: Vec<RebalanceAction>,
     pub assumptions: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GoalProjection {
-    pub goal_id: String,
-    pub name: String,
-    pub months_remaining: i64,
-    pub funded_pct: f64,
-    pub estimated_success_pct: f64,
-    pub conservative_amount: f64,
-    pub median_amount: f64,
-    pub required_monthly_contribution: f64,
-    pub monthly_gap: f64,
-    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -612,8 +450,6 @@ pub struct ContextSelection {
     #[serde(default = "enabled")]
     pub include_profile: bool,
     #[serde(default = "enabled")]
-    pub include_goals: bool,
-    #[serde(default = "enabled")]
     pub include_holdings: bool,
     #[serde(default = "enabled")]
     pub include_planning: bool,
@@ -626,8 +462,6 @@ pub struct ContextSelection {
     #[serde(default = "enabled", alias = "includePortfolioCheckins")]
     pub include_daily_assets: bool,
     #[serde(default = "enabled")]
-    pub include_portfolio_events: bool,
-    #[serde(default = "enabled")]
     pub include_evidence: bool,
 }
 
@@ -635,14 +469,12 @@ impl Default for ContextSelection {
     fn default() -> Self {
         Self {
             include_profile: true,
-            include_goals: true,
             include_holdings: true,
             include_planning: true,
             include_risk_findings: true,
             include_rules: true,
             include_system_reviews: true,
             include_daily_assets: true,
-            include_portfolio_events: true,
             include_evidence: true,
         }
     }
@@ -650,10 +482,6 @@ impl Default for ContextSelection {
 
 fn enabled() -> bool {
     true
-}
-
-fn default_manual_source() -> String {
-    "manual".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1015,8 +843,6 @@ pub struct SystemReviewSnapshot {
     pub concentration_pct: f64,
     pub risk_status: String,
     pub high_risk_findings: usize,
-    pub goal_total: usize,
-    pub goals_on_track: usize,
     pub active_rules: usize,
 }
 

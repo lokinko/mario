@@ -1,21 +1,19 @@
 //! Portfolio workflows coordinate repositories and replaceable market providers.
 use crate::{
     db::Database,
-    event_import, fx,
+    fx,
     market_data::{
         EcbFxRateProvider, FxRateProvider, SecurityPriceProvider, TwelveDataSecurityPriceProvider,
     },
     models,
     models::{
         FinancialProfile, FxRateQuery, HoldingInput, HoldingTradeDeleteInput, HoldingTradeInput,
-        HoldingTradeUpdateInput, PortfolioEventImportCommitRequest, PortfolioEventImportPreview,
-        PortfolioEventImportRequest, PortfolioEventImportResult, PortfolioEventInput,
-        PortfolioEventRecord, SecurityPriceConfig, SecurityPriceQuery, SecurityPriceQuote,
+        HoldingTradeUpdateInput, SecurityPriceConfig, SecurityPriceQuery, SecurityPriceQuote,
         Snapshot,
     },
     prices, AppResult,
 };
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 pub(crate) struct MarketServices {
     fx: Arc<dyn FxRateProvider>,
     prices: Arc<dyn SecurityPriceProvider>,
@@ -29,13 +27,6 @@ impl MarketServices {
     }
     pub fn for_account<'a>(&'a self, db: &'a Database) -> PortfolioService<'a> {
         PortfolioService { db, market: self }
-    }
-    #[cfg(test)]
-    pub fn with_providers(
-        fx: Arc<dyn FxRateProvider>,
-        prices: Arc<dyn SecurityPriceProvider>,
-    ) -> Self {
-        Self { fx, prices }
     }
 }
 pub(crate) struct PortfolioService<'a> {
@@ -153,74 +144,17 @@ impl PortfolioService<'_> {
         self.db
             .daily_history(&models::daily::HistoryQuery::default())
     }
-    pub async fn add_event(&self, input: &PortfolioEventInput) -> AppResult<PortfolioEventRecord> {
-        self.cache_event_fx(input).await?;
-        let input = self
-            .db
-            .centralized_event(input, &self.db.snapshot()?.profile.base_currency)?;
-        self.db.add_portfolio_event(&input)
-    }
-    pub async fn preview_import(
-        &self,
-        input: &PortfolioEventImportRequest,
-    ) -> AppResult<PortfolioEventImportPreview> {
-        self.cache_import_fx(&input.csv_text).await?;
-        self.db.preview_portfolio_event_import(input)
-    }
-    pub async fn commit_import(
-        &self,
-        input: &PortfolioEventImportCommitRequest,
-    ) -> AppResult<PortfolioEventImportResult> {
-        self.cache_import_fx(&input.csv_text).await?;
-        self.db.commit_portfolio_event_import(input)
-    }
-    async fn cache_event_fx(&self, input: &PortfolioEventInput) -> AppResult<()> {
-        let base = self.db.snapshot()?.profile.base_currency;
-        fx::refresh(self.db, self.market.fx.as_ref(), false).await?;
-        if !input.currency.eq_ignore_ascii_case(&base) {
-            let query = FxRateQuery {
-                from_currency: input.currency.clone(),
-                to_currency: base,
-                on_date: input.occurred_on.clone(),
-            };
-            let quote = fx::historical_quote(self.db, self.market.fx.as_ref(), &query).await?;
-            let key = format!(
-                "fx.quote.{}.{}.{}",
-                quote.from_currency, quote.to_currency, query.on_date
-            );
-            self.db.set_setting(&key, &serde_json::to_string(&quote)?)?;
-        }
-        Ok(())
-    }
-
-    async fn cache_import_fx(&self, csv: &str) -> AppResult<()> {
-        let parsed = event_import::parse(csv)?;
-        let mut seen = HashSet::new();
-        for row in parsed.rows {
-            if seen.insert((row.input.currency.clone(), row.input.occurred_on.clone())) {
-                // Invalid/missing historical quotes are reported on the affected preview rows.
-                if let Err(error) = self.cache_event_fx(&row.input).await {
-                    tracing::warn!(%error, "CSV FX lookup failed");
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use crate::models::{
-        HoldingInput, PortfolioEventImportCommitRequest, PortfolioEventImportRequest,
-        PortfolioEventInput,
-    };
+    use crate::models::HoldingInput;
     use crate::{
-        fx::{refresh, today, FxOverrideInput},
+        fx::{refresh, FxOverrideInput},
         models::FxRateQuote,
     };
     use chrono::Utc;
-    use std::sync::Arc;
     struct Provider;
     #[async_trait::async_trait]
     impl FxRateProvider for Provider {
@@ -242,69 +176,6 @@ mod integration_tests {
     }
     fn holding(currency: &str) -> HoldingInput {
         serde_json::from_value(serde_json::json!({"name":"账户","symbol":"","assetClass":"现金","marketValue":100,"costBasis":0,"targetPct":0,"currency":currency,"valuationDate":"2026-01-01"})).unwrap()
-    }
-    #[tokio::test]
-    async fn ledger_and_csv_without_rate_share_the_source_and_frozen_records_survive_overrides() {
-        let db = Database::open(std::path::Path::new(":memory:")).unwrap();
-        db.add_holding(&holding("CNY")).unwrap();
-        let market = MarketServices::with_providers(
-            Arc::new(Provider),
-            Arc::new(crate::market_data::TwelveDataSecurityPriceProvider::new().unwrap()),
-        );
-        let service = market.for_account(&db);
-        let csv = "source,external_id,event_type,occurred_on,amount,currency,note\nbroker,id-1,deposit,2026-01-02,100,USD,deposit\n";
-        let preview = service
-            .preview_import(&PortfolioEventImportRequest {
-                csv_text: csv.into(),
-            })
-            .await
-            .unwrap();
-        assert_eq!(preview.ready_count, 1);
-        assert_eq!(preview.rows[0].fx_rate_to_base, Some(7.0));
-        let committed = service
-            .commit_import(&PortfolioEventImportCommitRequest {
-                csv_text: csv.into(),
-                preview_revision: preview.preview_revision,
-            })
-            .await
-            .unwrap();
-        assert_eq!(committed.inserted_count, 1);
-        let frozen = db.portfolio_events().unwrap()[0].clone();
-        assert_eq!(frozen.base_amount, 700.0);
-        db.set_fx_override(&FxOverrideInput {
-            currency: "USD".into(),
-            rate: Some(8.0),
-        })
-        .unwrap();
-        let event:PortfolioEventInput=serde_json::from_value(serde_json::json!({"eventType":"deposit","source":"manual","externalId":"id-2","assetName":"","amount":100,"currency":"USD","occurredOn":today(),"note":"new deposit"})).unwrap();
-        let saved = service.add_event(&event).await.unwrap();
-        assert_eq!(saved.base_amount, 800.0);
-        let events = db.portfolio_events().unwrap();
-        assert_eq!(
-            serde_json::to_value(events.iter().find(|e| e.id == frozen.id).unwrap()).unwrap(),
-            serde_json::to_value(&frozen).unwrap()
-        );
-        let preview = service
-            .preview_import(&PortfolioEventImportRequest {
-                csv_text: csv.into(),
-            })
-            .await
-            .unwrap();
-        assert_eq!(preview.duplicate_count, 1);
-        db.set_fx_override(&FxOverrideInput {
-            currency: "USD".into(),
-            rate: Some(9.0),
-        })
-        .unwrap();
-        let today_csv=format!("source,external_id,event_type,occurred_on,amount,currency,note\nmanual,id-2,deposit,{},100,USD,new deposit\n",today());
-        let preview = service
-            .preview_import(&PortfolioEventImportRequest {
-                csv_text: today_csv,
-            })
-            .await
-            .unwrap();
-        assert_eq!(preview.duplicate_count, 1);
-        assert_eq!(preview.rows[0].fx_rate_to_base, Some(8.0));
     }
     #[tokio::test]
     async fn changing_today_rate_preserves_prior_daily_totals_and_balance_confirmation() {

@@ -10,7 +10,6 @@
     "riskLevel": "稳健",
     "baseCurrency": "CNY"
   },
-  "goals": [],
   "holdings": [],
   "holdingValuations": [],
   "findings": [
@@ -35,13 +34,11 @@
   },
   "plan": {
     "monthlySurplus": 0,
-    "committedMonthly": 0,
     "modeledAnnualReturnPct": 4.2,
     "modeledAnnualVolatilityPct": 8,
     "stressLossPct": 0,
     "riskCapacityPct": 15,
     "riskStatus": "insufficient",
-    "goalProjections": [],
     "rebalancing": [],
     "assumptions": "基于当前资产类别的长期示例假设，执行 2000 次可重复模拟；不含税费、通胀、资产相关性突变和未来收入变化，不是收益预测。"
   },

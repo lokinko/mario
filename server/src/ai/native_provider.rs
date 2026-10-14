@@ -319,6 +319,179 @@ fn parse_anthropic(value: &Value, result: &mut SearchCompletion) {
 
 #[async_trait]
 impl ModelProvider for NativeModelProvider {
+    async fn complete_stream(
+        &self,
+        messages: Vec<ChatMessage>,
+        on_delta: super::streaming::DeltaCallback,
+    ) -> AppResult<ModelCompletion> {
+        let anthropic = self.protocol == "anthropic";
+        let chat = self.protocol == "openai-chat";
+        let body = if anthropic {
+            let system = messages
+                .iter()
+                .filter(|m| m.role == "system")
+                .map(|m| m.content.as_str())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            let turns = messages
+                .into_iter()
+                .filter(|m| m.role != "system")
+                .collect::<Vec<_>>();
+            json!({"model":self.model,"system":system,"messages":turns,"max_tokens":8192,"stream":true})
+        } else if chat {
+            json!({"model":self.model,"messages":messages,"stream":true,"stream_options":{"include_usage":true}})
+        } else {
+            json!({"model":self.model,"input":messages,"store":false,"stream":true})
+        };
+        let request = self
+            .client
+            .post(format!(
+                "{}/{}",
+                self.base_url,
+                if anthropic {
+                    "messages"
+                } else if chat {
+                    "chat/completions"
+                } else {
+                    "responses"
+                }
+            ))
+            .json(&body);
+        let mut response = if anthropic {
+            request
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", "2023-06-01")
+        } else {
+            request.bearer_auth(&self.api_key)
+        }
+        .send()
+        .await?;
+        if !response.status().is_success() {
+            return Err(AppError::Model(format!(
+                "{} 服务返回 HTTP {}，请检查模型流式支持和配置",
+                self.protocol,
+                response.status()
+            )));
+        }
+        let mut decoder = super::streaming::SseDecoder::default();
+        let mut content = String::new();
+        let mut usage = super::provider::ModelUsage::default();
+        let mut stopped = false;
+        while let Some(bytes) = response.chunk().await? {
+            for data in decoder.feed(&bytes)? {
+                if data == "[DONE]" {
+                    if chat && stopped && !content.trim().is_empty() {
+                        return Ok(ModelCompletion { content, usage });
+                    }
+                    return Err(AppError::Model("模型流未正常完成".into()));
+                }
+                let event: Value = serde_json::from_str(&data)
+                    .map_err(|_| AppError::Model("模型流式事件无效".into()))?;
+                if event.get("error").is_some_and(|e| !e.is_null())
+                    || matches!(
+                        event["type"].as_str(),
+                        Some("error" | "response.failed" | "response.incomplete")
+                    )
+                {
+                    return Err(AppError::Model(
+                        "模型流式输出失败或被截断，请重试或缩小问题".into(),
+                    ));
+                }
+                let delta = if chat {
+                    let choice = event["choices"]
+                        .as_array()
+                        .and_then(|choices| choices.iter().find(|c| c["index"] == 0));
+                    if let Some(choice) = choice {
+                        if let Some(reason) = choice["finish_reason"].as_str() {
+                            if reason != "stop" {
+                                return Err(AppError::Model(
+                                    "模型流式输出未完成，请重试或缩小问题".into(),
+                                ));
+                            }
+                            stopped = true;
+                        }
+                    }
+                    usage.input_tokens = event["usage"]["prompt_tokens"]
+                        .as_u64()
+                        .or(usage.input_tokens);
+                    usage.output_tokens = event["usage"]["completion_tokens"]
+                        .as_u64()
+                        .or(usage.output_tokens);
+                    choice.and_then(|c| c["delta"]["content"].as_str())
+                } else if anthropic {
+                    match event["type"].as_str() {
+                        Some("message_start") => {
+                            usage.input_tokens = event["message"]["usage"]["input_tokens"].as_u64();
+                            usage.output_tokens =
+                                event["message"]["usage"]["output_tokens"].as_u64();
+                            None
+                        }
+                        Some("content_block_start") if event["content_block"]["type"] == "text" => {
+                            event["content_block"]["text"].as_str()
+                        }
+                        Some("content_block_delta") if event["delta"]["type"] == "text_delta" => {
+                            event["delta"]["text"].as_str()
+                        }
+                        Some("message_delta") => {
+                            usage.input_tokens = event["usage"]["input_tokens"]
+                                .as_u64()
+                                .or(usage.input_tokens);
+                            usage.output_tokens = event["usage"]["output_tokens"]
+                                .as_u64()
+                                .or(usage.output_tokens);
+                            if let Some(reason) = event["delta"]["stop_reason"].as_str() {
+                                if !matches!(reason, "end_turn" | "stop_sequence") {
+                                    return Err(AppError::Model(
+                                        "模型流式输出未完成，请重试或缩小问题".into(),
+                                    ));
+                                }
+                                stopped = true;
+                            }
+                            None
+                        }
+                        Some("message_stop") => {
+                            if stopped && !content.trim().is_empty() {
+                                return Ok(ModelCompletion { content, usage });
+                            }
+                            return Err(AppError::Model("模型流未正常完成".into()));
+                        }
+                        _ => None,
+                    }
+                } else {
+                    match event["type"].as_str() {
+                        Some("response.output_text.delta") => event["delta"].as_str(),
+                        Some("response.completed") => {
+                            if event["response"]["status"] != "completed" {
+                                return Err(AppError::Model("模型流未正常完成".into()));
+                            }
+                            let mut result = SearchCompletion::default();
+                            parse_openai(&event["response"], &mut result);
+                            if !result.content.is_empty() {
+                                content = result.content;
+                            }
+                            usage.input_tokens =
+                                event["response"]["usage"]["input_tokens"].as_u64();
+                            usage.output_tokens =
+                                event["response"]["usage"]["output_tokens"].as_u64();
+                            if content.trim().is_empty() {
+                                return Err(AppError::Model("模型没有返回有效内容".into()));
+                            }
+                            return Ok(ModelCompletion { content, usage });
+                        }
+                        _ => None,
+                    }
+                };
+                if let Some(delta) = delta {
+                    if content.len() + delta.len() > 128_000 {
+                        return Err(AppError::Model("模型输出过大".into()));
+                    }
+                    content.push_str(delta);
+                    on_delta(delta);
+                }
+            }
+        }
+        Err(AppError::Model("模型流连接中断，回答尚未完成".into()))
+    }
     async fn complete(&self, messages: Vec<ChatMessage>) -> AppResult<ModelCompletion> {
         let result = self.generate(messages, false).await?;
         Ok(ModelCompletion {
@@ -345,6 +518,111 @@ mod tests {
         collections::VecDeque,
         sync::{Arc, Mutex},
     };
+
+    async fn stream_fixture(
+        protocol: &str,
+        first: String,
+        last: String,
+    ) -> (
+        NativeModelProvider,
+        Arc<tokio::sync::Notify>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let release = Arc::new(tokio::sync::Notify::new());
+        let gate = release.clone();
+        let app = Router::new().route("/v1/{*path}", post(move |Json(body): Json<Value>| {
+            let gate = gate.clone(); let first = first.clone(); let last = last.clone();
+            async move {
+                assert_eq!(body["stream"], true);
+                let stream = async_stream::stream! {
+                    for byte in first.bytes() { yield Ok::<_, std::convert::Infallible>(bytes::Bytes::from(vec![byte])); }
+                    gate.notified().await;
+                    yield Ok(bytes::Bytes::from(last));
+                };
+                axum::response::Response::builder().header("content-type", "text/event-stream").body(axum::body::Body::from_stream(stream)).unwrap()
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let provider = NativeModelProvider::new(
+            protocol.into(),
+            format!("http://{address}/v1"),
+            "fixture".into(),
+            "fixture-key".into(),
+        )
+        .unwrap();
+        (provider, release, server)
+    }
+
+    #[tokio::test]
+    async fn streams_all_native_protocols_before_terminal_event_and_keeps_usage() {
+        for protocol in ["openai-chat", "openai-responses", "anthropic"] {
+            let (first, last) = match protocol {
+                "openai-chat" => (
+                    json!({"choices":[{"index":0,"delta":{"content":"中文"},"finish_reason":null}]}).to_string(),
+                    format!("data: {}\n\ndata: {}\n\ndata: [DONE]\n\n", json!({"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}), json!({"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2}})),
+                ),
+                "openai-responses" => (
+                    json!({"type":"response.output_text.delta","delta":"中文"}).to_string(),
+                    format!("data: {}\n\n", json!({"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":2}}})),
+                ),
+                _ => (
+                    json!({"type":"content_block_delta","delta":{"type":"text_delta","text":"中文"}}).to_string(),
+                    format!("data: {}\n\ndata: {}\n\n", json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":10,"output_tokens":2}}), json!({"type":"message_stop"})),
+                ),
+            };
+            let (provider, release, server) = stream_fixture(
+                protocol,
+                format!(": ping\r\n\r\ndata: {first}\r\n\r\n"),
+                last,
+            )
+            .await;
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let pending = tokio::spawn(async move {
+                provider
+                    .complete_stream(
+                        vec![ChatMessage::user("问题")],
+                        Box::new(move |delta| {
+                            tx.send(delta.to_string()).unwrap();
+                        }),
+                    )
+                    .await
+            });
+            assert_eq!(
+                tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                "中文"
+            );
+            assert!(!pending.is_finished());
+            release.notify_one();
+            let result = pending.await.unwrap().unwrap();
+            assert_eq!(result.content, "中文");
+            assert_eq!(result.usage.input_tokens, Some(10));
+            assert_eq!(result.usage.output_tokens, Some(2));
+            server.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_stream_disconnect_truncation_and_in_band_errors() {
+        for (protocol, last) in [
+            ("openai-chat", String::new()),
+            ("openai-chat", format!("data: {}\n\ndata: [DONE]\n\n", json!({"choices":[{"index":0,"delta":{},"finish_reason":"length"}]}))),
+            ("openai-responses", "data: {\"type\":\"response.incomplete\"}\n\n".into()),
+            ("anthropic", "data: {\"type\":\"error\",\"error\":{\"message\":\"private provider failure\"}}\n\n".into()),
+        ] {
+            let (provider, release, server) = stream_fixture(protocol, ": ping\n\n".into(), last).await;
+            release.notify_one();
+            let error = provider.complete_stream(vec![ChatMessage::user("test")], Box::new(|_| {})).await.unwrap_err();
+            assert!(!error.to_string().contains("private provider failure"));
+            server.abort();
+        }
+    }
 
     #[derive(Default)]
     struct MockState {

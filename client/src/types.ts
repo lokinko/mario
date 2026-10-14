@@ -12,16 +12,6 @@ export interface FinancialProfile {
   baseCurrency: string;
 }
 
-export interface Goal {
-  id: string;
-  name: string;
-  targetAmount: number;
-  currentAmount: number;
-  monthlyContribution: number;
-  targetDate: string;
-  priority: "刚性" | "重要" | "弹性";
-}
-
 export interface Holding {
   id: string;
   symbol: string;
@@ -99,78 +89,6 @@ export interface HoldingValuationEvidence {
   capturedAt: string;
 }
 
-export type PortfolioEventType =
-  | "deposit"
-  | "withdrawal"
-  | "dividend"
-  | "interest"
-  | "fee"
-  | "tax"
-  | "buy"
-  | "sell";
-
-export interface PortfolioEventInput {
-  eventType: PortfolioEventType;
-  source: string;
-  externalId: string;
-  assetName: string;
-  amount: number;
-  currency: string;
-  fxRateToBase: number | null;
-  fxRateSource: string;
-  fxRateObservedOn: string;
-  occurredOn: string;
-  note: string;
-}
-
-export interface PortfolioEventRecord extends PortfolioEventInput {
-  id: string;
-  baseCurrency: string;
-  baseAmount: number;
-  reversalOfEventId: string | null;
-  reversedByEventId: string | null;
-  createdAt: string;
-}
-
-export interface PortfolioEventReversalInput {
-  occurredOn: string;
-  note: string;
-}
-
-export type PortfolioEventImportStatus = "ready" | "duplicate" | "error";
-
-export interface PortfolioEventImportRow {
-  rowNumber: number;
-  status: PortfolioEventImportStatus;
-  message: string;
-  source: string;
-  externalId: string;
-  eventType: string;
-  occurredOn: string;
-  amount: number | null;
-  currency: string;
-  fxRateToBase: number | null;
-  fxRateSource: string;
-  fxRateObservedOn: string;
-  assetName: string;
-  note: string;
-}
-
-export interface PortfolioEventImportPreview {
-  rows: PortfolioEventImportRow[];
-  readyCount: number;
-  duplicateCount: number;
-  errorCount: number;
-  previewRevision: string;
-  baseCurrency: string;
-}
-
-export interface PortfolioEventImportResult {
-  insertedCount: number;
-  duplicateCount: number;
-  previewRevision: string;
-}
-
 export interface PortfolioAllocationChange {
   assetClass: string;
   previousValue: number;
@@ -195,7 +113,6 @@ export interface Snapshot {
   clearedTradeHoldings?: string[];
   holdingRevisions?: Record<string, string>;
   profile: FinancialProfile;
-  goals: Goal[];
   holdings: Holding[];
   holdingValuations: HoldingValuationEvidence[];
   findings: RiskFinding[];
@@ -273,28 +190,13 @@ export interface PortfolioValuationStatus {
 
 export interface PortfolioPlan {
   monthlySurplus: number;
-  committedMonthly: number;
   modeledAnnualReturnPct: number;
   modeledAnnualVolatilityPct: number;
   stressLossPct: number;
   riskCapacityPct: number;
   riskStatus: "within" | "near" | "over" | "insufficient";
-  goalProjections: GoalProjection[];
   rebalancing: RebalanceAction[];
   assumptions: string;
-}
-
-export interface GoalProjection {
-  goalId: string;
-  name: string;
-  monthsRemaining: number;
-  fundedPct: number;
-  estimatedSuccessPct: number;
-  conservativeAmount: number;
-  medianAmount: number;
-  requiredMonthlyContribution: number;
-  monthlyGap: number;
-  status: "on-track" | "watch" | "off-track" | "reached" | "expired";
 }
 
 export interface RebalanceAction {
@@ -341,14 +243,12 @@ export interface AnalysisRequest {
 
 export interface ContextSelection {
   includeProfile: boolean;
-  includeGoals: boolean;
   includeHoldings: boolean;
   includePlanning: boolean;
   includeRiskFindings: boolean;
   includeRules: boolean;
   includeSystemReviews: boolean;
   includeDailyAssets: boolean;
-  includePortfolioEvents: boolean;
   includeEvidence: boolean;
 }
 
@@ -489,7 +389,6 @@ export interface AnalysisWorkflowTrace {
       holdings: Holding[];
       holdingValuations: HoldingValuationEvidence[];
     };
-    goals?: Goal[];
   };
   version: string;
   researchPlan?: string;
@@ -615,8 +514,6 @@ export interface SystemReviewSnapshot {
   concentrationPct: number;
   riskStatus: PortfolioPlan["riskStatus"];
   highRiskFindings: number;
-  goalTotal: number;
-  goalsOnTrack: number;
   activeRules: number;
 }
 

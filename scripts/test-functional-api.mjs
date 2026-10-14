@@ -112,12 +112,22 @@ try {
   let snap = await api("/snapshot");
   await api("/portfolio-checkins", "GET", undefined, 404);
   await api("/portfolio-checkins", "POST", {}, 404);
+  for (const [path, method] of [
+    ["/goals", "POST"], ["/goals/removed", "PUT"], ["/goals/removed", "DELETE"],
+    ["/portfolio-events", "GET"], ["/portfolio-events", "POST"],
+    ["/portfolio-events/removed/reverse", "POST"],
+    ["/portfolio-events/import/preview", "POST"], ["/portfolio-events/import/commit", "POST"],
+  ]) await api(path, method, method === "GET" ? undefined : {}, 404);
+  assert.equal(snap.goals, undefined);
+  assert.equal(snap.plan.goalProjections, undefined);
   assert.equal(snap.holdings.length, 0);
   const defaults = await api("/analysis-settings");
   assert.equal(defaults.workflow, "deep");
   assert.equal(defaults.contextSelection.includeProfile, true);
   assert.equal(defaults.contextSelection.includeDailyAssets, true);
   assert.equal(defaults.contextSelection.includePortfolioCheckins, undefined);
+  assert.equal(defaults.contextSelection.includeGoals, undefined);
+  assert.equal(defaults.contextSelection.includePortfolioEvents, undefined);
   const configured = { ...defaults, webSearch: false, useMemory: false, contextSelection: { ...defaults.contextSelection, includeProfile: false } };
   assert.deepEqual(await api("/analysis-settings", "PUT", configured), configured);
   assert.deepEqual(await api("/analysis-settings"), configured);
@@ -169,71 +179,10 @@ try {
     "PASS assets: unified FX, zero, version conflict, idempotency, daily history",
   );
 
-  const goal = {
-    name: "备用金目标",
-    targetAmount: 200000,
-    currentAmount: 10000,
-    monthlyContribution: 3000,
-    targetDate: date(730),
-    priority: "高",
-  };
-  snap = await api("/goals", "POST", goal);
-  const goalId = snap.goals[0].id;
-  assert.equal(snap.plan.goalProjections.length, 1);
-  snap = await api(`/goals/${goalId}`, "PUT", {
-    ...goal,
-    currentAmount: 200000,
-  });
-  assert.equal(snap.plan.goalProjections[0].status, "reached");
-  await api(`/goals/${goalId}`, "DELETE");
-  console.log("PASS goals: create, edit, deterministic projection, delete");
-
-  const flow = {
-    eventType: "deposit",
-    source: "test",
-    externalId: "deposit-1",
-    assetName: "",
-    amount: 1000,
-    currency: "CNY",
-    fxRateToBase: null,
-    occurredOn: middle,
-    note: "新增投入",
-  };
-  const deposit = await api("/portfolio-events", "POST", flow);
-  await api("/portfolio-events", "POST", flow, 409);
-  const reversal = await api(
-    `/portfolio-events/${deposit.id}/reverse`,
-    "POST",
-    { occurredOn: middle, note: "测试冲正" },
-  );
-  assert.equal(reversal.amount, -1000);
-  await api(
-    `/portfolio-events/${deposit.id}/reverse`,
-    "POST",
-    { occurredOn: middle, note: "重复" },
-    409,
-  );
-  const csvText = `source,external_id,event_type,occurred_on,amount,currency,asset_name,note\ntest,csv-1,deposit,${middle},2000,CNY,,CSV入金`;
-  let preview = await api("/portfolio-events/import/preview", "POST", {
-    csvText,
-  });
-  assert.equal(preview.readyCount, 1);
-  const imported = await api("/portfolio-events/import/commit", "POST", {
-    csvText,
-    previewRevision: preview.previewRevision,
-  });
-  assert.equal(imported.insertedCount, 1);
-  preview = await api("/portfolio-events/import/preview", "POST", { csvText });
-  assert.equal(preview.duplicateCount, 1);
-  const altered = await api("/portfolio-events/import/preview", "POST", {
-    csvText: csvText.replace("2000", "9999"),
-  });
-  assert.equal(altered.errorCount, 1);
   await api(`/holdings/${cash}`, "PUT", {
     ...holding("现金", 102100),
     valuationDate: today,
   });
-  console.log("PASS ledger: event deduplication, reversal, CSV import");
 
   const evidence = {
     assetName: "现金",
@@ -355,11 +304,9 @@ try {
     ...request,
     contextSelection: {
       includeDailyAssets: false,
-      includePortfolioEvents: false,
     },
   });
   assert.equal(omitted.payload.dailyAssetHistory, undefined);
-  assert.equal(omitted.payload.portfolioEvents, undefined);
   await api(`/holdings/${cash}`, "PUT", {
     ...holding("现金", 102200),
     valuationDate: today,
@@ -466,6 +413,49 @@ try {
   assert.equal(snap.holdingTrades.length, 0);
   assert.equal(snap.holdings.find(h => h.id === trade.holdingId).quantity, 0);
   console.log("PASS real trading: exact amounts, edits, confirmed deletion API, atomic rejection, dividends, restart, unchanged cash and past observations");
+  // Exercise browser JSON -> HTTP JSON parser with a recurring weighted average.
+  const oppoBuy = {
+    ...execution, requestId: randomUUID(),
+    newHolding: { name: "OPPO 股票", symbol: "", assetClass: "股票", currency: "CNY" },
+    account: "内部股票账户", externalId: "oppo-1", taxes: "0",
+  };
+  snap = await api("/holding-trades", "POST", oppoBuy);
+  const oppoId = snap.holdingTrades.find(t => t.id === oppoBuy.requestId).holdingId;
+  snap = await api("/holding-trades", "POST", {
+    ...oppoBuy, requestId: randomUUID(), holdingId: oppoId, newHolding: null,
+    expectedRevision: snap.holdingRevisions[oppoId], sequence: 2,
+    quantity: "7", price: "17.13", grossAmount: "119.91", fees: "0", externalId: "oppo-2",
+  });
+  const originalOPPO = snap.holdings.find(h => h.id === oppoId);
+  const oppoTrades = snap.holdingTrades;
+  const oppoSummary = snap.holdingTradeSummaries[oppoId];
+  for (const currentPrice of [25, 30.12345678]) {
+    const { id, ...input } = snap.holdings.find(h => h.id === oppoId);
+    snap = await api(`/holdings/${id}`, "PUT", {
+      ...input, currentPrice, marketValue: input.quantity * currentPrice,
+    });
+    const updated = snap.holdings.find(h => h.id === id);
+    assert.equal(updated.currentPrice, currentPrice);
+    assert.equal(updated.marketValue, 17 * currentPrice);
+    for (const field of ["quantity", "costPrice", "costBasis"]) {
+      assert.equal(updated[field], originalOPPO[field]);
+    }
+    assert.deepEqual(snap.holdingTrades, oppoTrades);
+    assert.deepEqual(snap.holdingTradeSummaries[id], oppoSummary);
+  }
+  const { id: oppoHoldingId, ...oppoInput } = snap.holdings.find(h => h.id === oppoId);
+  for (const changes of [{ quantity: 18 }, { costPrice: 14 }, { costBasis: 238 }, { currency: "USD" }, { assetClass: "基金" }]) {
+    await api(`/holdings/${oppoHoldingId}`, "PUT", { ...oppoInput, ...changes }, 400);
+  }
+  await stopServer(); await startServer();
+  snap = await api("/snapshot");
+  const reopenedOPPO = snap.holdings.find(h => h.id === oppoId);
+  assert.equal(reopenedOPPO.currentPrice, 30.12345678);
+  assert.equal(reopenedOPPO.costBasis, originalOPPO.costBasis);
+  assert.deepEqual(snap.holdingTrades, oppoTrades);
+  assert.deepEqual(snap.holdingTradeSummaries[oppoId], oppoSummary);
+  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
+  console.log("PASS internal OPPO stock: manual price edits, JSON average-cost round trip, protected execution totals and restart persistence");
   console.log(
     `PASS restart persistence; ${count} authenticated HTTP assertions total`,
   );

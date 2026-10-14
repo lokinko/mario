@@ -64,6 +64,35 @@ impl Drop for Tenant {
 
 #[test]
 #[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
+fn postgres_upgrades_remove_retired_tables_and_preserve_active_data() {
+    let mut tenant = Tenant::legacy();
+    drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
+    tenant.sql("CREATE TABLE goals (id TEXT PRIMARY KEY);
+        CREATE TABLE portfolio_events (id TEXT PRIMARY KEY, reversal_of_event_id TEXT REFERENCES portfolio_events(id));
+        INSERT INTO goals VALUES ('old-goal');
+        INSERT INTO portfolio_events VALUES ('original',NULL),('reversal','original');
+        UPDATE data_revision SET schema_version=5 WHERE id=1;");
+    for _ in 0..2 {
+        let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
+        assert_eq!(db.snapshot().unwrap().profile.monthly_income, 12345.0);
+        assert!(tenant.check(
+            "SELECT to_regclass('goals') IS NULL AND to_regclass('portfolio_events') IS NULL"
+        ));
+        assert!(tenant.check(&format!(
+            "SELECT schema_version={} FROM data_revision WHERE id=1",
+            schema::POSTGRES_SCHEMA_VERSION
+        )));
+        assert!(db
+            .export_sync_data()
+            .unwrap()
+            .tables
+            .iter()
+            .all(|t| !matches!(t.name.as_str(), "goals" | "portfolio_events")));
+    }
+}
+
+#[test]
+#[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
 fn postgres_migrations_upgrade_existing_tenant_once_across_replicas() {
     let mut tenant = Tenant::legacy();
     let before: i64 = tenant

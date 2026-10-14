@@ -220,13 +220,22 @@ pub(super) fn summaries(
         .map(|(id, rows)| Ok((id, position(&rows)?)))
         .collect()
 }
-pub(super) fn guard_edit(conn: &Connection, id: &str, input: &HoldingInput) -> AppResult<()> {
+pub(super) fn guard_edit(conn: &Connection, id: &str, input: &mut HoldingInput) -> AppResult<bool> {
     let s = Database::snapshot_on(conn)?;
     if s.holding_trade_summaries.contains_key(id) {
         let h = s.holdings.iter().find(|h| h.id == id).unwrap();
-        if h.quantity != input.quantity
-            || h.cost_price != input.cost_price
-            || (h.cost_basis - input.cost_basis).abs() > 1e-8_f64.max(h.cost_basis.abs() * 1e-10)
+        // JSON float parsing can move an unchanged decimal-derived average by a few ULPs.
+        let same_number = |a: f64, b: f64| {
+            a.is_finite() && b.is_finite() && (a - b).abs() <= 4.0 * f64::EPSILON * a.abs().max(1.0)
+        };
+        let same_optional = |a: Option<f64>, b: Option<f64>| match (a, b) {
+            (Some(a), Some(b)) => same_number(a, b),
+            (None, None) => true,
+            _ => false,
+        };
+        if !same_optional(h.quantity, input.quantity)
+            || !same_optional(h.cost_price, input.cost_price)
+            || !same_number(h.cost_basis, input.cost_basis)
             || h.currency != input.currency.trim().to_ascii_uppercase()
             || h.asset_class != input.asset_class
         {
@@ -234,8 +243,13 @@ pub(super) fn guard_edit(conn: &Connection, id: &str, input: &HoldingInput) -> A
                 "交易持仓的数量、成本、币种和资产类别由真实成交管理，请编辑交易",
             ));
         }
+        // Always persist the server's execution-derived values, never their float round trip.
+        input.quantity = h.quantity;
+        input.cost_price = h.cost_price;
+        input.cost_basis = h.cost_basis;
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }
 fn rebuild(conn: &Connection, h: &Holding, s: &HoldingTradeSummary) -> AppResult<()> {
     let quantity = number(&s.quantity)?.to_f64().unwrap();
@@ -626,6 +640,63 @@ pub(super) fn clear_invalid(conn: &Connection) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn internal_stock_price_edits_preserve_execution_totals_after_json_round_trip() {
+        for (quantity, second_quantity, gross, second_gross) in
+            [("10", "7", "100", "119.91"), ("0.1", "0.07", "1", "1.1991")]
+        {
+            let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+            let mut buy = first();
+            buy.new_holding.as_mut().unwrap().name = "OPPO 股票".into();
+            buy.quantity = quantity.into();
+            buy.gross_amount = gross.into();
+            let s = db.save_holding_trade(&buy).unwrap();
+            let mut buy = next(&s, "buy", second_quantity, "17.13", "2026-01-02");
+            buy.gross_amount = second_gross.into();
+            let original = db.save_holding_trade(&buy).unwrap();
+            let id = &original.holdings[0].id;
+            let mut s = original.clone();
+            for price in [25.0, 30.12345678, 0.0] {
+                // from_value bypasses HTTP's JSON float parser and misses this regression.
+                let mut input: HoldingInput =
+                    serde_json::from_str(&serde_json::to_string(&s.holdings[0]).unwrap()).unwrap();
+                input.current_price = Some(price);
+                s = db.update_holding(id, &input).unwrap();
+                let h = &s.holdings[0];
+                assert_eq!(h.current_price, Some(price));
+                assert_eq!(h.market_value, h.quantity.unwrap() * price);
+                assert_eq!(h.quantity, original.holdings[0].quantity);
+                assert_eq!(h.cost_price, original.holdings[0].cost_price);
+                assert_eq!(h.cost_basis, original.holdings[0].cost_basis);
+                assert_eq!(s.holding_trades, original.holding_trades);
+                assert_eq!(s.holding_trade_summaries, original.holding_trade_summaries);
+            }
+            let input: HoldingInput =
+                serde_json::from_str(&serde_json::to_string(&s.holdings[0]).unwrap()).unwrap();
+            for field in [
+                "quantity",
+                "costPrice",
+                "costBasis",
+                "currency",
+                "assetClass",
+            ] {
+                let mut changed = serde_json::to_value(&input).unwrap();
+                changed[field] = match field {
+                    "currency" => serde_json::json!("USD"),
+                    "assetClass" => serde_json::json!("基金"),
+                    _ => serde_json::json!(999.0),
+                };
+                let changed = serde_json::from_value(changed).unwrap();
+                assert!(db.update_holding(id, &changed).is_err(), "{field}");
+                let unchanged = db.snapshot().unwrap();
+                assert_eq!(
+                    serde_json::to_value(&unchanged.holdings).unwrap(),
+                    serde_json::to_value(&s.holdings).unwrap()
+                );
+                assert_eq!(unchanged.holding_trades, s.holding_trades);
+            }
+        }
+    }
     fn first() -> HoldingTradeInput {
         serde_json::from_value(serde_json::json!({
             "requestId":Uuid::new_v4().to_string(),"newHolding":{"name":"交易测试","symbol":"","assetClass":"股票","currency":"CNY"},
@@ -706,7 +777,10 @@ mod tests {
         assert_eq!(db.save_holding_trade(&d).unwrap().holding_trades.len(), 4);
         let copy = Database::open(&dir.path().join("copy.db")).unwrap();
         let export = db.export_sync_data().unwrap();
-        assert_eq!(export.schema_version, 18);
+        assert_eq!(
+            export.schema_version,
+            super::super::SYNC_DATASET_SCHEMA_VERSION
+        );
         copy.import_sync_data(&export).unwrap();
         assert_eq!(
             copy.snapshot().unwrap().holding_trade_summaries,
@@ -714,6 +788,13 @@ mod tests {
         );
         let mut old = export;
         old.schema_version = 17;
+        super::super::tests::add_retired_tables(&mut old);
+        old.tables.retain(|table| {
+            !matches!(
+                table.name.as_str(),
+                "decisions" | "decision_reviews" | "portfolio_checkins"
+            )
+        });
         assert!(copy.import_sync_data(&old).is_err());
         assert_eq!(copy.snapshot().unwrap().holding_trades, s.holding_trades);
     }

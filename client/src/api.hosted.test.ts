@@ -1,12 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import {
-  getSnapshot,
-  saveProfile,
-  previewPortfolioEventImport,
-  commitPortfolioEventImport,
-  updateHoldingAmount,
-} from "./api/portfolio";
+import { getSnapshot, saveProfile, updateHoldingAmount } from "./api/portfolio";
 import { checkServerVersion } from "./api/account";
 import { previewAnalysis } from "./api/research";
 import { acceptRevision, dataRevision, serviceUrl } from "./lib/service";
@@ -219,19 +213,4 @@ it("advances the revision after an acknowledged save and leaves unsent drafts bl
     "查看最新资料",
   );
   expect(fetcher).toHaveBeenCalledTimes(1);
-});
-
-it("acknowledges currency caching during CSV preview before committing its frozen rows", async () => {
-  acceptRevision("10");
-  const fetcher = vi
-    .fn()
-    .mockResolvedValueOnce(response({ previewRevision: "fx-rows" }, "12"))
-    .mockResolvedValueOnce(response({ insertedCount: 1 }, "13"));
-  vi.stubGlobal("fetch", fetcher);
-  const preview = await previewPortfolioEventImport("csv");
-  expect(dataRevision()).toBe("12");
-  await commitPortfolioEventImport("csv", preview.previewRevision);
-  expect(fetcher.mock.calls[0][1].headers["If-Match"]).toBe("10");
-  expect(fetcher.mock.calls[1][1].headers["If-Match"]).toBe("12");
-  expect(dataRevision()).toBe("13");
 });

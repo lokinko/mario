@@ -20,6 +20,7 @@ pub struct InvestmentOrchestrator<'a> {
     provider: &'a dyn ModelProvider,
     retriever: &'a HybridMemoryRetriever,
     workflow: &'a dyn AnalysisWorkflow,
+    events: Option<super::streaming::EventSender>,
 }
 
 static DEFAULT_WORKFLOW: InvestmentWorkflowV6 = InvestmentWorkflowV6;
@@ -38,7 +39,13 @@ impl<'a> InvestmentOrchestrator<'a> {
             provider,
             retriever,
             workflow,
+            events: None,
         }
+    }
+
+    pub(crate) fn with_events(mut self, events: super::streaming::EventSender) -> Self {
+        self.events = Some(events);
+        self
     }
 
     pub async fn run(
@@ -57,14 +64,12 @@ impl<'a> InvestmentOrchestrator<'a> {
         let personal_context = [
             "financialProfile",
             "portfolio",
-            "goals",
             "currentUserMessage",
             "dailyAssetHistory",
             "deterministicPlan",
             "riskFindings",
             "personalInvestmentRules",
             "periodicSystemReviews",
-            "portfolioEvents",
         ]
         .into_iter()
         .filter_map(|key| {
@@ -77,6 +82,7 @@ impl<'a> InvestmentOrchestrator<'a> {
         trace.personal_context = Some(serde_json::Value::Object(personal_context));
         trace.evidence_catalog = evidence_catalog(&built_context.payload);
         if request.web_search {
+            super::streaming::status(&self.events, "正在查找资料…");
             let started = Instant::now();
             let assets = built_context.payload["portfolio"]["holdings"].as_array().into_iter().flatten()
                 .map(|holding| serde_json::json!({"name":holding["name"],"symbol":holding["symbol"]})).collect::<Vec<_>>();
@@ -438,8 +444,39 @@ impl<'a> InvestmentOrchestrator<'a> {
     }
 
     async fn call_stage(&self, prompt: StagePrompt) -> AppResult<(String, ModelCallTrace)> {
+        self.call_model_stage(prompt, false).await
+    }
+
+    async fn call_model_stage(
+        &self,
+        prompt: StagePrompt,
+        report: bool,
+    ) -> AppResult<(String, ModelCallTrace)> {
+        super::streaming::status(&self.events, format!("{}…", prompt.label));
         let started = Instant::now();
-        let completion = self.provider.complete(prompt.messages).await?;
+        let completion = if report && self.events.is_some() {
+            let events = self.events.clone().unwrap();
+            let raw = std::sync::Mutex::new(String::new());
+            let _ = events.try_send(super::streaming::AnalysisEvent::Draft {
+                answer: String::new(),
+            });
+            self.provider
+                .complete_stream(
+                    prompt.messages,
+                    Box::new(move |delta| {
+                        let mut raw = raw.lock().unwrap();
+                        if raw.len() + delta.len() <= 128_000 {
+                            raw.push_str(delta);
+                            let _ = events.try_send(super::streaming::AnalysisEvent::Draft {
+                                answer: super::streaming::draft_report(&raw),
+                            });
+                        }
+                    }),
+                )
+                .await?
+        } else {
+            self.provider.complete(prompt.messages).await?
+        };
         let latency_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         Ok((
             completion.content,
@@ -467,7 +504,7 @@ impl<'a> InvestmentOrchestrator<'a> {
     )> {
         let stage_label = prompt.label;
         let allowed = allowed_evidence_ids.iter().cloned().collect::<HashSet<_>>();
-        let (content, first_call) = self.call_stage(prompt).await?;
+        let (content, first_call) = self.call_model_stage(prompt, true).await?;
         let parse = |content: &str| {
             let report = parse_structured_analysis(content, &allowed)?;
             super::structured_output::validate_source_types(&report, sources, context)?;
@@ -490,7 +527,8 @@ impl<'a> InvestmentOrchestrator<'a> {
                     &first_error,
                     allowed_evidence_ids,
                 );
-                let (repaired_content, repair_call) = self.call_stage(repair_prompt).await?;
+                let (repaired_content, repair_call) =
+                    self.call_model_stage(repair_prompt, true).await?;
                 let report = parse(&repaired_content).map_err(|second_error| {
                     crate::error::AppError::Model(format!(
                         "模型输出两次未通过结构化校验：首次 {first_error}；修复后 {second_error}"
@@ -920,7 +958,6 @@ mod tests {
             cleared_trade_holdings: Vec::new(),
             holding_revisions: Default::default(),
             profile: FinancialProfile::default(),
-            goals: Vec::new(),
             holdings: vec![Holding {
                 id: "h1".into(),
                 symbol: "IDX".into(),
@@ -959,13 +996,11 @@ mod tests {
             },
             plan: PortfolioPlan {
                 monthly_surplus: 0.0,
-                committed_monthly: 0.0,
                 modeled_annual_return_pct: 5.5,
                 modeled_annual_volatility_pct: 14.0,
                 stress_loss_pct: 28.0,
                 risk_capacity_pct: 15.0,
                 risk_status: "over".into(),
-                goal_projections: Vec::new(),
                 rebalancing: Vec::new(),
                 assumptions: "测试".into(),
             },
@@ -1218,7 +1253,7 @@ mod tests {
         let personal = output.workflow_trace.personal_context.unwrap();
         assert!(personal.get("portfolio").is_none());
         assert!(personal.get("financialProfile").is_none());
-        assert_eq!(personal["goals"], context.payload["goals"]);
+        assert_eq!(personal["riskFindings"], context.payload["riskFindings"]);
     }
 
     #[tokio::test]
@@ -1242,7 +1277,9 @@ mod tests {
             preview_revision: None,
         };
         let context = ContextBuilder::build(&request, &snapshot(), &ContextSources::default());
+        let (events, mut receiver) = tokio::sync::mpsc::channel(32);
         let output = InvestmentOrchestrator::new(&provider, &retriever)
+            .with_events(events)
             .run(&request, &context, &[])
             .await
             .unwrap();
@@ -1258,6 +1295,18 @@ mod tests {
             .stages
             .iter()
             .any(|stage| stage.contains("修复并校验")));
+        let mut resets = 0;
+        let mut draft = String::new();
+        while let Ok(event) = receiver.try_recv() {
+            if let super::super::streaming::AnalysisEvent::Draft { answer } = event {
+                if answer.is_empty() {
+                    resets += 1;
+                }
+                draft = answer;
+            }
+        }
+        assert!(resets >= 2, "repair must reset the failed draft");
+        assert!(draft.contains("先处理集中风险"));
     }
 
     #[tokio::test]

@@ -1,4 +1,9 @@
-import { HttpError, requestJson } from "./transport";
+import {
+  HttpError,
+  requestJson,
+  requestEvents,
+  type RequestOptions,
+} from "./transport";
 import { isDataWrite, requestPolicy } from "./requestPolicy";
 import { beforeDataWrite, markDataWrite, DATA_SAVED } from "./syncEvents";
 import { serviceUrl, dataRevision, acceptRevision } from "./service";
@@ -8,6 +13,7 @@ export async function httpRequest<T>(
   path: string,
   init?: RequestInit,
   account = { token: webToken(), baseUrl: serviceUrl() },
+  transport: (url: string, options: RequestOptions) => Promise<T> = requestJson,
 ): Promise<T> {
   const dataWrite = isDataWrite(path, init?.method);
   const release = dataWrite ? markDataWrite() : () => {};
@@ -20,7 +26,7 @@ export async function httpRequest<T>(
     if (dataWrite) await beforeDataWrite();
     ensureCurrentAccount();
     const baseRevision = dataRevision();
-    const result = await requestJson<T>(`${baseUrl}${path}`, {
+    const result = await transport(`${baseUrl}${path}`, {
       ...init,
       timeoutMs: requestPolicy(path).timeoutMs,
       onResponse: (response) => {
@@ -52,4 +58,19 @@ export async function httpRequest<T>(
   } finally {
     release();
   }
+}
+
+export async function httpStreamRequest<T>(
+  path: string,
+  init: RequestInit,
+  onEvent: (event: unknown) => T | undefined,
+): Promise<T> {
+  const account = { token: webToken(), baseUrl: serviceUrl() };
+  return httpRequest<T>(path, init, account, (url, options) =>
+    requestEvents(url, options, (event) => {
+      if (webToken() !== account.token || serviceUrl() !== account.baseUrl)
+        throw new Error("账号已切换，请在当前账号中重新操作。");
+      return onEvent(event);
+    }),
+  );
 }

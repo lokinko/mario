@@ -286,7 +286,6 @@ fn dialect(sql: &str) -> String {
             "system_reviews(id)",
             "investment_rules(id)",
             "holdings(id)",
-            "portfolio_events(id)",
         ] {
             let with_delete = format!("REFERENCES {target} ON DELETE CASCADE");
             sql = sql.replace(

@@ -4,7 +4,7 @@ use crate::error::AppResult;
 
 // Bump whenever hosted tables/columns change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 5;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 6;
 
 // Keep legacy migration order intact: opening an old database remains idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -25,17 +25,6 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
          CREATE TABLE IF NOT EXISTS profile (
            id INTEGER PRIMARY KEY CHECK (id = 1),
            payload TEXT NOT NULL,
-           updated_at TEXT NOT NULL
-         );
-         CREATE TABLE IF NOT EXISTS goals (
-           id TEXT PRIMARY KEY,
-           name TEXT NOT NULL,
-           target_amount REAL NOT NULL,
-           current_amount REAL NOT NULL DEFAULT 0,
-           monthly_contribution REAL NOT NULL DEFAULT 0,
-           target_date TEXT NOT NULL,
-           priority TEXT NOT NULL,
-           created_at TEXT NOT NULL,
            updated_at TEXT NOT NULL
          );
          CREATE TABLE IF NOT EXISTS holdings (
@@ -115,25 +104,6 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            extraction_note TEXT NOT NULL
          );
          CREATE INDEX IF NOT EXISTS research_attachments_evidence ON research_attachments(evidence_id);
-         CREATE TABLE IF NOT EXISTS portfolio_events (
-           id TEXT PRIMARY KEY,
-           event_type TEXT NOT NULL,
-           source TEXT NOT NULL DEFAULT 'manual',
-           external_id TEXT NOT NULL DEFAULT '',
-           fingerprint TEXT NOT NULL DEFAULT '',
-           asset_name TEXT NOT NULL,
-           amount REAL NOT NULL,
-           currency TEXT NOT NULL,
-           fx_rate_to_base REAL,
-           fx_rate_source TEXT NOT NULL DEFAULT '',
-           fx_rate_observed_on TEXT NOT NULL DEFAULT '',
-           base_currency TEXT NOT NULL,
-           base_amount REAL NOT NULL,
-           occurred_on TEXT NOT NULL,
-           note TEXT NOT NULL,
-           created_at TEXT NOT NULL,
-           reversal_of_event_id TEXT REFERENCES portfolio_events(id)
-         );
          CREATE TABLE IF NOT EXISTS memory_preferences (
            memory_id TEXT PRIMARY KEY,
            preference TEXT NOT NULL,
@@ -166,26 +136,8 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            value TEXT NOT NULL
          );",
     )?;
-    ensure_column(
-        connection,
-        "goals",
-        "current_amount",
-        "REAL NOT NULL DEFAULT 0",
-    )?;
     ensure_column(connection, "analyses", "audit", "TEXT")?;
     ensure_column(connection, "analyses", "trace", "TEXT")?;
-    ensure_column(
-        connection,
-        "goals",
-        "updated_at",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(
-        connection,
-        "goals",
-        "monthly_contribution",
-        "REAL NOT NULL DEFAULT 0",
-    )?;
     ensure_column(
         connection,
         "holdings",
@@ -197,30 +149,6 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
         "holdings",
         "updated_at",
         "TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(
-        connection,
-        "portfolio_events",
-        "source",
-        "TEXT NOT NULL DEFAULT 'manual'",
-    )?;
-    ensure_column(
-        connection,
-        "portfolio_events",
-        "external_id",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(
-        connection,
-        "portfolio_events",
-        "fingerprint",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    connection.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_portfolio_events_occurred_on
-           ON portfolio_events(occurred_on, created_at);
-         CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolio_events_fingerprint
-           ON portfolio_events(fingerprint) WHERE fingerprint <> '';",
     )?;
     ensure_column(connection, "holdings", "fx_rate_to_base", "REAL")?;
     ensure_column(connection, "holdings", "cost_price", "REAL")?;
@@ -244,28 +172,6 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
         "fx_rate_observed_on",
         "TEXT NOT NULL DEFAULT ''",
     )?;
-    ensure_column(
-        connection,
-        "portfolio_events",
-        "fx_rate_source",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(
-        connection,
-        "portfolio_events",
-        "fx_rate_observed_on",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(
-        connection,
-        "portfolio_events",
-        "reversal_of_event_id",
-        "TEXT REFERENCES portfolio_events(id)",
-    )?;
-    connection.execute_batch(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolio_events_single_reversal
-           ON portfolio_events(reversal_of_event_id) WHERE reversal_of_event_id IS NOT NULL;",
-    )?;
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS holding_trades (
            id TEXT PRIMARY KEY, holding_id TEXT NOT NULL REFERENCES holdings(id),
@@ -273,6 +179,8 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
          );
          CREATE INDEX IF NOT EXISTS idx_holding_trades_holding ON holding_trades(holding_id);",
     )?;
+    connection
+        .execute_batch("DROP TABLE IF EXISTS portfolio_events; DROP TABLE IF EXISTS goals;")?;
     Ok(())
 }
 

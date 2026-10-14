@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 import { isDataWrite, requestPolicy } from "./requestPolicy";
 
-it("keeps caching imports behind revision checks and defaults unknown operations to writes", () => {
-  expect(isDataWrite("/portfolio-events/import/preview", "POST")).toBe(true);
+it("keeps data updates behind revision checks and defaults unknown operations to writes", () => {
+  expect(isDataWrite("/fx-settings/refresh", "POST")).toBe(true);
   expect(isDataWrite("/analysis/preview?source=test", "POST")).toBe(false);
   expect(isDataWrite("/model-config/test", "POST")).toBe(false);
   expect(isDataWrite("/future/preview", "POST")).toBe(true);

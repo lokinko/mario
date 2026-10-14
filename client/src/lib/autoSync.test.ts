@@ -136,8 +136,6 @@ it("tracks all server mutations but not read-only previews or connection tests",
     "/profile",
     "/holdings/h/verified-valuation",
     "/analysis",
-    "/portfolio-events/import/commit",
-    "/portfolio-events/import/preview",
     "/model-config/codex",
   ])
     expect(isDataWrite(path, "POST")).toBe(true);

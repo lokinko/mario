@@ -167,13 +167,6 @@ impl Database {
                 .iter()
                 .filter(|finding| finding.level == "high")
                 .count(),
-            goal_total: portfolio.goals.len(),
-            goals_on_track: portfolio
-                .plan
-                .goal_projections
-                .iter()
-                .filter(|goal| matches!(goal.status.as_str(), "on-track" | "reached"))
-                .count(),
             active_rules: rules.iter().filter(|rule| rule.active).count(),
         };
         let record = SystemReviewRecord {

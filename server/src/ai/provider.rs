@@ -44,6 +44,15 @@ pub trait ModelProvider: Send + Sync {
         ))
     }
     async fn complete(&self, messages: Vec<ChatMessage>) -> AppResult<ModelCompletion>;
+    async fn complete_stream(
+        &self,
+        messages: Vec<ChatMessage>,
+        on_delta: super::streaming::DeltaCallback,
+    ) -> AppResult<ModelCompletion> {
+        let result = self.complete(messages).await?;
+        on_delta(&result.content);
+        Ok(result)
+    }
     fn provider_name(&self) -> &str;
     fn model_name(&self) -> &str;
 }

@@ -9,14 +9,12 @@ import type {
 
 const contextOptions: [keyof ContextSelection, string][] = [
   ["includeProfile", "财务档案"],
-  ["includeGoals", "目标计划"],
   ["includeHoldings", "持仓明细"],
   ["includePlanning", "规划结果"],
   ["includeRiskFindings", "风险检查"],
   ["includeRules", "个人规则"],
   ["includeSystemReviews", "周期复盘"],
   ["includeDailyAssets", "每日资产记录"],
-  ["includePortfolioEvents", "组合流水"],
   ["includeEvidence", "研究证据与历史搜索资料"],
 ];
 

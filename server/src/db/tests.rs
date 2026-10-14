@@ -1,12 +1,180 @@
 use super::*;
 
+#[test]
+fn upgrades_remove_retired_tables_without_changing_active_records() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("upgrade.db");
+    let db = Database::open(&path).unwrap();
+    let holding = db.add_holding(&detailed_holding_input()).unwrap();
+    let before = db.export_sync_data().unwrap();
+    db.conn()
+        .unwrap()
+        .execute_batch(
+            "CREATE TABLE goals (id TEXT PRIMARY KEY, name TEXT);
+         INSERT INTO goals VALUES ('old-goal','旧目标');
+         CREATE TABLE portfolio_events (id TEXT PRIMARY KEY,
+           reversal_of_event_id TEXT REFERENCES portfolio_events(id));
+         INSERT INTO portfolio_events VALUES ('original',NULL),('reversal','original');",
+        )
+        .unwrap();
+    drop(db);
+    for _ in 0..2 {
+        let reopened = Database::open(&path).unwrap();
+        assert_eq!(reopened.export_sync_data().unwrap().tables, before.tables);
+        assert_eq!(
+            reopened.snapshot().unwrap().holdings[0].id,
+            holding.holdings[0].id
+        );
+        let count: i64 = reopened
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('goals','portfolio_events')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+        let snapshot = serde_json::to_value(reopened.snapshot().unwrap()).unwrap();
+        assert!(snapshot.get("goals").is_none());
+        assert!(snapshot["plan"].get("goalProjections").is_none());
+        assert!(snapshot["plan"].get("committedMonthly").is_none());
+    }
+}
+
+#[test]
+fn all_legacy_backup_versions_restore_active_data_and_skip_retired_records() {
+    let source = Database::open(Path::new(":memory:")).unwrap();
+    source
+        .save_profile(&FinancialProfile {
+            monthly_income: 4567.0,
+            ..Default::default()
+        })
+        .unwrap();
+    let current = source.export_sync_data().unwrap();
+    for version in 1..SYNC_DATASET_SCHEMA_VERSION {
+        let specs = sync_specs_for_version(version).unwrap();
+        let tables = specs
+            .iter()
+            .map(|spec| {
+                let mut table = SyncTable {
+                    name: spec.name.into(),
+                    columns: spec.columns.iter().map(|c| (*c).into()).collect(),
+                    rows: Vec::new(),
+                };
+                if let Some(active) = current.tables.iter().find(|t| t.name == spec.name) {
+                    table.rows = active
+                        .rows
+                        .iter()
+                        .map(|row| {
+                            spec.columns
+                                .iter()
+                                .map(|column| {
+                                    row[active.columns.iter().position(|c| c == column).unwrap()]
+                                        .clone()
+                                })
+                                .collect()
+                        })
+                        .collect();
+                } else if matches!(spec.name, "goals" | "portfolio_events") {
+                    // Retired payload values have no domain interpretation in the new service.
+                    table.rows.push(
+                        spec.columns
+                            .iter()
+                            .map(|_| SyncValue::Text("retired".into()))
+                            .collect(),
+                    );
+                }
+                table
+            })
+            .collect();
+        let legacy = SyncDataset {
+            schema_version: version,
+            exported_at: current.exported_at.clone(),
+            tables,
+        };
+        let target = Database::open(Path::new(":memory:")).unwrap();
+        target
+            .import_sync_data(&legacy)
+            .unwrap_or_else(|error| panic!("v{version}: {error}"));
+        assert_eq!(target.snapshot().unwrap().profile.monthly_income, 4567.0);
+        assert!(target
+            .export_sync_data()
+            .unwrap()
+            .tables
+            .iter()
+            .all(|t| !matches!(t.name.as_str(), "goals" | "portfolio_events")));
+    }
+}
+
+#[test]
+fn current_backup_round_trip_preserves_data_and_excludes_private_settings() {
+    let source = Database::open(Path::new(":memory:")).unwrap();
+    source
+        .save_profile(&FinancialProfile {
+            monthly_income: 12345.0,
+            ..Default::default()
+        })
+        .unwrap();
+    source.add_holding(&detailed_holding_input()).unwrap();
+    source
+        .add_investment_rule(&InvestmentRuleInput {
+            category: "仓位".into(),
+            statement: "核对集中度".into(),
+            trigger: "加仓前".into(),
+            rationale: "限制风险".into(),
+            active: true,
+            source_review_id: None,
+        })
+        .unwrap();
+    source
+        .add_research_evidence(&ResearchEvidenceInput {
+            asset_name: "资产".into(),
+            title: "资料".into(),
+            publisher: "来源".into(),
+            source_url: "https://example.com/source".into(),
+            source_tier: "一手来源".into(),
+            evidence_type: "数据发布".into(),
+            stance: "支持".into(),
+            as_of_date: "2026-01-01".into(),
+            claim: "待核对资料".into(),
+            notes: "原文".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    source.conn().unwrap().execute_batch("INSERT INTO analyses(id,question,answer,created_at) VALUES ('analysis','问题','完整回答','2026-01-01T00:00:00Z');").unwrap();
+    source
+        .save_memory_preference(
+            "analysis",
+            &MemoryPreferenceInput {
+                preference: "pinned".into(),
+                note: "保留".into(),
+            },
+        )
+        .unwrap();
+    source
+        .set_setting("private-setting", "private-value")
+        .unwrap();
+    source
+        .set_setting("model.api-key", "private-secret")
+        .unwrap();
+    let exported = source.export_sync_data().unwrap();
+    let serialized = serde_json::to_string(&exported).unwrap();
+    assert!(!serialized.contains("private-value"));
+    assert!(!serialized.contains("private-secret"));
+    let target = Database::open(Path::new(":memory:")).unwrap();
+    target.import_sync_data(&exported).unwrap();
+    assert_eq!(target.export_sync_data().unwrap().tables, exported.tables);
+    assert_eq!(target.memories().unwrap()[0].preference, "pinned");
+}
+
 // Construct an authentic old backup from today's export for compatibility tests.
 pub(super) fn add_retired_tables(dataset: &mut SyncDataset) {
     let specs = sync_specs_for_version(15).unwrap();
     for (index, spec) in specs.iter().enumerate() {
         if matches!(
             spec.name,
-            "decisions" | "decision_reviews" | "portfolio_checkins"
+            "decisions" | "decision_reviews" | "portfolio_checkins" | "goals" | "portfolio_events"
         ) && !dataset.tables.iter().any(|table| table.name == spec.name)
         {
             dataset.tables.insert(
@@ -45,7 +213,7 @@ fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data()
     assert_eq!(exported.schema_version, SYNC_DATASET_SCHEMA_VERSION);
     assert!(!exported.tables.iter().any(|table| matches!(
         table.name.as_str(),
-        "decisions" | "decision_reviews" | "portfolio_checkins"
+        "decisions" | "decision_reviews" | "portfolio_checkins" | "goals" | "portfolio_events"
     )));
     let preferences = exported
         .tables
@@ -376,6 +544,13 @@ fn v16_backups_skip_retired_portfolio_snapshots_and_keep_active_data() {
     .unwrap();
     let mut legacy = db.export_sync_data().unwrap();
     legacy.schema_version = 16;
+    add_retired_tables(&mut legacy);
+    legacy.tables.retain(|table| {
+        !matches!(
+            table.name.as_str(),
+            "decisions" | "decision_reviews" | "portfolio_checkins"
+        )
+    });
     let spec = sync_specs_for_version(16)
         .unwrap()
         .into_iter()
@@ -408,439 +583,6 @@ fn v16_backups_skip_retired_portfolio_snapshots_and_keep_active_data() {
             |row| row.get::<_, bool>(0),
         )
         .unwrap());
-}
-
-#[test]
-fn reverses_events_without_a_baseline_and_preserves_the_audit_chain() {
-    let directory = tempfile::tempdir().unwrap();
-    let db = Database::open(&directory.path().join("reversal.db")).unwrap();
-    db.add_holding(&HoldingInput {
-        symbol: "CASH".into(),
-        name: "现金".into(),
-        asset_class: "现金".into(),
-        market_value: 100_000.0,
-        cost_basis: 100_000.0,
-        cost_price: None,
-        quantity: None,
-        current_price: None,
-        target_pct: 100.0,
-        currency: "CNY".into(),
-        fx_rate_to_base: None,
-        valuation_date: "2026-08-01".into(),
-        fx_rate_source: String::new(),
-        fx_rate_observed_on: String::new(),
-    })
-    .unwrap();
-    let source = db
-        .add_portfolio_event(&PortfolioEventInput {
-            event_type: PortfolioEventType::Deposit,
-            source: "manual".into(),
-            external_id: String::new(),
-            asset_name: String::new(),
-            amount: 1_000.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-            occurred_on: "2026-08-02".into(),
-            note: "误录入金".into(),
-        })
-        .unwrap();
-    let reversal = db
-        .reverse_portfolio_event(
-            &source.id,
-            &PortfolioEventReversalInput {
-                occurred_on: "2026-08-03".into(),
-                note: "与银行流水核对后确认重复".into(),
-            },
-        )
-        .unwrap();
-
-    assert_eq!(reversal.amount, -1_000.0);
-    assert_eq!(reversal.base_amount, -1_000.0);
-    assert_eq!(
-        reversal.reversal_of_event_id.as_deref(),
-        Some(source.id.as_str())
-    );
-    let events = db.portfolio_events().unwrap();
-    let restored_source = events.iter().find(|event| event.id == source.id).unwrap();
-    assert_eq!(
-        restored_source.reversed_by_event_id.as_deref(),
-        Some(reversal.id.as_str())
-    );
-    assert_eq!(
-        events.iter().map(|event| event.base_amount).sum::<f64>(),
-        0.0
-    );
-    assert!(matches!(
-        db.reverse_portfolio_event(
-            &source.id,
-            &PortfolioEventReversalInput {
-                occurred_on: "2026-08-03".into(),
-                note: "再次冲正".into(),
-            }
-        ),
-        Err(AppError::Conflict(_))
-    ));
-    assert!(matches!(
-        db.reverse_portfolio_event(
-            &reversal.id,
-            &PortfolioEventReversalInput {
-                occurred_on: "2026-08-03".into(),
-                note: "冲正冲正记录".into(),
-            }
-        ),
-        Err(AppError::Validation(_))
-    ));
-
-    let dataset = db.export_sync_data().unwrap();
-    let target = Database::open(&directory.path().join("reversal-target.db")).unwrap();
-    target.import_sync_data(&dataset).unwrap();
-    let restored = target.portfolio_events().unwrap();
-    assert_eq!(restored.len(), 2);
-    assert_eq!(
-        restored.iter().map(|event| event.base_amount).sum::<f64>(),
-        0.0
-    );
-}
-
-#[test]
-fn sync_snapshot_round_trips_domain_data_but_never_settings() {
-    let directory = tempfile::tempdir().unwrap();
-    let source = Database::open(&directory.path().join("source.db")).unwrap();
-    source
-        .save_profile(&FinancialProfile {
-            monthly_expense: 8_000.0,
-            emergency_fund: 48_000.0,
-            ..Default::default()
-        })
-        .unwrap();
-    source
-        .add_holding(&HoldingInput {
-            symbol: "IDX".into(),
-            name: "宽基指数".into(),
-            asset_class: "基金".into(),
-            market_value: 120_000.0,
-            cost_basis: 100_000.0,
-            cost_price: None,
-            quantity: None,
-            current_price: None,
-            target_pct: 100.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            valuation_date: "2026-01-01".into(),
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-        })
-        .unwrap();
-    let holding_id = source.snapshot().unwrap().holdings[0].id.clone();
-    let mut quote = verified_quote();
-    quote.symbol = "IDX".into();
-    quote.currency = "CNY".into();
-    quote.requested_on = "2026-01-01".into();
-    quote.observed_on = "2026-01-01".into();
-    quote.staleness_days = 0;
-    quote.close = 12.0;
-    quote.source_url = "https://api.twelvedata.com/time_series?symbol=IDX&interval=1day".into();
-    source
-        .apply_verified_holding_valuation(&holding_id, 10_000.0, &quote)
-        .unwrap();
-    let _rule = source
-        .add_investment_rule(&InvestmentRuleInput {
-            category: "仓位".into(),
-            statement: "单一主动仓位不超过 8%".into(),
-            trigger: "任何新建或加仓决定".into(),
-            rationale: "限制永久损失".into(),
-            active: true,
-            source_review_id: None,
-        })
-        .unwrap();
-    let analysis_id = "synced-analysis".to_string();
-    source
-        .conn()
-        .unwrap()
-        .execute(
-            "INSERT INTO analyses(id, question, answer, created_at) VALUES (?1, ?2, ?3, ?4)",
-            params![
-                analysis_id,
-                "指数研究",
-                "指数集中度分析",
-                "2026-01-01T00:00:00Z"
-            ],
-        )
-        .unwrap();
-    let hidden_memory = source
-        .save_memory_preference(
-            &analysis_id,
-            &MemoryPreferenceInput {
-                preference: "hidden".into(),
-                note: "先验证永久屏蔽".into(),
-            },
-        )
-        .unwrap();
-    assert!(!hidden_memory.selected);
-    source
-        .save_memory_preference(
-            &analysis_id,
-            &MemoryPreferenceInput {
-                preference: "pinned".into(),
-                note: "跨设备保留的能力圈经验".into(),
-            },
-        )
-        .unwrap();
-    source
-        .add_portfolio_event(&PortfolioEventInput {
-            event_type: PortfolioEventType::Deposit,
-            source: "同步券商".into(),
-            external_id: "sync-event-1".into(),
-            asset_name: String::new(),
-            amount: 700.0,
-            currency: "USD".into(),
-            fx_rate_to_base: Some(7.0),
-            fx_rate_source: "ecb_reference".into(),
-            fx_rate_observed_on: "2026-01-02".into(),
-            occurred_on: "2026-01-02".into(),
-            note: "同步测试入金".into(),
-        })
-        .unwrap();
-    source.set_setting("model.name", "never-sync-this").unwrap();
-
-    let dataset = source.export_sync_data().unwrap();
-    let second_export = source.export_sync_data().unwrap();
-    assert_eq!(
-        dataset.content_hash().unwrap(),
-        second_export.content_hash().unwrap()
-    );
-
-    let mut orphaned_preference = dataset.clone();
-    let preference_table = orphaned_preference
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "memory_preferences")
-        .unwrap();
-    preference_table.rows[0][0] = SyncValue::Text("missing-memory".into());
-    let preference_target = Database::open(&directory.path().join("preference-target.db")).unwrap();
-    assert!(matches!(
-        preference_target.import_sync_data(&orphaned_preference),
-        Err(AppError::Validation(_))
-    ));
-
-    let mut corrupted_identity = dataset.clone();
-    let event_table = corrupted_identity
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "portfolio_events")
-        .unwrap();
-    event_table.rows[0][4] = SyncValue::Text("wrong-fingerprint".into());
-    let corrupted_target = Database::open(&directory.path().join("corrupted-target.db")).unwrap();
-    assert!(matches!(
-        corrupted_target.import_sync_data(&corrupted_identity),
-        Err(AppError::Validation(_))
-    ));
-
-    let mut corrupted_fx_date = dataset.clone();
-    let event_table = corrupted_fx_date
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "portfolio_events")
-        .unwrap();
-    event_table.rows[0][10] = SyncValue::Text("2026-01-03".into());
-    assert!(matches!(
-        corrupted_target.import_sync_data(&corrupted_fx_date),
-        Err(AppError::Validation(_))
-    ));
-
-    let mut corrupted_valuation = dataset.clone();
-    let valuation_table = corrupted_valuation
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "holding_valuations")
-        .unwrap();
-    valuation_table.rows[0][4] = SyncValue::Real(999.0);
-    assert!(matches!(
-        corrupted_target.import_sync_data(&corrupted_valuation),
-        Err(AppError::Validation(_))
-    ));
-
-    let target = Database::open(&directory.path().join("target.db")).unwrap();
-    target
-        .set_setting("model.name", "keep-local-model")
-        .unwrap();
-    target.import_sync_data(&dataset).unwrap();
-    let restored = target.snapshot().unwrap();
-    assert_eq!(restored.holdings.len(), 1);
-    assert_eq!(restored.holding_valuations.len(), 1);
-    assert_eq!(restored.holding_valuations[0].quantity, 10_000.0);
-    assert_eq!(restored.profile.emergency_fund, 48_000.0);
-    let restored_memory = target
-        .memories()
-        .unwrap()
-        .into_iter()
-        .find(|item| item.id == analysis_id)
-        .unwrap();
-    assert_eq!(restored_memory.preference, "pinned");
-    assert_eq!(restored_memory.preference_note, "跨设备保留的能力圈经验");
-    let restored_events = target.portfolio_events().unwrap();
-    assert_eq!(restored_events.len(), 1);
-    assert_eq!(restored_events[0].source, "同步券商");
-    assert_eq!(restored_events[0].external_id, "sync-event-1");
-    assert_eq!(restored_events[0].fx_rate_source, "ecb_reference");
-    assert_eq!(restored_events[0].fx_rate_observed_on, "2026-01-02");
-    assert_eq!(
-        target.setting("model.name").unwrap().as_deref(),
-        Some("keep-local-model")
-    );
-
-    let mut legacy_v8 = dataset.clone();
-    add_retired_tables(&mut legacy_v8);
-    let legacy_reviews = legacy_v8
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "decision_reviews")
-        .unwrap();
-    legacy_reviews.columns.pop();
-    for row in &mut legacy_reviews.rows {
-        row.pop();
-    }
-    legacy_v8.tables.truncate(14); // Drop v10 daily tracking tables to construct an authentic v8 package.
-    for table in &mut legacy_v8.tables {
-        if matches!(table.name.as_str(), "decision_reviews" | "system_reviews") {
-            if let Some(index) = table.columns.iter().position(|column| column == "content") {
-                table.columns.remove(index);
-                for row in &mut table.rows {
-                    row.remove(index);
-                }
-            }
-        }
-    }
-    strip_holding_details_for_legacy(&mut legacy_v8);
-    legacy_v8.schema_version = 8;
-    assert_eq!(legacy_v8.tables.pop().unwrap().name, "holding_valuations");
-    legacy_v8.validate().unwrap();
-    let v8_target = Database::open(&directory.path().join("v8-target.db")).unwrap();
-    v8_target.import_sync_data(&legacy_v8).unwrap();
-    assert_eq!(v8_target.memories().unwrap().len(), 1);
-
-    let mut legacy_v7 = legacy_v8;
-    legacy_v7.schema_version = 7;
-    assert_eq!(legacy_v7.tables.pop().unwrap().name, "memory_preferences");
-    legacy_v7.validate().unwrap();
-    let v7_target = Database::open(&directory.path().join("v7-target.db")).unwrap();
-    v7_target.import_sync_data(&legacy_v7).unwrap();
-    assert_eq!(v7_target.portfolio_events().unwrap().len(), 1);
-
-    let mut legacy_v6 = legacy_v7;
-    legacy_v6.schema_version = 6;
-    let events = legacy_v6
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "portfolio_events")
-        .unwrap();
-    events.columns.remove(16);
-    for row in &mut events.rows {
-        row.remove(16);
-    }
-    legacy_v6.validate().unwrap();
-    let v6_target = Database::open(&directory.path().join("v6-target.db")).unwrap();
-    v6_target.import_sync_data(&legacy_v6).unwrap();
-    assert_eq!(v6_target.portfolio_events().unwrap().len(), 1);
-
-    let mut legacy_v5 = legacy_v6;
-    legacy_v5.schema_version = 5;
-    let holdings = legacy_v5
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "holdings")
-        .unwrap();
-    for index in [11, 10] {
-        holdings.columns.remove(index);
-        for row in &mut holdings.rows {
-            row.remove(index);
-        }
-    }
-    let events = legacy_v5
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "portfolio_events")
-        .unwrap();
-    for index in [10, 9] {
-        events.columns.remove(index);
-        for row in &mut events.rows {
-            row.remove(index);
-        }
-    }
-    legacy_v5.validate().unwrap();
-    let v5_target = Database::open(&directory.path().join("v5-target.db")).unwrap();
-    v5_target.import_sync_data(&legacy_v5).unwrap();
-    assert!(v5_target.portfolio_events().unwrap()[0]
-        .fx_rate_source
-        .is_empty());
-
-    let mut legacy_v4 = legacy_v5;
-    legacy_v4.schema_version = 4;
-    let events = legacy_v4
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "portfolio_events")
-        .unwrap();
-    for index in [4, 3, 2] {
-        events.columns.remove(index);
-        for row in &mut events.rows {
-            row.remove(index);
-        }
-    }
-    legacy_v4.validate().unwrap();
-    let v4_target = Database::open(&directory.path().join("v4-target.db")).unwrap();
-    v4_target.import_sync_data(&legacy_v4).unwrap();
-    let v4_events = v4_target.portfolio_events().unwrap();
-    assert_eq!(v4_events.len(), 1);
-    assert_eq!(v4_events[0].source, "manual");
-    assert!(v4_events[0].external_id.is_empty());
-
-    let mut legacy_v3 = legacy_v4;
-    legacy_v3.schema_version = 3;
-    assert_eq!(legacy_v3.tables.pop().unwrap().name, "portfolio_events");
-    legacy_v3.validate().unwrap();
-    let v3_target = Database::open(&directory.path().join("v3-target.db")).unwrap();
-    v3_target.import_sync_data(&legacy_v3).unwrap();
-    assert!(v3_target.portfolio_events().unwrap().is_empty());
-
-    let mut legacy_v2 = legacy_v3;
-    legacy_v2.schema_version = 2;
-    let holdings = legacy_v2
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "holdings")
-        .unwrap();
-    for index in [9, 8] {
-        holdings.columns.remove(index);
-        for row in &mut holdings.rows {
-            row.remove(index);
-        }
-    }
-    legacy_v2.validate().unwrap();
-    let v2_target = Database::open(&directory.path().join("v2-target.db")).unwrap();
-    v2_target.import_sync_data(&legacy_v2).unwrap();
-    assert_eq!(
-        v2_target
-            .snapshot()
-            .unwrap()
-            .valuation_status
-            .undated_holding_count,
-        1
-    );
-
-    let mut legacy_dataset = legacy_v2;
-    add_retired_tables(&mut legacy_dataset);
-    legacy_dataset.schema_version = 1;
-    assert_eq!(
-        legacy_dataset.tables.pop().unwrap().name,
-        "portfolio_checkins"
-    );
-    legacy_dataset.validate().unwrap();
-    let legacy_target = Database::open(&directory.path().join("legacy-target.db")).unwrap();
-    legacy_target.import_sync_data(&legacy_dataset).unwrap();
-    assert_eq!(legacy_target.snapshot().unwrap().holdings.len(), 1);
 }
 
 #[test]
@@ -879,177 +621,6 @@ fn updates_and_deletes_holding() {
     let snapshot = db.update_holding(id, &updated).unwrap();
     assert_eq!(snapshot.holdings[0].market_value, 120_000.0);
     assert!(db.delete_holding(id).unwrap().holdings.is_empty());
-}
-
-#[test]
-fn csv_event_import_is_previewed_atomic_deduplicated_and_revision_bound() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("event-import.db")).unwrap();
-    db.add_holding(&HoldingInput {
-        symbol: "CASH".into(),
-        name: "现金".into(),
-        asset_class: "现金".into(),
-        market_value: 10_000.0,
-        cost_basis: 10_000.0,
-        cost_price: None,
-        quantity: None,
-        current_price: None,
-        target_pct: 100.0,
-        currency: "CNY".into(),
-        fx_rate_to_base: None,
-        valuation_date: "2026-08-31".into(),
-        fx_rate_source: String::new(),
-        fx_rate_observed_on: String::new(),
-    })
-    .unwrap();
-
-    let conflicting = "source,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,asset_name,note\n券商甲,trade-001,deposit,2026-09-01,1000,CNY,,,首次入金\n券商甲,trade-001,deposit,2026-09-01,2000,CNY,,,冲突入金\n";
-    let conflict_preview = db
-        .preview_portfolio_event_import(&PortfolioEventImportRequest {
-            csv_text: conflicting.into(),
-        })
-        .unwrap();
-    assert_eq!(conflict_preview.ready_count, 1);
-    assert_eq!(conflict_preview.error_count, 1);
-    assert!(matches!(
-        db.commit_portfolio_event_import(&PortfolioEventImportCommitRequest {
-            csv_text: conflicting.into(),
-            preview_revision: conflict_preview.preview_revision,
-        }),
-        Err(AppError::Validation(_))
-    ));
-    assert!(db.portfolio_events().unwrap().is_empty());
-
-    let valid = "source,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,asset_name,note\n券商甲,trade-001,deposit,2026-09-01,1000,CNY,,,首次入金\n券商甲,trade-001,deposit,2026-09-01,1000,CNY,,,首次入金\n券商甲,fee-001,fee,2026-09-02,5,CNY,,指数基金,交易费用\n";
-    let preview = db
-        .preview_portfolio_event_import(&PortfolioEventImportRequest {
-            csv_text: valid.into(),
-        })
-        .unwrap();
-    assert_eq!(preview.ready_count, 2);
-    assert_eq!(preview.duplicate_count, 1);
-    assert_eq!(preview.error_count, 0);
-    let changed_after_preview = valid.replace("交易费用", "费用说明已改变");
-    assert!(matches!(
-        db.commit_portfolio_event_import(&PortfolioEventImportCommitRequest {
-            csv_text: changed_after_preview,
-            preview_revision: preview.preview_revision.clone(),
-        }),
-        Err(AppError::Conflict(_))
-    ));
-    assert!(db.portfolio_events().unwrap().is_empty());
-    let result = db
-        .commit_portfolio_event_import(&PortfolioEventImportCommitRequest {
-            csv_text: valid.into(),
-            preview_revision: preview.preview_revision,
-        })
-        .unwrap();
-    assert_eq!(result.inserted_count, 2);
-    assert_eq!(result.duplicate_count, 1);
-    assert_eq!(db.portfolio_events().unwrap().len(), 2);
-
-    let repeated = db
-        .preview_portfolio_event_import(&PortfolioEventImportRequest {
-            csv_text: valid.into(),
-        })
-        .unwrap();
-    assert_eq!(repeated.ready_count, 0);
-    assert_eq!(repeated.duplicate_count, 3);
-    let repeated_result = db
-        .commit_portfolio_event_import(&PortfolioEventImportCommitRequest {
-            csv_text: valid.into(),
-            preview_revision: repeated.preview_revision,
-        })
-        .unwrap();
-    assert_eq!(repeated_result.inserted_count, 0);
-
-    let changed = valid.replace("1000,CNY,,,首次入金", "1200,CNY,,,首次入金");
-    let changed_preview = db
-        .preview_portfolio_event_import(&PortfolioEventImportRequest { csv_text: changed })
-        .unwrap();
-    assert!(changed_preview.error_count > 0);
-
-    let late = "source,external_id,event_type,occurred_on,amount,currency,fx_rate_to_base,asset_name,note\n券商甲,trade-003,interest,2026-09-03,20,CNY,,现金,利息\n";
-    let late_preview = db
-        .preview_portfolio_event_import(&PortfolioEventImportRequest {
-            csv_text: late.into(),
-        })
-        .unwrap();
-    db.add_portfolio_event(&PortfolioEventInput {
-        event_type: PortfolioEventType::Interest,
-        source: "券商甲".into(),
-        external_id: "trade-003".into(),
-        asset_name: "现金".into(),
-        amount: 20.0,
-        currency: "CNY".into(),
-        fx_rate_to_base: None,
-        fx_rate_source: String::new(),
-        fx_rate_observed_on: String::new(),
-        occurred_on: "2026-09-03".into(),
-        note: "利息".into(),
-    })
-    .unwrap();
-    assert!(matches!(
-        db.commit_portfolio_event_import(&PortfolioEventImportCommitRequest {
-            csv_text: late.into(),
-            preview_revision: late_preview.preview_revision,
-        }),
-        Err(AppError::Conflict(_))
-    ));
-}
-
-#[test]
-fn foreign_currency_events_require_and_freeze_the_declared_rate() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("event-fx.db")).unwrap();
-    db.add_holding(&HoldingInput {
-        symbol: "CASH".into(),
-        name: "现金".into(),
-        asset_class: "现金".into(),
-        market_value: 10_000.0,
-        cost_basis: 10_000.0,
-        cost_price: None,
-        quantity: None,
-        current_price: None,
-        target_pct: 100.0,
-        currency: "CNY".into(),
-        fx_rate_to_base: None,
-        valuation_date: "2026-08-31".into(),
-        fx_rate_source: String::new(),
-        fx_rate_observed_on: String::new(),
-    })
-    .unwrap();
-    let mut input = PortfolioEventInput {
-        event_type: PortfolioEventType::Withdrawal,
-        source: "manual".into(),
-        external_id: String::new(),
-        asset_name: String::new(),
-        amount: 100.0,
-        currency: "USD".into(),
-        fx_rate_to_base: None,
-        fx_rate_source: String::new(),
-        fx_rate_observed_on: String::new(),
-        occurred_on: "2026-09-01".into(),
-        note: "美元出金".into(),
-    };
-    assert!(matches!(
-        db.add_portfolio_event(&input),
-        Err(AppError::Validation(_))
-    ));
-    input.fx_rate_to_base = Some(7.0);
-    input.fx_rate_source = "ecb_reference".into();
-    input.fx_rate_observed_on = "2026-09-02".into();
-    assert!(matches!(
-        db.add_portfolio_event(&input),
-        Err(AppError::Validation(_))
-    ));
-    input.fx_rate_observed_on = "2026-08-31".into();
-    let event = db.add_portfolio_event(&input).unwrap();
-    assert_eq!(event.base_currency, "CNY");
-    assert_eq!(event.base_amount, 700.0);
-    assert_eq!(event.fx_rate_to_base, Some(7.0));
-    assert_eq!(event.fx_rate_source, "ecb_reference");
-    assert_eq!(event.fx_rate_observed_on, "2026-08-31");
 }
 
 #[test]
@@ -1195,86 +766,6 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
         )
         .unwrap();
     assert_eq!(normalized.total_value, 142.0);
-}
-
-#[test]
-fn updates_goal_funding_and_recalculates_projection() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    let input = GoalInput {
-        name: "养老".into(),
-        target_amount: 1_000_000.0,
-        current_amount: 100_000.0,
-        monthly_contribution: 2_000.0,
-        target_date: "2036-12-31".into(),
-        priority: "重要".into(),
-    };
-    let created = db.add_goal(&input).unwrap();
-    let id = created.goals[0].id.clone();
-    let initial_success = created.plan.goal_projections[0].estimated_success_pct;
-    let mut updated = input;
-    updated.monthly_contribution = 8_000.0;
-    let snapshot = db.update_goal(&id, &updated).unwrap();
-    assert_eq!(snapshot.goals[0].monthly_contribution, 8_000.0);
-    assert!(snapshot.plan.goal_projections[0].estimated_success_pct > initial_success);
-    assert!(db.delete_goal(&id).unwrap().goals.is_empty());
-}
-
-#[test]
-fn migrates_existing_goal_and_holding_columns_without_losing_data() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("legacy.db");
-    let connection = Connection::open(&path).unwrap();
-    connection
-        .execute_batch(
-            "CREATE TABLE goals (
-               id TEXT PRIMARY KEY, name TEXT NOT NULL, target_amount REAL NOT NULL,
-               target_date TEXT NOT NULL, priority TEXT NOT NULL, created_at TEXT NOT NULL
-             );
-             CREATE TABLE holdings (
-               id TEXT PRIMARY KEY, symbol TEXT NOT NULL, name TEXT NOT NULL,
-               asset_class TEXT NOT NULL, market_value REAL NOT NULL, cost_basis REAL NOT NULL,
-               currency TEXT NOT NULL, created_at TEXT NOT NULL
-             );
-             CREATE TABLE analyses (
-               id TEXT PRIMARY KEY, question TEXT NOT NULL, answer TEXT NOT NULL,
-               created_at TEXT NOT NULL
-             );
-             CREATE TABLE portfolio_events (
-               id TEXT PRIMARY KEY, event_type TEXT NOT NULL, asset_name TEXT NOT NULL,
-               amount REAL NOT NULL, currency TEXT NOT NULL, fx_rate_to_base REAL,
-               base_currency TEXT NOT NULL, base_amount REAL NOT NULL,
-               occurred_on TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL
-             );
-             INSERT INTO goals VALUES ('g1','养老',1000000,'2036-12-31','重要','2026-01-01');
-             INSERT INTO holdings VALUES ('h1','IDX','指数','基金',100000,90000,'CNY','2026-01-01');
-             INSERT INTO analyses VALUES ('a1','旧问题','旧回答','2026-01-01');
-             INSERT INTO portfolio_events VALUES (
-               'e1','deposit','',1000,'CNY',NULL,'CNY',1000,
-               '2026-01-02','旧版入金','2026-01-02T00:00:00Z'
-             );",
-        )
-        .unwrap();
-    drop(connection);
-
-    let db = Database::open(&path).unwrap();
-    let snapshot = db.snapshot().unwrap();
-    assert_eq!(snapshot.goals[0].current_amount, 0.0);
-    assert_eq!(snapshot.goals[0].monthly_contribution, 0.0);
-    assert_eq!(snapshot.holdings[0].target_pct, 0.0);
-    assert_eq!(snapshot.holdings[0].fx_rate_to_base, None);
-    assert!(snapshot.holdings[0].valuation_date.is_empty());
-    assert!(snapshot.holdings[0].fx_rate_source.is_empty());
-    assert!(snapshot.holdings[0].fx_rate_observed_on.is_empty());
-    let events = db.portfolio_events().unwrap();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].source, "manual");
-    assert!(events[0].external_id.is_empty());
-    assert!(events[0].fx_rate_source.is_empty());
-    assert!(events[0].fx_rate_observed_on.is_empty());
-    assert_eq!(snapshot.profile.base_currency, "CNY");
-    assert_eq!(snapshot.valuation_status.undated_holding_count, 1);
-    assert!(db.analysis_history().unwrap()[0].transparency.is_none());
 }
 
 #[test]

@@ -5,30 +5,21 @@ mod text;
 use text::truncate_chars;
 mod sync_validation;
 use sync_validation::{
-    quote_identifier, validate_synced_event_identities, validate_synced_event_reversals,
-    validate_synced_fx_provenance, validate_synced_holding_valuations,
+    quote_identifier, validate_synced_fx_provenance, validate_synced_holding_valuations,
     validate_synced_memory_preferences,
 };
 mod snapshot;
 use snapshot::build_snapshot;
 mod validation;
 use validation::{
-    normalized_fx_provenance, normalized_holding_fx_provenance, validate_currency, validate_goal,
+    normalized_fx_provenance, normalized_holding_fx_provenance, validate_currency,
     validate_holding, validate_holding_valuation_evidence, validate_investment_rule,
-    validate_non_negative, validate_portfolio_event, validate_research_evidence,
-    validate_system_review,
-};
-mod ledger_values;
-use ledger_values::{
-    insert_portfolio_event, portfolio_event_content_hash, portfolio_event_fingerprint,
-    portfolio_event_identity_fingerprint, portfolio_event_import_row, portfolio_event_record,
-    portfolio_event_record_from_row, portfolio_import_revision,
+    validate_non_negative, validate_research_evidence, validate_system_review,
 };
 mod rule_values;
 use rule_values::store_rule_revision;
 mod daily;
 mod fx;
-mod ledger;
 mod memory;
 mod portfolio;
 mod reminders;
@@ -45,24 +36,19 @@ use std::{
     sync::Mutex,
 };
 
-use crate::storage::{Connection, Row, Transaction};
+use crate::storage::{Connection, Transaction};
 use chrono::{Local, NaiveDate, Utc};
 use rusqlite::{params, types::ValueRef};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::{
     error::{AppError, AppResult},
-    event_import,
     models::{
-        AnalysisHistoryItem, AnalysisResult, FinancialProfile, Goal, GoalInput, Holding,
-        HoldingInput, HoldingValuationEvidence, InvestmentRule, InvestmentRuleInput,
-        InvestmentRuleRevision, MemoryItem, MemoryPreferenceInput, ModelConfig,
-        PortfolioEventImportCommitRequest, PortfolioEventImportPreview,
-        PortfolioEventImportRequest, PortfolioEventImportResult, PortfolioEventImportRow,
-        PortfolioEventInput, PortfolioEventRecord, PortfolioEventReversalInput, PortfolioEventType,
-        ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary, SecurityPriceQuote,
-        Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
+        AnalysisHistoryItem, AnalysisResult, FinancialProfile, Holding, HoldingInput,
+        HoldingValuationEvidence, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision,
+        MemoryItem, MemoryPreferenceInput, ModelConfig, ResearchEvidence, ResearchEvidenceInput,
+        ReviewReminderSummary, SecurityPriceQuote, Snapshot, StoredAnalysis, SystemReviewInput,
+        SystemReviewRecord, SystemReviewSnapshot,
     },
     planning, risk, valuation,
 };

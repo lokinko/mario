@@ -45,6 +45,7 @@ impl CodexProvider {
         &self,
         messages: Vec<ChatMessage>,
         search: bool,
+        on_delta: Option<super::streaming::DeltaCallback>,
     ) -> AppResult<SearchCompletion> {
         tokio::time::timeout(Duration::from_secs(180), async {
             let mut rpc = Rpc::start().await?;
@@ -72,6 +73,11 @@ impl CodexProvider {
                     return Err(AppError::Model("Codex 请求了问答以外的工具操作，已停止本次调用".into()));
                 }
                 match event["method"].as_str() {
+                    Some("item/agentMessage/delta") => {
+                        if let (Some(callback), Some(delta)) = (&on_delta, event["params"]["delta"].as_str()) {
+                            callback(delta);
+                        }
+                    }
                     Some("item/completed") => ingest_item(&event["params"]["item"], &mut output)?,
                     Some("thread/tokenUsage/updated") => {
                         let usage = &event["params"]["tokenUsage"]["total"];
@@ -94,14 +100,25 @@ impl CodexProvider {
 #[async_trait]
 impl ModelProvider for CodexProvider {
     async fn complete(&self, messages: Vec<ChatMessage>) -> AppResult<ModelCompletion> {
-        let result = self.generate(messages, false).await?;
+        let result = self.generate(messages, false, None).await?;
         Ok(ModelCompletion {
             content: result.content,
             usage: result.usage,
         })
     }
     async fn search(&self, messages: Vec<ChatMessage>) -> AppResult<SearchCompletion> {
-        self.generate(messages, true).await
+        self.generate(messages, true, None).await
+    }
+    async fn complete_stream(
+        &self,
+        messages: Vec<ChatMessage>,
+        on_delta: super::streaming::DeltaCallback,
+    ) -> AppResult<ModelCompletion> {
+        let result = self.generate(messages, false, Some(on_delta)).await?;
+        Ok(ModelCompletion {
+            content: result.content,
+            usage: result.usage,
+        })
     }
     fn provider_name(&self) -> &str {
         "codex"

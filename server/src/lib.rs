@@ -7,7 +7,6 @@ mod authentication;
 mod context;
 mod db;
 mod error;
-mod event_import;
 mod evidence;
 mod fx;
 mod hosted;
@@ -21,6 +20,7 @@ mod risk;
 mod runtime;
 mod secrets;
 mod storage;
+mod streaming;
 mod valuation;
 
 pub use error::{AppError, AppResult};

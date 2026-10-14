@@ -10,16 +10,14 @@ export function requestPolicy(path: string) {
   const resource = path.split("?")[0];
   const timeoutMs = [
     "/analysis",
+    "/analysis/stream",
     "/model-config/test",
     "/model-config/codex",
-    "/portfolio-events/import/preview",
-    "/portfolio-events/import/commit",
   ].includes(resource)
     ? 300000
     : resource === "/snapshot" ||
         resource.startsWith("/fx-settings") ||
-        resource.startsWith("/market-data/fx-rate") ||
-        resource === "/portfolio-events"
+        resource.startsWith("/market-data/fx-rate")
       ? 30000
       : resource.startsWith("/research-evidence") ||
           resource.startsWith("/data/")
@@ -30,6 +28,6 @@ export function requestPolicy(path: string) {
     acceptsRevision: (dataWrite: boolean) =>
       resource === "/snapshot" ||
       resource === "/fx-settings" ||
-      (dataWrite && resource !== "/analysis"),
+      (dataWrite && !["/analysis", "/analysis/stream"].includes(resource)),
   };
 }

@@ -2,15 +2,9 @@ import { httpRequest } from "../lib/httpClient";
 import type {
   FinancialProfile,
   FxBook,
-  Goal,
   Holding,
   SecurityPriceConfig,
   SecurityPriceQuote,
-  PortfolioEventInput,
-  PortfolioEventImportPreview,
-  PortfolioEventImportResult,
-  PortfolioEventRecord,
-  PortfolioEventReversalInput,
   Snapshot,
 } from "../types";
 import { serviceUrl } from "../lib/service";
@@ -118,80 +112,6 @@ export function deleteHoldingTrade(
   return httpRequest<Snapshot>(`/holding-trades/${encodeURIComponent(id)}`, {
     method: "DELETE",
     body: JSON.stringify(input),
-  });
-}
-
-export async function getPortfolioEvents(): Promise<PortfolioEventRecord[]> {
-  return httpRequest<PortfolioEventRecord[]>("/portfolio-events");
-}
-
-export async function savePortfolioEvent(
-  input: PortfolioEventInput,
-): Promise<PortfolioEventRecord> {
-  return httpRequest<PortfolioEventRecord>("/portfolio-events", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export async function reversePortfolioEvent(
-  id: string,
-  input: PortfolioEventReversalInput,
-): Promise<PortfolioEventRecord> {
-  return httpRequest<PortfolioEventRecord>(
-    `/portfolio-events/${encodeURIComponent(id)}/reverse`,
-    {
-      method: "POST",
-      body: JSON.stringify(input),
-    },
-  );
-}
-
-export async function previewPortfolioEventImport(
-  csvText: string,
-): Promise<PortfolioEventImportPreview> {
-  return httpRequest<PortfolioEventImportPreview>(
-    "/portfolio-events/import/preview",
-    {
-      method: "POST",
-      body: JSON.stringify({ csvText }),
-    },
-  );
-}
-
-export async function commitPortfolioEventImport(
-  csvText: string,
-  previewRevision: string,
-): Promise<PortfolioEventImportResult> {
-  return httpRequest<PortfolioEventImportResult>(
-    "/portfolio-events/import/commit",
-    {
-      method: "POST",
-      body: JSON.stringify({ csvText, previewRevision }),
-    },
-  );
-}
-
-export async function saveGoal(goal: Omit<Goal, "id">): Promise<Snapshot> {
-  return httpRequest<Snapshot>("/goals", {
-    method: "POST",
-    body: JSON.stringify(goal),
-  });
-}
-
-export async function updateGoal(
-  id: string,
-  goal: Omit<Goal, "id">,
-): Promise<Snapshot> {
-  return httpRequest<Snapshot>(`/goals/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    body: JSON.stringify(goal),
-  });
-}
-
-export async function deleteGoal(id: string): Promise<Snapshot> {
-  return httpRequest<Snapshot>(`/goals/${encodeURIComponent(id)}`, {
-    method: "DELETE",
   });
 }
 

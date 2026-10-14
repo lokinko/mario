@@ -1,6 +1,12 @@
 import { SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ChevronRight, LoaderCircle, Send } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronRight,
+  LoaderCircle,
+  Send,
+  Square,
+} from "lucide-react";
 import {
   getAnalysis,
   getAnalysisHistory,
@@ -40,12 +46,21 @@ export function Advisor({
   const latestAnswerRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sendingRef = useRef(false);
+  const streamRef = useRef<AbortController | null>(null);
+  const [draft, setDraft] = useState<{
+    question: string;
+    answer: string;
+  } | null>(null);
+  const [stage, setStage] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [running, setRunning] = useState(false);
+  const [stopped, setStopped] = useState(false);
   const [error, setError] = useState("");
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
   const [historyBusy, setHistoryBusy] = useState("");
   const [historyError, setHistoryError] = useState("");
+
+  useEffect(() => () => streamRef.current?.abort(), []);
 
   useEffect(() => {
     if (!active || running) return;
@@ -69,6 +84,8 @@ export function Advisor({
     }
     setQuestion(queued);
     setTurns([]);
+    setDraft(null);
+    setStopped(false);
     setError("");
     window.sessionStorage.removeItem("mario.advisorQuestion");
     window.sessionStorage.removeItem("compass.advisorQuestion");
@@ -96,12 +113,12 @@ export function Advisor({
   }, []);
 
   useEffect(() => {
-    if (active && turns.length)
+    if (active && (turns.length || draft))
       latestAnswerRef.current?.scrollIntoView?.({
         behavior: "smooth",
         block: "start",
       });
-  }, [turns, active]);
+  }, [turns.length, Boolean(draft), active]);
 
   const send = async () => {
     if (
@@ -116,7 +133,12 @@ export function Advisor({
     const message = question.trim();
     const previous = turns.at(-1);
     setRunning(true);
+    setStopped(false);
     setError("");
+    setDraft({ question: message, answer: "" });
+    setStage("正在准备资料…");
+    const controller = new AbortController();
+    streamRef.current = controller;
     try {
       // Read the account's saved defaults for every turn, including after a
       // settings change on this device or another device.
@@ -135,13 +157,23 @@ export function Advisor({
       // Keep the server's immutable context check without an extra UI step.
       const preview = await previewAnalysis(request);
       if (!isCurrent()) return;
-      const result = await runAnalysis({
-        ...request,
-        previewRevision: preview.contextRevision,
-      });
+      const result = await runAnalysis(
+        {
+          ...request,
+          previewRevision: preview.contextRevision,
+        },
+        (update) => {
+          if (!isCurrent()) return;
+          if (update.type === "draft")
+            setDraft({ question: message, answer: update.answer });
+          else setStage(update.message);
+        },
+        controller.signal,
+      );
       if (!isCurrent()) return;
       setTurns((current) => [...current, { question: message, result }]);
       setQuestion("");
+      setDraft(null);
       void getAnalysisHistory()
         .then((items) => {
           if (isCurrent()) {
@@ -155,9 +187,25 @@ export function Advisor({
     } catch (nextError) {
       if (isCurrent()) setError(String(nextError));
     } finally {
-      sendingRef.current = false;
-      if (isCurrent()) setRunning(false);
+      // A stopped request may settle after another send has already started.
+      if (streamRef.current === controller) {
+        sendingRef.current = false;
+        streamRef.current = null;
+        if (isCurrent()) setRunning(false);
+      }
     }
+  };
+
+  const stop = () => {
+    const controller = streamRef.current;
+    if (!controller) return;
+    analysisRequest.invalidate();
+    streamRef.current = null;
+    sendingRef.current = false;
+    controller.abort();
+    setRunning(false);
+    setStopped(true);
+    setError("");
   };
 
   const openStoredAnalysis = async (id: string) => {
@@ -169,6 +217,8 @@ export function Advisor({
       const item = await getAnalysis(id);
       if (!isCurrent()) return false;
       setTurns([{ question: item.question, result: item }]);
+      setDraft(null);
+      setStopped(false);
       setQuestion("");
       setDailyAssetRange(undefined);
       setError("");
@@ -186,6 +236,8 @@ export function Advisor({
     historyRequest.invalidate();
     setHistoryBusy("");
     setTurns([]);
+    setDraft(null);
+    setStopped(false);
     setQuestion("");
     setDailyAssetRange(undefined);
     setError("");
@@ -224,6 +276,34 @@ export function Advisor({
             </div>
           </article>
         ))}
+        {draft && (
+          <article className="conversation-turn" ref={latestAnswerRef}>
+            <div className="user-question">
+              <span>你</span>
+              <p>{draft.question}</p>
+            </div>
+            <div className="assistant-answer" aria-busy={running}>
+              <span className="answer-author">
+                mario ·{" "}
+                {running
+                  ? "正在生成，内容尚待校验"
+                  : stopped
+                    ? "已停止生成"
+                    : "回复未完成"}
+              </span>
+              <ModelReport
+                answer={
+                  draft.answer ||
+                  (running
+                    ? stage
+                    : stopped
+                      ? "已停止生成。"
+                      : "未收到完整回复，请重试。")
+                }
+              />
+            </div>
+          </article>
+        )}
       </div>
       <form
         className="panel conversation-composer"
@@ -254,7 +334,11 @@ export function Advisor({
         </label>
         <div className="composer-footer">
           <span role="status">
-            {running ? "正在分析…" : "Ctrl / ⌘ + Enter 发送"}
+            {running
+              ? stage
+              : stopped
+                ? "已停止，已显示的内容尚未完成"
+                : "Ctrl / ⌘ + Enter 发送"}
             {!model.hasApiKey && (
               <button
                 type="button"
@@ -265,23 +349,23 @@ export function Advisor({
               </button>
             )}
           </span>
-          <button
-            type="submit"
-            className="primary"
-            disabled={
-              running ||
-              Boolean(historyBusy) ||
-              !question.trim() ||
-              !model.hasApiKey
-            }
-          >
-            {running ? (
-              <LoaderCircle size={17} className="spin" />
-            ) : (
+          {running ? (
+            <button type="button" className="secondary" onClick={stop}>
+              <Square size={17} />
+              停止生成
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="primary"
+              disabled={
+                Boolean(historyBusy) || !question.trim() || !model.hasApiKey
+              }
+            >
               <Send size={17} />
-            )}
-            {running ? "生成中…" : "发送"}
-          </button>
+              发送
+            </button>
+          )}
         </div>
       </form>
       {error && (

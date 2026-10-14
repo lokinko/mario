@@ -1,6 +1,5 @@
 use super::{
-    quote_identifier, sync_specs_for_version, validate_synced_event_identities,
-    validate_synced_event_reversals, validate_synced_fx_provenance,
+    quote_identifier, sync_specs_for_version, validate_synced_fx_provenance,
     validate_synced_holding_valuations, validate_synced_memory_preferences, AppError, AppResult,
     Database, HashSet, SyncDataset, SyncTable, SyncValue, Utc, ValueRef,
     SYNC_DATASET_SCHEMA_VERSION, SYNC_TABLES,
@@ -86,9 +85,7 @@ impl Database {
                 "旧交易记录格式已停用，请清空旧交易后按成交单重新录入；本次未覆盖任何数据".into(),
             ));
         }
-        validate_synced_event_identities(dataset)?;
         validate_synced_fx_provenance(dataset)?;
-        validate_synced_event_reversals(dataset)?;
         validate_synced_memory_preferences(dataset)?;
         validate_synced_holding_valuations(dataset)?;
         let mut conn = self.conn()?;

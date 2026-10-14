@@ -27,7 +27,6 @@ vi.mock("./api/portfolio", async (original) => ({
   }),
   getSnapshot: vi.fn(),
   getDailyAssets: vi.fn().mockResolvedValue({ records: [], nextBefore: null }),
-  getPortfolioEvents: vi.fn().mockResolvedValue([]),
   getFxSettings: vi.fn().mockResolvedValue({
     baseCurrency: "CNY",
     checkedAt: 0,
@@ -162,19 +161,22 @@ it.each([true, false])(
   },
 );
 
-it("falls back to questions when an old dashboard bookmark is opened", async () => {
-  window.location.hash = "dashboard";
-  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
-    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
-  );
-  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
-    new Error("optional model unavailable"),
-  );
-  render(<App />);
-  const questions = await screen.findByRole("button", { name: "问答" });
-  expect(questions.getAttribute("aria-current")).toBe("page");
-  expect(screen.queryByRole("button", { name: "分析看板" })).toBeNull();
-});
+it.each(["dashboard", "foundation", "goals", "ledger"])(
+  "falls back to questions for the retired %s bookmark",
+  async (bookmark) => {
+    window.location.hash = bookmark;
+    vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+      emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+    );
+    vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
+      new Error("optional model unavailable"),
+    );
+    render(<App />);
+    const questions = await screen.findByRole("button", { name: "问答" });
+    expect(questions.getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByRole("button", { name: "分析看板" })).toBeNull();
+  },
+);
 
 it("keeps local application accessible when optional model configuration fails", async () => {
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
@@ -250,18 +252,12 @@ it("shows frequently used records in primary navigation", async () => {
   render(<App />);
   await screen.findByRole("button", { name: "问答" });
   expect(screen.getByRole("button", { name: "我的情况" })).toBeTruthy();
-  for (const name of [
-    "复盘记录",
-    "参考资料",
-    "投资目标",
-    "组合流水",
-    "长期记忆",
-  ]) {
+  for (const name of ["复盘记录", "参考资料", "长期记忆"]) {
     const entry = screen.getByRole("button", { name });
     expect(entry.closest("aside")).toBeTruthy();
     expect(entry.closest("details")).toBeNull();
   }
-  for (const name of ["决策确认", "资料与确认"])
+  for (const name of ["决策确认", "资料与确认", "投资目标", "组合流水"])
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
 it("responds to hash navigation without leaving the old page on screen", async () => {
