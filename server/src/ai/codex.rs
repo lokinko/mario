@@ -20,28 +20,54 @@ impl CodexProvider {
         Self { model }
     }
     pub async fn detect() -> AppResult<String> {
+        let models = Self::models().await?;
+        Ok(models
+            .iter()
+            .find(|model| model.is_default)
+            .unwrap_or(&models[0])
+            .model
+            .clone())
+    }
+    pub async fn models() -> AppResult<Vec<crate::models::CodexModel>> {
         tokio::time::timeout(Duration::from_secs(25), async {
             let mut rpc = Rpc::start().await?;
             rpc.account().await?;
-            let models = rpc.call("model/list", json!({})).await?;
-            models["data"]
-                .as_array()
-                .and_then(|items| {
-                    items
-                        .iter()
-                        .find(|model| model["isDefault"] == true)
-                        .or_else(|| items.first())
-                })
-                .and_then(|model| model["model"].as_str())
-                .map(str::to_string)
-                .ok_or_else(|| AppError::Model("已读取 Codex 登录，但没有可用模型".into()))
+            let mut catalog = Vec::<crate::models::CodexModel>::new();
+            let mut cursor = Value::Null;
+            for _ in 0..10 {
+                let page = rpc
+                    .call(
+                        "model/list",
+                        json!({"limit":100,"includeHidden":false,"cursor":cursor}),
+                    )
+                    .await?;
+                for model in parse_models(&page)? {
+                    if !catalog.iter().any(|entry| entry.model == model.model) {
+                        catalog.push(model);
+                    }
+                }
+                let next = page["nextCursor"].clone();
+                if next.is_null() {
+                    break;
+                }
+                if next == cursor || !next.is_string() {
+                    return Err(AppError::Model(
+                        "Codex 模型列表分页无效，请更新 Codex 后重试".into(),
+                    ));
+                }
+                cursor = next;
+            }
+            if catalog.is_empty() || catalog.len() > 100 {
+                return Err(AppError::Model("Codex 没有返回有效的可选模型列表".into()));
+            }
+            Ok(catalog)
         })
         .await
         .map_err(|_| {
             AppError::Model("读取 Codex 凭证超时，请打开 Codex 检查登录状态后重试".into())
         })?
     }
-    async fn generate(
+    pub(crate) async fn generate(
         &self,
         messages: Vec<ChatMessage>,
         search: bool,
@@ -97,6 +123,39 @@ impl CodexProvider {
         }).await.map_err(|_| AppError::Model("Codex 调用超时，请缩小问题后重试".into()))?
     }
 }
+
+fn parse_models(page: &Value) -> AppResult<Vec<crate::models::CodexModel>> {
+    let items = page["data"]
+        .as_array()
+        .ok_or_else(|| AppError::Model("Codex 模型列表格式无效".into()))?;
+    items
+        .iter()
+        .filter(|item| item["hidden"] != true)
+        .map(|item| {
+            let model = item["model"]
+                .as_str()
+                .filter(|value| !value.is_empty() && value.len() <= 200)
+                .ok_or_else(|| AppError::Model("Codex 模型 ID 无效".into()))?;
+            Ok(crate::models::CodexModel {
+                model: model.into(),
+                display_name: item["displayName"]
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(model)
+                    .chars()
+                    .take(200)
+                    .collect(),
+                description: item["description"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .chars()
+                    .take(2000)
+                    .collect(),
+                is_default: item["isDefault"] == true,
+            })
+        })
+        .collect()
+}
 #[async_trait]
 impl ModelProvider for CodexProvider {
     async fn complete(&self, messages: Vec<ChatMessage>) -> AppResult<ModelCompletion> {
@@ -136,10 +195,33 @@ fn binary() -> AppResult<PathBuf> {
             "此设备无法读取桌面 Codex 凭证，请使用 OpenAI 或 Anthropic API Key".into(),
         ));
     }
-    let mut candidates = vec![
+    let mut candidates = Vec::new();
+    for name in ["MARIO_CODEX_BIN", "CODEX_CLI_PATH"] {
+        if let Some(path) = std::env::var_os(name) {
+            candidates.push(PathBuf::from(path));
+        }
+    }
+    #[cfg(windows)]
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        // Desktop installs keep versioned native binaries here. Prefer the newest
+        // installed executable when a standalone terminal has no CODEX_CLI_PATH.
+        let root = PathBuf::from(local).join("OpenAI/Codex/bin");
+        if let Ok(entries) = std::fs::read_dir(root) {
+            let mut installed = entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path().join("codex.exe"))
+                .filter(|path| path.is_file())
+                .collect::<Vec<_>>();
+            installed.sort_by_key(|path| {
+                std::cmp::Reverse(path.metadata().and_then(|meta| meta.modified()).ok())
+            });
+            candidates.extend(installed);
+        }
+    }
+    candidates.extend([
         PathBuf::from("/Applications/ChatGPT.app/Contents/Resources/codex"),
         PathBuf::from("/Applications/Codex.app/Contents/Resources/codex"),
-    ];
+    ]);
     if let Some(home) = dirs::home_dir() {
         candidates.push(home.join("Applications/ChatGPT.app/Contents/Resources/codex"));
         candidates.push(home.join("Applications/Codex.app/Contents/Resources/codex"));
@@ -149,6 +231,18 @@ fn binary() -> AppResult<PathBuf> {
         PathBuf::from("/usr/local/bin/codex"),
     ]);
     if let Some(path) = std::env::var_os("PATH") {
+        // npm installs a .cmd launcher on Windows; spawn the native executable
+        // directly so prompts and paths never pass through a shell.
+        #[cfg(windows)]
+        for dir in std::env::split_paths(&path) {
+            for arch in ["x64", "arm64"] {
+                let triple = if arch == "x64" { "x86_64" } else { "aarch64" };
+                candidates.push(dir.join(format!("node_modules/@openai/codex/node_modules/@openai/codex-win32-{arch}/vendor/{triple}-pc-windows-msvc/bin/codex.exe")));
+                candidates.push(dir.join(format!(
+                    "node_modules/@openai/codex/vendor/{triple}-pc-windows-msvc/codex/codex.exe"
+                )));
+            }
+        }
         candidates.extend(
             std::env::split_paths(&path)
                 .map(|dir| dir.join(if cfg!(windows) { "codex.exe" } else { "codex" })),
@@ -181,7 +275,7 @@ struct Rpc {
 impl Rpc {
     async fn start() -> AppResult<Self> {
         let mut child = Command::new(binary()?)
-            .args(["app-server", "--stdio", "-c", "model_provider=\"openai\""])
+            .args(["app-server", "-c", "model_provider=\"openai\""])
             .current_dir(std::env::temp_dir())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -351,6 +445,34 @@ fn collect_source(source: &Value, output: &mut SearchCompletion) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn catalog_uses_native_labels_and_defaults_and_filters_hidden_models() {
+        let models = parse_models(&json!({"data":[
+            {"model":"a","displayName":"Model A","description":"Tasks","isDefault":true},
+            {"model":"hidden","hidden":true}, {"model":"b"}
+        ]}))
+        .unwrap();
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].display_name, "Model A");
+        assert!(models[0].is_default);
+        assert_eq!(models[1].display_name, "b");
+        assert!(parse_models(&json!({"data":[{"model":""}]})).is_err());
+        assert!(parse_models(&json!({})).is_err());
+    }
+
+    #[tokio::test]
+    #[ignore = "Reads the user's local Codex model catalog; no inference"]
+    async fn live_codex_model_catalog() {
+        let models = CodexProvider::models().await.unwrap();
+        assert!(!models.is_empty());
+        for model in models {
+            println!(
+                "{} | {} | default={}",
+                model.model, model.display_name, model.is_default
+            );
+        }
+    }
 
     #[test]
     fn missing_or_unknown_account_is_a_visible_failure() {

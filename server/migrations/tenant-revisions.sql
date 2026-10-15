@@ -11,7 +11,9 @@ $$;
 DO $$
 DECLARE item record;
 BEGIN
-    FOR item IN SELECT tablename FROM pg_tables WHERE schemaname=current_schema() AND tablename <> 'data_revision'
+    DROP TRIGGER IF EXISTS data_changed ON daily_totals;
+    DROP TRIGGER IF EXISTS data_changed ON financial_operations;
+    FOR item IN SELECT tablename FROM pg_tables WHERE schemaname=current_schema() AND tablename NOT IN ('data_revision','daily_totals','financial_operations')
     LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=format('%I.%I',current_schema(),item.tablename)::regclass AND tgname='data_changed') THEN
             EXECUTE format('CREATE TRIGGER data_changed AFTER INSERT OR UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION bump_data_revision()',item.tablename);

@@ -15,6 +15,9 @@ import type { HoldingTrade, HoldingTradeSummary, Snapshot } from "../../types";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 vi.mock("../../api/portfolio", () => ({
+  getFinancialHistory: vi
+    .fn()
+    .mockResolvedValue({ records: [], quarantine: null }),
   saveHoldingTrade: vi.fn(),
   updateHoldingTrade: vi.fn(),
   deleteHoldingTrade: vi.fn(),
@@ -348,6 +351,7 @@ it("edits the original record and freezes its revision across a background refre
   await waitFor(() => expect(onUpdate).toHaveBeenCalled());
   expect(portfolioApi.updateHoldingTrade).toHaveBeenNthCalledWith(2, buy.id, {
     expectedRevision: "initial",
+    settlementMode: "auto",
     kind: "buy",
     occurredOn: buy.occurredOn,
     sequence: 1,
@@ -461,7 +465,7 @@ it("shows authoritative sell profits and dividends in the holding overview and d
       flash={vi.fn()}
     />,
   );
-  expect(screen.getByRole("status").textContent).toContain("旧交易记录");
+  expect(screen.getByRole("status").textContent).toContain("交易链已隔离");
   expect(screen.queryByText("期初余额")).toBeNull();
   expect(screen.queryByRole("button", { name: "撤销误录" })).toBeNull();
 });
@@ -486,4 +490,39 @@ it("keeps the asset editor unavailable while a transaction draft is open", async
     "disabled",
     false,
   );
+});
+
+it("keeps an uncertain edit frozen and retries exactly the original content", async () => {
+  vi.mocked(portfolioApi.updateHoldingTrade)
+    .mockRejectedValueOnce(new Error("操作结果待确认"))
+    .mockResolvedValueOnce(value);
+  const onUpdate = vi.fn();
+  render(
+    <HoldingTrades
+      snapshot={value}
+      holding={holding}
+      onUpdate={onUpdate}
+      flash={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "编辑交易" }));
+  change("交易备注", "需要保留的原请求");
+  fireEvent.click(screen.getByRole("button", { name: "保存修改并更新持仓" }));
+  await screen.findByRole("button", { name: "再次核对原操作" });
+  const first = vi.mocked(portfolioApi.updateHoldingTrade).mock.calls[0];
+  expect(screen.getByLabelText("交易备注").closest("fieldset")).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(screen.getByRole("button", { name: "关闭交易录入" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(onUpdate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "再次核对原操作" }));
+  await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(value));
+  expect(vi.mocked(portfolioApi.updateHoldingTrade).mock.calls[1]).toEqual(
+    first,
+  );
+  expect(portfolioApi.saveHoldingTrade).not.toHaveBeenCalled();
 });

@@ -178,6 +178,8 @@ pub(super) fn validate_synced_holding_valuations(dataset: &SyncDataset) -> AppRe
             return Err(AppError::Validation("同步价格回退天数无效".into()));
         }
         let quote = SecurityPriceQuote {
+            exact_close: None,
+            splits: Vec::new(),
             symbol: sync_text(row, 1, "行情代码")?.into(),
             currency: sync_text(row, 5, "行情币种")?.into(),
             close: sync_real(row, 3, "单位价格")?,

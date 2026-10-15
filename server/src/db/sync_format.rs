@@ -309,9 +309,62 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         columns: &["id", "holding_id", "payload", "created_at"],
         order_by: "created_at, id",
     },
+    SyncTableSpec {
+        name: "financial_operations",
+        columns: &["id", "request_hash", "payload", "created_at"],
+        order_by: "created_at,id",
+    },
+    SyncTableSpec {
+        name: "financial_journal",
+        columns: &[
+            "id",
+            "holding_id",
+            "kind",
+            "before_payload",
+            "after_payload",
+            "cash_delta",
+            "reason",
+            "created_at",
+            "operation_id",
+        ],
+        order_by: "created_at,id",
+    },
+    SyncTableSpec {
+        name: "trading_quarantine",
+        columns: &["holding_id", "payload", "reason", "created_at"],
+        order_by: "holding_id",
+    },
+    SyncTableSpec {
+        name: "cash_state",
+        columns: &[
+            "currency",
+            "holding_id",
+            "amount",
+            "baseline_id",
+            "confirmed_on",
+            "confirmed_at",
+            "needs_reconciliation",
+        ],
+        order_by: "currency",
+    },
+    SyncTableSpec {
+        name: "trade_settlements",
+        columns: &["trade_id", "currency", "amount", "baseline_id", "included"],
+        order_by: "trade_id",
+    },
+    SyncTableSpec {
+        name: "corporate_actions",
+        columns: &["id", "holding_id", "payload"],
+        order_by: "id",
+    },
+    SyncTableSpec {
+        name: "holding_amounts",
+        columns: &["holding_id", "payload"],
+        order_by: "holding_id",
+    },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 19;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 21;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
@@ -319,6 +372,21 @@ const V8_SYNC_TABLE_COUNT: usize = 13;
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
     if version == SYNC_DATASET_SCHEMA_VERSION {
+        return Ok(specs);
+    }
+    specs.retain(|s| {
+        ![
+            "financial_operations",
+            "financial_journal",
+            "trading_quarantine",
+            "cash_state",
+            "trade_settlements",
+            "corporate_actions",
+            "holding_amounts",
+        ]
+        .contains(&s.name)
+    });
+    if version == 20 || version == 19 {
         return Ok(specs);
     }
     // Retired tables are shape metadata only and never restored.

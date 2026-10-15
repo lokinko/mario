@@ -170,6 +170,18 @@ fn current_backup_round_trip_preserves_data_and_excludes_private_settings() {
 
 // Construct an authentic old backup from today's export for compatibility tests.
 pub(super) fn add_retired_tables(dataset: &mut SyncDataset) {
+    dataset.tables.retain(|t| {
+        ![
+            "financial_operations",
+            "financial_journal",
+            "trading_quarantine",
+            "cash_state",
+            "trade_settlements",
+            "corporate_actions",
+            "holding_amounts",
+        ]
+        .contains(&t.name.as_str())
+    });
     let specs = sync_specs_for_version(15).unwrap();
     for (index, spec) in specs.iter().enumerate() {
         if matches!(
@@ -312,6 +324,8 @@ fn independent_text_reviews_preserve_content_through_restart_and_import() {
 
 fn verified_quote() -> SecurityPriceQuote {
     SecurityPriceQuote {
+        exact_close: None,
+        splits: Vec::new(),
         symbol: "AAPL".into(),
         currency: "USD".into(),
         close: 101.25,
@@ -341,6 +355,8 @@ fn persists_profile_and_holding() {
     };
     db.save_profile(&profile).unwrap();
     db.add_holding(&HoldingInput {
+        exact_values: None,
+        cash_amount: None,
         symbol: "IDX".into(),
         name: "指数".into(),
         asset_class: "基金".into(),
@@ -373,6 +389,8 @@ fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
     .unwrap();
     let created = db
         .add_holding(&HoldingInput {
+            exact_values: None,
+            cash_amount: None,
             symbol: "AAPL".into(),
             name: "Apple".into(),
             asset_class: "股票".into(),
@@ -406,6 +424,8 @@ fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
     assert_eq!(valued.holding_valuations[0].observed_on, "2026-09-04");
 
     let unchanged = HoldingInput {
+        exact_values: None,
+        cash_amount: None,
         symbol: "AAPL".into(),
         name: "Apple Inc.".into(),
         asset_class: "股票".into(),
@@ -429,6 +449,8 @@ fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
         1
     );
     let changed = HoldingInput {
+        exact_values: None,
+        cash_amount: None,
         current_price: Some(102.0),
         ..unchanged
     };
@@ -445,6 +467,8 @@ fn rejects_verified_price_when_provider_currency_differs_from_holding() {
     let db = Database::open(&dir.path().join("valuation-currency.db")).unwrap();
     let created = db
         .add_holding(&HoldingInput {
+            exact_values: None,
+            cash_amount: None,
             symbol: "AAPL".into(),
             name: "错误币种".into(),
             asset_class: "股票".into(),
@@ -478,7 +502,7 @@ fn trade_managed_codes_can_be_corrected_cleared_and_filled_without_changing_trad
     })
     .unwrap();
     let trade: crate::models::HoldingTradeInput = serde_json::from_value(serde_json::json!({
-        "requestId": Uuid::new_v4().to_string(),
+        "expectedCashBaseline":"00000000-0000-0000-0000-000000000001","requestId": Uuid::new_v4().to_string(),
         "newHolding": {
             "symbol": "AAPL", "name": "Apple", "assetClass": "股票",
             "currency": "USD"
@@ -487,6 +511,7 @@ fn trade_managed_codes_can_be_corrected_cleared_and_filled_without_changing_trad
         "sequence": 1, "quantity": "10", "price": "100", "grossAmount": "1000", "fees": "2", "taxes": "0", "account": "券商"
     }))
     .unwrap();
+    super::cash::fund(&db, "USD");
     let created = db.save_holding_trade(&trade).unwrap();
     let id = &created.holdings[0].id;
     let valued = db
@@ -599,6 +624,8 @@ fn updates_and_deletes_holding() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("test.db")).unwrap();
     let input = HoldingInput {
+        exact_values: None,
+        cash_amount: None,
         symbol: "IDX".into(),
         name: "指数".into(),
         asset_class: "基金".into(),
@@ -635,6 +662,8 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
 
     let incomplete = db
         .add_holding(&HoldingInput {
+            exact_values: None,
+            cash_amount: None,
             symbol: "USD".into(),
             name: "美元资产".into(),
             asset_class: "股票".into(),
@@ -655,6 +684,8 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
     db.delete_holding(&incomplete.holdings[0].id).unwrap();
     let usd_snapshot = db
         .add_holding(&HoldingInput {
+            exact_values: None,
+            cash_amount: None,
             symbol: "USD".into(),
             name: "美元资产".into(),
             asset_class: "股票".into(),
@@ -676,6 +707,8 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
     let usd_id = usd_snapshot.holdings[0].id.clone();
     let snapshot = db
         .add_holding(&HoldingInput {
+            exact_values: None,
+            cash_amount: None,
             symbol: "CASH".into(),
             name: "人民币现金".into(),
             asset_class: "现金".into(),
@@ -710,6 +743,8 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
     db.update_holding(
         &usd_id,
         &HoldingInput {
+            exact_values: None,
+            cash_amount: None,
             symbol: "USD".into(),
             name: "美元资产".into(),
             asset_class: "股票".into(),
@@ -734,7 +769,7 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
     assert_eq!(changed.total_value, 0.0);
     assert_eq!(
         changed.valuation_status.missing_fx_holdings,
-        vec!["人民币现金"]
+        vec!["CNY 存款"]
     );
     let usd_after_base_change = changed
         .holdings
@@ -748,6 +783,8 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
         .update_holding(
             &cny_id,
             &HoldingInput {
+                exact_values: None,
+                cash_amount: None,
                 symbol: "CASH".into(),
                 name: "人民币现金".into(),
                 asset_class: "现金".into(),
@@ -1020,6 +1057,8 @@ fn system_review_freezes_portfolio_and_method_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("test.db")).unwrap();
     db.add_holding(&HoldingInput {
+        exact_values: None,
+        cash_amount: None,
         symbol: "IDX".into(),
         name: "指数".into(),
         asset_class: "基金".into(),
@@ -1061,6 +1100,8 @@ fn system_review_freezes_portfolio_and_method_snapshot() {
     db.update_holding(
         &holding_id,
         &HoldingInput {
+            exact_values: None,
+            cash_amount: None,
             symbol: "IDX".into(),
             name: "指数".into(),
             asset_class: "基金".into(),
@@ -1135,6 +1176,8 @@ fn rejects_non_https_research_sources() {
 
 fn detailed_holding_input() -> HoldingInput {
     HoldingInput {
+        exact_values: None,
+        cash_amount: None,
         symbol: "IDX".into(),
         name: "手动持仓".into(),
         asset_class: "基金".into(),
@@ -1255,7 +1298,7 @@ fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quanti
         .update_holding_amount(
             id,
             &crate::models::daily::AmountInput {
-                amount: 2010.0,
+                amount: 2010.0.to_string(),
                 expected_revision: created.holding_revisions[id].clone(),
                 request_id: "price-update".into(),
             },
@@ -1270,7 +1313,7 @@ fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quanti
         .update_holding_amount(
             id,
             &crate::models::daily::AmountInput {
-                amount: 1e15,
+                amount: 1e15.to_string(),
                 expected_revision: tiny.holding_revisions[id].clone(),
                 request_id: "oversized-unit-price".into(),
             }
@@ -1282,7 +1325,7 @@ fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quanti
         .update_holding_amount(
             id,
             &crate::models::daily::AmountInput {
-                amount: 0.0,
+                amount: 0.0.to_string(),
                 expected_revision: zero.holding_revisions[id].clone(),
                 request_id: "zero-quantity".into(),
             },
@@ -1293,7 +1336,7 @@ fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quanti
         .update_holding_amount(
             id,
             &crate::models::daily::AmountInput {
-                amount: 1.0,
+                amount: 1.0.to_string(),
                 expected_revision: saved_zero.holding_revisions[id].clone(),
                 request_id: "impossible-total".into(),
             }

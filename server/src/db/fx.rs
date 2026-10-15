@@ -4,7 +4,7 @@ use crate::models::market::{FxBook, FxOverrideInput, ManualRate};
 fn key(base: &str) -> String {
     format!("fx.book.{base}")
 }
-fn book_on(conn: &Connection, base: &str) -> AppResult<Option<FxBook>> {
+pub(super) fn book_on(conn: &Connection, base: &str) -> AppResult<Option<FxBook>> {
     conn.query_row(
         "SELECT value FROM settings WHERE key=?1",
         [key(base)],
@@ -40,6 +40,41 @@ pub(super) fn holding_input(
         ) = rate(&book, &input.currency.trim().to_ascii_uppercase());
     }
     Ok(result)
+}
+
+pub(super) fn exact_rate(
+    conn: &Connection,
+    holding: &Holding,
+    base: &str,
+) -> AppResult<Option<String>> {
+    if holding.currency.eq_ignore_ascii_case(base) {
+        return Ok(Some("1".into()));
+    }
+    if holding.fx_rate_source.starts_with("central_") {
+        if let Some(book) = book_on(conn, base)? {
+            if let Some(manual) = book.manual.get(&holding.currency) {
+                return Ok(Some(
+                    manual
+                        .exact_rate
+                        .clone()
+                        .unwrap_or_else(|| manual.rate.to_string()),
+                ));
+            }
+            if let Some(quote) = book
+                .quotes
+                .iter()
+                .find(|q| q.from_currency == holding.currency)
+            {
+                return Ok(Some(
+                    quote
+                        .exact_rate
+                        .clone()
+                        .unwrap_or_else(|| quote.rate.to_string()),
+                ));
+            }
+        }
+    }
+    Ok(holding.fx_rate_to_base.map(|v| v.to_string()))
 }
 pub(super) fn apply_holdings(conn: &Connection) -> AppResult<()> {
     let snapshot = Database::snapshot_on(conn)?;
@@ -97,7 +132,26 @@ impl Database {
             return Err(AppError::Validation("请选择需要换算的外币".into()));
         }
         let mut book = self.fx_book(&base)?;
-        if let Some(value) = input.rate {
+        use rust_decimal::prelude::ToPrimitive;
+        let rate = if let Some(value) = &input.exact_rate {
+            let exact = crate::models::decimal::parse(value)?;
+            if input.rate.is_none()
+                || exact.is_zero()
+                || exact > rust_decimal::Decimal::from(1_000_000_000_i64)
+            {
+                return Err(AppError::Validation(
+                    "汇率必须是有效正数，且不超过 10 亿；删除时不能附带精确汇率".into(),
+                ));
+            }
+            Some(
+                exact
+                    .to_f64()
+                    .ok_or_else(|| AppError::Validation("汇率无效".into()))?,
+            )
+        } else {
+            input.rate
+        };
+        if let Some(value) = rate {
             if !value.is_finite() || value <= 0.0 || value > 1e9 {
                 return Err(AppError::Validation(
                     "汇率必须是有效正数，且不超过 10 亿".into(),
@@ -106,6 +160,12 @@ impl Database {
             book.manual.insert(
                 currency,
                 ManualRate {
+                    exact_rate: Some(
+                        input
+                            .exact_rate
+                            .clone()
+                            .unwrap_or_else(|| value.to_string()),
+                    ),
                     rate: value,
                     observed_on: crate::models::market::today(),
                 },
@@ -127,6 +187,18 @@ pub(super) fn validate_sync(dataset: &SyncDataset) -> AppResult<()> {
     let invalid = || AppError::Validation("统一汇率设置无效".into());
     let supported = |c: &str| crate::models::market::SUPPORTED_CURRENCIES.contains(&c);
     let valid_rate = |v: f64| v.is_finite() && v > 0.0 && v <= 1e9;
+    let valid_exact = |exact: &Option<String>, view: f64| {
+        use rust_decimal::{prelude::ToPrimitive, Decimal};
+        exact.as_deref().is_none_or(|v| {
+            Decimal::from_str_exact(v).ok().is_some_and(|n| {
+                n > Decimal::ZERO
+                    && n <= Decimal::from(1_000_000_000_i64)
+                    && n.to_f64().is_some_and(|value| {
+                        (value - view).abs() <= 4.0 * f64::EPSILON * value.abs().max(1.0)
+                    })
+            })
+        })
+    };
     let valid_day = |s: &str| {
         NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
             && s <= crate::models::market::today().as_str()
@@ -135,6 +207,7 @@ pub(super) fn validate_sync(dataset: &SyncDataset) -> AppResult<()> {
         supported(&q.from_currency)
             && supported(&q.to_currency)
             && valid_rate(q.rate)
+            && valid_exact(&q.exact_rate, q.rate)
             && valid_day(&q.requested_on)
             && valid_day(&q.observed_on)
             && q.observed_on <= q.requested_on
@@ -162,7 +235,11 @@ pub(super) fn validate_sync(dataset: &SyncDataset) -> AppResult<()> {
                     .iter()
                     .any(|q| q.to_currency != base || !valid_quote(q))
                 || book.manual.iter().any(|(c, m)| {
-                    !supported(c) || c == base || !valid_rate(m.rate) || !valid_day(&m.observed_on)
+                    !supported(c)
+                        || c == base
+                        || !valid_rate(m.rate)
+                        || !valid_exact(&m.exact_rate, m.rate)
+                        || !valid_day(&m.observed_on)
                 })
             {
                 return Err(invalid());

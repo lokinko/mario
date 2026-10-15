@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { getSnapshot, saveProfile, updateHoldingAmount } from "./api/portfolio";
+import {
+  getSnapshot,
+  saveProfile,
+  updateHoldingAmount,
+  saveHoldingTrade,
+} from "./api/portfolio";
 import { checkServerVersion } from "./api/account";
 import { previewAnalysis } from "./api/research";
 import { acceptRevision, dataRevision, serviceUrl } from "./lib/service";
@@ -8,6 +13,57 @@ import { setWebToken, webToken } from "./lib/webSession";
 import { beginSync, endSync, blockStaleWrites } from "./lib/syncEvents";
 import type { FinancialProfile } from "./types";
 import type { AnalysisRequest } from "./types";
+
+it("resolves a lost financial response without resubmitting the mutation", async () => {
+  const current = { holdings: [], cashBalances: [{ amount: "900.01" }] };
+  const fetcher = vi
+    .fn()
+    .mockRejectedValueOnce(new TypeError("connection reset after commit"))
+    .mockResolvedValueOnce(
+      response({ committed: true, snapshot: current }, "91"),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const input = {
+    requestId: "attempt",
+    kind: "buy" as const,
+    holdingId: "holding",
+    expectedRevision: "before",
+    newHolding: null,
+    occurredOn: "2026-01-01",
+    sequence: 1,
+    quantity: "1",
+    price: "100",
+    grossAmount: "100",
+    fees: "0",
+    taxes: "0",
+    account: "broker",
+    externalId: "",
+    note: "",
+  };
+  expect(await saveHoldingTrade(input)).toEqual(current);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(String(fetcher.mock.calls[1][0])).toContain(
+    "/financial-operations/resolve",
+  );
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({
+    method: "POST",
+    path: "/api/holding-trades",
+    input,
+  });
+  expect(dataRevision()).toBe("91");
+});
+
+it("keeps an unresolved financial write pending instead of declaring failure or retrying it", async () => {
+  const fetcher = vi
+    .fn()
+    .mockRejectedValueOnce(new TypeError("connection lost"))
+    .mockResolvedValueOnce(response({ committed: false, snapshot: null }, "7"));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(
+    updateHoldingAmount("cash", "100.01", "old", "same-request"),
+  ).rejects.toThrow("操作结果待确认");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
 vi.mock("./lib/service", async (original) => ({
   ...(await original<typeof import("./lib/service")>()),
   isLocalDev: () => false,

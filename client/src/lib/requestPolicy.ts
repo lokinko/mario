@@ -3,7 +3,11 @@ export function isDataWrite(path: string, method = "GET") {
   const resource = path.split("?")[0];
   return (
     method.toUpperCase() !== "GET" &&
-    !["/analysis/preview", "/model-config/test"].includes(resource)
+    ![
+      "/analysis/preview",
+      "/model-config/test",
+      "/financial-operations/resolve",
+    ].includes(resource)
   );
 }
 export function requestPolicy(path: string) {
@@ -15,7 +19,8 @@ export function requestPolicy(path: string) {
     "/model-config/codex",
   ].includes(resource)
     ? 300000
-    : resource === "/snapshot" ||
+    : resource === "/model-config/codex/models" ||
+        resource === "/snapshot" ||
         resource.startsWith("/fx-settings") ||
         resource.startsWith("/market-data/fx-rate")
       ? 30000

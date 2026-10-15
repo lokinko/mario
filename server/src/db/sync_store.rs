@@ -158,6 +158,12 @@ impl Database {
         }
         super::daily::validate(&transaction)?;
         super::trades::validate_stored(&transaction)?;
+        super::cash::consolidate(&transaction)?;
+        super::cash::initialize_balances(&transaction)?;
+        super::amounts::initialize(&transaction)?;
+        super::amounts::validate(&transaction)?;
+        super::cash::validate(&transaction)?;
+        super::corporate::validate(&transaction)?;
         transaction.execute("DELETE FROM settings WHERE key LIKE 'trading.reset.%'", [])?;
         transaction.commit()?;
         Ok(())

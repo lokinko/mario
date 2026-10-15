@@ -17,6 +17,14 @@ vi.mock("../../api/settings", () => ({
     .fn()
     .mockImplementation(async (input) => ({ ...input, hasApiKey: true })),
   readCodexCredentials: vi.fn(),
+  getCodexModels: vi.fn().mockResolvedValue([
+    {
+      model: "detected-model",
+      displayName: "Detected Model",
+      description: "Local model",
+      isDefault: true,
+    },
+  ]),
   deleteModelKey: vi.fn(),
   testModelConnection: vi.fn(),
 }));

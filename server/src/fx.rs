@@ -71,12 +71,19 @@ pub async fn historical_quote(
             .filter(|m| m.observed_on.as_str() <= query.on_date.as_str())
         {
             return Ok(FxRateQuote {
+                exact_rate: manual
+                    .exact_rate
+                    .clone()
+                    .or_else(|| Some(manual.rate.to_string())),
                 from_currency: from,
                 to_currency: to,
                 rate: manual.rate,
                 requested_on: query.on_date.clone(),
                 observed_on: manual.observed_on.clone(),
-                staleness_days: 0,
+                staleness_days: (date
+                    - chrono::NaiveDate::parse_from_str(&manual.observed_on, "%Y-%m-%d")
+                        .map_err(|_| AppError::Validation("手动汇率日期无效".into()))?)
+                .num_days(),
                 provider_code: "user_declared".into(),
                 provider_name: "手动汇率".into(),
                 source_url: String::new(),
@@ -106,7 +113,6 @@ pub async fn historical_quote(
         Some(q) => q,
         None => provider.quote(query).await?,
     };
-    db.set_setting(&key, &serde_json::to_string(&quote)?)?;
     Ok(quote)
 }
 
@@ -149,6 +155,7 @@ mod tests {
                 return Err(AppError::MarketData("offline".into()));
             }
             Ok(FxRateQuote {
+                exact_rate: None,
                 from_currency: query.from_currency.clone(),
                 to_currency: query.to_currency.clone(),
                 rate: self.rate,
@@ -174,7 +181,7 @@ mod tests {
         }
     }
     fn input(currency: &str) -> crate::models::HoldingInput {
-        serde_json::from_value(serde_json::json!({"symbol":"","name":"账户","assetClass":"现金", "marketValue":100,"costBasis":0,"targetPct":0,"currency":currency,"valuationDate":"2026-01-01","fxRateToBase":999})).unwrap()
+        serde_json::from_value(serde_json::json!({"symbol":"","name":"账户","assetClass":"其他", "marketValue":100,"costBasis":0,"targetPct":0,"currency":currency,"valuationDate":"2026-01-01","fxRateToBase":999})).unwrap()
     }
     #[tokio::test]
     async fn refresh_is_cached_rolls_over_and_never_guesses_on_failure() {
@@ -235,6 +242,7 @@ mod tests {
         db.add_holding(&input("USD")).unwrap();
         assert_eq!(db.snapshot().unwrap().total_value, 1400.0);
         db.set_fx_override(&FxOverrideInput {
+            exact_rate: None,
             currency: "USD".into(),
             rate: Some(8.0),
         })
@@ -250,6 +258,7 @@ mod tests {
         assert_eq!(reopened.fx_book("CNY").unwrap().manual["USD"].rate, 8.0);
         reopened
             .set_fx_override(&FxOverrideInput {
+                exact_rate: None,
                 currency: "USD".into(),
                 rate: None,
             })
@@ -258,6 +267,7 @@ mod tests {
         for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e10] {
             assert!(reopened
                 .set_fx_override(&FxOverrideInput {
+                    exact_rate: None,
                     currency: "USD".into(),
                     rate: Some(invalid)
                 })
@@ -265,7 +275,8 @@ mod tests {
         }
     }
     #[tokio::test]
-    async fn historical_quotes_are_cached_and_manual_settings_do_not_rewrite_the_past() {
+    async fn historical_quote_reads_do_not_mutate_data_and_manual_settings_do_not_rewrite_the_past()
+    {
         let db = db();
         let source = provider(7.0);
         let query = FxRateQuery {
@@ -275,13 +286,14 @@ mod tests {
         };
         let quote = historical_quote(&db, &source, &query).await.unwrap();
         db.set_fx_override(&FxOverrideInput {
+            exact_rate: None,
             currency: "USD".into(),
             rate: Some(8.0),
         })
         .unwrap();
         let cached = historical_quote(&db, &source, &query).await.unwrap();
         assert_eq!(quote.rate, cached.rate);
-        assert_eq!(source.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(source.calls.load(Ordering::SeqCst), 2);
         let mut current = query;
         current.on_date = today();
         assert_eq!(

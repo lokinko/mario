@@ -13,3 +13,4 @@ cargo build --manifest-path "$root_dir/server/Cargo.toml"
 (cd "$root_dir" && node scripts/test-functional-api.mjs)
 (cd "$root_dir" && node scripts/test-web.mjs)
 "$root_dir/scripts/test-local-auth.sh"
+(cd "$root_dir" && npm run test:financial)

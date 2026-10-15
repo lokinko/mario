@@ -28,6 +28,15 @@ pub(crate) async fn read_codex(db: &Database) -> AppResult<ModelConfig> {
     db.model_config()
 }
 
+pub(crate) async fn codex_models(db: &Database) -> AppResult<Vec<crate::models::CodexModel>> {
+    if db.hosted() {
+        return Err(AppError::Validation(
+            "请通过本机桥接读取个人电脑的模型列表".into(),
+        ));
+    }
+    CodexProvider::models().await
+}
+
 pub(crate) async fn test_connection(db: &Database) -> AppResult<ModelConnectionTest> {
     let config = db.model_config()?;
     let provider = configured_model_provider(db, &config)?;
@@ -49,6 +58,12 @@ pub(crate) fn configured_model_provider(
     db: &Database,
     config: &ModelConfig,
 ) -> AppResult<Box<dyn ModelProvider>> {
+    if config.provider == "codex-bridge" {
+        return Ok(Box::new(crate::ai::bridge::BridgeProvider::new(
+            super::codex_bridge::id(db)?,
+            config.model.clone(),
+        )));
+    }
     if db.hosted() {
         crate::models::validate_endpoint(&config.base_url)?;
     }
@@ -90,13 +105,24 @@ pub(crate) fn configured_model_key(db: &Database, config: &ModelConfig) -> AppRe
 }
 
 pub(crate) async fn save(db: &Database, input: ModelConfigInput) -> AppResult<ModelConfig> {
+    if input.provider == "codex-bridge" {
+        return super::codex_bridge::save(db, &input.model);
+    }
     if input.provider == "codex" {
         if db.hosted() {
             return Err(AppError::Validation(
                 "托管服务不允许使用 Codex 本机登录".into(),
             ));
         }
-        CodexProvider::detect().await?;
+        if !codex_models(db)
+            .await?
+            .iter()
+            .any(|entry| entry.model == input.model)
+        {
+            return Err(AppError::Validation(
+                "此模型不在本机 Codex 返回的模型列表中，请重新选择".into(),
+            ));
+        }
         save_codex_config(db, &input.model)?;
         return db.model_config();
     }

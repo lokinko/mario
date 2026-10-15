@@ -64,6 +64,24 @@ impl Drop for Tenant {
 
 #[test]
 #[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
+fn postgres_upgrades_cash_to_currency_balances_once_without_changing_asset_total() {
+    let mut tenant = Tenant::legacy();
+    drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
+    tenant.sql("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,valuation_date,created_at,updated_at) VALUES
+        ('bank-a','','银行A','现金',100,0,0,'CNY','2026-01-01','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z'),
+        ('bank-b','','银行B','现金',23.45,0,0,'CNY','2026-01-01','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z');
+        UPDATE data_revision SET schema_version=6 WHERE id=1;");
+    for _ in 0..2 {
+        let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
+        let s = db.snapshot().unwrap();
+        assert_eq!(s.holdings.len(), 1);
+        assert_eq!(s.holdings[0].name, "CNY 存款");
+        assert_eq!(s.total_value, 123.45);
+    }
+}
+
+#[test]
+#[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
 fn postgres_upgrades_remove_retired_tables_and_preserve_active_data() {
     let mut tenant = Tenant::legacy();
     drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
@@ -177,8 +195,14 @@ fn postgres_migrates_version_one_holdings_and_persists_manual_unit_prices() {
     assert_eq!(holding.cost_price, Some(1.2345));
     assert_eq!(holding.quantity, Some(100.5));
     assert_eq!(holding.current_price, Some(1.4567));
-    assert_eq!(holding.market_value, 100.5 * 1.4567);
-    assert_eq!(holding.cost_basis, 100.5 * 1.2345);
+    assert_eq!(holding.market_value, 146.39835);
+    assert_eq!(
+        snapshot.accounting.as_ref().unwrap().holdings[&holding.id]
+            .amounts
+            .market_value,
+        "146.39835"
+    );
+    assert_eq!(holding.cost_basis, 124.06725);
     let exported = db.export_sync_data().unwrap();
     db.import_sync_data(&exported).unwrap();
     drop(db);

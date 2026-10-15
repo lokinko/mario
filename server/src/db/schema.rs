@@ -2,9 +2,9 @@ use crate::storage::Connection;
 
 use crate::error::AppResult;
 
-// Bump whenever hosted tables/columns change. This is independent of the
+// Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 6;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 8;
 
 // Keep legacy migration order intact: opening an old database remains idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -181,6 +181,7 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
     )?;
     connection
         .execute_batch("DROP TABLE IF EXISTS portfolio_events; DROP TABLE IF EXISTS goals;")?;
+    super::financial::initialize(connection)?;
     Ok(())
 }
 

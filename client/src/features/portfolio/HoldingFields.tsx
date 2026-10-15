@@ -8,6 +8,19 @@ export function hasHoldingDetails(holding: Omit<Holding, "id">) {
   );
 }
 
+export function holdingExactValues(holding: Omit<Holding, "id">) {
+  return (
+    holding.exactValues ?? {
+      marketValue: String(holding.marketValue),
+      costBasis: String(holding.costBasis),
+      quantity: holding.quantity == null ? null : String(holding.quantity),
+      costPrice: holding.costPrice == null ? null : String(holding.costPrice),
+      currentPrice:
+        holding.currentPrice == null ? null : String(holding.currentPrice),
+    }
+  );
+}
+
 export function validHoldingDetails(holding: Omit<Holding, "id">) {
   if (!hasHoldingDetails(holding)) return true;
   return (
@@ -71,8 +84,8 @@ export function HoldingFields<T extends Omit<Holding, "id">>({
                 holding[key] == null
                   ? ""
                   : focused === key && !(tradeManaged && key !== "currentPrice")
-                    ? holding[key]
-                    : formatNumber(holding[key])
+                    ? (holding.exactValues?.[key] ?? holding[key])
+                    : formatNumber(holding.exactValues?.[key] ?? holding[key])
               }
               onFocus={() => setFocused(key)}
               onBlur={() => setFocused(null)}
@@ -91,6 +104,10 @@ export function HoldingFields<T extends Omit<Holding, "id">>({
                         : Number(event.target.value),
                   }),
                   ...(tradeManaged ? { costBasis: holding.costBasis } : {}),
+                  exactValues: {
+                    ...holdingExactValues(holding),
+                    [key]: event.target.value || null,
+                  },
                 })
               }
             />

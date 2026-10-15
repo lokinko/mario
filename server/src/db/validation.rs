@@ -133,6 +133,19 @@ pub(super) fn validate_holding_valuation_evidence(
     quantity: f64,
     quote: &SecurityPriceQuote,
 ) -> AppResult<()> {
+    if let Some(exact) = &quote.exact_close {
+        use rust_decimal::prelude::ToPrimitive;
+        let price = rust_decimal::Decimal::from_str_exact(exact)
+            .map_err(|_| AppError::Validation("行情原始价格无效".into()))?;
+        if price <= rust_decimal::Decimal::ZERO
+            || price > rust_decimal::Decimal::from(1_000_000_000_000_000_i64)
+            || !price.to_f64().is_some_and(|value| {
+                (value - quote.close).abs() <= 4.0 * f64::EPSILON * value.abs().max(1.0)
+            })
+        {
+            return Err(AppError::Validation("行情价格与精确原值不一致".into()));
+        }
+    }
     if !quantity.is_finite() || quantity <= 0.0 || quantity > 1e15 {
         return Err(AppError::Validation("持仓数量必须是有效正数".into()));
     }

@@ -2,7 +2,9 @@ mod endpoint;
 pub(crate) mod information;
 pub(crate) mod market;
 pub(crate) use endpoint::validate_endpoint;
+pub(crate) mod accounting;
 pub(crate) mod daily;
+pub(crate) mod decimal;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +18,8 @@ pub struct FxRateQuery {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FxRateQuote {
+    #[serde(default)]
+    pub exact_rate: Option<String>,
     pub from_currency: String,
     pub to_currency: String,
     pub rate: f64,
@@ -34,11 +38,17 @@ pub struct FxRateQuote {
 pub struct SecurityPriceQuery {
     pub symbol: String,
     pub on_date: String,
+    #[serde(default)]
+    pub action_from: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SecurityPriceQuote {
+    #[serde(default)]
+    pub exact_close: Option<String>,
+    #[serde(default)]
+    pub splits: Vec<SplitEvent>,
     pub symbol: String,
     pub currency: String,
     pub close: f64,
@@ -54,6 +64,46 @@ pub struct SecurityPriceQuote {
     pub source_url: String,
     pub methodology_url: String,
     pub disclaimer: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SplitEvent {
+    pub effective_on: String,
+    pub numerator: String,
+    pub denominator: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorporateActionRecord {
+    pub id: String,
+    pub holding_id: String,
+    pub split: SplitEvent,
+    pub applied: bool,
+    #[serde(default)]
+    pub dismissed: bool,
+    #[serde(default)]
+    pub user_declared: bool,
+    #[serde(default)]
+    pub symbol: String,
+    pub source_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ConfirmCorporateActionInput {
+    pub expected_revision: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManualCorporateActionInput {
+    pub request_id: String,
+    pub expected_revision: String,
+    pub split: SplitEvent,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +154,8 @@ pub struct HoldingValuationEvidence {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FinancialProfile {
+    #[serde(default)]
+    pub exact_amounts: Option<accounting::ProfileAmounts>,
     pub monthly_income: f64,
     pub monthly_expense: f64,
     pub emergency_fund: f64,
@@ -119,6 +171,7 @@ pub struct FinancialProfile {
 impl Default for FinancialProfile {
     fn default() -> Self {
         Self {
+            exact_amounts: None,
             monthly_income: 0.0,
             monthly_expense: 0.0,
             emergency_fund: 0.0,
@@ -162,6 +215,10 @@ pub struct Holding {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HoldingInput {
+    #[serde(default)]
+    pub exact_values: Option<accounting::HoldingAmounts>,
+    #[serde(default)]
+    pub cash_amount: Option<String>,
     pub symbol: String,
     pub name: String,
     pub asset_class: String,
@@ -210,6 +267,12 @@ pub struct RiskFinding {
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     #[serde(default)]
+    pub accounting: Option<accounting::AccountingSnapshot>,
+    #[serde(default)]
+    pub corporate_actions: Vec<CorporateActionRecord>,
+    #[serde(default)]
+    pub cash_balances: Vec<CashBalanceState>,
+    #[serde(default)]
     pub price_refresh_errors: Vec<String>,
     #[serde(default)]
     pub holding_trades: Vec<HoldingTrade>,
@@ -230,6 +293,18 @@ pub struct Snapshot {
     pub valuation_status: PortfolioValuationStatus,
     pub plan: PortfolioPlan,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CashBalanceState {
+    pub currency: String,
+    pub holding_id: String,
+    pub amount: String,
+    pub baseline_id: String,
+    pub confirmed_on: String,
+    pub confirmed_at: String,
+    pub needs_reconciliation: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -282,6 +357,8 @@ pub struct HoldingTradeSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HoldingTradeInput {
+    #[serde(default)]
+    pub expected_cash_baseline: String,
     pub request_id: String,
     #[serde(default)]
     pub holding_id: String,
@@ -300,12 +377,31 @@ pub struct HoldingTradeInput {
     pub external_id: String,
     #[serde(default)]
     pub note: String,
+    #[serde(default)]
+    pub settlement_mode: SettlementMode,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettlementMode {
+    #[default]
+    Auto,
+    History,
+    Settle,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HoldingTradeDeleteInput {
     pub expected_revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TradeRepairInput {
+    pub expected_revision: String,
+    pub trades: Vec<HoldingTrade>,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -325,11 +421,15 @@ pub struct HoldingTradeUpdateInput {
     pub external_id: String,
     #[serde(default)]
     pub note: String,
+    #[serde(default)]
+    pub settlement_mode: SettlementMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortfolioValuationStatus {
+    #[serde(default)]
+    pub decision_ready: bool,
     pub base_currency: String,
     pub comparable: bool,
     pub missing_fx_holdings: Vec<String>,
@@ -350,6 +450,8 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortfolioPlan {
+    #[serde(default)]
+    pub exact_monthly_surplus: Option<String>,
     pub monthly_surplus: f64,
     pub modeled_annual_return_pct: f64,
     pub modeled_annual_volatility_pct: f64,
@@ -363,6 +465,8 @@ pub struct PortfolioPlan {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RebalanceAction {
+    #[serde(default)]
+    pub exact_amount: Option<String>,
     pub holding_id: String,
     pub name: String,
     pub current_pct: f64,
@@ -379,6 +483,17 @@ pub struct ModelConfig {
     pub base_url: String,
     pub model: String,
     pub has_api_key: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexModel {
+    pub model: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

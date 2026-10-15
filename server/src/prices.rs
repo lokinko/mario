@@ -26,7 +26,7 @@ const SUCCESS_TTL: Duration = Duration::from_secs(3600);
 const FAILURE_TTL: Duration = Duration::from_secs(60);
 const MAX_ENTRIES: usize = 512;
 type QuoteResult = Result<SecurityPriceQuote, String>;
-type QuoteEntries = BTreeMap<(String, String), Arc<Mutex<Entry>>>;
+type QuoteEntries = BTreeMap<(String, String, Option<String>), Arc<Mutex<Entry>>>;
 
 #[derive(Default)]
 struct Entry {
@@ -67,14 +67,37 @@ impl FreeSecurityPriceProvider {
         })
     }
 
-    async fn fetch(&self, symbol: &str, day: NaiveDate) -> AppResult<SecurityPriceQuote> {
+    async fn fetch(
+        &self,
+        symbol: &str,
+        day: NaiveDate,
+        action_from: Option<&str>,
+    ) -> AppResult<SecurityPriceQuote> {
         let _permit = SLOTS
             .get_or_init(|| Semaphore::new(4))
             .acquire()
             .await
             .map_err(|_| AppError::MarketData("行情服务已停止".into()))?;
         let end = day.min(Utc::now().date_naive() - chrono::Duration::days(1));
-        let start = day - chrono::Duration::days(10);
+        // Yahoo normalizes older closes to current share units, so a historical
+        // valuation of a managed position still needs actions through today.
+        let event_end = if action_from.is_some() {
+            end.max(Utc::now().date_naive())
+        } else {
+            end
+        };
+        let start = if let Some(from) = action_from {
+            let from = NaiveDate::parse_from_str(from, "%Y-%m-%d")
+                .map_err(|_| AppError::Validation("公司行动检查起始日无效".into()))?;
+            if from > day {
+                return Err(AppError::Validation(
+                    "公司行动检查起始日不能晚于请求日".into(),
+                ));
+            }
+            from.min(day - chrono::Duration::days(10))
+        } else {
+            day - chrono::Duration::days(10)
+        };
         let mut last_error = None;
         for host in &self.hosts {
             let mut url =
@@ -95,7 +118,7 @@ impl FreeSecurityPriceProvider {
                 // Buffer both sides for exchange-local dates; the parser enforces the cutoff.
                 .append_pair(
                     "period2",
-                    &(end + chrono::Duration::days(2))
+                    &(event_end + chrono::Duration::days(2))
                         .and_hms_opt(0, 0, 0)
                         .unwrap()
                         .and_utc()
@@ -146,7 +169,7 @@ impl SecurityPriceProvider for FreeSecurityPriceProvider {
         if day > today || day < NaiveDate::from_ymd_opt(1970, 1, 12).unwrap() {
             return Err(AppError::Validation("证券价格日期超出支持范围".into()));
         }
-        let key = (symbol.clone(), day.to_string());
+        let key = (symbol.clone(), day.to_string(), query.action_from.clone());
         let entry = {
             let mut cache = self.cache.entries.lock().await;
             if !cache.contains_key(&key) && cache.len() >= MAX_ENTRIES {
@@ -174,10 +197,13 @@ impl SecurityPriceProvider for FreeSecurityPriceProvider {
         }) {
             result.clone()
         } else {
-            let result = self.fetch(&symbol, day).await.map_err(|error| match error {
-                AppError::MarketData(message) => message,
-                other => other.to_string(),
-            });
+            let result = self
+                .fetch(&symbol, day, query.action_from.as_deref())
+                .await
+                .map_err(|error| match error {
+                    AppError::MarketData(message) => message,
+                    other => other.to_string(),
+                });
             entry.fetched = Some((Instant::now(), result.clone()));
             result
         };
@@ -203,6 +229,8 @@ struct ChartResult {
     #[serde(default)]
     timestamp: Vec<i64>,
     indicators: Indicators,
+    #[serde(default)]
+    events: serde_json::Value,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -219,7 +247,7 @@ struct Indicators {
 }
 #[derive(Deserialize)]
 struct Closes {
-    close: Vec<Option<f64>>,
+    close: Vec<Option<serde_json::Number>>,
 }
 
 fn parse_quote(
@@ -272,18 +300,65 @@ fn parse_quote(
             let date = DateTime::from_timestamp(*ts, 0)?
                 .with_timezone(&zone)
                 .date_naive();
-            let price = (*close)?;
+            let raw = close.as_ref()?.to_string();
+            let price = rust_decimal::Decimal::from_str_exact(&raw)
+                .or_else(|_| rust_decimal::Decimal::from_scientific(&raw))
+                .ok()?;
             (date <= end
                 && (day - date).num_days() <= 10
-                && price.is_finite()
-                && price > 0.0
-                && price <= 1e15)
-                .then_some((date, price))
+                && price > rust_decimal::Decimal::ZERO
+                && price <= rust_decimal::Decimal::from(1_000_000_000_000_000_i64))
+            .then_some((date, price))
         })
         .max_by_key(|(day, _)| *day)
         .ok_or_else(|| AppError::MarketData("最近 10 天内没有已完成的有效日收盘价".into()))?;
+    let mut splits = Vec::new();
+    if let Some(events) = result.events.get("splits").and_then(|v| v.as_object()) {
+        for event in events.values() {
+            let timestamp = event
+                .get("date")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| AppError::MarketData("拆股日期无效".into()))?;
+            let effective = DateTime::from_timestamp(timestamp, 0)
+                .ok_or_else(|| AppError::MarketData("拆股时间无效".into()))?
+                .with_timezone(&zone)
+                .date_naive();
+            // A split effective today may already adjust yesterday's close.
+            if effective.to_string() > crate::models::market::today() {
+                continue;
+            }
+            let ratio = |key: &str| -> AppResult<String> {
+                let value = event
+                    .get(key)
+                    .ok_or_else(|| AppError::MarketData("拆股比例缺失".into()))?;
+                let text = value
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| value.to_string());
+                let number = rust_decimal::Decimal::from_str_exact(&text)
+                    .map_err(|_| AppError::MarketData("拆股比例无效".into()))?;
+                if number <= rust_decimal::Decimal::ZERO {
+                    return Err(AppError::MarketData("拆股比例须为正数".into()));
+                }
+                Ok(number.normalize().to_string())
+            };
+            splits.push(crate::models::SplitEvent {
+                effective_on: effective.to_string(),
+                numerator: ratio("numerator")?,
+                denominator: ratio("denominator")?,
+            });
+        }
+    }
+    use rust_decimal::prelude::ToPrimitive;
+    let exact_close = if pence {
+        selected.1 / rust_decimal::Decimal::from(100)
+    } else {
+        selected.1
+    };
     Ok(SecurityPriceQuote {
-        symbol: symbol.into(), currency, close: if pence { selected.1 / 100.0 } else { selected.1 },
+        exact_close: Some(exact_close.normalize().to_string()),
+        splits,
+        symbol: symbol.into(), currency, close: exact_close.to_f64().ok_or_else(||AppError::MarketData("价格超出范围".into()))?,
         requested_on: day.to_string(), observed_on: selected.0.to_string(),
         staleness_days: (day - selected.0).num_days(),
         provider_code: "yahoo_daily_close".into(), provider_name: "Yahoo Finance".into(),
@@ -316,6 +391,7 @@ pub async fn complete_input(
         let quote = provider
             .quote(
                 &SecurityPriceQuery {
+                    action_from: None,
                     symbol: input.symbol.clone(),
                     on_date: crate::fx::today(),
                 },
@@ -329,6 +405,26 @@ pub async fn complete_input(
             )));
         }
         input.current_price = Some(quote.close);
+        let mut exact =
+            input
+                .exact_values
+                .clone()
+                .unwrap_or(crate::models::accounting::HoldingAmounts {
+                    price_status: "provisional".into(),
+                    market_value: input.market_value.to_string(),
+                    cost_basis: input.cost_basis.to_string(),
+                    quantity: input.quantity.map(|v| v.to_string()),
+                    cost_price: input.cost_price.map(|v| v.to_string()),
+                    current_price: None,
+                });
+        exact.current_price = Some(
+            quote
+                .exact_close
+                .clone()
+                .unwrap_or_else(|| quote.close.to_string()),
+        );
+        exact.price_status = "provisional".into();
+        input.exact_values = Some(exact);
         input.valuation_date = quote.requested_on;
     }
     Ok(input)
@@ -353,12 +449,19 @@ pub async fn refresh(
         .collect::<Vec<_>>();
     for chunk in holdings.chunks(4) {
         let fetch = |index: usize| {
+            let snapshot = &snapshot;
             let holding = chunk.get(index).copied();
             let day = day.clone();
             async move {
                 match holding {
                     Some(holding) => {
                         let query = SecurityPriceQuery {
+                            action_from: snapshot
+                                .holding_trades
+                                .iter()
+                                .filter(|t| t.holding_id == holding.id)
+                                .map(|t| t.occurred_on.clone())
+                                .min(),
                             symbol: holding.symbol.clone(),
                             on_date: day,
                         };
@@ -378,6 +481,11 @@ pub async fn refresh(
                         "行情币种 {} 与持仓币种 {} 不一致",
                         quote.currency, holding.currency
                     )));
+                }
+                if db.register_corporate_actions(&holding.id, &quote)? {
+                    return Err(AppError::MarketData(
+                        "发现待确认拆股或合股，已暂停估值，请按来源核对并确认公司行动".into(),
+                    ));
                 }
                 if snapshot.holding_valuations.iter().any(|v| {
                     v.holding_id == holding.id
@@ -432,13 +540,14 @@ pub fn start_refresh() {
                 .lock()
                 .await
                 .keys()
-                .filter(|(_, day)| day >= &yesterday)
-                .map(|(symbol, _)| symbol.clone())
+                .filter(|(_, day, _)| day >= &yesterday)
+                .map(|(symbol, _, _)| symbol.clone())
                 .collect();
             for symbol in symbols {
                 let _ = provider
                     .quote(
                         &SecurityPriceQuery {
+                            action_from: None,
                             symbol,
                             on_date: today.clone(),
                         },
@@ -457,6 +566,34 @@ mod tests {
 
     fn day(text: &str) -> NaiveDate {
         NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
+    }
+    #[test]
+    fn split_effective_today_is_retained_when_only_previous_close_is_completed() {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&payload("AAPL", "USD", &[("2026-09-07", Some(10.0))])).unwrap();
+        value["chart"]["result"][0]["indicators"]["quote"][0]["close"][0] =
+            serde_json::from_str("12345678901234.01").unwrap();
+        value["chart"]["result"][0]["events"] = serde_json::json!({"splits":{"event":{"date":day("2026-09-08").and_hms_opt(14,0,0).unwrap().and_utc().timestamp(),"numerator":2,"denominator":1}}});
+        let q = parse_quote(
+            &serde_json::to_vec(&value).unwrap(),
+            "AAPL",
+            day("2026-09-08"),
+            day("2026-09-07"),
+            String::new(),
+        )
+        .unwrap();
+        assert_eq!(q.exact_close.as_deref(), Some("12345678901234.01"));
+        assert_eq!(q.observed_on, "2026-09-07");
+        assert_eq!(q.splits[0].effective_on, "2026-09-08");
+        let previous_request = parse_quote(
+            &serde_json::to_vec(&value).unwrap(),
+            "AAPL",
+            day("2026-09-07"),
+            day("2026-09-07"),
+            String::new(),
+        )
+        .unwrap();
+        assert_eq!(previous_request.splits[0].effective_on, "2026-09-08");
     }
     fn payload(symbol: &str, currency: &str, dates: &[(&str, Option<f64>)]) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({"chart":{"error":null,"result":[{
@@ -698,6 +835,7 @@ mod tests {
             cache: Arc::new(Cache::default()),
         };
         let mut query = SecurityPriceQuery {
+            action_from: None,
             symbol: "601988.SZ".into(),
             on_date: "2026-09-08".into(),
         };
@@ -746,6 +884,7 @@ mod tests {
                 provider
                     .quote(
                         &SecurityPriceQuery {
+                            action_from: None,
                             symbol: if index % 2 == 0 { " aapl " } else { "AAPL" }.into(),
                             on_date: "2026-09-08".into(),
                         },
@@ -760,6 +899,7 @@ mod tests {
         }
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         let query = SecurityPriceQuery {
+            action_from: None,
             symbol: "AAPL".into(),
             on_date: "2026-09-08".into(),
         };
@@ -768,7 +908,7 @@ mod tests {
             .entries
             .lock()
             .await
-            .get(&("AAPL".into(), query.on_date.clone()))
+            .get(&("AAPL".into(), query.on_date.clone(), None))
             .unwrap()
             .clone();
         tokio::time::advance(SUCCESS_TTL).await;
@@ -788,12 +928,13 @@ mod tests {
             for index in 0..MAX_ENTRIES - 1 {
                 let cell = Arc::new(Mutex::new(Entry::default()));
                 pinned.push(cell.clone());
-                entries.insert((format!("X{index}"), query.on_date.clone()), cell);
+                entries.insert((format!("X{index}"), query.on_date.clone(), None), cell);
             }
         }
         assert!(provider
             .quote(
                 &SecurityPriceQuery {
+                    action_from: None,
                     symbol: "NEW".into(),
                     ..query.clone()
                 },
@@ -807,6 +948,7 @@ mod tests {
         provider
             .quote(
                 &SecurityPriceQuery {
+                    action_from: None,
                     symbol: "NEW".into(),
                     ..query
                 },
@@ -978,6 +1120,7 @@ mod tests {
             let q = provider
                 .quote(
                     &SecurityPriceQuery {
+                        action_from: None,
                         symbol: symbol.into(),
                         on_date: crate::fx::today(),
                     },
@@ -1031,6 +1174,8 @@ mod tests {
     async fn price_refresh_keeps_trade_quantities_costs_and_execution_records() {
         let db = db();
         let trade = crate::models::HoldingTradeInput {
+            expected_cash_baseline: "00000000-0000-0000-0000-000000000001".into(),
+            settlement_mode: crate::models::SettlementMode::Settle,
             request_id: uuid::Uuid::new_v4().to_string(),
             holding_id: String::new(),
             expected_revision: None,
@@ -1052,6 +1197,7 @@ mod tests {
             external_id: String::new(),
             note: String::new(),
         };
+        crate::db::fund_cash(&db, "USD");
         let before = db.save_holding_trade(&trade).unwrap();
         let provider = FixedProvider {
             price: 23.0,

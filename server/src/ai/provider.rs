@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ModelUsage {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
@@ -58,14 +58,14 @@ pub trait ModelProvider: Send + Sync {
     fn model_name(&self) -> &str;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchSource {
     pub url: String,
     pub title: String,
     pub claim: String,
     pub original: bool,
 }
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SearchCompletion {
     pub api_calls: usize,
     pub content: String,

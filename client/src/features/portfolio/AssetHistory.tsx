@@ -4,12 +4,12 @@ import type { DailyHistory, DailyRecord, Snapshot } from "../../types";
 import { formatMoney } from "../../lib/format";
 import { SERVER_DATA_UPDATED, DATA_SAVED } from "../../lib/syncEvents";
 
-const money = (value: number | null, currency: string) =>
+const money = (value: number | string | null, currency: string) =>
   value == null ? "总额待补全" : formatMoney(value, currency);
 const change = (value: number | null, currency: string) =>
   value == null
     ? "暂不可比较"
-    : `${value > 0 ? "+" : ""}${formatMoney(value, currency)}`;
+    : `${Number(value) > 0 ? "+" : ""}${formatMoney(value, currency)}`;
 
 function Trend({ records }: { records: DailyRecord[] }) {
   const segments: DailyRecord[][] = [];
@@ -85,7 +85,8 @@ function Trend({ records }: { records: DailyRecord[] }) {
                 stroke="var(--accent, #24876b)"
               >
                 <title>
-                  {r.day} · {money(r.totalAssets, r.baseCurrency)} ·{" "}
+                  {r.day} ·{" "}
+                  {money(r.exactTotalAssets ?? r.totalAssets, r.baseCurrency)} ·{" "}
                   {r.carried ? "沿用值" : "有更新"}
                 </title>
               </circle>
@@ -191,7 +192,12 @@ export function AssetHistory({ snapshot }: { snapshot: Snapshot }) {
           <div className="daily-metrics">
             <div>
               <span>总资产</span>
-              <strong>{money(latest.totalAssets, latest.baseCurrency)}</strong>
+              <strong>
+                {money(
+                  latest.exactTotalAssets ?? latest.totalAssets,
+                  latest.baseCurrency,
+                )}
+              </strong>
             </div>
             <div>
               <span>较昨日</span>
@@ -212,9 +218,17 @@ export function AssetHistory({ snapshot }: { snapshot: Snapshot }) {
               <div>
                 <span>
                   净资产 · 已扣负债{" "}
-                  {money(latest.liabilities, latest.baseCurrency)}
+                  {money(
+                    latest.exactLiabilities || latest.liabilities,
+                    latest.baseCurrency,
+                  )}
                 </span>
-                <strong>{money(latest.netAssets, latest.baseCurrency)}</strong>
+                <strong>
+                  {money(
+                    latest.exactNetAssets ?? latest.netAssets,
+                    latest.baseCurrency,
+                  )}
+                </strong>
               </div>
             )}
           </div>

@@ -194,7 +194,7 @@ export function ExchangeRates({
               disabled={busy || !valid}
               onClick={() =>
                 void run(async () => {
-                  const next = await setFxOverride(currency, Number(draft));
+                  const next = await setFxOverride(currency, draft);
                   setDrafts((current) => {
                     const result = { ...current };
                     delete result[currency];

@@ -59,13 +59,14 @@ where
         .route(
             "/api/server",
             get(|| async {
-                Json(serde_json::json!({"mode":"hosted", "database":"postgresql", "protocol":1}))
+                Json(serde_json::json!({"mode":"hosted", "database":"postgresql", "protocol":1, "codexBridge":1}))
             }),
         )
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024))
         .with_state(state);
     let app = private
         .merge(public)
+        .merge(crate::http::codex_bridge::worker_router())
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(cors)
         .layer(middleware::map_response(no_store))
@@ -146,6 +147,34 @@ async fn authenticate(
             .get(header::IF_MATCH)
             .and_then(|v| v.to_str().ok());
         if is_write && expected != Some(revision.as_str()) {
+            // Financial writes carry durable, transactionally committed receipts. A lost
+            // response must remain recoverable even after the global version advanced.
+            let path = request.uri().path().to_owned();
+            if path.starts_with("/api/holding-trades")
+                || path.starts_with("/api/corporate-actions/")
+                || (path.starts_with("/api/holdings/")
+                    && (path.ends_with("/amount")
+                        || path.ends_with("/trade-repair")
+                        || path.ends_with("/corporate-actions")))
+            {
+                let method = request.method().as_str().to_owned();
+                let bytes = axum::body::to_bytes(request.into_body(), 1024 * 1024)
+                    .await
+                    .map_err(|_| AppError::Validation("操作请求过大".into()))?;
+                if let Ok(input) = serde_json::from_slice(&bytes) {
+                    if let Some(snapshot) = db.replay_financial_request(&method, &path, &input)? {
+                        let mut response = Json(snapshot).into_response();
+                        response.headers_mut().insert(
+                            "x-data-revision",
+                            revision
+                                .parse()
+                                .map_err(|_| AppError::Validation("数据版本无效".into()))?,
+                        );
+                        db.unlock_account()?;
+                        return Ok(response);
+                    }
+                }
+            }
             return Ok::<_, AppError>(
                 (
                     StatusCode::CONFLICT,
@@ -224,7 +253,6 @@ async fn logout(
 async fn version(
     Extension(state): Extension<Arc<RequestContext>>,
 ) -> AppResult<Json<serde_json::Value>> {
-    state.portfolio().snapshot().await?;
     Ok(Json(serde_json::json!({"revision":state.db.revision()?})))
 }
 async fn export(

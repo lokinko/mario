@@ -41,8 +41,7 @@ impl PortfolioService<'_> {
         prices::refresh(self.db, self.market.prices.as_ref()).await
     }
     pub async fn snapshot(&self) -> AppResult<Snapshot> {
-        self.refresh_fx(false).await?;
-        Ok(self.refresh_prices().await?.snapshot)
+        self.db.snapshot()
     }
     pub async fn fx_quote(&self, query: &FxRateQuery) -> AppResult<crate::models::FxRateQuote> {
         fx::historical_quote(self.db, self.market.fx.as_ref(), query).await
@@ -86,12 +85,35 @@ impl PortfolioService<'_> {
         id: &str,
         input: crate::models::VerifiedHoldingValuationInput,
     ) -> AppResult<Snapshot> {
-        let quote = self
-            .security_quote(&SecurityPriceQuery {
-                symbol: input.symbol,
-                on_date: input.on_date,
-            })
-            .await?;
+        let snapshot = self.db.snapshot()?;
+        let query = SecurityPriceQuery {
+            action_from: snapshot
+                .holding_trades
+                .iter()
+                .filter(|t| t.holding_id == id)
+                .map(|t| t.occurred_on.clone())
+                .min(),
+            symbol: input.symbol,
+            on_date: input.on_date,
+        };
+        let quote = self.security_quote(&query).await?;
+        if query.action_from.is_some() && quote.provider_code != "yahoo_daily_close" {
+            let actions = self.market.prices.quote(&query, "").await?;
+            if self.db.register_corporate_actions(id, &actions)? {
+                return Err(crate::AppError::Validation(
+                    "存在待确认公司行动，请先核对数量与成本调整".into(),
+                ));
+            }
+            if actions
+                .splits
+                .iter()
+                .any(|s| s.effective_on > quote.observed_on)
+            {
+                return Err(crate::AppError::Validation(
+                    "未复权价格早于公司行动，请等待行动生效后的完整收盘价或人工核对估值".into(),
+                ));
+            }
+        }
         self.db
             .apply_verified_holding_valuation(id, input.quantity, &quote)
     }
@@ -101,9 +123,7 @@ impl PortfolioService<'_> {
         self.refresh_fx(false).await
     }
     pub async fn save_profile(&self, input: &FinancialProfile) -> AppResult<Snapshot> {
-        self.db.save_profile(input)?;
-        self.refresh_fx(false).await?;
-        self.db.snapshot()
+        self.db.save_profile(input)
     }
     pub async fn save_holding(&self, id: Option<&str>, input: HoldingInput) -> AppResult<Snapshot> {
         self.refresh_fx(false).await?;
@@ -113,34 +133,30 @@ impl PortfolioService<'_> {
         } else {
             self.db.add_holding(&input)?;
         }
-        Ok(self.refresh_prices().await?.snapshot)
+        self.db.snapshot()
     }
     pub async fn save_trade(&self, input: &HoldingTradeInput) -> AppResult<Snapshot> {
-        self.db.save_holding_trade(input)?;
-        self.snapshot().await
+        self.db.save_holding_trade(input)
     }
     pub async fn update_trade(
         &self,
         id: &str,
         input: &HoldingTradeUpdateInput,
     ) -> AppResult<Snapshot> {
-        self.db.update_holding_trade(id, input)?;
-        self.snapshot().await
+        self.db.update_holding_trade(id, input)
     }
     pub async fn delete_trade(
         &self,
         id: &str,
         input: &HoldingTradeDeleteInput,
     ) -> AppResult<Snapshot> {
-        self.db.delete_holding_trade(id, input)?;
-        self.snapshot().await
+        self.db.delete_holding_trade(id, input)
     }
     pub async fn ensure_daily(
         &self,
         input: &models::daily::EnsureInput,
     ) -> AppResult<models::daily::DailyHistory> {
         self.db.ensure_daily(input)?;
-        self.snapshot().await?;
         self.db
             .daily_history(&models::daily::HistoryQuery::default())
     }
@@ -160,6 +176,7 @@ mod integration_tests {
     impl FxRateProvider for Provider {
         async fn quote(&self, q: &FxRateQuery) -> AppResult<FxRateQuote> {
             Ok(FxRateQuote {
+                exact_rate: None,
                 from_currency: q.from_currency.clone(),
                 to_currency: q.to_currency.clone(),
                 rate: 7.0,
@@ -197,6 +214,7 @@ mod integration_tests {
             c.execute("DELETE FROM daily_totals", []).unwrap();
         }
         db.set_fx_override(&FxOverrideInput {
+            exact_rate: None,
             currency: "USD".into(),
             rate: Some(8.0),
         })

@@ -1,6 +1,13 @@
 export type RiskLevel = "保守" | "稳健" | "均衡" | "进取";
 
 export interface FinancialProfile {
+  exactAmounts?: {
+    monthlyIncome: string;
+    monthlyExpense: string;
+    emergencyFund: string;
+    liabilities: string;
+    investableAssets: string;
+  } | null;
   monthlyIncome: number;
   monthlyExpense: number;
   emergencyFund: number;
@@ -13,6 +20,7 @@ export interface FinancialProfile {
 }
 
 export interface Holding {
+  exactValues?: HoldingAmounts;
   id: string;
   symbol: string;
   name: string;
@@ -107,6 +115,31 @@ export interface RiskFinding {
 }
 
 export interface Snapshot {
+  accounting?: {
+    totalValue: string | null;
+    holdings: Record<string, AccountingHolding>;
+    investments: AccountingTotals;
+    cash: AccountingTotals;
+  } | null;
+  corporateActions?: {
+    id: string;
+    holdingId: string;
+    split: { effectiveOn: string; numerator: string; denominator: string };
+    applied: boolean;
+    dismissed?: boolean;
+    userDeclared?: boolean;
+    symbol?: string;
+    sourceUrl: string;
+  }[];
+  cashBalances?: {
+    currency: string;
+    holdingId: string;
+    amount: string;
+    baselineId: string;
+    confirmedOn: string;
+    confirmedAt: string;
+    needsReconciliation: boolean;
+  }[];
   priceRefreshErrors?: string[];
   holdingTrades?: HoldingTrade[];
   holdingTradeSummaries?: Record<string, HoldingTradeSummary>;
@@ -124,8 +157,28 @@ export interface Snapshot {
   updatedAt: string;
 }
 
+export interface HoldingAmounts {
+  marketValue: string;
+  costBasis: string;
+  quantity: string | null;
+  costPrice: string | null;
+  currentPrice: string | null;
+}
+export interface AccountingHolding extends HoldingAmounts {
+  priceStatus?: string;
+  fxRate: string | null;
+  unrealizedProfit: string | null;
+  settledProfit: string | null;
+  usable: boolean;
+}
+export type AccountingTotals = Record<
+  "value" | "cost" | "unrealized" | "realized",
+  { value: string | null; missing: number }
+>;
+
 export type HoldingTradeKind = "buy" | "sell" | "dividend";
 export interface HoldingTradeFields {
+  settlementMode?: "auto" | "history" | "settle";
   kind: HoldingTradeKind;
   occurredOn: string;
   sequence: number;
@@ -152,6 +205,7 @@ export interface TradeSecurityInput {
   currency: string;
 }
 export interface HoldingTradeInput extends HoldingTradeFields {
+  expectedCashBaseline?: string;
   requestId: string;
   holdingId: string;
   expectedRevision: string | null;
@@ -179,6 +233,7 @@ export interface HoldingTradeSummary {
 }
 
 export interface PortfolioValuationStatus {
+  decisionReady?: boolean;
   baseCurrency: string;
   comparable: boolean;
   missingFxHoldings: string[];
@@ -189,6 +244,7 @@ export interface PortfolioValuationStatus {
 }
 
 export interface PortfolioPlan {
+  exactMonthlySurplus?: string | null;
   monthlySurplus: number;
   modeledAnnualReturnPct: number;
   modeledAnnualVolatilityPct: number;
@@ -200,6 +256,7 @@ export interface PortfolioPlan {
 }
 
 export interface RebalanceAction {
+  exactAmount?: string | null;
   holdingId: string;
   name: string;
   currentPct: number;
@@ -215,7 +272,8 @@ export interface ModelConfig {
     | "openai-chat"
     | "anthropic"
     | "openai-compatible"
-    | "codex";
+    | "codex"
+    | "codex-bridge";
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
@@ -568,6 +626,8 @@ export interface AutoSyncResult {
 }
 
 export interface DailyAsset {
+  accounting?: AccountingHolding | null;
+  exactBaseValue?: string | null;
   holding: Holding;
   confirmedOn: string | null;
   carried: boolean;
@@ -578,6 +638,9 @@ export interface DailyAsset {
   changeKind?: string;
 }
 export interface DailyRecord {
+  exactTotalAssets?: string | null;
+  exactLiabilities?: string;
+  exactNetAssets?: string | null;
   day: string;
   baseCurrency: string;
   totalAssets: number | null;

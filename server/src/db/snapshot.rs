@@ -116,6 +116,14 @@ pub(super) fn build_snapshot(
             plan.assumptions
         );
     }
+    if !valuation_status.decision_ready {
+        plan.rebalancing.clear();
+        plan.assumptions = format!(
+            "估值质量未满足决策要求，再平衡行动暂停。{}；{}",
+            valuation_status.warnings.join("；"),
+            plan.assumptions
+        );
+    }
     let target_total: f64 = holdings.iter().map(|holding| holding.target_pct).sum();
     if target_total > 0.0 && !(99.0..=101.0).contains(&target_total) {
         findings.push(crate::models::RiskFinding {
@@ -128,6 +136,9 @@ pub(super) fn build_snapshot(
         });
     }
     Snapshot {
+        accounting: None,
+        corporate_actions: Vec::new(),
+        cash_balances: Vec::new(),
         price_refresh_errors: Vec::new(),
         holding_trades: Vec::new(),
         holding_trade_summaries: Default::default(),

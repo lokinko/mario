@@ -98,16 +98,204 @@ impl Database {
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<Result<_, _>>()?;
         snapshot.holding_trades = super::trades::load(conn)?;
-        snapshot.holding_trade_summaries = super::trades::summaries(&snapshot.holding_trades)?;
-        let mut notices = conn
-            .prepare("SELECT value FROM settings WHERE key LIKE 'trading.reset.%' ORDER BY key")?;
+        snapshot.cash_balances = super::cash::states(conn)?;
+        snapshot.holding_trade_summaries =
+            super::trades::summaries(conn, &snapshot.holding_trades)?;
+        snapshot.corporate_actions = super::corporate::load(conn)?;
+        if snapshot
+            .corporate_actions
+            .iter()
+            .any(|a| !a.applied && !a.dismissed)
+        {
+            snapshot.valuation_status.comparable = false;
+            snapshot.valuation_status.decision_ready = false;
+            snapshot
+                .valuation_status
+                .warnings
+                .push("存在待确认公司行动，相关估值和调仓行动暂停".into());
+            snapshot.plan.rebalancing.clear();
+        }
+        let mut notices =
+            conn.prepare("SELECT holding_id FROM trading_quarantine ORDER BY holding_id")?;
         snapshot.cleared_trade_holdings = notices
             .query_map([], |r| r.get(0))?
             .collect::<Result<Vec<_>, _>>()?;
+        if snapshot
+            .cash_balances
+            .iter()
+            .any(|b| b.needs_reconciliation)
+        {
+            snapshot.valuation_status.decision_ready = false;
+            snapshot
+                .valuation_status
+                .warnings
+                .push("存款余额待重新核对".into());
+            snapshot.plan.rebalancing.clear();
+            snapshot.findings.push(crate::models::RiskFinding {
+                level: "high".into(),
+                title: "存款余额待核对".into(),
+                detail: "核对基准之前的交易发生了更正，当前余额保留，行动建议暂停".into(),
+                action: "按银行或券商实际余额重新确认存款".into(),
+            });
+        }
+        if !snapshot.cleared_trade_holdings.is_empty() {
+            snapshot.valuation_status.comparable = false;
+            snapshot.valuation_status.decision_ready = false;
+            snapshot
+                .valuation_status
+                .warnings
+                .push("交易链存在异常，原始记录已隔离，组合估值和行动建议暂停".into());
+            snapshot.plan.rebalancing.clear();
+            snapshot.plan.assumptions =
+                "存在待修复交易链，禁止将缓存数值作为可信资产或行动依据".into();
+            snapshot.findings.push(crate::models::RiskFinding {
+                level: "high".into(),
+                title: "交易原始记录待修复".into(),
+                detail: "原始记录和现金余额均已保留，未自动删除或重新结算".into(),
+                action: "在交易明细中预览和修复异常记录，并核对存款".into(),
+            });
+        }
+        let accounting = super::amounts::build(conn, &snapshot)?;
+        let today =
+            chrono::NaiveDate::parse_from_str(&crate::models::market::today(), "%Y-%m-%d").unwrap();
+        for evidence in &snapshot.holding_valuations {
+            if !chrono::NaiveDate::parse_from_str(&evidence.observed_on, "%Y-%m-%d")
+                .is_ok_and(|day| (0..=7).contains(&(today - day).num_days()))
+            {
+                snapshot.valuation_status.decision_ready = false;
+                snapshot.valuation_status.warnings.push(format!(
+                    "{} 的实际价格观察日缺失或已超过 7 天",
+                    evidence.symbol
+                ));
+            }
+        }
+        for holding in &snapshot.holdings {
+            if holding.asset_class != "现金"
+                && matches!(
+                    accounting.holdings[&holding.id]
+                        .amounts
+                        .price_status
+                        .as_str(),
+                    "unconfirmed" | "provisional" | "corporate_pending_price"
+                )
+            {
+                snapshot.valuation_status.decision_ready = false;
+                snapshot.valuation_status.warnings.push(format!(
+                    "{} 当前价格尚未确认，成交参考价不能作为决策估值",
+                    holding.name
+                ));
+            }
+        }
+        use rust_decimal::{prelude::ToPrimitive, Decimal};
+        let number = |value: &str| -> AppResult<f64> {
+            Decimal::from_str_exact(value)
+                .map_err(|_| AppError::Validation("会计投影金额无效".into()))?
+                .to_f64()
+                .ok_or_else(|| AppError::Validation("会计投影超出范围".into()))
+        };
+        for holding in &mut snapshot.holdings {
+            let exact = &accounting.holdings[&holding.id];
+            if exact.usable {
+                holding.market_value = number(&exact.amounts.market_value)?;
+                holding.cost_basis = number(&exact.amounts.cost_basis)?;
+                holding.quantity = exact.amounts.quantity.as_deref().map(number).transpose()?;
+                holding.cost_price = exact
+                    .amounts
+                    .cost_price
+                    .as_deref()
+                    .map(number)
+                    .transpose()?;
+                holding.current_price = exact
+                    .amounts
+                    .current_price
+                    .as_deref()
+                    .map(number)
+                    .transpose()?;
+            }
+        }
+        let derived = build_snapshot(
+            snapshot.profile.clone(),
+            snapshot.holdings.clone(),
+            snapshot.holding_valuations.clone(),
+            snapshot.updated_at.clone(),
+        );
+        let extra = snapshot
+            .findings
+            .into_iter()
+            .filter(|f| matches!(f.title.as_str(), "存款余额待核对" | "交易原始记录待修复"))
+            .collect::<Vec<_>>();
+        snapshot.findings = derived.findings;
+        snapshot.findings.extend(extra);
+        snapshot.plan = derived.plan;
+        if let Some(total) = &accounting.total_value {
+            let total = Decimal::from_str_exact(total)
+                .map_err(|_| AppError::Validation("组合合计无效".into()))?;
+            let mut target_sum = Decimal::ZERO;
+            for holding in &snapshot.holdings {
+                target_sum += Decimal::from_str_exact(&holding.target_pct.to_string())
+                    .map_err(|_| AppError::Validation("目标权重无效".into()))?;
+            }
+            if (target_sum - Decimal::from(100)).abs() > Decimal::new(1, 8) {
+                snapshot.plan.rebalancing.clear();
+            }
+            for action in &mut snapshot.plan.rebalancing {
+                let source = &accounting.holdings[&action.holding_id];
+                let weight = Decimal::from_str_exact(&action.target_pct.to_string())
+                    .map_err(|_| AppError::Validation("目标权重无效".into()))?
+                    / Decimal::from(100);
+                let value = Decimal::from_str_exact(&source.amounts.market_value)
+                    .map_err(|_| AppError::Validation("资产原值无效".into()))?;
+                let rate = Decimal::from_str_exact(source.fx_rate.as_deref().unwrap_or("0"))
+                    .map_err(|_| AppError::Validation("折算汇率无效".into()))?;
+                let difference = total
+                    .checked_mul(weight)
+                    .and_then(|target| value.checked_mul(rate).map(|current| target - current))
+                    .ok_or_else(|| AppError::Validation("再平衡金额计算超出范围".into()))?;
+                let amount = difference.abs().round_dp_with_strategy(
+                    if snapshot.profile.base_currency == "JPY" {
+                        0
+                    } else {
+                        2
+                    },
+                    rust_decimal::RoundingStrategy::MidpointAwayFromZero,
+                );
+                action.exact_amount = Some(amount.normalize().to_string());
+                action.amount = amount
+                    .to_f64()
+                    .ok_or_else(|| AppError::Validation("再平衡金额超出范围".into()))?;
+                action.direction = if difference >= Decimal::ZERO {
+                    "增加"
+                } else {
+                    "减少"
+                }
+                .into();
+            }
+        }
+        snapshot.total_value = if snapshot.valuation_status.comparable {
+            derived.total_value
+        } else {
+            0.0
+        };
+        snapshot.concentration_pct = if snapshot.valuation_status.comparable {
+            derived.concentration_pct
+        } else {
+            0.0
+        };
+        if !snapshot.valuation_status.decision_ready {
+            snapshot.plan.rebalancing.clear();
+            snapshot.plan.assumptions = format!(
+                "数据质量未满足行动要求：{}。{}",
+                snapshot.valuation_status.warnings.join("；"),
+                snapshot.plan.assumptions
+            );
+        }
+        snapshot.accounting = Some(accounting);
         Ok(snapshot)
     }
 
     pub fn save_profile(&self, profile: &FinancialProfile) -> AppResult<Snapshot> {
+        let canonical = crate::models::accounting::normalize_profile(profile)?;
+        let profile = &canonical;
         validate_non_negative(&[
             profile.monthly_income,
             profile.monthly_expense,
@@ -152,6 +340,9 @@ impl Database {
         let before = super::daily::prepare(&transaction)?;
         let base_currency = before.profile.base_currency.clone();
         let mut input = super::fx::holding_input(&transaction, input, &base_currency)?;
+        super::amounts::normalize(&mut input)?;
+        super::cash::normalize_input(&mut input)?;
+        super::cash::guard(&transaction, None, &input)?;
         normalize_holding_details(&mut input, false)?;
         let input = &input;
         validate_holding(input, &base_currency)?;
@@ -169,11 +360,39 @@ impl Database {
             &input.valuation_date,
         )?;
         let now = Utc::now().to_rfc3339();
+        let id = Uuid::new_v4().to_string();
         transaction.execute(
             "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on, created_at, updated_at, cost_price, quantity, current_price)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?14, ?15, ?16)",
-            params![Uuid::new_v4().to_string(), input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, now, input.cost_price, input.quantity, input.current_price],
+            params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, now, input.cost_price, input.quantity, input.current_price],
         )?;
+        if input.asset_class == "现金" {
+            super::cash::confirm(
+                &transaction,
+                &id,
+                &input.currency,
+                crate::models::decimal::parse(
+                    input
+                        .cash_amount
+                        .as_deref()
+                        .unwrap_or(&input.market_value.to_string()),
+                )?,
+                &input.valuation_date,
+            )?;
+            super::financial::journal(
+                &transaction,
+                &id,
+                "balance.open",
+                &Option::<Holding>::None,
+                input,
+                input
+                    .cash_amount
+                    .as_deref()
+                    .unwrap_or(&input.market_value.to_string()),
+                ("建立存款核对基准", None),
+            )?;
+        }
+        super::amounts::record_input(&transaction, &id, input, false)?;
         super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
@@ -187,7 +406,10 @@ impl Database {
         let before = super::daily::prepare(&transaction)?;
         let base_currency = before.profile.base_currency.clone();
         let mut input = super::fx::holding_input(&transaction, input, &base_currency)?;
+        super::amounts::normalize(&mut input)?;
         let trade_managed = super::trades::guard_edit(&transaction, id, &mut input)?;
+        super::cash::normalize_input(&mut input)?;
+        super::cash::guard(&transaction, Some(id), &input)?;
         normalize_holding_details(&mut input, trade_managed)?;
         let input = &input;
         validate_holding(input, &base_currency)?;
@@ -239,6 +461,43 @@ impl Database {
         if valuation_changed {
             transaction.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
         }
+        if input.asset_class == "现金" {
+            super::cash::confirm(
+                &transaction,
+                id,
+                &input.currency,
+                crate::models::decimal::parse(
+                    input
+                        .cash_amount
+                        .as_deref()
+                        .unwrap_or(&input.market_value.to_string()),
+                )?,
+                &input.valuation_date,
+            )?;
+            super::financial::journal(
+                &transaction,
+                id,
+                "balance.confirm",
+                &serde_json::json!({"holding":before.holdings.iter().find(|h| h.id == id),"cashBalance":before.cash_balances.iter().find(|b|b.holding_id==id)}),
+                input,
+                &(crate::models::decimal::parse(
+                    input
+                        .cash_amount
+                        .as_deref()
+                        .unwrap_or(&input.market_value.to_string()),
+                )? - crate::models::decimal::parse(
+                    &before
+                        .cash_balances
+                        .iter()
+                        .find(|b| b.holding_id == id)
+                        .map_or_else(|| previous.1.to_string(), |b| b.amount.clone()),
+                )?)
+                .normalize()
+                .to_string(),
+                ("重新核对实际存款", None),
+            )?;
+        }
+        super::amounts::record_input(&transaction, id, input, trade_managed)?;
         super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
@@ -253,6 +512,11 @@ impl Database {
         quote: &SecurityPriceQuote,
     ) -> AppResult<Snapshot> {
         validate_holding_valuation_evidence(quantity, quote)?;
+        if self.register_corporate_actions(id, quote)? {
+            return Err(AppError::Validation(
+                "存在待确认公司行动，请先核对数量与成本调整".into(),
+            ));
+        }
         let market_value = quantity * quote.close;
         if !market_value.is_finite() || market_value <= 0.0 || market_value > 1e15 {
             return Err(AppError::Validation("数量乘以单位价格后的市值无效".into()));
@@ -344,6 +608,7 @@ impl Database {
                 captured_at,
             ],
         )?;
+        super::amounts::apply_quote(&transaction, id, quantity, quote)?;
         super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;
@@ -355,6 +620,11 @@ impl Database {
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
         let before = super::daily::prepare(&transaction)?;
+        if before.cleared_trade_holdings.iter().any(|h| h == id) {
+            return Err(AppError::Validation(
+                "存在隔离交易链，请先修复原始记录".into(),
+            ));
+        }
         if before.holding_trades.iter().any(|t| t.holding_id == id) {
             return Err(AppError::Validation(
                 "已有交易明细的持仓需通过卖出清仓，交易记录会保留".into(),
@@ -364,6 +634,25 @@ impl Database {
         if affected == 0 {
             return Err(AppError::Validation("找不到要删除的资产".into()));
         }
+        super::financial::journal(
+            &transaction,
+            id,
+            "holding.delete",
+            &serde_json::json!({"holding":before.holdings.iter().find(|h|h.id==id),"accounting":before.accounting.as_ref().and_then(|a|a.holdings.get(id)),"cashBalance":before.cash_balances.iter().find(|b|b.holding_id==id),"corporateActions":before.corporate_actions.iter().filter(|a|a.holding_id==id).collect::<Vec<_>>()}),
+            &Option::<Holding>::None,
+            &before
+                .cash_balances
+                .iter()
+                .find(|b| b.holding_id == id)
+                .map(|b| {
+                    crate::models::decimal::parse(&b.amount).map(|n| (-n).normalize().to_string())
+                })
+                .transpose()?
+                .unwrap_or_else(|| "0".into()),
+            ("用户移除手工资产", None),
+        )?;
+        transaction.execute("DELETE FROM cash_state WHERE holding_id=?1", [id])?;
+        transaction.execute("DELETE FROM corporate_actions WHERE holding_id=?1", [id])?;
         super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
         transaction.commit()?;

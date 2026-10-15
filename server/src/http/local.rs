@@ -51,6 +51,7 @@ where
             state.clone(),
             require_local_auth,
         ))
+        .merge(super::codex_bridge::worker_router())
         .layer(TraceLayer::new_for_http())
         .layer(cors);
 

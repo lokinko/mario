@@ -997,6 +997,9 @@ mod tests {
 
     fn snapshot() -> Snapshot {
         Snapshot {
+            accounting: None,
+            corporate_actions: Vec::new(),
+            cash_balances: Vec::new(),
             price_refresh_errors: Vec::new(),
             holding_trades: Vec::new(),
             holding_trade_summaries: Default::default(),
@@ -1031,6 +1034,7 @@ mod tests {
             emergency_months: 6.0,
             concentration_pct: 100.0,
             valuation_status: crate::models::PortfolioValuationStatus {
+                decision_ready: true,
                 base_currency: "CNY".into(),
                 comparable: true,
                 missing_fx_holdings: Vec::new(),
@@ -1040,6 +1044,7 @@ mod tests {
                 warnings: Vec::new(),
             },
             plan: PortfolioPlan {
+                exact_monthly_surplus: None,
                 monthly_surplus: 0.0,
                 modeled_annual_return_pct: 5.5,
                 modeled_annual_volatility_pct: 14.0,

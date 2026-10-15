@@ -1564,6 +1564,39 @@ button:focus-visible {
 .file-import-button input:disabled {
   cursor: not-allowed;
 }
+.codex-model-picker {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.codex-model-picker select {
+  width: 100%;
+  min-width: 0;
+}
+.codex-bridge-panel {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.codex-bridge-panel p,
+.codex-bridge-panel ol {
+  margin: 10px 0;
+}
+.codex-bridge-panel ol {
+  padding-left: 22px;
+}
+.codex-bridge-panel input {
+  width: 100%;
+  min-width: 0;
+  margin: 8px 0;
+}
+.codex-bridge-panel .form-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .model-fields {
   margin-top: 20px;
 }
@@ -2175,4 +2208,20 @@ button:focus-visible {
 }
 .exchange-float .exchange-settings-heading p {
   margin: 0;
+}
+.financial-history pre {
+  max-width: 100%;
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.financial-history textarea {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  font-family: monospace;
+}
+.financial-history fieldset {
+  min-width: 0;
 }

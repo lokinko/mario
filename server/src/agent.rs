@@ -67,7 +67,10 @@ impl AgentExecutor {
         memories: Vec<models::MemoryItem>,
         events: Option<crate::ai::streaming::EventSender>,
     ) -> AppResult<AnalysisResult> {
-        if let Ok(endpoint) = std::env::var("MARIO_AGENT_URL") {
+        if let Some(endpoint) = std::env::var("MARIO_AGENT_URL")
+            .ok()
+            .filter(|_| config.provider != "codex-bridge")
+        {
             let token = std::env::var("MARIO_AGENT_TOKEN")
                 .map_err(|_| AppError::Validation("缺少 Agent 服务令牌".into()))?;
             let job = Job {
@@ -120,7 +123,12 @@ impl AgentExecutor {
             }
             return Ok(response.json().await?);
         }
-        let provider: Box<dyn ModelProvider> = if config.provider == "codex" {
+        let provider: Box<dyn ModelProvider> = if config.provider == "codex-bridge" {
+            Box::new(crate::ai::bridge::BridgeProvider::new(
+                api_key.ok_or_else(|| AppError::Validation("请先配对本机 Codex".into()))?,
+                config.model,
+            ))
+        } else if config.provider == "codex" {
             Box::new(CodexProvider::new(config.model))
         } else {
             Box::new(

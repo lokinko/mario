@@ -13,7 +13,8 @@ pub const STRUCTURED_ANALYSIS_CONTRACT: &str = r#"
   "actions": [{"supportingFactIndices":[0],"evidenceLimits":["这条建议的证据局限与尚需核实的条件"],"action":"下一步行动","rationale":"为什么","reversible":true,"reviewTrigger":"何时复盘或停止"}],
   "reviewTriggers": ["未来复盘或证伪条件"]
 }
-facts、unknowns、options、actions、reviewTriggers 均至少一项。basis 只能是 user_data 或 research_evidence；basis 为 research_evidence 时必须引用本次上下文里的证据 ID，sourceRefs 必须为空；basis 为 user_data 时 evidenceIds 必须为空，sourceRefs 填写实际使用的个人原值 JSON Pointer（例如 /portfolio/holdings/0/marketValue 或 /currentUserMessage），只能指向本次提供的授权档案标量值，不得引用 /question、元数据或未提供的路径。综合推断无法直接对应个人原值时 sourceRefs 可为空，不强行配引用。不得编造证据 ID 或路径。inferences 可以为空。所有字段都必须存在。
+当本次上下文 portfolio.valuationStatus.decisionReady 为 false 时，actions 必须且只能有一项，action 严格为“核对资产数据后再评估调仓”，rationale 严格为“当前数据质量未满足行动要求”，reviewTrigger 严格为“完成数据核对并重新生成分析”，reversible 为 true；evidenceLimits 说明实际的数据缺陷，supportingFactIndices 引用对应事实。不得在其他章节提供精确调仓金额或目标股数。
+facts、unknowns、options、actions、reviewTriggers 均至少一项。basis 只能是 user_data 或 research_evidence；basis 为 research_evidence 时必须引用本次上下文里的证据 ID，sourceRefs 必须为空；basis 为 user_data 时 evidenceIds 必须为空，sourceRefs 填写实际使用的个人原值 JSON Pointer（例如 /portfolio/accounting/holdings/持仓ID/marketValue、/financialProfile/profile/exactAmounts/monthlyIncome 或 /currentUserMessage），只能指向本次提供的授权档案标量值，不得引用 /question、元数据或未提供的路径。综合推断无法直接对应个人原值时 sourceRefs 可为空，不强行配引用。不得编造证据 ID 或路径。inferences 可以为空。所有字段都必须存在。
 每条 actions 必须通过 supportingFactIndices 引用 facts 中至少一条真正支持该行动的事实（从 0 开始，不得越界或重复），不得把所有事实无差别挂在每条建议上。rationale 必须解释这些事实如何结合用户持仓、目标或风险约束推出该行动，并区分事实与判断；涉及外部环境的建议须关联带 research_evidence 引用的事实。evidenceLimits 必须逐条列出该建议的口径、时效、反方证据或缺失信息，至少一条。来源不足时应建议核实/补充资料或暂缓行动，不得为了显得专业而编造事实、补齐引用或承诺收益。"#;
 
 pub fn parse_structured_analysis(
@@ -35,6 +36,18 @@ pub fn validate_source_types(
     sources: &[crate::models::AnalysisEvidenceReference],
     context: &serde_json::Value,
 ) -> Result<(), String> {
+    if context
+        .pointer("/portfolio/valuationStatus/decisionReady")
+        .and_then(serde_json::Value::as_bool)
+        == Some(false)
+        && (report.actions.len() != 1
+            || report.actions[0].action != "核对资产数据后再评估调仓"
+            || report.actions[0].rationale != "当前数据质量未满足行动要求"
+            || report.actions[0].review_trigger != "完成数据核对并重新生成分析"
+            || !report.actions[0].reversible)
+    {
+        return Err("数据质量未达标：actions 必须仅包含安全核对动作，不能生成调仓指令".into());
+    }
     for claim in report.facts.iter().chain(&report.inferences) {
         if claim.source_refs.len() > 12
             || (claim.basis != "user_data" && !claim.source_refs.is_empty())
@@ -43,6 +56,62 @@ pub fn validate_source_types(
         }
         let mut seen = HashSet::new();
         for path in &claim.source_refs {
+            let field = path.rsplit('/').next().unwrap_or_default();
+            if context
+                .pointer("/financialProfile/profile/exactAmounts")
+                .is_some_and(|v| v.is_object())
+                && path.starts_with("/financialProfile/profile/")
+                && !path.starts_with("/financialProfile/profile/exactAmounts/")
+                && [
+                    "monthlyIncome",
+                    "monthlyExpense",
+                    "emergencyFund",
+                    "liabilities",
+                    "investableAssets",
+                ]
+                .contains(&field)
+            {
+                return Err(format!("财务金额必须引用 exactAmounts 原值：{path}"));
+            }
+            if path == "/deterministicPlan/monthlySurplus"
+                && context
+                    .pointer("/deterministicPlan/exactMonthlySurplus")
+                    .is_some_and(|v| v.is_string())
+            {
+                return Err("每月结余必须引用 exactMonthlySurplus 原值".into());
+            }
+            if context
+                .pointer("/portfolio/accounting")
+                .is_some_and(|v| v.is_object())
+                && (path == "/portfolio/totalValue"
+                    || (path.starts_with("/portfolio/holdings/")
+                        && [
+                            "marketValue",
+                            "costBasis",
+                            "quantity",
+                            "costPrice",
+                            "currentPrice",
+                            "fxRateToBase",
+                        ]
+                        .contains(&field)))
+            {
+                return Err(format!(
+                    "金额或数量必须引用精确会计原值，不能引用浮点显示投影：{path}"
+                ));
+            }
+            let parts = path.split('/').collect::<Vec<_>>();
+            if parts.len() >= 6 && parts[1..4] == ["portfolio", "accounting", "holdings"] {
+                let parent = format!("/portfolio/accounting/holdings/{}", parts[4]);
+                if context
+                    .pointer(&format!("{parent}/usable"))
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(false)
+                    && field != "usable"
+                    && field != "priceStatus"
+                {
+                    return Err(format!("待核对会计数据不能作为已确认事实原值：{path}"));
+                }
+            }
             let group = path.split('/').nth(1).unwrap_or_default();
             if !path.starts_with('/')
                 || !seen.insert(path)
@@ -306,6 +375,33 @@ mod tests {
             "reviewTriggers": ["集中度降至目标范围"]
         })
         .to_string()
+    }
+
+    #[test]
+    fn financial_readiness_is_enforced_and_exact_amount_refs_are_required() {
+        let mut report =
+            parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
+        let context = serde_json::json!({"portfolio":{"valuationStatus":{"decisionReady":false},"holdings":[{"marketValue":1.0}],"accounting":{"holdings":{"asset":{"marketValue":"1.01","usable":false}}}}});
+        assert!(validate_source_types(&report, &[], &context)
+            .unwrap_err()
+            .contains("数据质量"));
+        report.actions[0].action = "核对资产数据后再评估调仓".into();
+        report.actions[0].rationale = "当前数据质量未满足行动要求".into();
+        report.actions[0].review_trigger = "完成数据核对并重新生成分析".into();
+        report.actions[0].reversible = true;
+        assert!(validate_source_types(&report, &[], &context).is_ok());
+        report.facts[0].source_refs = vec!["/portfolio/holdings/0/marketValue".into()];
+        assert!(validate_source_types(&report, &[], &context)
+            .unwrap_err()
+            .contains("精确会计"));
+        report.facts[0].source_refs =
+            vec!["/portfolio/accounting/holdings/asset/marketValue".into()];
+        assert!(validate_source_types(&report, &[], &context)
+            .unwrap_err()
+            .contains("待核对"));
+        let mut ready = context;
+        ready["portfolio"]["accounting"]["holdings"]["asset"]["usable"] = true.into();
+        assert!(validate_source_types(&report, &[], &ready).is_ok());
     }
 
     #[test]

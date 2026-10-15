@@ -9,7 +9,7 @@ export function NumberField({
   suffix,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   onChange: (v: string) => void;
   prefix?: string;
   suffix?: string;

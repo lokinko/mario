@@ -12,7 +12,29 @@ export function portfolioOverview(
   holdings: Holding[],
   summaries: Snapshot["holdingTradeSummaries"],
   baseCurrency: string,
+  accounting?: Snapshot["accounting"],
+  cash = false,
 ) {
+  if (accounting)
+    return {
+      totals: cash ? accounting.cash : accounting.investments,
+      rows: holdings.map((holding) => {
+        const exact = accounting.holdings[holding.id];
+        return {
+          holding,
+          rate: exact?.fxRate ?? null,
+          amounts: {
+            value: exact?.usable ? exact.marketValue : null,
+            cost:
+              exact?.usable && exact.unrealizedProfit != null
+                ? exact.costBasis
+                : null,
+            unrealized: exact?.usable ? exact.unrealizedProfit : null,
+            realized: exact?.usable ? exact.settledProfit : null,
+          },
+        };
+      }),
+    };
   const totals = Object.fromEntries(
     overviewMetrics.map((key) => [
       key,

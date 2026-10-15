@@ -1,3 +1,4 @@
+import { FinancialHistory } from "./FinancialHistory";
 import { useDrawerControls } from "../../components/Drawer";
 import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
@@ -86,33 +87,45 @@ export function HoldingTrades({
   const summary = holding
     ? snapshot.holdingTradeSummaries?.[holding.id]
     : undefined;
+  const [uncertain, setUncertain] = useState(false);
   const [open, setOpen] = useState(!holding);
   useEffect(() => {
-    onEditingChange?.(open);
+    onEditingChange?.(open || uncertain);
     return () => onEditingChange?.(false);
-  }, [open, onEditingChange]);
+  }, [open, uncertain, onEditingChange]);
   const [editing, setEditing] = useState<HoldingTrade | null>(null);
   const [draft, setDraft] = useState(() => emptyDraft(summary?.account));
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [assetClass, setAssetClass] = useState<Holding["assetClass"]>("股票");
   const [currency, setCurrency] = useState(
-    holding?.currency ?? snapshot.profile.baseCurrency,
+    holding?.currency ??
+      (["CNY", "HKD", "USD"].includes(snapshot.profile.baseCurrency)
+        ? snapshot.profile.baseCurrency
+        : "CNY"),
+  );
+  const [settlementMode, setSettlementMode] = useState<"settle" | "history">(
+    "settle",
+  );
+  const quarantined = Boolean(
+    holding && snapshot.clearedTradeHoldings?.includes(holding.id),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const pendingAction = useRef<(() => Promise<Snapshot>) | null>(null);
+  const pendingDelete = useRef(false);
+  const cashBaselines = useRef(snapshot.cashBalances ?? []);
   const drawer = useDrawerControls();
   useEffect(() => {
-    drawer.setBusy(busy);
+    drawer.setBusy(busy || uncertain);
     return () => drawer.setBusy(false);
-  }, [busy, drawer]);
+  }, [busy, uncertain, drawer]);
   const pending = useRef(false);
   const attempt = useRef<{ key: string; id: string } | null>(null);
   const revision = useRef(
     holding ? (snapshot.holdingRevisions?.[holding.id] ?? null) : null,
   );
-  const money = (value: string | number) =>
-    formatMoney(Number(value) || 0, currency, 2);
+  const money = (value: string | number) => formatMoney(value, currency, 2);
   const isDividend = draft.kind === "dividend";
   const gross =
     draft.grossAmount || estimate(draft.quantity, draft.price, currency);
@@ -145,10 +158,12 @@ export function HoldingTrades({
       ) + 1,
     );
   const begin = (kind: HoldingTradeKind, t?: HoldingTrade) => {
+    cashBaselines.current = snapshot.cashBalances ?? [];
     revision.current = holding
       ? (snapshot.holdingRevisions?.[holding.id] ?? null)
       : null;
     setEditing(t ?? null);
+    setSettlementMode("settle");
     setDraft(
       t
         ? { ...t, sequence: String(t.sequence) }
@@ -169,7 +184,7 @@ export function HoldingTrades({
     onClose?.();
   };
   async function save() {
-    if (!valid || pending.current) return;
+    if (!valid || pending.current || uncertain) return;
     pending.current = true;
     setBusy(true);
     setError("");
@@ -185,8 +200,12 @@ export function HoldingTrades({
       account: draft.account.trim(),
       externalId: draft.externalId.trim(),
       note: draft.note.trim(),
+      settlementMode: editing ? "auto" : settlementMode,
     };
     const input = {
+      expectedCashBaseline:
+        cashBaselines.current.find((b) => b.currency === currency)
+          ?.baselineId ?? "",
       ...fields,
       holdingId: holding?.id ?? "",
       expectedRevision: revision.current,
@@ -198,12 +217,21 @@ export function HoldingTrades({
     if (attempt.current?.key !== key)
       attempt.current = { key, id: crypto.randomUUID() };
     try {
-      const next = editing
-        ? await updateHoldingTrade(editing.id, {
-            ...fields,
-            expectedRevision: revision.current ?? "",
-          })
-        : await saveHoldingTrade({ ...input, requestId: attempt.current!.id });
+      pendingDelete.current = false;
+      pendingAction.current = editing
+        ? (() => {
+            const target = editing.id;
+            const request = {
+              ...fields,
+              expectedRevision: revision.current ?? "",
+            };
+            return () => updateHoldingTrade(target, request);
+          })()
+        : (() => {
+            const request = { ...input, requestId: attempt.current!.id };
+            return () => saveHoldingTrade(request);
+          })();
+      const next = await pendingAction.current();
       drawer.markClean();
       onUpdate(next);
       setPage(1);
@@ -216,6 +244,7 @@ export function HoldingTrades({
           : "真实交易已保存，持仓和收益已更新",
       );
     } catch (e) {
+      setUncertain(String(e).includes("结果待确认"));
       setError(String(e));
     } finally {
       pending.current = false;
@@ -223,13 +252,13 @@ export function HoldingTrades({
     }
   }
   async function remove(t: HoldingTrade) {
-    if (pending.current || open) return;
+    if (pending.current || open || uncertain) return;
     const expectedRevision = snapshot.holdingRevisions?.[t.holdingId];
     if (
       !window.confirm(
         `确认删除“${holding?.name}”在 ${t.occurredOn} 的第 ${t.sequence} 笔${names[t.kind]}？\n` +
           `账户：${t.account} · 金额：${money(t.grossAmount)}\n` +
-          "删除后会重新计算持仓、成本和盈亏。删除最后一笔交易会将持仓数量和成本归零，保留证券信息。此操作无法撤销。",
+          "删除后会重新计算持仓、成本和盈亏，并退回买入支出或扣回卖出、分红收入。删除最后一笔交易会将持仓数量和成本归零，保留证券信息。原始记录和本次更正会保留在更正历史中。",
       )
     )
       return;
@@ -238,9 +267,38 @@ export function HoldingTrades({
     setError("");
     try {
       if (!expectedRevision) throw new Error("持仓版本缺失，请刷新后重试");
-      onUpdate(await deleteHoldingTrade(t.id, { expectedRevision }));
+      pendingDelete.current = true;
+      pendingAction.current = () =>
+        deleteHoldingTrade(t.id, { expectedRevision });
+      onUpdate(await pendingAction.current());
       flash("交易已删除，持仓和盈亏已更新");
     } catch (e) {
+      setUncertain(String(e).includes("结果待确认"));
+      setError(String(e));
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function recheck() {
+    if (busy || !pendingAction.current) return;
+    pending.current = true;
+    setBusy(true);
+    try {
+      const next = await pendingAction.current();
+      onUpdate(next);
+      setUncertain(false);
+      setError("");
+      if (!pendingDelete.current) {
+        drawer.markClean();
+        setDraft(emptyDraft(draft.account));
+        attempt.current = null;
+        close();
+      }
+      flash("操作结果已确认，未重新创建交易");
+    } catch (e) {
+      setUncertain(String(e).includes("结果待确认"));
       setError(String(e));
     } finally {
       pending.current = false;
@@ -279,9 +337,9 @@ export function HoldingTrades({
   );
   return (
     <div className="holding-trades">
-      {holding && snapshot.clearedTradeHoldings?.includes(holding.id) && (
+      {quarantined && (
         <p className="error-box" role="status">
-          这项持仓的旧交易记录不符合当前规则，已清空数量与成本。请从最早一笔真实买入重新录入。
+          这项持仓的交易链已隔离，原始记录和缓存余额均已保留。请在“更正历史与数据核对”中预览修复，避免重新录入造成重复结算。
         </p>
       )}
       {holding && (
@@ -295,7 +353,7 @@ export function HoldingTrades({
             <button
               key={kind}
               className="secondary"
-              disabled={busy || open}
+              disabled={busy || uncertain || open || quarantined}
               onClick={() => begin(kind)}
             >
               {kind === "buy" && <Plus size={14} />}{" "}
@@ -312,7 +370,22 @@ export function HoldingTrades({
             : "。请核对交易记录后重试；如持仓已变化，请刷新后再操作。"}
         </p>
       )}
-      {open && (
+      {uncertain && (
+        <p role="status">
+          这笔操作的结果仍待确认，输入和请求编号已固定。
+          <button type="button" disabled={busy} onClick={() => void recheck()}>
+            再次核对原操作
+          </button>
+        </p>
+      )}
+      {holding && (
+        <FinancialHistory
+          holding={holding}
+          snapshot={snapshot}
+          onUpdate={onUpdate}
+        />
+      )}
+      {open && !quarantined && (
         <form
           aria-label={editing ? "编辑真实交易" : "录入真实交易"}
           onSubmit={(e) => {
@@ -332,7 +405,7 @@ export function HoldingTrades({
               type="button"
               className="text-button"
               aria-label="关闭交易录入"
-              disabled={busy}
+              disabled={busy || uncertain}
               onClick={() => {
                 if (drawer.confirmDiscard()) {
                   drawer.markClean();
@@ -343,7 +416,7 @@ export function HoldingTrades({
               <X size={16} />
             </button>
           </div>
-          <fieldset className="holding-fields" disabled={busy}>
+          <fieldset className="holding-fields" disabled={busy || uncertain}>
             <div className="form-grid">
               {!holding && (
                 <>
@@ -384,19 +457,11 @@ export function HoldingTrades({
                       value={currency}
                       onChange={(e) => setCurrency(e.target.value)}
                     >
-                      {[
-                        ...new Set([
-                          currency,
-                          "CNY",
-                          "HKD",
-                          "USD",
-                          "EUR",
-                          "JPY",
-                          "GBP",
-                        ]),
-                      ].map((c) => (
-                        <option key={c}>{c}</option>
-                      ))}
+                      {[...new Set([currency, "CNY", "HKD", "USD"])].map(
+                        (c) => (
+                          <option key={c}>{c}</option>
+                        ),
+                      )}
                     </select>
                   </label>
                 </>
@@ -482,20 +547,50 @@ export function HoldingTrades({
                 成交 / 分红 {money(gross)} · 费用 {money(draft.fees)} · 税费{" "}
                 {money(draft.taxes)}
               </small>
+              <small>
+                {currency} 存款余额{" "}
+                {money(
+                  snapshot.holdings.find(
+                    (item) =>
+                      item.assetClass === "现金" && item.currency === currency,
+                  )?.marketValue ?? 0,
+                )}
+              </small>
             </p>
             {holding && !trades.length && (
               <p className="section-intro">
                 首次录入将按真实成交重建这项持仓，替换目前的手工数量和成本。请从最早的买入开始补齐历史，不会自动补入期初余额。
               </p>
             )}
+            {!editing && (
+              <label>
+                资金处理
+                <select
+                  value={settlementMode}
+                  onChange={(e) =>
+                    setSettlementMode(e.target.value as "history" | "settle")
+                  }
+                >
+                  <option value="settle">新增成交，结算当前存款</option>
+                  <option value="history">历史补录，当前余额已包含</option>
+                </select>
+              </label>
+            )}
             <p className="section-intro">
               同一账户、同一证券使用同一项持仓。当日顺序按实际发生先后填写，可补录历史交易。
-              成交单价用于计算交易，不改变当前行情。现金余额请按账户实际余额另行核对。
+              买入从 {currency}{" "}
+              新增结算会扣加当前存款；历史补录仅重建持仓，不重放已包含在余额中的现金流。余额核对基准之前的交易更正会提示重新核对。成交单价不改变当前行情。
+              {!holding &&
+                "新证券在取得行情前暂以首笔买入价估值，请及时核对当前价格。"}
               {isDividend &&
                 " 现金分红计入收益，不减少持仓成本；红利再投资请另录一笔真实买入。"}
             </p>
             <div className="form-actions">
-              <button className="primary" type="submit" disabled={!valid}>
+              <button
+                className="primary"
+                type="submit"
+                disabled={!valid || uncertain}
+              >
                 {busy
                   ? "保存中…"
                   : editing
@@ -580,7 +675,7 @@ export function HoldingTrades({
                     <td>
                       <button
                         className="text-button"
-                        disabled={busy || open}
+                        disabled={busy || uncertain || open}
                         onClick={() => begin(t.kind, t)}
                       >
                         编辑交易
@@ -607,7 +702,7 @@ export function HoldingTrades({
               <button
                 type="button"
                 className="secondary"
-                disabled={currentPage === 1 || busy || open}
+                disabled={currentPage === 1 || busy || uncertain || open}
                 onClick={() => setPage(currentPage - 1)}
               >
                 上一页
@@ -618,7 +713,9 @@ export function HoldingTrades({
               <button
                 type="button"
                 className="secondary"
-                disabled={currentPage === pageCount || busy || open}
+                disabled={
+                  currentPage === pageCount || busy || uncertain || open
+                }
                 onClick={() => setPage(currentPage + 1)}
               >
                 下一页

@@ -72,7 +72,7 @@ it("shows automatically loaded values and saves a persistent manual rate then re
   });
   fireEvent.click(screen.getAllByRole("button", { name: "保存修改" })[0]);
   await screen.findByLabelText("1 USD = 8 CNY");
-  expect(portfolioApi.setFxOverride).toHaveBeenCalledWith("USD", 8);
+  expect(portfolioApi.setFxOverride).toHaveBeenCalledWith("USD", "8");
   await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   vi.mocked(portfolioApi.setFxOverride).mockResolvedValue(book);
   fireEvent.click(screen.getByRole("button", { name: "恢复自动" }));
@@ -129,7 +129,10 @@ it("shows involved rates directly and lets users select other currencies", async
     ),
   );
   await waitFor(() =>
-    expect(portfolioApi.setFxOverride).toHaveBeenCalledWith("HKD", 0.91234567),
+    expect(portfolioApi.setFxOverride).toHaveBeenCalledWith(
+      "HKD",
+      "0.91234567",
+    ),
   );
 });
 it("remembers deselected currencies across mounts without changing rates or assets", async () => {

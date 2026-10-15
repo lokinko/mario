@@ -13,6 +13,8 @@ pub fn today() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManualRate {
+    #[serde(default)]
+    pub exact_rate: Option<String>,
     pub rate: f64,
     pub observed_on: String,
 }
@@ -29,6 +31,8 @@ pub struct FxBook {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FxOverrideInput {
+    #[serde(default)]
+    pub exact_rate: Option<String>,
     pub currency: String,
     pub rate: Option<f64>,
 }

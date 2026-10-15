@@ -34,6 +34,7 @@ try {
     assert.equal(server.mode, 'hosted');
     assert.equal(server.database, 'postgresql');
     assert.equal(server.protocol, 1);
+    assert.equal(server.codexBridge, 1, '后端尚未部署本机 Codex 桥接');
     console.log(`PASS ${url.protocol === 'https:' ? 'HTTPS' : '本机 HTTP'} 与多用户 PostgreSQL API`);
     const page = await (await request('')).text();
     assert.match(page, /id=["']root["']/);
@@ -53,6 +54,14 @@ try {
     console.log('PASS 网页与 JavaScript 资源');
     await request('api/snapshot', [401]);
     await request('api/model-config', [401]);
+    await request('api/codex-bridge', [401]);
+    const bridge = await fetch(new URL('api/codex-bridge/worker/poll', url), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runner: 'unauthorized', model: 'test' }),
+      redirect: 'manual', signal: AbortSignal.timeout(15000),
+    });
+    assert.equal(bridge.status, 401, '本机桥接必须拒绝没有配对码的请求');
+    checks++;
     await request('.env', [403, 404]);
     await request('mario.db', [403, 404]);
     console.log(`PASS 未登录访问保护与私有文件保护；共 ${checks} 项只读 HTTP 检查通过。`);

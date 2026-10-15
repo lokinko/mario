@@ -198,7 +198,13 @@ for attempt in $(seq 1 120); do
     if [[ "$attempt" == 120 ]]; then journalctl -u "$SERVICE_NAME.service" -n 30 --no-pager; echo '服务未就绪' >&2; exit 1; fi
     sleep 1
 done
+# 本机 Codex 桥接和 API 一起部署，不在服务器安装或登录 Codex。
+# 直接探测当前进程，避免旧二进制被误认为桥接已就绪。
+"$NODE" --input-type=module -e 'const r=await fetch(process.argv[1],{signal:AbortSignal.timeout(5000)}); const b=await r.json(); if(!r.ok || b.codexBridge!==1) { console.error("Codex 桥接未就绪，请检查当前运行的后端版本"); process.exit(1); }' "http://127.0.0.1:$API_PORT/api/server"
 echo "宿主机服务已就绪，关闭 SSH 后继续运行，重启主机自动启动。"
+echo '本机 Codex 桥接已部署：网页 设置 → 模型接口 → Codex 本机桥接 → 生成配对码。'
+echo '在个人电脑的同版 Mario 源码目录执行 npm run codex:bridge，粘贴配对码；在线后点击启用本机 Codex。'
+echo '本机桥接主动通过 HTTPS 连接网页，无需开放个人电脑端口；服务重启后需要重新配对。'
 echo "将 $PROJECT_DIR/.runtime/native/nginx.conf 加入域名的 HTTPS server，运行 nginx -t 后重载。"
 echo '若 www 在 server 层跳到根域名，请把该 return 移到兜底 location /，让 /mario 留在 www。'
 echo '详细步骤：docs/deploy-madeagents.md；公网验收：bash deploy.sh check；日志：sudo bash deploy.sh logs'

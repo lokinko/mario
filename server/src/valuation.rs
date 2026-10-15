@@ -57,7 +57,28 @@ pub fn status(base_currency: &str, holdings: &[Holding]) -> PortfolioValuationSt
     if valuation_dates.len() > 1 {
         warnings.push("持仓估值日期不一致".into());
     }
+    let today =
+        chrono::NaiveDate::parse_from_str(&crate::models::market::today(), "%Y-%m-%d").unwrap();
+    let recent = |day: &str| {
+        chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d")
+            .is_ok_and(|date| (0..=7).contains(&(today - date).num_days()))
+    };
+    for holding in holdings {
+        if !recent(&holding.valuation_date) {
+            warnings.push(format!("{} 的估值缺少有效日期或已超过 7 天", holding.name));
+        }
+        if !holding.currency.eq_ignore_ascii_case(&base_currency)
+            && !recent(&holding.fx_rate_observed_on)
+        {
+            warnings.push(format!(
+                "{} 的汇率缺少有效观察日或已超过 7 天",
+                holding.name
+            ));
+        }
+    }
+    let decision_ready = warnings.is_empty() && !holdings.is_empty();
     PortfolioValuationStatus {
+        decision_ready,
         base_currency,
         comparable: missing_fx_holdings.is_empty(),
         missing_fx_holdings,

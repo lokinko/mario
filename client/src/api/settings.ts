@@ -31,6 +31,37 @@ export async function readCodexCredentials(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-config/codex", { method: "POST" });
 }
 
+export type CodexBridgeStatus = {
+  paired: boolean;
+  online: boolean;
+  model: string | null;
+  models?: CodexModel[];
+};
+export type CodexModel = {
+  model: string;
+  displayName: string;
+  description: string;
+  isDefault: boolean;
+};
+export function getCodexModels() {
+  return httpRequest<CodexModel[]>("/model-config/codex/models");
+}
+export function getCodexBridgeStatus() {
+  return httpRequest<CodexBridgeStatus>("/codex-bridge");
+}
+export function pairCodexBridge() {
+  return httpRequest<{ pairingCode: string; expiresInSeconds: number }>(
+    "/codex-bridge",
+    { method: "POST" },
+  );
+}
+export function enableCodexBridge() {
+  return httpRequest<ModelConfig>("/codex-bridge/enable", { method: "POST" });
+}
+export function revokeCodexBridge() {
+  return httpRequest<{ ok: boolean }>("/codex-bridge", { method: "DELETE" });
+}
+
 export async function getAnalysisSettings(): Promise<AnalysisSettings> {
   return httpRequest<AnalysisSettings>("/analysis-settings");
 }

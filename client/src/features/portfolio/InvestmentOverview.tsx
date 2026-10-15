@@ -12,13 +12,21 @@ export function InvestmentOverview({
   summaries,
   baseCurrency = "CNY",
   cash = false,
+  accounting,
 }: {
   holdings: Holding[];
   summaries: Snapshot["holdingTradeSummaries"];
   baseCurrency?: string;
   cash?: boolean;
+  accounting?: Snapshot["accounting"];
 }) {
-  const { totals, rows } = portfolioOverview(holdings, summaries, baseCurrency);
+  const { totals, rows } = portfolioOverview(
+    holdings,
+    summaries,
+    baseCurrency,
+    accounting,
+    cash,
+  );
   const metrics = cash ? (["value"] as const) : overviewMetrics;
   return (
     <section
@@ -39,7 +47,7 @@ export function InvestmentOverview({
                 key === "unrealized" || key === "realized"
                   ? totals[key].value == null
                     ? ""
-                    : totals[key].value >= 0
+                    : Number(totals[key].value) >= 0
                       ? "gain"
                       : "loss"
                   : ""
@@ -48,7 +56,7 @@ export function InvestmentOverview({
               {totals[key].value == null
                 ? "—"
                 : ((key === "unrealized" || key === "realized") &&
-                  totals[key].value! > 0
+                  Number(totals[key].value) > 0
                     ? "+"
                     : "") + formatMoney(totals[key].value!, baseCurrency)}
             </strong>
@@ -64,15 +72,15 @@ export function InvestmentOverview({
                       : "成本或汇率") +
                   "待补"
                 : key === "realized"
-                  ? "含已清仓资产与净现金分红"
-                  : "全部" + (cash ? "现金账户" : "投资持仓")}
+                  ? "按当前汇率折算 · 含已清仓资产与净现金分红"
+                  : "全部" + (cash ? "币种余额" : "投资持仓")}
             </small>
           </article>
         ))}
       </div>
       <details className="overview-breakdown">
         <summary>
-          按持仓估值汇率折算 {baseCurrency} · {cash ? "现金账户" : "不含现金"}{" "}
+          按持仓估值汇率折算 {baseCurrency} · {cash ? "币种余额" : "不含现金"}{" "}
           <span>原币明细</span>
         </summary>
         <p>

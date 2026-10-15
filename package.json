@@ -3,6 +3,8 @@
   "private": true,
   "version": "0.6.0",
   "scripts": {
+    "codex:bridge": "node scripts/codex-bridge.mjs",
+    "test:codex-bridge": "node scripts/test-codex-bridge.mjs",
     "check:architecture": "node scripts/check-architecture.mjs && node --test scripts/check-architecture.test.mjs",
     "test:startup": "node scripts/test-startup.mjs",
     "test:postgres-start": "node scripts/test-postgres-start.mjs",
@@ -17,6 +19,7 @@
     "web:build": "node scripts/build-web.mjs",
     "server:check": "cargo check --manifest-path server/Cargo.toml",
     "test:hosted": "node scripts/test-hosted.mjs",
+    "test:financial": "node scripts/test-financial.mjs",
     "deploy": "bash deploy.sh",
     "test:deploy": "node scripts/test-deploy.mjs"
   },

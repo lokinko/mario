@@ -1,7 +1,26 @@
 use crate::models::{FinancialProfile, Holding, PortfolioPlan, RebalanceAction};
 
 pub fn analyze(profile: &FinancialProfile, holdings: &[Holding]) -> PortfolioPlan {
-    let monthly_surplus = (profile.monthly_income - profile.monthly_expense).max(0.0);
+    use rust_decimal::{prelude::ToPrimitive, Decimal};
+    let income = profile
+        .exact_amounts
+        .as_ref()
+        .map(|a| a.monthly_income.clone())
+        .unwrap_or_else(|| profile.monthly_income.to_string());
+    let expense = profile
+        .exact_amounts
+        .as_ref()
+        .map(|a| a.monthly_expense.clone())
+        .unwrap_or_else(|| profile.monthly_expense.to_string());
+    let exact_monthly_surplus = Decimal::from_str_exact(&income)
+        .ok()
+        .zip(Decimal::from_str_exact(&expense).ok())
+        .map(|(a, b)| (a - b).max(Decimal::ZERO).normalize().to_string());
+    let monthly_surplus = exact_monthly_surplus
+        .as_deref()
+        .and_then(|v| Decimal::from_str_exact(v).ok())
+        .and_then(|v| v.to_f64())
+        .unwrap_or(0.0);
     let has_portfolio = holdings.iter().any(|holding| holding.market_value > 0.0);
     let (annual_return, annual_volatility) = portfolio_assumptions(profile, holdings);
     let emergency_months = if profile.monthly_expense > 0.0 {
@@ -35,6 +54,7 @@ pub fn analyze(profile: &FinancialProfile, holdings: &[Holding]) -> PortfolioPla
     };
 
     PortfolioPlan {
+        exact_monthly_surplus,
         monthly_surplus,
         modeled_annual_return_pct: annual_return * 100.0,
         modeled_annual_volatility_pct: annual_volatility * 100.0,
@@ -102,6 +122,7 @@ fn rebalance_actions(holdings: &[Holding]) -> Vec<RebalanceAction> {
             }
             let amount = holding.target_pct / 100.0 * total - holding.market_value;
             Some(RebalanceAction {
+                exact_amount: None,
                 holding_id: holding.id.clone(),
                 name: holding.name.clone(),
                 current_pct,

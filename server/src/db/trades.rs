@@ -82,7 +82,7 @@ fn validate(t: &HoldingTrade) -> AppResult<()> {
     Ok(())
 }
 pub(super) fn load(conn: &Connection) -> AppResult<Vec<HoldingTrade>> {
-    let mut stmt = conn.prepare("SELECT payload FROM holding_trades ORDER BY created_at, id")?;
+    let mut stmt = conn.prepare("SELECT payload FROM holding_trades WHERE holding_id NOT IN (SELECT holding_id FROM trading_quarantine) ORDER BY created_at, id")?;
     let rows = stmt
         .query_map([], |r| r.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -90,7 +90,48 @@ pub(super) fn load(conn: &Connection) -> AppResult<Vec<HoldingTrade>> {
 }
 
 // The server alone replays dated executions; decimal quantities never depend on float tolerances.
-pub(super) fn position(trades: &[HoldingTrade]) -> AppResult<HoldingTradeSummary> {
+pub(super) fn split_ratio(split: &crate::models::SplitEvent) -> AppResult<Decimal> {
+    split_value(Decimal::ONE, split)
+}
+
+pub(super) fn split_value(
+    quantity: Decimal,
+    split: &crate::models::SplitEvent,
+) -> AppResult<Decimal> {
+    let numerator = number(&split.numerator)?;
+    let denominator = number(&split.denominator)?;
+    if numerator.is_zero()
+        || denominator.is_zero()
+        || chrono::NaiveDate::parse_from_str(&split.effective_on, "%Y-%m-%d").is_err()
+        || split.effective_on > crate::models::market::today()
+    {
+        return Err(invalid("公司行动日期或比例无效"));
+    }
+    let result = checked(
+        quantity
+            .checked_mul(numerator)
+            .and_then(|q| q.checked_div(denominator)),
+    )?;
+    Ok(result)
+}
+
+pub(super) fn split_quantity(
+    quantity: Decimal,
+    split: &crate::models::SplitEvent,
+) -> AppResult<Decimal> {
+    let result = split_value(quantity, split)?;
+    if result.normalize().scale() > 8 {
+        return Err(invalid(
+            "公司行动产生零碎股或超过 8 位小数，请核对零碎股现金结算，不能自动取整",
+        ));
+    }
+    Ok(result)
+}
+
+pub(super) fn position_with_splits(
+    trades: &[HoldingTrade],
+    splits: &[crate::models::SplitEvent],
+) -> AppResult<HoldingTradeSummary> {
     let mut ordered: Vec<_> = trades.iter().collect();
     ordered.sort_by(|a, b| (&a.occurred_on, a.sequence).cmp(&(&b.occurred_on, b.sequence)));
     let (mut ids, mut sequences, mut identities) = (HashSet::new(), HashSet::new(), HashSet::new());
@@ -113,7 +154,16 @@ pub(super) fn position(trades: &[HoldingTrade]) -> AppResult<HoldingTradeSummary
     );
     let mut result = HoldingTradeSummary::default();
     let mut bought = false;
+    let mut splits = splits.iter().collect::<Vec<_>>();
+    splits.sort_by_key(|s| &s.effective_on);
+    let mut splits = splits.into_iter().peekable();
     for t in ordered {
+        while splits
+            .peek()
+            .is_some_and(|s| s.effective_on <= t.occurred_on)
+        {
+            quantity = split_quantity(quantity, splits.next().unwrap())?;
+        }
         validate(t)?;
         let first = trades.first().unwrap();
         if t.holding_id != first.holding_id
@@ -186,6 +236,9 @@ pub(super) fn position(trades: &[HoldingTrade]) -> AppResult<HoldingTradeSummary
         result.cash_flows.insert(t.id.clone(), text(flow));
         result.account = t.account.clone();
     }
+    for split in splits {
+        quantity = split_quantity(quantity, split)?;
+    }
     result.quantity = text(quantity);
     result.cost_basis = text(basis);
     result.average_cost = text(if quantity.is_zero() {
@@ -202,6 +255,7 @@ pub(super) fn position(trades: &[HoldingTrade]) -> AppResult<HoldingTradeSummary
     Ok(result)
 }
 pub(super) fn summaries(
+    conn: &Connection,
     trades: &[HoldingTrade],
 ) -> AppResult<BTreeMap<String, HoldingTradeSummary>> {
     let mut groups: BTreeMap<String, Vec<HoldingTrade>> = BTreeMap::new();
@@ -217,11 +271,17 @@ pub(super) fn summaries(
     }
     groups
         .into_iter()
-        .map(|(id, rows)| Ok((id, position(&rows)?)))
+        .map(|(id, rows)| {
+            let summary = super::corporate::position(conn, &id, &rows)?;
+            Ok((id, summary))
+        })
         .collect()
 }
 pub(super) fn guard_edit(conn: &Connection, id: &str, input: &mut HoldingInput) -> AppResult<bool> {
     let s = Database::snapshot_on(conn)?;
+    if s.cleared_trade_holdings.iter().any(|item| item == id) {
+        return Err(invalid("交易链已隔离，请先修复原始记录"));
+    }
     if s.holding_trade_summaries.contains_key(id) {
         let h = s.holdings.iter().find(|h| h.id == id).unwrap();
         // JSON float parsing can move an unchanged decimal-derived average by a few ULPs.
@@ -251,7 +311,7 @@ pub(super) fn guard_edit(conn: &Connection, id: &str, input: &mut HoldingInput) 
     }
     Ok(false)
 }
-fn rebuild(conn: &Connection, h: &Holding, s: &HoldingTradeSummary) -> AppResult<()> {
+pub(super) fn rebuild(conn: &Connection, h: &Holding, s: &HoldingTradeSummary) -> AppResult<()> {
     let quantity = number(&s.quantity)?.to_f64().unwrap();
     let basis = Decimal::from_str_exact(&s.cost_basis)
         .unwrap()
@@ -261,8 +321,15 @@ fn rebuild(conn: &Connection, h: &Holding, s: &HoldingTradeSummary) -> AppResult
         .unwrap()
         .to_f64()
         .unwrap();
-    let price = h.current_price.unwrap_or(0.0);
-    let market_value = quantity * price;
+    let exact = super::amounts::rebuild(conn, h, s)?;
+    let price = Decimal::from_str_exact(exact.current_price.as_deref().unwrap())
+        .map_err(|_| invalid("价格无效"))?
+        .to_f64()
+        .unwrap();
+    let market_value = Decimal::from_str_exact(&exact.market_value)
+        .map_err(|_| invalid("市值无效"))?
+        .to_f64()
+        .unwrap();
     if !market_value.is_finite() || market_value > 1e15 {
         return Err(invalid("持仓市值超过允许范围"));
     }
@@ -284,10 +351,19 @@ impl Database {
     ) -> AppResult<Snapshot> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
+        let operation = super::financial::operation("delete", id, input)?;
+        if let Some(snapshot) = super::financial::replay(&tx, &operation)? {
+            return Ok(snapshot);
+        }
         let before = super::daily::prepare(&tx)?;
         // A retry after a successful deletion must not alter any other record.
+        if tx.query_row("SELECT EXISTS(SELECT 1 FROM holding_trades t JOIN trading_quarantine q ON q.holding_id=t.holding_id WHERE t.id=?1)",[id],|r|r.get::<_,bool>(0))? {
+            return Err(invalid("交易链已隔离，请先预览修复，原始记录不能直接删除"));
+        }
         let Some(trade) = before.holding_trades.iter().find(|t| t.id == id) else {
-            return Ok(before);
+            let snapshot = super::financial::complete(&tx, &operation)?;
+            tx.commit()?;
+            return Ok(snapshot);
         };
         let h = before
             .holdings
@@ -305,18 +381,36 @@ impl Database {
             .filter(|t| t.holding_id == h.id && t.id != id)
             .cloned()
             .collect();
-        let summary = position(&chain).map_err(|e| match e {
+        let summary = super::corporate::position(&tx, &h.id, &chain).map_err(|e| match e {
             AppError::Validation(message) => invalid(&format!(
                 "无法删除这笔交易：{message}；请先编辑或删除依赖它的后续交易"
             )),
             other => other,
         })?;
+        let cash_delta = super::cash::settle_trade(
+            &tx,
+            &h.currency,
+            id,
+            &trade.occurred_on,
+            None,
+            crate::models::SettlementMode::Auto,
+            "",
+        )?;
+        super::financial::journal(
+            &tx,
+            &h.id,
+            "trade.delete",
+            trade,
+            &Option::<HoldingTrade>::None,
+            &text(cash_delta),
+            ("用户删除交易", Some(&operation.0)),
+        )?;
         tx.execute("DELETE FROM holding_trades WHERE id=?1", [id])?;
         rebuild(&tx, h, &summary)?;
         super::daily::finish(&tx, &before, None)?;
+        let snapshot = super::financial::complete(&tx, &operation)?;
         tx.commit()?;
-        drop(conn);
-        self.snapshot()
+        Ok(snapshot)
     }
     pub fn save_holding_trade(&self, input: &HoldingTradeInput) -> AppResult<Snapshot> {
         self.write_holding_trade(None, input)
@@ -329,6 +423,7 @@ impl Database {
         self.write_holding_trade(
             Some(id),
             &HoldingTradeInput {
+                expected_cash_baseline: String::new(),
                 request_id: id.into(),
                 holding_id: String::new(),
                 expected_revision: Some(input.expected_revision.clone()),
@@ -344,6 +439,7 @@ impl Database {
                 account: input.account.clone(),
                 external_id: input.external_id.clone(),
                 note: input.note.clone(),
+                settlement_mode: input.settlement_mode,
             },
         )
     }
@@ -354,6 +450,29 @@ impl Database {
     ) -> AppResult<Snapshot> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
+        let operation = if let Some(id) = edit_id {
+            let update = HoldingTradeUpdateInput {
+                expected_revision: input.expected_revision.clone().unwrap_or_default(),
+                kind: input.kind.clone(),
+                occurred_on: input.occurred_on.clone(),
+                sequence: input.sequence,
+                quantity: input.quantity.clone(),
+                price: input.price.clone(),
+                gross_amount: input.gross_amount.clone(),
+                fees: input.fees.clone(),
+                taxes: input.taxes.clone(),
+                account: input.account.clone(),
+                external_id: input.external_id.clone(),
+                note: input.note.clone(),
+                settlement_mode: input.settlement_mode,
+            };
+            super::financial::operation("edit", id, &update)?
+        } else {
+            super::financial::operation("create", &input.request_id, input)?
+        };
+        if let Some(snapshot) = super::financial::replay(&tx, &operation)? {
+            return Ok(snapshot);
+        }
         let before = super::daily::prepare(&tx)?;
         let original = before
             .holding_trades
@@ -385,10 +504,11 @@ impl Database {
             if before.holdings.iter().any(|existing| {
                 existing.currency == h.currency.trim().to_ascii_uppercase()
                     && existing.asset_class == h.asset_class
-                    && before
-                        .holding_trade_summaries
-                        .get(&existing.id)
-                        .is_some_and(|s| s.account == input.account.trim())
+                    && (before.cleared_trade_holdings.contains(&existing.id)
+                        || before
+                            .holding_trade_summaries
+                            .get(&existing.id)
+                            .is_some_and(|s| s.account == input.account.trim()))
                     && if h.symbol.trim().is_empty() {
                         existing.symbol.is_empty() && existing.name == h.name.trim()
                     } else {
@@ -400,8 +520,9 @@ impl Database {
                 ));
             }
             let id = Uuid::new_v4().to_string();
-            tx.execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,fx_rate_to_base,valuation_date,fx_rate_source,fx_rate_observed_on,created_at,updated_at,quantity,current_price) VALUES (?1,?2,?3,?4,0,0,0,?5,NULL,?6,'','',?7,?7,0,0)",
-                params![id,h.symbol.trim(),h.name.trim(),h.asset_class,h.currency.trim().to_ascii_uppercase(),crate::models::market::today(),now])?;
+            // Use the first execution as a provisional reference until a current quote is available.
+            tx.execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,fx_rate_to_base,valuation_date,fx_rate_source,fx_rate_observed_on,created_at,updated_at,quantity,current_price) VALUES (?1,?2,?3,?4,0,0,0,?5,NULL,?6,'','',?7,?7,0,?8)",
+                params![id,h.symbol.trim(),h.name.trim(),h.asset_class,h.currency.trim().to_ascii_uppercase(),crate::models::market::today(),now,number(input.price.trim())?.to_f64().unwrap()])?;
             Database::snapshot_on(&tx)?
                 .holdings
                 .into_iter()
@@ -417,6 +538,18 @@ impl Database {
         };
         if h.asset_class == "现金" {
             return Err(invalid("现金账户不能录入证券交易"));
+        }
+        if before.cleared_trade_holdings.contains(&h.id) {
+            return Err(invalid(
+                "交易链已隔离，请先预览并修复原始记录；不能重新录入导致重复结算",
+            ));
+        }
+        if before
+            .corporate_actions
+            .iter()
+            .any(|a| a.holding_id == h.id && !a.applied && !a.dismissed)
+        {
+            return Err(invalid("存在待确认公司行动，请先核对数量与成本调整"));
         }
         let mut trade = HoldingTrade {
             id: input.request_id.clone(),
@@ -450,7 +583,9 @@ impl Database {
                 return Err(AppError::Conflict("请求编号已用于另一笔交易".into()));
             }
             if &trade == old {
-                return Ok(before);
+                let snapshot = super::financial::complete(&tx, &operation)?;
+                tx.commit()?;
+                return Ok(snapshot);
             }
             if edit_id.is_none() {
                 return Err(AppError::Conflict("请求编号已用于另一笔交易".into()));
@@ -478,7 +613,40 @@ impl Database {
             .cloned()
             .collect();
         chain.push(trade.clone());
-        let summary = position(&chain)?;
+        let summary = super::corporate::position(&tx, &h.id, &chain)?;
+        let cash_delta = super::cash::settle_trade(
+            &tx,
+            &h.currency,
+            &trade.id,
+            &trade.occurred_on,
+            Some(Decimal::from_str_exact(&summary.cash_flows[&trade.id]).unwrap()),
+            input.settlement_mode,
+            &input.expected_cash_baseline,
+        )?;
+        super::financial::journal(
+            &tx,
+            &h.id,
+            if edit_id.is_some() {
+                "trade.edit"
+            } else {
+                "trade.create"
+            },
+            &original,
+            &trade,
+            &text(cash_delta),
+            (
+                if trade.note.is_empty() {
+                    if edit_id.is_some() {
+                        "用户更正原记录"
+                    } else {
+                        "用户新增成交"
+                    }
+                } else {
+                    &trade.note
+                },
+                Some(&operation.0),
+            ),
+        )?;
         tx.execute("INSERT INTO holding_trades(id,holding_id,payload,created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
             params![trade.id,h.id,serde_json::to_string(&trade)?,trade.created_at])?;
         rebuild(&tx, &h, &summary)?;
@@ -487,9 +655,9 @@ impl Database {
             [format!("trading.reset.{}", h.id)],
         )?;
         super::daily::finish(&tx, &before, None)?;
+        let snapshot = super::financial::complete(&tx, &operation)?;
         tx.commit()?;
-        drop(conn);
-        self.snapshot()
+        Ok(snapshot)
     }
 }
 pub(super) fn validate_stored(conn: &Connection) -> AppResult<()> {
@@ -543,17 +711,67 @@ pub(super) fn validate_stored(conn: &Connection) -> AppResult<()> {
         })?
         .collect::<Result<Vec<_>, _>>()?;
     for (id, holding_id, payload, created_at) in rows {
+        if s.cleared_trade_holdings.contains(&holding_id) {
+            continue;
+        }
         let t: HoldingTrade = serde_json::from_str(&payload)?;
         if t.id != id || t.holding_id != holding_id || t.created_at != created_at {
             return Err(invalid("交易字段与数据库记录不一致"));
         }
     }
+    for holding_id in &s.cleared_trade_holdings {
+        let raw: String = conn.query_row(
+            "SELECT payload FROM trading_quarantine WHERE holding_id=?1",
+            [holding_id],
+            |r| r.get(0),
+        )?;
+        let original: Vec<serde_json::Value> = serde_json::from_str(&raw)?;
+        let mut statement = conn.prepare(
+            "SELECT id,payload,created_at FROM holding_trades WHERE holding_id=?1 ORDER BY id",
+        )?;
+        let actual = statement
+            .query_map([holding_id], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut original = original
+            .into_iter()
+            .map(|r| {
+                if r["holdingId"].as_str() != Some(holding_id.as_str()) {
+                    return Err(invalid("隔离原文关联不一致"));
+                }
+                Ok((
+                    r["id"]
+                        .as_str()
+                        .ok_or_else(|| invalid("隔离编号缺失"))?
+                        .to_owned(),
+                    r["payload"]
+                        .as_str()
+                        .ok_or_else(|| invalid("隔离原文缺失"))?
+                        .to_owned(),
+                    r["createdAt"]
+                        .as_str()
+                        .ok_or_else(|| invalid("隔离时间缺失"))?
+                        .to_owned(),
+                ))
+            })
+            .collect::<AppResult<Vec<_>>>()?;
+        original.sort();
+        if original.is_empty() || original != actual {
+            return Err(invalid("隔离证据与原始行不一致，不能恢复"));
+        }
+    }
     Ok(())
 }
-// No old DTO adapters. Clear an invalid position's full chain rather than replaying a fragment.
-pub(super) fn clear_invalid(conn: &Connection) -> AppResult<()> {
-    let mut stmt = conn.prepare("SELECT id,holding_id,payload,created_at FROM holding_trades")?;
-    let rows = stmt
+// Preserve every source row. Invalid chains are excluded from derived calculations until repaired.
+pub(super) fn quarantine_invalid(conn: &Connection) -> AppResult<()> {
+    let mut statement =
+        conn.prepare("SELECT id,holding_id,payload,created_at FROM holding_trades")?;
+    let rows = statement
         .query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,
@@ -564,9 +782,11 @@ pub(super) fn clear_invalid(conn: &Connection) -> AppResult<()> {
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let mut groups: BTreeMap<String, Vec<HoldingTrade>> = BTreeMap::new();
+    let mut raw: BTreeMap<String, Vec<serde_json::Value>> = BTreeMap::new();
     let mut invalid_ids = HashSet::new();
     let mut identities: BTreeMap<(String, String), HashSet<String>> = BTreeMap::new();
     for (id, holding_id, payload, created_at) in rows {
+        raw.entry(holding_id.clone()).or_default().push(serde_json::json!({"id":id,"holdingId":holding_id,"payload":payload,"createdAt":created_at}));
         match serde_json::from_str::<HoldingTrade>(&payload) {
             Ok(t) if t.id == id && t.holding_id == holding_id && t.created_at == created_at => {
                 if !t.external_id.is_empty() {
@@ -578,8 +798,7 @@ pub(super) fn clear_invalid(conn: &Connection) -> AppResult<()> {
                 groups.entry(holding_id).or_default().push(t);
             }
             _ => {
-                invalid_ids.insert(holding_id.clone());
-                groups.entry(holding_id).or_default();
+                invalid_ids.insert(holding_id);
             }
         }
     }
@@ -592,7 +811,7 @@ pub(super) fn clear_invalid(conn: &Connection) -> AppResult<()> {
             [id],
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
         );
-        if position(trades).is_err()
+        if super::corporate::position(conn, id, trades).is_err()
             || !matching.is_ok_and(|(currency, class)| {
                 class != "现金" && trades.iter().all(|t| t.currency == currency)
             })
@@ -600,52 +819,299 @@ pub(super) fn clear_invalid(conn: &Connection) -> AppResult<()> {
             invalid_ids.insert(id.clone());
         }
     }
-    for id in &invalid_ids {
-        conn.execute("DELETE FROM holding_trades WHERE holding_id=?1", [id])?;
-        conn.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
-        conn.execute("INSERT INTO settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![format!("trading.reset.{id}"),id])?;
-        tracing::warn!(holding_id=%id,"invalid trading records cleared; re-enter real executions");
-    }
-    if !groups.is_empty() {
-        // With invalid payloads removed we can capture the cached balances safely.
-        // The cleanup then produces today's observation, without rewriting prior days.
-        let s = super::daily::prepare(conn)?;
-        for id in &invalid_ids {
-            conn.execute("UPDATE holdings SET quantity=0,cost_basis=0,cost_price=0,market_value=0,updated_at=?2 WHERE id=?1 AND asset_class<>'现金'",params![id,Utc::now().to_rfc3339()])?;
-        }
-        for h in &s.holdings {
-            if let Some(summary) = s.holding_trade_summaries.get(&h.id) {
-                let near = |a: f64, b: f64| (a - b).abs() <= 1e-8_f64.max(b.abs() * 1e-10);
-                let quantity = number(&summary.quantity)?.to_f64().unwrap();
-                let basis = Decimal::from_str_exact(&summary.cost_basis)
-                    .unwrap()
-                    .to_f64()
-                    .unwrap();
-                let average = Decimal::from_str_exact(&summary.average_cost)
-                    .unwrap()
-                    .to_f64()
-                    .unwrap();
-                if !h.quantity.is_some_and(|n| near(n, quantity))
-                    || !near(h.cost_basis, basis)
-                    || !h.cost_price.is_some_and(|n| near(n, average))
-                {
-                    rebuild(conn, h, summary)?;
-                }
-            }
-        }
-        super::daily::finish(conn, &s, None)?;
+    for id in invalid_ids {
+        let payload = serde_json::to_string(&raw[&id])?;
+        let reason = "原始交易格式、关联或交易链校验失败；数据已保留，请预览修复后恢复计算";
+        conn.execute("INSERT INTO trading_quarantine(holding_id,payload,reason,created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(holding_id) DO NOTHING",params![id,payload,reason,Utc::now().to_rfc3339()])?;
     }
     Ok(())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn balance(s: &Snapshot, currency: &str) -> f64 {
+        s.holdings
+            .iter()
+            .find(|h| h.asset_class == "现金" && h.currency == currency)
+            .map_or(0.0, |h| h.market_value)
+    }
+
+    #[test]
+    fn trades_settle_each_currency_and_keep_total_assets_correct() {
+        for currency in ["CNY", "HKD", "USD"] {
+            let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+            db.save_profile(&crate::models::FinancialProfile {
+                base_currency: currency.into(),
+                ..Default::default()
+            })
+            .unwrap();
+            super::super::cash::fund(&db, currency);
+            let mut buy = first();
+            buy.new_holding.as_mut().unwrap().currency = currency.into();
+            buy.taxes = "1".into();
+            let s = db.save_holding_trade(&buy).unwrap();
+            assert_eq!(balance(&s, currency), 9897.0);
+            assert_eq!(s.total_value, 9997.0); // Only fees/taxes leave the portfolio.
+            let s = db.save_holding_trade(&buy).unwrap();
+            assert_eq!(balance(&s, currency), 9897.0);
+            let mut sale = next(&s, "sell", "5", "12", "2026-01-02");
+            sale.fees = "1".into();
+            sale.taxes = "2".into();
+            let s = db.save_holding_trade(&sale).unwrap();
+            assert_eq!(balance(&s, currency), 9954.0);
+            let mut dividend = next(&s, "dividend", "0", "0", "2026-01-03");
+            dividend.gross_amount = "10".into();
+            dividend.taxes = "2".into();
+            let s = db.save_holding_trade(&dividend).unwrap();
+            assert_eq!(balance(&s, currency), 9962.0);
+            let mut correction = edit(&s, &buy.request_id);
+            correction.fees = "5".into();
+            let s = db
+                .update_holding_trade(&buy.request_id, &correction)
+                .unwrap();
+            assert_eq!(balance(&s, currency), 9959.0);
+            assert_eq!(
+                balance(
+                    &db.update_holding_trade(&buy.request_id, &correction)
+                        .unwrap(),
+                    currency
+                ),
+                9959.0
+            );
+            let mut s = s;
+            for id in [&dividend.request_id, &sale.request_id, &buy.request_id] {
+                let revision = s.holding_revisions[&s
+                    .holding_trades
+                    .iter()
+                    .find(|t| &t.id == id)
+                    .unwrap()
+                    .holding_id]
+                    .clone();
+                s = db
+                    .delete_holding_trade(
+                        id,
+                        &HoldingTradeDeleteInput {
+                            expected_revision: revision,
+                        },
+                    )
+                    .unwrap();
+            }
+            assert_eq!(balance(&s, currency), 10000.0);
+            assert_eq!(s.total_value, 10000.0);
+        }
+    }
+
+    #[test]
+    fn insufficient_cash_and_failed_daily_writes_roll_back_the_entire_trade() {
+        let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+        let buy = first();
+        let before = db.export_sync_data().unwrap().content_hash().unwrap();
+        assert!(db
+            .save_holding_trade(&buy)
+            .unwrap_err()
+            .to_string()
+            .contains("存款余额不足"));
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            before
+        );
+        assert!(db.snapshot().unwrap().holdings.is_empty());
+        super::super::cash::fund(&db, "CNY");
+        let s = db.save_holding_trade(&buy).unwrap();
+        let cash = s.holdings.iter().find(|h| h.asset_class == "现金").unwrap();
+        db.update_holding_amount(
+            &cash.id,
+            &crate::models::daily::AmountInput {
+                amount: 0.0.to_string(),
+                expected_revision: s.holding_revisions[&cash.id].clone(),
+                request_id: Uuid::new_v4().to_string(),
+            },
+        )
+        .unwrap();
+        let s = db.snapshot().unwrap();
+        let mut edited = edit(&s, &buy.request_id);
+        edited.fees = "3".into();
+        let changed = db.update_holding_trade(&buy.request_id, &edited).unwrap();
+        assert_eq!(balance(&changed, "CNY"), 0.0);
+        assert!(changed.cash_balances[0].needs_reconciliation);
+        let before = db.export_sync_data().unwrap().content_hash().unwrap();
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            before
+        );
+        db.conn().unwrap().execute_batch("CREATE TRIGGER fail_cash_daily BEFORE INSERT ON daily_entries BEGIN SELECT RAISE(ABORT,'daily write failed'); END;").unwrap();
+        edited.fees = "1".into(); // Would refund one unit before the daily write fails.
+        assert!(db.update_holding_trade(&buy.request_id, &edited).is_err());
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn deleting_income_covered_by_a_new_balance_confirmation_requires_reconciliation() {
+        let db = funded_open(std::path::Path::new(":memory:")).unwrap();
+        let buy = first();
+        let s = db.save_holding_trade(&buy).unwrap();
+        let sale = next(&s, "sell", "10", "20", "2026-01-02");
+        let s = db.save_holding_trade(&sale).unwrap();
+        let cash = s.holdings.iter().find(|h| h.asset_class == "现金").unwrap();
+        db.update_holding_amount(
+            &cash.id,
+            &crate::models::daily::AmountInput {
+                amount: 0.0.to_string(),
+                expected_revision: s.holding_revisions[&cash.id].clone(),
+                request_id: Uuid::new_v4().to_string(),
+            },
+        )
+        .unwrap();
+        let s = db.snapshot().unwrap();
+        let changed = db
+            .delete_holding_trade(
+                &sale.request_id,
+                &HoldingTradeDeleteInput {
+                    expected_revision: s.holding_revisions[&s.holdings[0].id].clone(),
+                },
+            )
+            .unwrap();
+        assert_eq!(balance(&changed, "CNY"), 0.0);
+        assert!(changed.cash_balances[0].needs_reconciliation);
+    }
+
+    #[test]
+    fn cash_is_shared_between_positions_but_never_between_currencies() {
+        let db = funded_open(std::path::Path::new(":memory:")).unwrap();
+        db.save_holding_trade(&first()).unwrap();
+        let mut other = first();
+        other.new_holding.as_mut().unwrap().name = "另一证券".into();
+        let s = db.save_holding_trade(&other).unwrap();
+        assert_eq!(balance(&s, "CNY"), 9796.0);
+        let mut usd = first();
+        usd.new_holding.as_mut().unwrap().currency = "USD".into();
+        assert!(db
+            .save_holding_trade(&usd)
+            .unwrap_err()
+            .to_string()
+            .contains("USD 存款余额不足"));
+        assert_eq!(balance(&db.snapshot().unwrap(), "CNY"), 9796.0);
+        let cash = s.holdings.iter().find(|h| h.asset_class == "现金").unwrap();
+        db.update_holding_amount(
+            &cash.id,
+            &crate::models::daily::AmountInput {
+                amount: 0.30.to_string(),
+                expected_revision: s.holding_revisions[&cash.id].clone(),
+                request_id: Uuid::new_v4().to_string(),
+            },
+        )
+        .unwrap();
+        let mut tiny = next(
+            &db.snapshot().unwrap(),
+            "buy",
+            "0.1",
+            "1",
+            &crate::models::market::today(),
+        );
+        for expected in [0.2, 0.1, 0.0] {
+            tiny.request_id = Uuid::new_v4().to_string();
+            tiny.expected_revision = db
+                .snapshot()
+                .unwrap()
+                .holding_revisions
+                .get(&tiny.holding_id)
+                .cloned();
+            let s = db.save_holding_trade(&tiny).unwrap();
+            assert_eq!(balance(&s, "CNY"), expected);
+            tiny.sequence += 1;
+        }
+        tiny.request_id = Uuid::new_v4().to_string();
+        tiny.expected_revision = db
+            .snapshot()
+            .unwrap()
+            .holding_revisions
+            .get(&tiny.holding_id)
+            .cloned();
+        assert!(db.save_holding_trade(&tiny).is_err());
+    }
+
+    #[test]
+    fn legacy_backup_keeps_current_cash_and_later_corrections_only_settle_the_difference() {
+        let db = funded_open(std::path::Path::new(":memory:")).unwrap();
+        let buy = first();
+        db.save_holding_trade(&buy).unwrap();
+        let mut backup = db.export_sync_data().unwrap();
+        backup.schema_version = 19;
+        backup.tables.retain(|t| {
+            ![
+                "financial_operations",
+                "financial_journal",
+                "trading_quarantine",
+                "cash_state",
+                "trade_settlements",
+                "corporate_actions",
+                "holding_amounts",
+            ]
+            .contains(&t.name.as_str())
+        });
+        let copy = Database::open(std::path::Path::new(":memory:")).unwrap();
+        copy.import_sync_data(&backup).unwrap();
+        let s = copy.snapshot().unwrap();
+        assert_eq!(balance(&s, "CNY"), 9898.0);
+        let mut correction = edit(&s, &buy.request_id);
+        correction.fees = "3".into();
+        let s = copy
+            .update_holding_trade(&buy.request_id, &correction)
+            .unwrap();
+        assert_eq!(balance(&s, "CNY"), 9898.0);
+        assert!(s.cash_balances[0].needs_reconciliation);
+        // A fresh backup also carries the already settled current balance.
+        db.import_sync_data(&copy.export_sync_data().unwrap())
+            .unwrap();
+        assert_eq!(balance(&db.snapshot().unwrap(), "CNY"), 9898.0);
+    }
+
+    #[test]
+    fn sub_float_unit_cash_debits_are_preserved_in_the_exact_balance() {
+        let db = funded_open(std::path::Path::new(":memory:")).unwrap();
+        let s = db.snapshot().unwrap();
+        let cash = &s.holdings[0];
+        db.update_holding_amount(
+            &cash.id,
+            &crate::models::daily::AmountInput {
+                amount: 1e15.to_string(),
+                expected_revision: s.holding_revisions[&cash.id].clone(),
+                request_id: Uuid::new_v4().to_string(),
+            },
+        )
+        .unwrap();
+        let mut buy = first();
+        buy.quantity = "0.01".into();
+        buy.price = "1".into();
+        buy.gross_amount = "0.01".into();
+        buy.fees = "0".into();
+        buy.occurred_on = crate::models::market::today();
+        buy.expected_cash_baseline = db.snapshot().unwrap().cash_balances[0].baseline_id.clone();
+        let snapshot = db.save_holding_trade(&buy).unwrap();
+        assert_eq!(snapshot.cash_balances[0].amount, "999999999999999.99");
+        let restored = Database::open(std::path::Path::new(":memory:")).unwrap();
+        restored
+            .import_sync_data(&db.export_sync_data().unwrap())
+            .unwrap();
+        assert_eq!(
+            restored.snapshot().unwrap().cash_balances[0].amount,
+            "999999999999999.99"
+        );
+    }
+    fn funded_open(path: &std::path::Path) -> AppResult<Database> {
+        let db = Database::open(path)?;
+        super::super::cash::fund(&db, "CNY");
+        Ok(db)
+    }
     #[test]
     fn internal_stock_price_edits_preserve_execution_totals_after_json_round_trip() {
         for (quantity, second_quantity, gross, second_gross) in
             [("10", "7", "100", "119.91"), ("0.1", "0.07", "1", "1.1991")]
         {
-            let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+            let db = funded_open(std::path::Path::new(":memory:")).unwrap();
             let mut buy = first();
             buy.new_holding.as_mut().unwrap().name = "OPPO 股票".into();
             buy.quantity = quantity.into();
@@ -699,14 +1165,20 @@ mod tests {
     }
     fn first() -> HoldingTradeInput {
         serde_json::from_value(serde_json::json!({
-            "requestId":Uuid::new_v4().to_string(),"newHolding":{"name":"交易测试","symbol":"","assetClass":"股票","currency":"CNY"},
-            "kind":"buy","occurredOn":"2026-01-01","sequence":1,"quantity":"10","price":"10","grossAmount":"100","fees":"2","taxes":"0","account":"券商A"
+            "expectedCashBaseline":"00000000-0000-0000-0000-000000000001","requestId":Uuid::new_v4().to_string(),"newHolding":{"name":"交易测试","symbol":"","assetClass":"股票","currency":"CNY"},
+            "kind":"buy","occurredOn":"2026-01-01","sequence":1,"quantity":"10","price":"10","grossAmount":"100","fees":"2","taxes":"0","account":"券商A","settlementMode":"settle"
         })).unwrap()
     }
     fn next(s: &Snapshot, kind: &str, q: &str, p: &str, date: &str) -> HoldingTradeInput {
         let h = &s.holdings[0];
         let gross = text(number(q).unwrap() * number(p).unwrap());
         HoldingTradeInput {
+            expected_cash_baseline: s
+                .cash_balances
+                .iter()
+                .find(|c| c.currency == h.currency)
+                .map(|c| c.baseline_id.clone())
+                .unwrap_or_default(),
             request_id: Uuid::new_v4().to_string(),
             new_holding: None,
             holding_id: h.id.clone(),
@@ -729,6 +1201,7 @@ mod tests {
             account: "券商A".into(),
             external_id: String::new(),
             note: String::new(),
+            settlement_mode: crate::models::SettlementMode::Settle,
         }
     }
     fn edit(s: &Snapshot, id: &str) -> HoldingTradeUpdateInput {
@@ -742,12 +1215,12 @@ mod tests {
     #[test]
     fn real_executions_dividends_fees_and_taxes_drive_one_server_summary() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("real.db")).unwrap();
+        let db = funded_open(&dir.path().join("real.db")).unwrap();
         let mut buy = first();
         buy.taxes = "1".into();
         let s = db.save_holding_trade(&buy).unwrap();
         assert_eq!(s.holding_trades.len(), 1);
-        assert_eq!(s.holdings[0].current_price, Some(0.0));
+        assert_eq!(s.holdings[0].current_price, Some(10.0));
         let mut b = next(&s, "buy", "10", "20", "2026-01-02");
         b.fees = "3".into();
         b.taxes = "2".into();
@@ -773,7 +1246,7 @@ mod tests {
         assert_eq!(summary.profits[&sale.request_id], "70");
         assert_eq!(summary.cash_flows[&d.request_id], "16");
         assert_eq!(s.holdings[0].valuation_date, crate::models::market::today());
-        assert_eq!(s.holdings[0].market_value, 0.0);
+        assert_eq!(s.holdings[0].market_value, 150.0);
         assert_eq!(db.save_holding_trade(&d).unwrap().holding_trades.len(), 4);
         let copy = Database::open(&dir.path().join("copy.db")).unwrap();
         let export = db.export_sync_data().unwrap();
@@ -801,7 +1274,7 @@ mod tests {
     #[test]
     fn fractional_close_is_exact_and_dividend_can_arrive_after_close() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("fraction.db")).unwrap();
+        let db = funded_open(&dir.path().join("fraction.db")).unwrap();
         let mut b = first();
         b.quantity = "0.1".into();
         b.gross_amount = "1".into();
@@ -828,7 +1301,7 @@ mod tests {
     fn deletions_replay_costs_profits_charges_and_zero_the_last_position() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("delete.db");
-        let db = Database::open(&file).unwrap();
+        let db = funded_open(&file).unwrap();
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
         let second = next(&s, "buy", "10", "20", "2026-01-02");
@@ -872,7 +1345,16 @@ mod tests {
         assert_ne!(s.holding_revisions[&id], before_revision);
         assert!(!sum.cash_flows.contains_key(&second.request_id));
         let daily = db.daily_history(&Default::default()).unwrap();
-        assert_eq!(daily.records[0].assets[0].holding.market_value, 115.0);
+        assert_eq!(
+            daily.records[0]
+                .assets
+                .iter()
+                .find(|a| a.holding.id == id)
+                .unwrap()
+                .holding
+                .market_value,
+            115.0
+        );
         // An unknown / already deleted ID is a no-op even with the previous revision.
         let baseline = db.export_sync_data().unwrap().content_hash().unwrap();
         db.delete_holding_trade(
@@ -896,7 +1378,7 @@ mod tests {
         s = delete(&s, &b.request_id);
         assert!(s.holding_trades.is_empty());
         assert!(s.holding_trade_summaries.is_empty());
-        assert_eq!(s.holdings.len(), 1);
+        assert_eq!(s.holdings.len(), 2);
         assert_eq!(s.holdings[0].quantity, Some(0.0));
         assert_eq!(s.holdings[0].cost_price, Some(0.0));
         assert_eq!(s.holdings[0].cost_basis, 0.0);
@@ -927,7 +1409,7 @@ mod tests {
     #[test]
     fn deletions_reject_stale_revisions_oversells_and_orphan_dividends_atomically() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("delete-reject.db")).unwrap();
+        let db = funded_open(&dir.path().join("delete-reject.db")).unwrap();
         let b = first();
         let initial = db.save_holding_trade(&b).unwrap();
         let sale = next(&initial, "sell", "10", "20", "2026-01-02");
@@ -979,7 +1461,7 @@ mod tests {
     fn corrections_preserve_identity_quote_and_retry_without_extra_records() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("edit.db");
-        let db = Database::open(&file).unwrap();
+        let db = funded_open(&file).unwrap();
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
         let sale = next(&s, "sell", "10", "20", "2026-01-02");
@@ -1033,7 +1515,7 @@ mod tests {
     #[test]
     fn chronological_validation_rejects_oversells_duplicates_and_invalid_fields_atomically() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("reject.db")).unwrap();
+        let db = funded_open(&dir.path().join("reject.db")).unwrap();
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
         let s = db
@@ -1090,7 +1572,7 @@ mod tests {
     #[test]
     fn manual_positions_are_rebuilt_from_history_without_artificial_opening_or_date_boundary() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("manual.db")).unwrap();
+        let db = funded_open(&dir.path().join("manual.db")).unwrap();
         let h:HoldingInput=serde_json::from_value(serde_json::json!({"name":"旧快照","symbol":"","assetClass":"股票","currency":"CNY",
             "valuationDate":crate::models::market::today(),"quantity":100,"currentPrice":23,"costPrice":10,"costBasis":1000,"marketValue":2300,"targetPct":0})).unwrap();
         let s = db.add_holding(&h).unwrap();
@@ -1107,10 +1589,10 @@ mod tests {
         assert!(db.update_holding(&s.holdings[0].id, &forbidden).is_err());
     }
     #[test]
-    fn restart_clears_only_invalid_chains_and_notifies_until_they_are_reentered() {
+    fn restart_quarantines_invalid_chains_preserves_balances_and_requires_reviewed_repair() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("clear.db");
-        let db = Database::open(&file).unwrap();
+        let db = funded_open(&file).unwrap();
         let first = first();
         let s = db.save_holding_trade(&first).unwrap();
         let bad_id = s.holdings[0].id.clone();
@@ -1140,13 +1622,13 @@ mod tests {
             )
             .unwrap();
         drop(db);
-        let db = Database::open(&file).unwrap();
+        let db = funded_open(&file).unwrap();
         let s = db.snapshot().unwrap();
         assert_eq!(s.holding_trades, vec![valid]);
         assert!(s.cleared_trade_holdings.contains(&bad_id));
         assert_eq!(
             s.holdings.iter().find(|h| h.id == bad_id).unwrap().quantity,
-            Some(0.0)
+            Some(10.0)
         );
         assert_eq!(
             s.holdings
@@ -1156,12 +1638,49 @@ mod tests {
                 .quantity,
             Some(10.0)
         );
-        let mut reenter = first;
+        let mut reenter = first.clone();
         reenter.request_id = Uuid::new_v4().to_string();
         reenter.new_holding = None;
         reenter.holding_id = bad_id.clone();
         reenter.expected_revision = s.holding_revisions.get(&bad_id).cloned();
-        let s = db.save_holding_trade(&reenter).unwrap();
+        assert!(db.save_holding_trade(&reenter).is_err());
+        assert!(!s.valuation_status.comparable);
+        let raw = db.financial_history(&bad_id).unwrap();
+        assert!(raw["quarantine"]["payload"]
+            .as_str()
+            .unwrap()
+            .contains("opening"));
+        let copy = Database::open(std::path::Path::new(":memory:")).unwrap();
+        copy.import_sync_data(&db.export_sync_data().unwrap())
+            .unwrap();
+        assert_eq!(copy.financial_history(&bad_id).unwrap(), raw);
+        assert!(copy
+            .snapshot()
+            .unwrap()
+            .cleared_trade_holdings
+            .contains(&bad_id));
+        assert!(!copy.snapshot().unwrap().valuation_status.decision_ready);
+        let mut repaired: HoldingTrade=serde_json::from_str(&serde_json::to_string(&serde_json::json!({
+            "id":first.request_id,"holdingId":bad_id,"kind":"buy","occurredOn":first.occurred_on,"sequence":1,
+            "quantity":"10","price":"10","grossAmount":"100","fees":"2","taxes":"0","currency":"CNY","account":"券商A","externalId":"","note":"","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"
+        })).unwrap()).unwrap();
+        repaired.id = reenter.request_id.clone();
+        let repair = crate::models::TradeRepairInput {
+            expected_revision: s.holding_revisions[&bad_id].clone(),
+            trades: vec![repaired],
+            reason: "按券商成交单核对恢复".into(),
+        };
+        let cash_before = balance(&s, "CNY");
+        db.preview_trade_repair(&bad_id, &repair).unwrap();
+        let s = db.repair_trades(&bad_id, &repair).unwrap();
+        assert_eq!(balance(&s, "CNY"), cash_before);
+        assert_eq!(
+            db.financial_history(&bad_id).unwrap()["records"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
         assert!(!s.cleared_trade_holdings.contains(&bad_id));
         assert_eq!(s.holding_trades.len(), 2);
     }
@@ -1169,7 +1688,7 @@ mod tests {
     #[test]
     fn fees_can_exceed_small_sale_proceeds_and_existing_account_security_is_reused() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("fees.db")).unwrap();
+        let db = funded_open(&dir.path().join("fees.db")).unwrap();
         let mut b = first();
         b.quantity = "1".into();
         b.price = "0.01".into();
@@ -1187,10 +1706,10 @@ mod tests {
         assert_eq!(sum.realized_profit, "-1");
     }
     #[test]
-    fn invalid_chain_cleanup_rolls_back_if_daily_observation_cannot_be_written() {
+    fn quarantine_does_not_rewrite_daily_observations_or_source_records() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("rollback.db");
-        let db = Database::open(&file).unwrap();
+        let db = funded_open(&file).unwrap();
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
         let id = s.holdings[0].id.clone();
@@ -1209,7 +1728,8 @@ mod tests {
             conn.execute_batch("CREATE TRIGGER reject_cleanup BEFORE INSERT ON daily_entries BEGIN SELECT RAISE(ABORT,'test cleanup failure'); END;").unwrap();
         }
         drop(db);
-        assert!(Database::open(&file).is_err());
+        let reopened = Database::open(&file).unwrap();
+        assert!(!reopened.snapshot().unwrap().valuation_status.comparable);
         let conn = Connection::open(&file).unwrap();
         assert_eq!(
             conn.query_row("SELECT quantity FROM holdings WHERE id=?1", [&id], |r| r

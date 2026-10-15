@@ -15,10 +15,31 @@ use std::sync::Arc;
 pub(super) fn router() -> Router {
     Router::new()
         .route("/api/snapshot", get(snapshot))
+        .route(
+            "/api/financial-operations/resolve",
+            post(resolve_financial_operation),
+        )
         .route("/api/daily-assets/ensure", post(ensure_daily_assets))
         .route("/api/daily-assets", get(daily_assets))
         .route("/api/daily-assets/compare", get(compare_daily_assets))
         .route("/api/holdings/{id}/amount", put(update_holding_amount))
+        .route(
+            "/api/holdings/{id}/financial-history",
+            get(financial_history),
+        )
+        .route(
+            "/api/holdings/{id}/trade-repair/preview",
+            post(preview_trade_repair),
+        )
+        .route("/api/holdings/{id}/trade-repair", post(repair_trades))
+        .route(
+            "/api/holdings/{id}/corporate-actions",
+            post(declare_corporate_action),
+        )
+        .route(
+            "/api/corporate-actions/{id}/{mode}",
+            post(review_corporate_action),
+        )
         .route("/api/market-data/fx-rate", get(fx_rate_quote))
         .route("/api/fx-settings", get(fx_settings).put(save_fx_override))
         .route("/api/fx-settings/refresh", post(refresh_fx_settings))
@@ -52,8 +73,65 @@ pub(super) fn router() -> Router {
         )
 }
 
+async fn financial_history(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
+    Ok(Json(state.db.financial_history(&id)?))
+}
+
+async fn preview_trade_repair(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(id): Path<String>,
+    Json(input): Json<models::TradeRepairInput>,
+) -> AppResult<Json<models::HoldingTradeSummary>> {
+    Ok(Json(state.db.preview_trade_repair(&id, &input)?))
+}
+
+async fn repair_trades(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(id): Path<String>,
+    Json(input): Json<models::TradeRepairInput>,
+) -> AppResult<Json<Snapshot>> {
+    Ok(Json(state.db.repair_trades(&id, &input)?))
+}
+
+async fn declare_corporate_action(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(id): Path<String>,
+    Json(input): Json<models::ManualCorporateActionInput>,
+) -> AppResult<Json<Snapshot>> {
+    Ok(Json(state.db.declare_corporate_action(&id, &input)?))
+}
+
+async fn review_corporate_action(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path((id, mode)): Path<(String, String)>,
+    Json(input): Json<models::ConfirmCorporateActionInput>,
+) -> AppResult<Json<Snapshot>> {
+    Ok(Json(state.db.review_corporate_action(&id, &input, &mode)?))
+}
+
 async fn snapshot(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.portfolio().snapshot().await?))
+}
+
+#[derive(serde::Deserialize)]
+struct ResolveFinancialOperation {
+    method: String,
+    path: String,
+    input: serde_json::Value,
+}
+async fn resolve_financial_operation(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Json(input): Json<ResolveFinancialOperation>,
+) -> AppResult<Json<serde_json::Value>> {
+    let snapshot = state
+        .db
+        .replay_financial_request(&input.method, &input.path, &input.input)?;
+    Ok(Json(
+        serde_json::json!({"committed":snapshot.is_some(),"snapshot":snapshot}),
+    ))
 }
 
 async fn refresh_security_prices(
@@ -193,7 +271,11 @@ async fn update_holding_amount(
 async fn fx_settings(
     Extension(state): Extension<Arc<RequestContext>>,
 ) -> AppResult<Json<fx::FxBook>> {
-    Ok(Json(state.portfolio().refresh_fx(false).await?))
+    Ok(Json(
+        state
+            .db
+            .fx_book(&state.db.snapshot()?.profile.base_currency)?,
+    ))
 }
 
 async fn refresh_fx_settings(

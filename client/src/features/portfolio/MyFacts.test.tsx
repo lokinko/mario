@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import {
-  act,
   cleanup,
   fireEvent,
   render,
@@ -16,6 +15,9 @@ import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 import { formatMoney } from "../../lib/format";
 vi.mock("../../api/portfolio", () => ({
+  getFinancialHistory: vi
+    .fn()
+    .mockResolvedValue({ records: [], quarantine: null }),
   ensureDailyAssets: vi.fn().mockResolvedValue({
     timezone: "Asia/Shanghai",
     today: "2026-09-13",
@@ -37,6 +39,10 @@ vi.mock("../../api/portfolio", () => ({
   getFxSettings: vi.fn(),
 }));
 beforeEach(() => {
+  vi.mocked(portfolioApi.getFinancialHistory).mockResolvedValue({
+    records: [],
+    quarantine: null,
+  });
   vi.mocked(portfolioApi.getFxSettings).mockResolvedValue({
     baseCurrency: "CNY",
     checkedAt: 0,
@@ -447,10 +453,13 @@ it.each([
     fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
     const { id, ...input } = holding;
     await waitFor(() =>
-      expect(portfolioApi.updateHolding).toHaveBeenCalledWith(id, {
-        ...input,
-        symbol: nextSymbol,
-      }),
+      expect(portfolioApi.updateHolding).toHaveBeenCalledWith(
+        id,
+        expect.objectContaining({
+          ...input,
+          symbol: nextSymbol,
+        }),
+      ),
     );
     expect(onUpdate).toHaveBeenCalledWith(updated);
   },
@@ -509,11 +518,14 @@ it("updates the manual OPPO price without rounding or recomputing execution cost
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
   const { id, ...input } = holding;
   await waitFor(() =>
-    expect(portfolioApi.updateHolding).toHaveBeenCalledWith(id, {
-      ...input,
-      currentPrice: 30.12345678,
-      marketValue: holding.quantity * 30.12345678,
-    }),
+    expect(portfolioApi.updateHolding).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({
+        ...input,
+        currentPrice: 30.12345678,
+        marketValue: holding.quantity * 30.12345678,
+      }),
+    ),
   );
   expect(onUpdate).toHaveBeenCalledWith(updated);
 });
@@ -535,17 +547,19 @@ it("only asks for monthly facts and preserves existing investment preferences", 
   });
   fireEvent.click(screen.getByRole("button", { name: "保存收支" }));
   await waitFor(() =>
-    expect(portfolioApi.saveProfile).toHaveBeenCalledWith({
-      ...snapshot.profile,
-      monthlyIncome: 8000,
-    }),
+    expect(portfolioApi.saveProfile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...snapshot.profile,
+        monthlyIncome: 8000,
+      }),
+    ),
   );
 });
 it("stores deposits once as cash holdings, without adding them again to the profile", async () => {
   vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
-  fireEvent.click(screen.getByRole("button", { name: "添加存款" }));
+  fireEvent.click(screen.getByRole("button", { name: "编辑 CNY 存款" }));
   expect(screen.queryByRole("spinbutton", { name: /持仓成本/ })).toBeNull();
   fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
     target: { value: "50000" },
@@ -554,7 +568,7 @@ it("stores deposits once as cash holdings, without adding them again to the prof
   await waitFor(() =>
     expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "银行存款",
+        name: "CNY 存款",
         assetClass: "现金",
         marketValue: 50000,
       }),
@@ -624,19 +638,24 @@ it("preserves the user's entered balance on failure and keeps existing cost and 
     }),
   );
 });
-it("requires an explicit amount and accepts a zero balance without an FX rate", async () => {
+it("shows exactly three currency balances and accepts zero without an FX rate", async () => {
   vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
-  fireEvent.click(screen.getByRole("button", { name: "添加存款" }));
+  for (const currency of ["CNY", "HKD", "USD"]) {
+    expect(
+      screen.getByRole("button", { name: `编辑 ${currency} 存款` }),
+    ).toBeTruthy();
+  }
+  expect(screen.queryByRole("button", { name: "添加存款" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "编辑 USD 存款" }));
+  expect(screen.queryByRole("combobox", { name: "币种" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "名称" })).toBeNull();
+  const input = screen.getByRole("spinbutton", { name: "当前金额 USD" });
+  fireEvent.change(input, { target: { value: "" } });
   const save = screen.getByRole("button", { name: "保存这笔资产" });
   expect((save as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.change(screen.getByRole("combobox", { name: "币种" }), {
-    target: { value: "USD" },
-  });
-  fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 USD" }), {
-    target: { value: "0" },
-  });
+  fireEvent.change(input, { target: { value: "0" } });
   expect((save as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(save);
   await waitFor(() =>
@@ -653,7 +672,7 @@ it("requires an explicit amount and accepts a zero balance without an FX rate", 
 it("keeps asset categories fixed while an asset form is open, then unlocks on cancel", () => {
   mount();
   fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
-  fireEvent.click(screen.getByRole("button", { name: "添加存款" }));
+  fireEvent.click(screen.getByRole("button", { name: "编辑 CNY 存款" }));
   expect(
     (screen.getByRole("button", { name: "投资持仓" }) as HTMLButtonElement)
       .disabled,
@@ -684,7 +703,7 @@ it("blocks negative monthly facts and re-enables saving after correction", async
 it("blocks invalid asset amounts even when a form is submitted with Enter", () => {
   mount();
   fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
-  fireEvent.click(screen.getByRole("button", { name: "添加存款" }));
+  fireEvent.click(screen.getByRole("button", { name: "编辑 CNY 存款" }));
   fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
     target: { value: "1000000000000001" },
   });
@@ -723,7 +742,10 @@ it("records investment cost in the holding's currency and shows the saved profit
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
   const { id, ...input } = saved;
   await waitFor(() =>
-    expect(portfolioApi.updateHolding).toHaveBeenCalledWith(id, input),
+    expect(portfolioApi.updateHolding).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining(input),
+    ),
   );
   expect(onUpdate).toHaveBeenCalledWith(updated);
   rerender(
@@ -871,34 +893,49 @@ it("shows deletion failures and allows retrying without losing the holding", asy
   expect(portfolioApi.deleteHolding).toHaveBeenCalledTimes(2);
 });
 
-it("also supports deleting cash and blocks duplicate actions during deletion", async () => {
-  vi.spyOn(window, "confirm").mockReturnValue(true);
-  let resolve!: (value: Snapshot) => void;
-  vi.mocked(portfolioApi.deleteHolding).mockImplementationOnce(
-    () =>
-      new Promise((yes) => {
-        resolve = yes;
-      }),
-  );
+it("updates a currency balance with the form revision and preserves input on a conflict", async () => {
   const cash = {
     ...investment,
     id: "cash",
-    name: "银行存款",
+    name: "CNY 存款",
     assetClass: "现金" as const,
+    valuationDate: "",
   };
-  mount({ ...snapshot, holdings: [cash] });
+  vi.mocked(portfolioApi.updateHoldingAmount).mockRejectedValue(
+    new Error("该资产已更新"),
+  );
+  const { onUpdate, flash, rerender } = mount({
+    ...snapshot,
+    holdings: [cash],
+    holdingRevisions: { cash: "old" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
-  const remove = screen.getByRole("button", { name: "删除 银行存款" });
-  fireEvent.click(remove);
-  expect((remove as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByLabelText("银行存款金额")).toBeNull();
-  expect(
-    (screen.getByRole("button", { name: "编辑 银行存款" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
-  fireEvent.click(remove);
-  expect(portfolioApi.deleteHolding).toHaveBeenCalledExactlyOnceWith("cash");
-  await act(async () => resolve(snapshot));
+  expect(screen.queryByRole("button", { name: "删除 CNY 存款" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "编辑 CNY 存款" }));
+  const input = screen.getByRole("spinbutton", { name: "当前金额 CNY" });
+  fireEvent.change(input, { target: { value: "2000" } });
+  rerender(
+    <MyFacts
+      snapshot={{
+        ...snapshot,
+        holdings: [{ ...cash, marketValue: 900 }],
+        holdingRevisions: { cash: "new" },
+      }}
+      onUpdate={onUpdate}
+      flash={flash}
+      navigate={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
+  await screen.findByRole("alert");
+  expect(portfolioApi.updateHoldingAmount).toHaveBeenCalledWith(
+    "cash",
+    "2000",
+    "old",
+    expect.any(String),
+  );
+  expect(screen.getByDisplayValue("2000")).toBeTruthy();
+  expect(portfolioApi.updateHolding).not.toHaveBeenCalled();
 });
 
 it("saves manually entered unit prices and fractional quantities with calculated totals", async () => {

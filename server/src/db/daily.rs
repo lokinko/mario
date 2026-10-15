@@ -12,6 +12,10 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Entry {
+    #[serde(default)]
+    accounting: Option<crate::models::accounting::AccountingHolding>,
+    #[serde(default)]
+    exact_liabilities: Option<String>,
     holding: Option<Holding>,
     removed: bool,
     confirmed_on: Option<String>,
@@ -24,6 +28,8 @@ struct Entry {
 impl Entry {
     fn empty() -> Self {
         Self {
+            accounting: None,
+            exact_liabilities: None,
             holding: None,
             removed: false,
             confirmed_on: None,
@@ -76,8 +82,18 @@ fn latest_entry(conn: &Connection, day: &str, entity: &str) -> AppResult<Option<
         params![entity,day], |r| r.get::<_,String>(0)).optional()?
         .map(|v| serde_json::from_str(&v).map_err(AppError::from)).transpose()
 }
-fn asset_entry(holding: &Holding, actual: bool, confirmed: Option<String>) -> Entry {
+fn asset_entry(
+    holding: &Holding,
+    actual: bool,
+    confirmed: Option<String>,
+    snapshot: &Snapshot,
+) -> Entry {
     Entry {
+        accounting: snapshot
+            .accounting
+            .as_ref()
+            .and_then(|a| a.holdings.get(&holding.id))
+            .cloned(),
         holding: Some(holding.clone()),
         confirmed_on: confirmed,
         actual_update: actual,
@@ -109,11 +125,21 @@ fn initialize_at(conn: &Connection, snapshot: &Snapshot, day: &str) -> AppResult
             "$liabilities",
             &Entry {
                 liabilities: Some(snapshot.profile.liabilities),
+                exact_liabilities: snapshot
+                    .profile
+                    .exact_amounts
+                    .as_ref()
+                    .map(|a| a.liabilities.clone()),
                 ..Entry::empty()
             },
         )?;
         for h in &snapshot.holdings {
-            put(conn, day, &h.id, &asset_entry(h, false, valuation_day(h)))?;
+            put(
+                conn,
+                day,
+                &h.id,
+                &asset_entry(h, false, valuation_day(h), snapshot),
+            )?;
         }
     }
     Ok(())
@@ -150,6 +176,17 @@ fn finish_at(
     for h in &after.holdings {
         let old = before.holdings.iter().find(|old| old.id == h.id);
         if old.map(serde_json::to_value).transpose()? != Some(serde_json::to_value(h)?)
+            || serde_json::to_value(
+                before
+                    .accounting
+                    .as_ref()
+                    .and_then(|a| a.holdings.get(&h.id)),
+            )? != serde_json::to_value(
+                after
+                    .accounting
+                    .as_ref()
+                    .and_then(|a| a.holdings.get(&h.id)),
+            )?
             || confirmation == Some(h.id.as_str())
         {
             let confirmed = if confirmation == Some(h.id.as_str()) {
@@ -163,13 +200,13 @@ fn finish_at(
             } else {
                 latest_entry(conn, &day, &h.id)?.and_then(|e| e.confirmed_on)
             };
-            put(conn, &day, &h.id, &asset_entry(h, true, confirmed))?;
+            put(conn, &day, &h.id, &asset_entry(h, true, confirmed, &after))?;
         }
     }
     for h in &before.holdings {
         if !after.holdings.iter().any(|a| a.id == h.id) {
             let mut entry = latest_entry(conn, &day, &h.id)?
-                .unwrap_or_else(|| asset_entry(h, false, valuation_day(h)));
+                .unwrap_or_else(|| asset_entry(h, false, valuation_day(h), before));
             entry.removed = true;
             entry.actual_update = true;
             entry.request_id = None;
@@ -188,13 +225,25 @@ fn finish_at(
             },
         )?;
     }
-    if before.profile.liabilities != after.profile.liabilities {
+    if before.profile.liabilities != after.profile.liabilities
+        || before
+            .profile
+            .exact_amounts
+            .as_ref()
+            .map(|a| &a.liabilities)
+            != after.profile.exact_amounts.as_ref().map(|a| &a.liabilities)
+    {
         put(
             conn,
             &day,
             "$liabilities",
             &Entry {
                 liabilities: Some(after.profile.liabilities),
+                exact_liabilities: after
+                    .profile
+                    .exact_amounts
+                    .as_ref()
+                    .map(|a| a.liabilities.clone()),
                 actual_update: true,
                 ..Entry::empty()
             },
@@ -206,7 +255,15 @@ fn delta(a: &DailyRecord, b: &DailyRecord) -> Option<f64> {
     if a.base_currency != b.base_currency {
         return None;
     }
-    Some(b.total_assets? - a.total_assets?)
+    use rust_decimal::{prelude::ToPrimitive, Decimal};
+    let source = |record: &DailyRecord| {
+        record
+            .exact_total_assets
+            .clone()
+            .or_else(|| record.total_assets.map(|v| v.to_string()))
+            .and_then(|v| Decimal::from_str_exact(&v).ok())
+    };
+    (source(b)? - source(a)?).to_f64()
 }
 /// Rebuild from sparse observations, never from the current holdings. Thus a later
 /// edit or a synchronized observation cannot leak backwards into earlier dates.
@@ -253,48 +310,90 @@ fn rebuild_at(conn: &Connection, through: &str) -> AppResult<()> {
             .get("$liabilities")
             .and_then(|(_, e)| e.liabilities)
             .ok_or_else(|| AppError::Validation("每日历史缺少负债状态".into()))?;
-        let assets = state
-            .values()
-            .filter_map(|(recorded, e)| {
-                let holding = e.holding.clone()?;
-                // Keep tombstones on the removal date for the history detail.
-                if e.removed && recorded != &key {
-                    return None;
-                }
-                let base_value = if e.removed {
-                    Some(0.0)
+        use rust_decimal::{prelude::ToPrimitive, Decimal};
+        let mut assets = Vec::new();
+        for (recorded, e) in state.values() {
+            let Some(holding) = e.holding.clone() else {
+                continue;
+            };
+            if e.removed && recorded != &key {
+                continue;
+            }
+            let exact_base = if e.removed {
+                Some(Decimal::ZERO)
+            } else if let Some(exact) = &e.accounting {
+                if !exact.usable {
+                    None
                 } else {
-                    valuation::normalize_holding(&holding, &base)
-                        .map(|h| h.market_value)
-                        .filter(|v| v.is_finite())
-                };
-                Some(DailyAsset {
-                    holding,
-                    confirmed_on: e.confirmed_on.clone(),
-                    carried: e.confirmed_on.as_deref() != Some(key.as_str()),
-                    removed: e.removed,
-                    base_value,
-                    previous_day_change: None,
-                    pct_point_change: None,
-                    change_kind: "baseline".into(),
-                })
-            })
-            .collect::<Vec<_>>();
+                    let amount = Decimal::from_str_exact(&exact.amounts.market_value)
+                        .map_err(|_| AppError::Validation("每日资产原值无效".into()))?;
+                    let rate = if holding.currency == base {
+                        Some(Decimal::ONE)
+                    } else if exact.base_currency == base {
+                        exact
+                            .fx_rate
+                            .as_deref()
+                            .map(Decimal::from_str_exact)
+                            .transpose()
+                            .map_err(|_| AppError::Validation("每日资产汇率无效".into()))?
+                    } else {
+                        None
+                    };
+                    rate.and_then(|rate| amount.checked_mul(rate))
+                }
+            } else {
+                valuation::normalize_holding(&holding, &base)
+                    .and_then(|h| Decimal::from_str_exact(&h.market_value.to_string()).ok())
+            };
+            assets.push(DailyAsset {
+                exact_base_value: exact_base.map(|v| v.normalize().to_string()),
+                accounting: e.accounting.clone(),
+                holding,
+                confirmed_on: e.confirmed_on.clone(),
+                carried: e.confirmed_on.as_deref() != Some(key.as_str()),
+                removed: e.removed,
+                base_value: exact_base.and_then(|v| v.to_f64()),
+                previous_day_change: None,
+                pct_point_change: None,
+                change_kind: "baseline".into(),
+            });
+        }
         let missing_fx = assets
             .iter()
             .filter(|a| a.base_value.is_none())
             .map(|a| a.holding.name.clone())
             .collect::<Vec<_>>();
-        let total = missing_fx
-            .is_empty()
-            .then(|| assets.iter().filter_map(|a| a.base_value).sum::<f64>())
-            .filter(|v| v.is_finite());
+        let exact_total = if missing_fx.is_empty() {
+            Some(
+                assets
+                    .iter()
+                    .try_fold(Decimal::ZERO, |sum, a| -> AppResult<Decimal> {
+                        sum.checked_add(
+                            Decimal::from_str_exact(a.exact_base_value.as_deref().unwrap())
+                                .map_err(|_| AppError::Validation("每日合计原值无效".into()))?,
+                        )
+                        .ok_or_else(|| AppError::Validation("每日合计溢出".into()))
+                    })?,
+            )
+        } else {
+            None
+        };
+        let total = exact_total.and_then(|v| v.to_f64());
+        let exact_liabilities = state
+            .get("$liabilities")
+            .and_then(|(_, entry)| entry.exact_liabilities.clone())
+            .unwrap_or_else(|| liabilities.to_string());
+        let liability = Decimal::from_str_exact(&exact_liabilities)
+            .map_err(|_| AppError::Validation("每日负债无效".into()))?;
         let mut record = DailyRecord {
+            exact_total_assets: exact_total.map(|v| v.normalize().to_string()),
+            exact_liabilities,
+            exact_net_assets: exact_total.map(|v| (v - liability).normalize().to_string()),
             day: key.clone(),
             base_currency: base,
             total_assets: total,
             liabilities,
-            net_assets: total.map(|v| v - liabilities),
+            net_assets: exact_total.and_then(|v| (v - liability).to_f64()),
             carried: !actual,
             assets,
             missing_fx,
@@ -319,8 +418,7 @@ fn rebuild_at(conn: &Connection, through: &str) -> AppResult<()> {
                 .into();
                 if prev.base_currency == record.base_currency {
                     let previous_value = prior.map_or(Some(0.0), |a| a.base_value);
-                    asset.previous_day_change =
-                        asset.base_value.zip(previous_value).map(|(b, a)| b - a);
+                    asset.previous_day_change = asset_delta(prior, Some(asset));
                     asset.pct_point_change = prev
                         .total_assets
                         .zip(record.total_assets)
@@ -427,8 +525,13 @@ impl Database {
         Ok(compare(read(&query.from)?, read(&query.to)?))
     }
     pub fn update_holding_amount(&self, id: &str, input: &AmountInput) -> AppResult<Snapshot> {
-        validate_non_negative(&[input.amount])?;
-        if input.amount > 1e15 {
+        use rust_decimal::prelude::ToPrimitive;
+        let exact = crate::models::decimal::parse(&input.amount)?;
+        let amount = exact
+            .to_f64()
+            .ok_or_else(|| AppError::Validation("金额超出范围".into()))?;
+        validate_non_negative(&[amount])?;
+        if amount > 1e15 {
             return Err(AppError::Validation("金额超过允许范围".into()));
         }
         if input.request_id.is_empty() || input.request_id.len() > 128 {
@@ -437,6 +540,14 @@ impl Database {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         let now = Utc::now();
+        let operation = super::financial::operation(
+            "amount",
+            &input.request_id,
+            &(format!("holdings/{id}/amount"), input),
+        )?;
+        if let Some(snapshot) = super::financial::replay(&tx, &operation)? {
+            return Ok(snapshot);
+        }
         let before = prepare_at(&tx, now)?;
         let holding = before
             .holdings
@@ -444,9 +555,14 @@ impl Database {
             .find(|h| h.id == id)
             .ok_or_else(|| AppError::Validation("找不到要更新的资产".into()))?;
         let day = today_at(&tx, now)?;
+        if before.cleared_trade_holdings.iter().any(|item| item == id) {
+            return Err(AppError::Validation(
+                "交易链已隔离，请先修复原始记录".into(),
+            ));
+        }
         if latest_entry(&tx, &day, id)?
             .is_some_and(|e| e.request_id.as_deref() == Some(&input.request_id))
-            && holding.market_value == input.amount
+            && holding.market_value == amount
         {
             tx.commit()?;
             drop(conn);
@@ -457,14 +573,14 @@ impl Database {
                 "该资产已更新，请核对最新金额后重试；输入已保留".into(),
             ));
         }
-        if holding.quantity == Some(0.0) && input.amount > 0.0 {
+        if holding.quantity == Some(0.0) && amount > 0.0 {
             return Err(AppError::Validation(
                 "持仓数为 0，请先更新持仓数和当前价格".into(),
             ));
         }
         let current_price = holding.quantity.and_then(|quantity| {
             if quantity > 0.0 {
-                Some(input.amount / quantity)
+                Some(amount / quantity)
             } else {
                 holding.current_price
             }
@@ -473,24 +589,63 @@ impl Database {
             holding.cost_price,
             holding.quantity,
             current_price,
-            input.amount,
+            amount,
             holding.cost_basis,
         )?;
         // FX provenance has its own observation date; manual amounts do not refresh it.
         tx.execute(
             "UPDATE holdings SET market_value=?2, valuation_date=?3, updated_at=?4, current_price=CASE WHEN quantity > 0 THEN ?2 / quantity WHEN quantity = 0 THEN current_price ELSE NULL END WHERE id=?1",
-            params![id, input.amount, day, Utc::now().to_rfc3339()],
+            params![id, amount, day, Utc::now().to_rfc3339()],
         )?;
         tx.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
+        super::amounts::set_market_value(&tx, holding, exact)?;
+        if holding.asset_class == "现金" {
+            super::cash::confirm(&tx, id, &holding.currency, exact, &day)?;
+        }
         super::fx::apply_holdings(&tx)?;
         finish_at(&tx, &before, Some(id), now)?;
         let mut entry = latest_entry(&tx, &day, id)?.unwrap();
         entry.request_id = Some(input.request_id.clone());
         put(&tx, &day, id, &entry)?;
+        super::financial::journal(
+            &tx,
+            id,
+            "balance.confirm",
+            &serde_json::json!({"holding":holding,"accounting":before.accounting.as_ref().and_then(|a|a.holdings.get(id)),"cashBalance":before.cash_balances.iter().find(|b|b.holding_id==id)}),
+            &input.amount,
+            &if holding.asset_class != "现金" {
+                "0".to_owned()
+            } else {
+                (exact
+                    - rust_decimal::Decimal::from_str_exact(
+                        &before
+                            .cash_balances
+                            .iter()
+                            .find(|b| b.holding_id == id)
+                            .map_or_else(|| holding.market_value.to_string(), |b| b.amount.clone()),
+                    )
+                    .map_err(|_| AppError::Validation("原金额无效".into()))?)
+                .normalize()
+                .to_string()
+            },
+            ("手动核对当前金额", Some(&operation.0)),
+        )?;
+        let snapshot = super::financial::complete(&tx, &operation)?;
         tx.commit()?;
-        drop(conn);
-        self.snapshot()
+        Ok(snapshot)
     }
+}
+fn asset_delta(a: Option<&DailyAsset>, b: Option<&DailyAsset>) -> Option<f64> {
+    use rust_decimal::{prelude::ToPrimitive, Decimal};
+    let amount = |asset: Option<&DailyAsset>| match asset {
+        None => Some(Decimal::ZERO),
+        Some(asset) => asset
+            .exact_base_value
+            .clone()
+            .or_else(|| asset.base_value.map(|v| v.to_string()))
+            .and_then(|v| Decimal::from_str_exact(&v).ok()),
+    };
+    (amount(b)? - amount(a)?).to_f64()
 }
 pub fn compare(from: DailyRecord, to: DailyRecord) -> DailyComparison {
     let compatible = from.base_currency == to.base_currency;
@@ -518,7 +673,7 @@ pub fn compare(from: DailyRecord, to: DailyRecord) -> DailyComparison {
             let b = right.get(&id).copied();
             let av = a.map_or(Some(0.0), |a| a.base_value);
             let bv = b.map_or(Some(0.0), |b| b.base_value);
-            let amount_change = compatible.then(|| bv.zip(av).map(|(b, a)| b - a)).flatten();
+            let amount_change = compatible.then(|| asset_delta(a, b)).flatten();
             let pct_point_change = if compatible {
                 from.total_assets
                     .zip(to.total_assets)
@@ -733,14 +888,14 @@ mod tests {
         Database::open(std::path::Path::new(":memory:")).unwrap()
     }
     fn input(name: &str, value: f64) -> HoldingInput {
-        serde_json::from_value(serde_json::json!({"symbol":"","name":name,"assetClass":"现金","marketValue":value,"costBasis":0,"targetPct":0,"currency":"CNY","fxRateToBase":null,"valuationDate":"2026-01-01","fxRateSource":"","fxRateObservedOn":""})).unwrap()
+        serde_json::from_value(serde_json::json!({"symbol":"","name":name,"assetClass":"其他","marketValue":value,"costBasis":0,"targetPct":0,"currency":"CNY","fxRateToBase":null,"valuationDate":"2026-01-01","fxRateSource":"","fxRateObservedOn":""})).unwrap()
     }
     fn amount(db: &Database, id: &str, value: f64) -> Snapshot {
         let revision = db.snapshot().unwrap().holding_revisions[id].clone();
         db.update_holding_amount(
             id,
             &AmountInput {
-                amount: value,
+                amount: value.to_string(),
                 expected_revision: revision,
                 request_id: Uuid::new_v4().to_string(),
             },
@@ -777,6 +932,12 @@ mod tests {
             params![id, value],
         )
         .unwrap();
+        super::super::amounts::set_market_value(
+            &tx,
+            before.holdings.iter().find(|h| h.id == id).unwrap(),
+            rust_decimal::Decimal::from_str_exact(&value.to_string()).unwrap(),
+        )
+        .unwrap();
         finish_at(&tx, &before, Some(id), now).unwrap();
         tx.commit().unwrap();
     }
@@ -805,7 +966,7 @@ mod tests {
             1
         );
         let req = AmountInput {
-            amount: 0.0,
+            amount: 0.0.to_string(),
             expected_revision: db.snapshot().unwrap().holding_revisions[&id].clone(),
             request_id: "retry".into(),
         };
@@ -820,7 +981,7 @@ mod tests {
             db.update_holding_amount(
                 &id,
                 &AmountInput {
-                    amount: 800.0,
+                    amount: 800.0.to_string(),
                     expected_revision: old_revision,
                     request_id: "stale".into()
                 }
@@ -832,7 +993,7 @@ mod tests {
                 .update_holding_amount(
                     &id,
                     &AmountInput {
-                        amount: invalid,
+                        amount: invalid.to_string(),
                         expected_revision: req.expected_revision.clone(),
                         request_id: "bad".into()
                     }

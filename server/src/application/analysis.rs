@@ -120,10 +120,12 @@ impl<'a> AnalysisService<'a> {
         }
         // Freeze credentials and their destination under the same account lock;
         // another device may change its model settings while this analysis runs.
-        if self.db.hosted() {
+        if self.db.hosted() && config.provider != "codex-bridge" {
             crate::models::validate_endpoint(&config.base_url)?;
         }
-        let api_key = if config.provider == "codex" {
+        let api_key = if config.provider == "codex-bridge" {
+            Some(super::codex_bridge::id(self.db)?)
+        } else if config.provider == "codex" {
             None
         } else {
             Some(configured_model_key(self.db, &config)?)

@@ -42,7 +42,7 @@ async function stopDatabase(site) {
 }
 async function startApi(site) {
   const actual = readConfig(join(site.directory, '.env'));
-  const binary = join(root, 'server/target/debug/mario-server' + (process.platform === 'win32' ? '.exe' : ''));
+  const binary = resolve(process.env.MARIO_TEST_SERVER_BIN ?? join(root, 'server/target/debug/mario-server' + (process.platform === 'win32' ? '.exe' : '')));
   const child = spawn(binary, ['--port', actual.MARIO_PORT], { env: { ...cleanEnv, DATABASE_URL: `postgresql://mario:${actual.POSTGRES_PASSWORD}@127.0.0.1:${actual.MARIO_PG_PORT}/postgres`, MARIO_HOST: '127.0.0.1', MARIO_MASTER_KEY: actual.MARIO_MASTER_KEY }, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = ''; child.stdout.on('data', chunk => { logs += chunk; }); child.stderr.on('data', chunk => { logs += chunk; });
   children.push(child); site.child = child; site.base = `http://127.0.0.1:${actual.MARIO_PORT}/api`;
@@ -154,5 +154,5 @@ try {
 } finally {
   for (const site of sites) { await stopApi(site); await stopDatabase(site); }
   assert(resolve(fixture).startsWith(resolve(tmpdir()) + sep + 'mario-migration-'));
-  rmSync(fixture, { recursive: true, force: true });
+  rmSync(fixture, { recursive: true, force: true, maxRetries:20, retryDelay:100 });
 }

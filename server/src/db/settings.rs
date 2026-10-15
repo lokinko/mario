@@ -61,7 +61,9 @@ impl Database {
             },
             base_url: value("model.base_url", "https://api.openai.com/v1")?,
             model: value("model.name", "gpt-4.1-mini")?,
-            has_api_key: if value("model.provider", "")? == "codex" {
+            has_api_key: if value("model.provider", "")? == "codex-bridge" {
+                !value("model.codex_bridge_id", "")?.is_empty()
+            } else if value("model.provider", "")? == "codex" {
                 value("model.codex_ready", "false")? == "true"
             } else {
                 has_key
@@ -77,14 +79,23 @@ impl Database {
     ) -> AppResult<()> {
         if !matches!(
             provider,
-            "openai-responses" | "openai-chat" | "anthropic" | "openai-compatible" | "codex"
+            "openai-responses"
+                | "openai-chat"
+                | "anthropic"
+                | "openai-compatible"
+                | "codex"
+                | "codex-bridge"
         ) {
             return Err(AppError::Validation(
                 "请选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或 Codex"
                     .into(),
             ));
         }
-        if provider != "codex" {
+        if provider == "codex-bridge" {
+            if base_url != "codex://bridge" {
+                return Err(AppError::Validation("桥接地址无效".into()));
+            }
+        } else if provider != "codex" {
             crate::models::validate_endpoint(base_url)?;
         } else if self.hosted() || base_url != "codex://local" {
             return Err(AppError::Validation("Codex 登录仅支持本机开发模式".into()));

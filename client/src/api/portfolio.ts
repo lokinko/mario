@@ -15,6 +15,72 @@ export async function getSnapshot(): Promise<Snapshot> {
   return httpRequest<Snapshot>("/snapshot");
 }
 
+export function getFinancialHistory(id: string): Promise<{
+  records: {
+    id: string;
+    kind: string;
+    before: string;
+    after: string;
+    cashDelta: string;
+    operationId: string;
+    reason: string;
+    createdAt: string;
+  }[];
+  quarantine: { payload: string; reason: string; createdAt: string } | null;
+}> {
+  return httpRequest(`/holdings/${encodeURIComponent(id)}/financial-history`);
+}
+type RepairInput = {
+  expectedRevision: string;
+  trades: import("../types").HoldingTrade[];
+  reason: string;
+};
+export function previewTradeRepair(
+  id: string,
+  input: RepairInput,
+): Promise<import("../types").HoldingTradeSummary> {
+  return httpRequest(
+    `/holdings/${encodeURIComponent(id)}/trade-repair/preview`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+export function repairTrades(
+  id: string,
+  input: RepairInput,
+): Promise<Snapshot> {
+  return httpRequest(`/holdings/${encodeURIComponent(id)}/trade-repair`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function confirmCorporateAction(
+  id: string,
+  expectedRevision: string,
+  reason: string,
+  mode: "confirm" | "reject" | "revert" = "confirm",
+): Promise<Snapshot> {
+  return httpRequest(`/corporate-actions/${encodeURIComponent(id)}/${mode}`, {
+    method: "POST",
+    body: JSON.stringify({ expectedRevision, reason }),
+  });
+}
+
+export function declareCorporateAction(
+  id: string,
+  input: {
+    requestId: string;
+    expectedRevision: string;
+    split: { effectiveOn: string; numerator: string; denominator: string };
+    reason: string;
+  },
+): Promise<Snapshot> {
+  return httpRequest(`/holdings/${encodeURIComponent(id)}/corporate-actions`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function getSecurityPrice(
   symbol: string,
   onDate: string,
@@ -135,7 +201,7 @@ export function getDailyAssets(
 
 export function updateHoldingAmount(
   id: string,
-  amount: number,
+  amount: number | string,
   expectedRevision: string,
   requestId: string,
 ) {
@@ -166,10 +232,14 @@ export function refreshFxSettings(): Promise<FxBook> {
 
 export function setFxOverride(
   currency: string,
-  rate: number | null,
+  rate: number | string | null,
 ): Promise<FxBook> {
   return httpRequest<FxBook>("/fx-settings", {
     method: "PUT",
-    body: JSON.stringify({ currency, rate }),
+    body: JSON.stringify({
+      currency,
+      rate: rate == null ? null : Number(rate),
+      ...(typeof rate === "string" ? { exactRate: rate } : {}),
+    }),
   });
 }

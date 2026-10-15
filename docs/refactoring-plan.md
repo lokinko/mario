@@ -1,6 +1,6 @@
 # mario 重构与产品收敛
 
-> 历史记录：其中的原生客户端与平台构建说明仅适用于当时版本。当前仅维护 Web，见 [Web 构建](client-builds.md)。
+> 历史记录：其中的原生客户端、本地优先、端到端同步及平台构建说明仅适用于当时版本；当前数据边界以 architecture.md、cloud-sync.md 和 threat-model.md 为准。当前仅维护 Web，见 [Web 构建](client-builds.md)。
 
 目标：让用户少理解工具配置、多理解自己的判断；代码围绕明确领域和状态流组织，而非继续堆积页面。
 

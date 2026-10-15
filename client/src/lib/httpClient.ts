@@ -49,6 +49,58 @@ export async function httpRequest<T>(
 
     return result;
   } catch (error) {
+    const resource = path.split("?")[0];
+    const receiptable =
+      resource === "/holding-trades" ||
+      resource.startsWith("/holding-trades/") ||
+      resource.endsWith("/amount") ||
+      resource.endsWith("/trade-repair") ||
+      resource.endsWith("/corporate-actions") ||
+      resource.startsWith("/corporate-actions/");
+    if (
+      dataWrite &&
+      receiptable &&
+      (!(error instanceof HttpError) || error.status >= 500) &&
+      typeof init?.body === "string"
+    ) {
+      ensureCurrentAccount();
+      try {
+        const resolved = await requestJson<{ committed: boolean; snapshot: T }>(
+          `${baseUrl}/financial-operations/resolve`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              method: init.method,
+              path: `/api${resource}`,
+              input: JSON.parse(init.body),
+            }),
+            timeoutMs: 10000,
+            headers: {
+              "Content-Type": "application/json",
+              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            },
+            onResponse: (response) => {
+              ensureCurrentAccount();
+              acceptRevision(
+                response.headers.get("x-data-revision") ?? dataRevision(),
+              );
+            },
+          },
+        );
+        ensureCurrentAccount();
+        if (resolved.committed) {
+          window.dispatchEvent(new Event(DATA_SAVED));
+          return resolved.snapshot;
+        }
+      } catch {
+        /* Keep the original attempt and request id; never guess or resubmit. */
+      }
+      ensureCurrentAccount();
+      throw new Error(
+        "操作结果待确认，原请求编号和输入已保留。可核对更正历史后使用相同内容重试；不要重新创建一笔交易。",
+        { cause: error },
+      );
+    }
     if (error instanceof HttpError && error.status === 401) {
       const currentToken = webToken();
       if (!currentToken || currentToken === authToken)

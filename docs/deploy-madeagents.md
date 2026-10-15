@@ -81,6 +81,8 @@ bash deploy.sh check
 
 ## 日常只用这个脚本
 
+本机 Codex 桥接随 `deploy.sh` 一起构建和部署，脚本自动检测桥接协议是否就绪。服务器不需要 Codex 登录；用户在网页配对后，在自己的电脑运行 `npm run codex:bridge`。详细步骤见 [本机 Codex 桥接](codex-bridge.md)。
+
 ```bash
 # 更新前备份；用仓库所有者账号拉取代码，然后重新部署、构建。
 git pull --ff-only

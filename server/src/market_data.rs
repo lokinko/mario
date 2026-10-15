@@ -187,7 +187,7 @@ fn parse_twelve_data_quote(
     let values = payload
         .values
         .ok_or_else(|| AppError::MarketData("Twelve Data 响应没有日线价格".into()))?;
-    let mut selected: Option<(NaiveDate, f64)> = None;
+    let mut selected: Option<(NaiveDate, f64, String)> = None;
     for value in values {
         let Some(date_text) = value.datetime.get(..10) else {
             continue;
@@ -202,12 +202,14 @@ fn parse_twelve_data_quote(
             && (requested_on - date).num_days() <= PRICE_LOOKBACK_DAYS
             && close.is_finite()
             && close > 0.0
-            && selected.is_none_or(|(current, _)| date > current)
+            && selected
+                .as_ref()
+                .is_none_or(|(current, _, _)| date > *current)
         {
-            selected = Some((date, close));
+            selected = Some((date, close, value.close));
         }
     }
-    let (observed_on, close) = selected.ok_or_else(|| {
+    let (observed_on, close, exact_close) = selected.ok_or_else(|| {
         AppError::MarketData(format!(
             "Twelve Data 在 {} 及之前 {} 天内没有 {} 的有效日收盘价",
             requested_on.format("%Y-%m-%d"),
@@ -216,6 +218,8 @@ fn parse_twelve_data_quote(
         ))
     })?;
     Ok(SecurityPriceQuote {
+        exact_close: Some(exact_close),
+        splits: Vec::new(),
         symbol: requested_symbol.into(),
         currency,
         close,
@@ -313,6 +317,7 @@ impl FxRateProvider for EcbFxRateProvider {
         }
         if from == to {
             return Ok(FxRateQuote {
+                exact_rate: None,
                 from_currency: from,
                 to_currency: to,
                 rate: 1.0,
@@ -377,8 +382,13 @@ impl FxRateProvider for EcbFxRateProvider {
             fetched.map_err(AppError::MarketData)?
         };
         drop(cache);
-        let (rate, observed_on) = parse_ecb_quote(&body, &from, &to, requested_on)?;
+        let (exact_rate, observed_on) = parse_ecb_quote_exact(&body, &from, &to, requested_on)?;
+        use rust_decimal::prelude::ToPrimitive;
+        let rate = exact_rate
+            .to_f64()
+            .ok_or_else(|| AppError::MarketData("汇率超出范围".into()))?;
         Ok(FxRateQuote {
+            exact_rate: Some(exact_rate.normalize().to_string()),
             from_currency: from,
             to_currency: to,
             rate,
@@ -404,21 +414,24 @@ struct EcbCsvRow {
     #[serde(rename = "TIME_PERIOD")]
     time_period: String,
     #[serde(rename = "OBS_VALUE")]
-    observation: f64,
+    observation: String,
 }
 
-fn parse_ecb_quote(
+fn parse_ecb_quote_exact(
     bytes: &[u8],
     from: &str,
     to: &str,
     requested_on: NaiveDate,
-) -> AppResult<(f64, NaiveDate)> {
-    let mut observations = BTreeMap::<NaiveDate, BTreeMap<String, f64>>::new();
+) -> AppResult<(rust_decimal::Decimal, NaiveDate)> {
+    let mut observations = BTreeMap::<NaiveDate, BTreeMap<String, rust_decimal::Decimal>>::new();
     let mut reader = csv::Reader::from_reader(bytes);
     for result in reader.deserialize::<EcbCsvRow>() {
         let row = result
             .map_err(|error| AppError::MarketData(format!("无法解析 ECB 汇率响应：{error}")))?;
-        if row.denominator != "EUR" || !row.observation.is_finite() || row.observation <= 0.0 {
+        let Ok(observation) = rust_decimal::Decimal::from_str_exact(&row.observation) else {
+            continue;
+        };
+        if row.denominator != "EUR" || observation <= rust_decimal::Decimal::ZERO {
             continue;
         }
         let date = NaiveDate::parse_from_str(&row.time_period, "%Y-%m-%d")
@@ -427,24 +440,26 @@ fn parse_ecb_quote(
             observations
                 .entry(date)
                 .or_default()
-                .insert(row.currency, row.observation);
+                .insert(row.currency, observation);
         }
     }
 
     for (date, rates) in observations.iter().rev() {
         let from_per_euro = if from == "EUR" {
-            Some(1.0)
+            Some(rust_decimal::Decimal::ONE)
         } else {
             rates.get(from).copied()
         };
         let to_per_euro = if to == "EUR" {
-            Some(1.0)
+            Some(rust_decimal::Decimal::ONE)
         } else {
             rates.get(to).copied()
         };
         if let (Some(from_rate), Some(to_rate)) = (from_per_euro, to_per_euro) {
-            let cross_rate = to_rate / from_rate;
-            if cross_rate.is_finite() && cross_rate > 0.0 {
+            let Some(cross_rate) = to_rate.checked_div(from_rate) else {
+                continue;
+            };
+            if cross_rate > rust_decimal::Decimal::ZERO {
                 return Ok((cross_rate, *date));
             }
         }
@@ -467,6 +482,18 @@ fn normalized_currency(value: &str) -> AppResult<String> {
         )));
     }
     Ok(currency)
+}
+
+#[cfg(test)]
+fn parse_ecb_quote(
+    bytes: &[u8],
+    from: &str,
+    to: &str,
+    requested_on: NaiveDate,
+) -> AppResult<(f64, NaiveDate)> {
+    use rust_decimal::prelude::ToPrimitive;
+    let (rate, date) = parse_ecb_quote_exact(bytes, from, to, requested_on)?;
+    Ok((rate.to_f64().unwrap(), date))
 }
 
 #[cfg(test)]

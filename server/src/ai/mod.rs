@@ -1,3 +1,4 @@
+pub(crate) mod bridge;
 mod codex;
 mod executor;
 pub use codex::CodexProvider;

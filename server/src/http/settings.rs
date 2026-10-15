@@ -16,11 +16,18 @@ pub(super) fn router() -> Router {
         )
         .route("/api/model-config/test", post(test_model_config))
         .route("/api/model-config/codex", post(read_codex_credentials))
+        .route("/api/model-config/codex/models", get(codex_models))
         .route("/api/model-key", axum::routing::delete(delete_model_key))
         .route(
             "/api/analysis-settings",
             get(analysis_settings).put(save_analysis_settings),
         )
+}
+
+async fn codex_models(
+    Extension(state): Extension<Arc<RequestContext>>,
+) -> AppResult<Json<Vec<crate::models::CodexModel>>> {
+    Ok(Json(model_settings::codex_models(&state.db).await?))
 }
 
 async fn model_config(

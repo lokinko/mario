@@ -1,4 +1,4 @@
-import type { Holding } from "../../types";
+import type { Holding, AccountingHolding } from "../../types";
 import { formatMoney, formatNumber } from "../../lib/format";
 import { isClosedHolding, unrealizedProfit } from "./holdingMetrics";
 export function AssetAmountRow({
@@ -9,6 +9,7 @@ export function AssetAmountRow({
   onDelete,
   disabled = false,
   canDelete = true,
+  exact,
 }: {
   holding: Holding;
   realizedPnl?: number;
@@ -17,6 +18,7 @@ export function AssetAmountRow({
   onDelete: () => void;
   disabled?: boolean;
   canDelete?: boolean;
+  exact?: AccountingHolding;
 }) {
   const investment = holding.assetClass !== "现金";
   const closed = isClosedHolding(holding, realizedPnl != null);
@@ -44,19 +46,21 @@ export function AssetAmountRow({
       {investment && (
         <>
           <div role="cell" data-label="数量">
-            {holding.quantity == null ? "—" : formatNumber(holding.quantity)}
+            {holding.quantity == null
+              ? "—"
+              : formatNumber(exact?.quantity ?? holding.quantity)}
           </div>
           <div role="cell" data-label="现价 / 成本价">
             <span>
               {holding.currentPrice == null
                 ? "—"
-                : formatNumber(holding.currentPrice)}
+                : formatNumber(exact?.currentPrice ?? holding.currentPrice)}
             </span>
             <small>
               成本{" "}
               {holding.costPrice == null
                 ? "—"
-                : formatNumber(holding.costPrice)}
+                : formatNumber(exact?.costPrice ?? holding.costPrice)}
             </small>
           </div>
         </>
@@ -66,8 +70,20 @@ export function AssetAmountRow({
         data-label={investment ? "市值" : "余额"}
         className="asset-value"
       >
-        <strong>{formatMoney(holding.marketValue, holding.currency)}</strong>
+        <strong>
+          {exact && !exact.usable
+            ? "待核对"
+            : formatMoney(
+                exact?.marketValue ?? holding.marketValue,
+                holding.currency,
+              )}
+        </strong>
         {!investment && <small>{holding.valuationDate}</small>}
+        {investment &&
+          exact?.priceStatus &&
+          ["unconfirmed", "provisional"].includes(exact.priceStatus) && (
+            <small>参考估值，价格待核对</small>
+          )}
       </div>
       {investment && (
         <div
@@ -75,9 +91,12 @@ export function AssetAmountRow({
           data-label="浮动盈亏"
           className={pnl == null ? "" : pnl >= 0 ? "gain" : "loss"}
         >
-          {pnl == null
-            ? "—"
-            : (pnl > 0 ? "+" : "") + formatMoney(pnl, holding.currency)}
+          {exact && !exact.usable
+            ? "待核对"
+            : pnl == null
+              ? "—"
+              : (pnl > 0 ? "+" : "") +
+                formatMoney(exact?.unrealizedProfit ?? pnl, holding.currency)}
           <small>
             {pnl != null && holding.costBasis > 0
               ? (pnl > 0 ? "+" : "") +

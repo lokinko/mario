@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyAsset {
+    #[serde(default)]
+    pub accounting: Option<super::accounting::AccountingHolding>,
+    #[serde(default)]
+    pub exact_base_value: Option<String>,
     pub holding: Holding,
     pub confirmed_on: Option<String>,
     pub carried: bool,
@@ -19,6 +23,12 @@ pub struct DailyAsset {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyRecord {
+    #[serde(default)]
+    pub exact_total_assets: Option<String>,
+    #[serde(default)]
+    pub exact_liabilities: String,
+    #[serde(default)]
+    pub exact_net_assets: Option<String>,
     pub day: String,
     pub base_currency: String,
     pub total_assets: Option<f64>,
@@ -52,10 +62,11 @@ pub struct HistoryQuery {
 pub struct EnsureInput {
     pub timezone: String,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AmountInput {
-    pub amount: f64,
+    #[serde(deserialize_with = "super::decimal::text")]
+    pub amount: String,
     pub expected_revision: String,
     pub request_id: String,
 }

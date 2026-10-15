@@ -18,6 +18,14 @@ use validation::{
 };
 mod rule_values;
 use rule_values::store_rule_revision;
+mod amounts;
+mod cash;
+mod corporate;
+mod financial;
+#[cfg(test)]
+mod financial_tests;
+#[cfg(test)]
+pub(crate) use cash::fund as fund_cash;
 mod daily;
 mod fx;
 mod memory;
@@ -91,7 +99,10 @@ impl Database {
         if version < schema::POSTGRES_SCHEMA_VERSION {
             let tx = connection.transaction()?;
             schema::initialize(&tx)?;
-            trades::clear_invalid(&tx)?;
+            trades::quarantine_invalid(&tx)?;
+            cash::consolidate(&tx)?;
+            cash::initialize_balances(&tx)?;
+            amounts::initialize(&tx)?;
             // Re-run for existing tenants too, so newly added tables get revision triggers.
             tx.execute_batch(include_str!("../migrations/tenant-revisions.sql"))?;
             tx.execute_batch(
@@ -148,7 +159,10 @@ impl Database {
         let mut connection = Connection::open(path)?;
         schema::initialize(&connection)?;
         let tx = connection.transaction()?;
-        trades::clear_invalid(&tx)?;
+        trades::quarantine_invalid(&tx)?;
+        cash::consolidate(&tx)?;
+        cash::initialize_balances(&tx)?;
+        amounts::initialize(&tx)?;
         tx.commit()?;
         Ok(Self {
             connection: Mutex::new(connection),

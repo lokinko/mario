@@ -4,6 +4,7 @@ mod ai;
 mod application;
 mod attachments;
 mod authentication;
+mod codex_bridge_worker;
 mod context;
 mod db;
 mod error;
