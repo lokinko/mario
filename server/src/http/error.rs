@@ -15,7 +15,9 @@ impl IntoResponse for AppError {
             AppError::Auth(_) | AppError::LocalAuth(_) => StatusCode::UNAUTHORIZED,
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
-            AppError::Model(_) | AppError::Network(_) => StatusCode::BAD_GATEWAY,
+            AppError::Model(_) | AppError::Network(_) | AppError::Codex(_) => {
+                StatusCode::BAD_GATEWAY
+            }
             AppError::MarketData(_) => StatusCode::BAD_GATEWAY,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };

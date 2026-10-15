@@ -4,6 +4,7 @@ use super::provider::{
     ChatMessage, ModelCompletion, ModelProvider, SearchCompletion, SearchSource,
 };
 use crate::error::{AppError, AppResult};
+use crate::models::inference::{CodexFailure, MODEL_CALL_TIMEOUT};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::{path::PathBuf, process::Stdio, time::Duration};
@@ -14,10 +15,62 @@ use tokio::{
 
 pub struct CodexProvider {
     model: String,
+    status: Option<StatusCallback>,
+}
+type StatusCallback = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
+async fn retry_turn<T, F, Fut>(
+    mut operation: F,
+    emitted: &std::sync::atomic::AtomicBool,
+    status: Option<&StatusCallback>,
+) -> AppResult<(T, usize)>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = AppResult<T>>,
+{
+    tokio::time::timeout(MODEL_CALL_TIMEOUT, async {
+        for attempt in 0..3 {
+            match operation().await {
+                Ok(output) => return Ok((output, attempt + 1)),
+                Err(AppError::Codex(reason))
+                    if reason.retryable()
+                        && !emitted.load(std::sync::atomic::Ordering::Relaxed)
+                        && attempt < 2 =>
+                {
+                    if let Some(status) = status {
+                        status(&format!(
+                            "Codex 暂时连接失败，正在自动重试（{}/2）…",
+                            attempt + 1
+                        ));
+                    }
+                    tokio::time::sleep(Duration::from_millis(
+                        1000 * (1 << attempt) as u64 + rand::random::<u8>() as u64,
+                    ))
+                    .await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!()
+    })
+    .await
+    .map_err(|_| AppError::Codex(CodexFailure::Timeout))?
 }
 impl CodexProvider {
     pub fn new(model: String) -> Self {
-        Self { model }
+        Self {
+            model,
+            status: None,
+        }
+    }
+    pub(crate) fn with_status(mut self, status: StatusCallback) -> Self {
+        self.status = Some(status);
+        self
+    }
+    pub(crate) fn with_events(self, events: Option<super::streaming::EventSender>) -> Self {
+        self.with_status(std::sync::Arc::new(move |message| {
+            super::streaming::status(&events, message)
+        }))
     }
     pub async fn detect() -> AppResult<String> {
         let models = Self::models().await?;
@@ -73,13 +126,41 @@ impl CodexProvider {
         search: bool,
         on_delta: Option<super::streaming::DeltaCallback>,
     ) -> AppResult<SearchCompletion> {
-        tokio::time::timeout(Duration::from_secs(180), async {
-            let mut rpc = Rpc::start().await?;
-            rpc.account().await?;
-            let work = WorkDir::new()?;
-            let instructions = messages.iter().filter(|m| m.role == "system").map(|m| m.content.as_str()).collect::<Vec<_>>().join("\n\n");
-            let prompt = messages.iter().filter(|m| m.role != "system").map(|m| m.content.as_str()).collect::<Vec<_>>().join("\n\n");
-            let thread = rpc.call("thread/start", json!({
+        // One deadline covers all attempts. Never restart a turn after any assistant
+        // output, even when this caller did not request streaming callbacks.
+        let emitted = std::sync::atomic::AtomicBool::new(false);
+        let (mut output, attempts) = retry_turn(
+            || self.generate_once(&messages, search, on_delta.as_ref(), &emitted),
+            &emitted,
+            self.status.as_ref(),
+        )
+        .await?;
+        output.api_calls = attempts;
+        Ok(output)
+    }
+    async fn generate_once(
+        &self,
+        messages: &[ChatMessage],
+        search: bool,
+        on_delta: Option<&super::streaming::DeltaCallback>,
+        emitted: &std::sync::atomic::AtomicBool,
+    ) -> AppResult<SearchCompletion> {
+        let mut rpc = Rpc::start().await?;
+        rpc.account().await?;
+        let work = WorkDir::new()?;
+        let instructions = messages
+            .iter()
+            .filter(|m| m.role == "system")
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let prompt = messages
+            .iter()
+            .filter(|m| m.role != "system")
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let thread = rpc.call("thread/start", json!({
                 "model":self.model, "modelProvider":"openai", "ephemeral":true,
                 "cwd":work.0, "approvalPolicy":"never", "sandbox":"read-only",
                 "environments":[], "selectedCapabilityRoots":[],
@@ -89,38 +170,124 @@ impl CodexProvider {
                     "features.apps":false, "features.skills":false, "features.hooks":false,
                     "mcp_servers":{}}
             })).await?;
-            let id = thread["thread"]["id"].as_str().ok_or_else(|| AppError::Model("Codex 未创建临时会话".into()))?;
-            rpc.call("turn/start", json!({"threadId":id,"input":[{"type":"text","text":prompt}],"effort":"low","environments":[]})).await?;
-            let mut output = SearchCompletion { api_calls:1, ..Default::default() };
-            loop {
-                let event = rpc.read().await?;
-                if event.get("id").is_some() && event.get("method").is_some() {
-                    // No interactive tool requests are permitted in this model adapter.
-                    return Err(AppError::Model("Codex 请求了问答以外的工具操作，已停止本次调用".into()));
-                }
-                match event["method"].as_str() {
-                    Some("item/agentMessage/delta") => {
-                        if let (Some(callback), Some(delta)) = (&on_delta, event["params"]["delta"].as_str()) {
+        let id = thread["thread"]["id"]
+            .as_str()
+            .ok_or_else(|| AppError::Model("Codex 未创建临时会话".into()))?;
+        rpc.call("turn/start", json!({"threadId":id,"input":[{"type":"text","text":prompt}],"effort":"low","environments":[]})).await?;
+        let mut output = SearchCompletion {
+            api_calls: 1,
+            ..Default::default()
+        };
+        loop {
+            let event = rpc.read().await?;
+            if event.get("id").is_some() && event.get("method").is_some() {
+                // No interactive tool requests are permitted in this model adapter.
+                return Err(AppError::Model(
+                    "Codex 请求了问答以外的工具操作，已停止本次调用".into(),
+                ));
+            }
+            match event["method"].as_str() {
+                Some("item/agentMessage/delta") => {
+                    if let Some(delta) = event["params"]["delta"]
+                        .as_str()
+                        .filter(|delta| !delta.is_empty())
+                    {
+                        emitted.store(true, std::sync::atomic::Ordering::Relaxed);
+                        if let Some(callback) = on_delta {
                             callback(delta);
                         }
                     }
-                    Some("item/completed") => ingest_item(&event["params"]["item"], &mut output)?,
-                    Some("thread/tokenUsage/updated") => {
-                        let usage = &event["params"]["tokenUsage"]["total"];
-                        output.usage.input_tokens = usage["inputTokens"].as_u64();
-                        output.usage.output_tokens = usage["outputTokens"].as_u64();
-                    }
-                    Some("turn/completed") => {
-                        if event["params"]["turn"]["status"] != "completed" {
-                            return Err(AppError::Model("Codex 调用失败或额度不足，请在 Codex 中检查登录与额度后重试".into()));
-                        }
-                        if output.content.trim().is_empty() { return Err(AppError::Model("Codex 没有返回有效回答".into())); }
-                        return Ok(output);
-                    }
-                    _ => {}
                 }
+                Some("item/completed") => {
+                    let item = &event["params"]["item"];
+                    if item["type"] == "agentMessage"
+                        && item["text"].as_str().is_some_and(|text| !text.is_empty())
+                    {
+                        emitted.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    ingest_item(item, &mut output)?;
+                }
+                Some("error") => {
+                    if event["params"]["willRetry"] == true {
+                        if let Some(status) = &self.status {
+                            status("Codex 正在恢复上游连接，请稍候…");
+                        }
+                    } else {
+                        return Err(classify_failure(&event["params"]["error"]).into());
+                    }
+                }
+                Some("thread/tokenUsage/updated") => {
+                    let usage = &event["params"]["tokenUsage"]["total"];
+                    output.usage.input_tokens = usage["inputTokens"].as_u64();
+                    output.usage.output_tokens = usage["outputTokens"].as_u64();
+                }
+                Some("turn/completed") => {
+                    if event["params"]["turn"]["status"] != "completed" {
+                        return Err(classify_failure(&event["params"]["turn"]["error"]).into());
+                    }
+                    if output.content.trim().is_empty() {
+                        return Err(AppError::Model("Codex 没有返回有效回答".into()));
+                    }
+                    return Ok(output);
+                }
+                _ => {}
             }
-        }).await.map_err(|_| AppError::Model("Codex 调用超时，请缩小问题后重试".into()))?
+        }
+    }
+}
+
+fn classify_failure(error: &Value) -> CodexFailure {
+    let info = if error["codexErrorInfo"].is_null() {
+        &error["data"]["codexErrorInfo"]
+    } else {
+        &error["codexErrorInfo"]
+    };
+    // Current App Server uses externally tagged objects for HTTP/stream errors;
+    // older builds may use a type field or string enum variant.
+    let tagged = info
+        .as_object()
+        .filter(|object| object.len() == 1)
+        .and_then(|object| object.iter().next());
+    let kind = info
+        .as_str()
+        .or_else(|| info["type"].as_str())
+        .or_else(|| tagged.map(|(kind, _)| kind.as_str()))
+        .unwrap_or_default()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    match kind.as_str() {
+        "usagelimitexceeded" => CodexFailure::UsageLimit,
+        "sessionbudgetexceeded" => CodexFailure::SessionBudget,
+        "unauthorized" => CodexFailure::Unauthorized,
+        "contextwindowexceeded" => CodexFailure::ContextLimit,
+        "badrequest" | "cyberpolicy" | "misalignmentpolicyviolation" | "toomanydenials" => {
+            CodexFailure::Rejected
+        }
+        "ratelimitexceeded" | "serveroverloaded" | "flexunavailable" => CodexFailure::Busy,
+        // App Server already exhausted its own retries; do not multiply them.
+        "responsetoomanyfailedattempts" => CodexFailure::Other,
+        _ => match info["httpStatusCode"]
+            .as_u64()
+            .or_else(|| tagged.and_then(|(_, details)| details["httpStatusCode"].as_u64()))
+            .or_else(|| error["httpStatusCode"].as_u64())
+        {
+            Some(401 | 403) => CodexFailure::Unauthorized,
+            Some(429) => CodexFailure::Busy,
+            Some(500 | 502 | 503 | 504) => CodexFailure::Unavailable,
+            Some(400 | 404 | 422) => CodexFailure::Rejected,
+            _ if error["code"] == -32001 => CodexFailure::Busy,
+            _ if matches!(
+                kind.as_str(),
+                "responsestreamconnectionfailed" | "responsestreamdisconnected"
+            ) =>
+            {
+                CodexFailure::Disconnected
+            }
+            _ if kind == "internalservererror" => CodexFailure::Unavailable,
+            _ => CodexFailure::Other,
+        },
     }
 }
 
@@ -308,17 +475,27 @@ impl Rpc {
     async fn send(&mut self, value: Value) -> AppResult<()> {
         let mut bytes = serde_json::to_vec(&value)?;
         bytes.push(b'\n');
-        self.input.write_all(&bytes).await?;
-        self.input.flush().await?;
+        self.input
+            .write_all(&bytes)
+            .await
+            .map_err(|_| AppError::Codex(CodexFailure::Disconnected))?;
+        self.input
+            .flush()
+            .await
+            .map_err(|_| AppError::Codex(CodexFailure::Disconnected))?;
         Ok(())
     }
     async fn wire_read(&mut self) -> AppResult<Value> {
         let mut bytes = Vec::new();
         // Bound each event before parsing; never log responses or credentials.
         loop {
-            let available = self.output.fill_buf().await?;
+            let available = self
+                .output
+                .fill_buf()
+                .await
+                .map_err(|_| AppError::Codex(CodexFailure::Disconnected))?;
             if available.is_empty() {
-                return Err(AppError::Model("Codex 已退出，请检查安装和登录状态".into()));
+                return Err(CodexFailure::Disconnected.into());
             }
             let end = available
                 .iter()
@@ -354,9 +531,7 @@ impl Rpc {
             let event = self.wire_read().await?;
             if event["id"].as_u64() == Some(id) && event.get("method").is_none() {
                 if event.get("error").is_some() {
-                    return Err(AppError::Model(format!(
-                        "Codex 的 {method} 请求失败，请检查登录、模型权限和 Codex 版本"
-                    )));
+                    return Err(classify_failure(&event["error"]).into());
                 }
                 return Ok(event["result"].clone());
             }
@@ -445,6 +620,145 @@ fn collect_source(source: &Value, output: &mut SearchCompletion) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex,
+    };
+
+    #[test]
+    fn classifies_native_error_protocol_without_echoing_provider_messages() {
+        for (info, expected) in [
+            (
+                json!({"httpConnectionFailed":{"httpStatusCode":503}}),
+                CodexFailure::Unavailable,
+            ),
+            (
+                json!({"responseStreamDisconnected":{"httpStatusCode":401}}),
+                CodexFailure::Unauthorized,
+            ),
+            (
+                json!({"responseStreamConnectionFailed":{"httpStatusCode":null}}),
+                CodexFailure::Disconnected,
+            ),
+            (
+                json!({"responseTooManyFailedAttempts":{"httpStatusCode":503}}),
+                CodexFailure::Other,
+            ),
+            (json!("usageLimitExceeded"), CodexFailure::UsageLimit),
+            (json!("sessionBudgetExceeded"), CodexFailure::SessionBudget),
+            (json!("rateLimitExceeded"), CodexFailure::Busy),
+            (json!("contextWindowExceeded"), CodexFailure::ContextLimit),
+            (json!("badRequest"), CodexFailure::Rejected),
+        ] {
+            let error = json!({"codexErrorInfo":info,"message":"secret-provider-payload"});
+            assert_eq!(classify_failure(&error), expected);
+            assert!(!classify_failure(&error).to_string().contains("secret"));
+        }
+        assert_eq!(
+            classify_failure(&json!({"code":-32001})),
+            CodexFailure::Busy
+        );
+        assert_eq!(
+            classify_failure(&json!({"message":"insufficient balance"})),
+            CodexFailure::Other
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn transient_turn_failures_retry_twice_with_progress_and_count_actual_attempts() {
+        let calls = AtomicUsize::new(0);
+        let emitted = AtomicBool::new(false);
+        let progress = Arc::new(Mutex::new(Vec::new()));
+        let captured = progress.clone();
+        let status: StatusCallback =
+            Arc::new(move |message| captured.lock().unwrap().push(message.to_string()));
+        let (output, count) = retry_turn(
+            || {
+                let attempt = calls.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    if attempt < 2 {
+                        Err(CodexFailure::Unavailable.into())
+                    } else {
+                        Ok("answer")
+                    }
+                }
+            },
+            &emitted,
+            Some(&status),
+        )
+        .await
+        .unwrap();
+        assert_eq!(output, "answer");
+        assert_eq!(count, 3);
+        assert_eq!(progress.lock().unwrap().len(), 2);
+        let failed = retry_turn(
+            || async { Err::<(), _>(CodexFailure::Busy.into()) },
+            &emitted,
+            None,
+        )
+        .await;
+        assert!(matches!(failed, Err(AppError::Codex(CodexFailure::Busy))));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn permanent_errors_or_partial_output_are_never_replayed() {
+        for (reason, partial) in [
+            (CodexFailure::UsageLimit, false),
+            (CodexFailure::SessionBudget, false),
+            (CodexFailure::Unauthorized, false),
+            (CodexFailure::Rejected, false),
+            (CodexFailure::ContextLimit, false),
+            (CodexFailure::Other, false),
+            (CodexFailure::Disconnected, true),
+        ] {
+            let calls = AtomicUsize::new(0);
+            let emitted = AtomicBool::new(partial);
+            let result = retry_turn(
+                || {
+                    calls.fetch_add(1, Ordering::Relaxed);
+                    async { Err::<(), _>(reason.into()) }
+                },
+                &emitted,
+                None,
+            )
+            .await;
+            assert!(matches!(result,Err(AppError::Codex(actual)) if actual==reason));
+            assert_eq!(calls.load(Ordering::Relaxed), 1);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancellation_during_backoff_and_call_deadline_stop_work() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let captured = calls.clone();
+        let task = tokio::spawn(async move {
+            retry_turn(
+                || {
+                    captured.fetch_add(1, Ordering::Relaxed);
+                    async { Err::<(), _>(CodexFailure::Busy.into()) }
+                },
+                &AtomicBool::new(false),
+                None,
+            )
+            .await
+        });
+        tokio::task::yield_now().await;
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        task.abort();
+        let _ = task.await;
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        let result = retry_turn(
+            std::future::pending::<AppResult<()>>,
+            &AtomicBool::new(false),
+            None,
+        )
+        .await;
+        assert!(matches!(
+            result,
+            Err(AppError::Codex(CodexFailure::Timeout))
+        ));
+    }
 
     #[test]
     fn catalog_uses_native_labels_and_defaults_and_filters_hidden_models() {

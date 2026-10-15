@@ -85,6 +85,17 @@ async fn work(
             }
         };
         if !response.status().is_success() {
+            if matches!(
+                response.status().as_u16(),
+                408 | 429 | 500 | 502 | 503 | 504
+            ) {
+                eprintln!(
+                    "桥接服务暂时不可用（HTTP {}），5 秒后自动重连。",
+                    response.status().as_u16()
+                );
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
             return Err(AppError::Model(format!(
                 "桥接连接失败（HTTP {}）。请确认服务器已部署新版，并在网页重新配对。",
                 response.status().as_u16()
@@ -136,7 +147,16 @@ async fn execute(
     runner: &str,
     job: Job,
 ) -> AppResult<()> {
-    let provider = CodexProvider::new(job.model);
+    let statuses = Arc::new(Mutex::new(std::collections::VecDeque::new()));
+    let captured_statuses = statuses.clone();
+    let provider = CodexProvider::new(job.model).with_status(Arc::new(move |message| {
+        eprintln!("{message}");
+        let mut statuses = captured_statuses.lock().unwrap();
+        if statuses.len() >= 8 {
+            statuses.pop_front();
+        }
+        statuses.push_back(message.to_owned());
+    }));
     let buffer = Arc::new(Mutex::new(String::new()));
     let captured = buffer.clone();
     let overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -155,16 +175,25 @@ async fn execute(
     loop {
         tokio::select! {
             result = &mut future => {
+                let progress = std::mem::take(&mut *statuses.lock().unwrap());
+                for message in progress {
+                    if !send(client, base, token, runner, &job.id, Event::Status { message }).await? { return Ok(()); }
+                }
                 let pending = std::mem::take(&mut *buffer.lock().unwrap());
                 if !pending.is_empty() && !send(client, base, token, runner, &job.id, Event::Delta { text: pending }).await? { return Ok(()); }
                 let event = match result {
                     Ok(result) => Event::Complete { result },
+                    Err(AppError::Codex(reason)) => { eprintln!("{reason}"); Event::Failure { reason } },
                     Err(error) => { eprintln!("{error}"); Event::Error },
                 };
                 send(client, base, token, runner, &job.id, event).await?;
                 return Ok(());
             }
             _ = interval.tick() => {
+                let progress = std::mem::take(&mut *statuses.lock().unwrap());
+                for message in progress {
+                    if !send(client, base, token, runner, &job.id, Event::Status { message }).await? { return Ok(()); }
+                }
                 if overflow.load(std::sync::atomic::Ordering::Relaxed) {
                     send(client, base, token, runner, &job.id, Event::Error).await?;
                     return Err(AppError::Model("Codex 输出超出桥接缓冲区".into()));

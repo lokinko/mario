@@ -16,5 +16,7 @@ it("accepts only revisions corresponding to displayed data or completed ordinary
     true,
   );
   expect(requestPolicy("/holdings/a").acceptsRevision(true)).toBe(true);
-  expect(requestPolicy("/analysis").timeoutMs).toBe(300000);
+  expect(requestPolicy("/analysis").timeoutMs).toBe(1800000);
+  expect(requestPolicy("/analysis/stream").timeoutMs).toBe(1800000);
+  expect(requestPolicy("/analysis/stream").idleTimeoutMs).toBe(60000);
 });

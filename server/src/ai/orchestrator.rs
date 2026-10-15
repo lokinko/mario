@@ -553,6 +553,7 @@ fn stage_error(label: &str, error: AppError) -> AppError {
     match error {
         AppError::RateLimit(message) => AppError::RateLimit(format!("{label}失败：{message}")),
         AppError::Model(message) => AppError::Model(format!("{label}失败：{message}")),
+        AppError::Codex(reason) => AppError::Model(format!("{label}失败：{reason}")),
         error => error,
     }
 }

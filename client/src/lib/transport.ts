@@ -10,25 +10,48 @@ export class HttpError extends Error {
 
 export interface RequestOptions extends RequestInit {
   timeoutMs?: number;
+  idleTimeoutMs?: number;
   onResponse?: (response: Response) => void;
 }
 
-/** POST SSE with one deadline for headers and body; never replay a generation. */
+/** Separate the workflow deadline from a stalled connection. Never replay a generation. */
 export async function requestEvents<T>(
   url: string,
   options: RequestOptions,
   onEvent: (event: unknown) => T | undefined,
 ): Promise<T> {
-  const { timeoutMs = 300000, signal, onResponse, ...init } = options;
+  const {
+    timeoutMs = 1800000,
+    idleTimeoutMs = 60000,
+    signal,
+    onResponse,
+    ...init
+  } = options;
   const controller = new AbortController();
   const abort = () => controller.abort(signal?.reason);
   const timer = setTimeout(
     () =>
       controller.abort(
-        new Error("回复超时，已显示的内容尚未完成。请先查看历史记录再重试。"),
+        new Error(
+          "回复超时：本次问答已达到最长执行时间。已显示的内容尚未完成，请先查看历史记录再重试。",
+        ),
       ),
     timeoutMs,
   );
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const received = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(
+      () =>
+        controller.abort(
+          new Error(
+            "回复超时：服务长时间没有返回状态或心跳，连接可能已中断。已显示的内容尚未完成，请先查看历史记录再重试。",
+          ),
+        ),
+      idleTimeoutMs,
+    );
+  };
+  received();
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -39,6 +62,7 @@ export async function requestEvents<T>(
   try {
     controller.signal.throwIfAborted();
     const response = await fetch(url, { ...init, signal: controller.signal });
+    received();
     if (!response.ok) {
       let message = `服务返回 ${response.status}`;
       try {
@@ -61,6 +85,7 @@ export async function requestEvents<T>(
       controller.signal.throwIfAborted();
       const { value, done } = await reader.read();
       controller.signal.throwIfAborted();
+      received();
       buffer += done
         ? decoder.decode()
         : decoder.decode(value, { stream: true });
@@ -97,6 +122,7 @@ export async function requestEvents<T>(
     throw error;
   } finally {
     clearTimeout(timer);
+    clearTimeout(idleTimer);
     signal?.removeEventListener("abort", abort);
     controller.signal.removeEventListener("abort", cancel);
     await reader?.cancel().catch(() => {});
@@ -109,7 +135,13 @@ export async function requestJson<T>(
   url: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { timeoutMs = 15000, signal, onResponse, ...init } = options;
+  const {
+    timeoutMs = 15000,
+    idleTimeoutMs: _idleTimeoutMs,
+    signal,
+    onResponse,
+    ...init
+  } = options;
   const controller = new AbortController();
   const abort = () => controller.abort(signal?.reason);
   const timer = setTimeout(

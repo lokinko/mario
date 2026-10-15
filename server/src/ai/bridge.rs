@@ -28,10 +28,20 @@ pub(crate) struct Job {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub(crate) enum Event {
-    Delta { text: String },
-    Complete { result: SearchCompletion },
+    Delta {
+        text: String,
+    },
+    Complete {
+        result: SearchCompletion,
+    },
     Error,
     Heartbeat,
+    Status {
+        message: String,
+    },
+    Failure {
+        reason: crate::models::inference::CodexFailure,
+    },
 }
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -256,10 +266,19 @@ pub(crate) fn status(id: &str) -> Status {
 pub(crate) struct BridgeProvider {
     id: String,
     model: String,
+    events: Option<super::streaming::EventSender>,
 }
 impl BridgeProvider {
     pub fn new(id: String, model: String) -> Self {
-        Self { id, model }
+        Self {
+            id,
+            model,
+            events: None,
+        }
+    }
+    pub(crate) fn with_events(mut self, events: Option<super::streaming::EventSender>) -> Self {
+        self.events = events;
+        self
     }
     async fn generate(
         &self,
@@ -305,7 +324,7 @@ impl BridgeProvider {
                 search,
             })
             .map_err(|_| AppError::Busy("本机桥接队列繁忙".into()))?;
-        tokio::time::timeout(Duration::from_secs(190), async {
+        tokio::time::timeout(Duration::from_secs(240), async {
             loop {
                 let event = tokio::time::timeout(Duration::from_secs(35), receiver.recv())
                     .await
@@ -323,6 +342,11 @@ impl BridgeProvider {
                         return Ok(result)
                     }
                     Some(Event::Heartbeat) => {}
+                    Some(Event::Status { message }) => super::streaming::status(
+                        &self.events,
+                        message.chars().take(300).collect::<String>(),
+                    ),
+                    Some(Event::Failure { reason }) => return Err(reason.into()),
                     _ => {
                         return Err(AppError::Model(
                             "本机 Codex 调用失败或桥接已断开，请查看本机桥接窗口".into(),
@@ -393,6 +417,43 @@ mod tests {
         let runner = uuid::Uuid::new_v4().to_string();
         connection.claim(&runner, "fixture").unwrap();
         (id, connection, runner)
+    }
+    #[tokio::test]
+    async fn bridge_forwards_retry_progress_and_preserves_safe_failure_category() {
+        let (id, connection, runner) = setup();
+        let (sender, mut receiver) = mpsc::channel(8);
+        let provider = BridgeProvider::new(id.clone(), "fixture".into()).with_events(Some(sender));
+        let task = tokio::spawn(async move { provider.complete(vec![]).await });
+        let job = connection.poll(&runner, "fixture").await.unwrap().unwrap();
+        connection
+            .event(
+                &runner,
+                &job.id,
+                Event::Status {
+                    message: "Codex 正在自动重试（1/2）…".into(),
+                },
+            )
+            .unwrap();
+        let event = receiver.recv().await.unwrap();
+        assert!(
+            matches!(event,super::super::streaming::AnalysisEvent::Status {message} if message.contains("自动重试"))
+        );
+        connection
+            .event(
+                &runner,
+                &job.id,
+                Event::Failure {
+                    reason: crate::models::inference::CodexFailure::UsageLimit,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            task.await.unwrap(),
+            Err(AppError::Codex(
+                crate::models::inference::CodexFailure::UsageLimit
+            ))
+        ));
+        revoke(&id);
     }
     #[tokio::test]
     async fn bridge_streams_only_matching_job_and_preserves_search_provenance() {

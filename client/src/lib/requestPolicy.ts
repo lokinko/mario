@@ -12,24 +12,22 @@ export function isDataWrite(path: string, method = "GET") {
 }
 export function requestPolicy(path: string) {
   const resource = path.split("?")[0];
-  const timeoutMs = [
-    "/analysis",
-    "/analysis/stream",
-    "/model-config/test",
-    "/model-config/codex",
-  ].includes(resource)
-    ? 300000
-    : resource === "/model-config/codex/models" ||
-        resource === "/snapshot" ||
-        resource.startsWith("/fx-settings") ||
-        resource.startsWith("/market-data/fx-rate")
-      ? 30000
-      : resource.startsWith("/research-evidence") ||
-          resource.startsWith("/data/")
-        ? 60000
-        : 15000;
+  const timeoutMs = ["/analysis", "/analysis/stream"].includes(resource)
+    ? 1800000
+    : ["/model-config/test", "/model-config/codex"].includes(resource)
+      ? 300000
+      : resource === "/model-config/codex/models" ||
+          resource === "/snapshot" ||
+          resource.startsWith("/fx-settings") ||
+          resource.startsWith("/market-data/fx-rate")
+        ? 30000
+        : resource.startsWith("/research-evidence") ||
+            resource.startsWith("/data/")
+          ? 60000
+          : 15000;
   return {
     timeoutMs,
+    ...(resource === "/analysis/stream" ? { idleTimeoutMs: 60000 } : {}),
     acceptsRevision: (dataWrite: boolean) =>
       resource === "/snapshot" ||
       resource === "/fx-settings" ||

@@ -1,4 +1,5 @@
 mod endpoint;
+pub(crate) mod inference;
 pub(crate) mod information;
 pub(crate) mod market;
 pub(crate) use endpoint::validate_endpoint;

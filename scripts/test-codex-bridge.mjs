@@ -1,14 +1,17 @@
 // Disposable local end-to-end test; --live explicitly uses local Codex quota.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join, sep } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 const live = process.argv.includes('--live');
+const protocolFixture = process.argv.includes('--protocol-fixture');
+const deep = protocolFixture || process.argv.includes('--deep');
+assert(!(live && protocolFixture), '--live and --protocol-fixture are mutually exclusive');
 const hosted = process.argv.includes('--hosted');
 if (hosted) assert(process.env.MARIO_TEST_DATABASE_URL, '--hosted requires MARIO_TEST_DATABASE_URL pointing to a disposable PostgreSQL database');
 const binary = resolve(process.env.MARIO_TEST_SERVER_BIN || `server/target/debug/mario-server${process.platform === 'win32' ? '.exe' : ''}`);
@@ -46,6 +49,16 @@ let fakeTask;
 let holdNext = false, heldJob, cancelledJob;
 let expectedModel = 'bridge-fixture';
 try {
+  if (protocolFixture) {
+    const fixture=join(directory,`codex-fixture${process.platform==='win32'?'.exe':''}`);
+    execFileSync('rustc',[resolve('scripts/fixtures/codex-app-server.rs'),'--edition','2021','-o',fixture],{stdio:'pipe'});
+    environment.MARIO_CODEX_BIN=fixture;
+    environment.MARIO_TEST_CODEX_SCENARIO=join(directory,'scenario');
+    environment.MARIO_TEST_CODEX_COUNTER=join(directory,'counter');
+    environment.MARIO_TEST_CODEX_REPORT=join(directory,'report');
+    await writeFile(environment.MARIO_TEST_CODEX_SCENARIO,'success');
+    await writeFile(environment.MARIO_TEST_CODEX_REPORT,report);
+  }
   let server = start(['--port', String(port)]);
   for (let attempt = 0; attempt < 100; attempt++) {
     try { await request(hosted ? '/server' : '/health'); break; } catch { if (server.exitCode !== null) throw Error('服务启动失败'); await sleep(100); }
@@ -63,7 +76,7 @@ try {
   await request('/model-config', 'GET', undefined, pairingCode, 401);
   assert.equal((await request('/codex-bridge')).online, false);
   await request('/codex-bridge/enable', 'POST', undefined, auth, 400);
-  if (live) {
+  if (live || protocolFixture) {
     const worker = start(['--codex-bridge', site]);
     worker.stdin.end(pairingCode + '\n');
   } else {
@@ -127,9 +140,13 @@ try {
   const connection = await request('/model-config/test', 'POST');
   assert.equal(connection.ok, true);
   console.log(`PASS ${live ? '真实 Codex' : '模拟 Codex'} 配对、启用、模型连接；模型 ${config.model}`);
-  const input = { question:'这是连通性验收。当前没有提供任何投资资料，请简短说明还需要哪些资料；不要提供交易建议。', workflow:'quick', webSearch:false, useMemory:false, reflect:false, exploreAlternatives:false };
+  if (protocolFixture) {
+    await writeFile(environment.MARIO_TEST_CODEX_SCENARIO,'transient');
+    await writeFile(environment.MARIO_TEST_CODEX_COUNTER,'0');
+  }
+  const input = { question:'这是连通性验收。当前没有提供任何投资资料，请简短说明还需要哪些资料；不要提供交易建议。', workflow:deep?'deep':'quick', webSearch:deep, useMemory:false, reflect:deep, exploreAlternatives:deep };
   const preview = await request('/analysis/preview', 'POST', input);
-  const response = await fetch(`${site}/api/analysis/stream`, { method:'POST', headers:{Authorization:`Bearer ${auth}`,'Content-Type':'application/json',...(revisions.has(auth)?{'If-Match':revisions.get(auth)}:{})}, body:JSON.stringify({...input,previewRevision:preview.contextRevision}), signal:AbortSignal.timeout(280000) });
+  const response = await fetch(`${site}/api/analysis/stream`, { method:'POST', headers:{Authorization:`Bearer ${auth}`,'Content-Type':'application/json',...(revisions.has(auth)?{'If-Match':revisions.get(auth)}:{})}, body:JSON.stringify({...input,previewRevision:preview.contextRevision}), signal:AbortSignal.timeout(deep?1800000:280000) });
   assert.equal(response.status, 200);
   const events = (await response.text()).split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6)));
   assert(events.some(event => event.type === 'draft'), '缺少流式草稿');
@@ -137,8 +154,26 @@ try {
   assert(completed, `没有完成事件: ${JSON.stringify(events.filter(e => e.type === 'error'))}`);
   assert.equal(completed.result.transparency.provider, 'codex-bridge');
   assert.equal((await request('/analyses')).length, 1);
+  if (protocolFixture) {
+    assert(events.some(event=>event.type==='status' && event.message.includes('自动重试')),'重试进度必须经过桥接到达网页');
+    assert(completed.result.workflowTrace.calls.length>=5,'必须完整执行深度分析与搜索');
+    assert.equal(completed.result.workflowTrace.calls[0].requestCount,2);
+    console.log('PASS Codex App Server 503 自动恢复 → 桥接重试状态 → 深度分析+联网 → 单次保存');
+    for (const [scenario,expected] of [['quota','用量限制'],['partial','暂时不可用'],['native-retry',null]]) {
+      await writeFile(environment.MARIO_TEST_CODEX_SCENARIO,scenario);
+      await writeFile(environment.MARIO_TEST_CODEX_COUNTER,'0');
+      const result=await request('/model-config/test','POST',undefined,auth,expected?502:200);
+      if (expected) assert(result.error.includes(expected),JSON.stringify(result));
+      else assert(result.ok);
+      assert.equal(await readFile(environment.MARIO_TEST_CODEX_COUNTER,'utf8'),'1',`${scenario} 不应启动额外推理`);
+      assert(!JSON.stringify(result).includes('SECRET-test-provider-body'));
+    }
+    assert.equal((await request('/analyses')).length,1);
+    assert(!logs.includes('SECRET-test-provider-body'));
+    console.log('PASS 额度不重试、已有输出不重放、原生恢复不叠加重试、错误分类保留且不泄露原文');
+  }
   console.log('PASS 预览 → 桥接推理 → SSE 草稿 → 完整结果 → 历史保存；独立 Agent 已绕过');
-  if (!live) {
+  if (!live && !protocolFixture) {
     const nextPreview = await request('/analysis/preview', 'POST', input);
     holdNext = true;
     const abort = new AbortController();

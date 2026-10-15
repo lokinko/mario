@@ -59,7 +59,8 @@ where
         .route(
             "/api/server",
             get(|| async {
-                Json(serde_json::json!({"mode":"hosted", "database":"postgresql", "protocol":1, "codexBridge":1}))
+                Json(serde_json::json!({"mode":"hosted", "database":"postgresql", "protocol":1, "codexBridge":1,
+                    "analysisTimeoutSeconds":crate::models::inference::ANALYSIS_TIMEOUT.as_secs(), "codexMaxAttempts":3}))
             }),
         )
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024))

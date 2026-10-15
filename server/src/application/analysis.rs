@@ -133,28 +133,37 @@ impl<'a> AnalysisService<'a> {
         // The immutable authorized context is now frozen. Release the account lock
         // while the remote Agent runs so other devices can continue editing.
         self.db.unlock_account()?;
-        let result = if let Some(events) = events {
-            executor
-                .execute_stream(
-                    config,
-                    api_key,
-                    request.clone(),
-                    prepared.context,
-                    prepared.memories,
-                    events,
-                )
-                .await
-        } else {
-            executor
-                .execute(
-                    config,
-                    api_key,
-                    request.clone(),
-                    prepared.context,
-                    prepared.memories,
-                )
-                .await
+        let execution = async {
+            if let Some(events) = events {
+                executor
+                    .execute_stream(
+                        config,
+                        api_key,
+                        request.clone(),
+                        prepared.context,
+                        prepared.memories,
+                        events,
+                    )
+                    .await
+            } else {
+                executor
+                    .execute(
+                        config,
+                        api_key,
+                        request.clone(),
+                        prepared.context,
+                        prepared.memories,
+                    )
+                    .await
+            }
         };
+        let result = tokio::time::timeout(crate::models::inference::ANALYSIS_TIMEOUT, execution)
+            .await
+            .unwrap_or_else(|_| {
+                Err(AppError::Model(
+                    crate::models::inference::ANALYSIS_TIMEOUT_MESSAGE.into(),
+                ))
+            });
         self.db.lock_account()?;
         let result = result?;
         self.db.save_analysis(
@@ -322,6 +331,58 @@ mod tests {
         db.save_model_metadata("codex", "codex://local", "fixture")
             .unwrap();
         db
+    }
+    struct DelayedExecutor {
+        delay: std::time::Duration,
+        dropped: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+    #[async_trait::async_trait]
+    impl AnalysisExecutor for DelayedExecutor {
+        async fn execute(
+            &self,
+            config: ModelConfig,
+            key: Option<String>,
+            request: AnalysisRequest,
+            context: context::BuiltContext,
+            memories: Vec<MemoryItem>,
+        ) -> AppResult<AnalysisResult> {
+            struct Guard(std::sync::Arc<std::sync::atomic::AtomicBool>);
+            impl Drop for Guard {
+                fn drop(&mut self) {
+                    self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+            let _guard = Guard(self.dropped.clone());
+            tokio::time::sleep(self.delay).await;
+            Executor {
+                captured: Default::default(),
+                fail: false,
+            }
+            .execute(config, key, request, context, memories)
+            .await
+        }
+    }
+    #[tokio::test(start_paused = true)]
+    async fn long_workflow_survives_five_minutes_but_deadline_cancels_without_saving() {
+        for (seconds, success) in [(360, true), (26 * 60, false)] {
+            let db = database();
+            let service = AnalysisService::new(&db);
+            let dropped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let executor = DelayedExecutor {
+                delay: std::time::Duration::from_secs(seconds),
+                dropped: dropped.clone(),
+            };
+            let mut request = request(Vec::new());
+            request.preview_revision = Some(service.preview(&request).unwrap().context_revision);
+            let result = service.execute(request, &executor).await;
+            assert_eq!(result.is_ok(), success);
+            if !success {
+                assert!(result.unwrap_err().to_string().contains("25 分钟"));
+            }
+            assert!(dropped.load(std::sync::atomic::Ordering::Relaxed));
+            assert_eq!(db.analysis_history().unwrap().len(), usize::from(success));
+            db.save_profile(&db.snapshot().unwrap().profile).unwrap();
+        }
     }
     #[tokio::test]
     async fn execution_uses_the_preview_payload_and_persists_the_original_user_message() {

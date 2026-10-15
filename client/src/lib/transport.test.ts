@@ -89,6 +89,84 @@ describe("streaming response lifecycle", () => {
     await vi.advanceTimersByTimeAsync(100);
     await pending;
   });
+  it("keeps a deep workflow alive beyond five minutes while server heartbeats arrive", async () => {
+    vi.useFakeTimers();
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            stream = controller;
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const pending = requestEvents("/stream", { method: "POST" }, (event) =>
+      (event as { type: string }).type === "complete" ? "done" : undefined,
+    );
+    for (let i = 0; i < 24; i++) {
+      await vi.advanceTimersByTimeAsync(15000);
+      stream.enqueue(new TextEncoder().encode(": keep-alive\n\n"));
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    stream.enqueue(new TextEncoder().encode('data: {"type":"complete"}\n\n'));
+    expect(await pending).toBe("done");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("stops an idle stream without reissuing a generation", async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(new ReadableStream({ start() {}, cancel }), {
+        headers: { "content-type": "text/event-stream" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const pending = expect(
+      requestEvents(
+        "/stream",
+        { method: "POST", idleTimeoutMs: 100 },
+        () => undefined,
+      ),
+    ).rejects.toThrow("没有返回状态或心跳");
+    await vi.advanceTimersByTimeAsync(100);
+    await pending;
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+  it("retains an absolute deadline even while heartbeats arrive", async () => {
+    vi.useFakeTimers();
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              stream = controller;
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+      ),
+    );
+    const pending = expect(
+      requestEvents(
+        "/stream",
+        { timeoutMs: 200, idleTimeoutMs: 100 },
+        () => undefined,
+      ),
+    ).rejects.toThrow("最长执行时间");
+    for (let i = 0; i < 3; i++) {
+      await vi.advanceTimersByTimeAsync(50);
+      stream.enqueue(new TextEncoder().encode(": heartbeat\n\n"));
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    await vi.advanceTimersByTimeAsync(50);
+    await pending;
+  });
 });
 describe("local request lifecycle", () => {
   it("retries a transient read failure", async () => {

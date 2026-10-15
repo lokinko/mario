@@ -29,6 +29,8 @@ pub enum AppError {
     Validation(String),
     #[error("{0}")]
     Model(String),
+    #[error("{0}")]
+    Codex(#[from] crate::models::inference::CodexFailure),
 }
 
 impl Serialize for AppError {

@@ -35,6 +35,8 @@ try {
     assert.equal(server.database, 'postgresql');
     assert.equal(server.protocol, 1);
     assert.equal(server.codexBridge, 1, '后端尚未部署本机 Codex 桥接');
+    assert.equal(server.analysisTimeoutSeconds, 1500, '后端尚未部署多阶段问答超时修复');
+    assert.equal(server.codexMaxAttempts, 3, '后端尚未部署 Codex 重试修复');
     console.log(`PASS ${url.protocol === 'https:' ? 'HTTPS' : '本机 HTTP'} 与多用户 PostgreSQL API`);
     const page = await (await request('')).text();
     assert.match(page, /id=["']root["']/);

@@ -82,7 +82,7 @@ impl AgentExecutor {
                 memories,
             };
             let mut response = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(280))
+                .timeout(crate::models::inference::AGENT_HTTP_TIMEOUT)
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?
                 .post(format!(
@@ -124,12 +124,15 @@ impl AgentExecutor {
             return Ok(response.json().await?);
         }
         let provider: Box<dyn ModelProvider> = if config.provider == "codex-bridge" {
-            Box::new(crate::ai::bridge::BridgeProvider::new(
-                api_key.ok_or_else(|| AppError::Validation("请先配对本机 Codex".into()))?,
-                config.model,
-            ))
+            Box::new(
+                crate::ai::bridge::BridgeProvider::new(
+                    api_key.ok_or_else(|| AppError::Validation("请先配对本机 Codex".into()))?,
+                    config.model,
+                )
+                .with_events(events.clone()),
+            )
         } else if config.provider == "codex" {
-            Box::new(CodexProvider::new(config.model))
+            Box::new(CodexProvider::new(config.model).with_events(events.clone()))
         } else {
             Box::new(
                 NativeModelProvider::new(
@@ -217,10 +220,17 @@ async fn run(Json(job): Json<Job>) -> AppResult<Json<AnalysisResult>> {
         job.config.model,
         job.api_key,
     )?;
+    let retriever = HybridMemoryRetriever::default();
+    let orchestrator = InvestmentOrchestrator::new(&provider, &retriever);
     Ok(Json(
-        InvestmentOrchestrator::new(&provider, &HybridMemoryRetriever::default())
-            .run(&job.request, &job.context, &job.memories)
-            .await?,
+        tokio::time::timeout(
+            crate::models::inference::ANALYSIS_TIMEOUT,
+            orchestrator.run(&job.request, &job.context, &job.memories),
+        )
+        .await
+        .map_err(|_| {
+            AppError::Model(crate::models::inference::ANALYSIS_TIMEOUT_MESSAGE.into())
+        })??,
     ))
 }
 
@@ -241,10 +251,13 @@ async fn run_stream(
     let future = Box::pin(async move {
         let _permit = permit;
         let retriever = HybridMemoryRetriever::default();
-        InvestmentOrchestrator::new(&provider, &retriever)
-            .with_events(sender)
-            .run(&job.request, &job.context, &job.memories)
-            .await
+        let orchestrator = InvestmentOrchestrator::new(&provider, &retriever).with_events(sender);
+        tokio::time::timeout(
+            crate::models::inference::ANALYSIS_TIMEOUT,
+            orchestrator.run(&job.request, &job.context, &job.memories),
+        )
+        .await
+        .map_err(|_| AppError::Model(crate::models::inference::ANALYSIS_TIMEOUT_MESSAGE.into()))?
     });
     let mut response =
         axum::response::Sse::new(crate::streaming::response_stream(future, receiver))
