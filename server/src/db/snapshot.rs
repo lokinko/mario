@@ -62,22 +62,15 @@ pub(super) fn build_snapshot(
             action: "在“我的情况 → 汇率设置”重试自动更新或统一修改汇率。".into(),
         });
     }
-    if valuation_status.undated_holding_count > 0 || valuation_status.valuation_dates.len() > 1 {
+    if valuation_status.undated_holding_count > 0 {
         findings.push(crate::models::RiskFinding {
             level: "medium".into(),
-            title: "持仓估值日期尚未对齐".into(),
-            detail: if valuation_status.undated_holding_count > 0 {
-                format!(
-                    "有 {} 项持仓缺少估值日期，不能建立可靠的周期比较基线。",
-                    valuation_status.undated_holding_count
-                )
-            } else {
-                format!(
-                    "当前持仓使用了 {} 个不同估值日期，组合变化可能混入时间错位。",
-                    valuation_status.valuation_dates.len()
-                )
-            },
-            action: "把全部持仓更新到同一估值日，便于核对组合价值。".into(),
+            title: "持仓缺少估值日期".into(),
+            detail: format!(
+                "有 {} 项持仓缺少估值日期，不能建立可靠的周期比较基线。",
+                valuation_status.undated_holding_count
+            ),
+            action: "补充缺少的持仓估值日期，便于核对组合价值。".into(),
         });
     }
     let verified_ids = holding_valuations

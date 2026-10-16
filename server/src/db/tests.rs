@@ -1196,6 +1196,52 @@ fn detailed_holding_input() -> HoldingInput {
 }
 
 #[test]
+fn different_recent_valuation_dates_allow_actions_but_stale_values_still_block() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("valuation-dates.db")).unwrap();
+    let today = NaiveDate::parse_from_str(&crate::models::market::today(), "%Y-%m-%d").unwrap();
+    let mut investment = detailed_holding_input();
+    investment.valuation_date = today.to_string();
+    investment.target_pct = 100.0;
+    let created = db.add_holding(&investment).unwrap();
+    let investment_id = created.holdings[0].id.clone();
+    db.add_holding(&HoldingInput {
+        symbol: String::new(),
+        name: "人民币存款".into(),
+        asset_class: "现金".into(),
+        market_value: 10_000.0,
+        cost_basis: 0.0,
+        cost_price: None,
+        quantity: None,
+        current_price: None,
+        valuation_date: (today - chrono::Duration::days(1)).to_string(),
+        ..detailed_holding_input()
+    })
+    .unwrap();
+
+    let snapshot = db.snapshot().unwrap();
+    assert_eq!(snapshot.valuation_status.valuation_dates.len(), 2);
+    assert!(snapshot.valuation_status.aligned_valuation_date.is_none());
+    assert!(snapshot.valuation_status.decision_ready);
+    assert!(snapshot.valuation_status.warnings.is_empty());
+    assert!(!snapshot.plan.rebalancing.is_empty());
+    assert!(!snapshot
+        .findings
+        .iter()
+        .any(|finding| finding.title.contains("估值日期")));
+
+    investment.valuation_date = (today - chrono::Duration::days(8)).to_string();
+    let stale = db.update_holding(&investment_id, &investment).unwrap();
+    assert!(!stale.valuation_status.decision_ready);
+    assert!(stale.plan.rebalancing.is_empty());
+    assert!(stale
+        .valuation_status
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("已超过 7 天")));
+}
+
+#[test]
 fn manual_holding_details_survive_restart_history_and_sync() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("details.db");

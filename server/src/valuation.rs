@@ -54,9 +54,6 @@ pub fn status(base_currency: &str, holdings: &[Holding]) -> PortfolioValuationSt
     if undated_holding_count > 0 {
         warnings.push("存在缺少估值日期的持仓".into());
     }
-    if valuation_dates.len() > 1 {
-        warnings.push("持仓估值日期不一致".into());
-    }
     let today =
         chrono::NaiveDate::parse_from_str(&crate::models::market::today(), "%Y-%m-%d").unwrap();
     let recent = |day: &str| {
