@@ -1542,6 +1542,15 @@ button:focus-visible {
 .data-transfer-card > .secondary {
   margin-top: auto;
 }
+.data-replacement-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.data-replacement-option input {
+  width: auto;
+}
 .file-import-button {
   position: relative;
   overflow: hidden;

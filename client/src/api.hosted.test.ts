@@ -6,7 +6,7 @@ import {
   updateHoldingAmount,
   saveHoldingTrade,
 } from "./api/portfolio";
-import { checkServerVersion } from "./api/account";
+import { checkServerVersion, prepareDataReplacement } from "./api/account";
 import { previewAnalysis } from "./api/research";
 import { acceptRevision, dataRevision, serviceUrl } from "./lib/service";
 import { setWebToken, webToken } from "./lib/webSession";
@@ -269,4 +269,44 @@ it("advances the revision after an acknowledged save and leaves unsent drafts bl
     "查看最新资料",
   );
   expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("pins replacement to its backup revision even if newer data was loaded", async () => {
+  acceptRevision("10");
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(response({ tables: ["backup"] }, "12"))
+    .mockResolvedValueOnce(response({ error: "资料已变化" }, "13", 409));
+  vi.stubGlobal("fetch", fetcher);
+  const backup = await prepareDataReplacement();
+  expect(backup.data).toEqual({ tables: ["backup"] });
+  expect(dataRevision()).toBe("10");
+  acceptRevision("13");
+  await expect(backup.replace({ tables: ["replacement"] })).rejects.toThrow(
+    "资料已变化",
+  );
+  expect(fetcher.mock.calls[1][0]).toBe(
+    `${serviceUrl()}/data/import?replace=true`,
+  );
+  expect(fetcher.mock.calls[1][1].headers["If-Match"]).toBe("12");
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({
+    tables: ["replacement"],
+  });
+  expect(dataRevision()).toBe("13");
+});
+
+it("refuses replacement after switching accounts", async () => {
+  const fetcher = vi.fn().mockResolvedValue(response({}, "12"));
+  vi.stubGlobal("fetch", fetcher);
+  const backup = await prepareDataReplacement();
+  setWebToken("other-account");
+  await expect(backup.replace({})).rejects.toThrow("账号已切换");
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it("refuses to prepare replacement without a backup revision", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}")));
+  await expect(prepareDataReplacement()).rejects.toThrow(
+    "未获取到备份的数据版本",
+  );
 });

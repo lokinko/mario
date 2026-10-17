@@ -9,7 +9,7 @@ use crate::{
 use accounts::{Accounts, Credentials};
 use axum::http::StatusCode;
 use axum::{
-    extract::{Request, State},
+    extract::{Query, Request, State},
     http::{header, HeaderValue, Method},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -261,11 +261,17 @@ async fn export(
 ) -> AppResult<Json<db::SyncDataset>> {
     Ok(Json(state.db.export_sync_data()?))
 }
+#[derive(Default, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct ImportOptions {
+    replace: bool,
+}
 async fn import(
     Extension(state): Extension<Arc<RequestContext>>,
+    Query(options): Query<ImportOptions>,
     Json(data): Json<db::SyncDataset>,
 ) -> AppResult<Json<serde_json::Value>> {
-    if !state.db.is_empty_for_import()? {
+    if !options.replace && !state.db.is_empty_for_import()? {
         return Err(AppError::Conflict("仅允许向空账户导入数据".into()));
     }
     state.db.import_sync_data(&data)?;

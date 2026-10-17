@@ -1,11 +1,16 @@
 import { useState } from "react";
 import { Cloud, Download, LoaderCircle, RefreshCw, Upload } from "lucide-react";
-import { exportData, importData } from "../../api/account";
+import {
+  exportData,
+  importData,
+  prepareDataReplacement,
+} from "../../api/account";
 import { PageHeader } from "../../components/PageHeader";
 import type { SyncState } from "../../lib/autoSync";
 import { serviceUrl } from "../../lib/service";
 import { saveTextDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
+import { useRequestGuard } from "../../lib/useRequestGuard";
 export function ServerData({
   flash,
   onRestore,
@@ -20,6 +25,8 @@ export function ServerData({
   const [operation, setOperation] = useState<"export" | "import" | null>(null);
   const busy = operation !== null;
   const [error, setError] = useState("");
+  const [replace, setReplace] = useState(false);
+  const requests = useRequestGuard();
   return (
     <section className="page narrow cloud-page">
       <PageHeader title="账号与数据" />
@@ -102,8 +109,23 @@ export function ServerData({
             </h2>
           </div>
           <p className="section-intro">
-            仅适用于空账号，支持 JSON 文件，最大 64 MB。
+            支持 JSON 文件，最大 64 MB。默认仅导入空账号。
           </p>
+          <label className="data-replacement-option">
+            <input
+              type="checkbox"
+              checked={replace}
+              disabled={busy}
+              onChange={(e) => setReplace(e.target.checked)}
+            />
+            覆盖当前账号已有数据
+          </label>
+          {replace && (
+            <p className="section-intro">
+              将替换当前账号的全部业务数据，包括交易、持仓和历史记录，不做合并。
+              覆盖前会自动下载当前数据的备份，请确认浏览器允许下载并妥善保管。
+            </p>
+          )}
           <label
             className={`secondary file-import-button ${busy ? "disabled" : ""}`}
           >
@@ -112,7 +134,11 @@ export function ServerData({
             ) : (
               <Upload size={16} />
             )}
-            {operation === "import" ? "导入中…" : "导入到空账号"}
+            {operation === "import"
+              ? "导入中…"
+              : replace
+                ? "选择文件并覆盖导入"
+                : "导入到空账号"}
             <input
               type="file"
               accept="application/json,.json"
@@ -121,20 +147,47 @@ export function ServerData({
                 const input = e.currentTarget;
                 const file = input.files?.[0];
                 if (!file) return;
+                const isCurrent = requests.begin();
                 setOperation("import");
                 setError("");
                 try {
                   if (file.size > 64 * 1024 * 1024)
                     throw new Error("文件超过 64 MB");
                   const data = JSON.parse(await file.text());
-                  if (!confirm("将把此文件导入当前空账号，是否继续？")) return;
-                  await importData(data);
+                  if (!isCurrent()) return;
+                  if (
+                    !confirm(
+                      replace
+                        ? "将先下载当前账号的备份，再用此文件替换当前账号的全部业务数据（包括交易、持仓和历史记录），不做合并。是否继续？"
+                        : "将把此文件导入当前空账号，是否继续？",
+                    )
+                  )
+                    return;
+                  if (replace) {
+                    const backup = await prepareDataReplacement();
+                    if (!isCurrent()) return;
+                    await saveTextDownload(
+                      `mario-before-import-${new Date().toISOString().replace(/[:.]/g, "-")}.json`,
+                      JSON.stringify(backup.data),
+                      "application/json",
+                    );
+                    if (!isCurrent()) return;
+                    await backup.replace(data);
+                  } else {
+                    await importData(data);
+                  }
+                  if (!isCurrent()) return;
                   await onRestore();
-                  flash("数据已导入");
+                  if (isCurrent())
+                    flash(
+                      replace
+                        ? "数据已覆盖导入，覆盖前备份已下载"
+                        : "数据已导入",
+                    );
                 } catch (error) {
-                  setError(String(error));
+                  if (isCurrent()) setError(String(error));
                 } finally {
-                  setOperation(null);
+                  if (isCurrent()) setOperation(null);
                   input.value = "";
                 }
               }}

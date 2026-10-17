@@ -197,6 +197,43 @@ try{
   assert.deepEqual(copied.corporateActions,financial.corporateActions);
   assert.equal((await request(base,`/holdings/${security}/financial-history`,financialCopy)).records.length,4);
   console.log('PASS PostgreSQL exact-source and company-action lifecycle, JSON restore and replica reads');
+  // Explicit account replacement must replace existing trades, preserve credentials,
+  // remain isolated, roll back failed imports, and reject changes since the backup.
+  await request(base,'/model-config',financialCopy,'PUT',{provider:'openai-chat',baseUrl:modelUrl,model:'target-model',apiKey:'target-key-preserved'});
+  const targetTrade={...lostRequest,requestId:randomUUID(),newHolding:{...lostRequest.newHolding,name:'覆盖前独有交易'},account:'覆盖前账户'};
+  const targetBefore=await request(base,'/holding-trades',financialCopy,'POST',targetTrade);
+  const targetBackup=await request(base,'/data/export',financialCopy);
+  await request(base,'/data/import',financialCopy,'POST',financialBackup,409);
+  await request(base,'/data/import?replace=false',financialCopy,'POST',financialBackup,409);
+  const replacementInvalid=structuredClone(financialBackup);
+  const replacementHoldings=replacementInvalid.tables.find(t=>t.name==='holdings');
+  replacementHoldings.rows.push([...replacementHoldings.rows[0]]);
+  const beforeReplacementFailure=financialCopy.revision;
+  await request(base,'/data/import?replace=true',financialCopy,'POST',replacementInvalid,500);
+  assert.deepEqual((await request(base,'/data/export',financialCopy)).tables,targetBackup.tables,'failed replacement must preserve every original table');
+  assert.equal(financialCopy.revision,beforeReplacementFailure,'failed replacement must roll back the revision');
+  const staleReplacement={...financialCopy};
+  await request(replica,'/profile',financialCopy,'PUT',{...targetBefore.profile,monthlyIncome:34567});
+  await request(base,'/data/import?replace=true',staleReplacement,'POST',financialBackup,409);
+  assert.equal((await request(base,'/snapshot',financialCopy)).profile.monthlyIncome,34567);
+  await request(base,'/data/import?replace=true',financialCopy,'POST',financialBackup);
+  const replaced=await request(replica,'/snapshot',financialCopy);
+  assert.deepEqual(replaced.holdingTrades,financial.holdingTrades);
+  assert.deepEqual(replaced.corporateActions,financial.corporateActions);
+  assert.deepEqual(replaced.accounting,financial.accounting);
+  assert.equal(replaced.profile.monthlyIncome,financial.profile.monthlyIncome);
+  assert(!replaced.holdingTrades.some(t=>t.id===targetTrade.requestId));
+  assert.equal((await request(base,`/holdings/${security}/financial-history`,financialCopy)).records.length,4);
+  assert.deepEqual((await request(base,'/data/export',financialAccount)).tables,financialBackup.tables,'replacement must not modify the source account');
+  const preservedModel=await request(base,'/model-config',financialCopy);
+  assert.equal(preservedModel.model,'target-model');assert.equal(preservedModel.hasApiKey,true);
+  await request(base,'/model-config/test',financialCopy,'POST');
+  assert.equal(modelRequests.at(-1).auth,'Bearer target-key-preserved');
+  await request(base,'/data/import?replace=true',financialCopy,'POST',targetBackup);
+  const rolledBack=await request(replica,'/snapshot',financialCopy);
+  assert.deepEqual(rolledBack.holdingTrades,targetBefore.holdingTrades,'the downloaded backup must restore original trades');
+  assert.deepEqual(rolledBack.accounting,targetBefore.accounting);
+  console.log('PASS account overwrite import: existing trades replaced, original backup restored, transaction rollback, revision conflicts, credential preservation and tenant isolation');
   await request(base,'/cloud/status',a,'GET',undefined,404);
   assert.equal((await fetch(base.replace('/api','')+'/mario.db')).status,404);
   for (const child of children) { if(child.exitCode===null && child.signalCode===null){const ended=once(child,'exit');child.kill();await ended;} }

@@ -9,10 +9,15 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { ServerData } from "./ServerData";
 import * as accountApi from "../../api/account";
+import { saveTextDownload } from "../../lib/download";
 
 vi.mock("../../api/account", () => ({
   exportData: vi.fn(),
   importData: vi.fn(),
+  prepareDataReplacement: vi.fn(),
+}));
+vi.mock("../../lib/download", () => ({
+  saveTextDownload: vi.fn().mockResolvedValue(undefined),
 }));
 afterEach(() => {
   cleanup();
@@ -23,7 +28,7 @@ afterEach(() => {
 function mount() {
   const onRestore = vi.fn().mockResolvedValue(undefined);
   const flash = vi.fn();
-  render(
+  const view = render(
     <ServerData
       flash={flash}
       onRestore={onRestore}
@@ -31,12 +36,15 @@ function mount() {
       onRetryAuto={vi.fn()}
     />,
   );
-  return { onRestore, flash };
+  return { onRestore, flash, unmount: view.unmount };
 }
-function chooseFile(value: string, size = value.length) {
-  fireEvent.change(screen.getByLabelText("导入到空账号"), {
-    target: { files: [{ size, text: () => Promise.resolve(value) }] },
-  });
+function chooseFile(value: string, size = value.length, replace = false) {
+  fireEvent.change(
+    screen.getByLabelText(replace ? "选择文件并覆盖导入" : "导入到空账号"),
+    {
+      target: { files: [{ size, text: () => Promise.resolve(value) }] },
+    },
+  );
 }
 
 it("restores export and import controls after an export failure", async () => {
@@ -94,4 +102,132 @@ it("refreshes application data only after a confirmed import succeeds", async ()
   await waitFor(() => expect(flash).toHaveBeenCalledWith("数据已导入"));
   expect(accountApi.importData).toHaveBeenCalledWith({ profile: {} });
   expect(onRestore).toHaveBeenCalledOnce();
+});
+
+it("downloads the original data before replacing and refreshes after success", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const replace = vi.fn().mockResolvedValue(undefined);
+  const original = { tables: ["original"] };
+  vi.mocked(accountApi.prepareDataReplacement).mockResolvedValueOnce({
+    data: original,
+    replace,
+  });
+  const { onRestore, flash } = mount();
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
+  );
+  chooseFile('{"tables":["replacement"]}', undefined, true);
+  await waitFor(() =>
+    expect(flash).toHaveBeenCalledWith("数据已覆盖导入，覆盖前备份已下载"),
+  );
+  expect(window.confirm).toHaveBeenCalledWith(
+    expect.stringContaining("全部业务数据"),
+  );
+  expect(saveTextDownload).toHaveBeenCalledWith(
+    expect.stringMatching(/^mario-before-import-.*\.json$/),
+    JSON.stringify(original),
+    "application/json",
+  );
+  expect(replace).toHaveBeenCalledWith({ tables: ["replacement"] });
+  expect(vi.mocked(saveTextDownload).mock.invocationCallOrder[0]).toBeLessThan(
+    replace.mock.invocationCallOrder[0],
+  );
+  expect(replace.mock.invocationCallOrder[0]).toBeLessThan(
+    onRestore.mock.invocationCallOrder[0],
+  );
+  expect(accountApi.importData).not.toHaveBeenCalled();
+});
+
+it("does not back up or replace when the overwrite confirmation is cancelled", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(false);
+  const { onRestore } = mount();
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
+  );
+  chooseFile("{}", undefined, true);
+  await waitFor(() => expect(window.confirm).toHaveBeenCalled());
+  expect(accountApi.prepareDataReplacement).not.toHaveBeenCalled();
+  expect(saveTextDownload).not.toHaveBeenCalled();
+  expect(onRestore).not.toHaveBeenCalled();
+});
+
+it("keeps existing data when backup export fails", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(accountApi.prepareDataReplacement).mockRejectedValueOnce(
+    new Error("备份失败"),
+  );
+  const { onRestore, flash } = mount();
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
+  );
+  chooseFile("{}", undefined, true);
+  expect((await screen.findByRole("alert")).textContent).toContain("备份失败");
+  expect(saveTextDownload).not.toHaveBeenCalled();
+  expect(accountApi.importData).not.toHaveBeenCalled();
+  expect(onRestore).not.toHaveBeenCalled();
+  expect(flash).not.toHaveBeenCalled();
+  expect(
+    (screen.getByLabelText("选择文件并覆盖导入") as HTMLInputElement).disabled,
+  ).toBe(false);
+});
+
+it("does not replace data when downloading the backup fails", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const replace = vi.fn();
+  vi.mocked(accountApi.prepareDataReplacement).mockResolvedValueOnce({
+    data: {},
+    replace,
+  });
+  vi.mocked(saveTextDownload).mockRejectedValueOnce(new Error("下载失败"));
+  mount();
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
+  );
+  chooseFile("{}", undefined, true);
+  expect((await screen.findByRole("alert")).textContent).toContain("下载失败");
+  expect(replace).not.toHaveBeenCalled();
+});
+
+it("keeps the backup and reports a rejected replacement without refreshing", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const replace = vi.fn().mockRejectedValue(new Error("资料已变化"));
+  vi.mocked(accountApi.prepareDataReplacement).mockResolvedValueOnce({
+    data: {},
+    replace,
+  });
+  const { onRestore, flash } = mount();
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
+  );
+  chooseFile("{}", undefined, true);
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "资料已变化",
+  );
+  expect(saveTextDownload).toHaveBeenCalledOnce();
+  expect(onRestore).not.toHaveBeenCalled();
+  expect(flash).not.toHaveBeenCalled();
+});
+
+it("abandons replacement when the account page unmounts during backup", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const replace = vi.fn();
+  let finish!: (backup: { data: unknown; replace: typeof replace }) => void;
+  vi.mocked(accountApi.prepareDataReplacement).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const { unmount, onRestore } = mount();
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
+  );
+  chooseFile("{}", undefined, true);
+  await waitFor(() =>
+    expect(accountApi.prepareDataReplacement).toHaveBeenCalled(),
+  );
+  unmount();
+  finish({ data: {}, replace });
+  await waitFor(() => expect(saveTextDownload).not.toHaveBeenCalled());
+  expect(replace).not.toHaveBeenCalled();
+  expect(onRestore).not.toHaveBeenCalled();
 });
