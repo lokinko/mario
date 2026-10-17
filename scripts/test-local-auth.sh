@@ -46,7 +46,7 @@ if [[ "$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $toke
   exit 1
 fi
 market_config="$(curl -fsS -H "Authorization: Bearer $token" "http://127.0.0.1:$port/api/market-data/security/config")"
-if ! python3 -c 'import json,sys; value=json.load(sys.stdin); assert value["provider"] == "twelve-data" and isinstance(value["hasApiKey"], bool)' <<<"$market_config"; then
+if ! python3 -c 'import json,sys; value=json.load(sys.stdin); assert value["provider"] == "yahoo-finance" and value["hasApiKey"] is False' <<<"$market_config"; then
   echo "security price config endpoint returned an unexpected response" >&2
   exit 1
 fi

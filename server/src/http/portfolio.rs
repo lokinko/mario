@@ -212,8 +212,15 @@ async fn update_holding(
 async fn delete_holding(
     Extension(state): Extension<Arc<RequestContext>>,
     Path(id): Path<String>,
+    body: axum::body::Bytes,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.delete_holding(&id)?))
+    let input = if body.is_empty() {
+        models::HoldingDeleteInput::default()
+    } else {
+        serde_json::from_slice(&body)
+            .map_err(|_| crate::AppError::Validation("删除持仓请求格式无效".into()))?
+    };
+    Ok(Json(state.db.delete_holding(&id, &input)?))
 }
 
 async fn save_holding_trade(

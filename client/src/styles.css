@@ -2026,11 +2026,66 @@ button:focus-visible {
 }
 .holding-trades .table-scroll {
   overflow-x: auto;
+  container: holding-trades / inline-size;
 }
 .trade-table td {
   min-width: 100px;
   max-width: 250px;
   overflow-wrap: anywhere;
+}
+.trade-table .trade-edit {
+  color: var(--green);
+  font-weight: 600;
+}
+@container holding-trades (max-width: 760px) {
+  .trade-table {
+    display: block;
+  }
+  .trade-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .trade-table tbody {
+    display: grid;
+    gap: 12px;
+  }
+  .trade-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .trade-table td {
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    border: 0;
+  }
+  .trade-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .trade-table .trade-account,
+  .trade-table .trade-actions {
+    grid-column: 1 / -1;
+  }
+  .trade-table .trade-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
 }
 @media (max-width: 600px) {
   .holding-trades form {

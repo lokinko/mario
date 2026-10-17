@@ -1134,7 +1134,7 @@ mod tests {
         assert!(compare(before, records(&db)[0].clone())
             .amount_change
             .is_none());
-        db.delete_holding(&id).unwrap();
+        db.delete_holding(&id, &Default::default()).unwrap();
         assert!(records(&db)[0].assets[0].removed);
         assert_eq!(records(&db)[0].total_assets, Some(0.0));
     }

@@ -616,31 +616,44 @@ impl Database {
         self.snapshot()
     }
 
-    pub fn delete_holding(&self, id: &str) -> AppResult<Snapshot> {
+    pub fn delete_holding(
+        &self,
+        id: &str,
+        input: &crate::models::HoldingDeleteInput,
+    ) -> AppResult<Snapshot> {
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
+        let operation = super::financial::operation("holding.delete", id, input)?;
+        if let Some(snapshot) = super::financial::replay(&transaction, &operation)? {
+            return Ok(snapshot);
+        }
         let before = super::daily::prepare(&transaction)?;
+        let Some(holding) = before.holdings.iter().find(|h| h.id == id) else {
+            return Err(AppError::Validation("找不到要删除的资产".into()));
+        };
         if before.cleared_trade_holdings.iter().any(|h| h == id) {
             return Err(AppError::Validation(
                 "存在隔离交易链，请先修复原始记录".into(),
             ));
         }
-        if before.holding_trades.iter().any(|t| t.holding_id == id) {
-            return Err(AppError::Validation(
-                "已有交易明细的持仓需通过卖出清仓，交易记录会保留".into(),
+        let trades: Vec<_> = before
+            .holding_trades
+            .iter()
+            .filter(|t| t.holding_id == id)
+            .collect();
+        if (!trades.is_empty() || !input.expected_revision.is_empty())
+            && before.holding_revisions.get(id) != Some(&input.expected_revision)
+        {
+            return Err(AppError::Conflict(
+                "持仓已更新，请刷新并核对后重新删除".into(),
             ));
         }
-        let affected = transaction.execute("DELETE FROM holdings WHERE id=?1", [id])?;
-        if affected == 0 {
-            return Err(AppError::Validation("找不到要删除的资产".into()));
-        }
-        super::financial::journal(
-            &transaction,
-            id,
-            "holding.delete",
-            &serde_json::json!({"holding":before.holdings.iter().find(|h|h.id==id),"accounting":before.accounting.as_ref().and_then(|a|a.holdings.get(id)),"cashBalance":before.cash_balances.iter().find(|b|b.holding_id==id),"corporateActions":before.corporate_actions.iter().filter(|a|a.holding_id==id).collect::<Vec<_>>()}),
-            &Option::<Holding>::None,
-            &before
+        let cash_delta = if !trades.is_empty() {
+            super::cash::remove_holding_trades(&transaction, &holding.currency, &trades)?
+                .normalize()
+                .to_string()
+        } else {
+            before
                 .cash_balances
                 .iter()
                 .find(|b| b.holding_id == id)
@@ -648,16 +661,26 @@ impl Database {
                     crate::models::decimal::parse(&b.amount).map(|n| (-n).normalize().to_string())
                 })
                 .transpose()?
-                .unwrap_or_else(|| "0".into()),
-            ("用户移除手工资产", None),
+                .unwrap_or_else(|| "0".into())
+        };
+        super::financial::journal(
+            &transaction,
+            id,
+            "holding.delete",
+            &serde_json::json!({"holding":holding,"trades":trades,"accounting":before.accounting.as_ref().and_then(|a|a.holdings.get(id)),"cashBalance":before.cash_balances.iter().find(|b|b.holding_id==id),"corporateActions":before.corporate_actions.iter().filter(|a|a.holding_id==id).collect::<Vec<_>>()}),
+            &Option::<Holding>::None,
+            &cash_delta,
+            ("用户删除持仓及关联交易", Some(&operation.0)),
         )?;
+        transaction.execute("DELETE FROM holding_trades WHERE holding_id=?1", [id])?;
+        transaction.execute("DELETE FROM holdings WHERE id=?1", [id])?;
         transaction.execute("DELETE FROM cash_state WHERE holding_id=?1", [id])?;
         transaction.execute("DELETE FROM corporate_actions WHERE holding_id=?1", [id])?;
         super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
+        let snapshot = super::financial::complete(&transaction, &operation)?;
         transaction.commit()?;
-        drop(conn);
-        self.snapshot()
+        Ok(snapshot)
     }
 }
 

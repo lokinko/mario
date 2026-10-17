@@ -208,6 +208,13 @@ impl Database {
                     serde_json::from_value(input.clone())?;
                 operation("amount", &input.request_id, &(path, &input))?
             }
+            ("DELETE", Some(path)) if path.starts_with("holdings/") && !path[9..].contains('/') => {
+                operation(
+                    "holding.delete",
+                    &path[9..],
+                    &serde_json::from_value::<crate::models::HoldingDeleteInput>(input.clone())?,
+                )?
+            }
             ("POST", Some(path))
                 if path.starts_with("holdings/") && path.ends_with("/trade-repair") =>
             {

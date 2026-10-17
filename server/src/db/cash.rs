@@ -263,6 +263,67 @@ pub(super) fn settle_trade(
     Ok(delta)
 }
 
+/// Reverse the whole position at once: intermediate refunds or debits must not
+/// reject a valid net change, or let a history flag block the remaining reversals.
+pub(super) fn remove_holding_trades(
+    conn: &Connection,
+    currency: &str,
+    trades: &[&crate::models::HoldingTrade],
+) -> AppResult<Decimal> {
+    initialize_balances(conn)?;
+    let state = states(conn)?.into_iter().find(|s| s.currency == currency);
+    let baseline = state.as_ref().map_or("", |s| s.baseline_id.as_str());
+    let mut delta = Decimal::ZERO;
+    let mut reconcile = false;
+    for trade in trades {
+        let previous = conn
+            .query_row(
+                "SELECT amount,baseline_id,included FROM trade_settlements WHERE trade_id=?1",
+                [&trade.id],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, bool>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        match previous {
+            Some((amount, old_baseline, included)) if old_baseline == baseline => {
+                let amount = Decimal::from_str_exact(&amount)
+                    .map_err(|_| AppError::Validation("结算记录金额无效".into()))?;
+                delta = delta
+                    .checked_sub(amount)
+                    .ok_or_else(|| AppError::Validation("累计结算金额超过允许范围".into()))?;
+                reconcile |= !included;
+            }
+            _ => reconcile = true,
+        }
+    }
+    if !delta.is_zero() && state.as_ref().is_some_and(|s| s.needs_reconciliation) {
+        return Err(AppError::Validation(
+            "存款存在历史更正差异，请先按实际余额重新核对后删除持仓".into(),
+        ));
+    }
+    if !delta.is_zero() {
+        settle(conn, currency, delta)?;
+    }
+    if reconcile {
+        conn.execute(
+            "UPDATE cash_state SET needs_reconciliation=1 WHERE currency=?1",
+            [currency],
+        )?;
+    }
+    for trade in trades {
+        conn.execute(
+            "DELETE FROM trade_settlements WHERE trade_id=?1",
+            [&trade.id],
+        )?;
+    }
+    Ok(delta)
+}
+
 pub(super) fn normalize_input(input: &mut HoldingInput) -> AppResult<()> {
     if input.asset_class != "现金" {
         return Ok(());

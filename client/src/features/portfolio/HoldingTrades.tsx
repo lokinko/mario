@@ -89,10 +89,6 @@ export function HoldingTrades({
     : undefined;
   const [uncertain, setUncertain] = useState(false);
   const [open, setOpen] = useState(!holding);
-  useEffect(() => {
-    onEditingChange?.(open || uncertain);
-    return () => onEditingChange?.(false);
-  }, [open, uncertain, onEditingChange]);
   const [editing, setEditing] = useState<HoldingTrade | null>(null);
   const [draft, setDraft] = useState(() => emptyDraft(summary?.account));
   const [name, setName] = useState("");
@@ -111,6 +107,10 @@ export function HoldingTrades({
     holding && snapshot.clearedTradeHoldings?.includes(holding.id),
   );
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    onEditingChange?.(open || uncertain || busy);
+    return () => onEditingChange?.(false);
+  }, [open, uncertain, busy, onEditingChange]);
   const [error, setError] = useState("");
   const pendingAction = useRef<(() => Promise<Snapshot>) | null>(null);
   const pendingDelete = useRef(false);
@@ -258,7 +258,7 @@ export function HoldingTrades({
       !window.confirm(
         `确认删除“${holding?.name}”在 ${t.occurredOn} 的第 ${t.sequence} 笔${names[t.kind]}？\n` +
           `账户：${t.account} · 金额：${money(t.grossAmount)}\n` +
-          "删除后会重新计算持仓、成本和盈亏，并退回买入支出或扣回卖出、分红收入。删除最后一笔交易会将持仓数量和成本归零，保留证券信息。原始记录和本次更正会保留在更正历史中。",
+          "删除后会重新计算持仓、成本和盈亏。当前核对基准仍计入的交易会退回买入支出或扣回卖出、分红收入；历史交易保留当前存款并标记待核对。删除最后一笔交易会将持仓数量和成本归零，保留证券信息。原始记录和本次更正会保留在更正历史中。",
       )
     )
       return;
@@ -635,11 +635,11 @@ export function HoldingTrades({
               <tbody>
                 {visibleTrades.map((t) => (
                   <tr key={t.id}>
-                    <td>
+                    <td data-label="日期 / 顺序">
                       {t.occurredOn}
                       <small>第 {t.sequence} 笔</small>
                     </td>
-                    <td>
+                    <td data-label="类型 / 数量">
                       {t.kind === "dividend" ? (
                         names[t.kind]
                       ) : (
@@ -653,28 +653,29 @@ export function HoldingTrades({
                         </small>
                       )}
                     </td>
-                    <td>
+                    <td data-label="成交 / 分红金额">
                       {money(t.grossAmount)}
                       <small>{t.currency}</small>
                     </td>
-                    <td>
+                    <td data-label="费用 / 税费">
                       {money(t.fees)}
                       <small>税费 {money(t.taxes)}</small>
                     </td>
-                    <td>
+                    <td data-label="实际现金收支">
                       {money(summary?.cashFlows[t.id] ?? "0")}
                       {summary?.profits[t.id] !== undefined && (
                         <small>卖出盈亏 {money(summary.profits[t.id])}</small>
                       )}
                     </td>
-                    <td>
+                    <td data-label="账户 / 凭据" className="trade-account">
                       {t.account}
                       <small>{t.externalId}</small>
                       <small>{t.note}</small>
                     </td>
-                    <td>
+                    <td className="trade-actions">
                       <button
-                        className="text-button"
+                        type="button"
+                        className="text-button trade-edit"
                         disabled={busy || uncertain || open}
                         onClick={() => begin(t.kind, t)}
                       >
@@ -683,7 +684,7 @@ export function HoldingTrades({
                       <button
                         type="button"
                         className="text-button danger-text"
-                        disabled={busy || open}
+                        disabled={busy || uncertain || open}
                         onClick={() => void remove(t)}
                       >
                         删除交易

@@ -51,6 +51,7 @@ export async function httpRequest<T>(
   } catch (error) {
     const resource = path.split("?")[0];
     const receiptable =
+      (init?.method === "DELETE" && /^\/holdings\/[^/]+$/.test(resource)) ||
       resource === "/holding-trades" ||
       resource.startsWith("/holding-trades/") ||
       resource.endsWith("/amount") ||

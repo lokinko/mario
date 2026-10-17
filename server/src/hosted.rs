@@ -154,7 +154,9 @@ async fn authenticate(
             if path.starts_with("/api/holding-trades")
                 || path.starts_with("/api/corporate-actions/")
                 || (path.starts_with("/api/holdings/")
-                    && (path.ends_with("/amount")
+                    && ((request.method() == axum::http::Method::DELETE
+                        && !path[14..].contains('/'))
+                        || path.ends_with("/amount")
                         || path.ends_with("/trade-repair")
                         || path.ends_with("/corporate-actions")))
             {

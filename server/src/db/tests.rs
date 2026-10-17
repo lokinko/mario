@@ -647,7 +647,11 @@ fn updates_and_deletes_holding() {
     updated.market_value = 120_000.0;
     let snapshot = db.update_holding(id, &updated).unwrap();
     assert_eq!(snapshot.holdings[0].market_value, 120_000.0);
-    assert!(db.delete_holding(id).unwrap().holdings.is_empty());
+    assert!(db
+        .delete_holding(id, &Default::default())
+        .unwrap()
+        .holdings
+        .is_empty());
 }
 
 #[test]
@@ -681,7 +685,8 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
         })
         .unwrap();
     assert!(!incomplete.valuation_status.comparable);
-    db.delete_holding(&incomplete.holdings[0].id).unwrap();
+    db.delete_holding(&incomplete.holdings[0].id, &Default::default())
+        .unwrap();
     let usd_snapshot = db
         .add_holding(&HoldingInput {
             exact_values: None,

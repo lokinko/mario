@@ -77,7 +77,13 @@ export function MyFacts({
   const costHelpId = useId();
   const codeHelpId = useId();
   const currencyHelpId = useId();
-  const [busy, setBusy] = useState(false);
+  const [working, setBusy] = useState(false);
+  const [uncertainDelete, setUncertainDelete] = useState<{
+    id: string;
+    expectedRevision: string;
+  } | null>(null);
+  const deleting = useRef(false);
+  const busy = working || Boolean(uncertainDelete);
   const [error, setError] = useState("");
   const [section, setSection] = useState<"income" | "savings" | "holdings">(
     "holdings",
@@ -249,22 +255,66 @@ export function MyFacts({
     });
     setError("");
   };
-  const removeAsset = async (item: Holding) => {
-    if (busy) return;
-    if (!window.confirm(`确认删除“${item.name}”？`)) return;
+  const submitRemoval = async (request: {
+    id: string;
+    expectedRevision: string;
+  }) => {
+    if (deleting.current) return;
+    deleting.current = true;
     setBusy(true);
     setError("");
     try {
-      onUpdate(await deleteHolding(item.id));
-      if (editing?.id === item.id) setEditing(null);
-      if (selectedId === item.id) setSelectedId(null);
+      onUpdate(await deleteHolding(request.id, request.expectedRevision));
+      setUncertainDelete(null);
+      if (editing?.id === request.id) setEditing(null);
+      if (selectedId === request.id) setSelectedId(null);
       flash("资产已删除");
     } catch (e) {
-      setError(`删除失败：${String(e)}`);
+      const uncertain = String(e).includes("结果待确认");
+      setUncertainDelete(uncertain ? request : null);
+      setError(uncertain ? String(e) : `删除失败：${String(e)}`);
     } finally {
+      deleting.current = false;
       setBusy(false);
     }
   };
+  const removeAsset = async (item: Holding) => {
+    if (busy || editingTrade || deleting.current) return;
+    const count = (snapshot.holdingTrades ?? []).filter(
+      (t) => t.holdingId === item.id,
+    ).length;
+    const expectedRevision = snapshot.holdingRevisions?.[item.id] ?? "";
+    if (
+      !window.confirm(
+        `确认删除“${item.name}”？\n` +
+          (count
+            ? `将同时删除 ${count} 笔交易明细，并按这些交易对当前存款的净影响退回买入支出、扣回卖出和分红收入。已核对余额覆盖的历史交易不调整当前存款，会标记待核对。\n`
+            : "") +
+          "此操作用于移除误录持仓，不代表实际卖出。更正历史和此前日期的资产记录会保留。",
+      )
+    )
+      return;
+    if (count && !expectedRevision) {
+      setError("持仓版本缺失，请刷新后重试");
+      return;
+    }
+    await submitRemoval({ id: item.id, expectedRevision });
+  };
+  const errorNotice = error && (
+    <div className="error-box" role="alert">
+      {error}
+      {uncertainDelete && (
+        <button
+          type="button"
+          className="secondary"
+          disabled={working}
+          onClick={() => void submitRemoval(uncertainDelete)}
+        >
+          核对删除结果
+        </button>
+      )}
+    </div>
+  );
   return (
     <div className="page narrow facts-page">
       <PageHeader
@@ -352,11 +402,7 @@ export function MyFacts({
           </button>
         ))}
       </div>
-      {error && !editing && !selected && (
-        <div className="error-box" role="alert">
-          {error}。请重试。
-        </div>
-      )}
+      {!editing && !selected && errorNotice}
       {section === "holdings" &&
         Boolean(snapshot.priceRefreshErrors?.length) && (
           <p className="warning-text" role="status">
@@ -660,9 +706,6 @@ export function MyFacts({
             )}
             {(section === "savings" ? cashRows : visibleInvestments).map(
               (item) => {
-                const trades = (snapshot.holdingTrades ?? []).filter(
-                  (t) => t.holdingId === item.id,
-                );
                 const tradeSummary = snapshot.holdingTradeSummaries?.[item.id];
                 return (
                   <div
@@ -692,7 +735,7 @@ export function MyFacts({
                         } else setSelectedId(item.id);
                       }}
                       disabled={busy}
-                      canDelete={item.assetClass !== "现金" && !trades.length}
+                      canDelete={item.assetClass !== "现金"}
                       onDelete={() => void removeAsset(item)}
                       onEdit={() => {
                         cashRevision.current =
@@ -775,11 +818,7 @@ export function MyFacts({
         >
           {editing ? (
             <>
-              {error && (
-                <div className="error-box" role="alert">
-                  {error}
-                </div>
-              )}
+              {errorNotice}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -1016,15 +1055,11 @@ export function MyFacts({
             </>
           ) : selected ? (
             <>
-              {error && (
-                <div className="error-box" role="alert">
-                  {error}
-                </div>
-              )}
+              {errorNotice}
               <div className="detail-actions">
                 <button
                   className="secondary"
-                  disabled={editingTrade}
+                  disabled={busy || editingTrade}
                   title={editingTrade ? "请先保存或取消当前交易" : undefined}
                   onClick={() => {
                     setAssetAmount(String(selected.marketValue));
@@ -1035,6 +1070,15 @@ export function MyFacts({
                   }}
                 >
                   编辑资产
+                </button>
+                <button
+                  type="button"
+                  className="secondary danger-text"
+                  disabled={busy || editingTrade}
+                  title={editingTrade ? "请先保存或取消当前交易" : undefined}
+                  onClick={() => void removeAsset(selected)}
+                >
+                  删除持仓
                 </button>
               </div>
               <dl className="detail-grid">
@@ -1108,13 +1152,16 @@ export function MyFacts({
                   {snapshot.clearedTradeHoldings?.includes(selected.id) && (
                     <p className="warning-text">交易明细需重新录入</p>
                   )}
-                  <HoldingTrades
-                    snapshot={snapshot}
-                    holding={selected}
-                    onEditingChange={setEditingTrade}
-                    onUpdate={onUpdate}
-                    flash={flash}
-                  />
+                  <fieldset disabled={busy} className="holding-trades-controls">
+                    <HoldingTrades
+                      key={selected.id}
+                      snapshot={snapshot}
+                      holding={selected}
+                      onEditingChange={setEditingTrade}
+                      onUpdate={onUpdate}
+                      flash={flash}
+                    />
+                  </fieldset>
                 </>
               )}
             </>

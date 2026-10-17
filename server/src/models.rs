@@ -397,6 +397,13 @@ pub struct HoldingTradeDeleteInput {
     pub expected_revision: String,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HoldingDeleteInput {
+    #[serde(default)]
+    pub expected_revision: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TradeRepairInput {

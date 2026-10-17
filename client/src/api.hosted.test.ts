@@ -5,6 +5,7 @@ import {
   saveProfile,
   updateHoldingAmount,
   saveHoldingTrade,
+  deleteHolding,
 } from "./api/portfolio";
 import { checkServerVersion, prepareDataReplacement } from "./api/account";
 import { previewAnalysis } from "./api/research";
@@ -63,6 +64,36 @@ it("keeps an unresolved financial write pending instead of declaring failure or 
     updateHoldingAmount("cash", "100.01", "old", "same-request"),
   ).rejects.toThrow("操作结果待确认");
   expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it("resolves a lost whole-position deletion with its original versioned request", async () => {
+  const current = {
+    holdings: [],
+    holdingTrades: [],
+    cashBalances: [{ amount: "1000" }],
+  };
+  const fetcher = vi
+    .fn()
+    .mockRejectedValueOnce(new TypeError("connection reset after commit"))
+    .mockResolvedValueOnce(
+      response({ committed: true, snapshot: current }, "92"),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  expect(await deleteHolding("position", "position-v1")).toEqual(current);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher.mock.calls[0][1].method).toBe("DELETE");
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
+    expectedRevision: "position-v1",
+  });
+  expect(String(fetcher.mock.calls[1][0])).toContain(
+    "/financial-operations/resolve",
+  );
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({
+    method: "DELETE",
+    path: "/api/holdings/position",
+    input: { expectedRevision: "position-v1" },
+  });
+  expect(dataRevision()).toBe("92");
 });
 vi.mock("./lib/service", async (original) => ({
   ...(await original<typeof import("./lib/service")>()),

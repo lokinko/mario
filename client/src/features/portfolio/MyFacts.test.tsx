@@ -863,6 +863,7 @@ it("refreshes the portfolio after deletion and closes the deleted asset's edit f
   await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(snapshot));
   expect(portfolioApi.deleteHolding).toHaveBeenCalledExactlyOnceWith(
     "investment",
+    "",
   );
   expect(flash).toHaveBeenCalledWith("资产已删除");
   expect(screen.queryByRole("region", { name: "记录资产" })).toBeNull();
@@ -891,6 +892,121 @@ it("shows deletion failures and allows retrying without losing the holding", asy
   fireEvent.click(screen.getByRole("button", { name: "删除 指数基金" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(snapshot));
   expect(portfolioApi.deleteHolding).toHaveBeenCalledTimes(2);
+});
+
+const recordedPosition = () => ({
+  ...snapshot,
+  holdings: [investment],
+  holdingRevisions: { [investment.id]: "position-v1" },
+  holdingTrades: [
+    {
+      id: "recorded-buy",
+      holdingId: investment.id,
+      kind: "buy",
+      currency: "CNY",
+      occurredOn: "2026-01-01",
+      sequence: 1,
+      quantity: "10",
+      price: "10",
+      grossAmount: "100",
+      fees: "0",
+      taxes: "0",
+      account: "测试账户",
+      externalId: "",
+      note: "",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    } satisfies HoldingTrade,
+  ],
+});
+
+it("deletes a position with executions from its details after explaining linked cash effects", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  let resolve!: (value: Snapshot) => void;
+  vi.mocked(portfolioApi.deleteHolding).mockImplementationOnce(
+    () => new Promise((done) => (resolve = done)),
+  );
+  const { onUpdate, rerender, flash } = mount(recordedPosition());
+  expect(screen.getByRole("button", { name: "删除 指数基金" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "查看 指数基金" }));
+  fireEvent.click(screen.getByRole("button", { name: "删除持仓" }));
+  fireEvent.click(screen.getByRole("button", { name: "删除持仓" }));
+  expect(confirm).toHaveBeenCalledExactlyOnceWith(
+    expect.stringMatching(/1 笔交易明细.*净影响/s),
+  );
+  expect(portfolioApi.deleteHolding).toHaveBeenCalledExactlyOnceWith(
+    investment.id,
+    "position-v1",
+  );
+  expect(
+    (
+      screen.getByRole("button", { name: "编辑交易" }) as HTMLButtonElement
+    ).matches(":disabled"),
+  ).toBe(true);
+  resolve(snapshot);
+  await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(snapshot));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  rerender(
+    <MyFacts
+      snapshot={snapshot}
+      onUpdate={onUpdate}
+      flash={flash}
+      navigate={vi.fn()}
+    />,
+  );
+  expect(screen.queryByRole("button", { name: "删除 指数基金" })).toBeNull();
+});
+
+it("locks position deletion while an execution is being edited", async () => {
+  mount(recordedPosition());
+  fireEvent.click(screen.getByRole("button", { name: "查看 指数基金" }));
+  fireEvent.click(screen.getByRole("button", { name: "编辑交易" }));
+  expect(screen.getByRole("button", { name: "删除持仓" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(screen.getByRole("button", { name: "编辑资产" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(portfolioApi.deleteHolding).not.toHaveBeenCalled();
+});
+
+it("keeps an uncertain deletion frozen and rechecks the original revision after a refresh", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(portfolioApi.deleteHolding)
+    .mockRejectedValueOnce(new Error("操作结果待确认"))
+    .mockResolvedValueOnce(snapshot);
+  const { onUpdate, rerender, flash } = mount(recordedPosition());
+  fireEvent.click(screen.getByRole("button", { name: "删除 指数基金" }));
+  await screen.findByRole("button", { name: "核对删除结果" });
+  expect(screen.getByRole("button", { name: "删除 指数基金" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(screen.getByRole("button", { name: "记录买入" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  rerender(
+    <MyFacts
+      snapshot={{
+        ...recordedPosition(),
+        holdingRevisions: { [investment.id]: "position-v2" },
+      }}
+      onUpdate={onUpdate}
+      flash={flash}
+      navigate={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "核对删除结果" }));
+  await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(snapshot));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(portfolioApi.deleteHolding).toHaveBeenNthCalledWith(
+    2,
+    investment.id,
+    "position-v1",
+  );
 });
 
 it("updates a currency balance with the form revision and preserves input on a conflict", async () => {

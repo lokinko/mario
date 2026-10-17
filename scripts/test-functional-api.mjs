@@ -473,6 +473,27 @@ try {
   assert.deepEqual(snap.holdings, priorHoldings);
   await api("/holdings", "POST", holding("重复人民币存款", 100), 409);
   await api("/holdings", "POST", holding("欧元存款", 100, "EUR"), 400);
+  // Removing a recorded position is atomic, versioned, cash-aware and retryable.
+  const removal = { expectedRevision: snap.holdingRevisions[oppoId] };
+  const beforeRemoval = snap;
+  await api(`/holdings/${oppoId}`, "DELETE", { expectedRevision: "stale" }, 409);
+  await api(`/holdings/${oppoId}`, "DELETE", {}, 409);
+  assert.deepEqual((await api("/snapshot")).holdings, beforeRemoval.holdings);
+  snap = await api(`/holdings/${oppoId}`, "DELETE", removal);
+  assert(!snap.holdings.some(h => h.id === oppoId));
+  assert(!snap.holdingTrades.some(t => t.holdingId === oppoId));
+  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
+  const journal = await api(`/holdings/${oppoId}/financial-history`);
+  const removed = journal.records.find(r => r.kind === "holding.delete");
+  assert.equal(JSON.parse(removed.before).trades.length, 2);
+  assert.equal(removed.cashDelta, "221.91");
+  assert.equal((await api(`/holdings/${oppoId}`, "DELETE", removal)).holdings.find(h => h.id === cash).marketValue, 102200);
+  assert.equal((await api("/financial-operations/resolve", "POST", { method: "DELETE", path: `/api/holdings/${oppoId}`, input: removal })).committed, true);
+  await stopServer(); await startServer();
+  snap = await api("/snapshot");
+  assert(!snap.holdings.some(h => h.id === oppoId));
+  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
+  console.log("PASS whole-position removal: stale version rollback, linked executions, net cash reversal, journal, receipts and restart persistence");
   console.log(
     `PASS restart persistence; ${count} authenticated HTTP assertions total`,
   );

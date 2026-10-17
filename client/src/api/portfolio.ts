@@ -146,9 +146,13 @@ export async function updateHolding(
   });
 }
 
-export async function deleteHolding(id: string): Promise<Snapshot> {
+export async function deleteHolding(
+  id: string,
+  expectedRevision: string,
+): Promise<Snapshot> {
   return httpRequest<Snapshot>(`/holdings/${encodeURIComponent(id)}`, {
     method: "DELETE",
+    body: JSON.stringify({ expectedRevision }),
   });
 }
 
