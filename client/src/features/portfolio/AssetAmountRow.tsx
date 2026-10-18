@@ -1,4 +1,8 @@
-import type { Holding, AccountingHolding } from "../../types";
+import type {
+  Holding,
+  AccountingHolding,
+  StockOptionTotals,
+} from "../../types";
 import { formatMoney, formatNumber } from "../../lib/format";
 import { isClosedHolding, unrealizedProfit } from "./holdingMetrics";
 export function AssetAmountRow({
@@ -10,6 +14,7 @@ export function AssetAmountRow({
   disabled = false,
   canDelete = true,
   exact,
+  optionTotals,
 }: {
   holding: Holding;
   realizedPnl?: number | string;
@@ -19,10 +24,17 @@ export function AssetAmountRow({
   disabled?: boolean;
   canDelete?: boolean;
   exact?: AccountingHolding;
+  optionTotals?: StockOptionTotals;
 }) {
   const investment = holding.assetClass !== "现金";
-  const closed = isClosedHolding(holding, realizedPnl != null);
-  const pnl = unrealizedProfit(holding, realizedPnl != null);
+  const closed =
+    isClosedHolding(holding, realizedPnl != null || Boolean(optionTotals)) &&
+    !optionTotals?.openContracts;
+  const pnl = optionTotals
+    ? optionTotals.unrealizedProfit == null
+      ? null
+      : Number(optionTotals.unrealizedProfit)
+    : unrealizedProfit(holding, realizedPnl != null);
   const settledProfit = exact ? exact.settledProfit : realizedPnl;
   return (
     <div
@@ -41,6 +53,7 @@ export function AssetAmountRow({
         <small>
           {holding.symbol && holding.symbol + " · "}
           {holding.currency} · {holding.assetClass}
+          {optionTotals ? " · 含关联期权" : ""}
           {closed ? " · 已清仓" : ""}
         </small>
       </div>
@@ -100,13 +113,15 @@ export function AssetAmountRow({
                 : (pnl > 0 ? "+" : "") +
                   formatMoney(exact?.unrealizedProfit ?? pnl, holding.currency)}
             <small>
-              {pnl != null && holding.costBasis > 0
+              {!optionTotals && pnl != null && holding.costBasis > 0
                 ? (pnl > 0 ? "+" : "") +
                   formatNumber((pnl / holding.costBasis) * 100) +
                   "%"
-                : closed
-                  ? "已清仓"
-                  : "成本待补"}
+                : optionTotals
+                  ? "股票与期权合计"
+                  : closed
+                    ? "已清仓"
+                    : "成本待补"}
             </small>
           </div>
           <div

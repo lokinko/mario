@@ -213,7 +213,8 @@ export function FinancialHistory({
             </button>
           </section>
         ))}
-      {snapshot.holdingTrades?.some((t) => t.holdingId === holding.id) &&
+      {!snapshot.optionContracts?.[holding.id] &&
+        snapshot.holdingTrades?.some((t) => t.holdingId === holding.id) &&
         !snapshot.clearedTradeHoldings?.includes(holding.id) && (
           <details>
             <summary>按券商通知补充拆股或合股</summary>

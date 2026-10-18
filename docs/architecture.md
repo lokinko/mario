@@ -105,8 +105,8 @@ flowchart TD
 | `ai/` | `orchestrator` 按 `workflow`（当前 v7）执行资料筛选、研究计划、候选、反思与报告；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 只由用户电脑上的桥接 worker 调用；`selection`、`grounding`、`structured_output` 负责筛选、引用落地与输出校验；`streaming` 解析流式草稿 |
 | `codex_bridge_worker.rs` | 用户电脑上的桥接进程，长轮询 API 领取任务并调用本机 Codex |
 | `market_data.rs`、`prices.rs` | 行情端口的网络实现与实例内有界缓存；只处理公开行情，不读写账号数据 |
-| `db/`、`storage.rs` | `Database` 门面下的领域仓储（持仓、成交、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
-| `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、推理事件与执行时限 |
+| `db/`、`storage.rs` | `Database` 门面下的领域仓储（持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
+| `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、期权合约计价及多空头重放、推理事件与执行时限 |
 | `context.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：分析上下文构建与预览、再平衡规划、风险检查、估值状态、本地证据检索 |
 | `attachments.rs`、`secrets.rs`、`streaming.rs`、`error.rs` | 附件解码与文本提取、主密钥加解密（AAD 绑定 schema 与用途）、共享 SSE 响应、统一错误类型 |
 
@@ -117,7 +117,7 @@ flowchart TD
 | `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发 |
 | `app/useApplicationData.ts` | 服务端数据生命周期：启动、快照与模型配置加载、自动同步、请求代次、草稿保护与远程更新提示 |
 | `app/navigation.ts` | 视图、导航分组与标签 |
-| `features/portfolio` | 我的情况：持仓、成交、现金、汇率、每日资产、资产历史与财务日志 |
+| `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
 | `features/reviews`、`features/settings`、`features/account` | 复盘；模型设置、问答预设与 Codex 桥接；网页账号与服务端数据备份 |
 | `api/<领域>.ts` | 领域请求与返回契约；`api/portfolio/financialRequest.ts` 负责财务回执核对与快速编辑排队 |
@@ -159,6 +159,10 @@ sequenceDiagram
 ### 6.3 行情与汇率
 
 `composition::MarketRuntime` 在进程启动时创建供应商并定时刷新公开行情；`application/prices.rs`、`fx.rs` 通过端口查询并在账号事务中写入估值与汇率来源。快照、版本与历史汇率的 GET 不触发刷新或写入；持仓编辑的外部查询在提交事务前完成，成交保存不依赖外部行情。
+
+### 股票与关联期权
+
+期权以 `holding_options` 绑定账号内同账户、同币种的标的股票，自身复用持仓和成交。`models/options` 按整数张数、每单位权利金及显式合约乘数独立重放：多头为权利金资产，空头为有符号负债，不混入股票股数与成本。`db/options` 维护不可变合约定义、独立人工报价及 `stockOptionTotals` 展示投影；现金、审计、回执、每日观测与数据版本沿用同一仓储事务。组合会计按底层资产计数一次，股票列表按标的汇总显示。普通股票行情与拆股计算不得作用于期权；未平仓期权暂停普通股票再平衡，行权、被指派、保证金及合约调整尚无自动处理路径。到期作废只接受到期日经核对后的显式记录。每日观测冻结合约元数据，备份 v23 包含关联，旧版无期权备份可事务恢复。
 
 ### 6.4 同步、备份与恢复
 

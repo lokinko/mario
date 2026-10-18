@@ -87,6 +87,8 @@ impl ContextBuilder {
                 json!({
                     "holdings": snapshot.holdings,
                     "holdingValuations": snapshot.holding_valuations,
+                    "optionContracts": snapshot.option_contracts,
+                    "stockOptionTotals": snapshot.stock_option_totals,
                     "totalValue": snapshot.total_value,
                     "concentrationPct": snapshot.concentration_pct,
                     "valuationStatus": snapshot.valuation_status,
@@ -314,6 +316,8 @@ mod tests {
 
     fn snapshot() -> Snapshot {
         Snapshot {
+            option_contracts: Default::default(),
+            stock_option_totals: Default::default(),
             accounting: None,
             corporate_actions: Vec::new(),
             cash_balances: Vec::new(),
@@ -587,5 +591,39 @@ mod tests {
         let settings = serde_json::to_value(&request.context_selection).unwrap();
         assert!(settings.get("includeGoals").is_none());
         assert!(settings.get("includePortfolioEvents").is_none());
+    }
+    #[test]
+    fn option_ownership_is_frozen_only_with_authorized_holdings() {
+        let mut snapshot = snapshot();
+        let contract:crate::models::options::OptionContract=serde_json::from_value(json!({"underlyingId":"stock","account":"券商","optionType":"put","side":"short","strike":"100","expiresOn":"2026-12-18","multiplier":"100"})).unwrap();
+        snapshot.option_contracts.insert("option".into(), contract);
+        let mut request = AnalysisRequest {
+            daily_asset_range: None,
+            web_search: false,
+            user_message: None,
+            question: "核对期权风险".into(),
+            workflow: "deep".into(),
+            reflect: true,
+            explore_alternatives: true,
+            context_selection: ContextSelection::default(),
+            preview_revision: None,
+        };
+        request.context_selection.include_holdings = true;
+        let before = ContextBuilder::build(&request, &snapshot, &ContextSources::default());
+        assert_eq!(
+            before.payload["portfolio"]["optionContracts"]["option"]["underlyingId"],
+            "stock"
+        );
+        snapshot
+            .option_contracts
+            .get_mut("option")
+            .unwrap()
+            .multiplier = "10".into();
+        let changed = ContextBuilder::build(&request, &snapshot, &ContextSources::default());
+        assert_ne!(before.revision, changed.revision);
+        request.context_selection.include_holdings = false;
+        let hidden = ContextBuilder::build(&request, &snapshot, &ContextSources::default());
+        assert!(hidden.payload.get("portfolio").is_none());
+        assert!(!hidden.payload.to_string().contains("underlyingId"));
     }
 }

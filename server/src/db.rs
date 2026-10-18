@@ -32,6 +32,7 @@ mod reviews;
 mod secrets;
 mod settings;
 pub(crate) use settings::model_key_binding;
+mod options;
 mod sync_store;
 mod trades;
 use std::{

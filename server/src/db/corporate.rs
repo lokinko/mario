@@ -17,6 +17,12 @@ pub(super) fn position(
     id: &str,
     trades: &[crate::models::HoldingTrade],
 ) -> AppResult<crate::models::HoldingTradeSummary> {
+    if let Some(contract) = super::options::get(conn, id)? {
+        for trade in trades {
+            super::trades::validate(trade, Some(&contract))?;
+        }
+        return crate::models::options::position(&contract, trades);
+    }
     let actions = load(conn)?
         .into_iter()
         .filter(|a| a.holding_id == id && a.applied)
@@ -99,6 +105,11 @@ impl Database {
             return Ok(snapshot);
         }
         let before = super::daily::prepare(&tx)?;
+        if before.option_contracts.contains_key(id) {
+            return Err(AppError::Validation(
+                "期权合约调整须按券商通知核对，不能套用股票拆股".into(),
+            ));
+        }
         let holding = before
             .holdings
             .iter()
@@ -165,6 +176,11 @@ impl Database {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         let snapshot = Self::snapshot_on(&tx)?;
+        if snapshot.option_contracts.contains_key(id) {
+            return Err(AppError::Validation(
+                "期权不能套用股票行情或拆股调整".into(),
+            ));
+        }
         let holding = snapshot
             .holdings
             .iter()

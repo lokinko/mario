@@ -122,6 +122,7 @@ impl Database {
             }
         }
         super::schema::remove_retired_analysis_metadata(&transaction)?;
+        super::options::validate(&transaction)?;
         super::daily::validate(&transaction)?;
         super::trades::validate_stored(&transaction)?;
         super::cash::consolidate(&transaction)?;

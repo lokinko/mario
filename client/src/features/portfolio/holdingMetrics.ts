@@ -21,7 +21,7 @@ export function sortInvestmentHoldings(
   holdings: Holding[],
   snapshot: Pick<
     Snapshot,
-    "profile" | "holdingTradeSummaries" | "holdingTrades"
+    "profile" | "holdingTradeSummaries" | "holdingTrades" | "stockOptionTotals"
   >,
   order: "value-desc" | "value-asc" | "name" = "value-desc",
 ) {
@@ -32,22 +32,31 @@ export function sortInvestmentHoldings(
       lastTrades.set(trade.holdingId, trade);
   }
   const valueInBase = (holding: Holding) => {
-    if (holding.currency === snapshot.profile.baseCurrency)
-      return holding.marketValue;
+    const marketValue = Number(
+      snapshot.stockOptionTotals?.[holding.id]?.marketValue ??
+        holding.marketValue,
+    );
+    if (holding.currency === snapshot.profile.baseCurrency) return marketValue;
     return holding.fxRateToBase != null &&
       Number.isFinite(holding.fxRateToBase) &&
       holding.fxRateToBase > 0
-      ? holding.marketValue * holding.fxRateToBase
+      ? marketValue * holding.fxRateToBase
       : null;
   };
   return [...holdings].sort((a, b) => {
     const aClosed = isClosedHolding(
       a,
-      Boolean(snapshot.holdingTradeSummaries?.[a.id]),
+      Boolean(
+        snapshot.holdingTradeSummaries?.[a.id] ||
+        snapshot.stockOptionTotals?.[a.id],
+      ) && !snapshot.stockOptionTotals?.[a.id]?.openContracts,
     );
     const bClosed = isClosedHolding(
       b,
-      Boolean(snapshot.holdingTradeSummaries?.[b.id]),
+      Boolean(
+        snapshot.holdingTradeSummaries?.[b.id] ||
+        snapshot.stockOptionTotals?.[b.id],
+      ) && !snapshot.stockOptionTotals?.[b.id]?.openContracts,
     );
     if (aClosed !== bClosed) return aClosed ? 1 : -1;
     if (order === "name") return a.name.localeCompare(b.name, "zh-CN");

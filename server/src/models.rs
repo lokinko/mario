@@ -8,6 +8,7 @@ pub use provider::ModelProviderKind;
 pub(crate) mod accounting;
 pub(crate) mod daily;
 pub(crate) mod decimal;
+pub(crate) mod options;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -270,6 +271,10 @@ pub struct RiskFinding {
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     #[serde(default)]
+    pub option_contracts: std::collections::BTreeMap<String, options::OptionContract>,
+    #[serde(default)]
+    pub stock_option_totals: std::collections::BTreeMap<String, options::StockOptionTotals>,
+    #[serde(default)]
     pub accounting: Option<accounting::AccountingSnapshot>,
     #[serde(default)]
     pub corporate_actions: Vec<CorporateActionRecord>,
@@ -334,6 +339,8 @@ pub struct HoldingTrade {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TradeSecurityInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub option: Option<options::OptionContract>,
     pub name: String,
     pub symbol: String,
     pub asset_class: String,
@@ -390,6 +397,8 @@ pub enum TradeKind {
     Sell,
     /// Cash dividend before tax; carries no quantity or price.
     Dividend,
+    /// Explicit broker-confirmed expiry without exercise or assignment.
+    Expire,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

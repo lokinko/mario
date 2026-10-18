@@ -35,7 +35,10 @@ fn values(t: &HoldingTrade) -> AppResult<[Decimal; 5]> {
         number(&t.taxes)?,
     ])
 }
-fn validate(t: &HoldingTrade) -> AppResult<()> {
+pub(super) fn validate(
+    t: &HoldingTrade,
+    option: Option<&crate::models::options::OptionContract>,
+) -> AppResult<()> {
     Uuid::parse_str(&t.id).map_err(|_| invalid("交易请求编号无效"))?;
     let date = chrono::NaiveDate::parse_from_str(&t.occurred_on, "%Y-%m-%d")
         .map_err(|_| invalid("交易日期无效"))?;
@@ -56,12 +59,16 @@ fn validate(t: &HoldingTrade) -> AppResult<()> {
         return Err(invalid("请核对账户、同日成交顺序或说明长度"));
     }
     let [q, p, gross, fees, taxes] = values(t)?;
-    if gross <= Decimal::ZERO {
+    if gross <= Decimal::ZERO && !(option.is_some() && t.kind == TradeKind::Expire) {
         return Err(invalid("成交金额或税前分红须大于零"));
     }
     match t.kind {
         TradeKind::Buy | TradeKind::Sell if q > Decimal::ZERO && p > Decimal::ZERO => {
-            let computed = checked(q.checked_mul(p))?;
+            let multiplier = option
+                .map(|c| number(&c.multiplier))
+                .transpose()?
+                .unwrap_or(Decimal::ONE);
+            let computed = checked(q.checked_mul(p).and_then(|v| v.checked_mul(multiplier)))?;
             let tolerance = if t.currency == "JPY" {
                 Decimal::ONE
             } else {
@@ -70,6 +77,13 @@ fn validate(t: &HoldingTrade) -> AppResult<()> {
             if (computed - gross).abs() > tolerance {
                 return Err(invalid("成交金额与数量 × 单价不一致，请按券商成交单核对"));
             }
+        }
+        TradeKind::Expire
+            if option.is_some() && q > Decimal::ZERO && p.is_zero() && gross.is_zero() => {}
+        TradeKind::Expire => {
+            return Err(invalid(
+                "到期作废只适用于期权，张数须大于零且权利金和成交额为零",
+            ))
         }
         TradeKind::Dividend if q.is_zero() && p.is_zero() => {}
         TradeKind::Buy | TradeKind::Sell => {
@@ -163,7 +177,7 @@ pub(super) fn position_with_splits(
         {
             quantity = split_quantity(quantity, splits.next().unwrap())?;
         }
-        validate(t)?;
+        validate(t, None)?;
         let first = trades.first().unwrap();
         if t.holding_id != first.holding_id
             || t.currency != first.currency
@@ -181,6 +195,7 @@ pub(super) fn position_with_splits(
         let expenses = fees + taxes;
         let flow;
         match t.kind {
+            TradeKind::Expire => return Err(invalid("股票不能记录期权到期")),
             TradeKind::Buy => {
                 bought = true;
                 quantity = checked(quantity.checked_add(q))?;
@@ -487,31 +502,46 @@ impl Database {
                 .cloned()
                 .ok_or_else(|| invalid("交易对应持仓不存在"))?
         } else if let Some(h) = &input.new_holding {
-            if !input.holding_id.is_empty() || input.kind != TradeKind::Buy {
-                return Err(invalid("新证券须从第一笔真实买入开始"));
+            if !input.holding_id.is_empty()
+                || input.kind
+                    != h.option.as_ref().map_or(TradeKind::Buy, |c| {
+                        if c.side == crate::models::options::OptionSide::Short {
+                            TradeKind::Sell
+                        } else {
+                            TradeKind::Buy
+                        }
+                    })
+            {
+                return Err(invalid(
+                    "新证券须从真实开仓开始；股票和多头期权买入，空头期权卖出",
+                ));
             }
             super::validate_currency(&h.currency)?;
             if h.name.trim().is_empty()
                 || h.name.chars().count() > 200
                 || h.symbol.chars().count() > 80
-                || !["股票", "基金", "债券", "黄金", "其他"].contains(&h.asset_class.as_str())
+                || !["股票", "基金", "债券", "黄金", "其他", "期权"]
+                    .contains(&h.asset_class.as_str())
+                || (h.asset_class == "期权") != h.option.is_some()
             {
                 return Err(invalid("请核对证券名称、代码和资产类别"));
             }
-            if before.holdings.iter().any(|existing| {
-                existing.currency == h.currency.trim().to_ascii_uppercase()
-                    && existing.asset_class == h.asset_class
-                    && (before.cleared_trade_holdings.contains(&existing.id)
-                        || before
-                            .holding_trade_summaries
-                            .get(&existing.id)
-                            .is_some_and(|s| s.account == input.account.trim()))
-                    && if h.symbol.trim().is_empty() {
-                        existing.symbol.is_empty() && existing.name == h.name.trim()
-                    } else {
-                        existing.symbol.eq_ignore_ascii_case(h.symbol.trim())
-                    }
-            }) {
+            if h.option.is_none()
+                && before.holdings.iter().any(|existing| {
+                    existing.currency == h.currency.trim().to_ascii_uppercase()
+                        && existing.asset_class == h.asset_class
+                        && (before.cleared_trade_holdings.contains(&existing.id)
+                            || before
+                                .holding_trade_summaries
+                                .get(&existing.id)
+                                .is_some_and(|s| s.account == input.account.trim()))
+                        && if h.symbol.trim().is_empty() {
+                            existing.symbol.is_empty() && existing.name == h.name.trim()
+                        } else {
+                            existing.symbol.eq_ignore_ascii_case(h.symbol.trim())
+                        }
+                })
+            {
                 return Err(AppError::Conflict(
                     "该账户证券已有交易持仓，请在原持仓的交易明细里追加成交".into(),
                 ));
@@ -520,6 +550,17 @@ impl Database {
             // Use the first execution as a provisional reference until a current quote is available.
             tx.execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,fx_rate_to_base,valuation_date,fx_rate_source,fx_rate_observed_on,created_at,updated_at,quantity,current_price) VALUES ($1,$2,$3,$4,0,0,0,$5,NULL,$6,'','',$7,$7,0,$8)",
                 params![id,h.symbol.trim(),h.name.trim(),h.asset_class,h.currency.trim().to_ascii_uppercase(),crate::models::market::today(),now,number(input.price.trim())?.to_f64().unwrap()])?;
+            if let Some(contract) = &h.option {
+                super::options::create(
+                    &tx,
+                    &before,
+                    &id,
+                    contract,
+                    &h.currency.trim().to_ascii_uppercase(),
+                    &input.account,
+                    &operation.0,
+                )?;
+            }
             Database::snapshot_on(&tx)?
                 .holdings
                 .into_iter()
@@ -566,7 +607,15 @@ impl Database {
             created_at: original.map_or_else(|| now.clone(), |t| t.created_at.clone()),
             updated_at: original.map_or_else(|| now.clone(), |t| t.updated_at.clone()),
         };
-        validate(&trade)?;
+        let option = super::options::get(&tx, &h.id)?;
+        validate(&trade, option.as_ref())?;
+        if before
+            .option_contracts
+            .values()
+            .any(|c| c.underlying_id == h.id && c.account != trade.account)
+        {
+            return Err(invalid("股票成交账户必须与关联期权一致"));
+        }
         if let Some(old) = original {
             if edit_id.is_none()
                 && ((!input.holding_id.is_empty() && input.holding_id != h.id)

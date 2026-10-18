@@ -108,6 +108,9 @@ pub(super) fn validate_synced_holding_valuations(dataset: &SyncDataset) -> AppRe
         .ok_or_else(|| AppError::Validation("数据快照缺少 holdings".into()))?;
     if dataset.schema_version >= 14 {
         for row in &holdings.rows {
+            if sync_text(row, 3, "资产类别")? == "期权" {
+                continue;
+            }
             super::portfolio::validate_detail_totals(
                 sync_optional_real(row, 14, "成本价")?,
                 sync_optional_real(row, 15, "持仓数")?,

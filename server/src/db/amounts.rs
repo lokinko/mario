@@ -129,7 +129,11 @@ pub(super) fn rebuild(
         .unwrap_or_else(|| "0".into());
     let values = HoldingAmounts {
         price_status,
-        market_value: text(product(dec(&summary.quantity)?, dec(&price)?)?),
+        market_value: text(if let Some(c) = super::options::get(conn, &h.id)? {
+            c.value(dec(&summary.quantity)?, dec(&price)?)?
+        } else {
+            product(dec(&summary.quantity)?, dec(&price)?)?
+        }),
         cost_basis: summary.cost_basis.clone(),
         quantity: Some(summary.quantity.clone()),
         cost_price: Some(summary.average_cost.clone()),
@@ -254,9 +258,23 @@ pub(super) fn build(conn: &Connection, snapshot: &Snapshot) -> AppResult<Account
                 values.market_value = text(product(dec(quantity)?, dec(price)?)?);
             }
         }
-        let unrealized = if dec(&values.cost_basis)? > Decimal::ZERO {
+        let empty_option_anchor = snapshot
+            .option_contracts
+            .values()
+            .any(|c| c.underlying_id == holding.id)
+            && values
+                .quantity
+                .as_deref()
+                .map(dec)
+                .transpose()?
+                .is_some_and(|q| q.is_zero())
+            && dec(&values.market_value)?.is_zero()
+            && dec(&values.cost_basis)?.is_zero();
+        let unrealized = if dec(&values.cost_basis)? != Decimal::ZERO
+            || snapshot.option_contracts.contains_key(&holding.id)
+        {
             Some(text(dec(&values.market_value)? - dec(&values.cost_basis)?))
-        } else if summary.is_some_and(|s| s.quantity == "0") {
+        } else if empty_option_anchor || summary.is_some_and(|s| s.quantity == "0") {
             Some("0".into())
         } else {
             None
@@ -270,7 +288,9 @@ pub(super) fn build(conn: &Connection, snapshot: &Snapshot) -> AppResult<Account
                 amounts: values,
                 fx_rate,
                 unrealized_profit: unrealized,
-                settled_profit: summary.map(|s| s.settled_profit.clone()),
+                settled_profit: summary
+                    .map(|s| s.settled_profit.clone())
+                    .or_else(|| empty_option_anchor.then(|| "0".into())),
                 usable: !price_pending
                     && !snapshot.cleared_trade_holdings.contains(&holding.id)
                     && !snapshot
@@ -391,9 +411,9 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let limit = Decimal::from(1_000_000_000_000_000_i64);
-    let same = |source: &str, view: f64| -> AppResult<bool> {
+    let same = |source: &str, view: f64, signed: bool| -> AppResult<bool> {
         let source = dec(source)?;
-        if source < Decimal::ZERO || source > limit {
+        if (!signed && source < Decimal::ZERO) || source.abs() > limit {
             return Ok(false);
         }
         let value = source
@@ -401,14 +421,16 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
             .ok_or_else(|| AppError::Validation("金额超出范围".into()))?;
         Ok((value - view).abs() <= 4.0 * f64::EPSILON * value.abs().max(1.0))
     };
-    for (_id, payload, class, market, cost, quantity, cost_price, current_price) in rows {
+    for (id, payload, class, market, cost, quantity, cost_price, current_price) in rows {
+        let signed = super::options::get(conn, &id)?
+            .is_some_and(|c| c.side == crate::models::options::OptionSide::Short);
         let values: HoldingAmounts = serde_json::from_str(&payload)?;
         if !matches!(
             values.price_status.as_str(),
             "manual" | "quoted" | "unconfirmed" | "provisional" | "corporate_pending_price"
         ) || class == "现金"
-            || !same(&values.market_value, market)?
-            || !same(&values.cost_basis, cost)?
+            || !same(&values.market_value, market, signed)?
+            || !same(&values.cost_basis, cost, class == "期权")?
         {
             return Err(AppError::Validation("精确会计记录与资产投影不一致".into()));
         }
@@ -418,7 +440,7 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
             (values.current_price, current_price),
         ] {
             match (source, view) {
-                (Some(source), Some(view)) if same(&source, view)? => {}
+                (Some(source), Some(view)) if same(&source, view, false)? => {}
                 (None, None) => {}
                 _ => {
                     return Err(AppError::Validation(

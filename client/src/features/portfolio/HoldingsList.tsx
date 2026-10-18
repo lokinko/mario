@@ -43,7 +43,13 @@ export function HoldingsList({
     onFiltersChange({ ...filters, ...changes });
   const currency = snapshot.profile.baseCurrency;
   const closed = (item: Holding) =>
-    isClosedHolding(item, Boolean(snapshot.holdingTradeSummaries?.[item.id]));
+    isClosedHolding(
+      item,
+      Boolean(
+        snapshot.holdingTradeSummaries?.[item.id] ||
+        snapshot.stockOptionTotals?.[item.id],
+      ),
+    ) && !snapshot.stockOptionTotals?.[item.id]?.openContracts;
   const closedCount = holdings.filter(closed).length;
   const query = search.trim().toLocaleLowerCase();
   const visible = holdings.filter(

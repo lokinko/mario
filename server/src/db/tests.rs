@@ -1,6 +1,10 @@
 use super::*;
 
 pub(super) fn add_legacy_table_shapes(dataset: &mut SyncDataset) {
+    let specs = sync_specs_for_version(dataset.schema_version).unwrap();
+    dataset
+        .tables
+        .retain(|t| specs.iter().any(|s| s.name == t.name));
     for spec in sync_specs_for_version(dataset.schema_version).unwrap() {
         if !dataset.tables.iter().any(|table| table.name == spec.name) {
             dataset.tables.push(SyncTable {
@@ -253,6 +257,7 @@ pub(super) fn add_retired_tables(dataset: &mut SyncDataset) {
             "trade_settlements",
             "corporate_actions",
             "holding_amounts",
+            "holding_options",
         ]
         .contains(&t.name.as_str())
     });

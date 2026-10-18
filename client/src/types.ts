@@ -24,7 +24,7 @@ export interface Holding {
   id: string;
   symbol: string;
   name: string;
-  assetClass: "现金" | "债券" | "股票" | "基金" | "黄金" | "其他";
+  assetClass: "现金" | "债券" | "股票" | "基金" | "黄金" | "其他" | "期权";
   marketValue: number;
   costBasis: number;
   costPrice?: number | null;
@@ -114,7 +114,28 @@ export interface RiskFinding {
   action: string;
 }
 
+export interface OptionContract {
+  underlyingId: string;
+  account: string;
+  optionType: "call" | "put";
+  side: "long" | "short";
+  strike: string;
+  expiresOn: string;
+  multiplier: string;
+}
+export interface StockOptionTotals {
+  marketValue: string;
+  costBasis: string;
+  unrealizedProfit: string | null;
+  settledProfit: string | null;
+  optionSettledProfit: string;
+  optionUnrealizedProfit: string;
+  usable: boolean;
+  openContracts: number;
+}
 export interface Snapshot {
+  optionContracts?: Record<string, OptionContract>;
+  stockOptionTotals?: Record<string, StockOptionTotals>;
   accounting?: {
     totalValue: string | null;
     holdings: Record<string, AccountingHolding>;
@@ -176,7 +197,7 @@ export type AccountingTotals = Record<
   { value: string | null; missing: number }
 >;
 
-export type HoldingTradeKind = "buy" | "sell" | "dividend";
+export type HoldingTradeKind = "buy" | "sell" | "dividend" | "expire";
 export interface HoldingTradeFields {
   settlementMode?: "history" | "settle";
   kind: HoldingTradeKind;
@@ -199,6 +220,7 @@ export interface HoldingTrade extends HoldingTradeFields {
   updatedAt: string;
 }
 export interface TradeSecurityInput {
+  option?: OptionContract;
   name: string;
   symbol: string;
   assetClass: Holding["assetClass"];

@@ -920,6 +920,8 @@ mod tests {
 
     fn snapshot() -> Snapshot {
         Snapshot {
+            option_contracts: Default::default(),
+            stock_option_totals: Default::default(),
             accounting: None,
             corporate_actions: Vec::new(),
             cash_balances: Vec::new(),

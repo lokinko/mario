@@ -97,6 +97,7 @@ impl Database {
         snapshot.holding_revisions = statement
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<Result<_, _>>()?;
+        snapshot.option_contracts = super::options::load(conn)?;
         snapshot.holding_trades = super::trades::load(conn)?;
         snapshot.cash_balances = super::cash::states(conn)?;
         snapshot.holding_trade_summaries =
@@ -289,6 +290,21 @@ impl Database {
                 snapshot.plan.assumptions
             );
         }
+        snapshot.stock_option_totals = super::options::totals(&snapshot, &accounting)?;
+        if snapshot.option_contracts.keys().any(|id| {
+            snapshot
+                .holdings
+                .iter()
+                .any(|h| &h.id == id && h.quantity.is_some_and(|q| q > 0.0))
+        }) {
+            snapshot.valuation_status.decision_ready = false;
+            snapshot.valuation_status.warnings.push("存在未平仓期权；组合含权利金资产或负债，普通股票再平衡不适用，请核对保证金与交割风险".into());
+            snapshot.plan.assumptions = format!(
+                "存在未平仓期权，普通股票再平衡暂停；请核对保证金与交割风险。{}",
+                snapshot.plan.assumptions
+            );
+            snapshot.plan.rebalancing.clear();
+        }
         snapshot.accounting = Some(accounting);
         Ok(snapshot)
     }
@@ -335,6 +351,11 @@ impl Database {
     }
 
     pub fn add_holding(&self, input: &HoldingInput) -> AppResult<Snapshot> {
+        if input.asset_class == "期权" {
+            return Err(AppError::Validation(
+                "请在标的股票中添加期权合约并记录开仓".into(),
+            ));
+        }
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
         let before = super::daily::prepare(&transaction)?;
@@ -407,6 +428,26 @@ impl Database {
         let base_currency = before.profile.base_currency.clone();
         let mut input = super::fx::holding_input(&transaction, input, &base_currency)?;
         super::amounts::normalize(&mut input)?;
+        if input.asset_class == "期权" || before.option_contracts.contains_key(id) {
+            return Err(AppError::Validation(
+                "期权数量与成本由成交管理，当前权利金请使用期权报价入口".into(),
+            ));
+        }
+        if before
+            .option_contracts
+            .values()
+            .any(|c| c.underlying_id == id)
+        {
+            let old = before.holdings.iter().find(|h| h.id == id).unwrap();
+            if input.asset_class != old.asset_class
+                || input.currency != old.currency
+                || input.symbol.trim() != old.symbol
+            {
+                return Err(AppError::Validation(
+                    "股票已有期权关联，不能更改其证券代码、类别或币种".into(),
+                ));
+            }
+        }
         let trade_managed = super::trades::guard_edit(&transaction, id, &mut input)?;
         super::cash::normalize_input(&mut input)?;
         super::cash::guard(&transaction, Some(id), &input)?;
@@ -511,6 +552,11 @@ impl Database {
         quantity: f64,
         quote: &SecurityPriceQuote,
     ) -> AppResult<Snapshot> {
+        if super::options::get(&*self.conn()?, id)?.is_some() {
+            return Err(AppError::Validation(
+                "期权须录入合约权利金，不能采用股票行情".into(),
+            ));
+        }
         validate_holding_valuation_evidence(quantity, quote)?;
         if self.register_corporate_actions(id, quote)? {
             return Err(AppError::Validation(
@@ -631,6 +677,15 @@ impl Database {
         let Some(holding) = before.holdings.iter().find(|h| h.id == id) else {
             return Err(AppError::Validation("找不到要删除的资产".into()));
         };
+        if before
+            .option_contracts
+            .values()
+            .any(|c| c.underlying_id == id)
+        {
+            return Err(AppError::Validation(
+                "请先移除关联期权合约，再删除标的股票；真实平仓请记录成交".into(),
+            ));
+        }
         if before.cleared_trade_holdings.iter().any(|h| h == id) {
             return Err(AppError::Validation(
                 "存在隔离交易链，请先修复原始记录".into(),
@@ -667,7 +722,7 @@ impl Database {
             &transaction,
             id,
             "holding.delete",
-            &serde_json::json!({"holding":holding,"trades":trades,"accounting":before.accounting.as_ref().and_then(|a|a.holdings.get(id)),"cashBalance":before.cash_balances.iter().find(|b|b.holding_id==id),"corporateActions":before.corporate_actions.iter().filter(|a|a.holding_id==id).collect::<Vec<_>>()}),
+            &serde_json::json!({"holding":holding,"option":before.option_contracts.get(id),"trades":trades,"accounting":before.accounting.as_ref().and_then(|a|a.holdings.get(id)),"cashBalance":before.cash_balances.iter().find(|b|b.holding_id==id),"corporateActions":before.corporate_actions.iter().filter(|a|a.holding_id==id).collect::<Vec<_>>()}),
             &Option::<Holding>::None,
             &cash_delta,
             ("用户删除持仓及关联交易", Some(&operation.0)),

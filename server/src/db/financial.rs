@@ -41,7 +41,11 @@ pub(super) fn operation<T: Serialize>(
 ) -> AppResult<(String, String)> {
     let bytes = serde_json::to_vec(input)?;
     let hash = format!("{:x}", Sha256::digest(&bytes));
-    let key = if kind == "create" || kind == "amount" || kind == "corporate.declare" {
+    let key = if kind == "create"
+        || kind == "amount"
+        || kind == "corporate.declare"
+        || kind == "option.price"
+    {
         format!("{kind}:{id}")
     } else {
         format!("{kind}:{id}:{hash}")
@@ -202,6 +206,16 @@ impl Database {
                     )?,
                     _ => return Ok(None),
                 }
+            }
+            ("PUT", Some(path))
+                if path.starts_with("holdings/") && path.ends_with("/option-price") =>
+            {
+                let id = path
+                    .trim_start_matches("holdings/")
+                    .trim_end_matches("/option-price");
+                let input: crate::models::options::OptionPriceInput =
+                    serde_json::from_value(input.clone())?;
+                operation("option.price", &input.request_id, &(id, &input))?
             }
             ("PUT", Some(path)) if path.starts_with("holdings/") && path.ends_with("/amount") => {
                 let input: crate::models::daily::AmountInput =

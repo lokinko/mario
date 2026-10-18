@@ -13,6 +13,8 @@ use std::collections::BTreeMap;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Entry {
     #[serde(default)]
+    option: Option<crate::models::options::OptionContract>,
+    #[serde(default)]
     accounting: Option<crate::models::accounting::AccountingHolding>,
     #[serde(default)]
     exact_liabilities: Option<String>,
@@ -28,6 +30,7 @@ struct Entry {
 impl Entry {
     fn empty() -> Self {
         Self {
+            option: None,
             accounting: None,
             exact_liabilities: None,
             holding: None,
@@ -89,6 +92,7 @@ fn asset_entry(
     snapshot: &Snapshot,
 ) -> Entry {
     Entry {
+        option: snapshot.option_contracts.get(&holding.id).cloned(),
         accounting: snapshot
             .accounting
             .as_ref()
@@ -549,6 +553,11 @@ impl Database {
             return Ok(snapshot);
         }
         let before = prepare_at(&tx, now)?;
+        if before.option_contracts.contains_key(id) {
+            return Err(AppError::Validation(
+                "请从期权合约报价入口更新权利金".into(),
+            ));
+        }
         let holding = before
             .holdings
             .iter()
@@ -812,14 +821,49 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
                     .is_some_and(|h| h.id == entity && !entity.starts_with('$')) =>
             {
                 let h = entry.holding.unwrap();
-                validate_non_negative(&[h.market_value, h.cost_basis])?;
-                super::portfolio::validate_detail_totals(
-                    h.cost_price,
-                    h.quantity,
-                    h.current_price,
-                    h.market_value,
-                    h.cost_basis,
-                )?;
+                if let Some(c) = entry.option {
+                    c.validate()?;
+                    let q = h
+                        .quantity
+                        .ok_or_else(|| AppError::Validation("历史期权缺少张数".into()))?;
+                    let price = h
+                        .current_price
+                        .ok_or_else(|| AppError::Validation("历史期权缺少权利金".into()))?;
+                    if h.asset_class != "期权"
+                        || !q.is_finite()
+                        || q < 0.0
+                        || q.fract() != 0.0
+                        || !price.is_finite()
+                        || price < 0.0
+                        || !h.cost_basis.is_finite()
+                        || h.cost_basis.abs() > 1e15
+                    {
+                        return Err(AppError::Validation("历史期权数量或价格无效".into()));
+                    }
+                    let expected = c.value(
+                        crate::models::decimal::parse(&q.to_string())?,
+                        crate::models::decimal::parse(&price.to_string())?,
+                    )?;
+                    use rust_decimal::prelude::ToPrimitive;
+                    let expected = expected.to_f64().unwrap();
+                    if !h.market_value.is_finite()
+                        || (h.market_value - expected).abs() > 0.005_f64.max(expected.abs() * 1e-10)
+                    {
+                        return Err(AppError::Validation("历史期权市值不一致".into()));
+                    }
+                } else {
+                    if h.asset_class == "期权" {
+                        return Err(AppError::Validation("历史期权缺少合约".into()));
+                    }
+                    validate_non_negative(&[h.market_value, h.cost_basis])?;
+                    super::portfolio::validate_detail_totals(
+                        h.cost_price,
+                        h.quantity,
+                        h.current_price,
+                        h.market_value,
+                        h.cost_basis,
+                    )?;
+                }
                 validate_currency(&h.currency)?;
                 if h.fx_rate_to_base
                     .is_some_and(|v| !v.is_finite() || v <= 0.0 || v > 1e15)

@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { StockOptions } from "./StockOptions";
 import type { Holding, Snapshot } from "../../types";
 import { formatMoney } from "../../lib/format";
 import { HoldingTrades } from "./HoldingTrades";
@@ -24,6 +26,12 @@ export function HoldingDetail({
   onUpdate: (snapshot: Snapshot) => void;
   flash: (message: string) => void;
 }) {
+  const [stockEditing, setStockEditing] = useState(false);
+  const [optionEditing, setOptionEditing] = useState(false);
+  useEffect(() => {
+    onEditingTradeChange(stockEditing || optionEditing);
+    return () => onEditingTradeChange(false);
+  }, [stockEditing, optionEditing, onEditingTradeChange]);
   const tradeSummary = snapshot.holdingTradeSummaries?.[holding.id];
   const valuations =
     snapshot.holdingValuations?.filter((v) => v.holdingId === holding.id) ?? [];
@@ -102,18 +110,32 @@ export function HoldingDetail({
           收盘日 {v.observedOn} · {v.disclaimer}
         </p>
       ))}
+      {holding.assetClass === "股票" && (
+        <StockOptions
+          key={holding.id}
+          snapshot={snapshot}
+          stock={holding}
+          disabled={busy || stockEditing}
+          onEditingChange={setOptionEditing}
+          onUpdate={onUpdate}
+          flash={flash}
+        />
+      )}
       {holding.assetClass !== "现金" && (
         <>
           <h3>交易明细</h3>
           {snapshot.clearedTradeHoldings?.includes(holding.id) && (
             <p className="warning-text">交易明细需重新录入</p>
           )}
-          <fieldset disabled={busy} className="holding-trades-controls">
+          <fieldset
+            disabled={busy || optionEditing}
+            className="holding-trades-controls"
+          >
             <HoldingTrades
               key={holding.id}
               snapshot={snapshot}
               holding={holding}
-              onEditingChange={onEditingTradeChange}
+              onEditingChange={setStockEditing}
               onUpdate={onUpdate}
               flash={flash}
             />

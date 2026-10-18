@@ -16,6 +16,21 @@ export async function getSnapshot(): Promise<Snapshot> {
   return httpRequest<Snapshot>("/snapshot");
 }
 
+export function updateOptionPrice(
+  id: string,
+  input: {
+    requestId: string;
+    expectedRevision: string;
+    price: string;
+    observedOn: string;
+  },
+): Promise<Snapshot> {
+  return financialRequest(`/holdings/${encodeURIComponent(id)}/option-price`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
 export function getFinancialHistory(id: string): Promise<{
   records: {
     id: string;

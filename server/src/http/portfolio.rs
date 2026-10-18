@@ -28,6 +28,7 @@ pub(super) fn router() -> Router {
         .route("/api/daily-assets", get(daily_assets))
         .route("/api/daily-assets/compare", get(compare_daily_assets))
         .route("/api/holdings/{id}/amount", put(update_holding_amount))
+        .route("/api/holdings/{id}/option-price", put(update_option_price))
         .route(
             "/api/holdings/{id}/financial-history",
             get(financial_history),
@@ -76,6 +77,14 @@ pub(super) fn router() -> Router {
             "/api/holdings/{id}/verified-valuation",
             put(apply_verified_holding_valuation),
         )
+}
+
+async fn update_option_price(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(id): Path<String>,
+    Json(input): Json<models::options::OptionPriceInput>,
+) -> AppResult<Json<Snapshot>> {
+    Ok(Json(state.db.update_option_price(&id, &input)?))
 }
 
 async fn financial_history(

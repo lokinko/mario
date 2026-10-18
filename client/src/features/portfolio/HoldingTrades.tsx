@@ -13,20 +13,27 @@ import type {
   HoldingTradeFields,
   HoldingTradeKind,
   Snapshot,
+  OptionContract,
 } from "../../types";
 import { formatMoney, formatNumber } from "../../lib/format";
 import { localDateValue } from "../../lib/dates";
 
-const names: Record<HoldingTradeKind, string> = {
+const tradeNames: Record<HoldingTradeKind, string> = {
   buy: "买入",
   sell: "卖出",
   dividend: "现金分红",
+  expire: "到期作废",
 };
 const pageSize = 5;
 const decimal = /^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/;
 const validNumber = (s: string) => decimal.test(s) && Number(s) <= 1e15;
 // Only estimate the broker's gross amount here; all accounting is performed on the server.
-function estimate(quantity: string, price: string, currency: string) {
+function estimate(
+  quantity: string,
+  price: string,
+  currency: string,
+  multiplier = "1",
+) {
   if (!validNumber(quantity) || !validNumber(price)) return "";
   const digits =
     new Intl.NumberFormat("zh-CN", {
@@ -38,7 +45,10 @@ function estimate(quantity: string, price: string, currency: string) {
     return BigInt(whole) * 100000000n + BigInt(fraction.padEnd(8, "0"));
   };
   const divisor = 10n ** BigInt(16 - digits);
-  const rounded = (scaled(quantity) * scaled(price) + divisor / 2n) / divisor;
+  const rounded =
+    (scaled(quantity) * scaled(price) * BigInt(Number(multiplier)) +
+      divisor / 2n) /
+    divisor;
   const s = rounded.toString().padStart(digits + 1, "0");
   return digits ? s.slice(0, -digits) + "." + s.slice(-digits) : s;
 }
@@ -60,6 +70,7 @@ const emptyDraft = (account = ""): Draft => ({
 export function HoldingTrades({
   snapshot,
   holding,
+  newOption,
   onUpdate,
   onClose,
   onEditingChange,
@@ -67,11 +78,23 @@ export function HoldingTrades({
 }: {
   snapshot: Snapshot;
   holding?: Holding;
+  newOption?: { contract: OptionContract; name: string; currency: string };
   onUpdate: (snapshot: Snapshot) => void;
   onClose?: () => void;
   onEditingChange?: (editing: boolean) => void;
   flash: (message: string) => void;
 }) {
+  const option = holding
+    ? snapshot.optionContracts?.[holding.id]
+    : newOption?.contract;
+  const names = option
+    ? {
+        buy: option.side === "long" ? "买入开仓" : "买入平仓",
+        sell: option.side === "long" ? "卖出平仓" : "卖出开仓",
+        dividend: "现金分红",
+        expire: "到期作废",
+      }
+    : tradeNames;
   const trades = (snapshot.holdingTrades ?? []).filter(
     (t) => t.holdingId === holding?.id,
   );
@@ -90,12 +113,19 @@ export function HoldingTrades({
   const [uncertain, setUncertain] = useState(false);
   const [open, setOpen] = useState(!holding);
   const [editing, setEditing] = useState<HoldingTrade | null>(null);
-  const [draft, setDraft] = useState(() => emptyDraft(summary?.account));
+  const [draft, setDraft] = useState<Draft>(() => ({
+    ...emptyDraft(option?.account ?? summary?.account),
+    kind:
+      newOption?.contract.side === "short"
+        ? ("sell" as const)
+        : ("buy" as const),
+  }));
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [assetClass, setAssetClass] = useState<Holding["assetClass"]>("股票");
   const [currency, setCurrency] = useState(
     holding?.currency ??
+      newOption?.currency ??
       (["CNY", "HKD", "USD"].includes(snapshot.profile.baseCurrency)
         ? snapshot.profile.baseCurrency
         : "CNY"),
@@ -127,27 +157,38 @@ export function HoldingTrades({
   );
   const money = (value: string | number) => formatMoney(value, currency, 2);
   const isDividend = draft.kind === "dividend";
-  const gross =
-    draft.grossAmount || estimate(draft.quantity, draft.price, currency);
+  const isExpiry = draft.kind === "expire";
+  const gross = isExpiry
+    ? "0"
+    : draft.grossAmount ||
+      estimate(
+        draft.quantity,
+        draft.price,
+        currency,
+        option?.multiplier ?? "1",
+      );
   const expense = Number(draft.fees) + Number(draft.taxes);
   const cash =
     draft.kind === "buy" ? -(Number(gross) + expense) : Number(gross) - expense;
   const valid = Boolean(
-    (holding || name.trim()) &&
+    (holding || newOption || name.trim()) &&
     draft.account.trim() &&
     draft.occurredOn &&
     draft.occurredOn <= localDateValue(new Date()) &&
     /^[1-9]\d{0,6}$/.test(draft.sequence) &&
     Number(draft.sequence) <= 1e6 &&
     validNumber(gross) &&
-    Number(gross) > 0 &&
+    (isExpiry || Number(gross) > 0) &&
     validNumber(draft.fees) &&
     validNumber(draft.taxes) &&
     (isDividend ||
       (validNumber(draft.quantity) &&
         Number(draft.quantity) > 0 &&
         validNumber(draft.price) &&
-        Number(draft.price) > 0)) &&
+        (isExpiry || Number(draft.price) > 0))) &&
+    (!option ||
+      (Number.isInteger(Number(draft.quantity)) &&
+        draft.occurredOn <= option.expiresOn)) &&
     Number(gross) + expense <= 1e15,
   );
   const nextSequence = (date: string) =>
@@ -170,7 +211,19 @@ export function HoldingTrades({
         : {
             ...emptyDraft(summary?.account),
             kind,
-            sequence: nextSequence(localDateValue(new Date())),
+            sequence: nextSequence(
+              kind === "expire"
+                ? option!.expiresOn
+                : localDateValue(new Date()),
+            ),
+            ...(kind === "expire"
+              ? {
+                  occurredOn: option!.expiresOn,
+                  quantity: summary?.quantity ?? "",
+                  price: "0",
+                  grossAmount: "0",
+                }
+              : {}),
           },
     );
     attempt.current = null;
@@ -195,7 +248,7 @@ export function HoldingTrades({
       occurredOn: draft.occurredOn,
       sequence: Number(draft.sequence),
       quantity: isDividend ? "0" : draft.quantity,
-      price: isDividend ? "0" : draft.price,
+      price: isDividend || isExpiry ? "0" : draft.price,
       grossAmount: gross,
       fees: draft.fees,
       taxes: draft.taxes,
@@ -213,7 +266,15 @@ export function HoldingTrades({
       expectedRevision: revision.current,
       newHolding: holding
         ? null
-        : { name: name.trim(), symbol: symbol.trim(), assetClass, currency },
+        : newOption
+          ? {
+              name: newOption.name,
+              symbol: "",
+              assetClass: "期权" as const,
+              currency,
+              option: newOption.contract,
+            }
+          : { name: name.trim(), symbol: symbol.trim(), assetClass, currency },
     };
     const key = JSON.stringify(input);
     if (attempt.current?.key !== key)
@@ -351,11 +412,21 @@ export function HoldingTrades({
               ? `${summary.account} · 按真实成交计算持仓`
               : "从最早一笔真实买入开始录入"}
           </span>
-          {(["buy", "sell", "dividend"] as const).map((kind) => (
+          {(option
+            ? (["buy", "sell", "expire"] as const)
+            : (["buy", "sell", "dividend"] as const)
+          ).map((kind) => (
             <button
               key={kind}
               className="secondary"
-              disabled={busy || uncertain || open || quarantined}
+              disabled={
+                busy ||
+                uncertain ||
+                open ||
+                quarantined ||
+                (kind === "expire" &&
+                  option!.expiresOn > localDateValue(new Date()))
+              }
               onClick={() => begin(kind)}
             >
               {kind === "buy" && <Plus size={14} />}{" "}
@@ -401,7 +472,9 @@ export function HoldingTrades({
                 ? "编辑交易"
                 : holding
                   ? `${holding.name} · ${names[draft.kind]}`
-                  : "记录第一笔真实买入"}
+                  : newOption
+                    ? `${newOption.name} · ${names[draft.kind]}`
+                    : "记录第一笔真实买入"}
             </h3>
             <button
               type="button"
@@ -420,7 +493,7 @@ export function HoldingTrades({
           </div>
           <fieldset className="holding-fields" disabled={busy || uncertain}>
             <div className="form-grid">
-              {!holding && (
+              {!holding && !newOption && (
                 <>
                   <label>
                     <span>证券名称</span>
@@ -478,14 +551,27 @@ export function HoldingTrades({
                         ...d,
                         kind: e.target.value as HoldingTradeKind,
                         grossAmount: "",
+                        ...(e.target.value === "expire" && option
+                          ? {
+                              occurredOn: option.expiresOn,
+                              quantity: summary?.quantity ?? "",
+                              price: "0",
+                              grossAmount: "0",
+                              sequence: nextSequence(option.expiresOn),
+                            }
+                          : {}),
                       }))
                     }
                   >
-                    {Object.entries(names).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
-                      </option>
-                    ))}
+                    {Object.entries(names)
+                      .filter(([key]) =>
+                        option ? key !== "dividend" : key !== "expire",
+                      )
+                      .map(([key, label]) => (
+                        <option key={key} value={key}>
+                          {label}
+                        </option>
+                      ))}
                   </select>
                 </label>
               )}
@@ -500,10 +586,17 @@ export function HoldingTrades({
               })}
               {!isDividend && (
                 <>
-                  {field("quantity", "成交数量", { required: true })}
-                  {field("price", `成交单价（${currency}）`, {
+                  {field("quantity", option ? "成交张数" : "成交数量", {
                     required: true,
                   })}
+                  {!isExpiry &&
+                    field(
+                      "price",
+                      `${option ? "每单位权利金" : "成交单价"}（${currency}）`,
+                      {
+                        required: true,
+                      },
+                    )}
                 </>
               )}
               <label>
@@ -519,6 +612,7 @@ export function HoldingTrades({
                       : `成交金额（${currency}）`
                   }
                   inputMode="decimal"
+                  disabled={isExpiry}
                   value={draft.grossAmount}
                   placeholder={
                     isDividend
@@ -540,6 +634,12 @@ export function HoldingTrades({
                 {field("note", "交易备注", { maxLength: 2000 })}
               </div>
             </details>
+            {option && (
+              <p className="section-intro">
+                合约乘数 {option.multiplier}；成交额 = 张数 × 每单位权利金 ×
+                乘数。空头市值计为负债。到期作废仅用于已核对未行权、未被指派的合约，交割请先核对券商单据。
+              </p>
+            )}
             <p className="trade-amount">
               {cash < 0 ? "实际支出" : "实际净收入"}{" "}
               <strong>

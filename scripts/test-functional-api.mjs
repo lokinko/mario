@@ -491,6 +491,44 @@ try {
   assert(!snap.holdings.some(h => h.id === oppoId));
   assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
   console.log("PASS whole-position removal: stale version rollback, linked executions, net cash reversal, journal, receipts and restart persistence");
+  // Options belong to a stock anchor; premium cash flows and liability valuation stay distinct.
+  const underlyingId = trade.holdingId;
+  const optionOpen = {
+    ...execution, requestId: randomUUID(), externalId: "option-open", taxes: "0",
+    expectedCashBaseline: snap.cashBalances.find(c => c.currency === "CNY").baselineId,
+    newHolding: {name:"标的认沽空头",symbol:"",assetClass:"期权",currency:"CNY",option:{underlyingId,account:execution.account,optionType:"put",side:"short",strike:"10",expiresOn:today,multiplier:"100"}},
+    kind:"sell",quantity:"2",price:"3",grossAmount:"600",fees:"2",
+  };
+  snap=await api("/holding-trades","POST",optionOpen);
+  const optionId=snap.holdingTrades.find(t=>t.id===optionOpen.requestId).holdingId;
+  assert.equal(snap.holdings.find(h=>h.id===underlyingId).quantity,0);
+  assert.equal(snap.accounting.holdings[optionId].marketValue,"-600");
+  assert.equal(snap.accounting.holdings[optionId].costBasis,"-598");
+  assert.equal(snap.holdings.find(h=>h.id===cash).marketValue,102798);
+  const quote={requestId:randomUUID(),expectedRevision:snap.holdingRevisions[optionId],price:"1.25",observedOn:today};
+  snap=await api(`/holdings/${optionId}/option-price`,"PUT",quote);
+  assert.equal(snap.stockOptionTotals[underlyingId].marketValue,"-250");
+  assert.equal(snap.stockOptionTotals[underlyingId].optionUnrealizedProfit,"348");
+  assert.equal(snap.accounting.totalValue,"102548");
+  assert.equal((await api("/financial-operations/resolve","POST",{method:"PUT",path:`/api/holdings/${optionId}/option-price`,input:quote})).committed,true);
+  assert.equal((await api(`/holdings/${optionId}/option-price`,"PUT",quote)).accounting.totalValue,"102548");
+  await api(`/holdings/${optionId}/option-price`,"PUT",{...quote,requestId:randomUUID(),price:"2"},409);
+  await api(`/holdings/${underlyingId}`,"DELETE",{expectedRevision:snap.holdingRevisions[underlyingId]},400);
+  const optionClose={...optionOpen,requestId:randomUUID(),newHolding:null,holdingId:optionId,expectedRevision:snap.holdingRevisions[optionId],kind:"buy",sequence:2,quantity:"1",price:"1",grossAmount:"100",fees:"1",externalId:"option-close"};
+  snap=await api("/holding-trades","POST",optionClose);
+  assert.equal(snap.holdingTradeSummaries[optionId].settledProfit,"198");
+  assert.equal(snap.holdingTradeSummaries[optionId].costBasis,"-299");
+  assert.equal(snap.stockOptionTotals[underlyingId].optionUnrealizedProfit,"174");
+  const expiry={...optionClose,requestId:randomUUID(),expectedRevision:snap.holdingRevisions[optionId],kind:"expire",sequence:3,price:"0",grossAmount:"0",fees:"0",externalId:"option-expiry"};
+  snap=await api("/holding-trades","POST",expiry);
+  assert.equal(snap.holdingTradeSummaries[optionId].quantity,"0");
+  assert.equal(snap.stockOptionTotals[underlyingId].settledProfit,"497");
+  assert.equal(snap.accounting.totalValue,"102697");
+  assert.equal((await api("/daily-assets")).records[0].totalAssets,102697);
+  await stopServer();await startServer();snap=await api("/snapshot");
+  assert.equal(snap.optionContracts[optionId].underlyingId,underlyingId);
+  assert.equal(snap.stockOptionTotals[underlyingId].optionSettledProfit,"497");
+  console.log("PASS stock options: short premium, multiplier, liability valuation, partial close, expiry, grouped returns, receipts, daily assets and restart");
   console.log(
     `PASS restart persistence; ${count} authenticated HTTP assertions total`,
   );

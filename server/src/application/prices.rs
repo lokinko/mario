@@ -82,6 +82,7 @@ pub async fn refresh(
         .filter(|h| {
             h.quantity.is_some_and(|q| q > 0.0)
                 && h.asset_class != "现金"
+                && !snapshot.option_contracts.contains_key(&h.id)
                 && !h.symbol.trim().is_empty()
         })
         .collect::<Vec<_>>();
@@ -362,6 +363,7 @@ mod tests {
             holding_id: String::new(),
             expected_revision: None,
             new_holding: Some(crate::models::TradeSecurityInput {
+                option: None,
                 symbol: "AAPL".into(),
                 name: "Apple".into(),
                 asset_class: "股票".into(),

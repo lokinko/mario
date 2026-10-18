@@ -85,6 +85,11 @@ impl PortfolioService<'_> {
         input: crate::models::VerifiedHoldingValuationInput,
     ) -> AppResult<Snapshot> {
         let snapshot = self.db.snapshot()?;
+        if snapshot.option_contracts.contains_key(id) {
+            return Err(crate::AppError::Validation(
+                "请通过期权报价入口核对每单位权利金".into(),
+            ));
+        }
         let query = SecurityPriceQuery {
             action_from: snapshot
                 .holding_trades
@@ -122,6 +127,16 @@ impl PortfolioService<'_> {
         self.refresh_fx(false).await
     }
     pub async fn save_holding(&self, id: Option<&str>, input: HoldingInput) -> AppResult<Snapshot> {
+        let option_holding = if let Some(id) = id {
+            self.db.snapshot()?.option_contracts.contains_key(id)
+        } else {
+            false
+        };
+        if input.asset_class == "期权" || option_holding {
+            return Err(crate::AppError::Validation(
+                "期权资料请通过股票详情中的期权入口管理".into(),
+            ));
+        }
         self.refresh_fx(false).await?;
         let input = prices::complete_input(input, self.market.prices.as_ref()).await?;
         if let Some(id) = id {

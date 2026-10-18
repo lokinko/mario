@@ -83,10 +83,36 @@ export function MyFacts({
       },
   );
   const investments = sortInvestmentHoldings(
-    snapshot.holdings.filter((item) => item.assetClass !== "现金"),
+    snapshot.holdings.filter(
+      (item) =>
+        item.assetClass !== "现金" && !snapshot.optionContracts?.[item.id],
+    ),
     snapshot,
     filters.sort,
   );
+  const displayAccounting = snapshot.accounting
+    ? { ...snapshot.accounting, holdings: { ...snapshot.accounting.holdings } }
+    : null;
+  for (const [id, totals] of Object.entries(snapshot.stockOptionTotals ?? {})) {
+    if (displayAccounting?.holdings[id])
+      displayAccounting.holdings[id] = {
+        ...displayAccounting.holdings[id],
+        priceStatus: Object.entries(snapshot.optionContracts ?? {}).some(
+          ([child, c]) =>
+            c.underlyingId === id &&
+            ["provisional", "unconfirmed"].includes(
+              snapshot.accounting?.holdings[child]?.priceStatus ?? "",
+            ),
+        )
+          ? "provisional"
+          : displayAccounting.holdings[id].priceStatus,
+        marketValue: totals.marketValue,
+        costBasis: totals.costBasis,
+        unrealizedProfit: totals.unrealizedProfit,
+        settledProfit: totals.settledProfit,
+        usable: totals.usable,
+      };
+  }
   const currency = snapshot.profile.baseCurrency;
 
   const run = async (
@@ -152,7 +178,8 @@ export function MyFacts({
       <div key={item.id || item.currency} className="facts-asset-entry">
         <AssetAmountRow
           holding={withExactValues(snapshot, item)}
-          exact={snapshot.accounting?.holdings[item.id]}
+          exact={displayAccounting?.holdings[item.id]}
+          optionTotals={snapshot.stockOptionTotals?.[item.id]}
           realizedPnl={tradeSummary?.settledProfit}
           onOpen={() => {
             if (item.assetClass === "现金") openEditor(item);
@@ -255,7 +282,7 @@ export function MyFacts({
       {section !== "income" && (
         <InvestmentOverview
           holdings={section === "holdings" ? investments : cash}
-          accounting={snapshot.accounting}
+          accounting={displayAccounting}
           baseCurrency={currency}
           cash={section === "savings"}
         />
