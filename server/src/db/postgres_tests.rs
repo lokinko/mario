@@ -87,15 +87,22 @@ fn postgres_upgrades_remove_retired_tables_and_preserve_active_data() {
     drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
     tenant.sql("CREATE TABLE goals (id TEXT PRIMARY KEY);
         CREATE TABLE portfolio_events (id TEXT PRIMARY KEY, reversal_of_event_id TEXT REFERENCES portfolio_events(id));
+        CREATE TABLE memory_preferences (memory_id TEXT PRIMARY KEY, preference TEXT, note TEXT, updated_at TEXT);
+        INSERT INTO memory_preferences VALUES ('old-analysis','pinned','retired','2026-10-17T00:00:00Z');
+        INSERT INTO settings(key,value) VALUES ('analysis.settings','{\"useMemory\":true,\"webSearch\":false}');
         INSERT INTO goals VALUES ('old-goal');
         INSERT INTO portfolio_events VALUES ('original',NULL),('reversal','original');
-        UPDATE data_revision SET schema_version=5 WHERE id=1;");
+        UPDATE data_revision SET schema_version=8 WHERE id=1;");
     for _ in 0..2 {
         let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
         assert_eq!(db.snapshot().unwrap().profile.monthly_income, 12345.0);
         assert!(tenant.check(
-            "SELECT to_regclass('goals') IS NULL AND to_regclass('portfolio_events') IS NULL"
+            "SELECT to_regclass('goals') IS NULL AND to_regclass('portfolio_events') IS NULL AND to_regclass('memory_preferences') IS NULL"
         ));
+        let preset: serde_json::Value =
+            serde_json::from_str(&db.setting("analysis.settings").unwrap().unwrap()).unwrap();
+        assert!(preset.get("useMemory").is_none());
+        assert_eq!(preset["webSearch"], false);
         assert!(tenant.check(&format!(
             "SELECT schema_version={} FROM data_revision WHERE id=1",
             schema::POSTGRES_SCHEMA_VERSION

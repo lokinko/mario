@@ -532,11 +532,8 @@ pub struct AnalysisRequest {
     pub user_message: Option<String>,
     pub question: String,
     pub workflow: String,
-    pub use_memory: bool,
     pub reflect: bool,
     pub explore_alternatives: bool,
-    #[serde(default)]
-    pub excluded_memory_ids: Vec<String>,
     #[serde(default)]
     pub context_selection: ContextSelection,
     #[serde(default)]
@@ -547,7 +544,6 @@ pub struct AnalysisRequest {
 #[serde(rename_all = "camelCase", default)]
 pub struct AnalysisSettings {
     pub workflow: String,
-    pub use_memory: bool,
     pub reflect: bool,
     pub explore_alternatives: bool,
     pub web_search: bool,
@@ -558,7 +554,6 @@ impl Default for AnalysisSettings {
     fn default() -> Self {
         Self {
             workflow: "deep".into(),
-            use_memory: true,
             reflect: true,
             explore_alternatives: true,
             web_search: true,
@@ -625,12 +620,10 @@ pub struct AnalysisPreview {
     pub model: String,
     pub workflow: String,
     pub groups: Vec<ContextGroup>,
-    pub memory_candidates: Vec<MemoryItem>,
     pub evidence_candidates: Vec<ResearchEvidence>,
     pub payload: serde_json::Value,
     pub payload_bytes: usize,
     pub context_revision: String,
-    pub memory_policy: String,
     pub system_policy: String,
     pub local_only: Vec<String>,
     pub generated_at: String,
@@ -644,11 +637,6 @@ pub struct AnalysisTransparency {
     pub context_groups: Vec<String>,
     pub payload_bytes: usize,
     pub context_revision: String,
-    pub memory_items_used: usize,
-    #[serde(default)]
-    pub reviewed_memory_items_used: usize,
-    #[serde(default)]
-    pub conflicting_memory_items_used: usize,
     #[serde(default)]
     pub evidence_items_used: usize,
     #[serde(default)]
@@ -763,8 +751,6 @@ pub struct AnalysisWorkflowTrace {
     #[serde(default)]
     pub research_plan: Option<String>,
     #[serde(default)]
-    pub memory_items: Vec<MemoryItem>,
-    #[serde(default)]
     pub alternatives: Vec<AnalysisAlternative>,
     #[serde(default)]
     pub critique: Option<String>,
@@ -844,53 +830,6 @@ pub struct StoredAnalysis {
 pub struct ReviewReminderSummary {
     pub periodic_review_due: bool,
     pub checked_on: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemoryItem {
-    pub id: String,
-    pub kind: String,
-    pub title: String,
-    pub summary: String,
-    pub content: serde_json::Value,
-    pub created_at: String,
-    pub occurred_at: String,
-    pub status: String,
-    pub reviewed: bool,
-    pub contradiction: bool,
-    pub tags: Vec<String>,
-    #[serde(default = "default_memory_preference")]
-    pub preference: String,
-    #[serde(default)]
-    pub preference_note: String,
-    #[serde(default)]
-    pub preference_updated_at: Option<String>,
-    #[serde(default = "enabled")]
-    pub selected: bool,
-    #[serde(default)]
-    pub retrieval: Option<MemoryRetrieval>,
-}
-
-fn default_memory_preference() -> String {
-    "default".into()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemoryPreferenceInput {
-    pub preference: String,
-    #[serde(default)]
-    pub note: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemoryRetrieval {
-    pub score: f64,
-    pub age_days: i64,
-    pub reasons: Vec<String>,
-    pub passes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1069,19 +1008,6 @@ impl AnalysisRequest {
         }
         if !matches!(self.workflow.as_str(), "quick" | "deep") {
             return Err(crate::AppError::Validation("未知的分析工作流".into()));
-        }
-        if self.excluded_memory_ids.len() > 64 {
-            return Err(crate::AppError::Validation(
-                "单次最多排除 64 条候选记忆".into(),
-            ));
-        }
-        let mut unique_ids = std::collections::HashSet::new();
-        for id in &self.excluded_memory_ids {
-            if id.trim().is_empty() || id.chars().count() > 128 || !unique_ids.insert(id) {
-                return Err(crate::AppError::Validation(
-                    "排除记忆 ID 必须非空、不重复且不超过 128 个字符".into(),
-                ));
-            }
         }
         Ok(())
     }

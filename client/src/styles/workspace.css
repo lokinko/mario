@@ -69,20 +69,17 @@
   margin-bottom: 16px;
 }
 .investment-overview-grid,
-.review-metrics,
-.memory-overview {
+.review-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
-.review-metrics,
-.memory-overview {
+.review-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 16px;
 }
 .investment-overview-metric,
-.review-metrics article,
-.memory-overview article {
+.review-metrics article {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -93,8 +90,7 @@
   gap: 4px;
 }
 .investment-overview-metric > span,
-.review-metrics span,
-.memory-overview span {
+.review-metrics span {
   font-size: 12px;
   color: var(--muted);
 }
@@ -103,8 +99,7 @@
   justify-content: space-between;
 }
 .investment-overview-metric > strong,
-.review-metrics strong,
-.memory-overview strong {
+.review-metrics strong {
   font-size: 26px;
   line-height: 1.4;
   font-weight: 650;
@@ -112,8 +107,7 @@
   overflow-wrap: anywhere;
 }
 .investment-overview-metric > small,
-.review-metrics small,
-.memory-overview small {
+.review-metrics small {
   color: var(--muted);
   font-size: 12px;
 }
@@ -359,15 +353,13 @@
   white-space: pre-wrap;
 }
 .system-review-list,
-.evidence-list,
-.memory-manager-list {
+.evidence-list {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 .system-review-list > article,
-.evidence-list > article,
-.memory-manager-list > article {
+.evidence-list > article {
   padding: 14px 0;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -376,13 +368,11 @@
   min-width: 0;
 }
 .system-review-list > article:last-child,
-.evidence-list > article:last-child,
-.memory-manager-list > article:last-child {
+.evidence-list > article:last-child {
   border-bottom: 0;
 }
 .system-review-head small,
-.evidence-list small,
-.memory-manager-list > article > small {
+.evidence-list small {
   color: var(--muted);
   font-size: 12px;
 }
@@ -393,13 +383,8 @@
   gap: 12px;
   margin-top: 6px;
 }
-.evidence-list .inactive,
-.memory-manager-list > article.hidden {
+.evidence-list .inactive {
   opacity: 0.7;
-}
-.memory-manager-list > article.pinned {
-  border-left: 3px solid var(--green);
-  padding-left: 12px;
 }
 .rule-layout {
   display: block;
@@ -483,10 +468,6 @@
 .drawer-body .panel {
   border: 0;
   padding: 0;
-}
-.drawer-body .memory-preference-editor {
-  display: flex;
-  flex-direction: column;
 }
 .drawer-body .rule-editor {
   border: 0;
@@ -636,8 +617,7 @@ body[data-drawer-open] .exchange-float {
     gap: 8px;
     padding-inline: 12px;
   }
-  .review-metrics,
-  .memory-overview {
+  .review-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -680,10 +660,6 @@ body[data-drawer-open] .exchange-float {
   .secondary,
   .form-grid input:not([type="checkbox"]):not([type="radio"]),
   .form-grid select,
-  .memory-toolbar button,
-  .memory-toolbar input,
-  .memory-preference-editor input,
-  .memory-preference-editor select,
   .text-button,
   .section-switcher button,
   .position-filters button,
@@ -696,8 +672,7 @@ body[data-drawer-open] .exchange-float {
     min-height: 44px;
   }
   .investment-overview-grid,
-  .review-metrics,
-  .memory-overview {
+  .review-metrics {
     gap: 8px;
   }
   .investment-overview-metric {

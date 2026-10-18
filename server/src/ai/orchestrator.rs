@@ -2,42 +2,38 @@ use std::{collections::HashSet, time::Instant};
 
 use super::{
     structured_output::{parse_structured_analysis, render_report},
-    workflow::{AnalysisWorkflow, CandidateContext, InvestmentWorkflowV6, StagePrompt},
+    workflow::{AnalysisWorkflow, CandidateContext, InvestmentWorkflowV7, StagePrompt},
     ModelProvider,
 };
 use crate::{
     context::BuiltContext,
     error::{AppError, AppResult},
-    memory::HybridMemoryRetriever,
     models::{
         AnalysisAlternative, AnalysisEvidenceReference, AnalysisRequest, AnalysisResult,
-        AnalysisTransparency, AnalysisWorkflowTrace, MemoryItem, ModelCallTrace,
-        OutputValidationTrace, ResearchEvidence, StructuredAnalysis,
+        AnalysisTransparency, AnalysisWorkflowTrace, ModelCallTrace, OutputValidationTrace,
+        ResearchEvidence, StructuredAnalysis,
     },
 };
 
 pub struct InvestmentOrchestrator<'a> {
     provider: &'a dyn ModelProvider,
-    retriever: &'a HybridMemoryRetriever,
     workflow: &'a dyn AnalysisWorkflow,
     events: Option<crate::ports::analysis::EventSender>,
 }
 
-static DEFAULT_WORKFLOW: InvestmentWorkflowV6 = InvestmentWorkflowV6;
+static DEFAULT_WORKFLOW: InvestmentWorkflowV7 = InvestmentWorkflowV7;
 
 impl<'a> InvestmentOrchestrator<'a> {
-    pub fn new(provider: &'a dyn ModelProvider, retriever: &'a HybridMemoryRetriever) -> Self {
-        Self::with_workflow(provider, retriever, &DEFAULT_WORKFLOW)
+    pub fn new(provider: &'a dyn ModelProvider) -> Self {
+        Self::with_workflow(provider, &DEFAULT_WORKFLOW)
     }
 
     pub fn with_workflow(
         provider: &'a dyn ModelProvider,
-        retriever: &'a HybridMemoryRetriever,
         workflow: &'a dyn AnalysisWorkflow,
     ) -> Self {
         Self {
             provider,
-            retriever,
             workflow,
             events: None,
         }
@@ -52,7 +48,6 @@ impl<'a> InvestmentOrchestrator<'a> {
         &self,
         request: &AnalysisRequest,
         built_context: &BuiltContext,
-        memory_pool: &[MemoryItem],
     ) -> AppResult<AnalysisResult> {
         let mut prompt_context = built_context.payload.clone();
         let mut stages = vec!["确定性风险检查".into(), "构建最小必要上下文".into()];
@@ -156,19 +151,6 @@ impl<'a> InvestmentOrchestrator<'a> {
         }
         // Classification is confined to the frozen, authorized candidates. It
         // never reloads the database or rewrites any original source fields.
-        let eligible_memories = memory_pool
-            .iter()
-            .filter(|item| {
-                request.use_memory
-                    && item.selected
-                    && item.preference != "hidden"
-                    && !request.excluded_memory_ids.contains(&item.id)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        trace
-            .evidence_catalog
-            .extend(eligible_memories.iter().map(memory_reference));
         if !trace.evidence_catalog.is_empty() {
             let candidates = trace.evidence_catalog.clone();
             let (content, call) = self
@@ -205,16 +187,6 @@ impl<'a> InvestmentOrchestrator<'a> {
             trace.information_selection = items;
             stages.push("模型自动分类并筛选最多10条相关信息".into());
         }
-        let selected_ids = trace
-            .evidence_catalog
-            .iter()
-            .map(|source| source.id.as_str())
-            .collect::<HashSet<_>>();
-        let selected_memory_pool = eligible_memories
-            .into_iter()
-            .filter(|item| selected_ids.contains(format!("memory-{}", item.id).as_str()))
-            .collect::<Vec<_>>();
-        trace.memory_items = selected_memory_pool.clone();
         // Remove the entire preliminary pool from subsequent prompts, including
         // the research planner and the independent evidence reviewer.
         if let Some(object) = prompt_context.as_object_mut() {
@@ -269,14 +241,7 @@ impl<'a> InvestmentOrchestrator<'a> {
             } else {
                 "校验结构化输出".into()
             });
-            return Ok(result(
-                self.provider,
-                answer,
-                stages,
-                built_context,
-                &selected_memory_pool,
-                trace,
-            ));
+            return Ok(result(self.provider, answer, stages, built_context, trace));
         }
 
         let (plan, call) = self
@@ -289,33 +254,6 @@ impl<'a> InvestmentOrchestrator<'a> {
         trace.calls.push(call);
         stages.push("生成研究计划".into());
 
-        let memories = if request.use_memory {
-            let mut first = self
-                .retriever
-                .search(&request.question, &selected_memory_pool, 4);
-            mark_retrieval_pass(&mut first, "用户问题复核");
-            let mut second = self.retriever.search(&plan, &selected_memory_pool, 6);
-            mark_retrieval_pass(&mut second, "研究计划扩展");
-            merge_memories(first, second, 8)
-        } else {
-            Vec::new()
-        };
-        if request.use_memory {
-            stages.push("多轮本地记忆检索".into());
-        }
-        let memory_context = if memories.is_empty() {
-            "没有检索到相关历史记录".into()
-        } else {
-            serde_json::to_string_pretty(&memories)?
-        };
-        // The frozen catalog already includes all model-selected memories.
-        // This second lookup only focuses the candidate researchers.
-        for item in &mut trace.memory_items {
-            if let Some(focused) = memories.iter().find(|focused| focused.id == item.id) {
-                item.retrieval = focused.retrieval.clone();
-            }
-        }
-
         if request.explore_alternatives {
             stages.push("探索多个可行方案".into());
         }
@@ -326,7 +264,6 @@ impl<'a> InvestmentOrchestrator<'a> {
             question: &request.question,
             local_context: &context,
             research_plan: &plan,
-            memory_context: &memory_context,
         };
 
         for spec in alternative_specs {
@@ -386,14 +323,7 @@ impl<'a> InvestmentOrchestrator<'a> {
         } else {
             "校验结构化输出".into()
         });
-        Ok(result(
-            self.provider,
-            answer,
-            stages,
-            built_context,
-            &selected_memory_pool,
-            trace,
-        ))
+        Ok(result(self.provider, answer, stages, built_context, trace))
     }
 
     async fn ground_report(
@@ -584,111 +514,19 @@ fn evidence_catalog(payload: &serde_json::Value) -> Vec<AnalysisEvidenceReferenc
         .collect()
 }
 
-fn memory_reference(item: &MemoryItem) -> AnalysisEvidenceReference {
-    AnalysisEvidenceReference {
-        attachments: Vec::new(),
-        id: format!("memory-{}", item.id),
-        title: item.title.clone(),
-        publisher: "历史模型回答".into(),
-        source_url: String::new(),
-        source_tier: "历史记录（不代表当前事实）".into(),
-        as_of_date: String::new(),
-        asset_name: String::new(),
-        evidence_type: "historical_ai".into(),
-        // Preserve the complete answer rather than its retrieval summary.
-        claim: serde_json::to_string_pretty(&item.content).unwrap_or_default(),
-        notes: format!(
-            "{}；记录时点：{}；{}",
-            item.status,
-            item.occurred_at,
-            if item.contradiction {
-                "复盘包含反证，须同时说明原判断与复盘"
-            } else {
-                "历史信息仅在适用范围内使用"
-            }
-        ),
-        stance: if item.contradiction {
-            "反证"
-        } else {
-            "背景"
-        }
-        .into(),
-        captured_at: item.created_at.clone(),
-    }
-}
-
-fn merge_memories(
-    first: Vec<MemoryItem>,
-    second: Vec<MemoryItem>,
-    limit: usize,
-) -> Vec<MemoryItem> {
-    let mut result: Vec<MemoryItem> = Vec::new();
-    for item in first.into_iter().chain(second) {
-        if let Some(existing) = result.iter_mut().find(|existing| existing.id == item.id) {
-            merge_retrieval(existing, &item);
-        } else {
-            result.push(item);
-        }
-        if result.len() == limit {
-            break;
-        }
-    }
-    result
-}
-
-fn mark_retrieval_pass(items: &mut [MemoryItem], pass: &str) {
-    for item in items {
-        if let Some(retrieval) = &mut item.retrieval {
-            if !retrieval.passes.iter().any(|existing| existing == pass) {
-                retrieval.passes.push(pass.into());
-            }
-        }
-    }
-}
-
-fn merge_retrieval(existing: &mut MemoryItem, incoming: &MemoryItem) {
-    let (Some(current), Some(next)) = (&mut existing.retrieval, &incoming.retrieval) else {
-        return;
-    };
-    current.score = current.score.max(next.score);
-    current.age_days = current.age_days.min(next.age_days);
-    for reason in &next.reasons {
-        if !current.reasons.contains(reason) {
-            current.reasons.push(reason.clone());
-        }
-    }
-    for pass in &next.passes {
-        if !current.passes.contains(pass) {
-            current.passes.push(pass.clone());
-        }
-    }
-    if current.passes.len() > 1
-        && !current
-            .reasons
-            .iter()
-            .any(|reason| reason == "原问题与研究计划均命中")
-    {
-        current.reasons.push("原问题与研究计划均命中".into());
-    }
-}
-
 fn result(
     provider: &dyn ModelProvider,
     answer: String,
     stages: Vec<String>,
     built_context: &BuiltContext,
-    memory_items: &[MemoryItem],
     workflow_trace: AnalysisWorkflowTrace,
 ) -> AnalysisResult {
-    let mut context_groups: Vec<_> = built_context
+    let context_groups: Vec<_> = built_context
         .groups
         .iter()
         .filter(|group| group.included)
         .map(|group| group.label.clone())
         .collect();
-    if !memory_items.is_empty() {
-        context_groups.push("相关历史记忆".into());
-    }
     let total_latency_ms = workflow_trace
         .calls
         .iter()
@@ -744,15 +582,8 @@ fn result(
             provider: provider.provider_name().into(),
             model: provider.model_name().into(),
             context_groups,
-            payload_bytes: built_context.payload_bytes
-                + serde_json::to_vec(memory_items).map_or(0, |bytes| bytes.len()),
+            payload_bytes: built_context.payload_bytes,
             context_revision: built_context.revision.clone(),
-            memory_items_used: memory_items.len(),
-            reviewed_memory_items_used: memory_items.iter().filter(|item| item.reviewed).count(),
-            conflicting_memory_items_used: memory_items
-                .iter()
-                .filter(|item| item.contradiction)
-                .count(),
             evidence_items_used: workflow_trace.evidence_catalog.len(),
             citations_required: !workflow_trace.evidence_catalog.is_empty(),
             model_calls,
@@ -798,7 +629,6 @@ mod tests {
         ai::ChatMessage,
         context::{ContextBuilder, ContextSources},
         error::AppResult,
-        memory::HybridMemoryRetriever,
         models::{
             ContextSelection, FinancialProfile, Holding, PortfolioPlan, ResearchEvidence,
             RiskFinding, Snapshot,
@@ -819,14 +649,13 @@ mod tests {
             api_key,
         )
         .unwrap();
-        let retriever = HybridMemoryRetriever::default();
         let mut request = AnalysisRequest {
             daily_asset_range: None,
             web_search: true,
             user_message: Some("这笔资金三年内要用，请结合我的集中持仓和外部背景，说明风险、适合我的下一步以及依据。".into()),
             question: "这笔资金三年内要用，请结合我的集中持仓和外部背景，说明风险、适合我的下一步以及依据。".into(),
-            workflow: "quick".into(), use_memory: false, reflect: false, explore_alternatives: false,
-            excluded_memory_ids: vec![], context_selection: ContextSelection::default(), preview_revision: None,
+            workflow: "quick".into(), reflect: false, explore_alternatives: false,
+            context_selection: ContextSelection::default(), preview_revision: None,
         };
         let fixture = snapshot();
         let context = ContextBuilder::build(
@@ -837,8 +666,8 @@ mod tests {
             },
         );
         request.preview_revision = Some(context.revision.clone());
-        let result = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &context, &[])
+        let result = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap();
         let report = result.workflow_trace.structured_report.as_ref().unwrap();
@@ -897,11 +726,10 @@ mod tests {
     #[tokio::test]
     async fn rate_limit_failures_keep_the_actual_model_stage() {
         for (search, label) in [(true, "网页查找失败"), (false, "快速分析失败")] {
-            let request: AnalysisRequest = serde_json::from_value(serde_json::json!({"question":"检查风险","workflow":"quick","webSearch":search,"useMemory":false,"reflect":false,"exploreAlternatives":false})).unwrap();
+            let request: AnalysisRequest = serde_json::from_value(serde_json::json!({"question":"检查风险","workflow":"quick","webSearch":search,"reflect":false,"exploreAlternatives":false})).unwrap();
             let context = ContextBuilder::build(&request, &snapshot(), &ContextSources::default());
-            let retriever = HybridMemoryRetriever::default();
-            let error = InvestmentOrchestrator::new(&LimitProvider, &retriever)
-                .run(&request, &context, &[])
+            let error = InvestmentOrchestrator::new(&LimitProvider)
+                .run(&request, &context)
                 .await
                 .unwrap_err();
             assert!(
@@ -1061,39 +889,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deep_workflow_runs_plan_retrieval_exploration_reflection_and_synthesis() {
+    async fn deep_workflow_runs_plan_exploration_reflection_and_synthesis() {
         let provider = MockProvider {
             calls: AtomicUsize::new(0),
         };
-        let retriever = HybridMemoryRetriever::default();
-        let memory = vec![MemoryItem {
-            id: "m1".into(),
-            kind: "analysis".into(),
-            title: "指数分析".into(),
-            summary: "集中度复盘".into(),
-            content: serde_json::json!({ "lesson": "集中度复盘" }),
-            created_at: "2026-01-01".into(),
-            occurred_at: "2026-01-01".into(),
-            status: "已复盘".into(),
-            reviewed: true,
-            contradiction: false,
-            tags: vec!["指数".into(), "集中度".into()],
-            preference: "default".into(),
-            preference_note: String::new(),
-            preference_updated_at: None,
-            selected: true,
-            retrieval: None,
-        }];
         let request = AnalysisRequest {
             daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "检查指数集中度".into(),
             workflow: "deep".into(),
-            use_memory: true,
             reflect: true,
             explore_alternatives: true,
-            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
@@ -1119,19 +926,14 @@ mod tests {
             &snapshot,
             &ContextSources {
                 evidence_candidates: &evidence,
-                memory_candidates: &memory,
                 ..Default::default()
             },
         );
-        let output = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &context, &memory)
+        let output = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap();
         assert_eq!(provider.calls.load(Ordering::SeqCst), 7);
-        assert!(output
-            .stages
-            .iter()
-            .any(|stage| stage.contains("多轮本地记忆检索")));
         assert!(output
             .stages
             .iter()
@@ -1139,15 +941,6 @@ mod tests {
         assert!(output.answer.contains("当前判断"));
         assert_eq!(output.workflow_trace.alternatives.len(), 2);
         assert!(output.workflow_trace.research_plan.is_some());
-        assert_eq!(output.workflow_trace.memory_items.len(), 1);
-        assert_eq!(
-            output.workflow_trace.memory_items[0]
-                .retrieval
-                .as_ref()
-                .unwrap()
-                .passes,
-            vec!["用户问题复核", "研究计划扩展"]
-        );
         assert!(output.workflow_trace.critique.is_some());
         assert_eq!(output.workflow_trace.calls.len(), 7);
         assert!(output.workflow_trace.structured_report.is_some());
@@ -1173,7 +966,7 @@ mod tests {
             output.workflow_trace.calls.last().unwrap().stage,
             "advice_grounding"
         );
-        assert_eq!(output.workflow_trace.evidence_catalog.len(), 2);
+        assert_eq!(output.workflow_trace.evidence_catalog.len(), 1);
         assert_eq!(
             output.workflow_trace.evidence_catalog[0].claim,
             evidence[0].claim
@@ -1190,10 +983,7 @@ mod tests {
         assert_eq!(output.transparency.model_calls, 7);
         assert_eq!(output.transparency.input_tokens, Some(700));
         assert_eq!(output.transparency.output_tokens, Some(140));
-        assert_eq!(output.transparency.memory_items_used, 1);
-        assert_eq!(output.transparency.reviewed_memory_items_used, 1);
-        assert_eq!(output.transparency.conflicting_memory_items_used, 0);
-        assert_eq!(output.transparency.evidence_items_used, 2);
+        assert_eq!(output.transparency.evidence_items_used, 1);
         assert!(output.transparency.citations_required);
         assert!(output.transparency.structured_output_validated);
         assert_eq!(output.transparency.output_repairs, 0);
@@ -1206,24 +996,21 @@ mod tests {
         let provider = MockProvider {
             calls: AtomicUsize::new(0),
         };
-        let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
             daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "只做快速风险摘要".into(),
             workflow: "quick".into(),
-            use_memory: true,
             reflect: true,
             explore_alternatives: true,
-            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
         let snapshot = snapshot();
         let context = ContextBuilder::build(&request, &snapshot, &ContextSources::default());
-        let output = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &context, &[])
+        let output = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap();
 
@@ -1235,10 +1022,6 @@ mod tests {
         assert!(output.workflow_trace.research_plan.is_none());
         assert!(output.workflow_trace.alternatives.is_empty());
         assert!(output.workflow_trace.critique.is_none());
-        assert!(!output
-            .stages
-            .iter()
-            .any(|stage| stage.contains("本地记忆检索")));
     }
 
     struct RepairingProvider {
@@ -1280,17 +1063,14 @@ mod tests {
             calls: AtomicUsize::new(1),
             always_invalid: false,
         };
-        let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
             daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "只讨论目标".into(),
             workflow: "quick".into(),
-            use_memory: false,
             reflect: false,
             explore_alternatives: false,
-            excluded_memory_ids: vec![],
             context_selection: ContextSelection {
                 include_holdings: false,
                 include_profile: false,
@@ -1299,8 +1079,8 @@ mod tests {
             preview_revision: None,
         };
         let context = ContextBuilder::build(&request, &snapshot(), &ContextSources::default());
-        let output = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &context, &[])
+        let output = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap();
         let personal = output.workflow_trace.personal_context.unwrap();
@@ -1315,25 +1095,22 @@ mod tests {
             calls: AtomicUsize::new(0),
             always_invalid: false,
         };
-        let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
             daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "快速检查风险".into(),
             workflow: "quick".into(),
-            use_memory: false,
             reflect: false,
             explore_alternatives: false,
-            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
         let context = ContextBuilder::build(&request, &snapshot(), &ContextSources::default());
         let (events, mut receiver) = tokio::sync::mpsc::channel(32);
-        let output = InvestmentOrchestrator::new(&provider, &retriever)
+        let output = InvestmentOrchestrator::new(&provider)
             .with_events(events)
-            .run(&request, &context, &[])
+            .run(&request, &context)
             .await
             .unwrap();
 
@@ -1368,23 +1145,20 @@ mod tests {
             calls: AtomicUsize::new(0),
             always_invalid: true,
         };
-        let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
             daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "快速检查风险".into(),
             workflow: "quick".into(),
-            use_memory: false,
             reflect: false,
             explore_alternatives: false,
-            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
         let context = ContextBuilder::build(&request, &snapshot(), &ContextSources::default());
-        let error = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &context, &[])
+        let error = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap_err();
 
@@ -1446,23 +1220,20 @@ mod tests {
             "test-only-key".into(),
         )
         .unwrap();
-        let retriever = HybridMemoryRetriever::default();
         let request = AnalysisRequest {
             daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "快速检查风险".into(),
             workflow: "quick".into(),
-            use_memory: false,
             reflect: false,
             explore_alternatives: false,
-            excluded_memory_ids: Vec::new(),
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
         let context = ContextBuilder::build(&request, &snapshot(), &ContextSources::default());
-        let output = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &context, &[])
+        let output = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap();
 
@@ -1519,8 +1290,7 @@ mod tests {
     }
     fn selection_fixture() -> (AnalysisRequest, BuiltContext) {
         let request: AnalysisRequest = serde_json::from_value(serde_json::json!({
-            "question":"检查指数方法", "workflow":"quick", "useMemory":false,
-            "reflect":false, "exploreAlternatives":false
+            "question":"检查指数方法", "workflow":"quick", "reflect":false, "exploreAlternatives":false
         }))
         .unwrap();
         let items = (1..=12).map(|index| serde_json::from_value::<ResearchEvidence>(serde_json::json!({
@@ -1554,9 +1324,8 @@ mod tests {
             selection: fixture_selection().to_string(),
             report: valid_report_json(true),
         };
-        let retriever = HybridMemoryRetriever::default();
-        let result = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &context, &[])
+        let result = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap();
         assert_eq!(context.payload, original_payload);
@@ -1596,8 +1365,8 @@ mod tests {
             selection: "{\"items\":[]}".into(),
             report: valid_report_json(false),
         };
-        let result = InvestmentOrchestrator::new(&provider, &HybridMemoryRetriever::default())
-            .run(&request, &context, &[])
+        let result = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap();
         assert!(result.workflow_trace.evidence_catalog.is_empty());
@@ -1617,9 +1386,8 @@ mod tests {
             selection: fixture_selection().to_string(),
             report: valid_report_json(true).replace("e1", "e2"),
         };
-        let retriever = HybridMemoryRetriever::default();
-        let error = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &context, &[])
+        let error = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap_err();
         assert!(error.to_string().contains("未授权的证据 ID：e2"));
@@ -1630,8 +1398,8 @@ mod tests {
             selection: invalid.to_string(),
             report: valid_report_json(true),
         };
-        let error = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &context, &[])
+        let error = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap_err();
         assert!(error.to_string().contains("信息筛选两次未通过校验"));
@@ -1709,17 +1477,14 @@ mod tests {
             user_message: None,
             question: "结合外部信息检查持仓".into(),
             workflow: "quick".into(),
-            use_memory: false,
             reflect: false,
             explore_alternatives: false,
-            excluded_memory_ids: vec![],
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
         let context = ContextBuilder::build(&request, &snapshot(), &ContextSources::default());
-        let retriever = HybridMemoryRetriever::default();
-        let result = InvestmentOrchestrator::new(&provider, &retriever)
-            .run(&request, &context, &[])
+        let result = InvestmentOrchestrator::new(&provider)
+            .run(&request, &context)
             .await
             .unwrap();
         assert_eq!(provider.searches.load(Ordering::SeqCst), 1);

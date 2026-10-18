@@ -119,18 +119,20 @@ try {
     ["/portfolio-events", "GET"], ["/portfolio-events", "POST"],
     ["/portfolio-events/removed/reverse", "POST"],
     ["/portfolio-events/import/preview", "POST"], ["/portfolio-events/import/commit", "POST"],
+    ["/memories", "GET"], ["/memories/removed/preference", "PUT"],
   ]) await api(path, method, method === "GET" ? undefined : {}, 404);
   assert.equal(snap.goals, undefined);
   assert.equal(snap.plan.goalProjections, undefined);
   assert.equal(snap.holdings.length, 0);
   const defaults = await api("/analysis-settings");
   assert.equal(defaults.workflow, "deep");
+  assert.equal(defaults.useMemory, undefined);
   assert.equal(defaults.contextSelection.includeProfile, true);
   assert.equal(defaults.contextSelection.includeDailyAssets, true);
   assert.equal(defaults.contextSelection.includePortfolioCheckins, undefined);
   assert.equal(defaults.contextSelection.includeGoals, undefined);
   assert.equal(defaults.contextSelection.includePortfolioEvents, undefined);
-  const configured = { ...defaults, webSearch: false, useMemory: false, contextSelection: { ...defaults.contextSelection, includeProfile: false } };
+  const configured = { ...defaults, webSearch: false, contextSelection: { ...defaults.contextSelection, includeProfile: false } };
   assert.deepEqual(await api("/analysis-settings", "PUT", configured), configured);
   assert.deepEqual(await api("/analysis-settings"), configured);
   await api("/analysis-settings", "PUT", { ...configured, workflow: "invalid" }, 400);
@@ -227,7 +229,7 @@ try {
   assert.deepEqual(Buffer.from(download.dataBase64, "base64"), originalFile);
   await api(`/research-evidence/${source.id}/attachments/${attachment.id}`, "GET", undefined, 404);
   const filePreview = await api("/analysis/preview", "POST", {
-    question: "黄金储备", workflow: "quick", useMemory: false, reflect: false,
+    question: "黄金储备", workflow: "quick", reflect: false,
     exploreAlternatives: false, webSearch: false,
   });
   assert(filePreview.evidenceCandidates.some(item => item.id === fileSource.id && item.claim.includes("原始重要信息")));
@@ -285,7 +287,6 @@ try {
   const request = {
     question: "分析我的现金资产变化",
     workflow: "quick",
-    useMemory: false,
     reflect: false,
     exploreAlternatives: false,
     webSearch: false,

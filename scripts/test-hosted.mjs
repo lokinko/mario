@@ -31,7 +31,7 @@ const mockAgent=httpServer(async(req,res)=>{
   await new Promise(resolve=>releaseAgent=resolve);
   const job=receivedJob;
   res.setHeader('Content-Type','application/json');
-  res.end(JSON.stringify({id:randomUUID(),answer:'test frozen analysis',stages:[],createdAt:new Date().toISOString(),disclaimer:'test',transparency:{provider:job.config.provider,model:job.config.model,contextGroups:[],payloadBytes:job.context.payload_bytes,contextRevision:job.context.revision,memoryItemsUsed:0,externalDataUsed:false,apiKeySent:true}}));
+  res.end(JSON.stringify({id:randomUUID(),answer:'test frozen analysis',stages:[],createdAt:new Date().toISOString(),disclaimer:'test',transparency:{provider:job.config.provider,model:job.config.model,contextGroups:[],payloadBytes:job.context.payload_bytes,contextRevision:job.context.revision,externalDataUsed:false,apiKeySent:true}}));
 }).listen(0,'127.0.0.1');
 await once(mockAgent,'listening');
 const agentUrl=`http://127.0.0.1:${mockAgent.address().port}`;
@@ -98,14 +98,14 @@ try{
   assert.equal(modelRequests[0].body.messages[0].role,'system');
   assert.equal(modelRequests[0].body.stream,false);
   assert(!('input' in modelRequests[0].body));
-  const analysisRequest={question:'test authorized context',workflow:'quick',useMemory:false,reflect:false,exploreAlternatives:false,contextSelection:{includeProfile:false}};
+  const analysisRequest={question:'test authorized context',workflow:'quick',reflect:false,exploreAlternatives:false,contextSelection:{includeProfile:false}};
   const preview=await request(base,'/analysis/preview',a,'POST',analysisRequest);
   const running=request(base,'/analysis',a,'POST',{...analysisRequest,previewRevision:preview.contextRevision});
   await Promise.race([received,new Promise((_,reject)=>{const t=setTimeout(()=>reject(Error('Agent never received job')),10000);t.unref();})]);
   assert.equal(receivedJob.api_key,'test-secret-never-export');
   assert.equal(receivedJob.config.baseUrl,'https://gateway.example.test:8443/custom/v1');
   assert.equal(receivedJob.context.payload.financialProfile,undefined);
-  assert.deepEqual(Object.keys(receivedJob).sort(),['api_key','config','context','memories','request']);
+  assert.deepEqual(Object.keys(receivedJob).sort(),['api_key','config','context','request']);
   const concurrent={...a};await request(replica,'/snapshot',concurrent);
   await request(replica,'/profile',concurrent,'PUT',{...profile,monthlyIncome:77777});
   releaseAgent();await running;

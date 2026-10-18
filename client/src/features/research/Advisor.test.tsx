@@ -230,7 +230,6 @@ it("does not let a stopped request unlock or overwrite a new generation", async 
 it("sends once using saved defaults and the frozen revision without a confirmation step", async () => {
   const settings = {
     ...analysisSettings,
-    useMemory: false,
     webSearch: false,
     contextSelection: {
       ...analysisSettings.contextSelection,
@@ -247,7 +246,6 @@ it("sends once using saved defaults and the frozen revision without a confirmati
     userMessage: "我的持仓有什么风险？",
     question: "我的持仓有什么风险？",
     dailyAssetRange: undefined,
-    excludedMemoryIds: [],
   });
   expect(researchApi.runAnalysis).toHaveBeenCalledWith(
     {
@@ -345,7 +343,6 @@ it("automatically carries previous context and rereads saved defaults, then clea
   await screen.findByText(result.answer);
   vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue({
     ...analysisSettings,
-    useMemory: false,
   });
   vi.mocked(researchApi.runAnalysis).mockResolvedValue({
     ...result,
@@ -359,7 +356,6 @@ it("automatically carries previous context and rereads saved defaults, then clea
   expect(followUp?.question).toContain(result.answer);
   expect(followUp?.question).toContain("三年内需要用钱");
   expect(followUp?.userMessage).toBe("三年内需要用钱");
-  expect(followUp?.useMemory).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "新对话" }));
   expect(screen.queryByText(result.answer)).toBeNull();
   ask("一个新问题");

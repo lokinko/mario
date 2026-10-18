@@ -97,44 +97,6 @@ pub(super) fn validate_synced_fx_provenance(dataset: &SyncDataset) -> AppResult<
     Ok(())
 }
 
-pub(super) fn validate_synced_memory_preferences(dataset: &SyncDataset) -> AppResult<()> {
-    if dataset.schema_version < 8 {
-        return Ok(());
-    }
-    let source_ids = dataset
-        .tables
-        .iter()
-        .filter(|table| {
-            table.name == "analyses" || (dataset.schema_version < 16 && table.name == "decisions")
-        })
-        .flat_map(|table| table.rows.iter())
-        .map(|row| sync_text(row, 0, "记忆来源 ID"))
-        .collect::<AppResult<HashSet<_>>>()?;
-    let table = dataset
-        .tables
-        .iter()
-        .find(|table| table.name == "memory_preferences")
-        .ok_or_else(|| AppError::Validation("数据快照缺少 memory_preferences".into()))?;
-    let mut seen = HashSet::new();
-    for row in &table.rows {
-        let memory_id = sync_text(row, 0, "长期记忆 ID")?;
-        let preference = sync_text(row, 1, "长期记忆偏好")?;
-        let note = sync_text(row, 2, "长期记忆备注")?;
-        let updated_at = sync_text(row, 3, "长期记忆更新时间")?;
-        if memory_id.trim().is_empty()
-            || memory_id.chars().count() > 128
-            || !seen.insert(memory_id)
-            || !source_ids.contains(memory_id)
-            || !matches!(preference, "pinned" | "hidden")
-            || note.chars().count() > 1_000
-            || chrono::DateTime::parse_from_rfc3339(updated_at).is_err()
-        {
-            return Err(AppError::Validation("同步长期记忆偏好无效".into()));
-        }
-    }
-    Ok(())
-}
-
 pub(super) fn validate_synced_holding_valuations(dataset: &SyncDataset) -> AppResult<()> {
     if dataset.schema_version < 9 {
         return Ok(());

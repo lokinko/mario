@@ -118,7 +118,7 @@ export function rustDependencies(source, modulePath = []) {
   }
   return names;
 }
-const core = new Set(['models', 'context', 'risk', 'planning', 'valuation', 'memory', 'evidence', 'event_import']);
+const core = new Set(['models', 'context', 'risk', 'planning', 'valuation', 'evidence', 'event_import']);
 const infrastructure = new Set(['db', 'storage', 'accounts', 'secrets', 'prices', 'market_data']);
 const transport = new Set(['http', 'hosted', 'runtime', 'agent', 'streaming', 'composition', 'codex_bridge_worker']);
 export function serverViolation(source, target) {
@@ -203,7 +203,7 @@ export function checkArchitecture() {
     if (['prices', 'market_data'].includes(owner) && /\bstatic\s+\w+\s*:/.test(code))
       violations.push(`${name}: mutable market resources belong to injected instances`);
     if (owner !== 'db' && /use\s+(?:super|crate)::\*/.test(code)) violations.push(`${name}: production imports must be explicit`);
-    if (['application', 'models', 'context', 'risk', 'planning', 'valuation', 'memory', 'evidence', 'event_import', 'db', 'error'].includes(owner) && /\baxum::/.test(code))
+    if (['application', 'models', 'context', 'risk', 'planning', 'valuation', 'evidence', 'event_import', 'db', 'error'].includes(owner) && /\baxum::/.test(code))
       violations.push(`${name}: HTTP framework belongs in adapters`);
     if (!serverGraph.has(owner)) serverGraph.set(owner, new Set());
     for (const target of rustDependencies(source, name.replace(/\.rs$/, '').replace(/\/mod$/, '').split('/'))) {

@@ -1251,7 +1251,7 @@ mod tests {
         let id = db.add_holding(&input("银行", 100.0)).unwrap().holdings[0]
             .id
             .clone();
-        let mut request:crate::models::AnalysisRequest=serde_json::from_value(serde_json::json!({"question":"资产变化","workflow":"quick","useMemory":false,"reflect":false,"exploreAlternatives":false})).unwrap();
+        let mut request:crate::models::AnalysisRequest=serde_json::from_value(serde_json::json!({"question":"资产变化","workflow":"quick","reflect":false,"exploreAlternatives":false})).unwrap();
         let context = db.daily_analysis_context(&request).unwrap();
         assert!(context.to_string().contains("netAssets"));
         let snap = db.snapshot().unwrap();

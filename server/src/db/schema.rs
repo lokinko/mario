@@ -1,10 +1,11 @@
 use crate::storage::Connection;
 
+use super::OptionalRow;
 use crate::error::AppResult;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 8;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 9;
 
 // Keep legacy migration order intact: opening an old database remains idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -104,12 +105,6 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            extraction_note TEXT NOT NULL
          );
          CREATE INDEX IF NOT EXISTS research_attachments_evidence ON research_attachments(evidence_id);
-         CREATE TABLE IF NOT EXISTS memory_preferences (
-           memory_id TEXT PRIMARY KEY,
-           preference TEXT NOT NULL,
-           note TEXT NOT NULL DEFAULT '',
-           updated_at TEXT NOT NULL
-         );
          CREATE TABLE IF NOT EXISTS holding_valuations (
            holding_id TEXT PRIMARY KEY REFERENCES holdings(id) ON DELETE CASCADE,
            symbol TEXT NOT NULL,
@@ -180,8 +175,83 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
          CREATE INDEX IF NOT EXISTS idx_holding_trades_holding ON holding_trades(holding_id);",
     )?;
     connection
-        .execute_batch("DROP TABLE IF EXISTS portfolio_events; DROP TABLE IF EXISTS goals;")?;
+        .execute_batch("DROP TABLE IF EXISTS portfolio_events; DROP TABLE IF EXISTS goals; DROP TABLE IF EXISTS memory_preferences;")?;
+    remove_retired_analysis_metadata(connection)?;
     super::financial::initialize(connection)?;
+    Ok(())
+}
+
+// Strip retired fields without rewriting answers or their frozen source catalog.
+// Also run after imports so legacy backups cannot restore removed metadata.
+pub(super) fn remove_retired_analysis_metadata(connection: &Connection) -> AppResult<()> {
+    let preset: Option<String> = connection
+        .query_row(
+            "SELECT value FROM settings WHERE key='analysis.settings'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(preset) = preset {
+        if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&preset) {
+            if value
+                .as_object_mut()
+                .is_some_and(|object| object.remove("useMemory").is_some())
+            {
+                connection.execute(
+                    "UPDATE settings SET value=?1 WHERE key='analysis.settings'",
+                    [serde_json::to_string(&value)?],
+                )?;
+            }
+        }
+    }
+    for (column, fields) in [
+        (
+            "audit",
+            &[
+                "memoryItemsUsed",
+                "reviewedMemoryItemsUsed",
+                "conflictingMemoryItemsUsed",
+            ][..],
+        ),
+        ("trace", &["memoryItems"][..]),
+    ] {
+        let filter = fields
+            .iter()
+            .map(|field| format!("{column} LIKE '%\"{field}\"%'"))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        let mut statement =
+            connection.prepare(&format!("SELECT id,{column} FROM analyses WHERE {filter}"))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+        for (id, raw) in rows {
+            let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                continue;
+            };
+            let Some(object) = value.as_object_mut() else {
+                continue;
+            };
+            for field in fields {
+                object.remove(*field);
+            }
+            if column == "audit" {
+                if let Some(groups) = object
+                    .get_mut("contextGroups")
+                    .and_then(serde_json::Value::as_array_mut)
+                {
+                    groups.retain(|group| group.as_str() != Some("相关历史记忆"));
+                }
+            }
+            connection.execute(
+                &format!("UPDATE analyses SET {column}=?1 WHERE id=?2"),
+                super::params![serde_json::to_string(&value)?, id],
+            )?;
+        }
+    }
     Ok(())
 }
 

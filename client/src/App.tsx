@@ -15,7 +15,6 @@ import { View, initialView, navGroups, viewLabels } from "./app/navigation";
 import { MyFacts } from "./features/portfolio/MyFacts";
 import { EvidenceWorkbench } from "./features/research/EvidenceWorkbench";
 import { ReviewCenter } from "./features/reviews/ReviewCenter";
-import { MemoryCenter } from "./features/memory/MemoryCenter";
 import { Advisor } from "./features/research/Advisor";
 import { ModelSettings } from "./features/settings/ModelSettings";
 import { AccountSettings } from "./features/account/WebAccess";
@@ -353,9 +352,6 @@ function App() {
               onAsk={startAnalysis}
               flash={flash}
             />
-          )}
-          {view === "memory" && (
-            <MemoryCenter key={remoteViewRevision} flash={flash} />
           )}
           {model && advisorVisited && (
             <div hidden={view !== "advisor"}>

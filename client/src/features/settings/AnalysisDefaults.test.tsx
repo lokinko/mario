@@ -45,41 +45,14 @@ it("loads saved permissions and saves one preset for future questions", async ()
   )) as HTMLInputElement;
   expect(profile.checked).toBe(false);
   fireEvent.click(screen.getByLabelText("持仓明细"));
-  fireEvent.click(screen.getByLabelText("参考长期记忆"));
   fireEvent.click(screen.getByLabelText("联网查找相关资料"));
   fireEvent.click(screen.getByRole("button", { name: "保存问答预设" }));
   await waitFor(() => expect(flash).toHaveBeenCalled());
   expect(settingsApi.saveAnalysisSettings).toHaveBeenCalledWith({
     ...stored,
-    useMemory: false,
     webSearch: false,
     contextSelection: { ...stored.contextSelection, includeHoldings: false },
   });
-});
-
-it("keeps deep-only options while switching to quick analysis", async () => {
-  vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(
-    analysisSettings,
-  );
-  render(
-    <AnalysisDefaults
-      model={{ ...model, provider: "openai-chat" }}
-      flash={vi.fn()}
-    />,
-  );
-  fireEvent.change(await screen.findByLabelText("分析方式"), {
-    target: { value: "quick" },
-  });
-  expect(
-    (screen.getByLabelText("参考长期记忆") as HTMLInputElement).disabled,
-  ).toBe(true);
-  expect(screen.getByText(/当前 Chat Completions 接口不支持/)).toBeTruthy();
-  fireEvent.change(screen.getByLabelText("分析方式"), {
-    target: { value: "deep" },
-  });
-  const memory = screen.getByLabelText("参考长期记忆") as HTMLInputElement;
-  expect(memory.disabled).toBe(false);
-  expect(memory.checked).toBe(true);
 });
 
 it("shows a read failure and retries without overwriting saved permissions", async () => {

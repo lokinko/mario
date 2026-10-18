@@ -504,6 +504,7 @@ mod tests {
         db.conn().unwrap().execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,valuation_date,created_at,updated_at) VALUES ('legacy-cash','','工资卡','现金',123.45,0,0,'CNY','2026-01-01','9999-01-02T00:00:00Z','2026-01-01T00:00:00Z')", []).unwrap();
         let mut legacy = db.export_sync_data().unwrap();
         legacy.schema_version = 19;
+        super::super::tests::add_legacy_table_shapes(&mut legacy);
         legacy.tables.retain(|t| {
             ![
                 "financial_operations",

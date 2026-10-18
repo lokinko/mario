@@ -255,12 +255,18 @@ it("shows frequently used records in primary navigation", async () => {
   render(<App />);
   await screen.findByRole("button", { name: "问答" });
   expect(screen.getByRole("button", { name: "我的情况" })).toBeTruthy();
-  for (const name of ["复盘记录", "参考资料", "长期记忆"]) {
+  for (const name of ["复盘记录", "参考资料"]) {
     const entry = screen.getByRole("button", { name });
     expect(entry.closest("aside")).toBeTruthy();
     expect(entry.closest("details")).toBeNull();
   }
-  for (const name of ["决策确认", "资料与确认", "投资目标", "组合流水"])
+  for (const name of [
+    "决策确认",
+    "资料与确认",
+    "投资目标",
+    "组合流水",
+    "长期记忆",
+  ])
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
 it("responds to hash navigation without leaving the old page on screen", async () => {

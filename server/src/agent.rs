@@ -5,8 +5,7 @@ use crate::{
     ai::{CodexProvider, InvestmentOrchestrator, ModelProvider, NativeModelProvider},
     authentication::token_matches,
     context,
-    memory::HybridMemoryRetriever,
-    models::{self, AnalysisRequest, AnalysisResult, ModelConfig},
+    models::{AnalysisRequest, AnalysisResult, ModelConfig},
     AppError, AppResult,
 };
 use axum::{
@@ -24,7 +23,6 @@ use std::sync::Arc;
 struct Job {
     request: AnalysisRequest,
     context: context::BuiltContext,
-    memories: Vec<models::MemoryItem>,
     config: ModelConfig,
     api_key: String,
 }
@@ -39,9 +37,8 @@ impl crate::ports::analysis::AnalysisExecutor for AgentExecutor {
         api_key: Option<String>,
         request: AnalysisRequest,
         context: context::BuiltContext,
-        memories: Vec<models::MemoryItem>,
     ) -> AppResult<AnalysisResult> {
-        self.execute_with_events(config, api_key, request, context, memories, None)
+        self.execute_with_events(config, api_key, request, context, None)
             .await
     }
     async fn execute_stream(
@@ -50,10 +47,9 @@ impl crate::ports::analysis::AnalysisExecutor for AgentExecutor {
         api_key: Option<String>,
         request: AnalysisRequest,
         context: context::BuiltContext,
-        memories: Vec<models::MemoryItem>,
         events: crate::ports::analysis::EventSender,
     ) -> AppResult<AnalysisResult> {
-        self.execute_with_events(config, api_key, request, context, memories, Some(events))
+        self.execute_with_events(config, api_key, request, context, Some(events))
             .await
     }
 }
@@ -64,7 +60,6 @@ impl AgentExecutor {
         api_key: Option<String>,
         request: AnalysisRequest,
         context: context::BuiltContext,
-        memories: Vec<models::MemoryItem>,
         events: Option<crate::ports::analysis::EventSender>,
     ) -> AppResult<AnalysisResult> {
         if let Some(endpoint) = std::env::var("MARIO_AGENT_URL")
@@ -79,7 +74,6 @@ impl AgentExecutor {
                 config,
                 request,
                 context,
-                memories,
             };
             let mut response = reqwest::Client::builder()
                 .timeout(crate::models::inference::AGENT_HTTP_TIMEOUT)
@@ -144,12 +138,11 @@ impl AgentExecutor {
                 .with_events(events.clone()),
             )
         };
-        let retriever = HybridMemoryRetriever::default();
-        let mut orchestrator = InvestmentOrchestrator::new(provider.as_ref(), &retriever);
+        let mut orchestrator = InvestmentOrchestrator::new(provider.as_ref());
         if let Some(events) = events {
             orchestrator = orchestrator.with_events(events);
         }
-        orchestrator.run(&request, &context, &memories).await
+        orchestrator.run(&request, &context).await
     }
 }
 pub async fn serve() -> AppResult<()> {
@@ -220,12 +213,11 @@ async fn run(Json(job): Json<Job>) -> AppResult<Json<AnalysisResult>> {
         job.config.model,
         job.api_key,
     )?;
-    let retriever = HybridMemoryRetriever::default();
-    let orchestrator = InvestmentOrchestrator::new(&provider, &retriever);
+    let orchestrator = InvestmentOrchestrator::new(&provider);
     Ok(Json(
         tokio::time::timeout(
             crate::models::inference::ANALYSIS_TIMEOUT,
-            orchestrator.run(&job.request, &job.context, &job.memories),
+            orchestrator.run(&job.request, &job.context),
         )
         .await
         .map_err(|_| {
@@ -250,11 +242,10 @@ async fn run_stream(
     let provider = provider.with_events(Some(sender.clone()));
     let future = Box::pin(async move {
         let _permit = permit;
-        let retriever = HybridMemoryRetriever::default();
-        let orchestrator = InvestmentOrchestrator::new(&provider, &retriever).with_events(sender);
+        let orchestrator = InvestmentOrchestrator::new(&provider).with_events(sender);
         tokio::time::timeout(
             crate::models::inference::ANALYSIS_TIMEOUT,
-            orchestrator.run(&job.request, &job.context, &job.memories),
+            orchestrator.run(&job.request, &job.context),
         )
         .await
         .map_err(|_| AppError::Model(crate::models::inference::ANALYSIS_TIMEOUT_MESSAGE.into()))?
@@ -319,7 +310,7 @@ mod tests {
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let request: AnalysisRequest = serde_json::from_value(serde_json::json!({
             "question":"如何检查集中风险？","workflow":"quick","webSearch":false,
-            "useMemory":false,"reflect":false,"exploreAlternatives":false
+            "reflect":false,"exploreAlternatives":false
         }))
         .unwrap();
         let make_job = || Job {
@@ -331,7 +322,6 @@ mod tests {
                 revision: "custom-model-test".into(),
                 evidence_items: 0,
             },
-            memories: Vec::new(),
             config: ModelConfig {
                 provider: "openai-chat".into(),
                 base_url: format!("http://{address}/gateway/v1/"),

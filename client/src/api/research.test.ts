@@ -31,10 +31,7 @@ it("guards every stream update against account changes and releases the write gu
   vi.stubGlobal("fetch", fetcher);
   const updates = vi.fn();
   const pending = expect(
-    runAnalysis(
-      { ...analysisSettings, question: "问题", excludedMemoryIds: [] },
-      updates,
-    ),
+    runAnalysis({ ...analysisSettings, question: "问题" }, updates),
   ).rejects.toThrow("账号已切换");
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalled());
   expect(hasDataWrites()).toBe(true);
@@ -67,10 +64,7 @@ it("only completes and publishes the saved event after draft updates", async () 
   );
   const updates = vi.fn();
   expect(
-    await runAnalysis(
-      { ...analysisSettings, question: "问题", excludedMemoryIds: [] },
-      updates,
-    ),
+    await runAnalysis({ ...analysisSettings, question: "问题" }, updates),
   ).toEqual(result);
   expect(updates).toHaveBeenCalledWith({ type: "draft", answer: "部分回复" });
   expect(hasDataWrites()).toBe(false);

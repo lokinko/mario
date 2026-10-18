@@ -144,7 +144,7 @@ try {
     await writeFile(environment.MARIO_TEST_CODEX_SCENARIO,'transient');
     await writeFile(environment.MARIO_TEST_CODEX_COUNTER,'0');
   }
-  const input = { question:'这是连通性验收。当前没有提供任何投资资料，请简短说明还需要哪些资料；不要提供交易建议。', workflow:deep?'deep':'quick', webSearch:deep, useMemory:false, reflect:deep, exploreAlternatives:deep };
+  const input = { question:'这是连通性验收。当前没有提供任何投资资料，请简短说明还需要哪些资料；不要提供交易建议。', workflow:deep?'deep':'quick', webSearch:deep, reflect:deep, exploreAlternatives:deep };
   const preview = await request('/analysis/preview', 'POST', input);
   const response = await fetch(`${site}/api/analysis/stream`, { method:'POST', headers:{Authorization:`Bearer ${auth}`,'Content-Type':'application/json',...(revisions.has(auth)?{'If-Match':revisions.get(auth)}:{})}, body:JSON.stringify({...input,previewRevision:preview.contextRevision}), signal:AbortSignal.timeout(deep?1800000:280000) });
   assert.equal(response.status, 200);

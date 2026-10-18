@@ -4,10 +4,8 @@ use crate::{
     context,
     db::Database,
     evidence::search_evidence,
-    memory::HybridMemoryRetriever,
     models::{
-        AnalysisPreview, AnalysisRequest, AnalysisResult, MemoryItem, ModelConfig,
-        ResearchEvidence, Snapshot,
+        AnalysisPreview, AnalysisRequest, AnalysisResult, ModelConfig, ResearchEvidence, Snapshot,
     },
     ports::analysis::AnalysisExecutor,
     AppError, AppResult,
@@ -19,8 +17,6 @@ pub(crate) struct AnalysisService<'a> {
 struct PreparedAnalysis {
     config: ModelConfig,
     context: context::BuiltContext,
-    memories: Vec<MemoryItem>,
-    memory_candidates: Vec<MemoryItem>,
     evidence_candidates: Vec<ResearchEvidence>,
 }
 impl<'a> AnalysisService<'a> {
@@ -31,18 +27,6 @@ impl<'a> AnalysisService<'a> {
         request.validate()?;
         let config = self.db.model_config()?;
         let snapshot = self.db.snapshot()?;
-        let retriever = HybridMemoryRetriever::default();
-        let memory_candidates = if request.use_memory {
-            initial_memory_candidates(
-                &retriever,
-                &request.question,
-                &self.db.memories()?,
-                &request.excluded_memory_ids,
-            )
-        } else {
-            Vec::new()
-        };
-        let memories = selected_memories(&memory_candidates);
         let rules = self.db.investment_rules()?;
         let system_reviews = self
             .db
@@ -60,14 +44,11 @@ impl<'a> AnalysisService<'a> {
                 rules: &rules,
                 system_reviews: &system_reviews,
                 evidence_candidates: &evidence_candidates,
-                memory_candidates: &memories,
             },
         );
         Ok(PreparedAnalysis {
             config,
             context: built_context,
-            memories,
-            memory_candidates,
             evidence_candidates,
         })
     }
@@ -78,7 +59,6 @@ impl<'a> AnalysisService<'a> {
             prepared.context,
             prepared.config.provider,
             prepared.config.model,
-            prepared.memory_candidates,
             prepared.evidence_candidates,
         ))
     }
@@ -136,24 +116,11 @@ impl<'a> AnalysisService<'a> {
         let execution = async {
             if let Some(events) = events {
                 executor
-                    .execute_stream(
-                        config,
-                        api_key,
-                        request.clone(),
-                        prepared.context,
-                        prepared.memories,
-                        events,
-                    )
+                    .execute_stream(config, api_key, request.clone(), prepared.context, events)
                     .await
             } else {
                 executor
-                    .execute(
-                        config,
-                        api_key,
-                        request.clone(),
-                        prepared.context,
-                        prepared.memories,
-                    )
+                    .execute(config, api_key, request.clone(), prepared.context)
                     .await
             }
         };
@@ -202,98 +169,27 @@ fn relevant_evidence(
     Ok(search_evidence(&query, &items, 30))
 }
 
-fn initial_memory_candidates(
-    retriever: &HybridMemoryRetriever,
-    question: &str,
-    pool: &[MemoryItem],
-    excluded_memory_ids: &[String],
-) -> Vec<MemoryItem> {
-    let mut candidates = retriever.search(question, pool, 16);
-    for item in &mut candidates {
-        item.selected = !excluded_memory_ids
-            .iter()
-            .any(|excluded| excluded == &item.id);
-        if let Some(retrieval) = &mut item.retrieval {
-            retrieval.passes.push("发送前问题初筛".into());
-        }
-    }
-    candidates
-}
-
-fn selected_memories(candidates: &[MemoryItem]) -> Vec<MemoryItem> {
-    candidates
-        .iter()
-        .filter(|item| item.selected)
-        .cloned()
-        .collect()
-}
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::models::ContextSelection;
     use serde_json::json;
-    fn request(excluded_memory_ids: Vec<String>) -> AnalysisRequest {
+    fn request() -> AnalysisRequest {
         AnalysisRequest {
             daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "复盘指数集中风险".into(),
             workflow: "deep".into(),
-            use_memory: true,
             reflect: true,
             explore_alternatives: true,
-            excluded_memory_ids,
             context_selection: ContextSelection::default(),
             preview_revision: None,
         }
     }
 
-    fn memory() -> MemoryItem {
-        MemoryItem {
-            id: "memory-1".into(),
-            kind: "analysis".into(),
-            title: "指数".into(),
-            summary: "集中风险".into(),
-            content: json!({ "lesson": "降低集中度" }),
-            created_at: "2026-01-01".into(),
-            occurred_at: "2026-01-01".into(),
-            status: "已复盘".into(),
-            reviewed: true,
-            contradiction: false,
-            tags: vec!["指数".into()],
-            preference: "default".into(),
-            preference_note: String::new(),
-            preference_updated_at: None,
-            selected: true,
-            retrieval: None,
-        }
-    }
-
-    #[test]
-    fn excluded_memory_remains_visible_but_is_not_authorized() {
-        let retriever = HybridMemoryRetriever::default();
-        let candidates = initial_memory_candidates(
-            &retriever,
-            "复盘指数集中风险",
-            &[memory()],
-            &["memory-1".into()],
-        );
-        assert_eq!(candidates.len(), 1);
-        assert!(!candidates[0].selected);
-        assert!(selected_memories(&candidates).is_empty());
-    }
-
-    #[test]
-    fn rejects_duplicate_or_oversized_memory_exclusions() {
-        assert!(request(vec!["same".into(), "same".into()])
-            .validate()
-            .is_err());
-        assert!(request(vec!["x".repeat(129)]).validate().is_err());
-        assert!(request(vec!["memory-1".into()]).validate().is_ok());
-    }
-
     struct Executor {
-        captured: std::sync::Mutex<Vec<(serde_json::Value, Vec<MemoryItem>)>>,
+        captured: std::sync::Mutex<Vec<serde_json::Value>>,
         fail: bool,
     }
     #[async_trait::async_trait]
@@ -304,7 +200,6 @@ mod tests {
             api_key: Option<String>,
             request: AnalysisRequest,
             context: context::BuiltContext,
-            memories: Vec<MemoryItem>,
         ) -> AppResult<AnalysisResult> {
             assert_eq!(config.provider, "codex");
             assert!(api_key.is_none());
@@ -312,17 +207,14 @@ mod tests {
                 request.preview_revision.as_deref(),
                 Some(context.revision.as_str())
             );
-            self.captured
-                .lock()
-                .unwrap()
-                .push((context.payload, memories));
+            self.captured.lock().unwrap().push(context.payload);
             if self.fail {
                 return Err(AppError::Model("executor failure".into()));
             }
             Ok(serde_json::from_value(json!({
                 "id": uuid::Uuid::new_v4().to_string(), "answer":"frozen answer", "stages":[],
                 "createdAt":chrono::Utc::now().to_rfc3339(), "disclaimer":"test",
-                "transparency":{"provider":config.provider, "model":config.model, "contextGroups":[], "payloadBytes":context.payload_bytes, "contextRevision":context.revision, "memoryItemsUsed":0, "externalDataUsed":false, "apiKeySent":false}
+                "transparency":{"provider":config.provider, "model":config.model, "contextGroups":[], "payloadBytes":context.payload_bytes, "contextRevision":context.revision, "externalDataUsed":false, "apiKeySent":false}
             }))?)
         }
     }
@@ -344,7 +236,6 @@ mod tests {
             key: Option<String>,
             request: AnalysisRequest,
             context: context::BuiltContext,
-            memories: Vec<MemoryItem>,
         ) -> AppResult<AnalysisResult> {
             struct Guard(std::sync::Arc<std::sync::atomic::AtomicBool>);
             impl Drop for Guard {
@@ -358,7 +249,7 @@ mod tests {
                 captured: Default::default(),
                 fail: false,
             }
-            .execute(config, key, request, context, memories)
+            .execute(config, key, request, context)
             .await
         }
     }
@@ -372,7 +263,7 @@ mod tests {
                 delay: std::time::Duration::from_secs(seconds),
                 dropped: dropped.clone(),
             };
-            let mut request = request(Vec::new());
+            let mut request = request();
             request.preview_revision = Some(service.preview(&request).unwrap().context_revision);
             let result = service.execute(request, &executor).await;
             assert_eq!(result.is_ok(), success);
@@ -385,6 +276,26 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn stored_answers_never_enter_a_new_analysis_context() {
+        let db = database();
+        let service = AnalysisService::new(&db);
+        let request = request();
+        let before = service.preview(&request).unwrap();
+        db.conn().unwrap().execute_batch("INSERT INTO analyses(id,question,answer,created_at) VALUES ('previous','复盘指数集中风险','private-history-marker','2026-10-17T00:00:00Z');").unwrap();
+        let after = service.preview(&request).unwrap();
+        assert_eq!(before.context_revision, after.context_revision);
+        assert_eq!(before.payload, after.payload);
+        let preview = serde_json::to_value(after).unwrap();
+        assert!(preview.get("memoryCandidates").is_none());
+        assert!(preview.get("memoryPolicy").is_none());
+        assert!(!preview.to_string().contains("private-history-marker"));
+        assert_eq!(
+            db.analysis("previous").unwrap().answer,
+            "private-history-marker"
+        );
+    }
+
+    #[tokio::test]
     async fn execution_uses_the_preview_payload_and_persists_the_original_user_message() {
         let db = database();
         let service = AnalysisService::new(&db);
@@ -392,12 +303,12 @@ mod tests {
             captured: Default::default(),
             fail: false,
         };
-        let mut request = request(Vec::new());
+        let mut request = request();
         request.user_message = Some("本轮原始问题".into());
         let preview = service.preview(&request).unwrap();
         request.preview_revision = Some(preview.context_revision);
         let result = service.execute(request, &executor).await.unwrap();
-        assert_eq!(executor.captured.lock().unwrap()[0].0, preview.payload);
+        assert_eq!(executor.captured.lock().unwrap()[0], preview.payload);
         assert_eq!(db.analysis(&result.id).unwrap().question, "本轮原始问题");
         assert_eq!(db.analysis_history().unwrap().len(), 1);
     }
@@ -409,7 +320,7 @@ mod tests {
             captured: Default::default(),
             fail: false,
         };
-        let mut request = request(Vec::new());
+        let mut request = request();
         request.preview_revision = Some(service.preview(&request).unwrap().context_revision);
         let mut changed = request.clone();
         changed.context_selection.include_profile = false;
@@ -429,7 +340,7 @@ mod tests {
             captured: Default::default(),
             fail: true,
         };
-        let mut request = request(Vec::new());
+        let mut request = request();
         request.preview_revision = Some(service.preview(&request).unwrap().context_revision);
         assert!(service
             .execute(request, &executor)

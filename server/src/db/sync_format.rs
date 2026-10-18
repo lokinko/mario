@@ -247,11 +247,6 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         order_by: "id",
     },
     SyncTableSpec {
-        name: "memory_preferences",
-        columns: &["memory_id", "preference", "note", "updated_at"],
-        order_by: "memory_id",
-    },
-    SyncTableSpec {
         name: "holding_valuations",
         columns: &[
             "holding_id",
@@ -364,7 +359,7 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 21;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 22;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
@@ -372,6 +367,18 @@ const V8_SYNC_TABLE_COUNT: usize = 13;
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
     if version == SYNC_DATASET_SCHEMA_VERSION {
+        return Ok(specs);
+    }
+    // Retired v8-v21 table: validate its shape, then skip it on import.
+    specs.insert(
+        7,
+        SyncTableSpec {
+            name: "memory_preferences",
+            columns: &["memory_id", "preference", "note", "updated_at"],
+            order_by: "memory_id",
+        },
+    );
+    if version == 21 {
         return Ok(specs);
     }
     specs.retain(|s| {

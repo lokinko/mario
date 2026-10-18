@@ -13,7 +13,6 @@ mod evidence;
 mod hosted;
 mod http;
 mod market_data;
-mod memory;
 mod models;
 mod planning;
 mod ports;

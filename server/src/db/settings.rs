@@ -127,7 +127,6 @@ mod tests {
         assert_eq!(settings.workflow, "deep");
         assert!(settings.context_selection.include_profile);
         settings.web_search = false;
-        settings.use_memory = false;
         settings.context_selection.include_profile = false;
         settings.context_selection.include_evidence = false;
         db.save_analysis_settings(settings).unwrap();
@@ -135,7 +134,6 @@ mod tests {
         let db = Database::open(&path).unwrap();
         let mut restored = db.analysis_settings().unwrap();
         assert!(!restored.web_search);
-        assert!(!restored.use_memory);
         assert!(!restored.context_selection.include_profile);
         assert!(!restored.context_selection.include_evidence);
         restored.workflow = "invalid".into();

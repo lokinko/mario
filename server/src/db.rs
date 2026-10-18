@@ -1,12 +1,9 @@
 mod sync_format;
 use sync_format::{sync_specs_for_version, SYNC_TABLES};
 pub use sync_format::{SyncDataset, SyncTable, SyncValue, SYNC_DATASET_SCHEMA_VERSION};
-mod text;
-use text::truncate_chars;
 mod sync_validation;
 use sync_validation::{
     quote_identifier, validate_synced_fx_provenance, validate_synced_holding_valuations,
-    validate_synced_memory_preferences,
 };
 mod snapshot;
 use snapshot::build_snapshot;
@@ -28,7 +25,6 @@ mod financial_tests;
 pub(crate) use cash::fund as fund_cash;
 mod daily;
 mod fx;
-mod memory;
 mod portfolio;
 mod reminders;
 mod research;
@@ -55,9 +51,9 @@ use crate::{
     models::{
         AnalysisHistoryItem, AnalysisResult, FinancialProfile, Holding, HoldingInput,
         HoldingValuationEvidence, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision,
-        MemoryItem, MemoryPreferenceInput, ModelConfig, ResearchEvidence, ResearchEvidenceInput,
-        ReviewReminderSummary, SecurityPriceQuote, Snapshot, StoredAnalysis, SystemReviewInput,
-        SystemReviewRecord, SystemReviewSnapshot,
+        ModelConfig, ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary,
+        SecurityPriceQuote, Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
+        SystemReviewSnapshot,
     },
     planning, risk, valuation,
 };

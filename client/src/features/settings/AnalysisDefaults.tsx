@@ -112,7 +112,6 @@ export function AnalysisDefaults({
           <div className="analysis-default-options">
             {(
               [
-                ["useMemory", "参考长期记忆"],
                 ["reflect", "反思检查"],
                 ["exploreAlternatives", "比较备选方案"],
               ] as const
@@ -140,9 +139,7 @@ export function AnalysisDefaults({
               联网查找相关资料
             </label>
           </div>
-          <p className="section-intro">
-            长期记忆、反思检查与备选方案在深度分析时使用。长期记忆自动检索相关记录，已屏蔽的记忆不会发送。
-          </p>
+          <p className="section-intro">反思检查与备选方案在深度分析时使用。</p>
           <p className="section-intro">
             {model.provider === "openai-chat"
               ? "当前 Chat Completions 接口不支持原生网页搜索，联网选项暂不生效。"

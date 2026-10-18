@@ -291,10 +291,8 @@ export interface AnalysisRequest {
   userMessage?: string;
   question: string;
   workflow: "quick" | "deep";
-  useMemory: boolean;
   reflect: boolean;
   exploreAlternatives: boolean;
-  excludedMemoryIds: string[];
   contextSelection: ContextSelection;
   previewRevision?: string;
 }
@@ -312,7 +310,6 @@ export interface ContextSelection {
 
 export interface AnalysisSettings {
   workflow: "quick" | "deep";
-  useMemory: boolean;
   reflect: boolean;
   exploreAlternatives: boolean;
   webSearch: boolean;
@@ -333,46 +330,13 @@ export interface AnalysisPreview {
   model: string;
   workflow: "quick" | "deep";
   groups: ContextGroup[];
-  memoryCandidates: MemoryCandidate[];
   evidenceCandidates: ResearchEvidence[];
   payload: Record<string, unknown>;
   payloadBytes: number;
   contextRevision: string;
-  memoryPolicy: string;
   systemPolicy: string;
   localOnly: string[];
   generatedAt: string;
-}
-
-export interface MemoryCandidate {
-  id: string;
-  kind: string;
-  title: string;
-  summary: string;
-  content: Record<string, unknown>;
-  createdAt: string;
-  occurredAt: string;
-  status: string;
-  reviewed: boolean;
-  contradiction: boolean;
-  tags: string[];
-  preference: "default" | "pinned" | "hidden";
-  preferenceNote: string;
-  preferenceUpdatedAt: string | null;
-  selected: boolean;
-  retrieval?: MemoryRetrieval;
-}
-
-export interface MemoryPreferenceInput {
-  preference: "default" | "pinned" | "hidden";
-  note: string;
-}
-
-export interface MemoryRetrieval {
-  score: number;
-  ageDays: number;
-  reasons: string[];
-  passes: string[];
 }
 
 export interface AnalysisTransparency {
@@ -381,9 +345,6 @@ export interface AnalysisTransparency {
   contextGroups: string[];
   payloadBytes: number;
   contextRevision: string;
-  memoryItemsUsed: number;
-  reviewedMemoryItemsUsed: number;
-  conflictingMemoryItemsUsed: number;
   evidenceItemsUsed: number;
   citationsRequired: boolean;
   modelCalls: number;
@@ -450,7 +411,6 @@ export interface AnalysisWorkflowTrace {
   };
   version: string;
   researchPlan?: string;
-  memoryItems: MemoryCandidate[];
   alternatives: AnalysisAlternative[];
   critique?: string;
   calls: ModelCallTrace[];

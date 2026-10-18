@@ -1,5 +1,99 @@
 use super::*;
 
+pub(super) fn add_legacy_table_shapes(dataset: &mut SyncDataset) {
+    for spec in sync_specs_for_version(dataset.schema_version).unwrap() {
+        if !dataset.tables.iter().any(|table| table.name == spec.name) {
+            dataset.tables.push(SyncTable {
+                name: spec.name.into(),
+                columns: spec.columns.iter().map(|column| (*column).into()).collect(),
+                rows: Vec::new(),
+            });
+        }
+    }
+}
+
+#[test]
+fn upgrade_and_legacy_restore_remove_memory_metadata_and_preserve_reports() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("retired.db");
+    let db = Database::open(&path).unwrap();
+    db.conn().unwrap().execute_batch(
+        "CREATE TABLE memory_preferences(memory_id TEXT PRIMARY KEY, preference TEXT, note TEXT, updated_at TEXT);
+         INSERT INTO memory_preferences VALUES ('a1','pinned','旧备注','2026-10-17T00:00:00Z');
+         INSERT INTO settings(key,value) VALUES ('analysis.settings','{\"useMemory\":true,\"webSearch\":false}');
+         INSERT INTO analyses(id,question,answer,audit,trace,created_at) VALUES (
+           'a1','旧问题','完整历史回答',
+           '{\"memoryItemsUsed\":1,\"reviewedMemoryItemsUsed\":0,\"conflictingMemoryItemsUsed\":0,\"contextGroups\":[\"相关历史记忆\",\"财务档案\"],\"model\":\"old\"}',
+           '{\"version\":\"old\",\"memoryItems\":[{\"id\":\"a0\",\"preferenceNote\":\"旧备注\"}],\"evidenceCatalog\":[{\"id\":\"memory-a0\",\"claim\":\"原始引用\"}]}',
+           '2026-10-17T00:00:00Z');"
+    ).unwrap();
+    let assert_clean = |db: &Database| {
+        let conn = db.conn().unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name='memory_preferences'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+        let (answer, audit, trace): (String, String, String) = conn
+            .query_row(
+                "SELECT answer,audit,trace FROM analyses WHERE id='a1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(answer, "完整历史回答");
+        let audit: serde_json::Value = serde_json::from_str(&audit).unwrap();
+        assert_eq!(audit["contextGroups"], serde_json::json!(["财务档案"]));
+        assert_eq!(audit["model"], "old");
+        for key in [
+            "memoryItemsUsed",
+            "reviewedMemoryItemsUsed",
+            "conflictingMemoryItemsUsed",
+        ] {
+            assert!(audit.get(key).is_none());
+        }
+        let trace: serde_json::Value = serde_json::from_str(&trace).unwrap();
+        assert!(trace.get("memoryItems").is_none());
+        assert_eq!(trace["evidenceCatalog"][0]["claim"], "原始引用");
+        drop(conn);
+        let preset: serde_json::Value =
+            serde_json::from_str(&db.setting("analysis.settings").unwrap().unwrap()).unwrap();
+        assert!(preset.get("useMemory").is_none());
+        assert_eq!(preset["webSearch"], false);
+        assert!(!db
+            .export_sync_data()
+            .unwrap()
+            .tables
+            .iter()
+            .any(|table| table.name == "memory_preferences"));
+    };
+    let mut legacy = db.export_sync_data().unwrap();
+    legacy.schema_version = 21;
+    add_legacy_table_shapes(&mut legacy);
+    legacy
+        .tables
+        .iter_mut()
+        .find(|table| table.name == "memory_preferences")
+        .unwrap()
+        .rows
+        .push(vec![
+            SyncValue::Text("a1".into()),
+            SyncValue::Text("pinned".into()),
+            SyncValue::Text("旧备注".into()),
+            SyncValue::Text("2026-10-17T00:00:00Z".into()),
+        ]);
+    drop(db);
+    for _ in 0..2 {
+        let db = Database::open(&path).unwrap();
+        assert_clean(&db);
+        db.import_sync_data(&legacy).unwrap();
+        assert_clean(&db);
+    }
+}
+
 #[test]
 fn upgrades_remove_retired_tables_without_changing_active_records() {
     let directory = tempfile::tempdir().unwrap();
@@ -144,15 +238,6 @@ fn current_backup_round_trip_preserves_data_and_excludes_private_settings() {
         .unwrap();
     source.conn().unwrap().execute_batch("INSERT INTO analyses(id,question,answer,created_at) VALUES ('analysis','问题','完整回答','2026-01-01T00:00:00Z');").unwrap();
     source
-        .save_memory_preference(
-            "analysis",
-            &MemoryPreferenceInput {
-                preference: "pinned".into(),
-                note: "保留".into(),
-            },
-        )
-        .unwrap();
-    source
         .set_setting("private-setting", "private-value")
         .unwrap();
     source
@@ -165,7 +250,7 @@ fn current_backup_round_trip_preserves_data_and_excludes_private_settings() {
     let target = Database::open(Path::new(":memory:")).unwrap();
     target.import_sync_data(&exported).unwrap();
     assert_eq!(target.export_sync_data().unwrap().tables, exported.tables);
-    assert_eq!(target.memories().unwrap()[0].preference, "pinned");
+    assert_eq!(target.analysis("analysis").unwrap().answer, "完整回答");
 }
 
 // Construct an authentic old backup from today's export for compatibility tests.
@@ -186,7 +271,12 @@ pub(super) fn add_retired_tables(dataset: &mut SyncDataset) {
     for (index, spec) in specs.iter().enumerate() {
         if matches!(
             spec.name,
-            "decisions" | "decision_reviews" | "portfolio_checkins" | "goals" | "portfolio_events"
+            "decisions"
+                | "decision_reviews"
+                | "portfolio_checkins"
+                | "goals"
+                | "portfolio_events"
+                | "memory_preferences"
         ) && !dataset.tables.iter().any(|table| table.name == spec.name)
         {
             dataset.tables.insert(
@@ -216,6 +306,7 @@ fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data()
          CREATE TABLE decision_reviews(decision_id TEXT PRIMARY KEY, payload TEXT);
          INSERT INTO decisions VALUES ('retired', '{}');
          INSERT INTO analyses(id,question,answer,created_at) VALUES ('active','历史问题','完整原文','2026-10-12T00:00:00Z');
+         CREATE TABLE memory_preferences(memory_id TEXT PRIMARY KEY, preference TEXT, note TEXT, updated_at TEXT);
          INSERT INTO memory_preferences VALUES ('active','pinned','保留分析','2026-10-12T00:00:00Z');
          INSERT INTO memory_preferences VALUES ('retired','hidden','旧偏好','2026-10-12T00:00:00Z');"
     ).unwrap();
@@ -225,14 +316,13 @@ fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data()
     assert_eq!(exported.schema_version, SYNC_DATASET_SCHEMA_VERSION);
     assert!(!exported.tables.iter().any(|table| matches!(
         table.name.as_str(),
-        "decisions" | "decision_reviews" | "portfolio_checkins" | "goals" | "portfolio_events"
+        "decisions"
+            | "decision_reviews"
+            | "portfolio_checkins"
+            | "goals"
+            | "portfolio_events"
+            | "memory_preferences"
     )));
-    let preferences = exported
-        .tables
-        .iter()
-        .find(|table| table.name == "memory_preferences")
-        .unwrap();
-    assert_eq!(preferences.rows.len(), 1);
     let mut legacy = exported;
     legacy.schema_version = 15;
     add_retired_tables(&mut legacy);
@@ -264,13 +354,9 @@ fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data()
     let restored = Database::open(&directory.path().join("restored.db")).unwrap();
     restored.import_sync_data(&legacy).unwrap();
     assert_eq!(restored.snapshot().unwrap().profile.monthly_income, 12345.0);
-    let memories = restored.memories().unwrap();
-    assert_eq!(memories.len(), 1);
-    assert_eq!(memories[0].id, "active");
-    assert_eq!(memories[0].content["answer"], "完整原文");
-    assert_eq!(memories[0].preference, "pinned");
+    assert_eq!(restored.analysis("active").unwrap().answer, "完整原文");
     let retired_tables: i64 = restored.conn().unwrap().query_row(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('decisions','decision_reviews')", [], |row| row.get(0)
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('decisions','decision_reviews','memory_preferences')", [], |row| row.get(0)
     ).unwrap();
     assert_eq!(retired_tables, 0);
     restored.export_sync_data().unwrap().validate().unwrap();
@@ -824,9 +910,6 @@ fn stores_analysis_transparency_audit() {
             context_groups: vec!["本次问题".into(), "规则型风险检查".into()],
             payload_bytes: 512,
             context_revision: "ctx-test".into(),
-            memory_items_used: 2,
-            reviewed_memory_items_used: 1,
-            conflicting_memory_items_used: 1,
             evidence_items_used: 0,
             citations_required: false,
             model_calls: 3,
@@ -879,7 +962,6 @@ fn stores_analysis_transparency_audit() {
     db.save_analysis(&result, "如何控制风险？").unwrap();
     let history = db.analysis_history().unwrap();
     let audit = history[0].transparency.as_ref().unwrap();
-    assert_eq!(audit.memory_items_used, 2);
     assert_eq!(audit.model_calls, 3);
     assert!(!audit.api_key_sent);
     assert_eq!(
@@ -929,15 +1011,6 @@ fn stores_analysis_transparency_audit() {
         "与原始资料相反"
     );
     assert!(matches!(db.analysis("missing"), Err(AppError::NotFound(_))));
-    let memory = db
-        .memories()
-        .unwrap()
-        .into_iter()
-        .find(|item| item.kind == "analysis")
-        .unwrap();
-    assert!(!memory.reviewed);
-    assert!(memory.status.contains("未经结果验证"));
-    assert_eq!(memory.content["workflowVersion"], "investment-workflow-v4");
 }
 
 #[test]
@@ -949,7 +1022,7 @@ fn reads_analysis_audit_created_before_evidence_fields_existed() {
         .execute(
             "INSERT INTO analyses (id, question, answer, audit, created_at)
              VALUES ('legacy','旧问题','旧回答',?1,'2026-01-01')",
-            [r#"{"provider":"mock","model":"old","contextGroups":[],"payloadBytes":1,"contextRevision":"ctx-old","memoryItemsUsed":0,"externalDataUsed":false,"apiKeySent":false}"#],
+            [r#"{"provider":"mock","model":"old","contextGroups":[],"payloadBytes":1,"contextRevision":"ctx-old","externalDataUsed":false,"apiKeySent":false}"#],
         )
         .unwrap();
     let audit = db.analysis_history().unwrap()[0]
@@ -959,8 +1032,6 @@ fn reads_analysis_audit_created_before_evidence_fields_existed() {
     assert_eq!(audit.evidence_items_used, 0);
     assert!(!audit.citations_required);
     assert_eq!(audit.model_calls, 0);
-    assert_eq!(audit.reviewed_memory_items_used, 0);
-    assert_eq!(audit.conflicting_memory_items_used, 0);
     assert!(!audit.structured_output_validated);
     assert_eq!(audit.output_repairs, 0);
     assert!(db.analysis_history().unwrap()[0].workflow_version.is_none());
@@ -1001,7 +1072,7 @@ fn adds_workflow_trace_column_to_an_existing_analysis_database() {
 }
 
 #[test]
-fn reads_workflow_trace_created_before_structured_memory() {
+fn reads_legacy_workflow_trace() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("test.db")).unwrap();
     db.conn()
@@ -1021,7 +1092,6 @@ fn reads_workflow_trace_created_before_structured_memory() {
     );
     let trace = db.analysis("old-trace").unwrap().workflow_trace.unwrap();
     assert_eq!(trace.version, "investment-workflow-v2");
-    assert!(trace.memory_items.is_empty());
     assert!(trace.structured_report.is_none());
     assert!(trace.output_validation.is_none());
     assert!(trace.evidence_catalog.is_empty());

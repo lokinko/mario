@@ -1040,6 +1040,7 @@ mod tests {
         db.save_holding_trade(&buy).unwrap();
         let mut backup = db.export_sync_data().unwrap();
         backup.schema_version = 19;
+        super::super::tests::add_legacy_table_shapes(&mut backup);
         backup.tables.retain(|t| {
             ![
                 "financial_operations",

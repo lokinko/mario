@@ -142,7 +142,6 @@ export function Advisor({
         question: previous
           ? `以下是上一轮问答，仅用于理解追问，模型回答不是已核实事实。\n上次问题：${previous.question}\n上次回答摘要：${previous.result.answer.slice(0, 6000)}\n\n本次问题：${message}`
           : message,
-        excludedMemoryIds: [],
       };
       // Keep the server's immutable context check without an extra UI step.
       const preview = await previewAnalysis(request);

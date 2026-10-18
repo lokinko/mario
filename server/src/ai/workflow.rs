@@ -4,7 +4,7 @@ use super::structured_output::STRUCTURED_ANALYSIS_CONTRACT;
 use super::ChatMessage;
 use crate::context::INVESTMENT_SYSTEM_POLICY;
 
-pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v6";
+pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v7";
 
 pub struct StagePrompt {
     pub key: &'static str,
@@ -23,7 +23,6 @@ pub struct CandidateContext<'a> {
     pub question: &'a str,
     pub local_context: &'a str,
     pub research_plan: &'a str,
-    pub memory_context: &'a str,
 }
 
 pub trait AnalysisWorkflow: Send + Sync {
@@ -50,9 +49,9 @@ pub trait AnalysisWorkflow: Send + Sync {
     ) -> StagePrompt;
 }
 
-pub struct InvestmentWorkflowV6;
+pub struct InvestmentWorkflowV7;
 
-impl AnalysisWorkflow for InvestmentWorkflowV6 {
+impl AnalysisWorkflow for InvestmentWorkflowV7 {
     fn version(&self) -> &'static str {
         INVESTMENT_WORKFLOW_VERSION
     }
@@ -76,10 +75,10 @@ impl AnalysisWorkflow for InvestmentWorkflowV6 {
             label: "研究计划",
             messages: vec![
                 ChatMessage::system(format!(
-                    "{INVESTMENT_SYSTEM_POLICY}\n你现在是研究规划模块，只制定分析计划和检索线索，不给最终结论。"
+                    "{INVESTMENT_SYSTEM_POLICY}\n你现在是研究规划模块，只制定分析计划，不给最终结论。"
                 )),
                 ChatMessage::user(format!(
-                    "问题：{question}\n已知档案摘要：{payload}\n请列出需要核实的假设、反方问题、缺失信息，以及用于检索历史分析的关键词。"
+                    "问题：{question}\n已知档案摘要：{payload}\n请列出需要核实的假设、反方问题、缺失信息和资料局限。"
                 )),
             ],
         }
@@ -120,11 +119,10 @@ impl AnalysisWorkflow for InvestmentWorkflowV6 {
                     "{INVESTMENT_SYSTEM_POLICY}\n你是独立方案研究模块。只从指定视角形成候选方案，不读取其他候选方案，也不直接作最终裁决。"
                 )),
                 ChatMessage::user(format!(
-                    "用户问题：{}\n\n本地投资档案：{}\n\n研究计划：{}\n\n相关历史记忆：{}\n\n指定视角：{}\n任务：{}\n输出适用条件、建议动作、主要风险、机会成本、证据依据与证伪条件。",
+                    "用户问题：{}\n\n本地投资档案：{}\n\n研究计划：{}\n\n指定视角：{}\n任务：{}\n输出适用条件、建议动作、主要风险、机会成本、证据依据与证伪条件。",
                     context.question,
                     context.local_context,
                     context.research_plan,
-                    context.memory_context,
                     spec.lens,
                     spec.instruction
                 )),
@@ -203,7 +201,7 @@ mod tests {
 
     #[test]
     fn exploration_uses_independent_and_distinct_lenses() {
-        let workflow = InvestmentWorkflowV6;
+        let workflow = InvestmentWorkflowV7;
         let alternatives = workflow.alternative_specs(true);
         assert_eq!(alternatives.len(), 2);
         assert_ne!(alternatives[0].id, alternatives[1].id);
@@ -213,7 +211,7 @@ mod tests {
 
     #[test]
     fn disabling_exploration_preserves_a_no_action_baseline() {
-        let workflow = InvestmentWorkflowV6;
+        let workflow = InvestmentWorkflowV7;
         let alternatives = workflow.alternative_specs(false);
         assert_eq!(alternatives.len(), 1);
         assert_eq!(alternatives[0].id, "baseline");
@@ -221,7 +219,7 @@ mod tests {
 
     #[test]
     fn every_model_stage_inherits_the_untrusted_data_boundary() {
-        let workflow = InvestmentWorkflowV6;
+        let workflow = InvestmentWorkflowV7;
         let prompts = [
             workflow.quick("问题", "上下文"),
             workflow.research_plan("问题", &serde_json::json!({})),
@@ -237,7 +235,6 @@ mod tests {
             question: "问题",
             local_context: "上下文",
             research_plan: "计划",
-            memory_context: "记忆",
         };
         assert!(workflow.alternative(&context, &spec).messages[0]
             .content
@@ -246,7 +243,7 @@ mod tests {
 
     #[test]
     fn final_stages_require_the_machine_readable_contract() {
-        let workflow = InvestmentWorkflowV6;
+        let workflow = InvestmentWorkflowV7;
         assert!(workflow.quick("问题", "上下文").messages[1]
             .content
             .contains("evidenceIds"));

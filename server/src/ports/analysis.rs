@@ -1,7 +1,7 @@
 //! Execution port consumes frozen data and has no storage or HTTP dependency.
 use crate::{
     context::BuiltContext,
-    models::{AnalysisRequest, AnalysisResult, MemoryItem, ModelConfig},
+    models::{AnalysisRequest, AnalysisResult, ModelConfig},
     AppResult,
 };
 use async_trait::async_trait;
@@ -14,7 +14,6 @@ pub(crate) trait AnalysisExecutor: Send + Sync {
         api_key: Option<String>,
         request: AnalysisRequest,
         context: BuiltContext,
-        memories: Vec<MemoryItem>,
     ) -> AppResult<AnalysisResult>;
     async fn execute_stream(
         &self,
@@ -22,11 +21,9 @@ pub(crate) trait AnalysisExecutor: Send + Sync {
         api_key: Option<String>,
         request: AnalysisRequest,
         context: BuiltContext,
-        memories: Vec<MemoryItem>,
         _events: EventSender,
     ) -> AppResult<AnalysisResult> {
-        self.execute(config, api_key, request, context, memories)
-            .await
+        self.execute(config, api_key, request, context).await
     }
 }
 

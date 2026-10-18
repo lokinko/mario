@@ -1,4 +1,6 @@
 <!-- Historical release notes. Current deployment: self-hosting.md; legacy cloud integration has been removed. -->
+
+> 历史记录：本文保留当时的实现与验收结果。长期记忆功能现已移除，当前边界及迁移方案见[架构说明](architecture.md)。
 # mario 0.4.3：邮箱确认链路修复
 
 日期：2026-09-09。

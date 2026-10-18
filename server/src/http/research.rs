@@ -1,9 +1,8 @@
 use super::RequestContext;
 use crate::application::analysis::AnalysisService;
 use crate::models::{
-    AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, MemoryItem,
-    MemoryPreferenceInput, ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput,
-    StoredAnalysis,
+    AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, ResearchEvidence,
+    ResearchEvidenceInput, ResearchEvidenceStatusInput, StoredAnalysis,
 };
 use crate::{models, AppResult};
 use axum::{
@@ -15,8 +14,6 @@ use std::sync::Arc;
 
 pub(super) fn router() -> Router {
     Router::new()
-        .route("/api/memories", get(memories))
-        .route("/api/memories/{id}/preference", put(save_memory_preference))
         .route(
             "/api/research-evidence",
             get(research_evidence)
@@ -36,20 +33,6 @@ pub(super) fn router() -> Router {
         .route("/api/analysis/stream", post(stream_analysis))
         .route("/api/analyses", get(analyses))
         .route("/api/analyses/{id}", get(analysis))
-}
-
-async fn memories(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<Vec<MemoryItem>>> {
-    Ok(Json(state.db.memories()?))
-}
-
-async fn save_memory_preference(
-    Extension(state): Extension<Arc<RequestContext>>,
-    Path(id): Path<String>,
-    Json(input): Json<MemoryPreferenceInput>,
-) -> AppResult<Json<MemoryItem>> {
-    Ok(Json(state.db.save_memory_preference(&id, &input)?))
 }
 
 async fn research_evidence(
@@ -174,7 +157,6 @@ mod tests {
             _: Option<String>,
             _: AnalysisRequest,
             _: BuiltContext,
-            _: Vec<MemoryItem>,
         ) -> AppResult<AnalysisResult> {
             unreachable!("stream route must use streaming execution")
         }
@@ -184,7 +166,6 @@ mod tests {
             _: Option<String>,
             _: AnalysisRequest,
             context: BuiltContext,
-            _: Vec<MemoryItem>,
             events: crate::ports::analysis::EventSender,
         ) -> AppResult<AnalysisResult> {
             let _guard = ExecutionGuard(self.dropped.clone());
@@ -201,7 +182,7 @@ mod tests {
             Ok(serde_json::from_value(serde_json::json!({
                 "id":"streamed-result", "answer":"最终报告", "stages":[],
                 "createdAt":chrono::Utc::now().to_rfc3339(), "disclaimer":"test",
-                "transparency":{"provider":config.provider,"model":config.model,"contextGroups":[],"payloadBytes":context.payload_bytes,"contextRevision":context.revision,"memoryItemsUsed":0,"externalDataUsed":false,"apiKeySent":false}
+                "transparency":{"provider":config.provider,"model":config.model,"contextGroups":[],"payloadBytes":context.payload_bytes,"contextRevision":context.revision,"externalDataUsed":false,"apiKeySent":false}
             }))?)
         }
     }
@@ -231,7 +212,7 @@ mod tests {
                 fail,
             }),
         });
-        let mut request: AnalysisRequest = serde_json::from_value(serde_json::json!({"question":"流式问题","workflow":"quick","useMemory":false,"reflect":false,"exploreAlternatives":false,"webSearch":false})).unwrap();
+        let mut request: AnalysisRequest = serde_json::from_value(serde_json::json!({"question":"流式问题","workflow":"quick","reflect":false,"exploreAlternatives":false,"webSearch":false})).unwrap();
         request.preview_revision = Some(
             AnalysisService::new(&state.db)
                 .preview(&request)
