@@ -1,34 +1,192 @@
 # 架构
 
-当前生产结构：React Web → Rust API → PostgreSQL；Rust API → 独立 AI Agent → 模型提供方。完整配置与运行边界见 [自建部署](self-hosting.md)。
+本文是全局代码设计的总体说明：系统由哪些运行单元组成、源码如何分层、依赖朝哪个方向、状态和事务归谁、关键数据怎样流动，以及哪些不变量不能被局部改动破坏。修改跨模块结构前先读本文；具体模块的扩展步骤、耦合审计与验收记录见 [模块边界与开发约束](module-boundaries.md)，部署与运维见 [自建宿主机服务](self-hosting.md)。
+
+本文只描述当前生产路径。长期有效的架构变化必须在同次提交中更新本文与 [模块边界](module-boundaries.md)；一次性的验收数据写入对应的审计或发布文档，不在这里累积。
+
+## 1. 系统形态
+
+项目是模块化单体：一个 Rust 二进制按启动参数承担不同角色，一个 React 单页应用，一个 PostgreSQL。没有微服务、消息总线或持久作业队列。
 
 ```mermaid
 flowchart LR
-    W[网页] --> G[Nginx HTTPS]
-    G --> A[API：认证、业务规则、上下文授权]
-    A --> P[(PostgreSQL：账号与用户关系表)]
-    A --> R[无状态 AI Agent]
+    W[React Web] --> G[Nginx HTTPS]
+    G --> A[Rust API<br/>认证 · 租户选择 · 业务用例 · 事务]
+    A --> P[(PostgreSQL<br/>账号表 + 每账号独立 schema)]
+    A -->|冻结上下文| R[无状态 AI Agent]
     R --> M[模型提供方]
+    A -->|公开行情| Q[ECB / 免费行情 / Twelve Data]
+    B[个人电脑桥接进程] -->|HTTPS 长轮询| A
+    B --> C[本机 Codex App Server]
 ```
 
-- `client/src/api/` 按领域提供接口；`lib/httpClient.ts` 统一处理认证、超时、版本和账号切换保护。`app/useApplicationData.ts` 管理启动、同步、草稿保护和数据刷新。
-- `server/src/hosted.rs` 根据服务端会话选择用户数据库，执行版本检查、数据库 advisory lock、导出和导入。用户请求不能指定租户。
-- `server/src/accounts.rs` 管理公开注册、Argon2 密码、随机会话及撤销和登录限速。任何用户均可通过邮箱和密码注册，会话在数据库仅保存哈希。
-- `server/src/db/` 保留领域仓储和事务校验；`storage.rs` 隔离 SQL 引擎。PostgreSQL 保存关系表，SQLite 仅用于旧文件迁移和本地开发回归。
-- `server/src/runtime.rs` 负责启动配置与维护命令，`http/` 按功能注册路由和转换输入输出，`application/` 复用组合、分析和模型配置的业务流程。
-- `server/src/models/` 保存每日资产、行情值和分析轨迹的数据契约。数据库不引用 AI 工作流实现、网络 Provider 或行情刷新模块；HTTP 错误映射独立放在 `http/error.rs`。
-- `server/src/ports/analysis.rs` 定义冻结上下文的执行接口；`server/src/agent.rs` 实现独立进程或本地内联执行适配。工作流、Provider、输出验证仍在 `server/src/ai/`，其代码不调用仓储。
-- `server/src/db/secrets.rs` 拥有账号凭据持久化，调用 `server/src/secrets.rs` 在托管模式用主密钥加密用户凭据，AAD 包含用户 schema 和密钥用途；本地开发同样使用主密钥加密，按密钥用途绑定 AAD。
+同一个 `mario-server` 二进制由 [`runtime.rs`](../server/src/runtime.rs) 选择运行模式：
 
-账号使用独立 PostgreSQL schema，而不是共用单用户 AppState。每个请求只持有已认证用户的连接；连接关闭即释放任何未显式释放的会话锁。业务写入和数据版本在同一事务推进，避免应用崩溃造成“数据已变而版本未变”。多个 API 实例使用同一数据库锁，客户端旧版本写入返回 409。
+| 模式 | 触发条件 | 入口 | 数据 |
+| --- | --- | --- | --- |
+| 多用户服务（生产） | 设置 `DATABASE_URL` | `hosted::serve` | PostgreSQL，按账号 schema 隔离 |
+| 本地服务（开发、回归） | 未设置 `DATABASE_URL` | `http::local::serve` | 本地 SQLite 文件，单令牌或显式 `--allow-unauthenticated-dev` |
+| 无状态 Agent | `MARIO_ROLE=agent` | `agent::serve` | 无数据库，只接收 API 发来的冻结任务 |
+| Codex 桥接 worker | `--codex-bridge <站点>` | `codex_bridge_worker::run` | 运行在用户电脑，不监听端口，不读 `auth.json` |
+| 维护命令 | `--export-data`、`--reset-password` | `runtime.rs` | 一次性导出旧 SQLite 数据或重置密码 |
 
-AI 分析的预览与执行共享同一准备过程，读取并冻结用户授权的数据；外部模型工作期间释放账户锁，避免长时间阻塞其他设备。应用服务依赖 `ports/analysis::AnalysisExecutor` 执行接口，Agent 适配器负责独立进程调用或本地内联运行。结果保留输入版本与分析轨迹，随后通过 API 写入分析历史。独立 Agent 运行不需要数据库连接或账号服务。
+生产部署由 [`deploy.sh`](../deploy.sh) 在宿主机以 systemd 启动一个主运行器（[`scripts/host-runtime.mjs`](../scripts/host-runtime.mjs)），依次拉起 PostgreSQL、Agent（仅监听本机端口）和 API；Nginx 反向代理 API 与静态网页。推送代码不等于部署。
 
-当前同步是在线版本检查及按需刷新，没有离线写入队列、实时推送或持久 AI 作业队列。连接按请求创建，业务请求并发有上限；此实现面向小规模自建，进一步扩大并发应增加连接池、分页/增量资源接口和任务队列。
+## 2. 设计原则
 
-源码层面的职责、依赖方向、生命周期、扩展步骤与本轮验证见 [模块边界与开发约束](module-boundaries.md)。运行 `npm run check:architecture` 可检查反向依赖、跨功能页面引用和依赖循环；常规测试入口执行该检查。
+1. **服务端是唯一事实来源。** 前端只持有已显示快照和未保存草稿；金额、会计结果、估值状态和数据版本都由服务端计算并返回。
+2. **账号隔离由服务端决定。** 请求不能指定租户；认证后由服务端按用户 ID 选择数据库连接，账号数据不进入跨账号缓存。
+3. **写入有版本，财务写入有回执。** 业务写入与数据版本在同一事务推进；客户端用 `If-Match` 提交，过期写入返回 409；财务写入的回执与领域变化同事务提交，丢失响应可以安全重放。
+4. **精确金额。** 金额以十进制原文和精确值持久化，浮点只作展示投影；前端显示不经过二进制浮点重算。
+5. **AI 只消费冻结输入。** 分析前在服务端读取、授权、冻结上下文并计算指纹；AI 模块不读数据库、不写资产、不执行交易，模型输出必须经过结构校验才成为结果。
+6. **可替换能力经端口注入。** 模型执行与行情查询通过 `ports/` 中的 trait 注入，测试可以替换；不为普通仓储查询或单步 CRUD 增加抽象层。
+7. **单一生产路径。** 非兼容更新删除旧实现；只为存量数据恢复保留隔离的迁移适配，并写明移除条件（见第 9 节）。
 
-## 财务一致性约束（2026-10-15）
+## 3. 分层与依赖方向
+
+```mermaid
+flowchart TD
+    subgraph Client[client/src]
+        Shell[App.tsx · app/<br/>应用壳与数据生命周期] --> Features[features/&lt;领域&gt;/<br/>页面、表单、草稿]
+        Shell --> API[api/&lt;领域&gt;<br/>请求与返回契约]
+        Features --> API
+        Features --> Shared[components/ · lib/ · types.ts]
+        API --> Shared
+    end
+    subgraph Server[server/src]
+        Runtime[runtime · lib · main<br/>启动与模式选择] --> Adapters[http/ · hosted · agent<br/>composition · streaming]
+        Adapters --> App[application/<br/>业务用例与编排]
+        Adapters --> DB
+        App --> DB[db/ · storage<br/>领域仓储与事务]
+        App --> Ports[ports/<br/>执行接口]
+        Adapters --> AI[ai/<br/>工作流 · Provider · 输出校验]
+        AI --> Ports
+        DB --> Core
+        App --> Core
+        Ports --> Core[models/ · context · planning<br/>risk · valuation · evidence<br/>契约与确定性规则]
+        AI --> Core
+    end
+    API -->|HTTPS JSON / SSE| Adapters
+```
+
+箭头表示"可以依赖"。底层（契约与确定性规则）不依赖任何上层；`ports/` 只依赖契约，实现放在适配器中；`application/` 不认识 Axum、Agent 进程或具体行情供应商。简单仓储查询与单次 CRUD 允许沿用 HTTP → `Database` 的直接路径。
+
+`npm run check:architecture`（[`scripts/check-architecture.mjs`](../scripts/check-architecture.mjs)）静态强制以下规则，并检测前后端依赖循环：
+
+| 范围 | 禁止 |
+| --- | --- |
+| 前端功能页 | 引用 `app/`、`App.tsx`、`main.tsx`；引用其他功能目录 |
+| 前端共享层 | `lib/`、`components/`、`api/`、`types.ts` 引用功能页或应用壳；`lib/` 引用 `api/`；`api/` 跨领域互相引用 |
+| 前端可达性 | 任何生产模块无法从 `main.tsx` 到达 |
+| 契约与确定性规则 | `models`、`context`、`planning`、`risk`、`valuation`、`evidence` 依赖仓储、网络、传输、`application`、`ai` 或 `ports` |
+| `ports` | 依赖 `models`、`context`、`error` 以外的模块 |
+| `ai` | 依赖仓储、账号、行情供应商、传输适配器或 `application` |
+| `db` | 依赖 `application`、`ai`、`agent`、`http`、`hosted`、`runtime` 或行情网络模块 |
+| `application` | 依赖传输/进程适配器或具体行情供应商；`application/analysis.rs` 直接引用 `ai` |
+| `agent` | 依赖 `db`、`storage`、`accounts`、`application`、`http`、`hosted`、`runtime` |
+| `secrets`、行情适配器 | `secrets` 依赖 `error` 以外模块；`prices`/`market_data` 依赖 `models`、`ports`、`error` 以外模块或持有静态可变资源 |
+| 通用 | 非 `db` 模块使用通配导入；契约、仓储、应用层使用 `axum`；`application`/`ports` 直接使用 `reqwest` |
+
+静态检查与编译、行为测试互补，不能证明宏展开或所有运行时路径的隔离。新增或调整边界时同步更新检查器及其测试，不通过扩大豁免掩盖耦合。
+
+## 4. 后端模块地图
+
+| 模块 | 职责 |
+| --- | --- |
+| `main.rs`、`lib.rs`、`runtime.rs` | 进程入口、模块声明、环境与参数解析、模式选择、维护命令、优雅退出 |
+| `composition.rs` | 创建行情供应商，组装 `MarketServices`，拥有后台刷新任务并在服务退出时取消 |
+| `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS 与静态网页 |
+| `http/` | 按领域注册路由（`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`local.rs` 是本地模式的认证与串行写锁；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
+| `accounts.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速；本地令牌的常量时间比较 |
+| `application/` | 跨仓储与外部端口的用例：`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型凭据与目标绑定）、`codex_bridge`（账号配对） |
+| `ports/` | `analysis::AnalysisExecutor` 与事件通道；`market::FxRateProvider`、`SecurityPriceProvider` |
+| `agent.rs` | `AgentExecutor`：配置 `MARIO_AGENT_URL` 时把冻结任务发给独立 Agent，否则进程内执行；Codex 桥接任务始终在 API 进程经桥接中继执行。同文件提供 Agent HTTP 服务 |
+| `ai/` | `orchestrator` 按 `workflow`（当前 v7）执行资料筛选、研究计划、候选、反思与报告；`provider` 定义模型接口，`native_provider`、`codex`、`bridge` 是三种实现；`selection`、`grounding`、`structured_output` 负责筛选、引用落地与输出校验；`streaming` 解析流式草稿 |
+| `codex_bridge_worker.rs` | 用户电脑上的桥接进程，长轮询 API 领取任务并调用本机 Codex |
+| `market_data.rs`、`prices.rs` | 行情端口的网络实现与实例内有界缓存；只处理公开行情，不读写账号数据 |
+| `db/`、`storage.rs` | `Database` 门面下的领域仓储（持仓、成交、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 隔离 PostgreSQL 与 SQLite 引擎差异 |
+| `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、推理事件与执行时限 |
+| `context.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：分析上下文构建与预览、再平衡规划、风险检查、估值状态、本地证据检索 |
+| `attachments.rs`、`secrets.rs`、`streaming.rs`、`error.rs` | 附件解码与文本提取、主密钥加解密（AAD 绑定 schema 与用途）、共享 SSE 响应、统一错误类型 |
+
+## 5. 前端模块地图
+
+| 模块 | 职责 |
+| --- | --- |
+| `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发 |
+| `app/useApplicationData.ts` | 服务端数据生命周期：启动、快照与模型配置加载、自动同步、请求代次、草稿保护与远程更新提示 |
+| `app/navigation.ts` | 视图、导航分组与标签 |
+| `features/portfolio` | 我的情况：持仓、成交、现金、汇率、每日资产、资产历史与财务日志 |
+| `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
+| `features/reviews`、`features/settings`、`features/account` | 复盘；模型设置、问答预设与 Codex 桥接；网页账号与服务端数据备份 |
+| `api/<领域>.ts` | 领域请求与返回契约；`api/portfolio/financialRequest.ts` 负责财务回执核对与快速编辑排队 |
+| `lib/httpClient.ts`、`transport.ts`、`requestPolicy.ts` | 认证、超时与只读重试、版本采纳、账号切换保护、请求类别 |
+| `lib/autoSync.ts`、`syncEvents.ts`、`webSession.ts`、`useRequestGuard.ts` | 版本轮询、数据事件、网页会话与多账号、过期响应抑制 |
+| `components/`、其余 `lib/`、`types.ts` | 无功能生命周期的展示组件、格式化与日期工具、共享契约类型 |
+
+## 6. 关键数据流
+
+### 6.1 多用户请求生命周期
+
+1. Nginx 转发到 API；公开路由只有注册、登录、登出与服务信息，请求体上限 16 KB。
+2. 私有路由先取并发槽位（业务 24、认证 2），满载返回繁忙。
+3. 校验 Bearer 会话，按用户 ID 打开该账号 schema 的连接，取数据库 advisory 账号锁并读取数据版本。
+4. 写入请求（由 `http/policy.rs` 判定）比较 `If-Match`；不一致时，财务写入先查回执，命中则返回原结果，否则返回 409 与当前版本。
+5. 构造只含该账号连接与共享依赖的 `RequestContext`，交给领域路由；响应带 `x-data-revision` 与 `no-store`。连接关闭时释放残留的会话锁。
+
+本地模式使用单个 SQLite `Database` 与进程内写锁串行化，同样经过 `http/` 领域路由；它的并发能力不代表生产模式。
+
+### 6.2 AI 分析
+
+```mermaid
+sequenceDiagram
+    participant H as http/research
+    participant S as application/analysis
+    participant D as Database
+    participant E as AnalysisExecutor
+    participant G as Agent / ai
+    H->>S: 预览或执行请求（持有账号锁）
+    S->>D: 读取授权资料、模型配置与密钥目的地
+    S->>S: ContextBuilder 冻结上下文并计算指纹
+    S-->>H: 预览返回；执行时释放账号锁
+    S->>E: 冻结上下文 + 模型配置
+    E->>G: 独立 Agent、进程内或 Codex 桥接
+    G-->>E: 经校验的报告与轨迹（可流式）
+    S->>D: 重新取锁，校验输入版本后保存分析历史
+```
+
+预览与执行共享 `AnalysisService::prepare`，避免授权与指纹出现两套实现。执行失败不写历史；外部模型运行期间不持有账号锁。
+
+### 6.3 行情与汇率
+
+`composition::MarketRuntime` 在进程启动时创建供应商并定时刷新公开行情；`application/prices.rs`、`fx.rs` 通过端口查询并在账号事务中写入估值与汇率来源。快照、版本与历史汇率的 GET 不触发刷新或写入；持仓编辑的外部查询在提交事务前完成，成交保存不依赖外部行情。
+
+### 6.4 同步、备份与恢复
+
+前端按版本轮询，版本变化后才拉取快照，没有离线写入队列或实时推送。账号导出/导入使用版本化的同步数据集（`db/sync_format.rs`），导入在单一事务内校验表关联、精确金额与财务一致性后整体替换，失败整次回滚。宿主机级加密备份与迁移见 [服务器间打包、下载与恢复](data-migration.md)。
+
+## 7. 状态与事务归属
+
+| 状态 | 所有者 | 说明 |
+| --- | --- | --- |
+| 启动配置、行情供应商、AI 执行器 | 进程（`runtime`、`composition`） | 可替换，不持有账号数据 |
+| 公开行情缓存 | `prices`/`market_data` 实例 | 有界、失败退避，跨账号共享，只含公开数据 |
+| 会话与账号 | `accounts` | 会话仅存哈希，可撤销 |
+| 账号业务数据与版本 | `db` 领域仓储 | 业务写入、回执、日志、投影与版本同事务提交 |
+| 模型凭据 | `db/secrets.rs` + `secrets.rs` | 主密钥加密，AAD 绑定账号 schema 与用途 |
+| 冻结分析输入 | 单次分析请求 | 执行期间不可变，结果记录输入版本与轨迹 |
+| 桥接配对 | `application/codex_bridge` + `ai/bridge` | 只存配对摘要与短期通道，不接触 OpenAI 凭据 |
+| 已显示快照、同步状态 | `app/useApplicationData` | 请求代次防止旧响应覆盖新数据 |
+| 未保存草稿与单页请求状态 | 各功能页 | 应用层只知道是否需要保护 |
+
+## 8. 关键不变量
+
+- 账号之间不共享连接、缓存中的业务数据或密钥；客户端无法选择租户。
+- 数据库模块不联网，AI 模块不访问数据库，Agent 不需要数据库连接或账号服务。
+- 多步财务写入是单一领域事务，不能为拆分文件而拆开。
+- 决策依据缺失、过期、隔离或待核对时，规划清空行动建议；AI 输出也只能给出校验允许的安全动作。
+
+### 财务一致性约束（2026-10-15）
 
 | 风险 | 领域边界与必须保持的不变量 | 验证入口 |
 | --- | --- | --- |
@@ -40,24 +198,39 @@ AI 分析的预览与执行共享同一准备过程，读取并冻结用户授�
 | 浮点精度漂移 | decimal 输入、cash_state、holding_amounts、源行情/FX、accounting、每日精确原值、备份；number 仅投影 | 大额分位、行情原始十进制、还原一致性测试 |
 | 不可信数据生成行动 | 估值来源/时点与 decisionReady；缺失、过期、隔离、待核对时清空行动，AI 输出验证安全动作；不同资产的估值日期可以不同 | valuation、planning、structured_output 测试 |
 
-数据库模块不联网。行情刷新属于显式应用用例；GET 快照/版本/历史汇率不刷新或写入。持仓编辑的外部查询在提交前完成，成交保存不依赖外部行情。每次更正由所属领域事务负责回执、源记录、投影及历史的一致性。
+每次更正由所属领域事务负责回执、源记录、投影及历史的一致性。正式验收运行 `npm run test:financial`，并设置 `MARIO_TEST_PG_BIN` 指向 PostgreSQL 工具目录；门禁创建独立临时集群，运行真实迁移、SQLite 与 PostgreSQL HTTP、多实例版本/租户隔离、`pg_dump`/`pg_restore` 并逐表比较，不读取部署 `.env` 或生产数据。`scripts/test.sh` 包含此门禁，缺少 PostgreSQL 工具时必须失败。
 
-正式验收运行 npm run test:financial，并设置 MARIO_TEST_PG_BIN 指向 PostgreSQL 工具目录。门禁创建独立临时集群，运行真实迁移、SQLite 和 PostgreSQL HTTP、多实例版本/租户隔离、pg_dump/pg_restore；对恢复的账号及租户表逐表比较。它不读取部署 .env 或操作生产数据。默认 scripts/test.sh 包含此门禁，缺少 PostgreSQL 工具时必须失败，不能静默跳过。
+功能代码不能保证行情供应商无遗漏，也不能替代券商资产核对、部署环境备份及主密钥托管。当前不提供自动换汇、转托管、零碎股现金替代、交易执行或税务账簿。
 
-功能代码不能保证行情供应商无遗漏，也不能替代券商资产核对、部署环境备份及主密钥托管。本轮实现不提供自动换汇、转托管、零碎股现金替代、交易执行或税务账簿。旧版本已删除的原文和丢失精度不能从当前缓存反推；需要原备份或券商证据。
+## 9. 保留的迁移适配
 
-## 模块独立性增量（2026-10-18）
+以下代码只服务存量数据恢复，不构成第二条生产路径：
 
-行情接口位于 `ports/market.rs`，`market_data.rs` 和 `prices.rs` 只实现网络查询、解析和实例缓存。`application/fx.rs`、`application/prices.rs` 负责账号刷新与估值编排，`composition::MarketRuntime` 创建并注入供应商，拥有后台任务并在服务退出时取消。公开行情在同一服务实例内跨账号共享，业务数据与密钥不进入缓存；强制刷新通过供应商接口失效缓存。
+- 旧 JSON 备份结构、旧数据库补列、旧品牌目录与数据库文件名迁移（`runtime.rs`）。
+- `--export-data` 用于把旧 SQLite 数据导出后导入多用户服务。
+- 历史报告与引用的读取适配，保留历史原文。
 
-分析事件属于 `models/inference.rs`，执行接口和发送通道属于 `ports/analysis.rs`；应用、HTTP 和 Agent 不再从 AI 工作流实现中导入这些公共契约。凭据数据库操作归 `db/secrets.rs`，加解密模块不依赖数据库。
+### 长期记忆移除（2026-10-18）
 
-前端跨页提问由应用壳接收 `onAsk`、导航并传入待接收草稿；功能页不依赖应用导航或约定存储键。财务回执恢复属于 `api/portfolio/financialRequest.ts`，通用 HTTP 负责认证、版本与传输，并在回执核对完成前持续保护正在进行的写入。
+问答准备过程仅冻结本轮授权档案和研究证据，历史 AI 回答不再构建为候选记忆或自动召回；Agent 不接收独立的 memories 参数。前端入口、偏好接口、检索模块及专属契约已删除。仓储在升级时删除旧偏好表、清理预设开关和分析中的记忆元数据；历史问答正文及冻结引用保留。当前快照格式不导出记忆偏好，旧备份只校验退役表形状并跳过，导入在同一事务内清理元数据并执行财务一致性校验，失败整次回滚。升级前可用现有备份流程保留恢复点。这部分适配待停止支持 v1–v21 备份时移除。
 
-迁移边界、验收与尚未实施的问题见 [模块独立性审计](module-independence-2026-10-18.md)。模型配置事务、行情等待期间的账号锁、模型管理端口与前端会话状态仍需后续改造；此次检查通过不代表这些问题已消失。
+## 10. 容量边界与已知架构债
 
-## 长期记忆移除（2026-10-18）
+当前实现面向小规模自建：PostgreSQL 连接按请求创建，业务并发有固定上限，快照为全量读取，同步为轮询，分析没有持久作业或跨实例取消。扩大规模时的接入点分别是连接池、分页/增量资源接口和任务队列；在需求出现前不预先引入。
 
-问答准备过程仅冻结本轮授权档案和研究证据，历史 AI 回答不再构建为候选记忆或自动召回。应用层通过 `ports/analysis.rs` 将冻结上下文交给无状态执行器；Agent 不再接收独立的 memories 参数。资料筛选、研究计划、候选方案、反思及最终输出验证继续由工作流负责，版本升级为 v7。
+尚未完成的边界改造见 [模块独立性审计](module-independence-2026-10-18.md)：模型配置事务、行情等待期间的账号锁、模型管理端口与前端会话状态。架构检查通过不代表这些问题已消失。
 
-前端长期记忆入口、偏好接口、检索模块及专属契约已删除。仓储负责升级时删除旧偏好表、清理预设开关和分析中的记忆元数据；历史问答正文及冻结引用保留。快照 v22 不导出记忆偏好，旧备份只校验退役表形状并跳过，导入仍在同一事务内清理元数据并执行财务一致性校验，失败整次回滚。升级前可用现有备份流程保留恢复点；保留的旧格式适配仅用于存量备份恢复，待停止支持 v1–v21 备份时可移除。
+## 11. 修改架构时
+
+1. 先写简明设计：目标、涉及模块与职责、接口与数据流、依赖方向、状态和事务归属、验证方式；非兼容更新说明替换关系与数据迁移。
+2. 确定数据与事务的所属领域，再放置契约、仓储操作与用例；需要外部能力时增加或复用 `ports/` 接口并在适配器装配。
+3. 更新本文受影响的章节与 [模块边界](module-boundaries.md)，必要时调整 `scripts/check-architecture.mjs` 及其测试。
+4. 删除被替代的旧实现，运行 `npm run check:architecture` 与范围匹配的测试（入口见 [模块边界](module-boundaries.md#开发流程)）。
+
+## 相关文档
+
+- 产品与方法：[产品目标与长期原则](product-vision.md)、[投资方法论](methodology.md)、[确定性风险与再平衡模型](planning-model.md)
+- 安全与数据：[自建服务信任边界](threat-model.md)、[账号与数据同步](cloud-sync.md)、[AI 数据边界](ai-data-boundary.md)、[可追溯市场数据](market-data.md)
+- 领域行为：[真实成交与持仓](holding-trades.md)、[每日资产](daily-assets.md)、[研究证据](research-evidence.md)、[复盘与规则](review-and-rules.md)
+- AI：[AI 分析工作流契约](ai-workflow.md)、[问答流式回复](ai-streaming.md)、[可审计的 AI 分析档案](analysis-history.md)、[Codex 桥接](codex-bridge.md)
+- 运维：[自建宿主机服务](self-hosting.md)、[宿主机部署](deploy-madeagents.md)、[数据迁移](data-migration.md)、[Web 构建](client-builds.md)
