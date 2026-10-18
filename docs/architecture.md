@@ -99,7 +99,7 @@ flowchart TD
 | `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS 与静态网页 |
 | `http/` | 按领域注册路由（`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
 | `accounts.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速；Agent 令牌的常量时间比较 |
-| `application/` | 跨仓储与外部端口的用例：`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型凭据与目标绑定）、`codex_bridge`（账号配对） |
+| `application/` | 跨仓储与外部端口的用例：`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型接口切换策略、Provider 构造与连接测试）、`codex_bridge`（账号配对） |
 | `ports/` | `analysis::AnalysisExecutor` 与事件通道；`market::FxRateProvider`、`SecurityPriceProvider` |
 | `agent.rs` | `AgentExecutor`：配置 `MARIO_AGENT_URL` 时把冻结任务发给独立 Agent，否则进程内执行；Codex 桥接任务始终在 API 进程经桥接中继执行。同文件提供 Agent HTTP 服务 |
 | `ai/` | `orchestrator` 按 `workflow`（当前 v7）执行资料筛选、研究计划、候选、反思与报告；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 只由用户电脑上的桥接 worker 调用；`selection`、`grounding`、`structured_output` 负责筛选、引用落地与输出校验；`streaming` 解析流式草稿 |
@@ -172,7 +172,7 @@ sequenceDiagram
 | 公开行情缓存 | `prices`/`market_data` 实例 | 有界、失败退避，跨账号共享，只含公开数据 |
 | 会话与账号 | `accounts` | 会话仅存哈希，可撤销 |
 | 账号业务数据与版本 | `db` 领域仓储 | 业务写入、回执、日志、投影与版本同事务提交 |
-| 模型凭据 | `db/secrets.rs` + `secrets.rs` | 主密钥加密，AAD 绑定账号 schema 与用途 |
+| 模型配置与凭据 | `db/settings.rs` + `db/secrets.rs` + `secrets.rs` | 接口、地址、模型名、密文与目标绑定由 `save_model_configuration` 在同一事务写入，失败保留原配置；主密钥加密，AAD 绑定账号 schema 与用途 |
 | 冻结分析输入 | 单次分析请求 | 执行期间不可变，结果记录输入版本与轨迹 |
 | 桥接配对 | `application/codex_bridge` + `ai/bridge` | 只存配对摘要与短期通道，不接触 OpenAI 凭据 |
 | 已显示快照、同步状态 | `app/useApplicationData` | 请求代次防止旧响应覆盖新数据 |
@@ -220,7 +220,7 @@ sequenceDiagram
 
 当前实现面向小规模自建：PostgreSQL 连接按请求创建，业务并发有固定上限，快照为全量读取，同步为轮询，分析没有持久作业或跨实例取消。扩大规模时的接入点分别是连接池、分页/增量资源接口和任务队列；在需求出现前不预先引入。
 
-尚未完成的边界改造见 [模块独立性审计](module-independence-2026-10-18.md)：模型配置事务、行情等待期间的账号锁、模型管理端口与前端会话状态。架构检查通过不代表这些问题已消失。
+尚未完成的边界改造见 [模块独立性审计](module-independence-2026-10-18.md)：行情等待期间的账号锁、模型管理端口与前端会话状态。架构检查通过不代表这些问题已消失。
 
 ## 11. 修改架构时
 

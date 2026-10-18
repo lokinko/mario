@@ -1,7 +1,7 @@
 //! Model credentials and destination binding; independent of HTTP and process startup.
 use crate::{
     ai::{ChatMessage, ModelProvider, NativeModelProvider},
-    db::Database,
+    db::{model_key_binding, Database},
     models::{ModelConfig, ModelConfigInput, ModelConnectionTest, ModelProviderKind},
     AppError, AppResult,
 };
@@ -41,10 +41,6 @@ pub(crate) fn configured_model_provider(
     )?))
 }
 
-pub(crate) fn model_key_binding(provider: ModelProviderKind, base_url: &str) -> String {
-    format!("{} {}", provider, base_url.trim_end_matches('/'))
-}
-
 pub(crate) fn configured_model_key(db: &Database, config: &ModelConfig) -> AppResult<String> {
     if db
         .setting("model.key_binding")?
@@ -74,14 +70,12 @@ pub(crate) async fn save(db: &Database, input: ModelConfigInput) -> AppResult<Mo
             "切换模型接口或地址时，请填写对应 API Key".into(),
         ));
     }
-    db.save_model_metadata(input.provider, &input.base_url, &input.model)?;
-    if let Some(key) = input.api_key.as_deref() {
-        db.save_secret("model", key)?;
-        db.set_setting(
-            "model.key_binding",
-            &model_key_binding(input.provider, &input.base_url),
-        )?;
-    }
+    db.save_model_configuration(
+        input.provider,
+        &input.base_url,
+        &input.model,
+        input.api_key.as_deref(),
+    )?;
     db.model_config()
 }
 #[cfg(test)]

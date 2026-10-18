@@ -218,8 +218,13 @@ mod tests {
     const BRIDGE_ID: &str = "bridge-fixture";
     fn database() -> Database {
         let db = Database::test();
-        db.save_model_metadata(ModelProviderKind::CodexBridge, "codex://bridge", "fixture")
-            .unwrap();
+        db.save_model_configuration(
+            ModelProviderKind::CodexBridge,
+            "codex://bridge",
+            "fixture",
+            None,
+        )
+        .unwrap();
         db.set_setting("model.codex_bridge_id", BRIDGE_ID).unwrap();
         db
     }

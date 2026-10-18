@@ -198,10 +198,11 @@ mod tests {
         let gate = Arc::new(tokio::sync::Notify::new());
         let dropped = Arc::new(AtomicBool::new(false));
         let db = Database::test();
-        db.save_model_metadata(
+        db.save_model_configuration(
             crate::models::ModelProviderKind::CodexBridge,
             "codex://bridge",
             "fixture",
+            None,
         )
         .unwrap();
         db.set_setting("model.codex_bridge_id", "bridge-fixture")

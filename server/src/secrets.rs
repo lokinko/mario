@@ -16,6 +16,15 @@ fn master_key() -> AppResult<Vec<u8>> {
             AppError::Validation("MARIO_MASTER_KEY 必须是 Base64 编码的 32 字节随机密钥".into())
         })
 }
+#[cfg(test)]
+pub(crate) fn use_test_master_key() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        if master_key().is_err() {
+            std::env::set_var("MARIO_MASTER_KEY", STANDARD.encode([7u8; 32]));
+        }
+    });
+}
 pub fn validate_master_key() -> AppResult<()> {
     master_key().map(|_| ())
 }

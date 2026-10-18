@@ -21,13 +21,16 @@ impl Database {
         decrypt(&encrypted, &self.secret_scope(name)?)
     }
     pub fn save_secret(&self, name: &str, value: &str) -> AppResult<()> {
+        self.set_setting(
+            &format!("secret.{name}"),
+            &self.encrypted_secret(name, value)?,
+        )
+    }
+    pub(super) fn encrypted_secret(&self, name: &str, value: &str) -> AppResult<String> {
         if value.trim().is_empty() {
             return Err(AppError::Validation("API Key 不能为空".into()));
         }
-        self.set_setting(
-            &format!("secret.{name}"),
-            &encrypt(value.trim(), &self.secret_scope(name)?)?,
-        )
+        encrypt(value.trim(), &self.secret_scope(name)?)
     }
     pub fn remove_secret(&self, name: &str) -> AppResult<()> {
         self.delete_setting(&format!("secret.{name}"))

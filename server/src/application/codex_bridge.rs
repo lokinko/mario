@@ -65,7 +65,12 @@ pub(crate) fn save(db: &Database, model: &str) -> AppResult<ModelConfig> {
             "此模型不在本机 Codex 返回的模型列表中，请重新选择".into(),
         ));
     }
-    db.save_model_metadata(ModelProviderKind::CodexBridge, "codex://bridge", model)?;
+    db.save_model_configuration(
+        ModelProviderKind::CodexBridge,
+        "codex://bridge",
+        model,
+        None,
+    )?;
     db.model_config()
 }
 

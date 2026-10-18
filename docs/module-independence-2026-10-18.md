@@ -59,13 +59,15 @@ flowchart TD
 
 以下是本次已确认、尚未实施的改造，不应解读为本次已完成。
 
-### P1：模型配置与凭据缺少统一事务
+### 已关闭（2026-10-18）：模型配置与凭据缺少统一事务
 
 证据：`application/model_settings.rs::save` 依次保存元数据、加密密钥、目的地绑定；`db/settings.rs::save_model_metadata` 又分别写入 provider、base URL 和 model，没有包裹同一事务。更换配置过程中若加密失败或后续 SQL 失败，前面的写入已生效。
 
 影响：配置可能成为部分更新状态。`configured_model_key` 的目的地绑定校验仍会阻止错配密钥发出，但无法保证保存失败后配置保持原样。
 
 建议：在仓储增加有明确职责的 `save_model_configuration` 原子操作。应用层先完成参数、供应商策略及模型目录校验；仓储在事务中写配置、已按账号作用域加密的凭据和绑定。不要用应用层多次调用 `set_setting` 模拟事务。先用测试辅助 `db::fail_inserts` 在 PostgreSQL 中做 SQL 故障注入，再做双实例与密钥导出排除回归。此项不需要 schema 变化。
+
+关闭：仓储新增 `save_model_configuration`，先校验地址、模型名与密钥并在事务外完成加密，再在同一事务写入 provider、base URL、model，以及可选的密文和目标绑定；`model_key_binding` 随之归入 `db/settings.rs`。应用层只保留“切换接口须填写新密钥”的策略校验，Codex 桥接复用同一操作且不带密钥；`save_model_metadata` 已删除。回归用 `db::fail_inserts_when` 只让绑定写入失败，验证原配置、原密钥与绑定不变，空白密钥在写入前被拒绝。
 
 ### P1：账号锁覆盖外部行情等待，同步数据库访问阻塞异步请求
 

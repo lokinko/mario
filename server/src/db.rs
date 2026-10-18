@@ -31,6 +31,7 @@ mod research;
 mod reviews;
 mod secrets;
 mod settings;
+pub(crate) use settings::model_key_binding;
 mod sync_store;
 mod trades;
 use std::{
@@ -219,12 +220,23 @@ impl TestAccount {
 /// Makes every later insert into `table` fail, to exercise rollback paths.
 #[cfg(test)]
 pub(crate) fn fail_inserts(connection: &Connection, table: &str, message: &str) {
+    fail_inserts_when(connection, table, "true", message);
+}
+
+/// Like `fail_inserts`, but only for rows matching `condition` (an SQL expression over `NEW`).
+#[cfg(test)]
+pub(crate) fn fail_inserts_when(
+    connection: &Connection,
+    table: &str,
+    condition: &str,
+    message: &str,
+) {
     connection
         .execute_batch(&format!(
             "CREATE FUNCTION fail_{table}() RETURNS trigger LANGUAGE plpgsql AS $$
              BEGIN RAISE EXCEPTION '{message}'; END $$;
              CREATE TRIGGER fail_{table} BEFORE INSERT ON {table}
-             FOR EACH ROW EXECUTE FUNCTION fail_{table}();"
+             FOR EACH ROW WHEN ({condition}) EXECUTE FUNCTION fail_{table}();"
         ))
         .unwrap();
 }
