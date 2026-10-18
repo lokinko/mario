@@ -604,6 +604,7 @@ impl SyncDataset {
                 }
             }
         }
+        super::sync_validation::validate_synced_settings(self)?;
         super::fx::validate_sync(self)?;
         super::sync_validation::validate_synced_attachments(self)?;
         Ok(())

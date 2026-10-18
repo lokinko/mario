@@ -27,6 +27,7 @@ impl<'a> AnalysisService<'a> {
     fn prepare(&self, request: &AnalysisRequest) -> AppResult<PreparedAnalysis> {
         request.validate()?;
         let config = self.db.model_config()?;
+        let methodology = self.db.investment_methodology()?;
         let snapshot = self.db.snapshot()?;
         let rules = self.db.investment_rules()?;
         let system_reviews = self
@@ -41,6 +42,7 @@ impl<'a> AnalysisService<'a> {
             request,
             &snapshot,
             &context::ContextSources {
+                methodology: Some(&methodology.prompt),
                 daily_assets: Some(&daily_assets),
                 rules: &rules,
                 system_reviews: &system_reviews,
@@ -216,6 +218,43 @@ mod tests {
         }
     }
     const BRIDGE_ID: &str = "bridge-fixture";
+    #[tokio::test]
+    async fn methodology_is_frozen_and_changes_invalidate_the_preview() {
+        use crate::models::methodology::InvestmentMethodologyInput;
+        let db = database();
+        let service = AnalysisService::new(&db);
+        let mut request = request();
+        let before = service.preview(&request).unwrap();
+        db.save_investment_methodology(InvestmentMethodologyInput {
+            prompt: "优先比较管理成本，使用表格解释".into(),
+        })
+        .unwrap();
+        request.preview_revision = Some(before.context_revision);
+        let executor = Executor {
+            captured: Default::default(),
+            fail: false,
+        };
+        assert!(matches!(
+            service.execute(request.clone(), &executor).await,
+            Err(AppError::Validation(_))
+        ));
+        assert!(executor.captured.lock().unwrap().is_empty());
+        let after = service.preview(&request).unwrap();
+        assert_eq!(
+            after.payload["investmentMethodology"],
+            "优先比较管理成本，使用表格解释"
+        );
+        assert!(after
+            .system_policy
+            .contains("优先比较管理成本，使用表格解释"));
+        request.preview_revision = Some(after.context_revision);
+        service.execute(request, &executor).await.unwrap();
+        assert_eq!(
+            executor.captured.lock().unwrap()[0]["investmentMethodology"],
+            "优先比较管理成本，使用表格解释"
+        );
+    }
+
     fn database() -> Database {
         let db = Database::test();
         db.save_model_configuration(

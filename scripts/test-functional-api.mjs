@@ -133,6 +133,17 @@ try {
   assert.equal(snap.goals, undefined);
   assert.equal(snap.plan.goalProjections, undefined);
   assert.equal(snap.holdings.length, 0);
+  assert.equal((await fetch(base + "/investment-methodology")).status, 401);
+  const methodology = await api("/investment-methodology");
+  assert.equal(methodology.prompt, methodology.defaultPrompt);
+  const customMethodology = "先比较费用，再按我的时间投入排序。\n使用中文表格。";
+  assert.equal((await api("/investment-methodology", "PUT", { prompt: customMethodology })).prompt, customMethodology);
+  await api("/investment-methodology", "PUT", { prompt: " " }, 400);
+  await api("/investment-methodology", "PUT", { prompt: "中".repeat(4001) }, 400);
+  assert.equal((await api("/investment-methodology")).prompt, customMethodology);
+  const contextPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "deep", reflect: true, exploreAlternatives: true });
+  assert.equal(contextPreview.payload.investmentMethodology, customMethodology);
+  assert(contextPreview.systemPolicy.includes(customMethodology));
   const defaults = await api("/analysis-settings");
   assert.equal(defaults.workflow, "deep");
   assert.equal(defaults.useMemory, undefined);

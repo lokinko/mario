@@ -251,3 +251,22 @@ pub(super) fn validate_synced_attachments(dataset: &SyncDataset) -> AppResult<()
     }
     Ok(())
 }
+
+pub(super) fn validate_synced_settings(dataset: &SyncDataset) -> AppResult<()> {
+    let Some(table) = dataset.tables.iter().find(|table| table.name == "settings") else {
+        return Ok(());
+    };
+    for row in &table.rows {
+        let key = sync_text(row, 0, "设置键")?;
+        let value = sync_text(row, 1, "设置值")?;
+        if key == "investment.methodology" {
+            crate::models::methodology::InvestmentMethodologyInput {
+                prompt: value.into(),
+            }
+            .validate()?;
+        } else if !key.starts_with("fx.book.") && !key.starts_with("fx.quote.") {
+            return Err(AppError::Validation("数据快照包含不支持的设置项".into()));
+        }
+    }
+    Ok(())
+}

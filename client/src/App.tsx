@@ -16,6 +16,7 @@ import { MyFacts } from "./features/portfolio/MyFacts";
 import { EvidenceWorkbench } from "./features/research/EvidenceWorkbench";
 import { ReviewCenter } from "./features/reviews/ReviewCenter";
 import { Advisor } from "./features/research/Advisor";
+import { InvestmentMethodology } from "./features/methodology/InvestmentMethodology";
 import { ModelSettings } from "./features/settings/ModelSettings";
 import { AccountSettings } from "./features/account/WebAccess";
 import { PageHeader, PageStatus } from "./components/PageHeader";
@@ -351,6 +352,14 @@ function App() {
               key={remoteViewRevision}
               onAsk={startAnalysis}
               flash={flash}
+            />
+          )}
+          {view === "methodology" && (
+            <InvestmentMethodology
+              key={remoteViewRevision}
+              flash={flash}
+              onSaved={clearDraft}
+              onEdited={markEdited}
             />
           )}
           {model && advisorVisited && (

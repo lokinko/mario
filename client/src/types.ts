@@ -648,3 +648,8 @@ export interface FxBook {
   manual: Record<string, { rate: number; observedOn: string }>;
   error: string;
 }
+export type InvestmentMethodology = {
+  prompt: string;
+  defaultPrompt: string;
+  maxLength: number;
+};

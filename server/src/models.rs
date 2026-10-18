@@ -2,6 +2,7 @@ mod endpoint;
 pub(crate) mod inference;
 pub(crate) mod information;
 pub(crate) mod market;
+pub(crate) mod methodology;
 mod provider;
 pub(crate) use endpoint::validate_endpoint;
 pub use provider::ModelProviderKind;

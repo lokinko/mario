@@ -12,6 +12,24 @@ pub struct StagePrompt {
     pub messages: Vec<ChatMessage>,
 }
 
+impl StagePrompt {
+    pub fn with_methodology(mut self, payload: &Value) -> Self {
+        if let Some(prompt) = payload["investmentMethodology"].as_str() {
+            if let Some(system) = self
+                .messages
+                .iter_mut()
+                .find(|message| message.role == "system")
+            {
+                system.content.push_str("\n\n");
+                system
+                    .content
+                    .push_str(&crate::context::methodology_instructions(prompt));
+            }
+        }
+        self
+    }
+}
+
 pub struct AlternativeSpec {
     pub id: &'static str,
     pub label: &'static str,

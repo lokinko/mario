@@ -19,7 +19,7 @@ impl Database {
                 columns.join(","),
                 quote_identifier(spec.name),
                 if spec.name == "settings" {
-                    "WHERE key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%'"
+                    "WHERE key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%' OR key='investment.methodology'"
                 } else {
                     ""
                 },
@@ -75,7 +75,7 @@ impl Database {
 
         for spec in SYNC_TABLES.iter().rev() {
             let filter = if spec.name == "settings" {
-                " WHERE key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%'"
+                " WHERE key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%' OR key='investment.methodology'"
             } else {
                 ""
             };

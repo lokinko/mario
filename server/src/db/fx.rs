@@ -178,8 +178,8 @@ impl Database {
     }
 }
 
-// Only currency data may enter the exported settings subset. Model keys and other
-// account configuration remain outside data exports and cannot be overwritten.
+// Validate the currency subset; the synchronization boundary owns the settings
+// allowlist and validates other exported settings.
 pub(super) fn validate_sync(dataset: &SyncDataset) -> AppResult<()> {
     let Some(table) = dataset.tables.iter().find(|t| t.name == "settings") else {
         return Ok(());
@@ -256,8 +256,6 @@ pub(super) fn validate_sync(dataset: &SyncDataset) -> AppResult<()> {
             {
                 return Err(invalid());
             }
-        } else {
-            return Err(invalid());
         }
     }
     Ok(())

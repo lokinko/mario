@@ -429,3 +429,31 @@ it("composes source questions through the shell and consumes them before a data 
     evidence.mockRestore();
   }
 });
+
+it("opens the investment methodology editor directly from the sidebar without a model", async () => {
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
+    new Error("no model"),
+  );
+  const load = vi
+    .spyOn(settingsApi, "getInvestmentMethodology")
+    .mockResolvedValue({
+      prompt: "我的方法论",
+      defaultPrompt: "范本",
+      maxLength: 4000,
+    });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "投资方法论" }));
+  expect(
+    await screen.findByRole("heading", { name: "投资方法论" }),
+  ).toBeTruthy();
+  expect(
+    ((await screen.findByLabelText("投资方法论正文")) as HTMLTextAreaElement)
+      .value,
+  ).toBe("我的方法论");
+  expect(window.location.hash).toBe("#methodology");
+  load.mockRestore();
+});

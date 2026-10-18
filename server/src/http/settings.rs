@@ -1,5 +1,6 @@
 use super::RequestContext;
 use crate::application::model_settings;
+use crate::models::methodology::{InvestmentMethodology, InvestmentMethodologyInput};
 use crate::models::{AnalysisSettings, ModelConfig, ModelConfigInput, ModelConnectionTest};
 use crate::AppResult;
 use axum::{
@@ -11,6 +12,10 @@ use std::sync::Arc;
 pub(super) fn router() -> Router {
     Router::new()
         .route(
+            "/api/investment-methodology",
+            get(investment_methodology).put(save_investment_methodology),
+        )
+        .route(
             "/api/model-config",
             get(model_config).put(save_model_config),
         )
@@ -20,6 +25,19 @@ pub(super) fn router() -> Router {
             "/api/analysis-settings",
             get(analysis_settings).put(save_analysis_settings),
         )
+}
+
+async fn investment_methodology(
+    Extension(state): Extension<Arc<RequestContext>>,
+) -> AppResult<Json<InvestmentMethodology>> {
+    Ok(Json(state.db.investment_methodology()?))
+}
+
+async fn save_investment_methodology(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Json(input): Json<InvestmentMethodologyInput>,
+) -> AppResult<Json<InvestmentMethodology>> {
+    Ok(Json(state.db.save_investment_methodology(input)?))
 }
 
 async fn model_config(
