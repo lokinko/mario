@@ -1,10 +1,10 @@
 use crate::{
     accounts,
     application::portfolio::MarketServices,
+    composition::MarketRuntime,
     db::{self, Database},
-    fx,
     http::{api_router, policy, RequestContext},
-    prices, AppError, AppResult,
+    AppError, AppResult,
 };
 use accounts::{Accounts, Credentials};
 use axum::http::StatusCode;
@@ -24,7 +24,7 @@ struct HostedState {
     slots: tokio::sync::Semaphore,
     auth_slots: tokio::sync::Semaphore,
     market: Arc<MarketServices>,
-    analysis_executor: Arc<dyn crate::ai::AnalysisExecutor>,
+    analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
 }
 
 pub async fn serve<F>(
@@ -37,13 +37,12 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     crate::secrets::validate_master_key()?;
-    fx::start_daily_refresh();
-    prices::start_refresh();
+    let market_runtime = MarketRuntime::new()?;
     let state = Arc::new(HostedState {
         accounts: Arc::new(Accounts::open(url)?),
         slots: tokio::sync::Semaphore::new(24),
         auth_slots: tokio::sync::Semaphore::new(2),
-        market: Arc::new(MarketServices::new()?),
+        market: market_runtime.services.clone(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
     });
     let private = api_router()

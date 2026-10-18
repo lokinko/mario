@@ -20,7 +20,7 @@ pub struct InvestmentOrchestrator<'a> {
     provider: &'a dyn ModelProvider,
     retriever: &'a HybridMemoryRetriever,
     workflow: &'a dyn AnalysisWorkflow,
-    events: Option<super::streaming::EventSender>,
+    events: Option<crate::ports::analysis::EventSender>,
 }
 
 static DEFAULT_WORKFLOW: InvestmentWorkflowV6 = InvestmentWorkflowV6;
@@ -43,7 +43,7 @@ impl<'a> InvestmentOrchestrator<'a> {
         }
     }
 
-    pub(crate) fn with_events(mut self, events: super::streaming::EventSender) -> Self {
+    pub(crate) fn with_events(mut self, events: crate::ports::analysis::EventSender) -> Self {
         self.events = Some(events);
         self
     }
@@ -457,7 +457,7 @@ impl<'a> InvestmentOrchestrator<'a> {
         let completion = if report && self.events.is_some() {
             let events = self.events.clone().unwrap();
             let raw = std::sync::Mutex::new(String::new());
-            let _ = events.try_send(super::streaming::AnalysisEvent::Draft {
+            let _ = events.try_send(crate::models::inference::AnalysisEvent::Draft {
                 answer: String::new(),
             });
             self.provider
@@ -467,9 +467,10 @@ impl<'a> InvestmentOrchestrator<'a> {
                         let mut raw = raw.lock().unwrap();
                         if raw.len() + delta.len() <= 128_000 {
                             raw.push_str(delta);
-                            let _ = events.try_send(super::streaming::AnalysisEvent::Draft {
-                                answer: super::streaming::draft_report(&raw),
-                            });
+                            let _ =
+                                events.try_send(crate::models::inference::AnalysisEvent::Draft {
+                                    answer: super::streaming::draft_report(&raw),
+                                });
                         }
                     }),
                 )
@@ -1350,7 +1351,7 @@ mod tests {
         let mut resets = 0;
         let mut draft = String::new();
         while let Ok(event) = receiver.try_recv() {
-            if let super::super::streaming::AnalysisEvent::Draft { answer } = event {
+            if let crate::models::inference::AnalysisEvent::Draft { answer } = event {
                 if answer.is_empty() {
                     resets += 1;
                 }

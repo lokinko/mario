@@ -199,7 +199,6 @@ it("displays sorted positions in all filters and reorders after values or trade 
         ),
       }}
       onUpdate={vi.fn()}
-      navigate={vi.fn()}
       flash={vi.fn()}
     />,
   );
@@ -254,7 +253,6 @@ it("filters closed positions without changing the full portfolio overview", asyn
         },
       }}
       onUpdate={vi.fn()}
-      navigate={vi.fn()}
       flash={vi.fn()}
     />,
   );
@@ -277,7 +275,6 @@ it("prioritizes holdings and keeps asset history below without reserving space f
         holdings: [{ ...emptyHolding("HKD"), id: "hk", name: "港币账户" }],
       }}
       onUpdate={vi.fn()}
-      navigate={vi.fn()}
       flash={vi.fn()}
     />,
   );
@@ -378,14 +375,7 @@ function mount(value = snapshot) {
   const onUpdate = vi.fn();
   const flash = vi.fn();
   return {
-    ...render(
-      <MyFacts
-        snapshot={value}
-        onUpdate={onUpdate}
-        navigate={vi.fn()}
-        flash={flash}
-      />,
-    ),
+    ...render(<MyFacts snapshot={value} onUpdate={onUpdate} flash={flash} />),
     onUpdate,
     flash,
   };
@@ -748,14 +738,7 @@ it("records investment cost in the holding's currency and shows the saved profit
     ),
   );
   expect(onUpdate).toHaveBeenCalledWith(updated);
-  rerender(
-    <MyFacts
-      snapshot={updated}
-      onUpdate={onUpdate}
-      navigate={vi.fn()}
-      flash={flash}
-    />,
-  );
+  rerender(<MyFacts snapshot={updated} onUpdate={onUpdate} flash={flash} />);
   expect(screen.getByRole("button", { name: "编辑 指数基金" })).toBeTruthy();
   expect(screen.getByText("+25%")).toBeTruthy();
   expect(screen.queryByText("成本待补")).toBeNull();
@@ -867,14 +850,7 @@ it("refreshes the portfolio after deletion and closes the deleted asset's edit f
   );
   expect(flash).toHaveBeenCalledWith("资产已删除");
   expect(screen.queryByRole("region", { name: "记录资产" })).toBeNull();
-  rerender(
-    <MyFacts
-      snapshot={snapshot}
-      onUpdate={onUpdate}
-      navigate={vi.fn()}
-      flash={flash}
-    />,
-  );
+  rerender(<MyFacts snapshot={snapshot} onUpdate={onUpdate} flash={flash} />);
   expect(screen.queryByRole("button", { name: "删除 指数基金" })).toBeNull();
   expect(screen.getByText("暂无资产，点击上方添加。")).toBeTruthy();
 });
@@ -946,14 +922,7 @@ it("deletes a position with executions from its details after explaining linked 
   resolve(snapshot);
   await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(snapshot));
   expect(screen.queryByRole("dialog")).toBeNull();
-  rerender(
-    <MyFacts
-      snapshot={snapshot}
-      onUpdate={onUpdate}
-      flash={flash}
-      navigate={vi.fn()}
-    />,
-  );
+  rerender(<MyFacts snapshot={snapshot} onUpdate={onUpdate} flash={flash} />);
   expect(screen.queryByRole("button", { name: "删除 指数基金" })).toBeNull();
 });
 
@@ -996,7 +965,6 @@ it("keeps an uncertain deletion frozen and rechecks the original revision after 
       }}
       onUpdate={onUpdate}
       flash={flash}
-      navigate={vi.fn()}
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "核对删除结果" }));
@@ -1039,7 +1007,6 @@ it("updates a currency balance with the form revision and preserves input on a c
       }}
       onUpdate={onUpdate}
       flash={flash}
-      navigate={vi.fn()}
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));

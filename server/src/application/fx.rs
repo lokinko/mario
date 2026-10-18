@@ -1,13 +1,14 @@
 //! Central account FX book; current balances use today's book, ledger events use dated quotes.
 use crate::{
     db::Database,
-    market_data::{FxRateProvider, SUPPORTED_CURRENCIES},
+    models::market::SUPPORTED_CURRENCIES,
     models::{FxRateQuery, FxRateQuote},
+    ports::market::FxRateProvider,
     AppError, AppResult,
 };
 use chrono::Utc;
 
-pub use crate::models::market::{today, FxBook, FxOverrideInput};
+use crate::models::market::{today, FxBook};
 
 pub async fn refresh(
     db: &Database,
@@ -24,7 +25,7 @@ pub async fn refresh(
         return Ok(book);
     }
     if force {
-        crate::market_data::invalidate_fx_cache().await;
+        provider.invalidate().await;
     }
     let mut errors = Vec::new();
     for currency in SUPPORTED_CURRENCIES.iter().filter(|c| **c != base) {
@@ -116,39 +117,22 @@ pub async fn historical_quote(
     Ok(quote)
 }
 
-/// Keep the provider cache warm even with no client connected. Account observations
-/// are applied on the next read, under that account's existing transaction/lock.
-pub fn start_daily_refresh() {
-    tokio::spawn(async {
-        let Ok(provider) = crate::market_data::EcbFxRateProvider::new() else {
-            return;
-        };
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
-        loop {
-            interval.tick().await;
-            let query = FxRateQuery {
-                from_currency: "USD".into(),
-                to_currency: "CNY".into(),
-                on_date: today(),
-            };
-            if let Err(error) = provider.quote(&query).await {
-                tracing::warn!(%error, "automatic FX refresh failed");
-            }
-        }
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::market::FxOverrideInput;
     use std::sync::atomic::{AtomicUsize, Ordering};
     struct Provider {
         calls: AtomicUsize,
+        invalidations: AtomicUsize,
         fail: bool,
         rate: f64,
     }
     #[async_trait::async_trait]
     impl FxRateProvider for Provider {
+        async fn invalidate(&self) {
+            self.invalidations.fetch_add(1, Ordering::SeqCst);
+        }
         async fn quote(&self, query: &FxRateQuery) -> AppResult<FxRateQuote> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             if self.fail {
@@ -176,6 +160,7 @@ mod tests {
     fn provider(rate: f64) -> Provider {
         Provider {
             calls: AtomicUsize::new(0),
+            invalidations: AtomicUsize::new(0),
             fail: false,
             rate,
         }
@@ -219,10 +204,13 @@ mod tests {
         assert_eq!(provider.calls.load(Ordering::SeqCst), 10);
         let failed = Provider {
             calls: AtomicUsize::new(0),
+            invalidations: AtomicUsize::new(0),
             fail: true,
             rate: 1.0,
         };
         let result = refresh(&db, &failed, true).await.unwrap();
+        assert_eq!(failed.invalidations.load(Ordering::SeqCst), 1);
+        assert_eq!(provider.invalidations.load(Ordering::SeqCst), 0);
         assert!(!result.error.is_empty());
         assert!(result.quotes.iter().all(|q| q.rate == 7.0));
         let empty = super::tests::db();

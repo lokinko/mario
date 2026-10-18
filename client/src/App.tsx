@@ -48,6 +48,14 @@ function App() {
     clearDraft,
     retrySync,
   } = useApplicationData(view);
+  const [pendingQuestion, setPendingQuestion] = useState<{
+    id: number;
+    question: string;
+  }>();
+  const questionId = useRef(0);
+  const acceptQuestion = useCallback((id: number) => {
+    setPendingQuestion((current) => (current?.id === id ? undefined : current));
+  }, []);
   const [notice, setNotice] = useState("");
   const noticeTimer = useRef<ReturnType<typeof window.setTimeout> | undefined>(
     undefined,
@@ -117,6 +125,11 @@ function App() {
     if (currentView.current !== nextView)
       window.history.pushState(null, "", `#${nextView}`);
     window.scrollTo({ top: 0, behavior: "auto" });
+  };
+
+  const startAnalysis = (question: string) => {
+    setPendingQuestion({ id: ++questionId.current, question });
+    navigate("advisor");
   };
 
   useEffect(() => {
@@ -324,21 +337,20 @@ function App() {
               key={remoteViewRevision}
               snapshot={snapshot}
               onUpdate={setSnapshot}
-              navigate={navigate}
               flash={flash}
             />
           )}
           {view === "evidence" && (
             <EvidenceWorkbench
               key={remoteViewRevision}
-              navigate={navigate}
+              onAsk={startAnalysis}
               flash={flash}
             />
           )}
           {view === "review" && (
             <ReviewCenter
               key={remoteViewRevision}
-              navigate={navigate}
+              onAsk={startAnalysis}
               flash={flash}
             />
           )}
@@ -351,7 +363,9 @@ function App() {
                 key={dataRevision}
                 active={view === "advisor"}
                 model={model}
-                navigate={navigate}
+                onOpenSettings={() => navigate("settings")}
+                pendingQuestion={pendingQuestion}
+                onQuestionAccepted={acceptQuestion}
               />
             </div>
           )}

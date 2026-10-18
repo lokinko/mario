@@ -471,14 +471,7 @@ it("shows authoritative sell profits and dividends in the holding overview and d
 });
 
 it("keeps the asset editor unavailable while a transaction draft is open", async () => {
-  render(
-    <MyFacts
-      snapshot={value}
-      onUpdate={vi.fn()}
-      flash={vi.fn()}
-      navigate={vi.fn()}
-    />,
-  );
+  render(<MyFacts snapshot={value} onUpdate={vi.fn()} flash={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "查看 指数基金" }));
   fireEvent.click(screen.getByRole("button", { name: "编辑交易" }));
   expect(screen.getByRole("button", { name: "编辑资产" })).toHaveProperty(

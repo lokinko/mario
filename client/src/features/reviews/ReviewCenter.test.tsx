@@ -52,7 +52,7 @@ it("saves the complete text from a single input and displays it literally", asyn
   };
   vi.mocked(reviewsApi.saveSystemReview).mockResolvedValue(stored);
   const flash = vi.fn();
-  render(<ReviewCenter flash={flash} navigate={vi.fn()} />);
+  render(<ReviewCenter flash={flash} onAsk={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "新建复盘" }));
   const input = await screen.findByRole("textbox", {
     name: "我的观点、顾虑和思考",
@@ -81,7 +81,7 @@ it("rejects whitespace and retains the draft when saving fails", async () => {
   vi.mocked(reviewsApi.saveSystemReview).mockRejectedValueOnce(
     new Error("复盘保存失败"),
   );
-  render(<ReviewCenter flash={vi.fn()} navigate={vi.fn()} />);
+  render(<ReviewCenter flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "新建复盘" }));
   const input = await screen.findByRole("textbox", {
     name: "我的观点、顾虑和思考",
@@ -110,7 +110,7 @@ it("rejects whitespace and retains the draft when saving fails", async () => {
 
 it("shows every legacy field together as plain text", async () => {
   vi.mocked(reviewsApi.getSystemReviews).mockResolvedValue([legacy]);
-  render(<ReviewCenter flash={vi.fn()} navigate={vi.fn()} />);
+  render(<ReviewCenter flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: /2026 Q3/ }));
   const content = document.querySelector(".detail-prose")?.textContent;
   for (const text of [

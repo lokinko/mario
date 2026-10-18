@@ -1,29 +1,33 @@
 //! Portfolio workflows coordinate repositories and replaceable market providers.
+use super::{fx, prices};
+use crate::models::market::{FxBook, FxOverrideInput};
 use crate::{
     db::Database,
-    fx,
-    market_data::{
-        EcbFxRateProvider, FxRateProvider, SecurityPriceProvider, TwelveDataSecurityPriceProvider,
-    },
     models,
     models::{
-        FinancialProfile, FxRateQuery, HoldingInput, HoldingTradeDeleteInput, HoldingTradeInput,
-        HoldingTradeUpdateInput, SecurityPriceConfig, SecurityPriceQuery, SecurityPriceQuote,
+        FxRateQuery, HoldingInput, SecurityPriceConfig, SecurityPriceQuery, SecurityPriceQuote,
         Snapshot,
     },
-    prices, AppResult,
+    ports::market::{FxRateProvider, SecurityPriceProvider},
+    AppResult,
 };
 use std::sync::Arc;
 pub(crate) struct MarketServices {
     fx: Arc<dyn FxRateProvider>,
     prices: Arc<dyn SecurityPriceProvider>,
+    keyed_prices: Arc<dyn SecurityPriceProvider>,
 }
 impl MarketServices {
-    pub fn new() -> AppResult<Self> {
-        Ok(Self {
-            fx: Arc::new(EcbFxRateProvider::new()?),
-            prices: Arc::new(prices::FreeSecurityPriceProvider::new()?),
-        })
+    pub fn new(
+        fx: Arc<dyn FxRateProvider>,
+        prices: Arc<dyn SecurityPriceProvider>,
+        keyed_prices: Arc<dyn SecurityPriceProvider>,
+    ) -> Self {
+        Self {
+            fx,
+            prices,
+            keyed_prices,
+        }
     }
     pub fn for_account<'a>(&'a self, db: &'a Database) -> PortfolioService<'a> {
         PortfolioService { db, market: self }
@@ -34,14 +38,11 @@ pub(crate) struct PortfolioService<'a> {
     market: &'a MarketServices,
 }
 impl PortfolioService<'_> {
-    pub async fn refresh_fx(&self, force: bool) -> AppResult<fx::FxBook> {
+    pub async fn refresh_fx(&self, force: bool) -> AppResult<FxBook> {
         fx::refresh(self.db, self.market.fx.as_ref(), force).await
     }
     pub async fn refresh_prices(&self) -> AppResult<prices::RefreshResult> {
         prices::refresh(self.db, self.market.prices.as_ref()).await
-    }
-    pub async fn snapshot(&self) -> AppResult<Snapshot> {
-        self.db.snapshot()
     }
     pub async fn fx_quote(&self, query: &FxRateQuery) -> AppResult<crate::models::FxRateQuote> {
         fx::historical_quote(self.db, self.market.fx.as_ref(), query).await
@@ -51,9 +52,7 @@ impl PortfolioService<'_> {
         query: &SecurityPriceQuery,
     ) -> AppResult<SecurityPriceQuote> {
         if let Ok(key) = self.db.secret("security-price") {
-            TwelveDataSecurityPriceProvider::new()?
-                .quote(query, &key)
-                .await
+            self.market.keyed_prices.quote(query, &key).await
         } else {
             self.market.prices.quote(query, "").await
         }
@@ -117,13 +116,10 @@ impl PortfolioService<'_> {
         self.db
             .apply_verified_holding_valuation(id, input.quantity, &quote)
     }
-    pub async fn save_fx_override(&self, input: &fx::FxOverrideInput) -> AppResult<fx::FxBook> {
+    pub async fn save_fx_override(&self, input: &FxOverrideInput) -> AppResult<FxBook> {
         // A manual value must still be saveable when the provider is unavailable.
         self.db.set_fx_override(input)?;
         self.refresh_fx(false).await
-    }
-    pub async fn save_profile(&self, input: &FinancialProfile) -> AppResult<Snapshot> {
-        self.db.save_profile(input)
     }
     pub async fn save_holding(&self, id: Option<&str>, input: HoldingInput) -> AppResult<Snapshot> {
         self.refresh_fx(false).await?;
@@ -134,23 +130,6 @@ impl PortfolioService<'_> {
             self.db.add_holding(&input)?;
         }
         self.db.snapshot()
-    }
-    pub async fn save_trade(&self, input: &HoldingTradeInput) -> AppResult<Snapshot> {
-        self.db.save_holding_trade(input)
-    }
-    pub async fn update_trade(
-        &self,
-        id: &str,
-        input: &HoldingTradeUpdateInput,
-    ) -> AppResult<Snapshot> {
-        self.db.update_holding_trade(id, input)
-    }
-    pub async fn delete_trade(
-        &self,
-        id: &str,
-        input: &HoldingTradeDeleteInput,
-    ) -> AppResult<Snapshot> {
-        self.db.delete_holding_trade(id, input)
     }
     pub async fn ensure_daily(
         &self,
@@ -166,10 +145,7 @@ impl PortfolioService<'_> {
 mod integration_tests {
     use super::*;
     use crate::models::HoldingInput;
-    use crate::{
-        fx::{refresh, FxOverrideInput},
-        models::FxRateQuote,
-    };
+    use crate::{application::fx::refresh, models::market::FxOverrideInput, models::FxRateQuote};
     use chrono::Utc;
     struct Provider;
     #[async_trait::async_trait]

@@ -23,9 +23,11 @@ pub(crate) trait AnalysisExecutor: Send + Sync {
         request: AnalysisRequest,
         context: BuiltContext,
         memories: Vec<MemoryItem>,
-        _events: super::streaming::EventSender,
+        _events: EventSender,
     ) -> AppResult<AnalysisResult> {
         self.execute(config, api_key, request, context, memories)
             .await
     }
 }
+
+pub(crate) type EventSender = tokio::sync::mpsc::Sender<crate::models::inference::AnalysisEvent>;

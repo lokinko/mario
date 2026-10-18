@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::OnceLock, time::Duration};
+use std::{collections::BTreeMap, time::Duration};
 
 use async_trait::async_trait;
 use chrono::{Local, NaiveDate, Utc};
@@ -8,6 +8,7 @@ use serde::Deserialize;
 use crate::{
     error::{AppError, AppResult},
     models::{FxRateQuery, FxRateQuote, SecurityPriceQuery, SecurityPriceQuote},
+    ports::market::{FxRateProvider, SecurityPriceProvider},
 };
 
 const ECB_API_BASE: &str = "https://data-api.ecb.europa.eu/service/data";
@@ -15,31 +16,12 @@ const ECB_METHODOLOGY_URL: &str =
     "https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates";
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const LOOKBACK_DAYS: i64 = 7;
-pub(crate) use crate::models::market::SUPPORTED_CURRENCIES;
+use crate::models::market::SUPPORTED_CURRENCIES;
 const TWELVE_DATA_API_BASE: &str = "https://api.twelvedata.com";
 const TWELVE_DATA_METHODOLOGY_URL: &str = "https://twelvedata.com/docs/market-data/time-series";
 const PRICE_LOOKBACK_DAYS: i64 = 10;
 
 type FxCache = BTreeMap<String, (std::time::Instant, Result<Vec<u8>, String>)>;
-static FX_CACHE: OnceLock<tokio::sync::Mutex<FxCache>> = OnceLock::new();
-pub(crate) async fn invalidate_fx_cache() {
-    FX_CACHE.get_or_init(Default::default).lock().await.clear();
-}
-
-#[async_trait]
-pub trait FxRateProvider: Send + Sync {
-    async fn quote(&self, query: &FxRateQuery) -> AppResult<FxRateQuote>;
-}
-
-#[async_trait]
-pub trait SecurityPriceProvider: Send + Sync {
-    async fn quote(
-        &self,
-        query: &SecurityPriceQuery,
-        api_key: &str,
-    ) -> AppResult<SecurityPriceQuote>;
-}
-
 pub struct TwelveDataSecurityPriceProvider {
     client: Client,
     base_url: String,
@@ -260,6 +242,7 @@ fn normalized_symbol(value: &str) -> AppResult<String> {
 }
 
 pub struct EcbFxRateProvider {
+    cache: tokio::sync::Mutex<FxCache>,
     client: Client,
     base_url: String,
 }
@@ -272,6 +255,7 @@ impl EcbFxRateProvider {
                 .user_agent("mario/market-data")
                 .build()?,
             base_url: ECB_API_BASE.into(),
+            cache: Default::default(),
         })
     }
 
@@ -298,6 +282,9 @@ impl EcbFxRateProvider {
 
 #[async_trait]
 impl FxRateProvider for EcbFxRateProvider {
+    async fn invalidate(&self) {
+        self.cache.lock().await.clear();
+    }
     async fn quote(&self, query: &FxRateQuery) -> AppResult<FxRateQuote> {
         let from = normalized_currency(&query.from_currency)?;
         let to = normalized_currency(&query.to_currency)?;
@@ -333,7 +320,7 @@ impl FxRateProvider for EcbFxRateProvider {
         }
 
         // One bounded request supplies all supported pairs, including historical dates.
-        let mut cache = FX_CACHE.get_or_init(Default::default).lock().await;
+        let mut cache = self.cache.lock().await;
         let cache_key = format!("{}:{}", self.base_url, requested_on);
         let start = requested_on - chrono::Duration::days(LOOKBACK_DAYS);
         let currencies = SUPPORTED_CURRENCIES

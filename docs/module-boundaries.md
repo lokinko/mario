@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | `lib.rs` 同时负责启动、路由、认证、行情、模型配置与分析 | 改一个功能容易影响两种运行模式；子模块借用根模块的隐式导入 | 根模块声明模块与公开启动入口；配置在 `runtime`，传输在 `http`/`hosted`，流程在 `application` |
 | 分析预览与执行各自读取、检索和拼装上下文 | 数据授权、过滤和指纹容易发生偏差 | `AnalysisService::prepare` 是两者唯一的准备流程 |
-| 应用流程直接调用 Agent 环境入口 | 不启动远程服务就很难测试完整的冻结、执行与保存过程 | 应用层依赖 `AnalysisExecutor`；HTTP 装配 `AgentExecutor`；测试注入替代执行器 |
+| 应用流程直接调用 Agent 环境入口 | 不启动远程服务就很难测试完整的冻结、执行与保存过程 | 应用层依赖 `ports/analysis::AnalysisExecutor`；HTTP 装配 `AgentExecutor`；测试注入替代执行器 |
 | `models` 引用 AI 筛选和审查实现里的类型 | 共享契约和工作流形成循环依赖 | 轨迹数据属于 `models/information`；AI 模块只实现处理与校验 |
 | 数据库引用行情刷新模块里的类型、代码校验和日期规则 | 仓储与网络流程形成循环依赖 | FX 值、日期与证券代码规则在 `models/market`；每日资产契约在 `models/daily` |
 | 附件提取模块理解完整数据库同步包 | 解析工具和存储格式相互依赖 | 同步表关联、重复 ID 和累计大小校验归 `db/sync_validation`；附件解码与提取归 `attachments` |
@@ -140,3 +140,14 @@ node scripts/test-hosted.mjs
 本轮在一次性 PostgreSQL 17 集群实跑 5 项迁移测试、完整 SQLite/托管 HTTP 流程、跨实例回执与租户隔离。原生 pg_dump/pg_restore 对 141 张账号及租户表逐表比对一致。产品加密备份命令的在线/离线备份、错误密码与篡改拒绝、覆盖保护、SQL 失败回滚、安全备份恢复也通过。本段补充上述历史记录，不代表生产数据已迁移或部署。
 
 当前本地回归：217 项前端测试、202 项 Rust 测试通过；常规 Rust 套件的 9 项忽略包括 5 项已在独立门禁实跑的 PostgreSQL 测试，以及 4 项需真实模型/公共网络的显式测试。生产构建、Prettier、Rust 格式、严格 Clippy、架构检查、Web 鉴权与重启检查通过。财务门禁默认接入 scripts/test.sh；MARIO_TEST_PG_BIN 必须指向 PostgreSQL 工具目录。
+
+## 2026-10-18 独立性规则补充
+
+- `ports/` 是外部执行契约层，只依赖领域契约、冻结上下文和错误类型，不依赖数据库、AI 实现或传输适配器。流式事件结构归 `models/inference.rs`。
+- `application/portfolio.rs`、`application/fx.rs`、`application/prices.rs` 只使用行情端口。`composition.rs` 负责实际供应商装配与生命周期；`market_data.rs` / `prices.rs` 不读写账号数据，也不持有静态可变资源。
+- 账号凭据读写归 `db/secrets.rs`，`secrets.rs` 不依赖仓储。多步财务写入继续保持同一领域事务。
+- 功能页不得引用 `app/`，包括导航类型；向应用壳发出明确回调。参考资料与复盘使用 `onAsk(question)`，问答使用 `onOpenSettings()`。
+- `api/<领域>.ts` 可引用 `api/<同领域>/` 内部实现；仍禁止跨领域 API 互相引用。财务回执恢复只属于组合 API，`lib/httpClient.ts` 不解释财务回执或组合快照。
+- Rust 检查解析相对 `super::` / `self::` 路径，防止以相对导入隐藏反向依赖；分析生命周期不得导入 AI 工作流实现。静态检查与行为测试互补，仍不保证宏或所有运行时路径。
+
+完整职责划分、替换关系、迁移和待解决方案见 [模块独立性审计](module-independence-2026-10-18.md)。

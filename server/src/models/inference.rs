@@ -36,3 +36,20 @@ impl CodexFailure {
         matches!(self, Self::Busy | Self::Unavailable | Self::Disconnected)
     }
 }
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub(crate) enum AnalysisEvent {
+    Status {
+        message: String,
+    },
+    Draft {
+        answer: String,
+    },
+    Complete {
+        result: Box<crate::models::AnalysisResult>,
+    },
+    Error {
+        message: String,
+    },
+}

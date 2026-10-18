@@ -1,8 +1,6 @@
 pub(crate) mod bridge;
 mod codex;
-mod executor;
 pub use codex::CodexProvider;
-pub(crate) use executor::AnalysisExecutor;
 mod grounding;
 mod native_provider;
 mod orchestrator;

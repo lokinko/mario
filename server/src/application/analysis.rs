@@ -1,7 +1,6 @@
 //! Freeze authorized sources, validate the preview, execute, and persist the result.
 use super::model_settings::configured_model_key;
 use crate::{
-    ai::AnalysisExecutor,
     context,
     db::Database,
     evidence::search_evidence,
@@ -10,6 +9,7 @@ use crate::{
         AnalysisPreview, AnalysisRequest, AnalysisResult, MemoryItem, ModelConfig,
         ResearchEvidence, Snapshot,
     },
+    ports::analysis::AnalysisExecutor,
     AppError, AppResult,
 };
 use std::collections::HashSet;
@@ -94,7 +94,7 @@ impl<'a> AnalysisService<'a> {
         &self,
         request: AnalysisRequest,
         executor: &dyn AnalysisExecutor,
-        events: crate::ai::streaming::EventSender,
+        events: crate::ports::analysis::EventSender,
     ) -> AppResult<AnalysisResult> {
         // Streaming body starts after authentication middleware releases its lock.
         self.db.lock_account()?;
@@ -109,7 +109,7 @@ impl<'a> AnalysisService<'a> {
         &self,
         request: AnalysisRequest,
         executor: &dyn AnalysisExecutor,
-        events: Option<crate::ai::streaming::EventSender>,
+        events: Option<crate::ports::analysis::EventSender>,
     ) -> AppResult<AnalysisResult> {
         let prepared = self.prepare(&request)?;
         let config = prepared.config;

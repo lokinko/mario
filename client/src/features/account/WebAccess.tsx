@@ -149,12 +149,6 @@ export function WebAccess({ children }: { children: ReactNode }) {
   const resetAccountState = () => {
     acceptRevision();
     blockStaleWrites(false);
-    for (const key of [
-      "mario.advisorQuestion",
-      "compass.advisorQuestion",
-      "mario.dailyAssetRange",
-    ])
-      sessionStorage.removeItem(key);
     setEmail("");
     setPassword("");
     setRegister(false);

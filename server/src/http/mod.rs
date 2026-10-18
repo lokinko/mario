@@ -17,7 +17,7 @@ use std::sync::Arc;
 pub(crate) struct RequestContext {
     pub db: Database,
     pub market: Arc<MarketServices>,
-    pub analysis_executor: Arc<dyn crate::ai::AnalysisExecutor>,
+    pub analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
 }
 impl RequestContext {
     pub fn portfolio(&self) -> PortfolioService<'_> {

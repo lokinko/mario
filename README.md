@@ -82,7 +82,9 @@ client/                 React 响应式 Web 界面
 server/                 多用户 HTTP API 与独立 AI Agent 运行入口
   src/runtime.rs        启动配置与维护命令
   src/http/             按功能注册的 HTTP 适配器
-  src/application/      组合、分析与模型配置用例
+  src/application/      组合、行情刷新、分析与模型配置用例
+  src/ports/            可替换的行情查询与分析执行契约
+  src/composition.rs    供应商装配、共享实例与后台任务生命周期
   src/models/           每日资产、行情与分析轨迹共享契约
   src/ai/               可替换工作流、执行器与模型 Provider
   src/db.rs             领域数据仓储；storage.rs 对接 PostgreSQL / 旧 SQLite
@@ -93,7 +95,7 @@ server/                 多用户 HTTP API 与独立 AI Agent 运行入口
   src/evidence.rs       本地研究证据检索
   src/valuation.rs      基准币种折算、估值完整性与资产类别变化
   src/market_data.rs    可替换市场数据 Provider、ECB 汇率与 Twelve Data 证券价格适配器
-  src/prices.rs         免费证券日线、全局缓存、后台刷新与自动持仓估值
+  src/prices.rs         免费证券日线、实例缓存及公开行情预热
   src/risk.rs           不依赖大模型的风险规则
 docs/                   架构与投资方法论
 deploy.sh               宿主机部署与服务管理唯一入口

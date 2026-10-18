@@ -67,7 +67,7 @@ impl CodexProvider {
         self.status = Some(status);
         self
     }
-    pub(crate) fn with_events(self, events: Option<super::streaming::EventSender>) -> Self {
+    pub(crate) fn with_events(self, events: Option<crate::ports::analysis::EventSender>) -> Self {
         self.with_status(std::sync::Arc::new(move |message| {
             super::streaming::status(&events, message)
         }))

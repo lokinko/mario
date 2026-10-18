@@ -1,5 +1,5 @@
 //! Shared SSE response adapter for the backend and stateless Agent.
-use crate::{ai::streaming::AnalysisEvent, AppResult};
+use crate::{models::inference::AnalysisEvent, AppResult};
 use std::{future::Future, pin::Pin};
 
 // Own the execution future in the response body: dropping the connection cancels

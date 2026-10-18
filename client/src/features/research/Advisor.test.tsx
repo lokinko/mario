@@ -41,7 +41,7 @@ const props = {
     model: "test-model",
     hasApiKey: true,
   },
-  navigate: vi.fn(),
+  onOpenSettings: vi.fn(),
 };
 
 beforeEach(() => {
@@ -389,24 +389,42 @@ it("reopens a historical answer in the same report view and allows continuing th
   ).toContain("历史 report");
 });
 
-it("accepts a queued question and its asset range when returning from supporting pages", async () => {
-  const view = render(<Advisor {...props} active={false} />);
-  window.sessionStorage.setItem(
-    "mario.advisorQuestion",
-    "从资产概览带来的问题",
+it("accepts an explicit question and asset range only when active", async () => {
+  const onQuestionAccepted = vi.fn();
+  const pendingQuestion = {
+    id: 1,
+    question: "从资产概览带来的问题",
+    dailyAssetRange: { from: "2026-10-01", to: "2026-10-10" },
+  };
+  const view = render(
+    <Advisor
+      {...props}
+      active={false}
+      pendingQuestion={pendingQuestion}
+      onQuestionAccepted={onQuestionAccepted}
+    />,
   );
-  window.sessionStorage.setItem(
-    "mario.dailyAssetRange",
-    JSON.stringify({ from: "2026-10-01", to: "2026-10-10" }),
+  expect(onQuestionAccepted).not.toHaveBeenCalled();
+  view.rerender(
+    <Advisor
+      {...props}
+      active
+      pendingQuestion={pendingQuestion}
+      onQuestionAccepted={onQuestionAccepted}
+    />,
   );
-  view.rerender(<Advisor {...props} active />);
-  expect(await screen.findByDisplayValue("从资产概览带来的问题")).toBeTruthy();
-  expect(window.sessionStorage.getItem("mario.advisorQuestion")).toBeNull();
+  expect(
+    await screen.findByDisplayValue(pendingQuestion.question),
+  ).toBeTruthy();
+  expect(onQuestionAccepted).toHaveBeenCalledWith(1);
+  view.rerender(
+    <Advisor {...props} active onQuestionAccepted={onQuestionAccepted} />,
+  );
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
   await screen.findByText(result.answer);
   expect(researchApi.previewAnalysis).toHaveBeenCalledWith(
     expect.objectContaining({
-      dailyAssetRange: { from: "2026-10-01", to: "2026-10-10" },
+      dailyAssetRange: pendingQuestion.dailyAssetRange,
     }),
   );
 });

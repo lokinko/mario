@@ -16,7 +16,6 @@ import {
   refreshSecurityPrices,
 } from "../../api/portfolio";
 import type { FinancialProfile, Holding, Snapshot } from "../../types";
-import { type View } from "../../app/navigation";
 import { PageHeader } from "../../components/PageHeader";
 import { NumberField } from "../../components/NumberField";
 import { localDateValue } from "../../lib/dates";
@@ -35,7 +34,6 @@ export function MyFacts({
 }: {
   snapshot: Snapshot;
   onUpdate: (snapshot: Snapshot) => void;
-  navigate: (view: View) => void;
   flash: (message: string) => void;
 }) {
   const [profile, setProfile] = useState(snapshot.profile);

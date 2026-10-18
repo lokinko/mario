@@ -19,12 +19,14 @@ function clientLayer(path) {
 }
 export function clientViolation(source, target) {
   const from = clientLayer(source), to = clientLayer(target);
+  if (from === 'features' && ['app', 'App.tsx', 'main.tsx'].includes(to))
+    return 'features receive application callbacks, not application implementations';
   if (from === 'features' && to === 'features' && source.split('/')[1] !== target.split('/')[1])
     return 'features must compose through app or shared components';
   if (['lib', 'components', 'api', 'types.ts'].includes(from) && ['features', 'app', 'App.tsx', 'main.tsx'].includes(to))
     return 'shared modules cannot depend on application pages';
   if (from === 'lib' && to === 'api') return 'transport and sync primitives cannot import domain API clients';
-  if (from === 'api' && to === 'api' && source !== target) return 'domain clients cannot import another domain client';
+  if (from === 'api' && to === 'api' && source.split('/')[1].replace(/\.tsx?$/, '') !== target.split('/')[1].replace(/\.tsx?$/, '')) return 'domain clients cannot import another domain client';
   return undefined;
 }
 export function cycles(graph) {
@@ -91,8 +93,16 @@ export function productionRust(source) {
   }
   return result;
 }
-export function rustDependencies(source) {
-  const code = productionRust(source), names = new Set();
+export function rustDependencies(source, modulePath = []) {
+  // Resolve relative paths before inspecting imports, so super::db cannot hide
+  // the same dependency that crate::db would expose. Test items are masked first.
+  const code = productionRust(source).replace(/\b(?:(?:super|self)::)+/g, path => {
+    const owner = [...modulePath];
+    for (const segment of path.split('::').filter(Boolean)) {
+      if (segment === 'super') owner.pop();
+    }
+    return 'crate::' + (owner.length ? owner.join('::') + '::' : '');
+  }), names = new Set();
   for (const match of code.matchAll(/\bcrate::(\w+)/g)) names.add(match[1]);
   for (const match of code.matchAll(/\bcrate::\{/g)) {
     let i = match.index + match[0].length, depth = 0, field = '';
@@ -109,9 +119,18 @@ export function rustDependencies(source) {
   return names;
 }
 const core = new Set(['models', 'context', 'risk', 'planning', 'valuation', 'memory', 'evidence', 'event_import']);
-const infrastructure = new Set(['db', 'storage', 'accounts', 'secrets', 'fx', 'prices', 'market_data']);
-const transport = new Set(['http', 'hosted', 'runtime', 'agent']);
+const infrastructure = new Set(['db', 'storage', 'accounts', 'secrets', 'prices', 'market_data']);
+const transport = new Set(['http', 'hosted', 'runtime', 'agent', 'streaming', 'composition', 'codex_bridge_worker']);
 export function serverViolation(source, target) {
+  if (source === 'secrets' && !['error'].includes(target))
+    return 'credential encryption cannot depend on account persistence';
+  if (source === 'ports' && !['models', 'context', 'error', 'ports'].includes(target))
+    return 'execution contracts cannot depend on implementations or account state';
+  if (['prices', 'market_data'].includes(source) && !['models', 'ports', 'error'].includes(target))
+    return 'market adapters only implement query ports; account workflows belong in application';
+  if (source === 'application' && ['prices', 'market_data'].includes(target))
+    return 'application receives market ports; concrete providers belong in composition';
+  if (core.has(source) && target === 'ports') return 'domain rules cannot execute external ports';
   if (core.has(source) && (infrastructure.has(target) || transport.has(target) || ['application', 'ai'].includes(target)))
     return 'domain contracts and deterministic rules cannot depend on execution, persistence or transport';
   if (source === 'ai' && (infrastructure.has(target) || transport.has(target) || target === 'application'))
@@ -124,12 +143,19 @@ export function serverViolation(source, target) {
   return undefined;
 }
 
+export function serverFileViolation(source, target) {
+  if (source === 'application/analysis.rs' && target === 'ai')
+    return 'analysis lifecycle depends on the execution port, not workflow implementations';
+  return undefined;
+}
+
 export function checkArchitecture() {
   const violations = [], clientGraph = new Map(), serverGraph = new Map();
   const clientRoot = resolve(root, 'client/src');
   for (const path of files(clientRoot, /\.tsx?$/).filter(path => !/\.test\./.test(path) && !posix(path).includes('/test/'))) {
     const name = posix(relative(clientRoot, path));
-    const ast = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true);
+    const source = readFileSync(path, 'utf8');
+    const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
     const dependencies = new Set();
     const inspect = node => {
       let specifier;
@@ -172,14 +198,18 @@ export function checkArchitecture() {
     const name = posix(relative(serverRoot, path)), owner = name.split('/')[0].replace(/\.rs$/, '');
     if (!known.has(owner)) continue;
     const source = readFileSync(path, 'utf8'), code = productionRust(source);
+    if (['ports', 'application'].includes(owner) && /\breqwest::/.test(code))
+      violations.push(`${name}: network clients belong in execution adapters`);
+    if (['prices', 'market_data'].includes(owner) && /\bstatic\s+\w+\s*:/.test(code))
+      violations.push(`${name}: mutable market resources belong to injected instances`);
     if (owner !== 'db' && /use\s+(?:super|crate)::\*/.test(code)) violations.push(`${name}: production imports must be explicit`);
     if (['application', 'models', 'context', 'risk', 'planning', 'valuation', 'memory', 'evidence', 'event_import', 'db', 'error'].includes(owner) && /\baxum::/.test(code))
       violations.push(`${name}: HTTP framework belongs in adapters`);
     if (!serverGraph.has(owner)) serverGraph.set(owner, new Set());
-    for (const target of rustDependencies(source)) {
+    for (const target of rustDependencies(source, name.replace(/\.rs$/, '').replace(/\/mod$/, '').split('/'))) {
       if (!known.has(target) || target === owner) continue;
       serverGraph.get(owner).add(target);
-      const violation = serverViolation(owner, target);
+      const violation = serverViolation(owner, target) ?? serverFileViolation(name, target);
       if (violation) violations.push(`${name} -> ${target}: ${violation}`);
     }
   }

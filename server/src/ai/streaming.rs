@@ -1,24 +1,7 @@
 //! Streaming wire parser and draft projection. Drafts never bypass report validation.
+use crate::{models::inference::AnalysisEvent, ports::analysis::EventSender};
 use crate::{AppError, AppResult};
-use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub(crate) enum AnalysisEvent {
-    Status {
-        message: String,
-    },
-    Draft {
-        answer: String,
-    },
-    Complete {
-        result: Box<crate::models::AnalysisResult>,
-    },
-    Error {
-        message: String,
-    },
-}
-pub(crate) type EventSender = tokio::sync::mpsc::Sender<AnalysisEvent>;
 pub type DeltaCallback = Box<dyn Fn(&str) + Send + Sync>;
 
 pub(crate) fn status(sender: &Option<EventSender>, message: impl Into<String>) {

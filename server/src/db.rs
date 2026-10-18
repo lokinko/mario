@@ -33,6 +33,7 @@ mod portfolio;
 mod reminders;
 mod research;
 mod reviews;
+mod secrets;
 mod settings;
 #[cfg(test)]
 mod sync_merge;

@@ -19,7 +19,6 @@ import type {
 } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
 import { localDateValue } from "../../lib/dates";
-import { View } from "../../app/navigation";
 import { systemReviewText } from "../../lib/reviewText";
 
 export const emptyRule: InvestmentRuleInput = {
@@ -42,10 +41,10 @@ export function ruleInput(rule: InvestmentRule): InvestmentRuleInput {
 }
 
 export function ReviewCenter({
-  navigate,
+  onAsk,
   flash,
 }: {
-  navigate: (v: View) => void;
+  onAsk: (question: string) => void;
   flash: (s: string) => void;
 }) {
   const [tab, setTab] = useState("reviews");
@@ -200,11 +199,9 @@ export function ReviewCenter({
   };
 
   const startAiReview = () => {
-    window.sessionStorage.setItem(
-      "mario.advisorQuestion",
+    onAsk(
       "请基于我的个人投资规则、最近周期复盘、财务目标、当前组合和历史分析，完成一次系统复盘：先核对规则违反与风险边界，再识别重复错误，比较至少两种改进路径，并给出下一周期可验证的行动与证伪条件。",
     );
-    navigate("advisor");
   };
 
   if (!loaded && (loading || error))

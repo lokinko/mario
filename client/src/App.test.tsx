@@ -11,6 +11,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import * as portfolioApi from "./api/portfolio";
 import * as settingsApi from "./api/settings";
+import * as researchApi from "./api/research";
 import emptySnapshot from "./test/emptySnapshot.json";
 import { analysisSettings as defaultAnalysisSettings } from "./test/analysisSettings";
 import { WebAccess } from "./features/account/WebAccess";
@@ -354,3 +355,74 @@ it.each([
     expect(screen.queryByRole("navigation", { name: "当前位置" })).toBeNull();
   },
 );
+
+it("composes source questions through the shell and consumes them before a data reload", async () => {
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  const evidence = vi
+    .spyOn(researchApi, "getResearchEvidence")
+    .mockResolvedValue([
+      {
+        id: "source",
+        assetName: "",
+        title: "黄金储备变化",
+        publisher: "用户",
+        sourceUrl: "",
+        sourceTier: "用户资料（待核实）",
+        evidenceType: "user_source_text",
+        stance: "背景",
+        asOfDate: "",
+        claim: "原文",
+        notes: "",
+        active: true,
+        capturedAt: "2026-10-18T00:00:00Z",
+      },
+    ]);
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
+    provider: "openai-responses",
+    baseUrl: "https://api.openai.com/v1",
+    model: "fixture",
+    hasApiKey: false,
+  });
+  window.location.hash = "evidence";
+  try {
+    render(<App />);
+    const ask = await screen.findByRole("button", { name: "用资料提问" });
+    await waitFor(() =>
+      expect((ask as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(ask);
+    const question = await screen.findByRole("textbox", { name: "输入问题" });
+    await waitFor(() =>
+      expect((question as HTMLTextAreaElement).value).toContain("黄金储备变化"),
+    );
+    fireEvent.change(question, { target: { value: "继续编辑后的草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "参考资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "问答" }));
+    expect(
+      (screen.getByRole("textbox", { name: "输入问题" }) as HTMLTextAreaElement)
+        .value,
+    ).toBe("继续编辑后的草稿");
+    fireEvent.click(screen.getByRole("button", { name: "账号与数据" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "测试恢复数据" }),
+    );
+    await waitFor(() =>
+      expect(portfolioApi.getSnapshot).toHaveBeenCalledTimes(2),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "问答" }));
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("textbox", {
+            name: "输入问题",
+          }) as HTMLTextAreaElement
+        ).value,
+      ).toBe(""),
+    );
+  } finally {
+    evidence.mockRestore();
+  }
+});

@@ -13,7 +13,6 @@ import { LoadState } from "../../components/LoadState";
 import { saveAttachmentDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
 import { useRequestGuard } from "../../lib/useRequestGuard";
-import type { View } from "../../app/navigation";
 import {
   encodeResearchFiles,
   formatFileSize,
@@ -39,10 +38,10 @@ export function evidenceText(item: ResearchEvidence): string {
 }
 
 export function EvidenceWorkbench({
-  navigate,
+  onAsk,
   flash,
 }: {
-  navigate: (v: View) => void;
+  onAsk: (question: string) => void;
   flash: (s: string) => void;
 }) {
   const [creating, setCreating] = useState(false);
@@ -154,11 +153,9 @@ export function EvidenceWorkbench({
       .map((item) => item.title)
       .filter(Boolean)
       .join("、");
-    window.sessionStorage.setItem(
-      "mario.advisorQuestion",
+    onAsk(
       `请结合我保存的原始资料与资讯${topics ? `（${topics}）` : ""}，梳理其中的重要信息、局限和待核实事项，再分析它们对当前投资判断的影响。引用实际提供的资料，不要补造来源信息。`,
     );
-    navigate("advisor");
   };
 
   return (

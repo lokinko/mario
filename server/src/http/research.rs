@@ -150,9 +150,8 @@ async fn analysis(
 mod tests {
     use super::*;
     use crate::{
-        ai::{streaming::AnalysisEvent, AnalysisExecutor},
-        context::BuiltContext,
-        db::Database,
+        context::BuiltContext, db::Database, models::inference::AnalysisEvent,
+        ports::analysis::AnalysisExecutor,
     };
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -186,7 +185,7 @@ mod tests {
             _: AnalysisRequest,
             context: BuiltContext,
             _: Vec<MemoryItem>,
-            events: crate::ai::streaming::EventSender,
+            events: crate::ports::analysis::EventSender,
         ) -> AppResult<AnalysisResult> {
             let _guard = ExecutionGuard(self.dropped.clone());
             events
@@ -222,7 +221,10 @@ mod tests {
             .unwrap();
         let state = Arc::new(RequestContext {
             db,
-            market: Arc::new(crate::application::portfolio::MarketServices::new().unwrap()),
+            market: crate::composition::MarketRuntime::new()
+                .unwrap()
+                .services
+                .clone(),
             analysis_executor: Arc::new(Executor {
                 gate: gate.clone(),
                 dropped: dropped.clone(),

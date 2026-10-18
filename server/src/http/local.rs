@@ -1,8 +1,7 @@
 //! Local development authentication and serialization; never owns business workflows.
 use super::{api_router, policy, RequestContext};
 use crate::{
-    application::portfolio::MarketServices, authentication::token_matches, db::Database, fx,
-    prices, AppError, AppResult,
+    authentication::token_matches, composition::MarketRuntime, db::Database, AppError, AppResult,
 };
 use axum::{
     extract::{Request, State},
@@ -27,12 +26,11 @@ pub(crate) async fn serve<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    fx::start_daily_refresh();
-    prices::start_refresh();
+    let market_runtime = MarketRuntime::new()?;
     let state = Arc::new(LocalState {
         context: Arc::new(RequestContext {
             db: Database::open(&data_dir.join("mario.db"))?,
-            market: Arc::new(MarketServices::new()?),
+            market: market_runtime.services.clone(),
             analysis_executor: Arc::new(crate::agent::AgentExecutor),
         }),
         auth_token: auth_token.clone(),

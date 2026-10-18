@@ -15,7 +15,7 @@ pub struct NativeModelProvider {
     base_url: String,
     model: String,
     api_key: String,
-    events: Option<super::streaming::EventSender>,
+    events: Option<crate::ports::analysis::EventSender>,
 }
 
 impl NativeModelProvider {
@@ -53,7 +53,10 @@ impl NativeModelProvider {
         })
     }
 
-    pub(crate) fn with_events(mut self, events: Option<super::streaming::EventSender>) -> Self {
+    pub(crate) fn with_events(
+        mut self,
+        events: Option<crate::ports::analysis::EventSender>,
+    ) -> Self {
         self.events = events;
         self
     }
@@ -877,7 +880,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(
-            matches!(event, super::super::streaming::AnalysisEvent::Status { message } if message.contains("自动重试"))
+            matches!(event, crate::models::inference::AnalysisEvent::Status { message } if message.contains("自动重试"))
         );
         pending.abort();
         assert!(pending.await.unwrap_err().is_cancelled());

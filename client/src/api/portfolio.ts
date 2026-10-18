@@ -1,3 +1,4 @@
+import { financialRequest } from "./portfolio/financialRequest";
 import { httpRequest } from "../lib/httpClient";
 import type {
   FinancialProfile,
@@ -48,7 +49,7 @@ export function repairTrades(
   id: string,
   input: RepairInput,
 ): Promise<Snapshot> {
-  return httpRequest(`/holdings/${encodeURIComponent(id)}/trade-repair`, {
+  return financialRequest(`/holdings/${encodeURIComponent(id)}/trade-repair`, {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -60,10 +61,13 @@ export function confirmCorporateAction(
   reason: string,
   mode: "confirm" | "reject" | "revert" = "confirm",
 ): Promise<Snapshot> {
-  return httpRequest(`/corporate-actions/${encodeURIComponent(id)}/${mode}`, {
-    method: "POST",
-    body: JSON.stringify({ expectedRevision, reason }),
-  });
+  return financialRequest(
+    `/corporate-actions/${encodeURIComponent(id)}/${mode}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision, reason }),
+    },
+  );
 }
 
 export function declareCorporateAction(
@@ -75,10 +79,13 @@ export function declareCorporateAction(
     reason: string;
   },
 ): Promise<Snapshot> {
-  return httpRequest(`/holdings/${encodeURIComponent(id)}/corporate-actions`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+  return financialRequest(
+    `/holdings/${encodeURIComponent(id)}/corporate-actions`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export async function getSecurityPrice(
@@ -150,7 +157,7 @@ export async function deleteHolding(
   id: string,
   expectedRevision: string,
 ): Promise<Snapshot> {
-  return httpRequest<Snapshot>(`/holdings/${encodeURIComponent(id)}`, {
+  return financialRequest(`/holdings/${encodeURIComponent(id)}`, {
     method: "DELETE",
     body: JSON.stringify({ expectedRevision }),
   });
@@ -159,7 +166,7 @@ export async function deleteHolding(
 export function saveHoldingTrade(
   input: import("../types").HoldingTradeInput,
 ): Promise<Snapshot> {
-  return httpRequest<Snapshot>("/holding-trades", {
+  return financialRequest("/holding-trades", {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -169,7 +176,7 @@ export function updateHoldingTrade(
   id: string,
   input: import("../types").HoldingTradeUpdateInput,
 ): Promise<Snapshot> {
-  return httpRequest<Snapshot>(`/holding-trades/${encodeURIComponent(id)}`, {
+  return financialRequest(`/holding-trades/${encodeURIComponent(id)}`, {
     method: "PUT",
     body: JSON.stringify(input),
   });
@@ -179,7 +186,7 @@ export function deleteHoldingTrade(
   id: string,
   input: import("../types").HoldingTradeDeleteInput,
 ): Promise<Snapshot> {
-  return httpRequest<Snapshot>(`/holding-trades/${encodeURIComponent(id)}`, {
+  return financialRequest(`/holding-trades/${encodeURIComponent(id)}`, {
     method: "DELETE",
     body: JSON.stringify(input),
   });
@@ -213,7 +220,7 @@ export function updateHoldingAmount(
   const result = amountQueue
     .catch(() => undefined)
     .then(() =>
-      httpRequest<Snapshot>(
+      financialRequest(
         `/holdings/${encodeURIComponent(id)}/amount`,
         {
           method: "PUT",

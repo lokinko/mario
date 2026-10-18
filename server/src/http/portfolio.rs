@@ -4,7 +4,12 @@ use crate::models::{
     SecurityPriceConfigInput, SecurityPriceQuery, SecurityPriceQuote, Snapshot,
     VerifiedHoldingValuationInput,
 };
-use crate::{fx, models, prices, AppResult};
+use crate::{
+    application::prices,
+    models,
+    models::market::{FxBook, FxOverrideInput},
+    AppResult,
+};
 use axum::{
     extract::{Path, Query},
     routing::{get, post, put},
@@ -113,7 +118,7 @@ async fn review_corporate_action(
 }
 
 async fn snapshot(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.portfolio().snapshot().await?))
+    Ok(Json(state.db.snapshot()?))
 }
 
 #[derive(serde::Deserialize)]
@@ -189,7 +194,7 @@ async fn save_profile(
     Extension(state): Extension<Arc<RequestContext>>,
     Json(input): Json<FinancialProfile>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.portfolio().save_profile(&input).await?))
+    Ok(Json(state.db.save_profile(&input)?))
 }
 
 async fn add_holding(
@@ -227,7 +232,7 @@ async fn save_holding_trade(
     Extension(state): Extension<Arc<RequestContext>>,
     Json(input): Json<models::HoldingTradeInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.portfolio().save_trade(&input).await?))
+    Ok(Json(state.db.save_holding_trade(&input)?))
 }
 
 async fn update_holding_trade(
@@ -235,7 +240,7 @@ async fn update_holding_trade(
     Path(id): Path<String>,
     Json(input): Json<models::HoldingTradeUpdateInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.portfolio().update_trade(&id, &input).await?))
+    Ok(Json(state.db.update_holding_trade(&id, &input)?))
 }
 
 async fn delete_holding_trade(
@@ -243,7 +248,7 @@ async fn delete_holding_trade(
     Path(id): Path<String>,
     Json(input): Json<models::HoldingTradeDeleteInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.portfolio().delete_trade(&id, &input).await?))
+    Ok(Json(state.db.delete_holding_trade(&id, &input)?))
 }
 
 async fn ensure_daily_assets(
@@ -275,9 +280,7 @@ async fn update_holding_amount(
     Ok(Json(state.db.update_holding_amount(&id, &input)?))
 }
 
-async fn fx_settings(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<fx::FxBook>> {
+async fn fx_settings(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<FxBook>> {
     Ok(Json(
         state
             .db
@@ -287,13 +290,13 @@ async fn fx_settings(
 
 async fn refresh_fx_settings(
     Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<fx::FxBook>> {
+) -> AppResult<Json<FxBook>> {
     Ok(Json(state.portfolio().refresh_fx(true).await?))
 }
 
 async fn save_fx_override(
     Extension(state): Extension<Arc<RequestContext>>,
-    Json(input): Json<fx::FxOverrideInput>,
-) -> AppResult<Json<fx::FxBook>> {
+    Json(input): Json<FxOverrideInput>,
+) -> AppResult<Json<FxBook>> {
     Ok(Json(state.portfolio().save_fx_override(&input).await?))
 }

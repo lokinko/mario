@@ -22,7 +22,6 @@ import type {
   ModelConfig,
   StoredAnalysis,
 } from "../../types";
-import { View } from "../../app/navigation";
 import { ModelReport } from "./ModelReport";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 
@@ -31,11 +30,19 @@ type Turn = { question: string; result: AnalysisResult | StoredAnalysis };
 export function Advisor({
   model,
   active = true,
-  navigate,
+  onOpenSettings,
+  pendingQuestion,
+  onQuestionAccepted,
 }: {
   model: ModelConfig;
   active?: boolean;
-  navigate: (v: View) => void;
+  onOpenSettings: () => void;
+  pendingQuestion?: {
+    id: number;
+    question: string;
+    dailyAssetRange?: { from: string; to: string };
+  };
+  onQuestionAccepted?: (id: number) => void;
 }) {
   const historyRequest = useRequestGuard();
   const analysisRequest = useRequestGuard();
@@ -64,33 +71,15 @@ export function Advisor({
   useEffect(() => () => streamRef.current?.abort(), []);
 
   useEffect(() => {
-    if (!active || running) return;
-    const queued =
-      window.sessionStorage.getItem("mario.advisorQuestion") ??
-      window.sessionStorage.getItem("compass.advisorQuestion");
-    if (!queued) return;
-    const range = window.sessionStorage.getItem("mario.dailyAssetRange");
-    window.sessionStorage.removeItem("mario.dailyAssetRange");
-    try {
-      const parsed = range ? JSON.parse(range) : undefined;
-      setDailyAssetRange(
-        parsed &&
-          typeof parsed.from === "string" &&
-          typeof parsed.to === "string"
-          ? parsed
-          : undefined,
-      );
-    } catch {
-      setDailyAssetRange(undefined);
-    }
-    setQuestion(queued);
+    if (!active || running || !pendingQuestion) return;
+    setQuestion(pendingQuestion.question);
+    setDailyAssetRange(pendingQuestion.dailyAssetRange);
     setTurns([]);
     setDraft(null);
     setStopped(false);
     setError("");
-    window.sessionStorage.removeItem("mario.advisorQuestion");
-    window.sessionStorage.removeItem("compass.advisorQuestion");
-  }, [active, running]);
+    onQuestionAccepted?.(pendingQuestion.id);
+  }, [active, running, pendingQuestion, onQuestionAccepted]);
 
   useEffect(() => {
     let mounted = true;
@@ -421,7 +410,7 @@ export function Advisor({
                   <button
                     type="button"
                     className="text-button"
-                    onClick={() => navigate("settings")}
+                    onClick={onOpenSettings}
                   >
                     前往设置连接模型
                   </button>

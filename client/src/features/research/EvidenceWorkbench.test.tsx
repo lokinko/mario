@@ -44,7 +44,7 @@ const saved: ResearchEvidence = {
 it("saves complete source text with one field and clears it after success", async () => {
   vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([]);
   vi.mocked(researchApi.saveResearchEvidence).mockResolvedValue(saved);
-  render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const input = screen.getByRole("textbox", { name: "原始资料与资讯" });
   expect(screen.getAllByRole("textbox")).toHaveLength(1);
@@ -72,7 +72,7 @@ it("blocks blank content and keeps the draft when saving fails", async () => {
   vi.mocked(researchApi.saveResearchEvidence)
     .mockRejectedValueOnce(new Error("保存失败"))
     .mockResolvedValue(saved);
-  render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const input = screen.getByRole("textbox", { name: "原始资料与资讯" });
   fireEvent.change(input, { target: { value: " \n " } });
@@ -120,7 +120,7 @@ it("shows original text and all legacy information, with reversible archiving", 
     ...saved,
     active: false,
   });
-  render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
   await screen.findAllByText("保存于 2026-10-11");
   fireEvent.click(screen.getByRole("button", { name: "原始资料" }));
   expect(document.querySelector(".evidence-content")?.textContent).toBe(
@@ -163,14 +163,14 @@ it("carries source topics into the question so saved text can be retrieved", asy
     { ...saved, title: "黄金储备变化" },
     { ...saved, id: "archived", title: "旧资料", active: false },
   ]);
-  const navigate = vi.fn();
-  render(<EvidenceWorkbench flash={vi.fn()} navigate={navigate} />);
+  const onAsk = vi.fn();
+  render(<EvidenceWorkbench flash={vi.fn()} onAsk={onAsk} />);
   await screen.findAllByText(/保存于/);
   fireEvent.click(screen.getByRole("button", { name: "用资料提问" }));
-  const question = window.sessionStorage.getItem("mario.advisorQuestion");
+  const question = onAsk.mock.calls[0][0];
   expect(question).toContain("黄金储备变化");
   expect(question).not.toContain("旧资料");
-  expect(navigate).toHaveBeenCalledWith("advisor");
+  expect(onAsk).toHaveBeenCalledTimes(1);
 });
 
 it("saves attachments without requiring text and preserves them for retry", async () => {
@@ -178,7 +178,7 @@ it("saves attachments without requiring text and preserves them for retry", asyn
   vi.mocked(researchApi.saveResearchEvidence)
     .mockRejectedValueOnce(new Error("上传失败"))
     .mockResolvedValue(saved);
-  render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const file = new File(["原文\n第二段"], "报告.txt", { type: "text/plain" });
   fireEvent.change(screen.getByLabelText("选择附件"), {
@@ -208,7 +208,7 @@ it("saves attachments without requiring text and preserves them for retry", asyn
 
 it("can remove a selected file and rejects too many or oversized attachments", async () => {
   vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([]);
-  render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const picker = screen.getByLabelText("选择附件");
   fireEvent.change(picker, {
@@ -271,7 +271,7 @@ it("downloads the original file through the authenticated API", async () => {
   ) {
     downloaded = this.download;
   });
-  render(<EvidenceWorkbench flash={vi.fn()} navigate={vi.fn()} />);
+  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "原始资料" }));
   fireEvent.click(await screen.findByRole("button", { name: "报告.txt" }));
   await waitFor(() =>

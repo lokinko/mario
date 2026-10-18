@@ -107,12 +107,6 @@ it("switches from settings, clears old account drafts, and mounts the next accou
   setWebToken("account-b", undefined, { email: "b@example.test" });
   setWebToken("account-a", undefined, { email: "a@example.test" });
   acceptRevision("account-a-revision");
-  for (const key of [
-    "mario.advisorQuestion",
-    "compass.advisorQuestion",
-    "mario.dailyAssetRange",
-  ])
-    sessionStorage.setItem(key, "account-a-data");
   render(
     <WebAccess>
       <AccountData />
@@ -131,7 +125,6 @@ it("switches from settings, clears old account drafts, and mounts the next accou
   expect(screen.queryByText("account-a")).toBeNull();
   expect(webToken()).toBe("account-b");
   expect(dataRevision()).toBeUndefined();
-  expect(sessionStorage.length).toBe(0);
   await screen.findByText("account-b");
   expect((screen.getByLabelText("账号草稿") as HTMLInputElement).value).toBe(
     "",
@@ -159,10 +152,10 @@ it("blocks repeated logouts and retains the account and drafts if logout fails, 
     .mockResolvedValueOnce(new Response('{"ok":true}'));
   vi.stubGlobal("fetch", fetcher);
   setWebToken("account-a");
-  sessionStorage.setItem("mario.advisorQuestion", "待处理的问题");
   render(
     <WebAccess>
       <p>个人资产</p>
+      <input aria-label="待处理的问题" defaultValue="待处理的问题" />
       <AccountSettings />
     </WebAccess>,
   );
@@ -181,7 +174,9 @@ it("blocks repeated logouts and retains the account and drafts if logout fails, 
   await screen.findByRole("alert");
   expect(webToken()).toBe("account-a");
   expect(screen.getByText("个人资产")).toBeTruthy();
-  expect(sessionStorage.getItem("mario.advisorQuestion")).toBe("待处理的问题");
+  expect(
+    (screen.getByLabelText("待处理的问题") as HTMLInputElement).value,
+  ).toBe("待处理的问题");
   fireEvent.click(screen.getByRole("button", { name: "退出账号" }));
   await screen.findByRole("button", { name: "登录" });
   expect(fetcher).toHaveBeenCalledTimes(2);

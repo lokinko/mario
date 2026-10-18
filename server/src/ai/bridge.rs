@@ -266,7 +266,7 @@ pub(crate) fn status(id: &str) -> Status {
 pub(crate) struct BridgeProvider {
     id: String,
     model: String,
-    events: Option<super::streaming::EventSender>,
+    events: Option<crate::ports::analysis::EventSender>,
 }
 impl BridgeProvider {
     pub fn new(id: String, model: String) -> Self {
@@ -276,7 +276,10 @@ impl BridgeProvider {
             events: None,
         }
     }
-    pub(crate) fn with_events(mut self, events: Option<super::streaming::EventSender>) -> Self {
+    pub(crate) fn with_events(
+        mut self,
+        events: Option<crate::ports::analysis::EventSender>,
+    ) -> Self {
         self.events = events;
         self
     }
@@ -436,7 +439,7 @@ mod tests {
             .unwrap();
         let event = receiver.recv().await.unwrap();
         assert!(
-            matches!(event,super::super::streaming::AnalysisEvent::Status {message} if message.contains("自动重试"))
+            matches!(event,crate::models::inference::AnalysisEvent::Status {message} if message.contains("自动重试"))
         );
         connection
             .event(

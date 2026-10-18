@@ -32,7 +32,7 @@ struct Job {
 pub(crate) struct AgentExecutor;
 
 #[async_trait::async_trait]
-impl crate::ai::AnalysisExecutor for AgentExecutor {
+impl crate::ports::analysis::AnalysisExecutor for AgentExecutor {
     async fn execute(
         &self,
         config: ModelConfig,
@@ -51,7 +51,7 @@ impl crate::ai::AnalysisExecutor for AgentExecutor {
         request: AnalysisRequest,
         context: context::BuiltContext,
         memories: Vec<models::MemoryItem>,
-        events: crate::ai::streaming::EventSender,
+        events: crate::ports::analysis::EventSender,
     ) -> AppResult<AnalysisResult> {
         self.execute_with_events(config, api_key, request, context, memories, Some(events))
             .await
@@ -65,7 +65,7 @@ impl AgentExecutor {
         request: AnalysisRequest,
         context: context::BuiltContext,
         memories: Vec<models::MemoryItem>,
-        events: Option<crate::ai::streaming::EventSender>,
+        events: Option<crate::ports::analysis::EventSender>,
     ) -> AppResult<AnalysisResult> {
         if let Some(endpoint) = std::env::var("MARIO_AGENT_URL")
             .ok()
@@ -103,14 +103,14 @@ impl AgentExecutor {
                 let mut decoder = crate::ai::streaming::SseDecoder::default();
                 while let Some(bytes) = response.chunk().await? {
                     for data in decoder.feed(&bytes)? {
-                        let event: crate::ai::streaming::AnalysisEvent =
+                        let event: crate::models::inference::AnalysisEvent =
                             serde_json::from_str(&data)
                                 .map_err(|_| AppError::Model("Agent 流式事件无效".into()))?;
                         match event {
-                            crate::ai::streaming::AnalysisEvent::Complete { result } => {
+                            crate::models::inference::AnalysisEvent::Complete { result } => {
                                 return Ok(*result)
                             }
-                            crate::ai::streaming::AnalysisEvent::Error { message } => {
+                            crate::models::inference::AnalysisEvent::Error { message } => {
                                 return Err(AppError::Model(message))
                             }
                             event => {
