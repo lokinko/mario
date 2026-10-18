@@ -5,7 +5,7 @@ use crate::error::AppResult;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 9;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 10;
 
 // Keep legacy migration order intact: opening an old database remains idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -176,7 +176,23 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
     )?;
     connection
         .execute_batch("DROP TABLE IF EXISTS portfolio_events; DROP TABLE IF EXISTS goals; DROP TABLE IF EXISTS memory_preferences;")?;
+    // Canonicalize legacy settings once at the storage boundary.
+    connection.execute_batch(
+        "UPDATE settings SET value='openai-responses'
+           WHERE key='model.provider' AND value='openai-compatible';
+         UPDATE settings SET value=replace(value,'openai-compatible ','openai-responses ')
+           WHERE key='model.key_binding' AND value LIKE 'openai-compatible %';
+         INSERT INTO settings(key,value)
+           SELECT 'model.key_binding',
+             coalesce((SELECT value FROM settings WHERE key='model.provider'),'openai-responses') || ' ' ||
+             rtrim(coalesce((SELECT value FROM settings WHERE key='model.base_url'),'https://api.openai.com/v1'),'/')
+           WHERE EXISTS(SELECT 1 FROM settings WHERE key='secret.model')
+             AND coalesce((SELECT value FROM settings WHERE key='model.provider'),'openai-responses')
+                 NOT IN ('codex','codex-bridge')
+           ON CONFLICT(key) DO NOTHING;",
+    )?;
     remove_retired_analysis_metadata(connection)?;
+    connection.execute("DELETE FROM settings WHERE key LIKE 'trading.reset.%'", [])?;
     super::financial::initialize(connection)?;
     Ok(())
 }

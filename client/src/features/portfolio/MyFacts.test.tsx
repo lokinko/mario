@@ -65,7 +65,7 @@ afterEach(() => {
 });
 const snapshot = fixture as Snapshot;
 
-it("searches the aligned holding list without changing portfolio totals or saving data", async () => {
+it("groups holdings by currency and searches without changing portfolio totals or saving data", async () => {
   const holdings = [
     {
       ...emptyHolding("USD"),
@@ -89,7 +89,27 @@ it("searches the aligned holding list without changing portfolio totals or savin
   ];
   const view = mount({ ...snapshot, holdings });
   const list = screen.getByRole("table", { name: "持仓列表" });
-  expect(within(list).getAllByRole("columnheader")).toHaveLength(6);
+  expect(within(list).getAllByRole("columnheader")).toHaveLength(7);
+  expect(
+    within(list).getByRole("columnheader", { name: "已结算收益" }),
+  ).toBeTruthy();
+  expect(
+    within(list)
+      .getAllByRole("rowgroup")
+      .map((group) => group.getAttribute("aria-label")),
+  ).toEqual(["CNY 持仓", "USD 持仓"]);
+  expect(
+    within(within(list).getByRole("rowgroup", { name: "CNY 持仓" })).getByRole(
+      "button",
+      { name: "编辑 宽基基金" },
+    ),
+  ).toBeTruthy();
+  expect(
+    within(within(list).getByRole("rowgroup", { name: "USD 持仓" })).getByRole(
+      "button",
+      { name: "编辑 Apple" },
+    ),
+  ).toBeTruthy();
   const overview = await screen.findByLabelText("投资持仓概览");
   const totals = overview.textContent;
   const search = screen.getByRole("searchbox", { name: "搜索持仓" });
@@ -117,12 +137,12 @@ it("searches the aligned holding list without changing portfolio totals or savin
   fireEvent.change(screen.getByRole("combobox", { name: "持仓排序" }), {
     target: { value: "value-desc" },
   });
-  expect(order()).toEqual(["Apple", "宽基基金"]);
+  expect(order()).toEqual(["宽基基金", "Apple"]);
   expect(portfolioApi.updateHoldingAmount).not.toHaveBeenCalled();
   expect(portfolioApi.updateHolding).not.toHaveBeenCalled();
 });
 
-it("displays sorted positions in all filters and reorders after values or trade dates change", async () => {
+it("sorts within currency groups and reorders after values or trade dates change", async () => {
   const holdings = [
     { ...emptyHolding(), id: "old", name: "较早清仓", quantity: 0 },
     {
@@ -182,11 +202,9 @@ it("displays sorted positions in all filters and reorders after values or trade 
       view.container.querySelectorAll(".investment-assets .asset-name strong"),
     ).map((el) => el.textContent);
   await screen.findByLabelText("投资持仓概览");
-  expect(order()).toEqual(["大额持仓", "小额持仓", "近期清仓", "较早清仓"]);
-  fireEvent.click(screen.getByRole("button", { name: "未清仓 2" }));
   expect(order()).toEqual(["大额持仓", "小额持仓"]);
-  fireEvent.click(screen.getByRole("button", { name: "已清仓 2" }));
-  expect(order()).toEqual(["近期清仓", "较早清仓"]);
+  fireEvent.click(screen.getByRole("button", { name: "展开已清仓 2" }));
+  expect(order()).toEqual(["大额持仓", "小额持仓", "近期清仓", "较早清仓"]);
   view.rerender(
     <MyFacts
       snapshot={{
@@ -202,12 +220,12 @@ it("displays sorted positions in all filters and reorders after values or trade 
       flash={vi.fn()}
     />,
   );
-  expect(order()).toEqual(["较早清仓", "近期清仓"]);
-  fireEvent.click(screen.getByRole("button", { name: "全部 4" }));
   expect(order()).toEqual(["小额持仓", "大额持仓", "较早清仓", "近期清仓"]);
+  fireEvent.click(screen.getByRole("button", { name: "收起已清仓 2" }));
+  expect(order()).toEqual(["小额持仓", "大额持仓"]);
 });
 
-it("filters closed positions without changing the full portfolio overview", async () => {
+it("hides closed positions until expanded without changing the full portfolio overview", async () => {
   const closed = {
     ...emptyHolding(),
     id: "closed",
@@ -226,23 +244,39 @@ it("filters closed positions without changing the full portfolio overview", asyn
   const view = mount({
     ...snapshot,
     holdings: [closed, open],
+    accounting: {
+      ...snapshot.accounting!,
+      investments: {
+        ...snapshot.accounting!.investments,
+        realized: { value: "1190", missing: 0 },
+      },
+    },
     holdingTradeSummaries: {
       closed: { settledProfit: "1190" } as HoldingTradeSummary,
     },
   });
   await screen.findByLabelText("投资持仓概览");
-  fireEvent.click(screen.getByRole("button", { name: "未清仓 1" }));
   expect(screen.queryByRole("button", { name: "编辑 中国银行" })).toBeNull();
   expect(screen.getByRole("button", { name: "编辑 持有基金" })).toBeTruthy();
   expect(screen.getByLabelText("投资持仓概览").textContent).toContain(
     `+${formatMoney(1190)}`,
   );
-  fireEvent.click(screen.getByRole("button", { name: "已清仓 1" }));
-  expect(screen.queryByRole("button", { name: "编辑 持有基金" })).toBeNull();
-  expect(screen.getByRole("button", { name: "编辑 中国银行" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "全部 2" }));
+  const overview = screen.getByLabelText("投资持仓概览").textContent;
+  fireEvent.click(screen.getByRole("button", { name: "展开已清仓 1" }));
   expect(screen.getByRole("button", { name: "编辑 持有基金" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "已清仓 1" }));
+  expect(screen.getByLabelText("投资持仓概览").textContent).toBe(overview);
+  expect(screen.getByRole("button", { name: "编辑 中国银行" })).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "收起已清仓 1" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "收起已清仓 1" }));
+  fireEvent.change(screen.getByRole("searchbox", { name: "搜索持仓" }), {
+    target: { value: "中国银行" },
+  });
+  expect(screen.queryByRole("button", { name: "编辑 中国银行" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
   view.rerender(
     <MyFacts
       snapshot={{
@@ -257,14 +291,29 @@ it("filters closed positions without changing the full portfolio overview", asyn
     />,
   );
   expect(
-    screen.getByRole("button", { name: "全部 2" }).getAttribute("aria-pressed"),
-  ).toBe("true");
-  expect(
-    (screen.getByRole("button", { name: "已清仓 0" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
+    screen.queryByRole("button", { name: /展开已清仓|收起已清仓/ }),
+  ).toBeNull();
   expect(screen.getByRole("button", { name: "编辑 中国银行" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "编辑 持有基金" })).toBeTruthy();
+  view.rerender(
+    <MyFacts
+      snapshot={{
+        ...snapshot,
+        holdings: [closed],
+        holdingTradeSummaries: {
+          closed: { settledProfit: "1190" } as HoldingTradeSummary,
+        },
+      }}
+      onUpdate={vi.fn()}
+      flash={vi.fn()}
+    />,
+  );
+  expect(screen.queryByRole("button", { name: "编辑 中国银行" })).toBeNull();
+  expect(
+    screen.getByText("暂无未清仓持仓，可点击上方展开已清仓持仓。"),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "展开已清仓 1" }));
+  expect(screen.getByRole("button", { name: "编辑 中国银行" })).toBeTruthy();
 });
 
 it("prioritizes holdings and keeps asset history below without reserving space for exchange rates", async () => {

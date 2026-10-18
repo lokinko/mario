@@ -58,9 +58,7 @@ export function MyFacts({
   };
   const selectedRaw = snapshot.holdings.find((item) => item.id === selectedId);
   const selected = selectedRaw ? exactHolding(selectedRaw) : undefined;
-  const [positionFilter, setPositionFilter] = useState<
-    "all" | "open" | "closed"
-  >("all");
+  const [showClosed, setShowClosed] = useState(false);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"value-desc" | "value-asc" | "name">(
     "value-desc",
@@ -106,22 +104,28 @@ export function MyFacts({
   const closedInvestments = investments.filter((item) =>
     isClosedHolding(item, Boolean(snapshot.holdingTradeSummaries?.[item.id])),
   );
-  const effectivePositionFilter = closedInvestments.length
-    ? positionFilter
-    : "all";
   const visibleInvestments = investments.filter((item) => {
     const closed = isClosedHolding(
       item,
       Boolean(snapshot.holdingTradeSummaries?.[item.id]),
     );
     return (
-      (effectivePositionFilter === "all" ||
-        (effectivePositionFilter === "closed" ? closed : !closed)) &&
+      (showClosed || !closed) &&
       `${item.name} ${item.symbol} ${item.assetClass} ${item.currency}`
         .toLocaleLowerCase()
         .includes(search.trim().toLocaleLowerCase())
     );
   });
+  const currencyGroups = Array.from(
+    new Set(visibleInvestments.map((item) => item.currency)),
+  )
+    .sort((a, b) =>
+      a === currency ? -1 : b === currency ? 1 : a.localeCompare(b),
+    )
+    .map((code) => ({
+      currency: code,
+      holdings: visibleInvestments.filter((item) => item.currency === code),
+    }));
   const validIncome =
     [
       profile.monthlyIncome,
@@ -313,6 +317,42 @@ export function MyFacts({
       )}
     </div>
   );
+  const renderAssetRow = (item: Holding) => {
+    const tradeSummary = snapshot.holdingTradeSummaries?.[item.id];
+    return (
+      <div key={item.id || item.currency} className="facts-asset-entry">
+        <AssetAmountRow
+          holding={exactHolding(item)}
+          exact={snapshot.accounting?.holdings[item.id]}
+          realizedPnl={tradeSummary?.settledProfit}
+          onOpen={() => {
+            if (item.assetClass === "现金") {
+              cashRevision.current = snapshot.holdingRevisions?.[item.id] ?? "";
+              setAssetAmount(
+                snapshot.cashBalances?.find((b) => b.holdingId === item.id)
+                  ?.amount ?? String(item.marketValue),
+              );
+              setEditing(exactHolding(item));
+              setError("");
+            } else setSelectedId(item.id);
+          }}
+          disabled={busy}
+          canDelete={item.assetClass !== "现金"}
+          onDelete={() => void removeAsset(item)}
+          onEdit={() => {
+            cashRevision.current = snapshot.holdingRevisions?.[item.id] ?? "";
+            setAssetAmount(
+              snapshot.cashBalances?.find((b) => b.holdingId === item.id)
+                ?.amount ?? String(item.marketValue),
+            );
+            setAssetCost(item.costBasis > 0 ? String(item.costBasis) : "");
+            setEditing(exactHolding(item));
+            setError("");
+          }}
+        />
+      </div>
+    );
+  };
   return (
     <div className="page narrow facts-page">
       <PageHeader
@@ -417,7 +457,6 @@ export function MyFacts({
       {section !== "income" && (
         <InvestmentOverview
           holdings={section === "holdings" ? investments : cash}
-          summaries={snapshot.holdingTradeSummaries}
           accounting={snapshot.accounting}
           baseCurrency={currency}
           cash={section === "savings"}
@@ -601,8 +640,8 @@ export function MyFacts({
           {section === "holdings" && investments.length > 0 && (
             <p className="sr-only" id="holdings-sort-help">
               {sort === "name"
-                ? "按名称排列 · 已清仓列于末尾"
-                : `按折合 ${currency} 市值${sort === "value-asc" ? "从低到高" : "从高到低"}排列 · 已清仓按最近交易排列`}
+                ? "按币种分组，组内按名称排列 · 已清仓默认收起"
+                : `按币种分组，组内按折合 ${currency} 市值${sort === "value-asc" ? "从低到高" : "从高到低"}排列 · 已清仓默认收起，展开后按最近交易排列`}
               {sort !== "name" &&
                 investments.some(
                   (item) =>
@@ -618,32 +657,17 @@ export function MyFacts({
           )}
           {section === "holdings" && investments.length > 0 && (
             <div className="holdings-toolbar" data-presentation="true">
-              <div
-                className="position-filters"
-                role="group"
-                aria-label="持仓状态筛选"
-              >
-                {(
-                  [
-                    ["all", "全部", investments.length],
-                    [
-                      "open",
-                      "未清仓",
-                      investments.length - closedInvestments.length,
-                    ],
-                    ["closed", "已清仓", closedInvestments.length],
-                  ] as const
-                ).map(([id, label, count]) => (
+              <div className="position-filters">
+                <span>按币种分组</span>
+                {closedInvestments.length > 0 && (
                   <button
-                    key={id}
-                    disabled={count === 0}
-                    aria-pressed={effectivePositionFilter === id}
-                    onClick={() => setPositionFilter(id)}
+                    aria-expanded={showClosed}
+                    onClick={() => setShowClosed((value) => !value)}
                   >
-                    {label}
-                    <span>{count}</span>
+                    {showClosed ? "收起已清仓" : "展开已清仓"}
+                    <span>{closedInvestments.length}</span>
                   </button>
-                ))}
+                )}
               </div>
               <div className="holdings-tools">
                 <label className="holdings-search">
@@ -675,7 +699,7 @@ export function MyFacts({
             className={`facts-assets${section === "holdings" ? " investment-assets" : ""}`}
             role="table"
             aria-label={section === "holdings" ? "持仓列表" : "现金列表"}
-            aria-colcount={section === "holdings" ? 6 : 3}
+            aria-colcount={section === "holdings" ? 7 : 3}
           >
             {section === "holdings" && investments.length > 0 && (
               <div role="row" className="holdings-list-header">
@@ -685,6 +709,7 @@ export function MyFacts({
                   "现价 / 成本价",
                   "当前市值",
                   "浮动盈亏",
+                  "已结算收益",
                   "操作",
                 ].map((label) => (
                   <span role="columnheader" key={label}>
@@ -702,83 +727,49 @@ export function MyFacts({
                 ))}
               </div>
             )}
-            {(section === "savings" ? cashRows : visibleInvestments).map(
-              (item) => {
-                const tradeSummary = snapshot.holdingTradeSummaries?.[item.id];
-                return (
-                  <div
-                    key={item.id || item.currency}
-                    className="facts-asset-entry"
-                    role="rowgroup"
-                  >
-                    <AssetAmountRow
-                      holding={exactHolding(item)}
-                      exact={snapshot.accounting?.holdings[item.id]}
-                      realizedPnl={
-                        tradeSummary
-                          ? Number(tradeSummary.settledProfit)
-                          : undefined
-                      }
-                      onOpen={() => {
-                        if (item.assetClass === "现金") {
-                          cashRevision.current =
-                            snapshot.holdingRevisions?.[item.id] ?? "";
-                          setAssetAmount(
-                            snapshot.cashBalances?.find(
-                              (b) => b.holdingId === item.id,
-                            )?.amount ?? String(item.marketValue),
-                          );
-                          setEditing(exactHolding(item));
-                          setError("");
-                        } else setSelectedId(item.id);
-                      }}
-                      disabled={busy}
-                      canDelete={item.assetClass !== "现金"}
-                      onDelete={() => void removeAsset(item)}
-                      onEdit={() => {
-                        cashRevision.current =
-                          snapshot.holdingRevisions?.[item.id] ?? "";
-                        setAssetAmount(
-                          snapshot.cashBalances?.find(
-                            (b) => b.holdingId === item.id,
-                          )?.amount ?? String(item.marketValue),
-                        );
-                        setAssetCost(
-                          item.costBasis > 0 ? String(item.costBasis) : "",
-                        );
-                        setEditing(exactHolding(item));
-                        setError("");
-                      }}
-                    />
+            {section === "savings" ? (
+              <div role="rowgroup">{cashRows.map(renderAssetRow)}</div>
+            ) : (
+              currencyGroups.map((group) => (
+                <div
+                  role="rowgroup"
+                  aria-label={group.currency + " 持仓"}
+                  key={group.currency}
+                >
+                  <div role="row" className="holdings-currency-header">
+                    <div role="cell" aria-colspan={7}>
+                      <strong>{group.currency}</strong>
+                      <span>{group.holdings.length} 项持仓</span>
+                    </div>
                   </div>
-                );
-              },
+                  {group.holdings.map(renderAssetRow)}
+                </div>
+              ))
             )}
             {section === "holdings" &&
               investments.length > 0 &&
               visibleInvestments.length === 0 && (
                 <div className="empty-state" role="row">
-                  <div role="cell" aria-colspan={6}>
+                  <div role="cell" aria-colspan={7}>
                     <p>
                       {search.trim()
                         ? "没有找到匹配的持仓。"
-                        : "当前筛选下没有持仓。"}
+                        : "暂无未清仓持仓，可点击上方展开已清仓持仓。"}
                     </p>
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        setSearch("");
-                        setPositionFilter("all");
-                      }}
-                    >
-                      清除筛选
-                    </button>
+                    {search.trim() && (
+                      <button
+                        className="text-button"
+                        onClick={() => setSearch("")}
+                      >
+                        清除筛选
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
             {section === "holdings" && investments.length === 0 && (
               <div role="row">
-                <div role="cell" aria-colspan={6}>
+                <div role="cell" aria-colspan={7}>
                   <p className="empty">暂无资产，点击上方添加。</p>
                 </div>
               </div>

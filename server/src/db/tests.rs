@@ -223,16 +223,7 @@ fn current_backup_round_trip_preserves_data_and_excludes_private_settings() {
         .unwrap();
     source
         .add_research_evidence(&ResearchEvidenceInput {
-            asset_name: "资产".into(),
-            title: "资料".into(),
-            publisher: "来源".into(),
-            source_url: "https://example.com/source".into(),
-            source_tier: "一手来源".into(),
-            evidence_type: "数据发布".into(),
-            stance: "支持".into(),
-            as_of_date: "2026-01-01".into(),
-            claim: "待核对资料".into(),
-            notes: "原文".into(),
+            content: "待核对资料\n来源：https://example.com/source\n原文".into(),
             ..Default::default()
         })
         .unwrap();
@@ -594,7 +585,7 @@ fn trade_managed_codes_can_be_corrected_cleared_and_filled_without_changing_trad
             "currency": "USD"
         },
         "kind": "buy", "occurredOn": "2026-09-05",
-        "sequence": 1, "quantity": "10", "price": "100", "grossAmount": "1000", "fees": "2", "taxes": "0", "account": "券商"
+        "sequence": 1, "quantity": "10", "price": "100", "grossAmount": "1000", "fees": "2", "taxes": "0", "account": "券商", "settlementMode":"settle"
     }))
     .unwrap();
     super::cash::fund(&db, "USD");
@@ -1161,14 +1152,7 @@ fn system_review_freezes_portfolio_and_method_snapshot() {
     .unwrap();
     let review = db
         .save_system_review(&SystemReviewInput {
-            content: None,
-            period_label: "2026 Q3".into(),
-            adherence_score: Some(4),
-            process_summary: "按计划定投，没有追涨".into(),
-            rule_violations: "无".into(),
-            lessons: "继续降低无效交易".into(),
-            next_actions: "下季度检查再平衡".into(),
-            next_review_date: "2026-12-31".into(),
+            content: "按计划定投，没有追涨。继续降低无效交易，下季度检查再平衡。".into(),
         })
         .unwrap();
     let holding_id = db.snapshot().unwrap().holdings[0].id.clone();
@@ -1207,18 +1191,8 @@ fn stores_immutable_research_evidence_and_allows_archiving() {
     let db = Database::open(&dir.path().join("test.db")).unwrap();
     let created = db
         .add_research_evidence(&ResearchEvidenceInput {
-            attachments: Vec::new(),
-            content: None,
-            asset_name: "全球指数".into(),
-            title: "基金年度报告".into(),
-            publisher: "基金管理人".into(),
-            source_url: "https://example.com/annual-report".into(),
-            source_tier: "一手来源".into(),
-            evidence_type: "公司披露".into(),
-            stance: "背景".into(),
-            as_of_date: "2026-06-30".into(),
-            claim: "报告披露了费用与跟踪误差".into(),
-            notes: "复核费用变化".into(),
+            content: "基金年度报告：报告披露了费用与跟踪误差\n复核费用变化".into(),
+            ..Default::default()
         })
         .unwrap();
     let archived = db.set_research_evidence_status(&created.id, false).unwrap();
@@ -1229,24 +1203,37 @@ fn stores_immutable_research_evidence_and_allows_archiving() {
 }
 
 #[test]
-fn rejects_non_https_research_sources() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
-    let result = db.add_research_evidence(&ResearchEvidenceInput {
-        attachments: Vec::new(),
-        content: None,
-        asset_name: "指数".into(),
-        title: "未知资料".into(),
-        publisher: "未知".into(),
-        source_url: "http://example.com/report".into(),
-        source_tier: "媒体报道".into(),
-        evidence_type: "新闻".into(),
-        stance: "支持".into(),
-        as_of_date: "2026-06-30".into(),
-        claim: "未经验证的摘要".into(),
-        notes: String::new(),
-    });
-    assert!(matches!(result, Err(AppError::Validation(_))));
+fn reads_frozen_structured_reviews_after_retiring_the_old_write_format() {
+    let db = Database::open(Path::new(":memory:")).unwrap();
+    db.conn().unwrap().execute(
+        "INSERT INTO system_reviews(id,payload,snapshot,next_review_date,created_at) VALUES (?1,?2,?3,?4,?5)",
+        params!["old-review", r#"{"periodLabel":"2026 Q3","adherenceScore":4,"processSummary":"原始过程","lessons":"原始经验","nextReviewDate":"2026-12-31"}"#,
+            r#"{"portfolioValue":100,"emergencyMonths":3,"concentrationPct":0,"riskStatus":"ready","highRiskFindings":0,"activeRules":0}"#,
+            "2026-12-31", "2026-09-30T00:00:00Z"]
+    ).unwrap();
+    let stored = db.system_reviews().unwrap().remove(0);
+    assert_eq!(stored.content, None);
+    assert_eq!(stored.period_label, "2026 Q3");
+    assert_eq!(stored.process_summary, "原始过程");
+    assert_eq!(stored.lessons, "原始经验");
+    assert_eq!(stored.adherence_score, Some(4));
+    assert_eq!(stored.snapshot.portfolio_value, 100.0);
+}
+
+#[test]
+fn rejects_retired_structured_write_formats() {
+    assert!(
+        serde_json::from_value::<ResearchEvidenceInput>(serde_json::json!({
+            "assetName":"指数", "claim":"旧表单"
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<SystemReviewInput>(serde_json::json!({
+            "periodLabel":"旧周期", "processSummary":"旧复盘"
+        }))
+        .is_err()
+    );
 }
 
 fn detailed_holding_input() -> HoldingInput {

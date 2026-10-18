@@ -538,11 +538,6 @@ impl SyncDataset {
         Ok(crate::hash_bytes(&serde_json::to_vec(&self.tables)?))
     }
 
-    #[cfg(test)]
-    pub fn record_count(&self) -> usize {
-        self.tables.iter().map(|table| table.rows.len()).sum()
-    }
-
     pub fn validate(&self) -> AppResult<()> {
         let specs = sync_specs_for_version(self.schema_version)?;
         chrono::DateTime::parse_from_rfc3339(&self.exported_at)

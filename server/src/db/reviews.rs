@@ -4,6 +4,19 @@ use super::{
     SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot, Utc, Uuid,
 };
 
+#[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct StoredSystemReview {
+    content: Option<String>,
+    period_label: String,
+    adherence_score: Option<i64>,
+    process_summary: String,
+    rule_violations: String,
+    lessons: String,
+    next_actions: String,
+    next_review_date: String,
+}
+
 impl Database {
     pub fn investment_rules(&self) -> AppResult<Vec<InvestmentRule>> {
         let conn = self.conn()?;
@@ -171,47 +184,23 @@ impl Database {
         };
         let record = SystemReviewRecord {
             id,
-            content: input.content.clone(),
-            period_label: input.period_label.trim().into(),
-            adherence_score: input.adherence_score,
-            process_summary: input.process_summary.trim().into(),
-            rule_violations: input.rule_violations.trim().into(),
-            lessons: input.lessons.trim().into(),
-            next_actions: input.next_actions.trim().into(),
-            next_review_date: input.next_review_date.clone(),
+            content: Some(input.content.clone()),
+            period_label: String::new(),
+            adherence_score: None,
+            process_summary: String::new(),
+            rule_violations: String::new(),
+            lessons: String::new(),
+            next_actions: String::new(),
+            next_review_date: String::new(),
             snapshot,
             created_at,
-        };
-        let record = if input.content.is_some() {
-            SystemReviewRecord {
-                period_label: String::new(),
-                adherence_score: None,
-                process_summary: String::new(),
-                rule_violations: String::new(),
-                lessons: String::new(),
-                next_actions: String::new(),
-                next_review_date: String::new(),
-                ..record
-            }
-        } else {
-            record
-        };
-        let normalized_input = SystemReviewInput {
-            content: record.content.clone(),
-            period_label: record.period_label.clone(),
-            adherence_score: record.adherence_score,
-            process_summary: record.process_summary.clone(),
-            rule_violations: record.rule_violations.clone(),
-            lessons: record.lessons.clone(),
-            next_actions: record.next_actions.clone(),
-            next_review_date: record.next_review_date.clone(),
         };
         self.conn()?.execute(
             "INSERT INTO system_reviews (id, payload, snapshot, next_review_date, created_at)
              VALUES (?1,?2,?3,?4,?5)",
             params![
                 record.id,
-                serde_json::to_string(&normalized_input)?,
+                serde_json::to_string(input)?,
                 serde_json::to_string(&record.snapshot)?,
                 record.next_review_date,
                 record.created_at
@@ -237,7 +226,7 @@ impl Database {
         let mut reviews = Vec::new();
         for row in rows {
             let (id, payload, snapshot, created_at) = row?;
-            let input: SystemReviewInput = serde_json::from_str(&payload)?;
+            let input: StoredSystemReview = serde_json::from_str(&payload)?;
             reviews.push(SystemReviewRecord {
                 id,
                 content: input.content,

@@ -8,11 +8,11 @@ export const analysisSettings: AnalysisSettings = {
   contextSelection: {
     includeProfile: true,
     includeHoldings: true,
-    includePlanning: true,
-    includeRiskFindings: true,
-    includeRules: true,
-    includeSystemReviews: true,
-    includeDailyAssets: true,
+    includePlanning: false,
+    includeRiskFindings: false,
+    includeRules: false,
+    includeSystemReviews: false,
+    includeDailyAssets: false,
     includeEvidence: true,
   },
 };

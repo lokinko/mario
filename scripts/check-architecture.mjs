@@ -194,7 +194,7 @@ export function checkArchitecture() {
   }
   const serverRoot = resolve(root, 'server/src');
   const known = new Set([...readFileSync(resolve(serverRoot, 'lib.rs'), 'utf8').matchAll(/^mod (\w+);/gm)].map(m => m[1]));
-  for (const path of files(serverRoot, /\.rs$/).filter(path => !/(?:^|[\\/])(?:tests|postgres_tests|sync_merge)\.rs$/.test(path))) {
+  for (const path of files(serverRoot, /\.rs$/).filter(path => !/(?:^|[\\/])(?:tests|postgres_tests)\.rs$/.test(path))) {
     const name = posix(relative(serverRoot, path)), owner = name.split('/')[0].replace(/\.rs$/, '');
     if (!known.has(owner)) continue;
     const source = readFileSync(path, 'utf8'), code = productionRust(source);

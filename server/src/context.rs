@@ -401,7 +401,7 @@ mod tests {
         let preview = ContextBuilder::preview(
             &request,
             ContextBuilder::build(&request, &snapshot(), &ContextSources::default()),
-            "openai-compatible".into(),
+            "openai-responses".into(),
             "test-model".into(),
             Vec::new(),
         );

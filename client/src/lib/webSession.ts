@@ -29,17 +29,6 @@ export function savedWebAccounts(): WebAccount[] {
   } catch {
     /* Ignore damaged account storage. */
   }
-  // Include a session saved by an older build, even without an email label.
-  try {
-    const current: unknown = JSON.parse(localStorage.getItem(key()) ?? "null");
-    if (
-      validAccount(current) &&
-      !accounts.some((account) => account.token === current.token)
-    )
-      accounts.push(current);
-  } catch {
-    /* webToken handles a damaged active session. */
-  }
   return accounts;
 }
 
@@ -69,10 +58,7 @@ export function webToken(): string | undefined {
     setWebToken();
     return undefined;
   }
-  // Preserve a login from an older build. The server still checks its original expiry.
-  const legacy = sessionStorage.getItem(key()) ?? undefined;
-  if (legacy) setWebToken(legacy);
-  return legacy;
+  return undefined;
 }
 export function setWebToken(
   token?: string,

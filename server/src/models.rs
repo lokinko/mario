@@ -378,15 +378,12 @@ pub struct HoldingTradeInput {
     pub external_id: String,
     #[serde(default)]
     pub note: String,
-    #[serde(default)]
     pub settlement_mode: SettlementMode,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SettlementMode {
-    #[default]
-    Auto,
     History,
     Settle,
 }
@@ -429,7 +426,6 @@ pub struct HoldingTradeUpdateInput {
     pub external_id: String,
     #[serde(default)]
     pub note: String,
-    #[serde(default)]
     pub settlement_mode: SettlementMode,
 }
 
@@ -557,7 +553,14 @@ impl Default for AnalysisSettings {
             reflect: true,
             explore_alternatives: true,
             web_search: true,
-            context_selection: ContextSelection::default(),
+            context_selection: ContextSelection {
+                include_planning: false,
+                include_risk_findings: false,
+                include_rules: false,
+                include_system_reviews: false,
+                include_daily_assets: false,
+                ..ContextSelection::default()
+            },
         }
     }
 }
@@ -873,24 +876,9 @@ pub struct InvestmentRuleRevision {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SystemReviewInput {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(default)]
-    pub period_label: String,
-    #[serde(default)]
-    pub adherence_score: Option<i64>,
-    #[serde(default)]
-    pub process_summary: String,
-    #[serde(default)]
-    pub rule_violations: String,
-    #[serde(default)]
-    pub lessons: String,
-    #[serde(default)]
-    pub next_actions: String,
-    #[serde(default)]
-    pub next_review_date: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -926,20 +914,10 @@ pub struct SystemReviewRecord {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct ResearchEvidenceInput {
-    pub content: Option<String>,
+    pub content: String,
     pub attachments: Vec<ResearchAttachmentInput>,
-    pub asset_name: String,
-    pub title: String,
-    pub publisher: String,
-    pub source_url: String,
-    pub source_tier: String,
-    pub evidence_type: String,
-    pub stance: String,
-    pub as_of_date: String,
-    pub claim: String,
-    pub notes: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

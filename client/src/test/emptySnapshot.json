@@ -42,5 +42,45 @@
     "rebalancing": [],
     "assumptions": "基于当前资产类别的长期示例假设，执行 2000 次可重复模拟；不含税费、通胀、资产相关性突变和未来收入变化，不是收益预测。"
   },
-  "updatedAt": "2026-09-09T13:27:16.676237+00:00"
+  "updatedAt": "2026-09-09T13:27:16.676237+00:00",
+  "accounting": {
+    "totalValue": "0",
+    "holdings": {},
+    "investments": {
+      "value": {
+        "value": "0",
+        "missing": 0
+      },
+      "cost": {
+        "value": "0",
+        "missing": 0
+      },
+      "unrealized": {
+        "value": "0",
+        "missing": 0
+      },
+      "realized": {
+        "value": "0",
+        "missing": 0
+      }
+    },
+    "cash": {
+      "value": {
+        "value": "0",
+        "missing": 0
+      },
+      "cost": {
+        "value": "0",
+        "missing": 0
+      },
+      "unrealized": {
+        "value": "0",
+        "missing": 0
+      },
+      "realized": {
+        "value": "0",
+        "missing": 0
+      }
+    }
+  }
 }

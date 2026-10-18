@@ -48,14 +48,13 @@ async function request(base,path,session,method='GET',body,expected=200,revision
   const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json',...(session?{Authorization:`Bearer ${session.token}`} : {}),...(revision?{'If-Match':revision}:{})},body:body===undefined?undefined:JSON.stringify(body)});
   const text=await response.text(); assert.equal(response.status,expected,`${method} ${path}: ${text}`);assertions++;
   if(session&&response.ok&&response.headers.get('x-data-revision')) session.revision=response.headers.get('x-data-revision');
-  return text?JSON.parse(text):undefined;
+  return text?(response.headers.get("content-type")?.includes("application/json")?JSON.parse(text):text):undefined;
 }
 async function register(base){return request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'test-password-0123456789'});}
 try{
   const base=await start(), replica=await start();
   await request(base,'/snapshot',null,'GET',undefined,401);
-  const legacy=await request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'test-password-0123456789',registrationKey:'obsolete'});
-  assert(legacy.token);
+  await request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'test-password-0123456789',registrationKey:'obsolete'},422);
   await request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'short'},400);
   const a=await register(base),b=await register(base);
   const first=await request(base,'/snapshot',a); assert.equal(first.holdings.length,0);

@@ -21,15 +21,12 @@ const configure = () => {
   vi.stubEnv("BASE_URL", "/mario/");
 };
 
-it("migrates an existing tab session and restores it after reloading the module", async () => {
+it("restores the current session after reloading the module", async () => {
   configure();
-  sessionStorage.setItem("mario.session:/mario/api", "legacy-token");
-  expect(webToken()).toBe("legacy-token");
-  expect(sessionStorage.getItem("mario.session:/mario/api")).toBeNull();
-  sessionStorage.clear();
+  setWebToken("current-token");
   vi.resetModules();
   const reloaded = await import("./webSession");
-  expect(reloaded.webToken()).toBe("legacy-token");
+  expect(reloaded.webToken()).toBe("current-token");
   reloaded.setWebToken();
   expect(reloaded.webToken()).toBeUndefined();
 });
@@ -86,18 +83,6 @@ it("switches between saved accounts across reloads without extending their expir
     "token",
     "userId",
   ]);
-});
-
-it("preserves an older active session when adding another account", () => {
-  configure();
-  const expiresAt = Math.floor(Date.now() / 1000) + 3600;
-  localStorage.setItem(
-    "mario.session:/mario/api",
-    JSON.stringify({ token: "legacy-active", expiresAt }),
-  );
-  setWebToken("account-b", expiresAt, { email: "b@example.test" });
-  expect(switchWebAccount("legacy-active")).toBe(true);
-  expect(webToken()).toBe("legacy-active");
 });
 
 it("forgets only the logged-out account, including a late logout of an inactive account", () => {

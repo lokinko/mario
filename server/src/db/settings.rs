@@ -3,9 +3,11 @@ use crate::models::AnalysisSettings;
 
 impl Database {
     pub fn analysis_settings(&self) -> AppResult<AnalysisSettings> {
-        self.setting("analysis.settings")?
+        let settings = self
+            .setting("analysis.settings")?
             .map(|value| serde_json::from_str(&value).map_err(AppError::from))
-            .unwrap_or_else(|| Ok(AnalysisSettings::default()))
+            .unwrap_or_else(|| Ok(AnalysisSettings::default()))?;
+        Ok(normalize_analysis_settings(settings))
     }
 
     pub fn save_analysis_settings(
@@ -13,8 +15,9 @@ impl Database {
         settings: AnalysisSettings,
     ) -> AppResult<AnalysisSettings> {
         if !matches!(settings.workflow.as_str(), "quick" | "deep") {
-            return Err(AppError::Validation("请选择快速或深度分析".into()));
+            return Err(AppError::Validation("分析方式无效".into()));
         }
+        let settings = normalize_analysis_settings(settings);
         self.set_setting("analysis.settings", &serde_json::to_string(&settings)?)?;
         Ok(settings)
     }
@@ -55,10 +58,7 @@ impl Database {
                 .unwrap_or_else(|| fallback.into()))
         };
         Ok(ModelConfig {
-            provider: match value("model.provider", "openai-responses")?.as_str() {
-                "openai-compatible" => "openai-responses".into(),
-                other => other.into(),
-            },
+            provider: value("model.provider", "openai-responses")?,
             base_url: value("model.base_url", "https://api.openai.com/v1")?,
             model: value("model.name", "gpt-4.1-mini")?,
             has_api_key: if value("model.provider", "")? == "codex-bridge" {
@@ -79,12 +79,7 @@ impl Database {
     ) -> AppResult<()> {
         if !matches!(
             provider,
-            "openai-responses"
-                | "openai-chat"
-                | "anthropic"
-                | "openai-compatible"
-                | "codex"
-                | "codex-bridge"
+            "openai-responses" | "openai-chat" | "anthropic" | "codex" | "codex-bridge"
         ) {
             return Err(AppError::Validation(
                 "请选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或 Codex"
@@ -115,9 +110,64 @@ impl Database {
     }
 }
 
+// Keep legacy presets compatible while excluding data no longer offered in settings.
+fn normalize_analysis_settings(mut settings: AnalysisSettings) -> AnalysisSettings {
+    settings.workflow = "deep".into();
+    let selection = &mut settings.context_selection;
+    selection.include_planning = false;
+    selection.include_risk_findings = false;
+    selection.include_rules = false;
+    selection.include_system_reviews = false;
+    selection.include_daily_assets = false;
+    settings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_presets_only_keep_supported_data_and_use_deep_analysis() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("config.db")).unwrap();
+        let mut legacy = AnalysisSettings {
+            workflow: "quick".into(),
+            context_selection: crate::models::ContextSelection::default(),
+            ..AnalysisSettings::default()
+        };
+        legacy.context_selection.include_holdings = false;
+        db.set_setting(
+            "analysis.settings",
+            &serde_json::to_string(&legacy).unwrap(),
+        )
+        .unwrap();
+
+        let restored = db.analysis_settings().unwrap();
+        assert_eq!(restored.workflow, "deep");
+        assert!(restored.context_selection.include_profile);
+        assert!(!restored.context_selection.include_holdings);
+        assert!(restored.context_selection.include_evidence);
+        assert!(restored.reflect);
+        assert!(restored.explore_alternatives);
+        assert!(restored.web_search);
+        let selection = &restored.context_selection;
+        assert!(!selection.include_planning);
+        assert!(!selection.include_risk_findings);
+        assert!(!selection.include_rules);
+        assert!(!selection.include_system_reviews);
+        assert!(!selection.include_daily_assets);
+
+        // Older clients must not re-enable removed options when saving.
+        let saved = db.save_analysis_settings(legacy).unwrap();
+        let expected = serde_json::to_value(restored).unwrap();
+        assert_eq!(serde_json::to_value(saved).unwrap(), expected);
+        let persisted = db.setting("analysis.settings").unwrap().unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&persisted).unwrap(),
+            expected
+        );
+    }
+
     #[test]
     fn analysis_defaults_persist_across_restarts_and_reject_invalid_workflows() {
         let dir = tempfile::tempdir().unwrap();
@@ -142,14 +192,58 @@ mod tests {
     }
 
     #[test]
-    fn saves_both_native_protocols_and_reads_legacy_as_responses() {
+    fn opening_an_old_database_canonicalizes_provider_and_binds_credentials_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("legacy-model.db");
+        let db = Database::open(&path).unwrap();
+        db.set_setting("model.provider", "openai-compatible")
+            .unwrap();
+        db.set_setting("model.base_url", "https://models.example.test/v1/")
+            .unwrap();
+        db.set_setting("secret.model", "encrypted-credential-preserved")
+            .unwrap();
+        db.set_setting("trading.reset.old", "true").unwrap();
+        drop(db);
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.model_config().unwrap().provider, "openai-responses");
+        assert_eq!(
+            db.setting("model.key_binding").unwrap().as_deref(),
+            Some("openai-responses https://models.example.test/v1")
+        );
+        assert_eq!(
+            db.setting("secret.model").unwrap().as_deref(),
+            Some("encrypted-credential-preserved")
+        );
+        assert!(db.setting("trading.reset.old").unwrap().is_none());
+        db.set_setting(
+            "model.key_binding",
+            "openai-compatible https://original.example.test/v1",
+        )
+        .unwrap();
+        drop(db);
+        let db = Database::open(&path).unwrap();
+        assert_eq!(
+            db.setting("model.key_binding").unwrap().as_deref(),
+            Some("openai-responses https://original.example.test/v1")
+        );
+    }
+
+    #[test]
+    fn saves_current_native_protocols_and_rejects_retired_names() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("config.db")).unwrap();
         db.save_model_metadata("anthropic", "https://api.anthropic.com/v1", "claude-test")
             .unwrap();
         assert_eq!(db.model_config().unwrap().provider, "anthropic");
+        assert!(db
+            .save_model_metadata(
+                "openai-compatible",
+                "https://api.openai.com/v1",
+                "openai-test"
+            )
+            .is_err());
         db.save_model_metadata(
-            "openai-compatible",
+            "openai-responses",
             "https://api.openai.com/v1",
             "openai-test",
         )

@@ -131,55 +131,42 @@ impl Database {
             .iter()
             .map(crate::attachments::prepare)
             .collect::<AppResult<Vec<_>>>()?;
-        let mut evidence = ResearchEvidence {
-            attachments,
-            id: Uuid::new_v4().to_string(),
-            asset_name: input.asset_name.trim().into(),
-            title: input.title.trim().into(),
-            publisher: input.publisher.trim().into(),
-            source_url: input.source_url.trim().into(),
-            source_tier: input.source_tier.clone(),
-            evidence_type: input.evidence_type.clone(),
-            stance: input.stance.clone(),
-            as_of_date: input.as_of_date.clone(),
-            claim: input.claim.trim().into(),
-            notes: input.notes.trim().into(),
-            active: true,
-            captured_at: Utc::now().to_rfc3339(),
-        };
-        if input.content.is_some() || !input.attachments.is_empty() {
-            let content = input.content.as_deref().unwrap_or_default();
-            // Reuse the evidence storage and citation pipeline without inventing
-            // a publication date, URL, or verified source classification.
-            evidence.asset_name.clear();
-            evidence.title = content
-                .lines()
-                .find(|line| !line.trim().is_empty())
-                .unwrap_or_default()
-                .trim()
+        let mut title = input
+            .content
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or_default()
+            .trim()
+            .chars()
+            .take(80)
+            .collect::<String>();
+        if title.is_empty() {
+            title = input
+                .attachments
+                .iter()
+                .map(|file| file.name.as_str())
+                .collect::<Vec<_>>()
+                .join("、")
                 .chars()
                 .take(80)
                 .collect();
-            if evidence.title.is_empty() {
-                evidence.title = input
-                    .attachments
-                    .iter()
-                    .map(|file| file.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join("、")
-                    .chars()
-                    .take(80)
-                    .collect();
-            }
-            evidence.publisher = "用户保存的原始资料".into();
-            evidence.source_url.clear();
-            evidence.source_tier = "用户资料（待核实）".into();
-            evidence.evidence_type = "user_source_text".into();
-            evidence.stance = "背景".into();
-            evidence.as_of_date.clear();
-            evidence.claim = content.into();
-            evidence.notes.clear();
         }
+        let evidence = ResearchEvidence {
+            attachments,
+            id: Uuid::new_v4().to_string(),
+            asset_name: String::new(),
+            title,
+            publisher: "用户保存的原始资料".into(),
+            source_url: String::new(),
+            source_tier: "用户资料（待核实）".into(),
+            evidence_type: "user_source_text".into(),
+            stance: "背景".into(),
+            as_of_date: String::new(),
+            claim: input.content.clone(),
+            notes: String::new(),
+            active: true,
+            captured_at: Utc::now().to_rfc3339(),
+        };
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
         transaction.execute(

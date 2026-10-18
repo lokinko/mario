@@ -223,7 +223,7 @@ it("opens on holdings and preserves a question draft when returning from support
     emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
   vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
-    provider: "openai-compatible",
+    provider: "openai-responses",
     model: "test",
     baseUrl: "",
     hasApiKey: true,

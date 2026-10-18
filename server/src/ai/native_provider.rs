@@ -26,7 +26,7 @@ impl NativeModelProvider {
         api_key: String,
     ) -> AppResult<Self> {
         let protocol = match protocol.as_str() {
-            "openai-compatible" | "openai-responses" => "openai-responses",
+            "openai-responses" => "openai-responses",
             "openai-chat" => "openai-chat",
             "anthropic" => "anthropic",
             _ => {
@@ -339,7 +339,7 @@ impl UpstreamFailure {
                     )
                 })
                 .unwrap_or_default();
-            format!("{protocol} {reason}（HTTP 429，已请求 {attempts} 次）。{wait}请稍后再试；也可在问答预设中使用快速分析、减少联网查找，或检查服务商 API 额度与限额。")
+            format!("{protocol} {reason}（HTTP 429，已请求 {attempts} 次）。{wait}请稍后再试；也可在问答预设中减少联网查找，或检查服务商 API 额度与限额。")
         } else if self.status == 503 {
             format!("{protocol} 模型服务暂时繁忙（HTTP 503，已请求 {attempts} 次），请稍后重试。")
         } else {

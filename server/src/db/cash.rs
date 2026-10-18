@@ -138,7 +138,6 @@ pub(super) fn settle_trade(
     conn: &Connection,
     currency: &str,
     id: &str,
-    occurred_on: &str,
     flow: Option<Decimal>,
     mode: crate::models::SettlementMode,
     expected_baseline: &str,
@@ -208,14 +207,7 @@ pub(super) fn settle_trade(
     } else {
         match mode {
             crate::models::SettlementMode::History => Decimal::ZERO,
-            crate::models::SettlementMode::Auto
-                if state
-                    .as_ref()
-                    .is_some_and(|s| occurred_on <= s.confirmed_on.as_str()) =>
-            {
-                Decimal::ZERO
-            }
-            _ => cash_flow,
+            crate::models::SettlementMode::Settle => cash_flow,
         }
     };
     if (covered || (previous.is_some() && !included)) && original_flow != flow {
@@ -226,8 +218,7 @@ pub(super) fn settle_trade(
     }
     let delta = new - old;
     if previous.is_none()
-        && mode != crate::models::SettlementMode::History
-        && (mode == crate::models::SettlementMode::Settle || !new.is_zero())
+        && mode == crate::models::SettlementMode::Settle
         && (state.is_some() || new >= Decimal::ZERO)
         && state.as_ref().map_or("", |s| s.baseline_id.as_str()) != expected_baseline
     {
@@ -253,11 +244,7 @@ pub(super) fn settle_trade(
         && if previous.is_some() {
             included
         } else {
-            mode != crate::models::SettlementMode::History
-                && (mode == crate::models::SettlementMode::Settle
-                    || state
-                        .as_ref()
-                        .is_none_or(|s| occurred_on > s.confirmed_on.as_str()))
+            mode == crate::models::SettlementMode::Settle
         };
     conn.execute("INSERT INTO trade_settlements(trade_id,currency,amount,baseline_id,included) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(trade_id) DO UPDATE SET amount=excluded.amount,baseline_id=excluded.baseline_id,included=excluded.included",params![id,currency,new.normalize().to_string(),baseline,i64::from(included)])?;
     Ok(delta)

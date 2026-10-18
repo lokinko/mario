@@ -391,9 +391,8 @@ impl Database {
             &tx,
             &h.currency,
             id,
-            &trade.occurred_on,
             None,
-            crate::models::SettlementMode::Auto,
+            crate::models::SettlementMode::History,
             "",
         )?;
         super::financial::journal(
@@ -618,7 +617,6 @@ impl Database {
             &tx,
             &h.currency,
             &trade.id,
-            &trade.occurred_on,
             Some(Decimal::from_str_exact(&summary.cash_flows[&trade.id]).unwrap()),
             input.settlement_mode,
             &input.expected_cash_baseline,
@@ -650,10 +648,6 @@ impl Database {
         tx.execute("INSERT INTO holding_trades(id,holding_id,payload,created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
             params![trade.id,h.id,serde_json::to_string(&trade)?,trade.created_at])?;
         rebuild(&tx, &h, &summary)?;
-        tx.execute(
-            "DELETE FROM settings WHERE key=?1",
-            [format!("trading.reset.{}", h.id)],
-        )?;
         super::daily::finish(&tx, &before, None)?;
         let snapshot = super::financial::complete(&tx, &operation)?;
         tx.commit()?;
@@ -1210,7 +1204,7 @@ mod tests {
         serde_json::from_value(serde_json::json!({
             "expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,
             "quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":t.fees,"taxes":t.taxes,
-            "account":t.account,"externalId":t.external_id,"note":t.note
+            "account":t.account,"externalId":t.external_id,"note":t.note,"settlementMode":"history"
         })).unwrap()
     }
     #[test]

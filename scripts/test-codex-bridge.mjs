@@ -74,6 +74,7 @@ try {
   const { pairingCode } = await request('/codex-bridge', 'POST');
   await request('/codex-bridge/worker/poll', 'POST', { runner:randomUUID(), model:'fixture' }, auth, 401);
   await request('/model-config', 'GET', undefined, pairingCode, 401);
+  await request('/codex-bridge/worker/poll', 'POST', { runner:randomUUID(), model:'retired-worker' }, pairingCode, 400);
   assert.equal((await request('/codex-bridge')).online, false);
   await request('/codex-bridge/enable', 'POST', undefined, auth, 400);
   if (live || protocolFixture) {

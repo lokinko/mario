@@ -351,7 +351,7 @@ it("edits the original record and freezes its revision across a background refre
   await waitFor(() => expect(onUpdate).toHaveBeenCalled());
   expect(portfolioApi.updateHoldingTrade).toHaveBeenNthCalledWith(2, buy.id, {
     expectedRevision: "initial",
-    settlementMode: "auto",
+    settlementMode: "history",
     kind: "buy",
     occurredOn: buy.occurredOn,
     sequence: 1,
@@ -429,11 +429,24 @@ it("shows authoritative sell profits and dividends in the holding overview and d
     dividendIncome: "16",
     settledProfit: "115",
   };
-  const s = { ...value, holdingTradeSummaries: { [holding.id]: total } };
-  const props = { onUpdate: vi.fn(), navigate: vi.fn(), flash: vi.fn() };
+  const s = {
+    ...value,
+    holdingTradeSummaries: { [holding.id]: total },
+    accounting: {
+      ...value.accounting!,
+      investments: {
+        ...value.accounting!.investments,
+        realized: { value: "115", missing: 0 },
+      },
+    },
+  };
+  const props = { onUpdate: vi.fn(), flash: vi.fn() };
   const { rerender } = render(<MyFacts {...props} snapshot={s} />);
   const settled = screen.getByLabelText("投资持仓概览");
   expect(within(settled).getByText("+¥115")).toBeTruthy();
+  expect(
+    within(screen.getByRole("table", { name: "持仓列表" })).getByText("+¥115"),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "查看 指数基金" }));
   expect(screen.getByRole("heading", { name: "交易明细" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
@@ -445,11 +458,21 @@ it("shows authoritative sell profits and dividends in the holding overview and d
         holdingTradeSummaries: {
           [holding.id]: { ...total, settledProfit: "120" },
         },
+        accounting: {
+          ...s.accounting,
+          investments: {
+            ...s.accounting.investments,
+            realized: { value: "120", missing: 0 },
+          },
+        },
       }}
     />,
   );
   expect(
     within(screen.getByLabelText("投资持仓概览")).getByText("+¥120"),
+  ).toBeTruthy();
+  expect(
+    within(screen.getByRole("table", { name: "持仓列表" })).getByText("+¥120"),
   ).toBeTruthy();
   cleanup();
   render(

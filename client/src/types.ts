@@ -178,7 +178,7 @@ export type AccountingTotals = Record<
 
 export type HoldingTradeKind = "buy" | "sell" | "dividend";
 export interface HoldingTradeFields {
-  settlementMode?: "auto" | "history" | "settle";
+  settlementMode?: "history" | "settle";
   kind: HoldingTradeKind;
   occurredOn: string;
   sequence: number;
@@ -205,6 +205,7 @@ export interface TradeSecurityInput {
   currency: string;
 }
 export interface HoldingTradeInput extends HoldingTradeFields {
+  settlementMode: "history" | "settle";
   expectedCashBaseline?: string;
   requestId: string;
   holdingId: string;
@@ -212,6 +213,7 @@ export interface HoldingTradeInput extends HoldingTradeFields {
   newHolding: TradeSecurityInput | null;
 }
 export interface HoldingTradeUpdateInput extends HoldingTradeFields {
+  settlementMode: "history" | "settle";
   expectedRevision: string;
 }
 export interface HoldingTradeDeleteInput {
@@ -268,12 +270,7 @@ export interface RebalanceAction {
 
 export interface ModelConfig {
   provider:
-    | "openai-responses"
-    | "openai-chat"
-    | "anthropic"
-    | "openai-compatible"
-    | "codex"
-    | "codex-bridge";
+    "openai-responses" | "openai-chat" | "anthropic" | "codex" | "codex-bridge";
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
@@ -511,7 +508,7 @@ export interface InvestmentRuleRevision extends InvestmentRuleInput {
   changedAt: string;
 }
 
-export interface SystemReviewInput {
+export interface SystemReviewFields {
   content?: string | null;
   periodLabel: string;
   adherenceScore?: number | null;
@@ -522,7 +519,7 @@ export interface SystemReviewInput {
   nextReviewDate: string;
 }
 
-export type SystemReviewDraft = { content: string } | SystemReviewInput;
+export type SystemReviewDraft = { content: string };
 
 export interface SystemReviewSnapshot {
   portfolioValue: number;
@@ -535,7 +532,7 @@ export interface SystemReviewSnapshot {
   activeRules: number;
 }
 
-export interface SystemReviewRecord extends SystemReviewInput {
+export interface SystemReviewRecord extends SystemReviewFields {
   id: string;
   snapshot: SystemReviewSnapshot;
   createdAt: string;

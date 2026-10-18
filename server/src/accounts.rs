@@ -19,9 +19,6 @@ pub struct Accounts {
 pub struct Credentials {
     pub email: String,
     pub password: String,
-    // Older clients still submit this field; it no longer controls registration.
-    #[serde(default, rename = "registrationKey")]
-    _legacy_registration_key: Option<serde::de::IgnoredAny>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -156,7 +153,6 @@ impl Accounts {
         let email = validate(&Credentials {
             email: email.into(),
             password: password.into(),
-            _legacy_registration_key: None,
         })?;
         let hash = hash_password(password)?;
         let mut connection = self.conn()?;
@@ -214,16 +210,13 @@ mod tests {
     }
 
     #[test]
-    fn public_registration_needs_only_email_and_password_and_ignores_legacy_keys() {
+    fn public_registration_needs_only_email_and_password() {
         let accounts = accounts();
-        for (index, legacy_key) in [None, Some("obsolete-or-wrong-key")].iter().enumerate() {
-            let mut payload = serde_json::json!({
+        for index in 0..2 {
+            let payload = serde_json::json!({
                 "email": format!(" USER{index}@Example.Test "),
                 "password": "long-password-1234",
             });
-            if let Some(key) = legacy_key {
-                payload["registrationKey"] = (*key).into();
-            }
             let input: Credentials = serde_json::from_value(payload).unwrap();
             let session = accounts.register(&input).unwrap();
             assert_eq!(session.email, format!("user{index}@example.test"));

@@ -12,7 +12,7 @@ export function AssetAmountRow({
   exact,
 }: {
   holding: Holding;
-  realizedPnl?: number;
+  realizedPnl?: number | string;
   onOpen?: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -23,6 +23,7 @@ export function AssetAmountRow({
   const investment = holding.assetClass !== "现金";
   const closed = isClosedHolding(holding, realizedPnl != null);
   const pnl = unrealizedProfit(holding, realizedPnl != null);
+  const settledProfit = exact ? exact.settledProfit : realizedPnl;
   return (
     <div
       className={"asset-list-row" + (investment ? "" : " cash-list-row")}
@@ -86,27 +87,47 @@ export function AssetAmountRow({
           )}
       </div>
       {investment && (
-        <div
-          role="cell"
-          data-label="浮动盈亏"
-          className={pnl == null ? "" : pnl >= 0 ? "gain" : "loss"}
-        >
-          {exact && !exact.usable
-            ? "待核对"
-            : pnl == null
-              ? "—"
-              : (pnl > 0 ? "+" : "") +
-                formatMoney(exact?.unrealizedProfit ?? pnl, holding.currency)}
-          <small>
-            {pnl != null && holding.costBasis > 0
-              ? (pnl > 0 ? "+" : "") +
-                formatNumber((pnl / holding.costBasis) * 100) +
-                "%"
-              : closed
-                ? "已清仓"
-                : "成本待补"}
-          </small>
-        </div>
+        <>
+          <div
+            role="cell"
+            data-label="浮动盈亏"
+            className={pnl == null ? "" : pnl >= 0 ? "gain" : "loss"}
+          >
+            {exact && !exact.usable
+              ? "待核对"
+              : pnl == null
+                ? "—"
+                : (pnl > 0 ? "+" : "") +
+                  formatMoney(exact?.unrealizedProfit ?? pnl, holding.currency)}
+            <small>
+              {pnl != null && holding.costBasis > 0
+                ? (pnl > 0 ? "+" : "") +
+                  formatNumber((pnl / holding.costBasis) * 100) +
+                  "%"
+                : closed
+                  ? "已清仓"
+                  : "成本待补"}
+            </small>
+          </div>
+          <div
+            role="cell"
+            data-label="已结算收益"
+            className={
+              settledProfit == null || (exact && !exact.usable)
+                ? ""
+                : Number(settledProfit) >= 0
+                  ? "gain"
+                  : "loss"
+            }
+          >
+            {exact && !exact.usable
+              ? "待核对"
+              : settledProfit == null
+                ? "—"
+                : (Number(settledProfit) > 0 ? "+" : "") +
+                  formatMoney(settledProfit, holding.currency)}
+          </div>
+        </>
       )}
       <div role="cell" className="row-actions">
         <button

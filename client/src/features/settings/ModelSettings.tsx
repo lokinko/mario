@@ -45,9 +45,7 @@ export function ModelSettings({
   flash: (s: string) => void;
 }) {
   const [provider, setProvider] = useState<ModelConfig["provider"]>(
-    model.provider === "openai-compatible"
-      ? "openai-responses"
-      : model.provider,
+    model.provider,
   );
   const [baseUrl, setBaseUrl] = useState(model.baseUrl);
   const [modelName, setModelName] = useState(model.model);

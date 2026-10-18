@@ -6,7 +6,7 @@
 
 保存接口接收 `{ "content": "原始资料全文" }`，正文不超过 20,000 个字符；正文或附件至少提供一项。正文、空行和换行原样保留，不自动概括或改写。保存时间由系统记录，不当作资料发布日期；没有提供的链接和日期留空，也不会把用户资料自动归类为一手来源或已核验事实。
 
-资料继续使用原有证据存储与引用管线，全文存于 `claim`，以 `user_source_text` 标识，来源层级为“用户资料（待核实）”。旧版结构化资料继续可读，页面将原有字段完整呈现为文本；旧接口的 HTTPS、日期与分类校验仍保留。
+资料继续使用原有证据存储与引用管线，全文存于 `claim`，以 `user_source_text` 标识，来源层级为“用户资料（待核实）”。旧版结构化资料继续可读，页面将原有字段完整呈现为文本；新写入只接收 `content` 和 `attachments`，旧结构化输入字段会被拒绝。
 
 保存后的内容保持原始记录；需要更正时归档旧记录并保存新内容。归档可恢复，归档资料不会进入问答检索。资料及全文随数据导出与恢复保留。
 
@@ -16,7 +16,7 @@
 
 文本文件（TXT、Markdown、CSV、TSV、JSON、LOG，UTF-8 或 UTF-16）、含文字的 PDF 与 DOCX 会提取最多 20,000 字供问答检索和引用。Word 当前提取主文档段落与表格，未读取页眉、页脚或批注。提取失败、没有文字层的扫描件和其他格式仍保存原文件，页面明确显示未提取文字。暂不执行 OCR；文件中的图片、图表和排版不进入问答。过长文件显示截断说明，完整内容可下载。
 
-问答使用提取后的文字及文件名，不发送文件二进制或 Base64。附件随备份导出、导入及重启恢复，快照版本为 13，仍支持旧版本导入。资料及附件都按账号隔离。
+问答使用提取后的文字及文件名，不发送文件二进制或 Base64。附件随备份导出、导入及重启恢复，附件自快照 v13 引入，当前导出版本为 v22，仍支持旧版本导入。资料及附件都按账号隔离。
 
 ## 相关性检索与冻结
 
@@ -38,7 +38,7 @@
 
 ## 原生网页搜索
 
-模型接口支持 OpenAI 兼容 Chat Completions（`openai-chat`，`POST /chat/completions`，Bearer 认证）、OpenAI Responses（`POST /responses`，Bearer 认证）和 Anthropic Messages（`POST /messages`，`x-api-key` 和 `anthropic-version`）。用户可自行填写任意 HTTP/HTTPS Base URL、端口、路径和模型名称，无需服务器主机白名单。Base URL 包含供应商要求的路径（通常为 `/v1`），不包含具体端点。旧 `openai-compatible` 设置仍按 Responses 读取；仅实现 Chat Completions 的第三方服务请选择“OpenAI 兼容 · Chat Completions”。切换协议或地址且已有密钥时，必须填写对应密钥，避免沿用另一供应商凭据。
+模型接口支持 OpenAI 兼容 Chat Completions（`openai-chat`，`POST /chat/completions`，Bearer 认证）、OpenAI Responses（`POST /responses`，Bearer 认证）和 Anthropic Messages（`POST /messages`，`x-api-key` 和 `anthropic-version`）。用户可自行填写任意 HTTP/HTTPS Base URL、端口、路径和模型名称，无需服务器主机白名单。Base URL 包含供应商要求的路径（通常为 `/v1`），不包含具体端点。数据库升级会把旧 `openai-compatible` 设置及密钥目标绑定一次性改为 `openai-responses`；当前输入只接收现役协议名称。仅实现 Chat Completions 的第三方服务请选择“OpenAI 兼容 · Chat Completions”。切换协议或地址且已有密钥时，必须填写对应密钥，避免沿用另一供应商凭据。
 
 Responses / Messages 问答默认启用“联网查找相关资料”，可关闭；Chat Completions 接口禁用该开关，仅使用已选资料。预览只构建本地上下文，搜索开关写入预览指纹；确认后先执行原生搜索，再生成结构化建议并核对。OpenAI 使用 `web_search`，Anthropic 使用 `web_search_20250305`。普通生成、结构修复、建议核对和连接测试不启用搜索工具。网页搜索权限和费用由供应商控制；预览明确说明查询可能交给其搜索服务。
 

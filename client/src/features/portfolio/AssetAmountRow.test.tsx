@@ -78,12 +78,18 @@ it("distinguishes closed positions from missing cost and omits investment fields
     />,
   );
   expect(screen.queryByText("成本待补")).toBeNull();
+  expect(screen.getByText("+" + formatMoney(1190))).toBeTruthy();
   expect(screen.getAllByText(/已清仓/).length).toBeGreaterThan(0);
   expect(screen.queryByLabelText("删除 基金")).toBeNull();
   rerender(
     <AssetAmountRow holding={{ ...holding, costBasis: 0 }} {...callbacks()} />,
   );
   expect(screen.getByText("成本待补")).toBeTruthy();
+  expect(
+    screen
+      .getAllByRole("cell")
+      .find((cell) => cell.dataset.label === "已结算收益")?.textContent,
+  ).toBe("—");
   rerender(
     <AssetAmountRow
       holding={{ ...holding, assetClass: "现金" }}

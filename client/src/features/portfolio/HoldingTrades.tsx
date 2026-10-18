@@ -188,7 +188,9 @@ export function HoldingTrades({
     pending.current = true;
     setBusy(true);
     setError("");
-    const fields: HoldingTradeFields = {
+    const fields: HoldingTradeFields & {
+      settlementMode: "history" | "settle";
+    } = {
       kind: draft.kind,
       occurredOn: draft.occurredOn,
       sequence: Number(draft.sequence),
@@ -200,7 +202,7 @@ export function HoldingTrades({
       account: draft.account.trim(),
       externalId: draft.externalId.trim(),
       note: draft.note.trim(),
-      settlementMode: editing ? "auto" : settlementMode,
+      settlementMode: editing ? "history" : settlementMode,
     };
     const input = {
       expectedCashBaseline:

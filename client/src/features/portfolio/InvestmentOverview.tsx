@@ -9,24 +9,24 @@ const labels = {
 };
 export function InvestmentOverview({
   holdings,
-  summaries,
   baseCurrency = "CNY",
   cash = false,
   accounting,
 }: {
   holdings: Holding[];
-  summaries: Snapshot["holdingTradeSummaries"];
   baseCurrency?: string;
   cash?: boolean;
   accounting?: Snapshot["accounting"];
 }) {
-  const { totals, rows } = portfolioOverview(
-    holdings,
-    summaries,
-    baseCurrency,
-    accounting,
-    cash,
-  );
+  if (!accounting)
+    return (
+      <section aria-label={cash ? "现金概览" : "投资持仓概览"}>
+        <p className="error-box" role="alert">
+          缺少精确会计数据，请刷新页面。
+        </p>
+      </section>
+    );
+  const { totals, rows } = portfolioOverview(holdings, accounting, cash);
   const metrics = cash ? (["value"] as const) : overviewMetrics;
   return (
     <section

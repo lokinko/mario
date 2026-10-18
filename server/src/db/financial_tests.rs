@@ -235,7 +235,7 @@ fn cash_cutover_prevents_double_settlement_and_corrections_require_reconciliatio
     let s = db.save_holding_trade(&history).unwrap();
     assert_eq!(s.cash_balances[0].amount, "1000.01");
     let t = s.holding_trades[0].clone();
-    let edit:HoldingTradeUpdateInput=serde_json::from_value(serde_json::json!({"expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":"1","taxes":"0","account":t.account,"note":"按成交单更正"})).unwrap();
+    let edit:HoldingTradeUpdateInput=serde_json::from_value(serde_json::json!({"settlementMode":"history","expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":"1","taxes":"0","account":t.account,"note":"按成交单更正"})).unwrap();
     let s = db.update_holding_trade(&t.id, &edit).unwrap();
     assert_eq!(s.cash_balances[0].amount, "1000.01");
     assert!(s.cash_balances[0].needs_reconciliation);
@@ -418,7 +418,7 @@ fn cash_confirmation_fences_old_forms_but_note_only_history_edits_preserve_readi
     assert_eq!(s.cash_balances[0].amount, "900.01");
     let s = confirm(&db, "900.01");
     let t = &s.holding_trades[0];
-    let edit:HoldingTradeUpdateInput=serde_json::from_value(serde_json::json!({"expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":t.fees,"taxes":t.taxes,"account":t.account,"note":"仅补充成交说明"})).unwrap();
+    let edit:HoldingTradeUpdateInput=serde_json::from_value(serde_json::json!({"settlementMode":"history","expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":t.fees,"taxes":t.taxes,"account":t.account,"note":"仅补充成交说明"})).unwrap();
     let s = db.update_holding_trade(&t.id, &edit).unwrap();
     assert_eq!(s.cash_balances[0].amount, "900.01");
     assert!(!s.cash_balances[0].needs_reconciliation);

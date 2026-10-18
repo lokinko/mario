@@ -128,7 +128,11 @@ try {
   assert.equal(defaults.workflow, "deep");
   assert.equal(defaults.useMemory, undefined);
   assert.equal(defaults.contextSelection.includeProfile, true);
-  assert.equal(defaults.contextSelection.includeDailyAssets, true);
+  assert.equal(defaults.contextSelection.includeHoldings, true);
+  assert.equal(defaults.contextSelection.includeEvidence, true);
+  for (const key of ["includePlanning", "includeRiskFindings", "includeRules", "includeSystemReviews", "includeDailyAssets"]) {
+    assert.equal(defaults.contextSelection[key], false);
+  }
   assert.equal(defaults.contextSelection.includePortfolioCheckins, undefined);
   assert.equal(defaults.contextSelection.includeGoals, undefined);
   assert.equal(defaults.contextSelection.includePortfolioEvents, undefined);
@@ -188,25 +192,9 @@ try {
     valuationDate: today,
   });
 
-  const evidence = {
-    assetName: "现金",
-    title: "利率资料",
-    publisher: "测试来源",
-    sourceUrl: "https://example.com/rate",
-    sourceTier: "一手来源",
-    evidenceType: "数据发布",
-    stance: "支持",
-    asOfDate: start,
-    claim: "用于功能测试的资料，不构成真实行情",
-    notes: "测试",
-  };
+  const evidence = { content: "利率资料\n来源：https://example.com/rate\n用于功能测试的资料，不构成真实行情" };
   const source = await api("/research-evidence", "POST", evidence);
-  await api(
-    "/research-evidence",
-    "POST",
-    { ...evidence, sourceUrl: "http://example.com" },
-    400,
-  );
+  await api("/research-evidence", "POST", { assetName: "旧结构化表单" }, 422);
   await api(`/research-evidence/${source.id}/status`, "PUT", { active: false });
   assert.equal(
     (await api("/research-evidence")).find((e) => e.id === source.id).active,
@@ -262,14 +250,9 @@ try {
     statement: "每月检查应急资金",
   });
   assert.equal((await api(`/investment-rules/${rule.id}/history`)).length, 2);
+  await api("/system-reviews", "POST", { periodLabel: "旧结构化表单" }, 422);
   const periodic = await api("/system-reviews", "POST", {
-    periodLabel: "测试周期",
-    adherenceScore: 4,
-    processSummary: "检查预算",
-    ruleViolations: "无",
-    lessons: "保持记录",
-    nextActions: "持续跟踪",
-    nextReviewDate: date(30),
+    content: "检查预算。保持记录，持续跟踪。",
   });
   assert.equal(periodic.snapshot.portfolioValue, 102100);
   assert.equal("decisionTotal" in periodic.snapshot, false);
@@ -351,6 +334,7 @@ try {
   assert.equal(snap.totalValue, 102197);
   assert.equal(snap.holdings.find(h => h.id === trade.holdingId).currentPrice, 10);
   const correction = {
+    settlementMode: "history",
     expectedRevision: snap.holdingRevisions[trade.holdingId],
     kind: "buy", occurredOn: today, sequence: 1, quantity: "12", price: "11", grossAmount: "132", fees: "3", taxes: "1",
     account: "测试券商", externalId: "trade-edit-corrected", note: "修正录入",
@@ -360,6 +344,9 @@ try {
   assert.equal(snap.holdingTrades.find(t => t.id === trade.id).createdAt, trade.createdAt);
   assert.equal(snap.holdings.find(h => h.id === trade.holdingId).costBasis, 136);
   assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102064);
+  const { settlementMode: _mode, ...missingSettlementMode } = execution;
+  await api("/holding-trades", "POST", { ...missingSettlementMode, requestId: randomUUID() }, 422);
+  await api("/holding-trades", "POST", { ...execution, requestId: randomUUID(), settlementMode: "auto" }, 422);
   const correctedRevision = snap.holdingRevisions[trade.holdingId];
   snap = await api(`/holding-trades/${trade.id}`, "PUT", correction);
   assert.equal(snap.holdingRevisions[trade.holdingId], correctedRevision);

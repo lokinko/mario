@@ -246,101 +246,19 @@ pub(super) fn validate_investment_rule(input: &InvestmentRuleInput) -> AppResult
 }
 
 pub(super) fn validate_system_review(input: &SystemReviewInput) -> AppResult<()> {
-    if let Some(content) = &input.content {
-        return if content.trim().is_empty() {
-            Err(AppError::Validation("复盘内容不能为空".into()))
-        } else {
-            Ok(())
-        };
+    if input.content.trim().is_empty() {
+        return Err(AppError::Validation("复盘内容不能为空".into()));
     }
-    if input.period_label.trim().is_empty()
-        || input.process_summary.trim().is_empty()
-        || input.lessons.trim().is_empty()
-        || input.next_actions.trim().is_empty()
-        || input.next_review_date.trim().is_empty()
-    {
-        return Err(AppError::Validation(
-            "复盘周期、过程事实、经验、下一步和下次复盘日均为必填项".into(),
-        ));
-    }
-    if !input
-        .adherence_score
-        .is_some_and(|score| (1..=5).contains(&score))
-    {
-        return Err(AppError::Validation("纪律执行评分必须在 1—5 之间".into()));
-    }
-    chrono::NaiveDate::parse_from_str(&input.next_review_date, "%Y-%m-%d")
-        .map_err(|_| AppError::Validation("下次复盘日期格式无效".into()))?;
     Ok(())
 }
 
 pub(super) fn validate_research_evidence(input: &ResearchEvidenceInput) -> AppResult<()> {
     crate::attachments::validate(&input.attachments)?;
-    if input.content.is_some() || !input.attachments.is_empty() {
-        let content = input.content.as_deref().unwrap_or_default();
-        if content.trim().is_empty() && input.attachments.is_empty() {
-            return Err(AppError::Validation("请填写原始资料内容".into()));
-        }
-        if content.chars().count() > 20_000 {
-            return Err(AppError::Validation("原始资料不能超过 20000 个字符".into()));
-        }
-        return Ok(());
+    if input.content.trim().is_empty() && input.attachments.is_empty() {
+        return Err(AppError::Validation("请填写原始资料内容".into()));
     }
-    if input.asset_name.trim().is_empty()
-        || input.title.trim().is_empty()
-        || input.publisher.trim().is_empty()
-        || input.source_url.trim().is_empty()
-        || input.as_of_date.trim().is_empty()
-        || input.claim.trim().is_empty()
-    {
-        return Err(AppError::Validation(
-            "资产、标题、发布方、来源链接、资料日期和证据摘要均为必填项".into(),
-        ));
-    }
-    if !matches!(
-        input.source_tier.as_str(),
-        "一手来源" | "二手研究" | "媒体报道"
-    ) {
-        return Err(AppError::Validation("未知的来源层级".into()));
-    }
-    if !matches!(
-        input.evidence_type.as_str(),
-        "公司披露" | "监管文件" | "数据发布" | "研究报告" | "新闻" | "其他"
-    ) {
-        return Err(AppError::Validation("未知的证据类型".into()));
-    }
-    if !matches!(input.stance.as_str(), "支持" | "反驳" | "背景") {
-        return Err(AppError::Validation("未知的证据立场".into()));
-    }
-    let as_of_date = chrono::NaiveDate::parse_from_str(&input.as_of_date, "%Y-%m-%d")
-        .map_err(|_| AppError::Validation("资料日期格式无效".into()))?;
-    if as_of_date > Utc::now().date_naive() {
-        return Err(AppError::Validation("资料日期不能晚于今天".into()));
-    }
-    let source = reqwest::Url::parse(input.source_url.trim())
-        .map_err(|_| AppError::Validation("来源链接格式无效".into()))?;
-    if source.scheme() != "https"
-        || source.host_str().is_none()
-        || !source.username().is_empty()
-        || source.password().is_some()
-    {
-        return Err(AppError::Validation(
-            "研究证据必须使用有效的 HTTPS 来源链接".into(),
-        ));
-    }
-    for (label, value, limit) in [
-        ("资产或主题", input.asset_name.as_str(), 120),
-        ("资料标题", input.title.as_str(), 300),
-        ("发布方", input.publisher.as_str(), 200),
-        ("来源链接", input.source_url.as_str(), 2_048),
-        ("证据摘要", input.claim.as_str(), 4_000),
-        ("限制与待核实项", input.notes.as_str(), 4_000),
-    ] {
-        if value.chars().count() > limit {
-            return Err(AppError::Validation(format!(
-                "{label}不能超过 {limit} 个字符"
-            )));
-        }
+    if input.content.chars().count() > 20_000 {
+        return Err(AppError::Validation("原始资料不能超过 20000 个字符".into()));
     }
     Ok(())
 }

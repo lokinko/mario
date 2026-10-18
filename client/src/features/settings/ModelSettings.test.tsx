@@ -39,12 +39,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("migrates the legacy selection and saves Anthropic with its endpoint and replacement key", async () => {
+it("saves Anthropic with its endpoint and replacement key", async () => {
   const onUpdate = vi.fn();
   render(
     <ModelSettings
       model={{
-        provider: "openai-compatible",
+        provider: "openai-responses",
         baseUrl: "https://api.openai.com/v1",
         model: "existing-model",
         hasApiKey: true,

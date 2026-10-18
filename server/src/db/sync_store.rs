@@ -145,7 +145,6 @@ impl Database {
         super::amounts::validate(&transaction)?;
         super::cash::validate(&transaction)?;
         super::corporate::validate(&transaction)?;
-        transaction.execute("DELETE FROM settings WHERE key LIKE 'trading.reset.%'", [])?;
         transaction.commit()?;
         Ok(())
     }

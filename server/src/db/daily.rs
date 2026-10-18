@@ -1162,46 +1162,6 @@ mod tests {
         assert_eq!(before, after);
     }
     #[test]
-    fn independent_daily_edits_merge_and_conflicting_edits_remain_visible() {
-        let source = db();
-        let a = source.add_holding(&input("A", 100.0)).unwrap().holdings[0]
-            .id
-            .clone();
-        let b = source
-            .add_holding(&input("B", 200.0))
-            .unwrap()
-            .holdings
-            .iter()
-            .find(|h| h.name == "B")
-            .unwrap()
-            .id
-            .clone();
-        let base = source.export_sync_data().unwrap();
-        let left = db();
-        let right = db();
-        left.import_sync_data(&base).unwrap();
-        right.import_sync_data(&base).unwrap();
-        amount(&left, &a, 150.0);
-        amount(&right, &b, 250.0);
-        let merged = Database::merge_sync_data(
-            Some(&base),
-            &left.export_sync_data().unwrap(),
-            &right.export_sync_data().unwrap(),
-        )
-        .unwrap();
-        source.apply_sync_update(&merged, &[]).unwrap();
-        assert_eq!(records(&source)[0].total_assets, Some(400.0));
-        amount(&right, &a, 99.0);
-        assert!(matches!(
-            Database::merge_sync_data(
-                Some(&base),
-                &left.export_sync_data().unwrap(),
-                &right.export_sync_data().unwrap()
-            ),
-            Err(AppError::Conflict(_))
-        ));
-    }
-    #[test]
     fn legacy_v9_and_invalid_daily_payloads_are_handled_atomically() {
         let db = db();
         db.add_holding(&input("银行", 100.0)).unwrap();

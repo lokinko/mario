@@ -10,11 +10,6 @@ import type {
 const contextOptions: [keyof ContextSelection, string][] = [
   ["includeProfile", "财务档案"],
   ["includeHoldings", "持仓明细"],
-  ["includePlanning", "规划结果"],
-  ["includeRiskFindings", "风险检查"],
-  ["includeRules", "个人规则"],
-  ["includeSystemReviews", "周期复盘"],
-  ["includeDailyAssets", "每日资产记录"],
   ["includeEvidence", "研究证据与历史搜索资料"],
 ];
 
@@ -69,24 +64,6 @@ export function AnalysisDefaults({
       {!settings && !error && <p role="status">正在读取问答预设…</p>}
       {settings && (
         <fieldset className="holding-fields" disabled={saving}>
-          <div className="form-grid single-column">
-            <label>
-              <span>分析方式</span>
-              <select
-                value={settings.workflow}
-                onChange={(event) =>
-                  setSettings({
-                    ...settings,
-                    workflow: event.target
-                      .value as AnalysisSettings["workflow"],
-                  })
-                }
-              >
-                <option value="deep">深度分析</option>
-                <option value="quick">快速分析</option>
-              </select>
-            </label>
-          </div>
           <h3>自动输入的资料</h3>
           <div className="analysis-default-options">
             {contextOptions.map(([key, label]) => (
@@ -120,7 +97,6 @@ export function AnalysisDefaults({
                 <input
                   type="checkbox"
                   checked={settings[key]}
-                  disabled={settings.workflow !== "deep"}
                   onChange={(event) =>
                     setSettings({ ...settings, [key]: event.target.checked })
                   }
@@ -139,7 +115,9 @@ export function AnalysisDefaults({
               联网查找相关资料
             </label>
           </div>
-          <p className="section-intro">反思检查与备选方案在深度分析时使用。</p>
+          <p className="section-intro">
+            问答固定使用深度分析，并按照已保存的资料范围准备上下文。
+          </p>
           <p className="section-intro">
             {model.provider === "openai-chat"
               ? "当前 Chat Completions 接口不支持原生网页搜索，联网选项暂不生效。"

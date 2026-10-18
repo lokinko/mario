@@ -146,30 +146,21 @@ impl Connection {
         model: &str,
         models: &[crate::models::CodexModel],
     ) -> AppResult<()> {
-        if models.len() > 100
+        if models.is_empty()
+            || models.len() > 100
             || models.iter().any(|entry| {
                 entry.model.is_empty()
                     || entry.model.len() > 200
                     || entry.display_name.len() > 800
                     || entry.description.len() > 8000
             })
-            || (!models.is_empty() && !models.iter().any(|entry| entry.model == model))
+            || !models.iter().any(|entry| entry.model == model)
         {
             return Err(AppError::Validation("桥接模型列表无效".into()));
         }
         self.claim(runner, model)?;
         let mut state = self.state.lock().unwrap();
-        state.models = if models.is_empty() {
-            // Older workers advertise only their default model.
-            vec![crate::models::CodexModel {
-                model: model.into(),
-                display_name: model.into(),
-                description: String::new(),
-                is_default: true,
-            }]
-        } else {
-            models.to_vec()
-        };
+        state.models = models.to_vec();
         Ok(())
     }
     pub fn event(&self, runner: &str, id: &str, event: Event) -> AppResult<bool> {

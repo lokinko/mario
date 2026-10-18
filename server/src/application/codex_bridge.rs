@@ -55,21 +55,10 @@ pub(crate) fn save(db: &Database, model: &str) -> AppResult<ModelConfig> {
     if !state.online {
         return Err(AppError::Validation("本机桥接不在线，请重新连接".into()));
     }
-    if !state.models.iter().any(|entry| entry.model == model)
-        && state.model.as_deref() != Some(model)
-    {
+    if !state.models.iter().any(|entry| entry.model == model) {
         return Err(AppError::Validation(
             "此模型不在本机 Codex 返回的模型列表中，请重新选择".into(),
         ));
-    }
-    let previous = db.model_config()?;
-    if !matches!(previous.provider.as_str(), "codex" | "codex-bridge")
-        && db.setting("model.key_binding")?.is_none()
-    {
-        db.set_setting(
-            "model.key_binding",
-            &super::model_settings::model_key_binding(&previous.provider, &previous.base_url),
-        )?;
     }
     db.save_model_metadata("codex-bridge", "codex://bridge", model)?;
     db.model_config()
@@ -123,6 +112,17 @@ mod tests {
         assert!(enable(&b).is_err());
         let ca = bridge::authenticate(&token_a).unwrap();
         let runner = uuid::Uuid::new_v4().to_string();
+        ca.advertise(
+            &runner,
+            "fixture",
+            &[crate::models::CodexModel {
+                model: "fixture".into(),
+                display_name: "Fixture".into(),
+                description: String::new(),
+                is_default: true,
+            }],
+        )
+        .unwrap();
         let poll = tokio::spawn(async move { ca.poll(&runner, "fixture").await });
         tokio::task::yield_now().await;
         assert!(status(&a).unwrap().online);

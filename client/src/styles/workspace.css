@@ -152,8 +152,8 @@
   font-weight: 400;
 }
 .investment-panel {
-  --holding-columns: minmax(170px, 1.6fr) minmax(70px, 0.65fr)
-    minmax(100px, 0.85fr) minmax(120px, 1.1fr) minmax(115px, 1fr) 80px;
+  --holding-columns: minmax(140px, 1.6fr) minmax(55px, 0.65fr)
+    minmax(90px, 0.85fr) minmax(100px, 1.1fr) repeat(2, minmax(100px, 1fr)) 64px;
   padding: 0;
 }
 .holdings-toolbar {
@@ -181,12 +181,26 @@
   padding: 4px 8px;
   min-height: 32px;
 }
-.position-filters button[aria-pressed="true"] {
+.position-filters button span {
+  font-size: 12px;
+}
+.position-filters > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.position-filters button[aria-expanded="true"] {
   background: var(--tint-green);
   color: var(--green-deep);
 }
-.position-filters button span {
+.holdings-currency-header {
+  padding: 8px 16px;
+  border-block: 1px solid var(--line);
+  background: var(--soft);
   font-size: 12px;
+}
+.holdings-currency-header span {
+  margin-left: 8px;
+  color: var(--muted);
 }
 .holdings-search {
   display: flex;
@@ -580,6 +594,15 @@ body[data-drawer-open] .exchange-float {
   padding: 24px;
 }
 @media (max-width: 1200px) {
+  .investment-panel {
+    --holding-columns: minmax(100px, 1.4fr) minmax(40px, 0.6fr)
+      minmax(65px, 0.8fr) repeat(3, minmax(75px, 1fr)) 55px;
+  }
+  .asset-list-row,
+  .holdings-list-header {
+    gap: 8px;
+    padding-inline: 12px;
+  }
   .chat-workspace {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -607,15 +630,6 @@ body[data-drawer-open] .exchange-float {
   }
   .investment-overview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .investment-panel {
-    --holding-columns: minmax(130px, 1.4fr) minmax(55px, 0.6fr)
-      minmax(80px, 0.8fr) minmax(95px, 1fr) minmax(90px, 1fr) 64px;
-  }
-  .asset-list-row,
-  .holdings-list-header {
-    gap: 8px;
-    padding-inline: 12px;
   }
   .review-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));

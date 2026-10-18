@@ -55,6 +55,41 @@ it("loads saved permissions and saves one preset for future questions", async ()
   });
 });
 
+it("offers only the three supported data groups and always uses deep analysis", async () => {
+  vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(
+    analysisSettings,
+  );
+  render(
+    <AnalysisDefaults
+      model={{ ...model, provider: "openai-chat" }}
+      flash={vi.fn()}
+    />,
+  );
+  await screen.findByLabelText("财务档案");
+  for (const label of ["财务档案", "持仓明细", "研究证据与历史搜索资料"]) {
+    expect((screen.getByLabelText(label) as HTMLInputElement).checked).toBe(
+      true,
+    );
+  }
+  for (const label of [
+    "规划结果",
+    "风险检查",
+    "个人规则",
+    "周期复盘",
+    "每日资产记录",
+  ]) {
+    expect(screen.queryByLabelText(label)).toBeNull();
+  }
+  expect(screen.queryByRole("combobox")).toBeNull();
+  expect(screen.queryByText("快速分析")).toBeNull();
+  for (const label of ["反思检查", "比较备选方案"]) {
+    expect((screen.getByLabelText(label) as HTMLInputElement).disabled).toBe(
+      false,
+    );
+  }
+  expect(screen.getByText(/当前 Chat Completions 接口不支持/)).toBeTruthy();
+});
+
 it("shows a read failure and retries without overwriting saved permissions", async () => {
   vi.mocked(settingsApi.getAnalysisSettings)
     .mockRejectedValueOnce(new Error("无法读取预设"))

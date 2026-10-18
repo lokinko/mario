@@ -64,6 +64,33 @@ impl Drop for Tenant {
 
 #[test]
 #[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
+fn postgres_canonicalizes_legacy_model_settings_without_rebinding_existing_credentials() {
+    let mut tenant = Tenant::legacy();
+    drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
+    tenant.sql(
+        "INSERT INTO settings(key,value) VALUES
+        ('model.provider','openai-compatible'),
+        ('model.base_url','https://current.example.test/v1'),
+        ('model.key_binding','openai-compatible https://original.example.test/v1'),
+        ('secret.model','encrypted-credential-preserved');
+        UPDATE data_revision SET schema_version=9 WHERE id=1;",
+    );
+    for _ in 0..2 {
+        let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
+        assert_eq!(db.model_config().unwrap().provider, "openai-responses");
+        assert_eq!(
+            db.setting("model.key_binding").unwrap().as_deref(),
+            Some("openai-responses https://original.example.test/v1")
+        );
+        assert_eq!(
+            db.setting("secret.model").unwrap().as_deref(),
+            Some("encrypted-credential-preserved")
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
 fn postgres_upgrades_cash_to_currency_balances_once_without_changing_asset_total() {
     let mut tenant = Tenant::legacy();
     drop(Database::postgres(&tenant.url, &tenant.user).unwrap());

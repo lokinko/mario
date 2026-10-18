@@ -27,6 +27,7 @@ it("resolves a lost financial response without resubmitting the mutation", async
   const input = {
     requestId: "attempt",
     kind: "buy" as const,
+    settlementMode: "history" as const,
     holdingId: "holding",
     expectedRevision: "before",
     newHolding: null,
