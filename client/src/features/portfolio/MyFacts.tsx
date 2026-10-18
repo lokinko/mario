@@ -4,12 +4,14 @@ import { AssetEditor } from "./AssetEditor";
 import { AssetHistory } from "./AssetHistory";
 import { HoldingDetail } from "./HoldingDetail";
 import { HoldingTrades } from "./HoldingTrades";
+import { HoldingsList, defaultHoldingFilters } from "./HoldingsList";
 import { InvestmentOverview } from "./InvestmentOverview";
 import { ProfileForm } from "./ProfileForm";
-import { isClosedHolding, sortInvestmentHoldings } from "./holdingMetrics";
+import { sortInvestmentHoldings } from "./holdingMetrics";
+import { useHoldingRemoval } from "./useHoldingRemoval";
 import { useRef, useState } from "react";
-import { Plus, RefreshCw, Search } from "lucide-react";
-import { deleteHolding, refreshSecurityPrices } from "../../api/portfolio";
+import { Plus, RefreshCw } from "lucide-react";
+import { refreshSecurityPrices } from "../../api/portfolio";
 import type { Holding, Snapshot } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
 import { formatNumber } from "../../lib/format";
@@ -51,20 +53,22 @@ export function MyFacts({
   const selected = selectedRaw
     ? withExactValues(snapshot, selectedRaw)
     : undefined;
-  const [showClosed, setShowClosed] = useState(false);
-  const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<"value-desc" | "value-asc" | "name">(
-    "value-desc",
-  );
+  const [filters, setFilters] = useState(defaultHoldingFilters);
   const cashAttempt = useRef<{ key: string; id: string } | null>(null);
   const [working, setBusy] = useState(false);
-  const [uncertainDelete, setUncertainDelete] = useState<{
-    id: string;
-    expectedRevision: string;
-  } | null>(null);
-  const deleting = useRef(false);
-  const busy = working || Boolean(uncertainDelete);
   const [error, setError] = useState("");
+  const removal = useHoldingRemoval({
+    snapshot,
+    onUpdate,
+    flash,
+    setWorking: setBusy,
+    setError,
+    onRemoved: (id) => {
+      if (editing?.id === id) setEditing(null);
+      if (selectedId === id) setSelectedId(null);
+    },
+  });
+  const busy = working || removal.uncertain;
   const [section, setSection] = useState<"income" | "savings" | "holdings">(
     "holdings",
   );
@@ -81,34 +85,9 @@ export function MyFacts({
   const investments = sortInvestmentHoldings(
     snapshot.holdings.filter((item) => item.assetClass !== "现金"),
     snapshot,
-    sort,
+    filters.sort,
   );
   const currency = snapshot.profile.baseCurrency;
-  const closedInvestments = investments.filter((item) =>
-    isClosedHolding(item, Boolean(snapshot.holdingTradeSummaries?.[item.id])),
-  );
-  const visibleInvestments = investments.filter((item) => {
-    const closed = isClosedHolding(
-      item,
-      Boolean(snapshot.holdingTradeSummaries?.[item.id]),
-    );
-    return (
-      (showClosed || !closed) &&
-      `${item.name} ${item.symbol} ${item.assetClass} ${item.currency}`
-        .toLocaleLowerCase()
-        .includes(search.trim().toLocaleLowerCase())
-    );
-  });
-  const currencyGroups = Array.from(
-    new Set(visibleInvestments.map((item) => item.currency)),
-  )
-    .sort((a, b) =>
-      a === currency ? -1 : b === currency ? 1 : a.localeCompare(b),
-    )
-    .map((code) => ({
-      currency: code,
-      holdings: visibleInvestments.filter((item) => item.currency === code),
-    }));
 
   const run = async (
     task: () => Promise<void>,
@@ -150,60 +129,17 @@ export function MyFacts({
       name: "",
       assetClass: "其他",
     });
-  const submitRemoval = async (request: {
-    id: string;
-    expectedRevision: string;
-  }) => {
-    if (deleting.current) return;
-    deleting.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      onUpdate(await deleteHolding(request.id, request.expectedRevision));
-      setUncertainDelete(null);
-      if (editing?.id === request.id) setEditing(null);
-      if (selectedId === request.id) setSelectedId(null);
-      flash("资产已删除");
-    } catch (e) {
-      const uncertain = String(e).includes("结果待确认");
-      setUncertainDelete(uncertain ? request : null);
-      setError(uncertain ? String(e) : `删除失败：${String(e)}`);
-    } finally {
-      deleting.current = false;
-      setBusy(false);
-    }
-  };
-  const removeAsset = async (item: Holding) => {
-    if (busy || editingTrade || deleting.current) return;
-    const count = (snapshot.holdingTrades ?? []).filter(
-      (t) => t.holdingId === item.id,
-    ).length;
-    const expectedRevision = snapshot.holdingRevisions?.[item.id] ?? "";
-    if (
-      !window.confirm(
-        `确认删除“${item.name}”？\n` +
-          (count
-            ? `将同时删除 ${count} 笔交易明细，并按这些交易对当前存款的净影响退回买入支出、扣回卖出和分红收入。已核对余额覆盖的历史交易不调整当前存款，会标记待核对。\n`
-            : "") +
-          "此操作用于移除误录持仓，不代表实际卖出。更正历史和此前日期的资产记录会保留。",
-      )
-    )
-      return;
-    if (count && !expectedRevision) {
-      setError("持仓版本缺失，请刷新后重试");
-      return;
-    }
-    await submitRemoval({ id: item.id, expectedRevision });
-  };
+  const removeAsset = (item: Holding) =>
+    void removal.remove(item, working || editingTrade);
   const errorNotice = error && (
     <div className="error-box" role="alert">
       {error}
-      {uncertainDelete && (
+      {removal.uncertain && (
         <button
           type="button"
           className="secondary"
           disabled={working}
-          onClick={() => void submitRemoval(uncertainDelete)}
+          onClick={() => void removal.reconcile()}
         >
           核对删除结果
         </button>
@@ -224,7 +160,7 @@ export function MyFacts({
           }}
           disabled={busy}
           canDelete={item.assetClass !== "现金"}
-          onDelete={() => void removeAsset(item)}
+          onDelete={() => removeAsset(item)}
           onEdit={() => openEditor(item)}
         />
       </div>
@@ -363,88 +299,21 @@ export function MyFacts({
         <section
           className={`panel form-panel${section === "holdings" ? " investment-panel" : ""}`}
         >
-          {section === "holdings" && investments.length > 0 && (
-            <p className="sr-only" id="holdings-sort-help">
-              {sort === "name"
-                ? "按币种分组，组内按名称排列 · 已清仓默认收起"
-                : `按币种分组，组内按折合 ${currency} 市值${sort === "value-asc" ? "从低到高" : "从高到低"}排列 · 已清仓默认收起，展开后按最近交易排列`}
-              {sort !== "name" &&
-                investments.some(
-                  (item) =>
-                    !isClosedHolding(
-                      item,
-                      Boolean(snapshot.holdingTradeSummaries?.[item.id]),
-                    ) &&
-                    item.currency !== currency &&
-                    !(item.fxRateToBase != null && item.fxRateToBase > 0),
-                ) &&
-                " · 缺少汇率的资产排在未清仓资产末尾"}
-            </p>
-          )}
-          {section === "holdings" && investments.length > 0 && (
-            <div className="holdings-toolbar" data-presentation="true">
-              <div className="position-filters">
-                <span>按币种分组</span>
-                {closedInvestments.length > 0 && (
-                  <button
-                    aria-expanded={showClosed}
-                    onClick={() => setShowClosed((value) => !value)}
-                  >
-                    {showClosed ? "收起已清仓" : "展开已清仓"}
-                    <span>{closedInvestments.length}</span>
-                  </button>
-                )}
-              </div>
-              <div className="holdings-tools">
-                <label className="holdings-search">
-                  <Search size={16} aria-hidden="true" />
-                  <input
-                    type="search"
-                    aria-label="搜索持仓"
-                    placeholder="搜索名称、代码或币种"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </label>
-                <select
-                  aria-label="持仓排序"
-                  aria-describedby="holdings-sort-help"
-                  value={sort}
-                  onChange={(event) =>
-                    setSort(event.target.value as typeof sort)
-                  }
-                >
-                  <option value="value-desc">市值从高到低</option>
-                  <option value="value-asc">市值从低到高</option>
-                  <option value="name">名称排序</option>
-                </select>
-              </div>
-            </div>
-          )}
-          <div
-            className={`facts-assets${section === "holdings" ? " investment-assets" : ""}`}
-            role="table"
-            aria-label={section === "holdings" ? "持仓列表" : "现金列表"}
-            aria-colcount={section === "holdings" ? 7 : 3}
-          >
-            {section === "holdings" && investments.length > 0 && (
-              <div role="row" className="holdings-list-header">
-                {[
-                  "资产 / 币种",
-                  "持仓数",
-                  "现价 / 成本价",
-                  "当前市值",
-                  "浮动盈亏",
-                  "已结算收益",
-                  "操作",
-                ].map((label) => (
-                  <span role="columnheader" key={label}>
-                    {label}
-                  </span>
-                ))}
-              </div>
-            )}
-            {section === "savings" && (
+          {section === "holdings" ? (
+            <HoldingsList
+              snapshot={snapshot}
+              holdings={investments}
+              filters={filters}
+              onFiltersChange={setFilters}
+              renderRow={renderAssetRow}
+            />
+          ) : (
+            <div
+              className="facts-assets"
+              role="table"
+              aria-label="现金列表"
+              aria-colcount={3}
+            >
               <div role="row" className="holdings-list-header cash-list-header">
                 {["币种", "余额", "操作"].map((label) => (
                   <span role="columnheader" key={label}>
@@ -452,55 +321,9 @@ export function MyFacts({
                   </span>
                 ))}
               </div>
-            )}
-            {section === "savings" ? (
               <div role="rowgroup">{cashRows.map(renderAssetRow)}</div>
-            ) : (
-              currencyGroups.map((group) => (
-                <div
-                  role="rowgroup"
-                  aria-label={group.currency + " 持仓"}
-                  key={group.currency}
-                >
-                  <div role="row" className="holdings-currency-header">
-                    <div role="cell" aria-colspan={7}>
-                      <strong>{group.currency}</strong>
-                      <span>{group.holdings.length} 项持仓</span>
-                    </div>
-                  </div>
-                  {group.holdings.map(renderAssetRow)}
-                </div>
-              ))
-            )}
-            {section === "holdings" &&
-              investments.length > 0 &&
-              visibleInvestments.length === 0 && (
-                <div className="empty-state" role="row">
-                  <div role="cell" aria-colspan={7}>
-                    <p>
-                      {search.trim()
-                        ? "没有找到匹配的持仓。"
-                        : "暂无未清仓持仓，可点击上方展开已清仓持仓。"}
-                    </p>
-                    {search.trim() && (
-                      <button
-                        className="text-button"
-                        onClick={() => setSearch("")}
-                      >
-                        清除筛选
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-            {section === "holdings" && investments.length === 0 && (
-              <div role="row">
-                <div role="cell" aria-colspan={7}>
-                  <p className="empty">暂无资产，点击上方添加。</p>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
           {section === "holdings" && (
             <details className="investment-help">
               <summary>持仓与盈亏说明</summary>
@@ -553,7 +376,7 @@ export function MyFacts({
               editingTrade={editingTrade}
               onEditingTradeChange={setEditingTrade}
               onEdit={() => setEditing({ ...selected })}
-              onDelete={() => void removeAsset(selected)}
+              onDelete={() => removeAsset(selected)}
               onUpdate={onUpdate}
               flash={flash}
             />
