@@ -138,7 +138,7 @@ impl ContextBuilder {
     pub fn preview(
         request: &AnalysisRequest,
         context: BuiltContext,
-        provider: String,
+        provider: crate::models::ModelProviderKind,
         model: String,
         evidence_candidates: Vec<ResearchEvidence>,
     ) -> AnalysisPreview {
@@ -401,7 +401,7 @@ mod tests {
         let preview = ContextBuilder::preview(
             &request,
             ContextBuilder::build(&request, &snapshot(), &ContextSources::default()),
-            "openai-responses".into(),
+            crate::models::ModelProviderKind::OpenaiResponses,
             "test-model".into(),
             Vec::new(),
         );

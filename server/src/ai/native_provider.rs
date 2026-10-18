@@ -5,13 +5,16 @@ use serde_json::{json, Value};
 use super::provider::{
     ChatMessage, ModelCompletion, ModelProvider, SearchCompletion, SearchSource,
 };
-use crate::error::{AppError, AppResult};
+use crate::{
+    error::{AppError, AppResult},
+    models::ModelProviderKind,
+};
 
 /// Native search tools execute at the provider; Chat Completions supports generation only.
 /// This client never fetches search-result URLs.
 pub struct NativeModelProvider {
     client: Client,
-    protocol: String,
+    protocol: ModelProviderKind,
     base_url: String,
     model: String,
     api_key: String,
@@ -20,21 +23,16 @@ pub struct NativeModelProvider {
 
 impl NativeModelProvider {
     pub fn new(
-        protocol: String,
+        protocol: ModelProviderKind,
         base_url: String,
         model: String,
         api_key: String,
     ) -> AppResult<Self> {
-        let protocol = match protocol.as_str() {
-            "openai-responses" => "openai-responses",
-            "openai-chat" => "openai-chat",
-            "anthropic" => "anthropic",
-            _ => {
-                return Err(AppError::Validation(
-                    "请选择 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages".into(),
-                ))
-            }
-        };
+        if !protocol.is_native() {
+            return Err(AppError::Validation(
+                "请选择 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages".into(),
+            ));
+        }
         if api_key.trim().is_empty() || model.trim().is_empty() {
             return Err(AppError::Validation("请先配置模型名称和 API Key".into()));
         }
@@ -45,7 +43,7 @@ impl NativeModelProvider {
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_secs(120))
                 .build()?,
-            protocol: protocol.into(),
+            protocol,
             base_url: base_url.trim_end_matches('/').into(),
             model,
             api_key,
@@ -67,16 +65,16 @@ impl NativeModelProvider {
         let url = format!(
             "{}/{}",
             self.base_url,
-            match self.protocol.as_str() {
-                "anthropic" => "messages",
-                "openai-chat" => "chat/completions",
+            match self.protocol {
+                ModelProviderKind::Anthropic => "messages",
+                ModelProviderKind::OpenaiChat => "chat/completions",
                 _ => "responses",
             }
         );
         let started = tokio::time::Instant::now();
         for attempt in 0..3 {
             let request = self.client.post(&url).json(body);
-            let request = if self.protocol == "anthropic" {
+            let request = if self.protocol == ModelProviderKind::Anthropic {
                 request
                     .header("x-api-key", &self.api_key)
                     .header("anthropic-version", "2023-06-01")
@@ -103,7 +101,7 @@ impl NativeModelProvider {
             }
             let failure = UpstreamFailure::read(response).await;
             if !failure.retryable() || attempt == 2 {
-                return Err(failure.error(&self.protocol, attempt + 1));
+                return Err(failure.error(self.protocol.as_str(), attempt + 1));
             }
             let delay = failure
                 .retry_after
@@ -116,7 +114,7 @@ impl NativeModelProvider {
             if delay > std::time::Duration::from_secs(30)
                 || started.elapsed().saturating_add(delay) > std::time::Duration::from_secs(45)
             {
-                return Err(failure.error(&self.protocol, attempt + 1));
+                return Err(failure.error(self.protocol.as_str(), attempt + 1));
             }
             super::streaming::status(
                 &self.events,
@@ -154,8 +152,8 @@ impl NativeModelProvider {
         messages: Vec<ChatMessage>,
         search: bool,
     ) -> AppResult<SearchCompletion> {
-        let anthropic = self.protocol == "anthropic";
-        let chat = self.protocol == "openai-chat";
+        let anthropic = self.protocol == ModelProviderKind::Anthropic;
+        let chat = self.protocol == ModelProviderKind::OpenaiChat;
         if chat && search {
             return Err(AppError::Validation(
                 "Chat Completions 接口不支持原生网页搜索，请关闭联网查找或使用支持搜索的 Responses / Messages 接口".into(),
@@ -191,7 +189,11 @@ impl NativeModelProvider {
             result.api_calls += attempts;
             let parsed: Value = response.json().await?;
             if parsed.get("error").is_some_and(|v| !v.is_null()) {
-                return Err(event_error(&parsed, &self.protocol, result.api_calls));
+                return Err(event_error(
+                    &parsed,
+                    self.protocol.as_str(),
+                    result.api_calls,
+                ));
             }
             add_usage(
                 &mut result.usage.input_tokens,
@@ -530,8 +532,8 @@ impl ModelProvider for NativeModelProvider {
         on_delta: super::streaming::DeltaCallback,
     ) -> AppResult<ModelCompletion> {
         tokio::time::timeout(std::time::Duration::from_secs(120), async {
-        let anthropic = self.protocol == "anthropic";
-        let chat = self.protocol == "openai-chat";
+        let anthropic = self.protocol == ModelProviderKind::Anthropic;
+        let chat = self.protocol == ModelProviderKind::OpenaiChat;
         let body = if anthropic {
             let system = messages
                 .iter()
@@ -570,7 +572,7 @@ impl ModelProvider for NativeModelProvider {
                         Some("error" | "response.failed" | "response.incomplete")
                     )
                 {
-                    return Err(event_error(&event, &self.protocol, request_count));
+                    return Err(event_error(&event, self.protocol.as_str(), request_count));
                 }
                 let delta = if chat {
                     let choice = event["choices"]
@@ -680,7 +682,7 @@ impl ModelProvider for NativeModelProvider {
         self.generate(messages, true).await
     }
     fn provider_name(&self) -> &str {
-        &self.protocol
+        self.protocol.as_str()
     }
     fn model_name(&self) -> &str {
         &self.model
@@ -736,7 +738,7 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
         let provider = NativeModelProvider::new(
-            protocol.into(),
+            protocol.parse().unwrap(),
             format!("http://{address}/v1"),
             "gpt-6.1-sol".into(),
             "fixture-key".into(),
@@ -982,7 +984,7 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
         let provider = NativeModelProvider::new(
-            protocol.into(),
+            protocol.parse().unwrap(),
             format!("http://{address}/v1"),
             "fixture".into(),
             "fixture-key".into(),
@@ -1108,7 +1110,7 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
         let provider = NativeModelProvider::new(
-            protocol.into(),
+            protocol.parse().unwrap(),
             format!(
                 "http://{address}{}/",
                 if protocol == "openai-chat" {

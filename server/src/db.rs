@@ -60,6 +60,24 @@ pub struct Database {
     connection: Mutex<Connection>,
 }
 
+const LOCK_ACCOUNT_SQL: &str = "SELECT pg_advisory_lock(hashtextextended(current_schema(),0));";
+const UNLOCK_ACCOUNT_SQL: &str = "SELECT pg_advisory_unlock(hashtextextended(current_schema(),0));";
+
+/// Session advisory lock on the account schema; released when dropped.
+/// PostgreSQL counts nested acquisitions, so guards may overlap on one connection.
+#[must_use = "the account lock is released as soon as the guard is dropped"]
+pub struct AccountLock<'a> {
+    db: &'a Database,
+}
+
+impl Drop for AccountLock<'_> {
+    fn drop(&mut self) {
+        if let Err(error) = self.db.unlock_account() {
+            tracing::warn!(%error, "failed to release account lock");
+        }
+    }
+}
+
 impl Database {
     pub fn is_empty_for_import(&self) -> AppResult<bool> {
         if self.export_sync_data()?.tables.iter().any(|t| {
@@ -72,9 +90,18 @@ impl Database {
     }
     pub fn postgres(url: &str, user_id: &str) -> AppResult<Self> {
         let id = Uuid::parse_str(user_id).map_err(|_| AppError::Auth("无效账户".into()))?;
-        let mut connection = Connection::postgres(url, &format!("user_{}", id.simple()))?;
-        connection
-            .execute_batch("SELECT pg_advisory_lock(hashtextextended(current_schema(),0));")?;
+        let db = Self {
+            connection: Mutex::new(Connection::postgres(url, &format!("user_{}", id.simple()))?),
+        };
+        {
+            let _lock = db.lock_account()?;
+            db.migrate_tenant()?;
+        }
+        Ok(db)
+    }
+
+    fn migrate_tenant(&self) -> AppResult<()> {
+        let mut connection = self.conn()?;
         let has_schema_version = connection.query_row(
             "SELECT EXISTS (SELECT 1 FROM pg_attribute
              WHERE attrelid=to_regclass('data_revision')
@@ -109,11 +136,7 @@ impl Database {
             )?;
             tx.commit()?;
         }
-        connection
-            .execute_batch("SELECT pg_advisory_unlock(hashtextextended(current_schema(),0));")?;
-        Ok(Self {
-            connection: Mutex::new(connection),
-        })
+        Ok(())
     }
 
     pub fn hosted(&self) -> bool {
@@ -132,20 +155,32 @@ impl Database {
             .to_string())
     }
 
-    pub fn lock_account(&self) -> AppResult<()> {
+    pub fn lock_account(&self) -> AppResult<AccountLock<'_>> {
         if self.hosted() {
-            self.conn()?
-                .execute_batch("SELECT pg_advisory_lock(hashtextextended(current_schema(),0));")?;
+            self.conn()?.execute_batch(LOCK_ACCOUNT_SQL)?;
+        }
+        Ok(AccountLock { db: self })
+    }
+
+    fn unlock_account(&self) -> AppResult<()> {
+        if self.hosted() {
+            self.conn()?.execute_batch(UNLOCK_ACCOUNT_SQL)?;
         }
         Ok(())
     }
-    pub fn unlock_account(&self) -> AppResult<()> {
+
+    /// Runs slow external work with one level of the caller's account lock released,
+    /// then reacquires it. A cancelled future leaves the lock released.
+    pub async fn without_account_lock<T>(
+        &self,
+        work: impl std::future::Future<Output = T>,
+    ) -> AppResult<T> {
+        self.unlock_account()?;
+        let output = work.await;
         if self.hosted() {
-            self.conn()?.execute_batch(
-                "SELECT pg_advisory_unlock(hashtextextended(current_schema(),0));",
-            )?;
+            self.conn()?.execute_batch(LOCK_ACCOUNT_SQL)?;
         }
-        Ok(())
+        Ok(output)
     }
     pub fn open(path: &Path) -> AppResult<Self> {
         if let Some(parent) = path.parent() {
@@ -164,10 +199,13 @@ impl Database {
         })
     }
 
+    /// A panic while the guard was held already rolled back any open transaction
+    /// during unwinding, so a poisoned connection is still consistent.
     pub(crate) fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
-        self.connection
+        Ok(self
+            .connection
             .lock()
-            .map_err(|_| AppError::Database(rusqlite::Error::InvalidQuery))
+            .unwrap_or_else(std::sync::PoisonError::into_inner))
     }
 }
 

@@ -198,8 +198,12 @@ mod tests {
         let gate = Arc::new(tokio::sync::Notify::new());
         let dropped = Arc::new(AtomicBool::new(false));
         let db = Database::open(std::path::Path::new(":memory:")).unwrap();
-        db.save_model_metadata("codex", "codex://local", "fixture")
-            .unwrap();
+        db.save_model_metadata(
+            crate::models::ModelProviderKind::Codex,
+            "codex://local",
+            "fixture",
+        )
+        .unwrap();
         let state = Arc::new(RequestContext {
             db,
             market: crate::composition::MarketRuntime::new()

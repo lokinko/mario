@@ -1,7 +1,7 @@
 use super::{params, AppError, AppResult, Connection, Database, HoldingInput, Snapshot, Utc, Uuid};
 use crate::models::{
     Holding, HoldingTrade, HoldingTradeDeleteInput, HoldingTradeInput, HoldingTradeSummary,
-    HoldingTradeUpdateInput,
+    HoldingTradeUpdateInput, TradeKind,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use std::collections::{BTreeMap, HashSet};
@@ -59,8 +59,8 @@ fn validate(t: &HoldingTrade) -> AppResult<()> {
     if gross <= Decimal::ZERO {
         return Err(invalid("成交金额或税前分红须大于零"));
     }
-    match t.kind.as_str() {
-        "buy" | "sell" if q > Decimal::ZERO && p > Decimal::ZERO => {
+    match t.kind {
+        TradeKind::Buy | TradeKind::Sell if q > Decimal::ZERO && p > Decimal::ZERO => {
             let computed = checked(q.checked_mul(p))?;
             let tolerance = if t.currency == "JPY" {
                 Decimal::ONE
@@ -71,12 +71,11 @@ fn validate(t: &HoldingTrade) -> AppResult<()> {
                 return Err(invalid("成交金额与数量 × 单价不一致，请按券商成交单核对"));
             }
         }
-        "dividend" if q.is_zero() && p.is_zero() => {}
-        _ => {
-            return Err(invalid(
-                "仅支持买入、卖出和现金分红；分红不填写成交数量和单价",
-            ))
+        TradeKind::Dividend if q.is_zero() && p.is_zero() => {}
+        TradeKind::Buy | TradeKind::Sell => {
+            return Err(invalid("买入和卖出须填写大于零的成交数量和单价"))
         }
+        TradeKind::Dividend => return Err(invalid("分红不填写成交数量和单价")),
     }
     checked(gross.checked_add(fees).and_then(|n| n.checked_add(taxes)))?;
     Ok(())
@@ -181,8 +180,8 @@ pub(super) fn position_with_splits(
         let [q, _, gross, fees, taxes] = values(t)?;
         let expenses = fees + taxes;
         let flow;
-        match t.kind.as_str() {
-            "buy" => {
+        match t.kind {
+            TradeKind::Buy => {
                 bought = true;
                 quantity = checked(quantity.checked_add(q))?;
                 basis = checked(
@@ -192,7 +191,7 @@ pub(super) fn position_with_splits(
                 )?;
                 flow = -(gross + expenses);
             }
-            "sell" => {
+            TradeKind::Sell => {
                 if q > quantity {
                     return Err(invalid(&format!(
                         "{} 第 {} 笔卖出超过当时持仓 {}，请先补全此前买入",
@@ -220,7 +219,7 @@ pub(super) fn position_with_splits(
                 };
                 flow = gross - expenses;
             }
-            "dividend" => {
+            TradeKind::Dividend => {
                 // A payment can arrive after shares were sold following the ex-dividend date.
                 if !bought {
                     return Err(invalid("现金分红前须有该账户证券的买入记录"));
@@ -228,7 +227,6 @@ pub(super) fn position_with_splits(
                 flow = gross - expenses;
                 dividends = checked(dividends.checked_add(flow))?;
             }
-            _ => unreachable!(),
         }
         cash = checked(cash.checked_add(flow))?;
         fees_total = checked(fees_total.checked_add(fees))?;
@@ -427,7 +425,7 @@ impl Database {
                 holding_id: String::new(),
                 expected_revision: Some(input.expected_revision.clone()),
                 new_holding: None,
-                kind: input.kind.clone(),
+                kind: input.kind,
                 occurred_on: input.occurred_on.clone(),
                 sequence: input.sequence,
                 quantity: input.quantity.clone(),
@@ -452,7 +450,7 @@ impl Database {
         let operation = if let Some(id) = edit_id {
             let update = HoldingTradeUpdateInput {
                 expected_revision: input.expected_revision.clone().unwrap_or_default(),
-                kind: input.kind.clone(),
+                kind: input.kind,
                 occurred_on: input.occurred_on.clone(),
                 sequence: input.sequence,
                 quantity: input.quantity.clone(),
@@ -489,7 +487,7 @@ impl Database {
                 .cloned()
                 .ok_or_else(|| invalid("交易对应持仓不存在"))?
         } else if let Some(h) = &input.new_holding {
-            if !input.holding_id.is_empty() || input.kind != "buy" {
+            if !input.holding_id.is_empty() || input.kind != TradeKind::Buy {
                 return Err(invalid("新证券须从第一笔真实买入开始"));
             }
             super::validate_currency(&h.currency)?;
@@ -553,7 +551,7 @@ impl Database {
         let mut trade = HoldingTrade {
             id: input.request_id.clone(),
             holding_id: h.id.clone(),
-            kind: input.kind.clone(),
+            kind: input.kind,
             occurred_on: input.occurred_on.trim().into(),
             sequence: input.sequence,
             quantity: text(number(input.quantity.trim())?),
@@ -848,12 +846,12 @@ mod tests {
             assert_eq!(s.total_value, 9997.0); // Only fees/taxes leave the portfolio.
             let s = db.save_holding_trade(&buy).unwrap();
             assert_eq!(balance(&s, currency), 9897.0);
-            let mut sale = next(&s, "sell", "5", "12", "2026-01-02");
+            let mut sale = next(&s, TradeKind::Sell, "5", "12", "2026-01-02");
             sale.fees = "1".into();
             sale.taxes = "2".into();
             let s = db.save_holding_trade(&sale).unwrap();
             assert_eq!(balance(&s, currency), 9954.0);
-            let mut dividend = next(&s, "dividend", "0", "0", "2026-01-03");
+            let mut dividend = next(&s, TradeKind::Dividend, "0", "0", "2026-01-03");
             dividend.gross_amount = "10".into();
             dividend.taxes = "2".into();
             let s = db.save_holding_trade(&dividend).unwrap();
@@ -947,7 +945,7 @@ mod tests {
         let db = funded_open(std::path::Path::new(":memory:")).unwrap();
         let buy = first();
         let s = db.save_holding_trade(&buy).unwrap();
-        let sale = next(&s, "sell", "10", "20", "2026-01-02");
+        let sale = next(&s, TradeKind::Sell, "10", "20", "2026-01-02");
         let s = db.save_holding_trade(&sale).unwrap();
         let cash = s.holdings.iter().find(|h| h.asset_class == "现金").unwrap();
         db.update_holding_amount(
@@ -1000,7 +998,7 @@ mod tests {
         .unwrap();
         let mut tiny = next(
             &db.snapshot().unwrap(),
-            "buy",
+            TradeKind::Buy,
             "0.1",
             "1",
             &crate::models::market::today(),
@@ -1112,7 +1110,7 @@ mod tests {
             buy.quantity = quantity.into();
             buy.gross_amount = gross.into();
             let s = db.save_holding_trade(&buy).unwrap();
-            let mut buy = next(&s, "buy", second_quantity, "17.13", "2026-01-02");
+            let mut buy = next(&s, TradeKind::Buy, second_quantity, "17.13", "2026-01-02");
             buy.gross_amount = second_gross.into();
             let original = db.save_holding_trade(&buy).unwrap();
             let id = &original.holdings[0].id;
@@ -1164,7 +1162,7 @@ mod tests {
             "kind":"buy","occurredOn":"2026-01-01","sequence":1,"quantity":"10","price":"10","grossAmount":"100","fees":"2","taxes":"0","account":"券商A","settlementMode":"settle"
         })).unwrap()
     }
-    fn next(s: &Snapshot, kind: &str, q: &str, p: &str, date: &str) -> HoldingTradeInput {
+    fn next(s: &Snapshot, kind: TradeKind, q: &str, p: &str, date: &str) -> HoldingTradeInput {
         let h = &s.holdings[0];
         let gross = text(number(q).unwrap() * number(p).unwrap());
         HoldingTradeInput {
@@ -1178,7 +1176,7 @@ mod tests {
             new_holding: None,
             holding_id: h.id.clone(),
             expected_revision: s.holding_revisions.get(&h.id).cloned(),
-            kind: kind.into(),
+            kind,
             occurred_on: date.into(),
             sequence: s
                 .holding_trades
@@ -1216,15 +1214,15 @@ mod tests {
         let s = db.save_holding_trade(&buy).unwrap();
         assert_eq!(s.holding_trades.len(), 1);
         assert_eq!(s.holdings[0].current_price, Some(10.0));
-        let mut b = next(&s, "buy", "10", "20", "2026-01-02");
+        let mut b = next(&s, TradeKind::Buy, "10", "20", "2026-01-02");
         b.fees = "3".into();
         b.taxes = "2".into();
         let s = db.save_holding_trade(&b).unwrap();
-        let mut sale = next(&s, "sell", "5", "30", "2026-01-03");
+        let mut sale = next(&s, TradeKind::Sell, "5", "30", "2026-01-03");
         sale.fees = "1".into();
         sale.taxes = "2".into();
         let s = db.save_holding_trade(&sale).unwrap();
-        let mut d = next(&s, "dividend", "0", "0", "2026-01-04");
+        let mut d = next(&s, TradeKind::Dividend, "0", "0", "2026-01-04");
         d.gross_amount = "20".into();
         d.fees = "1".into();
         d.taxes = "3".into();
@@ -1276,14 +1274,14 @@ mod tests {
         b.fees = "0".into();
         let s = db.save_holding_trade(&b).unwrap();
         let s = db
-            .save_holding_trade(&next(&s, "buy", "0.2", "20", "2026-01-02"))
+            .save_holding_trade(&next(&s, TradeKind::Buy, "0.2", "20", "2026-01-02"))
             .unwrap();
         let s = db
-            .save_holding_trade(&next(&s, "sell", "0.3", "30", "2026-01-03"))
+            .save_holding_trade(&next(&s, TradeKind::Sell, "0.3", "30", "2026-01-03"))
             .unwrap();
         assert_eq!(s.holdings[0].quantity, Some(0.0));
         assert_eq!(s.holdings[0].cost_basis, 0.0);
-        let mut d = next(&s, "dividend", "0", "0", "2026-01-04");
+        let mut d = next(&s, TradeKind::Dividend, "0", "0", "2026-01-04");
         d.gross_amount = "1.25".into();
         d.taxes = "0.25".into();
         let s = db.save_holding_trade(&d).unwrap();
@@ -1299,13 +1297,13 @@ mod tests {
         let db = funded_open(&file).unwrap();
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
-        let second = next(&s, "buy", "10", "20", "2026-01-02");
+        let second = next(&s, TradeKind::Buy, "10", "20", "2026-01-02");
         let s = db.save_holding_trade(&second).unwrap();
-        let mut sale = next(&s, "sell", "5", "30", "2026-01-03");
+        let mut sale = next(&s, TradeKind::Sell, "5", "30", "2026-01-03");
         sale.fees = "1".into();
         sale.taxes = "2".into();
         let s = db.save_holding_trade(&sale).unwrap();
-        let mut d = next(&s, "dividend", "0", "0", "2026-01-04");
+        let mut d = next(&s, TradeKind::Dividend, "0", "0", "2026-01-04");
         d.gross_amount = "20".into();
         d.fees = "1".into();
         d.taxes = "3".into();
@@ -1396,7 +1394,7 @@ mod tests {
         );
         // The retained empty security can receive a corrected first execution.
         let s = reopened
-            .save_holding_trade(&next(&s, "buy", "2", "10", "2026-01-01"))
+            .save_holding_trade(&next(&s, TradeKind::Buy, "2", "10", "2026-01-01"))
             .unwrap();
         assert_eq!(s.holdings[0].quantity, Some(2.0));
         assert_eq!(s.holdings[0].market_value, 46.0);
@@ -1407,7 +1405,7 @@ mod tests {
         let db = funded_open(&dir.path().join("delete-reject.db")).unwrap();
         let b = first();
         let initial = db.save_holding_trade(&b).unwrap();
-        let sale = next(&initial, "sell", "10", "20", "2026-01-02");
+        let sale = next(&initial, TradeKind::Sell, "10", "20", "2026-01-02");
         let s = db.save_holding_trade(&sale).unwrap();
         let id = &s.holdings[0].id;
         let baseline = db.export_sync_data().unwrap().content_hash().unwrap();
@@ -1432,7 +1430,7 @@ mod tests {
             baseline
         );
         let s = db.delete_holding_trade(&sale.request_id, &current).unwrap();
-        let mut d = next(&s, "dividend", "0", "0", "2026-01-03");
+        let mut d = next(&s, TradeKind::Dividend, "0", "0", "2026-01-03");
         d.gross_amount = "10".into();
         let s = db.save_holding_trade(&d).unwrap();
         let baseline = db.export_sync_data().unwrap().content_hash().unwrap();
@@ -1459,7 +1457,7 @@ mod tests {
         let db = funded_open(&file).unwrap();
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
-        let sale = next(&s, "sell", "10", "20", "2026-01-02");
+        let sale = next(&s, TradeKind::Sell, "10", "20", "2026-01-02");
         let s = db.save_holding_trade(&sale).unwrap();
         let mut h: HoldingInput =
             serde_json::from_value(serde_json::to_value(&s.holdings[0]).unwrap()).unwrap();
@@ -1514,7 +1512,7 @@ mod tests {
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
         let s = db
-            .save_holding_trade(&next(&s, "sell", "5", "20", "2026-01-01"))
+            .save_holding_trade(&next(&s, TradeKind::Sell, "5", "20", "2026-01-01"))
             .unwrap();
         let baseline = db.export_sync_data().unwrap().content_hash().unwrap();
         let mut bad = edit(&s, &b.request_id);
@@ -1538,7 +1536,7 @@ mod tests {
                 "fees" => serde_json::json!("1e3"),
                 "taxes" => serde_json::json!("0.000000001"),
                 "account" => serde_json::json!("B"),
-                "kind" => serde_json::json!("void"),
+                "kind" => serde_json::json!("dividend"),
                 _ => serde_json::json!(2),
             };
             let bad: HoldingTradeUpdateInput = serde_json::from_value(value).unwrap();
@@ -1551,13 +1549,16 @@ mod tests {
                 baseline
             );
         }
-        let mut sale = next(&s, "sell", "6", "20", "2026-01-02");
+        let mut unknown = serde_json::to_value(edit(&s, &b.request_id)).unwrap();
+        unknown["kind"] = serde_json::json!("void");
+        assert!(serde_json::from_value::<HoldingTradeUpdateInput>(unknown).is_err());
+        let mut sale = next(&s, TradeKind::Sell, "6", "20", "2026-01-02");
         assert!(db.save_holding_trade(&sale).is_err());
         sale.quantity = "1".into();
         sale.gross_amount = "20".into();
         sale.external_id = "receipt".into();
         let s = db.save_holding_trade(&sale).unwrap();
-        let mut duplicate = next(&s, "buy", "1", "20", "2026-01-03");
+        let mut duplicate = next(&s, TradeKind::Buy, "1", "20", "2026-01-03");
         duplicate.external_id = "receipt".into();
         assert!(db.save_holding_trade(&duplicate).is_err());
         let mut invalid = serde_json::to_value(first()).unwrap();
@@ -1572,7 +1573,7 @@ mod tests {
             "valuationDate":crate::models::market::today(),"quantity":100,"currentPrice":23,"costPrice":10,"costBasis":1000,"marketValue":2300,"targetPct":0})).unwrap();
         let s = db.add_holding(&h).unwrap();
         let s = db
-            .save_holding_trade(&next(&s, "buy", "2", "10", "2026-01-01"))
+            .save_holding_trade(&next(&s, TradeKind::Buy, "2", "10", "2026-01-01"))
             .unwrap();
         assert_eq!(s.holding_trades.len(), 1);
         assert_eq!(s.holdings[0].quantity, Some(2.0));
@@ -1693,7 +1694,7 @@ mod tests {
         let mut duplicate = b.clone();
         duplicate.request_id = Uuid::new_v4().to_string();
         assert!(db.save_holding_trade(&duplicate).is_err());
-        let mut sale = next(&s, "sell", "1", "0.01", "2026-01-02");
+        let mut sale = next(&s, TradeKind::Sell, "1", "0.01", "2026-01-02");
         sale.fees = "1".into();
         let s = db.save_holding_trade(&sale).unwrap();
         let sum = &s.holding_trade_summaries[&s.holdings[0].id];

@@ -353,8 +353,8 @@ try {
   assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102064);
   await api(`/holding-trades/${trade.id}`, "PUT", { ...correction, note: "过期修改" }, 409);
   await api(`/holding-trades/${trade.id}`, "PUT", { ...correction, expectedRevision: correctedRevision, kind: "sell" }, 400);
-  await api("/holding-trades", "POST", { ...execution, requestId: randomUUID(), kind: "opening" }, 400);
-  // The old fields are rejected as a format error, never silently ignored.
+  // Unknown trade kinds and old fields are rejected as a format error, never silently ignored.
+  await api("/holding-trades", "POST", { ...execution, requestId: randomUUID(), kind: "opening" }, 422);
   await api("/holding-trades", "POST", { ...execution, requestId: randomUUID(), voidOf: trade.id }, 422);
   assert.deepEqual((await api("/snapshot")).holdingTrades, snap.holdingTrades);
   const dividend = {

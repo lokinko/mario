@@ -19,6 +19,23 @@ use axum::{
 use std::{future::Future, net::SocketAddr, path::PathBuf, sync::Arc};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
+/// Concurrent authenticated requests; each holds one PostgreSQL connection.
+const REQUEST_SLOTS: usize = 24;
+/// Concurrent password hashing for login and registration.
+const AUTH_SLOTS: usize = 2;
+
+/// Public capabilities used by deployment checks to confirm the running build.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerInfo {
+    mode: &'static str,
+    database: &'static str,
+    protocol: u32,
+    codex_bridge: u32,
+    analysis_timeout_seconds: u64,
+    codex_max_attempts: usize,
+}
+
 struct HostedState {
     accounts: Arc<Accounts>,
     slots: tokio::sync::Semaphore,
@@ -40,8 +57,8 @@ where
     let market_runtime = MarketRuntime::new()?;
     let state = Arc::new(HostedState {
         accounts: Arc::new(Accounts::open(url)?),
-        slots: tokio::sync::Semaphore::new(24),
-        auth_slots: tokio::sync::Semaphore::new(2),
+        slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
+        auth_slots: tokio::sync::Semaphore::new(AUTH_SLOTS),
         market: market_runtime.services.clone(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
     });
@@ -55,13 +72,7 @@ where
         .route("/api/auth/login", post(login))
         .route("/api/auth/register", post(register))
         .route("/api/auth/logout", post(logout))
-        .route(
-            "/api/server",
-            get(|| async {
-                Json(serde_json::json!({"mode":"hosted", "database":"postgresql", "protocol":1, "codexBridge":1,
-                    "analysisTimeoutSeconds":crate::models::inference::ANALYSIS_TIMEOUT.as_secs(), "codexMaxAttempts":3}))
-            }),
-        )
+        .route("/api/server", get(server_info))
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024))
         .with_state(state);
     let app = private
@@ -82,6 +93,16 @@ where
         .with_graceful_shutdown(shutdown)
         .await?;
     Ok(())
+}
+async fn server_info() -> Json<ServerInfo> {
+    Json(ServerInfo {
+        mode: "hosted",
+        database: "postgresql",
+        protocol: 1,
+        codex_bridge: 1,
+        analysis_timeout_seconds: crate::models::inference::ANALYSIS_TIMEOUT.as_secs(),
+        codex_max_attempts: crate::models::inference::CODEX_MAX_ATTEMPTS,
+    })
 }
 async fn no_store(mut response: Response) -> Response {
     response
@@ -138,8 +159,13 @@ async fn authenticate(
             .try_acquire()
             .map_err(|_| AppError::Busy("服务繁忙，请稍后重试".into()))?;
         let user = host.accounts.authenticate(bearer(request.headers())?)?;
-        let db = Database::postgres(&host.accounts.url, &user)?;
-        db.lock_account()?;
+        let state = Arc::new(RequestContext {
+            db: Database::postgres(&host.accounts.url, &user)?,
+            market: host.market.clone(),
+            analysis_executor: host.analysis_executor.clone(),
+        });
+        let db = &state.db;
+        let _lock = db.lock_account()?;
         let revision = db.revision()?;
         let is_write = policy::requires_revision(request.method(), request.uri().path());
         let expected = request
@@ -172,7 +198,6 @@ async fn authenticate(
                                 .parse()
                                 .map_err(|_| AppError::Validation("数据版本无效".into()))?,
                         );
-                        db.unlock_account()?;
                         return Ok(response);
                     }
                 }
@@ -188,25 +213,18 @@ async fn authenticate(
                     .into_response(),
             );
         }
-        let state = Arc::new(RequestContext {
-            db,
-            market: host.market.clone(),
-            analysis_executor: host.analysis_executor.clone(),
-        });
         request.extensions_mut().insert(state.clone());
         let mut response = next.run(request).await;
         response
             .headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-        let revision_header = state
-            .db
+        let revision_header = db
             .revision()?
             .parse()
             .map_err(|_| AppError::Validation("数据版本无效".into()))?;
         response
             .headers_mut()
             .insert("x-data-revision", revision_header);
-        state.db.unlock_account()?;
         Ok(response)
     }
     .await;

@@ -5,7 +5,8 @@ use crate::{
     db::Database,
     evidence::search_evidence,
     models::{
-        AnalysisPreview, AnalysisRequest, AnalysisResult, ModelConfig, ResearchEvidence, Snapshot,
+        AnalysisPreview, AnalysisRequest, AnalysisResult, ModelConfig, ModelProviderKind,
+        ResearchEvidence, Snapshot,
     },
     ports::analysis::AnalysisExecutor,
     AppError, AppResult,
@@ -77,12 +78,9 @@ impl<'a> AnalysisService<'a> {
         events: crate::ports::analysis::EventSender,
     ) -> AppResult<AnalysisResult> {
         // Streaming body starts after authentication middleware releases its lock.
-        self.db.lock_account()?;
-        let result = self
-            .execute_with_events(request, executor, Some(events))
-            .await;
-        self.db.unlock_account()?;
-        result
+        let _lock = self.db.lock_account()?;
+        self.execute_with_events(request, executor, Some(events))
+            .await
     }
 
     async fn execute_with_events(
@@ -100,19 +98,14 @@ impl<'a> AnalysisService<'a> {
         }
         // Freeze credentials and their destination under the same account lock;
         // another device may change its model settings while this analysis runs.
-        if self.db.hosted() && config.provider != "codex-bridge" {
+        if self.db.hosted() && config.provider != ModelProviderKind::CodexBridge {
             crate::models::validate_endpoint(&config.base_url)?;
         }
-        let api_key = if config.provider == "codex-bridge" {
-            Some(super::codex_bridge::id(self.db)?)
-        } else if config.provider == "codex" {
-            None
-        } else {
-            Some(configured_model_key(self.db, &config)?)
+        let api_key = match config.provider {
+            ModelProviderKind::CodexBridge => Some(super::codex_bridge::id(self.db)?),
+            ModelProviderKind::Codex => None,
+            _ => Some(configured_model_key(self.db, &config)?),
         };
-        // The immutable authorized context is now frozen. Release the account lock
-        // while the remote Agent runs so other devices can continue editing.
-        self.db.unlock_account()?;
         let execution = async {
             if let Some(events) = events {
                 executor
@@ -124,15 +117,20 @@ impl<'a> AnalysisService<'a> {
                     .await
             }
         };
-        let result = tokio::time::timeout(crate::models::inference::ANALYSIS_TIMEOUT, execution)
-            .await
+        // The immutable authorized context is now frozen. Release the account lock
+        // while the remote Agent runs so other devices can continue editing.
+        let result = self
+            .db
+            .without_account_lock(tokio::time::timeout(
+                crate::models::inference::ANALYSIS_TIMEOUT,
+                execution,
+            ))
+            .await?
             .unwrap_or_else(|_| {
                 Err(AppError::Model(
                     crate::models::inference::ANALYSIS_TIMEOUT_MESSAGE.into(),
                 ))
-            });
-        self.db.lock_account()?;
-        let result = result?;
+            })?;
         self.db.save_analysis(
             &result,
             request.user_message.as_deref().unwrap_or(&request.question),
@@ -201,7 +199,7 @@ mod tests {
             request: AnalysisRequest,
             context: context::BuiltContext,
         ) -> AppResult<AnalysisResult> {
-            assert_eq!(config.provider, "codex");
+            assert_eq!(config.provider, ModelProviderKind::Codex);
             assert!(api_key.is_none());
             assert_eq!(
                 request.preview_revision.as_deref(),
@@ -220,8 +218,12 @@ mod tests {
     }
     fn database() -> Database {
         let db = Database::open(std::path::Path::new(":memory:")).unwrap();
-        db.save_model_metadata("codex", "codex://local", "fixture")
-            .unwrap();
+        db.save_model_metadata(
+            crate::models::ModelProviderKind::Codex,
+            "codex://local",
+            "fixture",
+        )
+        .unwrap();
         db
     }
     struct DelayedExecutor {

@@ -2,6 +2,8 @@
 pub(crate) const ANALYSIS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25 * 60);
 pub(crate) const AGENT_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(26 * 60);
 pub(crate) const MODEL_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+/// Codex turns are retried only before any assistant output was emitted.
+pub(crate) const CODEX_MAX_ATTEMPTS: usize = 3;
 pub(crate) const ANALYSIS_TIMEOUT_MESSAGE: &str = "问答达到 25 分钟执行上限，已停止模型调用；本次未保存完整结果。可缩小问题或关闭部分分析步骤后重试";
 
 /// Safe error categories cross the bridge; upstream bodies and account details do not.

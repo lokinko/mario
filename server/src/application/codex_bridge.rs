@@ -1,5 +1,10 @@
 //! Pairing belongs to the authenticated account, never to caller-supplied model URLs.
-use crate::{ai::bridge, db::Database, models::ModelConfig, AppError, AppResult};
+use crate::{
+    ai::bridge,
+    db::Database,
+    models::{ModelConfig, ModelProviderKind},
+    AppError, AppResult,
+};
 const ID: &str = "model.codex_bridge_id";
 pub(crate) fn id(db: &Database) -> AppResult<String> {
     db.setting(ID)?
@@ -38,7 +43,7 @@ pub(crate) fn enable(db: &Database) -> AppResult<ModelConfig> {
         ));
     }
     let previous = db.model_config()?;
-    let selected = if previous.provider == "codex-bridge"
+    let selected = if previous.provider == ModelProviderKind::CodexBridge
         && state
             .models
             .iter()
@@ -60,7 +65,7 @@ pub(crate) fn save(db: &Database, model: &str) -> AppResult<ModelConfig> {
             "此模型不在本机 Codex 返回的模型列表中，请重新选择".into(),
         ));
     }
-    db.save_model_metadata("codex-bridge", "codex://bridge", model)?;
+    db.save_model_metadata(ModelProviderKind::CodexBridge, "codex://bridge", model)?;
     db.model_config()
 }
 

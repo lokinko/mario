@@ -2,7 +2,9 @@ mod endpoint;
 pub(crate) mod inference;
 pub(crate) mod information;
 pub(crate) mod market;
+mod provider;
 pub(crate) use endpoint::validate_endpoint;
+pub use provider::ModelProviderKind;
 pub(crate) mod accounting;
 pub(crate) mod daily;
 pub(crate) mod decimal;
@@ -313,7 +315,7 @@ pub struct CashBalanceState {
 pub struct HoldingTrade {
     pub id: String,
     pub holding_id: String,
-    pub kind: String,
+    pub kind: TradeKind,
     pub occurred_on: String,
     pub sequence: u32,
     pub quantity: String,
@@ -365,7 +367,7 @@ pub struct HoldingTradeInput {
     pub holding_id: String,
     pub expected_revision: Option<String>,
     pub new_holding: Option<TradeSecurityInput>,
-    pub kind: String,
+    pub kind: TradeKind,
     pub occurred_on: String,
     pub sequence: u32,
     pub quantity: String,
@@ -379,6 +381,15 @@ pub struct HoldingTradeInput {
     #[serde(default)]
     pub note: String,
     pub settlement_mode: SettlementMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TradeKind {
+    Buy,
+    Sell,
+    /// Cash dividend before tax; carries no quantity or price.
+    Dividend,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -413,7 +424,7 @@ pub struct TradeRepairInput {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HoldingTradeUpdateInput {
     pub expected_revision: String,
-    pub kind: String,
+    pub kind: TradeKind,
     pub occurred_on: String,
     pub sequence: u32,
     pub quantity: String,
@@ -483,7 +494,7 @@ pub struct RebalanceAction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelConfig {
-    pub provider: String,
+    pub provider: ModelProviderKind,
     pub base_url: String,
     pub model: String,
     pub has_api_key: bool,
@@ -503,7 +514,7 @@ pub struct CodexModel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelConfigInput {
-    pub provider: String,
+    pub provider: ModelProviderKind,
     pub base_url: String,
     pub model: String,
     pub api_key: Option<String>,
@@ -619,7 +630,7 @@ pub struct ContextGroup {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisPreview {
-    pub provider: String,
+    pub provider: ModelProviderKind,
     pub model: String,
     pub workflow: String,
     pub groups: Vec<ContextGroup>,

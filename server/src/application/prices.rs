@@ -367,7 +367,7 @@ mod tests {
                 asset_class: "股票".into(),
                 currency: "USD".into(),
             }),
-            kind: "buy".into(),
+            kind: crate::models::TradeKind::Buy,
             occurred_on: crate::models::market::today(),
             sequence: 1,
             quantity: "10".into(),

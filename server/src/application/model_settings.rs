@@ -2,11 +2,11 @@
 use crate::{
     ai::{ChatMessage, CodexProvider, ModelProvider, NativeModelProvider},
     db::Database,
-    models::{ModelConfig, ModelConfigInput, ModelConnectionTest},
+    models::{ModelConfig, ModelConfigInput, ModelConnectionTest, ModelProviderKind},
     AppError, AppResult,
 };
 pub(crate) fn save_codex_config(db: &Database, model: &str) -> AppResult<()> {
-    db.save_model_metadata("codex", "codex://local", model)?;
+    db.save_model_metadata(ModelProviderKind::Codex, "codex://local", model)?;
     db.set_setting("model.codex_ready", "true")
 }
 
@@ -51,7 +51,7 @@ pub(crate) fn configured_model_provider(
     db: &Database,
     config: &ModelConfig,
 ) -> AppResult<Box<dyn ModelProvider>> {
-    if config.provider == "codex-bridge" {
+    if config.provider == ModelProviderKind::CodexBridge {
         return Ok(Box::new(crate::ai::bridge::BridgeProvider::new(
             super::codex_bridge::id(db)?,
             config.model.clone(),
@@ -60,7 +60,7 @@ pub(crate) fn configured_model_provider(
     if db.hosted() {
         crate::models::validate_endpoint(&config.base_url)?;
     }
-    if config.provider == "codex" {
+    if config.provider == ModelProviderKind::Codex {
         if db.hosted() {
             return Err(AppError::Validation(
                 "托管服务不允许使用 Codex 本机登录".into(),
@@ -69,21 +69,21 @@ pub(crate) fn configured_model_provider(
         return Ok(Box::new(CodexProvider::new(config.model.clone())));
     }
     Ok(Box::new(NativeModelProvider::new(
-        config.provider.clone(),
+        config.provider,
         config.base_url.clone(),
         config.model.clone(),
         configured_model_key(db, config)?,
     )?))
 }
 
-pub(crate) fn model_key_binding(provider: &str, base_url: &str) -> String {
+pub(crate) fn model_key_binding(provider: ModelProviderKind, base_url: &str) -> String {
     format!("{} {}", provider, base_url.trim_end_matches('/'))
 }
 
 pub(crate) fn configured_model_key(db: &Database, config: &ModelConfig) -> AppResult<String> {
     if db
         .setting("model.key_binding")?
-        .is_none_or(|binding| binding != model_key_binding(&config.provider, &config.base_url))
+        .is_none_or(|binding| binding != model_key_binding(config.provider, &config.base_url))
     {
         return Err(AppError::Validation(
             "当前密钥不属于这个模型接口，请重新保存对应 API Key".into(),
@@ -93,10 +93,10 @@ pub(crate) fn configured_model_key(db: &Database, config: &ModelConfig) -> AppRe
 }
 
 pub(crate) async fn save(db: &Database, input: ModelConfigInput) -> AppResult<ModelConfig> {
-    if input.provider == "codex-bridge" {
+    if input.provider == ModelProviderKind::CodexBridge {
         return super::codex_bridge::save(db, &input.model);
     }
-    if input.provider == "codex" {
+    if input.provider == ModelProviderKind::Codex {
         if db.hosted() {
             return Err(AppError::Validation(
                 "托管服务不允许使用 Codex 本机登录".into(),
@@ -127,12 +127,12 @@ pub(crate) async fn save(db: &Database, input: ModelConfigInput) -> AppResult<Mo
             "切换模型接口或地址时，请填写对应 API Key".into(),
         ));
     }
-    db.save_model_metadata(&input.provider, &input.base_url, &input.model)?;
+    db.save_model_metadata(input.provider, &input.base_url, &input.model)?;
     if let Some(key) = input.api_key.as_deref() {
         db.save_secret("model", key)?;
         db.set_setting(
             "model.key_binding",
-            &model_key_binding(&input.provider, &input.base_url),
+            &model_key_binding(input.provider, &input.base_url),
         )?;
     }
     db.model_config()
@@ -146,7 +146,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("key-binding.db")).unwrap();
         let config = ModelConfig {
-            provider: "anthropic".into(),
+            provider: ModelProviderKind::Anthropic,
             base_url: "https://api.anthropic.com/v1".into(),
             model: "fixture".into(),
             has_api_key: true,
@@ -154,7 +154,7 @@ mod tests {
         for binding in [
             None,
             Some(model_key_binding(
-                "openai-responses",
+                ModelProviderKind::OpenaiResponses,
                 "https://api.openai.com/v1/",
             )),
         ] {

@@ -5,7 +5,7 @@ use crate::{
     ai::{CodexProvider, InvestmentOrchestrator, ModelProvider, NativeModelProvider},
     authentication::token_matches,
     context,
-    models::{AnalysisRequest, AnalysisResult, ModelConfig},
+    models::{AnalysisRequest, AnalysisResult, ModelConfig, ModelProviderKind},
     AppError, AppResult,
 };
 use axum::{
@@ -64,7 +64,7 @@ impl AgentExecutor {
     ) -> AppResult<AnalysisResult> {
         if let Some(endpoint) = std::env::var("MARIO_AGENT_URL")
             .ok()
-            .filter(|_| config.provider != "codex-bridge")
+            .filter(|_| config.provider != ModelProviderKind::CodexBridge)
         {
             let token = std::env::var("MARIO_AGENT_TOKEN")
                 .map_err(|_| AppError::Validation("缺少 Agent 服务令牌".into()))?;
@@ -117,7 +117,8 @@ impl AgentExecutor {
             }
             return Ok(response.json().await?);
         }
-        let provider: Box<dyn ModelProvider> = if config.provider == "codex-bridge" {
+        let provider: Box<dyn ModelProvider> = if config.provider == ModelProviderKind::CodexBridge
+        {
             Box::new(
                 crate::ai::bridge::BridgeProvider::new(
                     api_key.ok_or_else(|| AppError::Validation("请先配对本机 Codex".into()))?,
@@ -125,7 +126,7 @@ impl AgentExecutor {
                 )
                 .with_events(events.clone()),
             )
-        } else if config.provider == "codex" {
+        } else if config.provider == ModelProviderKind::Codex {
             Box::new(CodexProvider::new(config.model).with_events(events.clone()))
         } else {
             Box::new(
@@ -323,7 +324,7 @@ mod tests {
                 evidence_items: 0,
             },
             config: ModelConfig {
-                provider: "openai-chat".into(),
+                provider: ModelProviderKind::OpenaiChat,
                 base_url: format!("http://{address}/gateway/v1/"),
                 model: "third-party-model".into(),
                 has_api_key: true,

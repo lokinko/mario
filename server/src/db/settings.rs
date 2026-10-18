@@ -1,5 +1,5 @@
 use super::{params, AppError, AppResult, Database, ModelConfig, OptionalRow};
-use crate::models::AnalysisSettings;
+use crate::models::{AnalysisSettings, ModelProviderKind};
 
 impl Database {
     pub fn analysis_settings(&self) -> AppResult<AnalysisSettings> {
@@ -57,50 +57,46 @@ impl Database {
                 .optional()?
                 .unwrap_or_else(|| fallback.into()))
         };
+        let provider: ModelProviderKind = value(
+            "model.provider",
+            ModelProviderKind::OpenaiResponses.as_str(),
+        )?
+        .parse()?;
         Ok(ModelConfig {
-            provider: value("model.provider", "openai-responses")?,
+            provider,
             base_url: value("model.base_url", "https://api.openai.com/v1")?,
             model: value("model.name", "gpt-4.1-mini")?,
-            has_api_key: if value("model.provider", "")? == "codex-bridge" {
-                !value("model.codex_bridge_id", "")?.is_empty()
-            } else if value("model.provider", "")? == "codex" {
-                value("model.codex_ready", "false")? == "true"
-            } else {
-                has_key
+            has_api_key: match provider {
+                ModelProviderKind::CodexBridge => !value("model.codex_bridge_id", "")?.is_empty(),
+                ModelProviderKind::Codex => value("model.codex_ready", "false")? == "true",
+                _ => has_key,
             },
         })
     }
 
     pub fn save_model_metadata(
         &self,
-        provider: &str,
+        provider: ModelProviderKind,
         base_url: &str,
         model: &str,
     ) -> AppResult<()> {
-        if !matches!(
-            provider,
-            "openai-responses" | "openai-chat" | "anthropic" | "codex" | "codex-bridge"
-        ) {
-            return Err(AppError::Validation(
-                "请选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或 Codex"
-                    .into(),
-            ));
-        }
-        if provider == "codex-bridge" {
-            if base_url != "codex://bridge" {
+        match provider {
+            ModelProviderKind::CodexBridge if base_url != "codex://bridge" => {
                 return Err(AppError::Validation("桥接地址无效".into()));
             }
-        } else if provider != "codex" {
-            crate::models::validate_endpoint(base_url)?;
-        } else if self.hosted() || base_url != "codex://local" {
-            return Err(AppError::Validation("Codex 登录仅支持本机开发模式".into()));
+            ModelProviderKind::CodexBridge => {}
+            ModelProviderKind::Codex if self.hosted() || base_url != "codex://local" => {
+                return Err(AppError::Validation("Codex 登录仅支持本机开发模式".into()));
+            }
+            ModelProviderKind::Codex => {}
+            _ => crate::models::validate_endpoint(base_url)?,
         }
         if model.trim().is_empty() {
             return Err(AppError::Validation("请填写模型名称".into()));
         }
         let conn = self.conn()?;
         for (key, value) in [
-            ("model.provider", provider),
+            ("model.provider", provider.as_str()),
             ("model.base_url", base_url.trim_end_matches('/')),
             ("model.name", model),
         ] {
@@ -205,7 +201,10 @@ mod tests {
         db.set_setting("trading.reset.old", "true").unwrap();
         drop(db);
         let db = Database::open(&path).unwrap();
-        assert_eq!(db.model_config().unwrap().provider, "openai-responses");
+        assert_eq!(
+            db.model_config().unwrap().provider,
+            ModelProviderKind::OpenaiResponses
+        );
         assert_eq!(
             db.setting("model.key_binding").unwrap().as_deref(),
             Some("openai-responses https://models.example.test/v1")
@@ -232,39 +231,35 @@ mod tests {
     fn saves_current_native_protocols_and_rejects_retired_names() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("config.db")).unwrap();
-        db.save_model_metadata("anthropic", "https://api.anthropic.com/v1", "claude-test")
-            .unwrap();
-        assert_eq!(db.model_config().unwrap().provider, "anthropic");
-        assert!(db
-            .save_model_metadata(
-                "openai-compatible",
-                "https://api.openai.com/v1",
-                "openai-test"
-            )
-            .is_err());
         db.save_model_metadata(
-            "openai-responses",
-            "https://api.openai.com/v1",
-            "openai-test",
+            ModelProviderKind::Anthropic,
+            "https://api.anthropic.com/v1",
+            "claude-test",
         )
         .unwrap();
-        assert_eq!(db.model_config().unwrap().provider, "openai-responses");
-        assert!(db
-            .save_model_metadata("other", "https://example.com", "test")
+        assert_eq!(
+            db.model_config().unwrap().provider,
+            ModelProviderKind::Anthropic
+        );
+        for retired in ["openai-compatible", "other"] {
+            assert!(serde_json::from_value::<crate::models::ModelConfigInput>(
+                serde_json::json!({"provider": retired, "baseUrl": "https://api.openai.com/v1", "model": "test"})
+            )
             .is_err());
+        }
         db.save_model_metadata(
-            "openai-chat",
+            ModelProviderKind::OpenaiChat,
             "http://models.example.test:8080/custom/v1/",
             "third-party-model",
         )
         .unwrap();
         let config = db.model_config().unwrap();
-        assert_eq!(config.provider, "openai-chat");
+        assert_eq!(config.provider, ModelProviderKind::OpenaiChat);
         assert_eq!(config.base_url, "http://models.example.test:8080/custom/v1");
         assert_eq!(config.model, "third-party-model");
         assert!(db
             .save_model_metadata(
-                "openai-chat",
+                ModelProviderKind::OpenaiChat,
                 "https://models.example.test?key=secret",
                 "test"
             )

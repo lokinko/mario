@@ -189,7 +189,7 @@ pub(super) fn settle_trade(
                 .map_err(|_| AppError::Validation("原成交费用无效".into()))?;
             let taxes = Decimal::from_str_exact(&t.taxes)
                 .map_err(|_| AppError::Validation("原成交税款无效".into()))?;
-            Ok(if t.kind == "buy" {
+            Ok(if t.kind == crate::models::TradeKind::Buy {
                 -(gross + fees + taxes)
             } else {
                 gross - fees - taxes

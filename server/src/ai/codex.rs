@@ -4,7 +4,7 @@ use super::provider::{
     ChatMessage, ModelCompletion, ModelProvider, SearchCompletion, SearchSource,
 };
 use crate::error::{AppError, AppResult};
-use crate::models::inference::{CodexFailure, MODEL_CALL_TIMEOUT};
+use crate::models::inference::{CodexFailure, CODEX_MAX_ATTEMPTS, MODEL_CALL_TIMEOUT};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::{path::PathBuf, process::Stdio, time::Duration};
@@ -29,18 +29,19 @@ where
     Fut: std::future::Future<Output = AppResult<T>>,
 {
     tokio::time::timeout(MODEL_CALL_TIMEOUT, async {
-        for attempt in 0..3 {
+        for attempt in 0..CODEX_MAX_ATTEMPTS {
             match operation().await {
                 Ok(output) => return Ok((output, attempt + 1)),
                 Err(AppError::Codex(reason))
                     if reason.retryable()
                         && !emitted.load(std::sync::atomic::Ordering::Relaxed)
-                        && attempt < 2 =>
+                        && attempt + 1 < CODEX_MAX_ATTEMPTS =>
                 {
                     if let Some(status) = status {
                         status(&format!(
-                            "Codex 暂时连接失败，正在自动重试（{}/2）…",
-                            attempt + 1
+                            "Codex 暂时连接失败，正在自动重试（{}/{}）…",
+                            attempt + 1,
+                            CODEX_MAX_ATTEMPTS - 1
                         ));
                     }
                     tokio::time::sleep(Duration::from_millis(

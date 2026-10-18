@@ -32,7 +32,7 @@ fn sell_all(db: &Database, snapshot: &Snapshot, id: &str, price: &str) -> Snapsh
     input.holding_id = id.into();
     input.expected_revision = Some(snapshot.holding_revisions[id].clone());
     input.expected_cash_baseline = snapshot.cash_balances[0].baseline_id.clone();
-    input.kind = "sell".into();
+    input.kind = crate::models::TradeKind::Sell;
     input.price = price.into();
     input.gross_amount = (crate::models::decimal::parse(price).unwrap()
         * rust_decimal::Decimal::from(10))

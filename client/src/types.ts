@@ -268,9 +268,11 @@ export interface RebalanceAction {
   direction: "增加" | "减少";
 }
 
+export type ModelProviderKind =
+  "openai-responses" | "openai-chat" | "anthropic" | "codex" | "codex-bridge";
+
 export interface ModelConfig {
-  provider:
-    "openai-responses" | "openai-chat" | "anthropic" | "codex" | "codex-bridge";
+  provider: ModelProviderKind;
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
@@ -323,7 +325,7 @@ export interface ContextGroup {
 }
 
 export interface AnalysisPreview {
-  provider: string;
+  provider: ModelProviderKind;
   model: string;
   workflow: "quick" | "deep";
   groups: ContextGroup[];

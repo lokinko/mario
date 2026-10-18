@@ -77,7 +77,10 @@ fn postgres_canonicalizes_legacy_model_settings_without_rebinding_existing_crede
     );
     for _ in 0..2 {
         let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
-        assert_eq!(db.model_config().unwrap().provider, "openai-responses");
+        assert_eq!(
+            db.model_config().unwrap().provider,
+            crate::models::ModelProviderKind::OpenaiResponses
+        );
         assert_eq!(
             db.setting("model.key_binding").unwrap().as_deref(),
             Some("openai-responses https://original.example.test/v1")
