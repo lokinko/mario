@@ -98,7 +98,6 @@ it("resolves a lost whole-position deletion with its original versioned request"
 });
 vi.mock("./lib/service", async (original) => ({
   ...(await original<typeof import("./lib/service")>()),
-  isLocalDev: () => false,
 }));
 beforeEach(() => {
   acceptRevision();

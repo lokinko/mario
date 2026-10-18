@@ -2,7 +2,7 @@
 //! It has no database connection, session store, or mutation API.
 use crate::models::validate_endpoint;
 use crate::{
-    ai::{CodexProvider, InvestmentOrchestrator, ModelProvider, NativeModelProvider},
+    ai::{InvestmentOrchestrator, ModelProvider, NativeModelProvider},
     authentication::token_matches,
     context,
     models::{AnalysisRequest, AnalysisResult, ModelConfig, ModelProviderKind},
@@ -126,8 +126,6 @@ impl AgentExecutor {
                 )
                 .with_events(events.clone()),
             )
-        } else if config.provider == ModelProviderKind::Codex {
-            Box::new(CodexProvider::new(config.model).with_events(events.clone()))
         } else {
             Box::new(
                 NativeModelProvider::new(

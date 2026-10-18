@@ -9,8 +9,6 @@ pub enum ModelProviderKind {
     OpenaiResponses,
     OpenaiChat,
     Anthropic,
-    /// Personal Codex login on the local development machine.
-    Codex,
     /// Codex running on the user's computer, reached through the paired bridge.
     CodexBridge,
 }
@@ -21,7 +19,6 @@ impl ModelProviderKind {
             Self::OpenaiResponses => "openai-responses",
             Self::OpenaiChat => "openai-chat",
             Self::Anthropic => "anthropic",
-            Self::Codex => "codex",
             Self::CodexBridge => "codex-bridge",
         }
     }
@@ -49,11 +46,10 @@ impl std::str::FromStr for ModelProviderKind {
             "openai-responses" => Self::OpenaiResponses,
             "openai-chat" => Self::OpenaiChat,
             "anthropic" => Self::Anthropic,
-            "codex" => Self::Codex,
             "codex-bridge" => Self::CodexBridge,
             _ => {
                 return Err(AppError::Validation(
-                    "请选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或 Codex"
+                    "请选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或本机 Codex 桥接"
                         .into(),
                 ))
             }
@@ -71,7 +67,6 @@ mod tests {
             ModelProviderKind::OpenaiResponses,
             ModelProviderKind::OpenaiChat,
             ModelProviderKind::Anthropic,
-            ModelProviderKind::Codex,
             ModelProviderKind::CodexBridge,
         ] {
             assert_eq!(kind.as_str().parse::<ModelProviderKind>().unwrap(), kind);
@@ -81,5 +76,6 @@ mod tests {
             );
         }
         assert!("openai-compatible".parse::<ModelProviderKind>().is_err());
+        assert!("codex".parse::<ModelProviderKind>().is_err());
     }
 }

@@ -332,10 +332,10 @@ pub(super) fn rebuild(conn: &Connection, h: &Holding, s: &HoldingTradeSummary) -
         return Err(invalid("持仓市值超过允许范围"));
     }
     // Never overwrite a market quote with an execution price or date.
-    conn.execute("UPDATE holdings SET quantity=?2,cost_basis=?3,cost_price=?4,market_value=?5,current_price=?6,updated_at=?7 WHERE id=?1",
+    conn.execute("UPDATE holdings SET quantity=$2,cost_basis=$3,cost_price=$4,market_value=$5,current_price=$6,updated_at=$7 WHERE id=$1",
         params![h.id,quantity,basis,cost_price,market_value,price,Utc::now().to_rfc3339()])?;
     conn.execute(
-        "DELETE FROM holding_valuations WHERE holding_id=?1",
+        "DELETE FROM holding_valuations WHERE holding_id=$1",
         [&h.id],
     )?;
     super::fx::apply_holdings(conn)?;
@@ -355,7 +355,7 @@ impl Database {
         }
         let before = super::daily::prepare(&tx)?;
         // A retry after a successful deletion must not alter any other record.
-        if tx.query_row("SELECT EXISTS(SELECT 1 FROM holding_trades t JOIN trading_quarantine q ON q.holding_id=t.holding_id WHERE t.id=?1)",[id],|r|r.get::<_,bool>(0))? {
+        if tx.query_row("SELECT EXISTS(SELECT 1 FROM holding_trades t JOIN trading_quarantine q ON q.holding_id=t.holding_id WHERE t.id=$1)",[id],|r|r.get::<_,bool>(0))? {
             return Err(invalid("交易链已隔离，请先预览修复，原始记录不能直接删除"));
         }
         let Some(trade) = before.holding_trades.iter().find(|t| t.id == id) else {
@@ -402,7 +402,7 @@ impl Database {
             &text(cash_delta),
             ("用户删除交易", Some(&operation.0)),
         )?;
-        tx.execute("DELETE FROM holding_trades WHERE id=?1", [id])?;
+        tx.execute("DELETE FROM holding_trades WHERE id=$1", [id])?;
         rebuild(&tx, h, &summary)?;
         super::daily::finish(&tx, &before, None)?;
         let snapshot = super::financial::complete(&tx, &operation)?;
@@ -518,7 +518,7 @@ impl Database {
             }
             let id = Uuid::new_v4().to_string();
             // Use the first execution as a provisional reference until a current quote is available.
-            tx.execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,fx_rate_to_base,valuation_date,fx_rate_source,fx_rate_observed_on,created_at,updated_at,quantity,current_price) VALUES (?1,?2,?3,?4,0,0,0,?5,NULL,?6,'','',?7,?7,0,?8)",
+            tx.execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,fx_rate_to_base,valuation_date,fx_rate_source,fx_rate_observed_on,created_at,updated_at,quantity,current_price) VALUES ($1,$2,$3,$4,0,0,0,$5,NULL,$6,'','',$7,$7,0,$8)",
                 params![id,h.symbol.trim(),h.name.trim(),h.asset_class,h.currency.trim().to_ascii_uppercase(),crate::models::market::today(),now,number(input.price.trim())?.to_f64().unwrap()])?;
             Database::snapshot_on(&tx)?
                 .holdings
@@ -643,7 +643,7 @@ impl Database {
                 Some(&operation.0),
             ),
         )?;
-        tx.execute("INSERT INTO holding_trades(id,holding_id,payload,created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+        tx.execute("INSERT INTO holding_trades(id,holding_id,payload,created_at) VALUES ($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
             params![trade.id,h.id,serde_json::to_string(&trade)?,trade.created_at])?;
         rebuild(&tx, &h, &summary)?;
         super::daily::finish(&tx, &before, None)?;
@@ -713,13 +713,13 @@ pub(super) fn validate_stored(conn: &Connection) -> AppResult<()> {
     }
     for holding_id in &s.cleared_trade_holdings {
         let raw: String = conn.query_row(
-            "SELECT payload FROM trading_quarantine WHERE holding_id=?1",
+            "SELECT payload FROM trading_quarantine WHERE holding_id=$1",
             [holding_id],
             |r| r.get(0),
         )?;
         let original: Vec<serde_json::Value> = serde_json::from_str(&raw)?;
         let mut statement = conn.prepare(
-            "SELECT id,payload,created_at FROM holding_trades WHERE holding_id=?1 ORDER BY id",
+            "SELECT id,payload,created_at FROM holding_trades WHERE holding_id=$1 ORDER BY id",
         )?;
         let actual = statement
             .query_map([holding_id], |r| {
@@ -799,7 +799,7 @@ pub(super) fn quarantine_invalid(conn: &Connection) -> AppResult<()> {
     }
     for (id, trades) in &groups {
         let matching = conn.query_row(
-            "SELECT currency,asset_class FROM holdings WHERE id=?1",
+            "SELECT currency,asset_class FROM holdings WHERE id=$1",
             [id],
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
         );
@@ -814,7 +814,7 @@ pub(super) fn quarantine_invalid(conn: &Connection) -> AppResult<()> {
     for id in invalid_ids {
         let payload = serde_json::to_string(&raw[&id])?;
         let reason = "原始交易格式、关联或交易链校验失败；数据已保留，请预览修复后恢复计算";
-        conn.execute("INSERT INTO trading_quarantine(holding_id,payload,reason,created_at) VALUES (?1,?2,?3,?4) ON CONFLICT(holding_id) DO NOTHING",params![id,payload,reason,Utc::now().to_rfc3339()])?;
+        conn.execute("INSERT INTO trading_quarantine(holding_id,payload,reason,created_at) VALUES ($1,$2,$3,$4) ON CONFLICT(holding_id) DO NOTHING",params![id,payload,reason,Utc::now().to_rfc3339()])?;
     }
     Ok(())
 }
@@ -831,7 +831,7 @@ mod tests {
     #[test]
     fn trades_settle_each_currency_and_keep_total_assets_correct() {
         for currency in ["CNY", "HKD", "USD"] {
-            let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+            let db = Database::test();
             db.save_profile(&crate::models::FinancialProfile {
                 base_currency: currency.into(),
                 ..Default::default()
@@ -895,7 +895,7 @@ mod tests {
 
     #[test]
     fn insufficient_cash_and_failed_daily_writes_roll_back_the_entire_trade() {
-        let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+        let db = Database::test();
         let buy = first();
         let before = db.export_sync_data().unwrap().content_hash().unwrap();
         assert!(db
@@ -931,7 +931,7 @@ mod tests {
             db.export_sync_data().unwrap().content_hash().unwrap(),
             before
         );
-        db.conn().unwrap().execute_batch("CREATE TRIGGER fail_cash_daily BEFORE INSERT ON daily_entries BEGIN SELECT RAISE(ABORT,'daily write failed'); END;").unwrap();
+        crate::db::fail_inserts(&db.conn().unwrap(), "daily_entries", "daily write failed");
         edited.fees = "1".into(); // Would refund one unit before the daily write fails.
         assert!(db.update_holding_trade(&buy.request_id, &edited).is_err());
         assert_eq!(
@@ -942,7 +942,7 @@ mod tests {
 
     #[test]
     fn deleting_income_covered_by_a_new_balance_confirmation_requires_reconciliation() {
-        let db = funded_open(std::path::Path::new(":memory:")).unwrap();
+        let db = funded(Database::test());
         let buy = first();
         let s = db.save_holding_trade(&buy).unwrap();
         let sale = next(&s, TradeKind::Sell, "10", "20", "2026-01-02");
@@ -972,7 +972,7 @@ mod tests {
 
     #[test]
     fn cash_is_shared_between_positions_but_never_between_currencies() {
-        let db = funded_open(std::path::Path::new(":memory:")).unwrap();
+        let db = funded(Database::test());
         db.save_holding_trade(&first()).unwrap();
         let mut other = first();
         other.new_holding.as_mut().unwrap().name = "另一证券".into();
@@ -1027,7 +1027,7 @@ mod tests {
 
     #[test]
     fn legacy_backup_keeps_current_cash_and_later_corrections_only_settle_the_difference() {
-        let db = funded_open(std::path::Path::new(":memory:")).unwrap();
+        let db = funded(Database::test());
         let buy = first();
         db.save_holding_trade(&buy).unwrap();
         let mut backup = db.export_sync_data().unwrap();
@@ -1045,7 +1045,7 @@ mod tests {
             ]
             .contains(&t.name.as_str())
         });
-        let copy = Database::open(std::path::Path::new(":memory:")).unwrap();
+        let copy = Database::test();
         copy.import_sync_data(&backup).unwrap();
         let s = copy.snapshot().unwrap();
         assert_eq!(balance(&s, "CNY"), 9898.0);
@@ -1064,7 +1064,7 @@ mod tests {
 
     #[test]
     fn sub_float_unit_cash_debits_are_preserved_in_the_exact_balance() {
-        let db = funded_open(std::path::Path::new(":memory:")).unwrap();
+        let db = funded(Database::test());
         let s = db.snapshot().unwrap();
         let cash = &s.holdings[0];
         db.update_holding_amount(
@@ -1085,7 +1085,7 @@ mod tests {
         buy.expected_cash_baseline = db.snapshot().unwrap().cash_balances[0].baseline_id.clone();
         let snapshot = db.save_holding_trade(&buy).unwrap();
         assert_eq!(snapshot.cash_balances[0].amount, "999999999999999.99");
-        let restored = Database::open(std::path::Path::new(":memory:")).unwrap();
+        let restored = Database::test();
         restored
             .import_sync_data(&db.export_sync_data().unwrap())
             .unwrap();
@@ -1094,17 +1094,16 @@ mod tests {
             "999999999999999.99"
         );
     }
-    fn funded_open(path: &std::path::Path) -> AppResult<Database> {
-        let db = Database::open(path)?;
+    fn funded(db: Database) -> Database {
         super::super::cash::fund(&db, "CNY");
-        Ok(db)
+        db
     }
     #[test]
     fn internal_stock_price_edits_preserve_execution_totals_after_json_round_trip() {
         for (quantity, second_quantity, gross, second_gross) in
             [("10", "7", "100", "119.91"), ("0.1", "0.07", "1", "1.1991")]
         {
-            let db = funded_open(std::path::Path::new(":memory:")).unwrap();
+            let db = funded(Database::test());
             let mut buy = first();
             buy.new_holding.as_mut().unwrap().name = "OPPO 股票".into();
             buy.quantity = quantity.into();
@@ -1207,8 +1206,7 @@ mod tests {
     }
     #[test]
     fn real_executions_dividends_fees_and_taxes_drive_one_server_summary() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = funded_open(&dir.path().join("real.db")).unwrap();
+        let db = funded(Database::test());
         let mut buy = first();
         buy.taxes = "1".into();
         let s = db.save_holding_trade(&buy).unwrap();
@@ -1241,7 +1239,7 @@ mod tests {
         assert_eq!(s.holdings[0].valuation_date, crate::models::market::today());
         assert_eq!(s.holdings[0].market_value, 150.0);
         assert_eq!(db.save_holding_trade(&d).unwrap().holding_trades.len(), 4);
-        let copy = Database::open(&dir.path().join("copy.db")).unwrap();
+        let copy = Database::test();
         let export = db.export_sync_data().unwrap();
         assert_eq!(
             export.schema_version,
@@ -1266,8 +1264,7 @@ mod tests {
     }
     #[test]
     fn fractional_close_is_exact_and_dividend_can_arrive_after_close() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = funded_open(&dir.path().join("fraction.db")).unwrap();
+        let db = funded(Database::test());
         let mut b = first();
         b.quantity = "0.1".into();
         b.gross_amount = "1".into();
@@ -1292,9 +1289,8 @@ mod tests {
     }
     #[test]
     fn deletions_replay_costs_profits_charges_and_zero_the_last_position() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("delete.db");
-        let db = funded_open(&file).unwrap();
+        let account = crate::db::TestAccount::new();
+        let db = funded(account.open());
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
         let second = next(&s, TradeKind::Buy, "10", "20", "2026-01-02");
@@ -1377,7 +1373,7 @@ mod tests {
         assert_eq!(s.holdings[0].cost_basis, 0.0);
         assert_eq!(s.holdings[0].market_value, 0.0);
         assert_eq!(s.holdings[0].current_price, Some(23.0));
-        let copy = Database::open(&dir.path().join("copy.db")).unwrap();
+        let copy = Database::test();
         copy.import_sync_data(&db.export_sync_data().unwrap())
             .unwrap();
         assert!(copy.snapshot().unwrap().holding_trades.is_empty());
@@ -1386,7 +1382,7 @@ mod tests {
             serde_json::to_value(&s.holdings).unwrap()
         );
         drop(db);
-        let reopened = Database::open(&file).unwrap();
+        let reopened = account.open();
         assert!(reopened.snapshot().unwrap().holding_trades.is_empty());
         assert_eq!(
             serde_json::to_value(reopened.snapshot().unwrap().holdings).unwrap(),
@@ -1401,8 +1397,7 @@ mod tests {
     }
     #[test]
     fn deletions_reject_stale_revisions_oversells_and_orphan_dividends_atomically() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = funded_open(&dir.path().join("delete-reject.db")).unwrap();
+        let db = funded(Database::test());
         let b = first();
         let initial = db.save_holding_trade(&b).unwrap();
         let sale = next(&initial, TradeKind::Sell, "10", "20", "2026-01-02");
@@ -1452,9 +1447,8 @@ mod tests {
     }
     #[test]
     fn corrections_preserve_identity_quote_and_retry_without_extra_records() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("edit.db");
-        let db = funded_open(&file).unwrap();
+        let account = crate::db::TestAccount::new();
+        let db = funded(account.open());
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
         let sale = next(&s, TradeKind::Sell, "10", "20", "2026-01-02");
@@ -1497,18 +1491,13 @@ mod tests {
             .is_err());
         drop(db);
         assert_eq!(
-            Database::open(&file)
-                .unwrap()
-                .snapshot()
-                .unwrap()
-                .holding_trades,
+            account.open().snapshot().unwrap().holding_trades,
             corrected.holding_trades
         );
     }
     #[test]
     fn chronological_validation_rejects_oversells_duplicates_and_invalid_fields_atomically() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = funded_open(&dir.path().join("reject.db")).unwrap();
+        let db = funded(Database::test());
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
         let s = db
@@ -1567,8 +1556,7 @@ mod tests {
     }
     #[test]
     fn manual_positions_are_rebuilt_from_history_without_artificial_opening_or_date_boundary() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = funded_open(&dir.path().join("manual.db")).unwrap();
+        let db = funded(Database::test());
         let h:HoldingInput=serde_json::from_value(serde_json::json!({"name":"旧快照","symbol":"","assetClass":"股票","currency":"CNY",
             "valuationDate":crate::models::market::today(),"quantity":100,"currentPrice":23,"costPrice":10,"costBasis":1000,"marketValue":2300,"targetPct":0})).unwrap();
         let s = db.add_holding(&h).unwrap();
@@ -1585,10 +1573,9 @@ mod tests {
         assert!(db.update_holding(&s.holdings[0].id, &forbidden).is_err());
     }
     #[test]
-    fn restart_quarantines_invalid_chains_preserves_balances_and_requires_reviewed_repair() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("clear.db");
-        let db = funded_open(&file).unwrap();
+    fn upgrade_quarantines_invalid_chains_preserves_balances_and_requires_reviewed_repair() {
+        let account = crate::db::TestAccount::new();
+        let db = funded(account.open());
         let first = first();
         let s = db.save_holding_trade(&first).unwrap();
         let bad_id = s.holdings[0].id.clone();
@@ -1613,12 +1600,12 @@ mod tests {
         db.conn()
             .unwrap()
             .execute(
-                "UPDATE holding_trades SET payload=?2 WHERE id=?1",
+                "UPDATE holding_trades SET payload=$2 WHERE id=$1",
                 params![first.request_id, "{\"kind\":\"opening\"}"],
             )
             .unwrap();
         drop(db);
-        let db = funded_open(&file).unwrap();
+        let db = funded(account.reopen_from_old_release());
         let s = db.snapshot().unwrap();
         assert_eq!(s.holding_trades, vec![valid]);
         assert!(s.cleared_trade_holdings.contains(&bad_id));
@@ -1646,7 +1633,7 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("opening"));
-        let copy = Database::open(std::path::Path::new(":memory:")).unwrap();
+        let copy = Database::test();
         copy.import_sync_data(&db.export_sync_data().unwrap())
             .unwrap();
         assert_eq!(copy.financial_history(&bad_id).unwrap(), raw);
@@ -1683,8 +1670,7 @@ mod tests {
 
     #[test]
     fn fees_can_exceed_small_sale_proceeds_and_existing_account_security_is_reused() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = funded_open(&dir.path().join("fees.db")).unwrap();
+        let db = funded(Database::test());
         let mut b = first();
         b.quantity = "1".into();
         b.price = "0.01".into();
@@ -1703,9 +1689,8 @@ mod tests {
     }
     #[test]
     fn quarantine_does_not_rewrite_daily_observations_or_source_records() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("rollback.db");
-        let db = funded_open(&file).unwrap();
+        let account = crate::db::TestAccount::new();
+        let db = funded(account.open());
         let b = first();
         let s = db.save_holding_trade(&b).unwrap();
         let id = s.holdings[0].id.clone();
@@ -1717,18 +1702,18 @@ mod tests {
         {
             let conn = db.conn().unwrap();
             conn.execute(
-                "UPDATE holding_trades SET payload=?2 WHERE id=?1",
+                "UPDATE holding_trades SET payload=$2 WHERE id=$1",
                 params![b.request_id, "{\"kind\":\"opening\"}"],
             )
             .unwrap();
-            conn.execute_batch("CREATE TRIGGER reject_cleanup BEFORE INSERT ON daily_entries BEGIN SELECT RAISE(ABORT,'test cleanup failure'); END;").unwrap();
+            crate::db::fail_inserts(&conn, "daily_entries", "test cleanup failure");
         }
         drop(db);
-        let reopened = Database::open(&file).unwrap();
+        let reopened = account.reopen_from_old_release();
         assert!(!reopened.snapshot().unwrap().valuation_status.comparable);
-        let conn = Connection::open(&file).unwrap();
+        let conn = reopened.conn().unwrap();
         assert_eq!(
-            conn.query_row("SELECT quantity FROM holdings WHERE id=?1", [&id], |r| r
+            conn.query_row("SELECT quantity FROM holdings WHERE id=$1", [&id], |r| r
                 .get::<_, f64>(0))
                 .unwrap(),
             10.0

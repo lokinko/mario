@@ -35,13 +35,11 @@ mod sync_store;
 mod trades;
 use std::{
     collections::{HashMap, HashSet},
-    path::Path,
     sync::Mutex,
 };
 
-use crate::storage::{Connection, Transaction};
+use crate::storage::{params, Connection, OptionalRow, Transaction, Value};
 use chrono::{Local, NaiveDate, Utc};
-use rusqlite::{params, types::ValueRef};
 use uuid::Uuid;
 
 use crate::{
@@ -131,7 +129,7 @@ impl Database {
                 "ALTER TABLE data_revision ADD COLUMN IF NOT EXISTS schema_version INTEGER NOT NULL DEFAULT 0",
             )?;
             tx.execute(
-                "UPDATE data_revision SET schema_version=?1 WHERE id=1",
+                "UPDATE data_revision SET schema_version=$1 WHERE id=1",
                 [schema::POSTGRES_SCHEMA_VERSION],
             )?;
             tx.commit()?;
@@ -139,14 +137,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn hosted(&self) -> bool {
-        self.conn().map(|c| c.is_postgres()).unwrap_or(false)
-    }
-
     pub fn revision(&self) -> AppResult<String> {
-        if !self.hosted() {
-            return Ok("local".into());
-        }
         Ok(self
             .conn()?
             .query_row("SELECT revision FROM data_revision WHERE id=1", [], |r| {
@@ -156,17 +147,12 @@ impl Database {
     }
 
     pub fn lock_account(&self) -> AppResult<AccountLock<'_>> {
-        if self.hosted() {
-            self.conn()?.execute_batch(LOCK_ACCOUNT_SQL)?;
-        }
+        self.conn()?.execute_batch(LOCK_ACCOUNT_SQL)?;
         Ok(AccountLock { db: self })
     }
 
     fn unlock_account(&self) -> AppResult<()> {
-        if self.hosted() {
-            self.conn()?.execute_batch(UNLOCK_ACCOUNT_SQL)?;
-        }
-        Ok(())
+        Ok(self.conn()?.execute_batch(UNLOCK_ACCOUNT_SQL)?)
     }
 
     /// Runs slow external work with one level of the caller's account lock released,
@@ -177,28 +163,9 @@ impl Database {
     ) -> AppResult<T> {
         self.unlock_account()?;
         let output = work.await;
-        if self.hosted() {
-            self.conn()?.execute_batch(LOCK_ACCOUNT_SQL)?;
-        }
+        self.conn()?.execute_batch(LOCK_ACCOUNT_SQL)?;
         Ok(output)
     }
-    pub fn open(path: &Path) -> AppResult<Self> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let mut connection = Connection::open(path)?;
-        schema::initialize(&connection)?;
-        let tx = connection.transaction()?;
-        trades::quarantine_invalid(&tx)?;
-        cash::consolidate(&tx)?;
-        cash::initialize_balances(&tx)?;
-        amounts::initialize(&tx)?;
-        tx.commit()?;
-        Ok(Self {
-            connection: Mutex::new(connection),
-        })
-    }
-
     /// A panic while the guard was held already rolled back any open transaction
     /// during unwinding, so a poisoned connection is still consistent.
     pub(crate) fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
@@ -209,17 +176,63 @@ impl Database {
     }
 }
 
-trait OptionalRow<T> {
-    fn optional(self) -> rusqlite::Result<Option<T>>;
+/// A fresh tenant in the disposable `MARIO_TEST_DATABASE_URL` database; `open` may be called
+/// repeatedly to simulate a restart against the same account schema.
+#[cfg(test)]
+pub(crate) struct TestAccount {
+    url: String,
+    user: String,
 }
 
-impl<T> OptionalRow<T> for rusqlite::Result<T> {
-    fn optional(self) -> rusqlite::Result<Option<T>> {
-        match self {
-            Ok(value) => Ok(Some(value)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(error) => Err(error),
+#[cfg(test)]
+impl TestAccount {
+    pub(crate) fn new() -> Self {
+        Self {
+            url: std::env::var("MARIO_TEST_DATABASE_URL")
+                .expect("set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database (scripts/test.sh starts one)"),
+            user: Uuid::new_v4().to_string(),
         }
+    }
+
+    pub(crate) fn open(&self) -> Database {
+        Database::postgres(&self.url, &self.user).unwrap()
+    }
+
+    /// The account schema without running tenant migrations, for seeding older layouts.
+    pub(crate) fn connection(&self) -> Connection {
+        let id = Uuid::parse_str(&self.user).unwrap();
+        Connection::postgres(&self.url, &format!("user_{}", id.simple())).unwrap()
+    }
+}
+
+#[cfg(test)]
+impl TestAccount {
+    /// Reopens as if an older release had last migrated this tenant, re-running migrations.
+    pub(crate) fn reopen_from_old_release(&self) -> Database {
+        self.connection()
+            .execute_batch("UPDATE data_revision SET schema_version=0")
+            .unwrap();
+        self.open()
+    }
+}
+
+/// Makes every later insert into `table` fail, to exercise rollback paths.
+#[cfg(test)]
+pub(crate) fn fail_inserts(connection: &Connection, table: &str, message: &str) {
+    connection
+        .execute_batch(&format!(
+            "CREATE FUNCTION fail_{table}() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN RAISE EXCEPTION '{message}'; END $$;
+             CREATE TRIGGER fail_{table} BEFORE INSERT ON {table}
+             FOR EACH ROW EXECUTE FUNCTION fail_{table}();"
+        ))
+        .unwrap();
+}
+
+#[cfg(test)]
+impl Database {
+    pub(crate) fn test() -> Self {
+        TestAccount::new().open()
     }
 }
 

@@ -316,14 +316,14 @@ impl Database {
         let before = super::daily::prepare(&transaction)?;
         let previous_base_currency = before.profile.base_currency.clone();
         transaction.execute(
-            "INSERT INTO profile (id, payload, updated_at) VALUES (1, ?1, ?2)
+            "INSERT INTO profile (id, payload, updated_at) VALUES (1, $1, $2)
              ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
             params![payload, Utc::now().to_rfc3339()],
         )?;
         if !previous_base_currency.eq_ignore_ascii_case(&normalized.base_currency) {
             transaction.execute(
                 "UPDATE holdings SET fx_rate_to_base=NULL, fx_rate_source='',
-                    fx_rate_observed_on='', updated_at=?1",
+                    fx_rate_observed_on='', updated_at=$1",
                 params![Utc::now().to_rfc3339()],
             )?;
         }
@@ -363,7 +363,7 @@ impl Database {
         let id = Uuid::new_v4().to_string();
         transaction.execute(
             "INSERT INTO holdings (id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on, created_at, updated_at, cost_price, quantity, current_price)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?14, ?15, ?16)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15, $16)",
             params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, now, input.cost_price, input.quantity, input.current_price],
         )?;
         if input.asset_class == "现金" {
@@ -428,7 +428,7 @@ impl Database {
         )?;
         let previous = transaction
             .query_row(
-                "SELECT symbol, market_value, currency, valuation_date, quantity, current_price FROM holdings WHERE id=?1",
+                "SELECT symbol, market_value, currency, valuation_date, quantity, current_price FROM holdings WHERE id=$1",
                 [id],
                 |row| {
                     Ok((
@@ -446,7 +446,7 @@ impl Database {
             return Err(AppError::Validation("找不到要更新的资产".into()));
         };
         let affected = transaction.execute(
-            "UPDATE holdings SET symbol=?2, name=?3, asset_class=?4, market_value=?5, cost_basis=?6, target_pct=?7, currency=?8, fx_rate_to_base=?9, valuation_date=?10, fx_rate_source=?11, fx_rate_observed_on=?12, updated_at=?13, cost_price=?14, quantity=?15, current_price=?16 WHERE id=?1",
+            "UPDATE holdings SET symbol=$2, name=$3, asset_class=$4, market_value=$5, cost_basis=$6, target_pct=$7, currency=$8, fx_rate_to_base=$9, valuation_date=$10, fx_rate_source=$11, fx_rate_observed_on=$12, updated_at=$13, cost_price=$14, quantity=$15, current_price=$16 WHERE id=$1",
             params![id, input.symbol.trim(), input.name.trim(), input.asset_class, input.market_value, input.cost_basis, input.target_pct, input.currency.trim().to_ascii_uppercase(), fx_rate_to_base, input.valuation_date.trim(), fx_rate_source, fx_rate_observed_on, Utc::now().to_rfc3339(), input.cost_price, input.quantity, input.current_price],
         )?;
         if affected == 0 {
@@ -459,7 +459,7 @@ impl Database {
             || previous.4 != input.quantity
             || previous.5 != input.current_price;
         if valuation_changed {
-            transaction.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
+            transaction.execute("DELETE FROM holding_valuations WHERE holding_id=$1", [id])?;
         }
         if input.asset_class == "现金" {
             super::cash::confirm(
@@ -526,7 +526,7 @@ impl Database {
         let transaction = conn.transaction()?;
         let before = super::daily::prepare(&transaction)?;
         let holding_currency = transaction
-            .query_row("SELECT currency FROM holdings WHERE id=?1", [id], |row| {
+            .query_row("SELECT currency FROM holdings WHERE id=$1", [id], |row| {
                 row.get::<_, String>(0)
             })
             .optional()?
@@ -560,13 +560,13 @@ impl Database {
         )?;
         transaction.execute(
             "UPDATE holdings
-             SET symbol=?2, market_value=?3, valuation_date=?4,
-                 fx_rate_to_base=CASE WHEN valuation_date=?4 THEN fx_rate_to_base ELSE NULL END,
-                 fx_rate_source=CASE WHEN valuation_date=?4 THEN fx_rate_source ELSE '' END,
-                 fx_rate_observed_on=CASE WHEN valuation_date=?4 THEN fx_rate_observed_on ELSE '' END,
-                 updated_at=?5, quantity=?6, current_price=?7,
-                 cost_basis=CASE WHEN cost_price IS NOT NULL THEN cost_price * ?6 ELSE cost_basis END
-             WHERE id=?1",
+             SET symbol=$2, market_value=$3, valuation_date=$4,
+                 fx_rate_to_base=CASE WHEN valuation_date=$4 THEN fx_rate_to_base ELSE NULL END,
+                 fx_rate_source=CASE WHEN valuation_date=$4 THEN fx_rate_source ELSE '' END,
+                 fx_rate_observed_on=CASE WHEN valuation_date=$4 THEN fx_rate_observed_on ELSE '' END,
+                 updated_at=$5, quantity=$6, current_price=$7,
+                 cost_basis=CASE WHEN cost_price IS NOT NULL THEN cost_price * $6 ELSE cost_basis END
+             WHERE id=$1",
             params![id, quote.symbol.trim(), market_value, quote.requested_on, captured_at, quantity, quote.close],
         )?;
         transaction.execute(
@@ -575,7 +575,7 @@ impl Database {
                requested_on, observed_on, staleness_days, provider_code, provider_name,
                exchange_name, mic_code, instrument_type, price_basis, source_url,
                methodology_url, disclaimer, captured_at
-             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
              ON CONFLICT(holding_id) DO UPDATE SET
                symbol=excluded.symbol, quantity=excluded.quantity,
                unit_price=excluded.unit_price, market_value=excluded.market_value,
@@ -672,10 +672,10 @@ impl Database {
             &cash_delta,
             ("用户删除持仓及关联交易", Some(&operation.0)),
         )?;
-        transaction.execute("DELETE FROM holding_trades WHERE holding_id=?1", [id])?;
-        transaction.execute("DELETE FROM holdings WHERE id=?1", [id])?;
-        transaction.execute("DELETE FROM cash_state WHERE holding_id=?1", [id])?;
-        transaction.execute("DELETE FROM corporate_actions WHERE holding_id=?1", [id])?;
+        transaction.execute("DELETE FROM holding_trades WHERE holding_id=$1", [id])?;
+        transaction.execute("DELETE FROM holdings WHERE id=$1", [id])?;
+        transaction.execute("DELETE FROM cash_state WHERE holding_id=$1", [id])?;
+        transaction.execute("DELETE FROM corporate_actions WHERE holding_id=$1", [id])?;
         super::fx::apply_holdings(&transaction)?;
         super::daily::finish(&transaction, &before, None)?;
         let snapshot = super::financial::complete(&transaction, &operation)?;

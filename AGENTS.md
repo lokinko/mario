@@ -4,7 +4,7 @@
 
 ## 全局架构文档
 
-[架构说明](docs/architecture.md) 是全局代码设计的总体架构来源，维护整个项目的设计思路：运行模式与部署形态、设计原则、前后端分层与依赖方向（及架构检查强制的规则）、后端与前端模块地图、请求/AI 分析/行情/同步的关键数据流、状态与事务归属、财务与账号隔离不变量、保留的迁移适配，以及容量边界和已知架构债。本文件规定协作规则，架构说明描述系统当前的实际结构；两者冲突时以本文件的规则为准，并在同次更新中修正架构说明。
+[架构说明](docs/architecture.md) 是全局代码设计的总体架构来源，维护整个项目的设计思路：运行角色与部署形态、设计原则、前后端分层与依赖方向（及架构检查强制的规则）、后端与前端模块地图、请求/AI 分析/行情/同步的关键数据流、状态与事务归属、财务与账号隔离不变量、保留的迁移适配，以及容量边界和已知架构债。本文件规定协作规则，架构说明描述系统当前的实际结构；两者冲突时以本文件的规则为准，并在同次更新中修正架构说明。
 
 - 开始跨模块、改变依赖方向或调整状态与事务归属的工作前，先阅读架构说明，并在设计中引用受影响的章节。
 - 架构说明只描述当前生产路径与长期有效的设计；一次性验收数据写入审计或发布文档，模块级扩展步骤写入 [模块边界](docs/module-boundaries.md)。
@@ -15,15 +15,16 @@
 项目采用模块化单体，生产架构为：
 
 ```text
-React Web → Rust API → PostgreSQL
-                └──→ 无状态 AI Agent → 模型提供方
+React Web → Rust API → PostgreSQL（mario_auth + 每账号 user_<uuid> schema）
+                ├──→ 无状态 AI Agent → 模型提供方
+                └──← 个人电脑 Codex 桥接（HTTPS 长轮询）
 ```
 
-- 前端使用 React、TypeScript 和 Vite，负责展示与交互。
-- Rust API 使用 Axum，负责认证、账号隔离、业务用例、事务和分析结果持久化。
-- PostgreSQL 是生产数据存储；SQLite 用于本地开发、回归和旧数据迁移。
-- AI Agent 只消费已授权并冻结的输入，执行模型工作流；不读取账号数据库、不修改资产、不执行交易。
-- 保持现有部署方式，不为假设中的需求引入微服务、事件总线或通用框架。
+- 前端使用 React、TypeScript 和 Vite，负责展示与交互；界面文案与项目文档使用中文。
+- Rust API 使用 Axum，负责认证、账号隔离、业务用例、事务和分析结果持久化。同一个 `mario-server` 二进制还承担无状态 Agent（`MARIO_ROLE=agent`）、Codex 桥接 worker（`--codex-bridge`）和密码重置维护命令。
+- PostgreSQL 是唯一的数据存储，开发、测试与生产走同一条多用户认证路径。SQLite、单机免登录模式和服务器本机 Codex 登录已退役，不得重新引入第二套存储引擎或绕过认证的开发入口；旧 SQLite 数据只经 Git 标签 `legacy-sqlite-export` 导出后导入。
+- AI Agent 只消费已授权并冻结的输入，执行模型工作流；不读取账号数据库、不修改资产、不执行交易。Codex 只通过用户电脑上的配对桥接调用。
+- 保持现有部署方式（`deploy.sh` + systemd 宿主机运行），不为假设中的需求引入微服务、事件总线、连接池框架或通用框架。
 
 实现新功能或进行结构性修改前，必须先给出简明设计：功能目标、涉及模块、各模块职责、接口与数据流、依赖方向、状态和事务归属、验证方式。跨模块或非兼容性更新还必须说明影响范围、替换关系和迁移方案。已有设计满足需求时直接引用，并说明本次增量。
 
@@ -36,13 +37,14 @@ React Web → Rust API → PostgreSQL
 | `client/src/App.tsx`、`client/src/app/` | 应用装配、导航、启动、同步、跨功能组合与服务端数据生命周期 |
 | `client/src/features/<领域>/` | 独立功能的页面、表单、草稿和交互；不得导入其他功能目录的实现 |
 | `client/src/api/` | 按领域组织请求与返回契约；不得相互引用领域客户端，不承担页面或账号生命周期 |
-| `client/src/components/`、`client/src/lib/` | 共享展示组件、传输与基础能力；不得反向依赖功能页面或应用壳 |
-| `server/src/runtime.rs`、`server/src/lib.rs` | 启动配置、模式选择、模块声明与依赖装配；不堆积业务逻辑 |
-| `server/src/http/`、`server/src/hosted.rs` | 路由、认证、租户选择、版本检查和协议转换；多步业务流程交给应用层 |
-| `server/src/application/` | 业务用例与跨领域编排；依赖领域契约、仓储和执行接口，不依赖 HTTP 框架或 Agent 进程适配器 |
-| `server/src/models/`、领域计算模块 | 数据契约、值校验及确定性计算；不依赖数据库、网络、HTTP 或 AI 工作流实现 |
-| `server/src/db/`、`server/src/storage.rs` | 领域仓储、事务、同步校验及 SQL 适配；不依赖应用流程、HTTP、AI 或行情网络服务 |
-| `server/src/ai/`、`server/src/agent.rs` | AI 工作流、Provider、输出验证及执行适配；保持与账号存储、业务写入隔离 |
+| `client/src/components/`、`client/src/lib/`、`client/src/types.ts` | 共享展示组件、传输、同步与会话基础能力及共享契约；不得反向依赖功能页面或应用壳，`lib/` 不得引用 `api/` |
+| `server/src/runtime.rs`、`server/src/lib.rs`、`server/src/composition.rs` | 启动配置、运行角色选择、模块声明、行情供应商装配与后台任务生命周期；不堆积业务逻辑 |
+| `server/src/http/`、`server/src/hosted.rs` | 路由、认证、租户选择、`If-Match` 版本检查、财务回执重放和协议转换；免版本检查的例外只在 `http/policy.rs` 显式声明；多步业务流程交给应用层 |
+| `server/src/application/` | 业务用例与跨领域编排；依赖领域契约、仓储和 `ports/` 执行接口，不依赖 HTTP 框架、Agent 进程适配器或具体行情供应商 |
+| `server/src/ports/` | 模型执行与行情查询的可替换接口；只依赖领域契约与错误类型 |
+| `server/src/models/`、领域计算模块 | 数据契约、值校验及确定性计算（`context`、`planning`、`risk`、`valuation`、`evidence`）；不依赖数据库、网络、HTTP、`ports` 或 AI 工作流实现 |
+| `server/src/db/`、`server/src/storage.rs` | 领域仓储、事务、同步校验与 schema 迁移；`storage.rs` 是唯一使用数据库驱动的模块。不依赖应用流程、HTTP、AI 或行情网络服务 |
+| `server/src/ai/`、`server/src/agent.rs`、`server/src/codex_bridge_worker.rs` | AI 工作流、Provider、输出验证、执行与桥接适配；保持与账号存储、业务写入隔离 |
 
 前端依赖由应用壳指向功能、领域 API 和基础传输；后端由 HTTP 适配器调用应用用例，再通过仓储及执行接口完成工作。领域契约和确定性规则处于底层，禁止反向依赖。简单仓储查询与单次 CRUD 可沿用现有 HTTP → Database 路径，不增加无实际职责的转发层。
 
@@ -72,8 +74,10 @@ React Web → Rust API → PostgreSQL
 ## 4. 验证要求
 
 - 功能修改、缺陷修复及重构必须执行与影响范围匹配的检查，覆盖关键行为、失败路径和受影响的模块边界；不要编写只复述实现的测试。
-- 代码变更必须通过 `npm run check:architecture`。前端变更执行构建、格式检查及相关测试；后端变更执行 Rust 格式检查、测试、严格 Clippy 和构建。
-- 跨前后端、数据格式、财务逻辑或公共契约的修改，执行完整 `npm test`。该入口包含 HTTP 与财务集成验收；按现有文档配置隔离的 PostgreSQL 测试环境。
+- 代码变更必须通过 `npm run check:architecture`。前端变更执行 `client` 的构建、Prettier 格式检查及相关 Vitest 测试；后端变更执行 `cargo fmt --check`、`npm run test:server`、`cargo clippy --all-targets -- -D warnings` 和构建。
+- 跨前后端、数据格式、财务逻辑或公共契约的修改，执行完整 `npm test`（`scripts/test.sh`）。该入口包含 HTTP、Web、Codex 桥接与财务集成验收。
+- 开发和测试需要本机 PostgreSQL 工具（从 `MARIO_TEST_PG_BIN` 或 `pg_config --bindir` 查找）。Rust 测试和 HTTP 脚本只连接 `MARIO_TEST_DATABASE_URL` 指向的一次性数据库，由 `scripts/postgres-cluster.mjs` 创建临时集群并在结束后删除；不得把开发集群 `.runtime/dev`、部署 `.env` 或线上数据库传给测试。
+- 数据库测试为每个用例创建独立租户（`db::TestAccount`、`Database::test()`）；升级逻辑用 `reopen_from_old_release` 验证一次性迁移，故障注入用 `db::fail_inserts`，不要为测试在生产代码中增加开关。
 - 纯文档更新检查内容、引用路径和 `git diff --check`，无需运行与变更无关的业务测试。
 - 测试只使用隔离数据，不使用生产数据。缺少环境、检查失败或测试跳过必须如实记录，不能声称全部通过，也不能静默削弱门禁。
 

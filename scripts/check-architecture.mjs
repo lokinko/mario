@@ -203,6 +203,7 @@ export function checkArchitecture() {
     if (['prices', 'market_data'].includes(owner) && /\bstatic\s+\w+\s*:/.test(code))
       violations.push(`${name}: mutable market resources belong to injected instances`);
     if (owner !== 'db' && /use\s+(?:super|crate)::\*/.test(code)) violations.push(`${name}: production imports must be explicit`);
+    if (owner !== 'storage' && /\b(?:postgres|rusqlite)::/.test(code)) violations.push(`${name}: database drivers belong in storage.rs`);
     if (['application', 'models', 'context', 'risk', 'planning', 'valuation', 'evidence', 'event_import', 'db', 'error'].includes(owner) && /\baxum::/.test(code))
       violations.push(`${name}: HTTP framework belongs in adapters`);
     if (!serverGraph.has(owner)) serverGraph.set(owner, new Set());

@@ -151,7 +151,7 @@ impl ContextBuilder {
         let mut local_only = vec![
             "模型 API Key（只用于供应商认证请求头，不进入提示词）".into(),
             "行情 API Key（只用于用户主动发起的价格查询，不进入提示词）".into(),
-            "SQLite 文件路径与内部数据库标识".into(),
+            "数据库连接信息与内部数据库标识".into(),
         ];
         if !omitted.is_empty() {
             local_only.push(format!("本次未选择的数据组：{}", omitted.join("、")));

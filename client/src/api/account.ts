@@ -1,11 +1,10 @@
 import { httpRequest } from "../lib/httpClient";
-import { dataRevision, isLocalDev, serviceUrl } from "../lib/service";
+import { dataRevision, serviceUrl } from "../lib/service";
 import { requestJson } from "../lib/transport";
 import { webToken } from "../lib/webSession";
 export async function checkServerVersion(): Promise<
   import("../types").AutoSyncResult
 > {
-  if (isLocalDev()) return { state: "disabled" };
   const baseline = dataRevision();
   const result = await httpRequest<{ revision: string }>("/sync/version");
   return {

@@ -7,12 +7,10 @@ use crate::error::AppResult;
 // export format version: an existing tenant must also receive new SQL objects.
 pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 10;
 
-// Keep legacy migration order intact: opening an old database remains idempotent.
+// Keep migration order intact: re-running on an existing tenant schema is idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
     connection.execute_batch(
-        "PRAGMA journal_mode=WAL;
-         PRAGMA foreign_keys=ON;
-         CREATE TABLE IF NOT EXISTS daily_settings (
+        "CREATE TABLE IF NOT EXISTS daily_settings (
            id TEXT PRIMARY KEY, timezone TEXT NOT NULL
          );
          CREATE TABLE IF NOT EXISTS daily_entries (
@@ -33,11 +31,11 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            symbol TEXT NOT NULL,
            name TEXT NOT NULL,
            asset_class TEXT NOT NULL,
-           market_value REAL NOT NULL,
-           cost_basis REAL NOT NULL,
-           target_pct REAL NOT NULL DEFAULT 0,
+           market_value DOUBLE PRECISION NOT NULL,
+           cost_basis DOUBLE PRECISION NOT NULL,
+           target_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
            currency TEXT NOT NULL,
-           fx_rate_to_base REAL,
+           fx_rate_to_base DOUBLE PRECISION,
            valuation_date TEXT NOT NULL DEFAULT '',
            fx_rate_source TEXT NOT NULL DEFAULT '',
            fx_rate_observed_on TEXT NOT NULL DEFAULT '',
@@ -70,7 +68,7 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            revision INTEGER NOT NULL,
            created_at TEXT NOT NULL,
            updated_at TEXT NOT NULL,
-           FOREIGN KEY(source_review_id) REFERENCES system_reviews(id)
+           FOREIGN KEY(source_review_id) REFERENCES system_reviews(id) DEFERRABLE INITIALLY IMMEDIATE
          );
          CREATE TABLE IF NOT EXISTS investment_rule_revisions (
            rule_id TEXT NOT NULL,
@@ -78,7 +76,7 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            payload TEXT NOT NULL,
            changed_at TEXT NOT NULL,
            PRIMARY KEY(rule_id, revision),
-           FOREIGN KEY(rule_id) REFERENCES investment_rules(id) ON DELETE CASCADE
+           FOREIGN KEY(rule_id) REFERENCES investment_rules(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE
          );
          CREATE TABLE IF NOT EXISTS research_evidence (
            id TEXT PRIMARY KEY,
@@ -97,7 +95,7 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
          );
          CREATE TABLE IF NOT EXISTS research_attachments (
            id TEXT PRIMARY KEY,
-           evidence_id TEXT NOT NULL REFERENCES research_evidence(id) ON DELETE CASCADE,
+           evidence_id TEXT NOT NULL REFERENCES research_evidence(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
            name TEXT NOT NULL,
            byte_size INTEGER NOT NULL,
            data_base64 TEXT NOT NULL,
@@ -106,11 +104,11 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
          );
          CREATE INDEX IF NOT EXISTS research_attachments_evidence ON research_attachments(evidence_id);
          CREATE TABLE IF NOT EXISTS holding_valuations (
-           holding_id TEXT PRIMARY KEY REFERENCES holdings(id) ON DELETE CASCADE,
+           holding_id TEXT PRIMARY KEY REFERENCES holdings(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
            symbol TEXT NOT NULL,
-           quantity REAL NOT NULL,
-           unit_price REAL NOT NULL,
-           market_value REAL NOT NULL,
+           quantity DOUBLE PRECISION NOT NULL,
+           unit_price DOUBLE PRECISION NOT NULL,
+           market_value DOUBLE PRECISION NOT NULL,
            currency TEXT NOT NULL,
            requested_on TEXT NOT NULL,
            observed_on TEXT NOT NULL,
@@ -131,45 +129,22 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            value TEXT NOT NULL
          );",
     )?;
-    ensure_column(connection, "analyses", "audit", "TEXT")?;
-    ensure_column(connection, "analyses", "trace", "TEXT")?;
-    ensure_column(
-        connection,
-        "holdings",
-        "target_pct",
-        "REAL NOT NULL DEFAULT 0",
-    )?;
-    ensure_column(
-        connection,
-        "holdings",
-        "updated_at",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(connection, "holdings", "fx_rate_to_base", "REAL")?;
-    ensure_column(connection, "holdings", "cost_price", "REAL")?;
-    ensure_column(connection, "holdings", "quantity", "REAL")?;
-    ensure_column(connection, "holdings", "current_price", "REAL")?;
-    ensure_column(
-        connection,
-        "holdings",
-        "valuation_date",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(
-        connection,
-        "holdings",
-        "fx_rate_source",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(
-        connection,
-        "holdings",
-        "fx_rate_observed_on",
-        "TEXT NOT NULL DEFAULT ''",
+    connection.execute_batch(
+        "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS audit TEXT;
+         ALTER TABLE analyses ADD COLUMN IF NOT EXISTS trace TEXT;
+         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS target_pct DOUBLE PRECISION NOT NULL DEFAULT 0;
+         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS updated_at TEXT NOT NULL DEFAULT '';
+         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS fx_rate_to_base DOUBLE PRECISION;
+         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS cost_price DOUBLE PRECISION;
+         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS quantity DOUBLE PRECISION;
+         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS current_price DOUBLE PRECISION;
+         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS valuation_date TEXT NOT NULL DEFAULT '';
+         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS fx_rate_source TEXT NOT NULL DEFAULT '';
+         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS fx_rate_observed_on TEXT NOT NULL DEFAULT '';",
     )?;
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS holding_trades (
-           id TEXT PRIMARY KEY, holding_id TEXT NOT NULL REFERENCES holdings(id),
+           id TEXT PRIMARY KEY, holding_id TEXT NOT NULL REFERENCES holdings(id) DEFERRABLE INITIALLY IMMEDIATE,
            payload TEXT NOT NULL, created_at TEXT NOT NULL
          );
          CREATE INDEX IF NOT EXISTS idx_holding_trades_holding ON holding_trades(holding_id);",
@@ -214,7 +189,7 @@ pub(super) fn remove_retired_analysis_metadata(connection: &Connection) -> AppRe
                 .is_some_and(|object| object.remove("useMemory").is_some())
             {
                 connection.execute(
-                    "UPDATE settings SET value=?1 WHERE key='analysis.settings'",
+                    "UPDATE settings SET value=$1 WHERE key='analysis.settings'",
                     [serde_json::to_string(&value)?],
                 )?;
             }
@@ -263,35 +238,10 @@ pub(super) fn remove_retired_analysis_metadata(connection: &Connection) -> AppRe
                 }
             }
             connection.execute(
-                &format!("UPDATE analyses SET {column}=?1 WHERE id=?2"),
+                &format!("UPDATE analyses SET {column}=$1 WHERE id=$2"),
                 super::params![serde_json::to_string(&value)?, id],
             )?;
         }
-    }
-    Ok(())
-}
-
-fn ensure_column(
-    connection: &Connection,
-    table: &str,
-    column: &str,
-    definition: &str,
-) -> AppResult<()> {
-    if connection.is_postgres() {
-        connection.execute_batch(&format!(
-            "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}"
-        ))?;
-        return Ok(());
-    }
-    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
-    let columns = statement
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<Result<Vec<_>, _>>()?;
-    if !columns.iter().any(|value| value == column) {
-        connection.execute(
-            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
-            [],
-        )?;
     }
     Ok(())
 }

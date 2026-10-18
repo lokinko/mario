@@ -8,7 +8,7 @@ pub enum AppError {
     #[error("{0}")]
     RateLimit(String),
     #[error("数据库错误：{0}")]
-    Database(#[from] rusqlite::Error),
+    Database(#[from] crate::storage::Error),
     #[error("无法访问本地文件：{0}")]
     Io(#[from] std::io::Error),
     #[error("外部网络请求失败：{0}")]
@@ -17,8 +17,6 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     #[error("账户认证失败：{0}")]
     Auth(String),
-    #[error("本地客户端认证失败：{0}")]
-    LocalAuth(String),
     #[error("数据版本冲突：{0}")]
     Conflict(String),
     #[error("市场数据服务错误：{0}")]

@@ -69,10 +69,7 @@ export function startAutoSync(options: AutoSyncOptions) {
         status("waiting", "操作完成后检查最新数据");
       } else if (result.state !== "synced") {
         suspended = true;
-        status(
-          "paused",
-          result.state === "disabled" ? "本地开发模式" : "登录后自动同步",
-        );
+        status("paused", "登录后自动同步");
       } else {
         idle = result.sync?.localUpdated ? 0 : Math.min(idle + 1, 3);
         status("synced", "已同步");

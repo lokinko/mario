@@ -40,7 +40,7 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
     for (id, holding_id, payload) in rows {
         let action: CorporateActionRecord = serde_json::from_str(&payload)?;
         let exists = conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM holdings WHERE id=?1)",
+            "SELECT EXISTS(SELECT 1 FROM holdings WHERE id=$1)",
             [&holding_id],
             |r| r.get::<_, bool>(0),
         )?;
@@ -135,7 +135,7 @@ impl Database {
             source_url: String::new(),
         };
         tx.execute(
-            "INSERT INTO corporate_actions(id,holding_id,payload) VALUES (?1,?2,?3)",
+            "INSERT INTO corporate_actions(id,holding_id,payload) VALUES ($1,$2,$3)",
             params![action.id, id, serde_json::to_string(&action)?],
         )?;
         super::financial::journal(
@@ -148,7 +148,7 @@ impl Database {
             (&input.reason, Some(&operation.0)),
         )?;
         tx.execute(
-            "UPDATE holdings SET updated_at=?2 WHERE id=?1",
+            "UPDATE holdings SET updated_at=$2 WHERE id=$1",
             params![id, Utc::now().to_rfc3339()],
         )?;
         super::daily::finish(&tx, &before, None)?;
@@ -211,9 +211,9 @@ impl Database {
                 symbol: quote.symbol.clone(),
                 source_url: quote.source_url.clone(),
             };
-            if tx.execute("INSERT INTO corporate_actions(id,holding_id,payload) VALUES (?1,?2,?3) ON CONFLICT(id) DO NOTHING",params![id,holding.id,serde_json::to_string(&action)?])? > 0 {
+            if tx.execute("INSERT INTO corporate_actions(id,holding_id,payload) VALUES ($1,$2,$3) ON CONFLICT(id) DO NOTHING",params![id,holding.id,serde_json::to_string(&action)?])? > 0 {
                 super::financial::journal(&tx,&holding.id,"corporate.detected",&Option::<CorporateActionRecord>::None,&action,"0",("行情发现公司行动，等待核对",None))?;
-                tx.execute("UPDATE holdings SET updated_at=?2 WHERE id=?1",params![holding.id,Utc::now().to_rfc3339()])?;
+                tx.execute("UPDATE holdings SET updated_at=$2 WHERE id=$1",params![holding.id,Utc::now().to_rfc3339()])?;
             }
         }
         if load(&tx)?.iter().any(|a| {
@@ -295,7 +295,7 @@ impl Database {
         action.applied = mode == "confirm";
         action.dismissed = mode != "confirm";
         tx.execute(
-            "UPDATE corporate_actions SET payload=?2 WHERE id=?1",
+            "UPDATE corporate_actions SET payload=$2 WHERE id=$1",
             params![id, serde_json::to_string(&action)?],
         )?;
         let mut holding = before
@@ -331,7 +331,7 @@ impl Database {
             let summary = position(&tx, &holding.id, &trades)?;
             super::trades::rebuild(&tx, &holding, &summary)?;
             tx.execute(
-                "UPDATE holdings SET valuation_date='' WHERE id=?1",
+                "UPDATE holdings SET valuation_date='' WHERE id=$1",
                 [&holding.id],
             )?;
         }
@@ -345,7 +345,7 @@ impl Database {
             (&input.reason, Some(&operation.0)),
         )?;
         tx.execute(
-            "UPDATE holdings SET updated_at=?2 WHERE id=?1",
+            "UPDATE holdings SET updated_at=$2 WHERE id=$1",
             params![holding.id, Utc::now().to_rfc3339()],
         )?;
         super::daily::finish(&tx, &before, None)?;

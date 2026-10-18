@@ -1,4 +1,4 @@
-//! Explicit exceptions to optimistic concurrency and local serialization.
+//! Explicit exceptions to optimistic concurrency.
 use axum::http::Method;
 pub(crate) fn requires_revision(method: &Method, path: &str) -> bool {
     method != Method::GET
@@ -7,13 +7,6 @@ pub(crate) fn requires_revision(method: &Method, path: &str) -> bool {
             "/api/analysis/preview"
                 | "/api/model-config/test"
                 | "/api/financial-operations/resolve"
-        )
-}
-pub(crate) fn needs_local_lock(method: &Method, path: &str) -> bool {
-    method != Method::GET
-        || matches!(
-            path,
-            "/api/snapshot" | "/api/fx-settings" | "/api/market-data/fx-rate"
         )
 }
 #[cfg(test)]
@@ -26,7 +19,5 @@ mod tests {
         assert!(!requires_revision(&Method::POST, "/api/model-config/test"));
         assert!(requires_revision(&Method::POST, "/api/future/preview"));
         assert!(!requires_revision(&Method::GET, "/api/snapshot"));
-        assert!(needs_local_lock(&Method::GET, "/api/snapshot"));
-        assert!(!needs_local_lock(&Method::GET, "/api/analyses"));
     }
 }

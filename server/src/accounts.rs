@@ -1,17 +1,22 @@
 //! Self-hosted account/session authority. No third-party identity service.
-use crate::{storage::Connection, AppError, AppResult};
+use crate::{
+    storage::{params, Connection},
+    AppError, AppResult,
+};
 use argon2::{
     password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
 };
-use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Mutex;
 
+const AUTH_SCHEMA: &str = "mario_auth";
+
 pub struct Accounts {
     connection: Mutex<Connection>,
     pub url: String,
+    schema: String,
     dummy_hash: String,
 }
 #[derive(Deserialize)]
@@ -41,20 +46,28 @@ impl Accounts {
             .query_row("SELECT 1", [], |r| r.get::<_, i64>(0))
             .is_err()
         {
-            *connection = Connection::postgres(&self.url, "mario_auth")?;
+            *connection = Connection::postgres(&self.url, &self.schema)?;
         }
         Ok(connection)
     }
     pub fn open(url: String) -> AppResult<Self> {
-        let connection = Connection::postgres(&url, "mario_auth")?;
-        connection.execute_batch("SELECT pg_advisory_lock(hashtextextended('mario_auth',0));")?;
+        Self::open_schema(url, AUTH_SCHEMA.into())
+    }
+    fn open_schema(url: String, schema: String) -> AppResult<Self> {
+        let connection = Connection::postgres(&url, &schema)?;
+        connection.execute_batch(&format!(
+            "SELECT pg_advisory_lock(hashtextextended('{schema}',0));"
+        ))?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires_at BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS session_expiry ON sessions(expires_at);")?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS login_limits(email TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at BIGINT NOT NULL);")?;
-        connection.execute_batch("SELECT pg_advisory_unlock(hashtextextended('mario_auth',0));")?;
+        connection.execute_batch(&format!(
+            "SELECT pg_advisory_unlock(hashtextextended('{schema}',0));"
+        ))?;
         let dummy_hash = hash_password("unused-dummy-password")?;
         Ok(Self {
             connection: Mutex::new(connection),
             url,
+            schema,
             dummy_hash,
         })
     }
@@ -63,7 +76,7 @@ impl Accounts {
         let hash = hash_password(&input.password)?;
         let id = uuid::Uuid::new_v4().to_string();
         let connection = self.conn()?;
-        let count = connection.execute("INSERT INTO users(id,email,password_hash) VALUES (?1,?2,?3) ON CONFLICT(email) DO NOTHING",params![id,email,hash])?;
+        let count = connection.execute("INSERT INTO users(id,email,password_hash) VALUES ($1,$2,$3) ON CONFLICT(email) DO NOTHING",params![id,email,hash])?;
         if count == 0 {
             return Err(AppError::Validation("无法注册该账户".into()));
         }
@@ -73,13 +86,13 @@ impl Accounts {
         let email = validate(input)?;
         let connection = self.conn()?;
         let now = chrono::Utc::now().timestamp();
-        connection.execute("DELETE FROM login_limits WHERE reset_at<?1", [now])?;
-        let attempts=connection.query_row("INSERT INTO login_limits(email,attempts,reset_at) VALUES (?1,1,?2) ON CONFLICT(email) DO UPDATE SET attempts=login_limits.attempts+1 RETURNING attempts",params![email,now+60],|r|r.get::<_,i64>(0))?;
+        connection.execute("DELETE FROM login_limits WHERE reset_at<$1", [now])?;
+        let attempts=connection.query_row("INSERT INTO login_limits(email,attempts,reset_at) VALUES ($1,1,$2) ON CONFLICT(email) DO UPDATE SET attempts=login_limits.attempts+1 RETURNING attempts",params![email,now+60],|r|r.get::<_,i64>(0))?;
         if attempts > 10 {
             return Err(AppError::RateLimit("登录尝试过多，请一分钟后重试".into()));
         }
         let found = connection.query_row(
-            "SELECT id,password_hash FROM users WHERE email=?1",
+            "SELECT id,password_hash FROM users WHERE email=$1",
             [email.as_str()],
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
         );
@@ -99,7 +112,7 @@ impl Accounts {
         // password verification and leave an old-password session alive.
         let tx = connection.transaction()?;
         let current = tx.query_row(
-            "SELECT password_hash FROM users WHERE id=?1 FOR UPDATE",
+            "SELECT password_hash FROM users WHERE id=$1 FOR UPDATE",
             [id.as_str()],
             |r| r.get::<_, String>(0),
         )?;
@@ -118,11 +131,11 @@ impl Accounts {
         );
         let expires_at = chrono::Utc::now().timestamp() + 7 * 24 * 3600;
         c.execute(
-            "DELETE FROM sessions WHERE expires_at<?1",
+            "DELETE FROM sessions WHERE expires_at<$1",
             [chrono::Utc::now().timestamp()],
         )?;
         c.execute(
-            "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES (?1,?2,?3)",
+            "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES ($1,$2,$3)",
             params![digest(&token), id, expires_at],
         )?;
         Ok(Session {
@@ -135,18 +148,18 @@ impl Accounts {
     pub fn authenticate(&self, token: &str) -> AppResult<String> {
         self.conn()?
             .query_row(
-                "SELECT user_id FROM sessions WHERE token_hash=?1 AND expires_at>?2",
+                "SELECT user_id FROM sessions WHERE token_hash=$1 AND expires_at>$2",
                 params![digest(token), chrono::Utc::now().timestamp()],
                 |r| r.get(0),
             )
             .map_err(|error| match error {
-                rusqlite::Error::QueryReturnedNoRows => AppError::Auth("请重新登录".into()),
+                crate::storage::Error::QueryReturnedNoRows => AppError::Auth("请重新登录".into()),
                 error => AppError::Database(error),
             })
     }
     pub fn logout(&self, token: &str) -> AppResult<()> {
         self.conn()?
-            .execute("DELETE FROM sessions WHERE token_hash=?1", [digest(token)])?;
+            .execute("DELETE FROM sessions WHERE token_hash=$1", [digest(token)])?;
         Ok(())
     }
     pub fn reset_password(&self, email: &str, password: &str) -> AppResult<()> {
@@ -158,15 +171,15 @@ impl Accounts {
         let mut connection = self.conn()?;
         let tx = connection.transaction()?;
         let id = tx
-            .query_row("SELECT id FROM users WHERE email=?1", [email], |r| {
+            .query_row("SELECT id FROM users WHERE email=$1", [email], |r| {
                 r.get::<_, String>(0)
             })
             .map_err(|_| AppError::NotFound("账户不存在".into()))?;
         tx.execute(
-            "UPDATE users SET password_hash=?1 WHERE id=?2",
+            "UPDATE users SET password_hash=$1 WHERE id=$2",
             params![hash, id],
         )?;
-        tx.execute("DELETE FROM sessions WHERE user_id=?1", [id])?;
+        tx.execute("DELETE FROM sessions WHERE user_id=$1", [id])?;
         tx.commit()?;
         Ok(())
     }
@@ -200,13 +213,9 @@ mod tests {
     use axum::{http::StatusCode, response::IntoResponse};
 
     fn accounts() -> Accounts {
-        let connection = Connection::open_in_memory().unwrap();
-        connection.execute_batch("CREATE TABLE users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL); CREATE TABLE sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,expires_at BIGINT NOT NULL);").unwrap();
-        Accounts {
-            connection: Mutex::new(connection),
-            url: String::new(),
-            dummy_hash: String::new(),
-        }
+        let url = std::env::var("MARIO_TEST_DATABASE_URL")
+            .expect("set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database");
+        Accounts::open_schema(url, format!("auth_{}", uuid::Uuid::new_v4().simple())).unwrap()
     }
 
     #[test]
@@ -228,7 +237,7 @@ mod tests {
                 .conn()
                 .unwrap()
                 .query_row(
-                    "SELECT password_hash FROM users WHERE id=?1",
+                    "SELECT password_hash FROM users WHERE id=$1",
                     [session.user_id.as_str()],
                     |row| row.get::<_, String>(0),
                 )
@@ -291,6 +300,14 @@ mod tests {
     #[test]
     fn valid_sessions_survive_repeated_checks_and_revoked_or_expired_sessions_return_401() {
         let accounts = accounts();
+        accounts
+            .conn()
+            .unwrap()
+            .execute(
+                "INSERT INTO users(id,email,password_hash) VALUES ('user','user@example.test','unused')",
+                [],
+            )
+            .unwrap();
         let session = accounts
             .session(&accounts.conn().unwrap(), "user", "user@example.test")
             .unwrap();
@@ -310,7 +327,7 @@ mod tests {
             .conn()
             .unwrap()
             .execute(
-                "INSERT INTO sessions VALUES (?1,'user',0)",
+                "INSERT INTO sessions VALUES ($1,'user',0)",
                 [digest("expired")],
             )
             .unwrap();

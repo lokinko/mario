@@ -6,7 +6,7 @@ fn key(base: &str) -> String {
 }
 pub(super) fn book_on(conn: &Connection, base: &str) -> AppResult<Option<FxBook>> {
     conn.query_row(
-        "SELECT value FROM settings WHERE key=?1",
+        "SELECT value FROM settings WHERE key=$1",
         [key(base)],
         |r| r.get::<_, String>(0),
     )
@@ -87,7 +87,7 @@ pub(super) fn apply_holdings(conn: &Connection) -> AppResult<()> {
             || h.fx_rate_source != source
             || h.fx_rate_observed_on != observed
         {
-            conn.execute("UPDATE holdings SET fx_rate_to_base=?2,fx_rate_source=?3,fx_rate_observed_on=?4,updated_at=?5 WHERE id=?1",
+            conn.execute("UPDATE holdings SET fx_rate_to_base=$2,fx_rate_source=$3,fx_rate_observed_on=$4,updated_at=$5 WHERE id=$1",
                 params![h.id, value, source, observed, Utc::now().to_rfc3339()])?;
         }
     }
@@ -114,7 +114,7 @@ impl Database {
         } else {
             None
         };
-        tx.execute("INSERT INTO settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        tx.execute("INSERT INTO settings(key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             params![key(&book.base_currency), serde_json::to_string(book)?])?;
         apply_holdings(&tx)?;
         if let Some(before) = before {

@@ -26,7 +26,7 @@ $env:VITE_BASE_PATH = '/mario/'
 npm run web:build
 ```
 
-Web 资源、logo 和 API 使用同一部署前缀。生产登录页无需填写服务器地址，直接连接当前网站的 API。开发时可通过 `VITE_API_URL` 指定临时 API；默认 `npm run dev` 使用隔离的 SQLite 开发服务。
+Web 资源、logo 和 API 使用同一部署前缀。生产登录页无需填写服务器地址，直接连接当前网站的 API。开发时 `npm run dev` 连接本机开发 API（`http://127.0.0.1:4217/api`，使用 `.runtime/dev` 中的 PostgreSQL），也可通过 `VITE_API_URL` 指定其他临时 API。
 
 `npm run web:build` 生成 `client/dist` 并复制到 `outputs/web`。每次构建生成 `build-info.json`，记录版本、Git 提交、工作区状态、源码指纹、构建时间和资源路径。指纹覆盖 client、server、scripts、根目录 .gitattributes 与 package 文件，文档和忽略的配置、密钥、产物不参与。
 

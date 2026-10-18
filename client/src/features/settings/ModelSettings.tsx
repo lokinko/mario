@@ -1,5 +1,4 @@
 import { ExternalLink } from "../../components/ExternalLink";
-import { isLocalDev } from "../../lib/service";
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
@@ -14,7 +13,6 @@ import {
 } from "lucide-react";
 import {
   deleteModelKey,
-  readCodexCredentials,
   saveModelConfig,
   testModelConnection,
   type CodexBridgeStatus,
@@ -94,26 +92,6 @@ export function ModelSettings({
       flash("模型配置已安全保存");
     } catch (nextError) {
       setError(String(nextError));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const readCodex = async () => {
-    setSaving(true);
-    setError("");
-    setConnectionResult("");
-    try {
-      const next = await readCodexCredentials();
-      onUpdate(next);
-      setProvider(next.provider);
-      setBaseUrl(next.baseUrl);
-      setModelName(next.model);
-      setApiKey("");
-      setConnectionResult("Codex 凭证读取成功，已启用 " + next.model);
-      flash("已启用本机 Codex 登录");
-    } catch (error) {
-      setError("Codex 凭证读取失败：" + String(error));
     } finally {
       setSaving(false);
     }
@@ -209,22 +187,6 @@ export function ModelSettings({
             {model.hasApiKey ? "已配置" : "未配置"}
           </div>
         </div>
-        {isLocalDev() && (
-          <>
-            <button
-              className="secondary"
-              onClick={() => void readCodex()}
-              disabled={saving || testing}
-            >
-              {saving ? (
-                <LoaderCircle size={16} className="spin" />
-              ) : (
-                <KeyRound size={16} />
-              )}
-              一键读取 Codex 凭证
-            </button>
-          </>
-        )}
         <fieldset className="holding-fields" disabled={saving || testing}>
           <div className="form-grid model-fields">
             <label>
@@ -237,11 +199,9 @@ export function ModelSettings({
                   setBaseUrl(
                     next === "codex-bridge"
                       ? "codex://bridge"
-                      : next === "codex"
-                        ? "codex://local"
-                        : next === "anthropic"
-                          ? "https://api.anthropic.com/v1"
-                          : "https://api.openai.com/v1",
+                      : next === "anthropic"
+                        ? "https://api.anthropic.com/v1"
+                        : "https://api.openai.com/v1",
                   );
                   setModelName("");
                   setApiKey("");
@@ -253,7 +213,6 @@ export function ModelSettings({
                 </option>
                 <option value="openai-responses">OpenAI Responses</option>
                 <option value="anthropic">Anthropic Messages</option>
-                {isLocalDev() && <option value="codex">Codex 本机登录</option>}
                 <option value="codex-bridge">Codex 本机桥接（线上网页）</option>
               </select>
             </label>
@@ -263,7 +222,6 @@ export function ModelSettings({
                 <input
                   aria-label="API Base URL"
                   value={baseUrl}
-                  disabled={provider === "codex"}
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder="https://api.openai.com/v1"
                 />
@@ -273,9 +231,8 @@ export function ModelSettings({
                 </small>
               </label>
             )}
-            {provider === "codex" || provider === "codex-bridge" ? (
+            {provider === "codex-bridge" ? (
               <CodexModelSelect
-                provider={provider}
                 value={modelName}
                 onChange={setModelName}
                 bridgeStatus={bridgeStatus}
@@ -290,7 +247,7 @@ export function ModelSettings({
                 />
               </label>
             )}
-            {provider !== "codex" && provider !== "codex-bridge" && (
+            {provider !== "codex-bridge" && (
               <label>
                 <span>API Key</span>
                 <div className="secure-input">
@@ -331,11 +288,9 @@ export function ModelSettings({
             <p>
               {provider === "codex-bridge"
                 ? "模型请求在配对电脑的 Codex 中执行；只发送你确认的问答资料，不上传 ChatGPT 登录凭据。关闭本机桥接后，线上问答会提示连接不可用。"
-                : provider === "codex"
-                  ? "凭证由 Codex 保管和刷新，不复制到 mario。连接测试不验证网页搜索能力。"
-                  : provider === "openai-chat"
-                    ? "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥。第三方服务可选择 OpenAI 兼容接口；Chat Completions 问答仅使用已选资料，不启用原生网页搜索。"
-                    : "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥；联网查找需模型支持原生网页搜索，连接测试仅验证普通调用。"}
+                : provider === "openai-chat"
+                  ? "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥。第三方服务可选择 OpenAI 兼容接口；Chat Completions 问答仅使用已选资料，不启用原生网页搜索。"
+                  : "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥；联网查找需模型支持原生网页搜索，连接测试仅验证普通调用。"}
             </p>
           </div>
         </div>
@@ -349,27 +304,23 @@ export function ModelSettings({
           <div className="connection-success" role="status">
             <Check size={16} />
             <span>
-              <strong>
-                {model.provider === "codex" ? "Codex 状态" : "连接成功"}
-              </strong>
+              <strong>连接成功</strong>
               {connectionResult}
             </span>
           </div>
         )}
         <div className="form-actions">
           <div className="key-actions">
-            {model.hasApiKey &&
-              model.provider !== "codex" &&
-              model.provider !== "codex-bridge" && (
-                <button
-                  className="danger-text"
-                  onClick={clearKey}
-                  disabled={saving || testing}
-                >
-                  <Trash2 size={14} />
-                  移除密钥
-                </button>
-              )}
+            {model.hasApiKey && model.provider !== "codex-bridge" && (
+              <button
+                className="danger-text"
+                onClick={clearKey}
+                disabled={saving || testing}
+              >
+                <Trash2 size={14} />
+                移除密钥
+              </button>
+            )}
             <button
               className="secondary"
               onClick={testConnection}

@@ -29,7 +29,7 @@ pub(super) fn initialize(conn: &Connection) -> AppResult<()> {
         id TEXT PRIMARY KEY, holding_id TEXT NOT NULL, payload TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS holding_amounts (
-        holding_id TEXT PRIMARY KEY REFERENCES holdings(id) ON DELETE CASCADE, payload TEXT NOT NULL
+        holding_id TEXT PRIMARY KEY REFERENCES holdings(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE, payload TEXT NOT NULL
     );")?;
     Ok(())
 }
@@ -55,7 +55,7 @@ pub(super) fn replay(
 ) -> AppResult<Option<Snapshot>> {
     let stored = conn
         .query_row(
-            "SELECT request_hash,payload FROM financial_operations WHERE id=?1",
+            "SELECT request_hash,payload FROM financial_operations WHERE id=$1",
             [&operation.0],
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
         )
@@ -77,7 +77,7 @@ pub(super) fn replay(
 pub(super) fn complete(conn: &Connection, operation: &(String, String)) -> AppResult<Snapshot> {
     let snapshot = Database::snapshot_on(conn)?;
     conn.execute(
-        "INSERT INTO financial_operations(id,request_hash,payload,created_at) VALUES (?1,?2,?3,?4)",
+        "INSERT INTO financial_operations(id,request_hash,payload,created_at) VALUES ($1,$2,$3,$4)",
         params![
             operation.0,
             operation.1,
@@ -100,7 +100,7 @@ pub(super) fn journal<T: Serialize, U: Serialize>(
     metadata: (&str, Option<&str>),
 ) -> AppResult<()> {
     let id = Uuid::new_v4().to_string();
-    conn.execute("INSERT INTO financial_journal(id,holding_id,kind,before_payload,after_payload,cash_delta,reason,created_at,operation_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+    conn.execute("INSERT INTO financial_journal(id,holding_id,kind,before_payload,after_payload,cash_delta,reason,created_at,operation_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
         params![id,holding_id,kind,serde_json::to_string(before)?,serde_json::to_string(after)?,cash_delta,metadata.0,Utc::now().to_rfc3339(),metadata.1.unwrap_or(&id)])?;
     Ok(())
 }
@@ -129,7 +129,7 @@ impl Database {
         let summary = validate_repair(&tx, id, input)?;
         let before = super::daily::prepare(&tx)?;
         let raw: String = tx.query_row(
-            "SELECT payload FROM trading_quarantine WHERE holding_id=?1",
+            "SELECT payload FROM trading_quarantine WHERE holding_id=$1",
             [id],
             |r| r.get(0),
         )?;
@@ -143,10 +143,10 @@ impl Database {
             "0",
             (&input.reason, Some(&operation.0)),
         )?;
-        tx.execute("DELETE FROM holding_trades WHERE holding_id=?1", [id])?;
+        tx.execute("DELETE FROM holding_trades WHERE holding_id=$1", [id])?;
         for trade in &input.trades {
             tx.execute(
-                "INSERT INTO holding_trades(id,holding_id,payload,created_at) VALUES (?1,?2,?3,?4)",
+                "INSERT INTO holding_trades(id,holding_id,payload,created_at) VALUES ($1,$2,$3,$4)",
                 params![
                     trade.id,
                     id,
@@ -155,13 +155,13 @@ impl Database {
                 ],
             )?;
         }
-        tx.execute("DELETE FROM trading_quarantine WHERE holding_id=?1", [id])?;
+        tx.execute("DELETE FROM trading_quarantine WHERE holding_id=$1", [id])?;
         let holding = before.holdings.iter().find(|h| h.id == id).unwrap();
         super::trades::rebuild(&tx, holding, &summary)?;
         // Repair does not replay already reflected cash flows; reconciliation is required separately.
         super::cash::initialize_balances(&tx)?;
         tx.execute(
-            "UPDATE cash_state SET needs_reconciliation=1 WHERE currency=?1",
+            "UPDATE cash_state SET needs_reconciliation=1 WHERE currency=$1",
             [&holding.currency],
         )?;
         super::daily::finish(&tx, &before, None)?;
@@ -267,13 +267,13 @@ impl Database {
 
     pub fn financial_history(&self, holding_id: &str) -> AppResult<serde_json::Value> {
         let conn = self.conn()?;
-        let mut statement = conn.prepare("SELECT id,kind,before_payload,after_payload,cash_delta,reason,created_at,operation_id FROM financial_journal WHERE holding_id=?1 ORDER BY created_at,id")?;
+        let mut statement = conn.prepare("SELECT id,kind,before_payload,after_payload,cash_delta,reason,created_at,operation_id FROM financial_journal WHERE holding_id=$1 ORDER BY created_at,id")?;
         let records = statement.query_map([holding_id], |r| Ok(serde_json::json!({
             "id":r.get::<_,String>(0)?,"kind":r.get::<_,String>(1)?,
             "before":r.get::<_,String>(2)?,"after":r.get::<_,String>(3)?,
             "cashDelta":r.get::<_,String>(4)?,"reason":r.get::<_,String>(5)?,"createdAt":r.get::<_,String>(6)?,"operationId":r.get::<_,String>(7)?
         })))?.collect::<Result<Vec<_>,_>>()?;
-        let quarantine = conn.query_row("SELECT payload,reason,created_at FROM trading_quarantine WHERE holding_id=?1", [holding_id],
+        let quarantine = conn.query_row("SELECT payload,reason,created_at FROM trading_quarantine WHERE holding_id=$1", [holding_id],
             |r| Ok(serde_json::json!({"payload":r.get::<_,String>(0)?,"reason":r.get::<_,String>(1)?,"createdAt":r.get::<_,String>(2)?}))).optional()?;
         Ok(serde_json::json!({"records":records,"quarantine":quarantine}))
     }

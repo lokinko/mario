@@ -74,7 +74,7 @@ mod tests {
     use super::*;
     #[test]
     fn catalog_selection_is_validated_preserved_and_account_scoped() {
-        let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+        let db = Database::test();
         let token = pair(&db).unwrap();
         let connection = bridge::authenticate(&token).unwrap();
         let runner = uuid::Uuid::new_v4().to_string();
@@ -108,8 +108,8 @@ mod tests {
     }
     #[tokio::test]
     async fn bridge_account_selection_cannot_be_redirected_by_a_client_model_url() {
-        let a = Database::open(std::path::Path::new(":memory:")).unwrap();
-        let b = Database::open(std::path::Path::new(":memory:")).unwrap();
+        let a = Database::test();
+        let b = Database::test();
         let token_a = pair(&a).unwrap();
         let token_b = pair(&b).unwrap();
         assert_ne!(id(&a).unwrap(), id(&b).unwrap());

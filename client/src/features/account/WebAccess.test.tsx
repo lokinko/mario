@@ -13,7 +13,6 @@ import { acceptRevision, dataRevision } from "../../lib/service";
 import { useState } from "react";
 vi.mock("../../lib/service", async (original) => ({
   ...(await original<typeof import("../../lib/service")>()),
-  isLocalDev: () => false,
   serviceUrl: () =>
     import.meta.env.VITE_API_URL || `${import.meta.env.BASE_URL}api`,
 }));

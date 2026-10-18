@@ -68,20 +68,6 @@ impl CodexProvider {
         self.status = Some(status);
         self
     }
-    pub(crate) fn with_events(self, events: Option<crate::ports::analysis::EventSender>) -> Self {
-        self.with_status(std::sync::Arc::new(move |message| {
-            super::streaming::status(&events, message)
-        }))
-    }
-    pub async fn detect() -> AppResult<String> {
-        let models = Self::models().await?;
-        Ok(models
-            .iter()
-            .find(|model| model.is_default)
-            .unwrap_or(&models[0])
-            .model
-            .clone())
-    }
     pub async fn models() -> AppResult<Vec<crate::models::CodexModel>> {
         tokio::time::timeout(Duration::from_secs(25), async {
             let mut rpc = Rpc::start().await?;
@@ -834,8 +820,12 @@ mod tests {
     #[tokio::test]
     #[ignore = "Uses the user's local Codex login and model quota; run explicitly"]
     async fn live_codex_completion_and_native_search() {
-        let model = CodexProvider::detect().await.unwrap();
-        let provider = CodexProvider::new(model);
+        let models = CodexProvider::models().await.unwrap();
+        let model = models
+            .iter()
+            .find(|model| model.is_default)
+            .unwrap_or(&models[0]);
+        let provider = CodexProvider::new(model.model.clone());
         let reply = provider
             .complete(vec![ChatMessage::user("Reply only OK")])
             .await

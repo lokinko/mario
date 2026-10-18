@@ -1,4 +1,4 @@
-// Disposable local end-to-end test; --live explicitly uses local Codex quota.
+// Disposable end-to-end test against MARIO_TEST_DATABASE_URL; --live explicitly uses local Codex quota.
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -12,23 +12,19 @@ const live = process.argv.includes('--live');
 const protocolFixture = process.argv.includes('--protocol-fixture');
 const deep = protocolFixture || process.argv.includes('--deep');
 assert(!(live && protocolFixture), '--live and --protocol-fixture are mutually exclusive');
-const hosted = process.argv.includes('--hosted');
-if (hosted) assert(process.env.MARIO_TEST_DATABASE_URL, '--hosted requires MARIO_TEST_DATABASE_URL pointing to a disposable PostgreSQL database');
+assert(process.env.MARIO_TEST_DATABASE_URL, 'Set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database (npm run test:codex-bridge starts one)');
 const binary = resolve(process.env.MARIO_TEST_SERVER_BIN || `server/target/debug/mario-server${process.platform === 'win32' ? '.exe' : ''}`);
 const directory = await mkdtemp(join(tmpdir(), 'mario-bridge-test-'));
 const probe = createServer().listen(0, '127.0.0.1'); await once(probe, 'listening');
 const port = probe.address().port; await new Promise(done => probe.close(done));
 const site = `http://127.0.0.1:${port}`;
-let auth = randomBytes(32).toString('hex');
+let auth;
 const revisions = new Map();
-const environment = { ...process.env, MARIO_HOST: '127.0.0.1', MARIO_DATA_DIR: directory, MARIO_AUTH_TOKEN: auth,
+const environment = { ...process.env, MARIO_HOST: '127.0.0.1', DATABASE_URL: process.env.MARIO_TEST_DATABASE_URL,
+  MARIO_MASTER_KEY: randomBytes(32).toString('base64'),
   // Bridge must bypass the independent HTTP Agent, which cannot access this process's relay.
   MARIO_AGENT_URL: 'http://127.0.0.1:1', MARIO_AGENT_TOKEN: 'unused-test-token' };
-for (const key of ['DATABASE_URL', 'MARIO_WEB_DIR', 'MARIO_ROLE']) delete environment[key];
-if (hosted) {
-  environment.DATABASE_URL = process.env.MARIO_TEST_DATABASE_URL;
-  environment.MARIO_MASTER_KEY = randomBytes(32).toString('base64');
-}
+for (const key of ['MARIO_WEB_DIR', 'MARIO_ROLE']) delete environment[key];
 const children = [];
 let logs = '', running = true, workerFailure;
 function start(args) {
@@ -38,7 +34,7 @@ function start(args) {
   children.push(child); return child;
 }
 async function request(path, method = 'GET', body, token = auth, expected = 200) {
-  const response = await fetch(`${site}/api${path}`, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(revisions.has(token) ? {'If-Match':revisions.get(token)} : {}) }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(210000) });
+  const response = await fetch(`${site}/api${path}`, { method, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), 'Content-Type': 'application/json', ...(revisions.has(token) ? {'If-Match':revisions.get(token)} : {}) }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(210000) });
   const data = await response.json();
   assert.equal(response.status, expected, `${path}: ${JSON.stringify(data)}`);
   if (response.ok && response.headers.has('x-data-revision')) revisions.set(token, response.headers.get('x-data-revision'));
@@ -61,16 +57,13 @@ try {
   }
   let server = start(['--port', String(port)]);
   for (let attempt = 0; attempt < 100; attempt++) {
-    try { await request(hosted ? '/server' : '/health'); break; } catch { if (server.exitCode !== null) throw Error('服务启动失败'); await sleep(100); }
+    try { await request('/server'); break; } catch { if (server.exitCode !== null) throw Error('服务启动失败'); await sleep(100); }
   }
-  let other;
-  if (hosted) {
-    const register = () => request('/auth/register', 'POST', {email:`${randomUUID()}@example.test`,password:'bridge-disposable-test-password'});
-    auth = (await register()).token;
-    other = (await register()).token;
-    await request('/snapshot');
-    await request('/snapshot', 'GET', undefined, other);
-  }
+  const register = () => request('/auth/register', 'POST', {email:`${randomUUID()}@example.test`,password:'bridge-disposable-test-password'});
+  auth = (await register()).token;
+  const other = (await register()).token;
+  await request('/snapshot');
+  await request('/snapshot', 'GET', undefined, other);
   const { pairingCode } = await request('/codex-bridge', 'POST');
   await request('/codex-bridge/worker/poll', 'POST', { runner:randomUUID(), model:'fixture' }, auth, 401);
   await request('/model-config', 'GET', undefined, pairingCode, 401);
@@ -128,16 +121,14 @@ try {
     assert.equal((await request('/codex-bridge/enable','POST')).model,expectedModel,'再次启用不得重置为默认模型');
     console.log('PASS 动态模型列表、非默认模型保存、非法模型拒绝');
   }
-  if (hosted) {
-    assert.equal((await request('/codex-bridge', 'GET', undefined, other)).online, false);
-    await request('/codex-bridge/enable', 'POST', undefined, other, 400);
-    await request('/model-config', 'PUT', {provider:'codex-bridge',baseUrl:'codex://bridge',model:config.model}, other, 400);
-    const otherPair = await request('/codex-bridge', 'POST', undefined, other);
-    assert.notEqual(otherPair.pairingCode, pairingCode);
-    await request('/codex-bridge', 'DELETE', undefined, other);
-    assert.equal((await request('/codex-bridge')).online, true);
-    console.log('PASS PostgreSQL 多账号配对隔离、不能借用其他账号桥接、撤销互不影响');
-  }
+  assert.equal((await request('/codex-bridge', 'GET', undefined, other)).online, false);
+  await request('/codex-bridge/enable', 'POST', undefined, other, 400);
+  await request('/model-config', 'PUT', {provider:'codex-bridge',baseUrl:'codex://bridge',model:config.model}, other, 400);
+  const otherPair = await request('/codex-bridge', 'POST', undefined, other);
+  assert.notEqual(otherPair.pairingCode, pairingCode);
+  await request('/codex-bridge', 'DELETE', undefined, other);
+  assert.equal((await request('/codex-bridge')).online, true);
+  console.log('PASS PostgreSQL 多账号配对隔离、不能借用其他账号桥接、撤销互不影响');
   const connection = await request('/model-config/test', 'POST');
   assert.equal(connection.ok, true);
   console.log(`PASS ${live ? '真实 Codex' : '模拟 Codex'} 配对、启用、模型连接；模型 ${config.model}`);
@@ -199,7 +190,7 @@ try {
   server.kill(); await once(server, 'exit');
   server = start(['--port', String(port)]);
   for (let attempt=0;attempt<100;attempt++) {
-    try { await request(hosted?'/server':'/health'); break; } catch { await sleep(100); }
+    try { await request('/server'); break; } catch { await sleep(100); }
   }
   assert.equal((await request('/codex-bridge')).paired,false);
   await request('/codex-bridge/worker/poll','POST',{runner:randomUUID(),model:'fixture'},replacement.pairingCode,401);

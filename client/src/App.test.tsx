@@ -15,7 +15,6 @@ import * as researchApi from "./api/research";
 import emptySnapshot from "./test/emptySnapshot.json";
 import { analysisSettings as defaultAnalysisSettings } from "./test/analysisSettings";
 import { WebAccess } from "./features/account/WebAccess";
-import * as service from "./lib/service";
 import { setWebToken, webToken } from "./lib/webSession";
 
 vi.mock("./api/portfolio", async (original) => ({
@@ -80,7 +79,6 @@ it("keeps exchange rates outside the main page and available across navigation",
 it.each([true, false])(
   "switches accounts from the settings page even when model configuration is available=%s",
   async (modelAvailable) => {
-    const localDev = vi.spyOn(service, "isLocalDev").mockReturnValue(false);
     const securityConfig = vi
       .spyOn(portfolioApi, "getSecurityPriceConfig")
       .mockResolvedValue({ provider: "twelve-data", hasApiKey: false });
@@ -152,7 +150,6 @@ it.each([true, false])(
       ).toBeTruthy();
     } finally {
       cleanup();
-      localDev.mockRestore();
       securityConfig.mockRestore();
       analysisSettings.mockRestore();
       vi.unstubAllGlobals();
@@ -247,9 +244,9 @@ it("shows frequently used records in primary navigation", async () => {
     {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
   vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
-    provider: "codex",
+    provider: "codex-bridge",
     model: "test",
-    baseUrl: "codex://local",
+    baseUrl: "codex://bridge",
     hasApiKey: true,
   });
   render(<App />);
@@ -292,9 +289,9 @@ it("closes the left drawer with Escape and restores focus without changing the p
     {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
   vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
-    provider: "codex",
+    provider: "codex-bridge",
     model: "test",
-    baseUrl: "codex://local",
+    baseUrl: "codex://bridge",
     hasApiKey: true,
   });
   render(<App />);

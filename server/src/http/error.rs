@@ -12,7 +12,7 @@ impl IntoResponse for AppError {
             AppError::Busy(_) => StatusCode::SERVICE_UNAVAILABLE,
             AppError::RateLimit(_) => StatusCode::TOO_MANY_REQUESTS,
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
-            AppError::Auth(_) | AppError::LocalAuth(_) => StatusCode::UNAUTHORIZED,
+            AppError::Auth(_) => StatusCode::UNAUTHORIZED,
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Model(_) | AppError::Network(_) | AppError::Codex(_) => {
@@ -44,7 +44,7 @@ mod tests {
                 .status(),
             StatusCode::CONFLICT
         );
-        let response = AppError::Database(rusqlite::Error::InvalidQuery).into_response();
+        let response = AppError::Database(crate::storage::Error::Disconnected).into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = axum::body::to_bytes(response.into_body(), 4096)
             .await

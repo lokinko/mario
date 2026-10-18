@@ -27,10 +27,6 @@ export async function deleteModelKey(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-key", { method: "DELETE" });
 }
 
-export async function readCodexCredentials(): Promise<ModelConfig> {
-  return httpRequest<ModelConfig>("/model-config/codex", { method: "POST" });
-}
-
 export type CodexBridgeStatus = {
   paired: boolean;
   online: boolean;
@@ -43,9 +39,6 @@ export type CodexModel = {
   description: string;
   isDefault: boolean;
 };
-export function getCodexModels() {
-  return httpRequest<CodexModel[]>("/model-config/codex/models");
-}
 export function getCodexBridgeStatus() {
   return httpRequest<CodexBridgeStatus>("/codex-bridge");
 }

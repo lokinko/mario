@@ -1,11 +1,192 @@
-//! Small SQL boundary: domain repositories share queries, not a database engine.
-//! PostgreSQL owns hosted data. SQLite is retained only for local data migration/tests.
-use rusqlite::{
-    types::{FromSql, ToSqlOutput, Value, ValueRef},
-    Error, Result,
-};
-use std::{path::Path, sync::mpsc};
-fn receive<T: Send>(rx: mpsc::Receiver<T>) -> std::result::Result<T, mpsc::RecvError> {
+//! PostgreSQL boundary: repositories share dynamically typed rows over a dedicated client thread.
+//! Each tenant connection pins `search_path` to one account schema.
+use std::sync::mpsc;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("查询没有返回记录")]
+    QueryReturnedNoRows,
+    #[error("结果中没有第 {0} 列")]
+    InvalidColumnIndex(usize),
+    #[error("第 {index} 列无法转换：{message}")]
+    Conversion { index: usize, message: String },
+    #[error("账号数据空间名称无效")]
+    InvalidSchema,
+    #[error("数据库连接已关闭")]
+    Disconnected,
+    #[error("{0}")]
+    Postgres(#[from] postgres::Error),
+}
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
+    Null,
+    Integer(i64),
+    Real(f64),
+    Text(String),
+}
+
+pub trait ToSql {
+    fn to_value(&self) -> Value;
+}
+impl<T: ToSql + ?Sized> ToSql for &T {
+    fn to_value(&self) -> Value {
+        (**self).to_value()
+    }
+}
+impl ToSql for Value {
+    fn to_value(&self) -> Value {
+        self.clone()
+    }
+}
+impl ToSql for str {
+    fn to_value(&self) -> Value {
+        Value::Text(self.to_owned())
+    }
+}
+impl ToSql for String {
+    fn to_value(&self) -> Value {
+        Value::Text(self.clone())
+    }
+}
+impl ToSql for f64 {
+    fn to_value(&self) -> Value {
+        Value::Real(*self)
+    }
+}
+impl ToSql for bool {
+    fn to_value(&self) -> Value {
+        Value::Integer((*self).into())
+    }
+}
+macro_rules! integer_to_sql {
+    ($($t:ty),*) => { $(impl ToSql for $t {
+        fn to_value(&self) -> Value {
+            i64::try_from(*self).map_or(Value::Real(*self as f64), Value::Integer)
+        }
+    })* };
+}
+integer_to_sql!(i32, i64, u32, u64, usize);
+impl<T: ToSql> ToSql for Option<T> {
+    fn to_value(&self) -> Value {
+        self.as_ref().map_or(Value::Null, ToSql::to_value)
+    }
+}
+
+pub trait FromSql: Sized {
+    fn from_value(value: &Value) -> std::result::Result<Self, String>;
+}
+fn mismatch(expected: &str, value: &Value) -> String {
+    format!("期望 {expected}，实际为 {value:?}")
+}
+impl FromSql for Value {
+    fn from_value(value: &Value) -> std::result::Result<Self, String> {
+        Ok(value.clone())
+    }
+}
+impl FromSql for String {
+    fn from_value(value: &Value) -> std::result::Result<Self, String> {
+        match value {
+            Value::Text(text) => Ok(text.clone()),
+            other => Err(mismatch("文本", other)),
+        }
+    }
+}
+impl FromSql for f64 {
+    fn from_value(value: &Value) -> std::result::Result<Self, String> {
+        match value {
+            Value::Real(number) => Ok(*number),
+            Value::Integer(number) => Ok(*number as f64),
+            other => Err(mismatch("数值", other)),
+        }
+    }
+}
+impl FromSql for bool {
+    fn from_value(value: &Value) -> std::result::Result<Self, String> {
+        match value {
+            Value::Integer(number) => Ok(*number != 0),
+            other => Err(mismatch("布尔整数", other)),
+        }
+    }
+}
+macro_rules! integer_from_sql {
+    ($($t:ty),*) => { $(impl FromSql for $t {
+        fn from_value(value: &Value) -> std::result::Result<Self, String> {
+            match value {
+                Value::Integer(number) => <$t>::try_from(*number).map_err(|error| error.to_string()),
+                other => Err(mismatch("整数", other)),
+            }
+        }
+    })* };
+}
+integer_from_sql!(i32, i64, u32, u64, usize);
+impl<T: FromSql> FromSql for Option<T> {
+    fn from_value(value: &Value) -> std::result::Result<Self, String> {
+        match value {
+            Value::Null => Ok(None),
+            other => T::from_value(other).map(Some),
+        }
+    }
+}
+
+pub trait Params {
+    fn values(self) -> Vec<Value>;
+}
+impl Params for [&dyn ToSql; 0] {
+    fn values(self) -> Vec<Value> {
+        vec![]
+    }
+}
+macro_rules! array_params { ($($n:expr),*) => { $(impl<T: ToSql> Params for [T; $n] { fn values(self) -> Vec<Value> { self.iter().map(ToSql::to_value).collect() } })* }; }
+array_params!(1, 2, 3, 4, 5, 6, 7, 8);
+impl Params for &[&dyn ToSql] {
+    fn values(self) -> Vec<Value> {
+        self.iter().map(|value| value.to_value()).collect()
+    }
+}
+impl Params for Vec<Value> {
+    fn values(self) -> Vec<Value> {
+        self
+    }
+}
+macro_rules! params {
+    () => { &[] as &[&dyn $crate::storage::ToSql] };
+    ($($value:expr),+ $(,)?) => { &[$(&$value as &dyn $crate::storage::ToSql),+] as &[&dyn $crate::storage::ToSql] };
+}
+pub(crate) use params;
+
+pub trait OptionalRow<T> {
+    fn optional(self) -> Result<Option<T>>;
+}
+impl<T> OptionalRow<T> for Result<T> {
+    fn optional(self) -> Result<Option<T>> {
+        match self {
+            Ok(value) => Ok(Some(value)),
+            Err(Error::QueryReturnedNoRows) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+pub struct Row {
+    values: Vec<Value>,
+}
+impl Row {
+    pub fn get<I: TryInto<usize>, T: FromSql>(&self, index: I) -> Result<T> {
+        let index = index
+            .try_into()
+            .map_err(|_| Error::InvalidColumnIndex(usize::MAX))?;
+        T::from_value(self.value(index)?).map_err(|message| Error::Conversion { index, message })
+    }
+    pub fn value(&self, index: usize) -> Result<&Value> {
+        self.values
+            .get(index)
+            .ok_or(Error::InvalidColumnIndex(index))
+    }
+}
+
+fn receive<T: Send>(rx: mpsc::Receiver<T>) -> Result<T> {
     if tokio::runtime::Handle::try_current()
         .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread)
     {
@@ -13,87 +194,27 @@ fn receive<T: Send>(rx: mpsc::Receiver<T>) -> std::result::Result<T, mpsc::RecvE
     } else {
         rx.recv()
     }
+    .map_err(|_| Error::Disconnected)
 }
 
-pub trait Params {
-    fn values(self) -> Result<Vec<Value>>;
-}
-fn value(v: &dyn rusqlite::ToSql) -> Result<Value> {
-    Ok(match v.to_sql()? {
-        ToSqlOutput::Borrowed(v) => v.into(),
-        ToSqlOutput::Owned(v) => v,
-        _ => return Err(Error::InvalidQuery),
-    })
-}
-impl Params for [&dyn rusqlite::ToSql; 0] {
-    fn values(self) -> Result<Vec<Value>> {
-        Ok(vec![])
-    }
-}
-macro_rules! array_params { ($($n:expr),*) => { $(impl<T: rusqlite::ToSql> Params for [T; $n] { fn values(self) -> Result<Vec<Value>> { self.iter().map(|v| value(v)).collect() } })* }; }
-array_params!(1, 2, 3, 4, 5, 6, 7, 8);
-impl Params for &[&dyn rusqlite::ToSql] {
-    fn values(self) -> Result<Vec<Value>> {
-        self.iter().map(|v| value(*v)).collect()
-    }
-}
-impl Params for Vec<Value> {
-    fn values(self) -> Result<Vec<Value>> {
-        Ok(self)
-    }
-}
-
-pub struct Row<'a> {
-    values: Vec<Value>,
-    marker: std::marker::PhantomData<&'a ()>,
-}
-impl Row<'_> {
-    pub fn get<I: TryInto<usize>, T: FromSql>(&self, index: I) -> Result<T> {
-        let i = index.try_into().map_err(|_| Error::InvalidQuery)?;
-        T::column_result(self.get_ref(i)?).map_err(|e| {
-            Error::FromSqlConversionFailure(i, self.values[i].data_type(), Box::new(e))
-        })
-    }
-    pub fn get_ref(&self, index: usize) -> Result<ValueRef<'_>> {
-        self.values
-            .get(index)
-            .map(ValueRef::from)
-            .ok_or(Error::InvalidColumnIndex(index))
-    }
-}
-
-type Reply = mpsc::Sender<Result<(usize, Vec<Row<'static>>)>>;
-pub(crate) struct Command {
+type Reply = mpsc::Sender<Result<(usize, Vec<Row>)>>;
+struct Command {
     sql: String,
     values: Vec<Value>,
     batch: bool,
     reply: Reply,
 }
-pub enum Connection {
-    Sqlite(rusqlite::Connection),
-    Postgres(mpsc::Sender<Command>),
-}
-fn pg_error(error: impl std::error::Error + Send + Sync + 'static) -> Error {
-    Error::ToSqlConversionFailure(Box::new(error))
+pub struct Connection {
+    commands: mpsc::Sender<Command>,
 }
 impl Connection {
-    pub fn open(path: &Path) -> Result<Self> {
-        rusqlite::Connection::open(path).map(Self::Sqlite)
-    }
-    #[cfg(test)]
-    pub fn open_in_memory() -> Result<Self> {
-        rusqlite::Connection::open_in_memory().map(Self::Sqlite)
-    }
-    pub fn is_postgres(&self) -> bool {
-        matches!(self, Self::Postgres(_))
-    }
     pub fn postgres(url: &str, schema: &str) -> Result<Self> {
         if schema.is_empty()
             || !schema
                 .bytes()
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_')
         {
-            return Err(Error::InvalidQuery);
+            return Err(Error::InvalidSchema);
         }
         let (tx, rx) = mpsc::channel::<Command>();
         let (ready_tx, ready_rx) = mpsc::channel();
@@ -101,8 +222,8 @@ impl Connection {
         let schema = schema.to_owned();
         std::thread::spawn(move || {
             let connected = (|| {
-                let mut c = postgres::Client::connect(&url, postgres::NoTls).map_err(pg_error)?;
-                c.batch_execute(&format!("SET statement_timeout TO '30s'; SELECT pg_advisory_lock(hashtextextended('{schema}',0)); CREATE SCHEMA IF NOT EXISTS {schema}; SET search_path TO {schema}; SELECT pg_advisory_unlock(hashtextextended('{schema}',0));")).map_err(pg_error)?;
+                let mut c = postgres::Client::connect(&url, postgres::NoTls)?;
+                c.batch_execute(&format!("SET statement_timeout TO '30s'; SELECT pg_advisory_lock(hashtextextended('{schema}',0)); CREATE SCHEMA IF NOT EXISTS {schema}; SET search_path TO {schema}; SELECT pg_advisory_unlock(hashtextextended('{schema}',0));"))?;
                 Ok::<_, Error>(c)
             })();
             let mut client = match connected {
@@ -116,69 +237,38 @@ impl Connection {
                 }
             };
             for cmd in rx {
-                let result = pg_run(&mut client, &cmd.sql, cmd.values, cmd.batch);
+                let result = run(&mut client, &cmd.sql, cmd.values, cmd.batch);
                 let _ = cmd.reply.send(result);
             }
         });
-        receive(ready_rx).map_err(pg_error)??;
-        Ok(Self::Postgres(tx))
+        receive(ready_rx)??;
+        Ok(Self { commands: tx })
     }
-    fn run(
-        &self,
-        sql: &str,
-        values: Vec<Value>,
-        batch: bool,
-    ) -> Result<(usize, Vec<Row<'static>>)> {
-        match self {
-            Self::Sqlite(c) => {
-                if batch {
-                    c.execute_batch(sql)?;
-                    return Ok((0, vec![]));
-                }
-                let mut statement = c.prepare(sql)?;
-                if statement.column_count() == 0 {
-                    return Ok((
-                        statement.execute(rusqlite::params_from_iter(values))?,
-                        vec![],
-                    ));
-                }
-                let count = statement.column_count();
-                let rows = statement
-                    .query_map(rusqlite::params_from_iter(values), |r| {
-                        Ok(Row {
-                            values: (0..count).map(|i| r.get(i)).collect::<Result<_>>()?,
-                            marker: std::marker::PhantomData,
-                        })
-                    })?
-                    .collect::<Result<Vec<_>>>()?;
-                Ok((rows.len(), rows))
-            }
-            Self::Postgres(tx) => {
-                let (reply, rx) = mpsc::channel();
-                tx.send(Command {
-                    sql: sql.into(),
-                    values,
-                    batch,
-                    reply,
-                })
-                .map_err(|_| Error::InvalidQuery)?;
-                receive(rx).map_err(pg_error)?
-            }
-        }
+    fn run(&self, sql: &str, values: Vec<Value>, batch: bool) -> Result<(usize, Vec<Row>)> {
+        let (reply, rx) = mpsc::channel();
+        self.commands
+            .send(Command {
+                sql: sql.into(),
+                values,
+                batch,
+                reply,
+            })
+            .map_err(|_| Error::Disconnected)?;
+        receive(rx)?
     }
     pub fn execute_batch(&self, sql: &str) -> Result<()> {
         self.run(sql, vec![], true).map(|_| ())
     }
     pub fn execute(&self, sql: &str, params: impl Params) -> Result<usize> {
-        self.run(sql, params.values()?, false).map(|r| r.0)
+        self.run(sql, params.values(), false).map(|r| r.0)
     }
     pub fn query_row<T>(
         &self,
         sql: &str,
         params: impl Params,
-        f: impl FnOnce(&Row<'_>) -> Result<T>,
+        f: impl FnOnce(&Row) -> Result<T>,
     ) -> Result<T> {
-        let (_, rows) = self.run(sql, params.values()?, false)?;
+        let (_, rows) = self.run(sql, params.values(), false)?;
         f(rows.first().ok_or(Error::QueryReturnedNoRows)?)
     }
     pub fn prepare<'a>(&'a self, sql: &str) -> Result<Statement<'a>> {
@@ -206,11 +296,11 @@ impl Statement<'_> {
     pub fn query_map<T>(
         &mut self,
         params: impl Params,
-        mut f: impl FnMut(&Row<'_>) -> Result<T>,
+        mut f: impl FnMut(&Row) -> Result<T>,
     ) -> Result<std::vec::IntoIter<Result<T>>> {
         Ok(self
             .connection
-            .run(&self.sql, params.values()?, false)?
+            .run(&self.sql, params.values(), false)?
             .1
             .iter()
             .map(&mut f)
@@ -256,7 +346,6 @@ impl postgres::types::ToSql for PgValue {
         match &self.0 {
             Value::Null => Ok(IsNull::Yes),
             Value::Text(v) => v.to_sql(ty, out),
-            Value::Blob(v) => v.to_sql(ty, out),
             Value::Integer(v) => match *ty {
                 Type::INT4 => i32::try_from(*v)?.to_sql(ty, out),
                 Type::INT2 => i16::try_from(*v)?.to_sql(ty, out),
@@ -271,67 +360,14 @@ impl postgres::types::ToSql for PgValue {
     }
     postgres::types::to_sql_checked!();
 }
-fn dialect(sql: &str) -> String {
-    let mut sql = sql
-        .replace("PRAGMA journal_mode=WAL;", "")
-        .replace("PRAGMA foreign_keys=ON;", "")
-        .replace(
-            "PRAGMA defer_foreign_keys=ON;",
-            "SET CONSTRAINTS ALL DEFERRED;",
-        );
-    sql = sql.replace(" REAL", " DOUBLE PRECISION");
-    if sql.contains("CREATE TABLE") || sql.contains("ADD COLUMN") {
-        for target in [
-            "research_evidence(id)",
-            "system_reviews(id)",
-            "investment_rules(id)",
-            "holdings(id)",
-        ] {
-            let with_delete = format!("REFERENCES {target} ON DELETE CASCADE");
-            sql = sql.replace(
-                &with_delete,
-                &format!("{with_delete} DEFERRABLE INITIALLY IMMEDIATE"),
-            );
-            let plain = format!("REFERENCES {target}");
-            sql = sql.replace(
-                &format!("{plain},"),
-                &format!("{plain} DEFERRABLE INITIALLY IMMEDIATE,"),
-            );
-            sql = sql.replace(
-                &format!("{plain})"),
-                &format!("{plain} DEFERRABLE INITIALLY IMMEDIATE)"),
-            );
-            sql = sql.replace(
-                &format!("{plain}\n"),
-                &format!("{plain} DEFERRABLE INITIALLY IMMEDIATE\n"),
-            );
-        }
-    }
-    // Repository SQL is static; parameters are always bound, never interpolated.
-    for i in (1..=64).rev() {
-        sql = sql.replace(&format!("?{i}"), &format!("${i}"));
-    }
-    for i in 1..=3 {
-        sql = sql.replace(&format!("${i} IS NULL"), &format!("${i}::text IS NULL"));
-    }
-    if sql.contains("INSERT OR IGNORE") {
-        sql = format!(
-            "{} ON CONFLICT DO NOTHING",
-            sql.replace("INSERT OR IGNORE", "INSERT")
-                .trim_end_matches(';')
-        );
-    }
-    sql
-}
-fn pg_run(
+fn run(
     client: &mut postgres::Client,
     sql: &str,
     values: Vec<Value>,
     batch: bool,
-) -> Result<(usize, Vec<Row<'static>>)> {
-    let sql = dialect(sql);
+) -> Result<(usize, Vec<Row>)> {
     if batch {
-        client.batch_execute(&sql).map_err(pg_error)?;
+        client.batch_execute(sql)?;
         return Ok((0, vec![]));
     }
     let values = values.into_iter().map(PgValue).collect::<Vec<_>>();
@@ -339,16 +375,12 @@ fn pg_run(
         .iter()
         .map(|v| v as &(dyn postgres::types::ToSql + Sync))
         .collect::<Vec<_>>();
-    let statement = client.prepare(&sql).map_err(pg_error)?;
+    let statement = client.prepare(sql)?;
     if statement.columns().is_empty() {
-        return client
-            .execute(&statement, &params)
-            .map(|n| (n as usize, vec![]))
-            .map_err(pg_error);
+        return Ok((client.execute(&statement, &params)? as usize, vec![]));
     }
     let rows = client
-        .query(&statement, &params)
-        .map_err(pg_error)?
+        .query(&statement, &params)?
         .into_iter()
         .map(|r| {
             use postgres::types::Type;
@@ -364,6 +396,9 @@ fn pg_run(
                         Type::INT4 => r
                             .try_get::<_, Option<i32>>(i)
                             .map(|v| v.map(|v| Value::Integer(v.into()))),
+                        Type::INT2 => r
+                            .try_get::<_, Option<i16>>(i)
+                            .map(|v| v.map(|v| Value::Integer(v.into()))),
                         Type::FLOAT8 => r.try_get::<_, Option<f64>>(i).map(|v| v.map(Value::Real)),
                         Type::BOOL => r
                             .try_get::<_, Option<bool>>(i)
@@ -371,15 +406,11 @@ fn pg_run(
                         _ => r
                             .try_get::<_, Option<String>>(i)
                             .map(|v| v.map(Value::Text)),
-                    }
-                    .map_err(pg_error)?;
+                    }?;
                     Ok(v.unwrap_or(Value::Null))
                 })
                 .collect::<Result<_>>()?;
-            Ok(Row {
-                values,
-                marker: std::marker::PhantomData,
-            })
+            Ok(Row { values })
         })
         .collect::<Result<Vec<_>>>()?;
     Ok((rows.len(), rows))

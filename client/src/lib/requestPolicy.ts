@@ -14,10 +14,9 @@ export function requestPolicy(path: string) {
   const resource = path.split("?")[0];
   const timeoutMs = ["/analysis", "/analysis/stream"].includes(resource)
     ? 1800000
-    : ["/model-config/test", "/model-config/codex"].includes(resource)
+    : resource === "/model-config/test"
       ? 300000
-      : resource === "/model-config/codex/models" ||
-          resource === "/snapshot" ||
+      : resource === "/snapshot" ||
           resource.startsWith("/fx-settings") ||
           resource.startsWith("/market-data/fx-rate")
         ? 30000

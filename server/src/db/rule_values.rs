@@ -6,7 +6,7 @@ pub(super) fn store_rule_revision(
 ) -> AppResult<()> {
     transaction.execute(
         "INSERT INTO investment_rule_revisions (rule_id, revision, payload, changed_at)
-         VALUES (?1,?2,?3,?4)",
+         VALUES ($1,$2,$3,$4)",
         params![
             rule.id,
             rule.revision,

@@ -30,7 +30,7 @@ Web 通过 Rust API 读写数据，PostgreSQL 保存独立账号、会话及各�
 
 管理员可停服后通过服务端命令重置账号密码。不要把密码放进命令参数或 Git；通过 `MARIO_RESET_PASSWORD` 传入，并给二进制提供 `DATABASE_URL`，执行 `--reset-password 用户邮箱`。具体连接可使用配置的外部 URL，或 `postgresql://mario:<URL编码的密码>@127.0.0.1:55432/postgres`。修改密码会撤销该账号全部会话。重置后清除临时环境变量并重新启动服务。
 
-旧 SQLite 资料可由服务端 `--export-data` 导出，登录新账号后通过“账号与数据”导入；旧账号/会话/模型密钥不随业务 JSON 导入。导出时使用 `MARIO_DATA_DIR` 指向旧资料目录，详情可运行二进制 `--help`。
+当前版本不读取旧单机版的 SQLite 文件；旧资料用标签 `legacy-sqlite-export` 导出后在新账号导入，步骤见 [数据迁移指南](data-migration.md#旧版-sqlite-数据)。
 
 ## 高级运行与开发
 
@@ -45,4 +45,4 @@ VITE_BASE_PATH=/mario/ npm run web:build
 
 Web 产物的源码版本与校验值见 `outputs/build-manifest.json`。构建、浏览器文件交互与子路径配置见 [Web 构建](client-builds.md)。
 
-开发前端可通过 `VITE_API_URL=http://127.0.0.1:4217/api` 连接临时多用户 API；无此变量的 Vite 开发模式保留隔离的 SQLite 调试路径，不是生产服务。本地保存模型/行情密钥也需配置 `MARIO_MASTER_KEY`，密钥按用途加密存入本地数据库；旧钥匙串密钥需重新填写。不要把线上数据库传给集成测试。
+本地开发运行 `npm run dev`：脚本在 `.runtime/dev` 创建并启动开发用 PostgreSQL 集群（端口 `MARIO_DEV_PG_PORT`，默认 54329），生成该目录专用的数据库密码与 `MARIO_MASTER_KEY`，再启动 API（`127.0.0.1:4217`）和 Vite；在浏览器注册开发账号即可，退出时一并停止集群。开发机需安装 PostgreSQL 工具，脚本从 `MARIO_TEST_PG_BIN` 或 `pg_config --bindir` 查找。前端可用 `VITE_API_URL` 连接其他临时 API。不要把线上数据库传给开发或集成测试。

@@ -16,15 +16,6 @@ vi.mock("../../api/settings", () => ({
   saveModelConfig: vi
     .fn()
     .mockImplementation(async (input) => ({ ...input, hasApiKey: true })),
-  readCodexCredentials: vi.fn(),
-  getCodexModels: vi.fn().mockResolvedValue([
-    {
-      model: "detected-model",
-      displayName: "Detected Model",
-      description: "Local model",
-      isDefault: true,
-    },
-  ]),
   deleteModelKey: vi.fn(),
   testModelConnection: vi.fn(),
 }));
@@ -117,49 +108,19 @@ it("saves a third-party Chat Completions connection with a custom URL, port and 
   expect((screen.getByLabelText("API Key") as HTMLInputElement).value).toBe("");
 });
 
-it("reads Codex in one click and selects its detected model without copying a key", async () => {
-  const detected = {
-    provider: "codex" as const,
-    baseUrl: "codex://local",
-    model: "detected-model",
-    hasApiKey: true,
-  };
-  vi.mocked(settingsApi.readCodexCredentials).mockResolvedValue(detected);
-  const onUpdate = vi.fn();
+it("offers Codex only through the paired bridge", () => {
   render(
-    <ModelSettings model={existingModel} onUpdate={onUpdate} flash={vi.fn()} />,
+    <ModelSettings model={existingModel} onUpdate={vi.fn()} flash={vi.fn()} />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "一键读取 Codex 凭证" }));
-  await screen.findByText(/Codex 凭证读取成功/);
-  expect(onUpdate).toHaveBeenCalledWith(detected);
-  expect((screen.getByLabelText("模型接口") as HTMLSelectElement).value).toBe(
-    "codex",
-  );
-  expect((screen.getByLabelText("模型名称") as HTMLInputElement).value).toBe(
-    "detected-model",
-  );
-  expect(screen.queryByLabelText("API Key")).toBeNull();
-  expect(settingsApi.saveModelConfig).not.toHaveBeenCalled();
-});
-
-it("shows a missing-login failure and preserves the existing model", async () => {
-  vi.mocked(settingsApi.readCodexCredentials).mockRejectedValue(
-    new Error("未找到已登录的 Codex 凭证"),
-  );
-  const onUpdate = vi.fn();
-  render(
-    <ModelSettings model={existingModel} onUpdate={onUpdate} flash={vi.fn()} />,
-  );
-  fireEvent.click(screen.getByRole("button", { name: "一键读取 Codex 凭证" }));
-  await screen.findByText(/Codex 凭证读取失败.*未找到已登录/);
-  expect(onUpdate).not.toHaveBeenCalled();
-  expect((screen.getByLabelText("模型接口") as HTMLSelectElement).value).toBe(
+  const options = [
+    ...(screen.getByLabelText("模型接口") as HTMLSelectElement).options,
+  ].map((option) => option.value);
+  expect(options).toEqual([
+    "openai-chat",
     "openai-responses",
-  );
-  expect((screen.getByLabelText("模型名称") as HTMLInputElement).value).toBe(
-    "existing-model",
-  );
-  expect(screen.queryByText(/Codex 凭证读取成功/)).toBeNull();
+    "anthropic",
+    "codex-bridge",
+  ]);
 });
 
 it("locks configuration and key writes during a connection test and releases them on failure", async () => {

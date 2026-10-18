@@ -1,7 +1,7 @@
 use super::{
     quote_identifier, sync_specs_for_version, validate_synced_fx_provenance,
     validate_synced_holding_valuations, AppError, AppResult, Database, SyncDataset, SyncTable,
-    SyncValue, Utc, ValueRef, SYNC_DATASET_SCHEMA_VERSION, SYNC_TABLES,
+    SyncValue, Utc, Value, SYNC_DATASET_SCHEMA_VERSION, SYNC_TABLES,
 };
 
 impl Database {
@@ -30,26 +30,11 @@ impl Database {
                 .query_map([], |row| {
                     let mut values = Vec::with_capacity(spec.columns.len());
                     for index in 0..spec.columns.len() {
-                        values.push(match row.get_ref(index)? {
-                            ValueRef::Null => SyncValue::Null,
-                            ValueRef::Integer(value) => SyncValue::Integer(value),
-                            ValueRef::Real(value) => SyncValue::Real(value),
-                            ValueRef::Text(value) => SyncValue::Text(
-                                String::from_utf8(value.to_vec()).map_err(|error| {
-                                    rusqlite::Error::FromSqlConversionFailure(
-                                        index,
-                                        rusqlite::types::Type::Text,
-                                        Box::new(error),
-                                    )
-                                })?,
-                            ),
-                            ValueRef::Blob(_) => {
-                                return Err(rusqlite::Error::InvalidColumnType(
-                                    index,
-                                    spec.columns[index].into(),
-                                    rusqlite::types::Type::Blob,
-                                ));
-                            }
+                        values.push(match row.value(index)? {
+                            Value::Null => SyncValue::Null,
+                            Value::Integer(value) => SyncValue::Integer(*value),
+                            Value::Real(value) => SyncValue::Real(*value),
+                            Value::Text(value) => SyncValue::Text(value.clone()),
                         });
                     }
                     Ok(values)
@@ -86,7 +71,7 @@ impl Database {
         validate_synced_holding_valuations(dataset)?;
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;
-        transaction.execute_batch("PRAGMA defer_foreign_keys=ON;")?;
+        transaction.execute_batch("SET CONSTRAINTS ALL DEFERRED")?;
 
         for spec in SYNC_TABLES.iter().rev() {
             let filter = if spec.name == "settings" {
@@ -114,7 +99,7 @@ impl Database {
                 .map(|column| quote_identifier(column))
                 .collect::<Vec<_>>();
             let placeholders = (1..=spec.columns.len())
-                .map(|index| format!("?{index}"))
+                .map(|index| format!("${index}"))
                 .collect::<Vec<_>>();
             let sql = format!(
                 "INSERT INTO {} ({}) VALUES ({})",
@@ -127,10 +112,10 @@ impl Database {
                 let values = row
                     .iter()
                     .map(|value| match value {
-                        SyncValue::Null => rusqlite::types::Value::Null,
-                        SyncValue::Integer(value) => rusqlite::types::Value::Integer(*value),
-                        SyncValue::Real(value) => rusqlite::types::Value::Real(*value),
-                        SyncValue::Text(value) => rusqlite::types::Value::Text(value.clone()),
+                        SyncValue::Null => Value::Null,
+                        SyncValue::Integer(value) => Value::Integer(*value),
+                        SyncValue::Real(value) => Value::Real(*value),
+                        SyncValue::Text(value) => Value::Text(value.clone()),
                     })
                     .collect::<Vec<_>>();
                 statement.execute(values)?;

@@ -155,7 +155,7 @@ mod tests {
         }
     }
     fn db() -> Database {
-        Database::open(std::path::Path::new(":memory:")).unwrap()
+        Database::test()
     }
     fn provider(rate: f64) -> Provider {
         Provider {
@@ -221,9 +221,8 @@ mod tests {
     }
     #[tokio::test]
     async fn manual_rate_applies_to_all_holdings_survives_refresh_restart_and_export() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("fx.db");
-        let db = Database::open(&path).unwrap();
+        let account = crate::db::TestAccount::new();
+        let db = account.open();
         let source = provider(7.0);
         refresh(&db, &source, false).await.unwrap();
         db.add_holding(&input("USD")).unwrap();
@@ -242,7 +241,7 @@ mod tests {
         restored.import_sync_data(&data).unwrap();
         assert_eq!(restored.fx_book("CNY").unwrap().manual["USD"].rate, 8.0);
         drop(db);
-        let reopened = Database::open(&path).unwrap();
+        let reopened = account.open();
         assert_eq!(reopened.fx_book("CNY").unwrap().manual["USD"].rate, 8.0);
         reopened
             .set_fx_override(&FxOverrideInput {

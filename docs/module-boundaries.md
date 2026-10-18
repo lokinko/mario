@@ -30,10 +30,10 @@ flowchart TD
     Features --> API[领域 API 客户端]
     Lifecycle --> API
     API --> Transport[认证与 HTTP 传输]
-    HTTP[本地或多用户 HTTP 适配器] --> UseCases[应用服务]
+    HTTP[多用户 HTTP 适配器] --> UseCases[应用服务]
     UseCases --> Repository[Database 领域仓储]
     UseCases --> Ports[AI 与行情执行接口]
-    Repository --> Storage[SQL 存储适配器]
+    Repository --> Storage[PostgreSQL 存储适配器]
     Repository --> Domain[共享契约与确定性规则]
     Ports --> Domain
     UseCases --> Domain
@@ -45,7 +45,7 @@ flowchart TD
 | `client/src/api/` | 某领域的 URL、请求和返回类型 | 不访问 DOM，不引用其他领域客户端，不自行处理账号与同步 |
 | `client/src/lib/httpClient.ts` | 令牌、请求时限、写入前同步、响应版本与账号校验 | 不引用功能页面或领域客户端 |
 | `client/src/app/` | 启动、全局同步、跨页组合与刷新 | 页面草稿保留在页面，应用层只记录是否需要保护 |
-| `server/src/runtime.rs` | 环境与参数、维护命令、启动模式、退出信号 | 不放业务用例或 HTTP handler |
+| `server/src/runtime.rs` | 环境与参数、维护命令、运行角色、退出信号 | 不放业务用例或 HTTP handler |
 | `server/src/http/`、`hosted.rs` | 路由、认证、租户选择、版本检查、输入输出转换 | 多步业务流程交给应用服务；简单仓储查询和单次 CRUD 可直接调用 Database |
 | `server/src/application/` | 冻结与保存分析、模型设置、行情辅助的组合写入 | 不依赖 Axum、启动入口或 Agent 进程适配器 |
 | `server/src/models/` 与确定性计算模块 | 序列化契约、值校验、风险、规划、估值、上下文构建 | 不依赖仓储、网络刷新、工作流实现或 HTTP |
@@ -66,7 +66,6 @@ flowchart TD
 - 公开行情缓存继续保持有界、共享与失败退避。用户汇率覆盖、持仓、密钥和分析历史仍归账号数据库，不进入跨账号缓存。
 - 多用户请求在数据库账户锁内检查 `If-Match`。分析预览和模型连接测试不要求写入版本；CSV 预览会缓存汇率，所以仍按写入处理。新增操作默认要求版本，不能因为名字含 `preview` 或 `test` 就自动豁免。
 - 分析执行在锁内冻结上下文、模型配置、密钥目的地和指纹；模型执行期间释放账户锁，执行结束重新取锁后保存。失败不产生分析历史；请求退出会关闭连接并释放残留的数据库会话锁。
-- SQLite 开发模式继续使用本地请求串行锁；不把这一模式的并发能力等同于多用户生产模式。
 
 ### 前端
 
@@ -94,6 +93,8 @@ flowchart TD
 
 前端在对应 `api` 模块增加接口，功能页面维护自身交互。多个功能需要同屏出现时由应用壳组合；仅供显示、无功能生命周期的组件可以进入 `components`。已有明确边界的单步操作不必再增加一层空壳服务。
 
+开发与测试需要本机 PostgreSQL 工具（从 `MARIO_TEST_PG_BIN` 或 `pg_config --bindir` 查找）。Rust 测试与 HTTP 脚本只连接 `MARIO_TEST_DATABASE_URL` 指向的一次性数据库；`scripts/postgres-cluster.mjs <命令…>` 创建临时集群、设置该变量并在命令结束后删除集群。
+
 提交前执行：
 
 ```bash
@@ -102,12 +103,12 @@ npm run build --prefix client
 npm run format:check --prefix client
 npm test --prefix client
 cargo fmt --manifest-path server/Cargo.toml -- --check
-cargo test --manifest-path server/Cargo.toml
+npm run test:server
 cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
 cargo build --manifest-path server/Cargo.toml
-node scripts/test-functional-api.mjs
-node scripts/test-web.mjs
 ```
+
+跨前后端、数据格式、财务逻辑或公共契约的修改运行完整 `npm test`（[`scripts/test.sh`](../scripts/test.sh)）：上述检查之后，在同一个临时集群中依次运行 Rust 测试、`test-functional-api`、`test-web`、`test-codex-bridge`，再运行独立建集群的 `npm run test:financial`。
 
 依赖检查解析 TypeScript 导入/导出，包括类型导入与动态导入；Rust 检查去除字符串、注释与测试专属项后提取显式 crate 依赖。它阻止上层反向引用、跨功能 UI 引用、领域客户端之间的引用以及依赖循环。DB 内部实现仍允许使用父模块门面的共享导入。检查属于静态约束，与编译及行为测试互补，不代表所有宏展开或运行时隔离已经被证明。
 
@@ -129,9 +130,11 @@ node scripts/test-web.mjs
 本机没有 PostgreSQL 工具，也没有设置临时测试数据库。本轮不声称已实跑 PostgreSQL 多租户验收。GitHub 自动工作流已移除；租户、双实例版本冲突、锁释放、密钥、恢复和重启持久性仍由本地测试脚本验证。可以在具备临时数据库的环境设置 `MARIO_TEST_DATABASE_URL` 后运行：
 
 ```bash
-cargo test --manifest-path server/Cargo.toml db::postgres_tests -- --ignored
-node scripts/test-hosted.mjs
+npm run test:server -- db::postgres_tests
+npm run test:hosted
 ```
+
+（以上为 2026-10-18 起的现行命令，均自动创建临时集群；PostgreSQL 测试不再标记为忽略。）
 
 这次仍保留请求级 PostgreSQL 连接、进程内公开行情缓存、全量组合快照和同步轮询。连接池、增量读模型、持久分析作业与工作流取消属于后续容量或产品需求；当前用例边界已提供明确的接入位置。没有为这些尚未发生的需求加入通用框架。
 
@@ -169,3 +172,11 @@ node scripts/test-hosted.mjs
 - `ai/` 不检索历史问答，不消费记忆偏好；工作流 v7 保留资料筛选、研究计划、独立候选、反思与结构化输出。
 - `db/schema.rs` 承担旧表及元数据清理；`db/sync_format.rs` 仅保留旧备份表形状，`db/sync_store.rs` 跳过退役表并在导入事务内清理，迁移不会重新开放旧接口。旧格式支持结束后删除这部分适配。
 - 验证覆盖旧库重复升级、旧备份恢复、历史原文保留、问答不自动引入历史回答、退役接口 404，以及隔离 PostgreSQL 的迁移和备份恢复。
+
+## SQLite 退役后的边界（2026-10-18）
+
+- 运行时只有 PostgreSQL。`http/local.rs`、单令牌认证、`--allow-unauthenticated-dev`、旧数据目录迁移、`--export-data` 和服务器本机 Codex 登录已删除；上文各历史验收中的 SQLite HTTP 流程与本地认证检查不再存在。
+- `storage.rs` 是唯一使用数据库驱动的模块，提供自有的 `Value`、`ToSql`/`FromSql`、`Row` 与错误类型；架构检查禁止其他模块直接使用 `postgres::` 或 `rusqlite::`。仓储 SQL 使用原生 PostgreSQL 写法。
+- 账号锁、版本检查和财务回执只有多用户这一条路径；本地开发通过 `npm run dev` 走同一认证与租户流程。
+- Rust 测试为每个用例创建独立租户 schema（`db::TestAccount`）；升级测试先把 `schema_version` 置零再重新打开，验证一次性迁移，而不是依赖每次打开都重跑迁移。
+- 旧 SQLite 文件只能用标签 `legacy-sqlite-export` 导出后导入；当前代码不再承担该格式的读取责任。

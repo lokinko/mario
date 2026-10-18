@@ -9,17 +9,17 @@ pub(crate) fn fund(db: &Database, currency: &str) {
     let conn = db.conn().unwrap();
     if conn
         .query_row(
-            "SELECT COUNT(*) FROM holdings WHERE asset_class='现金' AND currency=?1",
+            "SELECT COUNT(*) FROM holdings WHERE asset_class='现金' AND currency=$1",
             [currency],
             |r| r.get::<_, i64>(0),
         )
         .unwrap()
         == 0
     {
-        conn.execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,valuation_date,created_at,updated_at) VALUES (?1,'',?2,'现金',10000,0,0,?3,'2026-01-01','9999-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
+        conn.execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,valuation_date,created_at,updated_at) VALUES ($1,'',$2,'现金',10000,0,0,$3,'2026-01-01','9999-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
             params![Uuid::new_v4().to_string(),format!("{currency} 存款"),currency]).unwrap();
         initialize_balances(&conn).unwrap();
-        conn.execute("UPDATE cash_state SET baseline_id='00000000-0000-0000-0000-000000000001' WHERE currency=?1",[currency]).unwrap();
+        conn.execute("UPDATE cash_state SET baseline_id='00000000-0000-0000-0000-000000000001' WHERE currency=$1",[currency]).unwrap();
     }
 }
 
@@ -51,7 +51,7 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
         let amount = crate::models::decimal::parse(&state.amount)?;
         let holding = conn
             .query_row(
-                "SELECT currency,asset_class,market_value FROM holdings WHERE id=?1",
+                "SELECT currency,asset_class,market_value FROM holdings WHERE id=$1",
                 [&state.holding_id],
                 |r| {
                     Ok((
@@ -117,7 +117,7 @@ pub(super) fn initialize_balances(conn: &Connection) -> AppResult<()> {
     for (id, currency, amount, day) in rows {
         let invalid_date = chrono::NaiveDate::parse_from_str(&day, "%Y-%m-%d").is_err();
         let day = if invalid_date { "1970-01-01" } else { &day };
-        conn.execute("INSERT INTO cash_state(currency,holding_id,amount,baseline_id,confirmed_on,confirmed_at,needs_reconciliation) VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(currency) DO NOTHING",params![currency,id,decimal(amount)?.normalize().to_string(),Uuid::new_v4().to_string(),day,Utc::now().to_rfc3339(),i64::from(invalid_date)])?;
+        conn.execute("INSERT INTO cash_state(currency,holding_id,amount,baseline_id,confirmed_on,confirmed_at,needs_reconciliation) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(currency) DO NOTHING",params![currency,id,decimal(amount)?.normalize().to_string(),Uuid::new_v4().to_string(),day,Utc::now().to_rfc3339(),i64::from(invalid_date)])?;
     }
     Ok(())
 }
@@ -129,7 +129,7 @@ pub(super) fn confirm(
     amount: Decimal,
     day: &str,
 ) -> AppResult<()> {
-    conn.execute("INSERT INTO cash_state(currency,holding_id,amount,baseline_id,confirmed_on,confirmed_at,needs_reconciliation) VALUES (?1,?2,?3,?4,?5,?6,0) ON CONFLICT(currency) DO UPDATE SET holding_id=excluded.holding_id,amount=excluded.amount,baseline_id=excluded.baseline_id,confirmed_on=excluded.confirmed_on,confirmed_at=excluded.confirmed_at,needs_reconciliation=0",params![currency,id,amount.normalize().to_string(),Uuid::new_v4().to_string(),day,Utc::now().to_rfc3339()])?;
+    conn.execute("INSERT INTO cash_state(currency,holding_id,amount,baseline_id,confirmed_on,confirmed_at,needs_reconciliation) VALUES ($1,$2,$3,$4,$5,$6,0) ON CONFLICT(currency) DO UPDATE SET holding_id=excluded.holding_id,amount=excluded.amount,baseline_id=excluded.baseline_id,confirmed_on=excluded.confirmed_on,confirmed_at=excluded.confirmed_at,needs_reconciliation=0",params![currency,id,amount.normalize().to_string(),Uuid::new_v4().to_string(),day,Utc::now().to_rfc3339()])?;
     Ok(())
 }
 
@@ -147,7 +147,7 @@ pub(super) fn settle_trade(
     let baseline = state.as_ref().map_or("", |s| s.baseline_id.as_str());
     let previous = conn
         .query_row(
-            "SELECT amount,baseline_id,included FROM trade_settlements WHERE trade_id=?1",
+            "SELECT amount,baseline_id,included FROM trade_settlements WHERE trade_id=$1",
             [id],
             |r| {
                 Ok((
@@ -163,7 +163,7 @@ pub(super) fn settle_trade(
     let covered = previous.as_ref().is_some_and(|(_, old, _)| old != baseline)
         || (previous.is_none()
             && conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM holding_trades WHERE id=?1)",
+                "SELECT EXISTS(SELECT 1 FROM holding_trades WHERE id=$1)",
                 [id],
                 |r| r.get::<_, bool>(0),
             )?);
@@ -212,7 +212,7 @@ pub(super) fn settle_trade(
     };
     if (covered || (previous.is_some() && !included)) && original_flow != flow {
         conn.execute(
-            "UPDATE cash_state SET needs_reconciliation=1 WHERE currency=?1",
+            "UPDATE cash_state SET needs_reconciliation=1 WHERE currency=$1",
             [currency],
         )?;
     }
@@ -246,7 +246,7 @@ pub(super) fn settle_trade(
         } else {
             mode == crate::models::SettlementMode::Settle
         };
-    conn.execute("INSERT INTO trade_settlements(trade_id,currency,amount,baseline_id,included) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(trade_id) DO UPDATE SET amount=excluded.amount,baseline_id=excluded.baseline_id,included=excluded.included",params![id,currency,new.normalize().to_string(),baseline,i64::from(included)])?;
+    conn.execute("INSERT INTO trade_settlements(trade_id,currency,amount,baseline_id,included) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(trade_id) DO UPDATE SET amount=excluded.amount,baseline_id=excluded.baseline_id,included=excluded.included",params![id,currency,new.normalize().to_string(),baseline,i64::from(included)])?;
     Ok(delta)
 }
 
@@ -265,7 +265,7 @@ pub(super) fn remove_holding_trades(
     for trade in trades {
         let previous = conn
             .query_row(
-                "SELECT amount,baseline_id,included FROM trade_settlements WHERE trade_id=?1",
+                "SELECT amount,baseline_id,included FROM trade_settlements WHERE trade_id=$1",
                 [&trade.id],
                 |r| {
                     Ok((
@@ -298,13 +298,13 @@ pub(super) fn remove_holding_trades(
     }
     if reconcile {
         conn.execute(
-            "UPDATE cash_state SET needs_reconciliation=1 WHERE currency=?1",
+            "UPDATE cash_state SET needs_reconciliation=1 WHERE currency=$1",
             [currency],
         )?;
     }
     for trade in trades {
         conn.execute(
-            "DELETE FROM trade_settlements WHERE trade_id=?1",
+            "DELETE FROM trade_settlements WHERE trade_id=$1",
             [&trade.id],
         )?;
     }
@@ -394,17 +394,17 @@ pub(super) fn settle(conn: &Connection, currency: &str, delta: Decimal) -> AppRe
     let day = crate::models::market::today();
     if let Some(h) = cash {
         conn.execute(
-            "UPDATE holdings SET market_value=?2,valuation_date=?3,updated_at=?4 WHERE id=?1",
+            "UPDATE holdings SET market_value=$2,valuation_date=$3,updated_at=$4 WHERE id=$1",
             params![h.id, amount, day, now],
         )?;
     } else {
-        conn.execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,valuation_date,created_at,updated_at) VALUES (?1,'',?2,'现金',?3,0,0,?4,?5,?6,?6)",
+        conn.execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,valuation_date,created_at,updated_at) VALUES ($1,'',$2,'现金',$3,0,0,$4,$5,$6,$6)",
             params![Uuid::new_v4().to_string(),format!("{currency} 存款"),amount,currency,day,now])?;
     }
     super::fx::apply_holdings(conn)?;
     initialize_balances(conn)?;
     conn.execute(
-        "UPDATE cash_state SET amount=?2 WHERE currency=?1",
+        "UPDATE cash_state SET amount=$2 WHERE currency=$1",
         params![currency, next.normalize().to_string()],
     )?;
     Ok(())
@@ -451,13 +451,13 @@ pub(super) fn consolidate(conn: &Connection) -> AppResult<()> {
         }
         changed = true;
         for row in rows.iter().skip(1) {
-            conn.execute("DELETE FROM holdings WHERE id=?1", [&row.id])?;
+            conn.execute("DELETE FROM holdings WHERE id=$1", [&row.id])?;
         }
         conn.execute(
-            "DELETE FROM holding_valuations WHERE holding_id=?1",
+            "DELETE FROM holding_valuations WHERE holding_id=$1",
             [&first.id],
         )?;
-        conn.execute("UPDATE holdings SET name=?2,symbol='',market_value=?3,cost_basis=0,target_pct=0,quantity=NULL,cost_price=NULL,current_price=NULL,updated_at=?4 WHERE id=?1",
+        conn.execute("UPDATE holdings SET name=$2,symbol='',market_value=$3,cost_basis=0,target_pct=0,quantity=NULL,cost_price=NULL,current_price=NULL,updated_at=$4 WHERE id=$1",
             params![first.id,name,total.to_f64().ok_or_else(||AppError::Validation("存款金额超出范围".into()))?,Utc::now().to_rfc3339()])?;
         confirm(
             conn,
@@ -467,7 +467,7 @@ pub(super) fn consolidate(conn: &Connection) -> AppResult<()> {
             &crate::models::market::today(),
         )?;
         conn.execute(
-            "UPDATE cash_state SET needs_reconciliation=1 WHERE currency=?1",
+            "UPDATE cash_state SET needs_reconciliation=1 WHERE currency=$1",
             [currency],
         )?;
     }
@@ -484,9 +484,8 @@ mod tests {
 
     #[test]
     fn upgrade_and_legacy_import_merge_currency_balances_without_replaying_trades() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("cash.db");
-        let db = Database::open(&path).unwrap();
+        let account = crate::db::TestAccount::new();
+        let db = account.open();
         fund(&db, "CNY");
         db.conn().unwrap().execute("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,valuation_date,created_at,updated_at) VALUES ('legacy-cash','','工资卡','现金',123.45,0,0,'CNY','2026-01-01','9999-01-02T00:00:00Z','2026-01-01T00:00:00Z')", []).unwrap();
         let mut legacy = db.export_sync_data().unwrap();
@@ -505,19 +504,19 @@ mod tests {
             .contains(&t.name.as_str())
         });
         drop(db);
-        let db = Database::open(&path).unwrap();
+        let db = account.reopen_from_old_release();
         let s = db.snapshot().unwrap();
         assert_eq!(s.holdings.len(), 1);
         assert_eq!(s.holdings[0].market_value, 10123.45);
         assert_eq!(s.holdings[0].name, "CNY 存款");
         let stable = db.export_sync_data().unwrap().content_hash().unwrap();
         drop(db);
-        let db = Database::open(&path).unwrap();
+        let db = account.reopen_from_old_release();
         assert_eq!(
             db.export_sync_data().unwrap().content_hash().unwrap(),
             stable
         );
-        let copy = Database::open(std::path::Path::new(":memory:")).unwrap();
+        let copy = Database::test();
         copy.import_sync_data(&legacy).unwrap();
         assert_eq!(copy.snapshot().unwrap().total_value, 10123.45);
         assert_eq!(copy.snapshot().unwrap().holdings.len(), 1);
@@ -527,7 +526,7 @@ mod tests {
 
     #[test]
     fn cash_has_one_balance_per_supported_currency_and_cannot_be_reclassified() {
-        let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+        let db = Database::test();
         let input: HoldingInput = serde_json::from_value(serde_json::json!({"symbol":"bank","name":"工资卡","assetClass":"现金","marketValue":100,"costBasis":0,"targetPct":0,"currency":"CNY","valuationDate":"2026-01-01"})).unwrap();
         let s = db.add_holding(&input).unwrap();
         assert_eq!(s.holdings[0].name, "CNY 存款");

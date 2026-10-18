@@ -9,7 +9,7 @@ impl Database {
     pub fn automatic_research_evidence(&self) -> AppResult<Vec<ResearchEvidence>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT trace FROM analyses WHERE created_at >= ?1 ORDER BY created_at DESC, id DESC LIMIT 50",
+            "SELECT trace FROM analyses WHERE created_at >= $1 ORDER BY created_at DESC, id DESC LIMIT 50",
         )?;
         let cutoff = (Utc::now() - chrono::Duration::days(30)).to_rfc3339();
         let traces = statement.query_map([cutoff], |row| row.get::<_, Option<String>>(0))?;
@@ -173,7 +173,7 @@ impl Database {
             "INSERT INTO research_evidence
              (id, asset_name, title, publisher, source_url, source_tier, evidence_type, stance,
               as_of_date, claim, notes, active, captured_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,1,?12)",
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1,$12)",
             params![
                 evidence.id,
                 evidence.asset_name,
@@ -193,7 +193,7 @@ impl Database {
             transaction.execute(
                 "INSERT INTO research_attachments
                  (id,evidence_id,name,byte_size,data_base64,extracted_text,extraction_note)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                 VALUES ($1,$2,$3,$4,$5,$6,$7)",
                 params![
                     metadata.id,
                     evidence.id,
@@ -216,7 +216,7 @@ impl Database {
     ) -> AppResult<crate::models::ResearchAttachmentDownload> {
         self.conn()?
             .query_row(
-                "SELECT name,data_base64 FROM research_attachments WHERE evidence_id=?1 AND id=?2",
+                "SELECT name,data_base64 FROM research_attachments WHERE evidence_id=$1 AND id=$2",
                 params![evidence_id, attachment_id],
                 |row| {
                     Ok(crate::models::ResearchAttachmentDownload {
@@ -235,7 +235,7 @@ impl Database {
         active: bool,
     ) -> AppResult<ResearchEvidence> {
         let affected = self.conn()?.execute(
-            "UPDATE research_evidence SET active=?2 WHERE id=?1",
+            "UPDATE research_evidence SET active=$2 WHERE id=$1",
             params![id, i64::from(active)],
         )?;
         if affected == 0 {
@@ -249,7 +249,7 @@ impl Database {
 
     pub fn save_analysis(&self, result: &AnalysisResult, question: &str) -> AppResult<()> {
         self.conn()?.execute(
-            "INSERT INTO analyses (id, question, answer, audit, trace, created_at) VALUES (?1,?2,?3,?4,?5,?6)",
+            "INSERT INTO analyses (id, question, answer, audit, trace, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
             params![
                 result.id,
                 question,
@@ -337,7 +337,7 @@ impl Database {
         let row = self
             .conn()?
             .query_row(
-                "SELECT id, question, answer, created_at, audit, trace FROM analyses WHERE id=?1",
+                "SELECT id, question, answer, created_at, audit, trace FROM analyses WHERE id=$1",
                 [id],
                 |row| {
                     Ok((
@@ -377,8 +377,7 @@ mod automatic_tests {
     #[test]
     fn automatic_library_deduplicates_sources_without_promoting_answers_or_refreshing_old_captures()
     {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("research.db")).unwrap();
+        let db = Database::test();
         let now = Utc::now().to_rfc3339();
         let old = (Utc::now() - chrono::Duration::days(40)).to_rfc3339();
         let source = json!({"id":"web-original","assetName":"","evidenceType":"native_web_summary","claim":"Search summary, not verified original text","notes":"Original qualification","stance":"背景","capturedAt":now,"title":"Documentation","publisher":"example.com","sourceUrl":"https://example.com/docs","sourceTier":"网页来源（待核实）","asOfDate":""});
@@ -402,7 +401,7 @@ mod automatic_tests {
             .unwrap(),
             ..Default::default()
         };
-        db.conn().unwrap().execute("INSERT INTO analyses (id,question,answer,trace,created_at) VALUES ('a','question','An invented model conclusion',?1,?2)", params![serde_json::to_string(&trace).unwrap(),now]).unwrap();
+        db.conn().unwrap().execute("INSERT INTO analyses (id,question,answer,trace,created_at) VALUES ('a','question','An invented model conclusion',$1,$2)", params![serde_json::to_string(&trace).unwrap(),now]).unwrap();
         let before = db.snapshot().unwrap().holdings;
         let results = db.automatic_research_evidence().unwrap();
         assert_eq!(results.len(), 1);
@@ -423,8 +422,7 @@ mod source_text_tests {
 
     #[test]
     fn source_text_survives_storage_retrieval_archiving_and_export() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("source.db")).unwrap();
+        let db = Database::test();
         let content = "  原始资料\n\n黄金储备变化：本期披露的完整原文。\n来源及日期尚未整理。\n  ";
         let input: ResearchEvidenceInput =
             serde_json::from_value(json!({"content": content})).unwrap();
@@ -442,7 +440,7 @@ mod source_text_tests {
         assert_eq!(serialized["claim"], content);
         assert_eq!(serialized["asOfDate"], "");
 
-        let target = Database::open(&dir.path().join("restored.db")).unwrap();
+        let target = Database::test();
         target
             .import_sync_data(&db.export_sync_data().unwrap())
             .unwrap();
@@ -455,8 +453,7 @@ mod source_text_tests {
 
     #[test]
     fn source_text_rejects_empty_and_overlong_content_but_accepts_full_documents() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("source.db")).unwrap();
+        let db = Database::test();
         for content in [" \n\t ".to_string(), "字".repeat(20_001)] {
             let input: ResearchEvidenceInput =
                 serde_json::from_value(json!({"content": content})).unwrap();
@@ -481,8 +478,7 @@ mod attachment_tests {
 
     #[test]
     fn files_are_atomic_downloadable_and_retrievable_without_sending_binary_to_ai() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("files.db")).unwrap();
+        let db = Database::test();
         let bytes = "黄金储备：本期变动\n\n原始信息".as_bytes();
         let input: ResearchEvidenceInput = serde_json::from_value(json!({
             "content": "", "attachments": [{"name":"报告.txt", "dataBase64":STANDARD.encode(bytes)}]
@@ -517,9 +513,8 @@ mod attachment_tests {
 
     #[test]
     fn attachments_survive_export_and_restart_and_legacy_backups_still_import() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("files.db");
-        let db = Database::open(&path).unwrap();
+        let account = crate::db::TestAccount::new();
+        let db = account.open();
         let input: ResearchEvidenceInput = serde_json::from_value(
             json!({"content":"原文", "attachments":[{"name":"image.png","dataBase64":"AAECAwQ="}]}),
         )
@@ -527,7 +522,7 @@ mod attachment_tests {
         let saved = db.add_research_evidence(&input).unwrap();
         let file = &saved.attachments[0];
         let dataset = db.export_sync_data().unwrap();
-        let restored = Database::open(&dir.path().join("restored.db")).unwrap();
+        let restored = Database::test();
         restored.import_sync_data(&dataset).unwrap();
         assert_eq!(
             restored
@@ -537,7 +532,7 @@ mod attachment_tests {
             "AAECAwQ="
         );
         drop(db);
-        let reopened = Database::open(&path).unwrap();
+        let reopened = account.open();
         assert_eq!(
             reopened
                 .research_attachment(&saved.id, &file.id)

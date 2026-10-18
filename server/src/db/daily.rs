@@ -66,7 +66,7 @@ fn today_at(conn: &Connection, now: DateTime<Utc>) -> AppResult<String> {
 }
 fn put(conn: &Connection, day: &str, entity: &str, entry: &Entry) -> AppResult<()> {
     conn.execute(
-        "INSERT INTO daily_entries(id,day,entity_id,payload) VALUES (?1,?2,?3,?4)
+        "INSERT INTO daily_entries(id,day,entity_id,payload) VALUES ($1,$2,$3,$4)
         ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
         params![
             format!("{day}:{entity}"),
@@ -78,7 +78,7 @@ fn put(conn: &Connection, day: &str, entity: &str, entry: &Entry) -> AppResult<(
     Ok(())
 }
 fn latest_entry(conn: &Connection, day: &str, entity: &str) -> AppResult<Option<Entry>> {
-    conn.query_row("SELECT payload FROM daily_entries WHERE entity_id=?1 AND day<=?2 ORDER BY day DESC LIMIT 1",
+    conn.query_row("SELECT payload FROM daily_entries WHERE entity_id=$1 AND day<=$2 ORDER BY day DESC LIMIT 1",
         params![entity,day], |r| r.get::<_,String>(0)).optional()?
         .map(|v| serde_json::from_str(&v).map_err(AppError::from)).transpose()
 }
@@ -105,7 +105,7 @@ fn valuation_day(holding: &Holding) -> Option<String> {
 }
 fn initialize_at(conn: &Connection, snapshot: &Snapshot, day: &str) -> AppResult<()> {
     conn.execute(
-        "INSERT OR IGNORE INTO daily_settings(id,timezone) VALUES ('account',?1)",
+        "INSERT INTO daily_settings(id,timezone) VALUES ('account',$1) ON CONFLICT DO NOTHING",
         [timezone(conn)?],
     )?;
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM daily_entries", [], |r| r.get(0))?;
@@ -436,7 +436,7 @@ fn rebuild_at(conn: &Connection, through: &str) -> AppResult<()> {
             record.since_last_update_change = delta(last, &record);
         }
         conn.execute(
-            "INSERT INTO daily_totals(day,payload) VALUES (?1,?2)",
+            "INSERT INTO daily_totals(day,payload) VALUES ($1,$2)",
             params![key, serde_json::to_string(&record)?],
         )?;
         if actual || last_actual.is_none() {
@@ -459,7 +459,7 @@ impl Database {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         tx.execute(
-            "INSERT OR IGNORE INTO daily_settings(id,timezone) VALUES ('account',?1)",
+            "INSERT INTO daily_settings(id,timezone) VALUES ('account',$1) ON CONFLICT DO NOTHING",
             [&input.timezone],
         )?;
         prepare(&tx)?;
@@ -487,7 +487,7 @@ impl Database {
         }
         let limit = query.limit.unwrap_or(30).clamp(1, 400);
         let conn = self.conn()?;
-        let mut stmt = conn.prepare("SELECT payload FROM daily_totals WHERE (?1 IS NULL OR day>=?1) AND (?2 IS NULL OR day<=?2) AND (?3 IS NULL OR day<?3) ORDER BY day DESC LIMIT ?4")?;
+        let mut stmt = conn.prepare("SELECT payload FROM daily_totals WHERE ($1::text IS NULL OR day>=$1) AND ($2::text IS NULL OR day<=$2) AND ($3::text IS NULL OR day<$3) ORDER BY day DESC LIMIT $4")?;
         let mut records = stmt
             .query_map(
                 params![query.from, query.to, query.before, limit + 1],
@@ -514,7 +514,7 @@ impl Database {
         let read = |day: &str| -> AppResult<DailyRecord> {
             let payload = conn
                 .query_row(
-                    "SELECT payload FROM daily_totals WHERE day=?1",
+                    "SELECT payload FROM daily_totals WHERE day=$1",
                     [day],
                     |r| r.get::<_, String>(0),
                 )
@@ -594,10 +594,10 @@ impl Database {
         )?;
         // FX provenance has its own observation date; manual amounts do not refresh it.
         tx.execute(
-            "UPDATE holdings SET market_value=?2, valuation_date=?3, updated_at=?4, current_price=CASE WHEN quantity > 0 THEN ?2 / quantity WHEN quantity = 0 THEN current_price ELSE NULL END WHERE id=?1",
+            "UPDATE holdings SET market_value=$2, valuation_date=$3, updated_at=$4, current_price=CASE WHEN quantity > 0 THEN $2 / quantity WHEN quantity = 0 THEN current_price ELSE NULL END WHERE id=$1",
             params![id, amount, day, Utc::now().to_rfc3339()],
         )?;
-        tx.execute("DELETE FROM holding_valuations WHERE holding_id=?1", [id])?;
+        tx.execute("DELETE FROM holding_valuations WHERE holding_id=$1", [id])?;
         super::amounts::set_market_value(&tx, holding, exact)?;
         if holding.asset_class == "现金" {
             super::cash::confirm(&tx, id, &holding.currency, exact, &day)?;
@@ -885,7 +885,7 @@ fn redact_profile(value: &mut serde_json::Value) {
 mod tests {
     use super::*;
     fn db() -> Database {
-        Database::open(std::path::Path::new(":memory:")).unwrap()
+        Database::test()
     }
     fn input(name: &str, value: f64) -> HoldingInput {
         serde_json::from_value(serde_json::json!({"symbol":"","name":name,"assetClass":"其他","marketValue":value,"costBasis":0,"targetPct":0,"currency":"CNY","fxRateToBase":null,"valuationDate":"2026-01-01","fxRateSource":"","fxRateObservedOn":""})).unwrap()
@@ -928,7 +928,7 @@ mod tests {
         let now = instant(when);
         let before = prepare_at(&tx, now).unwrap();
         tx.execute(
-            "UPDATE holdings SET market_value=?2 WHERE id=?1",
+            "UPDATE holdings SET market_value=$2 WHERE id=$1",
             params![id, value],
         )
         .unwrap();
@@ -943,9 +943,8 @@ mod tests {
     }
     #[test]
     fn daily_upsert_zero_idempotency_stale_write_and_restart() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("daily.db");
-        let db = Database::open(&path).unwrap();
+        let account = crate::db::TestAccount::new();
+        let db = account.open();
         let id = db.add_holding(&input("银行", 100.0)).unwrap().holdings[0]
             .id
             .clone();
@@ -958,7 +957,7 @@ mod tests {
             db.conn()
                 .unwrap()
                 .query_row(
-                    "SELECT COUNT(*) FROM daily_entries WHERE entity_id=?1",
+                    "SELECT COUNT(*) FROM daily_entries WHERE entity_id=$1",
                     [&id],
                     |r| r.get::<_, i64>(0)
                 )
@@ -1001,7 +1000,7 @@ mod tests {
                 .is_err());
         }
         drop(db);
-        let reopened = Database::open(&path).unwrap();
+        let reopened = account.open();
         assert_eq!(records(&reopened)[0].total_assets, Some(0.0));
     }
     #[test]
@@ -1105,7 +1104,7 @@ mod tests {
             timezone: "UTC".into(),
         })
         .unwrap();
-        db.conn().unwrap().execute_batch("CREATE TRIGGER fail_daily BEFORE INSERT ON daily_entries BEGIN SELECT RAISE(ABORT,'disk failure'); END;").unwrap();
+        crate::db::fail_inserts(&db.conn().unwrap(), "daily_entries", "disk failure");
         assert!(db.add_holding(&input("银行", 100.0)).is_err());
         assert!(db.snapshot().unwrap().holdings.is_empty());
         assert_eq!(records(&db)[0].total_assets, Some(0.0));

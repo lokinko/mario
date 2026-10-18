@@ -15,7 +15,7 @@ fn product(a: Decimal, b: Decimal) -> AppResult<Decimal> {
 }
 pub(super) fn read(conn: &Connection, id: &str) -> AppResult<Option<HoldingAmounts>> {
     conn.query_row(
-        "SELECT payload FROM holding_amounts WHERE holding_id=?1",
+        "SELECT payload FROM holding_amounts WHERE holding_id=$1",
         [id],
         |r| r.get::<_, String>(0),
     )
@@ -25,7 +25,7 @@ pub(super) fn read(conn: &Connection, id: &str) -> AppResult<Option<HoldingAmoun
 }
 pub(super) fn put(conn: &Connection, id: &str, amounts: &HoldingAmounts) -> AppResult<()> {
     let payload = serde_json::to_string(amounts)?;
-    conn.execute("INSERT INTO holding_amounts(holding_id,payload) VALUES (?1,?2) ON CONFLICT(holding_id) DO UPDATE SET payload=excluded.payload",params![id,payload])?;
+    conn.execute("INSERT INTO holding_amounts(holding_id,payload) VALUES ($1,$2) ON CONFLICT(holding_id) DO UPDATE SET payload=excluded.payload",params![id,payload])?;
     Ok(())
 }
 fn from_holding(h: &Holding) -> HoldingAmounts {

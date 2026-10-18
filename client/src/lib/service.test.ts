@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { isLocalDev, serviceUrl } from "./service";
+import { serviceUrl } from "./service";
 import { setWebToken, webToken } from "./webSession";
 
 afterEach(() => {
@@ -29,9 +29,7 @@ it("uses the mounted API, ignores old client server settings, and isolates sessi
 it("uses the local development API unless an explicit API URL is configured", () => {
   vi.stubEnv("DEV", true);
   vi.stubEnv("VITE_API_URL", "");
-  expect(isLocalDev()).toBe(true);
   expect(serviceUrl()).toBe("http://127.0.0.1:4217/api");
   vi.stubEnv("VITE_API_URL", "https://dev.example.com/mario/api");
-  expect(isLocalDev()).toBe(false);
   expect(serviceUrl()).toBe("https://dev.example.com/mario/api");
 });

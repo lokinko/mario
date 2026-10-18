@@ -1,15 +1,14 @@
-// Real HTTP -> Axum -> SQLite smoke test. Uses disposable data; automatic ECB requests may occur.
+// Real HTTP -> Axum -> PostgreSQL smoke test against a DISPOSABLE database; automatic ECB requests may occur.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
+import { testPostgresBin } from "./postgres-cluster.mjs";
 
-const dir = await mkdtemp(join(tmpdir(), "mario-functional-"));
+const database = process.env.MARIO_TEST_DATABASE_URL;
 const socket = createServer();
 socket.listen(0, "127.0.0.1");
 await once(socket, "listening");
@@ -17,8 +16,9 @@ const port = socket.address().port;
 await new Promise((r) => socket.close(r));
 const externalBase = process.env.MARIO_FUNCTIONAL_BASE_URL;
 const base = externalBase ?? `http://127.0.0.1:${port}/api`;
+assert(externalBase || database, "Set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database");
 let revision;
-const token = process.env.MARIO_FUNCTIONAL_TOKEN ?? randomBytes(32).toString("hex");
+let token = process.env.MARIO_FUNCTIONAL_TOKEN;
 const masterKey = randomBytes(32).toString("base64");
 let child,
   log = "",
@@ -46,13 +46,13 @@ async function api(path, method = "GET", body, status = 200) {
 }
 async function startServer() {
   if (externalBase) return;
-  const localEnv={...process.env,MARIO_DATA_DIR:dir,MARIO_AUTH_TOKEN:token,MARIO_MASTER_KEY:masterKey};
-  delete localEnv.DATABASE_URL;
+  const serverEnv={...process.env,DATABASE_URL:database,MARIO_MASTER_KEY:masterKey};
+  delete serverEnv.MARIO_AGENT_URL;
   child = spawn(
     resolve(process.env.MARIO_TEST_SERVER_BIN ?? (process.platform === "win32" ? "server/target/debug/mario-server.exe" : "server/target/debug/mario-server")),
     ["--port", String(port)],
     {
-      env: localEnv,
+      env: serverEnv,
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -60,10 +60,7 @@ async function startServer() {
   child.stderr.on("data", (b) => (log += b));
   for (let i = 0; i < 100; i++) {
     try {
-      const r = await fetch(base + "/health", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (r.ok) return;
+      if ((await fetch(base + "/server")).ok) return;
     } catch {}
     if (child.exitCode !== null) throw Error(log);
     await sleep(50);
@@ -92,6 +89,15 @@ const holding = (name, amount, currency = "CNY") => ({
 });
 try {
   await startServer();
+  if (!token) {
+    const registered = await fetch(base + "/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: `${randomUUID()}@example.test`, password: "functional-password-0123456789" }),
+    });
+    assert.equal(registered.status, 200, await registered.clone().text());
+    token = (await registered.json()).token;
+  }
   assert.equal((await fetch(base + "/daily-assets")).status, 401);
   if (!externalBase) {
     const preflight = await fetch(base + "/health", {
@@ -103,13 +109,16 @@ try {
       },
     });
     assert.equal(preflight.headers.get("access-control-allow-origin"), "http://localhost:1420");
+    await api("/sync/version");
     for (const path of ["/reminder-settings", "/review-reminders/acknowledge", "/decisions", "/decisions/retired/review", "/rule-effectiveness"])
-      assert.equal((await fetch(base + path, { method: "POST", headers: { Authorization: `Bearer ${token}` } })).status, 404);
+      await api(path, "POST", undefined, 404);
     await api("/model-config", "PUT", {
       provider: "openai-chat", baseUrl: "https://example.test/v1", model: "test-model", apiKey: "test-encrypted-model-key",
     });
     assert.equal((await api("/model-config")).hasApiKey, true);
-    assert(!(await readFile(join(dir, "mario.db"))).includes(Buffer.from("test-encrypted-model-key")));
+    const dump = spawnSync(join(testPostgresBin(), "pg_dump" + (process.platform === "win32" ? ".exe" : "")), ["--data-only", database], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+    assert.equal(dump.status, 0, dump.stderr);
+    assert(dump.stdout.includes("secret.model") && !dump.stdout.includes("test-encrypted-model-key"));
   }
   let snap = await api("/snapshot");
   await api("/portfolio-checkins", "GET", undefined, 404);
@@ -485,22 +494,6 @@ try {
   console.log(
     `PASS restart persistence; ${count} authenticated HTTP assertions total`,
   );
-  if (!externalBase) {
-    await stopServer();
-    const exportPath=join(dir,'migration.json');
-    const binary=resolve('server/target/debug/mario-server'+(process.platform==='win32'?'.exe':''));
-    const exportResult=spawnSync(binary,['--export-data',exportPath],{env:{...process.env,MARIO_DATA_DIR:dir},encoding:'utf8'});
-    assert.equal(exportResult.status,0,exportResult.stderr);
-    const exported=JSON.parse(await readFile(exportPath,'utf8'));
-    assert(exported.tables.find(t=>t.name==='holdings').rows.length>0);
-    const fxSettings=exported.tables.find(t=>t.name==='settings');
-    assert(fxSettings.rows.length>0);
-    assert(fxSettings.rows.every(row=>row[0].Text?.startsWith('fx.')));
-    const overwrite=spawnSync(binary,['--export-data',exportPath],{env:{...process.env,MARIO_DATA_DIR:dir},encoding:'utf8'});
-    assert.notEqual(overwrite.status,0);
-    console.log('PASS legacy SQLite CLI export and overwrite protection');
-  }
 } finally {
   await stopServer();
-  await rm(dir, { recursive: true, force: true });
 }

@@ -86,7 +86,7 @@ try{
   await request(base,'/model-config',a,'PUT',{provider:'openai-responses',baseUrl:'https://gateway.example.test:8443/custom/v1',model:'test-model',apiKey:'test-secret-never-export'});
   assert.equal((await request(base,'/model-config',a)).hasApiKey,true);
   assert.equal((await request(base,'/model-config',b)).hasApiKey,false);
-  await request(base,'/model-config/codex',a,'POST',{},400);
+  await request(base,'/model-config/codex',a,'POST',{},404);
   await request(base,'/model-config',a,'PUT',{provider:'openai-responses',baseUrl:'https://gateway.example.test/v1?key=secret',model:'test',apiKey:'secret'},400);
   await request(base,'/model-config',b,'PUT',{provider:'openai-chat',baseUrl:modelUrl,model:'third-party-model',apiKey:'third-party-key'});
   assert.equal((await request(base,'/model-config',b)).provider,'openai-chat');

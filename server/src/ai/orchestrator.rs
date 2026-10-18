@@ -1440,8 +1440,7 @@ mod tests {
         assert!(!prompts[1][1].content.contains("保留完整原文末段"));
         assert!(prompts[2][1].content.contains("保留完整原文末段"));
         drop(prompts);
-        let directory = tempfile::tempdir().unwrap();
-        let db = crate::db::Database::open(&directory.path().join("selection.db")).unwrap();
+        let db = crate::db::Database::test();
         db.save_analysis(&result, &request.question).unwrap();
         let reopened = db.analysis(&result.id).unwrap().workflow_trace.unwrap();
         assert_eq!(reopened.information_selection[0].source_id, "e1");

@@ -1,35 +1,10 @@
 //! Model credentials and destination binding; independent of HTTP and process startup.
 use crate::{
-    ai::{ChatMessage, CodexProvider, ModelProvider, NativeModelProvider},
+    ai::{ChatMessage, ModelProvider, NativeModelProvider},
     db::Database,
     models::{ModelConfig, ModelConfigInput, ModelConnectionTest, ModelProviderKind},
     AppError, AppResult,
 };
-pub(crate) fn save_codex_config(db: &Database, model: &str) -> AppResult<()> {
-    db.save_model_metadata(ModelProviderKind::Codex, "codex://local", model)?;
-    db.set_setting("model.codex_ready", "true")
-}
-
-pub(crate) async fn read_codex(db: &Database) -> AppResult<ModelConfig> {
-    if db.hosted() {
-        return Err(AppError::Validation(
-            "托管服务不允许使用服务器的个人 Codex 登录".into(),
-        ));
-    }
-    let model = CodexProvider::detect().await?;
-    save_codex_config(db, &model)?;
-    db.model_config()
-}
-
-pub(crate) async fn codex_models(db: &Database) -> AppResult<Vec<crate::models::CodexModel>> {
-    if db.hosted() {
-        return Err(AppError::Validation(
-            "请通过本机桥接读取个人电脑的模型列表".into(),
-        ));
-    }
-    CodexProvider::models().await
-}
-
 pub(crate) async fn test_connection(db: &Database) -> AppResult<ModelConnectionTest> {
     let config = db.model_config()?;
     let provider = configured_model_provider(db, &config)?;
@@ -57,17 +32,7 @@ pub(crate) fn configured_model_provider(
             config.model.clone(),
         )));
     }
-    if db.hosted() {
-        crate::models::validate_endpoint(&config.base_url)?;
-    }
-    if config.provider == ModelProviderKind::Codex {
-        if db.hosted() {
-            return Err(AppError::Validation(
-                "托管服务不允许使用 Codex 本机登录".into(),
-            ));
-        }
-        return Ok(Box::new(CodexProvider::new(config.model.clone())));
-    }
+    crate::models::validate_endpoint(&config.base_url)?;
     Ok(Box::new(NativeModelProvider::new(
         config.provider,
         config.base_url.clone(),
@@ -95,24 +60,6 @@ pub(crate) fn configured_model_key(db: &Database, config: &ModelConfig) -> AppRe
 pub(crate) async fn save(db: &Database, input: ModelConfigInput) -> AppResult<ModelConfig> {
     if input.provider == ModelProviderKind::CodexBridge {
         return super::codex_bridge::save(db, &input.model);
-    }
-    if input.provider == ModelProviderKind::Codex {
-        if db.hosted() {
-            return Err(AppError::Validation(
-                "托管服务不允许使用 Codex 本机登录".into(),
-            ));
-        }
-        if !codex_models(db)
-            .await?
-            .iter()
-            .any(|entry| entry.model == input.model)
-        {
-            return Err(AppError::Validation(
-                "此模型不在本机 Codex 返回的模型列表中，请重新选择".into(),
-            ));
-        }
-        save_codex_config(db, &input.model)?;
-        return db.model_config();
     }
     let previous = db.model_config()?;
     if previous.has_api_key
@@ -143,8 +90,7 @@ mod tests {
 
     #[test]
     fn missing_or_mismatched_key_binding_is_rejected_before_reading_credentials() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("key-binding.db")).unwrap();
+        let db = Database::test();
         let config = ModelConfig {
             provider: ModelProviderKind::Anthropic,
             base_url: "https://api.anthropic.com/v1".into(),

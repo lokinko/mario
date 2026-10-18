@@ -4,7 +4,7 @@
   "version": "0.6.0",
   "scripts": {
     "codex:bridge": "node scripts/codex-bridge.mjs",
-    "test:codex-bridge": "node scripts/test-codex-bridge.mjs",
+    "test:codex-bridge": "node scripts/postgres-cluster.mjs node scripts/test-codex-bridge.mjs",
     "check:architecture": "node scripts/check-architecture.mjs && node --test scripts/check-architecture.test.mjs",
     "test:startup": "node scripts/test-startup.mjs",
     "test:postgres-start": "node scripts/test-postgres-start.mjs",
@@ -14,16 +14,14 @@
     "test:backup": "node scripts/test-backup.mjs",
     "test:deployment": "node scripts/test-deployment.mjs",
     "install:all": "npm install --ignore-scripts && npm install --prefix client --ignore-scripts",
-    "dev": "concurrently -k -n server,client -c green,blue \"cargo run --manifest-path server/Cargo.toml -- --allow-unauthenticated-dev\" \"npm run dev --prefix client\"",
+    "dev": "node scripts/dev.mjs",
     "test": "bash scripts/test.sh",
+    "test:server": "node scripts/postgres-cluster.mjs cargo test --manifest-path server/Cargo.toml",
     "web:build": "node scripts/build-web.mjs",
     "server:check": "cargo check --manifest-path server/Cargo.toml",
-    "test:hosted": "node scripts/test-hosted.mjs",
+    "test:hosted": "node scripts/postgres-cluster.mjs node scripts/test-hosted.mjs",
     "test:financial": "node scripts/test-financial.mjs",
     "deploy": "bash deploy.sh",
     "test:deploy": "node scripts/test-deploy.mjs"
-  },
-  "devDependencies": {
-    "concurrently": "^9.1.2"
   }
 }

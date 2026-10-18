@@ -17,7 +17,7 @@ import {
   type WebAccount,
 } from "../../lib/webSession";
 import { requestJson } from "../../lib/transport";
-import { acceptRevision, isLocalDev, serviceUrl } from "../../lib/service";
+import { acceptRevision, serviceUrl } from "../../lib/service";
 import { blockStaleWrites } from "../../lib/syncEvents";
 
 const AccountAccess = createContext<{
@@ -221,7 +221,6 @@ export function WebAccess({ children }: { children: ReactNode }) {
     window.addEventListener("storage", restore);
     return () => window.removeEventListener("storage", restore);
   }, [connected]);
-  if (isLocalDev()) return children;
   if (connected && !addingAccount)
     return (
       <AccountAccess.Provider

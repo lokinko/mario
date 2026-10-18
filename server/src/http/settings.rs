@@ -15,8 +15,6 @@ pub(super) fn router() -> Router {
             get(model_config).put(save_model_config),
         )
         .route("/api/model-config/test", post(test_model_config))
-        .route("/api/model-config/codex", post(read_codex_credentials))
-        .route("/api/model-config/codex/models", get(codex_models))
         .route("/api/model-key", axum::routing::delete(delete_model_key))
         .route(
             "/api/analysis-settings",
@@ -24,22 +22,10 @@ pub(super) fn router() -> Router {
         )
 }
 
-async fn codex_models(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<Vec<crate::models::CodexModel>>> {
-    Ok(Json(model_settings::codex_models(&state.db).await?))
-}
-
 async fn model_config(
     Extension(state): Extension<Arc<RequestContext>>,
 ) -> AppResult<Json<ModelConfig>> {
     Ok(Json(state.db.model_config()?))
-}
-
-async fn read_codex_credentials(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<ModelConfig>> {
-    Ok(Json(model_settings::read_codex(&state.db).await?))
 }
 
 async fn save_model_config(

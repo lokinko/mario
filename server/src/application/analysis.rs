@@ -98,12 +98,11 @@ impl<'a> AnalysisService<'a> {
         }
         // Freeze credentials and their destination under the same account lock;
         // another device may change its model settings while this analysis runs.
-        if self.db.hosted() && config.provider != ModelProviderKind::CodexBridge {
+        if config.provider != ModelProviderKind::CodexBridge {
             crate::models::validate_endpoint(&config.base_url)?;
         }
         let api_key = match config.provider {
             ModelProviderKind::CodexBridge => Some(super::codex_bridge::id(self.db)?),
-            ModelProviderKind::Codex => None,
             _ => Some(configured_model_key(self.db, &config)?),
         };
         let execution = async {
@@ -199,8 +198,8 @@ mod tests {
             request: AnalysisRequest,
             context: context::BuiltContext,
         ) -> AppResult<AnalysisResult> {
-            assert_eq!(config.provider, ModelProviderKind::Codex);
-            assert!(api_key.is_none());
+            assert_eq!(config.provider, ModelProviderKind::CodexBridge);
+            assert_eq!(api_key.as_deref(), Some(BRIDGE_ID));
             assert_eq!(
                 request.preview_revision.as_deref(),
                 Some(context.revision.as_str())
@@ -216,14 +215,12 @@ mod tests {
             }))?)
         }
     }
+    const BRIDGE_ID: &str = "bridge-fixture";
     fn database() -> Database {
-        let db = Database::open(std::path::Path::new(":memory:")).unwrap();
-        db.save_model_metadata(
-            crate::models::ModelProviderKind::Codex,
-            "codex://local",
-            "fixture",
-        )
-        .unwrap();
+        let db = Database::test();
+        db.save_model_metadata(ModelProviderKind::CodexBridge, "codex://bridge", "fixture")
+            .unwrap();
+        db.set_setting("model.codex_bridge_id", BRIDGE_ID).unwrap();
         db
     }
     struct DelayedExecutor {

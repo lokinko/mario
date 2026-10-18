@@ -68,6 +68,18 @@ node scripts/restore-backup.mjs --input ./最新包.mario-backup --replace
 
 自动化可设置 `MARIO_BACKUP_PASSWORD` 或 `--password-file`，不把密码写进命令参数/`.env`。流式处理避免整库驻留内存；每次 scrypt 约 128 MiB 内存，源/目标/本机都需足够临时磁盘空间。
 
+## 旧版 SQLite 数据
+
+当前版本不再读取 SQLite。旧单机版的 `mario.db` 需用最后一个包含导出命令的版本转换为同步数据集，再在新账号中导入：
+
+```bash
+git worktree add ../mario-legacy legacy-sqlite-export
+cd ../mario-legacy
+MARIO_DATA_DIR=/path/to/旧资料目录 cargo run --manifest-path server/Cargo.toml -- --export-data ./mario-export.json
+```
+
+`MARIO_DATA_DIR` 指向包含 `mario.db` 的目录；导出文件以 `0600` 权限新建，已存在时拒绝覆盖。登录当前版本的新账号后，在“账号与数据”导入该文件；当前版本会校验并升级旧数据集版本，失败整次回滚。旧账号、会话与模型密钥不随业务数据导入，需重新配置。导出文件含完整财务资料，导入后删除，并用 `git worktree remove ../mario-legacy` 清理旧版本目录。
+
 ## 验证
 
 ```bash

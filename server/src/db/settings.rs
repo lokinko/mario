@@ -25,7 +25,7 @@ impl Database {
     pub fn setting(&self, key: &str) -> AppResult<Option<String>> {
         Ok(self
             .conn()?
-            .query_row("SELECT value FROM settings WHERE key=?1", [key], |row| {
+            .query_row("SELECT value FROM settings WHERE key=$1", [key], |row| {
                 row.get(0)
             })
             .optional()?)
@@ -33,7 +33,7 @@ impl Database {
 
     pub fn set_setting(&self, key: &str, value: &str) -> AppResult<()> {
         self.conn()?.execute(
-            "INSERT INTO settings (key,value) VALUES (?1,?2)
+            "INSERT INTO settings (key,value) VALUES ($1,$2)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             params![key, value],
         )?;
@@ -42,7 +42,7 @@ impl Database {
 
     pub fn delete_setting(&self, key: &str) -> AppResult<()> {
         self.conn()?
-            .execute("DELETE FROM settings WHERE key=?1", [key])?;
+            .execute("DELETE FROM settings WHERE key=$1", [key])?;
         Ok(())
     }
 
@@ -51,7 +51,7 @@ impl Database {
         let conn = self.conn()?;
         let value = |key: &str, fallback: &str| -> AppResult<String> {
             Ok(conn
-                .query_row("SELECT value FROM settings WHERE key=?1", [key], |row| {
+                .query_row("SELECT value FROM settings WHERE key=$1", [key], |row| {
                     row.get(0)
                 })
                 .optional()?
@@ -68,7 +68,6 @@ impl Database {
             model: value("model.name", "gpt-4.1-mini")?,
             has_api_key: match provider {
                 ModelProviderKind::CodexBridge => !value("model.codex_bridge_id", "")?.is_empty(),
-                ModelProviderKind::Codex => value("model.codex_ready", "false")? == "true",
                 _ => has_key,
             },
         })
@@ -85,10 +84,6 @@ impl Database {
                 return Err(AppError::Validation("桥接地址无效".into()));
             }
             ModelProviderKind::CodexBridge => {}
-            ModelProviderKind::Codex if self.hosted() || base_url != "codex://local" => {
-                return Err(AppError::Validation("Codex 登录仅支持本机开发模式".into()));
-            }
-            ModelProviderKind::Codex => {}
             _ => crate::models::validate_endpoint(base_url)?,
         }
         if model.trim().is_empty() {
@@ -100,7 +95,7 @@ impl Database {
             ("model.base_url", base_url.trim_end_matches('/')),
             ("model.name", model),
         ] {
-            conn.execute("INSERT INTO settings (key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key, value])?;
+            conn.execute("INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key, value])?;
         }
         Ok(())
     }
@@ -124,8 +119,7 @@ mod tests {
 
     #[test]
     fn legacy_presets_only_keep_supported_data_and_use_deep_analysis() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("config.db")).unwrap();
+        let db = Database::test();
         let mut legacy = AnalysisSettings {
             workflow: "quick".into(),
             context_selection: crate::models::ContextSelection::default(),
@@ -166,9 +160,8 @@ mod tests {
 
     #[test]
     fn analysis_defaults_persist_across_restarts_and_reject_invalid_workflows() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.db");
-        let db = Database::open(&path).unwrap();
+        let account = crate::db::TestAccount::new();
+        let db = account.open();
         let mut settings = db.analysis_settings().unwrap();
         assert_eq!(settings.workflow, "deep");
         assert!(settings.context_selection.include_profile);
@@ -177,7 +170,7 @@ mod tests {
         settings.context_selection.include_evidence = false;
         db.save_analysis_settings(settings).unwrap();
         drop(db);
-        let db = Database::open(&path).unwrap();
+        let db = account.open();
         let mut restored = db.analysis_settings().unwrap();
         assert!(!restored.web_search);
         assert!(!restored.context_selection.include_profile);
@@ -188,10 +181,9 @@ mod tests {
     }
 
     #[test]
-    fn opening_an_old_database_canonicalizes_provider_and_binds_credentials_once() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("legacy-model.db");
-        let db = Database::open(&path).unwrap();
+    fn upgrading_an_old_tenant_canonicalizes_provider_and_binds_credentials_once() {
+        let account = crate::db::TestAccount::new();
+        let db = account.open();
         db.set_setting("model.provider", "openai-compatible")
             .unwrap();
         db.set_setting("model.base_url", "https://models.example.test/v1/")
@@ -200,7 +192,7 @@ mod tests {
             .unwrap();
         db.set_setting("trading.reset.old", "true").unwrap();
         drop(db);
-        let db = Database::open(&path).unwrap();
+        let db = account.reopen_from_old_release();
         assert_eq!(
             db.model_config().unwrap().provider,
             ModelProviderKind::OpenaiResponses
@@ -220,7 +212,7 @@ mod tests {
         )
         .unwrap();
         drop(db);
-        let db = Database::open(&path).unwrap();
+        let db = account.reopen_from_old_release();
         assert_eq!(
             db.setting("model.key_binding").unwrap().as_deref(),
             Some("openai-responses https://original.example.test/v1")
@@ -229,8 +221,7 @@ mod tests {
 
     #[test]
     fn saves_current_native_protocols_and_rejects_retired_names() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("config.db")).unwrap();
+        let db = Database::test();
         db.save_model_metadata(
             ModelProviderKind::Anthropic,
             "https://api.anthropic.com/v1",

@@ -269,7 +269,7 @@ export interface RebalanceAction {
 }
 
 export type ModelProviderKind =
-  "openai-responses" | "openai-chat" | "anthropic" | "codex" | "codex-bridge";
+  "openai-responses" | "openai-chat" | "anthropic" | "codex-bridge";
 
 export interface ModelConfig {
   provider: ModelProviderKind;
@@ -580,7 +580,7 @@ export interface ResearchEvidence extends ResearchEvidenceFields {
 }
 
 export interface AutoSyncResult {
-  state: "synced" | "disabled" | "signed_out" | "busy";
+  state: "synced" | "signed_out" | "busy";
   sync?: { localUpdated?: boolean } | null;
 }
 

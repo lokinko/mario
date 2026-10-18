@@ -28,7 +28,6 @@ csv = "1"
 dirs = "6"
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 rust_decimal = { version = "=1.43.0", default-features = false, features = ["std"] }
@@ -51,5 +50,4 @@ icu_properties_data = "=2.2.0"
 icu_provider = "=2.2.0"
 
 [dev-dependencies]
-tempfile = "3"
 tokio = { version = "1", features = ["test-util"] }

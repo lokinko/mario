@@ -14,9 +14,8 @@ pub(super) fn add_legacy_table_shapes(dataset: &mut SyncDataset) {
 
 #[test]
 fn upgrade_and_legacy_restore_remove_memory_metadata_and_preserve_reports() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("retired.db");
-    let db = Database::open(&path).unwrap();
+    let account = crate::db::TestAccount::new();
+    let db = account.open();
     db.conn().unwrap().execute_batch(
         "CREATE TABLE memory_preferences(memory_id TEXT PRIMARY KEY, preference TEXT, note TEXT, updated_at TEXT);
          INSERT INTO memory_preferences VALUES ('a1','pinned','旧备注','2026-10-17T00:00:00Z');
@@ -31,7 +30,7 @@ fn upgrade_and_legacy_restore_remove_memory_metadata_and_preserve_reports() {
         let conn = db.conn().unwrap();
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE name='memory_preferences'",
+                "SELECT COUNT(*) FROM pg_tables WHERE schemaname=current_schema() AND tablename='memory_preferences'",
                 [],
                 |row| row.get(0),
             )
@@ -87,7 +86,7 @@ fn upgrade_and_legacy_restore_remove_memory_metadata_and_preserve_reports() {
         ]);
     drop(db);
     for _ in 0..2 {
-        let db = Database::open(&path).unwrap();
+        let db = account.reopen_from_old_release();
         assert_clean(&db);
         db.import_sync_data(&legacy).unwrap();
         assert_clean(&db);
@@ -96,9 +95,8 @@ fn upgrade_and_legacy_restore_remove_memory_metadata_and_preserve_reports() {
 
 #[test]
 fn upgrades_remove_retired_tables_without_changing_active_records() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("upgrade.db");
-    let db = Database::open(&path).unwrap();
+    let account = crate::db::TestAccount::new();
+    let db = account.open();
     let holding = db.add_holding(&detailed_holding_input()).unwrap();
     let before = db.export_sync_data().unwrap();
     db.conn()
@@ -113,7 +111,7 @@ fn upgrades_remove_retired_tables_without_changing_active_records() {
         .unwrap();
     drop(db);
     for _ in 0..2 {
-        let reopened = Database::open(&path).unwrap();
+        let reopened = account.reopen_from_old_release();
         assert_eq!(reopened.export_sync_data().unwrap().tables, before.tables);
         assert_eq!(
             reopened.snapshot().unwrap().holdings[0].id,
@@ -123,7 +121,7 @@ fn upgrades_remove_retired_tables_without_changing_active_records() {
             .conn()
             .unwrap()
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('goals','portfolio_events')",
+                "SELECT COUNT(*) FROM pg_tables WHERE schemaname=current_schema() AND tablename IN ('goals','portfolio_events')",
                 [],
                 |row| row.get(0),
             )
@@ -138,7 +136,7 @@ fn upgrades_remove_retired_tables_without_changing_active_records() {
 
 #[test]
 fn all_legacy_backup_versions_restore_active_data_and_skip_retired_records() {
-    let source = Database::open(Path::new(":memory:")).unwrap();
+    let source = Database::test();
     source
         .save_profile(&FinancialProfile {
             monthly_income: 4567.0,
@@ -187,7 +185,7 @@ fn all_legacy_backup_versions_restore_active_data_and_skip_retired_records() {
             exported_at: current.exported_at.clone(),
             tables,
         };
-        let target = Database::open(Path::new(":memory:")).unwrap();
+        let target = Database::test();
         target
             .import_sync_data(&legacy)
             .unwrap_or_else(|error| panic!("v{version}: {error}"));
@@ -203,7 +201,7 @@ fn all_legacy_backup_versions_restore_active_data_and_skip_retired_records() {
 
 #[test]
 fn current_backup_round_trip_preserves_data_and_excludes_private_settings() {
-    let source = Database::open(Path::new(":memory:")).unwrap();
+    let source = Database::test();
     source
         .save_profile(&FinancialProfile {
             monthly_income: 12345.0,
@@ -238,7 +236,7 @@ fn current_backup_round_trip_preserves_data_and_excludes_private_settings() {
     let serialized = serde_json::to_string(&exported).unwrap();
     assert!(!serialized.contains("private-value"));
     assert!(!serialized.contains("private-secret"));
-    let target = Database::open(Path::new(":memory:")).unwrap();
+    let target = Database::test();
     target.import_sync_data(&exported).unwrap();
     assert_eq!(target.export_sync_data().unwrap().tables, exported.tables);
     assert_eq!(target.analysis("analysis").unwrap().answer, "完整回答");
@@ -284,9 +282,8 @@ pub(super) fn add_retired_tables(dataset: &mut SyncDataset) {
 
 #[test]
 fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("old.db");
-    let db = Database::open(&path).unwrap();
+    let account = crate::db::TestAccount::new();
+    let db = account.open();
     db.save_profile(&FinancialProfile {
         monthly_income: 12345.0,
         ..Default::default()
@@ -302,7 +299,7 @@ fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data()
          INSERT INTO memory_preferences VALUES ('retired','hidden','旧偏好','2026-10-12T00:00:00Z');"
     ).unwrap();
     drop(db);
-    let reopened = Database::open(&path).unwrap();
+    let reopened = account.open();
     let exported = reopened.export_sync_data().unwrap();
     assert_eq!(exported.schema_version, SYNC_DATASET_SCHEMA_VERSION);
     assert!(!exported.tables.iter().any(|table| matches!(
@@ -342,12 +339,12 @@ fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data()
             SyncValue::Text("旧偏好".into()),
             SyncValue::Text("2026-10-12T00:00:00Z".into()),
         ]);
-    let restored = Database::open(&directory.path().join("restored.db")).unwrap();
+    let restored = Database::test();
     restored.import_sync_data(&legacy).unwrap();
     assert_eq!(restored.snapshot().unwrap().profile.monthly_income, 12345.0);
     assert_eq!(restored.analysis("active").unwrap().answer, "完整原文");
     let retired_tables: i64 = restored.conn().unwrap().query_row(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('decisions','decision_reviews','memory_preferences')", [], |row| row.get(0)
+        "SELECT COUNT(*) FROM pg_tables WHERE schemaname=current_schema() AND tablename IN ('decisions','decision_reviews','memory_preferences')", [], |row| row.get(0)
     ).unwrap();
     assert_eq!(retired_tables, 0);
     restored.export_sync_data().unwrap().validate().unwrap();
@@ -355,9 +352,8 @@ fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data()
 
 #[test]
 fn independent_text_reviews_preserve_content_through_restart_and_import() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("reviews.db");
-    let db = Database::open(&path).unwrap();
+    let account = crate::db::TestAccount::new();
+    let db = account.open();
     for content in ["", " \n\t "] {
         let input: SystemReviewInput =
             serde_json::from_value(serde_json::json!({"content": content})).unwrap();
@@ -384,12 +380,12 @@ fn independent_text_reviews_preserve_content_through_restart_and_import() {
             .periodic_review_due
     );
     drop(db);
-    let reopened = Database::open(&path).unwrap();
+    let reopened = account.open();
     assert_eq!(
         reopened.system_reviews().unwrap()[0].content.as_deref(),
         Some(content)
     );
-    let target = Database::open(&directory.path().join("target.db")).unwrap();
+    let target = Database::test();
     target
         .import_sync_data(&reopened.export_sync_data().unwrap())
         .unwrap();
@@ -423,8 +419,7 @@ fn verified_quote() -> SecurityPriceQuote {
 
 #[test]
 fn persists_profile_and_holding() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
+    let db = Database::test();
     let profile = FinancialProfile {
         monthly_expense: 10_000.0,
         emergency_fund: 60_000.0,
@@ -457,8 +452,7 @@ fn persists_profile_and_holding() {
 
 #[test]
 fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("verified-valuation.db")).unwrap();
+    let db = Database::test();
     db.save_profile(&FinancialProfile {
         base_currency: "USD".into(),
         ..Default::default()
@@ -540,8 +534,7 @@ fn freezes_verified_holding_valuation_and_invalidates_it_on_manual_change() {
 
 #[test]
 fn rejects_verified_price_when_provider_currency_differs_from_holding() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("valuation-currency.db")).unwrap();
+    let db = Database::test();
     let created = db
         .add_holding(&HoldingInput {
             exact_values: None,
@@ -570,9 +563,8 @@ fn rejects_verified_price_when_provider_currency_differs_from_holding() {
 
 #[test]
 fn trade_managed_codes_can_be_corrected_cleared_and_filled_without_changing_trades() {
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("trade-code.db");
-    let db = Database::open(&file).unwrap();
+    let account = crate::db::TestAccount::new();
+    let db = account.open();
     db.save_profile(&FinancialProfile {
         base_currency: "USD".into(),
         ..Default::default()
@@ -631,14 +623,14 @@ fn trade_managed_codes_can_be_corrected_cleared_and_filled_without_changing_trad
         1
     );
     drop(db);
-    let reopened = Database::open(&file).unwrap().snapshot().unwrap();
+    let reopened = account.open().snapshot().unwrap();
     assert_eq!(reopened.holdings[0].symbol, "AAPL");
     assert_eq!(reopened.holding_trades, valued.holding_trades);
 }
 
 #[test]
 fn v16_backups_skip_retired_portfolio_snapshots_and_keep_active_data() {
-    let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+    let db = Database::test();
     db.save_profile(&FinancialProfile {
         monthly_income: 4321.0,
         ..Default::default()
@@ -667,7 +659,7 @@ fn v16_backups_skip_retired_portfolio_snapshots_and_keep_active_data() {
             SyncValue::Text("2026-09-01T00:00:00Z".into()),
         ]],
     });
-    let target = Database::open(std::path::Path::new(":memory:")).unwrap();
+    let target = Database::test();
     target.import_sync_data(&legacy).unwrap();
     assert_eq!(target.snapshot().unwrap().profile.monthly_income, 4321.0);
     let exported = target.export_sync_data().unwrap();
@@ -680,7 +672,7 @@ fn v16_backups_skip_retired_portfolio_snapshots_and_keep_active_data() {
         .conn()
         .unwrap()
         .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='portfolio_checkins')",
+            "SELECT EXISTS(SELECT 1 FROM pg_tables WHERE schemaname=current_schema() AND tablename='portfolio_checkins')",
             [],
             |row| row.get::<_, bool>(0),
         )
@@ -689,8 +681,7 @@ fn v16_backups_skip_retired_portfolio_snapshots_and_keep_active_data() {
 
 #[test]
 fn sync_snapshot_rejects_unknown_or_incomplete_schema() {
-    let directory = tempfile::tempdir().unwrap();
-    let db = Database::open(&directory.path().join("source.db")).unwrap();
+    let db = Database::test();
     let mut dataset = db.export_sync_data().unwrap();
     dataset.tables.pop();
     assert!(matches!(dataset.validate(), Err(AppError::Validation(_))));
@@ -698,8 +689,7 @@ fn sync_snapshot_rejects_unknown_or_incomplete_schema() {
 
 #[test]
 fn updates_and_deletes_holding() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
+    let db = Database::test();
     let input = HoldingInput {
         exact_values: None,
         cash_amount: None,
@@ -733,8 +723,7 @@ fn updates_and_deletes_holding() {
 
 #[test]
 fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("currency.db")).unwrap();
+    let db = Database::test();
     let mut profile = FinancialProfile {
         base_currency: "CNY".into(),
         ..Default::default()
@@ -889,8 +878,7 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
 
 #[test]
 fn stores_analysis_transparency_audit() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
+    let db = Database::test();
     let result = AnalysisResult {
         id: "analysis-1".into(),
         answer: "先控制风险".into(),
@@ -1006,13 +994,12 @@ fn stores_analysis_transparency_audit() {
 
 #[test]
 fn reads_analysis_audit_created_before_evidence_fields_existed() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
+    let db = Database::test();
     db.conn()
         .unwrap()
         .execute(
             "INSERT INTO analyses (id, question, answer, audit, created_at)
-             VALUES ('legacy','旧问题','旧回答',?1,'2026-01-01')",
+             VALUES ('legacy','旧问题','旧回答',$1,'2026-01-01')",
             [r#"{"provider":"mock","model":"old","contextGroups":[],"payloadBytes":1,"contextRevision":"ctx-old","externalDataUsed":false,"apiKeySent":false}"#],
         )
         .unwrap();
@@ -1030,9 +1017,8 @@ fn reads_analysis_audit_created_before_evidence_fields_existed() {
 
 #[test]
 fn adds_workflow_trace_column_to_an_existing_analysis_database() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("legacy.db");
-    let connection = Connection::open(&path).unwrap();
+    let account = crate::db::TestAccount::new();
+    let connection = account.connection();
     connection
         .execute_batch(
             "CREATE TABLE analyses (
@@ -1048,12 +1034,12 @@ fn adds_workflow_trace_column_to_an_existing_analysis_database() {
         .unwrap();
     drop(connection);
 
-    let db = Database::open(&path).unwrap();
+    let db = account.open();
     let trace_columns: i64 = db
         .conn()
         .unwrap()
         .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('analyses') WHERE name = 'trace'",
+            "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='analyses' AND column_name='trace'",
             [],
             |row| row.get(0),
         )
@@ -1064,13 +1050,12 @@ fn adds_workflow_trace_column_to_an_existing_analysis_database() {
 
 #[test]
 fn reads_legacy_workflow_trace() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
+    let db = Database::test();
     db.conn()
         .unwrap()
         .execute(
             "INSERT INTO analyses (id,question,answer,audit,trace,created_at)
-             VALUES ('old-trace','旧分析','旧回答',NULL,?1,'2026-01-01')",
+             VALUES ('old-trace','旧分析','旧回答',NULL,$1,'2026-01-01')",
             [r#"{"version":"investment-workflow-v2","researchPlan":"旧计划","alternatives":[],"critique":null,"calls":[]}"#],
         )
         .unwrap();
@@ -1090,8 +1075,7 @@ fn reads_legacy_workflow_trace() {
 
 #[test]
 fn versions_investment_rules_without_overwriting_history() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
+    let db = Database::test();
     let original = InvestmentRuleInput {
         category: "仓位".into(),
         statement: "单一主动仓位不超过 10%".into(),
@@ -1120,8 +1104,7 @@ fn versions_investment_rules_without_overwriting_history() {
 
 #[test]
 fn system_review_freezes_portfolio_and_method_snapshot() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
+    let db = Database::test();
     db.add_holding(&HoldingInput {
         exact_values: None,
         cash_amount: None,
@@ -1187,8 +1170,7 @@ fn system_review_freezes_portfolio_and_method_snapshot() {
 
 #[test]
 fn stores_immutable_research_evidence_and_allows_archiving() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("test.db")).unwrap();
+    let db = Database::test();
     let created = db
         .add_research_evidence(&ResearchEvidenceInput {
             content: "基金年度报告：报告披露了费用与跟踪误差\n复核费用变化".into(),
@@ -1204,9 +1186,9 @@ fn stores_immutable_research_evidence_and_allows_archiving() {
 
 #[test]
 fn reads_frozen_structured_reviews_after_retiring_the_old_write_format() {
-    let db = Database::open(Path::new(":memory:")).unwrap();
+    let db = Database::test();
     db.conn().unwrap().execute(
-        "INSERT INTO system_reviews(id,payload,snapshot,next_review_date,created_at) VALUES (?1,?2,?3,?4,?5)",
+        "INSERT INTO system_reviews(id,payload,snapshot,next_review_date,created_at) VALUES ($1,$2,$3,$4,$5)",
         params!["old-review", r#"{"periodLabel":"2026 Q3","adherenceScore":4,"processSummary":"原始过程","lessons":"原始经验","nextReviewDate":"2026-12-31"}"#,
             r#"{"portfolioValue":100,"emergencyMonths":3,"concentrationPct":0,"riskStatus":"ready","highRiskFindings":0,"activeRules":0}"#,
             "2026-12-31", "2026-09-30T00:00:00Z"]
@@ -1259,8 +1241,7 @@ fn detailed_holding_input() -> HoldingInput {
 
 #[test]
 fn different_recent_valuation_dates_allow_actions_but_stale_values_still_block() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("valuation-dates.db")).unwrap();
+    let db = Database::test();
     let today = NaiveDate::parse_from_str(&crate::models::market::today(), "%Y-%m-%d").unwrap();
     let mut investment = detailed_holding_input();
     investment.valuation_date = today.to_string();
@@ -1305,9 +1286,8 @@ fn different_recent_valuation_dates_allow_actions_but_stale_values_still_block()
 
 #[test]
 fn manual_holding_details_survive_restart_history_and_sync() {
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("details.db");
-    let db = Database::open(&file).unwrap();
+    let account = crate::db::TestAccount::new();
+    let db = account.open();
     let created = db.add_holding(&detailed_holding_input()).unwrap();
     let holding = &created.holdings[0];
     assert_eq!(holding.market_value, 1005.0);
@@ -1325,11 +1305,11 @@ fn manual_holding_details_survive_restart_history_and_sync() {
         Some(12.0)
     );
     let export = db.export_sync_data().unwrap();
-    let copy = Database::open(&dir.path().join("copy.db")).unwrap();
+    let copy = Database::test();
     copy.import_sync_data(&export).unwrap();
     assert_eq!(copy.snapshot().unwrap().holdings[0].quantity, Some(100.5));
     drop(db);
-    let db = Database::open(&file).unwrap();
+    let db = account.open();
     let persisted = &db.snapshot().unwrap().holdings[0];
     assert_eq!(persisted.cost_price, Some(8.0));
     assert_eq!(persisted.current_price, Some(12.0));
@@ -1354,8 +1334,7 @@ fn manual_holding_details_survive_restart_history_and_sync() {
 
 #[test]
 fn manual_holding_details_reject_invalid_values_and_inconsistent_sync() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("details.db")).unwrap();
+    let db = Database::test();
     for (quantity, price) in [
         (None, Some(10.0)),
         (Some(10.0), None),
@@ -1398,8 +1377,7 @@ pub(super) fn strip_holding_details_for_legacy(dataset: &mut SyncDataset) {
 
 #[test]
 fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quantities() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("amount-details.db")).unwrap();
+    let db = Database::test();
     let created = db.add_holding(&detailed_holding_input()).unwrap();
     let id = &created.holdings[0].id;
     let updated = db

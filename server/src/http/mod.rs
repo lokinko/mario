@@ -1,7 +1,6 @@
 //! HTTP adapters. Business workflows live in application; authentication selects a context.
 pub(crate) mod codex_bridge;
 mod error;
-pub(crate) mod local;
 pub(crate) mod policy;
 mod portfolio;
 mod research;

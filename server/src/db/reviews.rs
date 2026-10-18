@@ -66,7 +66,7 @@ impl Database {
         transaction.execute(
             "INSERT INTO investment_rules
              (id, category, statement, trigger, rationale, active, source_review_id, revision, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
             params![
                 rule.id,
                 rule.category,
@@ -95,7 +95,7 @@ impl Database {
         let transaction = conn.transaction()?;
         let existing = transaction
             .query_row(
-                "SELECT created_at, revision FROM investment_rules WHERE id=?1",
+                "SELECT created_at, revision FROM investment_rules WHERE id=$1",
                 [id],
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
             )
@@ -115,8 +115,8 @@ impl Database {
             updated_at: now,
         };
         transaction.execute(
-            "UPDATE investment_rules SET category=?2, statement=?3, trigger=?4, rationale=?5,
-                    active=?6, source_review_id=?7, revision=?8, updated_at=?9 WHERE id=?1",
+            "UPDATE investment_rules SET category=$2, statement=$3, trigger=$4, rationale=$5,
+                    active=$6, source_review_id=$7, revision=$8, updated_at=$9 WHERE id=$1",
             params![
                 rule.id,
                 rule.category,
@@ -138,7 +138,7 @@ impl Database {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
             "SELECT payload, changed_at FROM investment_rule_revisions
-             WHERE rule_id=?1 ORDER BY revision DESC",
+             WHERE rule_id=$1 ORDER BY revision DESC",
         )?;
         let rows = statement.query_map([id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -197,7 +197,7 @@ impl Database {
         };
         self.conn()?.execute(
             "INSERT INTO system_reviews (id, payload, snapshot, next_review_date, created_at)
-             VALUES (?1,?2,?3,?4,?5)",
+             VALUES ($1,$2,$3,$4,$5)",
             params![
                 record.id,
                 serde_json::to_string(input)?,

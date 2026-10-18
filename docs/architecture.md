@@ -20,15 +20,16 @@ flowchart LR
     B --> C[本机 Codex App Server]
 ```
 
-同一个 `mario-server` 二进制由 [`runtime.rs`](../server/src/runtime.rs) 选择运行模式：
+同一个 `mario-server` 二进制由 [`runtime.rs`](../server/src/runtime.rs) 选择运行角色：
 
-| 模式 | 触发条件 | 入口 | 数据 |
+| 角色 | 触发条件 | 入口 | 数据 |
 | --- | --- | --- | --- |
-| 多用户服务（生产） | 设置 `DATABASE_URL` | `hosted::serve` | PostgreSQL，按账号 schema 隔离 |
-| 本地服务（开发、回归） | 未设置 `DATABASE_URL` | `http::local::serve` | 本地 SQLite 文件，单令牌或显式 `--allow-unauthenticated-dev` |
+| 多用户 API（默认） | 必须设置 `DATABASE_URL` | `hosted::serve` | PostgreSQL，按账号 schema 隔离 |
 | 无状态 Agent | `MARIO_ROLE=agent` | `agent::serve` | 无数据库，只接收 API 发来的冻结任务 |
 | Codex 桥接 worker | `--codex-bridge <站点>` | `codex_bridge_worker::run` | 运行在用户电脑，不监听端口，不读 `auth.json` |
-| 维护命令 | `--export-data`、`--reset-password` | `runtime.rs` | 一次性导出旧 SQLite 数据或重置密码 |
+| 维护命令 | `--reset-password` | `runtime.rs` | 重置指定账号密码 |
+
+PostgreSQL 是唯一的数据存储，没有单机或免登录模式。本地开发（`npm run dev`）与测试使用同一条多用户路径：[`scripts/postgres-cluster.mjs`](../scripts/postgres-cluster.mjs) 在 `.runtime/dev` 维护持久开发集群，或为测试创建一次性集群；开发者在浏览器注册账号，与生产流程一致。
 
 生产部署由 [`deploy.sh`](../deploy.sh) 在宿主机以 systemd 启动一个主运行器（[`scripts/host-runtime.mjs`](../scripts/host-runtime.mjs)），依次拉起 PostgreSQL、Agent（仅监听本机端口）和 API；Nginx 反向代理 API 与静态网页。推送代码不等于部署。
 
@@ -85,7 +86,7 @@ flowchart TD
 | `application` | 依赖传输/进程适配器或具体行情供应商；`application/analysis.rs` 直接引用 `ai` |
 | `agent` | 依赖 `db`、`storage`、`accounts`、`application`、`http`、`hosted`、`runtime` |
 | `secrets`、行情适配器 | `secrets` 依赖 `error` 以外模块；`prices`/`market_data` 依赖 `models`、`ports`、`error` 以外模块或持有静态可变资源 |
-| 通用 | 非 `db` 模块使用通配导入；契约、仓储、应用层使用 `axum`；`application`/`ports` 直接使用 `reqwest` |
+| 通用 | 非 `db` 模块使用通配导入；契约、仓储、应用层使用 `axum`；`application`/`ports` 直接使用 `reqwest`；`storage.rs` 以外直接使用数据库驱动 |
 
 静态检查与编译、行为测试互补，不能证明宏展开或所有运行时路径的隔离。新增或调整边界时同步更新检查器及其测试，不通过扩大豁免掩盖耦合。
 
@@ -96,15 +97,15 @@ flowchart TD
 | `main.rs`、`lib.rs`、`runtime.rs` | 进程入口、模块声明、环境与参数解析、模式选择、维护命令、优雅退出 |
 | `composition.rs` | 创建行情供应商，组装 `MarketServices`，拥有后台刷新任务并在服务退出时取消 |
 | `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS 与静态网页 |
-| `http/` | 按领域注册路由（`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`local.rs` 是本地模式的认证与串行写锁；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
-| `accounts.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速；本地令牌的常量时间比较 |
+| `http/` | 按领域注册路由（`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
+| `accounts.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速；Agent 令牌的常量时间比较 |
 | `application/` | 跨仓储与外部端口的用例：`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型凭据与目标绑定）、`codex_bridge`（账号配对） |
 | `ports/` | `analysis::AnalysisExecutor` 与事件通道；`market::FxRateProvider`、`SecurityPriceProvider` |
 | `agent.rs` | `AgentExecutor`：配置 `MARIO_AGENT_URL` 时把冻结任务发给独立 Agent，否则进程内执行；Codex 桥接任务始终在 API 进程经桥接中继执行。同文件提供 Agent HTTP 服务 |
-| `ai/` | `orchestrator` 按 `workflow`（当前 v7）执行资料筛选、研究计划、候选、反思与报告；`provider` 定义模型接口，`native_provider`、`codex`、`bridge` 是三种实现；`selection`、`grounding`、`structured_output` 负责筛选、引用落地与输出校验；`streaming` 解析流式草稿 |
+| `ai/` | `orchestrator` 按 `workflow`（当前 v7）执行资料筛选、研究计划、候选、反思与报告；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 只由用户电脑上的桥接 worker 调用；`selection`、`grounding`、`structured_output` 负责筛选、引用落地与输出校验；`streaming` 解析流式草稿 |
 | `codex_bridge_worker.rs` | 用户电脑上的桥接进程，长轮询 API 领取任务并调用本机 Codex |
 | `market_data.rs`、`prices.rs` | 行情端口的网络实现与实例内有界缓存；只处理公开行情，不读写账号数据 |
-| `db/`、`storage.rs` | `Database` 门面下的领域仓储（持仓、成交、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 隔离 PostgreSQL 与 SQLite 引擎差异 |
+| `db/`、`storage.rs` | `Database` 门面下的领域仓储（持仓、成交、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
 | `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、推理事件与执行时限 |
 | `context.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：分析上下文构建与预览、再平衡规划、风险检查、估值状态、本地证据检索 |
 | `attachments.rs`、`secrets.rs`、`streaming.rs`、`error.rs` | 附件解码与文本提取、主密钥加解密（AAD 绑定 schema 与用途）、共享 SSE 响应、统一错误类型 |
@@ -133,8 +134,6 @@ flowchart TD
 3. 校验 Bearer 会话，按用户 ID 打开该账号 schema 的连接，取数据库 advisory 账号锁并读取数据版本。
 4. 写入请求（由 `http/policy.rs` 判定）比较 `If-Match`；不一致时，财务写入先查回执，命中则返回原结果，否则返回 409 与当前版本。
 5. 构造只含该账号连接与共享依赖的 `RequestContext`，交给领域路由；响应带 `x-data-revision` 与 `no-store`。连接关闭时释放残留的会话锁。
-
-本地模式使用单个 SQLite `Database` 与进程内写锁串行化，同样经过 `http/` 领域路由；它的并发能力不代表生产模式。
 
 ### 6.2 AI 分析
 
@@ -198,7 +197,7 @@ sequenceDiagram
 | 浮点精度漂移 | decimal 输入、cash_state、holding_amounts、源行情/FX、accounting、每日精确原值、备份；number 仅投影 | 大额分位、行情原始十进制、还原一致性测试 |
 | 不可信数据生成行动 | 估值来源/时点与 decisionReady；缺失、过期、隔离、待核对时清空行动，AI 输出验证安全动作；不同资产的估值日期可以不同 | valuation、planning、structured_output 测试 |
 
-每次更正由所属领域事务负责回执、源记录、投影及历史的一致性。正式验收运行 `npm run test:financial`，并设置 `MARIO_TEST_PG_BIN` 指向 PostgreSQL 工具目录；门禁创建独立临时集群，运行真实迁移、SQLite 与 PostgreSQL HTTP、多实例版本/租户隔离、`pg_dump`/`pg_restore` 并逐表比较，不读取部署 `.env` 或生产数据。`scripts/test.sh` 包含此门禁，缺少 PostgreSQL 工具时必须失败。
+每次更正由所属领域事务负责回执、源记录、投影及历史的一致性。正式验收运行 `npm run test:financial`：门禁创建独立临时集群，运行真实迁移、托管 HTTP 流程、多实例版本/租户隔离、`pg_dump`/`pg_restore` 并逐表比较，不读取部署 `.env` 或生产数据。PostgreSQL 工具从 `MARIO_TEST_PG_BIN` 或 `pg_config --bindir` 查找；`scripts/test.sh` 包含此门禁，缺少 PostgreSQL 工具时必须失败。
 
 功能代码不能保证行情供应商无遗漏，也不能替代券商资产核对、部署环境备份及主密钥托管。当前不提供自动换汇、转托管、零碎股现金替代、交易执行或税务账簿。
 
@@ -206,9 +205,12 @@ sequenceDiagram
 
 以下代码只服务存量数据恢复，不构成第二条生产路径：
 
-- 旧 JSON 备份结构、旧数据库补列、旧品牌目录与数据库文件名迁移（`runtime.rs`）。
-- `--export-data` 用于把旧 SQLite 数据导出后导入多用户服务。
+- 旧 JSON 备份结构（同步数据集 v1 起）、旧租户 schema 补列与一次性数据迁移（`db/schema.rs`、按 `POSTGRES_SCHEMA_VERSION` 只执行一次）。
 - 历史报告与引用的读取适配，保留历史原文。
+
+### SQLite 退役（2026-10-18）
+
+运行时只有 PostgreSQL。本地 SQLite 服务、单令牌认证、`--allow-unauthenticated-dev`、旧数据目录迁移、`--export-data` 与服务器本机 Codex 登录已删除；Codex 只通过用户电脑上的配对桥接使用。仓储 SQL 改为原生 PostgreSQL 写法，不再在运行时改写方言。旧 SQLite 文件的唯一迁移路径是 Git 标签 `legacy-sqlite-export` 中的 `--export-data`，导出的同步数据集由当前版本导入（见 [数据迁移](data-migration.md#旧版-sqlite-数据)）；该标签不再接收修复。
 
 ### 长期记忆移除（2026-10-18）
 

@@ -7,9 +7,6 @@ use crate::{
 
 impl Database {
     fn secret_scope(&self, name: &str) -> AppResult<String> {
-        if !self.hosted() {
-            return Ok(format!("local:{name}"));
-        }
         Ok(format!(
             "{}:{name}",
             self.conn()?

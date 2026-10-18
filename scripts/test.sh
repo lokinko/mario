@@ -7,10 +7,14 @@ npm run build --prefix "$root_dir/client"
 npm run format:check --prefix "$root_dir/client"
 npm test --prefix "$root_dir/client"
 cargo fmt --manifest-path "$root_dir/server/Cargo.toml" -- --check
-cargo test --manifest-path "$root_dir/server/Cargo.toml"
 cargo clippy --manifest-path "$root_dir/server/Cargo.toml" --all-targets -- -D warnings
 cargo build --manifest-path "$root_dir/server/Cargo.toml"
-(cd "$root_dir" && node scripts/test-functional-api.mjs)
-(cd "$root_dir" && node scripts/test-web.mjs)
-"$root_dir/scripts/test-local-auth.sh"
+# Rust tests and HTTP workflows share one disposable PostgreSQL cluster; each test uses its own account.
+(cd "$root_dir" && node scripts/postgres-cluster.mjs bash -c '
+  set -euo pipefail
+  cargo test --manifest-path server/Cargo.toml
+  node scripts/test-functional-api.mjs
+  node scripts/test-web.mjs
+  node scripts/test-codex-bridge.mjs
+')
 (cd "$root_dir" && npm run test:financial)

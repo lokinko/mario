@@ -63,7 +63,6 @@ impl Drop for Tenant {
 }
 
 #[test]
-#[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
 fn postgres_canonicalizes_legacy_model_settings_without_rebinding_existing_credentials() {
     let mut tenant = Tenant::legacy();
     drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
@@ -93,7 +92,6 @@ fn postgres_canonicalizes_legacy_model_settings_without_rebinding_existing_crede
 }
 
 #[test]
-#[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
 fn postgres_upgrades_cash_to_currency_balances_once_without_changing_asset_total() {
     let mut tenant = Tenant::legacy();
     drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
@@ -111,7 +109,6 @@ fn postgres_upgrades_cash_to_currency_balances_once_without_changing_asset_total
 }
 
 #[test]
-#[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
 fn postgres_upgrades_remove_retired_tables_and_preserve_active_data() {
     let mut tenant = Tenant::legacy();
     drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
@@ -147,7 +144,6 @@ fn postgres_upgrades_remove_retired_tables_and_preserve_active_data() {
 }
 
 #[test]
-#[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
 fn postgres_migrations_upgrade_existing_tenant_once_across_replicas() {
     let mut tenant = Tenant::legacy();
     let before: i64 = tenant
@@ -191,7 +187,6 @@ fn postgres_migrations_upgrade_existing_tenant_once_across_replicas() {
 }
 
 #[test]
-#[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
 fn postgres_migrations_roll_back_failed_upgrade_and_allow_retry() {
     let mut tenant = Tenant::legacy();
     tenant.sql(
@@ -215,7 +210,6 @@ fn postgres_migrations_roll_back_failed_upgrade_and_allow_retry() {
 }
 
 #[test]
-#[ignore = "requires MARIO_TEST_DATABASE_URL pointing to disposable PostgreSQL"]
 fn postgres_migrates_version_one_holdings_and_persists_manual_unit_prices() {
     let mut tenant = Tenant::legacy();
     drop(Database::postgres(&tenant.url, &tenant.user).unwrap());

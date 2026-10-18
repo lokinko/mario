@@ -136,7 +136,6 @@ it("tracks all server mutations but not read-only previews or connection tests",
     "/profile",
     "/holdings/h/verified-valuation",
     "/analysis",
-    "/model-config/codex",
   ])
     expect(isDataWrite(path, "POST")).toBe(true);
   for (const path of ["/analysis/preview", "/model-config/test"])

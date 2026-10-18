@@ -172,7 +172,7 @@ mod integration_tests {
     }
     #[tokio::test]
     async fn changing_today_rate_preserves_prior_daily_totals_and_balance_confirmation() {
-        let db = Database::open(std::path::Path::new(":memory:")).unwrap();
+        let db = Database::test();
         refresh(&db, &Provider, false).await.unwrap();
         db.add_holding(&holding("USD")).unwrap();
         let yesterday = (Utc::now()
@@ -183,7 +183,7 @@ mod integration_tests {
         {
             let c = db.conn().unwrap();
             c.execute(
-                "UPDATE daily_entries SET day=?1,id=?1 || ':' || entity_id",
+                "UPDATE daily_entries SET day=$1,id=$1 || ':' || entity_id",
                 [&yesterday],
             )
             .unwrap();

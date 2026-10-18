@@ -206,7 +206,7 @@ mod tests {
         }
     }
     fn db() -> Database {
-        Database::open(std::path::Path::new(":memory:")).unwrap()
+        Database::test()
     }
     fn holding(
         symbol: &str,
@@ -238,7 +238,7 @@ mod tests {
         {
             let conn = db.conn().unwrap();
             conn.execute(
-                "UPDATE daily_entries SET day=?1,id=?1 || ':' || entity_id",
+                "UPDATE daily_entries SET day=$1,id=$1 || ':' || entity_id",
                 [&yesterday],
             )
             .unwrap();

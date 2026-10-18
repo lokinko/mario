@@ -40,12 +40,12 @@ mario 在问答时使用供应商原生网页搜索，自动保存回答和来�
 
 - Web：HTTPS 同源 API、独立用户账号，详见 [自建部署](docs/self-hosting.md)
 - Rust + Axum 后端：自建账号、会话、租户隔离与业务 API
-- PostgreSQL：财务档案、持仓、复盘与分析历史；SQLite 仅用于旧数据迁移及本地开发
+- PostgreSQL：账号、财务档案、持仓、复盘与分析历史的唯一数据存储，开发与测试同样使用
 - 每日资产自动追踪：在资产抽屉中编辑并明确保存，同日合并、跨日沿用，查看总资产与净资产趋势、逐项变化和区间分析；详细规则见 [每日资产追踪](docs/daily-assets.md)
 - 服务器按账号加密保存模型与行情 API Key，不进入数据导出和分析上下文
 - 确定性风险规则：应急资金、负债压力、集中度、期限错配
 - 确定性计算：风险预算与再平衡偏差
-- 用户自定义第三方模型 API 地址、端口、模型名称和密钥；支持 OpenAI 兼容 Chat Completions、OpenAI Responses、Anthropic Messages，Codex 本机登录仅限本地开发
+- 用户自定义第三方模型 API 地址、端口、模型名称和密钥；支持 OpenAI 兼容 Chat Completions、OpenAI Responses、Anthropic Messages；也可通过个人电脑上的 [Codex 桥接](docs/codex-bridge.md) 使用本机 Codex
 - AI 深度工作流：资料筛选 → 研究计划 → 两个独立候选方案 → 独立反思 → 最终裁决
 - 结构化输出校验：事实、推断、未知、方案、行动与复盘条件必须通过机器契约，非法引用自动拦截并允许一次修复
 - AI 工作流轨迹：逐阶段保存研究产物、模型耗时与 Provider 返回的 token 用量
@@ -84,7 +84,7 @@ server/                 多用户 HTTP API 与独立 AI Agent 运行入口
   src/composition.rs    供应商装配、共享实例与后台任务生命周期
   src/models/           每日资产、行情与分析轨迹共享契约
   src/ai/               可替换工作流、执行器与模型 Provider
-  src/db.rs             领域数据仓储；storage.rs 对接 PostgreSQL / 旧 SQLite
+  src/db.rs             领域数据仓储；storage.rs 是唯一的 PostgreSQL 驱动适配
   src/accounts.rs       自建账号与会话
   src/hosted.rs         租户认证、版本校验与数据迁移
   src/agent.rs          无状态 Agent HTTP 服务
@@ -104,32 +104,28 @@ scripts/                构建、迁移与集成测试
 
 ## 开发与验证
 
-生产部署和 Web 构建见 [自建部署指南](docs/self-hosting.md)。只调试原有领域功能时仍可使用隔离的本地 SQLite 开发服务：
+生产部署和 Web 构建见 [自建部署指南](docs/self-hosting.md)。开发与测试需要本机安装 PostgreSQL 工具（`initdb`、`pg_ctl` 等，脚本从 `MARIO_TEST_PG_BIN` 或 `pg_config --bindir` 查找），没有 SQLite 或免登录模式：
 
 ```bash
 npm run install:all
 npm run dev
 ```
 
-本地 SQLite 开发模式保存模型/行情密钥前也需配置 `MARIO_MASTER_KEY`（Base64 编码的 32 字节随机密钥）；密钥加密保存在本地数据库，不使用操作系统钥匙串。旧钥匙串密钥需在设置中重新填写。
-
-多用户开发请配置 PostgreSQL、`MARIO_MASTER_KEY`；注册开放，任何用户均可通过邮箱和密码创建账号，无需邀请码。前端设置 `VITE_API_URL=http://127.0.0.1:4217/api`。独立 Agent 使用 `MARIO_ROLE=agent`，后端配置 `MARIO_AGENT_URL` 与共享内部令牌。宿主机部署默认采用独立 Agent，单进程开发可以不设置 Agent URL。
+`npm run dev` 在 `.runtime/dev` 启动开发用 PostgreSQL 集群，并生成该目录专用的数据库密码与 `MARIO_MASTER_KEY`，再启动 API 与 Vite；在浏览器用任意邮箱注册开发账号，数据在重启后保留，删除 `.runtime/dev` 即重置。单进程开发不需要独立 Agent；需要时以 `MARIO_ROLE=agent` 启动，后端配置 `MARIO_AGENT_URL` 与共享内部令牌。
 
 ```bash
 npm run check:architecture
 npm run build --prefix client
 npm test --prefix client
-cargo test --manifest-path server/Cargo.toml
+npm run test:server        # 在临时 PostgreSQL 集群中运行 cargo test
 cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
-cargo build --manifest-path server/Cargo.toml
-# 设置 MARIO_TEST_DATABASE_URL 为临时 PostgreSQL 后运行：
-node scripts/test-hosted.mjs
+npm test                   # 完整门禁，含 HTTP 与财务集成验收
 ```
 
 ## 模型与数据
 
 登录后在“设置”配置自己的模型、接口地址、API Key 和问答预设。AI 分析前自动按预设冻结上下文，独立 Agent 完成工作流，API 保存可审计结果。Agent 不读取数据库，也不修改资产或执行交易。
 
-旧 SQLite 数据可通过服务端 `--export-data` 命令导出，然后在新账号的“账号与数据”导入；密钥和旧账号会话不会导入。迁移步骤、隐私边界、PostgreSQL 备份和密码重置详见 [自建部署指南](docs/self-hosting.md)。
+旧单机版的 SQLite 数据需用 Git 标签 `legacy-sqlite-export` 导出，再在新账号的“账号与数据”导入；密钥和旧账号会话不会导入，步骤见 [数据迁移](docs/data-migration.md#旧版-sqlite-数据)。PostgreSQL 备份和密码重置详见 [自建部署指南](docs/self-hosting.md)。
 
 已有数据的账号可在“账号与数据”勾选“覆盖当前账号已有数据”，选择导出的 JSON 并确认。覆盖前自动下载原数据备份，随后替换当前账号的业务数据；不合并交易，也不影响其他账号。备份回退及接口说明见 [账号与数据同步](docs/cloud-sync.md)。

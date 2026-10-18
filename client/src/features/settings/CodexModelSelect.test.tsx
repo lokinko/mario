@@ -11,7 +11,6 @@ import { CodexModelSelect } from "./CodexModelSelect";
 import { ModelSettings } from "./ModelSettings";
 import * as api from "../../api/settings";
 vi.mock("../../api/settings", () => ({
-  getCodexModels: vi.fn(),
   getCodexBridgeStatus: vi.fn(),
   saveModelConfig: vi.fn(),
 }));
@@ -40,7 +39,6 @@ afterEach(() => {
 it("preserves a nondefault selection through status updates and allows switching", () => {
   const change = vi.fn();
   const props = {
-    provider: "codex-bridge" as const,
     value: "model-b",
     onChange: change,
     bridgeStatus: { paired: true, online: true, model: "model-a", models },
@@ -64,7 +62,6 @@ it("preserves a nondefault selection through status updates and allows switching
 });
 it("keeps the saved model visible when disconnected or removed from the catalog", () => {
   const props = {
-    provider: "codex-bridge" as const,
     value: "old-model",
     onChange: vi.fn(),
     bridgeStatus: null,
@@ -86,27 +83,6 @@ it("keeps the saved model visible when disconnected or removed from the catalog"
     false,
   );
   expect(screen.getByText("old-model（已保存，待确认可用）")).toBeTruthy();
-});
-it("recovers from a catalog read failure without changing the saved selection", async () => {
-  vi.mocked(api.getCodexModels)
-    .mockRejectedValueOnce(Error("offline"))
-    .mockResolvedValueOnce(models);
-  const change = vi.fn();
-  render(
-    <CodexModelSelect
-      provider="codex"
-      value="model-b"
-      onChange={change}
-      bridgeStatus={null}
-    />,
-  );
-  await screen.findByRole("alert");
-  fireEvent.click(screen.getByText("重新读取模型"));
-  await screen.findByText("Model B");
-  expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe(
-    "model-b",
-  );
-  expect(change).not.toHaveBeenCalled();
 });
 it("saves the selected bridge model rather than the computer default", async () => {
   const config = {

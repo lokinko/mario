@@ -8,7 +8,7 @@ fn buy(symbol: &str, mode: &str, date: &str) -> HoldingTradeInput {
     serde_json::from_value(serde_json::json!({"expectedCashBaseline":"00000000-0000-0000-0000-000000000001","requestId":Uuid::new_v4().to_string(),"newHolding":{"name":symbol,"symbol":symbol,"assetClass":"股票","currency":"CNY"},"kind":"buy","occurredOn":date,"sequence":1,"quantity":"10","price":"10","grossAmount":"100","fees":"0","taxes":"0","account":"测试券商","settlementMode":mode})).unwrap()
 }
 fn funded() -> Database {
-    let db = Database::open(Path::new(":memory:")).unwrap();
+    let db = Database::test();
     cash::fund(&db, "CNY");
     db
 }
@@ -98,7 +98,7 @@ fn deleting_whole_position_nets_cash_preserves_evidence_and_replays_after_restor
         stable,
         db.export_sync_data().unwrap().content_hash().unwrap()
     );
-    let copy = Database::open(Path::new(":memory:")).unwrap();
+    let copy = Database::test();
     copy.import_sync_data(&db.export_sync_data().unwrap())
         .unwrap();
     let replay = copy
@@ -216,7 +216,7 @@ fn deleting_position_rolls_back_cash_and_trades_when_journal_fails() {
         .unwrap();
     let id = s.holding_trades[0].holding_id.clone();
     let before = db.export_sync_data().unwrap().content_hash().unwrap();
-    db.conn().unwrap().execute_batch("CREATE TRIGGER reject_removal BEFORE INSERT ON financial_journal BEGIN SELECT RAISE(ABORT,'audit failure'); END;").unwrap();
+    crate::db::fail_inserts(&db.conn().unwrap(), "financial_journal", "audit failure");
     let request = crate::models::HoldingDeleteInput {
         expected_revision: s.holding_revisions[&id].clone(),
     };
@@ -272,9 +272,8 @@ fn cash_cutover_prevents_double_settlement_and_corrections_require_reconciliatio
 
 #[test]
 fn durable_receipts_recover_lost_responses_without_recreating_deleted_trades() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("receipts.db");
-    let db = Database::open(&path).unwrap();
+    let account = crate::db::TestAccount::new();
+    let db = account.open();
     cash::fund(&db, "CNY");
     let buy = buy("RECEIPT", "settle", "2026-01-01");
     let s = db.save_holding_trade(&buy).unwrap();
@@ -288,7 +287,7 @@ fn durable_receipts_recover_lost_responses_without_recreating_deleted_trades() {
     )
     .unwrap();
     drop(db);
-    let db = Database::open(&path).unwrap();
+    let db = account.open();
     let s = db
         .replay_financial_request("POST", "/api/holding-trades", &request)
         .unwrap()
@@ -306,7 +305,7 @@ fn durable_receipts_recover_lost_responses_without_recreating_deleted_trades() {
         db.save_holding_trade(&changed),
         Err(AppError::Conflict(_))
     ));
-    let copy = Database::open(Path::new(":memory:")).unwrap();
+    let copy = Database::test();
     copy.import_sync_data(&db.export_sync_data().unwrap())
         .unwrap();
     assert!(copy
@@ -325,7 +324,7 @@ fn durable_receipts_recover_lost_responses_without_recreating_deleted_trades() {
 fn journal_failure_rolls_back_cash_position_and_receipt_together() {
     let db = funded();
     let before = db.export_sync_data().unwrap().content_hash().unwrap();
-    db.conn().unwrap().execute_batch("CREATE TRIGGER reject_journal BEFORE INSERT ON financial_journal BEGIN SELECT RAISE(ABORT,'audit failure'); END;").unwrap();
+    crate::db::fail_inserts(&db.conn().unwrap(), "financial_journal", "audit failure");
     let input = buy("ATOMIC", "settle", "2026-01-01");
     assert!(db.save_holding_trade(&input).is_err());
     assert_eq!(
@@ -393,7 +392,7 @@ fn split_review_rebuilds_quantity_and_cost_without_changing_original_executions_
         s.holdings.iter().find(|h| h.id == id).unwrap().market_value,
         100.0
     );
-    let restored = Database::open(Path::new(":memory:")).unwrap();
+    let restored = Database::test();
     restored
         .import_sync_data(&db.export_sync_data().unwrap())
         .unwrap();
@@ -476,7 +475,7 @@ fn manual_reverse_split_and_retraction_preserve_cash_and_reject_fractional_round
         .review_corporate_action(&fractional.request_id, &attempt, "reject")
         .unwrap();
     assert!(s.corporate_actions.iter().all(|a| a.dismissed));
-    let copy = Database::open(Path::new(":memory:")).unwrap();
+    let copy = Database::test();
     copy.import_sync_data(&db.export_sync_data().unwrap())
         .unwrap();
     assert_eq!(
@@ -513,7 +512,7 @@ fn decimal_source_and_daily_history_keep_cents_below_float_resolution_and_restor
             .as_deref(),
         Some("999999999999999.02")
     );
-    let copy = Database::open(Path::new(":memory:")).unwrap();
+    let copy = Database::test();
     let data = db.export_sync_data().unwrap();
     copy.import_sync_data(&data).unwrap();
     assert_eq!(
