@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "$0")/.." && pwd)"
-server_bin="$root_dir/server/target/debug/mario-server"
+server_bin="${MARIO_TEST_SERVER_BIN:-$root_dir/server/target/debug/mario-server}"
 test_dir="$(mktemp -d /tmp/mario-local-auth.XXXXXX)"
 port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 token="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
