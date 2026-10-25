@@ -21,9 +21,14 @@ export function sortInvestmentHoldings(
   holdings: Holding[],
   snapshot: Pick<
     Snapshot,
-    "profile" | "holdingTradeSummaries" | "holdingTrades" | "stockOptionTotals"
+    | "profile"
+    | "holdingTradeSummaries"
+    | "holdingTrades"
+    | "stockOptionTotals"
+    | "accounting"
   >,
-  order: "value-desc" | "value-asc" | "name" = "value-desc",
+  order:
+    "value-desc" | "value-asc" | "pnl-desc" | "pnl-asc" | "name" = "value-desc",
 ) {
   const lastTrades = new Map<string, HoldingTrade>();
   for (const trade of snapshot.holdingTrades ?? []) {
@@ -65,6 +70,19 @@ export function sortInvestmentHoldings(
       const bTrade = lastTrades.get(b.id);
       if (aTrade && bTrade) return newestTradeFirst(aTrade, bTrade);
       return aTrade ? -1 : bTrade ? 1 : 0;
+    }
+    if (order === "pnl-desc" || order === "pnl-asc") {
+      const aPnl =
+        snapshot.stockOptionTotals?.[a.id]?.unrealizedProfit ??
+        snapshot.accounting?.holdings[a.id]?.unrealizedProfit;
+      const bPnl =
+        snapshot.stockOptionTotals?.[b.id]?.unrealizedProfit ??
+        snapshot.accounting?.holdings[b.id]?.unrealizedProfit;
+      if (aPnl == null || bPnl == null)
+        return aPnl == null ? (bPnl == null ? 0 : 1) : -1;
+      return order === "pnl-asc"
+        ? Number(aPnl) - Number(bPnl)
+        : Number(bPnl) - Number(aPnl);
     }
     const aValue = valueInBase(a);
     const bValue = valueInBase(b);

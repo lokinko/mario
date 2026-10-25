@@ -194,8 +194,6 @@ export function SourceDetail({
   const [downloading, setDownloading] = useState(false);
   useEffect(() => {
     setError("");
-    region.current?.focus({ preventScroll: true });
-    region.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
   }, [source.id]);
   const url = sourceUrl(source.sourceUrl);
   const download = async (id: string) => {

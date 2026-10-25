@@ -17,6 +17,7 @@ vi.mock("../../api/settings", () => ({
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  vi.restoreAllMocks();
 });
 const stored = {
   prompt: "先核对现金流，再比较方案",
@@ -72,6 +73,7 @@ it("loads a template only into the draft and rejects blank or oversized text", a
   const editor = (await screen.findByLabelText(
     "投资方法论正文",
   )) as HTMLTextAreaElement;
+  vi.spyOn(window, "confirm").mockReturnValue(true);
   fireEvent.click(screen.getByRole("button", { name: "使用初始范本" }));
   expect(editor.value).toBe(stored.defaultPrompt);
   expect(api.saveInvestmentMethodology).not.toHaveBeenCalled();

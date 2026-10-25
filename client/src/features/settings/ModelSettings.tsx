@@ -1,13 +1,14 @@
+import { Badge } from "../../components/Badge";
+import { Callout } from "../../components/Callout";
 import { ExternalLink } from "../../components/ExternalLink";
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle,
   Bot,
-  Check,
   Cloud,
   KeyRound,
+  Eye,
+  EyeOff,
   LoaderCircle,
-  LockKeyhole,
   Save,
   Trash2,
 } from "lucide-react";
@@ -34,11 +35,13 @@ import type { ReactNode } from "react";
 export function ModelSettings({
   model,
   accountSettings,
+  displaySettings,
   onUpdate,
   flash,
 }: {
   model: ModelConfig;
   accountSettings?: ReactNode;
+  displaySettings?: ReactNode;
   onUpdate: (m: ModelConfig) => void;
   flash: (s: string) => void;
 }) {
@@ -50,6 +53,8 @@ export function ModelSettings({
   const [bridgeStatus, setBridgeStatus] = useState<CodexBridgeStatus | null>(
     null,
   );
+  const [showKey, setShowKey] = useState(false);
+  const [showMarketKey, setShowMarketKey] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -177,15 +182,66 @@ export function ModelSettings({
   return (
     <div className="page narrow settings-page">
       <PageHeader title="设置" />
-      {accountSettings}
-      <section className="panel form-panel">
+      <nav className="settings-directory" aria-label="设置分区">
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById("model-settings")
+              ?.scrollIntoView({ behavior: "smooth" })
+          }
+        >
+          模型连接
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById("analysis-settings")
+              ?.scrollIntoView({ behavior: "smooth" })
+          }
+        >
+          问答预设
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById("market-settings")
+              ?.scrollIntoView({ behavior: "smooth" })
+          }
+        >
+          行情数据
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById("display-settings")
+              ?.scrollIntoView({ behavior: "smooth" })
+          }
+        >
+          显示偏好
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById("account-settings")
+              ?.scrollIntoView({ behavior: "smooth" })
+          }
+        >
+          账号
+        </button>
+      </nav>
+      <section className="panel form-panel" id="model-settings">
         <div className="panel-title">
           <div>
             <h2>模型连接</h2>
           </div>
-          <div className={`status-dot ${model.hasApiKey ? "connected" : ""}`}>
+          <Badge tone={model.hasApiKey ? "success" : "neutral"}>
             {model.hasApiKey ? "已配置" : "未配置"}
-          </div>
+          </Badge>
         </div>
         <fieldset className="holding-fields" disabled={saving || testing}>
           <div className="form-grid model-fields">
@@ -253,7 +309,7 @@ export function ModelSettings({
                 <div className="secure-input">
                   <KeyRound size={16} />
                   <input
-                    type="password"
+                    type={showKey ? "text" : "password"}
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder={
@@ -262,6 +318,14 @@ export function ModelSettings({
                         : "输入模型供应商密钥"
                     }
                   />
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={showKey ? "隐藏模型密钥" : "显示模型密钥"}
+                    onClick={() => setShowKey(!showKey)}
+                  >
+                    {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </label>
             )}
@@ -281,8 +345,7 @@ export function ModelSettings({
             }}
           />
         )}
-        <div className="privacy-note">
-          <LockKeyhole size={18} />
+        <Callout tone="info">
           <div>
             <strong>密钥与业务数据分离</strong>
             <p>
@@ -293,21 +356,15 @@ export function ModelSettings({
                   : "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥；联网查找需模型支持原生网页搜索，连接测试仅验证普通调用。"}
             </p>
           </div>
-        </div>
-        {error && (
-          <div className="error-box" role="alert">
-            <AlertTriangle size={18} />
-            {error}
-          </div>
-        )}
+        </Callout>
+        {error && <Callout tone="danger">{error}</Callout>}
         {connectionResult && (
-          <div className="connection-success" role="status">
-            <Check size={16} />
+          <Callout tone="success">
             <span>
               <strong>连接成功</strong>
               {connectionResult}
             </span>
-          </div>
+          </Callout>
         )}
         <div className="form-actions">
           <div className="key-actions">
@@ -344,17 +401,20 @@ export function ModelSettings({
           </button>
         </div>
       </section>
-      <AnalysisDefaults model={model} flash={flash} />
-      <details className="panel form-panel optional-settings">
+      <div id="analysis-settings">
+        <AnalysisDefaults model={model} flash={flash} />
+      </div>
+      <details
+        className="panel form-panel optional-settings"
+        id="market-settings"
+      >
         <summary className="panel-title">
           <div>
             <h2>行情数据 · Twelve Data</h2>
           </div>
-          <div
-            className={`status-dot ${securityConfig?.hasApiKey ? "connected" : ""}`}
-          >
+          <Badge tone={securityConfig?.hasApiKey ? "success" : "neutral"}>
             {securityConfig?.hasApiKey ? "已配置" : "未配置"}
-          </div>
+          </Badge>
         </summary>
         <p className="section-intro">
           自动价格使用无需密钥的 Yahoo Finance 免费日线。这里可选配置 Twelve
@@ -367,7 +427,7 @@ export function ModelSettings({
               <KeyRound size={16} />
               <input
                 disabled={marketBusy}
-                type="password"
+                type={showMarketKey ? "text" : "password"}
                 value={securityApiKey}
                 onChange={(event) => setSecurityApiKey(event.target.value)}
                 placeholder={
@@ -376,6 +436,15 @@ export function ModelSettings({
                     : "输入个人 Twelve Data 密钥"
                 }
               />
+              <button
+                type="button"
+                className="icon-button"
+                disabled={marketBusy}
+                aria-label={showMarketKey ? "隐藏行情密钥" : "显示行情密钥"}
+                onClick={() => setShowMarketKey(!showMarketKey)}
+              >
+                {showMarketKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
           </label>
         </div>
@@ -411,20 +480,14 @@ export function ModelSettings({
             </ExternalLink>
           </p>
         </details>
-        {marketError && (
-          <div className="error-box" role="alert">
-            <AlertTriangle size={18} />
-            {marketError}
-          </div>
-        )}
+        {marketError && <Callout tone="danger">{marketError}</Callout>}
         {marketResult && (
-          <div className="connection-success" role="status">
-            <Check size={16} />
+          <Callout tone="success">
             <span>
               <strong>价格连接成功</strong>
               {marketResult}
             </span>
-          </div>
+          </Callout>
         )}
         <div className="form-actions">
           <div className="key-actions">
@@ -461,6 +524,8 @@ export function ModelSettings({
           </button>
         </div>
       </details>
+      {displaySettings}
+      <div id="account-settings">{accountSettings}</div>
     </div>
   );
 }

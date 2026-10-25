@@ -6,7 +6,6 @@ import {
 } from "../../api/portfolio";
 import type { Holding, Snapshot } from "../../types";
 import { localDateValue } from "../../lib/dates";
-import { formatNumber } from "../../lib/format";
 import {
   HoldingFields,
   hasHoldingDetails,
@@ -178,6 +177,7 @@ export function AssetEditor({
             <div className="input-affix">
               <i>{editing.currency}</i>
               <input
+                data-money-input="true"
                 type="number"
                 required={manualAssetAmount}
                 readOnly={!manualAssetAmount}
@@ -194,7 +194,7 @@ export function AssetEditor({
                   manualAssetAmount
                     ? assetAmount
                     : editing.quantity != null && editing.currentPrice != null
-                      ? formatNumber(editing.quantity * editing.currentPrice)
+                      ? String(editing.quantity * editing.currentPrice)
                       : ""
                 }
                 onChange={(e) => {
@@ -214,6 +214,7 @@ export function AssetEditor({
                 <div className="input-affix">
                   <i>{editing.currency}</i>
                   <input
+                    data-money-input="true"
                     type="number"
                     min={0}
                     max={1e15}
@@ -224,7 +225,7 @@ export function AssetEditor({
                     readOnly={tradeManaged || editing.costPrice != null}
                     value={
                       editing.costPrice != null
-                        ? formatNumber(editing.costBasis)
+                        ? holdingExactValues(editing).costBasis
                         : assetCost
                     }
                     onChange={(e) => {

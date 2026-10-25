@@ -25,8 +25,14 @@ export function Drawer({
   busy = false,
   dirty = false,
   resetKey,
+  subtitle,
+  size = "default",
+  footer,
 }: {
   title: string;
+  subtitle?: string;
+  size?: "default" | "wide";
+  footer?: ReactNode;
   children: ReactNode;
   onClose: () => void;
   busy?: boolean;
@@ -84,6 +90,12 @@ export function Drawer({
     panel.current?.querySelector<HTMLElement>("button")?.focus();
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (
+          (event.target as HTMLElement).closest?.(
+            '[role="menu"], [aria-haspopup="menu"][aria-expanded="true"]',
+          )
+        )
+          return;
         event.preventDefault();
         event.stopImmediatePropagation();
         close.current();
@@ -133,7 +145,7 @@ export function Drawer({
       <div className="drawer-backdrop" onClick={dismiss} />
       <div
         ref={panel}
-        className="drawer"
+        className={`drawer drawer-${size}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={heading}
@@ -144,7 +156,10 @@ export function Drawer({
         }}
       >
         <header className="drawer-header">
-          <h2 id={heading}>{title}</h2>
+          <div>
+            <h2 id={heading}>{title}</h2>
+            {subtitle && <p>{subtitle}</p>}
+          </div>
           <button
             type="button"
             className="icon-button"
@@ -157,6 +172,7 @@ export function Drawer({
         </header>
         <DrawerControls.Provider value={controls}>
           <div className="drawer-body">{children}</div>
+          {footer && <footer className="drawer-footer">{footer}</footer>}
         </DrawerControls.Provider>
       </div>
     </div>,

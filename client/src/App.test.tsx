@@ -67,13 +67,13 @@ it("keeps exchange rates outside the main page and available across navigation",
     new Error("optional model unavailable"),
   );
   render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "展开汇率浮窗" }));
+  fireEvent.click(await screen.findByRole("button", { name: "查看汇率" }));
   const rates = await screen.findByRole("region", { name: "汇率设置" });
   expect(rates.closest("main")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   fireEvent.click(screen.getByRole("button", { name: "我的情况" }));
   await screen.findByRole("heading", { name: "我的情况" });
-  expect(screen.getAllByRole("region", { name: "汇率设置" })).toHaveLength(1);
-  expect(screen.getByRole("region", { name: "汇率设置" })).toBe(rates);
+  expect(screen.getByRole("button", { name: "查看汇率" })).toBeTruthy();
 });
 
 it.each([true, false])(

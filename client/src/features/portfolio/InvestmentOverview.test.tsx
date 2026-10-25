@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { InvestmentOverview } from "./InvestmentOverview";
 import { emptyHolding } from "./forms";
@@ -51,9 +51,11 @@ it("renders the server's exact totals and source amounts without recalculating p
     container.querySelectorAll(".investment-overview-metric"),
   ).toHaveLength(4);
   expect(screen.getByText("¥700.86")).toBeTruthy();
-  expect(screen.getByText("US$100.12")).toBeTruthy();
+  expect(screen.queryByText("100.12")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "原币明细 ›" }));
+  expect(screen.getByText("100.12")).toBeTruthy();
   expect(screen.getByText("2026-10-12")).toBeTruthy();
-  expect(container.querySelector("details")?.open).toBe(false);
+  expect(container.querySelector("details")).toBeNull();
 });
 it("discloses unavailable accounting instead of calculating or fabricating a zero", () => {
   const { container } = render(<InvestmentOverview holdings={[holding]} />);
@@ -77,7 +79,8 @@ it("preserves server missing-data status and hides unusable per-holding amounts"
     />,
   );
   expect(screen.getByText(/1 项交易或汇率待补/)).toBeTruthy();
-  expect(screen.queryByText("US$100.12")).toBeNull();
+  expect(screen.queryByText("100.12")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "待补 1" }));
   expect(screen.getAllByText("—")).toHaveLength(5);
 });
 it("uses the server's cash total and shows only the cash metric", () => {

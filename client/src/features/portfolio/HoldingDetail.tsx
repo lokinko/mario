@@ -1,7 +1,9 @@
+import { Callout } from "../../components/Callout";
+import { DataStamp } from "../../components/DataStamp";
 import { useEffect, useState } from "react";
 import { StockOptions } from "./StockOptions";
 import type { Holding, Snapshot } from "../../types";
-import { formatMoney } from "../../lib/format";
+import { formatMoney, formatSigned } from "../../lib/format";
 import { HoldingTrades } from "./HoldingTrades";
 import { isClosedHolding } from "./holdingMetrics";
 
@@ -38,56 +40,46 @@ export function HoldingDetail({
   const pendingTrade = editingTrade ? "请先保存或取消当前交易" : undefined;
   return (
     <>
-      <div className="detail-actions">
-        <button
-          className="secondary"
-          disabled={busy || editingTrade}
-          title={pendingTrade}
-          onClick={onEdit}
-        >
-          编辑资产
-        </button>
-        <button
-          type="button"
-          className="secondary danger-text"
-          disabled={busy || editingTrade}
-          title={pendingTrade}
-          onClick={onDelete}
-        >
-          删除持仓
-        </button>
-      </div>
+      <DataStamp
+        date={valuations[0]?.observedOn || holding.valuationDate}
+        source={valuations[0]?.providerName || "手动记录"}
+      />
       <dl className="detail-grid">
         <div>
           <dt>当前市值</dt>
           <dd>
-            {formatMoney(
-              holding.exactValues?.marketValue ?? holding.marketValue,
-              holding.currency,
-            )}
+            <span className="num" data-money>
+              {formatMoney(
+                holding.exactValues?.marketValue ?? holding.marketValue,
+                holding.currency,
+              )}
+            </span>
           </dd>
         </div>
         <div>
           <dt>持仓总成本</dt>
           <dd>
-            {holding.costBasis > 0 ||
-            isClosedHolding(holding, Boolean(tradeSummary))
-              ? formatMoney(
-                  holding.exactValues?.costBasis ?? holding.costBasis,
-                  holding.currency,
-                )
-              : "—"}
+            <span className="num" data-money>
+              {holding.costBasis > 0 ||
+              isClosedHolding(holding, Boolean(tradeSummary))
+                ? formatMoney(
+                    holding.exactValues?.costBasis ?? holding.costBasis,
+                    holding.currency,
+                  )
+                : "—"}
+            </span>
           </dd>
         </div>
         <div>
           <dt>已结算盈亏</dt>
           <dd>
-            {tradeSummary
-              ? formatMoney(
-                  Number(tradeSummary.settledProfit),
-                  holding.currency,
-                )
-              : "未录入交易"}
+            <span className="num" data-money>
+              {tradeSummary
+                ? formatSigned(tradeSummary.settledProfit, (value) =>
+                    formatMoney(value, holding.currency),
+                  )
+                : "未录入交易"}
+            </span>
           </dd>
         </div>
         <div>
@@ -125,7 +117,7 @@ export function HoldingDetail({
         <>
           <h3>交易明细</h3>
           {snapshot.clearedTradeHoldings?.includes(holding.id) && (
-            <p className="warning-text">交易明细需重新录入</p>
+            <Callout tone="warning">交易明细需重新录入</Callout>
           )}
           <fieldset
             disabled={busy || optionEditing}
@@ -142,6 +134,25 @@ export function HoldingDetail({
           </fieldset>
         </>
       )}
+      <div className="detail-actions holding-detail-footer">
+        <button
+          className="primary"
+          disabled={busy || editingTrade}
+          title={pendingTrade}
+          onClick={onEdit}
+        >
+          编辑资产
+        </button>
+        <button
+          type="button"
+          className="secondary danger-text"
+          disabled={busy || editingTrade}
+          title={pendingTrade}
+          onClick={onDelete}
+        >
+          删除持仓
+        </button>
+      </div>
     </>
   );
 }

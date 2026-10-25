@@ -1,3 +1,5 @@
+import { Skeleton } from "./Skeleton";
+import { Callout } from "./Callout";
 export function LoadState({
   loading,
   error,
@@ -7,14 +9,14 @@ export function LoadState({
   error: string;
   onRetry: () => void;
 }) {
-  if (loading) return <p role="status">正在读取记录…</p>;
+  if (loading) return <Skeleton />;
   if (!error) return null;
   return (
-    <div className="error-box" role="alert">
+    <Callout tone="danger">
       <span>{error}</span>
       <button className="secondary" onClick={onRetry}>
         重新加载
       </button>
-    </div>
+    </Callout>
   );
 }

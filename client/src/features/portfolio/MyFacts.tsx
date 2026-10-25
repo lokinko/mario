@@ -1,6 +1,10 @@
 import { Drawer } from "../../components/Drawer";
 import { AssetAmountRow } from "./AssetAmountRow";
 import { AssetEditor } from "./AssetEditor";
+import { AssetOverview } from "./AssetOverview";
+import { useAssetHistory } from "./useAssetHistory";
+import { Callout } from "../../components/Callout";
+import type { DisplayPreferenceProps } from "../../components/DisplayPreferences";
 import { AssetHistory } from "./AssetHistory";
 import { HoldingDetail } from "./HoldingDetail";
 import { HoldingTrades } from "./HoldingTrades";
@@ -14,7 +18,7 @@ import { Plus, RefreshCw } from "lucide-react";
 import { refreshSecurityPrices } from "../../api/portfolio";
 import type { Holding, Snapshot } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
-import { formatNumber } from "../../lib/format";
+import { formatMoney, formatNumber } from "../../lib/format";
 import { emptyHolding } from "./forms";
 
 const cashCurrencies = ["CNY", "HKD", "USD"];
@@ -39,13 +43,19 @@ export function MyFacts({
   snapshot,
   onUpdate,
   flash,
+  display = { maskAmounts: false, setMaskAmounts: () => {} },
 }: {
+  display?: Pick<DisplayPreferenceProps, "maskAmounts" | "setMaskAmounts">;
   snapshot: Snapshot;
   onUpdate: (snapshot: Snapshot) => void;
   flash: (message: string) => void;
 }) {
+  const history = useAssetHistory(snapshot);
+  const [help, setHelp] = useState<"instructions" | "valuation" | null>(null);
+  const [priceWarningDismissed, setPriceWarningDismissed] = useState(false);
   const [profile, setProfile] = useState(snapshot.profile);
   const [editing, setEditing] = useState<Holding | null>(null);
+  const [tradeHolding, setTradeHolding] = useState<Holding>();
   const [addingTrade, setAddingTrade] = useState(false);
   const [editingTrade, setEditingTrade] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -158,7 +168,7 @@ export function MyFacts({
   const removeAsset = (item: Holding) =>
     void removal.remove(item, working || editingTrade);
   const errorNotice = error && (
-    <div className="error-box" role="alert">
+    <Callout tone="danger">
       {error}
       {removal.uncertain && (
         <button
@@ -170,15 +180,44 @@ export function MyFacts({
           核对删除结果
         </button>
       )}
-    </div>
+    </Callout>
   );
   const renderAssetRow = (item: Holding) => {
+    if (item.assetClass === "现金" && !item.id)
+      return (
+        <div
+          key={item.currency}
+          role="row"
+          className="asset-list-row cash-list-row unrecorded-cash"
+        >
+          <div role="cell">{item.currency}</div>
+          <div role="cell">未记录</div>
+          <div role="cell">—</div>
+          <div role="cell">
+            <button className="text-button" onClick={() => openEditor(item)}>
+              添加
+            </button>
+          </div>
+        </div>
+      );
     const tradeSummary = snapshot.holdingTradeSummaries?.[item.id];
     return (
       <div key={item.id || item.currency} className="facts-asset-entry">
         <AssetAmountRow
           holding={withExactValues(snapshot, item)}
           exact={displayAccounting?.holdings[item.id]}
+          confirmedOn={
+            snapshot.cashBalances?.find((b) => b.currency === item.currency)
+              ?.confirmedOn
+          }
+          onTrade={
+            item.assetClass === "现金"
+              ? undefined
+              : () => {
+                  setTradeHolding(withExactValues(snapshot, item));
+                  setAddingTrade(true);
+                }
+          }
           optionTotals={snapshot.stockOptionTotals?.[item.id]}
           realizedPnl={tradeSummary?.settledProfit}
           onOpen={() => {
@@ -194,9 +233,10 @@ export function MyFacts({
     );
   };
   return (
-    <div className="page narrow facts-page">
+    <div className="page facts-page">
       <PageHeader
         title="我的情况"
+        description="核对资产、记录成交，保留每个数字的来源与时点。"
         action={
           section === "holdings" ? (
             <div className="trade-toolbar">
@@ -214,10 +254,13 @@ export function MyFacts({
                 <button
                   className="primary"
                   disabled={busy || Boolean(editing) || addingTrade}
-                  onClick={() => setAddingTrade(true)}
+                  onClick={() => {
+                    setTradeHolding(undefined);
+                    setAddingTrade(true);
+                  }}
                 >
                   <Plus size={16} />
-                  记录买入
+                  记录交易
                 </button>
               )}
               {section === "holdings" && (
@@ -234,9 +277,63 @@ export function MyFacts({
           ) : undefined
         }
       />
+      <button
+        className="text-button facts-help-trigger"
+        onClick={() => setHelp("instructions")}
+      >
+        ？使用说明
+      </button>
+      {help && (
+        <Drawer
+          title={help === "valuation" ? "估值待核对原因" : "资产记录使用说明"}
+          onClose={() => setHelp(null)}
+        >
+          {help === "valuation" ? (
+            <ul>
+              {snapshot.valuationStatus.warnings.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          ) : (
+            <>
+              <h3>持仓与盈亏</h3>
+              <p>
+                从最早一笔真实成交开始，按账户录入买入、卖出和现金分红。数量、成本和已结算盈亏由服务端计算；首次交易替换手工数量和成本，不自动补期初余额。当前行情与成交分别管理，填写代码后可更新价格，无代码资产请手动核对。
+              </p>
+              <h3>存款与现金</h3>
+              <p>
+                按币种核对实际余额，保存后建立核对基准。新增成交可结算同币种存款；历史补录不重放已包含的现金流。核对基准之前的更正会提示重新核对余额。
+              </p>
+            </>
+          )}
+        </Drawer>
+      )}
+      {snapshot.valuationStatus.decisionReady === false &&
+        snapshot.valuationStatus.warnings.length > 0 && (
+          <Callout
+            tone="warning"
+            title="行动建议已暂停"
+            action={
+              <button
+                className="text-button"
+                onClick={() => setHelp("valuation")}
+              >
+                查看原因
+              </button>
+            }
+          >
+            {snapshot.valuationStatus.warnings.join("；")}
+          </Callout>
+        )}
+      <AssetOverview
+        snapshot={snapshot}
+        history={history.history}
+        display={display}
+      />
       {addingTrade && (
-        <Drawer title="记录买入" onClose={() => setAddingTrade(false)}>
+        <Drawer title="记录交易" onClose={() => setAddingTrade(false)}>
           <HoldingTrades
+            holding={tradeHolding}
             snapshot={snapshot}
             onUpdate={onUpdate}
             flash={flash}
@@ -254,6 +351,7 @@ export function MyFacts({
         ).map(([id, label]) => (
           <button
             key={id}
+            aria-label={label}
             disabled={busy || Boolean(editing) || addingTrade}
             aria-pressed={section === id}
             onClick={() => {
@@ -262,22 +360,34 @@ export function MyFacts({
             }}
           >
             {label}
+            {id !== "income" && (
+              <small className="num" data-money>
+                {(id === "holdings"
+                  ? snapshot.accounting?.investments.value.value
+                  : snapshot.accounting?.cash.value.value) == null
+                  ? "—"
+                  : formatMoney(
+                      (id === "holdings"
+                        ? snapshot.accounting!.investments.value.value
+                        : snapshot.accounting!.cash.value.value)!,
+                      currency,
+                    )}
+              </small>
+            )}
           </button>
         ))}
       </div>
       {!editing && !selected && errorNotice}
       {section === "holdings" &&
+        !priceWarningDismissed &&
         Boolean(snapshot.priceRefreshErrors?.length) && (
-          <p className="warning-text" role="status">
+          <Callout
+            tone="warning"
+            onClose={() => setPriceWarningDismissed(true)}
+          >
             部分价格更新失败，已保留原值：
             {snapshot.priceRefreshErrors?.join("；")}
-          </p>
-        )}
-      {snapshot.valuationStatus.decisionReady === false &&
-        snapshot.valuationStatus.warnings.length > 0 && (
-          <p className="warning-text">
-            行动建议已暂停：{snapshot.valuationStatus.warnings.join("；")}
-          </p>
+          </Callout>
         )}
       {section !== "income" && (
         <InvestmentOverview
@@ -290,19 +400,14 @@ export function MyFacts({
       {snapshot.cashBalances
         ?.filter((b) => b.needsReconciliation)
         .map((b) => (
-          <p className="error-box" role="alert" key={b.currency}>
+          <Callout tone="warning" key={b.currency}>
             {b.currency}{" "}
             存款待核对：基准之前的交易发生更正，当前余额已保留。请按实际余额重新确认。
-          </p>
+          </Callout>
         ))}
-      {section === "savings" && (
-        <p className="section-intro">
-          按币种核对实际余额，保存后建立新的核对基准。新增成交选择结算当前存款，历史补录不重放已包含的现金流；基准之前的交易更正会提示重新核对余额。
-        </p>
-      )}
       {section === "savings" &&
         cash.some((item) => !cashCurrencies.includes(item.currency)) && (
-          <p className="warning-text">
+          <Callout tone="warning">
             旧数据中还有其他币种存款，已保留并计入总资产：
             {cash
               .filter((item) => !cashCurrencies.includes(item.currency))
@@ -311,7 +416,7 @@ export function MyFacts({
               )
               .join("；")}
             。请先核对并处理这些余额。
-          </p>
+          </Callout>
         )}
       {section === "income" ? (
         <ProfileForm
@@ -333,16 +438,20 @@ export function MyFacts({
               filters={filters}
               onFiltersChange={setFilters}
               renderRow={renderAssetRow}
+              onRecordTrade={() => {
+                setTradeHolding(undefined);
+                setAddingTrade(true);
+              }}
             />
           ) : (
             <div
               className="facts-assets"
               role="table"
               aria-label="现金列表"
-              aria-colcount={3}
+              aria-colcount={4}
             >
               <div role="row" className="holdings-list-header cash-list-header">
-                {["币种", "余额", "操作"].map((label) => (
+                {["币种", "余额", "核对日期", "操作"].map((label) => (
                   <span role="columnheader" key={label}>
                     {label}
                   </span>
@@ -350,14 +459,6 @@ export function MyFacts({
               </div>
               <div role="rowgroup">{cashRows.map(renderAssetRow)}</div>
             </div>
-          )}
-          {section === "holdings" && (
-            <details className="investment-help">
-              <summary>持仓与盈亏说明</summary>
-              <p className="section-intro">
-                用“记录买入”从最早一笔真实成交开始，按账户分别录入买入、卖出和现金分红，数量、成本和已结算盈亏自动计算。首次交易会按成交记录替换手工数量和成本，不自动补期初余额。成交与当前行情分别管理；填写证券代码后可刷新当前价格，无代码的资产请手动核对价格。浮动盈亏反映剩余持仓，已结算盈亏包含卖出盈亏与净现金分红。新增结算扣加同币种存款；历史补录不重放已包含的现金流，核对基准之前的更正会提示重新核对余额。
-              </p>
-            </details>
           )}
         </section>
       )}
@@ -372,6 +473,12 @@ export function MyFacts({
                   ? "添加存款"
                   : "添加持仓"
               : selected!.name
+          }
+          size={editing ? "default" : "wide"}
+          subtitle={
+            selected
+              ? `${selected.symbol || selected.name} · ${selected.currency} · ${selected.assetClass}`
+              : undefined
           }
           resetKey={editing ? "edit" : "detail"}
           busy={busy}
@@ -410,7 +517,7 @@ export function MyFacts({
           ) : null}
         </Drawer>
       )}
-      <AssetHistory snapshot={snapshot} />
+      <AssetHistory state={history} />
     </div>
   );
 }

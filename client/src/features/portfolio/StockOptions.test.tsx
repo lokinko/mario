@@ -245,6 +245,6 @@ it("keeps a zero-share stock visible while options are open and groups their ret
   ).toBeTruthy();
   expect(within(list).queryByText("认沽空头")).toBeNull();
   expect(within(list).getByText(/含关联期权/)).toBeTruthy();
-  expect(within(list).getByText("-¥600")).toBeTruthy();
-  expect(within(list).getByText("-¥2")).toBeTruthy();
+  expect(within(list).getByText("−600.00")).toBeTruthy();
+  expect(within(list).getByText("−2.00")).toBeTruthy();
 });

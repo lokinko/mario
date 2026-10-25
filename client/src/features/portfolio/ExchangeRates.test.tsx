@@ -48,7 +48,7 @@ afterEach(() => {
 async function open() {
   const onUpdate = vi.fn();
   render(<ExchangeRates baseCurrency="CNY" onUpdate={onUpdate} />);
-  await screen.findByLabelText("1 USD = 7 CNY");
+  await screen.findByLabelText("1 USD = 7.0000 CNY");
   await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   fireEvent.click(screen.getByText("管理汇率"));
   fireEvent.click(
@@ -71,12 +71,12 @@ it("shows automatically loaded values and saves a persistent manual rate then re
     manual: { USD: { rate: 8, observedOn: "2026-10-11" } },
   });
   fireEvent.click(screen.getAllByRole("button", { name: "保存修改" })[0]);
-  await screen.findByLabelText("1 USD = 8 CNY");
+  await screen.findByLabelText("1 USD = 8.0000 CNY");
   expect(portfolioApi.setFxOverride).toHaveBeenCalledWith("USD", "8");
   await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   vi.mocked(portfolioApi.setFxOverride).mockResolvedValue(book);
   fireEvent.click(screen.getByRole("button", { name: "恢复自动" }));
-  await screen.findByLabelText("1 USD = 7 CNY");
+  await screen.findByLabelText("1 USD = 7.0000 CNY");
   expect(portfolioApi.setFxOverride).toHaveBeenLastCalledWith("USD", null);
   await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(2));
 });
@@ -95,7 +95,7 @@ it("shows involved rates directly and lets users select other currencies", async
       onUpdate={vi.fn()}
     />,
   );
-  await screen.findByLabelText("1 HKD = 0.91 CNY");
+  await screen.findByLabelText("1 HKD = 0.9123 CNY");
   expect(
     screen.getByRole("article", { name: "HKD 兑 CNY 汇率" }).closest("details"),
   ).toBeNull();
@@ -111,13 +111,13 @@ it("shows involved rates directly and lets users select other currencies", async
   expect(
     container.querySelector(".exchange-rate-card:nth-child(2) strong")
       ?.textContent,
-  ).toBe("0.91");
-  expect(screen.getAllByLabelText("1 HKD = 0.91 CNY")).toHaveLength(1);
+  ).toBe("0.9123");
+  expect(screen.getAllByLabelText("1 HKD = 0.9123 CNY")).toHaveLength(1);
   expect(
     screen
       .getByRole("spinbutton", { name: "修改 HKD 汇率" })
       .getAttribute("placeholder"),
-  ).toBe("0.91");
+  ).toBe("0.9123");
   expect(portfolioApi.getSnapshot).not.toHaveBeenCalled();
   const input = screen.getByRole("spinbutton", { name: "修改 HKD 汇率" });
   fireEvent.change(input, { target: { value: "0.91234567" } });
@@ -142,7 +142,7 @@ it("remembers deselected currencies across mounts without changing rates or asse
     onUpdate: vi.fn(),
   };
   const first = render(<ExchangeRates {...props} />);
-  await screen.findByLabelText("1 USD = 7 CNY");
+  await screen.findByLabelText("1 USD = 7.0000 CNY");
   fireEvent.click(screen.getByRole("checkbox", { name: "USD" }));
   expect(screen.queryByRole("article", { name: "USD 兑 CNY 汇率" })).toBeNull();
   expect(screen.getByText("勾选币种后显示汇率。")).toBeTruthy();
@@ -167,7 +167,7 @@ it("ignores malformed preferences and excludes the new base currency", async () 
   const { rerender } = render(
     <ExchangeRates baseCurrency="CNY" onUpdate={vi.fn()} />,
   );
-  await screen.findByLabelText("1 USD = 7 CNY");
+  await screen.findByLabelText("1 USD = 7.0000 CNY");
   vi.mocked(portfolioApi.getFxSettings).mockResolvedValue({
     ...book,
     baseCurrency: "USD",
@@ -176,9 +176,9 @@ it("ignores malformed preferences and excludes the new base currency", async () 
     ],
   });
   rerender(<ExchangeRates baseCurrency="USD" onUpdate={vi.fn()} />);
-  await screen.findByLabelText("1 CNY = 0.14 USD");
+  await screen.findByLabelText("1 CNY = 0.1400 USD");
   expect(screen.queryByRole("checkbox", { name: "USD" })).toBeNull();
-  expect(screen.queryByLabelText("1 USD = 7 CNY")).toBeNull();
+  expect(screen.queryByLabelText("1 USD = 7.0000 CNY")).toBeNull();
 });
 it("rejects empty or nonpositive overrides and retains the draft after a failed save", async () => {
   await open();

@@ -7,6 +7,8 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { AssetOverview } from "./AssetOverview";
+import { useAssetHistory } from "./useAssetHistory";
 import { AssetHistory } from "./AssetHistory";
 import * as portfolioApi from "../../api/portfolio";
 import fixture from "../../test/emptySnapshot.json";
@@ -36,16 +38,32 @@ const history: DailyHistory = {
   ],
   nextBefore: null,
 };
+function History() {
+  const state = useAssetHistory(fixture as Snapshot);
+  return (
+    <>
+      <AssetOverview
+        snapshot={fixture as Snapshot}
+        history={state.history}
+        display={{ maskAmounts: false, setMaskAmounts: vi.fn() }}
+      />
+      <AssetHistory state={state} />
+    </>
+  );
+}
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue(history);
 });
 afterEach(cleanup);
-it("shows carry-forward labels with the trend collapsed until requested and the removed sections absent", async () => {
-  render(<AssetHistory snapshot={fixture as Snapshot} />);
+it("shows one shared history in the overview and an expanded keyboard accessible trend", async () => {
+  render(<History />);
   await screen.findByText(/今日沿用上次余额/);
-  expect(screen.getByText("资产趋势").closest("details")?.open).toBe(false);
-  fireEvent.click(screen.getByText("资产趋势"));
+  expect(screen.getByText("资产趋势").closest("details")).toBeNull();
+  expect(portfolioApi.getDailyAssets).toHaveBeenCalledTimes(1);
+  const chart = screen.getByRole("group", { name: /每日总资产趋势/ });
+  fireEvent.keyDown(chart, { key: "ArrowLeft" });
+  expect(screen.getByText("2026-09-12 · CNY")).toBeTruthy();
   expect(
     screen
       .getByRole("group", { name: /每日总资产趋势/ })
@@ -62,7 +80,7 @@ it("shows incomplete totals and loads older records with a cursor", async () => 
     ],
     nextBefore: "2026-09-13",
   });
-  render(<AssetHistory snapshot={fixture as Snapshot} />);
+  render(<History />);
   await screen.findByText("待补汇率：美元账户");
   expect(screen.queryByRole("group", { name: /每日总资产趋势/ })).toBeNull();
   fireEvent.click(screen.getByText("全部历史"));

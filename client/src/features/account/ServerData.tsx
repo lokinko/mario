@@ -1,3 +1,5 @@
+import { Drawer } from "../../components/Drawer";
+import { Callout } from "../../components/Callout";
 import { useState } from "react";
 import { Cloud, Download, LoaderCircle, RefreshCw, Upload } from "lucide-react";
 import {
@@ -27,6 +29,44 @@ export function ServerData({
   const [error, setError] = useState("");
   const [replace, setReplace] = useState(false);
   const requests = useRequestGuard();
+  const [pending, setPending] = useState<{
+    data: unknown;
+    replace: boolean;
+  } | null>(null);
+  const [backupConfirmed, setBackupConfirmed] = useState(false);
+  const confirmImport = async () => {
+    if (!pending || busy || (pending.replace && !backupConfirmed)) return;
+    const isCurrent = requests.begin();
+    setOperation("import");
+    setError("");
+    try {
+      if (pending.replace) {
+        const backup = await prepareDataReplacement();
+        if (!isCurrent()) return;
+        await saveTextDownload(
+          `mario-before-import-${new Date().toISOString().replace(/[:.]/g, "-")}.json`,
+          JSON.stringify(backup.data),
+          "application/json",
+        );
+        if (!isCurrent()) return;
+        await backup.replace(pending.data);
+      } else {
+        await importData(pending.data);
+      }
+      if (!isCurrent()) return;
+      await onRestore();
+      if (isCurrent()) {
+        setPending(null);
+        flash(
+          pending.replace ? "数据已覆盖导入，覆盖前备份已下载" : "数据已导入",
+        );
+      }
+    } catch (error) {
+      if (isCurrent()) setError(String(error));
+    } finally {
+      if (isCurrent()) setOperation(null);
+    }
+  };
   return (
     <section className="page narrow cloud-page">
       <PageHeader title="账号与数据" />
@@ -155,35 +195,8 @@ export function ServerData({
                     throw new Error("文件超过 64 MB");
                   const data = JSON.parse(await file.text());
                   if (!isCurrent()) return;
-                  if (
-                    !confirm(
-                      replace
-                        ? "将先下载当前账号的备份，再用此文件替换当前账号的全部业务数据（包括交易、持仓和历史记录），不做合并。是否继续？"
-                        : "将把此文件导入当前空账号，是否继续？",
-                    )
-                  )
-                    return;
-                  if (replace) {
-                    const backup = await prepareDataReplacement();
-                    if (!isCurrent()) return;
-                    await saveTextDownload(
-                      `mario-before-import-${new Date().toISOString().replace(/[:.]/g, "-")}.json`,
-                      JSON.stringify(backup.data),
-                      "application/json",
-                    );
-                    if (!isCurrent()) return;
-                    await backup.replace(data);
-                  } else {
-                    await importData(data);
-                  }
-                  if (!isCurrent()) return;
-                  await onRestore();
-                  if (isCurrent())
-                    flash(
-                      replace
-                        ? "数据已覆盖导入，覆盖前备份已下载"
-                        : "数据已导入",
-                    );
+                  setPending({ data, replace });
+                  setBackupConfirmed(false);
                 } catch (error) {
                   if (isCurrent()) setError(String(error));
                 } finally {
@@ -195,11 +208,54 @@ export function ServerData({
           </label>
         </section>
       </div>
-      {error && (
-        <p className="error-box" role="alert">
-          {error}
-        </p>
+      {pending && (
+        <Drawer
+          title={pending.replace ? "确认覆盖当前账号数据" : "确认导入数据"}
+          busy={busy}
+          onClose={() => {
+            setPending(null);
+            setError("");
+          }}
+        >
+          <Callout tone={pending.replace ? "warning" : "info"}>
+            {pending.replace
+              ? "将替换当前账号的全部业务数据，包括持仓、成交、现金、方法论、参考资料和历史记录，不做合并。账号登录凭据不变。"
+              : "将此文件导入当前空账号。"}
+          </Callout>
+          <p>
+            导入失败会整体回滚；覆盖前会额外下载当前数据的备份。如需恢复，须用备份文件重新导入。
+          </p>
+          {pending.replace && (
+            <label className="data-replacement-option" data-presentation="true">
+              <input
+                type="checkbox"
+                checked={backupConfirmed}
+                disabled={busy}
+                onChange={(event) => setBackupConfirmed(event.target.checked)}
+              />
+              我已导出当前数据
+            </label>
+          )}
+          {error && <Callout tone="danger">{error}</Callout>}
+          <div className="form-actions">
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => setPending(null)}
+            >
+              取消
+            </button>
+            <button
+              className={`primary${pending.replace ? " danger" : ""}`}
+              disabled={busy || (pending.replace && !backupConfirmed)}
+              onClick={() => void confirmImport()}
+            >
+              {busy ? "导入中…" : pending.replace ? "确认覆盖导入" : "确认导入"}
+            </button>
+          </div>
+        </Drawer>
       )}
+      {error && !pending && <Callout tone="danger">{error}</Callout>}
     </section>
   );
 }

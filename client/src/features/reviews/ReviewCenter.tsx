@@ -1,3 +1,8 @@
+import { EmptyState } from "../../components/EmptyState";
+import { Badge } from "../../components/Badge";
+import { Menu } from "../../components/Menu";
+import { LedgerEntry } from "../../components/LedgerEntry";
+import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";
 import { useEffect, useState } from "react";
 import { useRequestGuard } from "../../lib/useRequestGuard";
@@ -236,12 +241,14 @@ export function ReviewCenter({
         <article>
           <span>复盘记录</span>
           <strong>{reviews.length}</strong>
-          <small className={periodicReviewDue ? "warning-text" : ""}>
-            {periodicReviewDue
-              ? "现在需要安排一次"
-              : latestReview.nextReviewDate
-                ? `下次 ${latestReview.nextReviewDate}`
-                : ""}
+          <small>
+            {periodicReviewDue ? (
+              <Badge tone="warning">现在需要安排一次</Badge>
+            ) : latestReview.nextReviewDate ? (
+              `下次 ${latestReview.nextReviewDate}`
+            ) : (
+              ""
+            )}
           </small>
         </article>
         <article>
@@ -278,11 +285,7 @@ export function ReviewCenter({
             setError("");
           }}
         >
-          {error && (
-            <p className="error-box" role="alert">
-              {error}
-            </p>
-          )}
+          {error && <Callout tone="danger">{error}</Callout>}
           <section className="system-review-form">
             <form
               onSubmit={(event) => {
@@ -324,18 +327,30 @@ export function ReviewCenter({
             <span className="history-count">{reviews.length} 条</span>
           </div>
           {reviews.length === 0 && (
-            <div className="empty">
-              还没有复盘记录，写下你的第一段观点、顾虑和思考。
-            </div>
+            <EmptyState
+              title="还没有复盘记录"
+              action={
+                <button className="primary" onClick={() => setCreating(true)}>
+                  记录第一次复盘
+                </button>
+              }
+            >
+              写下你的第一段观点、顾虑和思考。
+            </EmptyState>
           )}
           <div className="system-review-list">
-            {reviews.map((item) => (
-              <article key={item.id}>
-                <div className="system-review-head">
-                  <small>
-                    {new Date(item.createdAt).toLocaleDateString("zh-CN")}
-                  </small>
-                </div>
+            {reviews.map((item, index) => (
+              <LedgerEntry
+                key={item.id}
+                date={item.createdAt}
+                showMonth={
+                  index === 0 ||
+                  localDateValue(new Date(reviews[index - 1].createdAt)).slice(
+                    0,
+                    7,
+                  ) !== localDateValue(new Date(item.createdAt)).slice(0, 7)
+                }
+              >
                 <button
                   className="text-button record-title"
                   onClick={() => setSelectedReview(item)}
@@ -350,7 +365,7 @@ export function ReviewCenter({
                 >
                   把思考沉淀为规则 <ChevronRight size={14} />
                 </button>
-              </article>
+              </LedgerEntry>
             ))}
           </div>
         </section>
@@ -399,39 +414,43 @@ export function ReviewCenter({
                   >
                     <div>
                       <span>
-                        {item.category} · v{item.revision}
+                        <Badge>{item.category}</Badge>{" "}
+                        <Badge>v{item.revision}</Badge>{" "}
+                        {!item.active && <Badge>已停用</Badge>}
                       </span>
                       <strong>{item.statement}</strong>
                       <p>
                         <b>触发</b>
                         {item.trigger}
                       </p>
-                      <small>{item.rationale}</small>
+                      <p>
+                        <b>依据</b>
+                        {item.rationale}
+                      </p>
                     </div>
                     <div className="rule-actions">
-                      <button
-                        className="text-button"
-                        onClick={() => toggleRuleHistory(item)}
-                      >
-                        历史
-                      </button>
-                      <button
-                        className="text-button"
-                        onClick={() => {
-                          setRuleOpen(true);
-                          setEditingRuleId(item.id);
-                          setRule(ruleInput(item));
-                        }}
-                      >
-                        修订
-                      </button>
-                      <button
-                        className="text-button"
+                      <Menu
+                        label={item.statement + "更多操作"}
                         disabled={saving}
-                        onClick={() => toggleRule(item)}
-                      >
-                        {item.active ? "停用" : "启用"}
-                      </button>
+                        items={[
+                          {
+                            label: "历史",
+                            action: () => void toggleRuleHistory(item),
+                          },
+                          {
+                            label: "修订",
+                            action: () => {
+                              setRuleOpen(true);
+                              setEditingRuleId(item.id);
+                              setRule(ruleInput(item));
+                            },
+                          },
+                          {
+                            label: item.active ? "停用" : "启用",
+                            action: () => void toggleRule(item),
+                          },
+                        ]}
+                      />
                     </div>
                     {expandedRuleId === item.id && (
                       <div className="rule-history">
@@ -469,11 +488,7 @@ export function ReviewCenter({
             setError("");
           }}
         >
-          {error && (
-            <p className="error-box" role="alert">
-              {error}
-            </p>
-          )}{" "}
+          {error && <Callout tone="danger">{error}</Callout>}{" "}
           <fieldset className="rule-editor holding-fields" disabled={saving}>
             <strong>
               {editingRuleId

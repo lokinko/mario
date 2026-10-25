@@ -1,3 +1,4 @@
+import { Callout } from "../../components/Callout";
 import {
   createContext,
   Fragment,
@@ -249,6 +250,11 @@ export function WebAccess({ children }: { children: ReactNode }) {
     );
   return (
     <div className="web-access">
+      <aside className="login-brand">
+        <strong>mario</strong>
+        <p>个人投资工作台</p>
+        <p>核对依据，记录判断，先看风险。</p>
+      </aside>
       <form
         className="panel"
         onSubmit={async (event) => {
@@ -338,11 +344,7 @@ export function WebAccess({ children }: { children: ReactNode }) {
           />
         </label>
         <p>资料存储在你的服务器，同一账号可在不同设备的浏览器访问。</p>
-        {error && (
-          <div className="error-box" role="alert">
-            {error}
-          </div>
-        )}
+        {error && <Callout tone="danger">{error}</Callout>}
         <button className="primary" disabled={busy}>
           {busy ? "连接中…" : register ? "创建账号" : "登录"}
         </button>

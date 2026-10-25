@@ -1,5 +1,6 @@
+import { Callout } from "../../components/Callout";
 import { useEffect, useState } from "react";
-import { AlertTriangle, LoaderCircle, Save } from "lucide-react";
+import { LoaderCircle, Save } from "lucide-react";
 import { getAnalysisSettings, saveAnalysisSettings } from "../../api/settings";
 import type {
   AnalysisSettings,
@@ -129,8 +130,7 @@ export function AnalysisDefaults({
         </fieldset>
       )}
       {error && (
-        <div className="error-box" role="alert">
-          <AlertTriangle size={18} />
+        <Callout tone="danger">
           {error}
           {!settings && (
             <button
@@ -140,7 +140,7 @@ export function AnalysisDefaults({
               重试
             </button>
           )}
-        </div>
+        </Callout>
       )}
       <div className="form-actions">
         <button

@@ -152,9 +152,7 @@ it("shows original text and all legacy information, with reversible archiving", 
       false,
     ),
   );
-  fireEvent.change(screen.getByRole("combobox", { name: "资料状态" }), {
-    target: { value: "archived" },
-  });
+  fireEvent.click(screen.getByRole("button", { name: /^已归档/ }));
   expect(await screen.findByRole("button", { name: "恢复" })).toBeTruthy();
 });
 

@@ -1,3 +1,4 @@
+import { Menu } from "./Menu";
 // @vitest-environment jsdom
 import { useState, StrictMode } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -104,4 +105,24 @@ it("ignores presentation filters when deciding whether to discard", () => {
   fireEvent.keyDown(window, { key: "Escape" });
   expect(close).toHaveBeenCalledOnce();
   expect(confirm).not.toHaveBeenCalled();
+});
+
+it("closes a nested menu before dismissing the drawer on Escape", () => {
+  const close = vi.fn();
+  render(
+    <Drawer title="详情" onClose={close}>
+      <Menu label="更多操作" items={[{ label: "编辑", action: vi.fn() }]} />
+    </Drawer>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+  fireEvent.keyDown(screen.getByRole("menuitem", { name: "编辑" }), {
+    key: "Escape",
+  });
+  expect(close).not.toHaveBeenCalled();
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "更多操作" }),
+  );
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  expect(close).toHaveBeenCalledOnce();
 });

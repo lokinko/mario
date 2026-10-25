@@ -1,6 +1,4 @@
 import type { Holding } from "../../types";
-import { useState } from "react";
-import { formatNumber } from "../../lib/format";
 
 export function hasHoldingDetails(holding: Omit<Holding, "id">) {
   return [holding.costPrice, holding.quantity, holding.currentPrice].some(
@@ -60,7 +58,6 @@ export function HoldingFields<T extends Omit<Holding, "id">>({
   onChange: (holding: T) => void;
   tradeManaged?: boolean;
 }) {
-  const [focused, setFocused] = useState<string | null>(null);
   return (
     <>
       {(
@@ -74,21 +71,14 @@ export function HoldingFields<T extends Omit<Holding, "id">>({
           <span>{label}</span>
           <div className="input-affix">
             <input
+              data-money-input={key !== "quantity" || undefined}
               type="number"
               inputMode="decimal"
               min={0}
               max={1e15}
               step="any"
               readOnly={tradeManaged && key !== "currentPrice"}
-              value={
-                holding[key] == null
-                  ? ""
-                  : focused === key && !(tradeManaged && key !== "currentPrice")
-                    ? (holding.exactValues?.[key] ?? holding[key])
-                    : formatNumber(holding.exactValues?.[key] ?? holding[key])
-              }
-              onFocus={() => setFocused(key)}
-              onBlur={() => setFocused(null)}
+              value={holding.exactValues?.[key] ?? holding[key] ?? ""}
               placeholder={
                 key === "currentPrice" && holding.symbol.trim()
                   ? "留空自动获取日收盘价"

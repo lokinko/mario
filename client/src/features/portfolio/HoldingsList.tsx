@@ -1,9 +1,11 @@
+import { EmptyState } from "../../components/EmptyState";
 import { Search } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Holding, Snapshot } from "../../types";
 import { isClosedHolding } from "./holdingMetrics";
 
-export type HoldingSort = "value-desc" | "value-asc" | "name";
+export type HoldingSort =
+  "value-desc" | "value-asc" | "pnl-desc" | "pnl-asc" | "name";
 export type HoldingFilters = {
   search: string;
   sort: HoldingSort;
@@ -31,12 +33,14 @@ export function HoldingsList({
   filters,
   onFiltersChange,
   renderRow,
+  onRecordTrade,
 }: {
   snapshot: Snapshot;
   holdings: Holding[];
   filters: HoldingFilters;
   onFiltersChange: (filters: HoldingFilters) => void;
   renderRow: (holding: Holding) => ReactNode;
+  onRecordTrade: () => void;
 }) {
   const { search, sort, showClosed } = filters;
   const update = (changes: Partial<HoldingFilters>) =>
@@ -77,7 +81,16 @@ export function HoldingsList({
       >
         <div role="row">
           <div role="cell" aria-colspan={7}>
-            <p className="empty">暂无资产，点击上方添加。</p>
+            <EmptyState
+              title="还没有持仓"
+              action={
+                <button className="primary" onClick={onRecordTrade}>
+                  记录第一笔交易
+                </button>
+              }
+            >
+              从第一笔真实成交开始记录。
+            </EmptyState>
           </div>
         </div>
       </div>
@@ -87,7 +100,9 @@ export function HoldingsList({
       <p className="sr-only" id="holdings-sort-help">
         {sort === "name"
           ? "按币种分组，组内按名称排列 · 已清仓默认收起"
-          : `按币种分组，组内按折合 ${currency} 市值${sort === "value-asc" ? "从低到高" : "从高到低"}排列 · 已清仓默认收起，展开后按最近交易排列`}
+          : sort.startsWith("pnl")
+            ? `按币种分组，组内按原币浮动盈亏${sort === "pnl-asc" ? "从低到高" : "从高到低"}排列 · 已清仓默认收起`
+            : `按币种分组，组内按折合 ${currency} 市值${sort === "value-asc" ? "从低到高" : "从高到低"}排列 · 已清仓默认收起，展开后按最近交易排列`}
         {sort !== "name" &&
           holdings.some(
             (item) =>
@@ -100,15 +115,6 @@ export function HoldingsList({
       <div className="holdings-toolbar" data-presentation="true">
         <div className="position-filters">
           <span>按币种分组</span>
-          {closedCount > 0 && (
-            <button
-              aria-expanded={showClosed}
-              onClick={() => update({ showClosed: !showClosed })}
-            >
-              {showClosed ? "收起已清仓" : "展开已清仓"}
-              <span>{closedCount}</span>
-            </button>
-          )}
         </div>
         <div className="holdings-tools">
           <label className="holdings-search">
@@ -131,6 +137,8 @@ export function HoldingsList({
           >
             <option value="value-desc">市值从高到低</option>
             <option value="value-asc">市值从低到高</option>
+            <option value="pnl-desc">浮动盈亏从高到低</option>
+            <option value="pnl-asc">浮动盈亏从低到高</option>
             <option value="name">名称排序</option>
           </select>
         </div>
@@ -143,8 +151,52 @@ export function HoldingsList({
       >
         <div role="row" className="holdings-list-header">
           {columns.map((label) => (
-            <span role="columnheader" key={label}>
-              {label}
+            <span
+              role="columnheader"
+              key={label}
+              aria-sort={
+                label === "资产 / 币种" && sort === "name"
+                  ? "ascending"
+                  : (label === "当前市值" && sort.startsWith("value")) ||
+                      (label === "浮动盈亏" && sort.startsWith("pnl"))
+                    ? sort.endsWith("asc")
+                      ? "ascending"
+                      : "descending"
+                    : undefined
+              }
+            >
+              {["资产 / 币种", "当前市值", "浮动盈亏"].includes(label) ? (
+                <button
+                  className="column-sort"
+                  data-presentation="true"
+                  onClick={() =>
+                    update({
+                      sort:
+                        label === "资产 / 币种"
+                          ? "name"
+                          : label === "当前市值"
+                            ? sort === "value-desc"
+                              ? "value-asc"
+                              : "value-desc"
+                            : sort === "pnl-desc"
+                              ? "pnl-asc"
+                              : "pnl-desc",
+                    })
+                  }
+                >
+                  {label}
+                  {label === "资产 / 币种" && sort === "name"
+                    ? " ▲"
+                    : (label === "当前市值" && sort.startsWith("value")) ||
+                        (label === "浮动盈亏" && sort.startsWith("pnl"))
+                      ? sort.endsWith("asc")
+                        ? " ▲"
+                        : " ▼"
+                      : ""}
+                </button>
+              ) : (
+                label
+              )}
             </span>
           ))}
         </div>
@@ -183,6 +235,16 @@ export function HoldingsList({
           </div>
         )}
       </div>
+      {closedCount > 0 && (
+        <button
+          className="text-button closed-toggle"
+          data-presentation="true"
+          aria-expanded={showClosed}
+          onClick={() => update({ showClosed: !showClosed })}
+        >
+          {showClosed ? "收起已清仓" : "已清仓"} {closedCount} 项 ›
+        </button>
+      )}
     </>
   );
 }

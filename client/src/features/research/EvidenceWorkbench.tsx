@@ -1,6 +1,10 @@
+import { EmptyState } from "../../components/EmptyState";
+import { Badge } from "../../components/Badge";
+import { LedgerEntry } from "../../components/LedgerEntry";
+import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, Save, Sparkles, X } from "lucide-react";
+import { Search, Paperclip, Save, Sparkles, X } from "lucide-react";
 import {
   getResearchEvidence,
   getResearchAttachment,
@@ -191,11 +195,7 @@ export function EvidenceWorkbench({
             setError("");
           }}
         >
-          {error && (
-            <p className="error-box" role="alert">
-              {error}
-            </p>
-          )}
+          {error && <Callout tone="danger">{error}</Callout>}
           <section className="evidence-form">
             <form
               onSubmit={(event) => {
@@ -250,11 +250,7 @@ export function EvidenceWorkbench({
                   ))}
                 </ul>
               )}
-              {fileError && (
-                <p className="error-box" role="alert">
-                  {fileError}
-                </p>
-              )}
+              {fileError && <Callout tone="danger">{fileError}</Callout>}
               <div className="form-actions">
                 <button
                   type="button"
@@ -283,22 +279,35 @@ export function EvidenceWorkbench({
         <div className="panel-title">
           <h2>已保存的资料</h2>
           <div className="list-toolbar" data-presentation>
-            <input
-              type="search"
-              aria-label="搜索资料"
-              placeholder="搜索资料"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <select
+            <label className="holdings-search">
+              <Search size={16} />
+              <input
+                type="search"
+                aria-label="搜索资料"
+                placeholder="搜索资料"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <div
+              className="section-switcher evidence-tabs"
+              role="group"
               aria-label="资料状态"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
             >
-              <option value="active">使用中</option>
-              <option value="archived">已归档</option>
-              <option value="all">全部</option>
-            </select>
+              {[
+                ["active", "使用中", active.length],
+                ["archived", "已归档", items.length - active.length],
+                ["all", "全部", items.length],
+              ].map(([value, label, count]) => (
+                <button
+                  key={value}
+                  aria-pressed={filter === value}
+                  onClick={() => setFilter(String(value))}
+                >
+                  {label} {count}
+                </button>
+              ))}
+            </div>
           </div>
           <span className="history-count">{items.length} 条</span>
         </div>
@@ -308,7 +317,16 @@ export function EvidenceWorkbench({
           onRetry={() => void refresh()}
         />
         {!loading && !error && items.length === 0 && (
-          <div className="empty">还没有资料，保存一段你获取到的重要信息。</div>
+          <EmptyState
+            title="还没有资料"
+            action={
+              <button className="primary" onClick={() => setCreating(true)}>
+                保存第一条资料
+              </button>
+            }
+          >
+            保存一段你获取到的重要信息。
+          </EmptyState>
         )}
         {!loading &&
           !error &&
@@ -317,8 +335,19 @@ export function EvidenceWorkbench({
             <p className="empty">没有符合当前搜索或状态的资料。</p>
           )}
         <div className="evidence-list">
-          {visibleItems.map((item) => (
-            <article key={item.id} className={item.active ? "" : "inactive"}>
+          {visibleItems.map((item, index) => (
+            <LedgerEntry
+              key={item.id}
+              date={item.capturedAt}
+              inactive={!item.active}
+              showMonth={
+                index === 0 ||
+                localDateValue(
+                  new Date(visibleItems[index - 1].capturedAt),
+                ).slice(0, 7) !==
+                  localDateValue(new Date(item.capturedAt)).slice(0, 7)
+              }
+            >
               <button
                 className="text-button record-title"
                 onClick={() => setSelectedId(item.id)}
@@ -331,7 +360,7 @@ export function EvidenceWorkbench({
               <p className="record-preview">{evidenceText(item)}</p>
               <small>
                 {item.attachments?.length || 0} 个附件 ·{" "}
-                {item.active ? "使用中" : "已归档"}
+                <Badge>{item.active ? "使用中" : "已归档"}</Badge>
               </small>
               {selectedId === item.id && (
                 <Drawer
@@ -339,11 +368,7 @@ export function EvidenceWorkbench({
                   busy={saving || !!downloading}
                   onClose={() => setSelectedId(null)}
                 >
-                  {error && (
-                    <p className="error-box" role="alert">
-                      {error}
-                    </p>
-                  )}
+                  {error && <Callout tone="danger">{error}</Callout>}
                   {evidenceText(item) && (
                     <p className="evidence-content">{evidenceText(item)}</p>
                   )}
@@ -395,7 +420,7 @@ export function EvidenceWorkbench({
                   {item.active ? "归档" : "恢复"}
                 </button>
               </footer>
-            </article>
+            </LedgerEntry>
           ))}
         </div>
       </section>

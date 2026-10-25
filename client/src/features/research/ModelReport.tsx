@@ -1,3 +1,4 @@
+import { Drawer } from "../../components/Drawer";
 import { useId, useRef, useState } from "react";
 import type { AnalysisClaim, AnalysisWorkflowTrace } from "../../types";
 import { reportSources, SourceDetail } from "./ReportSources";
@@ -27,6 +28,7 @@ export function ModelReport({
         type="button"
         className="report-source"
         key={id}
+        title={`${item.source.title || "原始资料"}${item.source.asOfDate ? ` · ${item.source.asOfDate}` : ""}`}
         aria-label={`查看引用 ${item.number}：${item.source.title || "原始资料"}`}
         aria-expanded={selectedId === id}
         aria-controls={regionId}
@@ -120,28 +122,38 @@ export function ModelReport({
         <h2>复盘与证伪条件</h2>
         {list(report.reviewTriggers)}
       </section>
-      {sources.length > 0 && (
-        <section className="report-citations" aria-label="本次回答引用">
-          <h2>引用的信息</h2>
-          <ul>
-            {sources.map((source) => (
-              <li key={source.id}>
-                {citation(source.id)} {source.title || "原始资料"}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <section className="report-citations" aria-label="本次回答引用">
+        <h2>依据与局限</h2>
+        <p>
+          以下为本次实际引用的来源；未覆盖的信息见“仍待核实”，来源内容仍需核对。
+        </p>
+        <ul>
+          {sources.map((source) => (
+            <li key={source.id}>
+              {citation(source.id)} {source.title || "原始资料"}
+            </li>
+          ))}
+        </ul>
+        {sources.length === 0 && <p>本次回答未提供可核对的引用来源。</p>}
+      </section>
       {selected && (
-        <SourceDetail
-          key={selected.id}
-          source={selected}
-          regionId={regionId}
-          close={() => {
+        <Drawer
+          title="引用原始信息"
+          onClose={() => {
             setSelectedId(null);
             lastTrigger.current?.focus();
           }}
-        />
+        >
+          <SourceDetail
+            key={selected.id}
+            source={selected}
+            regionId={regionId}
+            close={() => {
+              setSelectedId(null);
+              lastTrigger.current?.focus();
+            }}
+          />
+        </Drawer>
       )}
     </div>
   );

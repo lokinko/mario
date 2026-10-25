@@ -384,7 +384,7 @@ it("records cash dividends with zero share movement, using net income after both
   change("税费（CNY）", "3");
   change("分红到账日期", "2026-01-01");
   expect(screen.getByLabelText("当日顺序")).toHaveProperty("value", "2");
-  expect(screen.getByText("¥16")).toBeTruthy();
+  expect(screen.getByText("¥16.00")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "保存交易并更新持仓" }));
   await waitFor(() => expect(portfolioApi.saveHoldingTrade).toHaveBeenCalled());
   expect(portfolioApi.saveHoldingTrade).toHaveBeenCalledWith(
@@ -443,9 +443,11 @@ it("shows authoritative sell profits and dividends in the holding overview and d
   const props = { onUpdate: vi.fn(), flash: vi.fn() };
   const { rerender } = render(<MyFacts {...props} snapshot={s} />);
   const settled = screen.getByLabelText("投资持仓概览");
-  expect(within(settled).getByText("+¥115")).toBeTruthy();
+  expect(within(settled).getByText("+¥115.00")).toBeTruthy();
   expect(
-    within(screen.getByRole("table", { name: "持仓列表" })).getByText("+¥115"),
+    within(screen.getByRole("table", { name: "持仓列表" })).getByText(
+      "+115.00",
+    ),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "查看 指数基金" }));
   expect(screen.getByRole("heading", { name: "交易明细" })).toBeTruthy();
@@ -469,10 +471,12 @@ it("shows authoritative sell profits and dividends in the holding overview and d
     />,
   );
   expect(
-    within(screen.getByLabelText("投资持仓概览")).getByText("+¥120"),
+    within(screen.getByLabelText("投资持仓概览")).getByText("+¥120.00"),
   ).toBeTruthy();
   expect(
-    within(screen.getByRole("table", { name: "持仓列表" })).getByText("+¥120"),
+    within(screen.getByRole("table", { name: "持仓列表" })).getByText(
+      "+120.00",
+    ),
   ).toBeTruthy();
   cleanup();
   render(

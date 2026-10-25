@@ -35,18 +35,19 @@ export const navGroups: {
   items: { id: View; label: string; icon: typeof MessageCircle }[];
 }[] = [
   {
-    caption: "总览",
-    items: [
-      { id: "facts" as const, label: "我的情况", icon: WalletCards },
-      { id: "advisor" as const, label: "问答", icon: MessageCircle },
-      { id: "methodology" as const, label: "投资方法论", icon: BookOpen },
-    ],
+    caption: "资产",
+    items: [{ id: "facts", label: "我的情况", icon: WalletCards }],
+  },
+  {
+    caption: "决策",
+    items: [{ id: "advisor", label: "问答", icon: MessageCircle }],
   },
   {
     caption: "研究",
     items: [
-      { id: "review" as const, label: "复盘记录", icon: History },
-      { id: "evidence" as const, label: "参考资料", icon: Database },
+      { id: "evidence", label: "参考资料", icon: Database },
+      { id: "review", label: "复盘记录", icon: History },
+      { id: "methodology", label: "投资方法论", icon: BookOpen },
     ],
   },
 ];

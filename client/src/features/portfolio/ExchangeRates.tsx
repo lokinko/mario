@@ -1,3 +1,6 @@
+import { Badge } from "../../components/Badge";
+import { DataStamp } from "../../components/DataStamp";
+import { Callout } from "../../components/Callout";
 import { ExternalLink } from "../../components/ExternalLink";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import { useEffect, useState } from "react";
@@ -129,10 +132,22 @@ export function ExchangeRates({
           {currency} <span aria-hidden="true">→</span> {baseCurrency}
         </span>
         <strong
-          aria-label={`1 ${currency} = ${value == null ? "待更新" : formatNumber(value)} ${baseCurrency}`}
+          className="num"
+          aria-label={`1 ${currency} = ${value == null ? "待更新" : formatNumber(value, 4, true)} ${baseCurrency}`}
         >
-          {value == null ? "待更新" : formatNumber(value)}
+          {value == null ? "待更新" : formatNumber(value, 4, true)}
         </strong>
+        <DataStamp
+          date={
+            book.manual[currency]?.observedOn ??
+            book.quotes.find(
+              (q) =>
+                q.fromCurrency === currency && q.toCurrency === baseCurrency,
+            )?.observedOn
+          }
+          source={book.manual[currency] ? "手动汇率" : "ECB"}
+        />
+        {book.manual[currency] && <Badge>手动</Badge>}
       </article>
     );
   };
@@ -182,7 +197,9 @@ export function ExchangeRates({
               inputMode="decimal"
               disabled={busy}
               value={draft ?? ""}
-              placeholder={value == null ? "输入汇率" : formatNumber(value)}
+              placeholder={
+                value == null ? "输入汇率" : formatNumber(value, 4, true)
+              }
               onChange={(e) =>
                 setDrafts({ ...drafts, [currency]: e.target.value })
               }
@@ -251,19 +268,15 @@ export function ExchangeRates({
           ))}
         </div>
       </fieldset>
-      {error && (
-        <p className="error-box" role="alert">
-          {error}。输入已保留，可重试。
-        </p>
-      )}
+      {error && <Callout tone="danger">{error}。输入已保留，可重试。</Callout>}
       {busy && <p role="status">正在更新汇率…</p>}
       {book && (
         <>
           {book.error && (
-            <p className="warning-text" role="alert">
+            <Callout tone="warning">
               自动更新暂未成功，沿用上次可用值；没有可用值的币种暂停换算。
               {book.error}
-            </p>
+            </Callout>
           )}
           {selectedCurrencies.length > 0 ? (
             <div className="exchange-rate-list">

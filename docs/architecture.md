@@ -126,6 +126,17 @@ flowchart TD
 | `lib/autoSync.ts`、`syncEvents.ts`、`webSession.ts`、`useRequestGuard.ts` | 版本轮询、数据事件、网页会话与多账号、过期响应抑制 |
 | `components/`、其余 `lib/`、`types.ts` | 无功能生命周期的展示组件、格式化与日期工具、共享契约类型 |
 
+### 界面与显示约定
+
+- `main.tsx` 先加载 `styles/tokens.css`，再加载基础样式和工作区样式。颜色、字体、字号、间距、圆角和动效使用统一变量；沿用 React、原生 CSS 和 lucide，不请求外部字体、不引入 UI 或图表框架。
+- `app/useDisplayPreferences.ts` 拥有浏览器本地显示偏好，通过受控属性传给资产页和共享设置表单，再更新根节点 `data-pnl`、`data-mask-amounts`。默认红涨绿跌，可切换绿涨红跌；盈亏统一使用 `--up/--down` 并配符号，买卖方向用中性描边。偏好不进入账号数据库、备份或写入版本。
+- `lib/format.ts` 直接对十进制源字符串舍入和分组，金额按币种精度补齐（通常两位，JPY 为零位），数量和价格可显式指定精度，负号使用 `−`。数字列右对齐并采用等宽数字；数值输入保留原文，不把千分位文本写进原生数值控件。
+- 结构化金额使用 `data-money`，金额输入使用 `data-money-input`；隐藏金额只影响显示，原文、复制和导出仍含真实数据。它不构成数据脱敏或加密。
+- `Callout`、`Badge`、`DataStamp`、`Menu`、`Skeleton`、`EmptyState` 和 `Drawer` 只提供共享展示与可访问交互。菜单支持键盘与关闭后焦点恢复；抽屉保留草稿保护、忙碌锁定、背景隔离和焦点约束。
+- 同步入口集中在侧栏状态块，移动端顶部显示同一状态。汇率由侧栏入口打开抽屉；不再有页头同步上下文或浮动汇率组件。页面内容上限 1440px，阅读和表单页上限 960px。
+- `features/portfolio/useAssetHistory` 持有单页历史请求、区间与分页状态，供 `AssetOverview` 与 `AssetHistory` 共享。资产总览读取服务端每日精确总额或会计快照，趋势默认展开；前端只投影曲线坐标，不新增会计合计、持仓占比或汇兑计算。
+- 问答提供实际资料预览，已完成报告的引用在抽屉查看；流式阶段只映射服务端状态，未知阶段保留原文。来源、方法论版本等元信息仅显示契约中实际存在的字段。
+
 ## 6. 关键数据流
 
 ### 6.1 多用户请求生命周期
@@ -183,6 +194,7 @@ sequenceDiagram
 | 冻结分析输入 | 单次分析请求 | 执行期间不可变，结果记录输入版本与轨迹 |
 | 桥接配对 | `application/codex_bridge` + `ai/bridge` | 只存配对摘要与短期通道，不接触 OpenAI 凭据 |
 | 已显示快照、同步状态 | `app/useApplicationData` | 请求代次防止旧响应覆盖新数据 |
+| 显示偏好 | `app/useDisplayPreferences` | 当前浏览器 localStorage；不触发同步、账号写入或数据迁移 |
 | 未保存草稿与单页请求状态 | 各功能页 | 应用层只知道是否需要保护 |
 
 ## 8. 关键不变量

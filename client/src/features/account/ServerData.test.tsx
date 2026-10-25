@@ -79,11 +79,27 @@ it("blocks oversized and malformed imports before confirmation or writing", asyn
   expect(accountApi.importData).not.toHaveBeenCalled();
 });
 
+async function acceptImport(replace = false) {
+  await screen.findByRole("dialog");
+  if (replace) {
+    const confirm = screen.getByRole("button", {
+      name: "确认覆盖导入",
+    }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    expect(accountApi.prepareDataReplacement).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("checkbox", { name: "我已导出当前数据" }));
+  }
+  fireEvent.click(
+    screen.getByRole("button", { name: replace ? "确认覆盖导入" : "确认导入" }),
+  );
+}
+
 it("cancels an import without writing or refreshing and allows another selection", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(false);
   const { onRestore, flash } = mount();
   chooseFile("{}");
-  await waitFor(() => expect(window.confirm).toHaveBeenCalled());
+  await screen.findByRole("dialog");
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
   await waitFor(() =>
     expect(
       (screen.getByLabelText("导入到空账号") as HTMLInputElement).disabled,
@@ -99,6 +115,7 @@ it("refreshes application data only after a confirmed import succeeds", async ()
   vi.mocked(accountApi.importData).mockResolvedValue(undefined);
   const { onRestore, flash } = mount();
   chooseFile('{"profile":{}}');
+  await acceptImport();
   await waitFor(() => expect(flash).toHaveBeenCalledWith("数据已导入"));
   expect(accountApi.importData).toHaveBeenCalledWith({ profile: {} });
   expect(onRestore).toHaveBeenCalledOnce();
@@ -117,12 +134,11 @@ it("downloads the original data before replacing and refreshes after success", a
     screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
   );
   chooseFile('{"tables":["replacement"]}', undefined, true);
+  await acceptImport(true);
   await waitFor(() =>
     expect(flash).toHaveBeenCalledWith("数据已覆盖导入，覆盖前备份已下载"),
   );
-  expect(window.confirm).toHaveBeenCalledWith(
-    expect.stringContaining("全部业务数据"),
-  );
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(saveTextDownload).toHaveBeenCalledWith(
     expect.stringMatching(/^mario-before-import-.*\.json$/),
     JSON.stringify(original),
@@ -145,7 +161,8 @@ it("does not back up or replace when the overwrite confirmation is cancelled", a
     screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
   );
   chooseFile("{}", undefined, true);
-  await waitFor(() => expect(window.confirm).toHaveBeenCalled());
+  await screen.findByRole("dialog");
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
   expect(accountApi.prepareDataReplacement).not.toHaveBeenCalled();
   expect(saveTextDownload).not.toHaveBeenCalled();
   expect(onRestore).not.toHaveBeenCalled();
@@ -161,6 +178,7 @@ it("keeps existing data when backup export fails", async () => {
     screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
   );
   chooseFile("{}", undefined, true);
+  await acceptImport(true);
   expect((await screen.findByRole("alert")).textContent).toContain("备份失败");
   expect(saveTextDownload).not.toHaveBeenCalled();
   expect(accountApi.importData).not.toHaveBeenCalled();
@@ -184,6 +202,7 @@ it("does not replace data when downloading the backup fails", async () => {
     screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
   );
   chooseFile("{}", undefined, true);
+  await acceptImport(true);
   expect((await screen.findByRole("alert")).textContent).toContain("下载失败");
   expect(replace).not.toHaveBeenCalled();
 });
@@ -200,6 +219,7 @@ it("keeps the backup and reports a rejected replacement without refreshing", asy
     screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
   );
   chooseFile("{}", undefined, true);
+  await acceptImport(true);
   expect((await screen.findByRole("alert")).textContent).toContain(
     "资料已变化",
   );
@@ -222,6 +242,7 @@ it("abandons replacement when the account page unmounts during backup", async ()
     screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
   );
   chooseFile("{}", undefined, true);
+  await acceptImport(true);
   await waitFor(() =>
     expect(accountApi.prepareDataReplacement).toHaveBeenCalled(),
   );

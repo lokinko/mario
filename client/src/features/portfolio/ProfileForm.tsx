@@ -1,3 +1,4 @@
+import { Callout } from "../../components/Callout";
 import { useId } from "react";
 import { Save } from "lucide-react";
 import { saveProfile } from "../../api/portfolio";
@@ -80,11 +81,14 @@ export function ProfileForm({
   return (
     <section className="panel form-panel" aria-label="收支与风险设置">
       <h2>收入与支出</h2>
+      <p className="section-intro">
+        记录稳定月度现金流，作为风险承受能力的基础。
+      </p>
       {!valid && (
-        <p className="warning-text" role="alert">
+        <Callout tone="warning">
           请核对金额和投资偏好：金额不能为负，投资期限为 0—80 年，回撤为
           0—100%。
-        </p>
+        </Callout>
       )}
       <form
         onSubmit={(event) => {

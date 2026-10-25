@@ -1,6 +1,3 @@
-import { useState } from "react";
-import { formatNumber } from "../lib/format";
-
 export function NumberField({
   label,
   value,
@@ -10,25 +7,28 @@ export function NumberField({
 }: {
   label: string;
   value: number | string;
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
   prefix?: string;
   suffix?: string;
 }) {
-  const [focused, setFocused] = useState(false);
   return (
     <label>
       <span>{label}</span>
       <div className="input-affix">
-        {prefix && <i>{prefix}</i>}
         <input
+          data-money-input={
+            (prefix && /^[A-Z]{3}$/.test(prefix)) ||
+            (suffix && /^[A-Z]{3}$/.test(suffix))
+              ? true
+              : undefined
+          }
           type="number"
+          inputMode="decimal"
           step="any"
-          value={value ? (focused ? value : formatNumber(value)) : ""}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onChange={(e) => onChange(e.target.value)}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
         />
-        {suffix && <i>{suffix}</i>}
+        {(suffix || prefix) && <i>{suffix || prefix}</i>}
       </div>
     </label>
   );

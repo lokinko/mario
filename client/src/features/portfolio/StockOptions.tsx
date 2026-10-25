@@ -1,8 +1,9 @@
+import { Callout } from "../../components/Callout";
 import { useEffect, useRef, useState } from "react";
 import type { Holding, OptionContract, Snapshot } from "../../types";
 import { HoldingTrades } from "./HoldingTrades";
 import { updateOptionPrice } from "../../api/portfolio";
-import { formatMoney } from "../../lib/format";
+import { formatMoney, formatSigned } from "../../lib/format";
 import { localDateValue } from "../../lib/dates";
 import { useDrawerControls } from "../../components/Drawer";
 import { useHoldingRemoval } from "./useHoldingRemoval";
@@ -115,29 +116,51 @@ export function StockOptions({
         <dl className="detail-grid">
           <div>
             <dt>股票及期权净市值</dt>
-            <dd>{totals.usable ? money(totals.marketValue) : "待核对"}</dd>
+            <dd>
+              <span className="num" data-money>
+                {totals.usable ? money(totals.marketValue) : "待核对"}
+              </span>
+            </dd>
           </div>
           <div>
             <dt>合计浮动盈亏</dt>
-            <dd>{totals.usable ? money(totals.unrealizedProfit) : "待核对"}</dd>
+            <dd>
+              <span className="num" data-money>
+                {totals.usable
+                  ? formatSigned(totals.unrealizedProfit!, (value) =>
+                      money(String(value)),
+                    )
+                  : "待核对"}
+              </span>
+            </dd>
           </div>
           <div>
             <dt>合计已结算盈亏</dt>
-            <dd>{totals.usable ? money(totals.settledProfit) : "待核对"}</dd>
+            <dd>
+              <span className="num" data-money>
+                {totals.usable
+                  ? formatSigned(totals.settledProfit!, (value) =>
+                      money(String(value)),
+                    )
+                  : "待核对"}
+              </span>
+            </dd>
           </div>
           <div>
             <dt>其中期权已结算盈亏</dt>
             <dd>
-              {totals.usable ? money(totals.optionSettledProfit) : "待核对"}
+              <span className="num" data-money>
+                {totals.usable
+                  ? formatSigned(totals.optionSettledProfit!, (value) =>
+                      money(String(value)),
+                    )
+                  : "待核对"}
+              </span>
             </dd>
           </div>
         </dl>
       )}
-      {error && (
-        <p role="alert" className="error-box">
-          {error}
-        </p>
-      )}
+      {error && <Callout tone="danger">{error}</Callout>}
       {removal.uncertain && (
         <button disabled={working} onClick={() => void removal.reconcile()}>
           核对期权删除结果
@@ -314,13 +337,27 @@ export function StockOptions({
                       {snapshot.holdingTradeSummaries?.[id]?.quantity ?? "0"}
                     </td>
                     <td>
-                      {exact?.usable ? money(exact.marketValue) : "待核对"}
+                      <span className="num" data-money>
+                        {exact?.usable ? money(exact.marketValue) : "待核对"}
+                      </span>
                     </td>
                     <td>
-                      {exact?.usable ? money(exact.unrealizedProfit) : "待核对"}
+                      <span className="num" data-money>
+                        {exact?.usable
+                          ? formatSigned(exact.unrealizedProfit!, (value) =>
+                              money(String(value)),
+                            )
+                          : "待核对"}
+                      </span>
                     </td>
                     <td>
-                      {exact?.usable ? money(exact.settledProfit) : "待核对"}
+                      <span className="num" data-money>
+                        {exact?.usable
+                          ? formatSigned(exact.settledProfit!, (value) =>
+                              money(String(value)),
+                            )
+                          : "待核对"}
+                      </span>
                     </td>
                     <td>
                       <button

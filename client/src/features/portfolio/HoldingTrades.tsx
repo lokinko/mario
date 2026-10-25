@@ -1,3 +1,4 @@
+import { Callout } from "../../components/Callout";
 import { FinancialHistory } from "./FinancialHistory";
 import { useDrawerControls } from "../../components/Drawer";
 import { useEffect, useRef, useState } from "react";
@@ -15,7 +16,7 @@ import type {
   Snapshot,
   OptionContract,
 } from "../../types";
-import { formatMoney, formatNumber } from "../../lib/format";
+import { formatMoney, formatNumber, formatSigned } from "../../lib/format";
 import { localDateValue } from "../../lib/dates";
 
 const tradeNames: Record<HoldingTradeKind, string> = {
@@ -401,9 +402,9 @@ export function HoldingTrades({
   return (
     <div className="holding-trades">
       {quarantined && (
-        <p className="error-box" role="status">
+        <Callout tone="warning">
           这项持仓的交易链已隔离，原始记录和缓存余额均已保留。请在“更正历史与数据核对”中预览修复，避免重新录入造成重复结算。
-        </p>
+        </Callout>
       )}
       {holding && (
         <div className="trade-toolbar">
@@ -436,12 +437,12 @@ export function HoldingTrades({
         </div>
       )}
       {error && (
-        <p className="error-box" role="alert">
+        <Callout tone="danger">
           {error}
           {open
             ? "。输入已保留，请核对后重试；如持仓已变化，请关闭后重新打开表单。"
             : "。请核对交易记录后重试；如持仓已变化，请刷新后再操作。"}
-        </p>
+        </Callout>
       )}
       {uncertain && (
         <p role="status">
@@ -643,20 +644,35 @@ export function HoldingTrades({
             <p className="trade-amount">
               {cash < 0 ? "实际支出" : "实际净收入"}{" "}
               <strong>
-                {money(Math.abs(Number.isFinite(cash) ? cash : 0))}
+                <span className="num" data-money>
+                  {money(Math.abs(Number.isFinite(cash) ? cash : 0))}
+                </span>
               </strong>
               <small>
-                成交 / 分红 {money(gross)} · 费用 {money(draft.fees)} · 税费{" "}
-                {money(draft.taxes)}
+                成交 / 分红{" "}
+                <span className="num" data-money>
+                  {money(gross)}
+                </span>{" "}
+                · 费用{" "}
+                <span className="num" data-money>
+                  {money(draft.fees)}
+                </span>{" "}
+                · 税费{" "}
+                <span className="num" data-money>
+                  {money(draft.taxes)}
+                </span>
               </small>
               <small>
                 {currency} 存款余额{" "}
-                {money(
-                  snapshot.holdings.find(
-                    (item) =>
-                      item.assetClass === "现金" && item.currency === currency,
-                  )?.marketValue ?? 0,
-                )}
+                <span className="num" data-money>
+                  {money(
+                    snapshot.holdings.find(
+                      (item) =>
+                        item.assetClass === "现金" &&
+                        item.currency === currency,
+                    )?.marketValue ?? 0,
+                  )}
+                </span>
               </small>
             </p>
             {holding && !trades.length && (
@@ -706,16 +722,40 @@ export function HoldingTrades({
       {summary && (
         <p className="trade-summary">
           持仓 {formatNumber(summary.quantity)} 单位 · 剩余成本{" "}
-          {money(summary.costBasis)} · 已结算盈亏{" "}
+          <span className="num" data-money>
+            {money(summary.costBasis)}
+          </span>{" "}
+          · 已结算盈亏{" "}
           <strong
-            className={Number(summary.settledProfit) >= 0 ? "gain" : "loss"}
+            className={
+              Number(summary.settledProfit) === 0
+                ? ""
+                : Number(summary.settledProfit) > 0
+                  ? "gain"
+                  : "loss"
+            }
           >
-            {money(summary.settledProfit)}
+            <span className="num" data-money>
+              {formatSigned(summary.settledProfit, money)}
+            </span>
           </strong>
           <small>
-            卖出盈亏 {money(summary.realizedProfit)} · 净现金分红{" "}
-            {money(summary.dividendIncome)} · 费用 {money(summary.totalFees)} ·
-            税费 {money(summary.totalTaxes)}
+            卖出盈亏{" "}
+            <span className="num" data-money>
+              {money(summary.realizedProfit)}
+            </span>{" "}
+            · 净现金分红{" "}
+            <span className="num" data-money>
+              {money(summary.dividendIncome)}
+            </span>{" "}
+            · 费用{" "}
+            <span className="num" data-money>
+              {money(summary.totalFees)}
+            </span>{" "}
+            · 税费{" "}
+            <span className="num" data-money>
+              {money(summary.totalTaxes)}
+            </span>
           </small>
         </p>
       )}
@@ -751,22 +791,39 @@ export function HoldingTrades({
                       )}
                       {t.kind !== "dividend" && (
                         <small>
-                          {formatNumber(t.quantity)} × {formatNumber(t.price)}
+                          {formatNumber(t.quantity, 4)} ×{" "}
+                          {formatNumber(t.price, 4)}
                         </small>
                       )}
                     </td>
                     <td data-label="成交 / 分红金额">
-                      {money(t.grossAmount)}
+                      <span className="num" data-money>
+                        {money(t.grossAmount)}
+                      </span>
                       <small>{t.currency}</small>
                     </td>
                     <td data-label="费用 / 税费">
-                      {money(t.fees)}
-                      <small>税费 {money(t.taxes)}</small>
+                      <span className="num" data-money>
+                        {money(t.fees)}
+                      </span>
+                      <small>
+                        税费{" "}
+                        <span className="num" data-money>
+                          {money(t.taxes)}
+                        </span>
+                      </small>
                     </td>
                     <td data-label="实际现金收支">
-                      {money(summary?.cashFlows[t.id] ?? "0")}
+                      <span className="num" data-money>
+                        {money(summary?.cashFlows[t.id] ?? "0")}
+                      </span>
                       {summary?.profits[t.id] !== undefined && (
-                        <small>卖出盈亏 {money(summary.profits[t.id])}</small>
+                        <small>
+                          卖出盈亏{" "}
+                          <span className="num" data-money>
+                            {money(summary.profits[t.id])}
+                          </span>
+                        </small>
                       )}
                     </td>
                     <td data-label="账户 / 凭据" className="trade-account">

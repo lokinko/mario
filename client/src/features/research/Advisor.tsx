@@ -1,13 +1,13 @@
+import { Drawer } from "../../components/Drawer";
+import { Callout } from "../../components/Callout";
+import { Badge } from "../../components/Badge";
+import { DataStamp } from "../../components/DataStamp";
+import { GenerationSteps } from "./GenerationSteps";
+import { reportSources } from "./ReportSources";
 import { PageHeader } from "../../components/PageHeader";
 import { SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 import { useEffect, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  ChevronRight,
-  LoaderCircle,
-  Send,
-  Square,
-} from "lucide-react";
+import { ChevronRight, LoaderCircle, Send, Square } from "lucide-react";
 import {
   getAnalysis,
   getAnalysisHistory,
@@ -17,6 +17,7 @@ import {
 import { getAnalysisSettings } from "../../api/settings";
 import type {
   AnalysisRequest,
+  AnalysisPreview,
   AnalysisResult,
   AnalysisHistoryItem,
   ModelConfig,
@@ -233,9 +234,64 @@ export function Advisor({
     inputRef.current?.focus();
   };
 
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [preview, setPreview] = useState<AnalysisPreview>();
+  const [previewError, setPreviewError] = useState("");
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const previewRequest = useRequestGuard();
+  const inspectContext = async () => {
+    const current = previewRequest.begin();
+    setPreviewOpen(true);
+    setPreviewBusy(true);
+    setPreview(undefined);
+    setPreviewError("");
+    try {
+      const settings = await getAnalysisSettings();
+      if (!current()) return;
+      const next = await previewAnalysis({
+        ...settings,
+        webSearch: settings.webSearch && model.provider !== "openai-chat",
+        question: question.trim() || "查看将使用的资料",
+        dailyAssetRange,
+      });
+      if (current()) setPreview(next);
+    } catch (error) {
+      if (current()) setPreviewError(String(error));
+    } finally {
+      if (current()) setPreviewBusy(false);
+    }
+  };
+  useEffect(() => {
+    const input = inputRef.current;
+    if (input) {
+      input.style.height = "auto";
+      input.style.height = `${Math.min(192, Math.max(72, input.scrollHeight))}px`;
+    }
+  }, [question]);
+  const ageGroup = (date: string) => {
+    const now = new Date(),
+      day = new Date(date);
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const week = new Date(start);
+    week.setDate(week.getDate() - ((week.getDay() + 6) % 7));
+    return day >= start ? "今天" : day >= week ? "本周" : "更早";
+  };
+  const relativeTime = (date: string) => {
+    const minutes = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(date).getTime()) / 60000),
+    );
+    return minutes < 1
+      ? "刚刚"
+      : minutes < 60
+        ? `${minutes} 分钟前`
+        : minutes < 1440
+          ? `${Math.floor(minutes / 60)} 小时前`
+          : `${Math.floor(minutes / 1440)} 天前`;
+  };
   const [historyOpen, setHistoryOpen] = useState(false);
   return (
-    <div className="page narrow conversation-page">
+    <div className="page conversation-page">
       <PageHeader
         title="问答"
         action={
@@ -267,47 +323,79 @@ export function Advisor({
             <p className="empty">暂无历史对话</p>
           )}
           <div className="chat-history-list">
-            {history.map((item) => (
-              <button
-                key={item.id}
-                className={
-                  turns.some((turn) => turn.result.id === item.id)
-                    ? "active"
-                    : ""
-                }
-                onClick={() => {
-                  setHistoryOpen(false);
-                  void openStoredAnalysis(item.id);
-                }}
-                disabled={running || Boolean(historyBusy)}
-              >
-                <strong>{item.question}</strong>
-                <time dateTime={item.createdAt}>
-                  {new Date(item.createdAt).toLocaleString("zh-CN")}
-                </time>
-                {historyBusy === item.id ? (
-                  <LoaderCircle size={14} className="spin" />
-                ) : (
-                  <ChevronRight size={14} />
+            {history.map((item, index) => (
+              <div key={item.id} className="chat-history-item">
+                {(index === 0 ||
+                  ageGroup(history[index - 1].createdAt) !==
+                    ageGroup(item.createdAt)) && (
+                  <h3>{ageGroup(item.createdAt)}</h3>
                 )}
-              </button>
+                {
+                  <button
+                    key={item.id}
+                    className={
+                      turns.some((turn) => turn.result.id === item.id)
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() => {
+                      setHistoryOpen(false);
+                      void openStoredAnalysis(item.id);
+                    }}
+                    disabled={running || Boolean(historyBusy)}
+                  >
+                    <strong>{item.question}</strong>
+                    <time
+                      dateTime={item.createdAt}
+                      title={new Date(item.createdAt).toLocaleString("zh-CN")}
+                    >
+                      {relativeTime(item.createdAt)}
+                    </time>
+                    {historyBusy === item.id ? (
+                      <LoaderCircle size={14} className="spin" />
+                    ) : (
+                      <ChevronRight size={14} />
+                    )}
+                  </button>
+                }
+              </div>
             ))}
           </div>
         </section>
         <div className="chat-main">
           {turns.length === 0 && !draft && !running && (
             <section className="conversation-welcome" aria-label="开始问答">
-              <span>思考 · 记录 · 复盘</span>
               <h2>从一个问题开始</h2>
-              <p>结合你的资产与记录，梳理判断的依据和下一步行动。</p>
+              <p>
+                按你的问答预设读取已选持仓、现金、方法论与复盘规则，梳理依据、风险和待核实的信息。
+              </p>
+              <button
+                className="text-button"
+                onClick={() => void inspectContext()}
+              >
+                查看将发送的数据
+              </button>
               <div className="conversation-starters">
                 {[
-                  "帮我梳理当前持仓的主要风险",
-                  "我的现金和投资配置是否合理？",
-                  "如何复盘最近的一次投资决策？",
-                ].map((prompt) => (
+                  [
+                    "风险",
+                    "帮我梳理当前持仓的主要风险",
+                    "识别集中度与信息缺口",
+                  ],
+                  [
+                    "配置",
+                    "我的现金和投资配置是否合理？",
+                    "先核对现金流与风险承受能力",
+                  ],
+                  [
+                    "复盘",
+                    "如何复盘最近的一次投资决策？",
+                    "回看当时依据与证伪条件",
+                  ],
+                ].map(([category, prompt, description]) => (
                   <button
                     key={prompt}
+                    aria-label={prompt}
                     type="button"
                     disabled={Boolean(historyBusy)}
                     onClick={() => {
@@ -315,8 +403,9 @@ export function Advisor({
                       inputRef.current?.focus();
                     }}
                   >
-                    {prompt}
-                    <ChevronRight size={14} />
+                    <Badge>{category}</Badge>
+                    <strong>{prompt}</strong>
+                    <small>{description}</small>
                   </button>
                 ))}
               </div>
@@ -334,7 +423,22 @@ export function Advisor({
                   <p>{turn.question}</p>
                 </div>
                 <div className="assistant-answer">
-                  <span className="answer-author">mario</span>
+                  <div className="answer-author">
+                    mario ·{" "}
+                    <DataStamp
+                      date={new Date(turn.result.createdAt).toLocaleString(
+                        "zh-CN",
+                      )}
+                    />
+                    <span>
+                      {" "}
+                      · 引用{" "}
+                      {
+                        reportSources(turn.result.workflowTrace).sources.length
+                      }{" "}
+                      条来源
+                    </span>
+                  </div>
                   <ModelReport
                     answer={turn.result.answer}
                     trace={turn.result.workflowTrace}
@@ -356,7 +460,9 @@ export function Advisor({
                       : stopped
                         ? "已停止生成"
                         : "回复未完成"}
+                    <Badge tone="warning">未校验</Badge>
                   </span>
+                  {running && <GenerationSteps stage={stage} />}
                   <ModelReport
                     answer={
                       draft.answer ||
@@ -371,6 +477,18 @@ export function Advisor({
               </article>
             )}
           </div>
+          {!model.hasApiKey && (
+            <Callout
+              tone="info"
+              action={
+                <button className="text-button" onClick={onOpenSettings}>
+                  前往设置
+                </button>
+              }
+            >
+              连接模型后即可开始问答。
+            </Callout>
+          )}
           <form
             className="panel conversation-composer"
             onSubmit={(event) => {
@@ -379,7 +497,7 @@ export function Advisor({
             }}
           >
             <label className="question-box">
-              <span className="visually-hidden">输入问题</span>
+              <span className="sr-only">输入问题</span>
               <textarea
                 disabled={running || Boolean(historyBusy)}
                 ref={inputRef}
@@ -399,24 +517,27 @@ export function Advisor({
               />
             </label>
             <div className="composer-footer">
+              <button
+                className="text-button composer-context"
+                type="button"
+                disabled={running}
+                onClick={() => void inspectContext()}
+              >
+                将使用：查看已选资料
+              </button>
               <span role="status">
                 {running
                   ? stage
                   : stopped
                     ? "已停止，已显示的内容尚未完成"
                     : "Ctrl / ⌘ + Enter 发送"}
-                {!model.hasApiKey && (
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={onOpenSettings}
-                  >
-                    前往设置连接模型
-                  </button>
-                )}
               </span>
               {running ? (
-                <button type="button" className="secondary" onClick={stop}>
+                <button
+                  type="button"
+                  className="secondary danger-text"
+                  onClick={stop}
+                >
                   <Square size={17} />
                   停止生成
                 </button>
@@ -434,20 +555,50 @@ export function Advisor({
               )}
             </div>
           </form>
-          {error && (
-            <div className="error-box" role="alert">
-              <AlertTriangle size={18} />
-              {error}
-            </div>
-          )}
-          {historyError && (
-            <div className="error-box" role="alert">
-              <AlertTriangle size={18} />
-              {historyError}
-            </div>
-          )}
+          {error && <Callout tone="danger">{error}</Callout>}
+          {historyError && <Callout tone="danger">{historyError}</Callout>}
         </div>
       </div>
+      {previewOpen && (
+        <Drawer
+          title="将发送的数据"
+          busy={previewBusy}
+          onClose={() => {
+            previewRequest.invalidate();
+            setPreviewOpen(false);
+          }}
+        >
+          {previewBusy && <p role="status">正在读取预览…</p>}
+          {previewError && <Callout tone="danger">{previewError}</Callout>}
+          {preview && (
+            <>
+              <DataStamp date={preview.generatedAt} source={preview.model} />
+              <p className="section-intro">
+                仅使用问答预设中选择的资料。以下为当前预览；发送前会重新核对并冻结输入。
+              </p>
+              <ul>
+                {preview.groups.map((group) => (
+                  <li key={group.key}>
+                    {group.label} ·{" "}
+                    {group.included ? `${group.recordCount} 条` : "未选择"}
+                    <p>{group.description}</p>
+                  </li>
+                ))}
+              </ul>
+              <h3>实际资料正文</h3>
+              <pre className="context-preview">
+                {JSON.stringify(preview.payload, null, 2)}
+              </pre>
+              <h3>仅本地保留</h3>
+              <ul>
+                {preview.localOnly.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </Drawer>
+      )}
     </div>
   );
 }

@@ -1,0 +1,71 @@
+:root {
+  --bg: #f5f3ee;
+  --surface: #fff;
+  --surface-sunken: #faf8f4;
+  --surface-hover: #f2efe8;
+  --text-1: #15201b;
+  --text-2: #3f4a45;
+  --text-3: #656f68;
+  --text-4: #9aa29d;
+  --line: #e6e2d9;
+  --line-strong: #d3cdc0;
+  --brand: #0f3d2e;
+  --brand-hover: #0a2e22;
+  --brand-tint: #e9efeb;
+  --accent: #a8843c;
+  --accent-tint: #f4eddf;
+  --info: #2f5d7c;
+  --info-tint: #e8eff4;
+  --warning: #8a6116;
+  --warning-tint: #f7efdc;
+  --danger: #a3372b;
+  --danger-tint: #f7e8e5;
+  --success: #2c6b4f;
+  --success-tint: #e7f0ea;
+  --focus-ring: var(--brand);
+  --overlay: rgb(21 32 27 / 32%);
+  --font-sans:
+    "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-num:
+    "Inter", -apple-system, "SF Pro Text", "Helvetica Neue", "PingFang SC",
+    sans-serif;
+  --font-serif: "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif;
+  --fs-hidden: 0px;
+  --fs-caption: 12px;
+  --fs-body-sm: 13px;
+  --fs-body: 14px;
+  --fs-title-sm: 16px;
+  --fs-title: 20px;
+  --fs-figure: 24px;
+  --fs-hero: 36px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-pop: 0 8px 24px rgb(21 32 27 / 10%), 0 1px 2px rgb(21 32 27 / 6%);
+  --shadow-drawer: -12px 0 40px rgb(21 32 27 / 12%);
+  --duration-hover: 120ms;
+  --duration-enter: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+:root,
+[data-pnl="cn"] {
+  --up: #b8432f;
+  --down: #2d7651;
+  --up-tint: #f7e8e5;
+  --down-tint: #e7f0ea;
+}
+[data-pnl="intl"] {
+  --up: #2d7651;
+  --down: #b8432f;
+  --up-tint: #e7f0ea;
+  --down-tint: #f7e8e5;
+}

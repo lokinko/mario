@@ -424,3 +424,30 @@ it("accepts an explicit question and asset range only when active", async () => 
     }),
   );
 });
+
+it("previews the actual selected payload without sending an analysis", async () => {
+  vi.mocked(researchApi.previewAnalysis).mockResolvedValue({
+    ...preview,
+    model: "test-model",
+    generatedAt: "2026-10-25T12:40:00Z",
+    groups: [
+      {
+        key: "portfolio",
+        label: "我的持仓",
+        included: true,
+        recordCount: 2,
+        sensitivity: "个人资料",
+        description: "已选择的资产",
+      },
+    ],
+    payload: { portfolio: [{ name: "核对样例", marketValue: "1234.56" }] },
+    localOnly: ["API Key"],
+  });
+  render(<Advisor {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
+  await screen.findByRole("heading", { name: "实际资料正文" });
+  expect(screen.getByText(/核对样例/)).toBeTruthy();
+  expect(researchApi.runAnalysis).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
