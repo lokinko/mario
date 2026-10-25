@@ -166,7 +166,7 @@ sequenceDiagram
     S->>D: 重新取锁，校验输入版本后保存分析历史
 ```
 
-预览与执行共享 `AnalysisService::prepare`，避免授权与指纹出现两套实现。执行失败不写历史；外部模型运行期间不持有账号锁。
+预览与执行共享 `AnalysisService::prepare`，避免授权与指纹出现两套实现。执行失败不写历史；外部模型运行期间不持有账号锁。AI 上下文通过 `portfolio.dataIssues`、`rebalancingBlockedBy` 和 `excludedHoldingIds` 限定金额建议的范围，选择规划时同时提供 `deterministicPlan`；输出校验保留结构、证据 ID 与原值引用规则，不强制动作逐字匹配固定文案。历史分析冻结上下文不改写。
 
 投资方法论通过 `GET/PUT /api/investment-methodology` 管理，正文与初始范本契约归 `models/methodology.rs`，使用账号 schema 内的 `settings[investment.methodology]` 保存。没有存量值时返回初始范本，不执行隐式写入。准备时服务端读取已保存正文并纳入冻结 payload、预览指纹和历史轨迹；分析各阶段将该正文作为方法论指令，数据解释、来源校验与输出格式仍由系统约束。更改方法论使旧预览失效，已启动分析继续使用冻结版本。
 
