@@ -570,13 +570,46 @@ pub struct ModelConnectionTest {
     pub latency_ms: u128,
 }
 
+pub const PREVIOUS_TURN_LIMIT: usize = 800;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreviousTurn {
+    pub question: String,
+    pub answer: String,
+    pub suggestions: Vec<String>,
+}
+
+impl PreviousTurn {
+    pub fn validate(&self) -> crate::AppResult<()> {
+        let length = self.question.chars().count()
+            + self.answer.chars().count()
+            + self
+                .suggestions
+                .iter()
+                .map(|s| s.chars().count())
+                .sum::<usize>();
+        if length > PREVIOUS_TURN_LIMIT
+            || self.question.trim().is_empty()
+            || self.answer.trim().is_empty()
+            || self.suggestions.len() > 3
+            || self.suggestions.iter().any(|s| s.trim().is_empty())
+        {
+            return Err(crate::AppError::Validation(
+                "上一轮摘要须非空，总长度不超过800字符，建议最多3条".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisRequest {
     #[serde(default)]
     pub web_search: bool,
     #[serde(default)]
-    pub user_message: Option<String>,
+    pub previous_turn: Option<PreviousTurn>,
     pub question: String,
     pub workflow: String,
     pub reflect: bool,
@@ -998,6 +1031,9 @@ impl AnalysisRequest {
     pub fn validate(&self) -> crate::AppResult<()> {
         if self.question.trim().is_empty() {
             return Err(crate::AppError::Validation("分析问题不能为空".into()));
+        }
+        if let Some(previous) = &self.previous_turn {
+            previous.validate()?;
         }
         if !matches!(self.workflow.as_str(), "quick" | "deep") {
             return Err(crate::AppError::Validation("未知的分析工作流".into()));

@@ -243,7 +243,7 @@ it("sends once using saved defaults and the frozen revision without a confirmati
   await screen.findByText(result.answer);
   expect(researchApi.previewAnalysis).toHaveBeenCalledWith({
     ...settings,
-    userMessage: "我的持仓有什么风险？",
+    previousTurn: undefined,
     question: "我的持仓有什么风险？",
   });
   expect(researchApi.runAnalysis).toHaveBeenCalledWith(
@@ -352,9 +352,8 @@ it("automatically carries previous context and rereads saved defaults, then clea
   await screen.findByText("第二次 report");
   expect(screen.getByText(result.answer)).toBeTruthy();
   const followUp = vi.mocked(researchApi.previewAnalysis).mock.lastCall?.[0];
-  expect(followUp?.question).toContain(result.answer);
-  expect(followUp?.question).toContain("三年内需要用钱");
-  expect(followUp?.userMessage).toBe("三年内需要用钱");
+  expect(followUp?.previousTurn?.answer).toBe(result.answer);
+  expect(followUp?.question).toBe("三年内需要用钱");
   fireEvent.click(screen.getByRole("button", { name: "新对话" }));
   expect(screen.queryByText(result.answer)).toBeNull();
   ask("一个新问题");
@@ -380,7 +379,8 @@ it("reopens a historical answer in the same report view and allows continuing th
   ask("继续旧问题");
   await screen.findByText(result.answer);
   expect(
-    vi.mocked(researchApi.previewAnalysis).mock.lastCall?.[0].question,
+    vi.mocked(researchApi.previewAnalysis).mock.lastCall?.[0].previousTurn
+      ?.answer,
   ).toContain("历史 report");
 });
 
@@ -418,7 +418,7 @@ it("accepts an explicit question only when active", async () => {
   await screen.findByText(result.answer);
   expect(researchApi.previewAnalysis).toHaveBeenCalledWith(
     expect.objectContaining({
-      userMessage: pendingQuestion.question,
+      question: pendingQuestion.question,
     }),
   );
 });

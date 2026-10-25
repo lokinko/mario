@@ -34,7 +34,7 @@ pub fn validate_source_types(
         for path in &claim.source_refs {
             let group = path.split('/').nth(1).unwrap_or_default();
             let fact_group = path.split('/').nth(2).unwrap_or_default();
-            let allowed = group == "currentUserMessage"
+            let allowed = path == "/question"
                 || (group == "facts"
                     && ["summary", "holdings", "dataIssues", "options"].contains(&fact_group));
             if !path.starts_with('/')
@@ -223,12 +223,11 @@ mod tests {
     }
 
     #[test]
-    fn refuses_question_previous_answers_and_unauthorized_source_groups() {
+    fn refuses_previous_answers_and_unauthorized_source_groups() {
         let mut report =
             parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
         let context = serde_json::json!({"facts":{"summary":{"monthlySurplus":"8000"}},"question":"问题", "previousTurn":{"answer":"模型结论"},"researchEvidence":[{"claim":"来源"}]});
         for path in [
-            "/question",
             "/previousTurn/answer",
             "/researchEvidence/0/claim",
             "/facts/summary",

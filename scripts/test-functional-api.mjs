@@ -297,6 +297,12 @@ try {
   const analysis = await api("/analysis/preview", "POST", request);
   assert.equal(analysis.payload.dailyAssetHistory, undefined);
   assert.ok(analysis.payload.facts.holdings);
+  const previousTurn = { question: "上一问", answer: "上一轮结论", suggestions: ["上一轮动作"] };
+  const followup = await api("/analysis/preview", "POST", { ...request, previousTurn });
+  assert.deepEqual(followup.payload.previousTurn, previousTurn);
+  assert.equal(followup.payload.question, request.question);
+  assert.notEqual(followup.contextRevision, analysis.contextRevision);
+  await api("/analysis/preview", "POST", { ...request, previousTurn: { ...previousTurn, answer: "字".repeat(801) } }, 400);
   const redacted = await api("/analysis/preview", "POST", { ...request, contextSelection: { includeProfile: false } });
   assert.equal(redacted.payload.facts.summary.liabilities, undefined);
   const omitted = await api("/analysis/preview", "POST", { ...request, contextSelection: { includeHoldings: false, includeDailyAssets: true } });

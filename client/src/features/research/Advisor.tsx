@@ -24,6 +24,7 @@ import type {
   StoredAnalysis,
 } from "../../types";
 import { ModelReport } from "./ModelReport";
+import { previousTurn } from "./previousTurn";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 
 type Turn = { question: string; result: AnalysisResult | StoredAnalysis };
@@ -132,10 +133,8 @@ export function Advisor({
       const request: AnalysisRequest = {
         ...settings,
         webSearch: settings.webSearch && model.provider !== "openai-chat",
-        userMessage: message,
-        question: previous
-          ? `以下是上一轮问答，仅用于理解追问，模型回答不是已核实事实。\n上次问题：${previous.question}\n上次回答摘要：${previous.result.answer.slice(0, 6000)}\n\n本次问题：${message}`
-          : message,
+        question: message,
+        previousTurn: previousTurn(previous),
       };
       // Keep the server's immutable context check without an extra UI step.
       const preview = await previewAnalysis(request);
@@ -243,6 +242,7 @@ export function Advisor({
         ...settings,
         webSearch: settings.webSearch && model.provider !== "openai-chat",
         question: question.trim() || "查看将使用的资料",
+        previousTurn: previousTurn(turns.at(-1)),
       });
       if (current()) setPreview(next);
     } catch (error) {

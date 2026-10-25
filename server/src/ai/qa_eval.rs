@@ -40,10 +40,25 @@ struct CaseResult {
     error: Option<String>,
 }
 
-/// Mirrors Advisor's current UTF-16 slice, including its literal backslash-n separators.
-fn followup_question(previous_question: &str, answer: &str, question: &str) -> String {
-    let summary = String::from_utf16_lossy(&answer.encode_utf16().take(6_000).collect::<Vec<_>>());
-    format!("以下是上一轮问答，仅用于理解追问，模型回答不是已核实事实。\\n上次问题：{previous_question}\\n上次回答摘要：{summary}\\n\\n本次问题：{question}")
+fn previous_turn(question: &str, result: &AnalysisResult) -> crate::models::PreviousTurn {
+    let (answer, suggestions) = match result.workflow_trace.structured_report.as_ref().unwrap() {
+        crate::models::StoredAnalysisReport::Current(report) => (
+            &report.answer,
+            report
+                .suggestions
+                .iter()
+                .map(|s| s.action.chars().take(100).collect())
+                .collect(),
+        ),
+        crate::models::StoredAnalysisReport::Legacy(_) => {
+            panic!("live evaluation must produce current reports")
+        }
+    };
+    crate::models::PreviousTurn {
+        question: question.chars().take(200).collect(),
+        answer: answer.chars().take(300).collect(),
+        suggestions,
+    }
 }
 
 pub(super) async fn run_live() {
@@ -110,15 +125,12 @@ pub(super) async fn run_live() {
             record.status = "skipped";
             record.error = Some("上一轮执行失败，不能伪造追问上下文".into());
         } else {
-            let question = match parent.flatten() {
-                Some((question, result)) => {
-                    followup_question(question, &result.answer, &case.question)
-                }
-                None => case.question.clone(),
-            };
+            let previous_turn = parent
+                .flatten()
+                .map(|(question, result)| previous_turn(question, result));
             let mut request = AnalysisRequest {
-                question,
-                user_message: Some(case.question.clone()),
+                question: case.question.clone(),
+                previous_turn,
 
                 workflow: settings.workflow.clone(),
                 reflect: settings.reflect,
@@ -189,8 +201,14 @@ fn fixture_preserves_exact_amounts_and_issue_scope() {
 }
 
 #[test]
-fn baseline_followup_matches_the_current_client_without_splitting_unicode() {
-    let question = followup_question("减仓吗？", &"😀".repeat(4_000), "卖多少？");
-    assert_eq!(question.matches('😀').count(), 3_000);
-    assert!(question.ends_with("\\n\\n本次问题：卖多少？"));
+fn prior_summary_is_bounded_and_is_not_a_factual_source() {
+    let previous = crate::models::PreviousTurn {
+        question: "问题".into(),
+        answer: "😀".repeat(798),
+        suggestions: vec![],
+    };
+    previous.validate().unwrap();
+    let mut invalid = previous;
+    invalid.answer.push('字');
+    assert!(invalid.validate().is_err());
 }

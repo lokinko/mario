@@ -50,12 +50,8 @@ impl ContextBuilder {
         );
         payload.insert("question".into(), json!(request.question));
         payload.insert("webSearch".into(), json!(request.web_search));
-        if let Some(message) = request
-            .user_message
-            .as_ref()
-            .filter(|s| !s.trim().is_empty())
-        {
-            payload.insert("currentUserMessage".into(), json!(message));
+        if let Some(previous) = &request.previous_turn {
+            payload.insert("previousTurn".into(), json!(previous));
         }
         payload.insert(
             "facts".into(),

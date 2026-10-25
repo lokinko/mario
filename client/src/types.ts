@@ -323,9 +323,15 @@ export interface ModelConnectionTest {
   latencyMs: number;
 }
 
+export interface PreviousTurn {
+  question: string;
+  answer: string;
+  suggestions: string[];
+}
+
 export interface AnalysisRequest {
   webSearch?: boolean;
-  userMessage?: string;
+  previousTurn?: PreviousTurn;
   question: string;
   workflow: "quick" | "deep";
   reflect: boolean;
@@ -434,7 +440,9 @@ export interface AnalysisWorkflowTrace {
   webSearch?: { status: string; searchCalls: number; warnings: string[] };
   adviceGrounding?: AdviceGrounding[];
   personalContext?: {
-    currentUserMessage?: string;
+    currentUserMessage?: string; // Read-only historical reference.
+    question?: string;
+    previousTurn?: PreviousTurn;
     financialProfile?: { profile: FinancialProfile; emergencyMonths: number };
     portfolio?: {
       holdings: Holding[];

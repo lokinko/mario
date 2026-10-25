@@ -32,7 +32,7 @@ impl StagePrompt {
 
 pub trait AnalysisWorkflow: Send + Sync {
     fn version(&self) -> &'static str;
-    fn quick(&self, question: &str, local_context: &str) -> StagePrompt;
+    fn quick(&self, local_context: &str) -> StagePrompt;
     fn repair_output(
         &self,
         stage_label: &str,
@@ -49,14 +49,14 @@ impl AnalysisWorkflow for InvestmentWorkflowV8 {
         INVESTMENT_WORKFLOW_VERSION
     }
 
-    fn quick(&self, question: &str, local_context: &str) -> StagePrompt {
+    fn quick(&self, local_context: &str) -> StagePrompt {
         StagePrompt {
             key: "quick_analysis",
             label: "快速分析",
             messages: vec![
                 ChatMessage::system(INVESTMENT_SYSTEM_POLICY),
                 ChatMessage::user(format!(
-                    "用户问题：{question}\n\n本地投资档案：{local_context}\n\n直接回答并按以下契约输出。\n\n{STRUCTURED_ANALYSIS_CONTRACT}"
+                    "我的资料与本轮问题：{local_context}\n\n直接回答并按以下契约输出。\n\n{STRUCTURED_ANALYSIS_CONTRACT}"
                 )),
             ],
         }
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn generation_keeps_untrusted_data_boundary_and_machine_contract() {
-        let prompt = InvestmentWorkflowV8.quick("问题", "上下文");
+        let prompt = InvestmentWorkflowV8.quick("上下文");
         assert!(prompt.messages[0].content.contains("不可信数据"));
         assert!(prompt.messages[1].content.contains("evidenceIds"));
         assert!(

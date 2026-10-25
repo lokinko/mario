@@ -33,6 +33,10 @@ ModelProvider ── 适配用户选择的模型 API
 
 `researchPlan`、`alternatives`、`critique`、`adviceGrounding` 仅为 v7 及更早历史记录保留只读反序列化和展示，不再产生新的中间内容。没有数据库破坏性迁移，旧答案、引用和审计原文仍可打开；恢复旧设置时工作流规范为 `quick`，退役分析选项强制关闭，已保存的网页搜索授权保持不变。
 
+## 追问输入
+
+当前问题只使用 question，原 currentUserMessage 字段删除。previousTurn 是确定性截取的上一轮问题、结论和建议动作，总长度上限 800 字符；服务端在预览、执行及 Agent 入口校验，摘要变化会使冻结指纹失效。摘要是不可信会话线索，不能作为 sourceRefs 事实原值；历史报告仅通过只读适配取结论与动作。没有摘要模型阶段。
+
 ## 结构化输出契约
 
 自动筛选不会改写原始记录、个人档案或已确认规则。`trace.informationSelection` 随分析保存当次元数据，`trace.evidenceCatalog` 保留完整原始内容与附件信息；后续分析只接收最多 10 条选中原文片段。候选预览有字符预算，长正文按问题取连续相关片段，未展示部分不能作为筛选依据。生成只收到已选来源与授权个人档案，不会再次收到未入选资料。
@@ -43,7 +47,7 @@ ModelProvider ── 适配用户选择的模型 API
 
 每条事实必须声明 `basis`：
 
-- `user_data` 表示来自用户本次授权的本地数据，不允许附带研究证据 ID；`sourceRefs` 指向 `/facts/summary`、`/facts/holdings/<id>`、`/facts/dataIssues` 或 `/facts/options` 中实际使用的原值，服务端校验所属资料组和非空标量是否存在，客户端从冻结档案显示原值；
+- `user_data` 表示来自用户本次授权的本地数据，不允许附带研究证据 ID；`sourceRefs` 指向 `/facts/summary`、`/facts/holdings/<id>`、`/facts/dataIssues` 或 `/facts/options` 中实际使用的原值（本轮用户陈述可引用 `/question`），服务端校验所属资料组和非空标量是否存在，客户端从冻结档案显示原值；
 - `research_evidence` 表示使用研究证据，必须引用本次冻结候选中的 ID；
 - 引用最终入选集合之外、重复或空缺的证据 ID 都会失败。历史模型来源仅保留旧报告的读取展示，新分析不产生或召回这类来源。
 

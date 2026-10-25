@@ -9,7 +9,7 @@ import type {
 
 const labels: Record<string, string> = {
   facts: "本次事实卡",
-  question: "本轮问题",
+  question: "本轮原始消息",
   monthlySurplus: "月结余",
   portfolioValue: "资产总额",
   investmentValue: "投资资产",

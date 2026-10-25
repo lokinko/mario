@@ -121,10 +121,7 @@ impl<'a> AnalysisService<'a> {
                     crate::models::inference::ANALYSIS_TIMEOUT_MESSAGE.into(),
                 ))
             })?;
-        self.db.save_analysis(
-            &result,
-            request.user_message.as_deref().unwrap_or(&request.question),
-        )?;
+        self.db.save_analysis(&result, &request.question)?;
         Ok(result)
     }
 }
@@ -165,7 +162,7 @@ mod tests {
     fn request() -> AnalysisRequest {
         AnalysisRequest {
             web_search: false,
-            user_message: None,
+            previous_turn: None,
             question: "复盘指数集中风险".into(),
             workflow: "deep".into(),
             reflect: true,
@@ -327,7 +324,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execution_uses_the_preview_payload_and_persists_the_original_user_message() {
+    async fn execution_uses_the_preview_payload_and_persists_only_the_current_question() {
         let db = database();
         let service = AnalysisService::new(&db);
         let executor = Executor {
@@ -335,7 +332,12 @@ mod tests {
             fail: false,
         };
         let mut request = request();
-        request.user_message = Some("本轮原始问题".into());
+        request.question = "本轮原始问题".into();
+        request.previous_turn = Some(crate::models::PreviousTurn {
+            question: "上一轮问题".into(),
+            answer: "上一轮结论".into(),
+            suggestions: vec!["上一轮动作".into()],
+        });
         let preview = service.preview(&request).unwrap();
         request.preview_revision = Some(preview.context_revision);
         let result = service.execute(request, &executor).await.unwrap();

@@ -217,3 +217,9 @@ npm run test:hosted
 - `application/analysis` 不再查询个人规则、复盘和每日资产；旧预设字段反序列化后忽略，不重新导出。每日资产数据库和页面继续使用自己的历史与比较接口，已失效的问答区间参数删除。
 - `BuiltContext` 区分模型 payload 与授权估值审计，二者共同冻结指纹；模型仅消费紧凑 payload，估值链进入 trace。预览的事实卡与模型使用的卡一致。
 - 历史收支无 exactAmounts 时仅转换已保存数值为字符串，属于保留存量资料的最小读取适配；不要借此恢复双份金额上下文。
+
+## 追问摘要
+
+- `features/research/previousTurn` 按 Unicode 字符确定性截取上一轮问题、结构化结论和最多 3 条动作，额度分别为 200/300/每条100；历史报告使用已有的只读形状，纯文本旧记录最多取300字。
+- `models::PreviousTurn` 校验总计800字符、非空正文及最多3条建议。`ContextBuilder` 单独冻结 previousTurn；应用层保存当前 question，不把历史模型内容拼进用户问题。输出引用只允许当前问题与已授权事实卡，不能引用 previousTurn。
+- 新对话清空摘要，资料预览与实际请求共用该摘要。删除未接入的 conversation.rs，不增加总结调用。

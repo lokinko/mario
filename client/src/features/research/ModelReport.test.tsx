@@ -7,7 +7,7 @@ import type { AnalysisWorkflowTrace } from "../../types";
 afterEach(cleanup);
 it("shows a concise answer, linked suggestions and one question with folded evidence", () => {
   const trace = {
-    personalContext: { currentUserMessage: "每月结余8000元" },
+    personalContext: { question: "每月结余8000元" },
     evidenceCatalog: [],
     structuredReport: {
       answer: "本月先把结余转入备用金。",
@@ -23,7 +23,7 @@ it("shows a concise answer, linked suggestions and one question with folded evid
         {
           statement: "每月结余8000元",
           basis: "user_data",
-          sourceRefs: ["/currentUserMessage"],
+          sourceRefs: ["/question"],
           evidenceIds: [],
         },
       ],
