@@ -111,15 +111,17 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
           .filter((id): id is string => !!id),
       );
   });
-  report?.inferences.forEach((claim, index) => {
-    if (claim.basis === "user_data")
-      localByInference.set(
-        index,
-        (claim.sourceRefs ?? [])
-          .map(referencedLocal)
-          .filter((id): id is string => !!id),
-      );
-  });
+  (report && "inferences" in report ? report.inferences : []).forEach(
+    (claim, index) => {
+      if (claim.basis === "user_data")
+        localByInference.set(
+          index,
+          (claim.sourceRefs ?? [])
+            .map(referencedLocal)
+            .filter((id): id is string => !!id),
+        );
+    },
+  );
   // Older reports may provide references only through the evidence review.
   for (const review of trace?.adviceGrounding ?? []) {
     for (const check of review.checks) {
@@ -144,15 +146,17 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
       if (source) used.set(id, source);
     }
   });
-  report?.inferences.forEach((claim, index) => {
-    for (const id of [
-      ...claim.evidenceIds,
-      ...(localByInference.get(index) ?? []),
-    ]) {
-      const source = catalog.get(id);
-      if (source) used.set(id, source);
-    }
-  });
+  (report && "inferences" in report ? report.inferences : []).forEach(
+    (claim, index) => {
+      for (const id of [
+        ...claim.evidenceIds,
+        ...(localByInference.get(index) ?? []),
+      ]) {
+        const source = catalog.get(id);
+        if (source) used.set(id, source);
+      }
+    },
+  );
   return { sources: [...used.values()], localByFact, localByInference };
 }
 

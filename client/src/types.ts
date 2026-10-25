@@ -452,12 +452,26 @@ export interface AnalysisWorkflowTrace {
   alternatives: AnalysisAlternative[];
   critique?: string;
   calls: ModelCallTrace[];
-  structuredReport?: StructuredAnalysis;
+  structuredReport?: StructuredAnalysis | LegacyStructuredAnalysis;
   outputValidation?: OutputValidationTrace;
   evidenceCatalog: AnalysisEvidenceReference[];
 }
 
 export interface StructuredAnalysis {
+  answer: string;
+  suggestions: AnalysisSuggestion[];
+  facts: AnalysisClaim[];
+  question: string | null;
+}
+
+export interface AnalysisSuggestion {
+  action: string;
+  why: string;
+  factIndices: number[];
+  unlessWhen: string;
+}
+
+export interface LegacyStructuredAnalysis {
   verdict: string;
   facts: AnalysisClaim[];
   inferences: AnalysisClaim[];

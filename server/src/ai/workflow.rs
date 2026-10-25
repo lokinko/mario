@@ -56,7 +56,7 @@ impl AnalysisWorkflow for InvestmentWorkflowV8 {
             messages: vec![
                 ChatMessage::system(INVESTMENT_SYSTEM_POLICY),
                 ChatMessage::user(format!(
-                    "用户问题：{question}\n\n本地投资档案：{local_context}\n\n请给出结构化分析，并说明仍需核实的信息。\n\n{STRUCTURED_ANALYSIS_CONTRACT}"
+                    "用户问题：{question}\n\n本地投资档案：{local_context}\n\n直接回答并按以下契约输出。\n\n{STRUCTURED_ANALYSIS_CONTRACT}"
                 )),
             ],
         }
@@ -73,9 +73,7 @@ impl AnalysisWorkflow for InvestmentWorkflowV8 {
             key: "structured_output_repair",
             label: "结构化输出修复",
             messages: vec![
-                ChatMessage::system(format!(
-                    "{INVESTMENT_SYSTEM_POLICY}\n你现在是结构化输出修复模块。只能修复格式、字段和引用约束，不得添加原输出没有依据的新事实。"
-                )),
+                ChatMessage::system("只修复格式，不添加新事实。"),
                 ChatMessage::user(format!(
                     "待修复阶段：{stage_label}\n校验错误：{validation_error}\n本次允许引用的证据 ID：{}\n\n原输出：\n{}\n\n请严格按契约重写。\n{STRUCTURED_ANALYSIS_CONTRACT}",
                     serde_json::to_string(allowed_evidence_ids).unwrap_or_else(|_| "[]".into()),
@@ -99,5 +97,11 @@ mod tests {
         let prompt = InvestmentWorkflowV8.quick("问题", "上下文");
         assert!(prompt.messages[0].content.contains("不可信数据"));
         assert!(prompt.messages[1].content.contains("evidenceIds"));
+        assert!(
+            INVESTMENT_SYSTEM_POLICY.chars().count() + STRUCTURED_ANALYSIS_CONTRACT.chars().count()
+                < 800
+        );
+        let repair = InvestmentWorkflowV8.repair_output("生成", "无效输出", "字段缺失", &[]);
+        assert_eq!(repair.messages[0].content, "只修复格式，不添加新事实。");
     }
 }

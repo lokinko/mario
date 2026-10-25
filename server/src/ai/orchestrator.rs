@@ -296,7 +296,7 @@ impl<'a> InvestmentOrchestrator<'a> {
         } else {
             "校验结构化输出".into()
         });
-        state.trace.structured_report = Some(report);
+        state.trace.structured_report = Some(crate::models::StoredAnalysisReport::Current(report));
         state.trace.output_validation = Some(validation);
         Ok(result(
             self.provider,
@@ -387,10 +387,12 @@ impl<'a> InvestmentOrchestrator<'a> {
                 },
             )),
             Err(first_error) => {
-                let repair_prompt = self
-                    .workflow
-                    .repair_output(stage_label, &content, &first_error, allowed_evidence_ids)
-                    .with_methodology(context);
+                let repair_prompt = self.workflow.repair_output(
+                    stage_label,
+                    &content,
+                    &first_error,
+                    allowed_evidence_ids,
+                );
                 let (repaired_content, repair_call) =
                     self.call_model_stage(repair_prompt, true).await?;
                 let report = parse(&repaired_content).map_err(|second_error| {
@@ -625,7 +627,7 @@ mod tests {
             self.calls.fetch_add(1, Ordering::SeqCst);
             let requires_structured_output = messages
                 .iter()
-                .any(|message| message.content.contains("\"reviewTriggers\""));
+                .any(|message| message.content.contains("\"suggestions\""));
             let content = if messages
                 .iter()
                 .any(|message| message.content.contains("你是信息整理与筛选员"))
@@ -682,13 +684,10 @@ mod tests {
             }));
         }
         serde_json::json!({
-            "verdict": "先处理集中风险并设置复盘条件",
+            "answer": "先处理集中风险并设置复盘条件",
             "facts": facts,
-            "inferences": [{"statement":"降低集中度可能改善风险匹配","basis":"user_data","evidenceIds":[]}],
-            "unknowns": ["调整的税费与流动性影响"],
-            "options": [{"name":"分批调整","suitableWhen":"风险已经超出预算","tradeoffs":["可能错过短期上涨"],"risks":["调整速度不合适"]}],
-            "actions": [{"supportingFactIndices":[0],"evidenceLimits":["税费与流动性尚未核实"],"action":"核对目标权重后分批调整","rationale":"避免一次性预测市场","reversible":true,"reviewTrigger":"每完成一批后复核风险预算"}],
-            "reviewTriggers": ["集中度回到目标区间或风险承受力变化"]
+            "suggestions": [{"action":"分批降低指数持仓比例","why":"依据当前集中度与风险预算","factIndices":[0],"unlessWhen":"短期必须用钱时优先留现金"}],
+            "question": null
         })
         .to_string()
     }
@@ -1022,7 +1021,7 @@ mod tests {
         assert!(requests[1]["input"][0]["content"]
             .as_str()
             .unwrap()
-            .contains("结构化输出修复模块"));
+            .contains("只修复格式，不添加新事实"));
     }
     struct MethodologyProvider {
         prompts: Mutex<Vec<Vec<ChatMessage>>>,
@@ -1325,7 +1324,11 @@ mod tests {
         assert_eq!(sources[0].evidence_type, "native_web_excerpt");
         assert!(sources[0].as_of_date.is_empty());
         assert_eq!(
-            result.workflow_trace.structured_report.unwrap().facts[1].evidence_ids,
+            match result.workflow_trace.structured_report.unwrap() {
+                crate::models::StoredAnalysisReport::Current(report) =>
+                    report.facts[1].evidence_ids.clone(),
+                _ => panic!("new analysis must use current report"),
+            },
             vec![sources[0].id.clone()]
         );
         assert_eq!(result.transparency.evidence_items_used, 1);

@@ -324,7 +324,7 @@ impl Database {
                     .filter(|value| !value.is_empty()),
                 verdict: parsed_trace
                     .and_then(|item| item.structured_report)
-                    .map(|report| report.verdict),
+                    .map(|report| report.headline().to_owned()),
             });
         }
         Ok(history)

@@ -86,13 +86,8 @@ pub(crate) fn draft_report(raw: &str) -> String {
         if is_key {
             key = value;
             let title = match key.as_str() {
-                "verdict" => Some("当前判断"),
-                "facts" => Some("已知事实"),
-                "inferences" => Some("合理推断"),
-                "unknowns" => Some("仍待核实"),
-                "options" => Some("方案比较"),
-                "actions" => Some("下一步行动"),
-                "reviewTriggers" => Some("复盘与证伪条件"),
+                "suggestions" => Some("建议"),
+                "question" => Some("追问"),
                 _ => None,
             };
             if let Some(title) = title {
@@ -103,21 +98,12 @@ pub(crate) fn draft_report(raw: &str) -> String {
             }
         } else if matches!(
             key.as_str(),
-            "verdict"
-                | "statement"
-                | "unknowns"
-                | "name"
-                | "suitableWhen"
-                | "tradeoffs"
-                | "risks"
-                | "action"
-                | "rationale"
-                | "evidenceLimits"
-                | "reviewTrigger"
-                | "reviewTriggers"
+            "answer" | "action" | "why" | "unlessWhen" | "question"
         ) && !value.is_empty()
         {
-            result.push('\n');
+            if !result.is_empty() {
+                result.push('\n');
+            }
             result.push_str(&value);
         }
     }
@@ -139,15 +125,12 @@ mod tests {
     }
     #[test]
     fn projects_partial_strings_without_references_or_json_syntax() {
-        assert_eq!(
-            draft_report(r#"{"verdict":"先\n核实\u4e2d\u"#),
-            "当前判断\n先\n核实中"
-        );
+        assert_eq!(draft_report(r#"{"answer":"先\n核实\u4e2d\u"#), "先\n核实中");
         assert_eq!(
             draft_report(
-                r#"{"facts":[{"statement":"已知事实","sourceRefs":["/private/path"]}],"unknowns":["待核"#
+                r#"{"answer":"结论","facts":[{"statement":"隐藏事实","sourceRefs":["/private/path"]}],"suggestions":[{"action":"减少集中持仓"#
             ),
-            "已知事实\n已知事实\n\n仍待核实\n待核"
+            "结论\n\n建议\n减少集中持仓"
         );
     }
 }

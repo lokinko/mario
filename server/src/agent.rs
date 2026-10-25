@@ -280,13 +280,10 @@ mod tests {
                     let streaming = body["stream"] == true;
                     captured.lock().unwrap().push((headers, body));
                     let report = serde_json::json!({
-                        "verdict":"先核对集中风险",
+                        "answer":"先核对集中风险",
                         "facts":[{"statement":"组合集中度为100%","basis":"user_data","evidenceIds":[]}],
-                        "inferences":[],
-                        "unknowns":["资金使用期限"],
-                        "options":[{"name":"先核对资料","suitableWhen":"资料不足","tradeoffs":["延后决策"],"risks":["信息仍不完整"]}],
-                        "actions":[{"supportingFactIndices":[0],"evidenceLimits":["资金使用期限未知"],"action":"核对资金期限","rationale":"集中风险需要结合期限判断","reversible":true,"reviewTrigger":"明确期限后复核"}],
-                        "reviewTriggers":["资金期限变化"]
+                        "suggestions":[{"factIndices":[0],"action":"先保持现有仓位","why":"集中度100%，暂不加仓","unlessWhen":"资金期限明确后重评"}],
+                        "question":"资金什么时候要用？"
                     });
                     if streaming {
                         let content = report.to_string();

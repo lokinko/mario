@@ -40,7 +40,7 @@ async function request(path, method = 'GET', body, token = auth, expected = 200)
   if (response.ok && response.headers.has('x-data-revision')) revisions.set(token, response.headers.get('x-data-revision'));
   return data;
 }
-const report = JSON.stringify({ verdict:'请先明确资金用途', facts:[{statement:'用户未提供投资资料',basis:'user_data',evidenceIds:[]}], inferences:[], unknowns:['资金使用期限'], options:[{name:'先补充资料',suitableWhen:'资料不足',tradeoffs:['需要核对'],risks:['信息不完整']}], actions:[{supportingFactIndices:[0],evidenceLimits:['资金期限未知'],action:'核对资产数据后再评估调仓',rationale:'当前数据质量未满足行动要求',reversible:true,reviewTrigger:'完成数据核对并重新生成分析'}], reviewTriggers:['资料变化'] });
+const report = JSON.stringify({ answer:'请先明确资金用途', facts:[{statement:'用户未提供投资资料',basis:'user_data',evidenceIds:[],sourceRefs:[]}], suggestions:[{factIndices:[0],action:'先保持现有资金安排',why:'当前没有投资资料',unlessWhen:'明确资金用途后再调整'}], question:'这笔钱什么时候要用？' });
 let fakeTask;
 let holdNext = false, heldJob, cancelledJob;
 let expectedModel = 'bridge-fixture';

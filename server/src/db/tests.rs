@@ -907,32 +907,34 @@ fn stores_analysis_transparency_audit() {
         },
         workflow_trace: crate::models::AnalysisWorkflowTrace {
             version: "investment-workflow-v4".into(),
-            structured_report: Some(crate::models::StructuredAnalysis {
-                verdict: "先控制风险".into(),
-                facts: vec![crate::models::AnalysisClaim {
-                    statement: "风险预算已超出".into(),
-                    basis: "user_data".into(),
-                    evidence_ids: Vec::new(),
-                    source_refs: Vec::new(),
-                }],
-                inferences: Vec::new(),
-                unknowns: vec!["未来现金流".into()],
-                options: vec![crate::models::AnalysisOption {
-                    name: "分批调整".into(),
-                    suitable_when: "风险超限".into(),
-                    tradeoffs: vec!["可能错过上涨".into()],
-                    risks: vec!["执行偏差".into()],
-                }],
-                actions: vec![crate::models::AnalysisAction {
-                    supporting_fact_indices: vec![0],
-                    evidence_limits: vec!["旧记录的限制".into()],
-                    action: "核对目标权重".into(),
-                    rationale: "避免错误交易".into(),
-                    reversible: true,
-                    review_trigger: "一周后".into(),
-                }],
-                review_triggers: vec!["风险回到预算内".into()],
-            }),
+            structured_report: Some(crate::models::StoredAnalysisReport::Legacy(
+                crate::models::analysis_history::LegacyStructuredAnalysis {
+                    verdict: "先控制风险".into(),
+                    facts: vec![crate::models::AnalysisClaim {
+                        statement: "风险预算已超出".into(),
+                        basis: "user_data".into(),
+                        evidence_ids: Vec::new(),
+                        source_refs: Vec::new(),
+                    }],
+                    inferences: Vec::new(),
+                    unknowns: vec!["未来现金流".into()],
+                    options: vec![crate::models::analysis_history::AnalysisOption {
+                        name: "分批调整".into(),
+                        suitable_when: "风险超限".into(),
+                        tradeoffs: vec!["可能错过上涨".into()],
+                        risks: vec!["执行偏差".into()],
+                    }],
+                    actions: vec![crate::models::analysis_history::AnalysisAction {
+                        supporting_fact_indices: vec![0],
+                        evidence_limits: vec!["旧记录的限制".into()],
+                        action: "核对目标权重".into(),
+                        rationale: "避免错误交易".into(),
+                        reversible: true,
+                        review_trigger: "一周后".into(),
+                    }],
+                    review_triggers: vec!["风险回到预算内".into()],
+                },
+            )),
             output_validation: Some(crate::models::OutputValidationTrace {
                 status: "valid".into(),
                 attempts: 1,

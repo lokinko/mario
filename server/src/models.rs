@@ -1,3 +1,5 @@
+pub(crate) mod analysis_history;
+pub use analysis_history::StoredAnalysisReport;
 mod endpoint;
 pub(crate) mod inference;
 pub(crate) mod information;
@@ -714,13 +716,19 @@ pub struct AnalysisTransparency {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StructuredAnalysis {
-    pub verdict: String,
+    pub answer: String,
+    pub suggestions: Vec<AnalysisSuggestion>,
     pub facts: Vec<AnalysisClaim>,
-    pub inferences: Vec<AnalysisClaim>,
-    pub unknowns: Vec<String>,
-    pub options: Vec<AnalysisOption>,
-    pub actions: Vec<AnalysisAction>,
-    pub review_triggers: Vec<String>,
+    pub question: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisSuggestion {
+    pub action: String,
+    pub why: String,
+    pub fact_indices: Vec<usize>,
+    pub unless_when: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -731,29 +739,6 @@ pub struct AnalysisClaim {
     pub evidence_ids: Vec<String>,
     #[serde(default)]
     pub source_refs: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AnalysisOption {
-    pub name: String,
-    pub suitable_when: String,
-    pub tradeoffs: Vec<String>,
-    pub risks: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AnalysisAction {
-    // Defaults keep older frozen reports readable; new output is validated strictly.
-    #[serde(default)]
-    pub supporting_fact_indices: Vec<usize>,
-    #[serde(default)]
-    pub evidence_limits: Vec<String>,
-    pub action: String,
-    pub rationale: String,
-    pub reversible: bool,
-    pub review_trigger: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -812,7 +797,7 @@ pub struct AnalysisWorkflowTrace {
     #[serde(default)]
     pub calls: Vec<ModelCallTrace>,
     #[serde(default)]
-    pub structured_report: Option<StructuredAnalysis>,
+    pub structured_report: Option<StoredAnalysisReport>,
     #[serde(default)]
     pub output_validation: Option<OutputValidationTrace>,
     #[serde(default)]

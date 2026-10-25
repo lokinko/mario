@@ -66,70 +66,98 @@ export function ModelReport({
 
   return (
     <div className="model-report" aria-label="模型 report">
-      <section>
-        <h2>当前判断</h2>
-        <p>{report.verdict}</p>
-      </section>
-      <section>
-        <h2>已知事实</h2>
-        {claims(report.facts, true)}
-      </section>
-      {report.inferences.length > 0 && (
-        <section>
-          <h2>合理推断</h2>
-          {claims(report.inferences)}
-        </section>
+      {"suggestions" in report ? (
+        <>
+          <p>{report.answer}</p>
+          <ol aria-label="建议">
+            {report.suggestions.map((suggestion, index) => (
+              <li key={index}>
+                <p>{suggestion.action}</p>
+                <p className="muted">
+                  {suggestion.why}
+                  {[
+                    ...new Set(
+                      suggestion.factIndices.flatMap((factIndex) => [
+                        ...(report.facts[factIndex]?.evidenceIds ?? []),
+                        ...(localByFact.get(factIndex) ?? []),
+                      ]),
+                    ),
+                  ].map(citation)}
+                </p>
+                {suggestion.unlessWhen && (
+                  <p className="muted">前提：{suggestion.unlessWhen}</p>
+                )}
+              </li>
+            ))}
+          </ol>
+          {report.question && <p>追问：{report.question}</p>}
+        </>
+      ) : (
+        <>
+          <section>
+            <h2>当前判断</h2>
+            <p>{report.verdict}</p>
+          </section>
+          <section>
+            <h2>已知事实</h2>
+            {claims(report.facts, true)}
+          </section>
+          {report.inferences.length > 0 && (
+            <section>
+              <h2>合理推断</h2>
+              {claims(report.inferences)}
+            </section>
+          )}
+          <section>
+            <h2>仍待核实</h2>
+            {list(report.unknowns)}
+          </section>
+          <section>
+            <h2>方案比较</h2>
+            {report.options.map((option, index) => (
+              <div key={index}>
+                <h3>{option.name}</h3>
+                <p>适用条件：{option.suitableWhen}</p>
+                <p>取舍：{option.tradeoffs.join("；")}</p>
+                <p>风险：{option.risks.join("；")}</p>
+              </div>
+            ))}
+          </section>
+          <section>
+            <h2>下一步行动</h2>
+            {report.actions.map((action, index) => (
+              <div key={index}>
+                <h3>{action.action}</h3>
+                <p>{action.rationale}</p>
+                {!!action.supportingFactIndices?.length && (
+                  <p>
+                    依据：
+                    {action.supportingFactIndices
+                      .map((factIndex) => report.facts[factIndex]?.statement)
+                      .filter(Boolean)
+                      .join("；")}
+                  </p>
+                )}
+                <p>{action.reversible ? "可逆" : "需单独确认"}</p>
+                {!!action.evidenceLimits?.length && (
+                  <p>证据局限：{action.evidenceLimits.join("；")}</p>
+                )}
+                <p>复盘条件：{action.reviewTrigger}</p>
+              </div>
+            ))}
+          </section>
+          <section>
+            <h2>复盘与证伪条件</h2>
+            {list(report.reviewTriggers)}
+          </section>
+        </>
       )}
-      <section>
-        <h2>仍待核实</h2>
-        {list(report.unknowns)}
-      </section>
-      <section>
-        <h2>方案比较</h2>
-        {report.options.map((option, index) => (
-          <div key={index}>
-            <h3>{option.name}</h3>
-            <p>适用条件：{option.suitableWhen}</p>
-            <p>取舍：{option.tradeoffs.join("；")}</p>
-            <p>风险：{option.risks.join("；")}</p>
-          </div>
-        ))}
-      </section>
-      <section>
-        <h2>下一步行动</h2>
-        {report.actions.map((action, index) => (
-          <div key={index}>
-            <h3>{action.action}</h3>
-            <p>{action.rationale}</p>
-            {!!action.supportingFactIndices?.length && (
-              <p>
-                依据：
-                {action.supportingFactIndices
-                  .map((factIndex) => report.facts[factIndex]?.statement)
-                  .filter(Boolean)
-                  .join("；")}
-              </p>
-            )}
-            <p>{action.reversible ? "可逆" : "需单独确认"}</p>
-            {!!action.evidenceLimits?.length && (
-              <p>证据局限：{action.evidenceLimits.join("；")}</p>
-            )}
-            <p>复盘条件：{action.reviewTrigger}</p>
-          </div>
-        ))}
-      </section>
-      <section>
-        <h2>复盘与证伪条件</h2>
-        {list(report.reviewTriggers)}
-      </section>
       <details className="report-citations" aria-label="本次回答引用">
         <summary>依据与局限</summary>
         {trace?.webSearch?.warnings.map((warning, index) => (
           <p key={index}>{warning}</p>
         ))}
-        <p>
-          以下为本次实际引用的来源；未覆盖的信息见“仍待核实”，来源内容仍需核对。
-        </p>
+        {claims(report.facts, true)}
         <ul>
           {sources.map((source) => (
             <li key={source.id}>

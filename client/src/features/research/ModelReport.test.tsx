@@ -5,6 +5,45 @@ import { ModelReport } from "./ModelReport";
 import type { AnalysisWorkflowTrace } from "../../types";
 
 afterEach(cleanup);
+it("shows a concise answer, linked suggestions and one question with folded evidence", () => {
+  const trace = {
+    personalContext: { currentUserMessage: "每月结余8000元" },
+    evidenceCatalog: [],
+    structuredReport: {
+      answer: "本月先把结余转入备用金。",
+      suggestions: [
+        {
+          action: "本月将8000元结余转入备用金",
+          why: "每月结余8000元",
+          factIndices: [0],
+          unlessWhen: "本月有必要的大额支出时调整",
+        },
+      ],
+      facts: [
+        {
+          statement: "每月结余8000元",
+          basis: "user_data",
+          sourceRefs: ["/currentUserMessage"],
+          evidenceIds: [],
+        },
+      ],
+      question: "负债何时需要偿还？",
+    },
+  } as unknown as AnalysisWorkflowTrace;
+  render(<ModelReport answer="备用摘要" trace={trace} />);
+  expect(screen.getByText("本月先把结余转入备用金。")).toBeTruthy();
+  expect(screen.getByRole("list", { name: "建议" }).textContent).toContain(
+    "本月将8000元结余转入备用金",
+  );
+  expect(screen.getByText("追问：负债何时需要偿还？")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "方案比较" })).toBeNull();
+  expect(screen.getByText("依据与局限").closest("details")!.open).toBe(false);
+  fireEvent.click(screen.getAllByRole("button", { name: /查看引用 1/ })[0]);
+  expect(
+    screen.getByRole("region", { name: "引用原始信息" }).textContent,
+  ).toContain("每月结余8000元");
+});
+
 it("shows the complete report with sources and limitations, without process or action controls", () => {
   const trace = {
     webSearch: {
