@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use crate::models::ResearchEvidence;
 
+pub const ANALYSIS_EVIDENCE_LIMIT: usize = 5;
+
 pub fn search_evidence(
     query: &str,
     items: &[ResearchEvidence],
@@ -61,6 +63,37 @@ pub fn search_evidence(
         .map(|(_, item)| item)
         .collect()
 }
+pub fn relevant_excerpt(content: &str, question: &str, limit: usize) -> String {
+    let query = question.to_lowercase();
+    let pairs = query
+        .chars()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .filter(|pair| pair.iter().all(|ch| ch.is_alphanumeric()))
+        .take(160)
+        .map(|pair| pair.iter().collect::<String>())
+        .collect::<HashSet<_>>();
+    let characters = content.chars().collect::<Vec<_>>();
+    // Overlapping windows preserve context around chunk boundaries. The output
+    // always remains one contiguous, verbatim slice of the original source.
+    (0..characters.len())
+        .step_by((limit / 2).max(1))
+        .map(|start| {
+            let excerpt = characters[start..(start + limit).min(characters.len())]
+                .iter()
+                .collect::<String>();
+            let normalized = excerpt.to_lowercase();
+            let score = pairs
+                .iter()
+                .filter(|pair| normalized.contains(pair.as_str()))
+                .count();
+            (score, std::cmp::Reverse(start), excerpt)
+        })
+        .max_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)))
+        .map(|(_, _, excerpt)| excerpt)
+        .unwrap_or_default()
+}
+
 fn tokens(input: &str) -> HashSet<String> {
     let normalized = input.to_lowercase();
     let separators = "，。！？；：,.!?;:()（）/、-_";

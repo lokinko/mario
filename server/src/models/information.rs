@@ -1,4 +1,4 @@
-//! Immutable analysis annotations shared with storage, UI and workflow validation.
+//! Read-only model annotations frozen in historical reports.
 use serde::{Deserialize, Serialize};
 // Model annotations are internal, query-specific aids. Original source fields
 // remain immutable and are stored separately in the analysis's frozen catalog.

@@ -141,11 +141,15 @@ try {
   await api("/investment-methodology", "PUT", { prompt: " " }, 400);
   await api("/investment-methodology", "PUT", { prompt: "中".repeat(4001) }, 400);
   assert.equal((await api("/investment-methodology")).prompt, customMethodology);
-  const contextPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "deep", reflect: true, exploreAlternatives: true });
+  const contextPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "quick" });
   assert.equal(contextPreview.payload.investmentMethodology, customMethodology);
   assert(contextPreview.systemPolicy.includes(customMethodology));
   const defaults = await api("/analysis-settings");
   assert.equal(defaults.workflow, "quick");
+  assert.equal(defaults.reflect, undefined);
+  assert.equal(defaults.exploreAlternatives, undefined);
+  await api("/analysis/preview", "POST", { question: "退役流程", workflow: "deep" }, 400);
+  await api("/analysis-settings", "PUT", { ...defaults, workflow: "deep" }, 400);
   assert.equal(defaults.useMemory, undefined);
   assert.equal(defaults.contextSelection.includeProfile, true);
   assert.equal(defaults.contextSelection.includeHoldings, true);
@@ -237,8 +241,7 @@ try {
   assert.deepEqual(Buffer.from(download.dataBase64, "base64"), originalFile);
   await api(`/research-evidence/${source.id}/attachments/${attachment.id}`, "GET", undefined, 404);
   const filePreview = await api("/analysis/preview", "POST", {
-    question: "黄金储备", workflow: "quick", reflect: false,
-    exploreAlternatives: false, webSearch: false,
+    question: "黄金储备", workflow: "quick", webSearch: false,
   });
   assert(filePreview.evidenceCandidates.some(item => item.id === fileSource.id && item.claim.includes("原始重要信息")));
   assert(!JSON.stringify(filePreview).includes(originalFile.toString("base64")));
@@ -290,8 +293,6 @@ try {
   const request = {
     question: "分析我的现金资产变化",
     workflow: "quick",
-    reflect: false,
-    exploreAlternatives: false,
     webSearch: false,
   };
   const analysis = await api("/analysis/preview", "POST", request);

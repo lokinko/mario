@@ -1,0 +1,69 @@
+{
+  "workflowVersion": "investment-workflow-v7",
+  "expectedCases": 12,
+  "completedCases": 4,
+  "failedCases": 8,
+  "skippedCases": 0,
+  "pendingCases": 0,
+  "reviewedCases": 4,
+  "usefulSuggestionRate": null,
+  "directAnswerRate": null,
+  "fabricationRate": null,
+  "reviewedSubset": {
+    "cases": 4,
+    "usefulSuggestionRate": 0,
+    "directAnswerRate": 0,
+    "fabricationRate": 0
+  },
+  "averageAnswerCharacters": 4897.25,
+  "averageModelCalls": 8.75,
+  "averageInputTokens": 79076.5,
+  "inputTokenCases": 4,
+  "averageOutputTokens": 17798.75,
+  "outputTokenCases": 4,
+  "averageCallLatencyMs": 356809.75,
+  "averageElapsedMs": 356839.25,
+  "note": "机器均值仅统计完成题目；token 均值仅统计该项用量完整的题目。质量指标须全部题目完成且人工评分后才计算。",
+  "cases": [
+    {
+      "id": "reduce",
+      "answerCharacters": 4528,
+      "stageCalls": 9,
+      "modelCalls": 9,
+      "inputTokens": 66684,
+      "outputTokens": 16246,
+      "callLatencyMs": 347228,
+      "elapsedMs": 347283
+    },
+    {
+      "id": "surplus",
+      "answerCharacters": 4913,
+      "stageCalls": 9,
+      "modelCalls": 9,
+      "inputTokens": 79373,
+      "outputTokens": 18012,
+      "callLatencyMs": 376616,
+      "elapsedMs": 376647
+    },
+    {
+      "id": "horizon",
+      "answerCharacters": 5995,
+      "stageCalls": 8,
+      "modelCalls": 8,
+      "inputTokens": 92135,
+      "outputTokens": 18372,
+      "callLatencyMs": 371078,
+      "elapsedMs": 371094
+    },
+    {
+      "id": "debt",
+      "answerCharacters": 4153,
+      "stageCalls": 9,
+      "modelCalls": 9,
+      "inputTokens": 78114,
+      "outputTokens": 18565,
+      "callLatencyMs": 332317,
+      "elapsedMs": 332333
+    }
+  ]
+}

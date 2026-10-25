@@ -38,6 +38,8 @@ test('失败、跳过或中断的评测不会变成已通过的质量指标', ()
   assert.equal(result.failedCases, 1);
   assert.equal(result.skippedCases, 1);
   assert.equal(result.pendingCases, 1);
+  assert.equal(result.reviewedSubset.cases, 1);
+  assert.equal(result.reviewedSubset.usefulSuggestionRate, 1);
   assert.equal(result.usefulSuggestionRate, null);
   assert.equal(result.fabricationRate, null);
 });

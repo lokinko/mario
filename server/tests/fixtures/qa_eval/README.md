@@ -5,7 +5,7 @@
 - `snapshot.json` 是完全虚构的固定快照：成长基金 80 万元、债券基金 15 万元、缺少汇率的美元基金、人民币现金和待核对港币现金。应急金不足 1 个月，每月结余 8000 元。
 - 原币金额与精确会计值并存，沿用当前生产输入。缺汇率时总资产为 `null`，投资资产已知小计不冒充完整合计；港币现金待核对不阻止其他现金计算。
 - `questions.json` 包含 12 题；`previousCaseId` 仅引用前面成功完成的题目。v7 至行动 3 的已保存评测复现当时前端的 6000 个 UTF-16 单元截取及字段拼接；当前与前端一致通过 previousTurn 携带800字以内的上一轮问题、结论与动作，不新增总结调用。
-- 默认沿用 `AnalysisSettings::default()` 的工作流、资料组和分析选项；Chat Completions 与前端一致关闭不支持的原生搜索。行动 1 更改默认值后，同一题集自然走新路径。
+- 默认沿用 `AnalysisSettings::default()` 的工作流、资料组和搜索授权；Chat Completions 与前端一致关闭不支持的原生搜索。行动 1 更改默认值后，同一题集自然走新路径。
 
 ## 运行
 
@@ -53,3 +53,5 @@ npm run eval:qa:score -- .runtime/qa-eval/baseline-v7.json \
 机器指标包含 Unicode 字符数（包括正文中的标题与告警）、阶段数、按 `requestCount` 汇总的实际请求次数、输入/输出 token、调用累计耗时和题目端到端耗时。供应商未返回某次 token 时，该题对应 token 合计为 `null`；均值只计用量完整的题目，同时输出覆盖数量，不按零估算。应使用相同模型和接口比较，并记录搜索开启时实时网页资料的变动。
 
 离线验证：`npm run test:qa-eval`，以及 `npm run test:server -- ai::qa_eval`。完整 `npm test` 包含评分回归及虚构快照、追问截取回归；不会隐式调用真实模型。
+
+需要单独复测时，可设置 `MARIO_EVAL_CASE_IDS=reduce,followup`，只运行指定题目；追问依赖的上一题也应在列表中。子集报告 expectedCases 为子集数量，不能冒充完整12题结果；初次失败记录应保留，重测报告用新文件名。

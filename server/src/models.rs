@@ -612,8 +612,7 @@ pub struct AnalysisRequest {
     pub previous_turn: Option<PreviousTurn>,
     pub question: String,
     pub workflow: String,
-    pub reflect: bool,
-    pub explore_alternatives: bool,
+
     #[serde(default)]
     pub context_selection: ContextSelection,
     #[serde(default)]
@@ -624,8 +623,7 @@ pub struct AnalysisRequest {
 #[serde(rename_all = "camelCase", default)]
 pub struct AnalysisSettings {
     pub workflow: String,
-    pub reflect: bool,
-    pub explore_alternatives: bool,
+
     pub web_search: bool,
     pub context_selection: ContextSelection,
 }
@@ -634,8 +632,7 @@ impl Default for AnalysisSettings {
     fn default() -> Self {
         Self {
             workflow: "quick".into(),
-            reflect: false,
-            explore_alternatives: false,
+
             web_search: false,
             context_selection: ContextSelection::default(),
         }
@@ -1035,7 +1032,7 @@ impl AnalysisRequest {
         if let Some(previous) = &self.previous_turn {
             previous.validate()?;
         }
-        if !matches!(self.workflow.as_str(), "quick" | "deep") {
+        if self.workflow != "quick" {
             return Err(crate::AppError::Validation("未知的分析工作流".into()));
         }
         Ok(())

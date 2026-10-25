@@ -6,7 +6,6 @@ mod orchestrator;
 mod provider;
 #[cfg(test)]
 mod qa_eval;
-mod selection;
 pub(crate) mod streaming;
 mod structured_output;
 mod workflow;

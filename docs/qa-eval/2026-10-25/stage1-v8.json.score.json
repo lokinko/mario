@@ -1,0 +1,99 @@
+{
+  "workflowVersion": "investment-workflow-v8",
+  "expectedCases": 12,
+  "completedCases": 7,
+  "failedCases": 5,
+  "skippedCases": 0,
+  "pendingCases": 0,
+  "reviewedCases": 7,
+  "usefulSuggestionRate": null,
+  "directAnswerRate": null,
+  "fabricationRate": null,
+  "reviewedSubset": {
+    "cases": 7,
+    "usefulSuggestionRate": 0.09090909090909091,
+    "directAnswerRate": 0.7142857142857143,
+    "fabricationRate": 0
+  },
+  "averageAnswerCharacters": 2799.8571428571427,
+  "averageModelCalls": 1.8571428571428572,
+  "averageInputTokens": 7818.428571428572,
+  "inputTokenCases": 7,
+  "averageOutputTokens": 4859.571428571428,
+  "outputTokenCases": 7,
+  "averageCallLatencyMs": 78862.71428571429,
+  "averageElapsedMs": 78872,
+  "note": "机器均值仅统计完成题目；token 均值仅统计该项用量完整的题目。质量指标须全部题目完成且人工评分后才计算。",
+  "cases": [
+    {
+      "id": "reduce",
+      "answerCharacters": 2724,
+      "stageCalls": 2,
+      "modelCalls": 2,
+      "inputTokens": 8391,
+      "outputTokens": 5075,
+      "callLatencyMs": 80350,
+      "elapsedMs": 80354
+    },
+    {
+      "id": "surplus",
+      "answerCharacters": 2826,
+      "stageCalls": 2,
+      "modelCalls": 2,
+      "inputTokens": 8458,
+      "outputTokens": 5255,
+      "callLatencyMs": 87757,
+      "elapsedMs": 87759
+    },
+    {
+      "id": "emergency",
+      "answerCharacters": 2687,
+      "stageCalls": 2,
+      "modelCalls": 2,
+      "inputTokens": 8366,
+      "outputTokens": 4953,
+      "callLatencyMs": 83635,
+      "elapsedMs": 83638
+    },
+    {
+      "id": "loss",
+      "answerCharacters": 2907,
+      "stageCalls": 2,
+      "modelCalls": 2,
+      "inputTokens": 8607,
+      "outputTokens": 5422,
+      "callLatencyMs": 86138,
+      "elapsedMs": 86166
+    },
+    {
+      "id": "horizon",
+      "answerCharacters": 2961,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 4001,
+      "outputTokens": 2757,
+      "callLatencyMs": 51236,
+      "elapsedMs": 51239
+    },
+    {
+      "id": "debt",
+      "answerCharacters": 2481,
+      "stageCalls": 2,
+      "modelCalls": 2,
+      "inputTokens": 8228,
+      "outputTokens": 4885,
+      "callLatencyMs": 74871,
+      "elapsedMs": 74878
+    },
+    {
+      "id": "unknown",
+      "answerCharacters": 3013,
+      "stageCalls": 2,
+      "modelCalls": 2,
+      "inputTokens": 8678,
+      "outputTokens": 5670,
+      "callLatencyMs": 88052,
+      "elapsedMs": 88070
+    }
+  ]
+}

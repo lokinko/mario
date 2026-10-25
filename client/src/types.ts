@@ -333,9 +333,7 @@ export interface AnalysisRequest {
   webSearch?: boolean;
   previousTurn?: PreviousTurn;
   question: string;
-  workflow: "quick" | "deep";
-  reflect: boolean;
-  exploreAlternatives: boolean;
+  workflow: "quick";
   contextSelection: ContextSelection;
   previewRevision?: string;
 }
@@ -347,9 +345,7 @@ export interface ContextSelection {
 }
 
 export interface AnalysisSettings {
-  workflow: "quick" | "deep";
-  reflect: boolean;
-  exploreAlternatives: boolean;
+  workflow: "quick";
   webSearch: boolean;
   contextSelection: ContextSelection;
 }
@@ -366,7 +362,7 @@ export interface ContextGroup {
 export interface AnalysisPreview {
   provider: ModelProviderKind;
   model: string;
-  workflow: "quick" | "deep";
+  workflow: "quick";
   groups: ContextGroup[];
   evidenceCandidates: ResearchEvidence[];
   payload: Record<string, unknown>;

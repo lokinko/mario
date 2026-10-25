@@ -10,8 +10,7 @@ use crate::{
     error::{AppError, AppResult},
     models::{
         AnalysisEvidenceReference, AnalysisRequest, AnalysisResult, AnalysisTransparency,
-        AnalysisWorkflowTrace, ModelCallTrace, OutputValidationTrace, ResearchEvidence,
-        StructuredAnalysis,
+        AnalysisWorkflowTrace, ModelCallTrace, OutputValidationTrace, StructuredAnalysis,
     },
 };
 
@@ -36,7 +35,7 @@ struct RunState {
     trace: AnalysisWorkflowTrace,
 }
 
-/// Context handed to the report stages after information selection.
+/// Frozen prompt and authorized evidence IDs for report generation.
 struct AnalysisContext {
     context: String,
     allowed_evidence_ids: Vec<String>,
@@ -60,49 +59,20 @@ impl RunState {
                 version: workflow_version.into(),
                 valuation_evidence: built_context.valuation_evidence.clone(),
                 personal_context: Some(serde_json::Value::Object(personal_context)),
-                evidence_catalog: evidence_catalog(&built_context.payload),
+                evidence_catalog: built_context.evidence_catalog.clone(),
                 ..AnalysisWorkflowTrace::default()
             },
         }
     }
 
-    /// Replaces the preliminary evidence pool, including for the research planner
-    /// and the independent reviewer, with excerpts of the selected sources only.
-    fn analysis_context(&mut self) -> AppResult<AnalysisContext> {
-        if let Some(object) = self.prompt_context.as_object_mut() {
-            object.remove("researchEvidence");
-            object.remove("nativeWebEvidence");
-        }
-        let model_sources = self
-            .trace
-            .evidence_catalog
-            .iter()
-            .cloned()
-            .map(|mut source| {
-                if let Some(item) = self
-                    .trace
-                    .information_selection
-                    .iter()
-                    .find(|item| item.source_id == source.id)
-                {
-                    source.claim = item.excerpt.clone();
-                }
-                // Full originals and attachment text stay in the frozen catalog for
-                // citation inspection, while analysis sees only relevant excerpts.
-                source.attachments.clear();
-                source
-            })
-            .collect::<Vec<_>>();
-        self.prompt_context["selectedInformation"] = serde_json::to_value(model_sources)?;
-        self.prompt_context["informationMetadata"] =
-            serde_json::to_value(&self.trace.information_selection)?;
+    fn analysis_context(&self) -> AppResult<AnalysisContext> {
         Ok(AnalysisContext {
             context: serde_json::to_string(&self.prompt_context)?,
             allowed_evidence_ids: self
                 .trace
                 .evidence_catalog
                 .iter()
-                .map(|item| item.id.clone())
+                .map(|source| source.id.clone())
                 .collect(),
         })
     }
@@ -138,7 +108,6 @@ impl<'a> InvestmentOrchestrator<'a> {
         if request.web_search {
             self.search_web(request, built_context, &mut state).await?;
         }
-        self.select_information(request, &mut state).await?;
         let analysis = state.analysis_context()?;
         let prompt = self
             .workflow
@@ -206,61 +175,22 @@ impl<'a> InvestmentOrchestrator<'a> {
         let sources = searched
             .sources
             .into_iter()
-            .take(30)
+            .take(crate::evidence::ANALYSIS_EVIDENCE_LIMIT)
             .map(|source| web_evidence(source, &captured_at))
             .collect::<Vec<_>>();
-        state.prompt_context["nativeWebEvidence"] = serde_json::to_value(&sources)?;
+        let excerpts = sources
+            .iter()
+            .cloned()
+            .map(|mut source| {
+                source.claim =
+                    crate::evidence::relevant_excerpt(&source.claim, &request.question, 2_000);
+                source
+            })
+            .collect::<Vec<_>>();
+        state.prompt_context["nativeWebEvidence"] = serde_json::to_value(excerpts)?;
         state.prompt_context["webSearchStatus"] = serde_json::to_value(&trace.web_search)?;
         trace.evidence_catalog.extend(sources);
         state.stages.push("供应商原生网页搜索与引用归档".into());
-        Ok(())
-    }
-
-    /// Classification is confined to the frozen, authorized candidates. It
-    /// never reloads the database or rewrites any original source fields.
-    async fn select_information(
-        &self,
-        request: &AnalysisRequest,
-        state: &mut RunState,
-    ) -> AppResult<()> {
-        if state.trace.evidence_catalog.is_empty() {
-            return Ok(());
-        }
-        let candidates = state.trace.evidence_catalog.clone();
-        let (content, call) = self
-            .call_stage(super::selection::prompt(&request.question, &candidates))
-            .await?;
-        state.trace.calls.push(call);
-        let items = match super::selection::parse(&content, &candidates) {
-            Ok(items) => items,
-            Err(error) => {
-                let (content, call) = self
-                    .call_stage(super::selection::repair(
-                        &request.question,
-                        &candidates,
-                        &error,
-                    ))
-                    .await?;
-                state.trace.calls.push(call);
-                super::selection::parse(&content, &candidates)
-                    .map_err(|error| AppError::Model(format!("信息筛选两次未通过校验：{error}")))?
-            }
-        };
-        // Keep originals in model-selected order; metadata cannot substitute
-        // its own summary, date, publisher or URL for the original record.
-        state.trace.evidence_catalog = items
-            .iter()
-            .filter_map(|item| {
-                candidates
-                    .iter()
-                    .find(|source| source.id == item.source_id)
-                    .cloned()
-            })
-            .collect();
-        state.trace.information_selection = items;
-        state
-            .stages
-            .push("模型自动分类并筛选最多10条相关信息".into());
         Ok(())
     }
 
@@ -298,18 +228,10 @@ impl<'a> InvestmentOrchestrator<'a> {
         ))
     }
 
-    async fn call_stage(&self, prompt: StagePrompt) -> AppResult<(String, ModelCallTrace)> {
-        self.call_model_stage(prompt, false).await
-    }
-
-    async fn call_model_stage(
-        &self,
-        prompt: StagePrompt,
-        report: bool,
-    ) -> AppResult<(String, ModelCallTrace)> {
+    async fn call_model_stage(&self, prompt: StagePrompt) -> AppResult<(String, ModelCallTrace)> {
         super::streaming::status(&self.events, format!("{}…", prompt.label));
         let started = Instant::now();
-        let completion = if report && self.events.is_some() {
+        let completion = if self.events.is_some() {
             let events = self.events.clone().unwrap();
             let raw = std::sync::Mutex::new(String::new());
             let _ = events.try_send(crate::models::inference::AnalysisEvent::Draft {
@@ -360,7 +282,7 @@ impl<'a> InvestmentOrchestrator<'a> {
     )> {
         let stage_label = prompt.label;
         let allowed = allowed_evidence_ids.iter().cloned().collect::<HashSet<_>>();
-        let (content, first_call) = self.call_model_stage(prompt, true).await?;
+        let (content, first_call) = self.call_model_stage(prompt).await?;
         let parse = |content: &str| {
             let report = parse_structured_analysis(content, &allowed)?;
             super::structured_output::validate_source_types(&report, context)?;
@@ -383,8 +305,7 @@ impl<'a> InvestmentOrchestrator<'a> {
                     &first_error,
                     allowed_evidence_ids,
                 );
-                let (repaired_content, repair_call) =
-                    self.call_model_stage(repair_prompt, true).await?;
+                let (repaired_content, repair_call) = self.call_model_stage(repair_prompt).await?;
                 let report = parse(&repaired_content).map_err(|second_error| {
                     crate::error::AppError::Model(format!(
                         "模型输出两次未通过结构化校验：首次 {first_error}；修复后 {second_error}"
@@ -445,31 +366,6 @@ fn stage_error(label: &str, error: AppError) -> AppError {
         AppError::Codex(reason) => AppError::Model(format!("{label}失败：{reason}")),
         error => error,
     }
-}
-
-fn evidence_catalog(payload: &serde_json::Value) -> Vec<AnalysisEvidenceReference> {
-    payload
-        .get("researchEvidence")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|value| serde_json::from_value::<ResearchEvidence>(value.clone()).ok())
-        .map(|item| AnalysisEvidenceReference {
-            attachments: item.attachments,
-            asset_name: item.asset_name,
-            evidence_type: item.evidence_type,
-            claim: item.claim,
-            notes: item.notes,
-            stance: item.stance,
-            captured_at: item.captured_at,
-            id: item.id,
-            title: item.title,
-            publisher: item.publisher,
-            source_url: item.source_url,
-            source_tier: item.source_tier,
-            as_of_date: item.as_of_date,
-        })
-        .collect()
 }
 
 fn result(
@@ -618,21 +514,7 @@ mod tests {
             let requires_structured_output = messages
                 .iter()
                 .any(|message| message.content.contains("\"suggestions\""));
-            let content = if messages
-                .iter()
-                .any(|message| message.content.contains("你是信息整理与筛选员"))
-            {
-                let candidates: Vec<AnalysisEvidenceReference> =
-                    serde_json::from_str(messages[1].content.split("候选资料：").nth(1).unwrap())
-                        .unwrap();
-                serde_json::json!({"items": candidates.iter().take(10).map(|source|
-                    serde_json::json!({"sourceId":source.id,"topic":"指数","entities":[],
-                        "informationType": if source.evidence_type == "historical_ai" { "historical_ai" } else { "fact" },
-                        "eventDate":null,"dateQuote":null,"timeSensitivity":"unknown",
-                        "excerpt":source.claim.chars().take(200).collect::<String>(),
-                        "relevance":0.9,"reason":"与本次指数集中度问题相关"})
-                ).collect::<Vec<_>>()}).to_string()
-            } else if requires_structured_output {
+            let content = if requires_structured_output {
                 valid_report_json(
                     messages
                         .iter()
@@ -760,8 +642,6 @@ mod tests {
             previous_turn: None,
             question: "只做快速风险摘要".into(),
             workflow: "quick".into(),
-            reflect: true,
-            explore_alternatives: true,
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
@@ -826,8 +706,6 @@ mod tests {
             previous_turn: None,
             question: "只讨论目标".into(),
             workflow: "quick".into(),
-            reflect: false,
-            explore_alternatives: false,
             context_selection: ContextSelection {
                 include_holdings: false,
                 include_profile: false,
@@ -857,8 +735,6 @@ mod tests {
             previous_turn: None,
             question: "快速检查风险".into(),
             workflow: "quick".into(),
-            reflect: false,
-            explore_alternatives: false,
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
@@ -906,8 +782,6 @@ mod tests {
             previous_turn: None,
             question: "快速检查风险".into(),
             workflow: "quick".into(),
-            reflect: false,
-            explore_alternatives: false,
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
@@ -980,8 +854,6 @@ mod tests {
             previous_turn: None,
             question: "快速检查风险".into(),
             workflow: "quick".into(),
-            reflect: false,
-            explore_alternatives: false,
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
@@ -1072,22 +944,17 @@ mod tests {
         }
     }
 
-    struct SelectingProvider {
+    struct EvidenceProvider {
         prompts: Mutex<Vec<Vec<ChatMessage>>>,
-        selection: String,
         report: String,
     }
     #[async_trait]
-    impl ModelProvider for SelectingProvider {
+    impl ModelProvider for EvidenceProvider {
         async fn complete(
             &self,
             messages: Vec<ChatMessage>,
         ) -> AppResult<super::super::ModelCompletion> {
-            let content = if messages[0].content.contains("你是信息整理与筛选员") {
-                self.selection.clone()
-            } else {
-                self.report.clone()
-            };
+            let content = self.report.clone();
             self.prompts.lock().unwrap().push(messages);
             Ok(super::super::ModelCompletion {
                 request_count: 1,
@@ -1096,13 +963,13 @@ mod tests {
             })
         }
         fn provider_name(&self) -> &str {
-            "selection-fixture"
+            "evidence-fixture"
         }
         fn model_name(&self) -> &str {
             "fixture"
         }
     }
-    fn selection_fixture() -> (AnalysisRequest, BuiltContext) {
+    fn evidence_fixture() -> (AnalysisRequest, BuiltContext) {
         let request: AnalysisRequest = serde_json::from_value(serde_json::json!({
             "question":"检查指数方法", "workflow":"quick", "reflect":false, "exploreAlternatives":false
         }))
@@ -1110,7 +977,7 @@ mod tests {
         let items = (1..=12).map(|index| serde_json::from_value::<ResearchEvidence>(serde_json::json!({
             "id":format!("e{index}"),"assetName":"指数","title":"指数资料","publisher":"用户",
             "sourceUrl":"","sourceTier":"用户资料","evidenceType":"user_source_text",
-            "stance":"背景","asOfDate":"","claim":if index == 1 { "指数采用公开方法编制\n保留完整原文末段" } else { "未入选的原始资料不得进入后续分析" },
+            "stance":"背景","asOfDate":"","claim":if index == 1 { format!("{}指数采用公开方法编制{}保留完整原文末段", "无关前文".repeat(2_000), "无关后文".repeat(2_000)) } else { "其他资料".into() },
             "notes":"","active":true,"capturedAt":"2026-09-20"
         })).unwrap()).collect::<Vec<_>>();
         let context = ContextBuilder::build(
@@ -1123,19 +990,12 @@ mod tests {
         );
         (request, context)
     }
-    fn fixture_selection() -> serde_json::Value {
-        serde_json::json!({"items":[{"sourceId":"e1","topic":"指数方法","entities":["指数"],
-            "informationType":"fact","eventDate":null,"dateQuote":null,
-            "timeSensitivity":"stable","excerpt":"指数采用公开方法编制",
-            "relevance":0.9,"reason":"直接涉及本次问题"}]})
-    }
     #[tokio::test]
     async fn selected_excerpts_reach_analysis_and_originals_remain_frozen_for_citations() {
-        let (request, context) = selection_fixture();
+        let (request, context) = evidence_fixture();
         let original_payload = context.payload.clone();
-        let provider = SelectingProvider {
+        let provider = EvidenceProvider {
             prompts: Mutex::new(vec![]),
-            selection: fixture_selection().to_string(),
             report: valid_report_json(true),
         };
         let result = InvestmentOrchestrator::new(&provider)
@@ -1143,84 +1003,44 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(context.payload, original_payload);
-        assert_eq!(result.workflow_trace.evidence_catalog.len(), 1);
-        assert_eq!(
-            result.workflow_trace.information_selection[0].source_id,
-            "e1"
-        );
+        assert_eq!(result.workflow_trace.evidence_catalog.len(), 5);
+        assert!(result.workflow_trace.information_selection.is_empty());
+        assert_eq!(result.transparency.model_calls, 1);
         assert!(result.workflow_trace.evidence_catalog[0]
             .claim
             .contains("保留完整原文末段"));
         let prompts = provider.prompts.lock().unwrap();
-        assert!(prompts[0][1].content.contains("未入选的原始资料"));
-        for prompt in &prompts[1..] {
-            assert!(!prompt
-                .iter()
-                .any(|message| message.content.contains("未入选的原始资料")));
-        }
-        assert!(!prompts[1][1].content.contains("保留完整原文末段"));
+        assert_eq!(prompts.len(), 1);
+        assert!(!prompts[0][1].content.contains("保留完整原文末段"));
+        assert!(prompts[0][1].content.contains("指数采用公开方法编制"));
         drop(prompts);
         let db = crate::db::Database::test();
         db.save_analysis(&result, &request.question).unwrap();
         let reopened = db.analysis(&result.id).unwrap().workflow_trace.unwrap();
-        assert_eq!(reopened.information_selection[0].source_id, "e1");
+        assert!(reopened.information_selection.is_empty());
         assert_eq!(
             reopened.evidence_catalog[0].claim,
             result.workflow_trace.evidence_catalog[0].claim
         );
     }
     #[tokio::test]
-    async fn an_empty_selection_does_not_fall_back_to_the_full_candidate_pool() {
-        let (request, context) = selection_fixture();
-        let provider = SelectingProvider {
+    async fn rejects_sources_outside_the_frozen_top_five() {
+        let (request, context) = evidence_fixture();
+        let provider = EvidenceProvider {
             prompts: Mutex::new(vec![]),
-            selection: "{\"items\":[]}".into(),
-            report: valid_report_json(false),
-        };
-        let result = InvestmentOrchestrator::new(&provider)
-            .run(&request, &context)
-            .await
-            .unwrap();
-        assert!(result.workflow_trace.evidence_catalog.is_empty());
-        assert!(!result.transparency.citations_required);
-        assert!(!result.transparency.external_data_used);
-        for prompt in provider.prompts.lock().unwrap().iter().skip(1) {
-            assert!(!prompt
-                .iter()
-                .any(|message| message.content.contains("未入选的原始资料")));
-        }
-    }
-    #[tokio::test]
-    async fn rejects_citing_unselected_sources_and_invalid_selection_before_analysis() {
-        let (request, context) = selection_fixture();
-        let provider = SelectingProvider {
-            prompts: Mutex::new(vec![]),
-            selection: fixture_selection().to_string(),
-            report: valid_report_json(true).replace("e1", "e2"),
+            report: valid_report_json(true).replace("e1", "e12"),
         };
         let error = InvestmentOrchestrator::new(&provider)
             .run(&request, &context)
             .await
             .unwrap_err();
-        assert!(error.to_string().contains("未授权的证据 ID：e2"));
-        let mut invalid = fixture_selection();
-        invalid["items"][0]["sourceId"] = serde_json::json!("unapproved");
-        let provider = SelectingProvider {
-            prompts: Mutex::new(vec![]),
-            selection: invalid.to_string(),
-            report: valid_report_json(true),
-        };
-        let error = InvestmentOrchestrator::new(&provider)
-            .run(&request, &context)
-            .await
-            .unwrap_err();
-        assert!(error.to_string().contains("信息筛选两次未通过校验"));
-        assert_eq!(provider.prompts.lock().unwrap().len(), 2);
+        assert!(error.to_string().contains("未授权的证据 ID：e12"));
     }
 
     struct SearchMock {
         messages: Mutex<Vec<Vec<ChatMessage>>>,
         searches: AtomicUsize,
+        source_count: usize,
     }
     #[async_trait]
     impl ModelProvider for SearchMock {
@@ -1231,12 +1051,14 @@ mod tests {
             self.searches.fetch_add(1, Ordering::SeqCst);
             self.messages.lock().unwrap().push(messages);
             Ok(super::super::provider::SearchCompletion {
-                sources: vec![super::super::provider::SearchSource {
-                    url: "https://example.com/report".into(),
-                    title: "指数编制方法".into(),
-                    claim: "指数采用公开方法编制".into(),
-                    original: true,
-                }],
+                sources: (0..self.source_count)
+                    .map(|index| super::super::provider::SearchSource {
+                        url: format!("https://example.com/report/{index}"),
+                        title: "指数编制方法".into(),
+                        claim: "指数采用公开方法编制".into(),
+                        original: true,
+                    })
+                    .collect(),
                 search_calls: 1,
                 ..Default::default()
             })
@@ -1254,15 +1076,7 @@ mod tests {
                 .find("web-")
                 .map(|start| &text[start..start + 40])
                 .unwrap_or("missing");
-            let content = if text.contains("你是信息整理与筛选员") {
-                serde_json::json!({"items":[{"sourceId":id,"topic":"指数编制","entities":["指数"],
-                    "informationType":"fact","eventDate":null,"dateQuote":null,
-                    "timeSensitivity":"stable","excerpt":"指数采用公开方法编制",
-                    "relevance":0.9,"reason":"公开方法与本次问题相关"}]})
-                .to_string()
-            } else {
-                valid_report_json(true).replace("e1", id)
-            };
+            let content = valid_report_json(true).replace("e1", id);
             self.messages.lock().unwrap().push(messages);
             Ok(super::super::ModelCompletion {
                 request_count: 1,
@@ -1282,14 +1096,13 @@ mod tests {
         let provider = SearchMock {
             messages: Mutex::new(vec![]),
             searches: AtomicUsize::new(0),
+            source_count: 8,
         };
         let request = AnalysisRequest {
             web_search: true,
             previous_turn: None,
             question: "结合外部信息检查持仓".into(),
             workflow: "quick".into(),
-            reflect: false,
-            explore_alternatives: false,
             context_selection: ContextSelection::default(),
             preview_revision: None,
         };
@@ -1304,7 +1117,7 @@ mod tests {
             "completed"
         );
         let sources = &result.workflow_trace.evidence_catalog;
-        assert_eq!(sources.len(), 1);
+        assert_eq!(sources.len(), 5);
         assert_eq!(sources[0].evidence_type, "native_web_excerpt");
         assert!(sources[0].as_of_date.is_empty());
         assert_eq!(
@@ -1315,17 +1128,13 @@ mod tests {
             },
             vec![sources[0].id.clone()]
         );
-        assert_eq!(result.transparency.evidence_items_used, 1);
+        assert_eq!(result.transparency.evidence_items_used, 5);
         let calls = provider.messages.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert!(!calls[1][1].content.contains("https://example.com/report/7"));
         assert!(calls[1]
             .iter()
-            .any(|m| m.content.contains("你是信息整理与筛选员")));
-        assert!(calls[2]
-            .iter()
-            .any(|m| m.content.contains("selectedInformation")));
-        assert!(!calls[2]
-            .iter()
-            .any(|m| m.content.contains("\"nativeWebEvidence\"")));
+            .any(|m| m.content.contains("nativeWebEvidence")));
         assert!(context.payload.get("nativeWebEvidence").is_none());
         assert!(!calls[0][1].content.contains("marketValue"));
     }

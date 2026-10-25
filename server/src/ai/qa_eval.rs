@@ -82,7 +82,15 @@ pub(super) async fn run_live() {
         .create_new(true)
         .open(path)
         .expect("report path must be new and its parent directory must exist");
-    let (snapshot, cases) = fixtures();
+    let (snapshot, mut cases) = fixtures();
+    if let Ok(filter) = std::env::var("MARIO_EVAL_CASE_IDS") {
+        let ids = filter.split(',').collect::<Vec<_>>();
+        assert!(
+            ids.iter().all(|id| cases.iter().any(|case| case.id == *id)),
+            "unknown evaluation case ID"
+        );
+        cases.retain(|case| ids.contains(&case.id.as_str()));
+    }
     let settings = AnalysisSettings::default();
     let mut results = Vec::<CaseResult>::new();
     let mut previous = HashMap::<String, (String, AnalysisResult)>::new();
@@ -133,8 +141,7 @@ pub(super) async fn run_live() {
                 previous_turn,
 
                 workflow: settings.workflow.clone(),
-                reflect: settings.reflect,
-                explore_alternatives: settings.explore_alternatives,
+
                 web_search: settings.web_search
                     && provider_kind != crate::models::ModelProviderKind::OpenaiChat,
                 context_selection: settings.context_selection.clone(),
@@ -172,7 +179,15 @@ pub(super) async fn run_live() {
 
 #[test]
 fn fixture_preserves_exact_amounts_and_issue_scope() {
-    let (snapshot, cases) = fixtures();
+    let (snapshot, mut cases) = fixtures();
+    if let Ok(filter) = std::env::var("MARIO_EVAL_CASE_IDS") {
+        let ids = filter.split(',').collect::<Vec<_>>();
+        assert!(
+            ids.iter().all(|id| cases.iter().any(|case| case.id == *id)),
+            "unknown evaluation case ID"
+        );
+        cases.retain(|case| ids.contains(&case.id.as_str()));
+    }
     assert!((10..=15).contains(&cases.len()));
     let mut seen = std::collections::HashSet::new();
     for case in cases {

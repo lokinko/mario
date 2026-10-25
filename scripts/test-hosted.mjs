@@ -97,7 +97,7 @@ try{
   assert.equal(modelRequests[0].body.messages[0].role,'system');
   assert.equal(modelRequests[0].body.stream,false);
   assert(!('input' in modelRequests[0].body));
-  const analysisRequest={question:'test authorized context',workflow:'quick',reflect:false,exploreAlternatives:false,contextSelection:{includeProfile:false}};
+  const analysisRequest={question:'test authorized context',workflow:'quick',contextSelection:{includeProfile:false}};
   const preview=await request(base,'/analysis/preview',a,'POST',analysisRequest);
   const running=request(base,'/analysis',a,'POST',{...analysisRequest,previewRevision:preview.contextRevision});
   await Promise.race([received,new Promise((_,reject)=>{const t=setTimeout(()=>reject(Error('Agent never received job')),10000);t.unref();})]);

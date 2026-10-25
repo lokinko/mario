@@ -33,7 +33,7 @@ impl Database {
         &self,
         settings: AnalysisSettings,
     ) -> AppResult<AnalysisSettings> {
-        if !matches!(settings.workflow.as_str(), "quick" | "deep") {
+        if settings.workflow != "quick" {
             return Err(AppError::Validation("分析方式无效".into()));
         }
         let settings = normalize_analysis_settings(settings);
@@ -146,8 +146,6 @@ pub(crate) fn model_key_binding(provider: ModelProviderKind, base_url: &str) -> 
 // Keep legacy presets compatible while excluding data no longer offered in settings.
 fn normalize_analysis_settings(mut settings: AnalysisSettings) -> AnalysisSettings {
     settings.workflow = "quick".into();
-    settings.reflect = false;
-    settings.explore_alternatives = false;
     settings
 }
 
@@ -205,15 +203,17 @@ mod tests {
         let db = Database::test();
         let mut legacy = AnalysisSettings {
             workflow: "deep".into(),
-            reflect: true,
-            explore_alternatives: true,
+
             web_search: true,
             context_selection: crate::models::ContextSelection::default(),
         };
         legacy.context_selection.include_holdings = false;
+        let mut stored = serde_json::to_value(&legacy).unwrap();
+        stored["reflect"] = true.into();
+        stored["exploreAlternatives"] = true.into();
         db.set_setting(
             "analysis.settings",
-            &serde_json::to_string(&legacy).unwrap(),
+            &serde_json::to_string(&stored).unwrap(),
         )
         .unwrap();
 
@@ -222,12 +222,11 @@ mod tests {
         assert!(restored.context_selection.include_profile);
         assert!(!restored.context_selection.include_holdings);
         assert!(restored.context_selection.include_evidence);
-        assert!(!restored.reflect);
-        assert!(!restored.explore_alternatives);
         assert!(restored.web_search);
 
         // Older clients must not re-enable removed options when saving.
-        let saved = db.save_analysis_settings(legacy).unwrap();
+        assert!(db.save_analysis_settings(legacy).is_err());
+        let saved = db.save_analysis_settings(restored.clone()).unwrap();
         let expected = serde_json::to_value(restored).unwrap();
         assert_eq!(serde_json::to_value(saved).unwrap(), expected);
         let persisted = db.setting("analysis.settings").unwrap().unwrap();

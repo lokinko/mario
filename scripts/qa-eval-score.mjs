@@ -99,6 +99,12 @@ export function score(report, manual = new Map()) {
     usefulSuggestionRate: allReviewed ? useful / suggestions : null,
     directAnswerRate: allReviewed ? direct / reviewed : null,
     fabricationRate: allReviewed ? fabricated / reviewed : null,
+    reviewedSubset: reviewed ? {
+      cases: reviewed,
+      usefulSuggestionRate: useful / suggestions,
+      directAnswerRate: direct / reviewed,
+      fabricationRate: fabricated / reviewed,
+    } : null,
     averageAnswerCharacters: mean('answerCharacters'),
     averageModelCalls: mean('modelCalls'),
     averageInputTokens: mean('inputTokens'),

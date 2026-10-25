@@ -151,7 +151,11 @@ fn relevant_evidence(
             .into_iter()
             .filter(|item| !existing.contains(&(item.source_url.clone(), item.claim.clone()))),
     );
-    Ok(search_evidence(&query, &items, 30))
+    Ok(search_evidence(
+        &query,
+        &items,
+        crate::evidence::ANALYSIS_EVIDENCE_LIMIT,
+    ))
 }
 
 #[cfg(test)]
@@ -164,9 +168,8 @@ mod tests {
             web_search: false,
             previous_turn: None,
             question: "复盘指数集中风险".into(),
-            workflow: "deep".into(),
-            reflect: true,
-            explore_alternatives: true,
+            workflow: "quick".into(),
+
             context_selection: ContextSelection::default(),
             preview_revision: None,
         }
