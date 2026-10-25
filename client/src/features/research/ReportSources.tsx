@@ -8,6 +8,19 @@ import type {
 } from "../../types";
 
 const labels: Record<string, string> = {
+  facts: "本次事实卡",
+  question: "本轮问题",
+  monthlySurplus: "月结余",
+  portfolioValue: "资产总额",
+  investmentValue: "投资资产",
+  cashValue: "存款合计",
+  weightPct: "占比",
+  targetPct: "目标占比",
+  deviationPct: "偏差",
+  profitPct: "浮盈比例",
+  liabilities: "负债",
+  priceDate: "价格日期",
+  priceSource: "价格来源",
   financialProfile: "我的收支",
   portfolio: "我的持仓",
   currentUserMessage: "本轮原始消息",

@@ -317,6 +317,7 @@ mod tests {
                 payload_bytes: 40,
                 revision: "custom-model-test".into(),
                 evidence_items: 0,
+                valuation_evidence: Vec::new(),
             },
             config: ModelConfig {
                 provider: ModelProviderKind::OpenaiChat,

@@ -877,54 +877,6 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
     rebuild(conn)
 }
 
-impl Database {
-    pub fn daily_analysis_context(
-        &self,
-        request: &crate::models::AnalysisRequest,
-    ) -> AppResult<serde_json::Value> {
-        if !request.context_selection.include_daily_assets {
-            return Ok(serde_json::Value::Null);
-        }
-        let history = self.daily_history(&HistoryQuery {
-            limit: Some(30),
-            ..Default::default()
-        })?;
-        let comparison = if let Some(range) = &request.daily_asset_range {
-            Some(self.daily_compare(range)?)
-        } else if history.records.len() > 1 {
-            Some(compare(
-                history.records.last().unwrap().clone(),
-                history.records[0].clone(),
-            ))
-        } else {
-            None
-        };
-        let mut result = serde_json::json!({"history":history,"comparison":comparison,
-            "meaning":"每日已录入资产金额；carried 为沿用值，不是该日重新估值。金额差额不能证明收益、买卖或投资能力。资产记录可能不完整。"});
-        if !request.context_selection.include_profile {
-            redact_profile(&mut result);
-        }
-        Ok(result)
-    }
-}
-fn redact_profile(value: &mut serde_json::Value) {
-    match value {
-        serde_json::Value::Object(map) => {
-            map.remove("liabilities");
-            map.remove("netAssets");
-            for child in map.values_mut() {
-                redact_profile(child);
-            }
-        }
-        serde_json::Value::Array(items) => {
-            for child in items {
-                redact_profile(child);
-            }
-        }
-        _ => {}
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1247,45 +1199,5 @@ mod tests {
             before,
             restored.export_sync_data().unwrap().content_hash().unwrap()
         );
-    }
-    #[test]
-    fn daily_context_obeys_both_authorizations_and_changes_preview_revision() {
-        let db = db();
-        let id = db.add_holding(&input("银行", 100.0)).unwrap().holdings[0]
-            .id
-            .clone();
-        let mut request:crate::models::AnalysisRequest=serde_json::from_value(serde_json::json!({"question":"资产变化","workflow":"quick","reflect":false,"exploreAlternatives":false})).unwrap();
-        let context = db.daily_analysis_context(&request).unwrap();
-        assert!(context.to_string().contains("netAssets"));
-        let snap = db.snapshot().unwrap();
-        let built = crate::context::ContextBuilder::build(
-            &request,
-            &snap,
-            &crate::context::ContextSources {
-                daily_assets: Some(&context),
-                ..Default::default()
-            },
-        );
-        amount(&db, &id, 120.0);
-        let next = db.daily_analysis_context(&request).unwrap();
-        let changed = crate::context::ContextBuilder::build(
-            &request,
-            &snap,
-            &crate::context::ContextSources {
-                daily_assets: Some(&next),
-                ..Default::default()
-            },
-        );
-        assert_ne!(built.revision, changed.revision);
-        request.context_selection.include_profile = false;
-        let redacted = db.daily_analysis_context(&request).unwrap().to_string();
-        assert!(!redacted.contains("liabilities"));
-        assert!(!redacted.contains("netAssets"));
-        request.context_selection.include_daily_assets = false;
-        request.daily_asset_range = Some(CompareQuery {
-            from: "invalid".into(),
-            to: "invalid".into(),
-        });
-        assert!(db.daily_analysis_context(&request).unwrap().is_null());
     }
 }

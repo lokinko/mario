@@ -574,8 +574,6 @@ pub struct ModelConnectionTest {
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisRequest {
     #[serde(default)]
-    pub daily_asset_range: Option<crate::models::daily::CompareQuery>,
-    #[serde(default)]
     pub web_search: bool,
     #[serde(default)]
     pub user_message: Option<String>,
@@ -606,14 +604,7 @@ impl Default for AnalysisSettings {
             reflect: false,
             explore_alternatives: false,
             web_search: false,
-            context_selection: ContextSelection {
-                include_planning: false,
-                include_risk_findings: false,
-                include_rules: false,
-                include_system_reviews: false,
-                include_daily_assets: false,
-                ..ContextSelection::default()
-            },
+            context_selection: ContextSelection::default(),
         }
     }
 }
@@ -626,16 +617,6 @@ pub struct ContextSelection {
     #[serde(default = "enabled")]
     pub include_holdings: bool,
     #[serde(default = "enabled")]
-    pub include_planning: bool,
-    #[serde(default = "enabled")]
-    pub include_risk_findings: bool,
-    #[serde(default = "enabled")]
-    pub include_rules: bool,
-    #[serde(default = "enabled")]
-    pub include_system_reviews: bool,
-    #[serde(default = "enabled", alias = "includePortfolioCheckins")]
-    pub include_daily_assets: bool,
-    #[serde(default = "enabled")]
     pub include_evidence: bool,
 }
 
@@ -644,11 +625,6 @@ impl Default for ContextSelection {
         Self {
             include_profile: true,
             include_holdings: true,
-            include_planning: true,
-            include_risk_findings: true,
-            include_rules: true,
-            include_system_reviews: true,
-            include_daily_assets: true,
             include_evidence: true,
         }
     }
@@ -777,6 +753,8 @@ pub struct AnalysisEvidenceReference {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisWorkflowTrace {
+    #[serde(default)]
+    pub valuation_evidence: Vec<HoldingValuationEvidence>,
     #[serde(default)]
     pub information_selection: Vec<information::SelectedInformation>,
     #[serde(default)]

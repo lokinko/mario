@@ -29,23 +29,12 @@ impl<'a> AnalysisService<'a> {
         let config = self.db.model_config()?;
         let methodology = self.db.investment_methodology()?;
         let snapshot = self.db.snapshot()?;
-        let rules = self.db.investment_rules()?;
-        let system_reviews = self
-            .db
-            .system_reviews()?
-            .into_iter()
-            .take(8)
-            .collect::<Vec<_>>();
         let evidence_candidates = relevant_evidence(self.db, request, &snapshot)?;
-        let daily_assets = self.db.daily_analysis_context(request)?;
         let built_context = context::ContextBuilder::build(
             request,
             &snapshot,
             &context::ContextSources {
                 methodology: Some(&methodology.prompt),
-                daily_assets: Some(&daily_assets),
-                rules: &rules,
-                system_reviews: &system_reviews,
                 evidence_candidates: &evidence_candidates,
             },
         );
@@ -175,7 +164,6 @@ mod tests {
     use serde_json::json;
     fn request() -> AnalysisRequest {
         AnalysisRequest {
-            daily_asset_range: None,
             web_search: false,
             user_message: None,
             question: "复盘指数集中风险".into(),

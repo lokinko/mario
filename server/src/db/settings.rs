@@ -148,12 +148,6 @@ fn normalize_analysis_settings(mut settings: AnalysisSettings) -> AnalysisSettin
     settings.workflow = "quick".into();
     settings.reflect = false;
     settings.explore_alternatives = false;
-    let selection = &mut settings.context_selection;
-    selection.include_planning = false;
-    selection.include_risk_findings = false;
-    selection.include_rules = false;
-    selection.include_system_reviews = false;
-    selection.include_daily_assets = false;
     settings
 }
 
@@ -231,12 +225,6 @@ mod tests {
         assert!(!restored.reflect);
         assert!(!restored.explore_alternatives);
         assert!(restored.web_search);
-        let selection = &restored.context_selection;
-        assert!(!selection.include_planning);
-        assert!(!selection.include_risk_findings);
-        assert!(!selection.include_rules);
-        assert!(!selection.include_system_reviews);
-        assert!(!selection.include_daily_assets);
 
         // Older clients must not re-enable removed options when saving.
         let saved = db.save_analysis_settings(legacy).unwrap();

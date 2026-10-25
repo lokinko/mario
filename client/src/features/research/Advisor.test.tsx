@@ -245,7 +245,6 @@ it("sends once using saved defaults and the frozen revision without a confirmati
     ...settings,
     userMessage: "我的持仓有什么风险？",
     question: "我的持仓有什么风险？",
-    dailyAssetRange: undefined,
   });
   expect(researchApi.runAnalysis).toHaveBeenCalledWith(
     {
@@ -385,12 +384,11 @@ it("reopens a historical answer in the same report view and allows continuing th
   ).toContain("历史 report");
 });
 
-it("accepts an explicit question and asset range only when active", async () => {
+it("accepts an explicit question only when active", async () => {
   const onQuestionAccepted = vi.fn();
   const pendingQuestion = {
     id: 1,
     question: "从资产概览带来的问题",
-    dailyAssetRange: { from: "2026-10-01", to: "2026-10-10" },
   };
   const view = render(
     <Advisor
@@ -420,7 +418,7 @@ it("accepts an explicit question and asset range only when active", async () => 
   await screen.findByText(result.answer);
   expect(researchApi.previewAnalysis).toHaveBeenCalledWith(
     expect.objectContaining({
-      dailyAssetRange: pendingQuestion.dailyAssetRange,
+      userMessage: pendingQuestion.question,
     }),
   );
 });

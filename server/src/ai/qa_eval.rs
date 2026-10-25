@@ -119,7 +119,7 @@ pub(super) async fn run_live() {
             let mut request = AnalysisRequest {
                 question,
                 user_message: Some(case.question.clone()),
-                daily_asset_range: None,
+
                 workflow: settings.workflow.clone(),
                 reflect: settings.reflect,
                 explore_alternatives: settings.explore_alternatives,

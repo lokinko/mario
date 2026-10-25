@@ -4,7 +4,7 @@ use crate::models::{AnalysisClaim, StructuredAnalysis};
 
 pub const STRUCTURED_ANALYSIS_CONTRACT: &str = r#"只返回JSON，不加代码块或说明：
 {"answer":"直接回答，最多300字","suggestions":[{"action":"对象、方向、幅度、时间，最多120字","why":"数字依据","factIndices":[0],"unlessWhen":"不适用的前提，可为空"}],"facts":[{"statement":"引用的事实或数字","basis":"user_data或research_evidence","sourceRefs":[],"evidenceIds":[]}],"question":null}
-suggestions为1–3条，facts为1–8条，factIndices须非空、无重复且不越界。user_data只引用授权个人原值JSON Pointer，evidenceIds为空；research_evidence只引用本次授权证据ID，sourceRefs为空。金额引用精确字符串，不能引用浮点显示值。追问最多一个，没有则null。"#;
+suggestions为1–3条，facts为1–8条，factIndices须非空、无重复且不越界。user_data只引用授权个人原值JSON Pointer，evidenceIds为空；research_evidence只引用本次授权证据ID，sourceRefs为空。个人原值路径如/facts/summary/monthlySurplus或/facts/holdings/持仓ID/marketValue，金额用精确字符串。引用只指向非空标量，空值改引问题码。追问最多一个，没有则null。"#;
 
 pub fn parse_structured_analysis(
     content: &str,
@@ -22,7 +22,6 @@ pub fn parse_structured_analysis(
 
 pub fn validate_source_types(
     report: &StructuredAnalysis,
-    _sources: &[crate::models::AnalysisEvidenceReference],
     context: &serde_json::Value,
 ) -> Result<(), String> {
     for claim in &report.facts {
@@ -33,85 +32,22 @@ pub fn validate_source_types(
         }
         let mut seen = HashSet::new();
         for path in &claim.source_refs {
-            let field = path.rsplit('/').next().unwrap_or_default();
-            if context
-                .pointer("/financialProfile/profile/exactAmounts")
-                .is_some_and(|v| v.is_object())
-                && path.starts_with("/financialProfile/profile/")
-                && !path.starts_with("/financialProfile/profile/exactAmounts/")
-                && [
-                    "monthlyIncome",
-                    "monthlyExpense",
-                    "emergencyFund",
-                    "liabilities",
-                    "investableAssets",
-                ]
-                .contains(&field)
-            {
-                return Err(format!("财务金额必须引用 exactAmounts 原值：{path}"));
-            }
-            if path == "/deterministicPlan/monthlySurplus"
-                && context
-                    .pointer("/deterministicPlan/exactMonthlySurplus")
-                    .is_some_and(|v| v.is_string())
-            {
-                return Err("每月结余必须引用 exactMonthlySurplus 原值".into());
-            }
-            if context
-                .pointer("/portfolio/accounting")
-                .is_some_and(|v| v.is_object())
-                && (path == "/portfolio/totalValue"
-                    || (path.starts_with("/portfolio/holdings/")
-                        && [
-                            "marketValue",
-                            "costBasis",
-                            "quantity",
-                            "costPrice",
-                            "currentPrice",
-                            "fxRateToBase",
-                        ]
-                        .contains(&field)))
-            {
-                return Err(format!(
-                    "金额或数量必须引用精确会计原值，不能引用浮点显示投影：{path}"
-                ));
-            }
-            let parts = path.split('/').collect::<Vec<_>>();
-            if parts.len() >= 6 && parts[1..4] == ["portfolio", "accounting", "holdings"] {
-                let parent = format!("/portfolio/accounting/holdings/{}", parts[4]);
-                if context
-                    .pointer(&format!("{parent}/usable"))
-                    .and_then(serde_json::Value::as_bool)
-                    == Some(false)
-                    && field != "usable"
-                    && field != "priceStatus"
-                {
-                    return Err(format!("待核对会计数据不能作为已确认事实原值：{path}"));
-                }
-            }
             let group = path.split('/').nth(1).unwrap_or_default();
+            let fact_group = path.split('/').nth(2).unwrap_or_default();
+            let allowed = group == "currentUserMessage"
+                || (group == "facts"
+                    && ["summary", "holdings", "dataIssues", "options"].contains(&fact_group));
             if !path.starts_with('/')
                 || !seen.insert(path)
-                || ![
-                    "financialProfile",
-                    "portfolio",
-                    "currentUserMessage",
-                    "dailyAssetHistory",
-                    "deterministicPlan",
-                    "riskFindings",
-                    "personalInvestmentRules",
-                    "periodicSystemReviews",
-                ]
-                .contains(&group)
-                || !context.pointer(path).is_some_and(|value| {
-                    !value.is_null() && !value.is_object() && !value.is_array()
-                })
+                || !allowed
+                || !context
+                    .pointer(path)
+                    .is_some_and(|v| !v.is_null() && !v.is_object() && !v.is_array())
             {
                 return Err(format!("个人原始资料引用路径无效或未授权：{path}"));
             }
         }
     }
-
     Ok(())
 }
 
@@ -260,23 +196,22 @@ mod tests {
     }
 
     #[test]
-    fn data_issues_allow_normal_actions_but_exact_amount_refs_are_required() {
+    fn invalid_or_hidden_amounts_cannot_be_cited_but_other_holdings_remain_available() {
         let mut report =
             parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
-        let context = serde_json::json!({"portfolio":{"dataIssues":[{"code":"quarantinedTrades","holdingIds":["asset"],"message":"交易链待修复"}],"rebalancingBlockedBy":["quarantinedTrades"],"holdings":[{"marketValue":1.0}],"accounting":{"holdings":{"asset":{"marketValue":"1.01","usable":false}}}}});
-        assert!(validate_source_types(&report, &[], &context).is_ok());
-        report.facts[0].source_refs = vec!["/portfolio/holdings/0/marketValue".into()];
-        assert!(validate_source_types(&report, &[], &context)
-            .unwrap_err()
-            .contains("精确会计"));
-        report.facts[0].source_refs =
-            vec!["/portfolio/accounting/holdings/asset/marketValue".into()];
-        assert!(validate_source_types(&report, &[], &context)
-            .unwrap_err()
-            .contains("待核对"));
-        let mut ready = context;
-        ready["portfolio"]["accounting"]["holdings"]["asset"]["usable"] = true.into();
-        assert!(validate_source_types(&report, &[], &ready).is_ok());
+        let context = serde_json::json!({"facts":{"summary":{"portfolioValue":null},"holdings":{"ok":{"marketValue":"800000.01"},"blocked":{"marketValue":null}}}});
+        report.facts[0].source_refs = vec!["/facts/holdings/ok/marketValue".into()];
+        assert!(validate_source_types(&report, &context).is_ok());
+        for path in [
+            "/facts/holdings/blocked/marketValue",
+            "/facts/summary/portfolioValue",
+            "/portfolio/holdings/0/marketValue",
+            "/facts/holdings/ok",
+            "/facts/holdings/other/marketValue",
+        ] {
+            report.facts[0].source_refs = vec![path.into()];
+            assert!(validate_source_types(&report, &context).is_err());
+        }
     }
 
     #[test]
@@ -288,21 +223,22 @@ mod tests {
     }
 
     #[test]
-    fn validates_personal_references_against_frozen_scalars_and_source_groups() {
+    fn refuses_question_previous_answers_and_unauthorized_source_groups() {
         let mut report =
             parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
-        let context = serde_json::json!({"portfolio":{"holdings":[{"marketValue":120000}]},"question":"旧模型回答"});
-        report.facts[0].source_refs = vec!["/portfolio/holdings/0/marketValue".into()];
-        assert!(validate_source_types(&report, &[], &context).is_ok());
+        let context = serde_json::json!({"facts":{"summary":{"monthlySurplus":"8000"}},"question":"问题", "previousTurn":{"answer":"模型结论"},"researchEvidence":[{"claim":"来源"}]});
         for path in [
             "/question",
-            "/portfolio/holdings",
-            "/portfolio/holdings/1/marketValue",
+            "/previousTurn/answer",
             "/researchEvidence/0/claim",
+            "/facts/summary",
+            "/facts/metadata/other",
         ] {
             report.facts[0].source_refs = vec![path.into()];
-            assert!(validate_source_types(&report, &[], &context).is_err());
+            assert!(validate_source_types(&report, &context).is_err());
         }
+        report.facts[0].source_refs = vec!["/facts/summary/monthlySurplus".into()];
+        assert!(validate_source_types(&report, &context).is_ok());
     }
 
     #[test]

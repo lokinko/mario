@@ -324,7 +324,6 @@ export interface ModelConnectionTest {
 }
 
 export interface AnalysisRequest {
-  dailyAssetRange?: { from: string; to: string };
   webSearch?: boolean;
   userMessage?: string;
   question: string;
@@ -338,11 +337,6 @@ export interface AnalysisRequest {
 export interface ContextSelection {
   includeProfile: boolean;
   includeHoldings: boolean;
-  includePlanning: boolean;
-  includeRiskFindings: boolean;
-  includeRules: boolean;
-  includeSystemReviews: boolean;
-  includeDailyAssets: boolean;
   includeEvidence: boolean;
 }
 

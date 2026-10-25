@@ -21,7 +21,7 @@ ModelProvider ── 适配用户选择的模型 API
 - `ai/orchestrator.rs`：只负责调用阶段、汇总结果与生成轨迹。
 - `ai/provider.rs`：定义统一模型响应，包括正文和可选 token 用量。
 - `ai/structured_output.rs`：解析并校验最终分析，不允许模型自由改变字段、来源类型或引用边界。
-- `context.rs`：负责用户可见的数据选择、发送前预览和一致性指纹。
+- `context.rs` 与 `context/fact_sheet.rs`：负责授权数据选择、去重的精确事实卡、预览和一致性指纹。估值计算链只经 `valuationEvidence` 冻结并写入轨迹审计，不进入提示词。
 
 编排器提供 `with_workflow` 注入点。未来可以新增事实核验、估值情景或规则冲突检查工作流，而无需让工作流读取数据库或 API Key。
 
@@ -43,7 +43,7 @@ ModelProvider ── 适配用户选择的模型 API
 
 每条事实必须声明 `basis`：
 
-- `user_data` 表示来自用户本次授权的本地数据，不允许附带研究证据 ID；`sourceRefs` 指向实际使用的授权个人原值，服务端校验路径所属资料组及标量值是否存在，客户端从冻结档案显示原值；
+- `user_data` 表示来自用户本次授权的本地数据，不允许附带研究证据 ID；`sourceRefs` 指向 `/facts/summary`、`/facts/holdings/<id>`、`/facts/dataIssues` 或 `/facts/options` 中实际使用的原值，服务端校验所属资料组和非空标量是否存在，客户端从冻结档案显示原值；
 - `research_evidence` 表示使用研究证据，必须引用本次冻结候选中的 ID；
 - 引用最终入选集合之外、重复或空缺的证据 ID 都会失败。历史模型来源仅保留旧报告的读取展示，新分析不产生或召回这类来源。
 

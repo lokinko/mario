@@ -1,18 +1,13 @@
 import type { AnalysisSettings } from "../types";
 
 export const analysisSettings: AnalysisSettings = {
-  workflow: "deep",
-  reflect: true,
-  exploreAlternatives: true,
-  webSearch: true,
+  workflow: "quick",
+  reflect: false,
+  exploreAlternatives: false,
+  webSearch: false,
   contextSelection: {
     includeProfile: true,
     includeHoldings: true,
-    includePlanning: false,
-    includeRiskFindings: false,
-    includeRules: false,
-    includeSystemReviews: false,
-    includeDailyAssets: false,
     includeEvidence: true,
   },
 };

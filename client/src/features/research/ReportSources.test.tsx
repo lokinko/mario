@@ -8,6 +8,31 @@ import type {
 import { reportSources, SourceDetail } from "./ReportSources";
 
 afterEach(cleanup);
+it("opens precise fact sheet values from the frozen report context", () => {
+  const trace = {
+    personalContext: {
+      facts: {
+        holdings: {
+          asset: { name: "基金", marketValue: "900719925474099.91" },
+        },
+      },
+    },
+    structuredReport: {
+      facts: [
+        {
+          statement: "基金市值",
+          basis: "user_data",
+          evidenceIds: [],
+          sourceRefs: ["/facts/holdings/asset/marketValue"],
+        },
+      ],
+      suggestions: [],
+    },
+  } as unknown as AnalysisWorkflowTrace;
+  const result = reportSources(trace);
+  expect(result.sources[0].claim).toBe("900719925474099.91");
+  expect(result.sources[0].title).toBe("本次事实卡 · 基金 · 市值");
+});
 
 it("resolves original personal references even when evidence review is unavailable", () => {
   const trace = {

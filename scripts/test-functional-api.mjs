@@ -151,7 +151,7 @@ try {
   assert.equal(defaults.contextSelection.includeHoldings, true);
   assert.equal(defaults.contextSelection.includeEvidence, true);
   for (const key of ["includePlanning", "includeRiskFindings", "includeRules", "includeSystemReviews", "includeDailyAssets"]) {
-    assert.equal(defaults.contextSelection[key], false);
+    assert.equal(defaults.contextSelection[key], undefined);
   }
   assert.equal(defaults.contextSelection.includePortfolioCheckins, undefined);
   assert.equal(defaults.contextSelection.includeGoals, undefined);
@@ -293,25 +293,14 @@ try {
     reflect: false,
     exploreAlternatives: false,
     webSearch: false,
-    dailyAssetRange: { from: day, to: day },
   };
   const analysis = await api("/analysis/preview", "POST", request);
-  assert.ok(analysis.payload.dailyAssetHistory);
-  const redacted = await api("/analysis/preview", "POST", {
-    ...request,
-    contextSelection: { includeProfile: false },
-  });
-  assert.ok(
-    !JSON.stringify(redacted.payload.dailyAssetHistory).includes(
-      '"liabilities"',
-    ),
-  );
-  const omitted = await api("/analysis/preview", "POST", {
-    ...request,
-    contextSelection: {
-      includeDailyAssets: false,
-    },
-  });
+  assert.equal(analysis.payload.dailyAssetHistory, undefined);
+  assert.ok(analysis.payload.facts.holdings);
+  const redacted = await api("/analysis/preview", "POST", { ...request, contextSelection: { includeProfile: false } });
+  assert.equal(redacted.payload.facts.summary.liabilities, undefined);
+  const omitted = await api("/analysis/preview", "POST", { ...request, contextSelection: { includeHoldings: false, includeDailyAssets: true } });
+  assert.equal(omitted.payload.facts.holdings, undefined);
   assert.equal(omitted.payload.dailyAssetHistory, undefined);
   await api(`/holdings/${cash}`, "PUT", {
     ...holding("现金", 102200),

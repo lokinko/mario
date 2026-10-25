@@ -50,7 +50,7 @@ it("loads saved permissions and saves one preset for future questions", async ()
   await waitFor(() => expect(flash).toHaveBeenCalled());
   expect(settingsApi.saveAnalysisSettings).toHaveBeenCalledWith({
     ...stored,
-    webSearch: false,
+    webSearch: true,
     contextSelection: { ...stored.contextSelection, includeHoldings: false },
   });
 });
