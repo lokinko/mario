@@ -40,7 +40,7 @@ async function request(path, method = 'GET', body, token = auth, expected = 200)
   if (response.ok && response.headers.has('x-data-revision')) revisions.set(token, response.headers.get('x-data-revision'));
   return data;
 }
-const report = JSON.stringify({ answer:'请先明确资金用途', facts:[{statement:'用户未提供投资资料',basis:'user_data',evidenceIds:[],sourceRefs:[]}], suggestions:[{factIndices:[0],action:'先保持现有资金安排',why:'当前没有投资资料',unlessWhen:'明确资金用途后再调整'}], question:'这笔钱什么时候要用？' });
+const report = JSON.stringify({ answer:'请先明确资金用途', facts:[{statement:'用户提出本轮问题',basis:'user_data',evidenceIds:[],sourceRefs:['/question']}], suggestions:[{factIndices:[0],action:'先保持现有资金安排',why:'当前没有投资资料',unlessWhen:'明确资金用途后再调整'}], question:'这笔钱什么时候要用？' });
 let fakeTask;
 let holdNext = false, heldJob, cancelledJob;
 let expectedModel = 'bridge-fixture';

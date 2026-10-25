@@ -544,8 +544,9 @@ mod tests {
 
     fn valid_report_json(with_evidence: bool) -> String {
         let mut facts = vec![serde_json::json!({
-            "statement": "当前组合集中度超过风险预算",
+            "statement": "用户提出本轮问题",
             "basis": "user_data",
+            "sourceRefs": ["/question"],
             "evidenceIds": []
         })];
         if with_evidence {
@@ -675,7 +676,13 @@ mod tests {
         ) -> AppResult<super::super::ModelCompletion> {
             let call = self.calls.fetch_add(1, Ordering::SeqCst);
             let content = if call == 0 || self.always_invalid {
-                "这是一段无法机器校验的自由文本".into()
+                let mut report: serde_json::Value =
+                    serde_json::from_str(&valid_report_json(false)).unwrap();
+                report["facts"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("sourceRefs");
+                report.to_string()
             } else {
                 valid_report_json(false)
             };
@@ -753,6 +760,7 @@ mod tests {
         assert_eq!(validation.status, "repaired");
         assert_eq!(validation.attempts, 2);
         assert_eq!(validation.errors.len(), 1);
+        assert!(validation.errors[0].contains("sourceRefs 必须非空"));
         assert!(output
             .stages
             .iter()

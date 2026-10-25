@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use crate::models::{AnalysisClaim, StructuredAnalysis};
 
 pub const STRUCTURED_ANALYSIS_CONTRACT: &str = r#"只返回JSON，不加代码块或说明：
-{"answer":"直接回答，最多300字","suggestions":[{"action":"对象、方向、幅度、时间，最多120字","why":"数字依据","factIndices":[0],"unlessWhen":"不适用的前提，可为空"}],"facts":[{"statement":"引用的事实或数字","basis":"user_data或research_evidence","sourceRefs":[],"evidenceIds":[]}],"question":null}
-suggestions为1–3条，facts为1–8条，factIndices须非空、无重复且不越界。user_data只引用授权个人原值JSON Pointer，evidenceIds为空；research_evidence只引用本次授权证据ID，sourceRefs为空。个人原值路径如/facts/summary/monthlySurplus或/facts/holdings/持仓ID/marketValue，金额用精确字符串。引用只指向非空标量，空值改引问题码。追问最多一个，没有则null。"#;
+{"answer":"直接回答，最多300字","suggestions":[{"action":"对象、方向、具体金额或比例、时间，最多120字","why":"数字依据","factIndices":[0],"unlessWhen":"不适用的前提，可为空"}],"facts":[{"statement":"引用的事实或数字","basis":"user_data或research_evidence","sourceRefs":[],"evidenceIds":[]}],"question":null}
+suggestions为1–3条，facts为1–8条，factIndices非空、无重复且不越界。user_data的sourceRefs须非空，仅用授权原值JSON Pointer，evidenceIds为空；research_evidence只用授权证据ID，sourceRefs为空。原值路径如/facts/summary/monthlySurplus或/facts/holdings/持仓ID/marketValue，金额用精确字符串。只引非空标量，空值改引问题码。最多一个追问，否则null。"#;
 
 pub fn parse_structured_analysis(
     content: &str,
@@ -143,6 +143,9 @@ fn validate_claim(
         "user_data" if !claim.evidence_ids.is_empty() => {
             return Err("basis=user_data 时 evidenceIds 必须为空".into());
         }
+        "user_data" if claim.source_refs.is_empty() => {
+            return Err("basis=user_data 时 sourceRefs 必须非空".into());
+        }
         "user_data" => {}
         "research_evidence" if claim.evidence_ids.is_empty() => {
             return Err("basis=research_evidence 时必须提供 evidenceIds".into());
@@ -189,7 +192,7 @@ mod tests {
     fn valid_json() -> String {
         serde_json::json!({
             "answer":"先降低集中风险",
-            "facts":[{"statement":"集中度为60%","basis":"user_data","sourceRefs":[],"evidenceIds":[]},{"statement":"有外部资料","basis":"research_evidence","sourceRefs":[],"evidenceIds":["e1"]}],
+            "facts":[{"statement":"集中度为60%","basis":"user_data","sourceRefs":["/facts/holdings/fund/weightPct"],"evidenceIds":[]},{"statement":"有外部资料","basis":"research_evidence","sourceRefs":[],"evidenceIds":["e1"]}],
             "suggestions":[{"action":"本月分批降低集中持仓比例","why":"集中度60%","factIndices":[0],"unlessWhen":"近期有资金需求时优先留现金"}],
             "question":null
         }).to_string()
@@ -253,6 +256,25 @@ mod tests {
                 parse_structured_analysis(&value.to_string(), &HashSet::from(["e1".into()]))
                     .unwrap_err();
             assert!(error.contains("factIndices"));
+        }
+    }
+
+    #[test]
+    fn rejects_personal_facts_with_omitted_or_empty_source_refs() {
+        for omitted in [false, true] {
+            let mut value: serde_json::Value = serde_json::from_str(&valid_json()).unwrap();
+            if omitted {
+                value["facts"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("sourceRefs");
+            } else {
+                value["facts"][0]["sourceRefs"] = serde_json::json!([]);
+            }
+            let error =
+                parse_structured_analysis(&value.to_string(), &HashSet::from(["e1".into()]))
+                    .unwrap_err();
+            assert!(error.contains("sourceRefs 必须非空"));
         }
     }
 

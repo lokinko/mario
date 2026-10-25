@@ -1,0 +1,149 @@
+{
+  "workflowVersion": "investment-workflow-v8",
+  "expectedCases": 12,
+  "completedCases": 12,
+  "failedCases": 0,
+  "skippedCases": 0,
+  "pendingCases": 0,
+  "reviewedCases": 12,
+  "usefulSuggestionRate": 0.9090909090909091,
+  "directAnswerRate": 1,
+  "fabricationRate": 0,
+  "reviewedSubset": {
+    "cases": 12,
+    "usefulSuggestionRate": 0.9090909090909091,
+    "directAnswerRate": 1,
+    "fabricationRate": 0
+  },
+  "averageAnswerCharacters": 436.5833333333333,
+  "averageModelCalls": 1,
+  "averageInputTokens": 1313.9166666666667,
+  "inputTokenCases": 12,
+  "averageOutputTokens": 1086,
+  "outputTokenCases": 12,
+  "averageCallLatencyMs": 24248.5,
+  "averageElapsedMs": 24249.416666666668,
+  "note": "机器均值仅统计完成题目；token 均值仅统计该项用量完整的题目。质量指标须全部题目完成且人工评分后才计算。",
+  "cases": [
+    {
+      "id": "reduce",
+      "answerCharacters": 506,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1295,
+      "outputTokens": 1433,
+      "callLatencyMs": 32117,
+      "elapsedMs": 32117
+    },
+    {
+      "id": "add",
+      "answerCharacters": 407,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1298,
+      "outputTokens": 1290,
+      "callLatencyMs": 26272,
+      "elapsedMs": 26273
+    },
+    {
+      "id": "surplus",
+      "answerCharacters": 612,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1295,
+      "outputTokens": 1115,
+      "callLatencyMs": 23736,
+      "elapsedMs": 23736
+    },
+    {
+      "id": "emergency",
+      "answerCharacters": 318,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1299,
+      "outputTokens": 817,
+      "callLatencyMs": 19538,
+      "elapsedMs": 19539
+    },
+    {
+      "id": "loss",
+      "answerCharacters": 495,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1298,
+      "outputTokens": 1209,
+      "callLatencyMs": 27588,
+      "elapsedMs": 27589
+    },
+    {
+      "id": "followup",
+      "answerCharacters": 328,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1493,
+      "outputTokens": 739,
+      "callLatencyMs": 14149,
+      "elapsedMs": 14151
+    },
+    {
+      "id": "missing-fx",
+      "answerCharacters": 278,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1296,
+      "outputTokens": 808,
+      "callLatencyMs": 19651,
+      "elapsedMs": 19652
+    },
+    {
+      "id": "cash-check",
+      "answerCharacters": 255,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1302,
+      "outputTokens": 848,
+      "callLatencyMs": 20854,
+      "elapsedMs": 20855
+    },
+    {
+      "id": "horizon",
+      "answerCharacters": 638,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1301,
+      "outputTokens": 1327,
+      "callLatencyMs": 28069,
+      "elapsedMs": 28070
+    },
+    {
+      "id": "debt",
+      "answerCharacters": 462,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1294,
+      "outputTokens": 1067,
+      "callLatencyMs": 25887,
+      "elapsedMs": 25888
+    },
+    {
+      "id": "bond",
+      "answerCharacters": 431,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1296,
+      "outputTokens": 1205,
+      "callLatencyMs": 26370,
+      "elapsedMs": 26371
+    },
+    {
+      "id": "unknown",
+      "answerCharacters": 509,
+      "stageCalls": 1,
+      "modelCalls": 1,
+      "inputTokens": 1300,
+      "outputTokens": 1174,
+      "callLatencyMs": 26751,
+      "elapsedMs": 26752
+    }
+  ]
+}

@@ -208,7 +208,7 @@ npm run test:hosted
 ## 简明问答报告
 
 - `models::StructuredAnalysis` 是当前生成契约；`models/analysis_history` 的独立类型只读旧报告，仓储以 `headline()` 获取两类报告的列表摘要，不转换历史正文。
-- `ai/structured_output` 校验字段、数量、字数、事实索引和引用，拒绝旧生成字段；`ai/streaming` 只投影新报告的用户可见字段。`features/research/ModelReport` 共享来源抽屉，按报告形状读取历史或显示新回答，不增加第二条生成路径。
+- `ai/structured_output` 校验字段、数量、字数、事实索引和引用，拒绝旧生成字段及缺少原值引用的个人事实；路径校验保证存在与授权，不替代语义核对。`ai/streaming` 只投影新报告的用户可见字段。`features/research/ModelReport` 共享来源抽屉，按报告形状读取历史或显示新回答，不增加第二条生成路径。
 - 当前新默认方法论允许明确方向和比例；账号已经保存的正文保持原值，用户可在方法论页主动使用新范本并保存。
 
 ## 问答事实卡

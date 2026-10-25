@@ -281,7 +281,7 @@ mod tests {
                     captured.lock().unwrap().push((headers, body));
                     let report = serde_json::json!({
                         "answer":"先核对集中风险",
-                        "facts":[{"statement":"组合集中度为100%","basis":"user_data","evidenceIds":[]}],
+                        "facts":[{"statement":"组合集中度为100%","basis":"user_data","sourceRefs":["/facts/holdings/fund/weightPct"],"evidenceIds":[]}],
                         "suggestions":[{"factIndices":[0],"action":"先保持现有仓位","why":"集中度100%，暂不加仓","unlessWhen":"资金期限明确后重评"}],
                         "question":"资金什么时候要用？"
                     });
@@ -312,7 +312,7 @@ mod tests {
         let make_job = || Job {
             request: request.clone(),
             context: context::BuiltContext {
-                payload: serde_json::json!({"portfolio":{"concentrationPct":100.0}}),
+                payload: serde_json::json!({"facts":{"holdings":{"fund":{"weightPct":"100"}}}}),
                 groups: Vec::new(),
                 payload_bytes: 40,
                 revision: "custom-model-test".into(),
