@@ -1,3 +1,4 @@
+import { FinancialRequestError } from "../../api/portfolio/financialRequest";
 // @vitest-environment jsdom
 import {
   cleanup,
@@ -492,7 +493,9 @@ it("shows authoritative sell profits and dividends in the holding overview and d
       flash={vi.fn()}
     />,
   );
-  expect(screen.getByRole("status").textContent).toContain("交易链已隔离");
+  expect(
+    screen.getByText("请在下方预览并修复原始记录；修复前不能新增交易。"),
+  ).toBeTruthy();
   expect(screen.queryByText("期初余额")).toBeNull();
   expect(screen.queryByRole("button", { name: "撤销误录" })).toBeNull();
 });
@@ -514,7 +517,7 @@ it("keeps the asset editor unavailable while a transaction draft is open", async
 
 it("keeps an uncertain edit frozen and retries exactly the original content", async () => {
   vi.mocked(portfolioApi.updateHoldingTrade)
-    .mockRejectedValueOnce(new Error("操作结果待确认"))
+    .mockRejectedValueOnce(new FinancialRequestError())
     .mockResolvedValueOnce(value);
   const onUpdate = vi.fn();
   render(

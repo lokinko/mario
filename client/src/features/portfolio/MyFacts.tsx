@@ -1,5 +1,6 @@
 import { Drawer } from "../../components/Drawer";
 import { AssetAmountRow } from "./AssetAmountRow";
+import { ExchangeRates } from "./ExchangeRates";
 import { AssetEditor } from "./AssetEditor";
 import { AssetOverview } from "./AssetOverview";
 import { useAssetHistory } from "./useAssetHistory";
@@ -13,15 +14,15 @@ import { InvestmentOverview } from "./InvestmentOverview";
 import { ProfileForm } from "./ProfileForm";
 import { sortInvestmentHoldings } from "./holdingMetrics";
 import { useHoldingRemoval } from "./useHoldingRemoval";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw } from "lucide-react";
 import { refreshSecurityPrices } from "../../api/portfolio";
-import type { Holding, Snapshot } from "../../types";
+import type { DataIssue, Holding, Snapshot } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
-import { formatMoney, formatNumber } from "../../lib/format";
+import { formatMoney } from "../../lib/format";
 import { emptyHolding } from "./forms";
 
-const cashCurrencies = ["CNY", "HKD", "USD"];
+const defaultCashCurrencies = ["CNY", "HKD", "USD"];
 
 function withExactValues(snapshot: Snapshot, holding: Holding): Holding {
   const source = snapshot.accounting?.holdings[holding.id];
@@ -51,7 +52,9 @@ export function MyFacts({
   flash: (message: string) => void;
 }) {
   const history = useAssetHistory(snapshot);
-  const [help, setHelp] = useState<"instructions" | "valuation" | null>(null);
+  const [help, setHelp] = useState(false);
+  const [fxCurrency, setFxCurrency] = useState<string | null>(null);
+  const [issueTarget, setIssueTarget] = useState<string | null>(null);
   const [priceWarningDismissed, setPriceWarningDismissed] = useState(false);
   const [profile, setProfile] = useState(snapshot.profile);
   const [editing, setEditing] = useState<Holding | null>(null);
@@ -83,6 +86,36 @@ export function MyFacts({
     "holdings",
   );
   const cash = snapshot.holdings.filter((item) => item.assetClass === "现金");
+  const cashCurrencies = [
+    ...new Set([...defaultCashCurrencies, ...cash.map((h) => h.currency)]),
+  ];
+  useEffect(() => {
+    if (!issueTarget) return;
+    const row = document.getElementById(`asset-${issueTarget}`);
+    row?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    row?.focus();
+    setIssueTarget(null);
+  }, [issueTarget]);
+  const locateIssue = (issue: DataIssue) => {
+    const id = issue.holdingIds[0];
+    const target = snapshot.holdings.find(
+      (h) => h.id === (snapshot.optionContracts?.[id]?.underlyingId ?? id),
+    );
+    if (!target) return;
+    setSection(target.assetClass === "现金" ? "savings" : "holdings");
+    setFilters({ ...defaultHoldingFilters, showClosed: true });
+    setIssueTarget(target.id);
+  };
+  const repairIssue = (issue: DataIssue) => {
+    const holding = snapshot.holdings.find((h) =>
+      issue.holdingIds.includes(h.id),
+    );
+    if (!holding) return;
+    if (issue.code === "missingFxRate")
+      setFxCurrency(issue.currency ?? holding.currency);
+    else if (issue.code === "cashNeedsReconciliation") openEditor(holding);
+    else setSelectedId(holding.id);
+  };
   const cashRows = cashCurrencies.map(
     (currency) =>
       cash.find((item) => item.currency === currency) ?? {
@@ -202,8 +235,29 @@ export function MyFacts({
       );
     const tradeSummary = snapshot.holdingTradeSummaries?.[item.id];
     return (
-      <div key={item.id || item.currency} className="facts-asset-entry">
+      <div
+        key={item.id || item.currency}
+        id={`asset-${item.id}`}
+        tabIndex={-1}
+        className="facts-asset-entry"
+      >
         <AssetAmountRow
+          issues={snapshot.valuationStatus.issues.filter((issue) =>
+            issue.holdingIds.some(
+              (id) =>
+                id === item.id ||
+                snapshot.optionContracts?.[id]?.underlyingId === item.id,
+            ),
+          )}
+          onRepair={repairIssue}
+          source={
+            snapshot.holdingValuations?.find((v) => v.holdingId === item.id)
+              ?.providerName
+          }
+          observedOn={
+            snapshot.holdingValuations?.find((v) => v.holdingId === item.id)
+              ?.observedOn
+          }
           holding={withExactValues(snapshot, item)}
           exact={displayAccounting?.holdings[item.id]}
           confirmedOn={
@@ -279,54 +333,40 @@ export function MyFacts({
       />
       <button
         className="text-button facts-help-trigger"
-        onClick={() => setHelp("instructions")}
+        onClick={() => setHelp(true)}
       >
         ？使用说明
       </button>
       {help && (
-        <Drawer
-          title={help === "valuation" ? "估值待核对原因" : "资产记录使用说明"}
-          onClose={() => setHelp(null)}
-        >
-          {help === "valuation" ? (
-            <ul>
-              {snapshot.valuationStatus.warnings.map((reason) => (
-                <li key={reason}>{reason}</li>
-              ))}
-            </ul>
-          ) : (
-            <>
-              <h3>持仓与盈亏</h3>
-              <p>
-                从最早一笔真实成交开始，按账户录入买入、卖出和现金分红。数量、成本和已结算盈亏由服务端计算；首次交易替换手工数量和成本，不自动补期初余额。当前行情与成交分别管理，填写代码后可更新价格，无代码资产请手动核对。
-              </p>
-              <h3>存款与现金</h3>
-              <p>
-                按币种核对实际余额，保存后建立核对基准。新增成交可结算同币种存款；历史补录不重放已包含的现金流。核对基准之前的更正会提示重新核对余额。
-              </p>
-            </>
-          )}
+        <Drawer title="资产记录使用说明" onClose={() => setHelp(false)}>
+          <h3>持仓与盈亏</h3>
+          <p>
+            从最早一笔真实成交开始，按账户录入买入、卖出和现金分红。数量、成本和已结算盈亏由服务端计算；首次交易替换手工数量和成本，不自动补期初余额。当前行情与成交分别管理，填写代码后可更新价格，无代码资产请手动核对。
+          </p>
+          <h3>存款与现金</h3>
+          <p>
+            按币种核对实际余额，保存后建立核对基准。新增成交可结算同币种存款；历史补录不重放已包含的现金流。核对基准之前的更正会提示重新核对余额。
+          </p>
         </Drawer>
       )}
-      {snapshot.valuationStatus.decisionReady === false &&
-        snapshot.valuationStatus.warnings.length > 0 && (
-          <Callout
-            tone="warning"
-            title="行动建议已暂停"
-            action={
-              <button
-                className="text-button"
-                onClick={() => setHelp("valuation")}
-              >
-                查看原因
-              </button>
-            }
-          >
-            {snapshot.valuationStatus.warnings.join("；")}
-          </Callout>
-        )}
+      {fxCurrency && (
+        <Drawer
+          title={`补充 ${fxCurrency} 汇率`}
+          onClose={() => setFxCurrency(null)}
+        >
+          <ExchangeRates
+            baseCurrency={currency}
+            usedCurrencies={[fxCurrency]}
+            onUpdate={onUpdate}
+          />
+        </Drawer>
+      )}
       <AssetOverview
         snapshot={snapshot}
+        onLocateIssue={locateIssue}
+        issuesDisabled={
+          busy || Boolean(editing) || Boolean(selected) || addingTrade
+        }
         history={history.history}
         display={display}
       />
@@ -381,10 +421,7 @@ export function MyFacts({
       {section === "holdings" &&
         !priceWarningDismissed &&
         Boolean(snapshot.priceRefreshErrors?.length) && (
-          <Callout
-            tone="warning"
-            onClose={() => setPriceWarningDismissed(true)}
-          >
+          <Callout tone="info" onClose={() => setPriceWarningDismissed(true)}>
             部分价格更新失败，已保留原值：
             {snapshot.priceRefreshErrors?.join("；")}
           </Callout>
@@ -397,27 +434,6 @@ export function MyFacts({
           cash={section === "savings"}
         />
       )}
-      {snapshot.cashBalances
-        ?.filter((b) => b.needsReconciliation)
-        .map((b) => (
-          <Callout tone="warning" key={b.currency}>
-            {b.currency}{" "}
-            存款待核对：基准之前的交易发生更正，当前余额已保留。请按实际余额重新确认。
-          </Callout>
-        ))}
-      {section === "savings" &&
-        cash.some((item) => !cashCurrencies.includes(item.currency)) && (
-          <Callout tone="warning">
-            旧数据中还有其他币种存款，已保留并计入总资产：
-            {cash
-              .filter((item) => !cashCurrencies.includes(item.currency))
-              .map(
-                (item) => `${item.currency} ${formatNumber(item.marketValue)}`,
-              )
-              .join("；")}
-            。请先核对并处理这些余额。
-          </Callout>
-        )}
       {section === "income" ? (
         <ProfileForm
           profile={profile}

@@ -257,14 +257,27 @@ export interface HoldingTradeSummary {
 }
 
 export interface PortfolioValuationStatus {
-  decisionReady?: boolean;
   baseCurrency: string;
   comparable: boolean;
   missingFxHoldings: string[];
   undatedHoldingCount: number;
   valuationDates: string[];
   alignedValuationDate: string | null;
-  warnings: string[];
+  issues: DataIssue[];
+}
+
+export type IssueCode =
+  | "missingFxRate"
+  | "pendingCorporateAction"
+  | "quarantinedTrades"
+  | "cashNeedsReconciliation"
+  | "invalidTargetWeights";
+
+export interface DataIssue {
+  code: IssueCode;
+  holdingIds: string[];
+  currency: string | null;
+  message: string;
 }
 
 export interface PortfolioPlan {
@@ -276,6 +289,10 @@ export interface PortfolioPlan {
   riskCapacityPct: number;
   riskStatus: "within" | "near" | "over" | "insufficient";
   rebalancing: RebalanceAction[];
+  rebalancingBlockedBy: IssueCode[];
+  excludedHoldingIds: string[];
+  asOf: string | null;
+  targetTotalPct: number;
   assumptions: string;
 }
 

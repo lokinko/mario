@@ -71,7 +71,7 @@ export function InvestmentOverview({
                   });
                 }}
               >
-                <Badge tone="warning">待补 {totals[key].missing}</Badge>
+                <Badge>待补 {totals[key].missing}</Badge>
               </button>
             )}
             <small

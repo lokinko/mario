@@ -93,7 +93,16 @@ export function FinancialHistory({
     }
   };
   return (
-    <details className="investment-help financial-history">
+    <details
+      className="investment-help financial-history"
+      open={
+        snapshot.valuationStatus.issues.some(
+          (i) =>
+            i.holdingIds.includes(holding.id) &&
+            ["quarantinedTrades", "pendingCorporateAction"].includes(i.code),
+        ) || undefined
+      }
+    >
       <summary>更正历史与数据核对</summary>
       {error && <p role="alert">{error}</p>}
       {snapshot.corporateActions
@@ -102,10 +111,9 @@ export function FinancialHistory({
         )
         .map((action) => (
           <section key={action.id}>
-            <p role="alert">
-              发现待核对公司行动：{action.split.effectiveOn}，每{" "}
-              {action.split.denominator} 股变为 {action.split.numerator}{" "}
-              股。估值暂停。
+            <p>
+              拆合股比例：{action.split.effectiveOn}，每{" "}
+              {action.split.denominator} 股变为 {action.split.numerator} 股。
             </p>
             {action.sourceUrl && (
               <a

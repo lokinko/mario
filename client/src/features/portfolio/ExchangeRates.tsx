@@ -273,7 +273,7 @@ export function ExchangeRates({
       {book && (
         <>
           {book.error && (
-            <Callout tone="warning">
+            <Callout tone="info">
               自动更新暂未成功，沿用上次可用值；没有可用值的币种暂停换算。
               {book.error}
             </Callout>

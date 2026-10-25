@@ -4,6 +4,23 @@ import { serviceUrl } from "../../lib/service";
 import { webToken } from "../../lib/webSession";
 import type { Snapshot } from "../../types";
 
+export class FinancialRequestError extends Error {
+  readonly kind = "pending";
+  constructor(cause?: unknown) {
+    super(
+      "操作结果待确认，原请求编号和输入已保留。可核对更正历史后使用相同内容重试；不要重新创建一笔交易。",
+      { cause },
+    );
+    this.name = "FinancialRequestError";
+  }
+}
+
+export function isPendingFinancialRequest(
+  error: unknown,
+): error is FinancialRequestError {
+  return error instanceof FinancialRequestError && error.kind === "pending";
+}
+
 /** Reconcile a financial mutation's receipt while the normal write guard stays held. */
 export function financialRequest(
   path: string,
@@ -45,10 +62,7 @@ export function financialRequest(
           throw resolutionError;
       }
       ensureCurrentAccount();
-      throw new Error(
-        "操作结果待确认，原请求编号和输入已保留。可核对更正历史后使用相同内容重试；不要重新创建一笔交易。",
-        { cause: error },
-      );
+      throw new FinancialRequestError(error);
     }
   });
 }

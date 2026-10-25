@@ -1,3 +1,4 @@
+import { isPendingFinancialRequest } from "../../api/portfolio/financialRequest";
 import { Callout } from "../../components/Callout";
 import { useEffect, useRef, useState } from "react";
 import type { Holding, OptionContract, Snapshot } from "../../types";
@@ -99,7 +100,7 @@ export function StockOptions({
       drawer.markClean();
       flash("期权权利金与盈亏已更新");
     } catch (e) {
-      setUncertain(String(e).includes("结果待确认"));
+      setUncertain(isPendingFinancialRequest(e));
       setError(String(e));
     } finally {
       pending.current = false;

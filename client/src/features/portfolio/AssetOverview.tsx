@@ -1,24 +1,31 @@
 import { Eye, EyeOff } from "lucide-react";
-import type { DailyHistory, Snapshot } from "../../types";
+import type { DataIssue, DailyHistory, Snapshot } from "../../types";
 import type { DisplayPreferenceProps } from "../../components/DisplayPreferences";
 import { formatAmount, formatMoney, formatSigned } from "../../lib/format";
-import { Badge } from "../../components/Badge";
 import { DataStamp } from "../../components/DataStamp";
 import { AssetTrend } from "./AssetTrend";
 export function AssetOverview({
   snapshot,
   history,
   display,
+  onLocateIssue,
+  issuesDisabled = false,
 }: {
   snapshot: Snapshot;
+  onLocateIssue?: (issue: DataIssue) => void;
+  issuesDisabled?: boolean;
   history?: DailyHistory;
   display: Pick<DisplayPreferenceProps, "maskAmounts" | "setMaskAmounts">;
 }) {
-  const latest = history?.records[0];
+  const latest = snapshot.valuationStatus.comparable
+    ? history?.records[0]
+    : undefined;
   const currency = latest?.baseCurrency ?? snapshot.profile.baseCurrency;
-  const total = latest
-    ? (latest.exactTotalAssets ?? latest.totalAssets)
-    : snapshot.accounting?.totalValue;
+  const total = !snapshot.valuationStatus.comparable
+    ? null
+    : latest
+      ? (latest.exactTotalAssets ?? latest.totalAssets)
+      : snapshot.accounting?.totalValue;
   const symbol =
     new Intl.NumberFormat("zh-CN", { style: "currency", currency })
       .formatToParts(0)
@@ -106,6 +113,23 @@ export function AssetOverview({
             <span>30 日走势 ›</span>
           </button>
         )}
+      {snapshot.valuationStatus.issues.length > 0 && (
+        <details className="hero-issues">
+          <summary>{snapshot.valuationStatus.issues.length} 项需要处理</summary>
+          {snapshot.valuationStatus.issues.map((issue) => (
+            <button
+              className="text-button"
+              key={`${issue.code}-${issue.holdingIds.join()}`}
+              disabled={issuesDisabled}
+              onClick={() => onLocateIssue?.(issue)}
+            >
+              定位{" "}
+              {snapshot.holdings.find((h) => issue.holdingIds.includes(h.id))
+                ?.name ?? issue.currency}
+            </button>
+          ))}
+        </details>
+      )}
       <div className="hero-stamp">
         <DataStamp
           date={latest?.day ?? snapshot.updatedAt.slice(0, 10)}
@@ -123,12 +147,6 @@ export function AssetOverview({
             项资产沿用原值
           </span>
         )}
-        {latest?.missingFx.map((code) => (
-          <Badge key={code} tone="warning">
-            待补汇率：{code}
-          </Badge>
-        ))}
-        {display.maskAmounts && <span>金额已隐藏；复制和导出仍含真实数据</span>}
       </div>
     </section>
   );

@@ -1,4 +1,3 @@
-import { Callout } from "../../components/Callout";
 import { DataStamp } from "../../components/DataStamp";
 import { useEffect, useState } from "react";
 import { StockOptions } from "./StockOptions";
@@ -49,10 +48,12 @@ export function HoldingDetail({
           <dt>当前市值</dt>
           <dd>
             <span className="num" data-money>
-              {formatMoney(
-                holding.exactValues?.marketValue ?? holding.marketValue,
-                holding.currency,
-              )}
+              {snapshot.accounting?.holdings[holding.id]?.usable === false
+                ? "—"
+                : formatMoney(
+                    holding.exactValues?.marketValue ?? holding.marketValue,
+                    holding.currency,
+                  )}
             </span>
           </dd>
         </div>
@@ -116,9 +117,6 @@ export function HoldingDetail({
       {holding.assetClass !== "现金" && (
         <>
           <h3>交易明细</h3>
-          {snapshot.clearedTradeHoldings?.includes(holding.id) && (
-            <Callout tone="warning">交易明细需重新录入</Callout>
-          )}
           <fieldset
             disabled={busy || optionEditing}
             className="holding-trades-controls"

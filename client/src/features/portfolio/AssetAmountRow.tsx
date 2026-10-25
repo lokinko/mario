@@ -1,4 +1,5 @@
 import type {
+  DataIssue,
   Holding,
   AccountingHolding,
   StockOptionTotals,
@@ -24,8 +25,16 @@ export function AssetAmountRow({
   canDelete = true,
   exact,
   optionTotals,
+  issues = [],
+  onRepair,
+  source,
+  observedOn,
 }: {
   holding: Holding;
+  issues?: DataIssue[];
+  onRepair?: (issue: DataIssue) => void;
+  source?: string;
+  observedOn?: string;
   realizedPnl?: number | string;
   onOpen?: () => void;
   onEdit: () => void;
@@ -82,6 +91,35 @@ export function AssetAmountRow({
           {optionTotals ? " · 含关联期权" : ""}
           {closed && <Badge>已清仓</Badge>}
         </small>
+        {investment && (
+          <small>
+            {observedOn || holding.valuationDate || "日期未记录"} ·{" "}
+            {source || "手工估值"}
+          </small>
+        )}
+        {issues.map((issue) => (
+          <div
+            className="holding-data-issue"
+            key={`${issue.code}-${issue.holdingIds.join()}`}
+          >
+            <Badge tone="warning">{issue.message}</Badge>
+            <button
+              className="text-button"
+              disabled={disabled}
+              onClick={() => onRepair?.(issue)}
+            >
+              {
+                {
+                  missingFxRate: "补汇率",
+                  pendingCorporateAction: "确认拆合股",
+                  quarantinedTrades: "修复交易链",
+                  cashNeedsReconciliation: "核对存款",
+                  invalidTargetWeights: "编辑目标权重",
+                }[issue.code]
+              }
+            </button>
+          </div>
+        ))}
       </div>
       {investment && (
         <>
@@ -137,12 +175,11 @@ export function AssetAmountRow({
         </strong>
         {investment &&
           exact?.priceStatus &&
-          ["unconfirmed", "provisional"].includes(exact.priceStatus) && (
-            <Badge
-              tone="warning"
-              title={`参考估值，价格待核对 · ${holding.valuationDate || "日期待补"}`}
-            >
-              待核对
+          ["unconfirmed", "provisional", "corporate_pending_price"].includes(
+            exact.priceStatus,
+          ) && (
+            <Badge title={`参考价 · ${holding.valuationDate || "日期待补"}`}>
+              参考价
             </Badge>
           )}
       </div>

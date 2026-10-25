@@ -1,3 +1,4 @@
+import { isPendingFinancialRequest } from "../../api/portfolio/financialRequest";
 import { Callout } from "../../components/Callout";
 import { FinancialHistory } from "./FinancialHistory";
 import { useDrawerControls } from "../../components/Drawer";
@@ -308,7 +309,7 @@ export function HoldingTrades({
           : "真实交易已保存，持仓和收益已更新",
       );
     } catch (e) {
-      setUncertain(String(e).includes("结果待确认"));
+      setUncertain(isPendingFinancialRequest(e));
       setError(String(e));
     } finally {
       pending.current = false;
@@ -337,7 +338,7 @@ export function HoldingTrades({
       onUpdate(await pendingAction.current());
       flash("交易已删除，持仓和盈亏已更新");
     } catch (e) {
-      setUncertain(String(e).includes("结果待确认"));
+      setUncertain(isPendingFinancialRequest(e));
       setError(String(e));
     } finally {
       pending.current = false;
@@ -362,7 +363,7 @@ export function HoldingTrades({
       }
       flash("操作结果已确认，未重新创建交易");
     } catch (e) {
-      setUncertain(String(e).includes("结果待确认"));
+      setUncertain(isPendingFinancialRequest(e));
       setError(String(e));
     } finally {
       pending.current = false;
@@ -401,11 +402,7 @@ export function HoldingTrades({
   );
   return (
     <div className="holding-trades">
-      {quarantined && (
-        <Callout tone="warning">
-          这项持仓的交易链已隔离，原始记录和缓存余额均已保留。请在“更正历史与数据核对”中预览修复，避免重新录入造成重复结算。
-        </Callout>
-      )}
+      {quarantined && <p>请在下方预览并修复原始记录；修复前不能新增交易。</p>}
       {holding && (
         <div className="trade-toolbar">
           <span>

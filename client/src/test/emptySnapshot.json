@@ -30,7 +30,7 @@
     "undatedHoldingCount": 0,
     "valuationDates": [],
     "alignedValuationDate": null,
-    "warnings": []
+    "issues": []
   },
   "plan": {
     "monthlySurplus": 0,
@@ -40,7 +40,11 @@
     "riskCapacityPct": 15,
     "riskStatus": "insufficient",
     "rebalancing": [],
-    "assumptions": "基于当前资产类别的长期示例假设，执行 2000 次可重复模拟；不含税费、通胀、资产相关性突变和未来收入变化，不是收益预测。"
+    "assumptions": "基于当前资产类别的长期示例假设，执行 2000 次可重复模拟；不含税费、通胀、资产相关性突变和未来收入变化，不是收益预测。",
+    "rebalancingBlockedBy": [],
+    "excludedHoldingIds": [],
+    "asOf": null,
+    "targetTotalPct": 0
   },
   "updatedAt": "2026-09-09T13:27:16.676237+00:00",
   "accounting": {

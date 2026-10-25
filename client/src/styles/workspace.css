@@ -2019,3 +2019,17 @@ input[type="number"] {
 .investment-overview-grid:has(> :only-child) {
   grid-template-columns: minmax(0, 1fr);
 }
+
+.hero-issues {
+  grid-column: 1 / -1;
+}
+.hero-issues > button {
+  display: block;
+  margin-block-start: var(--space-2);
+}
+.holding-data-issue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}

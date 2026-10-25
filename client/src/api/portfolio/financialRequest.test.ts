@@ -150,3 +150,20 @@ it("propagates session expiry during receipt recovery to the shared auth handler
     window.removeEventListener("mario:session-expired", expired);
   }
 });
+
+it("reports an unresolved financial write with a typed pending outcome", async () => {
+  const { FinancialRequestError, isPendingFinancialRequest } =
+    await import("./financialRequest");
+  const lost = new TypeError("lost response");
+  const fetcher = vi.fn().mockRejectedValue(lost);
+  vi.stubGlobal("fetch", fetcher);
+  const error = await financialRequest("/holdings/cash/amount", input).catch(
+    (e: unknown) => e,
+  );
+  expect(error).toBeInstanceOf(FinancialRequestError);
+  expect(isPendingFinancialRequest(error)).toBe(true);
+  expect(error).toMatchObject({ kind: "pending", cause: { cause: lost } });
+  expect(isPendingFinancialRequest(new Error("操作结果待确认"))).toBe(false);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(hasDataWrites()).toBe(false);
+});

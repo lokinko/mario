@@ -1,3 +1,4 @@
+import { FinancialRequestError } from "../../api/portfolio/financialRequest";
 // @vitest-environment jsdom
 import {
   cleanup,
@@ -212,7 +213,7 @@ it("records expiry with zero premium and the remaining contract count", async ()
 it("retries an uncertain quote with exactly the same request and frozen revision", async () => {
   const cb = callbacks();
   vi.mocked(api.updateOptionPrice)
-    .mockRejectedValueOnce(new Error("结果待确认"))
+    .mockRejectedValueOnce(new FinancialRequestError())
     .mockResolvedValueOnce(snapshot);
   render(
     <StockOptions snapshot={snapshot} stock={stock} disabled={false} {...cb} />,

@@ -1,3 +1,4 @@
+import { FinancialRequestError } from "../../api/portfolio/financialRequest";
 // @vitest-environment jsdom
 import {
   cleanup,
@@ -1011,7 +1012,7 @@ it("locks position deletion while an execution is being edited", async () => {
 it("keeps an uncertain deletion frozen and rechecks the original revision after a refresh", async () => {
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(portfolioApi.deleteHolding)
-    .mockRejectedValueOnce(new Error("操作结果待确认"))
+    .mockRejectedValueOnce(new FinancialRequestError())
     .mockResolvedValueOnce(snapshot);
   const { onUpdate, rerender, flash } = mount(recordedPosition());
   deleteAsset("指数基金");
@@ -1223,3 +1224,137 @@ it("shows and saves the same total when returning from detailed prices to legacy
     ),
   );
 });
+
+it("shows old dates and reference prices without warning colors or global restrictions", () => {
+  const data = structuredClone(snapshot);
+  const h = {
+    ...emptyHolding(),
+    id: "old",
+    name: "旧日期持仓",
+    assetClass: "股票" as const,
+    valuationDate: "2025-01-01",
+    marketValue: 100,
+    quantity: 10,
+    currentPrice: 10,
+  };
+  data.holdings = [h];
+  data.accounting!.holdings[h.id] = {
+    marketValue: "100",
+    costBasis: "0",
+    quantity: "10",
+    currentPrice: "10",
+    costPrice: null,
+    fxRate: "1",
+    unrealizedProfit: null,
+    settledProfit: null,
+    priceStatus: "provisional",
+    usable: true,
+  };
+  const { container } = render(
+    <MyFacts snapshot={data} onUpdate={vi.fn()} flash={vi.fn()} />,
+  );
+  expect(screen.getByText("参考价")).toBeTruthy();
+  expect(screen.getByText(/2025-01-01 · 手工估值/)).toBeTruthy();
+  expect(
+    container.querySelector(".badge-warning, .callout-warning"),
+  ).toBeNull();
+  expect(screen.queryByText(/项需要处理/)).toBeNull();
+  expect(screen.queryByText("行动建议已暂停")).toBeNull();
+});
+
+it("locates an affected holding and offers its repair without warning on healthy rows", async () => {
+  const data = structuredClone(snapshot);
+  data.holdings = [
+    { ...emptyHolding("USD"), id: "usd", name: "美元资产", marketValue: 100 },
+    { ...emptyHolding(), id: "healthy", name: "正常资产", marketValue: 100 },
+  ];
+  data.valuationStatus.comparable = false;
+  data.valuationStatus.issues = [
+    {
+      code: "missingFxRate",
+      holdingIds: ["usd"],
+      currency: "USD",
+      message: "美元资产缺少 USD 汇率",
+    },
+  ];
+  const { container } = render(
+    <MyFacts snapshot={data} onUpdate={vi.fn()} flash={vi.fn()} />,
+  );
+  expect(screen.getByText("1 项需要处理")).toBeTruthy();
+  expect(container.querySelectorAll(".badge-warning")).toHaveLength(1);
+  expect(container.querySelector("#asset-healthy .badge-warning")).toBeNull();
+  const search = screen.getByRole("searchbox");
+  fireEvent.change(search, { target: { value: "正常资产" } });
+  fireEvent.click(screen.getByText("1 项需要处理"));
+  fireEvent.click(screen.getByRole("button", { name: "定位 美元资产" }));
+  await waitFor(() => expect(document.activeElement?.id).toBe("asset-usd"));
+  expect(search).toHaveProperty("value", "");
+  fireEvent.click(screen.getByRole("button", { name: "补汇率" }));
+  expect(screen.getByRole("dialog", { name: "补充 USD 汇率" })).toBeTruthy();
+  await waitFor(() => expect(portfolioApi.getFxSettings).toHaveBeenCalled());
+});
+
+it("shows reconciliation only in the affected currency row, including other cash currencies", () => {
+  const data = structuredClone(snapshot);
+  data.holdings = [
+    {
+      ...emptyHolding("EUR"),
+      id: "eur",
+      name: "欧元存款",
+      assetClass: "现金",
+      marketValue: 100,
+    },
+  ];
+  data.valuationStatus.issues = [
+    {
+      code: "cashNeedsReconciliation",
+      holdingIds: ["eur"],
+      currency: "EUR",
+      message: "EUR 存款待核对",
+    },
+  ];
+  render(<MyFacts snapshot={data} onUpdate={vi.fn()} flash={vi.fn()} />);
+  expect(screen.queryByText("EUR 存款待核对")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
+  expect(screen.getAllByText("EUR 存款待核对")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "核对存款" }));
+  expect(screen.getByRole("dialog", { name: "编辑 欧元存款" })).toBeTruthy();
+});
+
+it.each(["quarantinedTrades", "pendingCorporateAction"] as const)(
+  "opens the repair controls directly for %s",
+  async (code) => {
+    const data = structuredClone(snapshot);
+    data.holdings = [
+      {
+        ...emptyHolding(),
+        id: "affected",
+        name: "待处理证券",
+        assetClass: "股票",
+        marketValue: 100,
+      },
+    ];
+    data.valuationStatus.issues = [
+      {
+        code,
+        holdingIds: ["affected"],
+        currency: "CNY",
+        message: "该证券需要核对",
+      },
+    ];
+    render(<MyFacts snapshot={data} onUpdate={vi.fn()} flash={vi.fn()} />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: code === "quarantinedTrades" ? "修复交易链" : "确认拆合股",
+      }),
+    );
+    expect(screen.getByRole("dialog", { name: "待处理证券" })).toBeTruthy();
+    expect(document.querySelector("details.financial-history")).toHaveProperty(
+      "open",
+      true,
+    );
+    await waitFor(() =>
+      expect(portfolioApi.getFinancialHistory).toHaveBeenCalledWith("affected"),
+    );
+  },
+);

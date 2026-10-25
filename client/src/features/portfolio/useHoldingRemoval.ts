@@ -1,3 +1,4 @@
+import { isPendingFinancialRequest } from "../../api/portfolio/financialRequest";
 import { useRef, useState } from "react";
 import { deleteHolding } from "../../api/portfolio";
 import type { Holding, Snapshot } from "../../types";
@@ -34,7 +35,7 @@ export function useHoldingRemoval({
       onRemoved(request.id);
       flash("资产已删除");
     } catch (e) {
-      const pending = String(e).includes("结果待确认");
+      const pending = isPendingFinancialRequest(e);
       setUncertain(pending ? request : null);
       setError(pending ? String(e) : `删除失败：${String(e)}`);
     } finally {

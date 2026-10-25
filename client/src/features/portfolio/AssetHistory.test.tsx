@@ -81,7 +81,12 @@ it("shows incomplete totals and loads older records with a cursor", async () => 
     nextBefore: "2026-09-13",
   });
   render(<History />);
-  await screen.findByText("待补汇率：美元账户");
+  await waitFor(() =>
+    expect(document.querySelector(".hero-amount strong")?.textContent).toBe(
+      "—",
+    ),
+  );
+  expect(screen.queryByText("待补汇率：美元账户")).toBeNull();
   expect(screen.queryByRole("group", { name: /每日总资产趋势/ })).toBeNull();
   fireEvent.click(screen.getByText("全部历史"));
   await waitFor(() =>
