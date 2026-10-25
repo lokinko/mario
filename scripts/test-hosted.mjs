@@ -194,11 +194,11 @@ try{
   const security=financial.holdingTrades[0].holdingId;
   const action={requestId:randomUUID(),expectedRevision:financial.holdingRevisions[security],split:{effectiveOn:'2026-02-01',numerator:'2',denominator:'1'},reason:'券商通知核对测试'};
   financial=await request(base,`/holdings/${security}/corporate-actions`,financialAccount,'POST',action);
-  assert.equal(financial.valuationStatus.decisionReady,false);
+  assert.ok(financial.valuationStatus.issues.some(issue => issue.code === 'pendingCorporateAction' && issue.holdingIds.includes(security)));
   financial=await request(base,`/corporate-actions/${action.requestId}/confirm`,financialAccount,'POST',{expectedRevision:financial.holdingRevisions[security],reason:'核对实际股数'});
   assert.equal(financial.holdingTradeSummaries[security].quantity,'2');
   assert.equal(financial.holdingTradeSummaries[security].costBasis,'10');
-  assert.equal(financial.accounting.holdings[security].usable,false);
+  assert.equal(financial.accounting.holdings[security].usable,true);
   financial=await request(base,`/holdings/${security}/amount`,financialAccount,'PUT',{amount:'12.34',requestId:randomUUID(),expectedRevision:financial.holdingRevisions[security]});
   assert.equal(financial.accounting.totalValue,'100000000000011.36');
   const financialBackup=await request(base,'/data/export',financialAccount);

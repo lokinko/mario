@@ -139,6 +139,15 @@ fn deleting_mixed_history_and_live_position_reverses_only_current_cash() {
         .unwrap();
     assert_eq!(s.cash_balances[0].amount, "10000");
     assert!(s.cash_balances[0].needs_reconciliation);
+    assert_eq!(
+        s.valuation_status.issues[0].code,
+        crate::models::IssueCode::CashNeedsReconciliation
+    );
+    assert!(s.valuation_status.comparable);
+    assert!(!s
+        .plan
+        .rebalancing_blocked_by
+        .contains(&crate::models::IssueCode::CashNeedsReconciliation));
     assert!(s.holding_trades.is_empty());
 
     // A later cash confirmation covers all earlier executions.
@@ -364,7 +373,14 @@ fn split_review_rebuilds_quantity_and_cost_without_changing_original_executions_
         .unwrap());
     assert!(db.register_corporate_actions(&id, &quote).unwrap());
     let pending = db.snapshot().unwrap();
-    assert!(!pending.valuation_status.decision_ready);
+    assert_eq!(
+        pending.valuation_status.issues[0].code,
+        crate::models::IssueCode::PendingCorporateAction
+    );
+    assert_eq!(
+        pending.valuation_status.issues[0].holding_ids,
+        vec![id.clone()]
+    );
     assert!(db
         .apply_verified_holding_valuation(&id, 10.0, &quote)
         .is_err());
@@ -432,7 +448,11 @@ fn manual_reverse_split_and_retraction_preserve_cash_and_reject_fractional_round
     let id = s.holding_trades[0].holding_id.clone();
     let manual:crate::models::ManualCorporateActionInput=serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"expectedRevision":s.holding_revisions[&id],"split":{"effectiveOn":"2026-02-01","numerator":"1","denominator":"2"},"reason":"按未上市证券通知核对"})).unwrap();
     let s = db.declare_corporate_action(&id, &manual).unwrap();
-    assert!(!s.valuation_status.decision_ready);
+    assert!(s
+        .valuation_status
+        .issues
+        .iter()
+        .any(|i| i.code == crate::models::IssueCode::PendingCorporateAction));
     let confirm = ConfirmCorporateActionInput {
         expected_revision: s.holding_revisions[&id].clone(),
         reason: "核对券商通知".into(),
@@ -442,8 +462,8 @@ fn manual_reverse_split_and_retraction_preserve_cash_and_reject_fractional_round
         .unwrap();
     assert_eq!(s.holding_trade_summaries[&id].quantity, "5");
     assert_eq!(s.holding_trade_summaries[&id].cost_basis, "100");
-    assert!(!s.accounting.as_ref().unwrap().holdings[&id].usable);
-    assert!(s.accounting.as_ref().unwrap().total_value.is_none());
+    assert!(s.accounting.as_ref().unwrap().holdings[&id].usable);
+    assert!(s.accounting.as_ref().unwrap().total_value.is_some());
     let undo = ConfirmCorporateActionInput {
         expected_revision: s.holding_revisions[&id].clone(),
         reason: "通知版本有误，撤回核对".into(),
@@ -542,7 +562,7 @@ fn decimal_source_and_daily_history_keep_cents_below_float_resolution_and_restor
 }
 
 #[test]
-fn quote_request_date_cannot_hide_stale_observation_from_the_decision_gate() {
+fn old_price_observation_is_metadata_not_a_rebalancing_gate() {
     let db = funded();
     let s = db
         .save_holding_trade(&buy("SPLIT", "history", "2026-01-01"))
@@ -559,11 +579,10 @@ fn quote_request_date_cannot_hide_stale_observation_from_the_decision_gate() {
     let s = db
         .apply_verified_holding_valuation(&id, 10.0, &quote)
         .unwrap();
-    assert!(!s.valuation_status.decision_ready);
-    assert!(s
-        .valuation_status
-        .warnings
-        .iter()
-        .any(|s| s.contains("实际价格观察日")));
-    assert!(s.plan.rebalancing.is_empty());
+    assert!(s.valuation_status.issues.is_empty());
+    assert_eq!(s.holding_valuations[0].observed_on, quote.observed_on);
+    assert!(!s
+        .plan
+        .rebalancing_blocked_by
+        .contains(&crate::models::IssueCode::PendingCorporateAction));
 }

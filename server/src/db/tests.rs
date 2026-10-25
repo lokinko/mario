@@ -1245,7 +1245,7 @@ fn detailed_holding_input() -> HoldingInput {
 }
 
 #[test]
-fn different_recent_valuation_dates_allow_actions_but_stale_values_still_block() {
+fn old_cash_and_security_dates_do_not_block_rebalancing() {
     let db = Database::test();
     let today = NaiveDate::parse_from_str(&crate::models::market::today(), "%Y-%m-%d").unwrap();
     let mut investment = detailed_holding_input();
@@ -1262,7 +1262,7 @@ fn different_recent_valuation_dates_allow_actions_but_stale_values_still_block()
         cost_price: None,
         quantity: None,
         current_price: None,
-        valuation_date: (today - chrono::Duration::days(1)).to_string(),
+        valuation_date: (today - chrono::Duration::days(30)).to_string(),
         ..detailed_holding_input()
     })
     .unwrap();
@@ -1270,8 +1270,7 @@ fn different_recent_valuation_dates_allow_actions_but_stale_values_still_block()
     let snapshot = db.snapshot().unwrap();
     assert_eq!(snapshot.valuation_status.valuation_dates.len(), 2);
     assert!(snapshot.valuation_status.aligned_valuation_date.is_none());
-    assert!(snapshot.valuation_status.decision_ready);
-    assert!(snapshot.valuation_status.warnings.is_empty());
+    assert!(snapshot.valuation_status.issues.is_empty());
     assert!(!snapshot.plan.rebalancing.is_empty());
     assert!(!snapshot
         .findings
@@ -1280,13 +1279,12 @@ fn different_recent_valuation_dates_allow_actions_but_stale_values_still_block()
 
     investment.valuation_date = (today - chrono::Duration::days(8)).to_string();
     let stale = db.update_holding(&investment_id, &investment).unwrap();
-    assert!(!stale.valuation_status.decision_ready);
-    assert!(stale.plan.rebalancing.is_empty());
-    assert!(stale
-        .valuation_status
-        .warnings
-        .iter()
-        .any(|warning| warning.contains("已超过 7 天")));
+    assert!(stale.valuation_status.issues.is_empty());
+    assert!(!stale.plan.rebalancing.is_empty());
+    assert_eq!(
+        stale.plan.as_of.as_deref(),
+        Some((today - chrono::Duration::days(30)).to_string().as_str())
+    );
 }
 
 #[test]

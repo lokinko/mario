@@ -320,6 +320,34 @@ mod tests {
     fn opening(s: &Snapshot, parent: &str, side: &str, multiplier: &str) -> HoldingTradeInput {
         serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"newHolding":{"name":"股票期权","symbol":"","assetClass":"期权","currency":"CNY","option":{"underlyingId":parent,"account":"券商A","optionType":"put","side":side,"strike":"10","expiresOn":"2026-02-01","multiplier":multiplier}},"kind":if side=="short" {"sell"} else {"buy"},"occurredOn":"2026-01-02","sequence":1,"quantity":"2","price":"3","grossAmount":text(Decimal::from(6)*Decimal::from_str_exact(multiplier).unwrap()),"fees":"2","taxes":"0","account":"券商A","settlementMode":"settle","expectedCashBaseline":s.cash_balances[0].baseline_id})).unwrap()
     }
+    #[test]
+    fn open_options_exclude_only_the_contract_and_its_underlying() {
+        let db = Database::test();
+        let (s, parent) = setup(&db);
+        let input = opening(&s, &parent, "long", "1");
+        let s = db.save_holding_trade(&input).unwrap();
+        let option_id = s.option_contracts.keys().next().unwrap().clone();
+        let conn = db.conn().unwrap();
+        // The cash remains eligible even when all target weight belongs to the excluded stock.
+        conn.execute(
+            "UPDATE holdings SET target_pct=100 WHERE asset_class='股票'",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let s = db.snapshot().unwrap();
+        assert!(s.valuation_status.issues.is_empty());
+        assert!(s.plan.rebalancing_blocked_by.is_empty());
+        assert_eq!(s.plan.excluded_holding_ids.len(), 2);
+        assert!(s.plan.excluded_holding_ids.contains(&parent));
+        assert!(s.plan.excluded_holding_ids.contains(&option_id));
+        assert!(!s.plan.rebalancing.is_empty());
+        assert!(s
+            .plan
+            .rebalancing
+            .iter()
+            .all(|a| a.holding_id != parent && a.holding_id != option_id));
+    }
     fn next(
         s: &Snapshot,
         id: &str,
@@ -400,7 +428,8 @@ mod tests {
                 Decimal::from_str_exact(&s.cash_balances[0].amount).unwrap(),
                 start + expected_flow
             );
-            assert!(!s.valuation_status.decision_ready);
+            assert!(s.plan.excluded_holding_ids.contains(&id));
+            assert!(s.plan.excluded_holding_ids.contains(&parent));
             assert!(s.plan.rebalancing.is_empty());
             let before = hash(&db);
             db.update_option_price(&id, &quote).unwrap();

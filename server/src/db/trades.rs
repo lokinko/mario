@@ -1691,7 +1691,12 @@ mod tests {
             .unwrap()
             .cleared_trade_holdings
             .contains(&bad_id));
-        assert!(!copy.snapshot().unwrap().valuation_status.decision_ready);
+        let issues = copy.snapshot().unwrap().valuation_status.issues;
+        let quarantine = issues
+            .iter()
+            .find(|i| i.code == crate::models::IssueCode::QuarantinedTrades)
+            .unwrap();
+        assert_eq!(quarantine.holding_ids, vec![bad_id.clone()]);
         let mut repaired: HoldingTrade=serde_json::from_str(&serde_json::to_string(&serde_json::json!({
             "id":first.request_id,"holdingId":bad_id,"kind":"buy","occurredOn":first.occurred_on,"sequence":1,
             "quantity":"10","price":"10","grossAmount":"100","fees":"2","taxes":"0","currency":"CNY","account":"券商A","externalId":"","note":"","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"

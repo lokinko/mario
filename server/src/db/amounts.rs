@@ -233,7 +233,10 @@ pub(super) fn split_reference(
     }
     Ok(())
 }
-pub(super) fn build(conn: &Connection, snapshot: &Snapshot) -> AppResult<AccountingSnapshot> {
+pub(super) fn build(
+    conn: &Connection,
+    snapshot: &super::snapshot::SnapshotData,
+) -> AppResult<AccountingSnapshot> {
     let mut holdings = std::collections::BTreeMap::new();
     for holding in &snapshot.holdings {
         let stored = read(conn, &holding.id)?;
@@ -280,7 +283,6 @@ pub(super) fn build(conn: &Connection, snapshot: &Snapshot) -> AppResult<Account
             None
         };
         let fx_rate = super::fx::exact_rate(conn, holding, &snapshot.profile.base_currency)?;
-        let price_pending = values.price_status == "corporate_pending_price";
         holdings.insert(
             holding.id.clone(),
             AccountingHolding {
@@ -291,8 +293,7 @@ pub(super) fn build(conn: &Connection, snapshot: &Snapshot) -> AppResult<Account
                 settled_profit: summary
                     .map(|s| s.settled_profit.clone())
                     .or_else(|| empty_option_anchor.then(|| "0".into())),
-                usable: !price_pending
-                    && !snapshot.cleared_trade_holdings.contains(&holding.id)
+                usable: !snapshot.cleared_trade_holdings.contains(&holding.id)
                     && !snapshot
                         .corporate_actions
                         .iter()

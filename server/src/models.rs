@@ -453,15 +453,41 @@ pub struct HoldingTradeUpdateInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortfolioValuationStatus {
-    #[serde(default)]
-    pub decision_ready: bool,
     pub base_currency: String,
     pub comparable: bool,
     pub missing_fx_holdings: Vec<String>,
     pub undated_holding_count: usize,
     pub valuation_dates: Vec<String>,
     pub aligned_valuation_date: Option<String>,
-    pub warnings: Vec<String>,
+    pub issues: Vec<DataIssue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum IssueCode {
+    MissingFxRate,
+    PendingCorporateAction,
+    QuarantinedTrades,
+    CashNeedsReconciliation,
+    InvalidTargetWeights,
+}
+
+impl IssueCode {
+    pub fn blocks_portfolio_value(self) -> bool {
+        matches!(
+            self,
+            Self::MissingFxRate | Self::PendingCorporateAction | Self::QuarantinedTrades
+        )
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataIssue {
+    pub code: IssueCode,
+    pub holding_ids: Vec<String>,
+    pub currency: Option<String>,
+    pub message: String,
 }
 
 fn default_currency() -> String {
@@ -484,6 +510,10 @@ pub struct PortfolioPlan {
     pub risk_capacity_pct: f64,
     pub risk_status: String,
     pub rebalancing: Vec<RebalanceAction>,
+    pub rebalancing_blocked_by: Vec<IssueCode>,
+    pub excluded_holding_ids: Vec<String>,
+    pub as_of: Option<String>,
+    pub target_total_pct: f64,
     pub assumptions: String,
 }
 

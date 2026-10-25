@@ -90,222 +90,39 @@ impl Database {
             )?
             .unwrap_or_else(|| Utc::now().to_rfc3339());
 
-        let mut snapshot = build_snapshot(profile, holdings, holding_valuations, updated_at);
         let mut statement = conn.prepare(
             "SELECT id, CASE WHEN updated_at='' THEN created_at ELSE updated_at END FROM holdings",
         )?;
-        snapshot.holding_revisions = statement
+        let holding_revisions = statement
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<Result<_, _>>()?;
-        snapshot.option_contracts = super::options::load(conn)?;
-        snapshot.holding_trades = super::trades::load(conn)?;
-        snapshot.cash_balances = super::cash::states(conn)?;
-        snapshot.holding_trade_summaries =
-            super::trades::summaries(conn, &snapshot.holding_trades)?;
-        snapshot.corporate_actions = super::corporate::load(conn)?;
-        if snapshot
-            .corporate_actions
-            .iter()
-            .any(|a| !a.applied && !a.dismissed)
-        {
-            snapshot.valuation_status.comparable = false;
-            snapshot.valuation_status.decision_ready = false;
-            snapshot
-                .valuation_status
-                .warnings
-                .push("存在待确认公司行动，相关估值和调仓行动暂停".into());
-            snapshot.plan.rebalancing.clear();
-        }
+        let option_contracts = super::options::load(conn)?;
+        let holding_trades = super::trades::load(conn)?;
+        let cash_balances = super::cash::states(conn)?;
+        let holding_trade_summaries = super::trades::summaries(conn, &holding_trades)?;
+        let corporate_actions = super::corporate::load(conn)?;
         let mut notices =
             conn.prepare("SELECT holding_id FROM trading_quarantine ORDER BY holding_id")?;
-        snapshot.cleared_trade_holdings = notices
+        let cleared_trade_holdings = notices
             .query_map([], |r| r.get(0))?
             .collect::<Result<Vec<_>, _>>()?;
-        if snapshot
-            .cash_balances
-            .iter()
-            .any(|b| b.needs_reconciliation)
-        {
-            snapshot.valuation_status.decision_ready = false;
-            snapshot
-                .valuation_status
-                .warnings
-                .push("存款余额待重新核对".into());
-            snapshot.plan.rebalancing.clear();
-            snapshot.findings.push(crate::models::RiskFinding {
-                level: "high".into(),
-                title: "存款余额待核对".into(),
-                detail: "核对基准之前的交易发生了更正，当前余额保留，行动建议暂停".into(),
-                action: "按银行或券商实际余额重新确认存款".into(),
-            });
-        }
-        if !snapshot.cleared_trade_holdings.is_empty() {
-            snapshot.valuation_status.comparable = false;
-            snapshot.valuation_status.decision_ready = false;
-            snapshot
-                .valuation_status
-                .warnings
-                .push("交易链存在异常，原始记录已隔离，组合估值和行动建议暂停".into());
-            snapshot.plan.rebalancing.clear();
-            snapshot.plan.assumptions =
-                "存在待修复交易链，禁止将缓存数值作为可信资产或行动依据".into();
-            snapshot.findings.push(crate::models::RiskFinding {
-                level: "high".into(),
-                title: "交易原始记录待修复".into(),
-                detail: "原始记录和现金余额均已保留，未自动删除或重新结算".into(),
-                action: "在交易明细中预览和修复异常记录，并核对存款".into(),
-            });
-        }
-        let accounting = super::amounts::build(conn, &snapshot)?;
-        let today =
-            chrono::NaiveDate::parse_from_str(&crate::models::market::today(), "%Y-%m-%d").unwrap();
-        for evidence in &snapshot.holding_valuations {
-            if !chrono::NaiveDate::parse_from_str(&evidence.observed_on, "%Y-%m-%d")
-                .is_ok_and(|day| (0..=7).contains(&(today - day).num_days()))
-            {
-                snapshot.valuation_status.decision_ready = false;
-                snapshot.valuation_status.warnings.push(format!(
-                    "{} 的实际价格观察日缺失或已超过 7 天",
-                    evidence.symbol
-                ));
-            }
-        }
-        for holding in &snapshot.holdings {
-            if holding.asset_class != "现金"
-                && matches!(
-                    accounting.holdings[&holding.id]
-                        .amounts
-                        .price_status
-                        .as_str(),
-                    "unconfirmed" | "provisional" | "corporate_pending_price"
-                )
-            {
-                snapshot.valuation_status.decision_ready = false;
-                snapshot.valuation_status.warnings.push(format!(
-                    "{} 当前价格尚未确认，成交参考价不能作为决策估值",
-                    holding.name
-                ));
-            }
-        }
-        use rust_decimal::{prelude::ToPrimitive, Decimal};
-        let number = |value: &str| -> AppResult<f64> {
-            Decimal::from_str_exact(value)
-                .map_err(|_| AppError::Validation("会计投影金额无效".into()))?
-                .to_f64()
-                .ok_or_else(|| AppError::Validation("会计投影超出范围".into()))
+        let data = super::snapshot::SnapshotData {
+            profile,
+            holdings,
+            holding_valuations,
+            updated_at,
+            holding_revisions,
+            option_contracts,
+            holding_trades,
+            cash_balances,
+            holding_trade_summaries,
+            corporate_actions,
+            cleared_trade_holdings,
         };
-        for holding in &mut snapshot.holdings {
-            let exact = &accounting.holdings[&holding.id];
-            if exact.usable {
-                holding.market_value = number(&exact.amounts.market_value)?;
-                holding.cost_basis = number(&exact.amounts.cost_basis)?;
-                holding.quantity = exact.amounts.quantity.as_deref().map(number).transpose()?;
-                holding.cost_price = exact
-                    .amounts
-                    .cost_price
-                    .as_deref()
-                    .map(number)
-                    .transpose()?;
-                holding.current_price = exact
-                    .amounts
-                    .current_price
-                    .as_deref()
-                    .map(number)
-                    .transpose()?;
-            }
-        }
-        let derived = build_snapshot(
-            snapshot.profile.clone(),
-            snapshot.holdings.clone(),
-            snapshot.holding_valuations.clone(),
-            snapshot.updated_at.clone(),
-        );
-        let extra = snapshot
-            .findings
-            .into_iter()
-            .filter(|f| matches!(f.title.as_str(), "存款余额待核对" | "交易原始记录待修复"))
-            .collect::<Vec<_>>();
-        snapshot.findings = derived.findings;
-        snapshot.findings.extend(extra);
-        snapshot.plan = derived.plan;
-        if let Some(total) = &accounting.total_value {
-            let total = Decimal::from_str_exact(total)
-                .map_err(|_| AppError::Validation("组合合计无效".into()))?;
-            let mut target_sum = Decimal::ZERO;
-            for holding in &snapshot.holdings {
-                target_sum += Decimal::from_str_exact(&holding.target_pct.to_string())
-                    .map_err(|_| AppError::Validation("目标权重无效".into()))?;
-            }
-            if (target_sum - Decimal::from(100)).abs() > Decimal::new(1, 8) {
-                snapshot.plan.rebalancing.clear();
-            }
-            for action in &mut snapshot.plan.rebalancing {
-                let source = &accounting.holdings[&action.holding_id];
-                let weight = Decimal::from_str_exact(&action.target_pct.to_string())
-                    .map_err(|_| AppError::Validation("目标权重无效".into()))?
-                    / Decimal::from(100);
-                let value = Decimal::from_str_exact(&source.amounts.market_value)
-                    .map_err(|_| AppError::Validation("资产原值无效".into()))?;
-                let rate = Decimal::from_str_exact(source.fx_rate.as_deref().unwrap_or("0"))
-                    .map_err(|_| AppError::Validation("折算汇率无效".into()))?;
-                let difference = total
-                    .checked_mul(weight)
-                    .and_then(|target| value.checked_mul(rate).map(|current| target - current))
-                    .ok_or_else(|| AppError::Validation("再平衡金额计算超出范围".into()))?;
-                let amount = difference.abs().round_dp_with_strategy(
-                    if snapshot.profile.base_currency == "JPY" {
-                        0
-                    } else {
-                        2
-                    },
-                    rust_decimal::RoundingStrategy::MidpointAwayFromZero,
-                );
-                action.exact_amount = Some(amount.normalize().to_string());
-                action.amount = amount
-                    .to_f64()
-                    .ok_or_else(|| AppError::Validation("再平衡金额超出范围".into()))?;
-                action.direction = if difference >= Decimal::ZERO {
-                    "增加"
-                } else {
-                    "减少"
-                }
-                .into();
-            }
-        }
-        snapshot.total_value = if snapshot.valuation_status.comparable {
-            derived.total_value
-        } else {
-            0.0
-        };
-        snapshot.concentration_pct = if snapshot.valuation_status.comparable {
-            derived.concentration_pct
-        } else {
-            0.0
-        };
-        if !snapshot.valuation_status.decision_ready {
-            snapshot.plan.rebalancing.clear();
-            snapshot.plan.assumptions = format!(
-                "数据质量未满足行动要求：{}。{}",
-                snapshot.valuation_status.warnings.join("；"),
-                snapshot.plan.assumptions
-            );
-        }
-        snapshot.stock_option_totals = super::options::totals(&snapshot, &accounting)?;
-        if snapshot.option_contracts.keys().any(|id| {
-            snapshot
-                .holdings
-                .iter()
-                .any(|h| &h.id == id && h.quantity.is_some_and(|q| q > 0.0))
-        }) {
-            snapshot.valuation_status.decision_ready = false;
-            snapshot.valuation_status.warnings.push("存在未平仓期权；组合含权利金资产或负债，普通股票再平衡不适用，请核对保证金与交割风险".into());
-            snapshot.plan.assumptions = format!(
-                "存在未平仓期权，普通股票再平衡暂停；请核对保证金与交割风险。{}",
-                snapshot.plan.assumptions
-            );
-            snapshot.plan.rebalancing.clear();
-        }
-        snapshot.accounting = Some(accounting);
+        let accounting = super::amounts::build(conn, &data)?;
+        let mut snapshot = build_snapshot(data, accounting)?;
+        snapshot.stock_option_totals =
+            super::options::totals(&snapshot, snapshot.accounting.as_ref().unwrap())?;
         Ok(snapshot)
     }
 

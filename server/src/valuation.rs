@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use crate::models::{Holding, PortfolioAllocationChange, PortfolioValuationStatus};
+use crate::models::{
+    CashBalanceState, CorporateActionRecord, DataIssue, Holding, IssueCode,
+    PortfolioAllocationChange, PortfolioValuationStatus,
+};
 
 pub fn normalize_holding(holding: &Holding, base_currency: &str) -> Option<Holding> {
     let rate = if holding.currency.eq_ignore_ascii_case(base_currency) {
@@ -20,69 +23,81 @@ pub fn normalize_holding(holding: &Holding, base_currency: &str) -> Option<Holdi
     Some(normalized)
 }
 
-pub fn status(base_currency: &str, holdings: &[Holding]) -> PortfolioValuationStatus {
+pub fn issues(
+    base_currency: &str,
+    holdings: &[Holding],
+    corporate_actions: &[CorporateActionRecord],
+    quarantined_ids: &[String],
+    cash_balances: &[CashBalanceState],
+) -> PortfolioValuationStatus {
     let base_currency = base_currency.trim().to_ascii_uppercase();
-    let mut missing_fx_holdings = holdings
-        .iter()
-        .filter(|holding| {
-            !holding.currency.eq_ignore_ascii_case(&base_currency)
-                && holding
-                    .fx_rate_to_base
-                    .is_none_or(|rate| !rate.is_finite() || rate <= 0.0)
-        })
-        .map(|holding| holding.name.clone())
-        .collect::<Vec<_>>();
-    missing_fx_holdings.sort();
+    let mut issues = Vec::new();
+    let mut missing_fx_holdings = Vec::new();
+    for holding in holdings {
+        let mut add = |code, message: String| {
+            issues.push(DataIssue {
+                code,
+                holding_ids: vec![holding.id.clone()],
+                currency: Some(holding.currency.clone()),
+                message,
+            })
+        };
+        if !holding.currency.eq_ignore_ascii_case(&base_currency)
+            && holding
+                .fx_rate_to_base
+                .is_none_or(|rate| !rate.is_finite() || rate <= 0.0)
+        {
+            missing_fx_holdings.push(holding.name.clone());
+            add(
+                IssueCode::MissingFxRate,
+                format!("{} 缺少 {} 汇率", holding.name, holding.currency),
+            );
+        }
+        if quarantined_ids.contains(&holding.id) {
+            add(
+                IssueCode::QuarantinedTrades,
+                format!("{} 的交易链待修复", holding.name),
+            );
+        }
+        if corporate_actions
+            .iter()
+            .any(|a| a.holding_id == holding.id && !a.applied && !a.dismissed)
+        {
+            add(
+                IssueCode::PendingCorporateAction,
+                format!("{} 有待确认的拆合股", holding.name),
+            );
+        }
+        if cash_balances
+            .iter()
+            .any(|b| b.holding_id == holding.id && b.needs_reconciliation)
+        {
+            add(
+                IssueCode::CashNeedsReconciliation,
+                format!("{} 存款待核对", holding.currency),
+            );
+        }
+    }
     let undated_holding_count = holdings
         .iter()
-        .filter(|holding| holding.valuation_date.trim().is_empty())
+        .filter(|h| h.valuation_date.trim().is_empty())
         .count();
     let mut valuation_dates = holdings
         .iter()
-        .map(|holding| holding.valuation_date.trim())
-        .filter(|date| !date.is_empty())
-        .map(str::to_owned)
+        .map(|h| h.valuation_date.trim().to_owned())
+        .filter(|d| !d.is_empty())
         .collect::<Vec<_>>();
     valuation_dates.sort();
     valuation_dates.dedup();
-    let aligned_valuation_date = (undated_holding_count == 0 && valuation_dates.len() == 1)
-        .then(|| valuation_dates[0].clone());
-    let mut warnings = Vec::new();
-    if !missing_fx_holdings.is_empty() {
-        warnings.push("存在未折算到基准币种的外币持仓".into());
-    }
-    if undated_holding_count > 0 {
-        warnings.push("存在缺少估值日期的持仓".into());
-    }
-    let today =
-        chrono::NaiveDate::parse_from_str(&crate::models::market::today(), "%Y-%m-%d").unwrap();
-    let recent = |day: &str| {
-        chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d")
-            .is_ok_and(|date| (0..=7).contains(&(today - date).num_days()))
-    };
-    for holding in holdings {
-        if !recent(&holding.valuation_date) {
-            warnings.push(format!("{} 的估值缺少有效日期或已超过 7 天", holding.name));
-        }
-        if !holding.currency.eq_ignore_ascii_case(&base_currency)
-            && !recent(&holding.fx_rate_observed_on)
-        {
-            warnings.push(format!(
-                "{} 的汇率缺少有效观察日或已超过 7 天",
-                holding.name
-            ));
-        }
-    }
-    let decision_ready = warnings.is_empty() && !holdings.is_empty();
     PortfolioValuationStatus {
-        decision_ready,
+        comparable: !issues.iter().any(|i| i.code.blocks_portfolio_value()),
         base_currency,
-        comparable: missing_fx_holdings.is_empty(),
         missing_fx_holdings,
         undated_holding_count,
+        aligned_valuation_date: (undated_holding_count == 0 && valuation_dates.len() == 1)
+            .then(|| valuation_dates[0].clone()),
         valuation_dates,
-        aligned_valuation_date,
-        warnings,
+        issues,
     }
 }
 
@@ -174,7 +189,7 @@ mod tests {
             holding("人民币", "CNY", 700.0, None, "2026-09-01"),
             holding("美元", "USD", 100.0, None, "2026-09-02"),
         ];
-        let incomplete = status("CNY", &holdings);
+        let incomplete = issues("CNY", &holdings, &[], &[], &[]);
         assert!(!incomplete.comparable);
         assert_eq!(incomplete.missing_fx_holdings, vec!["美元"]);
         assert_eq!(incomplete.valuation_dates.len(), 2);
@@ -187,7 +202,7 @@ mod tests {
             normalize_holding(&completed, "CNY").unwrap().market_value,
             700.0
         );
-        let complete_status = status("CNY", &[holdings[0].clone(), completed]);
+        let complete_status = issues("CNY", &[holdings[0].clone(), completed], &[], &[], &[]);
         assert!(complete_status.comparable);
         assert_eq!(
             complete_status.aligned_valuation_date.as_deref(),

@@ -1,6 +1,15 @@
-use crate::models::{FinancialProfile, Holding, PortfolioPlan, RebalanceAction};
+use crate::models::{
+    accounting::AccountingSnapshot, DataIssue, FinancialProfile, Holding, IssueCode, PortfolioPlan,
+    RebalanceAction,
+};
 
-pub fn analyze(profile: &FinancialProfile, holdings: &[Holding]) -> PortfolioPlan {
+pub fn analyze(
+    profile: &FinancialProfile,
+    holdings: &[Holding],
+    issues: &[DataIssue],
+    excluded: &[String],
+    accounting: Option<&AccountingSnapshot>,
+) -> crate::AppResult<PortfolioPlan> {
     use rust_decimal::{prelude::ToPrimitive, Decimal};
     let income = profile
         .exact_amounts
@@ -53,7 +62,17 @@ pub fn analyze(profile: &FinancialProfile, holdings: &[Holding]) -> PortfolioPla
         "over"
     };
 
-    PortfolioPlan {
+    let target_total_pct: f64 = holdings.iter().map(|h| h.target_pct).sum();
+    let mut rebalancing_blocked_by = Vec::new();
+    for issue in issues.iter().filter(|i| i.code.blocks_portfolio_value()) {
+        if !rebalancing_blocked_by.contains(&issue.code) {
+            rebalancing_blocked_by.push(issue.code);
+        }
+    }
+    if (target_total_pct - 100.0).abs() > 1e-8 && !holdings.is_empty() {
+        rebalancing_blocked_by.push(IssueCode::InvalidTargetWeights);
+    }
+    Ok(PortfolioPlan {
         exact_monthly_surplus,
         monthly_surplus,
         modeled_annual_return_pct: annual_return * 100.0,
@@ -61,9 +80,13 @@ pub fn analyze(profile: &FinancialProfile, holdings: &[Holding]) -> PortfolioPla
         stress_loss_pct: stress_loss,
         risk_capacity_pct: risk_capacity,
         risk_status: risk_status.into(),
-        rebalancing: rebalance_actions(holdings),
+        rebalancing: if rebalancing_blocked_by.is_empty() { rebalance_actions(profile, holdings, excluded, accounting)? } else { Vec::new() },
+        rebalancing_blocked_by,
+        excluded_holding_ids: excluded.to_vec(),
+        as_of: holdings.iter().filter(|h| !excluded.contains(&h.id)).map(|h| h.valuation_date.as_str()).filter(|d| !d.is_empty()).min().map(str::to_owned),
+        target_total_pct,
         assumptions: "基于当前资产类别的长期示例假设估算风险与再平衡偏差；不含税费、通胀、资产相关性突变和未来收入变化，不是收益预测。".into(),
-    }
+    })
 }
 
 fn portfolio_assumptions(profile: &FinancialProfile, holdings: &[Holding]) -> (f64, f64) {
@@ -105,36 +128,74 @@ fn asset_assumptions(asset_class: &str) -> (f64, f64) {
     }
 }
 
-fn rebalance_actions(holdings: &[Holding]) -> Vec<RebalanceAction> {
-    let total: f64 = holdings.iter().map(|holding| holding.market_value).sum();
-    let target_total: f64 = holdings.iter().map(|holding| holding.target_pct).sum();
-    if total <= 0.0 || !(99.0..=101.0).contains(&target_total) {
-        return Vec::new();
+fn rebalance_actions(
+    profile: &FinancialProfile,
+    holdings: &[Holding],
+    excluded: &[String],
+    accounting: Option<&AccountingSnapshot>,
+) -> crate::AppResult<Vec<RebalanceAction>> {
+    use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
+    let dec = |s: &str| {
+        Decimal::from_str_exact(s).map_err(|_| crate::AppError::Validation("再平衡金额无效".into()))
+    };
+    let total = if let Some(accounting) = accounting {
+        match accounting.total_value.as_deref() {
+            Some(v) => dec(v)?,
+            None => return Ok(Vec::new()),
+        }
+    } else {
+        holdings.iter().try_fold(Decimal::ZERO, |sum, h| {
+            dec(&h.market_value.to_string()).map(|v| sum + v)
+        })?
+    };
+    if total <= Decimal::ZERO {
+        return Ok(Vec::new());
     }
-
-    let mut actions: Vec<_> = holdings
-        .iter()
-        .filter_map(|holding| {
-            let current_pct = holding.market_value / total * 100.0;
-            let deviation = current_pct - holding.target_pct;
-            if deviation.abs() < 3.0 {
-                return None;
+    let mut actions = Vec::new();
+    for holding in holdings.iter().filter(|h| !excluded.contains(&h.id)) {
+        let value = if let Some(accounting) = accounting {
+            let source = &accounting.holdings[&holding.id];
+            dec(&source.amounts.market_value)?
+                .checked_mul(dec(source.fx_rate.as_deref().unwrap_or("0"))?)
+        } else {
+            Some(dec(&holding.market_value.to_string())?)
+        }
+        .ok_or_else(|| crate::AppError::Validation("再平衡金额超出范围".into()))?;
+        let current_pct = (value / total * Decimal::from(100))
+            .to_f64()
+            .unwrap_or_default();
+        let deviation_pct = current_pct - holding.target_pct;
+        if deviation_pct.abs() < 3.0 {
+            continue;
+        }
+        let target = total
+            .checked_mul(dec(&holding.target_pct.to_string())? / Decimal::from(100))
+            .ok_or_else(|| crate::AppError::Validation("再平衡金额超出范围".into()))?;
+        let difference = target - value;
+        let amount = difference.abs().round_dp_with_strategy(
+            if profile.base_currency == "JPY" { 0 } else { 2 },
+            RoundingStrategy::MidpointAwayFromZero,
+        );
+        actions.push(RebalanceAction {
+            exact_amount: Some(amount.normalize().to_string()),
+            holding_id: holding.id.clone(),
+            name: holding.name.clone(),
+            current_pct,
+            target_pct: holding.target_pct,
+            deviation_pct,
+            amount: amount
+                .to_f64()
+                .ok_or_else(|| crate::AppError::Validation("再平衡金额超出范围".into()))?,
+            direction: if difference >= Decimal::ZERO {
+                "增加"
+            } else {
+                "减少"
             }
-            let amount = holding.target_pct / 100.0 * total - holding.market_value;
-            Some(RebalanceAction {
-                exact_amount: None,
-                holding_id: holding.id.clone(),
-                name: holding.name.clone(),
-                current_pct,
-                target_pct: holding.target_pct,
-                deviation_pct: deviation,
-                amount: amount.abs(),
-                direction: if amount >= 0.0 { "增加" } else { "减少" }.into(),
-            })
-        })
-        .collect();
+            .into(),
+        });
+    }
     actions.sort_by(|a, b| b.deviation_pct.abs().total_cmp(&a.deviation_pct.abs()));
-    actions
+    Ok(actions)
 }
 
 #[cfg(test)]
@@ -179,7 +240,8 @@ mod tests {
                 fx_rate_observed_on: String::new(),
             },
         ];
-        let actions = rebalance_actions(&holdings);
+        let actions =
+            rebalance_actions(&FinancialProfile::default(), &holdings, &[], None).unwrap();
         assert_eq!(actions.len(), 2);
         assert_eq!(actions[0].direction, "减少");
         assert_eq!(actions[1].direction, "增加");
@@ -227,14 +289,14 @@ mod tests {
                 fx_rate_observed_on: String::new(),
             },
         ];
-        let plan = analyze(&profile, &holdings);
+        let plan = analyze(&profile, &holdings, &[], &[], None).unwrap();
         assert!(plan.stress_loss_pct > 30.0);
         assert_eq!(plan.risk_status, "over");
     }
 
     #[test]
     fn empty_portfolio_does_not_claim_risk_alignment() {
-        let plan = analyze(&FinancialProfile::default(), &[]);
+        let plan = analyze(&FinancialProfile::default(), &[], &[], &[], None).unwrap();
         assert_eq!(plan.stress_loss_pct, 0.0);
         assert_eq!(plan.risk_status, "insufficient");
     }
