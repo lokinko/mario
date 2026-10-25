@@ -16,6 +16,11 @@ pub(crate) fn response_stream(
                 biased;
                 Some(event) = receiver.recv() => event,
                 result = &mut future => {
+                    // A ready execution may have enqueued its last draft during this poll.
+                    // Deliver those events before completion closes the response body.
+                    while let Ok(queued) = receiver.try_recv() {
+                        yield Ok(axum::response::sse::Event::default().json_data(queued).unwrap());
+                    }
                     let event = match result {
                         Ok(result) => AnalysisEvent::Complete { result: Box::new(result) },
                         Err(error) => AnalysisEvent::Error { message: error.to_string() },

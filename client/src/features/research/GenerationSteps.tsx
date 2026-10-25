@@ -4,7 +4,7 @@ export function GenerationSteps({ stage }: { stage: string }) {
     ? 4
     : /校验|验证|修复|审查|检查/.test(stage)
       ? 3
-      : /分析|方案|研究计划|反思|报告|候选/.test(stage)
+      : /分析|报告/.test(stage)
         ? 2
         : /检索|搜索|查找|筛选/.test(stage)
           ? 1

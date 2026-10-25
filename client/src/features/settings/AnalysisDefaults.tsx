@@ -88,23 +88,6 @@ export function AnalysisDefaults({
           </div>
           <h3>分析选项</h3>
           <div className="analysis-default-options">
-            {(
-              [
-                ["reflect", "反思检查"],
-                ["exploreAlternatives", "比较备选方案"],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key}>
-                <input
-                  type="checkbox"
-                  checked={settings[key]}
-                  onChange={(event) =>
-                    setSettings({ ...settings, [key]: event.target.checked })
-                  }
-                />
-                {label}
-              </label>
-            ))}
             <label>
               <input
                 type="checkbox"
@@ -117,7 +100,7 @@ export function AnalysisDefaults({
             </label>
           </div>
           <p className="section-intro">
-            问答固定使用深度分析，并按照已保存的资料范围准备上下文。
+            问答默认使用单次分析，并按照已保存的资料范围准备上下文。
           </p>
           <p className="section-intro">
             {model.provider === "openai-chat"

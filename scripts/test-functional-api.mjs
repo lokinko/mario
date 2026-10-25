@@ -145,7 +145,7 @@ try {
   assert.equal(contextPreview.payload.investmentMethodology, customMethodology);
   assert(contextPreview.systemPolicy.includes(customMethodology));
   const defaults = await api("/analysis-settings");
-  assert.equal(defaults.workflow, "deep");
+  assert.equal(defaults.workflow, "quick");
   assert.equal(defaults.useMemory, undefined);
   assert.equal(defaults.contextSelection.includeProfile, true);
   assert.equal(defaults.contextSelection.includeHoldings, true);

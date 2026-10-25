@@ -600,10 +600,10 @@ pub struct AnalysisSettings {
 impl Default for AnalysisSettings {
     fn default() -> Self {
         Self {
-            workflow: "deep".into(),
-            reflect: true,
-            explore_alternatives: true,
-            web_search: true,
+            workflow: "quick".into(),
+            reflect: false,
+            explore_alternatives: false,
+            web_search: false,
             context_selection: ContextSelection {
                 include_planning: false,
                 include_risk_findings: false,
@@ -797,6 +797,7 @@ pub struct AnalysisWorkflowTrace {
     #[serde(default)]
     pub web_search: Option<WebSearchTrace>,
     #[serde(default)]
+    // Read-only historical v7 artifacts; current workflow never produces these.
     pub advice_grounding: Vec<information::AdviceGrounding>,
     #[serde(default)]
     pub personal_context: Option<serde_json::Value>,

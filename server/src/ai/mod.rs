@@ -1,7 +1,6 @@
 pub(crate) mod bridge;
 mod codex;
 pub use codex::CodexProvider;
-mod grounding;
 mod native_provider;
 mod orchestrator;
 mod provider;

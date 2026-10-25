@@ -122,8 +122,11 @@ export function ModelReport({
         <h2>复盘与证伪条件</h2>
         {list(report.reviewTriggers)}
       </section>
-      <section className="report-citations" aria-label="本次回答引用">
-        <h2>依据与局限</h2>
+      <details className="report-citations" aria-label="本次回答引用">
+        <summary>依据与局限</summary>
+        {trace?.webSearch?.warnings.map((warning, index) => (
+          <p key={index}>{warning}</p>
+        ))}
         <p>
           以下为本次实际引用的来源；未覆盖的信息见“仍待核实”，来源内容仍需核对。
         </p>
@@ -135,7 +138,7 @@ export function ModelReport({
           ))}
         </ul>
         {sources.length === 0 && <p>本次回答未提供可核对的引用来源。</p>}
-      </section>
+      </details>
       {selected && (
         <Drawer
           title="引用原始信息"

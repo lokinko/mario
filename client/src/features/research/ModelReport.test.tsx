@@ -7,6 +7,11 @@ import type { AnalysisWorkflowTrace } from "../../types";
 afterEach(cleanup);
 it("shows the complete report with sources and limitations, without process or action controls", () => {
   const trace = {
+    webSearch: {
+      status: "incomplete",
+      warnings: ["搜索未返回原文"],
+      searchCalls: 0,
+    },
     researchPlan: "内部研究计划",
     evidenceCatalog: [
       {
@@ -55,6 +60,9 @@ it("shows the complete report with sources and limitations, without process or a
     },
   } as unknown as AnalysisWorkflowTrace;
   render(<ModelReport answer="旧摘要" trace={trace} />);
+  const evidence = screen.getByText("依据与局限").closest("details")!;
+  expect(evidence.open).toBe(false);
+  expect(evidence.textContent).toContain("搜索未返回原文");
   for (const content of [
     "优先补足备用金",
     "现金缓冲较少",

@@ -10,7 +10,7 @@ import { resolve, join, sep } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 const live = process.argv.includes('--live');
 const protocolFixture = process.argv.includes('--protocol-fixture');
-const deep = protocolFixture || process.argv.includes('--deep');
+const webSearch = protocolFixture || process.argv.includes('--web-search');
 assert(!(live && protocolFixture), '--live and --protocol-fixture are mutually exclusive');
 assert(process.env.MARIO_TEST_DATABASE_URL, 'Set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database (npm run test:codex-bridge starts one)');
 const binary = resolve(process.env.MARIO_TEST_SERVER_BIN || `server/target/debug/mario-server${process.platform === 'win32' ? '.exe' : ''}`);
@@ -136,9 +136,9 @@ try {
     await writeFile(environment.MARIO_TEST_CODEX_SCENARIO,'transient');
     await writeFile(environment.MARIO_TEST_CODEX_COUNTER,'0');
   }
-  const input = { question:'这是连通性验收。当前没有提供任何投资资料，请简短说明还需要哪些资料；不要提供交易建议。', workflow:deep?'deep':'quick', webSearch:deep, reflect:deep, exploreAlternatives:deep };
+  const input = { question:'这是连通性验收。当前没有提供任何投资资料，请简短说明还需要哪些资料；不要提供交易建议。', workflow:'quick', webSearch, reflect:false, exploreAlternatives:false };
   const preview = await request('/analysis/preview', 'POST', input);
-  const response = await fetch(`${site}/api/analysis/stream`, { method:'POST', headers:{Authorization:`Bearer ${auth}`,'Content-Type':'application/json',...(revisions.has(auth)?{'If-Match':revisions.get(auth)}:{})}, body:JSON.stringify({...input,previewRevision:preview.contextRevision}), signal:AbortSignal.timeout(deep?1800000:280000) });
+  const response = await fetch(`${site}/api/analysis/stream`, { method:'POST', headers:{Authorization:`Bearer ${auth}`,'Content-Type':'application/json',...(revisions.has(auth)?{'If-Match':revisions.get(auth)}:{})}, body:JSON.stringify({...input,previewRevision:preview.contextRevision}), signal:AbortSignal.timeout(280000) });
   assert.equal(response.status, 200);
   const events = (await response.text()).split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6)));
   assert(events.some(event => event.type === 'draft'), '缺少流式草稿');
@@ -148,9 +148,9 @@ try {
   assert.equal((await request('/analyses')).length, 1);
   if (protocolFixture) {
     assert(events.some(event=>event.type==='status' && event.message.includes('自动重试')),'重试进度必须经过桥接到达网页');
-    assert(completed.result.workflowTrace.calls.length>=5,'必须完整执行深度分析与搜索');
+    assert.equal(completed.result.workflowTrace.calls.length,2,'必须执行搜索和单次分析');
     assert.equal(completed.result.workflowTrace.calls[0].requestCount,2);
-    console.log('PASS Codex App Server 503 自动恢复 → 桥接重试状态 → 深度分析+联网 → 单次保存');
+    console.log('PASS Codex App Server 503 自动恢复 → 桥接重试状态 → 单次分析+联网 → 单次保存');
     for (const [scenario,expected] of [['quota','用量限制'],['partial','暂时不可用'],['native-retry',null]]) {
       await writeFile(environment.MARIO_TEST_CODEX_SCENARIO,scenario);
       await writeFile(environment.MARIO_TEST_CODEX_COUNTER,'0');

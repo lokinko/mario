@@ -145,7 +145,9 @@ pub(crate) fn model_key_binding(provider: ModelProviderKind, base_url: &str) -> 
 
 // Keep legacy presets compatible while excluding data no longer offered in settings.
 fn normalize_analysis_settings(mut settings: AnalysisSettings) -> AnalysisSettings {
-    settings.workflow = "deep".into();
+    settings.workflow = "quick".into();
+    settings.reflect = false;
+    settings.explore_alternatives = false;
     let selection = &mut settings.context_selection;
     selection.include_planning = false;
     selection.include_risk_findings = false;
@@ -205,12 +207,14 @@ mod tests {
     }
 
     #[test]
-    fn legacy_presets_only_keep_supported_data_and_use_deep_analysis() {
+    fn legacy_presets_only_keep_supported_data_and_use_quick_analysis() {
         let db = Database::test();
         let mut legacy = AnalysisSettings {
-            workflow: "quick".into(),
+            workflow: "deep".into(),
+            reflect: true,
+            explore_alternatives: true,
+            web_search: true,
             context_selection: crate::models::ContextSelection::default(),
-            ..AnalysisSettings::default()
         };
         legacy.context_selection.include_holdings = false;
         db.set_setting(
@@ -220,12 +224,12 @@ mod tests {
         .unwrap();
 
         let restored = db.analysis_settings().unwrap();
-        assert_eq!(restored.workflow, "deep");
+        assert_eq!(restored.workflow, "quick");
         assert!(restored.context_selection.include_profile);
         assert!(!restored.context_selection.include_holdings);
         assert!(restored.context_selection.include_evidence);
-        assert!(restored.reflect);
-        assert!(restored.explore_alternatives);
+        assert!(!restored.reflect);
+        assert!(!restored.explore_alternatives);
         assert!(restored.web_search);
         let selection = &restored.context_selection;
         assert!(!selection.include_planning);
@@ -250,7 +254,7 @@ mod tests {
         let account = crate::db::TestAccount::new();
         let db = account.open();
         let mut settings = db.analysis_settings().unwrap();
-        assert_eq!(settings.workflow, "deep");
+        assert_eq!(settings.workflow, "quick");
         assert!(settings.context_selection.include_profile);
         settings.web_search = false;
         settings.context_selection.include_profile = false;
@@ -264,7 +268,7 @@ mod tests {
         assert!(!restored.context_selection.include_evidence);
         restored.workflow = "invalid".into();
         assert!(db.save_analysis_settings(restored).is_err());
-        assert_eq!(db.analysis_settings().unwrap().workflow, "deep");
+        assert_eq!(db.analysis_settings().unwrap().workflow, "quick");
     }
 
     #[test]

@@ -55,7 +55,7 @@ it("loads saved permissions and saves one preset for future questions", async ()
   });
 });
 
-it("offers only the three supported data groups and always uses deep analysis", async () => {
+it("offers only the three supported data groups and uses single-call analysis", async () => {
   vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(
     analysisSettings,
   );
@@ -83,9 +83,7 @@ it("offers only the three supported data groups and always uses deep analysis", 
   expect(screen.queryByRole("combobox")).toBeNull();
   expect(screen.queryByText("快速分析")).toBeNull();
   for (const label of ["反思检查", "比较备选方案"]) {
-    expect((screen.getByLabelText(label) as HTMLInputElement).disabled).toBe(
-      false,
-    );
+    expect(screen.queryByLabelText(label)).toBeNull();
   }
   expect(screen.getByText(/当前 Chat Completions 接口不支持/)).toBeTruthy();
 });

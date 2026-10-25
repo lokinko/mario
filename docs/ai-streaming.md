@@ -9,7 +9,7 @@
 - `complete`：`result` 是通过原有结构、来源和建议核对流程，并已保存到历史记录的 `AnalysisResult`。页面用它替换草稿，供后续追问使用。
 - `error`：`message` 是失败说明。草稿不是已完成报告，不写入历史记录，也不作为后续追问的已完成上下文。
 
-快速问答流式生成报告；深度问答先发送阶段状态，在最终综合报告生成时流式显示正文。网页搜索、方案研究和建议核对继续使用原有调用流程。支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和本地 Codex App Server；Codex 凭证仍由 Codex 管理。
+单次问答流式生成报告，格式校验失败时清空草稿并修复一次。可选网页搜索与资料筛选发送阶段状态；研究计划、候选、风险审查及模型证据核对已删除。支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和本地 Codex App Server；Codex 凭证仍由 Codex 管理。
 
 独立 AI Agent 提供 `/execute/stream`，后端转发 `status` 和 `draft`，收到完整结果后由后端保存，再向页面发出 `complete`。前后端和 Agent 都要求明确的结束事件，连接关闭不能当作成功。浏览器和后端不会重发整次问答，已接受响应后的流中断或错误也不会自动重发。
 
