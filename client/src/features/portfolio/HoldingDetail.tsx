@@ -36,6 +36,7 @@ export function HoldingDetail({
   const tradeSummary = snapshot.holdingTradeSummaries?.[holding.id];
   const valuations =
     snapshot.holdingValuations?.filter((v) => v.holdingId === holding.id) ?? [];
+  const usable = snapshot.accounting?.holdings[holding.id]?.usable !== false;
   const pendingTrade = editingTrade ? "请先保存或取消当前交易" : undefined;
   return (
     <>
@@ -48,7 +49,7 @@ export function HoldingDetail({
           <dt>当前市值</dt>
           <dd>
             <span className="num" data-money>
-              {snapshot.accounting?.holdings[holding.id]?.usable === false
+              {!usable
                 ? "—"
                 : formatMoney(
                     holding.exactValues?.marketValue ?? holding.marketValue,
@@ -61,8 +62,9 @@ export function HoldingDetail({
           <dt>持仓总成本</dt>
           <dd>
             <span className="num" data-money>
-              {holding.costBasis > 0 ||
-              isClosedHolding(holding, Boolean(tradeSummary))
+              {usable &&
+              (holding.costBasis > 0 ||
+                isClosedHolding(holding, Boolean(tradeSummary)))
                 ? formatMoney(
                     holding.exactValues?.costBasis ?? holding.costBasis,
                     holding.currency,
@@ -75,11 +77,13 @@ export function HoldingDetail({
           <dt>已结算盈亏</dt>
           <dd>
             <span className="num" data-money>
-              {tradeSummary
-                ? formatSigned(tradeSummary.settledProfit, (value) =>
-                    formatMoney(value, holding.currency),
-                  )
-                : "未录入交易"}
+              {!usable
+                ? "—"
+                : tradeSummary
+                  ? formatSigned(tradeSummary.settledProfit, (value) =>
+                      formatMoney(value, holding.currency),
+                    )
+                  : "未录入交易"}
             </span>
           </dd>
         </div>

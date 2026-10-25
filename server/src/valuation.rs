@@ -191,6 +191,9 @@ mod tests {
         ];
         let incomplete = issues("CNY", &holdings, &[], &[], &[]);
         assert!(!incomplete.comparable);
+        assert_eq!(incomplete.issues.len(), 1);
+        assert_eq!(incomplete.issues[0].code, IssueCode::MissingFxRate);
+        assert_eq!(incomplete.issues[0].holding_ids, vec!["美元"]);
         assert_eq!(incomplete.missing_fx_holdings, vec!["美元"]);
         assert_eq!(incomplete.valuation_dates.len(), 2);
         assert!(normalize_holding(&holdings[1], "CNY").is_none());

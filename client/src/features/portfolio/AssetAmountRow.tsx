@@ -126,18 +126,18 @@ export function AssetAmountRow({
           <div role="cell" data-label="数量" className="num">
             <span className="desktop-quantity">
               {" "}
-              {holding.quantity == null
+              {exact?.usable === false || holding.quantity == null
                 ? "—"
                 : formatNumber(exact?.quantity ?? holding.quantity, 4)}
             </span>
             <span className="mobile-quantity">
               数量{" "}
-              {holding.quantity == null
+              {exact?.usable === false || holding.quantity == null
                 ? "—"
                 : formatNumber(exact?.quantity ?? holding.quantity, 4)}{" "}
               · 现价{" "}
               <span data-money>
-                {holding.currentPrice == null
+                {exact?.usable === false || holding.currentPrice == null
                   ? "—"
                   : formatNumber(
                       exact?.currentPrice ?? holding.currentPrice,
@@ -148,14 +148,14 @@ export function AssetAmountRow({
           </div>
           <div role="cell" data-label="现价 / 成本价" className="num">
             <span data-money>
-              {holding.currentPrice == null
+              {exact?.usable === false || holding.currentPrice == null
                 ? "—"
                 : formatNumber(exact?.currentPrice ?? holding.currentPrice, 4)}
             </span>
             <small>
               成本{" "}
               <span data-money>
-                {holding.costPrice == null
+                {exact?.usable === false || holding.costPrice == null
                   ? "—"
                   : formatNumber(exact?.costPrice ?? holding.costPrice, 4)}
               </span>
@@ -190,7 +190,11 @@ export function AssetAmountRow({
       )}
       {investment && (
         <>
-          <div role="cell" data-label="浮动盈亏" className={color(pnl)}>
+          <div
+            role="cell"
+            data-label="浮动盈亏"
+            className={exact?.usable === false ? "" : color(pnl)}
+          >
             <span className="num" data-money>
               {exact && !exact.usable
                 ? "—"
@@ -199,7 +203,9 @@ export function AssetAmountRow({
                   : formatSigned(pnl, money)}
             </span>
             <small>
-              {!optionTotals && pnl != null && holding.costBasis > 0 ? (
+              {exact?.usable === false ? null : !optionTotals &&
+                pnl != null &&
+                holding.costBasis > 0 ? (
                 <span className="pnl-percent num">
                   {formatPercent((Number(pnl) / holding.costBasis) * 100)}
                 </span>

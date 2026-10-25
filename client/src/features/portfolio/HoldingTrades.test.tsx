@@ -549,3 +549,30 @@ it("keeps an uncertain edit frozen and retries exactly the original content", as
   );
   expect(portfolioApi.saveHoldingTrade).not.toHaveBeenCalled();
 });
+
+it("keeps original executions visible while suppressing an unusable position summary", () => {
+  const s = structuredClone(value);
+  s.accounting!.holdings[holding.id] = {
+    marketValue: "120",
+    costBasis: "103",
+    quantity: "10",
+    currentPrice: "12",
+    costPrice: "10.3",
+    priceStatus: "provisional",
+    fxRate: "1",
+    unrealizedProfit: "17",
+    settledProfit: "0",
+    usable: false,
+  };
+  const { container } = render(
+    <HoldingTrades
+      snapshot={s}
+      holding={holding}
+      onUpdate={vi.fn()}
+      flash={vi.fn()}
+    />,
+  );
+  expect(container.querySelector(".trade-summary")).toBeNull();
+  expect(screen.getByRole("table")).toBeTruthy();
+  expect(screen.getByText("2026-01-01")).toBeTruthy();
+});

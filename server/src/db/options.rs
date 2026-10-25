@@ -334,11 +334,17 @@ mod tests {
             [],
         )
         .unwrap();
+        conn.execute(
+            "UPDATE holdings SET valuation_date='2025-12-01' WHERE id=$1",
+            [&parent],
+        )
+        .unwrap();
         drop(conn);
         let s = db.snapshot().unwrap();
         assert!(s.valuation_status.issues.is_empty());
         assert!(s.plan.rebalancing_blocked_by.is_empty());
         assert_eq!(s.plan.excluded_holding_ids.len(), 2);
+        assert_eq!(s.plan.as_of.as_deref(), Some("2025-12-01"));
         assert!(s.plan.excluded_holding_ids.contains(&parent));
         assert!(s.plan.excluded_holding_ids.contains(&option_id));
         assert!(!s.plan.rebalancing.is_empty());

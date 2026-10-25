@@ -111,3 +111,41 @@ it("keeps delete in an explicit menu and disables actions while saving", () => {
   ).toBe(true);
   expect(props.onEdit).not.toHaveBeenCalled();
 });
+
+it("hides uncertain quantities, prices and profit percentages only for an unusable holding", () => {
+  const exact = {
+    marketValue: "1000",
+    costBasis: "800",
+    quantity: "100",
+    currentPrice: "10",
+    costPrice: "8",
+    priceStatus: "provisional",
+    fxRate: "1",
+    unrealizedProfit: "200",
+    settledProfit: "0",
+    usable: false,
+  };
+  const { container, rerender } = render(
+    <AssetAmountRow
+      holding={{ ...holding, quantity: 100, currentPrice: 10, costPrice: 8 }}
+      {...callbacks()}
+      exact={exact}
+    />,
+  );
+  expect(container.querySelector(".pnl-percent")).toBeNull();
+  expect(
+    container.querySelector(".desktop-quantity")?.textContent?.trim(),
+  ).toBe("—");
+  expect(screen.queryByText("10.00")).toBeNull();
+  rerender(
+    <AssetAmountRow
+      holding={{ ...holding, quantity: 100, currentPrice: 10, costPrice: 8 }}
+      {...callbacks()}
+      exact={{ ...exact, usable: true }}
+    />,
+  );
+  expect(container.querySelector(".pnl-percent")?.textContent).toBe("+25.00%");
+  expect(
+    container.querySelector(".desktop-quantity")?.textContent?.trim(),
+  ).toBe("100");
+});

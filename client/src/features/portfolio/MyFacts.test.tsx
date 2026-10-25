@@ -976,7 +976,7 @@ it("deletes a position with executions from its details after explaining linked 
   fireEvent.click(screen.getByRole("button", { name: "删除持仓" }));
   fireEvent.click(screen.getByRole("button", { name: "删除持仓" }));
   expect(confirm).toHaveBeenCalledExactlyOnceWith(
-    expect.stringMatching(/1 笔交易明细.*净影响/s),
+    expect.stringMatching(/1 笔交易.*净影响/s),
   );
   expect(portfolioApi.deleteHolding).toHaveBeenCalledExactlyOnceWith(
     investment.id,

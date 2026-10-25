@@ -83,7 +83,7 @@ pub fn analyze(
         rebalancing: if rebalancing_blocked_by.is_empty() { rebalance_actions(profile, holdings, excluded, accounting)? } else { Vec::new() },
         rebalancing_blocked_by,
         excluded_holding_ids: excluded.to_vec(),
-        as_of: holdings.iter().filter(|h| !excluded.contains(&h.id)).map(|h| h.valuation_date.as_str()).filter(|d| !d.is_empty()).min().map(str::to_owned),
+        as_of: holdings.iter().map(|h| h.valuation_date.as_str()).filter(|d| !d.is_empty()).min().map(str::to_owned),
         target_total_pct,
         assumptions: "基于当前资产类别的长期示例假设估算风险与再平衡偏差；不含税费、通胀、资产相关性突变和未来收入变化，不是收益预测。".into(),
     })

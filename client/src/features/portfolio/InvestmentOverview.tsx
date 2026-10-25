@@ -77,20 +77,12 @@ export function InvestmentOverview({
             <small
               title={
                 totals[key].missing
-                  ? `${totals[key].missing} 项成本、交易或汇率待补；缺失数据不计入已知部分`
+                  ? `${totals[key].missing} 项未计入；查看原币明细核对原因`
                   : undefined
               }
             >
               {totals[key].missing
-                ? "已知部分 · " +
-                  totals[key].missing +
-                  " 项" +
-                  (key === "realized"
-                    ? "交易或汇率"
-                    : key === "value"
-                      ? "汇率"
-                      : "成本或汇率") +
-                  "待补"
+                ? `已知部分 · ${totals[key].missing} 项未计入`
                 : key === "realized"
                   ? "按当前汇率折算 · 含已清仓资产与净现金分红"
                   : "全部" + (cash ? "币种余额" : "投资持仓")}

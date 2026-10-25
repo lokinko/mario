@@ -1432,3 +1432,20 @@ fn manual_total_updates_keep_unit_prices_consistent_and_reject_impossible_quanti
         )
         .is_err());
 }
+
+#[test]
+fn incomplete_target_weights_only_block_rebalancing() {
+    let db = Database::test();
+    let mut input = detailed_holding_input();
+    input.target_pct = 99.0;
+    let s = db.add_holding(&input).unwrap();
+    assert!(s.valuation_status.issues.is_empty());
+    assert!(s.valuation_status.comparable);
+    assert!(s.total_value > 0.0);
+    assert_eq!(s.plan.target_total_pct, 99.0);
+    assert_eq!(
+        s.plan.rebalancing_blocked_by,
+        vec![crate::models::IssueCode::InvalidTargetWeights]
+    );
+    assert!(s.plan.rebalancing.is_empty());
+}

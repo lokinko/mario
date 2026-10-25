@@ -1,6 +1,6 @@
-# 数据问题提示收敛方案（草稿）
+# 数据问题提示收敛方案
 
-> 状态：待评审。本文只给出分析与执行计划，尚未修改代码。评审确认后按“执行计划”分阶段实施，并在同次交付中同步 [架构说明](docs/architecture.md) 与 [模块边界](docs/module-boundaries.md)。
+> 状态：已按四阶段实施。下文现状分析记录实施前的问题，执行计划作为历史设计依据；当前实现见 [架构说明](docs/architecture.md)、[模块边界](docs/module-boundaries.md)、[规划模型](docs/planning-model.md) 与 [实施记录](docs/data-issues-convergence.md)。第 8 节的选择采用方案默认值，D8 的取舍见实施记录。
 
 ## 1. 问题陈述
 
@@ -82,7 +82,7 @@ db/portfolio.rs::snapshot_on()    → 再追加 6 类条件，逐个把 decision
 
 判断标准是：这项防御在正常流程中是否可见；如果可见，它指出的是否是用户必须处理的问题。
 
-## 4. 设计准则（评审通过后写入 AGENTS.md）
+## 4. 设计准则（已写入 AGENTS.md）
 
 一条提示只有**同时满足**以下 4 点，才可以作为警告显示：
 

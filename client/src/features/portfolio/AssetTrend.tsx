@@ -34,7 +34,7 @@ export function AssetTrend({
   );
   if (!values.length)
     return mini ? null : (
-      <p className="empty">补齐汇率后显示总资产曲线，原币记录已保存。</p>
+      <p className="empty">当前总值不可用，原币记录已保存。</p>
     );
   if (points.length < 2)
     return mini ? null : (

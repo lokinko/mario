@@ -323,7 +323,7 @@ export function HoldingTrades({
       !window.confirm(
         `确认删除“${holding?.name}”在 ${t.occurredOn} 的第 ${t.sequence} 笔${names[t.kind]}？\n` +
           `账户：${t.account} · 金额：${money(t.grossAmount)}\n` +
-          "删除后会重新计算持仓、成本和盈亏。当前核对基准仍计入的交易会退回买入支出或扣回卖出、分红收入；历史交易保留当前存款并标记待核对。删除最后一笔交易会将持仓数量和成本归零，保留证券信息。原始记录和本次更正会保留在更正历史中。",
+          "删除后重算持仓和盈亏，并撤销该交易对当前存款的影响；已核对余额覆盖的历史交易仅标记存款待核对。更正历史保留。",
       )
     )
       return;
@@ -716,46 +716,48 @@ export function HoldingTrades({
           </fieldset>
         </form>
       )}
-      {summary && (
-        <p className="trade-summary">
-          持仓 {formatNumber(summary.quantity)} 单位 · 剩余成本{" "}
-          <span className="num" data-money>
-            {money(summary.costBasis)}
-          </span>{" "}
-          · 已结算盈亏{" "}
-          <strong
-            className={
-              Number(summary.settledProfit) === 0
-                ? ""
-                : Number(summary.settledProfit) > 0
-                  ? "gain"
-                  : "loss"
-            }
-          >
+      {summary &&
+        (!holding ||
+          snapshot.accounting?.holdings[holding.id]?.usable !== false) && (
+          <p className="trade-summary">
+            持仓 {formatNumber(summary.quantity)} 单位 · 剩余成本{" "}
             <span className="num" data-money>
-              {formatSigned(summary.settledProfit, money)}
-            </span>
-          </strong>
-          <small>
-            卖出盈亏{" "}
-            <span className="num" data-money>
-              {money(summary.realizedProfit)}
+              {money(summary.costBasis)}
             </span>{" "}
-            · 净现金分红{" "}
-            <span className="num" data-money>
-              {money(summary.dividendIncome)}
-            </span>{" "}
-            · 费用{" "}
-            <span className="num" data-money>
-              {money(summary.totalFees)}
-            </span>{" "}
-            · 税费{" "}
-            <span className="num" data-money>
-              {money(summary.totalTaxes)}
-            </span>
-          </small>
-        </p>
-      )}
+            · 已结算盈亏{" "}
+            <strong
+              className={
+                Number(summary.settledProfit) === 0
+                  ? ""
+                  : Number(summary.settledProfit) > 0
+                    ? "gain"
+                    : "loss"
+              }
+            >
+              <span className="num" data-money>
+                {formatSigned(summary.settledProfit, money)}
+              </span>
+            </strong>
+            <small>
+              卖出盈亏{" "}
+              <span className="num" data-money>
+                {money(summary.realizedProfit)}
+              </span>{" "}
+              · 净现金分红{" "}
+              <span className="num" data-money>
+                {money(summary.dividendIncome)}
+              </span>{" "}
+              · 费用{" "}
+              <span className="num" data-money>
+                {money(summary.totalFees)}
+              </span>{" "}
+              · 税费{" "}
+              <span className="num" data-money>
+                {money(summary.totalTaxes)}
+              </span>
+            </small>
+          </p>
+        )}
       {ordered.length > 0 && (
         <>
           <div className="table-scroll">
