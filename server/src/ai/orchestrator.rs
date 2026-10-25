@@ -738,69 +738,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires an explicitly configured live model and public network"]
     async fn live_evidence_advice_evaluation() {
-        let base_url = std::env::var("MARIO_EVAL_BASE_URL").expect("set MARIO_EVAL_BASE_URL");
-        let model = std::env::var("MARIO_EVAL_MODEL").expect("set MARIO_EVAL_MODEL");
-        // The key is read in-process and is never written into the report or logs.
-        let api_key = std::env::var("MARIO_EVAL_API_KEY").expect("set MARIO_EVAL_API_KEY");
-        let provider = crate::ai::NativeModelProvider::new(
-            std::env::var("MARIO_EVAL_PROVIDER")
-                .unwrap_or("openai-responses".into())
-                .parse()
-                .unwrap(),
-            base_url,
-            model,
-            api_key,
-        )
-        .unwrap();
-        let mut request = AnalysisRequest {
-            daily_asset_range: None,
-            web_search: true,
-            user_message: Some("这笔资金三年内要用，请结合我的集中持仓和外部背景，说明风险、适合我的下一步以及依据。".into()),
-            question: "这笔资金三年内要用，请结合我的集中持仓和外部背景，说明风险、适合我的下一步以及依据。".into(),
-            workflow: "quick".into(), reflect: false, explore_alternatives: false,
-            context_selection: ContextSelection::default(), preview_revision: None,
-        };
-        let fixture = snapshot();
-        let context = ContextBuilder::build(
-            &request,
-            &fixture,
-            &ContextSources {
-                ..Default::default()
-            },
-        );
-        request.preview_revision = Some(context.revision.clone());
-        let result = InvestmentOrchestrator::new(&provider)
-            .run(&request, &context)
-            .await
-            .unwrap();
-        let report = result.workflow_trace.structured_report.as_ref().unwrap();
-        assert!(!report.actions.is_empty());
-        assert_eq!(
-            result.workflow_trace.advice_grounding.len(),
-            report.actions.len()
-        );
-        assert!(
-            result
-                .workflow_trace
-                .advice_grounding
-                .iter()
-                .all(|review| review.status != "unavailable"),
-            "live reviewer failed to produce usable checks"
-        );
-        assert!(
-            report.facts.iter().any(|fact| fact.basis == "user_data"),
-            "missing personal basis"
-        );
-        assert!(
-            report
-                .facts
-                .iter()
-                .any(|fact| fact.basis == "research_evidence"),
-            "missing external context citation"
-        );
-        if let Ok(path) = std::env::var("MARIO_EVAL_REPORT_PATH") {
-            std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).unwrap();
-        }
+        super::super::qa_eval::run_live().await;
     }
 
     struct MockProvider {

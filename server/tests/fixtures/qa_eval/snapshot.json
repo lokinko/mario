@@ -1,0 +1,270 @@
+{
+  "profile": {
+    "monthlyIncome": 20000,
+    "monthlyExpense": 12000,
+    "emergencyFund": 10000,
+    "liabilities": 50000,
+    "investableAssets": 0,
+    "horizonYears": 3,
+    "maxDrawdownPct": 15,
+    "riskLevel": "稳健",
+    "baseCurrency": "CNY",
+    "exactAmounts": {
+      "monthlyIncome": "20000",
+      "monthlyExpense": "12000",
+      "emergencyFund": "10000",
+      "liabilities": "50000",
+      "investableAssets": "0"
+    }
+  },
+  "holdings": [
+    {
+      "id": "fund-a",
+      "symbol": "FUND-A",
+      "name": "虚构成长基金",
+      "assetClass": "基金",
+      "marketValue": 800000,
+      "costBasis": 1000000,
+      "targetPct": 30,
+      "currency": "CNY",
+      "fxRateToBase": 1,
+      "valuationDate": "2026-10-20",
+      "fxRateSource": "虚构评测汇率",
+      "fxRateObservedOn": "2026-10-20"
+    },
+    {
+      "id": "bond-b",
+      "symbol": "BOND-B",
+      "name": "虚构债券基金",
+      "assetClass": "债券",
+      "marketValue": 150000,
+      "costBasis": 140000,
+      "targetPct": 50,
+      "currency": "CNY",
+      "fxRateToBase": 1,
+      "valuationDate": "2026-10-20",
+      "fxRateSource": "虚构评测汇率",
+      "fxRateObservedOn": "2026-10-20"
+    },
+    {
+      "id": "usd-c",
+      "symbol": "USD-C",
+      "name": "虚构海外基金",
+      "assetClass": "基金",
+      "marketValue": 5000,
+      "costBasis": 6000,
+      "targetPct": 10,
+      "currency": "USD",
+      "fxRateToBase": null,
+      "valuationDate": "2026-10-20",
+      "fxRateSource": "",
+      "fxRateObservedOn": ""
+    },
+    {
+      "id": "cash-cny",
+      "symbol": "CASH-CNY",
+      "name": "人民币存款",
+      "assetClass": "现金",
+      "marketValue": 10000,
+      "costBasis": 0,
+      "targetPct": 10,
+      "currency": "CNY",
+      "fxRateToBase": 1,
+      "valuationDate": "2026-10-20",
+      "fxRateSource": "虚构评测汇率",
+      "fxRateObservedOn": "2026-10-20"
+    },
+    {
+      "id": "cash-hkd",
+      "symbol": "CASH-HKD",
+      "name": "港币存款",
+      "assetClass": "现金",
+      "marketValue": 100,
+      "costBasis": 0,
+      "targetPct": 0,
+      "currency": "HKD",
+      "fxRateToBase": 0.9,
+      "valuationDate": "2026-10-20",
+      "fxRateSource": "虚构评测汇率",
+      "fxRateObservedOn": "2026-10-20"
+    }
+  ],
+  "accounting": {
+    "totalValue": null,
+    "holdings": {
+      "fund-a": {
+        "baseCurrency": "CNY",
+        "priceStatus": "manual",
+        "marketValue": "800000",
+        "costBasis": "1000000",
+        "quantity": null,
+        "costPrice": null,
+        "currentPrice": null,
+        "fxRate": "1",
+        "unrealizedProfit": "-200000",
+        "settledProfit": null,
+        "usable": true
+      },
+      "bond-b": {
+        "baseCurrency": "CNY",
+        "priceStatus": "manual",
+        "marketValue": "150000",
+        "costBasis": "140000",
+        "quantity": null,
+        "costPrice": null,
+        "currentPrice": null,
+        "fxRate": "1",
+        "unrealizedProfit": "10000",
+        "settledProfit": null,
+        "usable": true
+      },
+      "usd-c": {
+        "baseCurrency": "CNY",
+        "priceStatus": "manual",
+        "marketValue": "5000",
+        "costBasis": "6000",
+        "quantity": null,
+        "costPrice": null,
+        "currentPrice": null,
+        "fxRate": null,
+        "unrealizedProfit": "-1000",
+        "settledProfit": null,
+        "usable": true
+      },
+      "cash-cny": {
+        "baseCurrency": "CNY",
+        "priceStatus": "manual",
+        "marketValue": "10000",
+        "costBasis": "0",
+        "quantity": null,
+        "costPrice": null,
+        "currentPrice": null,
+        "fxRate": "1",
+        "unrealizedProfit": null,
+        "settledProfit": null,
+        "usable": true
+      },
+      "cash-hkd": {
+        "baseCurrency": "CNY",
+        "priceStatus": "manual",
+        "marketValue": "100",
+        "costBasis": "0",
+        "quantity": null,
+        "costPrice": null,
+        "currentPrice": null,
+        "fxRate": "0.9",
+        "unrealizedProfit": null,
+        "settledProfit": null,
+        "usable": true
+      }
+    },
+    "investments": {
+      "value": {
+        "value": "950000",
+        "missing": 1
+      },
+      "cost": {
+        "value": "1140000",
+        "missing": 1
+      },
+      "unrealized": {
+        "value": "-190000",
+        "missing": 1
+      },
+      "realized": {
+        "value": null,
+        "missing": 3
+      }
+    },
+    "cash": {
+      "value": {
+        "value": "10090",
+        "missing": 0
+      },
+      "cost": {
+        "value": null,
+        "missing": 2
+      },
+      "unrealized": {
+        "value": null,
+        "missing": 2
+      },
+      "realized": {
+        "value": null,
+        "missing": 2
+      }
+    }
+  },
+  "cashBalances": [
+    {
+      "currency": "CNY",
+      "holdingId": "cash-cny",
+      "amount": "10000",
+      "baselineId": "fictional-cash-cny",
+      "confirmedOn": "2026-10-20",
+      "confirmedAt": "2026-10-20T00:00:00Z",
+      "needsReconciliation": false
+    },
+    {
+      "currency": "HKD",
+      "holdingId": "cash-hkd",
+      "amount": "100",
+      "baselineId": "fictional-cash-hkd",
+      "confirmedOn": "2026-10-20",
+      "confirmedAt": "2026-10-20T00:00:00Z",
+      "needsReconciliation": true
+    }
+  ],
+  "findings": [],
+  "totalValue": 0,
+  "emergencyMonths": 0.8333333333333334,
+  "concentrationPct": 0,
+  "valuationStatus": {
+    "baseCurrency": "CNY",
+    "comparable": false,
+    "missingFxHoldings": [
+      "虚构海外基金"
+    ],
+    "undatedHoldingCount": 0,
+    "valuationDates": [
+      "2026-10-20"
+    ],
+    "alignedValuationDate": "2026-10-20",
+    "issues": [
+      {
+        "code": "missingFxRate",
+        "holdingIds": [
+          "usd-c"
+        ],
+        "currency": "USD",
+        "message": "虚构海外基金 缺少 USD 汇率"
+      },
+      {
+        "code": "cashNeedsReconciliation",
+        "holdingIds": [
+          "cash-hkd"
+        ],
+        "currency": "HKD",
+        "message": "HKD 存款待核对"
+      }
+    ]
+  },
+  "plan": {
+    "exactMonthlySurplus": "8000",
+    "monthlySurplus": 8000,
+    "modeledAnnualReturnPct": 4.2,
+    "modeledAnnualVolatilityPct": 8,
+    "stressLossPct": 0,
+    "riskCapacityPct": 10.5,
+    "riskStatus": "insufficient",
+    "rebalancing": [],
+    "rebalancingBlockedBy": [
+      "missingFxRate"
+    ],
+    "excludedHoldingIds": [],
+    "asOf": null,
+    "targetTotalPct": 0,
+    "assumptions": "基于当前资产类别的长期示例假设估算风险与再平衡偏差；不含税费、通胀、资产相关性突变和未来收入变化，不是收益预测。"
+  },
+  "updatedAt": "2026-10-20T00:00:00Z"
+}

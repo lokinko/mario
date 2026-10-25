@@ -1,0 +1,63 @@
+[
+  {
+    "id": "reduce",
+    "question": "虚构成长基金要不要减仓？",
+    "focus": "集中持仓、方向与幅度"
+  },
+  {
+    "id": "add",
+    "question": "现在适合继续加仓虚构成长基金吗？",
+    "focus": "加仓与风险预算"
+  },
+  {
+    "id": "surplus",
+    "question": "每月结余应该怎么分配？",
+    "focus": "收支和资金用途"
+  },
+  {
+    "id": "emergency",
+    "question": "我的应急金够不够？下一步怎么补？",
+    "focus": "应急金不足"
+  },
+  {
+    "id": "loss",
+    "question": "虚构成长基金已经亏损了，我该怎么办？",
+    "focus": "亏损与成本"
+  },
+  {
+    "id": "followup",
+    "question": "那具体卖多少？",
+    "focus": "承接上一轮结论",
+    "previousCaseId": "reduce"
+  },
+  {
+    "id": "missing-fx",
+    "question": "虚构海外基金应该减持多少人民币？",
+    "focus": "缺汇率时不能给精确换算金额"
+  },
+  {
+    "id": "cash-check",
+    "question": "港币存款待核对，会影响我安排人民币结余吗？",
+    "focus": "问题影响范围"
+  },
+  {
+    "id": "horizon",
+    "question": "三年后要用的钱，现在放在哪类资产更合适？",
+    "focus": "期限与资金用途"
+  },
+  {
+    "id": "debt",
+    "question": "我的负债要不要提前还？",
+    "focus": "缺利率时给有前提建议"
+  },
+  {
+    "id": "bond",
+    "question": "虚构债券基金要保持还是增加？",
+    "focus": "低风险资产方向"
+  },
+  {
+    "id": "unknown",
+    "question": "我能在三年后拿出30万元买房吗？",
+    "focus": "缺目标等资料时的问题与前提"
+  }
+]

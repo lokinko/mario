@@ -3,6 +3,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root_dir" && npm run check:architecture)
+(cd "$root_dir" && npm run test:qa-eval)
 npm run build --prefix "$root_dir/client"
 npm run format:check --prefix "$root_dir/client"
 npm test --prefix "$root_dir/client"
