@@ -1,0 +1,23 @@
+{
+  "version": "cn-dividend-v1",
+  "start": "2016-01-01",
+  "end": "2025-12-31",
+  "source_start": "2015-01-01",
+  "index": "000922.CSI",
+  "top_n": 20,
+  "lookback_sessions": 63,
+  "horizons": [21, 63, 252],
+  "splits": {
+    "train": ["2016-01-01", "2021-12-31"],
+    "validation": ["2022-01-01", "2023-12-31"],
+    "test": ["2024-01-01", "2025-12-31"]
+  },
+  "etfs": [
+    {"symbol": "510300.SH", "index_name": "沪深300"},
+    {"symbol": "510500.SH", "index_name": "中证500"},
+    {"symbol": "512100.SH", "index_name": "中证1000"},
+    {"symbol": "510050.SH", "index_name": "上证50"},
+    {"symbol": "159915.SZ", "index_name": "创业板指"}
+  ],
+  "reference_etf": "510300.SH"
+}

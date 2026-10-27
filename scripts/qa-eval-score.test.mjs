@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { manualTemplate, parseManual, score } from './qa-eval-score.mjs';
 
 function fixture() {
@@ -67,7 +68,7 @@ test('命令行生成并读取报告旁的人工评分，重复运行保留评�
     const path = join(directory, 'report.json');
     const csvPath = `${path}.manual.csv`;
     await writeFile(path, JSON.stringify(fixture()));
-    const run = (...args) => spawnSync(process.execPath, [new URL('./qa-eval-score.mjs', import.meta.url).pathname, path, ...args], { encoding: 'utf8' });
+    const run = (...args) => spawnSync(process.execPath, [fileURLToPath(new URL('./qa-eval-score.mjs', import.meta.url)), path, ...args], { encoding: 'utf8' });
     assert.equal(run().status, 0);
     assert.equal(JSON.parse(await readFile(`${path}.score.json`, 'utf8')).reviewedCases, 0);
     const reviewed = 'id,suggestionCount,usefulSuggestionCount,directAnswer,fabricated,notes\na,2,2,1,0,已复核\nb,2,1,1,0,已复核\n';

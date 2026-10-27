@@ -11,6 +11,8 @@ server/target
 /work
 /outputs
 /.runtime
+__pycache__/
+*.pyc
 /backups
 *.mario-backup
 *.mario-backup.*.part

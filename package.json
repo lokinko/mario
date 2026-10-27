@@ -3,6 +3,8 @@
   "private": true,
   "version": "0.6.0",
   "scripts": {
+    "benchmark": "node scripts/benchmark.mjs",
+    "test:benchmark": "node scripts/benchmark.mjs --test",
     "codex:bridge": "node scripts/codex-bridge.mjs",
     "test:codex-bridge": "node scripts/postgres-cluster.mjs node scripts/test-codex-bridge.mjs",
     "check:architecture": "node scripts/check-architecture.mjs && node --test scripts/check-architecture.test.mjs",
