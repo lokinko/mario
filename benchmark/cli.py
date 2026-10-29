@@ -9,6 +9,7 @@ from .evaluate import baseline, evaluate
 from .files import new_directory, read_json, require, rows, write_json, write_rows
 from .release import build, verify_release
 from .public_sources import probe_public
+from .collect import collect_public, repair_catalogs
 from .sources import Tushare, collect_prices, collect_universe, fetch_documents
 
 DEFAULT_CONFIG = Path(__file__).with_name("config.json")
@@ -24,6 +25,14 @@ def main(argv=None):
     probe.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     probe.add_argument("--out", type=Path, required=True)
     probe.add_argument("--report-symbol", default="600036.SH")
+    collect = sub.add_parser("collect-public", help="免费来源批量补采与断点恢复，不发布、不伪造历史股票池")
+    collect.add_argument("--root", type=Path, required=True)
+    collect.add_argument("--symbols-file", type=Path, required=True)
+    collect.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    collect.add_argument("--workers", type=int, default=4)
+    repair = sub.add_parser("repair-catalogs", help="对缺失财报期取消分类过滤、按披露窗口定向补查")
+    repair.add_argument("--root", type=Path, required=True)
+    repair.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     universe = sub.add_parser("collect-universe", help="采集历史成分和总市值提案，保留待核对状态")
     universe.add_argument("--root", type=Path, required=True)
     universe.add_argument("--provider-index-code", default="000922.SH")
@@ -44,7 +53,11 @@ def main(argv=None):
     score.add_argument("--top-k", type=int, default=5)
     args = parser.parse_args(argv)
     try:
-        if args.command == "probe-public":
+        if args.command == "repair-catalogs":
+            result = repair_catalogs(args.root, args.config)
+        elif args.command == "collect-public":
+            result = collect_public(args.config, args.symbols_file, args.root, args.workers)
+        elif args.command == "probe-public":
             result = probe_public(args.config, args.out, args.report_symbol)
         elif args.command == "init":
             config = read_json(args.config)

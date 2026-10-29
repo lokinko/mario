@@ -65,9 +65,9 @@ def history_coverage(result, start, end):
             "completeness": "pending_exchange_calendar_and_adjustment_reconciliation"}
 
 
-def cninfo_announcements(code, start, end):
+def cninfo_announcements(code, start, end, stock_records=None, report_categories=True, allow_empty=False):
     symbol(code)
-    stocks = json.loads(download(CNINFO_STOCKS))["stockList"]
+    stocks = stock_records if stock_records is not None else json.loads(download(CNINFO_STOCKS))["stockList"]
     matches = [r for r in stocks if r["code"] == code[:6]]
     require(len(matches) == 1, "巨潮证券组织标识缺失或不唯一")
     body = {"pageNum": "1", "pageSize": "30", "column": "szse", "tabName": "fulltext",
@@ -76,9 +76,11 @@ def cninfo_announcements(code, start, end):
             "sortType": "", "isHLtitle": "false",
             "category": ";".join(["category_ndbg_szsh", "category_bndbg_szsh",
                                     "category_yjdbg_szsh", "category_sjdbg_szsh"])}
+    if not report_categories:
+        body["category"] = ""
     first = json.loads(download(CNINFO_QUERY, body))
     total = int(first["totalAnnouncement"])
-    require(total > 0, "巨潮未返回定期报告；可能是覆盖不足、接口变化或访问限制")
+    require(total > 0 or allow_empty, "巨潮未返回定期报告；可能是覆盖不足、接口变化或访问限制")
     output = list(first.get("announcements") or [])
     for page in range(2, (total + 29) // 30 + 1):
         import time
@@ -93,13 +95,23 @@ def cninfo_announcements(code, start, end):
 
 def report_catalog(code, announcements, start, end):
     output = []
-    periods = {"第一季度": ("03-31", "q1"), "半年度": ("06-30", "half_year"),
-               "第三季度": ("09-30", "q3"), "年度": ("12-31", "annual")}
+    periods = {"第一季度": ("03-31", "q1"), "一季度": ("03-31", "q1"),
+               "半年度": ("06-30", "half_year"), "中期": ("06-30", "half_year"),
+               "半年": ("06-30", "half_year"), "年报": ("12-31", "annual"),
+               "第三季度": ("09-30", "q3"), "三季度": ("09-30", "q3"), "年度": ("12-31", "annual")}
     for row in announcements:
         title = row.get("announcementTitle", "")
         if any(term in title for term in ("摘要", "英文", "取消", "更正公告", "说明", "意见")):
             continue
-        match = re.search(r"(20\d{2})年?(第一季度|半年度|第三季度|年度)报告", title)
+        normalized = re.sub(r"<[^>]+>|[\s_]+", "", title).replace("上半年度", "半年度").replace("半年度A股", "半年度")
+        chinese_digits = str.maketrans("〇零一二三四五六七八九", "00123456789")
+        normalized = re.sub(r"[二〇零]{2}[〇零一二三四五六七八九]{2}(?=年)",
+                            lambda match: match[0].translate(chinese_digits), normalized)
+        match = re.search(r"(20\d{2})(?:年度)?年?(第一季度|一季度|半年度|中期|第三季度|三季度|年度)报告", normalized)
+        if not match:
+            match = re.search(r"(20\d{2})年?(半年)报", normalized)
+        if not match:
+            match = re.search(r"(20\d{2})年?(年报)", normalized)
         if not match or not row.get("adjunctUrl"):
             continue
         suffix, kind = periods[match[2]]

@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-10-29",
+  "collection_completed_at": "2026-10-29T02:50:16.982082+00:00",
+  "scope": "2026-10-26 中证红利完整100家成分的候选资料库；不是历史年度top-20股票池",
+  "target_period": [
+    "2016-01-01",
+    "2025-12-31"
+  ],
+  "warmup_period": [
+    "2015-01-01",
+    "2015-12-31"
+  ],
+  "local_collection_root": ".runtime/benchmark/public-collection-20261029",
+  "stocks": 100,
+  "etfs": 5,
+  "target_daily_price_rows": 238175,
+  "warmup_price_rows": 20409,
+  "all_price_rows": 258584,
+  "pdf_files": 4371,
+  "unique_pdf_contents": 4371,
+  "unique_company_quarter_periods": 3741,
+  "pdf_bytes": 11053900506,
+  "source_download_errors": [],
+  "remaining_trading_day_gaps_after_independent_source_lookup": {
+    "600282.SH": [
+      "2019-04-29",
+      "2019-04-30"
+    ]
+  },
+  "missing_report_periods_within_observed_price_history": {
+    "920599.BJ": [
+      "2021-03-31",
+      "2021-06-30",
+      "2021-09-30"
+    ]
+  },
+  "holiday_rule": "明确闭市的周末及节假日不算缺失；少量未补齐交易日保留记录、不阻塞其余采集",
+  "listing_correction": {
+    "listed_on": "2016-11-04",
+    "source_uri": "https://www.sse.com.cn/disclosure/announcement/listing/c/c_20161103_4198624.shtml",
+    "verified_on": "2026-10-29",
+    "evidence": "将于2016年11月4日起在本所市场上市交易及申购、赎回"
+  },
+  "excluded_prelisting_provider_observations": 6,
+  "price_basis": "Yahoo历史观察与腾讯未复权数据分开保存，尚未混合为可评测复权收益",
+  "report_review_scope": "全部下载、PDF头检查及SHA256；6份标题不完整的文件核对封面/报告期并保存页面证据；未声称全部正文已读或结构化财务指标已提取",
+  "integrity": {
+    "status": "passed",
+    "verified_files": 9205,
+    "manifest_sha256": "0c5b9dc9197858703adb027af3851837a49f7eb7b1c0896c0af277ca4981bebd"
+  },
+  "validation": {
+    "benchmark_tests": 38,
+    "architecture": "passed",
+    "qa_scoring_tests": 5,
+    "client_tests": 265,
+    "client_build": "passed",
+    "client_format": "passed",
+    "rust_format_clippy_build": "passed",
+    "full_npm_test": "blocked_at_disposable_postgresql",
+    "blocker": "本机没有pg_config或MARIO_TEST_PG_BIN，Rust数据库/HTTP/Web/桥接/财务集成尚未运行"
+  },
+  "remaining_release_work": [
+    "历史成分与年末时点市值选样",
+    "原始与修订版语义核对",
+    "复权/公司行动对账",
+    "剩余旧代码资料覆盖"
+  ],
+  "release_ready": false,
+  "huggingface_published": false,
+  "sources": {
+    "calendar": "https://github.com/akfamily/akshare/blob/main/akshare/data/calendar.json",
+    "filings": "https://www.cninfo.com.cn/",
+    "current_constituents": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/000922cons.xls"
+  }
+}

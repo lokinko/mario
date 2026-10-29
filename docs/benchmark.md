@@ -50,6 +50,32 @@ Get-Content .runtime/benchmark/public-probe-v1/coverage.json -Raw
 
 输出 `coverage.json` 分列实际观察首末日、每年有效 OHLC 行数、空值日期、财报目录覆盖报告期和失败来源；`raw/` 保留真实响应、Excel、样本 PDF；`report_sources.proposed.jsonl` 只按标题识别完整财报候选并保持 `version_verified=false`。不把当前成分表当历史年度名单，不把来源未返回的日期补成交易日或停牌，不把 Yahoo 历史拆股调整 OHLC 当作已经核对的原始价。此探测包固定 `release_ready=false`，本身不是用于建模的完成 benchmark。单个来源失败时记录在 errors 中并保留其他探测结果，退出码 0 只表示探测任务完成，不代表所有来源完整；以 coverage 内容为准。重跑使用新目录以保留证据。[2026-10-27 首轮实测](benchmark-source-audit-2026-10-27.md) 记录已观察覆盖和缺口。
 
+### 免费批量补采与断点恢复
+
+`collect-public` 将探测扩展为明确股票清单的全量采集：每家公司的十年定期公告、原始/修订完整财报候选及全部 PDF，股票和配置中 ETF 的日线原响应、规范化行、交易日历和独立腾讯替代行情。Python 仍只使用标准库。默认最多 4 个并发，可设 1–6；源站错误重试后记录，成功文件保留，不因一家失败丢弃其他公司的结果。该命令直接维护可恢复采集目录，与 `build` 的不可覆盖正式发布目录分开。
+
+```powershell
+npm run benchmark -- collect-public --root .runtime/benchmark/public-collection-20261029 --symbols-file benchmark/universes/csi-dividend-current-20261026.json --workers 6
+if ($LASTEXITCODE -ne 0) { throw '采集进程失败；原命令重跑可恢复' }
+Get-Content .runtime/benchmark/public-collection-20261029/coverage.json -Raw
+```
+
+相同命令可以重跑以补取失败文件；`request.json` 固定配置与股票池，不允许在原目录无记录改变采集范围。`progress.json` 提供进度，`document-index/` 为每份成功原件保存文件路径、哈希、字节数和原公告元数据。恢复时校验缓存 PDF 哈希，内容损坏不能当作完成。相同 URL 的多个公告引用共用原件，保留各公告版本记录。最终生成 `reports.proposed.jsonl`、`report_sources.proposed.jsonl`、`prices/<证券>.jsonl`、`alternatives/`、`calendar.jsonl`、覆盖报告及文件清单。
+
+目录仍缺报告期时，可运行 `npm run benchmark -- repair-catalogs --root <采集目录>`。它只针对已有行情观察区间内的缺失季度，取消巨潮的报告分类过滤、按该季度的披露窗口补查，原始结果存为 `announcements/*-supplement.json`，不覆盖最初响应。随后重跑 `collect-public` 合并目录并下载新增原件。标题中的中文年份、文件名下划线、“半年报/年报”等变体也可识别。没有年份、标题被截断或目录接口漏掉的原件，需要核对 PDF 封面后才可写入本地 `extra-reports.jsonl`：保存标准财报字段、已下载 `document_path/sha256`，以及 `period_review: {method: "pdf_cover_text", page: 1, sha256, excerpt}`；采集时核对文件哈希，继续保持 `version_verified=false`，不凭披露窗口猜定报告期，也不将封面核对当作历史修订语义已核验。
+
+仓库附带 `csi-dividend-current-20261026.json` 是指数公司 **2026-10-26 当前 100 家成分**的带出处采集清单，覆盖沪、深、北三地代码（`.SH/.SZ/.BJ`），不按今天的市值冒充历史年度前 20 名。它用于提前建立候选原始资料库，不是正式 benchmark 股票池，也未覆盖已退出的历史成分。此轮保留的历史年末选样契约不变。另可传入带 `scope` 和 `instruments: [{symbol, name}]` 的自有清单采集已经确认的历史并集；变更清单应使用新目录。
+
+交易日历来自 AKShare 维护的历史交易日列表，保存来源原件；补采范围中明确闭市的周末和中国节假日不计作行情缺失。少量真实交易日缺口保留在覆盖统计中，不前向填充、不直接解释为停牌，不阻止其他文件采集。首末观察日期外的范围单独统计，不据此推断正式上市/退市日期。只对存在内部交易日缺口的年份补取腾讯的独立未复权行情；Yahoo 不覆盖的证券也可使用腾讯的完整年度原响应。供应商可能返回请求年份外的记录，规范化时严格截断。
+
+已经查到正式上市公告时，可在采集目录的 `instrument-facts.json` 按证券代码保存 `{listed_on, source_uri}`（日期和 HTTPS 原件出处）。重跑时将上市前供应商观察移至 `prelisting/<证券>.jsonl`，不计入交易价格或内部缺日；原始行情响应继续保留。例如 512100.SH 按[上交所上市公告](https://www.sse.com.cn/disclosure/announcement/listing/c/c_20161103_4198624.shtml)于 2016-11-04 上市，2016 年 9、10 月的供应商观察与空档不能当作二级市场成交和缺失。
+
+**两种价格口径分别保存**，不将腾讯未复权价接入 Yahoo 已调整历史去计算收益；没有经过复权对账的行情不写成 `provider_total_return_proxy`。财报目录识别“一季度/第一季度、三季度/第三季度、半年度/中期、年度”及标题空格，排除摘要、英文、撤销和仅更正说明类公告。PDF 下载成功仍不等于财务数字已提取或版本语义已核对，所有候选继续保留 `version_verified=false`，也不会自动通过正式 `build`。
+
+采集命令退出码 0 表示批量任务已跑完；源站失败、季度目录缺项、日线剩余缺口及待审状态以 `coverage.json` 为准。少量缺日不阻塞本地候选资料库整理，但正式评测不得借休市推测跳过真正缺失的标签起止行情。
+
+[2026-10-29 批量补采验收数据](benchmark-data-collection-2026-10-29.json) 记录实际文件数量、日线区间、剩余缺口、上市日期出处、完整性清单哈希和验证结果。下载语料保存在本机 `.runtime/benchmark/public-collection-20261029/`，不进入 Git，也未上传 Hugging Face。
+
 **可选授权来源适配器**使用 Tushare Pro HTTPS 接口，从本机环境变量读取 `TUSHARE_TOKEN`。未配置不影响免费探测；只有选用该适配器时才需在终端进程中配置，不写进仓库、JSON 或聊天。股票日线、ETF 日线、复权因子、历史成分和总市值的权限各异；工具遇到权限/网络错误退出，成功请求的缓存可恢复使用，不自动切到另一种价格口径。
 
 ```powershell
@@ -75,7 +101,7 @@ if ($LASTEXITCODE -ne 0) { throw '财报下载失败' }
 | 文件 | 行内容及必填字段 |
 | --- | --- |
 | `calendar.jsonl` | `date`、布尔 `is_open`、`source_uri`。source_start 至 end 的每个自然日必须有记录，不能只用周一至周五猜测中国节假日。 |
-| `instruments.jsonl` | `symbol`（如 `600000.SH`）、`name`、`kind`（stock/etf）、`listed_on`、可空 `delisted_on`、`source_uri`。覆盖历年选中股票的并集与所有 ETF。 |
+| `instruments.jsonl` | `symbol`（如 `600000.SH`，接受沪深北 `.SH/.SZ/.BJ`）、`name`、`kind`（stock/etf）、`listed_on`、可空 `delisted_on`、`source_uri`。覆盖历年选中股票的并集与所有 ETF。 |
 | `universe.jsonl` | `year`、`selection_date`、`available_at`、`membership_published_at`、`membership_verified`、`source_uri`、`candidate_count`、`candidates`。每个候选含 `symbol`、`market_cap`。保存完整候选，不是只保存已经选好的 20 家；candidate_count 应与当期官方完整名单一致。 |
 | `prices.jsonl` | `symbol`、`date`、`status`（trading/suspended）、`available_at`、`source_uri`；交易行另含 `open/high/low/close/volume/amount/adj_factor`、固定 `adjustment_basis=provider_total_return_proxy`。 |
 | `report_sources.jsonl` | `symbol`、`period_end`、`report_type`（q1/half_year/q3/annual）、`published_at`、`available_at`、`revision_id`、`version_verified`、`source_uri`（PDF 原件 URL）、`metrics`（对象，可空）。已知 SHA256 可填 `sha256`。 |
@@ -125,6 +151,7 @@ if ($LASTEXITCODE -ne 0) { throw '评测失败' }
 - [中证红利编制方案（中证指数）](https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/20231208175433-000922_Index_Methodology_cn.pdf)：解释候选指数；历史样本须对应历史公告，不能拿当前方案替代历史成分。
 - [Tushare 股票日线](https://tushare.pro/document/2?doc_id=27)、[每日指标及总市值](https://tushare.pro/document/2?doc_id=32)、[复权因子](https://tushare.pro/document/2?doc_id=28)、[历史成分与权重](https://tushare.pro/document/2?doc_id=96)、[ETF 日线](https://tushare.pro/document/2?doc_id=127)、[基金复权因子](https://tushare.pro/document/2?doc_id=199)、[交易日历](https://tushare.pro/document/2?doc_id=26)。权限与数据可用性以实际账户为准。
 - [巨潮资讯](https://www.cninfo.com.cn/)：交易所信息披露原件来源之一。
+- [AKShare 历史交易日列表](https://github.com/akfamily/akshare/blob/main/akshare/data/calendar.json)、[腾讯日线接口实现与字段说明](https://github.com/akfamily/akshare/blob/main/akshare/stock/quote/stock_hist_tx.py)：免费补采使用的日历及独立行情依据，最终仍保留供应商原响应和价格口径。
 - [Hugging Face 数据文件配置](https://huggingface.co/docs/hub/datasets-manual-configuration)、[数据上传与数据集卡](https://huggingface.co/docs/hub/datasets-adding)。
 
 ## 验证入口

@@ -1,0 +1,507 @@
+{
+  "scope": "current_csi_dividend_candidates_not_historical_top20",
+  "source_uri": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/000922cons.xls",
+  "instruments": [
+    {
+      "symbol": "000090.SZ",
+      "name": "天健集团",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "000157.SZ",
+      "name": "中联重科",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "000408.SZ",
+      "name": "藏格矿业",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "000429.SZ",
+      "name": "粤高速A",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "000651.SZ",
+      "name": "格力电器",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "000672.SZ",
+      "name": "上峰材料",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "000895.SZ",
+      "name": "双汇发展",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "000933.SZ",
+      "name": "神火股份",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "000983.SZ",
+      "name": "山西焦煤",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002043.SZ",
+      "name": "兔宝宝",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002154.SZ",
+      "name": "报喜鸟",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002233.SZ",
+      "name": "塔牌集团",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002267.SZ",
+      "name": "陕天然气",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002416.SZ",
+      "name": "爱施德",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002540.SZ",
+      "name": "亚太科技",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002563.SZ",
+      "name": "森马服饰",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002572.SZ",
+      "name": "索菲亚",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002601.SZ",
+      "name": "龙佰集团",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002737.SZ",
+      "name": "葵花药业",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002756.SZ",
+      "name": "永兴材料",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "002867.SZ",
+      "name": "周大生",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "301109.SZ",
+      "name": "军信股份",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600012.SH",
+      "name": "皖通高速",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600015.SH",
+      "name": "华夏银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600016.SH",
+      "name": "民生银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600028.SH",
+      "name": "中国石化",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600036.SH",
+      "name": "招商银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600039.SH",
+      "name": "四川路桥",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600057.SH",
+      "name": "厦门象屿",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600064.SH",
+      "name": "南京高科",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600096.SH",
+      "name": "云天化",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600123.SH",
+      "name": "兰花科创",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600153.SH",
+      "name": "建发股份",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600177.SH",
+      "name": "雅戈尔",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600188.SH",
+      "name": "兖矿能源",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600256.SH",
+      "name": "广汇能源",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600273.SH",
+      "name": "嘉化能源",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600282.SH",
+      "name": "南钢股份",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600295.SH",
+      "name": "鄂尔多斯",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600348.SH",
+      "name": "华阳股份",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600350.SH",
+      "name": "山东高速",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600373.SH",
+      "name": "中文传媒",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600398.SH",
+      "name": "海澜之家",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600461.SH",
+      "name": "洪城环境",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600502.SH",
+      "name": "安徽建工",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600546.SH",
+      "name": "山煤国际",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600585.SH",
+      "name": "海螺水泥",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600729.SH",
+      "name": "重百集团",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600737.SH",
+      "name": "中粮糖业",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600741.SH",
+      "name": "华域汽车",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600755.SH",
+      "name": "厦门国贸",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600757.SH",
+      "name": "长江传媒",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600901.SH",
+      "name": "江苏金租",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600919.SH",
+      "name": "江苏银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600938.SH",
+      "name": "中国海油",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600971.SH",
+      "name": "恒源煤电",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600985.SH",
+      "name": "淮北矿业",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "600997.SH",
+      "name": "开滦股份",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601000.SH",
+      "name": "唐山港",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601001.SH",
+      "name": "晋控煤业",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601006.SH",
+      "name": "大秦铁路",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601009.SH",
+      "name": "南京银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601019.SH",
+      "name": "山东出版",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601077.SH",
+      "name": "渝农商行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601088.SH",
+      "name": "中国神华",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601098.SH",
+      "name": "中南传媒",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601101.SH",
+      "name": "昊华能源",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601166.SH",
+      "name": "兴业银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601168.SH",
+      "name": "西部矿业",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601169.SH",
+      "name": "北京银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601187.SH",
+      "name": "厦门银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601216.SH",
+      "name": "君正集团",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601225.SH",
+      "name": "陕西煤业",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601229.SH",
+      "name": "上海银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601288.SH",
+      "name": "农业银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601318.SH",
+      "name": "中国平安",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601328.SH",
+      "name": "交通银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601398.SH",
+      "name": "工商银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601598.SH",
+      "name": "中国外运",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601658.SH",
+      "name": "邮储银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601666.SH",
+      "name": "平煤股份",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601668.SH",
+      "name": "中国建筑",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601699.SH",
+      "name": "潞安环能",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601717.SH",
+      "name": "中创智领",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601818.SH",
+      "name": "光大银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601825.SH",
+      "name": "沪农商行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601838.SH",
+      "name": "成都银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601857.SH",
+      "name": "中国石油",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601916.SH",
+      "name": "浙商银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601919.SH",
+      "name": "中远海控",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601928.SH",
+      "name": "凤凰传媒",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601939.SH",
+      "name": "建设银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601963.SH",
+      "name": "重庆银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601988.SH",
+      "name": "中国银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601997.SH",
+      "name": "贵阳银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "601998.SH",
+      "name": "中信银行",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "603565.SH",
+      "name": "中谷物流",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "603706.SH",
+      "name": "东方环宇",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "603967.SH",
+      "name": "中创物流",
+      "constituent_date": "20261026"
+    },
+    {
+      "symbol": "920599.BJ",
+      "name": "同力股份",
+      "constituent_date": "20261026"
+    }
+  ],
+  "source_sha256": "4bbb62211b20dd22cad63c7dea5ae00bcf7ba64d0e46bda31693427e1b4098dd"
+}

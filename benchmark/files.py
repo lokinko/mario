@@ -42,7 +42,7 @@ def number(value, positive=False):
 
 
 def symbol(value):
-    require(isinstance(value, str) and re.fullmatch(r"\d{6}\.(SH|SZ)", value),
+    require(isinstance(value, str) and re.fullmatch(r"\d{6}\.(SH|SZ|BJ)", value),
             f"证券代码错误: {value}")
     return value
 
