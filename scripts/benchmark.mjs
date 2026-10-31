@@ -8,6 +8,7 @@ const windows = process.platform === 'win32';
 const candidates = [
   process.env.MARIO_BENCHMARK_PYTHON,
   process.env.VIRTUAL_ENV && resolve(process.env.VIRTUAL_ENV, windows ? 'Scripts/python.exe' : 'bin/python'),
+  resolve(root, '.venv', windows ? 'Scripts/python.exe' : 'bin/python'),
   resolve(root, '../../.venv', windows ? 'Scripts/python.exe' : 'bin/python'),
 ].filter(Boolean);
 const python = candidates.find(path => existsSync(path)) ?? (windows ? 'python' : 'python3');

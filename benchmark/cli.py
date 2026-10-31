@@ -12,6 +12,8 @@ from .public_sources import probe_public
 from .collect import collect_public, repair_catalogs
 from .sources import Tushare, collect_prices, collect_universe, fetch_documents
 from .tech_universe import collect_tech_universe
+from .dividend_universe import collect_dividend_universe
+from .hub import publish
 from .pool_release import build_pool_release
 from .scoring import baseline_weights, evaluate_weights
 
@@ -42,8 +44,14 @@ def main(argv=None):
     tech.add_argument("--top", type=int, default=20)
     tech.add_argument("--workers", type=int, default=4)
     tech.add_argument("--sw-file", type=Path, help="本地下载的申万个股行业变更 xls；站点证书链不完整时使用")
-    pool_build = sub.add_parser("pool-build", help="由年度股票池构建时点输入与结果分离的可评分切片")
-    pool_build.add_argument("--universe-root", type=Path, required=True)
+    dividend = sub.add_parser("dividend-universe", help="重建中证红利选样日成分并按市值选出前 N，保留待核对状态")
+    dividend.add_argument("--root", type=Path, required=True)
+    dividend.add_argument("--years", required=True, help="逗号分隔的股票池年份，从 2009 起")
+    dividend.add_argument("--top", type=int, default=20)
+    dividend.add_argument("--workers", type=int, default=4)
+    pool_build = sub.add_parser("pool-build", help="由一个或多个年度股票池构建时点输入与结果分离的可评分切片")
+    pool_build.add_argument("--universe-root", type=Path, action="append", required=True,
+                            help="可重复；每个目录是一个股票池的采集结果")
     pool_build.add_argument("--out", type=Path, required=True)
     pool_base = sub.add_parser("pool-baseline", help="生成基线策略仓位：equal/momentum/size/cash")
     pool_base.add_argument("--strategy", choices=("equal", "momentum", "size", "cash"), required=True)
@@ -53,6 +61,13 @@ def main(argv=None):
     for command in (pool_base, pool_score):
         command.add_argument("--root", type=Path, required=True)
         command.add_argument("--out", type=Path, required=True)
+    hub = sub.add_parser("hub-publish", help="把评分切片上传到 Hugging Face 私有仓库：输入与标签分仓")
+    hub.add_argument("--release", type=Path, required=True)
+    hub.add_argument("--scorecards", type=Path, required=True, help="pool-score 输出目录，文件名即策略名")
+    hub.add_argument("--repo", required=True)
+    hub.add_argument("--labels-repo", required=True)
+    hub.add_argument("--path", default="pool-scoring")
+    hub.add_argument("--tag")
     universe = sub.add_parser("collect-universe", help="采集历史成分和总市值提案，保留待核对状态")
     universe.add_argument("--root", type=Path, required=True)
     universe.add_argument("--provider-index-code", default="000922.SH")
@@ -76,6 +91,11 @@ def main(argv=None):
         if args.command == "tech-universe":
             years = [int(value) for value in args.years.split(",") if value.strip()]
             result = collect_tech_universe(args.root, years, args.top, args.workers, args.sw_file)
+        elif args.command == "dividend-universe":
+            years = [int(value) for value in args.years.split(",") if value.strip()]
+            result = collect_dividend_universe(args.root, years, args.top, args.workers)
+        elif args.command == "hub-publish":
+            result = publish(args.release, args.repo, args.labels_repo, args.path, args.scorecards, args.tag)
         elif args.command == "pool-build":
             result = build_pool_release(args.universe_root, args.out)
         elif args.command in ("pool-baseline", "pool-score"):
@@ -91,7 +111,7 @@ def main(argv=None):
                 write_json(args.out, result)
                 result = {key: result[key] for key in ("metric", "score", "pool_equal_weight_score",
                                                        "csi300_score", "beat_csi300_periods",
-                                                       "beat_pool_equal_weight_periods", "by_year")}
+                                                       "beat_pool_equal_weight_periods", "by_pool")}
         elif args.command == "repair-catalogs":
             result = repair_catalogs(args.root, args.config)
         elif args.command == "collect-public":

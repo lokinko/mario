@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 from benchmark.baostock_market import Baostock, mario_code, provider_code
 from benchmark.files import Invalid
-from benchmark.tech_universe import industry_on, select_year, shares_on, stock_symbol, tech_level1
+from benchmark.market_cap import shares_on, stock_symbol
+from benchmark.tech_universe import industry_on, select_year, tech_level1
 from benchmark.xls import sheet_rows
 
 FREE, END, FAT_SECTOR = 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFD

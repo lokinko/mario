@@ -254,7 +254,7 @@ class BenchmarkTests(unittest.TestCase):
                 fetch_documents(root)
 
     def test_research_modules_only_import_stdlib_and_own_package(self):
-        optional = {"baostock_market.py": {"baostock"}}
+        optional = {"baostock_market.py": {"baostock"}, "hub.py": {"huggingface_hub"}}
         for path in Path(__file__).parents[1].glob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):

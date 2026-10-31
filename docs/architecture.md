@@ -243,9 +243,9 @@ sequenceDiagram
 
 ### 离线 benchmark 研究工具
 
-[`benchmark/`](../benchmark/) 是与生产模块隔离的 Python 标准库 CLI，由 `scripts/benchmark.mjs` 启动；`public_sources` 优先探测免费来源覆盖并归档响应，`sources` 提供可选授权行情和财报原件下载，`dataset` 负责契约、完整性和历史时点投影，`evaluate` 计算预测排序指标，`release` 创建不可覆盖且带哈希清单的本地发布包。CLI 依赖这些研究模块，研究模块不导入前后端源码、不访问 PostgreSQL、账号备份或生产凭据。边界测试限制其依赖为 Python 标准库和本包，唯一例外是 `baostock_market` 可导入 uv 依赖组 `market` 中的 `baostock`，用于已退市证券的免费日线；在线服务不调用研究 CLI。
+[`benchmark/`](../benchmark/) 是与生产模块隔离的 Python 标准库 CLI，由 `scripts/benchmark.mjs` 启动；`public_sources` 优先探测免费来源覆盖并归档响应，`sources` 提供可选授权行情和财报原件下载，`dataset` 负责契约、完整性和历史时点投影，`evaluate` 计算预测排序指标，`release` 创建不可覆盖且带哈希清单的本地发布包。CLI 依赖这些研究模块，研究模块不导入前后端源码、不访问 PostgreSQL、账号备份或生产凭据。边界测试限制其依赖为 Python 标准库和本包，例外只有两个单一适配器：`baostock_market` 可导入 uv 依赖组 `market` 中的 `baostock`，用于已退市证券的免费日线；`hub` 可导入依赖组 `publish` 中的 `huggingface_hub`，只负责上传。在线服务不调用研究 CLI。
 
-`tech_universe` 按时点选出科技股池：`xls` 用标准库解析申万个股行业变更历史，股本取东方财富已公告的变动记录，收盘价、交易状态与上市退市日期经 `baostock_market` 获取。它只产出带出处的年度候选提案，不修改 `dataset` 的正式校验规则。`pool_release` 由这些提案构建季度决策切片，把时点输入与建仓后价格路径分文件写入不可覆盖目录；`scoring` 是无网络的纯计算模块，按用户确定的主指标（建仓后 0–7、7–30、30–90 自然日总资产增长按 0.3/0.3/0.4 加权）给仓位文件打分，并以同一公式计算沪深300 与股票池等权对照。
+两个股票池只在候选来源上不同，按时点市值的口径由 `market_cap` 统一：选样日未复权收盘价（经 `baostock_market`）乘以当时已公告的总股本（东方财富），连同剔除原因与缓存布局。`tech_universe` 以 `xls` 解析的申万个股行业变更历史确定科技池候选；`dividend_universe` 以被动指数基金年报全部持仓为中证红利成分代理，再按中证官方调样公告修正生效时点。两者互不引用，只产出带出处的年度候选提案，不修改 `dataset` 的正式校验规则。`pool_release` 把一个或多个股票池的提案合并为季度决策切片，时点输入、选样快照与建仓后价格路径分文件写入不可覆盖目录；`scoring` 是无网络的纯计算模块，按用户确定的主指标（建仓后 0–7、7–30、30–90 自然日总资产增长按 0.3/0.3/0.4 加权）给仓位文件打分，并以同一公式计算沪深300 与股票池等权对照。`hub` 校验发布包后把输入与标签分别上传到两个私有 Hugging Face 数据集仓库。
 
 输入、请求缓存与发布包归 `.runtime/benchmark/`，是公开研究语料文件，不是第二个在线业务存储引擎。行情 token 只从终端环境读取。Hugging Face 是可选的后续分发渠道，本地构建不发布数据。完整原始归档与按披露时间截断的模型 inputs、未来 labels 分开；未核对历史成分、缺少日线或财报时不生成完成发布包。详细契约、失败恢复和研究限制见 [benchmark](benchmark.md)。
 

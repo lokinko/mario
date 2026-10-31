@@ -16,9 +16,9 @@ CNINFO_STOCKS = "https://www.cninfo.com.cn/new/data/szse_stock.json"
 CNINFO_QUERY = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 
 
-def download(url, body=None):
+def download(url, body=None, referer="https://www.cninfo.com.cn/"):
     request = Request(url, data=urlencode(body).encode() if body else None,
-                      headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.cninfo.com.cn/"})
+                      headers={"User-Agent": "Mozilla/5.0", "Referer": referer})
     with urlopen(request, timeout=40) as response:
         result = response.read(100 * 1024 * 1024 + 1)
     require(len(result) <= 100 * 1024 * 1024, "公开文件超过大小上限")

@@ -93,19 +93,35 @@ if ($LASTEXITCODE -ne 0) { throw '科技股池选样失败；原命令重跑可�
 
 申万站点只下发叶子证书，Python 标准库无法补全中间证书，因此用系统 curl 或浏览器下载后通过 `--sw-file` 导入；工具不关闭证书校验。导入方式和文件哈希写入 `raw/sw/meta.json`。`baostock` 是 uv 依赖组 `market` 中的可选依赖，只由 `baostock_market.py` 导入；未安装时命令报错退出，其他命令不受影响。
 
-输出 `universe/tech-<年份>.json` 沿用年度股票池字段（`selection_date`、`available_at`、`candidate_count`、`candidates[].market_cap`），另含每个候选的收盘价、股本出处日期、申万代码与版本、`selected` 前 N 名和 `excluded` 排除原因（B 股/北交所、Baostock 未覆盖、选样日前已退市、无行情、无已公告股本）。`membership_verified` 固定为 `false`、`membership_published_at` 为 `null`，不能直接通过正式 `validate`。原始响应缓存在 `raw/`，相同命令重跑只补取缺失项；`request.json` 固定年份与前 N 设置，改变范围须用新目录。总市值为 A 股收盘价乘以全部总股本，A+H 公司的 H 股也按 A 股价格计入。
+输出 `universe/tech-<年份>.json` 沿用年度股票池字段（`selection_date`、`available_at`、`candidate_count`、`candidates[].market_cap`），另含每个候选的收盘价、股本出处日期、申万代码与版本、`selected` 前 N 名和 `excluded` 排除原因（B 股/北交所、Baostock 未覆盖、选样日前已退市、无行情、无已公告股本）。`membership_verified` 固定为 `false`、`membership_published_at` 为 `null`，不能直接通过正式 `validate`。原始响应缓存在 `raw/`，相同命令重跑只补取缺失项；`request.json` 固定年份与前 N 设置，改变范围须用新目录。总市值为 A 股收盘价乘以全部总股本，A+H 公司的 H 股也按 A 股价格计入。市值口径、剔除原因和缓存布局由 `market_cap.py` 统一提供，红利池使用同一套规则。
+
+### 红利股池按时点选样
+
+v2 的红利股池每年取上一年最后交易日**已生效**的中证红利（000922）成分，按同一市值口径取前 20。指数 2008-05-26 才发布，2007 年末没有成分，因此红利池从 2009 年开始。免费来源没有历史成分表，`dividend-universe` 按以下顺序重建年末成分：
+
+1. 2010 年起，取被动指数基金大成中证红利 A（090010）年报披露的全部持仓（天天基金 `FundArchivesDatas.aspx?type=jjcc`，年末即第 4 季度明细）作为代理，剔除占净值低于 0.05% 的残留，以及选样日前上市不满一年的股票（指数要求连续多年现金分红，这类持仓只可能来自打新配售，例如 2020 年末的中芯国际、2021 年末的中国电信）。上市一至三年的持仓无法用免费来源确认当年的分红年限要求，予以保留。季报只有前十大，不能替代。
+2. 有中证官方调样公告的年份（2008–2014、2018–2020 年 12 月），按生效日相对选样日修正：已生效的调样，调出股移除、调入股补齐；次年 1 月生效的调样反向处理。这样可以纠正基金提前或滞后调仓。
+3. 基金成立前的 2008、2009 年末，从下一年末的成分按当年官方名单倒推一次调样。
+
+```powershell
+uv sync --group market --group publish
+npm run benchmark -- dividend-universe --root .runtime/benchmark/dividend-universe-<日期> --years 2009,2010,2011
+if ($LASTEXITCODE -ne 0) { throw '红利股池选样失败；原命令重跑可恢复' }
+```
+
+输出 `universe/dividend-<年份>.json` 与科技池同构，另含 `member_count`、`membership_basis`，每个候选和排除项带 `membership_source`（`fund_090010_<年>` 或 `csi_<公告编号>`）。`coverage.json` 的 `adjustment_check` 记录官方名单与基金持仓的一致性：已生效调样的调入股有几只在持仓中、调出股有几只仍在持仓中。中证官网对频繁请求返回 403，公告响应缓存在 `raw/csi/`，重跑不重复请求。2015–2017、2021 年的官方名单只在公告链接的表格中，2022 年起官网公告不再列出中证红利名单，这些年份只用基金代理（12 月生效，与年末持仓一致）。年中临时调样未逐项还原，`membership_verified` 固定为 `false`。
 
 ### 股票池切片评分
 
-`pool-build` 读取 `tech-universe` 的采集目录，用 Baostock 拉取各年前 N 名股票的未复权与后复权日线及沪深300 指数日线，在每个股票池年份的四个季度末形成决策点，写入不可覆盖的新目录：`inputs.jsonl` 为决策时点输入，`outcomes.jsonl` 为建仓后的价格路径（评分用，不得作为策略输入），另有 `config.json`、`summary.json` 和逐文件哈希 `manifest.json`。
+`pool-build` 读取一个或多个股票池采集目录（`--universe-root` 可重复，每种池子只能出现一次），用 Baostock 拉取各年前 N 名股票的未复权与后复权日线及沪深300 指数日线，在每个股票池年份的四个季度末形成决策点，写入不可覆盖的新目录：`inputs.jsonl` 为决策时点输入，`outcomes.jsonl` 为建仓后的价格路径（评分用，不得作为策略输入），`universe/<池>-<年>.json` 为去掉供应商当前简称的选样快照，另有 `config.json`、`summary.json` 和逐文件哈希 `manifest.json`。样本编号为 `<池>-<决策日>`，评分报告按 `by_pool` 分池汇总。行情缓存留在各自的采集目录中。
 
 ```powershell
-npm run benchmark -- pool-build --universe-root .runtime/benchmark/tech-universe-<日期> --out .runtime/benchmark/tech-slice-v1
-npm run benchmark -- pool-baseline --root .runtime/benchmark/tech-slice-v1 --strategy momentum --top 5 --out .runtime/benchmark/runs/momentum.weights.jsonl
-npm run benchmark -- pool-score --root .runtime/benchmark/tech-slice-v1 --weights .runtime/benchmark/runs/momentum.weights.jsonl --out .runtime/benchmark/runs/momentum.score.json
+npm run benchmark -- pool-build --universe-root .runtime/benchmark/tech-universe-<日期> --universe-root .runtime/benchmark/dividend-universe-<日期> --out .runtime/benchmark/pools-v1
+npm run benchmark -- pool-baseline --root .runtime/benchmark/pools-v1 --strategy momentum --top 5 --out .runtime/benchmark/runs/momentum.weights.jsonl
+npm run benchmark -- pool-score --root .runtime/benchmark/pools-v1 --weights .runtime/benchmark/runs/momentum.weights.jsonl --out .runtime/benchmark/scorecards/momentum.json
 ```
 
-输入每只股票只含代码、决策日未复权收盘价与交易状态、63 交易日后复权动量、选样日总市值和申万一级行业，不含供应商当前简称（例如“退”“*ST”会泄露结局）。后复权价格只依赖当时已发生的权益事件，可用于时点动量。
+输入每只股票只含代码、决策日未复权收盘价与交易状态、63 交易日后复权动量、选样日总市值和申万一级行业（红利池为 `null`），不含供应商当前简称（例如“退”“*ST”会泄露结局）。后复权价格只依赖当时已发生的权益事件，可用于时点动量。
 
 策略提交仓位文件，每行 `{"sample_id", "symbol", "weight"}`，`weight` 为十进制字符串，非负，同一决策点合计不超过 1，其余视为现金；只能引用该决策点股票池内的证券。主指标定义见 [行动指南 5.0 节](benchmark-v2-plan.md)：0.3×R(0–7 天) + 0.3×R(7–30 天) + 0.4×R(30–90 天)，单位为百分比，按自然日分段，建仓日为第 0 天。评分报告给出均值、中位数、标准差、自助法 95% 区间、逐年与逐期明细，并用同一公式计算沪深300 和股票池等权组合作对照。买入扣 0.03% 佣金和 0.10% 滑点；停牌或一字涨停买不进的部分留作现金；持有期停牌按停牌价、退市后按退市前最后价格估值，未计换股、清算与红利税。未提交仓位的决策点计 0 分。基线 `equal`、`momentum`、`size`、`cash` 只读取输入文件。
 
@@ -175,7 +191,13 @@ if ($LASTEXITCODE -ne 0) { throw '评测失败' }
 
 ## Hugging Face 与后续工作
 
-本地构建结果已按 Hugging Face Dataset Card 的两个 configuration（inputs、labels）和三个 split 排列，JSONL 可被 Datasets/Hub 识别。后续核对各源行情、成分与财报的再分发授权，再选择私有/公开仓库、上传并固定 commit SHA。第一版不把公开可浏览等同于可公开再分发，不擅自给原件附开放许可证；`summary.redistribution_status=not_reviewed` 如实保留状态。尚未创建仓库、尚未执行上传或下载验收。
+v1 本地构建结果按 Hugging Face Dataset Card 的两个 configuration（inputs、labels）和三个 split 排列，尚未上传。v2 股票池评分切片用 `hub-publish` 上传到私有数据集仓库：时点输入、选样快照、配置、统计、哈希清单和数据集卡进入主仓库；`outcomes.jsonl` 与各基线成绩进入单独的私有标签仓库，评测时再授权读取。命令先用 `verify` 校验发布包，并确认两个仓库都是私有仓库才上传；数据集卡沿用固定 canary（见 [行动指南 7.3 节](benchmark-v2-plan.md)）。`huggingface_hub` 是 uv 依赖组 `publish` 中的可选依赖，只由 `hub.py` 导入；token 由本机 `hf auth login` 保存，不写进仓库。
+
+```powershell
+npm run benchmark -- hub-publish --release .runtime/benchmark/pools-v1 --scorecards .runtime/benchmark/scorecards --repo lokinko/mario_bench --labels-repo lokinko/mario_bench_labels --path pool-scoring --tag pool-scoring-v1
+```
+
+`--scorecards` 目录中每个 `<策略>.json` 是 `pool-score` 的完整报告，汇总结果写入数据集卡。下载两个仓库的 `pool-scoring/` 合并后可用 `verify` 校验哈希、用 `pool-score` 打分。再分发授权尚未核对，不把公开可浏览等同于可公开再分发，也不擅自给原件附开放许可证。
 
 二十年红利与科技股、宽基指数的扩展规划见 [benchmark v2 行动指南](benchmark-v2-plan.md)。后续在固定 release SHA 上增加财报表格提取及版本对账、股息/盈利质量等结构化因子、成本和公司行动驱动的组合回测、walk-forward 调参、无外网历史信息回放与前瞻测试。接入在线问答时需另设计经授权冻结的资料输入，不允许研究 CLI 读取账号数据库或通过历史样本执行真实交易。
 

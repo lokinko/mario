@@ -145,9 +145,10 @@ def evaluate_weights(samples, outcomes, weight_rows):
             "pool_equal_weight_score": score(pool_returns), "csi300_score": score(index_returns)})
     require(periods, "没有可评分的样本")
     scores = [p["score"] for p in periods]
-    by_year = {}
+    by_year, by_pool = {}, {}
     for period in periods:
         by_year.setdefault(period["decision_date"][:4], []).append(period)
+        by_pool.setdefault(period["pool"], []).append(period)
     return {
         "metric": "0.3×R(0–7天) + 0.3×R(7–30天) + 0.4×R(30–90天)，总资产增长，单位为百分比",
         "cost_basis": COST_BASIS,
@@ -160,6 +161,10 @@ def evaluate_weights(samples, outcomes, weight_rows):
                            "pool_equal_weight_score": mean(p["pool_equal_weight_score"] for p in rows),
                            "csi300_score": mean(p["csi300_score"] for p in rows), "periods": len(rows)}
                     for year, rows in sorted(by_year.items())},
+        "by_pool": {pool: {"score": summarize([p["score"] for p in rows]),
+                           "pool_equal_weight_score": summarize([p["pool_equal_weight_score"] for p in rows]),
+                           "csi300_score": summarize([p["csi300_score"] for p in rows])}
+                    for pool, rows in sorted(by_pool.items())},
         "periods": periods,
         "limitations": ["股票池与行业归属尚未人工核对（membership_verified=false）",
                         "退市证券按退市前最后价格估值，未计换股、清算或退市整理期",

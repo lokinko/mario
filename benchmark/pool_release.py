@@ -1,6 +1,6 @@
-"""从年度股票池提案构建可评分的小切片：时点输入与未来结果分开写入不可覆盖目录。
+"""从一个或多个年度股票池提案构建可评分切片：时点输入与未来结果分开写入不可覆盖目录。
 
-输入只含证券代码与决策时点前的数据，不含供应商当前简称（会泄露 ST、退市等结局）。
+输入与随包快照只含证券代码与决策时点前的数据，不含供应商当前简称（会泄露 ST、退市等结局）。
 """
 
 from datetime import date
@@ -9,8 +9,9 @@ from decimal import Decimal
 from .baostock_market import SOURCE as BAOSTOCK, Baostock
 from .files import digest, new_directory, read_json, require, write_json, write_rows
 from .scoring import BUY_COST, COST_BASIS, SEGMENT_DAYS, SEGMENT_WEIGHTS, boundaries, can_buy
-from .tech_universe import cached
+from .market_cap import cached
 
+POOLS = ("dividend", "tech")
 INDEX = "000300.SH"
 LOOKBACK = 63
 
@@ -43,7 +44,7 @@ def sample_rows(pool, year, decision, snapshot, adjusted, raw, index_bars, calen
                        "momentum_63": momentum(adjusted[code], calendar, decision),
                        "market_cap_at_selection": by_symbol[code]["market_cap"],
                        "selection_date": snapshot["selection_date"],
-                       "sw_level1_name": by_symbol[code]["level1_name"]})
+                       "sw_level1_name": by_symbol[code].get("level1_name")})
     index_bar = index_bars.get(decision)
     return {"id": f"{pool}-{decision}", "pool": pool, "universe_year": year, "decision_date": decision,
             "cutoff": f"{decision}T18:00:00+08:00", "stocks": stocks,
@@ -73,36 +74,45 @@ def outcome_row(sample, adjusted, index_bars, calendar):
             "index": {"symbol": INDEX, "entry_open": index_bars[entry]["open"], "path": path(index_bars)}}
 
 
-def build_pool_release(universe_root, destination, pool="tech"):
-    request = read_json(universe_root / "request.json")
-    require(request["pool"] == pool, "股票池类型与采集目录不符")
-    years = request["years"]
-    raw_dir = universe_root / "raw" / "baostock" / "history"
-    snapshots = {year: read_json(universe_root / "universe" / f"{pool}-{year}.json") for year in years}
+def build_pool_release(universe_roots, destination):
+    """universe_roots：各股票池的采集目录；每个池子的行情缓存留在自己的目录里。"""
+    pools = {}
+    for root in universe_roots:
+        request = read_json(root / "request.json")
+        require(request["pool"] in POOLS, f"未知股票池类型: {request['pool']}")
+        require(request["pool"] not in pools, f"股票池重复: {request['pool']}")
+        pools[request["pool"]] = (root, request["years"])
+    calendars, adjusted, raw, index_bars, snapshots = {}, {}, {}, {}, {}
     with Baostock() as market:
-        calendars, adjusted, raw, index_bars = {}, {}, {}, {}
-        for year in years:
-            start, end = f"{year - 1}-08-01", f"{year + 1}-05-31"
-            days = cached(raw_dir / f"trade_dates-{start}-{end}.json", lambda: market.trade_dates(start, end))
-            calendars[year] = [row["calendar_date"] for row in days if row["is_trading_day"] == "1"]
-            for code in snapshots[year]["selected"]:
-                for flag, store in (("1", adjusted), ("3", raw)):
-                    rows = cached(raw_dir / f"{code}-{start}-{end}-adjust{flag}.json",
-                                  lambda: market.daily(code, start, end, flag))
-                    store.setdefault(code, {}).update({row["date"]: row for row in rows})
-            rows = cached(raw_dir / f"{INDEX}-{start}-{end}.json", lambda: market.daily(INDEX, start, end, "3", index=True))
-            index_bars.update({row["date"]: row for row in rows})
+        for pool, (root, years) in pools.items():
+            raw_dir = root / "raw" / "baostock" / "history"
+            for year in years:
+                snapshot = snapshots[pool, year] = read_json(root / "universe" / f"{pool}-{year}.json")
+                require(snapshot["pool"] == pool and snapshot["year"] == year, f"{pool}-{year} 快照与目录不符")
+                start, end = f"{year - 1}-08-01", f"{year + 1}-05-31"
+                days = cached(raw_dir / f"trade_dates-{start}-{end}.json", lambda: market.trade_dates(start, end))
+                calendars[year] = [row["calendar_date"] for row in days if row["is_trading_day"] == "1"]
+                for code in snapshot["selected"]:
+                    for flag, store in (("1", adjusted), ("3", raw)):
+                        rows = cached(raw_dir / f"{code}-{start}-{end}-adjust{flag}.json",
+                                      lambda: market.daily(code, start, end, flag))
+                        store.setdefault(code, {}).update({row["date"]: row for row in rows})
+                rows = cached(raw_dir / f"{INDEX}-{start}-{end}.json",
+                              lambda: market.daily(INDEX, start, end, "3", index=True))
+                index_bars.update({row["date"]: row for row in rows})
     samples, outcomes, skipped = [], [], []
-    for year in years:
+    for (pool, year), snapshot in sorted(snapshots.items()):
         for decision in quarter_decisions(calendars[year], year):
-            sample = sample_rows(pool, year, decision, snapshots[year], adjusted, raw, index_bars, calendars[year])
+            sample = sample_rows(pool, year, decision, snapshot, adjusted, raw, index_bars, calendars[year])
             outcome = outcome_row(sample, adjusted, index_bars, calendars[year])
             if outcome is None:
                 skipped.append({"sample_id": sample["id"], "reason": "insufficient_future_window"})
                 continue
             samples.append(sample)
             outcomes.append(outcome)
-    config = {"version": f"{pool}-slice-{'-'.join(map(str, years))}", "pool": pool, "years": years,
+    years = sorted({year for _, year in snapshots})
+    config = {"version": f"{'+'.join(sorted(pools))}-{years[0]}-{years[-1]}",
+              "pools": {pool: pool_years for pool, (_, pool_years) in sorted(pools.items())},
               "segments_days": list(SEGMENT_DAYS), "segment_weights": [str(w) for w in SEGMENT_WEIGHTS],
               "buy_cost": str(BUY_COST), "cost_basis": COST_BASIS, "reference_index": INDEX,
               "momentum_lookback_sessions": LOOKBACK, "price_source": BAOSTOCK,
@@ -111,8 +121,15 @@ def build_pool_release(universe_root, destination, pool="tech"):
         write_json(stage / "config.json", config)
         write_rows(stage / "inputs.jsonl", samples)
         write_rows(stage / "outcomes.jsonl", outcomes)
-        summary = {"samples": len(samples), "skipped": skipped, "years": years, "pool": pool,
-                   "release_ready": False}
+        (stage / "universe").mkdir()
+        for (pool, year), snapshot in sorted(snapshots.items()):
+            candidates = [{k: v for k, v in row.items() if k != "current_name"} for row in snapshot["candidates"]]
+            write_json(stage / "universe" / f"{pool}-{year}.json", {**snapshot, "candidates": candidates})
+        counts = {}
+        for sample in samples:
+            counts[sample["pool"]] = counts.get(sample["pool"], 0) + 1
+        summary = {"samples": len(samples), "samples_by_pool": counts, "skipped": skipped,
+                   "pools": config["pools"], "release_ready": False}
         write_json(stage / "summary.json", summary)
         files = {p.relative_to(stage).as_posix(): digest(p) for p in sorted(stage.rglob("*")) if p.is_file()}
         write_json(stage / "manifest.json", {"schema_version": 1, "files": files})

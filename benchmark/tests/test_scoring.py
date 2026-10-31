@@ -1,8 +1,13 @@
+import tempfile
 import unittest
+from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
+from unittest.mock import patch
 
-from benchmark.files import Invalid
-from benchmark.pool_release import momentum, outcome_row, quarter_decisions, sample_rows
+from benchmark.files import Invalid, rows, write_json
+from benchmark.pool_release import build_pool_release, momentum, outcome_row, quarter_decisions, sample_rows
+from benchmark.release import verify_release
 from benchmark.scoring import (baseline_weights, boundaries, can_buy, evaluate_weights, portfolio_segments,
                                score)
 
@@ -119,6 +124,45 @@ class PoolReleaseTest(unittest.TestCase):
         self.assertEqual(row["boundaries"], ["2015-04-08", "2015-04-30", "2015-06-30"])
         self.assertTrue(all(day >= "2015-04-01" for day, _ in row["stocks"]["000001.SZ"]["path"]))
         self.assertIsNone(outcome_row({**sample, "decision_date": "2015-06-30"}, {"000001.SZ": bars}, bars, calendar))
+
+    def test_combined_release_keeps_pools_separate_and_strips_current_names(self):
+        def universe(root, pool, code, extra):
+            (root / "universe").mkdir(parents=True)
+            write_json(root / "request.json", {"pool": pool, "years": [2015]})
+            write_json(root / "universe" / f"{pool}-2015.json", {
+                "pool": pool, "year": 2015, "selection_date": "2014-12-31", "selected": [code],
+                "candidates": [{"symbol": code, "market_cap": "1", "current_name": "退市某某", **extra}]})
+
+        class Market:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def trade_dates(self, start, end):
+                days = (date.fromisoformat(start) + timedelta(n) for n in range(700))
+                return [{"calendar_date": d.isoformat(), "is_trading_day": "1" if d.weekday() < 5 else "0"}
+                        for d in days if d.isoformat() <= end]
+
+            def daily(self, code, start, end, flag="3", index=False):
+                return [{"date": row["calendar_date"], **bar("10")} for row in self.trade_dates(start, end)
+                        if row["is_trading_day"] == "1"]
+
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            universe(base / "tech", "tech", "000001.SZ", {"level1_name": "电子"})
+            universe(base / "dividend", "dividend", "600000.SH", {"membership_source": "fund_090010_2014"})
+            with patch("benchmark.pool_release.Baostock", Market):
+                summary = build_pool_release([base / "tech", base / "dividend"], base / "release")
+                with self.assertRaises(Invalid):
+                    build_pool_release([base / "tech", base / "tech"], base / "again")
+            self.assertEqual(summary["samples_by_pool"], {"dividend": 4, "tech": 4})
+            verify_release(base / "release")
+            samples = rows(base / "release" / "inputs.jsonl")
+            self.assertEqual({s["id"].split("-")[0] for s in samples}, {"tech", "dividend"})
+            self.assertNotIn("退市", (base / "release" / "universe" / "tech-2015.json").read_text(encoding="utf-8"))
+            self.assertIsNone([s for s in samples if s["pool"] == "dividend"][0]["stocks"][0]["sw_level1_name"])
 
 
 if __name__ == "__main__":
