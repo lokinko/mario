@@ -12,6 +12,7 @@ from .files import digest, new_directory, read_json, require, symbol, write_json
 
 SHANGHAI = timezone(timedelta(hours=8))
 CSI_CONSTITUENTS = "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/000922cons.xls"
+CSI_INDEX_PERF = "https://www.csindex.com.cn/csindex-home/perf/index-perf"
 CNINFO_STOCKS = "https://www.cninfo.com.cn/new/data/szse_stock.json"
 CNINFO_QUERY = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 
@@ -23,6 +24,19 @@ def download(url, body=None, referer="https://www.cninfo.com.cn/"):
         result = response.read(100 * 1024 * 1024 + 1)
     require(len(result) <= 100 * 1024 * 1024, "公开文件超过大小上限")
     return result
+
+
+def csi_index_closes(code, start, end):
+    """中证指数官网日收盘点位；全收益指数只有收盘价。"""
+    query = urlencode({"indexCode": code, "startDate": start.replace("-", ""), "endDate": end.replace("-", "")})
+    payload = json.loads(download(f"{CSI_INDEX_PERF}?{query}", referer="https://www.csindex.com.cn/"))
+    require(payload.get("code") == "200" and isinstance(payload.get("data"), list), f"中证指数 {code} 行情请求失败")
+    rows = []
+    for row in payload["data"]:
+        require(row["indexCode"] == code and row["close"] is not None, f"中证指数 {code} 返回数据不符")
+        day = row["tradeDate"]
+        rows.append({"date": f"{day[:4]}-{day[4:6]}-{day[6:]}", "close": str(Decimal(str(row["close"])))})
+    return rows
 
 
 def yahoo_history(code, start, end):

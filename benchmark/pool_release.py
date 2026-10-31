@@ -7,12 +7,15 @@ from datetime import date
 from decimal import Decimal
 
 from .baostock_market import SOURCE as BAOSTOCK, Baostock
+from .collect import retry
 from .files import digest, new_directory, read_json, require, write_json, write_rows
-from .scoring import BUY_COST, COST_BASIS, SEGMENT_DAYS, SEGMENT_WEIGHTS, boundaries, can_buy
 from .market_cap import cached
+from .public_sources import CSI_INDEX_PERF, csi_index_closes
+from .scoring import BUY_COST, COST_BASIS, SEGMENT_DAYS, SEGMENT_WEIGHTS, boundaries, can_buy
 
 POOLS = ("dividend", "tech")
 INDEX = "000300.SH"
+TOTAL_RETURN_INDEX = "H00300"
 LOOKBACK = 63
 
 
@@ -52,7 +55,11 @@ def sample_rows(pool, year, decision, snapshot, adjusted, raw, index_bars, calen
                        "momentum_63": momentum(index_bars, calendar, decision)}}
 
 
-def outcome_row(sample, adjusted, index_bars, calendar):
+def outcome_row(sample, adjusted, index_bars, total_return, calendar):
+    """个股用后复权价格（分红与送转再投资）；对照用全收益指数，两边都计入分红。
+
+    全收益指数只有收盘价，建仓价按前一交易日全收益收盘 × 沪深300 价格指数当日开盘/前收折算。
+    """
     later = [d for d in calendar if d > sample["decision_date"]]
     if not later:
         return None
@@ -60,6 +67,10 @@ def outcome_row(sample, adjusted, index_bars, calendar):
     edges = boundaries(calendar, entry)
     if not edges or entry not in index_bars:
         return None
+    previous = calendar[calendar.index(entry) - 1]
+    window = [d for d in calendar if previous <= d <= edges[-1]]
+    require(all(d in total_return for d in window) and previous in index_bars,
+            f"{TOTAL_RETURN_INDEX} 在 {previous}–{edges[-1]} 缺少收盘点位")
 
     def path(bars):
         return [[d, bars[d]["close"]] for d in calendar if entry <= d <= edges[-1] and d in bars]
@@ -70,8 +81,11 @@ def outcome_row(sample, adjusted, index_bars, calendar):
         bar = bars.get(entry)
         stocks[stock["symbol"]] = {"buyable": can_buy(bar), "entry_open": bar["open"] if can_buy(bar) else None,
                                    "path": path(bars)}
+    entry_open = (Decimal(total_return[previous]) * Decimal(index_bars[entry]["open"])
+                  / Decimal(index_bars[previous]["close"]))
     return {"sample_id": sample["id"], "entry_date": entry, "boundaries": edges, "stocks": stocks,
-            "index": {"symbol": INDEX, "entry_open": index_bars[entry]["open"], "path": path(index_bars)}}
+            "index": {"symbol": TOTAL_RETURN_INDEX, "basis": "total_return", "entry_open": str(entry_open),
+                      "path": [[d, total_return[d]] for d in window if d >= entry]}}
 
 
 def build_pool_release(universe_roots, destination):
@@ -82,7 +96,7 @@ def build_pool_release(universe_roots, destination):
         require(request["pool"] in POOLS, f"未知股票池类型: {request['pool']}")
         require(request["pool"] not in pools, f"股票池重复: {request['pool']}")
         pools[request["pool"]] = (root, request["years"])
-    calendars, adjusted, raw, index_bars, snapshots = {}, {}, {}, {}, {}
+    calendars, adjusted, raw, index_bars, total_return, snapshots = {}, {}, {}, {}, {}, {}
     with Baostock() as market:
         for pool, (root, years) in pools.items():
             raw_dir = root / "raw" / "baostock" / "history"
@@ -100,11 +114,14 @@ def build_pool_release(universe_roots, destination):
                 rows = cached(raw_dir / f"{INDEX}-{start}-{end}.json",
                               lambda: market.daily(INDEX, start, end, "3", index=True))
                 index_bars.update({row["date"]: row for row in rows})
+                rows = cached(raw_dir / f"{TOTAL_RETURN_INDEX}-{start}-{end}.json",
+                              lambda: retry(lambda: csi_index_closes(TOTAL_RETURN_INDEX, start, end)))
+                total_return.update({row["date"]: row["close"] for row in rows})
     samples, outcomes, skipped = [], [], []
     for (pool, year), snapshot in sorted(snapshots.items()):
         for decision in quarter_decisions(calendars[year], year):
             sample = sample_rows(pool, year, decision, snapshot, adjusted, raw, index_bars, calendars[year])
-            outcome = outcome_row(sample, adjusted, index_bars, calendars[year])
+            outcome = outcome_row(sample, adjusted, index_bars, total_return, calendars[year])
             if outcome is None:
                 skipped.append({"sample_id": sample["id"], "reason": "insufficient_future_window"})
                 continue
@@ -115,7 +132,9 @@ def build_pool_release(universe_roots, destination):
               "pools": {pool: pool_years for pool, (_, pool_years) in sorted(pools.items())},
               "segments_days": list(SEGMENT_DAYS), "segment_weights": [str(w) for w in SEGMENT_WEIGHTS],
               "buy_cost": str(BUY_COST), "cost_basis": COST_BASIS, "reference_index": INDEX,
+              "reference_total_return_index": TOTAL_RETURN_INDEX, "reference_total_return_source": CSI_INDEX_PERF,
               "momentum_lookback_sessions": LOOKBACK, "price_source": BAOSTOCK,
+              "stock_price_basis": "Baostock 后复权（adjustflag=1）：现金分红、送转、配股均按再投资折算，未计红利税",
               "universe_membership_verified": False, "built_on": date.today().isoformat()}
     with new_directory(destination) as stage:
         write_json(stage / "config.json", config)

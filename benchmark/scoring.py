@@ -168,5 +168,6 @@ def evaluate_weights(samples, outcomes, weight_rows):
         "periods": periods,
         "limitations": ["股票池与行业归属尚未人工核对（membership_verified=false）",
                         "退市证券按退市前最后价格估值，未计换股、清算或退市整理期",
-                        "后复权价格近似股息再投资，未计红利税与到账时点",
+                        "后复权价格近似股息再投资，未计红利税与到账时点；沪深300 对照用全收益指数 H00300",
+                        "被吸收合并的证券按停牌前最后价格估值，未折算为存续公司股份",
                         "LLM 可能记得历史结果；时间截断不能消除预训练数据污染"]}

@@ -118,12 +118,20 @@ class PoolReleaseTest(unittest.TestCase):
                     "2015-07-01"]
         self.assertEqual(quarter_decisions(calendar, 2015), ["2015-03-31", "2015-06-30", "2015-07-01"])
         bars = {day: bar("10") for day in calendar}
+        index = {**bars, "2015-04-01": bar("11", preclose="10")}
+        total_return = {day: str(100 + i) for i, day in enumerate(calendar)}
         sample = {"id": "s", "decision_date": "2015-03-31", "stocks": [{"symbol": "000001.SZ"}]}
-        row = outcome_row(sample, {"000001.SZ": bars}, bars, calendar)
+        row = outcome_row(sample, {"000001.SZ": bars}, index, total_return, calendar)
         self.assertEqual(row["entry_date"], "2015-04-01")
         self.assertEqual(row["boundaries"], ["2015-04-08", "2015-04-30", "2015-06-30"])
         self.assertTrue(all(day >= "2015-04-01" for day, _ in row["stocks"]["000001.SZ"]["path"]))
-        self.assertIsNone(outcome_row({**sample, "decision_date": "2015-06-30"}, {"000001.SZ": bars}, bars, calendar))
+        self.assertEqual(Decimal(row["index"]["entry_open"]), Decimal("101") * 11 / 10)
+        self.assertEqual(row["index"]["path"][0], ["2015-04-01", "102"])
+        self.assertIsNone(outcome_row({**sample, "decision_date": "2015-06-30"}, {"000001.SZ": bars}, index,
+                                      total_return, calendar))
+        with self.assertRaises(Invalid):
+            outcome_row(sample, {"000001.SZ": bars}, index,
+                        {d: v for d, v in total_return.items() if d != "2015-04-30"}, calendar)
 
     def test_combined_release_keeps_pools_separate_and_strips_current_names(self):
         def universe(root, pool, code, extra):
@@ -153,7 +161,11 @@ class PoolReleaseTest(unittest.TestCase):
             base = Path(folder)
             universe(base / "tech", "tech", "000001.SZ", {"level1_name": "电子"})
             universe(base / "dividend", "dividend", "600000.SH", {"membership_source": "fund_090010_2014"})
-            with patch("benchmark.pool_release.Baostock", Market):
+            def closes(code, start, end):
+                return [{"date": row["date"], "close": "100"} for row in Market().daily(code, start, end)]
+
+            with patch("benchmark.pool_release.Baostock", Market), \
+                    patch("benchmark.pool_release.csi_index_closes", closes):
                 summary = build_pool_release([base / "tech", base / "dividend"], base / "release")
                 with self.assertRaises(Invalid):
                     build_pool_release([base / "tech", base / "tech"], base / "again")

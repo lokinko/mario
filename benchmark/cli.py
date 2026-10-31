@@ -14,6 +14,7 @@ from .sources import Tushare, collect_prices, collect_universe, fetch_documents
 from .tech_universe import collect_tech_universe
 from .dividend_universe import collect_dividend_universe
 from .hub import publish
+from .dashboard import write_dashboard
 from .pool_release import build_pool_release
 from .scoring import baseline_weights, evaluate_weights
 
@@ -61,6 +62,10 @@ def main(argv=None):
     for command in (pool_base, pool_score):
         command.add_argument("--root", type=Path, required=True)
         command.add_argument("--out", type=Path, required=True)
+    board = sub.add_parser("pool-dashboard", help="把各策略 pool-score 报告汇总为单文件 HTML 看板（可覆盖刷新）")
+    board.add_argument("--scorecards", type=Path, required=True, help="pool-score 输出目录，文件名即策略名")
+    board.add_argument("--release", type=Path, help="对应发布包，用于显示版本与范围")
+    board.add_argument("--out", type=Path, required=True)
     hub = sub.add_parser("hub-publish", help="把评分切片上传到 Hugging Face 私有仓库：输入与标签分仓")
     hub.add_argument("--release", type=Path, required=True)
     hub.add_argument("--scorecards", type=Path, required=True, help="pool-score 输出目录，文件名即策略名")
@@ -94,6 +99,10 @@ def main(argv=None):
         elif args.command == "dividend-universe":
             years = [int(value) for value in args.years.split(",") if value.strip()]
             result = collect_dividend_universe(args.root, years, args.top, args.workers)
+        elif args.command == "pool-dashboard":
+            if args.release:
+                verify_release(args.release)
+            result = write_dashboard(args.scorecards, args.out, args.release)
         elif args.command == "hub-publish":
             result = publish(args.release, args.repo, args.labels_repo, args.path, args.scorecards, args.tag)
         elif args.command == "pool-build":
