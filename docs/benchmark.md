@@ -144,7 +144,7 @@ if ($LASTEXITCODE -ne 0) { throw '评测失败' }
 
 本地构建结果已按 Hugging Face Dataset Card 的两个 configuration（inputs、labels）和三个 split 排列，JSONL 可被 Datasets/Hub 识别。后续核对各源行情、成分与财报的再分发授权，再选择私有/公开仓库、上传并固定 commit SHA。第一版不把公开可浏览等同于可公开再分发，不擅自给原件附开放许可证；`summary.redistribution_status=not_reviewed` 如实保留状态。尚未创建仓库、尚未执行上传或下载验收。
 
-后续在固定 release SHA 上增加财报表格提取及版本对账、股息/盈利质量等结构化因子、成本和公司行动驱动的组合回测、walk-forward 调参、无外网历史信息回放与前瞻测试。接入在线问答时需另设计经授权冻结的资料输入，不允许研究 CLI 读取账号数据库或通过历史样本执行真实交易。
+二十年红利与科技股、宽基指数的扩展规划见 [benchmark v2 行动指南](benchmark-v2-plan.md)。后续在固定 release SHA 上增加财报表格提取及版本对账、股息/盈利质量等结构化因子、成本和公司行动驱动的组合回测、walk-forward 调参、无外网历史信息回放与前瞻测试。接入在线问答时需另设计经授权冻结的资料输入，不允许研究 CLI 读取账号数据库或通过历史样本执行真实交易。
 
 已核对的接口与格式来源：
 
