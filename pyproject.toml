@@ -1,9 +1,13 @@
 [project]
 name = "mario-benchmark"
 version = "0.6.0"
-description = "中国红利研究 benchmark，只依赖 Python 标准库"
+description = "中国红利与科技股研究 benchmark；契约、构建与评测只依赖 Python 标准库"
 requires-python = ">=3.11"
 dependencies = []
+
+[dependency-groups]
+market = ["baostock==0.9.4"]
+publish = ["huggingface_hub>=1.0", "socksio>=1.0"]
 
 [tool.uv]
 package = false

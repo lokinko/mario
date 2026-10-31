@@ -11,6 +11,7 @@ from .release import build, verify_release
 from .public_sources import probe_public
 from .collect import collect_public, repair_catalogs
 from .sources import Tushare, collect_prices, collect_universe, fetch_documents
+from .tech_universe import collect_tech_universe
 
 DEFAULT_CONFIG = Path(__file__).with_name("config.json")
 
@@ -33,6 +34,12 @@ def main(argv=None):
     repair = sub.add_parser("repair-catalogs", help="对缺失财报期取消分类过滤、按披露窗口定向补查")
     repair.add_argument("--root", type=Path, required=True)
     repair.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    tech = sub.add_parser("tech-universe", help="免费来源按时点选出科技股池候选与前 N，保留待核对状态")
+    tech.add_argument("--root", type=Path, required=True)
+    tech.add_argument("--years", required=True, help="逗号分隔的股票池年份，如 2008,2015,2021")
+    tech.add_argument("--top", type=int, default=20)
+    tech.add_argument("--workers", type=int, default=4)
+    tech.add_argument("--sw-file", type=Path, help="本地下载的申万个股行业变更 xls；站点证书链不完整时使用")
     universe = sub.add_parser("collect-universe", help="采集历史成分和总市值提案，保留待核对状态")
     universe.add_argument("--root", type=Path, required=True)
     universe.add_argument("--provider-index-code", default="000922.SH")
@@ -53,7 +60,10 @@ def main(argv=None):
     score.add_argument("--top-k", type=int, default=5)
     args = parser.parse_args(argv)
     try:
-        if args.command == "repair-catalogs":
+        if args.command == "tech-universe":
+            years = [int(value) for value in args.years.split(",") if value.strip()]
+            result = collect_tech_universe(args.root, years, args.top, args.workers, args.sw_file)
+        elif args.command == "repair-catalogs":
             result = repair_catalogs(args.root, args.config)
         elif args.command == "collect-public":
             result = collect_public(args.config, args.symbols_file, args.root, args.workers)

@@ -38,7 +38,7 @@ mario 在问答时使用供应商原生网页搜索，自动保存回答和来�
 
 ## 当前能力
 
-- 离线研究：[中国红利 top-20 benchmark](docs/benchmark.md)，按历史年末市值选样，构建日线/季度财报及宽指 ETF 的时点输入、预测标签和本地 Hugging Face 发布包；真实数据采集与完整性验收独立执行
+- 离线研究：[中国红利 top-20 benchmark](docs/benchmark.md)，按历史年末市值选样，构建日线/季度财报及宽指 ETF 的时点输入、预测标签和本地 Hugging Face 发布包；v2 新增按申万时点行业选样的科技股池（[行动指南](docs/benchmark-v2-plan.md)）；真实数据采集与完整性验收独立执行
 
 - Web：HTTPS 同源 API、独立用户账号，详见 [自建部署](docs/self-hosting.md)
 - Rust + Axum 后端：自建账号、会话、租户隔离与业务 API

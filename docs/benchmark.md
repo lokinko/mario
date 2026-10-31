@@ -76,6 +76,25 @@ Get-Content .runtime/benchmark/public-collection-20261029/coverage.json -Raw
 
 [2026-10-29 批量补采验收数据](benchmark-data-collection-2026-10-29.json) 记录实际文件数量、日线区间、剩余缺口、上市日期出处、完整性清单哈希和验证结果。下载语料保存在本机 `.runtime/benchmark/public-collection-20261029/`，不进入 Git，也未上传 Hugging Face。
 
+### 科技股池按时点选样
+
+v2 的科技股池（见 [行动指南](benchmark-v2-plan.md)）每年取上一年最后交易日、当时申万一级为电子、计算机、通信、传媒的 A 股，按总市值取前 20。2014-02-21 申万新版生效前，对应旧版的电子元器件、信息设备、信息服务。只用免费来源：
+
+- 行业：[申万个股行业变更历史](https://www.swsresearch.com/swindex/pdf/SwClass2021/StockClassifyUse_stock.xls)，取选样日已生效的最近一条记录。该文件是申万当前维护的历史，部分记录经事后修订，输出中保留 `sw_updated` 和 `industry_basis` 说明。
+- 总股本：东方财富股本变动历史，只取变动日和公告日都不晚于选样日的最近一条。
+- 收盘价、交易状态、上市退市日期：Baostock 未复权日线（`adjustflag=3`）。停牌日使用供应商给出的停牌收盘价并标 `trade_status=suspended`。已退市公司照常参与当年选样，保留 `delisted_on`。
+
+```powershell
+uv sync --group market
+curl.exe -A "Mozilla/5.0" -o .runtime/benchmark/downloads/StockClassifyUse_stock.xls https://www.swsresearch.com/swindex/pdf/SwClass2021/StockClassifyUse_stock.xls
+npm run benchmark -- tech-universe --root .runtime/benchmark/tech-universe-<日期> --years 2008,2015,2021 --sw-file .runtime/benchmark/downloads/StockClassifyUse_stock.xls
+if ($LASTEXITCODE -ne 0) { throw '科技股池选样失败；原命令重跑可恢复' }
+```
+
+申万站点只下发叶子证书，Python 标准库无法补全中间证书，因此用系统 curl 或浏览器下载后通过 `--sw-file` 导入；工具不关闭证书校验。导入方式和文件哈希写入 `raw/sw/meta.json`。`baostock` 是 uv 依赖组 `market` 中的可选依赖，只由 `baostock_market.py` 导入；未安装时命令报错退出，其他命令不受影响。
+
+输出 `universe/tech-<年份>.json` 沿用年度股票池字段（`selection_date`、`available_at`、`candidate_count`、`candidates[].market_cap`），另含每个候选的收盘价、股本出处日期、申万代码与版本、`selected` 前 N 名和 `excluded` 排除原因（B 股/北交所、Baostock 未覆盖、选样日前已退市、无行情、无已公告股本）。`membership_verified` 固定为 `false`、`membership_published_at` 为 `null`，不能直接通过正式 `validate`。原始响应缓存在 `raw/`，相同命令重跑只补取缺失项；`request.json` 固定年份与前 N 设置，改变范围须用新目录。总市值为 A 股收盘价乘以全部总股本，A+H 公司的 H 股也按 A 股价格计入。
+
 **可选授权来源适配器**使用 Tushare Pro HTTPS 接口，从本机环境变量读取 `TUSHARE_TOKEN`。未配置不影响免费探测；只有选用该适配器时才需在终端进程中配置，不写进仓库、JSON 或聊天。股票日线、ETF 日线、复权因子、历史成分和总市值的权限各异；工具遇到权限/网络错误退出，成功请求的缓存可恢复使用，不自动切到另一种价格口径。
 
 ```powershell

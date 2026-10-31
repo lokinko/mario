@@ -254,6 +254,7 @@ class BenchmarkTests(unittest.TestCase):
                 fetch_documents(root)
 
     def test_research_modules_only_import_stdlib_and_own_package(self):
+        optional = {"baostock_market.py": {"baostock"}}
         for path in Path(__file__).parents[1].glob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
@@ -263,7 +264,8 @@ class BenchmarkTests(unittest.TestCase):
                 elif isinstance(node, ast.ImportFrom) and not node.level:
                     names = [node.module]
                 for name in names:
-                    self.assertIn(name.split(".")[0], sys.stdlib_module_names | {"benchmark"}, path.name)
+                    allowed = sys.stdlib_module_names | {"benchmark"} | optional.get(path.name, set())
+                    self.assertIn(name.split(".")[0], allowed, path.name)
 
     def test_market_collector_preserves_precision_units_and_gaps(self):
         class FakeProvider:

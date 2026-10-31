@@ -243,7 +243,9 @@ sequenceDiagram
 
 ### 离线 benchmark 研究工具
 
-[`benchmark/`](../benchmark/) 是与生产模块隔离的 Python 标准库 CLI，由 `scripts/benchmark.mjs` 启动；`public_sources` 优先探测免费来源覆盖并归档响应，`sources` 提供可选授权行情和财报原件下载，`dataset` 负责契约、完整性和历史时点投影，`evaluate` 计算预测排序指标，`release` 创建不可覆盖且带哈希清单的本地发布包。CLI 依赖这些研究模块，研究模块不导入前后端源码、不访问 PostgreSQL、账号备份或生产凭据。边界测试限制其依赖为 Python 标准库和本包；在线服务不调用研究 CLI。
+[`benchmark/`](../benchmark/) 是与生产模块隔离的 Python 标准库 CLI，由 `scripts/benchmark.mjs` 启动；`public_sources` 优先探测免费来源覆盖并归档响应，`sources` 提供可选授权行情和财报原件下载，`dataset` 负责契约、完整性和历史时点投影，`evaluate` 计算预测排序指标，`release` 创建不可覆盖且带哈希清单的本地发布包。CLI 依赖这些研究模块，研究模块不导入前后端源码、不访问 PostgreSQL、账号备份或生产凭据。边界测试限制其依赖为 Python 标准库和本包，唯一例外是 `baostock_market` 可导入 uv 依赖组 `market` 中的 `baostock`，用于已退市证券的免费日线；在线服务不调用研究 CLI。
+
+`tech_universe` 按时点选出科技股池：`xls` 用标准库解析申万个股行业变更历史，股本取东方财富已公告的变动记录，收盘价、交易状态与上市退市日期经 `baostock_market` 获取。它只产出带出处的年度候选提案，不修改 `dataset` 的正式校验规则。
 
 输入、请求缓存与发布包归 `.runtime/benchmark/`，是公开研究语料文件，不是第二个在线业务存储引擎。行情 token 只从终端环境读取。Hugging Face 是可选的后续分发渠道，本地构建不发布数据。完整原始归档与按披露时间截断的模型 inputs、未来 labels 分开；未核对历史成分、缺少日线或财报时不生成完成发布包。详细契约、失败恢复和研究限制见 [benchmark](benchmark.md)。
 
