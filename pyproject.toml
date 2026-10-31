@@ -1,0 +1,9 @@
+[project]
+name = "mario-benchmark"
+version = "0.6.0"
+description = "中国红利研究 benchmark，只依赖 Python 标准库"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
