@@ -95,6 +95,20 @@ if ($LASTEXITCODE -ne 0) { throw '科技股池选样失败；原命令重跑可�
 
 输出 `universe/tech-<年份>.json` 沿用年度股票池字段（`selection_date`、`available_at`、`candidate_count`、`candidates[].market_cap`），另含每个候选的收盘价、股本出处日期、申万代码与版本、`selected` 前 N 名和 `excluded` 排除原因（B 股/北交所、Baostock 未覆盖、选样日前已退市、无行情、无已公告股本）。`membership_verified` 固定为 `false`、`membership_published_at` 为 `null`，不能直接通过正式 `validate`。原始响应缓存在 `raw/`，相同命令重跑只补取缺失项；`request.json` 固定年份与前 N 设置，改变范围须用新目录。总市值为 A 股收盘价乘以全部总股本，A+H 公司的 H 股也按 A 股价格计入。
 
+### 股票池切片评分
+
+`pool-build` 读取 `tech-universe` 的采集目录，用 Baostock 拉取各年前 N 名股票的未复权与后复权日线及沪深300 指数日线，在每个股票池年份的四个季度末形成决策点，写入不可覆盖的新目录：`inputs.jsonl` 为决策时点输入，`outcomes.jsonl` 为建仓后的价格路径（评分用，不得作为策略输入），另有 `config.json`、`summary.json` 和逐文件哈希 `manifest.json`。
+
+```powershell
+npm run benchmark -- pool-build --universe-root .runtime/benchmark/tech-universe-<日期> --out .runtime/benchmark/tech-slice-v1
+npm run benchmark -- pool-baseline --root .runtime/benchmark/tech-slice-v1 --strategy momentum --top 5 --out .runtime/benchmark/runs/momentum.weights.jsonl
+npm run benchmark -- pool-score --root .runtime/benchmark/tech-slice-v1 --weights .runtime/benchmark/runs/momentum.weights.jsonl --out .runtime/benchmark/runs/momentum.score.json
+```
+
+输入每只股票只含代码、决策日未复权收盘价与交易状态、63 交易日后复权动量、选样日总市值和申万一级行业，不含供应商当前简称（例如“退”“*ST”会泄露结局）。后复权价格只依赖当时已发生的权益事件，可用于时点动量。
+
+策略提交仓位文件，每行 `{"sample_id", "symbol", "weight"}`，`weight` 为十进制字符串，非负，同一决策点合计不超过 1，其余视为现金；只能引用该决策点股票池内的证券。主指标定义见 [行动指南 5.0 节](benchmark-v2-plan.md)：0.3×R(0–7 天) + 0.3×R(7–30 天) + 0.4×R(30–90 天)，单位为百分比，按自然日分段，建仓日为第 0 天。评分报告给出均值、中位数、标准差、自助法 95% 区间、逐年与逐期明细，并用同一公式计算沪深300 和股票池等权组合作对照。买入扣 0.03% 佣金和 0.10% 滑点；停牌或一字涨停买不进的部分留作现金；持有期停牌按停牌价、退市后按退市前最后价格估值，未计换股、清算与红利税。未提交仓位的决策点计 0 分。基线 `equal`、`momentum`、`size`、`cash` 只读取输入文件。
+
 **可选授权来源适配器**使用 Tushare Pro HTTPS 接口，从本机环境变量读取 `TUSHARE_TOKEN`。未配置不影响免费探测；只有选用该适配器时才需在终端进程中配置，不写进仓库、JSON 或聊天。股票日线、ETF 日线、复权因子、历史成分和总市值的权限各异；工具遇到权限/网络错误退出，成功请求的缓存可恢复使用，不自动切到另一种价格口径。
 
 ```powershell

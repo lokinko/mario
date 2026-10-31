@@ -51,8 +51,12 @@ class Baostock:
     def stock_basics(self):
         return self._rows(self.api.query_stock_basic())
 
-    def daily(self, code, start, end):
-        fields = "date,code,open,high,low,close,preclose,volume,amount,tradestatus,isST"
+    def daily(self, code, start, end, adjustflag="3", index=False):
+        """adjustflag：3 未复权，1 后复权（过去价格只依赖当时已发生的权益事件）。"""
+        require(adjustflag in ("1", "3"), "只支持未复权或后复权")
+        fields = "date,code,open,high,low,close,preclose,volume,amount"
+        if not index:
+            fields += ",tradestatus,isST"
         return self._rows(self.api.query_history_k_data_plus(
             provider_code(code), fields, start_date=start, end_date=end,
-            frequency="d", adjustflag="3"))
+            frequency="d", adjustflag=adjustflag))

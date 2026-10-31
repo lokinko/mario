@@ -12,6 +12,8 @@ from .public_sources import probe_public
 from .collect import collect_public, repair_catalogs
 from .sources import Tushare, collect_prices, collect_universe, fetch_documents
 from .tech_universe import collect_tech_universe
+from .pool_release import build_pool_release
+from .scoring import baseline_weights, evaluate_weights
 
 DEFAULT_CONFIG = Path(__file__).with_name("config.json")
 
@@ -40,6 +42,17 @@ def main(argv=None):
     tech.add_argument("--top", type=int, default=20)
     tech.add_argument("--workers", type=int, default=4)
     tech.add_argument("--sw-file", type=Path, help="本地下载的申万个股行业变更 xls；站点证书链不完整时使用")
+    pool_build = sub.add_parser("pool-build", help="由年度股票池构建时点输入与结果分离的可评分切片")
+    pool_build.add_argument("--universe-root", type=Path, required=True)
+    pool_build.add_argument("--out", type=Path, required=True)
+    pool_base = sub.add_parser("pool-baseline", help="生成基线策略仓位：equal/momentum/size/cash")
+    pool_base.add_argument("--strategy", choices=("equal", "momentum", "size", "cash"), required=True)
+    pool_base.add_argument("--top", type=int, default=5)
+    pool_score = sub.add_parser("pool-score", help="按主指标给仓位文件打分")
+    pool_score.add_argument("--weights", type=Path, required=True)
+    for command in (pool_base, pool_score):
+        command.add_argument("--root", type=Path, required=True)
+        command.add_argument("--out", type=Path, required=True)
     universe = sub.add_parser("collect-universe", help="采集历史成分和总市值提案，保留待核对状态")
     universe.add_argument("--root", type=Path, required=True)
     universe.add_argument("--provider-index-code", default="000922.SH")
@@ -63,6 +76,22 @@ def main(argv=None):
         if args.command == "tech-universe":
             years = [int(value) for value in args.years.split(",") if value.strip()]
             result = collect_tech_universe(args.root, years, args.top, args.workers, args.sw_file)
+        elif args.command == "pool-build":
+            result = build_pool_release(args.universe_root, args.out)
+        elif args.command in ("pool-baseline", "pool-score"):
+            verify_release(args.root)
+            require(not args.out.exists(), "输出文件已存在，请使用新路径")
+            samples = rows(args.root / "inputs.jsonl")
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            if args.command == "pool-baseline":
+                write_rows(args.out, baseline_weights(samples, args.strategy, args.top))
+                result = {"weights": str(args.out), "strategy": args.strategy, "top": args.top}
+            else:
+                result = evaluate_weights(samples, rows(args.root / "outcomes.jsonl"), rows(args.weights))
+                write_json(args.out, result)
+                result = {key: result[key] for key in ("metric", "score", "pool_equal_weight_score",
+                                                       "csi300_score", "beat_csi300_periods",
+                                                       "beat_pool_equal_weight_periods", "by_year")}
         elif args.command == "repair-catalogs":
             result = repair_catalogs(args.root, args.config)
         elif args.command == "collect-public":
