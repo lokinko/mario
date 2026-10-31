@@ -1,6 +1,6 @@
-"""把同一发布包上各策略的 `pool-score` 报告汇总成可离线打开的单文件 HTML 看板。
+"""把 `bench-run` 输出目录中各策略的成绩汇总成可离线打开的单文件 HTML 看板。
 
-看板只读取成绩，不读取输入或结果标签；成绩目录中每个 `<策略>.json` 对应一个策略，新增策略只需放入新文件。
+看板只读取成绩与策略说明，不读取输入或结果标签；图表由本模块统一生成，新增策略不需要改看板代码。
 """
 
 import json
@@ -9,8 +9,8 @@ from datetime import datetime
 
 from .files import read_json, require
 from .public_sources import SHANGHAI
+from .strategy_runner import completed_runs, failed_runs
 
-LABELS = {"equal": "全池等权", "momentum": "63 日动量前 5", "size": "市值前 5", "cash": "全部现金"}
 POOL_LABELS = {"dividend": "红利池", "tech": "科技池"}
 BENCHMARKS = {"pool_equal_weight": "对照：股票池等权", "csi300": "对照：沪深300"}
 
@@ -19,10 +19,11 @@ def summary(value):
     return {"mean": value["mean"], "median": value["median"], "ci": value["bootstrap_95"], "count": value["count"]}
 
 
-def dashboard_data(scorecards, config=None):
-    """scorecards：{策略名: pool-score 报告}；各报告必须覆盖同一批决策点且对照得分一致。"""
-    require(scorecards, "缺少策略成绩")
-    names = sorted(scorecards, key=lambda name: (list(LABELS).index(name) if name in LABELS else len(LABELS), name))
+def dashboard_data(runs, config=None, failures=None):
+    """runs：{策略名: {"title", "description", "scorecard"}}；各成绩必须覆盖同一批决策点且对照得分一致。"""
+    require(runs, "缺少策略成绩")
+    names = sorted(runs)
+    scorecards = {name: runs[name]["scorecard"] for name in names}
     first = scorecards[names[0]]
     ids = [period["sample_id"] for period in first["periods"]]
     periods = {period["sample_id"]: {
@@ -47,7 +48,9 @@ def dashboard_data(scorecards, config=None):
         summaries[key] = {"all": summary(first[field]),
                           **{pool: summary(value[field]) for pool, value in first["by_pool"].items()}}
     return {
-        "strategies": [{"key": name, "label": LABELS.get(name, name)} for name in names],
+        "strategies": [{"key": name, "label": runs[name]["title"], "description": runs[name]["description"]}
+                       for name in names],
+        "failures": [{"key": name, "error": error} for name, error in sorted((failures or {}).items())],
         "benchmarks": [{"key": key, "label": label} for key, label in BENCHMARKS.items()],
         "pools": [{"key": pool, "label": POOL_LABELS.get(pool, pool)} for pool in sorted(first["by_pool"])],
         "summaries": summaries, "periods": sorted(periods.values(), key=lambda row: (row["decision_date"], row["pool"])),
@@ -62,10 +65,9 @@ def render(data):
     return TEMPLATE.replace("__DATA__", payload)
 
 
-def write_dashboard(scorecards_dir, destination, release=None):
-    scorecards = {item.stem: read_json(item) for item in sorted(scorecards_dir.glob("*.json"))}
+def write_dashboard(runs_dir, destination, release=None):
     config = read_json(release / "config.json") if release else None
-    data = dashboard_data(scorecards, config)
+    data = dashboard_data(completed_runs(runs_dir), config, failed_runs(runs_dir))
     destination.parent.mkdir(parents=True, exist_ok=True)
     part = destination.with_suffix(destination.suffix + ".part")
     part.write_text(render(data), encoding="utf-8")
@@ -104,6 +106,9 @@ thead th { background:var(--bg); position:sticky; top:0; }
 .legend label { margin-right:14px; cursor:pointer; user-select:none; }
 svg text { font-size:11px; fill:var(--muted); }
 .note { color:var(--muted); font-size:12px; margin:8px 0 0; }
+.failed { border-color:var(--up); } .failed li { white-space:pre-wrap; font-family:ui-monospace, monospace; font-size:12px; }
+.desc h3 { font-size:14px; margin:12px 0 4px; } .desc p { margin:0; white-space:pre-wrap; color:var(--muted); }
+.desc code { font-size:12px; }
 </style>
 </head>
 <body>
@@ -114,6 +119,7 @@ svg text { font-size:11px; fill:var(--muted); }
 <main>
   <div class="bar"><span>股票池：</span><span id="pools"></span></div>
   <div class="legend" id="legend"></div>
+  <section class="card failed" id="failures" hidden><h2>运行失败的策略（未计入看板）</h2><ul></ul></section>
   <section class="card"><h2>策略汇总</h2><table id="summary"></table>
     <p class="note" id="metric"></p></section>
   <div class="grid">
@@ -123,12 +129,14 @@ svg text { font-size:11px; fill:var(--muted); }
   <section class="card"><h2>累计得分（逐期得分求和，不是净值）</h2><div id="cumulative"></div></section>
   <section class="card"><h2>逐期明细</h2><div class="scroll"><table id="periods"></table></div>
     <p class="note">红色为正、绿色为负（A 股习惯）。买不进的股票（停牌或一字涨停）按规则留作现金，括号内为该期买不进的只数。</p></section>
+  <section class="card"><h2>策略说明</h2><div id="descriptions"></div></section>
   <section class="card"><h2>口径与限制</h2><ul id="limits" class="note"></ul></section>
 </main>
 <script type="application/json" id="data">__DATA__</script>
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
-const COLORS = ['#0969da', '#bf3989', '#9a6700', '#57606a', '#8250df', '#1b7c83', '#bc4c00'];
+const COLORS = ['#0969da', '#bf3989', '#9a6700', '#57606a', '#8250df', '#1b7c83', '#bc4c00', '#2da44e',
+  '#6639ba', '#0550ae', '#953800', '#4d2d00'];
 const SERIES = [...DATA.strategies.map((s, i) => ({...s, kind: 'strategy', color: COLORS[i % COLORS.length]})),
   {...DATA.benchmarks[0], kind: 'benchmark', color: '#d4a72c', dash: '5 3'},
   {...DATA.benchmarks[1], kind: 'benchmark', color: '#cf222e', dash: '2 3'}];
@@ -148,6 +156,12 @@ function header() {
     pools, `${DATA.periods.length} 个决策点`, `看板生成于 ${DATA.generated_at}`].filter(Boolean).join(' · ');
   document.getElementById('metric').textContent = `主指标：${DATA.metric}。${DATA.cost_basis}。`;
   document.getElementById('limits').innerHTML = DATA.limitations.map(x => `<li>${esc(x)}</li>`).join('');
+  const failed = document.getElementById('failures');
+  failed.hidden = !DATA.failures.length;
+  failed.querySelector('ul').innerHTML = DATA.failures.map(x => `<li><b>${esc(x.key)}</b>：${esc(x.error)}</li>`).join('');
+  document.getElementById('descriptions').innerHTML = SERIES.filter(s => s.kind === 'strategy').map(s =>
+    `<div class="desc"><h3><span class="swatch" style="background:${s.color}"></span>${esc(s.label)} <code>${esc(s.key)}</code></h3>
+    <p>${esc(s.description)}</p></div>`).join('');
   const choices = [{key: 'all', label: '全部'}, ...DATA.pools];
   document.getElementById('pools').innerHTML = choices.map(p =>
     `<button data-pool="${p.key}" class="${p.key === state.pool ? 'on' : ''}">${esc(p.label)}</button>`).join(' ');
@@ -186,7 +200,7 @@ function frame(width, height, pad, ymin, ymax) {
 function meansChart() {
   const series = visible(), sums = series.map(s => DATA.summaries[s.key][state.pool]);
   const lo = Math.min(0, ...sums.map(x => x.ci ? x.ci[0] : x.mean)), hi = Math.max(0, ...sums.map(x => x.ci ? x.ci[1] : x.mean));
-  const width = 560, height = 260, pad = {l: 44, r: 12, t: 12, b: 56}, f = frame(width, height, pad, lo, hi);
+  const width = 560, height = 300, pad = {l: 44, r: 12, t: 12, b: 96}, f = frame(width, height, pad, lo, hi);
   const band = (width - pad.l - pad.r) / Math.max(series.length, 1);
   const bars = series.map((s, i) => {
     const sum = sums[i], x = pad.l + band * i + band * 0.2, w = band * 0.6, top = f.y(Math.max(0, sum.mean)), base = f.y(Math.min(0, sum.mean));
@@ -195,7 +209,7 @@ function meansChart() {
       <line x1="${x + w / 3}" x2="${x + w * 2 / 3}" y1="${f.y(sum.ci[1])}" y2="${f.y(sum.ci[1])}" stroke="#24292f"/>` : '';
     return `<g><title>${esc(s.label)}：${fmt(sum.mean)}${sum.ci ? ` [${fmt(sum.ci[0])}, ${fmt(sum.ci[1])}]` : ''}</title>
       <rect x="${x}" y="${top}" width="${w}" height="${Math.max(base - top, 1)}" fill="${s.color}" opacity="0.85"/>${ci}
-      <text x="${x + w / 2}" y="${height - pad.b + 14}" text-anchor="middle">${esc(s.label.replace('对照：', ''))}</text></g>`;
+      <text transform="translate(${x + w / 2},${height - pad.b + 12}) rotate(-30)" text-anchor="end">${esc(s.label.replace(/^对照：/, ''))}</text></g>`;
   }).join('');
   document.getElementById('means').innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="100%">${f.grid}${bars}</svg>`;
 }

@@ -6,7 +6,7 @@
 
 import random
 from datetime import date, timedelta
-from decimal import ROUND_DOWN, Decimal
+from decimal import Decimal
 from statistics import mean, median, pstdev
 
 from .files import require, symbol
@@ -103,25 +103,6 @@ def bootstrap_interval(values, rounds=2000, seed=20261031):
 def summarize(values):
     return {"mean": mean(values), "median": median(values), "stdev": pstdev(values),
             "count": len(values), "bootstrap_95": bootstrap_interval(values)} if values else None
-
-
-def baseline_weights(samples, strategy, top=5):
-    """只读取时点输入：equal 全池等权；momentum/size 取前 top 只等权；cash 全部持有现金。"""
-    require(strategy in ("equal", "momentum", "size", "cash"), "未知基线策略")
-    for sample in samples:
-        stocks = [s for s in sample["stocks"] if s["trade_status"] != "no_bar"]
-        if strategy == "cash" or not stocks:
-            continue
-        if strategy == "equal":
-            chosen = stocks
-        elif strategy == "momentum":
-            ranked = [s for s in stocks if s["momentum_63"] is not None]
-            chosen = sorted(ranked, key=lambda s: (-Decimal(s["momentum_63"]), s["symbol"]))[:top]
-        else:
-            chosen = sorted(stocks, key=lambda s: (-Decimal(s["market_cap_at_selection"]), s["symbol"]))[:top]
-        weight = (Decimal(1) / len(chosen)).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
-        for stock in chosen:
-            yield {"sample_id": sample["id"], "symbol": stock["symbol"], "weight": str(weight)}
 
 
 def evaluate_weights(samples, outcomes, weight_rows):

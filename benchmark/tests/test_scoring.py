@@ -6,10 +6,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from benchmark.files import Invalid, rows, write_json
-from benchmark.pool_release import build_pool_release, momentum, outcome_row, quarter_decisions, sample_rows
+from benchmark.pool_release import (build_pool_release, momentum, outcome_row, quarter_decisions, sample_rows,
+                                    volatility)
 from benchmark.release import verify_release
-from benchmark.scoring import (baseline_weights, boundaries, can_buy, evaluate_weights, portfolio_segments,
-                               score)
+from benchmark.scoring import boundaries, can_buy, evaluate_weights, portfolio_segments, score
 
 
 def bar(price, status="1", **extra):
@@ -86,19 +86,6 @@ class ScoringTest(unittest.TestCase):
             with self.assertRaises(Invalid):
                 evaluate_weights(samples, [outcome(stocks)], rows)
 
-    def test_baselines_round_weights_down_and_skip_unlisted(self):
-        samples = [{"id": "s1", "stocks": [
-            {"symbol": f"00000{i}.SZ", "trade_status": "trading", "momentum_63": str(i),
-             "market_cap_at_selection": str(10 - i)} for i in range(1, 4)]
-            + [{"symbol": "000009.SZ", "trade_status": "no_bar", "momentum_63": None,
-                "market_cap_at_selection": "99"}]}]
-        equal = list(baseline_weights(samples, "equal"))
-        self.assertEqual(len(equal), 3)
-        self.assertLessEqual(sum(Decimal(r["weight"]) for r in equal), 1)
-        self.assertEqual([r["symbol"] for r in baseline_weights(samples, "momentum", top=1)], ["000003.SZ"])
-        self.assertEqual([r["symbol"] for r in baseline_weights(samples, "size", top=1)], ["000001.SZ"])
-        self.assertEqual(list(baseline_weights(samples, "cash")), [])
-
 
 class PoolReleaseTest(unittest.TestCase):
     def test_inputs_exclude_provider_names_and_use_only_past_prices(self):
@@ -112,6 +99,19 @@ class PoolReleaseTest(unittest.TestCase):
         self.assertNotIn("退市", str(sample))
         self.assertEqual(stock["momentum_63"], str(Decimal(165) / Decimal(102) - 1))
         self.assertIsNone(momentum(adjusted["000001.SZ"], calendar, "62"))
+        self.assertEqual(stock["return_20"], str(Decimal(165) / Decimal(145) - 1))
+        self.assertIsNotNone(stock["volatility_63"])
+
+    def test_volatility_skips_suspended_days_and_ignores_later_prices(self):
+        calendar = [f"{i:02d}" for i in range(80)]
+        bars = {day: bar("100" if i % 2 else "110") for i, day in enumerate(calendar)}
+        bars["71"] = bar("1")
+        swing = (Decimal(110) / 100 - 1 - (Decimal(100) / 110 - 1)) / 2
+        self.assertAlmostEqual(float(volatility(bars, calendar, "70", sessions=2)), float(swing), places=12)
+        bars["69"] = bar("999", status="0")
+        self.assertAlmostEqual(float(volatility(bars, calendar, "70", sessions=2)), 0.05, places=12)
+        self.assertEqual(Decimal(volatility(bars, calendar, "70", sessions=1)), 0)
+        self.assertIsNone(volatility(bars, calendar, "02", sessions=3))
 
     def test_quarter_decisions_and_outcome_entry_after_decision(self):
         calendar = ["2015-03-30", "2015-03-31", "2015-04-01", "2015-04-08", "2015-04-30", "2015-06-30",

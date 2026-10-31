@@ -24,6 +24,12 @@ def release(root):
     write_json(root / "manifest.json", {"schema_version": 1, "files": files})
 
 
+def runs(root):
+    (root / "equal").mkdir(parents=True)
+    write_json(root / "equal" / "run.json", {"status": "scored", "title": "全池等权", "description": "说明"})
+    write_json(root / "equal" / "scorecard.json", REPORT)
+
+
 class FakeApi:
     uploads, private = {}, True
 
@@ -53,8 +59,7 @@ class HubTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
             release(base / "release")
-            (base / "cards").mkdir()
-            write_json(base / "cards" / "equal.json", REPORT)
+            runs(base / "cards")
             result = publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "cards")
         inputs, labels = FakeApi.uploads["me/bench"], FakeApi.uploads["me/labels"]
         self.assertNotIn("pool-scoring/outcomes.jsonl", inputs)
@@ -68,8 +73,7 @@ class HubTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
             release(base / "release")
-            (base / "cards").mkdir()
-            write_json(base / "cards" / "equal.json", REPORT)
+            runs(base / "cards")
             FakeApi.private = False
             with self.assertRaises(Invalid):
                 publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "cards")

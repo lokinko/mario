@@ -117,11 +117,10 @@ if ($LASTEXITCODE -ne 0) { throw '红利股池选样失败；原命令重跑可�
 
 ```powershell
 npm run benchmark -- pool-build --universe-root .runtime/benchmark/tech-universe-<日期> --universe-root .runtime/benchmark/dividend-universe-<日期> --out .runtime/benchmark/pools-v1
-npm run benchmark -- pool-baseline --root .runtime/benchmark/pools-v1 --strategy momentum --top 5 --out .runtime/benchmark/runs/momentum.weights.jsonl
-npm run benchmark -- pool-score --root .runtime/benchmark/pools-v1 --weights .runtime/benchmark/runs/momentum.weights.jsonl --out .runtime/benchmark/scorecards/momentum.json
+npm run benchmark -- bench-run --release .runtime/benchmark/pools-v1
 ```
 
-输入每只股票只含代码、决策日未复权收盘价与交易状态、63 交易日后复权动量、选样日总市值和申万一级行业（红利池为 `null`），不含供应商当前简称（例如“退”“*ST”会泄露结局）。后复权价格只依赖当时已发生的权益事件，可用于时点动量。
+输入每只股票只含代码、决策日未复权收盘价与交易状态（`trading`、`suspended`，或未上市、已退市时的 `no_bar`）、后复权 63 交易日动量 `momentum_63`、20 交易日收益 `return_20`、最近 63 个有成交日的日收益标准差 `volatility_63`（不年化，停牌日跳过）、选样日总市值 `market_cap_at_selection` 和申万一级行业 `sw_level1_name`（红利池为 `null`）；历史不足时这些指标为 `null`。样本另含 `id`、`pool`、`decision_date` 和沪深300 价格指数的收盘与 63 日动量。所有数值都是十进制字符串。输入不含供应商当前简称（例如“退”“*ST”会泄露结局）。后复权价格只依赖当时已发生的权益事件，可用于时点动量。
 
 公司行动的处理口径：
 
@@ -133,17 +132,47 @@ npm run benchmark -- pool-score --root .runtime/benchmark/pools-v1 --weights .ru
 | 停牌 | 建仓日停牌留作现金；持有期停牌沿用最后价格 |
 | 退市、被吸收合并 | 建仓前已退市的不进入当年股票池，之后退市的保留在池中，避免幸存者偏差；持有期内退市或被吸收合并按最后价格估值，未模拟退市整理期、三板转让或换股为存续公司股份 |
 
-### 策略得分看板
+### 新增策略与自动评测
 
-`pool-dashboard` 把同一发布包上各策略的 `pool-score` 报告汇总成一个离线可打开的 HTML 文件，用浏览器直接打开即可，不依赖网络或第三方库。成绩目录中每个 `<策略>.json` 是一个策略，新增策略只需对同一发布包运行 `pool-score` 并放入该目录，再重新生成看板（输出文件可覆盖刷新）。各报告的决策点或对照得分不一致时拒绝生成，防止混用不同发布包。
+每次测试新策略只需要做两步，其余由 `bench-run` 自动完成：
 
-```powershell
-npm run benchmark -- pool-dashboard --scorecards .runtime/benchmark/scorecards --release .runtime/benchmark/pools-v1 --out .runtime/benchmark/dashboard.html
+1. **写策略描述**：新建 `benchmark/strategies/<名字>/strategy.md`，名字为小写字母开头的 snake_case。首行 `# 标题` 是看板上的显示名，之后写规则、动机和参数来源（例如在哪段年份上选定）。
+2. **把描述转成代码**：同目录写 `strategy.py`，定义顶层函数 `decide(sample)`。它接收一个决策点的输入（字段见上节），返回 `{证券代码: 仓位}`；仓位可以是 `Decimal`、整数、浮点或十进制字符串，合计不超过 1，余下为现金，返回空字典表示全部现金。只能导入 `bisect`、`collections`、`decimal`、`functools`、`heapq`、`itertools`、`math`、`operator`、`statistics`，不能使用 `open`、`eval`、`exec`、`getattr` 等，也不能访问下划线开头的名字或属性。
+
+```python
+from decimal import Decimal
+
+
+def decide(sample):
+    stocks = [s["symbol"] for s in sample["stocks"] if s["trade_status"] != "no_bar"]
+    return {code: Decimal(1) / len(stocks) for code in stocks}
 ```
 
-看板可按全部、红利池、科技池筛选，并可隐藏任意策略或对照。内容包括：汇总表（平均得分、中位数、自助法 95% 区间、跑赢沪深300 与股票池等权的期数、正得分期数、买不进只次）、平均得分与区间柱状图、逐年平均得分曲线、累计得分曲线（逐期得分求和，不是净值）和逐期明细（红正绿负）。
+```powershell
+npm run benchmark -- bench-run --release .runtime/benchmark/pools-v3-20261031
+```
 
-策略提交仓位文件，每行 `{"sample_id", "symbol", "weight"}`，`weight` 为十进制字符串，非负，同一决策点合计不超过 1，其余视为现金；只能引用该决策点股票池内的证券。主指标定义见 [行动指南 5.0 节](benchmark-v2-plan.md)：0.3×R(0–7 天) + 0.3×R(7–30 天) + 0.4×R(30–90 天)，单位为百分比，按自然日分段，建仓日为第 0 天。评分报告给出均值、中位数、标准差、自助法 95% 区间、逐年与逐期明细，并用同一公式计算沪深300 全收益指数和股票池等权组合作对照。买入扣 0.03% 佣金和 0.10% 滑点；停牌或一字涨停买不进的部分留作现金；持有期停牌按停牌价、退市后按退市前最后价格估值，未计换股、清算与红利税。未提交仓位的决策点计 0 分。基线 `equal`、`momentum`、`size`、`cash` 只读取输入文件。
+`bench-run` 依次：校验发布包哈希；发现 `strategies/` 下的全部策略；对每个策略做静态检查，再在独立子进程（隔离模式，导入受白名单限制，单策略限时 600 秒）中只从标准输入喂入 `inputs.jsonl`，生成仓位并向下截断到 8 位小数；用主指标打分；最后刷新看板。输出目录默认 `.runtime/benchmark/bench/<发布包目录名>/`，每个策略一个子目录，含 `weights.jsonl`、`scorecard.json` 和 `run.json`（标题、说明、指纹、运行时间、状态）；看板为该目录下的 `dashboard.html`。
+
+策略代码、发布包清单和打分引擎（`scoring.py`、`strategy_runner.py`）的哈希合成指纹，三者都没变的策略直接沿用上次结果，只修改 `strategy.md` 时只更新标题和说明；`--force` 忽略缓存全部重跑。从目录删除的策略，其结果也会被清理。某个策略检查或运行失败时，只记录错误、不影响其他策略，看板顶部列出失败原因，命令以非零退出。
+
+静态检查与子进程的作用是防止策略无意中读到结果标签或依赖外部状态，并不是对抗恶意代码的安全沙箱；只运行自己或可信代理生成的策略。
+
+内置策略：`equal`、`momentum`、`size`、`cash` 四个对照基线，以及 `trend`（正动量等权）、`trend_lowvol`（正动量中 63 日波动最低的 5 只）、`trend_pullback`（正动量中 20 日收益最低的 5 只）三条规则。三条规则的参数在 2006–2017 年决策点上选定，2018–2025 年作检验。
+
+### 策略得分看板
+
+看板是一个离线单文件 HTML，用浏览器直接打开即可，不依赖网络或第三方库；图表由 `dashboard.py` 统一生成，新增策略不需要改看板代码。各策略成绩的决策点或对照得分不一致时拒绝生成，防止混用不同发布包。
+
+看板可按全部、红利池、科技池筛选，并可隐藏任意策略或对照。内容包括：运行失败的策略（如有）、汇总表（平均得分、中位数、自助法 95% 区间、跑赢沪深300 与股票池等权的期数、正得分期数、买不进只次）、平均得分与区间柱状图、逐年平均得分曲线、累计得分曲线（逐期得分求和，不是净值）、逐期明细（红正绿负）和各策略的说明。
+
+Agent 等外部程序生成的仓位文件不经过 `strategies/`，用 `pool-score` 单独打分：
+
+```powershell
+npm run benchmark -- pool-score --root .runtime/benchmark/pools-v3-20261031 --weights <仓位文件> --out <成绩文件>
+```
+
+仓位文件，每行 `{"sample_id", "symbol", "weight"}`，`weight` 为十进制字符串，非负，同一决策点合计不超过 1，其余视为现金；只能引用该决策点股票池内的证券。主指标定义见 [行动指南 5.0 节](benchmark-v2-plan.md)：0.3×R(0–7 天) + 0.3×R(7–30 天) + 0.4×R(30–90 天)，单位为百分比，按自然日分段，建仓日为第 0 天。评分报告给出均值、中位数、标准差、自助法 95% 区间、逐年与逐期明细，并用同一公式计算沪深300 全收益指数和股票池等权组合作对照。买入扣 0.03% 佣金和 0.10% 滑点；停牌或一字涨停买不进的部分留作现金；持有期停牌按停牌价、退市后按退市前最后价格估值，未计换股、清算与红利税。未提交仓位的决策点计 0 分。
 
 **可选授权来源适配器**使用 Tushare Pro HTTPS 接口，从本机环境变量读取 `TUSHARE_TOKEN`。未配置不影响免费探测；只有选用该适配器时才需在终端进程中配置，不写进仓库、JSON 或聊天。股票日线、ETF 日线、复权因子、历史成分和总市值的权限各异；工具遇到权限/网络错误退出，成功请求的缓存可恢复使用，不自动切到另一种价格口径。
 
@@ -211,13 +240,13 @@ if ($LASTEXITCODE -ne 0) { throw '评测失败' }
 
 ## Hugging Face 与后续工作
 
-v1 本地构建结果按 Hugging Face Dataset Card 的两个 configuration（inputs、labels）和三个 split 排列，尚未上传。v2 股票池评分切片用 `hub-publish` 上传到私有数据集仓库：时点输入、选样快照、配置、统计、哈希清单和数据集卡进入主仓库；`outcomes.jsonl` 与各基线成绩进入单独的私有标签仓库，评测时再授权读取。命令先用 `verify` 校验发布包，并确认两个仓库都是私有仓库才上传；数据集卡沿用固定 canary（见 [行动指南 7.3 节](benchmark-v2-plan.md)）。`huggingface_hub` 是 uv 依赖组 `publish` 中的可选依赖，只由 `hub.py` 导入；token 由本机 `hf auth login` 保存，不写进仓库。
+v1 本地构建结果按 Hugging Face Dataset Card 的两个 configuration（inputs、labels）和三个 split 排列，尚未上传。v2 股票池评分切片用 `hub-publish` 上传到私有数据集仓库：时点输入、选样快照、配置、统计、哈希清单和数据集卡进入主仓库；`outcomes.jsonl` 与各策略成绩进入单独的私有标签仓库，评测时再授权读取。命令先用 `verify` 校验发布包，并确认两个仓库都是私有仓库才上传；数据集卡沿用固定 canary（见 [行动指南 7.3 节](benchmark-v2-plan.md)）。`huggingface_hub` 是 uv 依赖组 `publish` 中的可选依赖，只由 `hub.py` 导入；token 由本机 `hf auth login` 保存，不写进仓库。
 
 ```powershell
-npm run benchmark -- hub-publish --release .runtime/benchmark/pools-v1 --scorecards .runtime/benchmark/scorecards --repo lokinko/mario_bench --labels-repo lokinko/mario_bench_labels --path pool-scoring --tag pool-scoring-v1
+npm run benchmark -- hub-publish --release .runtime/benchmark/pools-v1 --runs .runtime/benchmark/bench/pools-v1 --repo lokinko/mario_bench --labels-repo lokinko/mario_bench_labels --path pool-scoring --tag pool-scoring-v1
 ```
 
-`--scorecards` 目录中每个 `<策略>.json` 是 `pool-score` 的完整报告，汇总结果写入数据集卡。下载两个仓库的 `pool-scoring/` 合并后可用 `verify` 校验哈希、用 `pool-score` 打分。再分发授权尚未核对，不把公开可浏览等同于可公开再分发，也不擅自给原件附开放许可证。
+`--runs` 是 `bench-run` 的输出目录，其中打分成功的策略成绩以 `scorecards/<策略>.json` 上传到标签仓库，汇总结果写入数据集卡。下载两个仓库的 `pool-scoring/` 合并后可用 `verify` 校验哈希、用 `pool-score` 打分。再分发授权尚未核对，不把公开可浏览等同于可公开再分发，也不擅自给原件附开放许可证。
 
 二十年红利与科技股、宽基指数的扩展规划见 [benchmark v2 行动指南](benchmark-v2-plan.md)。后续在固定 release SHA 上增加财报表格提取及版本对账、股息/盈利质量等结构化因子、成本和公司行动驱动的组合回测、walk-forward 调参、无外网历史信息回放与前瞻测试。接入在线问答时需另设计经授权冻结的资料输入，不允许研究 CLI 读取账号数据库或通过历史样本执行真实交易。
 

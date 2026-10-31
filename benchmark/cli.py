@@ -16,9 +16,11 @@ from .dividend_universe import collect_dividend_universe
 from .hub import publish
 from .dashboard import write_dashboard
 from .pool_release import build_pool_release
-from .scoring import baseline_weights, evaluate_weights
+from .scoring import evaluate_weights
+from .strategy_runner import bench_run
 
 DEFAULT_CONFIG = Path(__file__).with_name("config.json")
+DEFAULT_STRATEGIES = Path(__file__).with_name("strategies")
 
 
 def main(argv=None):
@@ -54,21 +56,18 @@ def main(argv=None):
     pool_build.add_argument("--universe-root", type=Path, action="append", required=True,
                             help="可重复；每个目录是一个股票池的采集结果")
     pool_build.add_argument("--out", type=Path, required=True)
-    pool_base = sub.add_parser("pool-baseline", help="生成基线策略仓位：equal/momentum/size/cash")
-    pool_base.add_argument("--strategy", choices=("equal", "momentum", "size", "cash"), required=True)
-    pool_base.add_argument("--top", type=int, default=5)
-    pool_score = sub.add_parser("pool-score", help="按主指标给仓位文件打分")
+    bench = sub.add_parser("bench-run", help="运行 strategies/ 下全部策略：静态检查、生成仓位、打分（未改动的沿用缓存）并刷新看板")
+    bench.add_argument("--release", type=Path, required=True, help="pool-build 生成的评分切片")
+    bench.add_argument("--strategies", type=Path, default=DEFAULT_STRATEGIES)
+    bench.add_argument("--out", type=Path, help="默认 .runtime/benchmark/bench/<发布包目录名>")
+    bench.add_argument("--force", action="store_true", help="忽略缓存全部重跑")
+    pool_score = sub.add_parser("pool-score", help="给外部生成的仓位文件（如 Agent 输出）按主指标打分")
     pool_score.add_argument("--weights", type=Path, required=True)
-    for command in (pool_base, pool_score):
-        command.add_argument("--root", type=Path, required=True)
-        command.add_argument("--out", type=Path, required=True)
-    board = sub.add_parser("pool-dashboard", help="把各策略 pool-score 报告汇总为单文件 HTML 看板（可覆盖刷新）")
-    board.add_argument("--scorecards", type=Path, required=True, help="pool-score 输出目录，文件名即策略名")
-    board.add_argument("--release", type=Path, help="对应发布包，用于显示版本与范围")
-    board.add_argument("--out", type=Path, required=True)
+    pool_score.add_argument("--root", type=Path, required=True)
+    pool_score.add_argument("--out", type=Path, required=True)
     hub = sub.add_parser("hub-publish", help="把评分切片上传到 Hugging Face 私有仓库：输入与标签分仓")
     hub.add_argument("--release", type=Path, required=True)
-    hub.add_argument("--scorecards", type=Path, required=True, help="pool-score 输出目录，文件名即策略名")
+    hub.add_argument("--runs", type=Path, required=True, help="bench-run 输出目录")
     hub.add_argument("--repo", required=True)
     hub.add_argument("--labels-repo", required=True)
     hub.add_argument("--path", default="pool-scoring")
@@ -99,28 +98,26 @@ def main(argv=None):
         elif args.command == "dividend-universe":
             years = [int(value) for value in args.years.split(",") if value.strip()]
             result = collect_dividend_universe(args.root, years, args.top, args.workers)
-        elif args.command == "pool-dashboard":
-            if args.release:
-                verify_release(args.release)
-            result = write_dashboard(args.scorecards, args.out, args.release)
+        elif args.command == "bench-run":
+            out = args.out or Path(".runtime/benchmark/bench") / args.release.resolve().name
+            runs = bench_run(args.strategies, args.release, out, args.force)
+            board = write_dashboard(out, out / "dashboard.html", args.release)
+            print(json.dumps({"runs": runs, "dashboard": board["dashboard"]}, ensure_ascii=False, indent=2))
+            return 0 if all(run["status"] != "failed" for run in runs) else 1
         elif args.command == "hub-publish":
-            result = publish(args.release, args.repo, args.labels_repo, args.path, args.scorecards, args.tag)
+            result = publish(args.release, args.repo, args.labels_repo, args.path, args.runs, args.tag)
         elif args.command == "pool-build":
             result = build_pool_release(args.universe_root, args.out)
-        elif args.command in ("pool-baseline", "pool-score"):
+        elif args.command == "pool-score":
             verify_release(args.root)
             require(not args.out.exists(), "输出文件已存在，请使用新路径")
             samples = rows(args.root / "inputs.jsonl")
             args.out.parent.mkdir(parents=True, exist_ok=True)
-            if args.command == "pool-baseline":
-                write_rows(args.out, baseline_weights(samples, args.strategy, args.top))
-                result = {"weights": str(args.out), "strategy": args.strategy, "top": args.top}
-            else:
-                result = evaluate_weights(samples, rows(args.root / "outcomes.jsonl"), rows(args.weights))
-                write_json(args.out, result)
-                result = {key: result[key] for key in ("metric", "score", "pool_equal_weight_score",
-                                                       "csi300_score", "beat_csi300_periods",
-                                                       "beat_pool_equal_weight_periods", "by_pool")}
+            result = evaluate_weights(samples, rows(args.root / "outcomes.jsonl"), rows(args.weights))
+            write_json(args.out, result)
+            result = {key: result[key] for key in ("metric", "score", "pool_equal_weight_score",
+                                                   "csi300_score", "beat_csi300_periods",
+                                                   "beat_pool_equal_weight_periods", "by_pool")}
         elif args.command == "repair-catalogs":
             result = repair_catalogs(args.root, args.config)
         elif args.command == "collect-public":

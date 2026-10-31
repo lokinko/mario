@@ -1,0 +1,2 @@
+def decide(sample):
+    return {}

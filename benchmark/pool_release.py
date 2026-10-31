@@ -17,6 +17,7 @@ POOLS = ("dividend", "tech")
 INDEX = "000300.SH"
 TOTAL_RETURN_INDEX = "H00300"
 LOOKBACK = 63
+SHORT_LOOKBACK = 20
 
 
 def quarter_decisions(calendar, year):
@@ -27,14 +28,25 @@ def quarter_decisions(calendar, year):
     return [output[q] for q in sorted(output)]
 
 
-def momentum(bars, calendar, day):
+def momentum(bars, calendar, day, sessions=LOOKBACK):
     index = calendar.index(day)
-    if index < LOOKBACK:
+    if index < sessions:
         return None
-    now, before = bars.get(day), bars.get(calendar[index - LOOKBACK])
+    now, before = bars.get(day), bars.get(calendar[index - sessions])
     if not now or not before or "0" in (now.get("tradestatus", "1"), before.get("tradestatus", "1")):
         return None
     return str(Decimal(now["close"]) / Decimal(before["close"]) - 1)
+
+
+def volatility(bars, calendar, day, sessions=LOOKBACK):
+    """最近 sessions 个有成交日的日收益率总体标准差（不年化）；停牌日跳过，不足时为空。"""
+    closes = [Decimal(bars[d]["close"]) for d in calendar[:calendar.index(day) + 1]
+              if d in bars and bars[d].get("tradestatus", "1") == "1"]
+    if len(closes) <= sessions:
+        return None
+    returns = [closes[i] / closes[i - 1] - 1 for i in range(len(closes) - sessions, len(closes))]
+    average = sum(returns) / sessions
+    return str((sum((r - average) ** 2 for r in returns) / sessions).sqrt())
 
 
 def sample_rows(pool, year, decision, snapshot, adjusted, raw, index_bars, calendar):
@@ -45,6 +57,8 @@ def sample_rows(pool, year, decision, snapshot, adjusted, raw, index_bars, calen
         stocks.append({"symbol": code, "close": bar["close"] if bar else None,
                        "trade_status": ("trading" if bar["tradestatus"] == "1" else "suspended") if bar else "no_bar",
                        "momentum_63": momentum(adjusted[code], calendar, decision),
+                       "return_20": momentum(adjusted[code], calendar, decision, SHORT_LOOKBACK),
+                       "volatility_63": volatility(adjusted[code], calendar, decision),
                        "market_cap_at_selection": by_symbol[code]["market_cap"],
                        "selection_date": snapshot["selection_date"],
                        "sw_level1_name": by_symbol[code].get("level1_name")})
@@ -133,7 +147,8 @@ def build_pool_release(universe_roots, destination):
               "segments_days": list(SEGMENT_DAYS), "segment_weights": [str(w) for w in SEGMENT_WEIGHTS],
               "buy_cost": str(BUY_COST), "cost_basis": COST_BASIS, "reference_index": INDEX,
               "reference_total_return_index": TOTAL_RETURN_INDEX, "reference_total_return_source": CSI_INDEX_PERF,
-              "momentum_lookback_sessions": LOOKBACK, "price_source": BAOSTOCK,
+              "momentum_lookback_sessions": LOOKBACK, "short_return_lookback_sessions": SHORT_LOOKBACK,
+              "volatility_lookback_sessions": LOOKBACK, "price_source": BAOSTOCK,
               "stock_price_basis": "Baostock 后复权（adjustflag=1）：现金分红、送转、配股均按再投资折算，未计红利税",
               "universe_membership_verified": False, "built_on": date.today().isoformat()}
     with new_directory(destination) as stage:
