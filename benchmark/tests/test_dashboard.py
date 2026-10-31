@@ -13,7 +13,7 @@ def report(scores, benchmark=1.0, ids=("dividend-2015-03-31", "tech-2015-03-31")
         return {"mean": sum(values) / len(values), "median": values[0], "stdev": 0, "count": len(values),
                 "bootstrap_95": [min(values), max(values)]}
     periods = [{"sample_id": i, "pool": i.split("-")[0], "decision_date": i.split("-", 1)[1], "entry_date": "2015-04-01",
-                "blocked_entries": ["600000.SH"] if n == 0 else [], "score": s,
+                "blocked_entries": ["600000.SH"] if n == 0 else [], "exits": [], "score": s,
                 "pool_equal_weight_score": benchmark, "csi300_score": 0.5} for n, (i, s) in enumerate(zip(ids, scores))]
     return {"metric": "0.3×R1 + 0.3×R2 + 0.4×R3", "cost_basis": "买入成本", "limitations": ["限制</script>"],
             "score": stat(scores), "pool_equal_weight_score": stat([benchmark] * 2), "csi300_score": stat([0.5] * 2),

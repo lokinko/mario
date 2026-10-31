@@ -95,6 +95,12 @@ class SandboxTest(unittest.TestCase):
                 code.write_text(source, encoding="utf-8")
                 with self.assertRaises(Invalid):
                     generate_weights(code, samples)
+            code.write_text("def decide(s):\n    return {'000001.SZ': {'weight': 1, 'exit': 'x'}}\n", encoding="utf-8")
+            with self.assertRaises(Invalid):
+                generate_weights(code, samples)
+            code.write_text("def decide(s):\n    return {'000003.SZ': {'weight': 0.5, 'exit': {'stop_loss': 0.1, "
+                            "'max_hold_days': 30}}}\n", encoding="utf-8")
+            self.assertEqual(generate_weights(code, samples)[0]["exit"], {"stop_loss": "0.1", "max_hold_days": 30})
             code.write_text("def decide(s):\n    return {'000001.SZ': 1 / 3, '000002.SZ': 0}\n", encoding="utf-8")
             self.assertEqual(generate_weights(code, samples), [{"sample_id": "s1", "symbol": "000001.SZ",
                                                                  "weight": "0.33333333"}])

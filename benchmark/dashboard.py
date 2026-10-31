@@ -28,7 +28,7 @@ def dashboard_data(runs, config=None, failures=None):
     ids = [period["sample_id"] for period in first["periods"]]
     periods = {period["sample_id"]: {
         "id": period["sample_id"], "pool": period["pool"], "decision_date": period["decision_date"],
-        "entry_date": period["entry_date"], "scores": {}, "blocked": {},
+        "entry_date": period["entry_date"], "scores": {}, "blocked": {}, "exits": {},
         "benchmarks": {"pool_equal_weight": period["pool_equal_weight_score"], "csi300": period["csi300_score"]}}
         for period in first["periods"]}
     summaries = {}
@@ -42,6 +42,7 @@ def dashboard_data(runs, config=None, failures=None):
                 require(math.isclose(row["benchmarks"][key], value, abs_tol=1e-9), f"{name} 的对照得分不一致")
             row["scores"][name] = period["score"]
             row["blocked"][name] = len(period["blocked_entries"])
+            row["exits"][name] = len(period["exits"])
         summaries[name] = {"all": summary(report["score"]),
                            **{pool: summary(value["score"]) for pool, value in report["by_pool"].items()}}
     for key, field in (("pool_equal_weight", "pool_equal_weight_score"), ("csi300", "csi300_score")):
@@ -128,7 +129,7 @@ svg text { font-size:11px; fill:var(--muted); }
   </div>
   <section class="card"><h2>累计得分（逐期得分求和，不是净值）</h2><div id="cumulative"></div></section>
   <section class="card"><h2>逐期明细</h2><div class="scroll"><table id="periods"></table></div>
-    <p class="note">红色为正、绿色为负（A 股习惯）。买不进的股票（停牌或一字涨停）按规则留作现金，括号内为该期买不进的只数。</p></section>
+    <p class="note">红色为正、绿色为负（A 股习惯）。买不进的股票（停牌或一字涨停）按规则留作现金，括号内为该期买不进的只数；“卖 n”为该期按卖出规则提前卖出的只数。</p></section>
   <section class="card"><h2>策略说明</h2><div id="descriptions"></div></section>
   <section class="card"><h2>口径与限制</h2><ul id="limits" class="note"></ul></section>
 </main>
@@ -173,7 +174,7 @@ function header() {
 }
 
 function summaryTable() {
-  const data = rows(), blocked = s => data.reduce((n, p) => n + (p.blocked[s.key] || 0), 0);
+  const data = rows(), count = (s, field) => data.reduce((n, p) => n + (p[field][s.key] || 0), 0);
   const body = SERIES.map(s => {
     const sum = DATA.summaries[s.key][state.pool], scores = data.map(p => value(p, s));
     const beat = k => s.kind === 'strategy' ? `${data.filter(p => p.scores[s.key] > p.benchmarks[k]).length}/${data.length}` : '—';
@@ -181,10 +182,11 @@ function summaryTable() {
       <td class="${tone(sum.mean)}">${fmt(sum.mean)}</td><td>${fmt(sum.median)}</td>
       <td>${sum.ci ? `[${fmt(sum.ci[0])}, ${fmt(sum.ci[1])}]` : '—'}</td>
       <td>${beat('csi300')}</td><td>${beat('pool_equal_weight')}</td>
-      <td>${scores.filter(v => v > 0).length}/${data.length}</td><td>${s.kind === 'strategy' ? blocked(s) : '—'}</td></tr>`;
+      <td>${scores.filter(v => v > 0).length}/${data.length}</td><td>${s.kind === 'strategy' ? count(s, 'blocked') : '—'}</td>
+      <td>${s.kind === 'strategy' ? count(s, 'exits') : '—'}</td></tr>`;
   }).join('');
   document.getElementById('summary').innerHTML = `<thead><tr><th>策略</th><th>平均得分</th><th>中位数</th><th>95% 区间</th>
-    <th>胜沪深300</th><th>胜股票池等权</th><th>正得分期数</th><th>买不进只次</th></tr></thead><tbody>${body}</tbody>`;
+    <th>胜沪深300</th><th>胜股票池等权</th><th>正得分期数</th><th>买不进只次</th><th>卖出只次</th></tr></thead><tbody>${body}</tbody>`;
 }
 
 function frame(width, height, pad, ymin, ymax) {
@@ -247,7 +249,8 @@ function periodTable() {
   const body = data.map(p => `<tr><td>${p.decision_date}</td>
     <td class="l">${esc((DATA.pools.find(x => x.key === p.pool) || {label: p.pool}).label)}</td><td>${p.entry_date}</td>
     ${series.map(s => { const v = value(p, s), b = s.kind === 'strategy' ? p.blocked[s.key] : 0;
-      return `<td class="${tone(v)}">${fmt(v)}${b ? ` <span class="meta">(${b})</span>` : ''}</td>`; }).join('')}</tr>`).join('');
+      const x = s.kind === 'strategy' ? p.exits[s.key] : 0;
+      return `<td class="${tone(v)}">${fmt(v)}${b ? ` <span class="meta">(${b})</span>` : ''}${x ? ` <span class="meta">卖${x}</span>` : ''}</td>`; }).join('')}</tr>`).join('');
   document.getElementById('periods').innerHTML = head + `<tbody>${body}</tbody>`;
 }
 

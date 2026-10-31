@@ -11,7 +11,7 @@ from .collect import retry
 from .files import digest, new_directory, read_json, require, write_json, write_rows
 from .market_cap import cached
 from .public_sources import CSI_INDEX_PERF, csi_index_closes
-from .scoring import BUY_COST, COST_BASIS, SEGMENT_DAYS, SEGMENT_WEIGHTS, boundaries, can_buy
+from .scoring import BUY_COST, COST_BASIS, SEGMENT_DAYS, SEGMENT_WEIGHTS, boundaries, can_buy, can_sell
 
 POOLS = ("dividend", "tech")
 INDEX = "000300.SH"
@@ -73,6 +73,7 @@ def outcome_row(sample, adjusted, index_bars, total_return, calendar):
     """个股用后复权价格（分红与送转再投资）；对照用全收益指数，两边都计入分红。
 
     全收益指数只有收盘价，建仓价按前一交易日全收益收盘 × 沪深300 价格指数当日开盘/前收折算。
+    个股路径每行为 [日期, 收盘, 开盘, 能否卖出]，供卖出规则逐日执行。
     """
     later = [d for d in calendar if d > sample["decision_date"]]
     if not later:
@@ -87,7 +88,8 @@ def outcome_row(sample, adjusted, index_bars, total_return, calendar):
             f"{TOTAL_RETURN_INDEX} 在 {previous}–{edges[-1]} 缺少收盘点位")
 
     def path(bars):
-        return [[d, bars[d]["close"]] for d in calendar if entry <= d <= edges[-1] and d in bars]
+        return [[d, bars[d]["close"], bars[d]["open"], can_sell(bars[d])]
+                for d in calendar if entry <= d <= edges[-1] and d in bars]
 
     stocks = {}
     for stock in sample["stocks"]:

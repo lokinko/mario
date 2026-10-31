@@ -1,7 +1,7 @@
 """发现 `strategies/<名字>/` 下的策略，静态检查后在子进程中只喂入时点输入，生成仓位、打分并缓存结果。
 
 每个策略目录含 `strategy.md`（首行 `# 标题`，其后是规则说明）与 `strategy.py`（顶层函数 `decide(sample)`，
-返回 {证券代码: 仓位}，合计不超过 1，余下为现金）。策略代码只能导入纯计算标准库，不能读写文件、访问网络或反射私有属性；
+返回 {证券代码: 仓位} 或 {证券代码: {"weight": 仓位, "exit": 卖出规则}}，合计不超过 1，余下为现金）。策略代码只能导入纯计算标准库，不能读写文件、访问网络或反射私有属性；
 子进程拿不到结果标签，只从标准输入读取 `inputs.jsonl` 的样本。
 """
 
@@ -55,11 +55,23 @@ def amount(value):
         raise TypeError(f"仓位必须是数值，收到 {type(value).__name__}")
     return str(Decimal(str(value)) if isinstance(value, float) else Decimal(value))
 
+def rule(value):
+    if not isinstance(value, dict):
+        raise TypeError("exit 必须是 dict")
+    return {k: v if k == "max_hold_days" else amount(v) for k, v in value.items()}
+
+def position(value):
+    if not isinstance(value, dict):
+        return {"weight": amount(value)}
+    if set(value) - {"weight", "exit"} or "weight" not in value:
+        raise TypeError("仓位 dict 只能含 weight 与 exit")
+    return {"weight": amount(value["weight"]), **({"exit": rule(value["exit"])} if value.get("exit") else {})}
+
 for sample in samples:
     chosen = decide(sample) or {}
     if not isinstance(chosen, dict):
         raise TypeError(f"{sample['id']}: decide 必须返回 dict，收到 {type(chosen).__name__}")
-    print(json.dumps({"sample_id": sample["id"], "weights": {str(k): amount(v) for k, v in chosen.items()}}))
+    print(json.dumps({"sample_id": sample["id"], "positions": {str(k): position(v) for k, v in chosen.items()}}))
 """
 
 
@@ -118,10 +130,11 @@ def generate_weights(code_path, samples, timeout=TIMEOUT_SECONDS):
     output = []
     for line in done.stdout.splitlines():
         row = json.loads(line)
-        for code, weight in row["weights"].items():
-            value = Decimal(weight).quantize(WEIGHT_STEP, rounding=ROUND_DOWN)
+        for code, position in row["positions"].items():
+            value = Decimal(position["weight"]).quantize(WEIGHT_STEP, rounding=ROUND_DOWN)
             if value:
-                output.append({"sample_id": row["sample_id"], "symbol": code, "weight": str(value)})
+                output.append({"sample_id": row["sample_id"], "symbol": code, "weight": str(value),
+                               **({"exit": position["exit"]} if "exit" in position else {})})
     return output
 
 
