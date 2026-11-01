@@ -76,6 +76,26 @@ class BuiltinStrategyTest(unittest.TestCase):
         for name in ("trend", "trend_lowvol", "trend_pullback"):
             self.assertEqual(picks(name, falling), [])
 
+    def test_calm_pullback_sums_ranks_falls_back_to_low_volatility_and_takes_profit_on_calm_stocks(self):
+        stocks = [stock("000001.SZ", "0.2", volatility="0.03", short="0.05"),
+                  stock("000002.SZ", "0.1", volatility="0.01", short="0.08"),
+                  stock("000003.SZ", "0.3", volatility="0.02", short="-0.04"),
+                  stock("000004.SZ", "-0.1", volatility="0.001", short="-0.2"),
+                  stock("000007.SZ", "0.5", short="0.01")]
+        ranked = ["000003.SZ", "000002.SZ", "000001.SZ", "000007.SZ"]
+        self.assertEqual(picks("trend_calm_pullback", stocks), ranked)
+        falling = [stock("000001.SZ", "-0.2", volatility="0.02"), stock("000002.SZ", None, volatility="0.01"),
+                   stock("000003.SZ", "-0.1")]
+        self.assertEqual(picks("trend_calm_pullback", falling), ["000002.SZ", "000001.SZ"])
+        code = BUILTIN / "trend_calm_pullback_take_profit" / "strategy.py"
+        exits = {pool: {r["symbol"]: r.get("exit") for r in generate_weights(code, [{"id": "s1", "pool": pool,
+                                                                                    "stocks": stocks}])}
+                 for pool in ("tech", "dividend")}
+        target = {"take_profit": "0.08"}
+        self.assertEqual(exits["tech"], {"000003.SZ": target, "000002.SZ": target, "000001.SZ": None,
+                                         "000007.SZ": None})
+        self.assertEqual(exits["dividend"], dict.fromkeys(ranked, target))
+
 
 class SandboxTest(unittest.TestCase):
     def test_static_check_blocks_io_imports_and_reflection(self):
