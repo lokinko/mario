@@ -19,7 +19,7 @@ def report(scores, benchmark=1.0, ids=("dividend-2015-03-31", "tech-2015-03-31")
         return {"mean": sum(values) / len(values), "median": values[0], "stdev": 0, "count": len(values),
                 "bootstrap_95": [min(values), max(values)]}
     def series(values):
-        return {"score": stat([v + 2.5 if v > 0 else v - 2.5 for v in values]), "return_score": stat(values),
+        return {"score": stat([v + 5 if v > 0 else v for v in values]), "return_score": stat(values),
                 "win_rate": sum(v > 0 for v in values) / len(values)}
 
     def stats(values):
@@ -28,7 +28,7 @@ def report(scores, benchmark=1.0, ids=("dividend-2015-03-31", "tech-2015-03-31")
                 for key, value in series(part).items()}
 
     def total(v):
-        return v + 2.5 if v > 0 else v - 2.5
+        return v + 5 if v > 0 else v
 
     periods = [{"sample_id": i, "pool": i.split("-")[0], "decision_date": i.split("-", 1)[1], "entry_date": "2015-04-01",
                 "blocked_entries": ["600000.SH"] if n == 0 else [], "exits": [], "segment_returns": [0.01, 0.0, -0.02],

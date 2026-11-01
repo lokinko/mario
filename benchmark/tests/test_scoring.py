@@ -76,11 +76,11 @@ class ScoringTest(unittest.TestCase):
                          "path": [["2015-10-08", "10"], ["2015-10-15", "12"]]} for code in ("000001.SZ", "000002.SZ")}
         report = evaluate_weights(samples, [outcome(stocks)], [])
         self.assertEqual(report["periods"][0]["return_score"], 0.0)
-        self.assertEqual(report["periods"][0]["score"], -2.5)
+        self.assertEqual(report["periods"][0]["score"], 0.0)
         self.assertFalse(report["periods"][0]["submitted"])
         self.assertGreater(report["periods"][0]["pool_equal_weight_return_score"], 0)
         self.assertAlmostEqual(report["periods"][0]["csi300_return_score"], 6.0)
-        self.assertAlmostEqual(report["periods"][0]["csi300_score"], 8.5)
+        self.assertAlmostEqual(report["periods"][0]["csi300_score"], 11.0)
         for rows in ([{"sample_id": "s1", "symbol": "600000.SH", "weight": "0.1"}],
                      [{"sample_id": "s1", "symbol": "000001.SZ", "weight": "0.6"},
                       {"sample_id": "s1", "symbol": "000002.SZ", "weight": "0.6"}],
@@ -90,7 +90,7 @@ class ScoringTest(unittest.TestCase):
             with self.assertRaises(Invalid):
                 evaluate_weights(samples, [outcome(stocks)], rows)
 
-    def test_total_score_adds_five_times_win_rate_above_half(self):
+    def test_total_score_adds_five_times_win_rate(self):
         samples = [{"id": f"s{i}", "pool": "tech", "decision_date": f"2015-0{i}-30", "stocks": [{"symbol": "000001.SZ"}]}
                    for i in range(1, 5)]
         closes = ["11", "10.5", "9", "10"]
@@ -102,12 +102,12 @@ class ScoringTest(unittest.TestCase):
         returns = [p["return_score"] for p in report["periods"]]
         self.assertEqual(report["win_rate"], 0.5)
         self.assertEqual(report["positive_periods"], 2)
-        self.assertAlmostEqual(report["score"]["mean"], sum(returns) / 4)
+        self.assertAlmostEqual(report["score"]["mean"], sum(returns) / 4 + 2.5)
         self.assertAlmostEqual(report["return_score"]["mean"], sum(returns) / 4)
         self.assertAlmostEqual(report["by_pool"]["tech"]["score"]["mean"],
-                               sum(returns) / 4 + 5 * (report["by_pool"]["tech"]["win_rate"] - 0.5))
+                               sum(returns) / 4 + 5 * report["by_pool"]["tech"]["win_rate"])
         self.assertEqual(report["csi300_win_rate"], 1.0)
-        self.assertAlmostEqual(report["csi300_score"]["mean"], report["csi300_return_score"]["mean"] + 2.5)
+        self.assertAlmostEqual(report["csi300_score"]["mean"], report["csi300_return_score"]["mean"] + 5)
 
 
 def day_row(day, close, open_price=None, sellable=True, buyable=True):

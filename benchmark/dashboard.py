@@ -321,7 +321,7 @@ function bootstrap(values, rounds, seed) {
   return [means[Math.trunc(0.025 * rounds)], means[Math.trunc(0.975 * rounds) - 1]];
 }
 
-const totalScores = (returns, params) => returns.map(v => v + params.win_rate_weight * ((v > 0) - 0.5));
+const totalScores = (returns, params) => returns.map(v => v + params.win_rate_weight * (v > 0));
 const interval = (returns, params) => bootstrap(totalScores(returns, params), params.rounds, params.seed);
 
 function summarize(returns, params, withInterval) {
