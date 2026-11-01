@@ -12,6 +12,7 @@
 次一个可买入或可卖出交易日开盘成交；网格只在该股票的资金内循环，不与卖出规则同用。
 """
 
+import math
 import random
 from datetime import date, timedelta
 from decimal import Decimal
@@ -237,7 +238,7 @@ def bootstrap_interval(values, rounds=2000, seed=20261031):
     if len(values) < 2:
         return None
     generator = random.Random(seed)
-    means = sorted(mean(generator.choice(values) for _ in values) for _ in range(rounds))
+    means = sorted(math.fsum(generator.choice(values) for _ in values) / len(values) for _ in range(rounds))
     return [means[int(0.025 * rounds)], means[int(0.975 * rounds) - 1]]
 
 
@@ -246,10 +247,10 @@ def summarize(values):
             "count": len(values), "bootstrap_95": bootstrap_interval(values)} if values else None
 
 
-def series_stats(periods):
-    """策略与两个对照各自的总分、收益得分汇总和胜率。"""
+def series_stats(periods, prefixes=SERIES):
+    """策略与两个对照（或 prefixes 指定的序列）各自的总分、收益得分汇总和胜率。"""
     output = {}
-    for prefix in SERIES:
+    for prefix in prefixes:
         returns = [p[f"{prefix}return_score"] for p in periods]
         output.update({f"{prefix}score": summarize([p[f"{prefix}score"] for p in periods]),
                        f"{prefix}return_score": summarize(returns),

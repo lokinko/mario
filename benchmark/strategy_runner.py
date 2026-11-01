@@ -203,14 +203,14 @@ def bench_run(strategies_dir, release, out, force=False):
 
 
 def completed_runs(out):
-    """{策略名: {"title", "description", "scorecard"}}，只含打分成功的策略。"""
+    """{策略名: {"title", "description", "scorecard", "weights"}}，只含打分成功的策略。"""
     output = {}
     for item in sorted(Path(out).iterdir()):
         record = item / "run.json"
         if item.is_dir() and record.exists() and read_json(record)["status"] == "scored":
             meta = read_json(record)
             output[item.name] = {"title": meta["title"], "description": meta["description"],
-                                 "scorecard": read_json(item / "scorecard.json")}
+                                 "scorecard": read_json(item / "scorecard.json"), "weights": rows(item / "weights.jsonl")}
     return output
 
 

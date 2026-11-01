@@ -141,6 +141,7 @@ class BenchRunTest(unittest.TestCase):
             runs = completed_runs(base / "out")
             self.assertEqual(list(runs), ["rising"])
             self.assertEqual(runs["rising"]["title"], "只买上涨")
+            self.assertEqual(runs["rising"]["weights"], [{"sample_id": "s1", "symbol": "000001.SZ", "weight": "1.00000000"}])
             first_segment, last_segment = Decimal("0.9987") * Decimal("1.1") - 1, Decimal(12) / 11 - 1
             self.assertAlmostEqual(runs["rising"]["scorecard"]["return_score"]["mean"],
                                    float(100 * (Decimal("0.3") * first_segment + Decimal("0.4") * last_segment)), places=6)
