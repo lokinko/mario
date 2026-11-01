@@ -95,6 +95,13 @@ class BuiltinStrategyTest(unittest.TestCase):
         self.assertEqual(exits["tech"], {"000003.SZ": target, "000002.SZ": target, "000001.SZ": None,
                                          "000007.SZ": None})
         self.assertEqual(exits["dividend"], dict.fromkeys(ranked, target))
+        code = BUILTIN / "trend_calm_pullback_grid" / "strategy.py"
+        rules = {pool: {r["symbol"]: r.get("exit") or r.get("grid") for r in
+                        generate_weights(code, [{"id": "s1", "pool": pool, "stocks": stocks}])}
+                 for pool in ("tech", "dividend")}
+        grid = {"step": "0.08", "lots": 2, "initial": 1}
+        self.assertEqual(rules["tech"], {"000003.SZ": grid, "000002.SZ": grid, "000001.SZ": None, "000007.SZ": None})
+        self.assertEqual(rules["dividend"], dict.fromkeys(ranked, target))
 
 
 class SandboxTest(unittest.TestCase):
