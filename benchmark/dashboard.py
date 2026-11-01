@@ -15,8 +15,11 @@ POOL_LABELS = {"dividend": "红利池", "tech": "科技池"}
 BENCHMARKS = {"pool_equal_weight": "对照：股票池等权", "csi300": "对照：沪深300"}
 
 
-def summary(value):
-    return {"mean": value["mean"], "median": value["median"], "ci": value["bootstrap_95"], "count": value["count"]}
+def summary(report, prefix=""):
+    """总分的均值、中位数与区间，以及平均收益得分与胜率。"""
+    value = report[f"{prefix}score"]
+    return {"mean": value["mean"], "median": value["median"], "ci": value["bootstrap_95"], "count": value["count"],
+            "return_mean": report[f"{prefix}return_score"]["mean"], "win_rate": report[f"{prefix}win_rate"]}
 
 
 def dashboard_data(runs, config=None, failures=None):
@@ -28,8 +31,9 @@ def dashboard_data(runs, config=None, failures=None):
     ids = [period["sample_id"] for period in first["periods"]]
     periods = {period["sample_id"]: {
         "id": period["sample_id"], "pool": period["pool"], "decision_date": period["decision_date"],
-        "entry_date": period["entry_date"], "scores": {}, "blocked": {}, "exits": {},
-        "benchmarks": {"pool_equal_weight": period["pool_equal_weight_score"], "csi300": period["csi300_score"]}}
+        "entry_date": period["entry_date"], "scores": {}, "blocked": {}, "exits": {}, "grid_trades": {},
+        "benchmarks": {"pool_equal_weight": period["pool_equal_weight_return_score"],
+                       "csi300": period["csi300_return_score"]}}
         for period in first["periods"]}
     summaries = {}
     for name in names:
@@ -37,17 +41,18 @@ def dashboard_data(runs, config=None, failures=None):
         require([p["sample_id"] for p in report["periods"]] == ids, f"{name} 与其他策略的决策点不一致，可能来自不同发布包")
         for period in report["periods"]:
             row = periods[period["sample_id"]]
-            for key, value in (("pool_equal_weight", period["pool_equal_weight_score"]),
-                               ("csi300", period["csi300_score"])):
+            for key, value in (("pool_equal_weight", period["pool_equal_weight_return_score"]),
+                               ("csi300", period["csi300_return_score"])):
                 require(math.isclose(row["benchmarks"][key], value, abs_tol=1e-9), f"{name} 的对照得分不一致")
-            row["scores"][name] = period["score"]
+            row["scores"][name] = period["return_score"]
             row["blocked"][name] = len(period["blocked_entries"])
             row["exits"][name] = len(period["exits"])
-        summaries[name] = {"all": summary(report["score"]),
-                           **{pool: summary(value["score"]) for pool, value in report["by_pool"].items()}}
-    for key, field in (("pool_equal_weight", "pool_equal_weight_score"), ("csi300", "csi300_score")):
-        summaries[key] = {"all": summary(first[field]),
-                          **{pool: summary(value[field]) for pool, value in first["by_pool"].items()}}
+            row["grid_trades"][name] = sum(t["buys"] + t["sells"] for t in period["grid_trades"])
+        summaries[name] = {"all": summary(report),
+                           **{pool: summary(value) for pool, value in report["by_pool"].items()}}
+    for key in BENCHMARKS:
+        summaries[key] = {"all": summary(first, f"{key}_"),
+                          **{pool: summary(value, f"{key}_") for pool, value in first["by_pool"].items()}}
     return {
         "strategies": [{"key": name, "label": runs[name]["title"], "description": runs[name]["description"]}
                        for name in names],
@@ -124,12 +129,12 @@ svg text { font-size:11px; fill:var(--muted); }
   <section class="card"><h2>策略汇总</h2><table id="summary"></table>
     <p class="note" id="metric"></p></section>
   <div class="grid">
-    <section class="card"><h2>平均得分与 95% 区间</h2><div id="means"></div></section>
-    <section class="card"><h2>逐年平均得分</h2><div id="yearly"></div></section>
+    <section class="card"><h2>总分与 95% 区间</h2><div id="means"></div></section>
+    <section class="card"><h2>逐年平均收益得分</h2><div id="yearly"></div></section>
   </div>
-  <section class="card"><h2>累计得分（逐期得分求和，不是净值）</h2><div id="cumulative"></div></section>
-  <section class="card"><h2>逐期明细</h2><div class="scroll"><table id="periods"></table></div>
-    <p class="note">红色为正、绿色为负（A 股习惯）。买不进的股票（停牌或一字涨停）按规则留作现金，括号内为该期买不进的只数；“卖 n”为该期按卖出规则提前卖出的只数。</p></section>
+  <section class="card"><h2>累计收益得分（逐期收益得分求和，不是净值）</h2><div id="cumulative"></div></section>
+  <section class="card"><h2>逐期收益得分</h2><div class="scroll"><table id="periods"></table></div>
+    <p class="note">数值为当期收益得分，大于 0 计为胜；红色为正、绿色为负（A 股习惯）。买不进的股票（停牌或一字涨停）按规则留作现金，括号内为该期买不进的只数；“卖 n”为该期按卖出规则提前卖出的只数。</p></section>
   <section class="card"><h2>策略说明</h2><div id="descriptions"></div></section>
   <section class="card"><h2>口径与限制</h2><ul id="limits" class="note"></ul></section>
 </main>
@@ -181,12 +186,14 @@ function summaryTable() {
     return `<tr><td><span class="swatch" style="background:${s.color}"></span>${esc(s.label)}</td>
       <td class="${tone(sum.mean)}">${fmt(sum.mean)}</td><td>${fmt(sum.median)}</td>
       <td>${sum.ci ? `[${fmt(sum.ci[0])}, ${fmt(sum.ci[1])}]` : '—'}</td>
+      <td class="${tone(sum.return_mean)}">${fmt(sum.return_mean)}</td>
+      <td>${(sum.win_rate * 100).toFixed(0)}%（${scores.filter(v => v > 0).length}/${data.length}）</td>
       <td>${beat('csi300')}</td><td>${beat('pool_equal_weight')}</td>
-      <td>${scores.filter(v => v > 0).length}/${data.length}</td><td>${s.kind === 'strategy' ? count(s, 'blocked') : '—'}</td>
-      <td>${s.kind === 'strategy' ? count(s, 'exits') : '—'}</td></tr>`;
+      <td>${s.kind === 'strategy' ? count(s, 'blocked') : '—'}</td>
+      <td>${s.kind === 'strategy' ? count(s, 'exits') : '—'}</td><td>${s.kind === 'strategy' ? count(s, 'grid_trades') : '—'}</td></tr>`;
   }).join('');
-  document.getElementById('summary').innerHTML = `<thead><tr><th>策略</th><th>平均得分</th><th>中位数</th><th>95% 区间</th>
-    <th>胜沪深300</th><th>胜股票池等权</th><th>正得分期数</th><th>买不进只次</th><th>卖出只次</th></tr></thead><tbody>${body}</tbody>`;
+  document.getElementById('summary').innerHTML = `<thead><tr><th>策略</th><th>总分</th><th>总分中位数</th><th>总分 95% 区间</th>
+    <th>平均收益得分</th><th>胜率（正得分期数）</th><th>胜沪深300</th><th>胜股票池等权</th><th>买不进只次</th><th>卖出只次</th><th>网格成交笔数</th></tr></thead><tbody>${body}</tbody>`;
 }
 
 function frame(width, height, pad, ymin, ymax) {

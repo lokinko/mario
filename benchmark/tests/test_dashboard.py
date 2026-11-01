@@ -12,14 +12,22 @@ def report(scores, benchmark=1.0, ids=("dividend-2015-03-31", "tech-2015-03-31")
     def stat(values):
         return {"mean": sum(values) / len(values), "median": values[0], "stdev": 0, "count": len(values),
                 "bootstrap_95": [min(values), max(values)]}
+    def series(values):
+        return {"score": stat([v + 2.5 if v > 0 else v - 2.5 for v in values]), "return_score": stat(values),
+                "win_rate": sum(v > 0 for v in values) / len(values)}
+
+    def stats(values):
+        return {f"{prefix}{key}": value for prefix, part in (("", values), ("pool_equal_weight_", [benchmark] * len(values)),
+                                                             ("csi300_", [0.5] * len(values)))
+                for key, value in series(part).items()}
+
     periods = [{"sample_id": i, "pool": i.split("-")[0], "decision_date": i.split("-", 1)[1], "entry_date": "2015-04-01",
-                "blocked_entries": ["600000.SH"] if n == 0 else [], "exits": [], "score": s,
-                "pool_equal_weight_score": benchmark, "csi300_score": 0.5} for n, (i, s) in enumerate(zip(ids, scores))]
-    return {"metric": "0.3×R1 + 0.3×R2 + 0.4×R3", "cost_basis": "买入成本", "limitations": ["限制</script>"],
-            "score": stat(scores), "pool_equal_weight_score": stat([benchmark] * 2), "csi300_score": stat([0.5] * 2),
-            "by_pool": {p["pool"]: {"score": stat([p["score"]]), "pool_equal_weight_score": stat([benchmark]),
-                                    "csi300_score": stat([0.5])} for p in periods},
-            "periods": periods}
+                "blocked_entries": ["600000.SH"] if n == 0 else [], "exits": [],
+                "grid_trades": [{"symbol": "600000.SH", "buys": 2, "sells": 1}] if n == 1 else [], "return_score": s,
+                "pool_equal_weight_return_score": benchmark, "csi300_return_score": 0.5}
+               for n, (i, s) in enumerate(zip(ids, scores))]
+    return {"metric": "总分", "cost_basis": "买入成本", "limitations": ["限制</script>"], **stats(scores),
+            "by_pool": {p["pool"]: stats([p["return_score"]]) for p in periods}, "periods": periods}
 
 
 def run(scorecard, title="策略"):
@@ -43,7 +51,11 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(data["strategies"][2]["label"], "末位")
         self.assertEqual(data["periods"][0]["scores"], {"equal": 0.0, "momentum": 1.0, "zeta": 3.0})
         self.assertEqual(data["periods"][0]["blocked"]["momentum"], 1)
-        self.assertEqual(data["summaries"]["csi300"]["tech"]["mean"], 0.5)
+        self.assertEqual([p["grid_trades"]["momentum"] for p in data["periods"]], [0, 3])
+        self.assertEqual(data["summaries"]["csi300"]["tech"]["mean"], 3.0)
+        self.assertEqual(data["summaries"]["csi300"]["tech"]["return_mean"], 0.5)
+        self.assertEqual((data["summaries"]["momentum"]["all"]["mean"], data["summaries"]["momentum"]["all"]["win_rate"]),
+                         (-0.5, 0.5))
         self.assertNotIn("secret", data["release"])
 
     def test_rejects_scorecards_from_different_releases(self):

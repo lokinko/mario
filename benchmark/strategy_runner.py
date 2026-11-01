@@ -1,7 +1,7 @@
 """发现 `strategies/<名字>/` 下的策略，静态检查后在子进程中只喂入时点输入，生成仓位、打分并缓存结果。
 
 每个策略目录含 `strategy.md`（首行 `# 标题`，其后是规则说明）与 `strategy.py`（顶层函数 `decide(sample)`，
-返回 {证券代码: 仓位} 或 {证券代码: {"weight": 仓位, "exit": 卖出规则}}，合计不超过 1，余下为现金）。策略代码只能导入纯计算标准库，不能读写文件、访问网络或反射私有属性；
+返回 {证券代码: 仓位} 或 {证券代码: {"weight": 仓位, "exit": 卖出规则 或 "grid": 网格}}，合计不超过 1，余下为现金）。策略代码只能导入纯计算标准库，不能读写文件、访问网络或反射私有属性；
 子进程拿不到结果标签，只从标准输入读取 `inputs.jsonl` 的样本。
 """
 
@@ -55,17 +55,19 @@ def amount(value):
         raise TypeError(f"仓位必须是数值，收到 {type(value).__name__}")
     return str(Decimal(str(value)) if isinstance(value, float) else Decimal(value))
 
-def rule(value):
+INTEGERS = {"max_hold_days", "lots", "initial"}
+
+def rule(key, value):
     if not isinstance(value, dict):
-        raise TypeError("exit 必须是 dict")
-    return {k: v if k == "max_hold_days" else amount(v) for k, v in value.items()}
+        raise TypeError(f"{key} 必须是 dict")
+    return {k: v if k in INTEGERS else amount(v) for k, v in value.items()}
 
 def position(value):
     if not isinstance(value, dict):
         return {"weight": amount(value)}
-    if set(value) - {"weight", "exit"} or "weight" not in value:
-        raise TypeError("仓位 dict 只能含 weight 与 exit")
-    return {"weight": amount(value["weight"]), **({"exit": rule(value["exit"])} if value.get("exit") else {})}
+    if set(value) - {"weight", "exit", "grid"} or "weight" not in value:
+        raise TypeError("仓位 dict 只能含 weight、exit 与 grid")
+    return {"weight": amount(value["weight"]), **{k: rule(k, value[k]) for k in ("exit", "grid") if value.get(k)}}
 
 for sample in samples:
     chosen = decide(sample) or {}
@@ -134,7 +136,7 @@ def generate_weights(code_path, samples, timeout=TIMEOUT_SECONDS):
             value = Decimal(position["weight"]).quantize(WEIGHT_STEP, rounding=ROUND_DOWN)
             if value:
                 output.append({"sample_id": row["sample_id"], "symbol": code, "weight": str(value),
-                               **({"exit": position["exit"]} if "exit" in position else {})})
+                               **{k: position[k] for k in ("exit", "grid") if k in position}})
     return output
 
 

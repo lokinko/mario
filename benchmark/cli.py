@@ -115,8 +115,8 @@ def main(argv=None):
             args.out.parent.mkdir(parents=True, exist_ok=True)
             result = evaluate_weights(samples, rows(args.root / "outcomes.jsonl"), rows(args.weights))
             write_json(args.out, result)
-            result = {key: result[key] for key in ("metric", "score", "pool_equal_weight_score",
-                                                   "csi300_score", "beat_csi300_periods",
+            result = {key: result[key] for key in ("metric", "score", "return_score", "win_rate",
+                                                   "pool_equal_weight_score", "csi300_score", "beat_csi300_periods",
                                                    "beat_pool_equal_weight_periods", "by_pool")}
         elif args.command == "repair-catalogs":
             result = repair_catalogs(args.root, args.config)

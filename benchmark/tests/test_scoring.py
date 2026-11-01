@@ -9,8 +9,8 @@ from benchmark.files import Invalid, rows, write_json
 from benchmark.pool_release import (build_pool_release, momentum, outcome_row, quarter_decisions, sample_rows,
                                     volatility)
 from benchmark.release import verify_release
-from benchmark.scoring import (boundaries, can_buy, can_sell, evaluate_weights, exit_rule, portfolio_segments, score,
-                               sell_cost)
+from benchmark.scoring import (boundaries, can_buy, can_sell, evaluate_weights, exit_rule, grid_rule,
+                               portfolio_segments, return_score, sell_cost)
 
 
 def bar(price, status="1", **extra):
@@ -50,18 +50,18 @@ class ScoringTest(unittest.TestCase):
         index = {"a": {"buyable": True, "entry_open": "100",
                        "path": [["2015-10-08", "100"], ["2015-10-15", "110"], ["2015-11-06", "121"],
                                 ["2016-01-06", "121"]]}}
-        returns, blocked, sold = portfolio_segments({"a": Decimal(1)}, outcome(index), cost=Decimal(0))
+        returns, blocked, sold, _ = portfolio_segments({"a": Decimal(1)}, outcome(index), cost=Decimal(0))
         self.assertEqual(sold, [])
         self.assertEqual([round(r, 10) for r in returns], [Decimal("0.1"), Decimal("0.1"), Decimal(0)])
         self.assertEqual(blocked, [])
-        self.assertAlmostEqual(score(returns), 6.0)
+        self.assertAlmostEqual(return_score(returns), 6.0)
 
     def test_cash_blocked_entries_costs_and_delisting_valuation(self):
         stocks = {"live": {"buyable": True, "entry_open": "10",
                            "path": [["2015-10-08", "10"], ["2015-10-09", "5"]]},
                   "halted": {"buyable": False, "entry_open": None, "path": []}}
-        returns, blocked, _ = portfolio_segments({"live": Decimal("0.5"), "halted": Decimal("0.25")},
-                                              outcome(stocks), cost=Decimal("0.01"))
+        returns, blocked, _, _ = portfolio_segments({"live": Decimal("0.5"), "halted": Decimal("0.25")},
+                                                 outcome(stocks), cost=Decimal("0.01"))
         self.assertEqual(blocked, ["halted"])
         expected_first = Decimal("0.5") + Decimal("0.5") * Decimal("0.99") * Decimal("0.5") - 1
         self.assertEqual(returns[0], expected_first)
@@ -75,10 +75,12 @@ class ScoringTest(unittest.TestCase):
         stocks = {code: {"buyable": True, "entry_open": "10",
                          "path": [["2015-10-08", "10"], ["2015-10-15", "12"]]} for code in ("000001.SZ", "000002.SZ")}
         report = evaluate_weights(samples, [outcome(stocks)], [])
-        self.assertEqual(report["periods"][0]["score"], 0.0)
+        self.assertEqual(report["periods"][0]["return_score"], 0.0)
+        self.assertEqual(report["periods"][0]["score"], -2.5)
         self.assertFalse(report["periods"][0]["submitted"])
-        self.assertGreater(report["periods"][0]["pool_equal_weight_score"], 0)
-        self.assertAlmostEqual(report["periods"][0]["csi300_score"], 6.0)
+        self.assertGreater(report["periods"][0]["pool_equal_weight_return_score"], 0)
+        self.assertAlmostEqual(report["periods"][0]["csi300_return_score"], 6.0)
+        self.assertAlmostEqual(report["periods"][0]["csi300_score"], 8.5)
         for rows in ([{"sample_id": "s1", "symbol": "600000.SH", "weight": "0.1"}],
                      [{"sample_id": "s1", "symbol": "000001.SZ", "weight": "0.6"},
                       {"sample_id": "s1", "symbol": "000002.SZ", "weight": "0.6"}],
@@ -88,15 +90,34 @@ class ScoringTest(unittest.TestCase):
             with self.assertRaises(Invalid):
                 evaluate_weights(samples, [outcome(stocks)], rows)
 
+    def test_total_score_adds_five_times_win_rate_above_half(self):
+        samples = [{"id": f"s{i}", "pool": "tech", "decision_date": f"2015-0{i}-30", "stocks": [{"symbol": "000001.SZ"}]}
+                   for i in range(1, 5)]
+        closes = ["11", "10.5", "9", "10"]
+        outcomes = [{**outcome({"000001.SZ": {"buyable": True, "entry_open": "10",
+                                              "path": [["2015-10-08", "10"], ["2015-10-15", close]]}}),
+                     "sample_id": f"s{i}"} for i, close in enumerate(closes, 1)]
+        rows = [{"sample_id": f"s{i}", "symbol": "000001.SZ", "weight": "1"} for i in range(1, 5)]
+        report = evaluate_weights(samples, outcomes, rows)
+        returns = [p["return_score"] for p in report["periods"]]
+        self.assertEqual(report["win_rate"], 0.5)
+        self.assertEqual(report["positive_periods"], 2)
+        self.assertAlmostEqual(report["score"]["mean"], sum(returns) / 4)
+        self.assertAlmostEqual(report["return_score"]["mean"], sum(returns) / 4)
+        self.assertAlmostEqual(report["by_pool"]["tech"]["score"]["mean"],
+                               sum(returns) / 4 + 5 * (report["by_pool"]["tech"]["win_rate"] - 0.5))
+        self.assertEqual(report["csi300_win_rate"], 1.0)
+        self.assertAlmostEqual(report["csi300_score"]["mean"], report["csi300_return_score"]["mean"] + 2.5)
 
-def day_row(day, close, open_price=None, sellable=True):
-    return [day, close, open_price or close, sellable]
+
+def day_row(day, close, open_price=None, sellable=True, buyable=True):
+    return [day, close, open_price or close, sellable, buyable]
 
 
 class ExitTest(unittest.TestCase):
     def held(self, path, rule):
         stocks = {"a": {"buyable": True, "entry_open": "10", "path": path}}
-        return portfolio_segments({"a": Decimal(1)}, outcome(stocks), {"a": exit_rule(rule)}, cost=Decimal(0))
+        return portfolio_segments({"a": Decimal(1)}, outcome(stocks), {"a": exit_rule(rule)}, cost=Decimal(0))[:3]
 
     def test_stop_loss_triggers_on_close_and_sells_next_open_after_costs(self):
         path = [day_row("2015-10-08", "9.5"), day_row("2015-10-09", "8.5", "8.8"), day_row("2015-10-15", "12"),
@@ -150,6 +171,100 @@ class ExitTest(unittest.TestCase):
         self.assertLess(report["periods"][0]["score"], 0)
 
 
+class GridTest(unittest.TestCase):
+    RULE = {"step": "0.1", "lots": 4, "initial": 2}
+
+    def run_grid(self, path, rule=None):
+        stocks = {"a": {"buyable": True, "entry_open": "10", "path": path}}
+        return portfolio_segments({"a": Decimal(1)}, outcome(stocks), grids={"a": grid_rule(rule or self.RULE)},
+                                  cost=Decimal(0))
+
+    def test_buys_a_lot_below_a_line_and_sells_it_back_one_line_up(self):
+        path = [day_row("2015-10-08", "10"), day_row("2015-10-09", "9"), day_row("2015-10-15", "9"),
+                day_row("2015-11-06", "10.1", "10"), day_row("2015-11-09", "10.1"), day_row("2016-01-06", "10.1")]
+        returns, _, _, traded = self.run_grid(path)
+        self.assertEqual(traded, [{"symbol": "a", "buys": 1, "sells": 1}])
+        units = Decimal("0.5") / 10 + Decimal("0.25") / 9
+        first = Decimal("0.25") + units * 9
+        second = Decimal("0.25") + units * Decimal("10.1")
+        third = Decimal("0.25") + units / 3 * Decimal("10.1") * (1 - sell_cost("2015-11-09")) + units * 2 / 3 * Decimal("10.1")
+        self.assertEqual(returns, [first - 1, second / first - 1, third / second - 1])
+
+    def test_unbuyable_days_postpone_orders_and_lots_are_capped(self):
+        path = [day_row("2015-10-08", "10"), day_row("2015-10-09", "5"), day_row("2015-10-15", "5", buyable=False),
+                day_row("2015-11-06", "5"), day_row("2016-01-06", "5")]
+        returns, _, _, traded = self.run_grid(path)
+        self.assertEqual(traded, [{"symbol": "a", "buys": 1, "sells": 0}])
+        self.assertEqual(returns[0], Decimal("0.75") - 1)
+        self.assertEqual(returns[1], Decimal(0))
+        flat = [day_row("2015-10-08", "10"), day_row("2015-10-09", "10.5"), day_row("2016-01-06", "10.5")]
+        self.assertEqual(self.run_grid(flat)[3], [{"symbol": "a", "buys": 0, "sells": 0}])
+
+    def test_rejects_invalid_grids_and_grid_with_exit(self):
+        for rule in ({}, {"step": 0.1, "lots": 4, "initial": 2}, {"step": "1", "lots": 4, "initial": 2},
+                     {"step": "0.1", "lots": 1, "initial": 1}, {"step": "0.1", "lots": 4, "initial": 5},
+                     {"step": "0.1", "lots": 21, "initial": 2}, {"step": "0.1", "lots": True, "initial": 1},
+                     {"step": "0.1", "lots": 4, "initial": 2, "center": "10"}):
+            with self.assertRaises(Invalid):
+                grid_rule(rule)
+        samples = [{"id": "s1", "pool": "tech", "decision_date": "2015-09-30", "stocks": [{"symbol": "000001.SZ"}]}]
+        stocks = {"000001.SZ": {"buyable": True, "entry_open": "10",
+                                "path": [day_row("2015-10-08", "10"), day_row("2015-10-09", "8.5"),
+                                         day_row("2016-01-06", "9")]}}
+        row = {"sample_id": "s1", "symbol": "000001.SZ", "weight": "1", "grid": self.RULE}
+        report = evaluate_weights(samples, [outcome(stocks)], [row])
+        self.assertEqual(report["grid_trades"], {"buys": 1, "sells": 0})
+        with self.assertRaises(Invalid):
+            evaluate_weights(samples, [outcome(stocks)], [{**row, "exit": {"stop_loss": "0.1"}}])
+
+
+class GridTest(unittest.TestCase):
+    RULE = {"step": "0.1", "lots": 4, "initial": 2}
+
+    def run_grid(self, path, rule=None):
+        stocks = {"a": {"buyable": True, "entry_open": "10", "path": path}}
+        return portfolio_segments({"a": Decimal(1)}, outcome(stocks), grids={"a": grid_rule(rule or self.RULE)},
+                                  cost=Decimal(0))
+
+    def test_buys_a_lot_below_a_line_and_sells_it_back_one_line_up(self):
+        path = [day_row("2015-10-08", "10"), day_row("2015-10-09", "9"), day_row("2015-10-15", "9"),
+                day_row("2015-11-06", "10.1", "10"), day_row("2015-11-09", "10.1"), day_row("2016-01-06", "10.1")]
+        returns, _, _, traded = self.run_grid(path)
+        self.assertEqual(traded, [{"symbol": "a", "buys": 1, "sells": 1}])
+        units = Decimal("0.5") / 10 + Decimal("0.25") / 9
+        first = Decimal("0.25") + units * 9
+        second = Decimal("0.25") + units * Decimal("10.1")
+        third = Decimal("0.25") + units / 3 * Decimal("10.1") * (1 - sell_cost("2015-11-09")) + units * 2 / 3 * Decimal("10.1")
+        self.assertEqual(returns, [first - 1, second / first - 1, third / second - 1])
+
+    def test_unbuyable_days_postpone_orders_and_lots_are_capped(self):
+        path = [day_row("2015-10-08", "10"), day_row("2015-10-09", "5"), day_row("2015-10-15", "5", buyable=False),
+                day_row("2015-11-06", "5"), day_row("2016-01-06", "5")]
+        returns, _, _, traded = self.run_grid(path)
+        self.assertEqual(traded, [{"symbol": "a", "buys": 1, "sells": 0}])
+        self.assertEqual(returns[0], Decimal("0.75") - 1)
+        self.assertEqual(returns[1], Decimal(0))
+        flat = [day_row("2015-10-08", "10"), day_row("2015-10-09", "10.5"), day_row("2016-01-06", "10.5")]
+        self.assertEqual(self.run_grid(flat)[3], [{"symbol": "a", "buys": 0, "sells": 0}])
+
+    def test_rejects_invalid_grids_and_grid_with_exit(self):
+        for rule in ({}, {"step": 0.1, "lots": 4, "initial": 2}, {"step": "1", "lots": 4, "initial": 2},
+                     {"step": "0.1", "lots": 1, "initial": 1}, {"step": "0.1", "lots": 4, "initial": 5},
+                     {"step": "0.1", "lots": 21, "initial": 2}, {"step": "0.1", "lots": True, "initial": 1},
+                     {"step": "0.1", "lots": 4, "initial": 2, "center": "10"}):
+            with self.assertRaises(Invalid):
+                grid_rule(rule)
+        samples = [{"id": "s1", "pool": "tech", "decision_date": "2015-09-30", "stocks": [{"symbol": "000001.SZ"}]}]
+        stocks = {"000001.SZ": {"buyable": True, "entry_open": "10",
+                                "path": [day_row("2015-10-08", "10"), day_row("2015-10-09", "8.5"),
+                                         day_row("2016-01-06", "9")]}}
+        row = {"sample_id": "s1", "symbol": "000001.SZ", "weight": "1", "grid": self.RULE}
+        report = evaluate_weights(samples, [outcome(stocks)], [row])
+        self.assertEqual(report["grid_trades"], {"buys": 1, "sells": 0})
+        with self.assertRaises(Invalid):
+            evaluate_weights(samples, [outcome(stocks)], [{**row, "exit": {"stop_loss": "0.1"}}])
+
+
 class PoolReleaseTest(unittest.TestCase):
     def test_inputs_exclude_provider_names_and_use_only_past_prices(self):
         calendar = [f"{i:02d}" for i in range(70)]
@@ -188,7 +303,7 @@ class PoolReleaseTest(unittest.TestCase):
         self.assertEqual(row["entry_date"], "2015-04-01")
         self.assertEqual(row["boundaries"], ["2015-04-08", "2015-04-30", "2015-06-30"])
         self.assertTrue(all(r[0] >= "2015-04-01" for r in row["stocks"]["000001.SZ"]["path"]))
-        self.assertEqual(row["stocks"]["000001.SZ"]["path"][0], ["2015-04-01", "10", "10", True])
+        self.assertEqual(row["stocks"]["000001.SZ"]["path"][0], ["2015-04-01", "10", "10", True, True])
         self.assertEqual(Decimal(row["index"]["entry_open"]), Decimal("101") * 11 / 10)
         self.assertEqual(row["index"]["path"][0], ["2015-04-01", "102"])
         self.assertIsNone(outcome_row({**sample, "decision_date": "2015-06-30"}, {"000001.SZ": bars}, index,

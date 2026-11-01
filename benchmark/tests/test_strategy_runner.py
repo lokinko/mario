@@ -101,6 +101,9 @@ class SandboxTest(unittest.TestCase):
             code.write_text("def decide(s):\n    return {'000003.SZ': {'weight': 0.5, 'exit': {'stop_loss': 0.1, "
                             "'max_hold_days': 30}}}\n", encoding="utf-8")
             self.assertEqual(generate_weights(code, samples)[0]["exit"], {"stop_loss": "0.1", "max_hold_days": 30})
+            code.write_text("def decide(s):\n    return {'000003.SZ': {'weight': 0.5, 'grid': {'step': 0.08, "
+                            "'lots': 4, 'initial': 2}}}\n", encoding="utf-8")
+            self.assertEqual(generate_weights(code, samples)[0]["grid"], {"step": "0.08", "lots": 4, "initial": 2})
             code.write_text("def decide(s):\n    return {'000001.SZ': 1 / 3, '000002.SZ': 0}\n", encoding="utf-8")
             self.assertEqual(generate_weights(code, samples), [{"sample_id": "s1", "symbol": "000001.SZ",
                                                                  "weight": "0.33333333"}])
@@ -119,8 +122,9 @@ class BenchRunTest(unittest.TestCase):
             self.assertEqual(list(runs), ["rising"])
             self.assertEqual(runs["rising"]["title"], "只买上涨")
             first_segment, last_segment = Decimal("0.9987") * Decimal("1.1") - 1, Decimal(12) / 11 - 1
-            self.assertAlmostEqual(runs["rising"]["scorecard"]["score"]["mean"],
+            self.assertAlmostEqual(runs["rising"]["scorecard"]["return_score"]["mean"],
                                    float(100 * (Decimal("0.3") * first_segment + Decimal("0.4") * last_segment)), places=6)
+            self.assertEqual(runs["rising"]["scorecard"]["win_rate"], 1.0)
             self.assertIn("os", failed_runs(base / "out")["broken"])
 
             (base / "s" / "rising" / "strategy.md").write_text("# 新标题\n\n说明。\n", encoding="utf-8")
