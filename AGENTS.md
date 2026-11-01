@@ -94,7 +94,8 @@ React Web → Rust API → PostgreSQL（mario_auth + 每账号 user_<uuid> schem
 - 每次测出新策略后，在当前评分切片上按总分与已有策略一起排名（`cash`、`equal`、`momentum`、`size` 四个对照基线不占名次）。进入 Top-10 的策略必须在同次交付中记录到看板，不能只留在扫描脚本或聊天记录里。
 - 记录方式：在 `benchmark/strategies/<名字>/` 提交 `strategy.py` 与 `strategy.md`，说明中写明买卖规则、参数来源与选定所用的决策点范围，以及检验段是否严格样本外；然后运行 `npm run benchmark -- bench-run --release <当前切片>` 打分并刷新看板，确认新策略出现在看板中且分数与探索结果一致。
 - 同次更新 [benchmark 文档](docs/benchmark.md) 的成绩表（总分、平均收益得分、胜率与分段总分）和策略说明；交付时列出新的 Top-10 及其名次变化。
-- 未进入 Top-10 的探索结果只在交付说明中汇报，不新增策略目录。看板文件在 `.runtime/` 下，不进 Git；策略目录与文档成绩表是可追溯的记录。
+- 未进入 Top-10 的探索结果只在交付说明中汇报，不新增策略目录。
+- 可追溯记录以 Git 中的 `benchmark/strategies/` 策略目录与 [benchmark 文档](docs/benchmark.md) 成绩表为准：任何人取出对应提交，对同一切片运行 `bench-run` 都能复现看板与成绩。看板文件位于 `.runtime/` 下，不进 Git，只是由这两者生成的展示；两者与看板不一致时，先修正记录再重新生成看板。
 
 ## 5. 每次更新的 Git 交付闭环
 
