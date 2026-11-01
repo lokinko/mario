@@ -103,6 +103,25 @@ class BuiltinStrategyTest(unittest.TestCase):
         self.assertEqual(rules["tech"], {"000003.SZ": grid, "000002.SZ": grid, "000001.SZ": None, "000007.SZ": None})
         self.assertEqual(rules["dividend"], dict.fromkeys(ranked, target))
 
+    def test_calm_mid_momentum_ranks_strong_trends_by_volatility_and_trend_excluding_last_month(self):
+        stocks = [stock("000001.SZ", "0.2", volatility="0.03", short="0.05"),
+                  stock("000002.SZ", "0.1", volatility="0.01", short="0.08"),
+                  stock("000003.SZ", "0.3", volatility="0.02", short="-0.04"),
+                  stock("000004.SZ", "-0.1", volatility="0.001", short="-0.2"),
+                  stock("000007.SZ", "0.5", short="0.01")]
+        code = BUILTIN / "calm_mid_momentum" / "strategy.py"
+        rules = {pool: {r["symbol"]: r.get("exit") or r.get("grid") for r in
+                        generate_weights(code, [{"id": "s1", "pool": pool, "stocks": stocks}])}
+                 for pool in ("tech", "dividend")}
+        self.assertEqual(list(rules["tech"]), ["000003.SZ", "000001.SZ", "000007.SZ"])
+        self.assertEqual(rules["tech"], {"000003.SZ": {"step": "0.08", "lots": 2, "initial": 1}, "000001.SZ": None,
+                                         "000007.SZ": None})
+        self.assertEqual(rules["dividend"], dict.fromkeys(rules["tech"], {"take_profit": "0.1"}))
+        weak = [stock("000001.SZ", "0.05", volatility="0.02"), stock("000002.SZ", None, volatility="0.01"),
+                stock("000003.SZ", "-0.1")]
+        fallback = generate_weights(code, [{"id": "s1", "pool": "tech", "stocks": weak}])
+        self.assertEqual([r["symbol"] for r in fallback], ["000002.SZ", "000001.SZ"])
+
 
 class SandboxTest(unittest.TestCase):
     def test_static_check_blocks_io_imports_and_reflection(self):
