@@ -6,7 +6,7 @@
 
 推荐 Ubuntu 22.04+ / Debian 12+、systemd、x86_64 或 arm64。域名 www 的 A 记录指向 `47.243.99.21`，安全组开放 80/443；数据库、Agent 和内部 API 端口不开放到公网。需要足够内存与磁盘完成 Rust 编译。
 
-把包含本次修改的代码提交并推送后，在服务器克隆。普通用户建议放在自己的 home；root 登录时放在 `/srv/mario`，不要放进 `/root`：
+代码推送到远端后，在服务器克隆。普通用户建议放在自己的 home；root 登录时放在 `/srv/mario`，不要放进 `/root`：
 
 ```bash
 git clone https://github.com/lokinko/mario.git /srv/mario
@@ -26,7 +26,7 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 项目 PostgreSQL 只监听 `127.0.0.1` TCP，显式关闭 Unix socket，避免服务用户无权写入发行版默认的 `/var/run/postgresql`。启动和恢复临时启动均使用此设置，不影响系统数据库。
 
-部署脚本以 root 执行系统安装，但运行服务使用普通用户。默认复用已有数据库所有者或 sudo 登录用户；直接 root 登录时创建 `mario`。部署会把当前项目目录归运行用户所有，不移动现有数据库，不更换密钥。旧 Docker 数据不会自动转为宿主机数据；请用旧版本导出加密包后恢复。
+部署脚本以 root 执行系统安装，但运行服务使用普通用户。默认复用已有数据库所有者或 sudo 登录用户；直接 root 登录时创建 `mario`。部署会把当前项目目录归运行用户所有，不移动现有数据库，不更换密钥。
 
 安装来源：[Node 官方发行版](https://nodejs.org/dist/latest-v22.x/)、[PostgreSQL 官方源](https://www.postgresql.org/download/linux/ubuntu/)、[Rust 官方安装](https://rust-lang.org/tools/install/)。
 
@@ -34,13 +34,13 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 `deploy.sh` 顶部配置区中，通常只需 IP 与域名，也可以像上面那样首次通过参数提供。以后直接运行脚本，空的 IP/域名会复用已有 `.env`。默认路径 `/mario/` 对应你的当前需求。
 
-可选配置说明包括网页前缀、API/Agent/PG 端口、已有数据库 URL、PG 工具路径、跨域来源、服务用户、systemd 名称和依赖安装开关。脚本中的参数会合并到 `.env`，已有密码与密钥保持原值。`.env` 是运行配置和秘密存储，不是第二份需要同时维护的部署参数表。模型 API 地址由用户在“模型与隐私”中自行配置，无需管理员添加白名单；旧 `.env` 中的 `MARIO_MODEL_HOSTS` 不再生效。
+可选配置说明包括网页前缀、API/Agent/PG 端口、已有数据库 URL、PG 工具路径、跨域来源、服务用户、systemd 名称和依赖安装开关。脚本中的参数会合并到 `.env`，已有密码与密钥保持原值。`.env` 是运行配置和秘密存储，不是第二份需要同时维护的部署参数表。模型 API 地址由用户在“模型与隐私”中自行配置，无需管理员添加白名单。
 
-已有 `.env.native` 自动迁移并保留备份；如果新旧文件同时存在需先整理。保留并备份 `.env`，尤其 `MARIO_MASTER_KEY`；遗失主密钥后无法解密已有模型凭据。用户各自的模型 API Key 在网页登录后配置。
+早期部署留下的 `.env.native` 会自动合并到 `.env` 并保留备份；如果新旧文件同时存在需先整理。保留并备份 `.env`，尤其 `MARIO_MASTER_KEY`；遗失主密钥后无法解密已有模型凭据。用户各自的模型 API Key 在网页登录后配置。
 
 ## 一次性接入已有 Nginx
 
-2026-10-08 实际观测到 www 会跳转到 `madeagents.ai`；需要让 `/mario` 留在 www。脚本无法仅凭 IP、域名判断现有站点文件、证书路径或面板布局，因此生成配置片段，**不自动覆盖原网站配置**。
+若 www 会跳转到 `madeagents.ai`，需要让 `/mario` 留在 www。脚本无法仅凭 IP、域名判断现有站点文件、证书路径或面板布局，因此生成配置片段，**不自动覆盖原网站配置**。
 
 先备份现有配置。在 `www.madeagents.ai` 的 **443 HTTPS server** 中，保留原证书，加入生成片段，例如：
 
@@ -98,7 +98,7 @@ bash deploy.sh check
 
 更改脚本顶部配置后执行 `deploy`，不能只 `restart`：重新部署才会写入新配置和重新构建网页。更改路径/端口后，生成的 Nginx 片段也会更新，需要重新检查并加载 Nginx。部署会先停止当前应用再构建，因此升级期间网站暂时不可用；构建失败保持服务停止，可在排查后重新部署。
 
-升级后，已有账户首次访问 API 时会按数据库结构版本自动补齐表、列和数据版本触发器，保留原有数据；迁移在账户锁和事务内完成，失败会回滚。若旧版本出现 `relation "research_attachments" does not exist` 或 `column r.content does not exist`，将修复后的代码同步到服务器并运行 `sudo bash deploy.sh`，然后刷新网页。`restart` 只重启已有二进制，不会编译修复。请求中的数据库错误可从服务日志和 `sudo tail -n 80 .runtime/native/postgres.log` 查看具体原因。
+升级后，已有账户首次访问 API 时会按数据库结构版本自动补齐表、列和数据版本触发器，保留原有数据；迁移在账户锁和事务内完成，失败会回滚。出现缺表或缺列错误时，同步最新代码并运行 `sudo bash deploy.sh`；`restart` 只重启已有二进制，不会编译修复。请求中的数据库错误可从服务日志和 `sudo tail -n 80 .runtime/native/postgres.log` 查看具体原因。
 
 `prepare` 只准备 `.env` 和 Nginx 片段，适合恢复数据前使用，需已有 Node：
 
@@ -115,13 +115,13 @@ sudo bash deploy.sh stop
 sudo tail -n 80 .runtime/native/postgres.log
 ```
 
-若出现 `could not create lock file "/var/run/postgresql/.s.PGSQL.55432.lock": Permission denied`，是系统 socket 目录权限问题；更新包含上述 TCP 配置的脚本后重新部署：
+若出现 `could not create lock file "/var/run/postgresql/.s.PGSQL.55432.lock": Permission denied`，是系统 socket 目录权限问题；当前脚本只用 TCP，更新脚本后重新部署：
 
 ```bash
 sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 ```
 
-新版运行器会把 PostgreSQL 日志末尾最多 16 KiB 输出到服务日志。若仍失败，按其中的 `FATAL`/`PANIC` 排查端口、权限、磁盘空间或数据版本；不要删除 `.runtime/native/postgres` 或 `.env` 来重试。
+运行器会把 PostgreSQL 日志末尾最多 16 KiB 输出到服务日志。若仍失败，按其中的 `FATAL`/`PANIC` 排查端口、权限、磁盘空间或数据版本；不要删除 `.runtime/native/postgres` 或 `.env` 来重试。
 
 ## 验收 Web
 

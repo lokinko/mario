@@ -2,7 +2,7 @@
 
 频繁搬迁使用一个加密 `.mario-backup` 文件，包含全部账号、业务数据、同步版本及解密用户模型凭据的主密钥。它是整库复制/替换，不合并两台服务器独立产生的修改；多设备实时访问请共用一台中心服务。
 
-当前部署是宿主机 PostgreSQL，备份默认 `native`，无需填写部署模式。旧 Docker 实例可在旧版本导出同格式加密包，再在本版本宿主机恢复；不会直接搬运 PostgreSQL 数据目录。
+部署是宿主机 PostgreSQL，备份无需填写部署模式，也不直接搬运 PostgreSQL 数据目录。
 
 ## 从本机一键打包下载
 
@@ -70,7 +70,7 @@ node scripts/restore-backup.mjs --input ./最新包.mario-backup --replace
 
 ## 旧版 SQLite 数据
 
-当前版本不再读取 SQLite。旧单机版的 `mario.db` 需用最后一个包含导出命令的版本转换为同步数据集，再在新账号中导入：
+服务端不读取 SQLite。旧单机版的 `mario.db` 需用最后一个包含导出命令的版本转换为同步数据集，再在新账号中导入：
 
 ```bash
 git worktree add ../mario-legacy legacy-sqlite-export
@@ -78,7 +78,7 @@ cd ../mario-legacy
 MARIO_DATA_DIR=/path/to/旧资料目录 cargo run --manifest-path server/Cargo.toml -- --export-data ./mario-export.json
 ```
 
-`MARIO_DATA_DIR` 指向包含 `mario.db` 的目录；导出文件以 `0600` 权限新建，已存在时拒绝覆盖。登录当前版本的新账号后，在“账号与数据”导入该文件；当前版本会校验并升级旧数据集版本，失败整次回滚。旧账号、会话与模型密钥不随业务数据导入，需重新配置。导出文件含完整财务资料，导入后删除，并用 `git worktree remove ../mario-legacy` 清理旧版本目录。
+`MARIO_DATA_DIR` 指向包含 `mario.db` 的目录；导出文件以 `0600` 权限新建，已存在时拒绝覆盖。登录当前版本的新账号后，在“账号与数据”导入该文件；服务端会校验并升级旧数据集版本，失败整次回滚。旧账号、会话与模型密钥不随业务数据导入，需重新配置。导出文件含完整财务资料，导入后删除，并用 `git worktree remove ../mario-legacy` 清理旧版本目录。
 
 ## 验证
 

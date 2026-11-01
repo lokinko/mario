@@ -6,13 +6,13 @@
 sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 ```
 
-完整的依赖安装、非 root 服务账号、Nginx 接入、升级和验收步骤见 [服务器部署指南](deploy-madeagents.md)。不再维护 Docker/Caddy 或独立 Web 启动入口。`.env` 由部署器自动生成，保存运行参数和持久密钥；日常改 `deploy.sh` 后重新部署，密码和主密钥保持不变。真实 `.env` 不提交 Git。
+完整的依赖安装、非 root 服务账号、Nginx 接入、升级和验收步骤见 [服务器部署指南](deploy-madeagents.md)。`.env` 由部署器自动生成，保存运行参数和持久密钥；日常改 `deploy.sh` 后重新部署，密码和主密钥保持不变。真实 `.env` 不提交 Git。
 
 Web 通过 Rust API 读写数据，PostgreSQL 保存独立账号、会话及各用户关系数据，AI Agent 是独立无状态进程。三个服务仅监听回环地址，公网访问由已有 Nginx 提供 HTTPS。Agent 不获得数据库 URL 或主密钥，它仅收到本次授权上下文和模型请求所需凭据。
 
 ## 账号与客户端
 
-注册开放，任何用户均可用邮箱和密码直接创建账号，无需邀请码。旧 `.env` 中遗留的 `MARIO_REGISTRATION_KEY` 不再使用，无需为升级修改它。每个人有独立邮箱、密码与模型密钥；邮箱作为账号名，不做邮件验证/邮件重置。通过浏览器访问 `https://www.madeagents.ai/mario`。
+注册开放，任何用户均可用邮箱和密码直接创建账号，无需邀请码。每个人有独立邮箱、密码与模型密钥；邮箱作为账号名，不做邮件验证/邮件重置。通过浏览器访问 `https://www.madeagents.ai/mario`。
 
 登录凭证及过期时间按服务器地址保存在浏览器的 `localStorage`，刷新、关闭后重开仍可恢复登录；服务端会话有效期 7 天，到期需重新登录。退出会撤销当前会话并清除本机凭证，同一浏览器的其他标签页同步更新登录状态。数据库临时错误不会被当作会话失效。网页、API 和资源统一使用构建时的部署前缀，Nginx 转发时剥离前缀。
 
@@ -30,7 +30,7 @@ Web 通过 Rust API 读写数据，PostgreSQL 保存独立账号、会话及各�
 
 管理员可停服后通过服务端命令重置账号密码。不要把密码放进命令参数或 Git；通过 `MARIO_RESET_PASSWORD` 传入，并给二进制提供 `DATABASE_URL`，执行 `--reset-password 用户邮箱`。具体连接可使用配置的外部 URL，或 `postgresql://mario:<URL编码的密码>@127.0.0.1:55432/postgres`。修改密码会撤销该账号全部会话。重置后清除临时环境变量并重新启动服务。
 
-当前版本不读取旧单机版的 SQLite 文件；旧资料用标签 `legacy-sqlite-export` 导出后在新账号导入，步骤见 [数据迁移指南](data-migration.md#旧版-sqlite-数据)。
+服务端不读取旧单机版的 SQLite 文件；旧资料用标签 `legacy-sqlite-export` 导出后在新账号导入，步骤见 [数据迁移指南](data-migration.md#旧版-sqlite-数据)。
 
 ## 高级运行与开发
 
