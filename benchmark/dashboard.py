@@ -6,6 +6,8 @@
 import json
 import math
 from datetime import datetime
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 from .files import read_json, require
 from .public_sources import SHANGHAI
@@ -13,7 +15,9 @@ from .scoring import series_stats
 from .strategy_runner import completed_runs, failed_runs
 
 POOL_LABELS = {"dividend": "红利池", "tech": "科技池"}
-BENCHMARKS = {"pool_equal_weight": "对照：股票池等权", "csi300": "对照：沪深300"}
+BENCHMARKS = {"pool_equal_weight": ("对照：股票池等权", "每期等权买入股票池中有行情记录的全部成员，由打分引擎计算。"),
+              "csi300": ("对照：沪深300", "沪深300 全收益指数（H00300），由打分引擎计算。")}
+BASELINES = {"cash", "equal", "momentum", "size"}
 SPLIT_YEAR = 2018
 
 
@@ -94,10 +98,10 @@ def dashboard_data(runs, config=None, failures=None):
     benchmarks = grouped_summaries(first["periods"], [s["key"] for s in spans], pools, [f"{k}_" for k in BENCHMARKS])
     summaries.update({key: benchmarks[f"{key}_"] for key in BENCHMARKS})
     return {
-        "strategies": [{"key": name, "label": runs[name]["title"], "description": runs[name]["description"]}
-                       for name in names],
+        "strategies": [{"key": name, "label": runs[name]["title"], "description": runs[name]["description"],
+                        "baseline": name in BASELINES} for name in names],
         "failures": [{"key": name, "error": error} for name, error in sorted((failures or {}).items())],
-        "benchmarks": [{"key": key, "label": label} for key, label in BENCHMARKS.items()],
+        "benchmarks": [{"key": key, "label": label, "description": text} for key, (label, text) in BENCHMARKS.items()],
         "pools": [{"key": pool, "label": POOL_LABELS.get(pool, pool)} for pool in pools], "segments": spans,
         "summaries": summaries, "periods": sorted(periods.values(), key=lambda row: (row["decision_date"], row["pool"])),
         "metric": first["metric"], "cost_basis": first["cost_basis"], "limitations": first["limitations"],
@@ -122,6 +126,17 @@ def write_dashboard(runs_dir, destination, release=None):
             "periods": len(data["periods"])}
 
 
+class QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+
+def dashboard_server(folder, port):
+    """只在本机提供 bench-run 输出目录；页面轮询看板文件的修改时间，重新生成后自动载入。"""
+    require((folder / "dashboard.html").exists(), f"{folder} 下还没有看板，请先运行 bench-run")
+    return ThreadingHTTPServer(("127.0.0.1", port), partial(QuietHandler, directory=str(folder)))
+
+
 TEMPLATE = """<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -132,91 +147,156 @@ TEMPLATE = """<!doctype html>
 :root { --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --bg:#f6f8fa; --up:#cf222e; --down:#1a7f37; --pick:#fff8c5; }
 * { box-sizing:border-box; }
 body { margin:0; font:14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color:var(--fg); background:#fff; }
-header { padding:20px 28px 12px; border-bottom:1px solid var(--line); }
-h1 { font-size:20px; margin:0 0 4px; }
+header { padding:14px 24px 10px; border-bottom:1px solid var(--line); }
+h1 { font-size:20px; margin:0 0 2px; }
 h2 { font-size:15px; margin:0 0 10px; }
 .meta { color:var(--muted); font-size:12px; }
-main { padding:16px 28px 40px; display:grid; gap:20px; }
-.bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-.bar + .bar { margin-top:-12px; }
-button { border:1px solid var(--line); background:#fff; border-radius:6px; padding:4px 12px; cursor:pointer; font:inherit; }
+.layout { display:grid; grid-template-columns:340px minmax(0, 1fr); gap:20px; padding:16px 24px 40px; align-items:start; }
+aside { position:sticky; top:12px; max-height:calc(100vh - 24px); display:flex; flex-direction:column; gap:12px; }
+main { display:grid; gap:20px; min-width:0; }
+@media (max-width:1100px) { .layout { grid-template-columns:minmax(0, 1fr); } aside { position:static; max-height:none; } }
+.bar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.bar + .bar { margin-top:8px; }
+.bar > span:first-child { color:var(--muted); font-size:12px; width:44px; }
+button { border:1px solid var(--line); background:#fff; border-radius:6px; padding:2px 10px; cursor:pointer; font:inherit; font-size:13px; }
 button.on { background:var(--fg); color:#fff; border-color:var(--fg); }
-.card { border:1px solid var(--line); border-radius:8px; padding:16px; }
-.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(420px, 1fr)); gap:20px; }
+button.link { border:0; padding:0; color:#0969da; background:none; font-size:12px; }
+.card { border:1px solid var(--line); border-radius:8px; padding:14px 16px; min-width:0; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(440px, 1fr)); gap:20px; }
+#list { overflow:auto; max-height:46vh; padding:8px 10px; flex:none; }
+#card { overflow:auto; flex:1 1 auto; min-height:180px; }
+@media (max-width:1100px) { #list { max-height:none; } }
+.group { font-size:12px; color:var(--muted); margin:6px 4px 2px; }
+.group:first-child { margin-top:0; }
+.item { display:grid; grid-template-columns:16px 24px 24px minmax(0, 1fr) auto; gap:6px; align-items:center; padding:2px 6px; border-radius:6px; cursor:pointer; }
+.item:hover { background:var(--bg); }
+.item .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.item input { margin:0; }
+.off { opacity:.4; }
+.num { font-variant-numeric:tabular-nums; }
+.rank { display:inline-block; min-width:20px; padding:0 4px; text-align:center; font-size:11px; line-height:18px; border-radius:9px;
+  background:var(--bg); color:var(--muted); font-variant-numeric:tabular-nums; }
+.rank.top { background:var(--fg); color:#fff; }
+.sw { vertical-align:middle; flex:none; }
+#card h2 { display:flex; gap:6px; align-items:flex-start; }
+#card p.rules { white-space:pre-wrap; margin:10px 0 8px; font-size:13px; }
+.kpi { display:grid; grid-template-columns:1fr 1fr; gap:6px 12px; font-size:12px; color:var(--muted); margin-top:10px; }
+.kpi b { display:block; font-size:15px; color:var(--fg); font-variant-numeric:tabular-nums; }
 table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
 th, td { padding:5px 8px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
-th:first-child, td:first-child, th.l, td.l { text-align:left; }
-thead th { background:var(--bg); position:sticky; top:0; }
+th.l, td.l { text-align:left; }
+thead th { background:var(--bg); position:sticky; top:0; z-index:1; }
 th[data-sort] { cursor:pointer; user-select:none; } th[data-sort]:hover { background:#eaeef2; }
+#summary tbody tr { cursor:pointer; }
 #periods tbody tr { cursor:pointer; } #periods tbody tr:hover { background:var(--bg); }
 #periods tbody tr.picked { background:var(--pick); }
+#periods th { font-weight:500; font-size:12px; cursor:pointer; }
 .scroll { max-height:520px; overflow:auto; }
+.wide { overflow-x:auto; }
 .up { color:var(--up); } .down { color:var(--down); }
-.swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:-1px; }
-.legend label { margin-right:14px; cursor:pointer; user-select:none; }
 svg text { font-size:11px; fill:var(--muted); }
-svg.pick { cursor:pointer; }
+svg text.lbl { fill:var(--fg); font-size:12px; }
+svg.chart { display:block; cursor:crosshair; }
+.hov { cursor:pointer; }
+.s { transition:opacity .12s; }
 .note { color:var(--muted); font-size:12px; margin:8px 0 0; }
 .failed { border-color:var(--up); } .failed li { white-space:pre-wrap; font-family:ui-monospace, monospace; font-size:12px; }
-.desc h3 { font-size:14px; margin:12px 0 4px; } .desc p { margin:0; white-space:pre-wrap; color:var(--muted); }
-.desc code { font-size:12px; }
+code { font-size:12px; }
 .tip { position:fixed; pointer-events:none; z-index:10; background:#fff; border:1px solid var(--line); border-radius:6px;
-  box-shadow:0 4px 12px rgba(31,35,40,.15); padding:6px 10px; font-size:12px; max-width:360px; }
-.tip b { display:block; margin-bottom:2px; } .tip div { display:flex; justify-content:space-between; gap:16px; }
+  box-shadow:0 4px 12px rgba(31,35,40,.15); padding:6px 10px; font-size:12px; max-width:420px; }
+.tip b { display:block; margin-bottom:2px; } .tip div { display:flex; justify-content:space-between; gap:16px; padding:0 2px; }
+.tip div.hit { background:var(--pick); font-weight:600; }
 .holdings { display:grid; grid-template-columns:repeat(auto-fill, minmax(400px, 1fr)); gap:12px; }
 .holdings > div { border:1px solid var(--line); border-radius:6px; padding:10px; min-width:0; }
 .holdings h3 { font-size:13px; margin:0 0 4px; } .holdings table { font-size:12px; }
 .holdings td.l { white-space:normal; }
 </style>
+<style id="focus"></style>
 </head>
 <body>
 <header>
   <h1>mario_bench 策略得分看板</h1>
-  <div class="meta" id="meta"></div>
+  <div class="meta"><span id="meta"></span> · <span id="live"></span></div>
 </header>
-<main>
-  <div class="bar"><span>股票池：</span><span id="pools"></span></div>
-  <div class="bar"><span>时间段：</span><span id="segments"></span></div>
-  <div class="legend" id="legend"></div>
-  <section class="card failed" id="failures" hidden><h2>运行失败的策略（未计入看板）</h2><ul></ul></section>
-  <section class="card"><h2>策略汇总</h2><table id="summary"></table>
-    <p class="note">点击表头按该列排序，再次点击反向；时间段按决策日年份切分。</p>
-    <p class="note" id="metric"></p></section>
-  <div class="grid">
-    <section class="card"><h2>总分与 95% 区间</h2><div id="means"></div></section>
-    <section class="card"><h2>逐年平均收益得分</h2><div id="yearly"></div></section>
-  </div>
-  <section class="card"><h2>累计收益得分（逐期收益得分求和，不是净值）</h2><div id="cumulative"></div>
-    <p class="note">悬停查看该期各策略得分，点击某一期查看当期持仓。</p></section>
-  <section class="card"><h2>逐期收益得分</h2><div class="scroll"><table id="periods"></table></div>
-    <p class="note">数值为当期收益得分，大于 0 计为胜；红色为正、绿色为负（A 股习惯）。买不进的股票（停牌或一字涨停）按规则留作现金，括号内为该期买不进的只数；“卖 n”为该期按卖出规则提前卖出的只数。点击一行查看当期持仓。</p></section>
-  <section class="card" id="detail" hidden><h2 id="detail-title"></h2><div id="detail-body"></div></section>
-  <section class="card"><h2>策略说明</h2><div id="descriptions"></div></section>
-  <section class="card"><h2>口径与限制</h2><ul id="limits" class="note"></ul></section>
-</main>
+<div class="layout">
+  <aside>
+    <section class="card">
+      <div class="bar"><span>股票池</span><span class="bar" id="pools"></span></div>
+      <div class="bar"><span>时间段</span><span class="bar" id="segments"></span></div>
+      <div class="bar" id="quick"><span>显示</span><button data-show="all">全部</button>
+        <button data-show="top5">前 5 名 + 市场对照</button><button data-show="strategy">只看候选策略</button></div>
+    </section>
+    <section class="card" id="list"></section>
+    <section class="card" id="card"></section>
+  </aside>
+  <main>
+    <section class="card failed" id="failures" hidden><h2>运行失败的策略（未计入看板）</h2><ul></ul></section>
+    <section class="card"><h2>策略汇总</h2><div class="wide"><table id="summary"></table></div>
+      <p class="note">名次按当前股票池与时间段的总分排列，对照基线与市场对照不占名次。点击表头排序，点击一行在左侧查看该策略的规则。</p></section>
+    <section class="card"><h2>累计收益得分（逐期收益得分求和，不是净值）</h2><div id="cumulative"></div>
+      <p class="note">曲线右端标出名次与策略名；悬停时高亮最近的曲线，点击查看该策略规则与当期持仓。</p></section>
+    <div class="grid">
+      <section class="card"><h2>总分与 95% 区间</h2><div id="means"></div></section>
+      <section class="card"><h2>逐年平均收益得分</h2><div id="yearly"></div></section>
+    </div>
+    <section class="card"><h2>逐期收益得分</h2><div class="scroll"><table id="periods"></table></div>
+      <p class="note">数值为当期收益得分，大于 0 计为胜；红色为正、绿色为负（A 股习惯）。买不进的股票（停牌或一字涨停）按规则留作现金，括号内为该期买不进的只数；“卖 n”为该期按卖出规则提前卖出的只数。点击一行查看当期持仓。</p></section>
+    <section class="card" id="detail" hidden><h2 id="detail-title"></h2><div id="detail-body"></div></section>
+    <section class="card"><h2>口径与限制</h2><p class="note" id="metric"></p><ul id="limits" class="note"></ul></section>
+  </main>
+</div>
 <div class="tip" id="tip" hidden></div>
 <script type="application/json" id="data">__DATA__</script>
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
-const COLORS = ['#0969da', '#bf3989', '#9a6700', '#57606a', '#8250df', '#1b7c83', '#bc4c00', '#2da44e',
-  '#6639ba', '#0550ae', '#953800', '#4d2d00'];
-const SERIES = [...DATA.strategies.map((s, i) => ({...s, kind: 'strategy', color: COLORS[i % COLORS.length]})),
-  {...DATA.benchmarks[0], kind: 'benchmark', color: '#d4a72c', dash: '5 3'},
-  {...DATA.benchmarks[1], kind: 'benchmark', color: '#cf222e', dash: '2 3'}];
+const PALETTE = ['#0969da', '#cf222e', '#1a7f37', '#8250df', '#e16f24', '#1b7c83', '#bf3989', '#6c8c00',
+  '#4c2889', '#a40e26', '#54aeff', '#7d4e00', '#2da44e', '#d2a8ff', '#ff8182', '#0550ae'];
+const GREYS = ['#8c959f', '#6e7781', '#afb8c1', '#57606a'];
+const counter = {strategy: 0, baseline: 0};
+const SERIES = [
+  ...DATA.strategies.map(s => {
+    const kind = s.baseline ? 'baseline' : 'strategy', i = counter[kind]++;
+    return kind === 'baseline'
+      ? {...s, kind, color: GREYS[i % GREYS.length], dash: ['4 3', '1 3', '7 3', '3 2 1 2'][i % 4], width: 1.3}
+      : {...s, kind, color: PALETTE[i % PALETTE.length], dash: ['', '7 3', '2 2'][Math.floor(i / PALETTE.length) % 3], width: 2};
+  }),
+  ...DATA.benchmarks.map((b, i) => ({...b, kind: 'benchmark', color: ['#bf8700', '#24292f'][i % 2], dash: '6 3', width: 1.6}))];
+const BY_KEY = Object.fromEntries(SERIES.map(s => [s.key, s]));
+const GROUPS = {strategy: '候选策略', baseline: '对照基线（不占名次）', benchmark: '市场对照'};
 const RULES = {stop_loss: '止损', trailing_stop: '移动止损', take_profit: '止盈', max_hold_days: '最长持有'};
-const state = {pool: 'all', segment: 'all', hidden: new Set(), sort: null, picked: null};
+const state = {pool: 'all', segment: 'all', hidden: new Set(), sort: null, picked: null, focus: null, hover: null, reveal: false};
+let view = {rows: [], rank: {}, width: {}};
 const fmt = v => v == null ? '—' : v.toFixed(2);
 const pct = v => `${+(Number(v) * 100).toFixed(2)}%`;
 const tone = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-const value = (row, s) => s.kind === 'strategy' ? row.scores[s.key] : row.benchmarks[s.key];
+const runs = s => s.kind !== 'benchmark';
+const value = (row, s) => runs(s) ? row.scores[s.key] : row.benchmarks[s.key];
 const visible = () => SERIES.filter(s => !state.hidden.has(s.key));
-const rows = () => DATA.periods.filter(p => (state.pool === 'all' || p.pool === state.pool) &&
-  (state.segment === 'all' || p.segment === state.segment));
 const stats = s => (DATA.summaries[s.key][state.segment] || {})[state.pool];
 const poolLabel = key => (DATA.pools.find(p => p.key === key) || {label: key}).label;
+const scopeLabel = () => `${state.pool === 'all' ? '全部股票池' : poolLabel(state.pool)} · ${DATA.segments.find(s => s.key === state.segment).label}`;
 const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
-const swatch = s => `<span class="swatch" style="background:${s.color}"></span>`;
+const plain = s => s.label.replace(/^对照：/, '');
+const short = (text, n) => text.length > n ? `${text.slice(0, Math.ceil((n - 1) / 2))}…${text.slice(text.length - Math.floor((n - 1) / 2))}` : text;
+const swatch = s => `<svg class="sw" width="22" height="10"><line x1="1" x2="21" y1="5" y2="5" stroke="${s.color}"
+  stroke-width="${s.width + 1}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''}/></svg>`;
+const rankBadge = s => view.rank[s.key] ? `<span class="rank ${view.rank[s.key] <= 3 ? 'top' : ''}">${view.rank[s.key]}</span>`
+  : '<span class="rank">—</span>';
+const rankText = s => view.rank[s.key] ? `${view.rank[s.key]} · ` : '';
+
+function derive() {
+  view.rows = DATA.periods.filter(p => (state.pool === 'all' || p.pool === state.pool) &&
+    (state.segment === 'all' || p.segment === state.segment));
+  const ranked = SERIES.filter(s => s.kind === 'strategy' && stats(s)).sort((a, b) => stats(b).mean - stats(a).mean);
+  view.rank = Object.fromEntries(ranked.map((s, i) => [s.key, i + 1]));
+  if (state.picked && !view.rows.some(p => p.id === state.picked)) state.picked = null;
+}
+
+function ordered() {
+  const score = s => (stats(s) || {mean: -Infinity}).mean;
+  return Object.keys(GROUPS).flatMap(kind => SERIES.filter(s => s.kind === kind).sort((a, b) => score(b) - score(a)));
+}
 
 const tip = document.getElementById('tip');
 function showTip(event, html) {
@@ -224,14 +304,70 @@ function showTip(event, html) {
   tip.hidden = false;
   const box = tip.getBoundingClientRect(), x = event.clientX + 14, y = event.clientY + 14;
   tip.style.left = `${Math.min(x, innerWidth - box.width - 8)}px`;
-  tip.style.top = `${y + box.height > innerHeight ? event.clientY - box.height - 10 : y}px`;
+  tip.style.top = `${y + box.height > innerHeight ? Math.max(4, event.clientY - box.height - 10) : y}px`;
 }
 const hideTip = () => { tip.hidden = true; };
 
-function buttons(target, choices, field) {
-  document.getElementById(target).innerHTML = choices.map(c =>
-    `<button data-${field}="${c.key}" class="${c.key === state[field] ? 'on' : ''}">${esc(c.label)}</button>`).join(' ');
-  document.querySelectorAll(`[data-${field}]`).forEach(b => b.onclick = () => { state[field] = b.dataset[field]; draw(); });
+const focusStyle = document.getElementById('focus');
+function applyFocus() {
+  const key = state.hover || state.focus;
+  focusStyle.textContent = key ? `.s:not([data-s="${key}"]) { opacity:.12; } polyline.s[data-s="${key}"] { stroke-width:3.4px; }
+    .row[data-s="${key}"] { background:var(--pick); }` : '';
+  if (key) document.querySelectorAll(`g.lines > [data-s="${key}"]`).forEach(el => el.parentNode.appendChild(el));
+}
+function setHover(key) {
+  if (state.hover === (key || null)) return;
+  state.hover = key || null;
+  applyFocus();
+}
+function focusOn(key) {
+  state.focus = key || null;
+  update(['card']);
+}
+
+const RENDER = {list: seriesList, card: strategyCard, summary: summaryTable, means: meansChart, yearly, cumulative,
+  periods: periodTable, picked: markPicked, detail};
+const EVERYTHING = Object.keys(RENDER);
+const VISIBILITY = ['list', 'summary', 'means', 'yearly', 'cumulative', 'periods', 'detail'];
+const dirty = new Set();
+let pending = 0;
+function update(parts, filtered) {
+  if (filtered) dirty.add('derive');
+  parts.forEach(part => dirty.add(part));
+  if (!pending) pending = requestAnimationFrame(flush);
+}
+function flush() {
+  pending = 0;
+  if (dirty.delete('derive')) derive();
+  ['means', 'yearly', 'cumulative'].forEach(id => { if (dirty.has(id)) view.width[id] = Math.max(document.getElementById(id).clientWidth, 320); });
+  for (const [name, render] of Object.entries(RENDER)) if (dirty.has(name)) render();
+  dirty.clear();
+  applyFocus();
+  saveHash();
+  if (state.reveal && state.picked) document.getElementById('detail').scrollIntoView({behavior: 'smooth', block: 'start'});
+  state.reveal = false;
+}
+
+function loadHash() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  if (DATA.pools.some(p => p.key === q.get('pool'))) state.pool = q.get('pool');
+  if (DATA.segments.some(s => s.key === q.get('seg'))) state.segment = q.get('seg');
+  (q.get('hide') || '').split(',').filter(key => BY_KEY[key]).forEach(key => state.hidden.add(key));
+  if (BY_KEY[q.get('focus')]) state.focus = q.get('focus');
+  if (DATA.periods.some(p => p.id === q.get('period'))) state.picked = q.get('period');
+  const [col, dir] = (q.get('sort') || '').split(':');
+  if (col && ['1', '-1'].includes(dir)) state.sort = {col, dir: +dir};
+}
+function saveHash() {
+  const q = new URLSearchParams();
+  if (state.pool !== 'all') q.set('pool', state.pool);
+  if (state.segment !== 'all') q.set('seg', state.segment);
+  if (state.hidden.size) q.set('hide', [...state.hidden].join(','));
+  if (state.focus) q.set('focus', state.focus);
+  if (state.picked) q.set('period', state.picked);
+  if (state.sort) q.set('sort', `${state.sort.col}:${state.sort.dir}`);
+  const hash = q.toString();
+  history.replaceState(null, '', hash ? `#${hash}` : location.pathname + location.search);
 }
 
 function header() {
@@ -244,145 +380,229 @@ function header() {
   const failed = document.getElementById('failures');
   failed.hidden = !DATA.failures.length;
   failed.querySelector('ul').innerHTML = DATA.failures.map(x => `<li><b>${esc(x.key)}</b>：${esc(x.error)}</li>`).join('');
-  document.getElementById('descriptions').innerHTML = SERIES.filter(s => s.kind === 'strategy').map(s =>
-    `<div class="desc"><h3>${swatch(s)}${esc(s.label)} <code>${esc(s.key)}</code></h3>
-    <p>${esc(s.description)}</p></div>`).join('');
-  buttons('pools', [{key: 'all', label: '全部'}, ...DATA.pools], 'pool');
-  buttons('segments', DATA.segments, 'segment');
-  document.getElementById('legend').innerHTML = SERIES.map(s => `<label><input type="checkbox" data-series="${s.key}"
-    ${state.hidden.has(s.key) ? '' : 'checked'}>${swatch(s)}${esc(s.label)}</label>`).join('');
-  document.querySelectorAll('[data-series]').forEach(b => b.onchange = () => {
-    b.checked ? state.hidden.delete(b.dataset.series) : state.hidden.add(b.dataset.series); draw(); });
+}
+
+function controls() {
+  const choose = (target, choices, field) => {
+    const box = document.getElementById(target);
+    box.innerHTML = choices.map(c =>
+      `<button data-key="${esc(c.key)}" class="${c.key === state[field] ? 'on' : ''}">${esc(c.label)}</button>`).join('');
+    box.onclick = e => {
+      const b = e.target.closest('button');
+      if (!b || b.dataset.key === state[field]) return;
+      state[field] = b.dataset.key;
+      controls();
+      update(EVERYTHING, true);
+    };
+  };
+  choose('pools', [{key: 'all', label: '全部'}, ...DATA.pools], 'pool');
+  choose('segments', DATA.segments, 'segment');
+}
+
+function seriesList() {
+  let html = '', kind = null;
+  for (const s of ordered()) {
+    if (s.kind !== kind) html += `<div class="group">${GROUPS[kind = s.kind]}</div>`;
+    const m = stats(s), off = state.hidden.has(s.key);
+    html += `<div class="item row hov ${off ? 'off' : ''}" data-s="${s.key}" title="${esc(s.label)}">
+      <input type="checkbox" data-toggle="${s.key}" ${off ? '' : 'checked'} aria-label="显示 ${esc(s.label)}">
+      ${swatch(s)}${rankBadge(s)}<span class="name">${esc(plain(s))}</span>
+      <span class="num ${tone(m && m.mean)}">${fmt(m && m.mean)}</span></div>`;
+  }
+  document.getElementById('list').innerHTML = html;
+}
+
+function strategyCard() {
+  const box = document.getElementById('card'), s = BY_KEY[state.focus];
+  if (!s) {
+    box.innerHTML = `<h2>策略规则</h2><p class="note">点击左侧列表、汇总表、柱状图或曲线上的任一策略，
+      在这里查看它的买卖规则与当前切片的成绩；再次点击或按 Esc 取消。</p>`;
+    return;
+  }
+  const m = stats(s), place = {strategy: view.rank[s.key] ? `第 ${view.rank[s.key]} 名` : '当前切片无成绩',
+    baseline: '对照基线，不占名次', benchmark: '市场对照'}[s.kind];
+  const kpi = m ? `<div class="kpi"><div>总分<b class="${tone(m.mean)}">${fmt(m.mean)}</b></div>
+      <div>95% 区间<b>${m.ci ? `[${fmt(m.ci[0])}, ${fmt(m.ci[1])}]` : '—'}</b></div>
+      <div>平均收益得分<b class="${tone(m.return_mean)}">${fmt(m.return_mean)}</b></div>
+      <div>胜率<b>${(m.win_rate * 100).toFixed(0)}%（${m.count} 期）</b></div></div>` : '<p class="note">当前切片没有决策点</p>';
+  box.innerHTML = `<h2>${swatch(s)}<span>${esc(s.label)}</span></h2>
+    <div class="meta">${s.kind === 'benchmark' ? '' : `<code>${esc(s.key)}</code> · `}${place} · ${esc(scopeLabel())}</div>
+    ${kpi}<p class="rules">${esc(s.description)}</p><button class="link" data-unfocus>取消聚焦</button>`;
 }
 
 function summaryTable() {
-  const data = rows(), strategy = s => s.kind === 'strategy';
+  const data = view.rows;
   const count = (s, field) => data.reduce((n, p) => n + (Array.isArray(p[field][s.key]) ? p[field][s.key].length : p[field][s.key]), 0);
   const beat = (s, k) => data.filter(p => p.scores[s.key] > p.benchmarks[k]).length;
   const columns = [
-    {label: '策略', key: s => s.label, cell: s => `${swatch(s)}${esc(s.label)}`},
-    {label: '总分', key: (s, m) => m.mean, cell: (s, m) => `<span class="${tone(m.mean)}">${fmt(m.mean)}</span>`},
-    {label: '总分中位数', key: (s, m) => m.median, cell: (s, m) => fmt(m.median)},
-    {label: '总分 95% 区间', key: (s, m) => m.ci && m.ci[0], cell: (s, m) => m.ci ? `[${fmt(m.ci[0])}, ${fmt(m.ci[1])}]` : '—'},
-    {label: '平均收益得分', key: (s, m) => m.return_mean, cell: (s, m) => `<span class="${tone(m.return_mean)}">${fmt(m.return_mean)}</span>`},
-    {label: '胜率（正得分期数）', key: (s, m) => m.win_rate,
+    {id: 'rank', label: '名次', key: s => view.rank[s.key], cell: s => rankBadge(s)},
+    {id: 'name', label: '策略', cls: 'l', key: s => s.label, cell: s => `${swatch(s)} ${esc(s.label)}`},
+    {id: 'mean', label: '总分', key: (s, m) => m.mean, cell: (s, m) => `<span class="${tone(m.mean)}">${fmt(m.mean)}</span>`},
+    {id: 'median', label: '总分中位数', key: (s, m) => m.median, cell: (s, m) => fmt(m.median)},
+    {id: 'ci', label: '总分 95% 区间', key: (s, m) => m.ci && m.ci[0], cell: (s, m) => m.ci ? `[${fmt(m.ci[0])}, ${fmt(m.ci[1])}]` : '—'},
+    {id: 'return', label: '平均收益得分', key: (s, m) => m.return_mean,
+     cell: (s, m) => `<span class="${tone(m.return_mean)}">${fmt(m.return_mean)}</span>`},
+    {id: 'win', label: '胜率（正得分期数）', key: (s, m) => m.win_rate,
      cell: (s, m) => `${(m.win_rate * 100).toFixed(0)}%（${data.filter(p => value(p, s) > 0).length}/${data.length}）`},
-    {label: '胜沪深300', key: s => strategy(s) ? beat(s, 'csi300') : null,
-     cell: s => strategy(s) ? `${beat(s, 'csi300')}/${data.length}` : '—'},
-    {label: '胜股票池等权', key: s => strategy(s) ? beat(s, 'pool_equal_weight') : null,
-     cell: s => strategy(s) ? `${beat(s, 'pool_equal_weight')}/${data.length}` : '—'},
-    ...[['买不进只次', 'blocked'], ['卖出只次', 'exits'], ['网格成交笔数', 'grid_trades']].map(([label, field]) =>
-      ({label, key: s => strategy(s) ? count(s, field) : null, cell: s => strategy(s) ? count(s, field) : '—'}))];
-  let list = SERIES.map(s => ({s, m: stats(s)})).filter(x => x.m);
-  if (state.sort) {
-    const {col, dir} = state.sort, key = x => columns[col].key(x.s, x.m);
-    list = list.slice().sort((a, b) => {
-      const x = key(a), y = key(b);
-      if (x == null || y == null) return (x == null) - (y == null);
-      return (typeof x === 'string' ? x.localeCompare(y, 'zh') : x - y) * dir;
-    });
-  }
-  const arrow = i => state.sort && state.sort.col === i ? (state.sort.dir > 0 ? ' ▲' : ' ▼') : '';
-  const table = document.getElementById('summary');
-  table.innerHTML = `<thead><tr>${columns.map((c, i) => `<th data-sort="${i}">${c.label}${arrow(i)}</th>`).join('')}</tr></thead>
-    <tbody>${list.map(({s, m}) => `<tr>${columns.map(c => `<td>${c.cell(s, m)}</td>`).join('')}</tr>`).join('')}</tbody>`;
-  table.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => {
-    const col = +th.dataset.sort, same = state.sort && state.sort.col === col;
-    state.sort = {col, dir: same ? -state.sort.dir : col === 0 ? 1 : -1};
-    summaryTable();
+    {id: 'csi300', label: '胜沪深300', key: s => runs(s) ? beat(s, 'csi300') : null,
+     cell: s => runs(s) ? `${beat(s, 'csi300')}/${data.length}` : '—'},
+    {id: 'pool', label: '胜股票池等权', key: s => runs(s) ? beat(s, 'pool_equal_weight') : null,
+     cell: s => runs(s) ? `${beat(s, 'pool_equal_weight')}/${data.length}` : '—'},
+    ...[['blocked', '买不进只次'], ['exits', '卖出只次'], ['grid_trades', '网格成交笔数']].map(([field, label]) =>
+      ({id: field, label, key: s => runs(s) ? count(s, field) : null, cell: s => runs(s) ? count(s, field) : '—'}))];
+  const sort = state.sort && columns.some(c => c.id === state.sort.col) ? state.sort : {col: 'mean', dir: -1};
+  const column = columns.find(c => c.id === sort.col), key = x => column.key(x.s, x.m);
+  const list = SERIES.map(s => ({s, m: stats(s)})).filter(x => x.m).sort((a, b) => {
+    const x = key(a), y = key(b);
+    if (x == null || y == null) return (x == null) - (y == null);
+    return (typeof x === 'string' ? x.localeCompare(y, 'zh') : x - y) * sort.dir;
   });
+  const arrow = c => c.id === sort.col ? (sort.dir > 0 ? ' ▲' : ' ▼') : '';
+  const table = document.getElementById('summary');
+  table.innerHTML = `<thead><tr>${columns.map(c => `<th data-sort="${c.id}" class="${c.cls || ''}">${c.label}${arrow(c)}</th>`).join('')}</tr></thead>
+    <tbody>${list.map(({s, m}) => `<tr class="row hov ${state.hidden.has(s.key) ? 'off' : ''}" data-s="${s.key}">${columns.map(c =>
+      `<td class="${c.cls || ''}">${c.cell(s, m)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  table.querySelector('thead').onclick = e => {
+    const th = e.target.closest('[data-sort]');
+    if (!th) return;
+    const col = th.dataset.sort;
+    state.sort = {col, dir: col === sort.col ? -sort.dir : ['rank', 'name'].includes(col) ? 1 : -1};
+    update(['summary']);
+  };
 }
 
-function frame(width, height, pad, ymin, ymax) {
-  const y = v => pad.t + (ymax - v) / (ymax - ymin || 1) * (height - pad.t - pad.b);
-  const step = Math.pow(10, Math.floor(Math.log10((ymax - ymin) / 4 || 1)));
-  const ticks = [];
-  for (let v = Math.ceil(ymin / step) * step; v <= ymax + 1e-9; v += step * (((ymax - ymin) / step > 8) ? 2 : 1)) ticks.push(v);
-  const grid = ticks.map(v => `<line x1="${pad.l}" x2="${width - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="${Math.abs(v) < 1e-9 ? '#8c959f' : '#eaeef2'}"/>
-    <text x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end">${+v.toFixed(2)}</text>`).join('');
-  return {y, grid};
+function ticks(lo, hi) {
+  const span = hi - lo || 1, magnitude = Math.pow(10, Math.floor(Math.log10(span / 5)));
+  const step = [1, 2, 5, 10].map(k => k * magnitude).find(k => span / k <= 6);
+  const output = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) output.push(+v.toFixed(10));
+  return output;
 }
 
 function meansChart() {
-  const series = visible().filter(stats), sums = series.map(stats);
-  const lo = Math.min(0, ...sums.map(x => x.ci ? x.ci[0] : x.mean)), hi = Math.max(0, ...sums.map(x => x.ci ? x.ci[1] : x.mean));
-  const width = 560, height = 300, pad = {l: 44, r: 12, t: 12, b: 96}, f = frame(width, height, pad, lo, hi);
-  const band = (width - pad.l - pad.r) / Math.max(series.length, 1);
+  const box = document.getElementById('means'), series = ordered().filter(s => !state.hidden.has(s.key) && stats(s));
+  const sums = series.map(stats), width = view.width.means, row = 22;
+  const pad = {l: Math.min(200, width * 0.4), r: 16, t: 4, b: 22}, height = pad.t + pad.b + row * Math.max(series.length, 1);
+  const lo = Math.min(0, ...sums.map(m => m.ci ? m.ci[0] : m.mean)), hi = Math.max(0, ...sums.map(m => m.ci ? m.ci[1] : m.mean));
+  const x = v => pad.l + (v - lo) / (hi - lo || 1) * (width - pad.l - pad.r), chars = Math.floor((pad.l - 12) / 12.5);
+  const grid = ticks(lo, hi).map(v => `<line x1="${x(v)}" x2="${x(v)}" y1="${pad.t}" y2="${height - pad.b}"
+    stroke="${Math.abs(v) < 1e-9 ? '#8c959f' : '#eaeef2'}"/><text x="${x(v)}" y="${height - 6}" text-anchor="middle">${v}</text>`).join('');
   const bars = series.map((s, i) => {
-    const sum = sums[i], x = pad.l + band * i + band * 0.2, w = band * 0.6, top = f.y(Math.max(0, sum.mean)), base = f.y(Math.min(0, sum.mean));
-    const ci = sum.ci ? `<line x1="${x + w / 2}" x2="${x + w / 2}" y1="${f.y(sum.ci[0])}" y2="${f.y(sum.ci[1])}" stroke="#24292f"/>
-      <line x1="${x + w / 3}" x2="${x + w * 2 / 3}" y1="${f.y(sum.ci[0])}" y2="${f.y(sum.ci[0])}" stroke="#24292f"/>
-      <line x1="${x + w / 3}" x2="${x + w * 2 / 3}" y1="${f.y(sum.ci[1])}" y2="${f.y(sum.ci[1])}" stroke="#24292f"/>` : '';
-    return `<g data-bar="${i}"><rect x="${pad.l + band * i}" y="${pad.t}" width="${band}" height="${height - pad.t - pad.b}" fill="transparent"/>
-      <rect x="${x}" y="${top}" width="${w}" height="${Math.max(base - top, 1)}" fill="${s.color}" opacity="0.85"/>${ci}
-      <text transform="translate(${x + w / 2},${height - pad.b + 12}) rotate(-30)" text-anchor="end">${esc(s.label.replace(/^对照：/, ''))}</text></g>`;
+    const m = sums[i], y = pad.t + row * i, mid = y + row / 2, cap = (v, h) => `<line x1="${x(v)}" x2="${x(v)}" y1="${mid - h}" y2="${mid + h}" stroke="#24292f"/>`;
+    const ci = m.ci ? `<line x1="${x(m.ci[0])}" x2="${x(m.ci[1])}" y1="${mid}" y2="${mid}" stroke="#24292f"/>${cap(m.ci[0], 4)}${cap(m.ci[1], 4)}` : '';
+    return `<g class="s hov" data-s="${s.key}"><rect x="0" y="${y}" width="${width}" height="${row}" fill="transparent"/>
+      <text class="lbl" x="${pad.l - 8}" y="${mid + 4}" text-anchor="end">${esc(rankText(s) + short(plain(s), chars - rankText(s).length))}</text>
+      <rect x="${Math.min(x(0), x(m.mean))}" y="${y + 5}" width="${Math.max(Math.abs(x(m.mean) - x(0)), 1)}" height="${row - 10}"
+        fill="${s.color}" opacity="${s.kind === 'strategy' ? 0.9 : 0.6}"/>${ci}</g>`;
   }).join('');
-  const box = document.getElementById('means');
-  box.innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="100%">${f.grid}${bars}</svg>`;
-  box.querySelectorAll('[data-bar]').forEach(g => {
-    const s = series[+g.dataset.bar], sum = sums[+g.dataset.bar];
-    g.onmousemove = e => showTip(e, `<b>${swatch(s)}${esc(s.label)}</b><div><span>总分</span><span>${fmt(sum.mean)}</span></div>
-      <div><span>95% 区间</span><span>${sum.ci ? `[${fmt(sum.ci[0])}, ${fmt(sum.ci[1])}]` : '—'}</span></div>
-      <div><span>平均收益得分</span><span>${fmt(sum.return_mean)}</span></div>
-      <div><span>胜率</span><span>${(sum.win_rate * 100).toFixed(0)}%（${sum.count} 期）</span></div>`);
-    g.onmouseleave = hideTip;
-  });
+  box.innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="100%">${grid}${bars}</svg>`;
+  box.querySelector('svg').onmousemove = e => {
+    const g = e.target.closest('[data-s]');
+    if (!g) return hideTip();
+    const s = BY_KEY[g.dataset.s], m = stats(s);
+    showTip(e, `<b>${swatch(s)} ${esc(rankText(s) + s.label)}</b><div><span>总分</span><span>${fmt(m.mean)}</span></div>
+      <div><span>95% 区间</span><span>${m.ci ? `[${fmt(m.ci[0])}, ${fmt(m.ci[1])}]` : '—'}</span></div>
+      <div><span>平均收益得分</span><span>${fmt(m.return_mean)}</span></div>
+      <div><span>胜率</span><span>${(m.win_rate * 100).toFixed(0)}%（${m.count} 期）</span></div>`);
+  };
+  box.querySelector('svg').onmouseleave = hideTip;
 }
 
-function lineChart(target, points, labels, titles, width, height, pick) {
-  const series = visible(), all = series.flatMap(s => points[s.key].filter(v => v != null));
-  const lo = Math.min(0, ...all), hi = Math.max(0, ...all), pad = {l: 48, r: 16, t: 12, b: 28};
-  const f = frame(width, height, pad, lo, hi), n = labels.length, x = i => pad.l + (n > 1 ? i / (n - 1) : 0.5) * (width - pad.l - pad.r);
-  const every = Math.ceil(n / (width / 70));
+function lineChart(target, points, labels, titles, height, pick, tagged) {
+  const box = document.getElementById(target), width = view.width[target], series = visible();
+  const all = series.flatMap(s => points[s.key].filter(v => v != null)), lo = Math.min(0, ...all), hi = Math.max(0, ...all);
+  const pad = {l: 44, r: tagged ? Math.round(Math.min(260, Math.max(170, width * 0.2))) : 14, t: 10, b: 26}, right = width - pad.r;
+  const n = labels.length, x = i => pad.l + (n > 1 ? i / (n - 1) : 0.5) * (right - pad.l);
+  const y = v => pad.t + (hi - v) / (hi - lo || 1) * (height - pad.t - pad.b);
+  const grid = ticks(lo, hi).map(v => `<line x1="${pad.l}" x2="${right}" y1="${y(v)}" y2="${y(v)}"
+    stroke="${Math.abs(v) < 1e-9 ? '#8c959f' : '#eaeef2'}"/><text x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join('');
+  const every = Math.max(1, Math.ceil(n / ((right - pad.l) / 72)));
   const axis = labels.map((l, i) => i % every ? '' : `<text x="${x(i)}" y="${height - 8}" text-anchor="middle">${esc(l)}</text>`).join('');
   const lines = series.map(s => {
-    const pts = points[s.key].map((v, i) => v == null ? null : `${x(i)},${f.y(v)}`).filter(Boolean).join(' ');
-    const dots = n > 40 ? '' : points[s.key].map((v, i) => v == null ? '' : `<circle cx="${x(i)}" cy="${f.y(v)}" r="2.5" fill="${s.color}"/>`).join('');
-    return `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="1.8" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''}/>${dots}`;
+    const pts = points[s.key].map((v, i) => v == null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`).filter(Boolean).join(' ');
+    const dots = n > 40 ? '' : `<g class="s" data-s="${s.key}">${points[s.key].map((v, i) => v == null ? ''
+      : `<circle cx="${x(i)}" cy="${y(v)}" r="2.5" fill="${s.color}"/>`).join('')}</g>`;
+    return `<polyline class="s" data-s="${s.key}" points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.width}"
+      stroke-linejoin="round" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''}/>${dots}`;
   }).join('');
-  const box = document.getElementById(target);
-  box.innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="100%" class="${pick ? 'pick' : ''}">${f.grid}${axis}${lines}
+  let tags = '';
+  if (tagged && n) {
+    const gap = 14, top = pad.t + 4, bottom = height - pad.b, chars = Math.floor((pad.r - 28) / 12);
+    const items = series.map(s => {
+      const v = points[s.key].filter(p => p != null).pop();
+      return v == null ? null : {s, v, at: y(v)};
+    }).filter(Boolean).sort((a, b) => a.at - b.at);
+    items.forEach((it, i) => { it.ty = Math.max(it.at, i ? items[i - 1].ty + gap : top); });
+    for (let i = items.length - 1; i >= 0; i--) items[i].ty = Math.min(items[i].ty, i === items.length - 1 ? bottom : items[i + 1].ty - gap);
+    tags = items.map(({s, at, ty}) => `<g class="s hov" data-s="${s.key}">
+      <path d="M${right + 2},${at} L${right + 10},${ty}" stroke="${s.color}" stroke-opacity=".6" fill="none"/>
+      <rect x="${right + 10}" y="${ty - 7}" width="${pad.r - 12}" height="14" fill="transparent"/>
+      <rect x="${right + 12}" y="${ty - 4}" width="8" height="8" rx="2" fill="${s.color}"/>
+      <text class="lbl" x="${right + 24}" y="${ty + 4}">${esc(rankText(s) + short(plain(s), chars - rankText(s).length))}</text></g>`).join('');
+  }
+  box.innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="100%" class="chart">${grid}${axis}<g class="lines">${lines}</g>${tags}
     <line class="cross" y1="${pad.t}" y2="${height - pad.b}" stroke="#8c959f" stroke-dasharray="3 3" visibility="hidden"/></svg>`;
   const svg = box.querySelector('svg'), cross = svg.querySelector('.cross');
-  const index = e => {
-    const rect = svg.getBoundingClientRect(), sx = (e.clientX - rect.left) * width / rect.width;
-    return Math.max(0, Math.min(n - 1, Math.round((sx - pad.l) / (width - pad.l - pad.r) * (n - 1))));
-  };
+  const locate = e => { const r = svg.getBoundingClientRect(); return [(e.clientX - r.left) * width / r.width, (e.clientY - r.top) * height / r.height]; };
+  const index = sx => Math.max(0, Math.min(n - 1, Math.round((sx - pad.l) / (right - pad.l) * (n - 1))));
+  const leave = () => { cross.setAttribute('visibility', 'hidden'); hideTip(); };
   svg.onmousemove = e => {
-    if (!n) return;
-    const i = index(e), ranked = series.map(s => [s, points[s.key][i]]).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1]);
+    const [sx, sy] = locate(e), tag = e.target.closest('g.hov');
+    if (tag) {
+      const s = BY_KEY[tag.dataset.s];
+      cross.setAttribute('visibility', 'hidden');
+      const v = points[s.key].filter(p => p != null).pop();
+      return showTip(e, `<b>${swatch(s)} ${esc(rankText(s) + s.label)}</b><div><span>期末</span><span class="${tone(v)}">${fmt(v)}</span></div>
+        <p class="note">点击查看规则</p>`);
+    }
+    if (!n || sx < pad.l - 4 || sx > right + 4) { setHover(null); return leave(); }
+    const i = index(sx), ranked = series.map(s => [s, points[s.key][i]]).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1]);
+    let near = null, best = 12;
+    ranked.forEach(([s, v]) => { const d = Math.abs(y(v) - sy); if (d < best) { best = d; near = s; } });
+    setHover(near && near.key);
     cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('visibility', 'visible');
-    showTip(e, `<b>${esc(titles[i])}</b>${ranked.map(([s, v]) =>
-      `<div><span>${swatch(s)}${esc(s.label)}</span><span class="${tone(v)}">${fmt(v)}</span></div>`).join('')}`);
+    showTip(e, `<b>${esc(titles[i])}</b>${ranked.map(([s, v]) => `<div class="${s === near ? 'hit' : ''}"><span>${swatch(s)}
+      ${esc(rankText(s) + s.label)}</span><span class="${tone(v)}">${fmt(v)}</span></div>`).join('')}
+      <p class="note">${[near && '点击查看高亮策略的规则', pick && '点击查看当期持仓'].filter(Boolean).join('，') || '靠近曲线可高亮该策略'}</p>`);
   };
-  svg.onmouseleave = () => { cross.setAttribute('visibility', 'hidden'); hideTip(); };
-  if (pick) svg.onclick = e => n && pick(index(e));
+  svg.onmouseleave = () => { leave(); setHover(null); };
+  svg.onclick = e => {
+    if (e.target.closest('g.hov')) return;
+    const [sx] = locate(e);
+    if (state.hover) focusOn(state.hover);
+    if (pick && n && sx >= pad.l - 4 && sx <= right + 4) pick(index(sx));
+  };
 }
 
 function yearly() {
-  const data = rows(), years = [...new Set(data.map(p => p.decision_date.slice(0, 4)))].sort(), points = {};
+  const data = view.rows, years = [...new Set(data.map(p => p.decision_date.slice(0, 4)))].sort(), points = {};
   SERIES.forEach(s => points[s.key] = years.map(y => mean(data.filter(p => p.decision_date.startsWith(y)).map(p => value(p, s)))));
-  lineChart('yearly', points, years, years.map(y => `${y} 年平均收益得分`), 560, 260);
+  lineChart('yearly', points, years, years.map(y => `${y} 年平均收益得分`), 280);
 }
 
 function cumulative() {
-  const data = rows(), points = {};
+  const data = view.rows, points = {};
   SERIES.forEach(s => { let total = 0; points[s.key] = data.map(p => total += value(p, s)); });
-  lineChart('cumulative', points, data.map(p => p.decision_date),
-    data.map(p => `${p.decision_date} ${poolLabel(p.pool)}（累计）`), 1100, 300, i => pickPeriod(data[i].id, true));
+  lineChart('cumulative', points, data.map(p => p.decision_date), data.map(p => `${p.decision_date} ${poolLabel(p.pool)}（累计）`),
+    340, i => pickPeriod(data[i].id, true), true);
 }
 
 function periodTable() {
-  const series = visible(), data = rows().slice().reverse();
-  const head = `<thead><tr><th>决策日</th><th class="l">股票池</th><th>建仓日</th>${series.map(s => `<th>${esc(s.label)}</th>`).join('')}</tr></thead>`;
-  const body = data.map(p => `<tr data-period="${esc(p.id)}" class="${p.id === state.picked ? 'picked' : ''}"><td>${p.decision_date}</td>
+  const series = visible(), data = view.rows.slice().reverse();
+  const head = `<thead><tr><th>决策日</th><th class="l">股票池</th><th>建仓日</th>${series.map(s =>
+    `<th class="row hov" data-s="${s.key}" title="${esc(s.label)}">${swatch(s)}<br>${esc(rankText(s) + short(plain(s), 8))}</th>`).join('')}</tr></thead>`;
+  const body = data.map(p => `<tr data-period="${esc(p.id)}"><td>${p.decision_date}</td>
     <td class="l">${esc(poolLabel(p.pool))}</td><td>${p.entry_date}</td>
-    ${series.map(s => { const v = value(p, s), b = s.kind === 'strategy' ? p.blocked[s.key].length : 0;
-      const x = s.kind === 'strategy' ? p.exits[s.key].length : 0;
-      return `<td class="${tone(v)}">${fmt(v)}${b ? ` <span class="meta">(${b})</span>` : ''}${x ? ` <span class="meta">卖${x}</span>` : ''}</td>`; }).join('')}</tr>`).join('');
+    ${series.map(s => { const v = value(p, s), b = runs(s) ? p.blocked[s.key].length : 0, x = runs(s) ? p.exits[s.key].length : 0;
+      return `<td class="row ${tone(v)}" data-s="${s.key}">${fmt(v)}${b ? ` <span class="meta">(${b})</span>` : ''}${x ? ` <span class="meta">卖${x}</span>` : ''}</td>`; }).join('')}</tr>`).join('');
   const table = document.getElementById('periods');
   table.innerHTML = head + `<tbody>${body}</tbody>`;
-  table.querySelectorAll('[data-period]').forEach(tr => tr.onclick = () => pickPeriod(tr.dataset.period, false));
+  table.querySelector('tbody').onclick = e => { const tr = e.target.closest('[data-period]'); if (tr) pickPeriod(tr.dataset.period, false); };
+  markPicked();
+}
+
+function markPicked() {
+  document.querySelectorAll('#periods [data-period]').forEach(tr => tr.classList.toggle('picked', tr.dataset.period === state.picked));
 }
 
 function ruleText(rule) {
@@ -395,36 +615,92 @@ function detail() {
   const box = document.getElementById('detail'), p = DATA.periods.find(x => x.id === state.picked);
   box.hidden = !p;
   if (!p) return;
-  const benchmarks = SERIES.filter(s => s.kind === 'benchmark').map(s => `${esc(s.label.replace(/^对照：/, ''))} ${fmt(value(p, s))}`).join('，');
+  const benchmarks = SERIES.filter(s => s.kind === 'benchmark').map(s => `${esc(plain(s))} ${fmt(value(p, s))}`).join('，');
   document.getElementById('detail-title').textContent = `当期明细：${p.decision_date} ${poolLabel(p.pool)}，建仓日 ${p.entry_date}`;
-  const cards = visible().filter(s => s.kind === 'strategy').map(s => {
+  const cards = ordered().filter(s => runs(s) && !state.hidden.has(s.key)).map(s => {
     const v = p.scores[s.key], seg = p.segment_returns[s.key], held = p.holdings[s.key];
     const exits = Object.fromEntries(p.exits[s.key].map(e => [e.symbol, e])), blocked = new Set(p.blocked[s.key]);
     const outcome = code => { const e = exits[code];
       if (blocked.has(code)) return '买不进，留作现金';
       return e ? `${RULES[e.reason] || e.reason} ${e.signal_date} 触发，${e.sell_date ? `${e.sell_date} 卖出` : '窗口内未能卖出'}` : ''; };
-    const body = held.length ? `<table><thead><tr><th>证券</th><th>仓位</th><th class="l">卖出规则</th><th class="l">执行</th></tr></thead>
-      <tbody>${held.map(([code, weight, rule]) => `<tr><td>${esc(code)}</td><td>${pct(weight)}</td>
+    const body = held.length ? `<table><thead><tr><th class="l">证券</th><th>仓位</th><th class="l">卖出规则</th><th class="l">执行</th></tr></thead>
+      <tbody>${held.map(([code, weight, rule]) => `<tr><td class="l">${esc(code)}</td><td>${pct(weight)}</td>
         <td class="l">${esc(ruleText(rule))}</td><td class="l">${esc(outcome(code))}</td></tr>`).join('')}</tbody></table>`
       : '<p class="note">全部持有现金</p>';
-    return `<div><h3>${swatch(s)}${esc(s.label)}：<span class="${tone(v)}">${fmt(v)}</span></h3>
+    return `<div class="row" data-s="${s.key}"><h3 class="hov" data-s="${s.key}">${swatch(s)} ${esc(rankText(s) + s.label)}：
+      <span class="${tone(v)}">${fmt(v)}</span></h3>
       <p class="note">0–7 天 ${pct(seg[0])} · 7–30 天 ${pct(seg[1])} · 30–90 天 ${pct(seg[2])}</p>${body}</div>`;
   }).join('');
-  document.getElementById('detail-body').innerHTML = `<p class="note">对照收益得分：${benchmarks}。只列出当前勾选的策略。</p>
+  document.getElementById('detail-body').innerHTML = `<p class="note">对照收益得分：${benchmarks}。只列出当前显示的策略，按名次排列。</p>
     <div class="holdings">${cards}</div>`;
 }
 
-function pickPeriod(id, scroll) {
-  state.picked = state.picked === id && !scroll ? null : id;
-  periodTable(); detail();
-  if (scroll && state.picked) document.getElementById('detail').scrollIntoView({behavior: 'smooth', block: 'start'});
+function pickPeriod(id, reveal) {
+  state.picked = state.picked === id && !reveal ? null : id;
+  state.reveal = reveal;
+  update(['picked', 'detail']);
 }
 
-function draw() {
-  if (state.picked && !rows().some(p => p.id === state.picked)) state.picked = null;
-  header(); summaryTable(); meansChart(); yearly(); cumulative(); periodTable(); detail();
+document.getElementById('list').addEventListener('change', e => {
+  const key = e.target.dataset.toggle;
+  if (!key) return;
+  e.target.checked ? state.hidden.delete(key) : state.hidden.add(key);
+  update(VISIBILITY);
+});
+document.getElementById('quick').onclick = e => {
+  const mode = e.target.dataset.show;
+  if (!mode) return;
+  const keep = s => mode === 'all' || (mode === 'top5' ? s.kind === 'benchmark' || view.rank[s.key] <= 5 : s.kind === 'strategy');
+  state.hidden = new Set(SERIES.filter(s => !keep(s)).map(s => s.key));
+  update(VISIBILITY);
+};
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest('.hov');
+  if (el) setHover(el.dataset.s);
+  else if (!e.target.closest('svg.chart')) setHover(null);
+});
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-unfocus]')) return focusOn(null);
+  const el = e.target.closest('.hov');
+  if (el && !e.target.closest('input')) focusOn(state.focus === el.dataset.s ? null : el.dataset.s);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.focus) focusOn(null); });
+
+let measured = 0;
+new ResizeObserver(([entry]) => {
+  const width = Math.round(entry.contentRect.width);
+  if (width !== measured) { measured = width; update(['means', 'yearly', 'cumulative']); }
+}).observe(document.querySelector('main'));
+
+function watch() {
+  const live = document.getElementById('live');
+  if (!location.protocol.startsWith('http')) {
+    live.textContent = '离线打开：重新运行 bench-run 后刷新页面即可，筛选与聚焦状态会保留';
+    return;
+  }
+  live.textContent = '自动刷新已开启：bench-run 重新生成看板后自动载入';
+  let stamp = null;
+  const poll = async () => {
+    if (!document.hidden) {
+      try {
+        const r = await fetch(location.pathname, {method: 'HEAD', cache: 'no-store'});
+        const next = `${r.headers.get('Last-Modified')}|${r.headers.get('Content-Length')}`;
+        if (r.ok && stamp && next !== stamp) return location.reload();
+        if (r.ok) [stamp, live.textContent] = [next, '自动刷新已开启：bench-run 重新生成看板后自动载入'];
+      } catch (error) {
+        live.textContent = '看板服务已停止，自动刷新暂停';
+      }
+    }
+    setTimeout(poll, 3000);
+  };
+  poll();
 }
-draw();
+
+loadHash();
+header();
+controls();
+watch();
+update(EVERYTHING, true);
 </script>
 </body>
 </html>

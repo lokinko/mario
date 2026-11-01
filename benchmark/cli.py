@@ -14,7 +14,7 @@ from .sources import Tushare, collect_prices, collect_universe, fetch_documents
 from .tech_universe import collect_tech_universe
 from .dividend_universe import collect_dividend_universe
 from .hub import publish
-from .dashboard import write_dashboard
+from .dashboard import dashboard_server, write_dashboard
 from .pool_release import build_pool_release
 from .scoring import evaluate_weights
 from .strategy_runner import bench_run
@@ -61,6 +61,10 @@ def main(argv=None):
     bench.add_argument("--strategies", type=Path, default=DEFAULT_STRATEGIES)
     bench.add_argument("--out", type=Path, help="默认 .runtime/benchmark/bench/<发布包目录名>")
     bench.add_argument("--force", action="store_true", help="忽略缓存全部重跑")
+    serve = sub.add_parser("bench-serve", help="在本机提供看板；bench-run 重新生成后已打开的页面自动载入")
+    serve.add_argument("--release", type=Path, required=True, help="pool-build 生成的评分切片")
+    serve.add_argument("--out", type=Path, help="默认 .runtime/benchmark/bench/<发布包目录名>")
+    serve.add_argument("--port", type=int, default=8765)
     pool_score = sub.add_parser("pool-score", help="给外部生成的仓位文件（如 Agent 输出）按主指标打分")
     pool_score.add_argument("--weights", type=Path, required=True)
     pool_score.add_argument("--root", type=Path, required=True)
@@ -104,6 +108,15 @@ def main(argv=None):
             board = write_dashboard(out, out / "dashboard.html", args.release)
             print(json.dumps({"runs": runs, "dashboard": board["dashboard"]}, ensure_ascii=False, indent=2))
             return 0 if all(run["status"] != "failed" for run in runs) else 1
+        elif args.command == "bench-serve":
+            out = args.out or Path(".runtime/benchmark/bench") / args.release.resolve().name
+            with dashboard_server(out, args.port) as server:
+                print(f"看板地址：http://127.0.0.1:{server.server_port}/dashboard.html（Ctrl+C 停止）", flush=True)
+                try:
+                    server.serve_forever()
+                except KeyboardInterrupt:
+                    pass
+            return 0
         elif args.command == "hub-publish":
             result = publish(args.release, args.repo, args.labels_repo, args.path, args.runs, args.tag)
         elif args.command == "pool-build":

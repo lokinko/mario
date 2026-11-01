@@ -1,10 +1,12 @@
 import json
 import re
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from urllib.request import Request, urlopen
 
-from benchmark.dashboard import dashboard_data, render, write_dashboard
+from benchmark.dashboard import dashboard_data, dashboard_server, render, write_dashboard
 from benchmark.files import Invalid, write_json, write_rows
 
 
@@ -63,6 +65,9 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual((momentum["mean"], momentum["win_rate"]), (-0.5, 0.5))
         self.assertEqual([s["key"] for s in data["segments"]], ["all", "early"])
         self.assertNotIn("secret", data["release"])
+        self.assertEqual({s["key"]: s["baseline"] for s in data["strategies"]},
+                         {"equal": True, "momentum": True, "zeta": False})
+        self.assertTrue(all(b["description"] for b in data["benchmarks"]))
 
     def test_splits_years_into_segments_and_carries_holdings_with_exit_rules(self):
         ids = ("dividend-2015-03-31", "tech-2019-03-31")
@@ -102,6 +107,24 @@ class DashboardTest(unittest.TestCase):
             text = out.read_text(encoding="utf-8")
             self.assertIn("size 标题", text)
             self.assertIn("静态检查未通过", text)
+
+    def test_server_exposes_modification_time_for_live_reload_and_requires_dashboard(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            with self.assertRaises(Invalid):
+                dashboard_server(base, 0)
+            save(base, "equal", report([0.0, 1.0]))
+            write_dashboard(base, base / "dashboard.html")
+            with dashboard_server(base, 0) as server:
+                worker = threading.Thread(target=server.serve_forever, daemon=True)
+                worker.start()
+                try:
+                    url = f"http://127.0.0.1:{server.server_port}/dashboard.html"
+                    with urlopen(Request(url, method="HEAD"), timeout=5) as response:
+                        self.assertEqual(response.status, 200)
+                        self.assertTrue(response.headers["Last-Modified"])
+                finally:
+                    server.shutdown()
 
 
 if __name__ == "__main__":
