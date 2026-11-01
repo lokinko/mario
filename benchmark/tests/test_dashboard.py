@@ -1,13 +1,17 @@
 import json
+import random
 import re
+import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from benchmark.dashboard import dashboard_data, dashboard_server, render, write_dashboard
+from benchmark.dashboard import TEMPLATE, dashboard_data, dashboard_server, render, write_dashboard
 from benchmark.files import Invalid, write_json, write_rows
+from benchmark.scoring import series_stats, total_score
 
 
 def report(scores, benchmark=1.0, ids=("dividend-2015-03-31", "tech-2015-03-31")):
@@ -59,10 +63,8 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(data["periods"][0]["scores"], {"equal": 0.0, "momentum": 1.0, "zeta": 3.0})
         self.assertEqual(data["periods"][0]["blocked"]["momentum"], ["600000.SH"])
         self.assertEqual([p["grid_trades"]["momentum"] for p in data["periods"]], [0, 3])
-        self.assertEqual(data["summaries"]["csi300"]["all"]["tech"]["mean"], 3.0)
-        self.assertEqual(data["summaries"]["csi300"]["all"]["tech"]["return_mean"], 0.5)
-        momentum = data["summaries"]["momentum"]["all"]["all"]
-        self.assertEqual((momentum["mean"], momentum["win_rate"]), (-0.5, 0.5))
+        self.assertEqual(data["periods"][1]["benchmarks"], {"pool_equal_weight": 1.0, "csi300": 0.5})
+        self.assertEqual(data["stats"], {"win_rate_weight": 5, "rounds": 2000, "seed": 20261031})
         self.assertEqual([s["key"] for s in data["segments"]], ["all", "early"])
         self.assertNotIn("secret", data["release"])
         self.assertEqual({s["key"]: s["baseline"] for s in data["strategies"]},
@@ -70,6 +72,9 @@ class DashboardTest(unittest.TestCase):
         self.assertTrue(all(b["description"] for b in data["benchmarks"]))
 
     def test_splits_years_into_segments_and_carries_holdings_with_exit_rules(self):
+        reordered = dashboard_data({"trend": run(report([1.0, 2.0], ids=("tech-2019-03-31", "dividend-2015-03-31")))})
+        self.assertEqual([(p["id"], p["order"]) for p in reordered["periods"]],
+                         [("dividend-2015-03-31", 1), ("tech-2019-03-31", 0)])
         ids = ("dividend-2015-03-31", "tech-2019-03-31")
         weights = [{"sample_id": ids[1], "symbol": "000001.SZ", "weight": "0.5", "exit": {"take_profit": "0.08"}},
                    {"sample_id": ids[1], "symbol": "000002.SZ", "weight": "0.5"}]
@@ -77,10 +82,6 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(data["segments"], [{"key": "all", "label": "全部年份"}, {"key": "early", "label": "2015"},
                                             {"key": "late", "label": "2019"}])
         self.assertEqual([p["segment"] for p in data["periods"]], ["early", "late"])
-        trend = data["summaries"]["trend"]
-        self.assertEqual((trend["late"]["all"]["mean"], trend["late"]["all"]["win_rate"]), (4.5, 1.0))
-        self.assertEqual((trend["early"]["dividend"]["mean"], trend["early"]["dividend"]["count"]), (-3.5, 1))
-        self.assertNotIn("tech", trend["early"])
         self.assertEqual(data["periods"][0]["holdings"]["trend"], [])
         self.assertEqual(data["periods"][1]["holdings"]["trend"],
                          [["000001.SZ", "0.5", {"take_profit": "0.08"}], ["000002.SZ", "0.5", None]])
@@ -107,6 +108,27 @@ class DashboardTest(unittest.TestCase):
             text = out.read_text(encoding="utf-8")
             self.assertIn("size 标题", text)
             self.assertIn("静态检查未通过", text)
+
+    @unittest.skipUnless(shutil.which("node"), "需要 Node.js 运行看板统计脚本")
+    def test_page_statistics_match_scoring_for_any_period_subset(self):
+        generator = random.Random(7)
+        samples = [[round(generator.uniform(-15, 20), 6) for _ in range(n)] for n in (1, 2, 3, 37, 148)]
+        samples += [[0.0, 0.0, 1.5], [-0.1] * 5]
+        script = re.search(r'<script id="stats">(.*?)</script>', TEMPLATE, re.S).group(1)
+        harness = script + "\nconst input = JSON.parse(require('fs').readFileSync(0, 'utf8'));\n" \
+            "console.log(JSON.stringify(input.samples.map(v => summarize(v, input.params, true))));"
+        params = dashboard_data({"equal": run(report([0.0, 1.0]))})["stats"]
+        done = subprocess.run(["node", "-e", harness], input=json.dumps({"samples": samples, "params": params}),
+                              capture_output=True, text=True, check=True)
+        for values, page in zip(samples, json.loads(done.stdout), strict=True):
+            expected = series_stats([{"return_score": v, "score": total_score(v)} for v in values], [""])
+            score = expected["score"]
+            self.assertEqual(page["count"], score["count"])
+            self.assertEqual(page["win_rate"], expected["win_rate"])
+            self.assertEqual(page["median"], score["median"])
+            self.assertAlmostEqual(page["mean"], score["mean"], places=12)
+            self.assertAlmostEqual(page["return_mean"], expected["return_score"]["mean"], places=12)
+            self.assertEqual(page["ci"], score["bootstrap_95"])
 
     def test_server_exposes_modification_time_for_live_reload_and_requires_dashboard(self):
         with tempfile.TemporaryDirectory() as folder:

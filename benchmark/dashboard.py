@@ -3,6 +3,7 @@
 看板只读取成绩与策略说明，不读取输入或结果标签；图表由本模块统一生成，新增策略不需要改看板代码。
 """
 
+import inspect
 import json
 import math
 from datetime import datetime
@@ -11,7 +12,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 from .files import read_json, require
 from .public_sources import SHANGHAI
-from .scoring import series_stats
+from .scoring import WIN_RATE_WEIGHT, bootstrap_interval
 from .strategy_runner import completed_runs, failed_runs
 
 POOL_LABELS = {"dividend": "红利池", "tech": "科技池"}
@@ -21,11 +22,10 @@ BASELINES = {"cash", "equal", "momentum", "size"}
 SPLIT_YEAR = 2018
 
 
-def summary(stats, prefix=""):
-    """总分的均值、中位数与区间，以及平均收益得分与胜率。"""
-    value = stats[f"{prefix}score"]
-    return {"mean": value["mean"], "median": value["median"], "ci": value["bootstrap_95"], "count": value["count"],
-            "return_mean": stats[f"{prefix}return_score"]["mean"], "win_rate": stats[f"{prefix}win_rate"]}
+def stats_parameters():
+    """页面按任意时间区间重算统计量时所用的参数，取自打分引擎，保证与 scoring.series_stats 同一口径。"""
+    defaults = inspect.signature(bootstrap_interval).parameters
+    return {"win_rate_weight": WIN_RATE_WEIGHT, "rounds": defaults["rounds"].default, "seed": defaults["seed"].default}
 
 
 def segment(decision_date):
@@ -39,20 +39,6 @@ def segments(periods):
     return [{"key": "all", "label": "全部年份"}] + [
         {"key": key, "label": f"{span[0]}–{span[-1]}" if span[0] != span[-1] else str(span[0])}
         for key, span in spans.items() if span]
-
-
-def grouped_summaries(periods, segment_keys, pools, prefixes):
-    """{前缀: {时间段: {股票池: 汇总}}}；统计口径与打分报告相同，由 scoring.series_stats 计算。"""
-    output = {prefix: {} for prefix in prefixes}
-    for key in segment_keys:
-        for pool in ["all", *pools]:
-            subset = [p for p in periods if key in ("all", segment(p["decision_date"])) and pool in ("all", p["pool"])]
-            if not subset:
-                continue
-            stats = series_stats(subset, prefixes)
-            for prefix in prefixes:
-                output[prefix].setdefault(key, {})[pool] = summary(stats, prefix)
-    return output
 
 
 def positions(weights):
@@ -73,13 +59,12 @@ def dashboard_data(runs, config=None, failures=None):
     pools = sorted({period["pool"] for period in first["periods"]})
     spans = segments(first["periods"])
     periods = {period["sample_id"]: {
-        "id": period["sample_id"], "pool": period["pool"], "decision_date": period["decision_date"],
+        "id": period["sample_id"], "order": order, "pool": period["pool"], "decision_date": period["decision_date"],
         "segment": segment(period["decision_date"]), "entry_date": period["entry_date"], "scores": {},
         "segment_returns": {}, "holdings": {}, "blocked": {}, "exits": {}, "grid_trades": {},
         "benchmarks": {"pool_equal_weight": period["pool_equal_weight_return_score"],
                        "csi300": period["csi300_return_score"]}}
-        for period in first["periods"]}
-    summaries = {}
+        for order, period in enumerate(first["periods"])}
     for name in names:
         report, held = scorecards[name], positions(runs[name]["weights"])
         require([p["sample_id"] for p in report["periods"]] == ids, f"{name} 与其他策略的决策点不一致，可能来自不同发布包")
@@ -94,16 +79,13 @@ def dashboard_data(runs, config=None, failures=None):
             row["blocked"][name] = period["blocked_entries"]
             row["exits"][name] = period["exits"]
             row["grid_trades"][name] = sum(t["buys"] + t["sells"] for t in period["grid_trades"])
-        summaries[name] = grouped_summaries(report["periods"], [s["key"] for s in spans], pools, [""])[""]
-    benchmarks = grouped_summaries(first["periods"], [s["key"] for s in spans], pools, [f"{k}_" for k in BENCHMARKS])
-    summaries.update({key: benchmarks[f"{key}_"] for key in BENCHMARKS})
     return {
         "strategies": [{"key": name, "label": runs[name]["title"], "description": runs[name]["description"],
                         "baseline": name in BASELINES} for name in names],
         "failures": [{"key": name, "error": error} for name, error in sorted((failures or {}).items())],
         "benchmarks": [{"key": key, "label": label, "description": text} for key, (label, text) in BENCHMARKS.items()],
         "pools": [{"key": pool, "label": POOL_LABELS.get(pool, pool)} for pool in pools], "segments": spans,
-        "summaries": summaries, "periods": sorted(periods.values(), key=lambda row: (row["decision_date"], row["pool"])),
+        "stats": stats_parameters(), "periods": sorted(periods.values(), key=lambda row: (row["decision_date"], row["pool"])),
         "metric": first["metric"], "cost_basis": first["cost_basis"], "limitations": first["limitations"],
         "release": {key: config[key] for key in ("version", "built_on", "pools", "reference_total_return_index")
                     if config and key in config},
@@ -206,6 +188,13 @@ code { font-size:12px; }
   box-shadow:0 4px 12px rgba(31,35,40,.15); padding:6px 10px; font-size:12px; max-width:420px; }
 .tip b { display:block; margin-bottom:2px; } .tip div { display:flex; justify-content:space-between; gap:16px; padding:0 2px; }
 .tip div.hit { background:var(--pick); font-weight:600; }
+#range { position:sticky; top:0; z-index:5; background:#fff; padding:10px 16px 6px; box-shadow:0 2px 6px rgba(31,35,40,.06); }
+#range .bar > span:first-child { width:auto; }
+.dates { display:inline-flex; gap:4px; align-items:center; font-size:12px; color:var(--muted); margin-left:8px; }
+.dates input { font:inherit; font-size:12px; border:1px solid var(--line); border-radius:6px; padding:1px 4px; color:var(--fg); }
+#timeline { margin-top:6px; touch-action:none; user-select:none; }
+#timeline svg { display:block; cursor:crosshair; }
+#timeline .window { cursor:grab; } #timeline .grip { cursor:ew-resize; }
 .holdings { display:grid; grid-template-columns:repeat(auto-fill, minmax(400px, 1fr)); gap:12px; }
 .holdings > div { border:1px solid var(--line); border-radius:6px; padding:10px; min-width:0; }
 .holdings h3 { font-size:13px; margin:0 0 4px; } .holdings table { font-size:12px; }
@@ -222,7 +211,6 @@ code { font-size:12px; }
   <aside>
     <section class="card">
       <div class="bar"><span>股票池</span><span class="bar" id="pools"></span></div>
-      <div class="bar"><span>时间段</span><span class="bar" id="segments"></span></div>
       <div class="bar" id="quick"><span>显示</span><button data-show="all">全部</button>
         <button data-show="top5">前 5 名 + 市场对照</button><button data-show="strategy">只看候选策略</button></div>
     </section>
@@ -230,9 +218,15 @@ code { font-size:12px; }
     <section class="card" id="card"></section>
   </aside>
   <main>
+    <section class="card" id="range">
+      <div class="bar"><span>时间区间</span><span class="bar" id="presets"></span>
+        <label class="dates"><input type="date" id="from" aria-label="开始日期"> 至 <input type="date" id="to" aria-label="结束日期"></label>
+        <span class="meta" id="range-note"></span></div>
+      <div id="timeline"></div>
+    </section>
     <section class="card failed" id="failures" hidden><h2>运行失败的策略（未计入看板）</h2><ul></ul></section>
     <section class="card"><h2>策略汇总</h2><div class="wide"><table id="summary"></table></div>
-      <p class="note">名次按当前股票池与时间段的总分排列，对照基线与市场对照不占名次。点击表头排序，点击一行在左侧查看该策略的规则。</p></section>
+      <p class="note">名次按当前股票池与时间区间的总分排列，对照基线与市场对照不占名次。统计量按打分引擎的同一公式在页面计算，任意区间与打分报告一致；95% 区间在拖动结束后补算。点击表头排序，点击一行在左侧查看该策略的规则。</p></section>
     <section class="card"><h2>累计收益得分（逐期收益得分求和，不是净值）</h2><div id="cumulative"></div>
       <p class="note">曲线右端标出名次与策略名；悬停时高亮最近的曲线，点击查看该策略规则与当期持仓。</p></section>
     <div class="grid">
@@ -247,6 +241,97 @@ code { font-size:12px; }
 </div>
 <div class="tip" id="tip" hidden></div>
 <script type="application/json" id="data">__DATA__</script>
+<script id="stats">
+function pythonRandom(seed) {
+  const N = 624, M = 397, mt = new Uint32Array(N);
+  let index = N;
+  const init = s => { mt[0] = s; for (let i = 1; i < N; i++) mt[i] = Math.imul(1812433253, mt[i - 1] ^ (mt[i - 1] >>> 30)) + i; };
+  const key = [];
+  for (let rest = Math.abs(seed); rest > 0 || !key.length; rest = Math.floor(rest / 4294967296)) key.push(rest % 4294967296);
+  init(19650218);
+  let i = 1, j = 0;
+  for (let k = Math.max(N, key.length); k; k--) {
+    mt[i] = (mt[i] ^ Math.imul(mt[i - 1] ^ (mt[i - 1] >>> 30), 1664525)) + key[j] + j;
+    if (++i >= N) { mt[0] = mt[N - 1]; i = 1; }
+    if (++j >= key.length) j = 0;
+  }
+  for (let k = N - 1; k; k--) {
+    mt[i] = (mt[i] ^ Math.imul(mt[i - 1] ^ (mt[i - 1] >>> 30), 1566083941)) - i;
+    if (++i >= N) { mt[0] = mt[N - 1]; i = 1; }
+  }
+  mt[0] = 0x80000000;
+  const next = () => {
+    if (index >= N) {
+      for (let k = 0; k < N; k++) {
+        const y = (mt[k] & 0x80000000) | (mt[(k + 1) % N] & 0x7fffffff);
+        mt[k] = mt[(k + M) % N] ^ (y >>> 1) ^ (y & 1 ? 0x9908b0df : 0);
+      }
+      index = 0;
+    }
+    let y = mt[index++];
+    y ^= y >>> 11; y ^= (y << 7) & 0x9d2c5680; y ^= (y << 15) & 0xefc60000; y ^= y >>> 18;
+    return y >>> 0;
+  };
+  return {below(n) {
+    const bits = 32 - Math.clz32(n);
+    let r = next() >>> (32 - bits);
+    while (r >= n) r = next() >>> (32 - bits);
+    return r;
+  }};
+}
+
+function fsum(values) {
+  const partials = [];
+  for (let x of values) {
+    let i = 0;
+    for (let y of partials) {
+      if (Math.abs(x) < Math.abs(y)) [x, y] = [y, x];
+      const hi = x + y, lo = y - (hi - x);
+      if (lo) partials[i++] = lo;
+      x = hi;
+    }
+    partials.length = i;
+    partials.push(x);
+  }
+  let n = partials.length, hi = 0, lo = 0;
+  if (n) {
+    hi = partials[--n];
+    while (n > 0) {
+      const x = hi, y = partials[--n];
+      hi = x + y;
+      lo = y - (hi - x);
+      if (lo) break;
+    }
+    if (n > 0 && ((lo < 0 && partials[n - 1] < 0) || (lo > 0 && partials[n - 1] > 0))) {
+      const y = lo * 2, x = hi + y;
+      if (y === x - hi) hi = x;
+    }
+  }
+  return hi;
+}
+
+function bootstrap(values, rounds, seed) {
+  if (values.length < 2) return null;
+  const random = pythonRandom(seed), n = values.length, means = new Float64Array(rounds), draw = new Array(n);
+  for (let r = 0; r < rounds; r++) {
+    for (let i = 0; i < n; i++) draw[i] = values[random.below(n)];
+    means[r] = fsum(draw) / n;
+  }
+  means.sort();
+  return [means[Math.trunc(0.025 * rounds)], means[Math.trunc(0.975 * rounds) - 1]];
+}
+
+const totalScores = (returns, params) => returns.map(v => v + params.win_rate_weight * ((v > 0) - 0.5));
+const interval = (returns, params) => bootstrap(totalScores(returns, params), params.rounds, params.seed);
+
+function summarize(returns, params, withInterval) {
+  if (!returns.length) return undefined;
+  const n = returns.length, totals = totalScores(returns, params), sorted = totals.slice().sort((a, b) => a - b);
+  return {mean: fsum(totals) / n, median: n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2,
+    ci: withInterval ? interval(returns, params) : undefined, count: n,
+    return_mean: fsum(returns) / n, win_rate: returns.filter(v => v > 0).length / n};
+}
+</script>
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
 const PALETTE = ['#0969da', '#cf222e', '#1a7f37', '#8250df', '#e16f24', '#1b7c83', '#bf3989', '#6c8c00',
@@ -264,8 +349,16 @@ const SERIES = [
 const BY_KEY = Object.fromEntries(SERIES.map(s => [s.key, s]));
 const GROUPS = {strategy: '候选策略', baseline: '对照基线（不占名次）', benchmark: '市场对照'};
 const RULES = {stop_loss: '止损', trailing_stop: '移动止损', take_profit: '止盈', max_hold_days: '最长持有'};
-const state = {pool: 'all', segment: 'all', hidden: new Set(), sort: null, picked: null, focus: null, hover: null, reveal: false};
-let view = {rows: [], rank: {}, width: {}};
+const DATES = [...new Set(DATA.periods.map(p => p.decision_date))].sort();
+const PRESETS = DATA.segments.map(s => {
+  const dates = DATA.periods.filter(p => s.key === 'all' || p.segment === s.key).map(p => p.decision_date);
+  return {...s, from: dates[0], to: dates[dates.length - 1]};
+});
+const MARKET_KEY = (DATA.benchmarks.find(b => b.key === 'csi300') || DATA.benchmarks[0]).key;
+const state = {pool: 'all', range: {from: DATES[0], to: DATES[DATES.length - 1]}, dragging: false, hidden: new Set(),
+  sort: null, picked: null, focus: null, hover: null, reveal: false};
+let view = {rows: [], scored: [], rank: {}, width: {}, stats: {}, preset: 'all'};
+const INTERVALS = new Map();
 const fmt = v => v == null ? '—' : v.toFixed(2);
 const pct = v => `${+(Number(v) * 100).toFixed(2)}%`;
 const tone = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
@@ -273,9 +366,11 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', 
 const runs = s => s.kind !== 'benchmark';
 const value = (row, s) => runs(s) ? row.scores[s.key] : row.benchmarks[s.key];
 const visible = () => SERIES.filter(s => !state.hidden.has(s.key));
-const stats = s => (DATA.summaries[s.key][state.segment] || {})[state.pool];
+const stats = s => view.stats[s.key];
 const poolLabel = key => (DATA.pools.find(p => p.key === key) || {label: key}).label;
-const scopeLabel = () => `${state.pool === 'all' ? '全部股票池' : poolLabel(state.pool)} · ${DATA.segments.find(s => s.key === state.segment).label}`;
+const rangeLabel = () => view.preset ? PRESETS.find(p => p.key === view.preset).label : `${state.range.from} 至 ${state.range.to}`;
+const scopeLabel = () => `${state.pool === 'all' ? '全部股票池' : poolLabel(state.pool)} · ${rangeLabel()}`;
+const ciText = m => m.ci === undefined ? '计算中…' : m.ci ? `[${fmt(m.ci[0])}, ${fmt(m.ci[1])}]` : '—';
 const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 const plain = s => s.label.replace(/^对照：/, '');
 const short = (text, n) => text.length > n ? `${text.slice(0, Math.ceil((n - 1) / 2))}…${text.slice(text.length - Math.floor((n - 1) / 2))}` : text;
@@ -285,9 +380,20 @@ const rankBadge = s => view.rank[s.key] ? `<span class="rank ${view.rank[s.key] 
   : '<span class="rank">—</span>';
 const rankText = s => view.rank[s.key] ? `${view.rank[s.key]} · ` : '';
 
+const intervalKey = s => `${s.key}|${state.pool}|${state.range.from}|${state.range.to}`;
+const returnsOf = s => view.scored.map(p => value(p, s));
+
 function derive() {
-  view.rows = DATA.periods.filter(p => (state.pool === 'all' || p.pool === state.pool) &&
-    (state.segment === 'all' || p.segment === state.segment));
+  const {from, to} = state.range;
+  view.rows = DATA.periods.filter(p => (state.pool === 'all' || p.pool === state.pool) && p.decision_date >= from && p.decision_date <= to);
+  view.preset = (PRESETS.find(p => p.from === from && p.to === to) || {}).key;
+  view.scored = view.rows.slice().sort((a, b) => a.order - b.order);
+  view.stats = {};
+  for (const s of SERIES) {
+    const m = summarize(returnsOf(s), DATA.stats, false);
+    if (m && INTERVALS.has(intervalKey(s))) m.ci = INTERVALS.get(intervalKey(s));
+    view.stats[s.key] = m;
+  }
   const ranked = SERIES.filter(s => s.kind === 'strategy' && stats(s)).sort((a, b) => stats(b).mean - stats(a).mean);
   view.rank = Object.fromEntries(ranked.map((s, i) => [s.key, i + 1]));
   if (state.picked && !view.rows.some(p => p.id === state.picked)) state.picked = null;
@@ -325,7 +431,7 @@ function focusOn(key) {
   update(['card']);
 }
 
-const RENDER = {list: seriesList, card: strategyCard, summary: summaryTable, means: meansChart, yearly, cumulative,
+const RENDER = {timeline, list: seriesList, card: strategyCard, summary: summaryTable, means: meansChart, yearly, cumulative,
   periods: periodTable, picked: markPicked, detail};
 const EVERYTHING = Object.keys(RENDER);
 const VISIBILITY = ['list', 'summary', 'means', 'yearly', 'cumulative', 'periods', 'detail'];
@@ -338,20 +444,46 @@ function update(parts, filtered) {
 }
 function flush() {
   pending = 0;
-  if (dirty.delete('derive')) derive();
-  ['means', 'yearly', 'cumulative'].forEach(id => { if (dirty.has(id)) view.width[id] = Math.max(document.getElementById(id).clientWidth, 320); });
+  const derived = dirty.delete('derive');
+  if (derived) derive();
+  ['timeline', 'means', 'yearly', 'cumulative'].forEach(id => { if (dirty.has(id)) view.width[id] = Math.max(document.getElementById(id).clientWidth, 320); });
   for (const [name, render] of Object.entries(RENDER)) if (dirty.has(name)) render();
   dirty.clear();
   applyFocus();
   saveHash();
+  if (derived) fillIntervals();
   if (state.reveal && state.picked) document.getElementById('detail').scrollIntoView({behavior: 'smooth', block: 'start'});
   state.reveal = false;
+}
+
+let filling = 0;
+function fillIntervals() {
+  clearTimeout(filling);
+  if (state.dragging) return;
+  filling = setTimeout(function step() {
+    const start = performance.now();
+    for (const s of SERIES) {
+      const m = view.stats[s.key];
+      if (!m || m.ci !== undefined) continue;
+      m.ci = interval(returnsOf(s), DATA.stats);
+      INTERVALS.set(intervalKey(s), m.ci);
+      if (performance.now() - start > 30) { filling = setTimeout(step, 0); return; }
+    }
+    update(['summary', 'means', 'card']);
+  }, 0);
+}
+
+function setRange(from, to) {
+  if (from === state.range.from && to === state.range.to) return;
+  state.range = {from, to};
+  update(state.dragging ? EVERYTHING.filter(part => !['periods', 'detail'].includes(part)) : EVERYTHING, true);
 }
 
 function loadHash() {
   const q = new URLSearchParams(location.hash.slice(1));
   if (DATA.pools.some(p => p.key === q.get('pool'))) state.pool = q.get('pool');
-  if (DATA.segments.some(s => s.key === q.get('seg'))) state.segment = q.get('seg');
+  const [from, to] = [q.get('from'), q.get('to')];
+  if (DATES.includes(from) && DATES.includes(to) && from <= to) state.range = {from, to};
   (q.get('hide') || '').split(',').filter(key => BY_KEY[key]).forEach(key => state.hidden.add(key));
   if (BY_KEY[q.get('focus')]) state.focus = q.get('focus');
   if (DATA.periods.some(p => p.id === q.get('period'))) state.picked = q.get('period');
@@ -361,7 +493,7 @@ function loadHash() {
 function saveHash() {
   const q = new URLSearchParams();
   if (state.pool !== 'all') q.set('pool', state.pool);
-  if (state.segment !== 'all') q.set('seg', state.segment);
+  if (view.preset !== 'all') [['from', state.range.from], ['to', state.range.to]].forEach(([k, v]) => q.set(k, v));
   if (state.hidden.size) q.set('hide', [...state.hidden].join(','));
   if (state.focus) q.set('focus', state.focus);
   if (state.picked) q.set('period', state.picked);
@@ -396,8 +528,94 @@ function controls() {
     };
   };
   choose('pools', [{key: 'all', label: '全部'}, ...DATA.pools], 'pool');
-  choose('segments', DATA.segments, 'segment');
 }
+
+const BRUSH = {l: 10, r: 10, t: 4, b: 18, height: 70};
+const MARKET = (() => {
+  let total = 0;
+  return DATES.map(d => total += mean(DATA.periods.filter(p => p.decision_date === d).map(p => p.benchmarks[MARKET_KEY])));
+})();
+const brushX = i => BRUSH.l + (DATES.length > 1 ? i / (DATES.length - 1) : 0.5) * (view.width.timeline - BRUSH.l - BRUSH.r);
+
+function timeline() {
+  const width = view.width.timeline, {t, b, height} = BRUSH, n = DATES.length, x = brushX, bottom = height - b;
+  const lo = Math.min(0, ...MARKET), hi = Math.max(0, ...MARKET), y = v => t + (hi - v) / (hi - lo || 1) * (bottom - t);
+  const fi = DATES.indexOf(state.range.from), ti = DATES.indexOf(state.range.to), left = x(fi), right = x(ti);
+  const line = MARKET.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const years = DATES.map((d, i) => [i, d.slice(0, 4)]).filter(([i, year]) => !i || DATES[i - 1].slice(0, 4) !== year);
+  const every = Math.max(1, Math.ceil(years.length / ((width - BRUSH.l - BRUSH.r) / 44)));
+  const ticks = years.filter((_, k) => k % every === 0).map(([i, year]) => `<line x1="${x(i)}" x2="${x(i)}" y1="${bottom}"
+    y2="${bottom + 4}" stroke="#8c959f"/><text x="${x(i) + 2}" y="${height - 4}">${year}</text>`).join('');
+  const splits = PRESETS.filter(p => p.key !== 'all' && p.from !== DATES[0]).map(p => `<line x1="${x(DATES.indexOf(p.from))}"
+    x2="${x(DATES.indexOf(p.from))}" y1="${t}" y2="${bottom}" stroke="#8c959f" stroke-dasharray="2 3"/>`).join('');
+  const grip = at => `<rect class="grip" x="${at - 4}" y="${(t + bottom) / 2 - 11}" width="8" height="22" rx="3" fill="#fff" stroke="#0969da"/>`;
+  document.getElementById('timeline').innerHTML = `<svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}">
+    <polygon points="${x(0)},${y(0)} ${line} ${x(n - 1)},${y(0)}" fill="#d0d7de" fill-opacity=".55"/>
+    <polyline points="${line}" fill="none" stroke="#8c959f"/>${splits}${ticks}
+    <rect x="0" y="${t}" width="${Math.max(left, 0)}" height="${bottom - t}" fill="#fff" fill-opacity=".7"/>
+    <rect x="${right}" y="${t}" width="${Math.max(width - right, 0)}" height="${bottom - t}" fill="#fff" fill-opacity=".7"/>
+    <rect class="window" x="${left}" y="${t}" width="${Math.max(right - left, 1)}" height="${bottom - t}" fill="#0969da"
+      fill-opacity=".08" stroke="#0969da"/>${grip(left)}${grip(right)}</svg>`;
+  document.getElementById('presets').innerHTML = PRESETS.map(p =>
+    `<button data-from="${p.from}" data-to="${p.to}" class="${p.key === view.preset ? 'on' : ''}">${esc(p.label)}</button>`).join('');
+  const [fromInput, toInput] = [document.getElementById('from'), document.getElementById('to')];
+  [fromInput, toInput].forEach(input => Object.assign(input, {min: DATES[0], max: DATES[n - 1]}));
+  fromInput.value = state.range.from;
+  toInput.value = state.range.to;
+  document.getElementById('range-note').textContent = `${view.rows.length} 个决策点${view.preset ? '' : ' · 自定义区间'}` +
+    ` · 背景为${plain(BY_KEY[MARKET_KEY])}累计收益得分，拖动两端或中间调整，空白处拖出新区间`;
+}
+
+(() => {
+  const box = document.getElementById('timeline');
+  let drag = null;
+  const locate = e => {
+    const r = box.getBoundingClientRect(), sx = (e.clientX - r.left) * view.width.timeline / r.width;
+    const i = Math.round((sx - BRUSH.l) / (view.width.timeline - BRUSH.l - BRUSH.r) * (DATES.length - 1));
+    return {sx, i: Math.max(0, Math.min(DATES.length - 1, i))};
+  };
+  box.onpointerdown = e => {
+    const {sx, i} = locate(e), fi = DATES.indexOf(state.range.from), ti = DATES.indexOf(state.range.to);
+    const mode = Math.abs(sx - brushX(fi)) <= 8 ? 'from' : Math.abs(sx - brushX(ti)) <= 8 ? 'to' : i >= fi && i <= ti ? 'move' : 'new';
+    drag = {mode, anchor: i, fi, ti};
+    state.dragging = true;
+    box.setPointerCapture(e.pointerId);
+  };
+  box.onpointermove = e => {
+    if (!drag) return;
+    const {i} = locate(e), last = DATES.length - 1;
+    let {fi, ti} = drag;
+    if (drag.mode === 'from') fi = Math.min(i, ti);
+    else if (drag.mode === 'to') ti = Math.max(i, fi);
+    else if (drag.mode === 'move') { const shift = Math.max(-fi, Math.min(last - ti, i - drag.anchor)); fi += shift; ti += shift; }
+    else [fi, ti] = [Math.min(drag.anchor, i), Math.max(drag.anchor, i)];
+    setRange(DATES[fi], DATES[ti]);
+  };
+  box.onpointerup = box.onpointercancel = () => {
+    if (!drag) return;
+    drag = null;
+    state.dragging = false;
+    update(EVERYTHING, true);
+  };
+  const snap = (value, forward) => forward ? DATES.find(d => d >= value) || DATES[DATES.length - 1]
+    : DATES.slice().reverse().find(d => d <= value) || DATES[0];
+  document.getElementById('from').onchange = e => {
+    if (!e.target.value) return update(['timeline']);
+    const from = snap(e.target.value, true);
+    setRange(from, from > state.range.to ? from : state.range.to);
+    update(['timeline']);
+  };
+  document.getElementById('to').onchange = e => {
+    if (!e.target.value) return update(['timeline']);
+    const to = snap(e.target.value, false);
+    setRange(to < state.range.from ? to : state.range.from, to);
+    update(['timeline']);
+  };
+  document.getElementById('presets').onclick = e => {
+    const b = e.target.closest('button');
+    if (b) setRange(b.dataset.from, b.dataset.to);
+  };
+})();
 
 function seriesList() {
   let html = '', kind = null;
@@ -422,7 +640,7 @@ function strategyCard() {
   const m = stats(s), place = {strategy: view.rank[s.key] ? `第 ${view.rank[s.key]} 名` : '当前切片无成绩',
     baseline: '对照基线，不占名次', benchmark: '市场对照'}[s.kind];
   const kpi = m ? `<div class="kpi"><div>总分<b class="${tone(m.mean)}">${fmt(m.mean)}</b></div>
-      <div>95% 区间<b>${m.ci ? `[${fmt(m.ci[0])}, ${fmt(m.ci[1])}]` : '—'}</b></div>
+      <div>95% 区间<b>${ciText(m)}</b></div>
       <div>平均收益得分<b class="${tone(m.return_mean)}">${fmt(m.return_mean)}</b></div>
       <div>胜率<b>${(m.win_rate * 100).toFixed(0)}%（${m.count} 期）</b></div></div>` : '<p class="note">当前切片没有决策点</p>';
   box.innerHTML = `<h2>${swatch(s)}<span>${esc(s.label)}</span></h2>
@@ -439,7 +657,7 @@ function summaryTable() {
     {id: 'name', label: '策略', cls: 'l', key: s => s.label, cell: s => `${swatch(s)} ${esc(s.label)}`},
     {id: 'mean', label: '总分', key: (s, m) => m.mean, cell: (s, m) => `<span class="${tone(m.mean)}">${fmt(m.mean)}</span>`},
     {id: 'median', label: '总分中位数', key: (s, m) => m.median, cell: (s, m) => fmt(m.median)},
-    {id: 'ci', label: '总分 95% 区间', key: (s, m) => m.ci && m.ci[0], cell: (s, m) => m.ci ? `[${fmt(m.ci[0])}, ${fmt(m.ci[1])}]` : '—'},
+    {id: 'ci', label: '总分 95% 区间', key: (s, m) => m.ci && m.ci[0], cell: (s, m) => ciText(m)},
     {id: 'return', label: '平均收益得分', key: (s, m) => m.return_mean,
      cell: (s, m) => `<span class="${tone(m.return_mean)}">${fmt(m.return_mean)}</span>`},
     {id: 'win', label: '胜率（正得分期数）', key: (s, m) => m.win_rate,
@@ -501,7 +719,7 @@ function meansChart() {
     if (!g) return hideTip();
     const s = BY_KEY[g.dataset.s], m = stats(s);
     showTip(e, `<b>${swatch(s)} ${esc(rankText(s) + s.label)}</b><div><span>总分</span><span>${fmt(m.mean)}</span></div>
-      <div><span>95% 区间</span><span>${m.ci ? `[${fmt(m.ci[0])}, ${fmt(m.ci[1])}]` : '—'}</span></div>
+      <div><span>95% 区间</span><span>${ciText(m)}</span></div>
       <div><span>平均收益得分</span><span>${fmt(m.return_mean)}</span></div>
       <div><span>胜率</span><span>${(m.win_rate * 100).toFixed(0)}%（${m.count} 期）</span></div>`);
   };
@@ -669,7 +887,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.focu
 let measured = 0;
 new ResizeObserver(([entry]) => {
   const width = Math.round(entry.contentRect.width);
-  if (width !== measured) { measured = width; update(['means', 'yearly', 'cumulative']); }
+  if (width !== measured) { measured = width; update(['timeline', 'means', 'yearly', 'cumulative']); }
 }).observe(document.querySelector('main'));
 
 function watch() {
