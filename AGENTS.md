@@ -89,6 +89,13 @@ React Web → Rust API → PostgreSQL（mario_auth + 每账号 user_<uuid> schem
 
 常用检查入口以根目录和前端 `package.json`、`scripts/test.sh` 为准，详细命令见 [模块边界](docs/module-boundaries.md)。
 
+### Benchmark 策略成绩记录
+
+- 每次测出新策略后，在当前评分切片上按总分与已有策略一起排名（`cash`、`equal`、`momentum`、`size` 四个对照基线不占名次）。进入 Top-10 的策略必须在同次交付中记录到看板，不能只留在扫描脚本或聊天记录里。
+- 记录方式：在 `benchmark/strategies/<名字>/` 提交 `strategy.py` 与 `strategy.md`，说明中写明买卖规则、参数来源与选定所用的决策点范围，以及检验段是否严格样本外；然后运行 `npm run benchmark -- bench-run --release <当前切片>` 打分并刷新看板，确认新策略出现在看板中且分数与探索结果一致。
+- 同次更新 [benchmark 文档](docs/benchmark.md) 的成绩表（总分、平均收益得分、胜率与分段总分）和策略说明；交付时列出新的 Top-10 及其名次变化。
+- 未进入 Top-10 的探索结果只在交付说明中汇报，不新增策略目录。看板文件在 `.runtime/` 下，不进 Git；策略目录与文档成绩表是可追溯的记录。
+
 ## 5. 每次更新的 Git 交付闭环
 
 除非用户明确要求暂不提交或推送，每次完成更新后，都必须处理代码冲突、提交本次修改并推送到远端；不能把推送留作建议或待办。
