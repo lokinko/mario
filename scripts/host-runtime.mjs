@@ -51,6 +51,26 @@ async function ready(url, expected, headers = {}) {
   }
   throw Error(`服务未就绪：${url}`);
 }
+// The research dashboard is optional: a failed download or scoring run must not block the financial service.
+const BENCH_REPOS = ['--repo', 'lokinko/mario_bench', '--labels-repo', 'lokinko/mario_bench_labels'];
+function benchTag(value = '') {
+  if (value && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) throw Error('MARIO_BENCH_TAG 只能包含字母、数字、点、下划线和连字符');
+  return value;
+}
+const benchDir = tag => resolve(root, '.runtime/benchmark/bench', tag);
+async function buildDashboard(config, env) {
+  const tag = benchTag(config.MARIO_BENCH_TAG);
+  if (!tag) return console.log('未配置 MARIO_BENCH_TAG，跳过研究看板');
+  const release = join('.runtime/benchmark', tag);
+  try {
+    await run('uv', ['sync', '--frozen', '--group', 'publish'], { env });
+    await run(process.execPath, ['scripts/benchmark.mjs', 'hub-fetch', ...BENCH_REPOS, '--tag', tag, '--out', release], { env });
+    await run(process.execPath, ['scripts/benchmark.mjs', 'bench-run', '--release', release, '--out', benchDir(tag)], { env });
+  } catch (error) {
+    console.warn(`研究看板未更新（${error.message}）；/dashboard 继续提供上次生成的版本，没有则返回“尚未生成”。` +
+      '首次部署需以服务用户执行 .venv/bin/hf auth login 保存 Hugging Face 只读 token，详见 docs/deploy-madeagents.md');
+  }
+}
 function acquireLock() {
   mkdirSync(runtime, { recursive: true, mode: 0o700 });
   if (existsSync(lockPath)) {
@@ -84,6 +104,7 @@ try {
       MARIO_PG_PORT: String(port(setup.MARIO_SETUP_PG_PORT || original.MARIO_PG_PORT || '55432', 'MARIO_PG_PORT')),
       PG_BIN: postgresBin(setup.MARIO_SETUP_PG_BIN || original.PG_BIN),
       MARIO_BACKUP_MODE: 'native',
+      MARIO_BENCH_TAG: benchTag(setup.MARIO_SETUP_BENCH_TAG || original.MARIO_BENCH_TAG || ''),
     };
     if (setup.MARIO_SETUP_DATABASE_URL) values.DATABASE_URL = setup.MARIO_SETUP_DATABASE_URL;
     if (setup.MARIO_SETUP_ORIGINS) values.MARIO_ALLOWED_ORIGINS = setup.MARIO_SETUP_ORIGINS;
@@ -105,6 +126,7 @@ try {
     await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['ci', '--prefix', 'client'], { env, shell: process.platform === 'win32' });
     await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--prefix', 'client'], { env, shell: process.platform === 'win32' });
     await run('cargo', ['build', '--release', '--locked', '--manifest-path', 'server/Cargo.toml'], { env });
+    await buildDashboard(config, env);
   } else {
     acquireLock();
     assertNoRestore();
@@ -142,6 +164,8 @@ try {
       await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--prefix', 'client'], { env: { ...baseEnv, VITE_BASE_PATH: prefix }, shell: process.platform === 'win32' });
       ensureRunning();
       await run('cargo', ['build', '--release', '--locked', '--manifest-path', 'server/Cargo.toml'], { env: baseEnv });
+      ensureRunning();
+      await buildDashboard(config, baseEnv);
     }
     ensureRunning();
     if (!existsSync(binary) || !existsSync(resolve(root, 'client/dist/index.html'))) throw Error('缺少构建产物；去掉 --skip-build 重新运行');
@@ -172,9 +196,10 @@ try {
       ...baseEnv, ...shared, DATABASE_URL: databaseUrl, MARIO_MASTER_KEY: config.MARIO_MASTER_KEY,
       MARIO_ALLOWED_ORIGINS: config.MARIO_ALLOWED_ORIGINS ?? '',
       MARIO_HOST: '127.0.0.1', MARIO_AGENT_URL: `http://127.0.0.1:${agentPort}`, MARIO_WEB_DIR: resolve(root, 'client/dist'),
+      ...(config.MARIO_BENCH_TAG ? { MARIO_BENCH_DIR: benchDir(benchTag(config.MARIO_BENCH_TAG)) } : {}),
     });
     await ready(`http://127.0.0.1:${apiPort}/api/server`, body => body.mode === 'hosted');
-    console.log(`\nAPI 与 Agent 已就绪：http://127.0.0.1:${apiPort}\n公网网页：https://${config.MARIO_DOMAIN}${prefix}\n注册已开放，使用邮箱和密码即可创建账号。\n前台运行器由 systemd 托管；Ctrl+C/SIGTERM 停止并保留数据。`);
+    console.log(`\nAPI 与 Agent 已就绪：http://127.0.0.1:${apiPort}\n公网网页：https://${config.MARIO_DOMAIN}${prefix}\n研究看板（登录后可见）：https://${config.MARIO_DOMAIN}${prefix}dashboard\n注册已开放，使用邮箱和密码即可创建账号。\n前台运行器由 systemd 托管；Ctrl+C/SIGTERM 停止并保留数据。`);
     if (prefix !== '/') console.log(`公网网页路径：${prefix}（外层代理需移除该前缀，本机上游仍使用根路径）`);
     await stopRequested;
   }

@@ -7,9 +7,10 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from benchmark.dashboard import TEMPLATE, dashboard_data, dashboard_server, render, write_dashboard
+from benchmark.dashboard import DASHBOARD_FILES, STATS, dashboard_data, dashboard_server, render, write_dashboard
 from benchmark.files import Invalid, write_json, write_rows
 from benchmark.scoring import series_stats, total_score
 
@@ -92,30 +93,31 @@ class DashboardTest(unittest.TestCase):
         with self.assertRaises(Invalid):
             dashboard_data({"equal": run(report([0.0, 1.0])), "size": run(report([0.0, 1.0], benchmark=2.0))})
 
-    def test_html_embeds_escaped_data_lists_failures_and_refreshes_in_place(self):
-        html = render(dashboard_data({"equal": run(report([0.0, 1.0]))}))
-        embedded = re.search(r'<script type="application/json" id="data">(.*?)</script>', html, re.S).group(1)
-        self.assertEqual(json.loads(embedded)["limitations"], ["限制</script>"])
+    def test_page_and_script_carry_no_data_and_data_file_lists_failures(self):
+        files = render(dashboard_data({"equal": run(report([0.0, 1.0]))}))
+        self.assertEqual(set(files), set(DASHBOARD_FILES))
+        self.assertEqual(json.loads(files["dashboard.json"])["limitations"], ["限制</script>"])
+        self.assertNotIn("限制</script>", files["dashboard.html"] + files["dashboard.js"])
+        self.assertIsNone(re.search(r"<script(?![^>]*\bsrc=)", files["dashboard.html"]), "页面不能有内联脚本，否则被 CSP 拦截")
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder) / "runs"
             save(base, "equal", report([0.0, 1.0]))
             save(base, "broken", None, status="failed")
-            out = base / "dashboard.html"
-            write_dashboard(base, out)
+            write_dashboard(base, base)
             save(base, "size", report([2.0, 1.0]))
-            result = write_dashboard(base, out)
+            result = write_dashboard(base, base)
             self.assertEqual(result["strategies"], ["equal", "size"])
-            text = out.read_text(encoding="utf-8")
-            self.assertIn("size 标题", text)
-            self.assertIn("静态检查未通过", text)
+            data = json.loads((base / "dashboard.json").read_text(encoding="utf-8"))
+            self.assertIn("size 标题", [s["label"] for s in data["strategies"]])
+            self.assertIn("静态检查未通过", data["failures"][0]["error"])
+            self.assertFalse(list(base.glob("*.part")))
 
     @unittest.skipUnless(shutil.which("node"), "需要 Node.js 运行看板统计脚本")
     def test_page_statistics_match_scoring_for_any_period_subset(self):
         generator = random.Random(7)
         samples = [[round(generator.uniform(-15, 20), 6) for _ in range(n)] for n in (1, 2, 3, 37, 148)]
         samples += [[0.0, 0.0, 1.5], [-0.1] * 5]
-        script = re.search(r'<script id="stats">(.*?)</script>', TEMPLATE, re.S).group(1)
-        harness = script + "\nconst input = JSON.parse(require('fs').readFileSync(0, 'utf8'));\n" \
+        harness = STATS + "\nconst input = JSON.parse(require('fs').readFileSync(0, 'utf8'));\n" \
             "console.log(JSON.stringify(input.samples.map(v => summarize(v, input.params, true))));"
         params = dashboard_data({"equal": run(report([0.0, 1.0]))})["stats"]
         done = subprocess.run(["node", "-e", harness], input=json.dumps({"samples": samples, "params": params}),
@@ -130,21 +132,28 @@ class DashboardTest(unittest.TestCase):
             self.assertAlmostEqual(page["return_mean"], expected["return_score"]["mean"], places=12)
             self.assertEqual(page["ci"], score["bootstrap_95"])
 
-    def test_server_exposes_modification_time_for_live_reload_and_requires_dashboard(self):
+    def test_server_uses_deployed_paths_marks_data_live_and_hides_other_files(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
             with self.assertRaises(Invalid):
                 dashboard_server(base, 0)
             save(base, "equal", report([0.0, 1.0]))
-            write_dashboard(base, base / "dashboard.html")
+            write_dashboard(base, base)
             with dashboard_server(base, 0) as server:
                 worker = threading.Thread(target=server.serve_forever, daemon=True)
                 worker.start()
+                root = f"http://127.0.0.1:{server.server_port}"
                 try:
-                    url = f"http://127.0.0.1:{server.server_port}/dashboard.html"
-                    with urlopen(Request(url, method="HEAD"), timeout=5) as response:
-                        self.assertEqual(response.status, 200)
+                    with urlopen(f"{root}/dashboard", timeout=5) as response:
+                        self.assertIn('src="dashboard.js"', response.read().decode())
+                    with urlopen(f"{root}/dashboard.js", timeout=5) as response:
+                        self.assertEqual(response.headers["Content-Type"], "text/javascript")
+                    with urlopen(Request(f"{root}/api/benchmark/dashboard", method="HEAD"), timeout=5) as response:
+                        self.assertEqual(response.headers["X-Bench-Live"], "1")
                         self.assertTrue(response.headers["Last-Modified"])
+                    with self.assertRaises(HTTPError) as missing:
+                        urlopen(f"{root}/equal/weights.jsonl", timeout=5)
+                    self.assertEqual(missing.exception.code, 404)
                 finally:
                     server.shutdown()
 

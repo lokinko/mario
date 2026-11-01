@@ -64,6 +64,13 @@ try {
     });
     assert.equal(bridge.status, 401, '本机桥接必须拒绝没有配对码的请求');
     checks++;
+    const board = await request('dashboard', [200, 404]);
+    if (board.status === 200) {
+      assert.match(await board.text(), /src="dashboard\.js"/, '研究看板页面不完整');
+      assert.match((await request('dashboard.js')).headers.get('content-type') || '', /javascript/);
+      await request('api/benchmark/dashboard', [401]);
+      console.log('PASS 研究看板页面；数据只对已登录账号开放');
+    } else console.log('研究看板尚未生成：查看部署日志中的“研究看板未更新”提示');
     await request('.env', [403, 404]);
     await request('mario.db', [403, 404]);
     console.log(`PASS 未登录访问保护与私有文件保护；共 ${checks} 项只读 HTTP 检查通过。`);

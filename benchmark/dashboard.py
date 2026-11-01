@@ -1,6 +1,7 @@
-"""把 `bench-run` 输出目录中各策略的成绩汇总成可离线打开的单文件 HTML 看板。
+"""把 `bench-run` 输出目录中各策略的成绩汇总成看板：页面、脚本与数据分为三个文件。
 
 看板只读取成绩与策略说明，不读取输入或结果标签；图表由本模块统一生成，新增策略不需要改看板代码。
+本机由 `bench-serve` 提供，部署后由 Mario 服务在 `/dashboard` 提供，数据只对已登录账号开放。
 """
 
 import inspect
@@ -9,6 +10,7 @@ import math
 from datetime import datetime
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 from .files import read_json, require
 from .public_sources import SHANGHAI
@@ -20,6 +22,7 @@ BENCHMARKS = {"pool_equal_weight": ("对照：股票池等权", "每期等权买
               "csi300": ("对照：沪深300", "沪深300 全收益指数（H00300），由打分引擎计算。")}
 BASELINES = {"cash", "equal", "momentum", "size"}
 SPLIT_YEAR = 2018
+DASHBOARD_FILES = ("dashboard.html", "dashboard.js", "dashboard.json")
 
 
 def stats_parameters():
@@ -93,30 +96,49 @@ def dashboard_data(runs, config=None, failures=None):
 
 
 def render(data):
-    payload = json.dumps(data, ensure_ascii=False, allow_nan=False).replace("</", "<\\/")
-    return TEMPLATE.replace("__DATA__", payload)
+    """看板拆成页面、脚本与数据三个文件：页面与脚本不含数据，可公开提供；数据由服务端按登录状态授权读取。"""
+    return {"dashboard.html": TEMPLATE, "dashboard.js": STATS + SCRIPT,
+            "dashboard.json": json.dumps(data, ensure_ascii=False, allow_nan=False)}
 
 
-def write_dashboard(runs_dir, destination, release=None):
+def write_dashboard(runs_dir, folder, release=None):
     config = read_json(release / "config.json") if release else None
     data = dashboard_data(completed_runs(runs_dir), config, failed_runs(runs_dir))
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    part = destination.with_suffix(destination.suffix + ".part")
-    part.write_text(render(data), encoding="utf-8")
-    part.replace(destination)
-    return {"dashboard": str(destination), "strategies": [s["key"] for s in data["strategies"]],
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, text in render(data).items():
+        part = folder / f"{name}.part"
+        part.write_text(text, encoding="utf-8")
+        part.replace(folder / name)
+    return {"dashboard": str(folder / "dashboard.html"), "strategies": [s["key"] for s in data["strategies"]],
             "periods": len(data["periods"])}
 
 
-class QuietHandler(SimpleHTTPRequestHandler):
+class DashboardHandler(SimpleHTTPRequestHandler):
+    """与部署后的 Mario 服务使用同一组路径；只暴露看板三个文件，数据响应带 X-Bench-Live 让页面开启自动刷新。"""
+    ROUTES = {"/": "dashboard.html", "/dashboard": "dashboard.html", "/dashboard.html": "dashboard.html",
+              "/dashboard.js": "dashboard.js", "/api/benchmark/dashboard": "dashboard.json"}
+
+    def translate_path(self, path):
+        name = self.ROUTES.get(path.split("?", 1)[0])
+        return str(Path(self.directory) / name) if name else str(Path(self.directory) / "missing")
+
+    def guess_type(self, path):
+        return {".js": "text/javascript", ".json": "application/json"}.get(Path(path).suffix) or super().guess_type(path)
+
+    def end_headers(self):
+        if self.path.startswith("/api/"):
+            self.send_header("X-Bench-Live", "1")
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def log_message(self, *args):
         pass
 
 
 def dashboard_server(folder, port):
-    """只在本机提供 bench-run 输出目录；页面轮询看板文件的修改时间，重新生成后自动载入。"""
-    require((folder / "dashboard.html").exists(), f"{folder} 下还没有看板，请先运行 bench-run")
-    return ThreadingHTTPServer(("127.0.0.1", port), partial(QuietHandler, directory=str(folder)))
+    """只在本机提供 bench-run 输出目录中的看板；页面轮询数据文件的修改时间，重新生成后自动载入。"""
+    require(all((folder / name).exists() for name in DASHBOARD_FILES), f"{folder} 下还没有看板，请先运行 bench-run")
+    return ThreadingHTTPServer(("127.0.0.1", port), partial(DashboardHandler, directory=str(folder)))
 
 
 TEMPLATE = """<!doctype html>
@@ -128,6 +150,7 @@ TEMPLATE = """<!doctype html>
 <style>
 :root { --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --bg:#f6f8fa; --up:#cf222e; --down:#1a7f37; --pick:#fff8c5; }
 * { box-sizing:border-box; }
+[hidden] { display:none !important; }
 body { margin:0; font:14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color:var(--fg); background:#fff; }
 header { padding:14px 24px 10px; border-bottom:1px solid var(--line); }
 h1 { font-size:20px; margin:0 0 2px; }
@@ -205,7 +228,7 @@ code { font-size:12px; }
 <body>
 <header>
   <h1>mario_bench 策略得分看板</h1>
-  <div class="meta"><span id="meta"></span> · <span id="live"></span></div>
+  <div class="meta"><span id="meta">正在载入看板数据…</span> · <span id="live"></span></div>
 </header>
 <div class="layout">
   <aside>
@@ -240,8 +263,12 @@ code { font-size:12px; }
   </main>
 </div>
 <div class="tip" id="tip" hidden></div>
-<script type="application/json" id="data">__DATA__</script>
-<script id="stats">
+<script type="module" src="dashboard.js"></script>
+</body>
+</html>
+"""
+
+STATS = """
 function pythonRandom(seed) {
   const N = 624, M = 397, mt = new Uint32Array(N);
   let index = N;
@@ -331,9 +358,42 @@ function summarize(returns, params, withInterval) {
     ci: withInterval ? interval(returns, params) : undefined, count: n,
     return_mean: fsum(returns) / n, win_rate: returns.filter(v => v > 0).length / n};
 }
-</script>
-<script>
-const DATA = JSON.parse(document.getElementById('data').textContent);
+"""
+
+SCRIPT = """
+const SOURCE = 'api/benchmark/dashboard';
+
+function sessionToken() {
+  try {
+    const session = JSON.parse(localStorage.getItem(`mario.session:${new URL('api', location.href).pathname}`));
+    return session && typeof session.token === 'string' && session.expiresAt * 1000 > Date.now() ? session.token : null;
+  } catch {
+    return null;
+  }
+}
+
+function stop(message, login = false) {
+  document.querySelector('.layout').hidden = true;
+  document.getElementById('meta').textContent = message;
+  if (login) document.getElementById('live').innerHTML = '<a href="./">前往 Mario 登录</a>';
+  throw Error(message);
+}
+
+async function loadData() {
+  const token = sessionToken();
+  let response;
+  try {
+    response = await fetch(SOURCE, {cache: 'no-store', headers: token ? {Authorization: `Bearer ${token}`} : {}});
+  } catch {
+    stop('无法连接看板服务');
+  }
+  if (response.status === 401) stop('看板只对已登录账号开放：请先在 Mario 登录，再回到本页', true);
+  if (response.status === 404) stop('服务器上还没有生成看板，请检查部署日志');
+  if (!response.ok) stop(`看板数据读取失败（HTTP ${response.status}）`);
+  return {data: await response.json(), live: response.headers.get('X-Bench-Live') === '1'};
+}
+
+const {data: DATA, live: LIVE} = await loadData();
 const PALETTE = ['#0969da', '#cf222e', '#1a7f37', '#8250df', '#e16f24', '#1b7c83', '#bf3989', '#6c8c00',
   '#4c2889', '#a40e26', '#54aeff', '#7d4e00', '#2da44e', '#d2a8ff', '#ff8182', '#0550ae'];
 const GREYS = ['#8c959f', '#6e7781', '#afb8c1', '#57606a'];
@@ -892,8 +952,8 @@ new ResizeObserver(([entry]) => {
 
 function watch() {
   const live = document.getElementById('live');
-  if (!location.protocol.startsWith('http')) {
-    live.textContent = '离线打开：重新运行 bench-run 后刷新页面即可，筛选与聚焦状态会保留';
+  if (!LIVE) {
+    live.textContent = '数据随部署更新';
     return;
   }
   live.textContent = '自动刷新已开启：bench-run 重新生成看板后自动载入';
@@ -901,7 +961,7 @@ function watch() {
   const poll = async () => {
     if (!document.hidden) {
       try {
-        const r = await fetch(location.pathname, {method: 'HEAD', cache: 'no-store'});
+        const r = await fetch(SOURCE, {method: 'HEAD', cache: 'no-store'});
         const next = `${r.headers.get('Last-Modified')}|${r.headers.get('Content-Length')}`;
         if (r.ok && stamp && next !== stamp) return location.reload();
         if (r.ok) [stamp, live.textContent] = [next, '自动刷新已开启：bench-run 重新生成看板后自动载入'];
@@ -919,7 +979,4 @@ header();
 controls();
 watch();
 update(EVERYTHING, true);
-</script>
-</body>
-</html>
 """

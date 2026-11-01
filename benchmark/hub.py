@@ -1,4 +1,4 @@
-"""把股票池评分切片发布到 Hugging Face 私有数据集仓库；唯一允许导入 huggingface_hub 的模块。
+"""在 Hugging Face 私有数据集仓库发布与下载股票池评分切片；唯一允许导入 huggingface_hub 的模块。
 
 时点输入与随包快照进入主仓库，未来结果与策略成绩进入单独的标签仓库，降低泄漏与被训练语料收录的风险。
 再分发授权尚未核对，两个仓库都必须是私有仓库。
@@ -124,16 +124,48 @@ def private_repo(api, repo_id):
     require(api.repo_info(repo_id, repo_type="dataset").private, f"{repo_id} 不是私有仓库，拒绝上传")
 
 
+def huggingface():
+    try:
+        import huggingface_hub
+    except ImportError as exc:
+        raise Invalid("缺少 huggingface_hub：执行 uv sync --group publish 后重试") from exc
+    return huggingface_hub
+
+
+def repo_path(path):
+    require(path and not Path(path).is_absolute() and ".." not in Path(path).parts, "仓库内路径无效")
+    return path
+
+
+def fetch(repo, labels_repo, path, tag, out):
+    """下载 publish 上传的某个标签并还原为 pool-build 的目录结构；目录已存在时只校验，不覆盖。"""
+    repo_path(path)
+    if out.exists():
+        verify_release(out)
+        return {"status": "cached", "release": str(out)}
+    download = huggingface().snapshot_download
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=out.parent) as folder:
+        staged = Path(folder) / "release"
+        for repo_id, patterns in ((repo, [f"{path}/*"]), (labels_repo, [f"{path}/{name}" for name in sorted(LABEL_FILES)])):
+            local = Path(folder) / repo_id.replace("/", "__")
+            download(repo_id=repo_id, repo_type="dataset", revision=tag, allow_patterns=patterns, local_dir=local)
+            for item in (local / path).rglob("*"):
+                if item.is_file():
+                    target = staged / item.relative_to(local / path)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(item, target)
+        verify_release(staged)
+        staged.rename(out)
+    return {"status": "downloaded", "release": str(out), "tag": tag}
+
+
 def publish(release, repo, labels_repo, path, runs_dir, tag=None):
     verify_release(release)
-    require(path and not Path(path).is_absolute() and ".." not in Path(path).parts, "仓库内路径无效")
+    repo_path(path)
     scorecards = {name: run["scorecard"] for name, run in completed_runs(runs_dir).items()}
     require(scorecards, "缺少策略成绩，请先运行 bench-run")
-    try:
-        from huggingface_hub import HfApi
-    except ImportError as exc:
-        raise Invalid("缺少 huggingface_hub：执行 uv sync --group market --group publish 后重试") from exc
-    api = HfApi()
+    api = huggingface().HfApi()
     for repo_id in (repo, labels_repo):
         private_repo(api, repo_id)
     version = read_json(release / "config.json")["version"]

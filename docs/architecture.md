@@ -96,7 +96,7 @@ flowchart TD
 | --- | --- |
 | `main.rs`、`lib.rs`、`runtime.rs` | 进程入口、模块声明、环境与参数解析、模式选择、维护命令、优雅退出 |
 | `composition.rs` | 创建行情供应商，组装 `MarketServices`，拥有后台刷新任务并在服务退出时取消 |
-| `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS 与静态网页 |
+| `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS、静态网页，以及只读提供研究看板文件（`MARIO_BENCH_DIR`，数据接口只验证会话，不打开账号库） |
 | `http/` | 按领域注册路由（`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
 | `accounts.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速；Agent 令牌的常量时间比较 |
 | `application/` | 跨仓储与外部端口的用例：`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型接口切换策略、Provider 构造与连接测试）、`codex_bridge`（账号配对） |
@@ -240,7 +240,9 @@ sequenceDiagram
 
 [`benchmark/`](../benchmark/) 是与生产模块隔离的 Python 标准库 CLI，由 `scripts/benchmark.mjs` 启动；`public_sources` 优先探测免费来源覆盖并归档响应，`sources` 提供可选授权行情和财报原件下载，`dataset` 负责契约、完整性和历史时点投影，`evaluate` 计算预测排序指标，`release` 创建不可覆盖且带哈希清单的本地发布包。CLI 依赖这些研究模块，研究模块不导入前后端源码、不访问 PostgreSQL、账号备份或生产凭据。边界测试限制其依赖为 Python 标准库和本包，例外只有两个单一适配器：`baostock_market` 可导入 uv 依赖组 `market` 中的 `baostock`，用于已退市证券的免费日线；`hub` 可导入依赖组 `publish` 中的 `huggingface_hub`，只负责上传。在线服务不调用研究 CLI。
 
-两个股票池只在候选来源上不同，按时点市值的口径由 `market_cap` 统一：选样日未复权收盘价（经 `baostock_market`）乘以当时已公告的总股本（东方财富），连同剔除原因与缓存布局。`tech_universe` 以 `xls` 解析的申万个股行业变更历史确定科技池候选；`dividend_universe` 以被动指数基金年报全部持仓为中证红利成分代理，再按中证官方调样公告修正生效时点。两者互不引用，只产出带出处的年度候选提案，不修改 `dataset` 的正式校验规则。`pool_release` 把一个或多个股票池的提案合并为季度决策切片，时点输入、选样快照与建仓后价格路径分文件写入不可覆盖目录；`scoring` 是无网络的纯计算模块，按用户确定的主指标（平均收益得分加 2.5 × 胜率，全部现金为 0，收益得分为建仓后 0–7、7–30、30–90 自然日总资产增长按 0.3/0.3/0.4 加权）给仓位文件打分，并以同一公式计算沪深300 全收益指数与股票池等权对照；仓位可附在决策日确定的卖出规则或网格，由 `scoring` 按结果路径中的逐日开盘、收盘与可卖出、可买入状态执行，策略本身不接触未来价格。策略以 `benchmark/strategies/<名字>/` 目录提交（说明 `strategy.md` 与只含 `decide(sample)` 的 `strategy.py`），`strategy_runner` 静态检查后在隔离子进程中只喂入时点输入生成仓位，交给 `scoring` 打分，并以代码、发布包和打分引擎的哈希缓存结果；`dashboard` 只读取 `strategy_runner` 输出的成绩与说明，生成离线单文件 HTML 看板，`bench-run` 一条命令串起这一流程；`bench-serve` 只在本机提供该目录，看板重新生成后已打开的页面自动载入。`hub` 校验发布包后把输入与标签分别上传到两个私有 Hugging Face 数据集仓库。
+两个股票池只在候选来源上不同，按时点市值的口径由 `market_cap` 统一：选样日未复权收盘价（经 `baostock_market`）乘以当时已公告的总股本（东方财富），连同剔除原因与缓存布局。`tech_universe` 以 `xls` 解析的申万个股行业变更历史确定科技池候选；`dividend_universe` 以被动指数基金年报全部持仓为中证红利成分代理，再按中证官方调样公告修正生效时点。两者互不引用，只产出带出处的年度候选提案，不修改 `dataset` 的正式校验规则。`pool_release` 把一个或多个股票池的提案合并为季度决策切片，时点输入、选样快照与建仓后价格路径分文件写入不可覆盖目录；`scoring` 是无网络的纯计算模块，按用户确定的主指标（平均收益得分加 2.5 × 胜率，全部现金为 0，收益得分为建仓后 0–7、7–30、30–90 自然日总资产增长按 0.3/0.3/0.4 加权）给仓位文件打分，并以同一公式计算沪深300 全收益指数与股票池等权对照；仓位可附在决策日确定的卖出规则或网格，由 `scoring` 按结果路径中的逐日开盘、收盘与可卖出、可买入状态执行，策略本身不接触未来价格。策略以 `benchmark/strategies/<名字>/` 目录提交（说明 `strategy.md` 与只含 `decide(sample)` 的 `strategy.py`），`strategy_runner` 静态检查后在隔离子进程中只喂入时点输入生成仓位，交给 `scoring` 打分，并以代码、发布包和打分引擎的哈希缓存结果；`dashboard` 只读取 `strategy_runner` 输出的成绩与说明，生成看板的页面、脚本与数据三个文件，`bench-run` 一条命令串起这一流程；`bench-serve` 只在本机提供这三个文件，看板重新生成后已打开的页面自动载入。`hub` 校验发布包后把输入与标签分别上传到两个私有 Hugging Face 数据集仓库，`hub-fetch` 按标签下载并校验还原。
+
+研究看板也随 Mario 部署：`host-runtime --build` 在构建网页和 API 后，用 `hub-fetch` 取得 `MARIO_BENCH_TAG` 对应的切片，再用 `bench-run` 生成看板，失败只告警、不阻止部署。API 以 `MARIO_BENCH_DIR` 指向输出目录，`/dashboard` 与 `/dashboard.js` 公开，`/api/benchmark/dashboard` 只验证会话令牌，不打开账号 schema、不加账号锁。依赖方向不变：在线服务只读取研究工具生成的文件，不调用研究 CLI，研究模块也不访问账号数据。看板页面读取 Mario 网页保存在 `localStorage` 的会话（`mario.session:<前缀>api` 的 `token` 与 `expiresAt`），这是两者之间唯一的约定，修改 `client/src/lib/webSession.ts` 的存储格式时要同步修改 `benchmark/dashboard.py`。
 
 输入、请求缓存与发布包归 `.runtime/benchmark/`，是公开研究语料文件，不是第二个在线业务存储引擎。行情 token 只从终端环境读取。Hugging Face 是可选的后续分发渠道，本地构建不发布数据。完整原始归档与按披露时间截断的模型 inputs、未来 labels 分开；未核对历史成分、缺少日线或财报时不生成完成发布包。详细契约、失败恢复和研究限制见 [benchmark](benchmark.md)。
 

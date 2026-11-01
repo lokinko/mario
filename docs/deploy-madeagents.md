@@ -21,6 +21,7 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 - 按 `/mario/` 构建 React 网页，编译 Rust 服务，自动初始化或复用 `.runtime/native/postgres`。
 - 创建 `mario.service`，由 systemd 托管 PostgreSQL、API 和独立 Agent。断开 SSH 不停止服务，开机自动启动。
 - 生成 `.runtime/native/nginx.conf`，供现有 HTTPS 站点接入。
+- 从 Hugging Face 私有仓库下载 benchmark 切片并生成研究看板 `/mario/dashboard`，见下文[研究看板](#研究看板-mariodashboard)。
 
 项目专用 Node 位于 `/opt/mario-tools/node`，不替换宿主机已有 Node。PostgreSQL 包由官方 PGDG 源安装；发行版可能同时创建自己的默认数据库服务，本项目使用独立的 55432 端口和数据目录。其他发行版请预装工具，并将脚本中的 `INSTALL_MISSING_TOOLS` 改成 `false`。
 
@@ -28,7 +29,7 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 部署脚本以 root 执行系统安装，但运行服务使用普通用户。默认复用已有数据库所有者或 sudo 登录用户；直接 root 登录时创建 `mario`。部署会把当前项目目录归运行用户所有，不移动现有数据库，不更换密钥。
 
-安装来源：[Node 官方发行版](https://nodejs.org/dist/latest-v22.x/)、[PostgreSQL 官方源](https://www.postgresql.org/download/linux/ubuntu/)、[Rust 官方安装](https://rust-lang.org/tools/install/)。
+安装来源：[Node 官方发行版](https://nodejs.org/dist/latest-v22.x/)、[PostgreSQL 官方源](https://www.postgresql.org/download/linux/ubuntu/)、[Rust 官方安装](https://rust-lang.org/tools/install/)、[uv 官方安装](https://docs.astral.sh/uv/getting-started/installation/)。
 
 ## 配置只改一个地方
 
@@ -106,6 +107,27 @@ bash deploy.sh check
 bash deploy.sh prepare --ip 47.243.99.21 --domain www.madeagents.ai
 ```
 
+## 研究看板 /mario/dashboard
+
+benchmark 策略得分看板与 Mario 一起部署，地址为 `https://www.madeagents.ai/mario/dashboard`，任何已登录账号都能查看；未登录只看到“前往 Mario 登录”。Nginx 不需要额外配置：`/mario/` 下的请求本来就会转给 API，`/dashboard`、`/dashboard.js` 和 `/api/benchmark/dashboard` 由 Rust 服务从 `MARIO_BENCH_DIR` 读取，只有最后一个数据接口需要登录。
+
+`deploy.sh` 顶部的 `BENCH_TAG` 指定看板使用的 Hugging Face 切片标签（当前为 `pool-scoring-v5`），写入 `.env` 的 `MARIO_BENCH_TAG`。构建阶段依次执行：
+
+1. `uv sync --frozen --group publish` 准备 Python 环境（缺少 uv 时为服务用户安装到 `~/.local/bin`，所需 Python 由 uv 自动选择）。
+2. `hub-fetch` 从两个私有仓库下载该标签，合并后按清单校验哈希，存到 `.runtime/benchmark/<标签>/`；目录已存在时只校验，不重新下载。
+3. `bench-run` 运行 Git 中 `benchmark/strategies/` 的全部策略，打分后把看板写入 `.runtime/benchmark/bench/<标签>/`。结果按指纹缓存，首次约 15 秒。
+
+两个仓库都是私有的，服务器需要一个只读 token，首次部署后用服务用户保存一次：
+
+```bash
+sudo -u <服务用户> -H /srv/mario/.venv/bin/hf auth login
+sudo bash deploy.sh
+```
+
+看板失败不阻止 Mario 部署：缺少 token、网络失败、哈希不符或有策略运行失败时，部署日志会打印“研究看板未更新”及原因，服务照常启动，`/mario/dashboard` 继续提供上次生成的版本；从未生成过时返回“尚未生成”。部署结束时脚本会提示看板是否已生成，`bash deploy.sh check` 也会检查页面和数据接口的登录保护。`BENCH_TAG` 与 `.env` 都为空时不生成看板。
+
+更新看板：新策略推送到 `main` 后，在服务器拉取代码并重新部署即可。数据切片升级时，先在本机用 `hub-publish` 发布新标签，再修改 `BENCH_TAG` 并重新部署。
+
 ## PostgreSQL 启动失败
 
 `pg_ctl: could not start server` 只是摘要，具体错误在项目日志。先在服务器项目目录停止自动重启并查看：
@@ -125,7 +147,7 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 ## 验收 Web
 
-公网只读验收使用 `bash deploy.sh check`，检查入口跳转、API 模式、JS/CSS/图标及未登录保护。也可在本机项目中运行：
+公网只读验收使用 `bash deploy.sh check`，检查入口跳转、API 模式、JS/CSS/图标、研究看板及未登录保护。也可在本机项目中运行：
 
 ```bash
 node scripts/test-deployment.mjs --url https://www.madeagents.ai/mario

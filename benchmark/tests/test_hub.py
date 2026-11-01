@@ -2,11 +2,12 @@ import sys
 import tempfile
 import types
 import unittest
+from fnmatch import fnmatch
 from pathlib import Path
 from unittest.mock import patch
 
 from benchmark.files import Invalid, digest, write_json
-from benchmark.hub import CANARY, publish
+from benchmark.hub import CANARY, fetch, publish
 
 REPORT = {"score": {"mean": 1.5, "bootstrap_95": [0.5, 2.5], "count": 4}, "beat_csi300_periods": 3,
           "pool_equal_weight_score": {"mean": 1.0}, "csi300_score": {"mean": 0.5}}
@@ -48,10 +49,20 @@ class FakeApi:
         pass
 
 
+def snapshot_download(repo_id, allow_patterns, local_dir, **_):
+    for name, text in FakeApi.uploads[repo_id].items():
+        if any(fnmatch(name, pattern) for pattern in allow_patterns):
+            target = Path(local_dir) / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+    return local_dir
+
+
 class HubTest(unittest.TestCase):
     def setUp(self):
         FakeApi.uploads, FakeApi.private = {}, True
-        self.module = patch.dict(sys.modules, {"huggingface_hub": types.SimpleNamespace(HfApi=FakeApi)})
+        hub = types.SimpleNamespace(HfApi=FakeApi, snapshot_download=snapshot_download)
+        self.module = patch.dict(sys.modules, {"huggingface_hub": hub})
         self.module.start()
         self.addCleanup(self.module.stop)
 
@@ -82,6 +93,35 @@ class HubTest(unittest.TestCase):
             with self.assertRaises(Invalid):
                 publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "cards")
         self.assertEqual(FakeApi.uploads, {})
+
+    def test_fetch_restores_published_release_without_scorecards_and_never_overwrites(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            release(base / "release")
+            (base / "release" / "universe").mkdir()
+            runs(base / "cards")
+            publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "cards")
+            out = base / "fetched" / "pool-scoring-v9"
+            result = fetch("me/bench", "me/labels", "pool-scoring", "pool-scoring-v9", out)
+            self.assertEqual(result["status"], "downloaded")
+            self.assertEqual(sorted(p.name for p in out.iterdir()),
+                             ["config.json", "inputs.jsonl", "manifest.json", "outcomes.jsonl", "summary.json"])
+            self.assertEqual(fetch("me/bench", "me/labels", "pool-scoring", "pool-scoring-v9", out)["status"], "cached")
+            (out / "outcomes.jsonl").write_text("[]\n", encoding="utf-8")
+            with self.assertRaises(Invalid):
+                fetch("me/bench", "me/labels", "pool-scoring", "pool-scoring-v9", out)
+
+    def test_fetch_rejects_tampered_download_and_leaves_no_directory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            release(base / "release")
+            runs(base / "cards")
+            publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "cards")
+            FakeApi.uploads["me/labels"]["pool-scoring/outcomes.jsonl"] = "[]\n"
+            out = base / "fetched" / "release"
+            with self.assertRaises(Invalid):
+                fetch("me/bench", "me/labels", "pool-scoring", "pool-scoring-v9", out)
+            self.assertEqual(list((base / "fetched").iterdir()), [])
 
 
 if __name__ == "__main__":

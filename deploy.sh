@@ -19,7 +19,8 @@ DATABASE_URL=""                 # 可选已有数据库 URL；空值复用已有
 ALLOWED_ORIGINS=""              # 可选跨域网页 Origin，逗号分隔；当前同源网页无需填写。
 RUN_USER=""                     # 服务用户；默认复用数据库所有者或 sudo 登录用户，root 登录则创建 mario。
 SERVICE_NAME="mario"            # systemd 服务名；一台服务器部署多份时需使用不同名称和端口。
-INSTALL_MISSING_TOOLS="true"    # true 自动安装缺失工具；false 由你提前安装 Node 22+/Rust/PG。
+INSTALL_MISSING_TOOLS="true"    # true 自动安装缺失工具；false 由你提前安装 Node 22+/Rust/PG/uv。
+BENCH_TAG="pool-scoring-v5"     # 研究看板 /mario/dashboard 使用的 Hugging Face 切片标签；空值复用 .env，.env 也为空则不生成看板。
 # 不要手写数据库密码或密钥：首次自动生成并保存 .env，重启不会更换。
 # 用户自己的模型/API Key 在网页登录后的“模型与隐私”里配置。
 # .env 是自动生成的运行配置和秘密存储；迁移时必须一并备份，不提交 Git。
@@ -137,7 +138,7 @@ if [[ "$ACTION" == deploy ]]; then
     install_tools
     chown -R "$RUN_USER:$(id -gn "$RUN_USER")" -- "$PROJECT_DIR"
     RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
-    export PATH="$RUN_HOME/.cargo/bin:$PATH"
+    export PATH="$RUN_HOME/.cargo/bin:$RUN_HOME/.local/bin:$PATH"
     as_user() { runuser -u "$RUN_USER" -- env -u CARGO_HOME -u RUSTUP_HOME PATH="$PATH" "$@"; }
     if ! as_user cargo --version >/dev/null 2>&1; then
         [[ "$INSTALL_MISSING_TOOLS" == true ]] || { echo '请先给运行用户安装 Rust/rustup' >&2; exit 1; }
@@ -146,6 +147,15 @@ if [[ "$ACTION" == deploy ]]; then
         curl -fsS https://sh.rustup.rs -o "$installer"
         chmod 644 "$installer"
         as_user sh "$installer" -y --profile minimal --default-toolchain none
+        rm -- "$installer"
+    fi
+    if ! as_user uv --version >/dev/null 2>&1; then
+        [[ "$INSTALL_MISSING_TOOLS" == true ]] || { echo '请先给运行用户安装 uv（研究看板的 Python 环境）' >&2; exit 1; }
+        # uv 官方安装器装到服务用户的 ~/.local/bin，不改 shell 配置；Python 版本由 uv 按 pyproject.toml 选择。
+        installer="$(mktemp)"
+        curl -LsSf https://astral.sh/uv/install.sh -o "$installer"
+        chmod 644 "$installer"
+        as_user env UV_NO_MODIFY_PATH=1 sh "$installer"
         rm -- "$installer"
     fi
     NODE="$(command -v node)"
@@ -160,7 +170,7 @@ if [[ "$ACTION" == check ]]; then exec "$NODE" scripts/test-deployment.mjs; fi
 export MARIO_SETUP_IP="$SERVER_IP" MARIO_SETUP_DOMAIN="$DOMAIN" MARIO_SETUP_BASE_PATH="$BASE_PATH"
 export MARIO_SETUP_API_PORT="$API_PORT" MARIO_SETUP_AGENT_PORT="$AGENT_PORT" MARIO_SETUP_PG_PORT="$PG_PORT"
 export MARIO_SETUP_PG_BIN="$PG_BIN" MARIO_SETUP_DATABASE_URL="$DATABASE_URL"
-export MARIO_SETUP_ORIGINS="$ALLOWED_ORIGINS"
+export MARIO_SETUP_ORIGINS="$ALLOWED_ORIGINS" MARIO_SETUP_BENCH_TAG="$BENCH_TAG"
 if [[ "$ACTION" == prepare ]]; then exec "$NODE" scripts/host-runtime.mjs --prepare; fi
 as_user "$NODE" scripts/host-runtime.mjs --prepare
 as_user "$NODE" scripts/host-runtime.mjs --build
@@ -206,6 +216,12 @@ echo '本机 Codex 桥接已部署：网页 设置 → 模型接口 → Codex �
 echo '在个人电脑的同版 Mario 源码目录执行 npm run codex:bridge，粘贴配对码；在线后点击启用本机 Codex。'
 echo '本次包含超时与重试修复：浏览器强制刷新；本机旧桥接请先 Ctrl+C，再更新源码、重新配对并启动。'
 echo '本机桥接主动通过 HTTPS 连接网页，无需开放个人电脑端口；服务重启后需要重新配对。'
+bench_tag="$(sed -n 's/^MARIO_BENCH_TAG=//p' .env)"
+if [[ -n "$bench_tag" && -f ".runtime/benchmark/bench/$bench_tag/dashboard.json" ]]; then
+    echo "研究看板已生成（$bench_tag）：登录后访问 ${BASE_PATH}dashboard。"
+elif [[ -n "$bench_tag" ]]; then
+    echo "研究看板未生成：执行 sudo -u $RUN_USER -H $PROJECT_DIR/.venv/bin/hf auth login 保存 Hugging Face 只读 token 后重新部署。"
+fi
 echo "将 $PROJECT_DIR/.runtime/native/nginx.conf 加入域名的 HTTPS server，运行 nginx -t 后重载。"
 echo '若 www 在 server 层跳到根域名，请把该 return 移到兜底 location /，让 /mario 留在 www。'
 echo '详细步骤：docs/deploy-madeagents.md；公网验收：bash deploy.sh check；日志：sudo bash deploy.sh logs'

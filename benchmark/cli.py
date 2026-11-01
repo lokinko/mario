@@ -13,7 +13,7 @@ from .collect import collect_public, repair_catalogs
 from .sources import Tushare, collect_prices, collect_universe, fetch_documents
 from .tech_universe import collect_tech_universe
 from .dividend_universe import collect_dividend_universe
-from .hub import publish
+from .hub import fetch, publish
 from .dashboard import dashboard_server, write_dashboard
 from .pool_release import build_pool_release
 from .scoring import evaluate_weights
@@ -76,6 +76,12 @@ def main(argv=None):
     hub.add_argument("--labels-repo", required=True)
     hub.add_argument("--path", default="pool-scoring")
     hub.add_argument("--tag")
+    hub_fetch = sub.add_parser("hub-fetch", help="从两个私有仓库下载某个标签的评分切片，合并并校验哈希；目录已存在且校验通过时直接沿用")
+    hub_fetch.add_argument("--repo", required=True)
+    hub_fetch.add_argument("--labels-repo", required=True)
+    hub_fetch.add_argument("--path", default="pool-scoring")
+    hub_fetch.add_argument("--tag", required=True)
+    hub_fetch.add_argument("--out", type=Path, required=True)
     universe = sub.add_parser("collect-universe", help="采集历史成分和总市值提案，保留待核对状态")
     universe.add_argument("--root", type=Path, required=True)
     universe.add_argument("--provider-index-code", default="000922.SH")
@@ -105,13 +111,13 @@ def main(argv=None):
         elif args.command == "bench-run":
             out = args.out or Path(".runtime/benchmark/bench") / args.release.resolve().name
             runs = bench_run(args.strategies, args.release, out, args.force)
-            board = write_dashboard(out, out / "dashboard.html", args.release)
+            board = write_dashboard(out, out, args.release)
             print(json.dumps({"runs": runs, "dashboard": board["dashboard"]}, ensure_ascii=False, indent=2))
             return 0 if all(run["status"] != "failed" for run in runs) else 1
         elif args.command == "bench-serve":
             out = args.out or Path(".runtime/benchmark/bench") / args.release.resolve().name
             with dashboard_server(out, args.port) as server:
-                print(f"看板地址：http://127.0.0.1:{server.server_port}/dashboard.html（Ctrl+C 停止）", flush=True)
+                print(f"看板地址：http://127.0.0.1:{server.server_port}/dashboard（Ctrl+C 停止）", flush=True)
                 try:
                     server.serve_forever()
                 except KeyboardInterrupt:
@@ -119,6 +125,8 @@ def main(argv=None):
             return 0
         elif args.command == "hub-publish":
             result = publish(args.release, args.repo, args.labels_repo, args.path, args.runs, args.tag)
+        elif args.command == "hub-fetch":
+            result = fetch(args.repo, args.labels_repo, args.path, args.tag, args.out)
         elif args.command == "pool-build":
             result = build_pool_release(args.universe_root, args.out)
         elif args.command == "pool-score":
