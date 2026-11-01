@@ -122,6 +122,21 @@ class BuiltinStrategyTest(unittest.TestCase):
         fallback = generate_weights(code, [{"id": "s1", "pool": "tech", "stocks": weak}])
         self.assertEqual([r["symbol"] for r in fallback], ["000002.SZ", "000001.SZ"])
 
+    def test_calm_mid_momentum_sector_keeps_one_stock_per_industry(self):
+        stocks = [stock("000001.SZ", "0.2", volatility="0.01", short="0"),
+                  stock("000002.SZ", "0.2", volatility="0.02", short="0"),
+                  stock("000003.SZ", "0.2", volatility="0.03", short="0"),
+                  stock("000004.SZ", "0.2", volatility="0.04", short="0")]
+        for s, industry in zip(stocks, ("电子", "电子", "传媒", "计算机")):
+            s["sw_level1_name"] = industry
+        code = BUILTIN / "calm_mid_momentum_sector" / "strategy.py"
+        tech = generate_weights(code, [{"id": "s1", "pool": "tech", "stocks": stocks}])
+        self.assertEqual([r["symbol"] for r in tech], ["000001.SZ", "000003.SZ", "000004.SZ"])
+        for s in stocks:
+            s["sw_level1_name"] = None
+        dividend = generate_weights(code, [{"id": "s1", "pool": "dividend", "stocks": stocks}])
+        self.assertEqual([r["symbol"] for r in dividend], ["000001.SZ", "000002.SZ", "000003.SZ"])
+
 
 class SandboxTest(unittest.TestCase):
     def test_static_check_blocks_io_imports_and_reflection(self):
