@@ -120,6 +120,7 @@ def discover(directory):
 
 
 def generate_weights(code_path, samples, timeout=TIMEOUT_SECONDS):
+    code_path = Path(code_path).resolve()
     payload = "".join(json.dumps(s, ensure_ascii=False) + "\n" for s in samples)
     try:
         done = subprocess.run([sys.executable, "-I", "-X", "utf8", "-c", SANDBOX, str(code_path), json.dumps(ALLOWED_IMPORTS),

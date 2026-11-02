@@ -139,6 +139,15 @@ class BuiltinStrategyTest(unittest.TestCase):
 
 
 class SandboxTest(unittest.TestCase):
+    def test_relative_strategy_path_survives_the_child_working_directory(self):
+        cwd = Path.cwd()
+        with tempfile.TemporaryDirectory(dir=cwd) as tmp:
+            code = Path(tmp) / "strategy.py"
+            code.write_text('def decide(sample):\n    return {"000001.SZ": "1"}\n', encoding="utf-8")
+            result = generate_weights(code.relative_to(cwd), [{"id": "sample"}])
+            self.assertEqual(result, [{"sample_id": "sample", "symbol": "000001.SZ", "weight": "1.00000000"}])
+            self.assertEqual(Path.cwd(), cwd)
+
     def test_unicode_inputs_and_errors_use_utf8_in_isolated_python(self):
         with tempfile.TemporaryDirectory(prefix="策略_") as tmp:
             code = Path(tmp) / "strategy.py"
