@@ -354,6 +354,31 @@ npm run benchmark -- evaluate --root .runtime/benchmark/release-v1 --split test 
 
 评测按期计算 Rank IC、top-k 平均复权收益代理、20 股等权对照、沪深300 ETF 对照和平均超额代理；显示符合条件的期数、已评估期数及排除原因。整期预测少交股票或存在不可观察结果时不计算该期，防止选择性少交改善分数。**该评测不是可成交组合回测**（含成本、停牌和涨跌停的组合评分见“股票池切片评分”）：未实现历史涨跌停成交限制、成本/印花税/滑点、分红实际到账与再投资、退市清算。21/63/252 日窗口可能重叠，不连乘为总净值，不报告年化或 Sharpe。复权因子用于收益代理，不额外重复加现金股息。
 
+## 每日行情自动更新
+
+[GitHub Actions workflow](../.github/workflows/benchmark-prices.yml) 在 `main` 上每天北京时间 **22:37、23:37** 各执行一次，第二次用于补抓供应商延迟数据，也支持 Actions 页手动运行。GitHub 定时任务可能延迟；公开仓库长期无活动可能停用定时任务，需在 Actions 页恢复。此任务不依赖本机开机或 Mario 部署服务器。
+
+仓库 Secret `HF_TOKEN` 需要对 `lokinko/mario_bench` 有读取权限、对 `lokinko/mario_bench_labels` 有读取和写入权限；建议使用限定到这两个私有仓库的 token。凭据只由 Actions Secret 注入，不写入源码、日志或产物。两个 HF 仓库必须保持私有；workflow 的 GitHub 权限仅为 `contents: read`，不向 GitHub 提交行情。
+
+本地同一个入口：
+
+```bash
+uv sync --frozen --group market --group publish
+uv run --frozen --group market --group publish python scripts/benchmark_update_prices.py
+# 真实采集和校验，但不上传；可用于首次运行前探测来源。
+uv run --frozen --group market --group publish python scripts/benchmark_update_prices.py --dry-run
+```
+
+`benchmark_update_prices.py` 负责参数、临时目录、运行摘要与失败退出；`daily_prices.py` 负责日线合并和完整性；`hub.py` 负责 HF 下载/上传。数据流是固定标签选样快照 → 上次成功日线 → 增量采集与校验 → 单次 HF 提交，不访问在线业务或账号数据库。
+
+- **证券范围**：默认读取 `pool-scoring-v7` 中红利、科技年度快照的 `selected` 历史成员并集，保留已退市公司，不使用候选全集或当前成分反推历史。延长这些证券的价格至今不等于构建 2026 年及以后年度股票池；新增年度选样仍需按现有流程构建、核对和发布新切片，再修改 GitHub 仓库变量 `BENCHMARK_SOURCE_TAG`（本地 `--tag`）。
+- **初次回补**：默认从 `2005-08-01` 到北京时间截止日，18 点前默认前一天，18 点后默认当天；交易日历排除周末、休市，首次下载历史较长。`--start` 可选择其他起点，但同一 HF 路径不能改变起点或倒退截止日，需要另用 `--path` 新建归档。`--end` 可以明确指定补采截止日。
+- **增量与修正**：按证券、价格口径、年份保存 `prices/<证券>/adjust<口径>/<年>.jsonl`。股票保留未复权 `3` 与后复权 `1`，另采沪深300 未复权日线、H00300 全收益收盘点位。每次从已存末日往前回拉 14 个自然日，覆盖供应商近期修正；更早修正需增大 `--overlap-days`。缺行、重复日期、错证券、非法数值和来源延迟均失败，不前向填充、不把缺行解释为停牌；上市前和退市日起不要求股票日线。
+- **持久化与恢复**：归档位于私有标签仓库 `daily-prices/`，包含选样快照、交易日历、证券元数据、覆盖统计、配置和逐文件 SHA-256。最新日线可能泄露历史决策的未来，不能放进时点输入仓库。每次从远端固定提交恢复并校验全部哈希，不依赖 GitHub cache/artifact；采集全部通过后才上传一次提交，`parent_commit` 防止远端前进时覆盖其他发布。失败保留远端上次成功版本，下次继续；本次临时目录自动清理。相同清单不会重复上传。
+- **评分边界**：任务只维护日线，不改 `pool-scoring/`、不可变标签、数据集卡、策略参数、成绩或部署看板。新评分切片仍需保留 v7 特征并等待完整结果窗口，再走显式构建、评分与发布。
+
+Actions 的运行摘要列出股票数、年度范围、实际最后交易日与上传提交；失败在运行日志中标明来源和日期，不将未完成采集报告为成功。工作流用串行并发组防止两次调度重叠；超过 120 分钟会失败，可手动重新运行。[GitHub 定时触发说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
+
 ## Hugging Face 托管
 
 股票池评分切片用 `hub-publish` 上传到两个私有数据集仓库：时点输入、选样快照、配置、统计、哈希清单和数据集卡进入 [`lokinko/mario_bench`](https://huggingface.co/datasets/lokinko/mario_bench)；`outcomes.jsonl` 与各策略成绩进入 [`lokinko/mario_bench_labels`](https://huggingface.co/datasets/lokinko/mario_bench_labels)，评测时再授权读取，降低泄漏和被模型训练语料收录的风险。命令先用 `verify` 校验发布包，并确认两个仓库都是私有仓库才上传。`huggingface_hub` 是 uv 依赖组 `publish` 中的可选依赖，只由 `hub.py` 导入；token 由本机 `hf auth login` 保存，不写进仓库。

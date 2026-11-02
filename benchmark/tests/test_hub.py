@@ -7,7 +7,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from benchmark.files import Invalid, digest, read_json, write_json
-from benchmark.hub import CANARY, dataset_card, fetch, publish
+from benchmark.hub import (CANARY, dataset_card, fetch, prepare_daily_prices, publish,
+                           publish_daily_prices)
+from benchmark.release import verify_release
 
 REPORT = {"score": {"mean": 1.5, "bootstrap_95": [0.5, 2.5], "count": 4}, "beat_csi300_periods": 3,
           "pool_equal_weight_score": {"mean": 1.0}, "csi300_score": {"mean": 0.5}}
@@ -32,17 +34,23 @@ def runs(root):
 
 
 class FakeApi:
-    uploads, private = {}, True
+    uploads, private, last_upload = {}, True, {}
 
     def create_repo(self, repo_id, **_):
         pass
 
     def repo_info(self, repo_id, **_):
-        return types.SimpleNamespace(private=self.private)
+        return types.SimpleNamespace(private=self.private, sha=f"sha-{repo_id}")
 
-    def upload_folder(self, repo_id, folder_path, **_):
-        FakeApi.uploads[repo_id] = {p.relative_to(folder_path).as_posix(): p.read_text(encoding="utf-8")
-                                    for p in Path(folder_path).rglob("*") if p.is_file()}
+    def file_exists(self, repo_id, name, **_):
+        return name in FakeApi.uploads.get(repo_id, {})
+
+    def upload_folder(self, repo_id, folder_path, path_in_repo="", **kwargs):
+        FakeApi.last_upload = kwargs
+        prefix = path_in_repo + "/" if path_in_repo else ""
+        FakeApi.uploads.setdefault(repo_id, {}).update(
+            {prefix + p.relative_to(folder_path).as_posix(): p.read_text(encoding="utf-8")
+             for p in Path(folder_path).rglob("*") if p.is_file()})
         return types.SimpleNamespace(oid=f"sha-{repo_id}")
 
     def create_tag(self, *_, **__):
@@ -60,7 +68,7 @@ def snapshot_download(repo_id, allow_patterns, local_dir, **_):
 
 class HubTest(unittest.TestCase):
     def setUp(self):
-        FakeApi.uploads, FakeApi.private = {}, True
+        FakeApi.uploads, FakeApi.private, FakeApi.last_upload = {}, True, {}
         hub = types.SimpleNamespace(HfApi=FakeApi, snapshot_download=snapshot_download)
         self.module = patch.dict(sys.modules, {"huggingface_hub": hub})
         self.module.start()
@@ -148,6 +156,74 @@ class HubTest(unittest.TestCase):
             with self.assertRaises(Invalid):
                 fetch("me/bench", "me/labels", "pool-scoring", "pool-scoring-v9", out)
             self.assertEqual(list((base / "fetched").iterdir()), [])
+
+    def test_daily_restore_is_pinned_and_publish_preserves_scoring_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            release(base / "release")
+            runs(base / "cards")
+            universe = base / "release/universe"
+            universe.mkdir()
+            write_json(universe / "tech-2025.json", {"pool": "tech", "year": 2025, "selected": ["000001.SZ"]})
+            manifest = read_json(base / "release/manifest.json")
+            manifest["files"]["universe/tech-2025.json"] = digest(universe / "tech-2025.json")
+            write_json(base / "release/manifest.json", manifest)
+            publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "cards")
+            calls = []
+
+            def download(**kwargs):
+                calls.append(kwargs)
+                return snapshot_download(**kwargs)
+
+            with patch("benchmark.hub.huggingface", return_value=types.SimpleNamespace(HfApi=FakeApi, snapshot_download=download)):
+                source, previous, parent, provenance = prepare_daily_prices(
+                    "me/bench", "me/labels", "v7", "daily-prices", base / "first")
+                self.assertIsNone(previous)
+                self.assertEqual(provenance["commit"], "sha-me/bench")
+                self.assertEqual(calls[0]["revision"], "sha-me/bench")
+                self.assertTrue((source / "universe/tech-2025.json").exists())
+                self.assertFalse((source / "outcomes.jsonl").exists())
+                # 独立日线发布包，不要求先评分，也不会改写评分数据集卡。
+                daily = base / "daily"
+                daily.mkdir()
+                write_json(daily / "config.json", {"last_session": "2026-11-02"})
+                write_json(daily / "manifest.json", {"files": {"config.json": digest(daily / "config.json")}})
+                old = dict(FakeApi.uploads["me/labels"])
+                publish_daily_prices(daily, "me/labels", "daily-prices", parent)
+                self.assertEqual(FakeApi.last_upload["parent_commit"], "sha-me/labels")
+                self.assertTrue(all(FakeApi.uploads["me/labels"][k] == v for k, v in old.items()))
+                _, previous, _, _ = prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base / "next")
+                self.assertTrue(verify_release(previous)["valid"])
+                self.assertEqual(calls[-1]["revision"], "sha-me/labels")
+
+    def test_daily_refuses_public_repo_and_scoring_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            with self.assertRaises(Invalid):
+                prepare_daily_prices("me/bench", "me/labels", "v7", "pool-scoring", base)
+            FakeApi.private = False
+            with self.assertRaises(Invalid):
+                prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base)
+            self.assertEqual(FakeApi.uploads, {})
+
+    def test_daily_rejects_changed_snapshot_and_upload_conflict(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            FakeApi.uploads["me/bench"] = {
+                "pool-scoring/manifest.json": '{"files":{"universe/tech-2025.json":"bad-hash"}}',
+                "pool-scoring/universe/tech-2025.json": '{}'}
+            with self.assertRaisesRegex(Invalid, "哈希"):
+                prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base / "source")
+            release(base / "daily")
+            config = base / "daily/config.json"
+            write_json(config, {"last_session": "2026-11-02"})
+            manifest = read_json(base / "daily/manifest.json")
+            manifest["files"]["config.json"] = digest(config)
+            write_json(base / "daily/manifest.json", manifest)
+            with patch.object(FakeApi, "upload_folder", side_effect=RuntimeError("parent commit conflict")):
+                with self.assertRaisesRegex(RuntimeError, "conflict"):
+                    publish_daily_prices(base / "daily", "me/labels", "daily-prices", "old-sha")
+            self.assertNotIn("me/labels", FakeApi.uploads)
 
 
 if __name__ == "__main__":

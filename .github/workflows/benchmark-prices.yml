@@ -1,0 +1,42 @@
+name: Benchmark 每日行情
+
+on:
+  schedule:
+    # UTC；北京时间每天 22:37，23:37 再次补抓供应商延迟的数据。
+    - cron: '37 14,15 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-daily-prices
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'lokinko/mario' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
+      PYTHONUTF8: '1'
+      BENCHMARK_SOURCE_TAG: ${{ vars.BENCHMARK_SOURCE_TAG || 'pool-scoring-v7' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: 检查 Hugging Face 凭据
+        run: test -n "$HF_TOKEN" || { echo '请先配置仓库 Secret HF_TOKEN（输入仓库读取、标签仓库写入权限）'; exit 1; }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: 安装锁定的研究依赖
+        run: |
+          python -m pip install uv
+          uv sync --frozen --group market --group publish
+      - name: 验证增量更新与发布行为
+        run: uv run --frozen --group market --group publish python -m unittest benchmark.tests.test_daily_prices benchmark.tests.test_hub -v
+      - name: 采集并同步 Hugging Face
+        run: uv run --frozen --group market --group publish python scripts/benchmark_update_prices.py --tag "$BENCHMARK_SOURCE_TAG"

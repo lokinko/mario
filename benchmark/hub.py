@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from .files import Invalid, read_json, require, write_json
+from .files import Invalid, digest, read_json, require, write_json
 from .release import verify_release
 from .strategy_runner import completed_runs
 
@@ -201,3 +201,53 @@ def publish(release, repo, labels_repo, path, runs_dir, tag=None):
                 api.create_tag(repo_id, repo_type="dataset", tag=tag, revision=info.oid)
             result[key] = {"repo": repo_id, "commit": info.oid, "tag": tag}
     return result
+
+
+def prepare_daily_prices(repo, labels_repo, tag, path, workspace):
+    """只下载已固定版本的选样快照；最新行情恢复自标签仓库的同一次提交。"""
+    repo_path(path)
+    require(path != "." and repo != labels_repo, "每日行情必须使用独立标签仓库及子目录")
+    require(not (path == "pool-scoring" or path.startswith("pool-scoring/")), "日线路径不能覆盖评分切片")
+    hub = huggingface()
+    api = hub.HfApi()
+    for repo_id in (repo, labels_repo):
+        require(api.repo_info(repo_id, repo_type="dataset").private, f"{repo_id} 不是私有仓库")
+    source_commit = api.repo_info(repo, repo_type="dataset", revision=tag).sha
+    parent_commit = api.repo_info(labels_repo, repo_type="dataset").sha
+    source_download = workspace / "source-download"
+    hub.snapshot_download(repo_id=repo, repo_type="dataset", revision=source_commit,
+                          allow_patterns=["pool-scoring/manifest.json", "pool-scoring/universe/*.json"],
+                          local_dir=source_download)
+    downloaded = source_download / "pool-scoring"
+    manifest = read_json(downloaded / "manifest.json")["files"]
+    source = workspace / "source"
+    (source / "universe").mkdir(parents=True)
+    snapshots = list((downloaded / "universe").glob("*.json"))
+    expected = {name for name in manifest if name.startswith("universe/")}
+    require({f"universe/{p.name}" for p in snapshots} == expected and expected, "选样快照文件集合不完整")
+    for item in snapshots:
+        require(digest(item) == manifest[f"universe/{item.name}"], f"选样快照哈希错误: {item.name}")
+        shutil.copy2(item, source / "universe" / item.name)
+    previous = None
+    if api.file_exists(labels_repo, f"{path}/manifest.json", repo_type="dataset", revision=parent_commit):
+        restored = workspace / "previous-download"
+        hub.snapshot_download(repo_id=labels_repo, repo_type="dataset", revision=parent_commit,
+                              allow_patterns=[f"{path}/**"], local_dir=restored)
+        # 下载器的 .cache 位于 restored 根目录，不属于可校验的数据目录。
+        previous = restored / path
+        verify_release(previous)
+    return source, previous, parent_commit, {"repo": repo, "tag": tag, "commit": source_commit}
+
+
+def publish_daily_prices(root, repo, path, parent_commit):
+    """一个提交同时更新日线与清单，远端前进则拒绝覆盖；不触碰评分切片和数据集卡。"""
+    repo_path(path)
+    require(path != ".", "每日行情必须使用独立子目录")
+    require(not (path == "pool-scoring" or path.startswith("pool-scoring/")), "日线路径不能覆盖评分切片")
+    verify_release(root)
+    api = huggingface().HfApi()
+    require(api.repo_info(repo, repo_type="dataset").private, f"{repo} 不是私有仓库")
+    info = api.upload_folder(repo_id=repo, repo_type="dataset", folder_path=root, path_in_repo=path,
+                             parent_commit=parent_commit,
+                             commit_message=f"更新每日行情至 {read_json(root / 'config.json')['last_session']}")
+    return {"repo": repo, "commit": info.oid, "path": path}

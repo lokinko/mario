@@ -136,6 +136,8 @@ flowchart TD
 
 `scripts/benchmark_fugui_study.py` 只读取既有股票池 Baostock 后复权与独立日历缓存，检查重叠档案及原有动量字段，生成只截至决策日的日/周/月 BOLL、月 MACD 与首次回踩信号；未知周期保持缺失，明确停牌沿用此前已知收盘。研究输入保留 v7 全部原字段与结果标签，临时候选仍经隔离执行器和原评分器运行；不将缺失基本面自动当作满足，也不以固定网格冒充底仓/机动仓分账。规则、未完成条件及复跑见[富贵策略](fugui-strategy.md)，时点、历史缺失、首次回踩、仓位与不可覆盖检查归 `benchmark/tests/test_fugui_study.py`。未准入候选不安装到正式策略目录。
 
+每日行情维护归 `daily_prices.py`，只消费已发布选样快照，复用 `baostock_market.py` 与 `public_sources.py`；不得引用年度选样实现、在线业务或策略内部代码。`scripts/benchmark_update_prices.py` 编排固定标签下载、增量合并、HF 提交与摘要；SDK 继续只在 `hub.py` 中使用。workflow 只调度此脚本，凭据由 Secret 注入，HF 私有标签仓库是持久状态来源；不使用 Actions cache 作为事实来源，不自动发布年度选样或成绩。修改时运行 `npm run test:benchmark` 与架构检查，特别验证回拉修正、真实缺日与停牌区别、退市边界、哈希损坏、失败不改远端、固定提交下载与远端前进冲突。使用及恢复见 [每日行情自动更新](benchmark.md#每日行情自动更新)。
+
 批量免费补采由 `collect.py` 拥有任务进度、固定请求与断点恢复，调用 `public_sources` 的目录和行情能力；`files.symbol` 明确支持沪深北代码，不按首位数字或默认深市猜测交易所。`universes/` 的当前成分清单只用于候选数据预采，不替代 `dataset` 的历史选样。价格口径不可隐式拼接，日历闭市与真实交易日缺口分别计数；测试覆盖节假日排除、范围截断、标题简写、来源隔离和恢复校验。
 
 新增功能时先确定数据与事务的所属领域，再放置共享契约和仓储操作。需要调用市场接口、检索多类资料或执行模型时，在 `application` 增加用例，并从 HTTP 装配执行依赖。HTTP handler 只解析请求、调用该用例并返回结果。
