@@ -1,0 +1,341 @@
+"""离线长窗口信号研究；不采集网络数据、不上传，也不修改正式 v5。
+
+build 从独立日线缓存生成不可覆盖的研究切片；scan 比较规则并仅输出临时候选。
+研究者可读取结果标签评分；信号计算与生成仓位的子进程均不读取标签。
+"""
+
+import argparse
+import ast
+import copy
+import json
+import shutil
+import sys
+from collections import Counter
+from decimal import ROUND_DOWN, Decimal
+from functools import lru_cache
+from itertools import product
+from pathlib import Path
+from statistics import mean
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from benchmark.files import digest, new_directory, read_json, require, rows, write_json, write_rows
+from benchmark.pool_release import momentum
+from benchmark.release import verify_release
+from benchmark.scoring import portfolio_segments
+
+
+FIELDS = ("momentum_12m", "momentum_6m_skip1", "momentum_12m_skip1", "momentum_12_2",
+          "price_to_sma_10m", "close_to_high_12m", "close_to_max_close_12m", "information_discreteness")
+
+
+def month_key(day, offset=0):
+    index = int(day[:4]) * 12 + int(day[5:7]) - 1 + offset
+    year, month = divmod(index, 12)
+    return f"{year:04}-{month + 1:02}"
+
+
+def features(bars, calendar, decision):
+    """所有分母、窗口、月末和观察数严格限制于 decision，不前填缺失价格。"""
+    days = [d for d in calendar if d <= decision]
+    require(days and days[-1] == decision, "决策日必须在交易日历中")
+    ends = {d[:7]: d for d in days}
+    anchors = {i: ends.get(month_key(decision, -i)) for i in range(14)}
+    output = {key: None for key in FIELDS}
+    issues = {}
+
+    def price(day, field="close"):
+        bar = bars.get(day)
+        if not bar or bar.get("tradestatus") != "1":
+            return None
+        value = Decimal(bar[field])
+        require(value.is_finite() and value > 0, f"无效价格: {day}")
+        return value
+
+    def ratio(key, a, b):
+        x, y = price(anchors[a]), price(anchors[b])
+        if x is not None and y is not None:
+            output[key] = str(x / y - 1)
+        else:
+            issues[key] = "missing_or_suspended_endpoint"
+
+    ratio("momentum_12m", 0, 12)
+    ratio("momentum_6m_skip1", 1, 7)
+    ratio("momentum_12m_skip1", 1, 13)
+    ratio("momentum_12_2", 1, 12)
+    monthly = [price(anchors[i]) for i in range(10)]
+    if all(v is not None for v in monthly):
+        output["price_to_sma_10m"] = str(monthly[0] / (sum(monthly) / 10) - 1)
+    else:
+        issues["price_to_sma_10m"] = "missing_or_suspended_month_end"
+
+    start = anchors[12]
+    window = [d for d in days if start and start < d <= decision]
+    complete = start is not None and start in bars and all(d in bars for d in window)
+    now = price(decision)
+    if complete and now is not None:
+        for field, key in (("high", "close_to_high_12m"), ("close", "close_to_max_close_12m")):
+            observed = [price(d, field) for d in window if bars[d]["tradestatus"] == "1"]
+            if observed:
+                output[key] = str(now / max(observed))
+    for key in ("close_to_high_12m", "close_to_max_close_12m"):
+        if output[key] is None:
+            issues[key] = "incomplete_year_or_unavailable_decision_price"
+
+    # FIP 的 12-2 操作定义：P[上月末]/P[12个月前月末]-1，共11个月；不混用13月端点。
+    formation_end = anchors[1]
+    formation = [d for d in window if formation_end and d <= formation_end]
+    if complete and output["momentum_12_2"] is not None:
+        previous = price(start)
+        signs = []
+        for day in formation:
+            current = price(day)
+            if current is not None:
+                if previous is not None:
+                    signs.append((current > previous) - (current < previous))
+                previous = current
+        if signs:
+            pret = Decimal(output["momentum_12_2"])
+            sign = (pret > 0) - (pret < 0)
+            output["information_discreteness"] = str(-Decimal(sign) * sum(signs) / len(signs))
+            output["fip_observations"] = len(signs)
+    if output["information_discreteness"] is None:
+        issues["information_discreteness"] = "incomplete_formation_or_missing_endpoint"
+    return {**output, "issues": issues}
+
+
+def load_history(history, symbols):
+    request = read_json(history / "request.json")
+    require(request["adjustflag"] == "1" and request["source"] == "https://www.baostock.com/",
+            "研究仅接受已对账的 Baostock 后复权缓存")
+    all_bars, hashes = {}, {}
+    requested = {r["symbol"]: r for r in request["requests"]}
+    require(symbols <= requested.keys(), "缓存请求不含全部历史股票")
+    for symbol in sorted(symbols):
+        path = history / "repaired" / f"{symbol}.json"
+        if not path.exists():
+            path = history / "raw" / f"{symbol}.json"
+        record = read_json(path)
+        require(record["status"] == "completed" and record["request"] == requested[symbol], f"采集未完成: {symbol}")
+        data = record["rows"]
+        require(data and len({r["date"] for r in data}) == len(data), f"空记录或重复日线: {symbol}")
+        code, market = symbol.split(".")
+        require(all(r["code"] == f"{market.lower()}.{code}" and
+                    requested[symbol]["start"] <= r["date"] <= requested[symbol]["end"] and
+                    r["tradestatus"] in ("0", "1") for r in data), f"日线代码/日期/状态不符: {symbol}")
+        all_bars[symbol] = {r["date"]: r for r in data}
+        hashes[path.relative_to(history).as_posix()] = digest(path)
+    return request, all_bars, hashes
+
+
+def build(release, history, calendar_path, destination):
+    verify_release(release)
+    samples = rows(release / "inputs.jsonl")
+    symbols = {s["symbol"] for sample in samples for s in sample["stocks"]}
+    request, all_bars, hashes = load_history(history, symbols)
+    require(request["release_manifest_sha256"] == digest(release / "manifest.json"), "缓存不是该原始切片的请求")
+    calendar = read_json(calendar_path)
+    calendar = [f"{d[:4]}-{d[4:6]}-{d[6:]}" if len(d) == 8 else d for d in calendar]
+    require(calendar == sorted(set(calendar)), "交易日历必须升序且不重复")
+    comparisons = Counter()
+    for code, bars in all_bars.items():
+        start, end = min(bars), max(bars)
+        require(all(d in bars for d in calendar if start <= d <= end), f"历史内部缺少交易日: {code}")
+    enriched = copy.deepcopy(samples)
+    coverage = Counter()
+    cache = {}
+    for sample in enriched:
+        decision = sample["decision_date"]
+        for stock in sample["stocks"]:
+            bars = all_bars[stock["symbol"]]
+            require(stock["trade_status"] != "trading" or decision in bars, "截断历史未到已知交易决策日")
+            for field, sessions in (("return_20", 20), ("momentum_63", 63)):
+                if stock[field] is not None:
+                    require(momentum(bars, calendar, decision, sessions) == stock[field], f"共同字段不一致: {sample['id']} {stock['symbol']} {field}")
+                    comparisons[field] += 1
+            key = stock["symbol"], decision
+            if key not in cache:
+                cache[key] = features(bars, calendar, decision)
+            stock["long_history"] = cache[key]
+            coverage.update(k for k in FIELDS if stock["long_history"][k] is not None)
+    with new_directory(destination) as stage:
+        # 标签只在所有特征生成后复制；不读其中的未来路径，也不从中取历史行情。
+        for path in release.rglob("*"):
+            relative = path.relative_to(release)
+            if path.is_file() and relative.as_posix() not in ("manifest.json", "inputs.jsonl"):
+                (stage / relative).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, stage / relative)
+        write_rows(stage / "inputs.jsonl", enriched)
+        report = {"research_only": True, "source_manifest_sha256": digest(release / "manifest.json"),
+                  "calendar_sha256": digest(calendar_path), "raw_hashes": hashes,
+                  "source_rows": sum(map(len, all_bars.values())), "samples": len(enriched),
+                  "stock_decisions": sum(len(s["stocks"]) for s in enriched),
+                  "common_field_comparisons": dict(comparisons), "feature_coverage": dict(coverage),
+                  "outcomes_unchanged": digest(stage / "outcomes.jsonl") == digest(release / "outcomes.jsonl")}
+        write_json(stage / "long-history-study.json", report)
+        write_json(stage / "manifest.json", {"schema_version": 1, "files": {
+            p.relative_to(stage).as_posix(): digest(p) for p in sorted(stage.rglob("*")) if p.is_file()}})
+    verify_release(destination)
+    return report
+
+
+COMMON = '''from decimal import Decimal
+PARAMS = PARAMETERS
+
+
+def signal(stock, key):
+    value = stock["long_history"][key]
+    return None if value is None else Decimal(value)
+
+
+def eligible(sample, keys):
+    return [s for s in sample["stocks"] if s["trade_status"] != "no_bar"
+            and all(signal(s, k) is not None for k in keys)]
+
+
+def positions(chosen, budget=Decimal(1)):
+    return {s["symbol"]: budget / len(chosen) for s in chosen} if chosen else {}
+'''
+
+BODIES = {
+    "dual_momentum_12m": '''
+def decide(sample):
+    known = eligible(sample, ["momentum_12m"])
+    chosen = sorted(known, key=lambda s: (-signal(s, "momentum_12m"), s["symbol"]))[:PARAMS["count"]]
+    return {s["symbol"]: Decimal(1) / PARAMS["count"] for s in chosen if signal(s, "momentum_12m") > 0}
+''',
+    "sma_10m_filter": '''
+def decide(sample):
+    known = eligible(sample, ["price_to_sma_10m"])
+    # 各股票固定1/20预算，不把低于均线者的风险预算重新分配给上涨股票。
+    return {s["symbol"]: Decimal(1) / len(sample["stocks"]) for s in known if signal(s, "price_to_sma_10m") > 0}
+''',
+    "high_52week": '''
+def decide(sample):
+    known = eligible(sample, [PARAMS["field"]])
+    chosen = sorted(known, key=lambda s: (-signal(s, PARAMS["field"]), s["symbol"]))[:PARAMS["count"]]
+    return positions(chosen)
+''',
+    "frog_in_pan": '''
+def decide(sample):
+    known = eligible(sample, ["momentum_12_2", "information_discreteness"])
+    winners = sorted(known, key=lambda s: (-signal(s, "momentum_12_2"), s["symbol"]))
+    count = max(1, int(Decimal(len(winners)) * Decimal(PARAMS["winner_fraction"])))
+    winners = [s for s in winners[:count] if signal(s, "momentum_12_2") > 0]
+    chosen = sorted(winners, key=lambda s: (signal(s, "information_discreteness"), s["symbol"]))[:PARAMS["count"]]
+    return positions(chosen)
+''',
+    "high_calm_rank": '''
+def decide(sample):
+    known = [s for s in eligible(sample, [PARAMS["field"]]) if s["volatility_63"] is not None]
+    near = sorted(known, key=lambda s: (-signal(s, PARAMS["field"]), s["symbol"]))
+    calm = sorted(known, key=lambda s: (Decimal(s["volatility_63"]), s["symbol"]))
+    ranks = {s["symbol"]: i for i, s in enumerate(near)}
+    risk = {s["symbol"]: i for i, s in enumerate(calm)}
+    chosen = sorted(known, key=lambda s: (ranks[s["symbol"]] + risk[s["symbol"]], s["symbol"]))[:PARAMS["count"]]
+    return positions(chosen)
+''',
+}
+
+GRIDS = {
+    "dual_momentum_12m": [{"count": n} for n in (1, 3, 5, 6, 10)],
+    "sma_10m_filter": [{}],
+    "high_52week": [dict(count=n, field=f) for n, f in product((1, 3, 5, 6, 10), ("close_to_high_12m", "close_to_max_close_12m"))],
+    "frog_in_pan": [dict(count=n, winner_fraction=f) for n, f in product((1, 2, 3), ("0.2", "0.3", "0.5"))],
+    "high_calm_rank": [dict(count=n, field=f) for n, f in product((1, 3, 5, 6, 10), ("close_to_high_12m", "close_to_max_close_12m"))],
+}
+
+
+def source_for(family, parameters):
+    source = COMMON.replace("PARAMETERS", repr(parameters)) + BODIES[family]
+    # 删除未使用的公共函数，失败原型只写入研究输出，不加入正式策略目录。
+    tree = ast.parse(source)
+    definitions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    needed = {"decide"}
+    while True:
+        used = {n.id for name in needed for n in ast.walk(definitions[name]) if isinstance(n, ast.Name)}
+        more = needed | (used & definitions.keys())
+        if needed == more:
+            break
+        needed = more
+    lines = source.splitlines()
+    for node in reversed(tree.body):
+        if isinstance(node, ast.FunctionDef) and node.name not in needed:
+            del lines[node.lineno - 1:node.end_lineno]
+    return "\n".join(lines).strip() + "\n"
+
+
+def scan(release, destination):
+    verify_release(release)
+    samples = rows(release / "inputs.jsonl")
+    outcomes = {r["sample_id"]: r for r in rows(release / "outcomes.jsonl")}
+
+    @lru_cache(None)
+    def marks(i, code):
+        segments = portfolio_segments({code: Decimal(1)}, outcomes[samples[i]["id"]])[0]
+        accumulated, values = Decimal(1), []
+        for value in segments:
+            accumulated *= 1 + value
+            values.append(float(accumulated))
+        return values
+
+    def evaluate(source):
+        namespace = {}
+        exec(compile(source, "strategy.py", "exec"), namespace)
+        scores = []
+        for i, sample in enumerate(samples):
+            values = [1., 1., 1.]
+            for code, weight in namespace["decide"](sample).items():
+                weight = float(Decimal(weight).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN))
+                for j, mark in enumerate(marks(i, code)):
+                    values[j] += weight * (mark - 1)
+            scores.append(100 * (.3 * (values[0] - 1) + .3 * (values[1] / values[0] - 1) + .4 * (values[2] / values[1] - 1)))
+        return scores
+
+    def stats(values):
+        return {"score": mean(v + 2.5 * (v > 0) for v in values), "returns": mean(values), "win": mean(v > 0 for v in values)}
+
+    trials, winners = [], []
+    with new_directory(destination) as stage:
+        for family, parameters in GRIDS.items():
+            records = []
+            for params in parameters:
+                source = source_for(family, params)
+                returns = evaluate(source)
+                record = {"family": family, "parameters": params, "full": stats(returns),
+                          "early": stats([v for s, v in zip(samples, returns) if s["decision_date"] < "2018"]),
+                          "late": stats([v for s, v in zip(samples, returns) if s["decision_date"] >= "2018"])}
+                records.append(record)
+                trials.append(record)
+            winner = max(records, key=lambda r: r["full"]["score"])
+            winners.append(winner)
+            candidate = stage / "candidates" / family
+            candidate.mkdir(parents=True)
+            (candidate / "strategy.py").write_text(source_for(family, winner["parameters"]), encoding="utf-8")
+            (candidate / "strategy.md").write_text(f"# 长窗口规则适配：{family}\n\n仅供研究，季度股票长仓，不是原论文完整组合。参数按148期全段选择，不是样本外。\n", encoding="utf-8")
+            print(json.dumps(winner), flush=True)
+        report = {"release_sha256": digest(release / "manifest.json"), "trials": trials,
+                  "winners": sorted(winners, key=lambda r: r["full"]["score"], reverse=True)}
+        write_json(stage / "results.json", report)
+    return report
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    builder = sub.add_parser("build")
+    builder.add_argument("--history", type=Path, required=True)
+    builder.add_argument("--calendar", type=Path, required=True)
+    for command in (builder, sub.add_parser("scan")):
+        command.add_argument("--release", type=Path, required=True)
+        command.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args()
+    if args.command == "build":
+        report = build(args.release, args.history, args.calendar, args.out)
+        print(json.dumps({k: v for k, v in report.items() if k != "raw_hashes"}, ensure_ascii=False, indent=2))
+    else:
+        report = scan(args.release, args.out)
+        print(f"COMPLETED {len(report['trials'])} trials")
+
+
+if __name__ == "__main__":
+    main()
