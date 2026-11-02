@@ -3,14 +3,14 @@
 - Origin Skill: academic-research-suite / experiment-agent
 - Origin Mode: run
 - Origin Date: 2026-11-02
-- Verification Status: VERIFIED（本地研究输入、适配代码、统一评分与复跑；未发布 v6）
+- Verification Status: VERIFIED（研究输入、适配代码、统一评分、复跑及 v6 发布/下载复核）
 - Version Label: external_strategies_batch_3_risk
 
 # 第三批：三年周波动和组合方差
 
 本批比较 4 类规则、45 组配置。`trend_basket_risk` 的本地正式评分为 **3.5163214312**，比现行最高 `trend_core_satellite` 的 3.4959143225 高 **0.0204071087**。这只是在反复研究的 148 期上的小幅领先：按年份聚类的配对 95% 区间为 **[−0.0283, 0.0979]**，最差单期没有改善，不构成稳定增益证据。
 
-该规则需要新增月内历史收益。已准备独立、不可覆盖的最小 v6 输入和本地评审看板，尚未上传 Hugging Face，未替换网站使用的 v5，也未向正式目录安装依赖未发布输入的策略。当前 [benchmark 正式成绩表](../benchmark.md#新增策略与自动评测) 仍对应 v5；以下为待发布 v6 的评审结果。
+该规则需要新增月内历史收益。用户明确授权“发布 v6 并更新正式策略记录”后，已发布不可变 v6 标签、从远端下载到全新目录并校验，再将 `trend_basket_risk` 登记到正式策略目录，重跑全部20项并更新[正式成绩表](../benchmark.md#新增策略与自动评测)。部署读取标签改为 v6；本次没有执行网站部署。
 
 ## 设计与原文差异
 
@@ -32,7 +32,7 @@
 
 候选篮子日收益为 `sum(w_i / sum(w) * r_i,d)`，日度目标权重固定，因此包含个股协方差。总体方差为这些篮子日收益的离均差平方均值，**不是个股标准差的平均值**。最优预算 `min(1,0.04² / variance)`；方差为 0 时预算 1，任一入选股票的必要日收益未知或日期集合不齐时留现金。其余现金不重新分配，不加杠杆。核心/卫星选股和红利止盈、科技网格规则完整保留。
 
-最小待发布包 `.runtime/benchmark/pool-scoring-v6/` 只在 v5 输入上新增 `stock.long_history.daily_returns_1m` 与 `issues`，不携带另外三类失败规则的特征。`config.input_features=monthly-risk-v1`，构建日期固定为 2026-11-02。148 期、股票名单、原字段逐项不变，标签逐字节不变；输入文件 4,027,286 字节。manifest SHA-256：`3ed8080387e7a7f1174198357b2818fed36085be91c47940563b0eb23d20fe55`。
+最小发布包 `.runtime/benchmark/pool-scoring-v6/` 只在 v5 输入上新增 `stock.long_history.daily_returns_1m` 与 `issues`，不携带另外三类失败规则的特征。`config.input_features=monthly-risk-v1`，构建日期固定为 2026-11-02。148 期、股票名单、原字段逐项不变，标签逐字节不变；输入文件 4,027,286 字节。manifest SHA-256：`3ed8080387e7a7f1174198357b2818fed36085be91c47940563b0eb23d20fe55`。
 
 ## 统一评分
 
@@ -59,11 +59,11 @@
 
 增益集中于 2015 年两池同时减仓。对逐期配对总分差按自然年重采样 10,000 次（种子 20261102，抽中的年份保留该年的两池全部期）得到上述包含 0 的区间。这个区间也没有校正全段选参及多轮搜索的选择偏差，不能据此宣称统计显著。
 
-## 待发布看板与策略身份
+## 正式排名与策略身份
 
 评审目录 `.runtime/benchmark/risk-study-20261102/review-strategies/` 保留 19 个现有实现，另加最优 `trend_basket_risk`，共 20 项。旧 `trend_risk_budget` 的行业分散选股、63 日个股平均波动预算，与新策略的核心/卫星构建和月内组合协方差不同，属于不同机制；不能按“仅参数不同”删掉旧规则。32 个新预算配置只保留一个，不能拆成目标值或幂次变体占榜。
 
-| v6 评审名次 | 策略 | 总分 | 相对现行 v5 |
+| v6 名次 | 策略 | 总分 | 相对原 v5 |
 | ---: | --- | ---: | --- |
 | 1 | `trend_basket_risk` | 3.5163 | 新入榜 |
 | 2 | `trend_core_satellite` | 3.4959 | 1→2 |
@@ -94,8 +94,12 @@ python scripts/benchmark_risk_study.py build --minimal --built-on 2026-11-02 --r
 
 本机通过 `bench-serve --release .runtime/benchmark/pool-scoring-v6 --out .runtime/benchmark/risk-study-20261102/review-runs --port 8766` 提供评审看板，页面与数据接口均实测 HTTP 200。它是本地评审入口，不是已部署网站。
 
-输入包及预览数据卡已准备，预定发布到现有私有仓库 `lokinko/mario_bench` 与 `lokinko/mario_bench_labels`，新建 `pool-scoring-v6` 标签；不覆盖 v5 标签，不上传原始长日线。待用户确认外部数据发布后，再执行发布、从新标签下载校验、安装单一新策略、更新正式成绩表和部署读取标签。只更新代码与数据记录，不擅自部署网站。数据卡已支持准确说明新字段的截止时点与 null 语义。
+用户授权后，向原有两个私有仓库创建 `pool-scoring-v6` 标签：输入仓库提交 `698ab24cc388e980f0cd8bbb25e45941760ee0f9`，标签仓库提交 `e55fa56f97c5c060981fc073d9305e01bcb8db9f`。发布后重新查询，两个仓库仍为私有，v6 标签指向上述提交，v5 标签的两个提交不变；标签仓库恰好20项策略成绩，无参数重复残留。未上传原始长日线。
 
-验证：114 个 benchmark 测试、架构检查 7 项、266 个前端测试、前端构建/格式、Rust fmt/clippy/build 通过。完整 `npm test` 在一次性 PostgreSQL 集群初始化前因找不到 PostgreSQL 工具失败，数据库、HTTP/Web/桥接与后续财务验收未执行；未使用开发或线上数据库。另已复跑上一批 35 组，结果 JSON 完全相同，确认共享扫描器对旧无执行规则策略没有改变成绩。
+使用 `hub-fetch --tag pool-scoring-v6 --out .runtime/benchmark/hf-verified-v6-20261102` 下载到此前不存在的目录，返回 `status=downloaded` 并通过43个文件的校验；manifest 与本地批准版本一致。随后由正式 `benchmark/strategies/` 评分到 `.runtime/benchmark/bench/pool-scoring-v6/`，20项均成功，仓位和完整成绩与批准的评审版本一致。`deploy.sh` 默认标签及部署文档已改为 v6，本次不执行部署；线上页面要在服务器按既有流程部署后更新。
 
-持续研究仍在进行；外部数据发布尚待确认，不能将评审榜宣称为网站已更新。
+数据卡准确说明新字段截止时点与 null 语义。正式新策略只保存一组参数，代码和说明已提交；原v5数据及旧提交仅作为历史复现入口，不在新策略中保留降级兼容分支。
+
+验证：正式准入后115个 benchmark 测试、架构检查7项、266个前端测试、前端构建/格式、部署测试、Rust fmt/clippy/build通过。新增测试确认注册策略要求v6字段而不会静默退回旧逻辑。完整 `npm test` 在一次性 PostgreSQL 集群初始化前因找不到 PostgreSQL 工具失败，数据库、HTTP/Web/桥接与后续财务验收未执行；未使用开发或线上数据库。另已复跑上一批35组，结果JSON完全相同，确认共享扫描器对旧无执行规则策略没有改变成绩。
+
+持续研究仍在进行；v6 发布、正式登记和本地看板已完成，不将推送代码宣称为网站已部署。

@@ -20,7 +20,7 @@ ALLOWED_ORIGINS=""              # 可选跨域网页 Origin，逗号分隔；当
 RUN_USER=""                     # 服务用户；默认复用数据库所有者或 sudo 登录用户，root 登录则创建 mario。
 SERVICE_NAME="mario"            # systemd 服务名；一台服务器部署多份时需使用不同名称和端口。
 INSTALL_MISSING_TOOLS="true"    # true 自动安装缺失工具；false 由你提前安装 Node 22+/Rust/PG/uv。
-BENCH_TAG="pool-scoring-v5"     # 研究看板 /mario/dashboard 使用的 Hugging Face 切片标签；空值复用 .env，.env 也为空则不生成看板。
+BENCH_TAG="pool-scoring-v6"     # 研究看板 /mario/dashboard 使用的 Hugging Face 切片标签；空值复用 .env，.env 也为空则不生成看板。
 # 不要手写数据库密码或密钥：首次自动生成并保存 .env，重启不会更换。
 # 用户自己的模型/API Key 在网页登录后的“模型与隐私”里配置。
 # .env 是自动生成的运行配置和秘密存储；迁移时必须一并备份，不提交 Git。

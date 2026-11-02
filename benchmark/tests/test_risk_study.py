@@ -8,6 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from benchmark.strategy_runner import check_source, generate_weights
+from benchmark.files import Invalid
 from scripts.benchmark_risk_study import GRIDS, monthly_features, risk_features, source_for
 
 
@@ -68,12 +69,14 @@ class RiskFeaturesTest(unittest.TestCase):
 
 class BasketOverlayTest(unittest.TestCase):
     def decide(self, stocks):
-        source = source_for("basket_risk_overlay", {"base": "trend_core_satellite", "target": "0.04", "power": 2})
-        self.assertEqual(check_source(source), [])
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "strategy.py"
-            path.write_text(source, encoding="utf-8")
-            return generate_weights(path, [{"id": "test", "pool": "tech", "stocks": stocks}])
+        path = Path(__file__).parents[1] / "strategies" / "trend_basket_risk" / "strategy.py"
+        return generate_weights(path, [{"id": "test", "pool": "tech", "stocks": stocks}])
+
+    def test_registered_strategy_requires_explicit_v6_history_contract(self):
+        old = stock("600000.SH", {})
+        del old["long_history"]
+        with self.assertRaisesRegex(Invalid, "long_history"):
+            self.decide([old])
 
     def test_variance_budget_scales_weights_and_keeps_execution_rules(self):
         high = {"2020-12-01": "0.1", "2020-12-02": "-0.1"}

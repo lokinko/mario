@@ -111,7 +111,7 @@ bash deploy.sh prepare --ip 47.243.99.21 --domain www.madeagents.ai
 
 benchmark 策略得分看板与 Mario 一起部署，地址为 `https://www.madeagents.ai/mario/dashboard`，任何已登录账号都能查看；未登录只看到“前往 Mario 登录”。Nginx 不需要额外配置：`/mario/` 下的请求本来就会转给 API，`/dashboard`、`/dashboard.js` 和 `/api/benchmark/dashboard` 由 Rust 服务从 `MARIO_BENCH_DIR` 读取，只有最后一个数据接口需要登录。
 
-`deploy.sh` 顶部的 `BENCH_TAG` 指定看板使用的 Hugging Face 切片标签（当前为 `pool-scoring-v5`），写入 `.env` 的 `MARIO_BENCH_TAG`。构建阶段依次执行：
+`deploy.sh` 顶部的 `BENCH_TAG` 指定看板使用的 Hugging Face 切片标签（当前为 `pool-scoring-v6`），写入 `.env` 的 `MARIO_BENCH_TAG`。v6 新增组合方差预算策略需要的决策前月内收益，原有决策点与标签不变；历史 v5 标签保留供旧提交复现，当前策略目录须使用 v6。构建阶段依次执行：
 
 1. 以服务用户执行 `uv sync --frozen --group publish --managed-python` 准备 Python 环境。部署固定 `UV_PROJECT_ENVIRONMENT=.runtime/benchmark/.venv`、`UV_PYTHON_INSTALL_DIR=.runtime/benchmark/python`、`UV_CACHE_DIR=.runtime/benchmark/uv-cache`（实际传入绝对路径），不复用仓库 `.venv` 或调用者激活的环境。缺少 uv 时安装到服务用户的 `~/.local/bin`；Python 由 uv 下载到上述项目目录。
 2. `hub-fetch` 从两个私有仓库下载该标签，合并后按清单校验哈希，存到 `.runtime/benchmark/<标签>/`；目录已存在时只校验，不重新下载。

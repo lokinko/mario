@@ -16,7 +16,7 @@
 | E01 | [Gary Antonacci：Dual, Relative & Absolute Momentum](https://www.optimalmomentum.com/dual-relative-absolute-momentum/) 与 [作者 FAQ](https://www.optimalmomentum.com/faq/)：区分横截面的相对强弱与自身超额收益的绝对趋势；公开模型采用较长回看与跨资产防御配置 | 正式 v5 只有 63 日动量；独立研究输入已补 12 个月收益，仍缺无风险收益与池外防御资产 | **63 日代理已测** 2.6928；**12 个月季度股票长仓/现金适配已测** 1.9659，完整 GEM 组合与现有资产约束不同 |
 | E02 | [Moskowitz、Ooi、Pedersen：Time Series Momentum，2012](https://www.aqr.com/Insights/Research/Journal-Article/Time-Series-Momentum)：用自身过去 12 个月超额收益方向形成多空趋势，研究对象为跨资产期货及远期 | 不允许做空或杠杆；研究输入已有 12 个月收益和三年周波动，仍缺无风险收益 | **63 日代理已测** 2.0119；**12 个月/三年周波动逆风险版已测** 1.4373，完整三年覆盖不足导致部分期现金；不解释为原期货策略复现 |
 | E03 | [MSCI Momentum Indexes Methodology，2025-04，§2.2–2.4](https://www.msci.com/indexes/documents/methodology/2_MSCI_Momentum_Indexes_Methodology_20250417.pdf)：6/12 个月动量跳过最近一个月，调整无风险收益，除以三年周收益波动，合成标准分并按动量得分与母指数市值权重配置 | 已补跳月动量及严格三年周波动；仍缺利率与调仓时点母指数权重；现有市值是年度选样日值 | **短窗口适配已测** 2.6629；**长窗口适配已测** 2.0202，三年周波动完整覆盖只有1,221/2,960，需保留该限制，不能称为指数复现 |
-| E04 | [Moreira、Muir：Volatility-Managed Portfolios，2017，§I.B、表 IV–V](https://amoreira2.github.io/alan-moreira.github.io/VolPortfolios_published.pdf)：按前一月组合已实现方差的倒数缩放风险敞口；另讨论不加杠杆版本 | 同源历史日线已补齐，已计算固定当前权重的历史篮子日收益；它仍不同于原文过去实际因子组合收益 | **平均个股逆方差代理已测** 3.2671；**核心/卫星篮子协方差预算已测** 3.5163，本地 v6 评审第一，较现行最高高0.0204但区间含0；待新增输入发布确认后准入 |
+| E04 | [Moreira、Muir：Volatility-Managed Portfolios，2017，§I.B、表 IV–V](https://amoreira2.github.io/alan-moreira.github.io/VolPortfolios_published.pdf)：按前一月组合已实现方差的倒数缩放风险敞口；另讨论不加杠杆版本 | 同源历史日线已补齐，已计算固定当前权重的历史篮子日收益；它仍不同于原文过去实际因子组合收益 | **平均个股逆方差代理已测** 3.2671；**核心/卫星篮子协方差预算已正式准入** 3.5163，v6 第一，较原最高高0.0204但区间含0；用户确认后已发布并下载复核 |
 | E05 | [Asness、Frazzini、Pedersen：Low-Risk Investing without Industry Bets，2014](https://www.aqr.com/-/media/AQR/Documents/Insights/Journal-Article/FAJ-LowRisk-Investing-Without-Industry-Bets.pdf)：研究行业内部的低 beta 效应及行业暴露影响 | 当前没有 beta；个股波动不能等同于市场 beta，也不允许原研究的多空构建 | **行业等预算、行业内低波长仓代理已测**，最优 2.5375；原 beta 计算与多空组合未复现 |
 | E06 | [Meb Faber：A Quantitative Approach to Tactical Asset Allocation，作者原规则回顾](https://mebfaber.com/2017/12/13/episode-86-quantitative-approach-tactical-asset-allocation/)：月末价格高于 10 个月简单均线时持有，否则现金 | 独立研究输入已补 10 个月月末价格；原多资产、月度调仓及现金收益与季度股票窗口不同 | **真实 10 月均线信号、季度股票适配已测**，1.8064；低于均线或数据不足的固定预算留现金，未复现原多资产组合 |
 | E07 | [Robeco：Guide to Conservative Investing，2023，p.6](https://www.robeco.com/docm/docu-202302-guide-to-conservative-investing.pdf)：先从大市值股票选三年低波，再按净派息率与动量选择，等权季度调仓 | 缺三年波动和可证明历史披露时点的净派息/回购数据；红利池身份不等于净派息率 | **待补数据**，先明确现金股息与净回购分子、时点市值分母及披露日期，不声称此前“低波+动量”就是完整 Conservative Formula |
@@ -25,9 +25,9 @@
 
 新增候选来源：[Novy-Marx，Fundamentally, Momentum is Fundamental Momentum，NBER w20984](https://www.nber.org/papers/w20984)。本次搜索取得题录与摘要，但正文和 PDF 访问返回 403；尚未核对完整信号、形成期和财报时点，不把摘要当作可执行规则，也没有测分。下一步应获取作者原稿并核查实际披露时间的数据路径，避免研究一直局限于价格类因子。
 
-E01–E05 的短窗口适配见 [第一批实验](audits/benchmark-external-strategies-20261102.md)；真实长窗口的 5 类/35 组比较、输入覆盖与复核见 [第二批实验](audits/benchmark-long-signals-20261102.md)。两批都没有胜出的独立新机制，当前 Top-10 不变。失败候选只在 `.runtime/` 中，不进入正式策略目录和网站看板；第二批的生成和扫描程序已提交，可从同构缓存重建。
+E01–E05 的短窗口适配见 [第一批实验](audits/benchmark-external-strategies-20261102.md)；真实长窗口的 5 类/35 组比较、输入覆盖与复核见 [第二批实验](audits/benchmark-long-signals-20261102.md)。这两批没有胜出的独立新机制，未改变当时的Top-10。失败候选只在 `.runtime/` 中，不进入正式策略目录和网站看板；第二批的生成和扫描程序已提交，可从同构缓存重建。
 
-第三批的 4 类/45 组比较与 v6 评审 Top-10 见 [组合风险实验](audits/benchmark-risk-signals-20261102.md)。新机制需月内历史收益输入，本地最小切片和看板已就绪；尚未上传外部数据或切换正式目录，现行 v5 排名不变。更优评审结果没有被隐去，也没有把它冒充成当前网站成绩。
+第三批的 4 类/45 组比较、当前 v6 Top-10 与发布复核见 [组合风险实验](audits/benchmark-risk-signals-20261102.md)。用户已授权发布新增输入，现已完成两个私有仓库的不可变v6标签、全新目录下载校验、正式新策略目录和本地看板。当前第一为 `trend_basket_risk`，20项中只新增这一种机制；部署默认数据标签改为v6，本次未执行网站部署。
 
 ## 长历史来源核查
 
@@ -42,7 +42,7 @@ E01–E05 的短窗口适配见 [第一批实验](audits/benchmark-external-stra
 
 ## 下一轮优先事项
 
-1. 完成 v6 外部发布确认、下载校验和 `trend_basket_risk` 正式准入闭环；只保留该新机制最优参数，原有个股平均波动预算因选股与估计方法不同而保留。网站部署须另有任务授权。
+1. 在已发布v6及当前20项基准上继续研究；`trend_basket_risk` 只保留最优参数，原有个股平均波动预算因选股与估计方法不同而保留。网站部署须另有任务授权。
 2. 核查盈利公告动量、盈利质量、净派息等原规则与可按披露时间取得的数据，优先处理财报修订和公告日期，不能用最新财务表回填历史。
 3. 研究原文过去实际组合收益方差与当前固定篮子风险估计的差异；需要过去执行路径时另补当时开盘及成交状态，不从标签文件回填输入。严格三年周波动因停牌失效的记录保留，不能为提高分数悄悄填值。
 4. beta 与净派息字段分别推进，不把指标缺失转化为不透明近似；月度、多空等完整原组合仍与本 benchmark 的季度长仓协议有区别。
