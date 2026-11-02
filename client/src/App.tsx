@@ -80,11 +80,13 @@ function App() {
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMobileNavOpen(false);
       if (event.key !== "Tab") return;
-      const buttons = Array.from(
-        sidebarRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+      const controls = Array.from(
+        sidebarRef.current?.querySelectorAll<
+          HTMLButtonElement | HTMLAnchorElement
+        >("button, a[href]") ?? [],
       );
-      const first = buttons[0],
-        last = buttons.at(-1);
+      const first = controls[0],
+        last = controls.at(-1);
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last?.focus();
@@ -251,17 +253,32 @@ function App() {
           {navGroups.map((group) => (
             <div className="nav-group" key={group.caption}>
               <p className="nav-caption">{group.caption}</p>
-              {group.items.map((item) => (
-                <button
-                  key={item.id}
-                  aria-current={view === item.id ? "page" : undefined}
-                  className={view === item.id ? "active" : ""}
-                  onClick={() => navigate(item.id)}
-                >
-                  <item.icon size={18} />
-                  {item.label}
-                </button>
-              ))}
+              {group.items.map((item) =>
+                "href" in item ? (
+                  <a
+                    key={item.id}
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${item.label}（新标签页打开）`}
+                    title="在新标签页打开研究看板"
+                    onClick={() => setMobileNavOpen(false)}
+                  >
+                    <item.icon size={18} />
+                    {item.label}
+                  </a>
+                ) : (
+                  <button
+                    key={item.id}
+                    aria-current={view === item.id ? "page" : undefined}
+                    className={view === item.id ? "active" : ""}
+                    onClick={() => navigate(item.id)}
+                  >
+                    <item.icon size={18} />
+                    {item.label}
+                  </button>
+                ),
+              )}
             </div>
           ))}
         </nav>

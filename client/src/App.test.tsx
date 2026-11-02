@@ -266,6 +266,33 @@ it("shows frequently used records in primary navigation", async () => {
   ])
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
+it("links to the research dashboard without replacing the current view and closes mobile navigation", async () => {
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
+    new Error("optional model unavailable"),
+  );
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "打开导航" }));
+  const navigation = screen.getByRole("dialog", { name: "主导航" });
+  const link = within(navigation).getByRole("link", {
+    name: "研究看板（新标签页打开）",
+  });
+  expect(link.getAttribute("href")).toBe(
+    `${import.meta.env.BASE_URL}dashboard`,
+  );
+  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("rel")).toContain("noopener");
+  expect(
+    link.closest(".nav-group")?.querySelector(".nav-caption")?.textContent,
+  ).toBe("研究");
+  fireEvent.click(link);
+  expect(screen.queryByRole("dialog", { name: "主导航" })).toBeNull();
+  expect(window.location.hash).toBe("#cloud");
+  expect(screen.getByRole("button", { name: "测试恢复数据" })).toBeTruthy();
+});
+
 it("responds to hash navigation without leaving the old page on screen", async () => {
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
     {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
