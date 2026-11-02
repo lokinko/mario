@@ -139,6 +139,20 @@ class BuiltinStrategyTest(unittest.TestCase):
 
 
 class SandboxTest(unittest.TestCase):
+    def test_unicode_inputs_and_errors_use_utf8_in_isolated_python(self):
+        with tempfile.TemporaryDirectory(prefix="策略_") as tmp:
+            code = Path(tmp) / "strategy.py"
+            code.write_text('def decide(sample):\n'
+                            '    if sample["industry"] != "计算机":\n'
+                            '        raise ValueError("行业编码错误")\n'
+                            '    return {"000001.SZ": "1"}\n', encoding="utf-8")
+            sample = {"id": "中文样本", "industry": "计算机"}
+            self.assertEqual(generate_weights(code, [sample]),
+                             [{"sample_id": "中文样本", "symbol": "000001.SZ", "weight": "1.00000000"}])
+            code.write_text('def decide(sample):\n    raise ValueError("中文错误消息")\n', encoding="utf-8")
+            with self.assertRaisesRegex(Invalid, "中文错误消息"):
+                generate_weights(code, [sample])
+
     def test_static_check_blocks_io_imports_and_reflection(self):
         self.assertEqual(check_source("import math\nfrom decimal import Decimal\ndef decide(sample):\n    return {}\n"), [])
         for source in ("import os\ndef decide(s): return {}", "from pathlib import Path\ndef decide(s): return {}",

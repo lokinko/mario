@@ -122,10 +122,10 @@ def discover(directory):
 def generate_weights(code_path, samples, timeout=TIMEOUT_SECONDS):
     payload = "".join(json.dumps(s, ensure_ascii=False) + "\n" for s in samples)
     try:
-        done = subprocess.run([sys.executable, "-I", "-c", SANDBOX, str(code_path), json.dumps(ALLOWED_IMPORTS),
+        done = subprocess.run([sys.executable, "-I", "-X", "utf8", "-c", SANDBOX, str(code_path), json.dumps(ALLOWED_IMPORTS),
                                json.dumps(sorted(BLOCKED_NAMES - {"__import__"}))],
-                              input=payload, capture_output=True, text=True, timeout=timeout,
-                              cwd=Path(code_path).parent, env={"PYTHONUTF8": "1"})
+                              input=payload, capture_output=True, text=True, encoding="utf-8", timeout=timeout,
+                              cwd=Path(code_path).parent, env={})
     except subprocess.TimeoutExpired as exc:
         raise Invalid(f"策略运行超过 {timeout} 秒") from exc
     require(done.returncode == 0, "策略运行失败：\n" + "\n".join(done.stderr.strip().splitlines()[-8:]))
