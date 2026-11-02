@@ -124,6 +124,8 @@ flowchart TD
 
 长窗口研究入口 `scripts/benchmark_long_history_study.py` 的 `build` 校验独立缓存、共同字段与历史完整性，构造只截至决策日的特征；`scan` 生成临时候选并比较配置，不安装正式策略或修改线上切片。它只依赖标准库与离线 `benchmark` 公开函数，不直接导入来源 SDK。缓存契约、命令和统计限制见 [长窗口实验](audits/benchmark-long-signals-20261102.md)，时点、缺失、停牌和隔离测试归 `benchmark/tests/test_long_history_study.py`。
 
+`scripts/benchmark_risk_study.py` 通过显式特征函数、字段和规则配置复用上述工具，不改变默认长窗口研究结果。周末、三年回看与月内停牌估值归特征构建；协方差预算归候选策略，不能用个股标准差均值替代。`--minimal --built-on <日期>` 构造 `monthly-risk-v1` 最小升级输入，仍保留原标签与字段，发布和策略安装是另外的显式步骤。相关测试归 `benchmark/tests/test_risk_study.py`，数据卡说明归 `hub.py` 与 `test_hub.py`；新旧机制和升级评审见 [第三批实验](audits/benchmark-risk-signals-20261102.md)。
+
 策略扩展先按机制去重：同一逻辑只更新原目录的最佳参数，删除被替代的参数目录、专属测试配置与当前文档入口，再用 `bench-run` 清理旧结果并刷新看板。不同选股、风险预算或执行机制可以分别登记；完整搜索空间及参数选择范围写入策略说明与审计，不把参数扫描变成多条策略。
 
 批量免费补采由 `collect.py` 拥有任务进度、固定请求与断点恢复，调用 `public_sources` 的目录和行情能力；`files.symbol` 明确支持沪深北代码，不按首位数字或默认深市猜测交易所。`universes/` 的当前成分清单只用于候选数据预采，不替代 `dataset` 的历史选样。价格口径不可隐式拼接，日历闭市与真实交易日缺口分别计数；测试覆盖节假日排除、范围截断、标题简写、来源隔离和恢复校验。

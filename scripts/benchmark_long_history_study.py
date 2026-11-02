@@ -127,7 +127,7 @@ def load_history(history, symbols):
     return request, all_bars, hashes
 
 
-def build(release, history, calendar_path, destination):
+def build(release, history, calendar_path, destination, projection=features, fields=FIELDS, config_updates=None):
     verify_release(release)
     samples = rows(release / "inputs.jsonl")
     symbols = {s["symbol"] for sample in samples for s in sample["stocks"]}
@@ -154,9 +154,9 @@ def build(release, history, calendar_path, destination):
                     comparisons[field] += 1
             key = stock["symbol"], decision
             if key not in cache:
-                cache[key] = features(bars, calendar, decision)
+                cache[key] = projection(bars, calendar, decision)
             stock["long_history"] = cache[key]
-            coverage.update(k for k in FIELDS if stock["long_history"][k] is not None)
+            coverage.update(k for k in fields if stock["long_history"][k] is not None)
     with new_directory(destination) as stage:
         # 标签只在所有特征生成后复制；不读其中的未来路径，也不从中取历史行情。
         for path in release.rglob("*"):
@@ -165,6 +165,8 @@ def build(release, history, calendar_path, destination):
                 (stage / relative).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(path, stage / relative)
         write_rows(stage / "inputs.jsonl", enriched)
+        if config_updates:
+            write_json(stage / "config.json", {**read_json(stage / "config.json"), **config_updates})
         report = {"research_only": True, "source_manifest_sha256": digest(release / "manifest.json"),
                   "calendar_sha256": digest(calendar_path), "raw_hashes": hashes,
                   "source_rows": sum(map(len, all_bars.values())), "samples": len(enriched),
@@ -246,7 +248,10 @@ GRIDS = {
 
 
 def source_for(family, parameters):
-    source = COMMON.replace("PARAMETERS", repr(parameters)) + BODIES[family]
+    return prune_source(COMMON.replace("PARAMETERS", repr(parameters)) + BODIES[family])
+
+
+def prune_source(source):
     # 删除未使用的公共函数，失败原型只写入研究输出，不加入正式策略目录。
     tree = ast.parse(source)
     definitions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
@@ -264,14 +269,17 @@ def source_for(family, parameters):
     return "\n".join(lines).strip() + "\n"
 
 
-def scan(release, destination):
+def scan(release, destination, grids=GRIDS, source_builder=source_for):
     verify_release(release)
     samples = rows(release / "inputs.jsonl")
     outcomes = {r["sample_id"]: r for r in rows(release / "outcomes.jsonl")}
 
     @lru_cache(None)
-    def marks(i, code):
-        segments = portfolio_segments({code: Decimal(1)}, outcomes[samples[i]["id"]])[0]
+    def marks(i, code, rule):
+        exit_json, grid_json = rule
+        exits = {code: {k: v if k == "max_hold_days" else Decimal(v) for k, v in json.loads(exit_json).items()}} if exit_json else None
+        grids = {code: {k: Decimal(v) if k == "step" else v for k, v in json.loads(grid_json).items()}} if grid_json else None
+        segments = portfolio_segments({code: Decimal(1)}, outcomes[samples[i]["id"]], exits, grids)[0]
         accumulated, values = Decimal(1), []
         for value in segments:
             accumulated *= 1 + value
@@ -284,9 +292,12 @@ def scan(release, destination):
         scores = []
         for i, sample in enumerate(samples):
             values = [1., 1., 1.]
-            for code, weight in namespace["decide"](sample).items():
-                weight = float(Decimal(weight).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN))
-                for j, mark in enumerate(marks(i, code)):
+            for code, position in namespace["decide"](sample).items():
+                position = position if isinstance(position, dict) else {"weight": position}
+                weight = float(Decimal(position["weight"]).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN))
+                rule = (json.dumps(position["exit"], sort_keys=True) if "exit" in position else "",
+                        json.dumps(position["grid"], sort_keys=True) if "grid" in position else "")
+                for j, mark in enumerate(marks(i, code, rule)):
                     values[j] += weight * (mark - 1)
             scores.append(100 * (.3 * (values[0] - 1) + .3 * (values[1] / values[0] - 1) + .4 * (values[2] / values[1] - 1)))
         return scores
@@ -296,10 +307,10 @@ def scan(release, destination):
 
     trials, winners = [], []
     with new_directory(destination) as stage:
-        for family, parameters in GRIDS.items():
+        for family, parameters in grids.items():
             records = []
             for params in parameters:
-                source = source_for(family, params)
+                source = source_builder(family, params)
                 returns = evaluate(source)
                 record = {"family": family, "parameters": params, "full": stats(returns),
                           "early": stats([v for s, v in zip(samples, returns) if s["decision_date"] < "2018"]),
@@ -310,7 +321,7 @@ def scan(release, destination):
             winners.append(winner)
             candidate = stage / "candidates" / family
             candidate.mkdir(parents=True)
-            (candidate / "strategy.py").write_text(source_for(family, winner["parameters"]), encoding="utf-8")
+            (candidate / "strategy.py").write_text(source_builder(family, winner["parameters"]), encoding="utf-8")
             (candidate / "strategy.md").write_text(f"# 长窗口规则适配：{family}\n\n仅供研究，季度股票长仓，不是原论文完整组合。参数按148期全段选择，不是样本外。\n", encoding="utf-8")
             print(json.dumps(winner), flush=True)
         report = {"release_sha256": digest(release / "manifest.json"), "trials": trials,

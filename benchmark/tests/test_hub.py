@@ -6,8 +6,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from unittest.mock import patch
 
-from benchmark.files import Invalid, digest, write_json
-from benchmark.hub import CANARY, fetch, publish
+from benchmark.files import Invalid, digest, read_json, write_json
+from benchmark.hub import CANARY, dataset_card, fetch, publish
 
 REPORT = {"score": {"mean": 1.5, "bootstrap_95": [0.5, 2.5], "count": 4}, "beat_csi300_periods": 3,
           "pool_equal_weight_score": {"mean": 1.0}, "csi300_score": {"mean": 0.5}}
@@ -79,6 +79,19 @@ class HubTest(unittest.TestCase):
         self.assertIn(CANARY, inputs["README.md"])
         self.assertIn("1.50 [0.50, 2.50]", inputs["README.md"])
         self.assertEqual(result["labels"]["commit"], "sha-me/labels")
+
+    def test_monthly_risk_card_describes_cutoff_and_missing_values_only_when_present(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder) / "release"
+            release(base)
+            old = dataset_card(base, "pool-scoring", "me/labels", {})
+            self.assertNotIn("daily_returns_1m", old)
+            config = read_json(base / "config.json")
+            write_json(base / "config.json", {**config, "input_features": "monthly-risk-v1"})
+            card = dataset_card(base, "pool-scoring", "me/labels", {})
+            self.assertIn("daily_returns_1m", card)
+            self.assertIn("未知缺行保留 null", card)
+            self.assertIn("不含决策后的收益", card)
 
     def test_refuses_public_repo_and_tampered_release(self):
         with tempfile.TemporaryDirectory() as folder:

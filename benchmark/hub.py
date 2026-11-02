@@ -36,6 +36,11 @@ def dataset_card(release, path, labels_repo, scorecards):
     table = "\n".join(score_line(name, report) for name, report in sorted(scorecards.items()))
     reference = next(iter(scorecards.values()), None)
     references = ""
+    feature_notes = ""
+    if config.get("input_features") == "monthly-risk-v1":
+        feature_notes = ("\n本版本另含 `stock.long_history.daily_returns_1m`：决策月截至决策日的每日后复权收益，"
+                         "按日期映射为十进制字符串；已知停牌按已有价格持平估值，未知缺行保留 null。"
+                         "它不含决策后的收益；原 v5 字段与结果标签不变。来源哈希和覆盖见 `long-history-study.json`。\n")
     if reference:
         references = (f"\n同一批决策点上，股票池等权总分 {reference['pool_equal_weight_score']['mean']:.2f}，"
                       f"沪深300 总分 {reference['csi300_score']['mean']:.2f}。\n")
@@ -69,6 +74,7 @@ tags:
 `{path}/inputs.jsonl` 每行是一个季度末决策点，只含该时点之前可得的数据：股票池证券、决策日收盘价与交易状态、
 63 个交易日动量、20 个交易日收益、63 个有成交日的日收益波动、选样日市值，以及沪深300 的收盘与动量；
 不含会泄露结局的证券当前简称。
+{feature_notes}
 
 策略对每个决策点输出目标仓位（其余为现金），可附止损、移动止损、止盈或最长持有天数等卖出规则，或改用网格加减仓，在决策日之后第一个交易日开盘建仓。以建仓日后第 7、30、90 个自然日当天或之前的
 最后一个交易日收盘为分界，计算 0–7、7–30、30–90 天三段不重叠的总资产增长 R，收益得分为
