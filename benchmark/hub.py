@@ -37,10 +37,15 @@ def dataset_card(release, path, labels_repo, scorecards):
     reference = next(iter(scorecards.values()), None)
     references = ""
     feature_notes = ""
-    if config.get("input_features") == "monthly-risk-v1":
+    if config.get("input_features") in ("monthly-risk-v1", "monthly-risk-regression-v1"):
         feature_notes = ("\n本版本另含 `stock.long_history.daily_returns_1m`：决策月截至决策日的每日后复权收益，"
                          "按日期映射为十进制字符串；已知停牌按已有价格持平估值，未知缺行保留 null。"
                          "它不含决策后的收益；原 v5 字段与结果标签不变。来源哈希和覆盖见 `long-history-study.json`。\n")
+    if config.get("input_features") == "monthly-risk-regression-v1":
+        feature_notes += ("\n本版本在v6上另含 `stock.long_history.clenow_mark_90`：截至决策日最近90个市场交易日的"
+                          "对数价格回归，信号为 `(exp(252 × slope) - 1) × 100 × R²`。已知停牌日用上一成交价估值，"
+                          "不把停牌日供应商字段当作新成交价；缺行、上市史不足或无法估值仍为 null。"
+                          "该信号只含决策前数据，不携带回归原始价格，不缩短90日窗口。\n")
     if reference:
         references = (f"\n同一批决策点上，股票池等权总分 {reference['pool_equal_weight_score']['mean']:.2f}，"
                       f"沪深300 总分 {reference['csi300_score']['mean']:.2f}。\n")

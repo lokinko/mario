@@ -107,6 +107,19 @@ class HubTest(unittest.TestCase):
                 publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "cards")
         self.assertEqual(FakeApi.uploads, {})
 
+    def test_regression_card_declares_valuation_and_fixed_window_without_future_prices(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder) / "release"
+            release(base)
+            config = read_json(base / "config.json")
+            write_json(base / "config.json", {**config, "input_features": "monthly-risk-regression-v1"})
+            card = dataset_card(base, "pool-scoring", "me/labels", {})
+            self.assertIn("daily_returns_1m", card)
+            self.assertIn("clenow_mark_90", card)
+            self.assertIn("不缩短90日窗口", card)
+            self.assertIn("不携带回归原始价格", card)
+            self.assertIn("上市史不足或无法估值仍为 null", card)
+
     def test_fetch_restores_published_release_without_scorecards_and_never_overwrites(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
