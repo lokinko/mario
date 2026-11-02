@@ -132,7 +132,7 @@ class RegressionStudyTest(unittest.TestCase):
         self.assertAlmostEqual(sum(Decimal(r["weight"]) for r in result), Decimal(4) / 9, places=7)
         params.update(base="trend_core_satellite", budget=False)
         result = self.run_candidate("regression_tilt", params, [a], pool="dividend")
-        self.assertEqual(result[0]["exit"], {"take_profit": "0.1"})
+        self.assertEqual(result[0]["exit"], {"take_profit": "0.1", "sell_fraction": "1"})
 
     def test_selected_candidate_only_needs_minimal_upgrade_and_refuses_missing_new_field(self):
         params = dict(base="trend_core_satellite", budget=True, target="0.04", power=2, clock="mark")
@@ -150,7 +150,7 @@ class RegressionStudyTest(unittest.TestCase):
         sample = {"id": "test", "pool": "dividend", "stocks": [item]}
         result = generate_weights(path, [sample])
         self.assertEqual(result[0]["weight"], "1.00000000")
-        self.assertEqual(result[0]["exit"], {"take_profit": "0.1"})
+        self.assertEqual(result[0]["exit"], {"take_profit": "0.1", "sell_fraction": "1"})
         del item["long_history"]["clenow_mark_90"]
         with self.assertRaises(Invalid):
             generate_weights(path, [sample])

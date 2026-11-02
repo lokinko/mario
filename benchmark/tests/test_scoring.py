@@ -124,7 +124,7 @@ class ExitTest(unittest.TestCase):
                 day_row("2015-11-06", "12"), day_row("2016-01-06", "12")]
         returns, _, sold = self.held(path, {"stop_loss": "0.1"})
         self.assertEqual(sold, [{"symbol": "a", "reason": "stop_loss", "signal_date": "2015-10-09",
-                                 "sell_date": "2015-10-15"}])
+                                 "sell_date": "2015-10-15", "sell_fraction": "1"}])
         cash = Decimal("0.1") * Decimal("12") * (1 - sell_cost("2015-10-15"))
         self.assertEqual(returns, [cash - 1, Decimal(0), Decimal(0)])
         self.assertEqual(sell_cost("2015-10-15"), Decimal("0.0023"))

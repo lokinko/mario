@@ -134,6 +134,8 @@ def generate_weights(code_path, samples, timeout=TIMEOUT_SECONDS):
     for line in done.stdout.splitlines():
         row = json.loads(line)
         for code, position in row["positions"].items():
+            if "exit" in position:
+                position["exit"].setdefault("sell_fraction", "1")
             value = Decimal(position["weight"]).quantize(WEIGHT_STEP, rounding=ROUND_DOWN)
             if value:
                 output.append({"sample_id": row["sample_id"], "symbol": code, "weight": str(value),

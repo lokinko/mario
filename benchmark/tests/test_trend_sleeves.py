@@ -53,7 +53,7 @@ class TrendSleevesTest(unittest.TestCase):
                 self.assertEqual(result["000001.SZ"]["grid"], {"step": "0.08", "lots": 2, "initial": 1})
                 self.assertNotIn("exit", result["000001.SZ"])
                 dividend = positions(name, stocks, "dividend")
-                self.assertTrue(all(p["exit"] == {"take_profit": "0.1"} for p in dividend.values()))
+                self.assertTrue(all(p["exit"] == {"take_profit": "0.1", "sell_fraction": "1"} for p in dividend.values()))
                 self.assertTrue(all("grid" not in p for p in dividend.values()))
 
     def test_strict_threshold_fallback_missing_data_and_empty_pool(self):

@@ -6,7 +6,7 @@
 赢加 2.5、输（含等于 0）不加后取平均，所以逐期总分可以直接求中位数、自助法区间和分组均值。
 
 仓位可附卖出规则（止损、移动止损、止盈、最长持有天数），在决策日确定，由本模块按建仓后的价格逐日执行：
-收盘触发，次一个可卖出交易日开盘卖出，所得留作现金直到 90 天结束，不再买回。
+收盘触发，次一个可卖出交易日开盘按 sell_fraction 一次卖出，所得留作现金，余仓继续估值。
 
 仓位也可改附网格：资金分成若干份，建仓买入其中几份，收盘价每向下穿过一条网格线加一份、向上穿过一条减一份，
 次一个可买入或可卖出交易日开盘成交；网格只在该股票的资金内循环，不与卖出规则同用。
@@ -76,8 +76,10 @@ def valuation(path, day):
 
 
 def exit_rule(value):
-    """校验卖出规则：止损、移动止损为 (0, 1) 内的比例，止盈为正比例，最长持有天数为 1–90 的自然日。"""
-    require(isinstance(value, dict) and value and set(value) <= {*EXIT_FRACTIONS, "max_hold_days"}, "卖出规则字段无效")
+    """触发条件与卖出比重分别校验；sell_fraction 为 (0, 1] 的持股数量比例，未指定时为 1。"""
+    require(isinstance(value, dict) and value and set(value) <= {*EXIT_FRACTIONS, "max_hold_days", "sell_fraction"},
+            "卖出规则字段无效")
+    require(set(value) & {*EXIT_FRACTIONS, "max_hold_days"}, "卖出规则必须含触发条件")
     rule = {}
     for key in EXIT_FRACTIONS:
         if key in value:
@@ -90,7 +92,11 @@ def exit_rule(value):
         require(isinstance(days, int) and not isinstance(days, bool) and 1 <= days <= SEGMENT_DAYS[-1],
                 "max_hold_days 必须为 1–90 的整数")
         rule["max_hold_days"] = days
-    return rule
+    fraction = value.get("sell_fraction", "1")
+    require(isinstance(fraction, str), "sell_fraction 必须为十进制字符串")
+    fraction = Decimal(fraction)
+    require(fraction.is_finite() and 0 < fraction <= 1, "sell_fraction 必须大于 0 且不超过 1")
+    return {**rule, "sell_fraction": fraction}
 
 
 def triggered(rule, cost, high, close, held_days):
@@ -106,21 +112,32 @@ def triggered(rule, cost, high, close, held_days):
 
 
 def simulate_exit(units, stock, rule, entry_date):
-    """按收盘价检查触发；触发后在之后第一个可卖出交易日开盘卖出。窗口内没卖出时 sell_date 为 None。"""
+    """触发后只执行一次，按比重卖出并返回余股；窗口内没成交时 sell_date 为 None。"""
     cost = high = Decimal(stock["entry_open"])
     signal = None
     for day, close, open_price, sellable, _ in stock["path"]:
         if signal:
             if sellable:
-                proceeds = units * Decimal(open_price) * (1 - sell_cost(day))
-                return {**signal, "sell_date": day, "proceeds": proceeds}
+                fraction = rule.get("sell_fraction", Decimal(1))
+                sold = units * fraction
+                proceeds = sold * Decimal(open_price) * (1 - sell_cost(day))
+                return {**signal, "sell_date": day, "sell_fraction": str(fraction), "proceeds": proceeds,
+                        "remaining_units": units - sold}
             continue
         close = Decimal(close)
         high = max(high, close)
         reason = triggered(rule, cost, high, close, (date.fromisoformat(day) - date.fromisoformat(entry_date)).days)
         if reason:
             signal = {"reason": reason, "signal_date": day}
-    return {**signal, "sell_date": None} if signal else None
+    return {**signal, "sell_date": None, "sell_fraction": str(rule.get("sell_fraction", Decimal(1)))} if signal else None
+
+
+def operation(side, reason, day, signal_date, budget, cash, before, after, price):
+    """金额以期初总资产=1计；卖出另记占该股成交前持股数量的比例，避免混淆分母。"""
+    return {"side": side, "reason": reason, "execution_date": day, "signal_date": signal_date,
+            "budget_fraction": str(budget), "cash_fraction": str(cash),
+            "position_fraction": str((before - after) / before) if side == "sell" else None,
+            "remaining_value_fraction": str(after * price)}
 
 
 def grid_rule(value):
@@ -141,30 +158,41 @@ def simulate_grid(budget, stock, rule, entry_date, edges, cost):
     lot, base, ratio = budget / rule["lots"], Decimal(stock["entry_open"]), 1 + rule["step"]
     held = target = rule["initial"]
     units = held * lot * (1 - cost) / base
+    operations = [operation("buy", "entry", entry_date, None, budget, held * lot, Decimal(0), units, base)]
     cash, level, buys, sells, marks = budget - held * lot, 0, 0, 0, []
+    signal_date = None
     for day, close, open_price, sellable, buyable in stock["path"]:
         if day > entry_date and target > held and buyable:
             spend = min((target - held) * lot, cash)
+            before = units
             units, cash, held, buys = units + spend * (1 - cost) / Decimal(open_price), cash - spend, target, buys + 1
+            operations.append(operation("buy", "grid", day, signal_date, budget, spend, before, units, Decimal(open_price)))
         elif day > entry_date and target < held and sellable:
+            before = units
             sold = units * (held - target) / held
             cash += sold * Decimal(open_price) * (1 - sell_cost(day))
             units, held, sells = units - sold, target, sells + 1
+            operations.append(operation("sell", "grid", day, signal_date, budget, sold * Decimal(open_price),
+                                        before, units, Decimal(open_price)))
         close = Decimal(close)
         while level < rule["initial"] and close >= base * ratio ** (level + 1):
             level += 1
         while level > rule["initial"] - rule["lots"] and close <= base * ratio ** (level - 1):
             level -= 1
-        target = rule["initial"] - level
+        next_target = rule["initial"] - level
+        if next_target != target:
+            signal_date = day
+        target = next_target
         marks.append((day, cash + units * close))
     values = [next(v for d, v in reversed(marks) if d <= edge) for edge in edges]
-    return {"values": values, "buys": buys, "sells": sells}
+    return {"values": values, "buys": buys, "sells": sells, "operations": operations}
 
 
-def portfolio_segments(weights, outcome, exits=None, grids=None, cost=BUY_COST):
+def portfolio_segments(weights, outcome, exits=None, grids=None, cost=BUY_COST, operations=None):
     """weights：{证券: Decimal}，合计不超过 1，余下为现金（收益为 0）；exits：{证券: 卖出规则}；grids：{证券: 网格}。"""
     require(all(w >= 0 for w in weights.values()) and sum(weights.values()) <= 1, "仓位须非负且合计不超过 1")
     cash, units, blocked, sales, gridded = Decimal(1) - sum(weights.values()), {}, [], {}, {}
+    ledger = operations if operations is not None else []
     for code, weight in weights.items():
         if not weight:
             continue
@@ -175,25 +203,35 @@ def portfolio_segments(weights, outcome, exits=None, grids=None, cost=BUY_COST):
             continue
         if grids and code in grids:
             gridded[code] = simulate_grid(weight, stock, grids[code], outcome["entry_date"], outcome["boundaries"], cost)
+            ledger.extend({"symbol": code, **trade} for trade in gridded[code]["operations"])
             continue
         units[code] = weight * (1 - cost) / Decimal(stock["entry_open"])
+        ledger.append({"symbol": code, **operation("buy", "entry", outcome["entry_date"], None, weight, weight,
+                                                  Decimal(0), units[code], Decimal(stock["entry_open"]))})
         if exits and code in exits:
             sale = simulate_exit(units[code], stock, exits[code], outcome["entry_date"])
             if sale:
                 sales[code] = sale
+                if sale["sell_date"]:
+                    price = next(Decimal(row[2]) for row in stock["path"] if row[0] == sale["sell_date"])
+                    sold = units[code] - sale["remaining_units"]
+                    ledger.append({"symbol": code, **operation("sell", sale["reason"], sale["sell_date"],
+                        sale["signal_date"], weight, sold * price, units[code], sale["remaining_units"], price)})
     values = [Decimal(1)]
     for index, day in enumerate(outcome["boundaries"]):
         total = cash + sum(grid["values"][index] for grid in gridded.values())
         for code, amount in units.items():
             sale = sales.get(code)
             if sale and sale["sell_date"] and sale["sell_date"] <= day:
-                total += sale["proceeds"]
+                total += sale["proceeds"] + sale["remaining_units"] * Decimal(valuation(outcome["stocks"][code]["path"], day))
             else:
                 total += amount * Decimal(valuation(outcome["stocks"][code]["path"], day))
         values.append(total)
     returns = [values[i + 1] / values[i] - 1 for i in range(3)]
-    sold = [{"symbol": code, **{k: v for k, v in sale.items() if k != "proceeds"}} for code, sale in sorted(sales.items())]
+    sold = [{"symbol": code, **{k: v for k, v in sale.items() if k not in ("proceeds", "remaining_units")}}
+            for code, sale in sorted(sales.items())]
     traded = [{"symbol": code, "buys": grid["buys"], "sells": grid["sells"]} for code, grid in sorted(gridded.items())]
+    ledger.sort(key=lambda trade: (trade["execution_date"], trade["symbol"]))
     return returns, blocked, sold, traded
 
 
@@ -267,14 +305,17 @@ def evaluate_weights(samples, outcomes, weight_rows):
         outcome = by_id.get(sample["id"])
         if not outcome:
             continue
+        operations = []
         returns, blocked, sold, traded = portfolio_segments(weights.get(sample["id"], {}), outcome,
-                                                            exits.get(sample["id"]), grids.get(sample["id"]))
+                                                            exits.get(sample["id"]), grids.get(sample["id"]),
+                                                            operations=operations)
         equal = {code: Decimal(1) / len(sample["stocks"]) for code in outcome["stocks"]}
         pool_returns = portfolio_segments(equal, outcome)[0]
         period = {
             "sample_id": sample["id"], "pool": sample["pool"], "decision_date": sample["decision_date"],
             "entry_date": outcome["entry_date"], "boundaries": outcome["boundaries"],
             "submitted": sample["id"] in weights, "blocked_entries": blocked, "exits": sold, "grid_trades": traded,
+            "operations": operations,
             "segment_returns": [float(r) for r in returns]}
         for prefix, segments in zip(SERIES, (returns, pool_returns, index_segments(outcome)), strict=True):
             value = return_score(segments)

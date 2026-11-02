@@ -64,7 +64,7 @@ def dashboard_data(runs, config=None, failures=None):
     periods = {period["sample_id"]: {
         "id": period["sample_id"], "order": order, "pool": period["pool"], "decision_date": period["decision_date"],
         "segment": segment(period["decision_date"]), "entry_date": period["entry_date"], "scores": {},
-        "segment_returns": {}, "holdings": {}, "blocked": {}, "exits": {}, "grid_trades": {},
+        "segment_returns": {}, "holdings": {}, "blocked": {}, "exits": {}, "grid_trades": {}, "operations": {},
         "benchmarks": {"pool_equal_weight": period["pool_equal_weight_return_score"],
                        "csi300": period["csi300_return_score"]}}
         for order, period in enumerate(first["periods"])}
@@ -72,6 +72,7 @@ def dashboard_data(runs, config=None, failures=None):
         report, held = scorecards[name], positions(runs[name]["weights"])
         require([p["sample_id"] for p in report["periods"]] == ids, f"{name} 与其他策略的决策点不一致，可能来自不同发布包")
         for period in report["periods"]:
+            require("operations" in period, f"{name} 缺少逐笔操作记录，请重新运行 bench-run")
             row = periods[period["sample_id"]]
             for key, value in (("pool_equal_weight", period["pool_equal_weight_return_score"]),
                                ("csi300", period["csi300_return_score"])):
@@ -81,6 +82,7 @@ def dashboard_data(runs, config=None, failures=None):
             row["holdings"][name] = held.get(period["sample_id"], [])
             row["blocked"][name] = period["blocked_entries"]
             row["exits"][name] = period["exits"]
+            row["operations"][name] = period["operations"]
             row["grid_trades"][name] = sum(t["buys"] + t["sells"] for t in period["grid_trades"])
     return {
         "strategies": [{"key": name, "label": runs[name]["title"], "description": runs[name]["description"],
@@ -218,10 +220,11 @@ code { font-size:12px; }
 #timeline { margin-top:6px; touch-action:none; user-select:none; }
 #timeline svg { display:block; cursor:crosshair; }
 #timeline .window { cursor:grab; } #timeline .grip { cursor:ew-resize; }
-.holdings { display:grid; grid-template-columns:repeat(auto-fill, minmax(400px, 1fr)); gap:12px; }
+.holdings { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 640px), 1fr)); gap:12px; }
 .holdings > div { border:1px solid var(--line); border-radius:6px; padding:10px; min-width:0; }
-.holdings h3 { font-size:13px; margin:0 0 4px; } .holdings table { font-size:12px; }
+.holdings h3 { font-size:13px; margin:0 0 4px; } .holdings table { font-size:12px; min-width:640px; }
 .holdings td.l { white-space:normal; }
+.holdings summary { cursor:pointer; margin-top:10px; }
 </style>
 <style id="focus"></style>
 </head>
@@ -883,10 +886,27 @@ function markPicked() {
   document.querySelectorAll('#periods [data-period]').forEach(tr => tr.classList.toggle('picked', tr.dataset.period === state.picked));
 }
 
-function ruleText(rule) {
-  if (!rule) return '持有到期';
-  if (rule.step) return `网格 线距 ${pct(rule.step)}，${rule.lots} 份，建仓 ${rule.initial} 份`;
-  return Object.entries(rule).map(([k, v]) => k === 'max_hold_days' ? `最长持有 ${v} 天` : `${RULES[k] || k} ${pct(v)}`).join('，');
+function initialWeight(weight, rule) {
+  return Number(weight) * (rule && rule.step ? rule.initial / rule.lots : 1);
+}
+
+function ruleText(rule, weight) {
+  if (!rule) return '首买预算的 100%，窗口内持有到期';
+  if (rule.step) return `网格线距 ${pct(rule.step)}；首买预算的 ${pct(rule.initial / rule.lots)}；每格加仓预算的 ${pct(1 / rule.lots)}（期初资产的 ${pct(Number(weight) / rule.lots)}）；每格减持 1 份，卖出比例按当时持有份数计算`;
+  const trigger = Object.entries(rule).filter(([k]) => k !== 'sell_fraction').map(([k, v]) =>
+    k === 'max_hold_days' ? `最长持有 ${v} 天` : `${RULES[k] || k} ${pct(v)}`).join('，');
+  return `${trigger}；触发后一次卖出该股持股数量的 ${pct(rule.sell_fraction)}，余仓持有到期`;
+}
+
+function operationsTable(operations) {
+  if (!operations.length) return '<p class="note">本期无实际买卖成交</p>';
+  return `<details><summary>每次买卖操作（${operations.length} 笔）</summary>
+    <p class="note">成交资金与成交后持仓市值均以期初总资产为分母；买入资金含买入费用预算，卖出为扣费前金额。成交后持仓按该次开盘价计，不是组合当时权重。</p>
+    <div class="wide"><table><thead><tr><th>成交日</th><th class="l">证券</th><th class="l">操作与触发</th><th class="l">本次操作比例</th><th>成交资金/期初资产</th><th>成交后持仓/期初资产</th></tr></thead>
+    <tbody>${operations.map(t => `<tr><td>${esc(t.execution_date)}</td><td class="l">${esc(t.symbol)}</td>
+      <td class="l">${t.side === 'buy' ? '买入' : '卖出'} · ${esc(t.reason === 'entry' ? '首次建仓' : t.reason === 'grid' ? '网格' : RULES[t.reason] || t.reason)}${t.signal_date ? `（${esc(t.signal_date)} 触发）` : ''}</td>
+      <td class="l">${t.side === 'sell' ? `卖出当时持股的 ${pct(t.position_fraction)}` : `使用该股预算的 ${pct(Number(t.cash_fraction) / Number(t.budget_fraction))}`}</td>
+      <td>${pct(t.cash_fraction)}</td><td>${pct(t.remaining_value_fraction)}</td></tr>`).join('')}</tbody></table></div></details>`;
 }
 
 function detail() {
@@ -900,14 +920,16 @@ function detail() {
     const exits = Object.fromEntries(p.exits[s.key].map(e => [e.symbol, e])), blocked = new Set(p.blocked[s.key]);
     const outcome = code => { const e = exits[code];
       if (blocked.has(code)) return '买不进，留作现金';
-      return e ? `${RULES[e.reason] || e.reason} ${e.signal_date} 触发，${e.sell_date ? `${e.sell_date} 卖出` : '窗口内未能卖出'}` : ''; };
-    const body = held.length ? `<table><thead><tr><th class="l">证券</th><th>仓位</th><th class="l">卖出规则</th><th class="l">执行</th></tr></thead>
-      <tbody>${held.map(([code, weight, rule]) => `<tr><td class="l">${esc(code)}</td><td>${pct(weight)}</td>
-        <td class="l">${esc(ruleText(rule))}</td><td class="l">${esc(outcome(code))}</td></tr>`).join('')}</tbody></table>`
+      return e ? `${RULES[e.reason] || e.reason} ${e.signal_date} 触发，${e.sell_date ? `${e.sell_date} 卖出持股的 ${pct(e.sell_fraction)}` : '窗口内未能卖出'}` : ''; };
+    const initial = held.reduce((sum, [code, weight, rule]) => sum + (blocked.has(code) ? 0 : initialWeight(weight, rule)), 0);
+    const body = held.length ? `<p class="note">计划首买占期初总资产 ${pct(held.reduce((sum, [, weight, rule]) => sum + initialWeight(weight, rule), 0))}；实际用于首买 ${pct(initial)}，初始现金 ${pct(1 - initial)}。初始现金包含网格预留资金及买不进的预算。</p>
+      <div class="wide"><table><thead><tr><th class="l">证券</th><th>预算/期初资产</th><th>首买/期初资产</th><th class="l">每次操作规则</th><th class="l">执行</th></tr></thead>
+      <tbody>${held.map(([code, weight, rule]) => `<tr><td class="l">${esc(code)}</td><td>${pct(weight)}</td><td>${pct(initialWeight(weight, rule))}</td>
+        <td class="l">${esc(ruleText(rule, weight))}</td><td class="l">${esc(outcome(code))}</td></tr>`).join('')}</tbody></table></div>`
       : '<p class="note">全部持有现金</p>';
     return `<div class="row" data-s="${s.key}"><h3 class="hov" data-s="${s.key}">${swatch(s)} ${esc(rankText(s) + s.label)}：
       <span class="${tone(v)}">${fmt(v)}</span></h3>
-      <p class="note">0–7 天 ${pct(seg[0])} · 7–30 天 ${pct(seg[1])} · 30–90 天 ${pct(seg[2])}</p>${body}</div>`;
+      <p class="note">0–7 天 ${pct(seg[0])} · 7–30 天 ${pct(seg[1])} · 30–90 天 ${pct(seg[2])}</p>${body}${operationsTable(p.operations[s.key])}</div>`;
   }).join('');
   document.getElementById('detail-body').innerHTML = `<p class="note">对照收益得分：${benchmarks}。只列出当前显示的策略，按名次排列。</p>
     <div class="holdings">${cards}</div>`;

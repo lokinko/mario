@@ -40,7 +40,7 @@ class StrategyMechanismsTest(unittest.TestCase):
 
     def test_negative_short_return_replaces_grid_with_an_exit_only_in_tech(self):
         negative = positions("trend_state_exit", [stock(short="-0.01")])[0]
-        self.assertEqual(negative["exit"], {"take_profit": "0.1", "stop_loss": "0.3"})
+        self.assertEqual(negative["exit"], {"take_profit": "0.1", "stop_loss": "0.3", "sell_fraction": "1"})
         self.assertNotIn("grid", negative)
         for short in ("0", "0.01", None):
             with self.subTest(short=short):
@@ -48,7 +48,7 @@ class StrategyMechanismsTest(unittest.TestCase):
                 self.assertEqual(unchanged["grid"], {"step": "0.08", "lots": 2, "initial": 1})
                 self.assertNotIn("exit", unchanged)
         dividend = positions("trend_state_exit", [stock(short="-0.01")], "dividend")[0]
-        self.assertEqual(dividend["exit"], {"take_profit": "0.1"})
+        self.assertEqual(dividend["exit"], {"take_profit": "0.1", "sell_fraction": "1"})
 
     def test_profit_ladder_scales_grid_clamps_bands_and_starts_fully_invested(self):
         for volatility, expected in (("0.001", "0.04"), ("0.01", "0.08"), ("0.1", "0.3")):
@@ -62,7 +62,7 @@ class StrategyMechanismsTest(unittest.TestCase):
         self.assertNotIn("grid", missing)
         self.assertNotIn("exit", missing)
         dividend = positions("trend_profit_ladder", [stock()], "dividend")[0]
-        self.assertEqual(dividend["exit"], {"take_profit": "0.1"})
+        self.assertEqual(dividend["exit"], {"take_profit": "0.1", "sell_fraction": "1"})
 
     def test_unavailable_and_empty_pools_leave_cash_and_weak_trends_use_fallback(self):
         for name in NAMES:

@@ -91,7 +91,7 @@ class BuiltinStrategyTest(unittest.TestCase):
         exits = {pool: {r["symbol"]: r.get("exit") for r in generate_weights(code, [{"id": "s1", "pool": pool,
                                                                                     "stocks": stocks}])}
                  for pool in ("tech", "dividend")}
-        target = {"take_profit": "0.08"}
+        target = {"take_profit": "0.08", "sell_fraction": "1"}
         self.assertEqual(exits["tech"], {"000003.SZ": target, "000002.SZ": target, "000001.SZ": None,
                                          "000007.SZ": None})
         self.assertEqual(exits["dividend"], dict.fromkeys(ranked, target))
@@ -116,7 +116,7 @@ class BuiltinStrategyTest(unittest.TestCase):
         self.assertEqual(list(rules["tech"]), ["000003.SZ", "000001.SZ", "000007.SZ"])
         self.assertEqual(rules["tech"], {"000003.SZ": {"step": "0.08", "lots": 2, "initial": 1}, "000001.SZ": None,
                                          "000007.SZ": None})
-        self.assertEqual(rules["dividend"], dict.fromkeys(rules["tech"], {"take_profit": "0.1"}))
+        self.assertEqual(rules["dividend"], dict.fromkeys(rules["tech"], {"take_profit": "0.1", "sell_fraction": "1"}))
         weak = [stock("000001.SZ", "0.05", volatility="0.02"), stock("000002.SZ", None, volatility="0.01"),
                 stock("000003.SZ", "-0.1")]
         fallback = generate_weights(code, [{"id": "s1", "pool": "tech", "stocks": weak}])
@@ -184,7 +184,8 @@ class SandboxTest(unittest.TestCase):
                 generate_weights(code, samples)
             code.write_text("def decide(s):\n    return {'000003.SZ': {'weight': 0.5, 'exit': {'stop_loss': 0.1, "
                             "'max_hold_days': 30}}}\n", encoding="utf-8")
-            self.assertEqual(generate_weights(code, samples)[0]["exit"], {"stop_loss": "0.1", "max_hold_days": 30})
+            self.assertEqual(generate_weights(code, samples)[0]["exit"],
+                             {"stop_loss": "0.1", "max_hold_days": 30, "sell_fraction": "1"})
             code.write_text("def decide(s):\n    return {'000003.SZ': {'weight': 0.5, 'grid': {'step': 0.08, "
                             "'lots': 4, 'initial': 2}}}\n", encoding="utf-8")
             self.assertEqual(generate_weights(code, samples)[0]["grid"], {"step": "0.08", "lots": 4, "initial": 2})

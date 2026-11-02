@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from benchmark.dashboard import DASHBOARD_FILES, STATS, dashboard_data, dashboard_server, render, write_dashboard
+from benchmark.dashboard import DASHBOARD_FILES, SCRIPT, STATS, dashboard_data, dashboard_server, render, write_dashboard
 from benchmark.files import Invalid, write_json, write_rows
 from benchmark.scoring import series_stats, total_score
 
@@ -33,7 +33,7 @@ def report(scores, benchmark=1.0, ids=("dividend-2015-03-31", "tech-2015-03-31")
 
     periods = [{"sample_id": i, "pool": i.split("-")[0], "decision_date": i.split("-", 1)[1], "entry_date": "2015-04-01",
                 "blocked_entries": ["600000.SH"] if n == 0 else [], "exits": [], "segment_returns": [0.01, 0.0, -0.02],
-                "grid_trades": [{"symbol": "600000.SH", "buys": 2, "sells": 1}] if n == 1 else [], "return_score": s,
+                "grid_trades": [{"symbol": "600000.SH", "buys": 2, "sells": 1}] if n == 1 else [], "operations": [], "return_score": s,
                 "score": total(s), "pool_equal_weight_return_score": benchmark, "pool_equal_weight_score": total(benchmark),
                 "csi300_return_score": 0.5, "csi300_score": total(0.5)}
                for n, (i, s) in enumerate(zip(ids, scores))]
@@ -92,6 +92,38 @@ class DashboardTest(unittest.TestCase):
             dashboard_data({"equal": run(report([0.0, 1.0])), "size": run(report([0.0], ids=("tech-2015-03-31",)))})
         with self.assertRaises(Invalid):
             dashboard_data({"equal": run(report([0.0, 1.0])), "size": run(report([0.0, 1.0], benchmark=2.0))})
+
+    def test_per_period_operations_are_carried_and_old_reports_require_rescoring(self):
+        card = report([0.0, 1.0])
+        trade = {"symbol": "600000.SH", "side": "sell", "position_fraction": "0.5", "cash_fraction": "0.1"}
+        card["periods"][0]["operations"] = [trade]
+        data = dashboard_data({"trend": run(card)})
+        self.assertEqual(data["periods"][0]["operations"]["trend"], [trade])
+        card["periods"][0].pop("operations")
+        with self.assertRaisesRegex(Invalid, "重新运行 bench-run"):
+            dashboard_data({"trend": run(card)})
+
+    @unittest.skipUnless(shutil.which("node"), "需要 Node.js 验证操作比重展示")
+    def test_operation_display_distinguishes_budget_initial_buy_and_current_share_ratios(self):
+        helpers = SCRIPT[SCRIPT.index("function initialWeight("):SCRIPT.index("function detail()")]
+        definitions = "\n".join(line for line in SCRIPT.splitlines() if line.startswith(("const pct =", "const esc =", "const RULES =")))
+        harness = definitions + "\n" + helpers + """
+const rule = {step: '0.08', lots: 2, initial: 1};
+const trade = {symbol: '<script>', side: 'sell', reason: 'take_profit', execution_date: '2026-01-02',
+  signal_date: '2026-01-01', position_fraction: '0.5', cash_fraction: '0.12', budget_fraction: '0.2', remaining_value_fraction: '0.12'};
+console.log(JSON.stringify({initial: initialWeight('0.2', rule), grid: ruleText(rule, '0.2'),
+  exit: ruleText({take_profit:'0.1', sell_fraction:'0.5'}, '0.2'), html:operationsTable([trade])}));
+"""
+        done = subprocess.run(["node", "-e", harness], capture_output=True, text=True, check=True)
+        rendered = json.loads(done.stdout)
+        self.assertEqual(rendered["initial"], 0.1)
+        self.assertIn("首买预算的 50%", rendered["grid"])
+        self.assertIn("期初资产的 10%", rendered["grid"])
+        self.assertIn("卖出该股持股数量的 50%", rendered["exit"])
+        self.assertIn("成交资金/期初资产", rendered["html"])
+        self.assertIn("卖出当时持股的 50%", rendered["html"])
+        self.assertIn("&lt;script&gt;", rendered["html"])
+        self.assertNotIn("<script>", rendered["html"])
 
     def test_page_and_script_carry_no_data_and_data_file_lists_failures(self):
         files = render(dashboard_data({"equal": run(report([0.0, 1.0]))}))

@@ -134,6 +134,8 @@ flowchart TD
 
 策略扩展先按机制去重：同一逻辑只更新原目录的最佳参数，删除被替代的参数目录、专属测试配置与当前文档入口，再用 `bench-run` 清理旧结果并刷新看板。不同选股、风险预算或执行机制可以分别登记；完整搜索空间及参数选择范围写入策略说明与审计，不把参数扫描变成多条策略。
 
+买卖操作比重沿用同一仓位/执行路径：`strategy_runner.generate_weights` 将条件卖出的默认 `sell_fraction` 显式写入仓位；`scoring.exit_rule` 校验触发条件与持股比例，`simulate_exit` 只执行一次并保留余股，`simulate_grid` 按实际成交记录预算使用和减持股数；`portfolio_segments` 维护扣费估值并汇总逐笔 `operations` 到每期成绩。看板只展示这些记录，禁止按价格触发自行补造成交。调整比例或增加执行机制须验证部分卖出后估值、停牌顺延、网格跨格与不同分母、失败不记成交，以及既有策略得分不变；相关测试归 `test_operation_ratios.py`、`test_scoring.py`、`test_dashboard.py` 与策略输出测试。旧报告必须重跑，不维护第二条旧格式展示路径。
+
 `scripts/benchmark_fugui_study.py` 只读取既有股票池 Baostock 后复权与独立日历缓存，检查重叠档案及原有动量字段，生成只截至决策日的日/周/月 BOLL、月 MACD 与首次回踩信号；未知周期保持缺失，明确停牌沿用此前已知收盘。研究输入保留 v7 全部原字段与结果标签，临时候选仍经隔离执行器和原评分器运行；不将缺失基本面自动当作满足，也不以固定网格冒充底仓/机动仓分账。规则、未完成条件及复跑见[富贵策略](fugui-strategy.md)，时点、历史缺失、首次回踩、仓位与不可覆盖检查归 `benchmark/tests/test_fugui_study.py`。未准入候选不安装到正式策略目录。
 
 每日行情维护归 `daily_prices.py`，只消费已发布选样快照，复用 `baostock_market.py` 与 `public_sources.py`；不得引用年度选样实现、在线业务或策略内部代码。`scripts/benchmark_update_prices.py` 编排固定标签下载、增量合并、HF 提交与摘要；SDK 继续只在 `hub.py` 中使用。workflow 只调度此脚本，凭据由 Secret 注入，HF 私有标签仓库是持久状态来源；不使用 Actions cache 作为事实来源，不自动发布年度选样或成绩。修改时运行 `npm run test:benchmark` 与架构检查，特别验证回拉修正、真实缺日与停牌区别、退市边界、哈希损坏、失败不改远端、固定提交下载与远端前进冲突。使用及恢复见 [每日行情自动更新](benchmark.md#每日行情自动更新)。
