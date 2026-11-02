@@ -7,15 +7,8 @@ from benchmark.strategy_runner import generate_weights
 
 STRATEGIES = Path(__file__).resolve().parents[1] / "strategies"
 CONFIGURATIONS = {
-    "trend_core25_sat75_m15": ("0.25", "0.15"),
-    "trend_single_m15": ("0", "0.15"),
-    "trend_core50_sat50_m15": ("0.5", "0.15"),
-    "trend_core25_sat75_m10": ("0.25", "0.1"),
-    "trend_core75_sat25_m15": ("0.75", "0.15"),
-    "trend_core50_sat50_m10": ("0.5", "0.1"),
-    "trend_core75_sat25_m10": ("0.75", "0.1"),
-    "trend_single_m05": ("0", "0.05"),
-    "trend_core75_sat25_m20": ("0.75", "0.2"),
+    "trend_core_satellite": ("0.25", "0.15"),
+    "trend_single": ("0", "0.15"),
 }
 
 

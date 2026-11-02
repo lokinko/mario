@@ -246,6 +246,8 @@ Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略
 
 研究看板也随 Mario 部署：`host-runtime --build` 在构建网页和 API 后，用 `hub-fetch` 取得 `MARIO_BENCH_TAG` 对应的切片，再用 `bench-run` 生成看板，失败只告警、不阻止部署。API 以 `MARIO_BENCH_DIR` 指向输出目录，`/dashboard` 与 `/dashboard.js` 公开，`/api/benchmark/dashboard` 只验证会话令牌，不打开账号 schema、不加账号锁。依赖方向不变：在线服务只读取研究工具生成的文件，不调用研究 CLI，研究模块也不访问账号数据。看板页面读取 Mario 网页保存在 `localStorage` 的会话（`mario.session:<前缀>api` 的 `token` 与 `expiresAt`），这是两者之间唯一的约定，修改 `client/src/lib/webSession.ts` 的存储格式时要同步修改 `benchmark/dashboard.py`。
 
+策略目录按选股、仓位构建与执行机制区分；同一机制只保留当前切片总分最高的一组参数，参数更新在原目录完成，不以参数变体重复占榜。扫描记录可保留为历史审计，当前看板由去重后的目录重新生成。
+
 输入、请求缓存与发布包归 `.runtime/benchmark/`，是公开研究语料文件，不是第二个在线业务存储引擎。行情 token 只从终端环境读取。Hugging Face 是可选的后续分发渠道，本地构建不发布数据。完整原始归档与按披露时间截断的模型 inputs、未来 labels 分开；未核对历史成分、缺少日线或财报时不生成完成发布包。详细契约、失败恢复和研究限制见 [benchmark](benchmark.md)。
 
 `collect` 编排免费批量补采：固定显式证券清单和请求快照，保存逐证券行情/财报目录、逐 PDF 哈希与可恢复进度；仅依赖公开来源适配器和文件契约，不调用在线服务。交易日历闭市日不算价格缺口，少量未补齐交易日只记覆盖状态、不阻塞其他资料下载。Yahoo 与腾讯价格口径分开归档，当前成分采集清单与历史年度前 20 名选样分开，未核对的财报与历史成分不会被采集流程升级为评测就绪。
