@@ -139,7 +139,13 @@ if [[ "$ACTION" == deploy ]]; then
     chown -R "$RUN_USER:$(id -gn "$RUN_USER")" -- "$PROJECT_DIR"
     RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
     export PATH="$RUN_HOME/.cargo/bin:$RUN_HOME/.local/bin:$PATH"
-    as_user() { runuser -u "$RUN_USER" -- env -u CARGO_HOME -u RUSTUP_HOME PATH="$PATH" "$@"; }
+    # sudo 调用者可能已激活 Python，或设置了 root 的工具/缓存目录；不能带入服务账号。
+    as_user() {
+        runuser -u "$RUN_USER" -- env -u CARGO_HOME -u RUSTUP_HOME \
+            -u VIRTUAL_ENV -u PYTHONHOME -u PYTHONPATH -u UV_PYTHON \
+            -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_CONFIG_HOME \
+            HOME="$RUN_HOME" USER="$RUN_USER" LOGNAME="$RUN_USER" PATH="$PATH" "$@"
+    }
     if ! as_user cargo --version >/dev/null 2>&1; then
         [[ "$INSTALL_MISSING_TOOLS" == true ]] || { echo '请先给运行用户安装 Rust/rustup' >&2; exit 1; }
         # Rust 官方安装器作为普通服务用户运行，版本由 rust-toolchain.toml 固定。
@@ -155,7 +161,7 @@ if [[ "$ACTION" == deploy ]]; then
         installer="$(mktemp)"
         curl -LsSf https://astral.sh/uv/install.sh -o "$installer"
         chmod 644 "$installer"
-        as_user env UV_NO_MODIFY_PATH=1 sh "$installer"
+        as_user env UV_INSTALL_DIR="$RUN_HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh "$installer"
         rm -- "$installer"
     fi
     NODE="$(command -v node)"
@@ -220,7 +226,7 @@ bench_tag="$(sed -n 's/^MARIO_BENCH_TAG=//p' .env)"
 if [[ -n "$bench_tag" && -f ".runtime/benchmark/bench/$bench_tag/dashboard.json" ]]; then
     echo "研究看板已生成（$bench_tag）：登录后访问 ${BASE_PATH}dashboard。"
 elif [[ -n "$bench_tag" ]]; then
-    echo "研究看板未生成：执行 sudo -u $RUN_USER -H $PROJECT_DIR/.venv/bin/hf auth login 保存 Hugging Face 只读 token 后重新部署。"
+    echo "研究看板未生成：先查看上方具体失败阶段；私有仓库认证失败时执行 sudo -u $RUN_USER -H $PROJECT_DIR/.runtime/benchmark/.venv/bin/hf auth login，再重新部署。"
 fi
 echo "将 $PROJECT_DIR/.runtime/native/nginx.conf 加入域名的 HTTPS server，运行 nginx -t 后重载。"
 echo '若 www 在 server 层跳到根域名，请把该 return 移到兜底 location /，让 /mario 留在 www。'

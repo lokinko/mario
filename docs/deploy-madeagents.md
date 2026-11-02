@@ -113,20 +113,28 @@ benchmark 策略得分看板与 Mario 一起部署，地址为 `https://www.made
 
 `deploy.sh` 顶部的 `BENCH_TAG` 指定看板使用的 Hugging Face 切片标签（当前为 `pool-scoring-v5`），写入 `.env` 的 `MARIO_BENCH_TAG`。构建阶段依次执行：
 
-1. `uv sync --frozen --group publish` 准备 Python 环境（缺少 uv 时为服务用户安装到 `~/.local/bin`，所需 Python 由 uv 自动选择）。
+1. 以服务用户执行 `uv sync --frozen --group publish --managed-python` 准备 Python 环境。部署固定 `UV_PROJECT_ENVIRONMENT=.runtime/benchmark/.venv`、`UV_PYTHON_INSTALL_DIR=.runtime/benchmark/python`、`UV_CACHE_DIR=.runtime/benchmark/uv-cache`（实际传入绝对路径），不复用仓库 `.venv` 或调用者激活的环境。缺少 uv 时安装到服务用户的 `~/.local/bin`；Python 由 uv 下载到上述项目目录。
 2. `hub-fetch` 从两个私有仓库下载该标签，合并后按清单校验哈希，存到 `.runtime/benchmark/<标签>/`；目录已存在时只校验，不重新下载。
 3. `bench-run` 运行 Git 中 `benchmark/strategies/` 的全部策略，打分后把看板写入 `.runtime/benchmark/bench/<标签>/`。结果按指纹缓存，首次约 15 秒。
 
 两个仓库都是私有的，服务器需要一个只读 token，首次部署后用服务用户保存一次：
 
 ```bash
-sudo -u <服务用户> -H /srv/mario/.venv/bin/hf auth login
+sudo -u <服务用户> -H /srv/mario/.runtime/benchmark/.venv/bin/hf auth login
 sudo bash deploy.sh
 ```
 
-看板失败不阻止 Mario 部署：缺少 token、网络失败、哈希不符或有策略运行失败时，部署日志会打印“研究看板未更新”及原因，服务照常启动，`/mario/dashboard` 继续提供上次生成的版本；从未生成过时返回“尚未生成”。部署结束时脚本会提示看板是否已生成，`bash deploy.sh check` 也会检查页面和数据接口的登录保护。`BENCH_TAG` 与 `.env` 都为空时不生成看板。
+看板失败不阻止 Mario 部署：缺少 token、网络失败、哈希不符或有策略运行失败时，部署日志会打印“研究看板未更新”、失败阶段（准备 Python 环境、下载并校验 Hugging Face 切片、策略评分与生成看板）及原因，服务照常启动，`/mario/dashboard` 继续提供上次生成的版本；从未生成过时返回“尚未生成”。部署结束时脚本会提示看板是否已生成，`bash deploy.sh check` 也会检查页面和数据接口的登录保护。`BENCH_TAG` 与 `.env` 都为空时不生成看板。
 
 更新看板：新策略推送到 `main` 后，在服务器拉取代码并重新部署即可。数据切片升级时，先在本机用 `hub-publish` 发布新标签，再修改 `BENCH_TAG` 并重新部署。
+
+### Python 安装与权限故障
+
+`uv pip install -e .` 曾因缺少打包配置而报 `Multiple top-level packages discovered in a flat-layout`，将 `client`、`server` 等目录误当 Python 包。当前 `pyproject.toml` 明确只打包 `benchmark` 及配置、策略资源，支持可编辑安装；安装核心包不安装可选的 Hugging Face 依赖，部署使用上面的 `publish` 依赖组。
+
+若旧部署报 `failed to canonicalize path /srv/mario/.venv/bin/python: Permission denied`，常见原因是该解释器链接到 `/root/.local/share/uv/python/...`。`chown -R` 项目目录无法让服务用户穿过 `/root`。可用 `namei -l /srv/mario/.venv/bin/python` 核对每层目录与链接目标，不要放宽 `/root` 权限。
+
+更新代码后直接重新执行 `sudo bash deploy.sh`：新部署在 `.runtime/benchmark/` 建立服务用户独立环境，不再访问旧 `.venv`，无需删除旧环境、数据库、配置或看板。若准备 Python 环境成功后出现私有仓库 401/403，再按上面的新路径登录 token 并重新部署。若仍在 Python 阶段失败，按详细错误检查项目父目录的遍历权限、磁盘空间及 Python 下载网络；HF 登录不能解决解释器权限问题。
 
 ## PostgreSQL 启动失败
 

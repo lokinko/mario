@@ -238,6 +238,8 @@ sequenceDiagram
 
 ### 离线 benchmark 研究工具
 
+Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略资源，支持可编辑安装，不扫描前端和 Rust 目录。部署时由 `scripts/benchmark-deploy.mjs` 拥有看板环境准备、下载和评分编排；虚拟环境、uv 管理的 Python 与缓存分别位于 `.runtime/benchmark/.venv`、`python`、`uv-cache`，均由服务用户创建。部署不复用仓库 `.venv`，不继承调用者的 Python 环境选择；两次研究 CLI 调用通过 `MARIO_BENCHMARK_PYTHON` 使用同一个部署解释器，下载仍使用服务用户保存的 HF 凭据。
+
 [`benchmark/`](../benchmark/) 是与生产模块隔离的 Python 标准库 CLI，由 `scripts/benchmark.mjs` 启动；`public_sources` 优先探测免费来源覆盖并归档响应，`sources` 提供可选授权行情和财报原件下载，`dataset` 负责契约、完整性和历史时点投影，`evaluate` 计算预测排序指标，`release` 创建不可覆盖且带哈希清单的本地发布包。CLI 依赖这些研究模块，研究模块不导入前后端源码、不访问 PostgreSQL、账号备份或生产凭据。边界测试限制其依赖为 Python 标准库和本包，例外只有两个单一适配器：`baostock_market` 可导入 uv 依赖组 `market` 中的 `baostock`，用于已退市证券的免费日线；`hub` 可导入依赖组 `publish` 中的 `huggingface_hub`，只负责上传。在线服务不调用研究 CLI。
 
 两个股票池只在候选来源上不同，按时点市值的口径由 `market_cap` 统一：选样日未复权收盘价（经 `baostock_market`）乘以当时已公告的总股本（东方财富），连同剔除原因与缓存布局。`tech_universe` 以 `xls` 解析的申万个股行业变更历史确定科技池候选；`dividend_universe` 以被动指数基金年报全部持仓为中证红利成分代理，再按中证官方调样公告修正生效时点。两者互不引用，只产出带出处的年度候选提案，不修改 `dataset` 的正式校验规则。`pool_release` 把一个或多个股票池的提案合并为季度决策切片，时点输入、选样快照与建仓后价格路径分文件写入不可覆盖目录；`scoring` 是无网络的纯计算模块，按用户确定的主指标（平均收益得分加 2.5 × 胜率，全部现金为 0，收益得分为建仓后 0–7、7–30、30–90 自然日总资产增长按 0.3/0.3/0.4 加权）给仓位文件打分，并以同一公式计算沪深300 全收益指数与股票池等权对照；仓位可附在决策日确定的卖出规则或网格，由 `scoring` 按结果路径中的逐日开盘、收盘与可卖出、可买入状态执行，策略本身不接触未来价格。策略以 `benchmark/strategies/<名字>/` 目录提交（说明 `strategy.md` 与只含 `decide(sample)` 的 `strategy.py`），`strategy_runner` 静态检查后在隔离子进程中只喂入时点输入生成仓位，交给 `scoring` 打分，并以代码、发布包和打分引擎的哈希缓存结果；`dashboard` 只读取 `strategy_runner` 输出的成绩与说明，生成看板的页面、脚本与数据三个文件，`bench-run` 一条命令串起这一流程；`bench-serve` 只在本机提供这三个文件，看板重新生成后已打开的页面自动载入。`hub` 校验发布包后把输入与标签分别上传到两个私有 Hugging Face 数据集仓库，`hub-fetch` 按标签下载并校验还原。

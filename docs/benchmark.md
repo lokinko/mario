@@ -30,7 +30,7 @@
 
 ## 本地使用
 
-npm 包装器依次查找 `MARIO_BENCHMARK_PYTHON`、已激活的虚拟环境、仓库 `.venv` 和上两级目录的 `.venv`，都没有时回退到 `python3`。命令非零退出即表示失败：
+npm 包装器依次查找 `MARIO_BENCHMARK_PYTHON`、已激活的虚拟环境、仓库 `.venv` 和上两级目录的 `.venv`，都没有时回退到 `python3`。本地可用 `uv pip install -e .` 将核心包安装到当前虚拟环境；它不包含可选依赖，HF 上传/下载仍用 `uv sync --group publish`。服务器部署另用服务用户专属的 `.runtime/benchmark/.venv`，由部署脚本指定解释器，见[部署说明](deploy-madeagents.md#研究看板-mariodashboard)。命令非零退出即表示失败：
 
 ```bash
 npm run benchmark -- init --root .runtime/benchmark/input-v1

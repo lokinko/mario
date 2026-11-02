@@ -5,9 +5,16 @@ description = "中国红利与科技股研究 benchmark；契约、构建与评�
 requires-python = ">=3.11"
 dependencies = []
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["benchmark"]
+
+[tool.setuptools.package-data]
+benchmark = ["config.json", "strategies/*/strategy.py", "strategies/*/strategy.md"]
+
 [dependency-groups]
 market = ["baostock==0.9.4"]
 publish = ["huggingface_hub>=1.0", "socksio>=1.0"]
-
-[tool.uv]
-package = false

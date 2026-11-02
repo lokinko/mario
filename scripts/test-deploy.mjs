@@ -20,7 +20,7 @@ function prepare(overrides, expected = 0) {
 }
 try {
   mkdirSync(join(fixture, 'scripts'));
-  for (const name of ['host-runtime.mjs', 'start-common.mjs']) copyFileSync(join(root, 'scripts', name), join(fixture, 'scripts', name));
+  for (const name of ['host-runtime.mjs', 'start-common.mjs', 'benchmark-deploy.mjs']) copyFileSync(join(root, 'scripts', name), join(fixture, 'scripts', name));
   copyFileSync(join(root, '.env.example'), join(fixture, '.env.example'));
   copyFileSync(join(root, 'deploy.sh'), join(fixture, 'deploy.sh'));
   createConfig(envPath, defaults('old.example.test'));

@@ -178,7 +178,7 @@ wheels = [
 [[package]]
 name = "mario-benchmark"
 version = "0.7.0"
-source = { virtual = "." }
+source = { editable = "." }
 
 [package.dev-dependencies]
 market = [

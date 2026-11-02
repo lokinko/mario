@@ -5,6 +5,7 @@ import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isIP } from 'node:net';
 import { args, assertNoRestore, basePath, createDeploymentConfig, defaults, hostname, migrateNativeConfig, port, postgresBin, readConfig, root, run, startPostgres, updateConfig, validateSecrets } from './start-common.mjs';
+import { benchDir, benchTag, buildDashboard } from './benchmark-deploy.mjs';
 
 const runtime = resolve(root, '.runtime/native');
 const configPath = resolve(root, '.env');
@@ -50,26 +51,6 @@ async function ready(url, expected, headers = {}) {
     await sleep(500);
   }
   throw Error(`服务未就绪：${url}`);
-}
-// The research dashboard is optional: a failed download or scoring run must not block the financial service.
-const BENCH_REPOS = ['--repo', 'lokinko/mario_bench', '--labels-repo', 'lokinko/mario_bench_labels'];
-function benchTag(value = '') {
-  if (value && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) throw Error('MARIO_BENCH_TAG 只能包含字母、数字、点、下划线和连字符');
-  return value;
-}
-const benchDir = tag => resolve(root, '.runtime/benchmark/bench', tag);
-async function buildDashboard(config, env) {
-  const tag = benchTag(config.MARIO_BENCH_TAG);
-  if (!tag) return console.log('未配置 MARIO_BENCH_TAG，跳过研究看板');
-  const release = join('.runtime/benchmark', tag);
-  try {
-    await run('uv', ['sync', '--frozen', '--group', 'publish'], { env });
-    await run(process.execPath, ['scripts/benchmark.mjs', 'hub-fetch', ...BENCH_REPOS, '--tag', tag, '--out', release], { env });
-    await run(process.execPath, ['scripts/benchmark.mjs', 'bench-run', '--release', release, '--out', benchDir(tag)], { env });
-  } catch (error) {
-    console.warn(`研究看板未更新（${error.message}）；/dashboard 继续提供上次生成的版本，没有则返回“尚未生成”。` +
-      '首次部署需以服务用户执行 .venv/bin/hf auth login 保存 Hugging Face 只读 token，详见 docs/deploy-madeagents.md');
-  }
 }
 function acquireLock() {
   mkdirSync(runtime, { recursive: true, mode: 0o700 });
