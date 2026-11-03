@@ -124,7 +124,7 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pools-v<N>-<日期>
 
 v7保留上述月内收益，另增加`stock.long_history.clenow_mark_90`：截至决策日最近90个市场交易日的log价格OLS回归，取`(exp(252×slope)-1)×100×R²`；明确停牌日沿用此前成交收盘估值，缺行、上市史不足或无法估值保留null，不缩短窗口。`config.input_features=monthly-risk-regression-v1`，20个已有策略的仓位与成绩不变；新回归权重倾斜策略要求v7，不在缺失字段时静默降级。原始回归价格、严格口径与R²冗余字段不随最小升级包发布。
 
-当前v9将`stock.fugui`替换为`daily_lower`、`weekly_lower`、`monthly_lower`、`monthly_mid_pullback`、`monthly_macd_negative`五个截至决策日的布尔信号及`issues`。两类买点均要求日/周BOLL下轨与月MACD负柱，月下吸再要求月下轨，龙回头再要求月中轨回踩；下轨沿用收盘价5%容差，中轨为上月在中轨上方、当前月回到中轨±5%。DIF/DEA不要求负值，旧首次回踩与长期腰斩逻辑已删除。缺少连续预热或未知行情保留null；正式切片不携带原始日线或预热根数。`config.input_features=monthly-risk-regression-fugui-v2`，其他字段、148个决策点及结果标签不变。富贵策略按用户明确要求保留默认看板，名称标明“技术底仓试验”，分数不代表完整基本面/滚动策略。来源与覆盖见`fugui-study.json`。
+本地研究v9将`stock.fugui`替换为`daily_lower`、`weekly_lower`、`monthly_lower`、`monthly_mid_pullback`、`monthly_macd_negative`五个截至决策日的布尔信号及`issues`。两类买点均要求日/周BOLL下轨与月MACD负柱，月下吸再要求月下轨，龙回头再要求月中轨回踩；下轨沿用收盘价5%容差，中轨为上月在中轨上方、当前月回到中轨±5%。DIF/DEA不要求负值，旧首次回踩与长期腰斩逻辑已删除。缺少连续预热或未知行情保留null；正式切片不携带原始日线或预热根数。`config.input_features=monthly-risk-regression-fugui-v2`，其他字段、148个决策点及结果标签不变。富贵策略按用户明确要求保留默认看板，名称标明“技术底仓试验”，分数不代表完整基本面/滚动策略。来源与覆盖见`fugui-study.json`。
 
 公司行动的处理口径：
 
@@ -201,9 +201,9 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v9
 
 第五批[回归趋势实验](audits/benchmark-regression-signals-20261102.md)比较3类48组配置，`trend_regression_tilt`以3.4853进入第三，平均收益得分1.6778、胜率72.3%，早/后段3.4026/3.5938。它按独立90日趋势质量将核心/卫星持仓权重从弱到强乘0.5至2、并列平均排名，再重新计算倾斜后篮子的4%方差预算，保留原止盈/网格。只保存这一组最优参数；原第三至第九各降一位，原第十`trend_calm_pullback`变为第十一。未超过现第一3.5163，配对区间含0，全部选参属于样本内。新机制与最小输入正式登记为v7，20项原有成绩与v6逐字节相同。
 
-当前本地评分切片（拟发布HF标签`pool-scoring-v9`，148个季度决策点：科技池80、红利池68）的成绩如下。v9只替换富贵策略技术信号，21项其他策略的仓位和完整成绩与v8逐字节一致。本表与`benchmark/strategies/`是可追溯记录，看板由`bench-run`生成、不进Git；进入Top-10的策略须同次更新本表（见[协作规范](../AGENTS.md)）。
+当前本地研究评分切片（仅本地目录名`pool-scoring-v9`，不是HF标签，148个季度决策点：科技池80、红利池68）的成绩如下。v9只替换富贵策略技术信号，21项其他策略的仓位和完整成绩与v8逐字节一致。本表与`benchmark/strategies/`是可追溯记录，看板由`bench-run`生成、不进Git；进入Top-10的策略须同次更新本表（见[协作规范](../AGENTS.md)）。
 
-[富贵策略](fugui-strategy.md)本次按用户确认更新为两组三周期BOLL买点，共用月MACD柱<0与收盘5%容差。其余千亿选样市值、低波与每只18%底仓不变；总分0.3331，平均收益得分0.0797，胜率10.1%，红利池单独0.7249，28期触发、82个持仓槽次，仍排18/18。历史v1总分0.0831保留在[审计](audits/benchmark-fugui-v1-20261103.md)。当前Top-10名次全部不变。历史基本面、行业分散、滚动及股息率卖出仍未实现，不能视为完整策略回测；未根据新成绩扫描参数，早/后段不是严格样本外。
+[富贵策略](fugui-strategy.md)本次按用户确认更新为两组三周期BOLL买点，共用月MACD柱<0与收盘5%容差。其余千亿选样市值、低波与每只18%底仓不变；总分0.3331，平均收益得分0.0797，胜率10.1%，红利池单独0.7249，28期触发、82个持仓槽次，仍排18/18。历史v1总分0.0831保留在[审计](audits/benchmark-fugui-v1-20261103.md)。用户明确选择本次只保留本地成绩，研究分支不合入或推送main；主分支、HF标签和线上看板继续已有版本。当前Top-10名次全部不变。历史基本面、行业分散、滚动及股息率卖出仍未实现，不能视为完整策略回测；未根据新成绩扫描参数，早/后段不是严格样本外。
 
 | 名次 | 策略 | 总分 | 平均收益得分 | 胜率 | 2006–2017 总分 | 2018–2025 总分 |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
@@ -296,7 +296,7 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v9
 
 流程为 Git → Actions → `benchmark.live evaluate` → 现有 HF 私有标签仓库的 `dashboard/current.json` → 宿主机每 30 秒同步 → 已登录看板每 10 秒读取。代码保留在 Git；HF 提交历史保留完整快照及状态，当前文件只是派生结果，不是账号业务存储。下载固定 HF 提交；网页脚本始终由本地部署代码生成，远端只提供 JSON。
 
-首次使用需要仓库 Secret `HF_TOKEN`（输入仓库读取、标签仓库写入权限），与每日行情使用同一凭据。评分数据由仓库 Variable `BENCHMARK_SCORING_TAG` 指定，缺省 `pool-scoring-v9`；修改它后手动触发工作流。数据标签继续不可变，所有策略在同一切片评分，数据升级不意味着重新建立在线入口。服务账号的 HF 凭据只需读取标签仓库。
+首次使用需要仓库 Secret `HF_TOKEN`（输入仓库读取、标签仓库写入权限），与每日行情使用同一凭据。评分数据由仓库 Variable `BENCHMARK_SCORING_TAG` 指定，缺省 `pool-scoring-v8`；修改它后手动触发工作流。数据标签继续不可变，所有策略在同一切片评分，数据升级不意味着重新建立在线入口。服务账号的 HF 凭据只需读取标签仓库。
 
 页面显示评测提交、已完成/总策略数、开始或完成状态；运行中和失败时继续展示明确标注提交与切片的上次成功成绩。全部成功才原子替换整张成绩快照，失败保留原因并让工作流失败。进程被强制终止或工作流超时，45 分钟未更新的运行状态显示“待核对”，到 Actions 查看日志并重新运行。首次尚无成功成绩时显示等待状态，不造空成绩。宿主机同步失败保留当前文件并在服务日志记录，恢复连接后自动继续。
 
@@ -442,13 +442,13 @@ npm run benchmark -- hub-publish --release <新切片目录> --runs <bench-run�
 `hub-fetch` 反向还原某个标签的切片：分别从两个仓库下载该标签的 `pool-scoring/`（标签仓库只取 `outcomes.jsonl`，不取成绩单），合并后用 `verify` 校验哈希，通过才放到 `--out`。目标目录已存在时只校验、不覆盖，校验失败即报错。下载后用`pool-score`或`bench-run`离线打分；持续评测也使用固定标签，线上部署只同步成功快照。
 
 ```bash
-npm run benchmark -- hub-fetch --repo lokinko/mario_bench --labels-repo lokinko/mario_bench_labels --tag pool-scoring-v9 --out .runtime/benchmark/pool-scoring-v9
+npm run benchmark -- hub-fetch --repo lokinko/mario_bench --labels-repo lokinko/mario_bench_labels --tag pool-scoring-v8 --out .runtime/benchmark/pool-scoring-v8
 ```
 
 | 标签 | 内容 | `mario_bench` commit | `mario_bench_labels` commit |
 | --- | --- | --- | --- |
-| `pool-scoring-v9`（本地，发布受阻） | 新版：替换富贵买点为三周期BOLL共振与月MACD负柱，契约`monthly-risk-regression-fugui-v2`；其他字段/标签不变，附22项成绩，持续评测默认标签 | 未发布：仓库公开，私有校验拒绝 | 未发布 |
-| `pool-scoring-v8` | 历史版本：在v7上增加首版富贵四个技术信号`monthly-risk-regression-fugui-v1`；由对应历史Git提交复现 | `1d4870f5734831e98a765e7d208c12143152a4df` | `551c82fc58d8725715baf82af751ff6db56cb481` |
+| `pool-scoring-v9`（仅本地，无HF标签） | 本地研究分支：三周期BOLL与月MACD负柱，契约`monthly-risk-regression-fugui-v2`，22项本地成绩；用户选择仅本地保留，不发布 | 不上传 | 不上传 |
+| `pool-scoring-v8` | 当前已发布版本与线上默认：在v7上增加首版富贵四个技术信号`monthly-risk-regression-fugui-v1`；使用main对应策略复现 | `1d4870f5734831e98a765e7d208c12143152a4df` | `551c82fc58d8725715baf82af751ff6db56cb481` |
 | `pool-scoring-v7` | 历史版本：在v6上新增决策前回归趋势 `monthly-risk-regression-v1`，附21项策略成绩；不能运行需要富贵技术信号的当前完整目录 | `742fb368617a5486b46c9c5ec36c3099b562640c` | `44328f826492728458fa528e24f2a36bbabe7ef6` |
 | `pool-scoring-v6` | 历史版本：新增决策前月内收益 `monthly-risk-v1`，附20项策略成绩；供旧提交复现 | `698ab24cc388e980f0cd8bbb25e45941760ee0f9` | `e55fa56f97c5c060981fc073d9305e01bcb8db9f` |
 | `pool-scoring-v5` | 历史版本：增加“能否买入”，主指标为平均收益得分 + 2.5 × 胜率，附14项成绩；供旧提交复现 | `22b160184faf8755717f38184e60874e5ccff128` | `1119a665ec044c51fdd935a750e56984021009b3` |

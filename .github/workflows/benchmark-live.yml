@@ -28,7 +28,7 @@ jobs:
     env:
       HF_HUB_DISABLE_PROGRESS_BARS: '1'
       PYTHONUTF8: '1'
-      BENCHMARK_SCORING_TAG: ${{ vars.BENCHMARK_SCORING_TAG || 'pool-scoring-v9' }}
+      BENCHMARK_SCORING_TAG: ${{ vars.BENCHMARK_SCORING_TAG || 'pool-scoring-v8' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

@@ -111,7 +111,7 @@ bash deploy.sh prepare --ip 47.243.99.21 --domain www.madeagents.ai
 
 benchmark 策略得分看板与 Mario 一起部署，地址为 `https://www.madeagents.ai/mario/dashboard`，任何已登录账号都能查看；未登录只看到“前往 Mario 登录”。Nginx 不需要额外配置：`/mario/` 下的请求本来就会转给 API，`/dashboard`、`/dashboard.js` 和 `/api/benchmark/dashboard` 由 Rust 服务从 `MARIO_BENCH_DIR` 读取，只有最后一个数据接口需要登录。
 
-`deploy.sh` 顶部 `BENCH_ENABLED=true` 启用持续看板，写入 `.env` 的 `MARIO_BENCH_ENABLED`；线上数据切片由 GitHub Actions 的 `BENCHMARK_SCORING_TAG` 统一指定（默认 `pool-scoring-v9`）。策略提交至 main 后自动评测、发布状态与成绩，无需再次部署网页。首次需设置仓库 Secret `HF_TOKEN` 并运行“Benchmark 持续评测”工作流。
+`deploy.sh` 顶部 `BENCH_ENABLED=true` 启用持续看板，写入 `.env` 的 `MARIO_BENCH_ENABLED`；线上数据切片由 GitHub Actions 的 `BENCHMARK_SCORING_TAG` 统一指定（默认 `pool-scoring-v8`）。策略提交至 main 后自动评测、发布状态与成绩，无需再次部署网页。首次需设置仓库 Secret `HF_TOKEN` 并运行“Benchmark 持续评测”工作流。
 
 构建阶段准备独立 Python 环境并下载私有标签仓库的 `dashboard/current.json`，本地生成页面与脚本。运行阶段由 systemd 主运行器启动只读同步器，每 30 秒检查远端更新，写入固定 `.runtime/benchmark/current/`；API 沿用账号认证提供数据，网页每 10 秒刷新状态。同步失败保留旧成绩，首次无快照则等待工作流完成；查看 `journalctl -u mario` 排查服务用户的 HF 读取权限。旧版本目录不删除，继续用于历史复现。详情见 [持续评测](benchmark.md#git-提交后持续评测)。
 

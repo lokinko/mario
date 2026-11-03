@@ -76,7 +76,7 @@ def main(argv=None):
     parser.add_argument("command", choices=("evaluate", "sync"))
     parser.add_argument("--repo", default="lokinko/mario_bench")
     parser.add_argument("--labels-repo", default="lokinko/mario_bench_labels")
-    parser.add_argument("--tag", default="pool-scoring-v9")
+    parser.add_argument("--tag", default="pool-scoring-v8")
     parser.add_argument("--commit")
     parser.add_argument("--run-url", default="")
     parser.add_argument("--strategies", type=Path, default=Path(__file__).with_name("strategies"))
