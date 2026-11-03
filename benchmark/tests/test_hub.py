@@ -4,7 +4,7 @@ import types
 import unittest
 from fnmatch import fnmatch
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from benchmark.files import Invalid, digest, read_json, write_json
 from benchmark.hub import (CANARY, dataset_card, fetch, prepare_daily_prices, publish,
@@ -45,6 +45,9 @@ class FakeApi:
     def file_exists(self, repo_id, name, **_):
         return name in FakeApi.uploads.get(repo_id, {})
 
+    def list_repo_files(self, repo_id, **_):
+        return list(FakeApi.uploads.get(repo_id, {}))
+
     def upload_folder(self, repo_id, folder_path, path_in_repo="", **kwargs):
         FakeApi.last_upload = kwargs
         prefix = path_in_repo + "/" if path_in_repo else ""
@@ -66,10 +69,17 @@ def snapshot_download(repo_id, allow_patterns, local_dir, **_):
     return local_dir
 
 
+def hf_hub_download(repo_id, filename, local_dir, **_):
+    target = Path(local_dir) / filename
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(FakeApi.uploads[repo_id][filename], encoding="utf-8")
+    return str(target)
+
+
 class HubTest(unittest.TestCase):
     def setUp(self):
         FakeApi.uploads, FakeApi.private, FakeApi.last_upload = {}, True, {}
-        hub = types.SimpleNamespace(HfApi=FakeApi, snapshot_download=snapshot_download)
+        hub = types.SimpleNamespace(HfApi=FakeApi, snapshot_download=snapshot_download, hf_hub_download=hf_hub_download)
         self.module = patch.dict(sys.modules, {"huggingface_hub": hub})
         self.module.start()
         self.addCleanup(self.module.stop)
@@ -186,7 +196,8 @@ class HubTest(unittest.TestCase):
                 calls.append(kwargs)
                 return snapshot_download(**kwargs)
 
-            with patch("benchmark.hub.huggingface", return_value=types.SimpleNamespace(HfApi=FakeApi, snapshot_download=download)):
+            with patch("benchmark.hub.huggingface", return_value=types.SimpleNamespace(
+                    HfApi=FakeApi, snapshot_download=download, hf_hub_download=hf_hub_download)):
                 source, previous, parent, provenance = prepare_daily_prices(
                     "me/bench", "me/labels", "v7", "daily-prices", base / "first")
                 self.assertIsNone(previous)
@@ -203,9 +214,26 @@ class HubTest(unittest.TestCase):
                 publish_daily_prices(daily, "me/labels", "daily-prices", parent)
                 self.assertEqual(FakeApi.last_upload["parent_commit"], "sha-me/labels")
                 self.assertTrue(all(FakeApi.uploads["me/labels"][k] == v for k, v in old.items()))
-                _, previous, _, _ = prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base / "next")
+                direct = Mock(wraps=hf_hub_download)
+                adapter = types.SimpleNamespace(HfApi=FakeApi, snapshot_download=download, hf_hub_download=direct)
+                with patch("benchmark.hub.huggingface", return_value=adapter):
+                    _, previous, _, _ = prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base / "next")
+                self.assertEqual({call.kwargs["revision"] for call in direct.call_args_list}, {"sha-me/labels"})
+                self.assertEqual({call.kwargs["filename"] for call in direct.call_args_list},
+                                 {"daily-prices/manifest.json", "daily-prices/config.json"})
                 self.assertTrue(verify_release(previous)["valid"])
-                self.assertEqual(calls[-1]["revision"], "sha-me/labels")
+                self.assertTrue(all(call["repo_id"] == "me/bench" for call in calls))
+
+                for name, value in (("daily-prices/config.json", None), ("daily-prices/extra.json", "{}")):
+                    with self.subTest(name=name):
+                        original = FakeApi.uploads["me/labels"].copy()
+                        if value is None:
+                            del FakeApi.uploads["me/labels"][name]
+                        else:
+                            FakeApi.uploads["me/labels"][name] = value
+                        with self.assertRaisesRegex(Invalid, "远端日线归档与 manifest 不一致"):
+                            prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base / name.replace("/", "_"))
+                        FakeApi.uploads["me/labels"] = original
 
     def test_daily_refuses_public_repo_and_scoring_path(self):
         with tempfile.TemporaryDirectory() as folder:

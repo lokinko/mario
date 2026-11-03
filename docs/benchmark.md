@@ -405,7 +405,7 @@ uv run --frozen --group market --group publish python scripts/benchmark_update_p
 - **闭市来源观察**：H00300 官方接口偶有闭市日点位，保留在 `source-observations/H00300-calendar-closed.jsonl` 并标记 `calendar_closed_index_observation`，不写入交易日价格序列、不增加收益观察日。
 - **本地归档**：`--out .runtime/benchmark/<新目录>` 可保留通过校验的完整归档，上传失败时也不会删除；已有目录不可覆盖。省略时使用自动清理的临时目录。对保留目录运行 `python -m benchmark verify --root <目录>` 可独立核对全部哈希，再按远端状态重试发布。
 - **采集容量**：脚本默认 `--workers 4`，上限4；每个进程独占 Baostock 会话，用 `spawn` 避免继承连接，同一证券目录只有一个写入者。先校验基准数据，再采股票；任何进程失败都不提交半成品。单进程可用 `--workers 1` 排查来源问题。
-- **持久化与恢复**：归档位于私有标签仓库 `daily-prices/`，包含选样快照、交易日历、证券元数据、覆盖统计、配置和逐文件 SHA-256。最新日线可能泄露历史决策的未来，不能放进时点输入仓库。每次从远端固定提交恢复并校验全部哈希，不依赖 GitHub cache/artifact；采集全部通过后才上传一次提交，`parent_commit` 防止远端前进时覆盖其他发布。失败保留远端上次成功版本，下次继续；本次临时目录自动清理。相同清单不会重复上传。
+- **持久化与恢复**：归档位于私有标签仓库 `daily-prices/`，包含选样快照、交易日历、证券元数据、覆盖统计、配置和逐文件 SHA-256。最新日线可能泄露历史决策的未来，不能放进时点输入仓库。每次固定远端提交，先核对远端文件全集与清单，再按清单逐文件下载并校验全部哈希，避免大型快照枚举遗漏；不依赖 GitHub cache/artifact。采集全部通过后才上传一次提交，`parent_commit` 防止远端前进时覆盖其他发布。失败保留远端上次成功版本，下次继续；本次临时目录自动清理。相同清单不会重复上传。
 - **评分边界**：任务只维护日线，不改 `pool-scoring/`、不可变标签、数据集卡、策略参数、成绩或部署看板。新评分切片仍需保留 v7 特征并等待完整结果窗口，再走显式构建、评分与发布。
 
 Actions 的运行摘要列出股票数、年度范围、实际最后交易日与上传提交；失败在运行日志中标明来源和日期，不将未完成采集报告为成功。工作流用串行并发组防止两次调度重叠；超过 120 分钟会失败，可手动重新运行。[GitHub 定时触发说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。

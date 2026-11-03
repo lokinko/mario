@@ -6,6 +6,7 @@
 
 import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .files import Invalid, digest, read_json, require, write_json
@@ -236,8 +237,24 @@ def prepare_daily_prices(repo, labels_repo, tag, path, workspace):
     previous = None
     if api.file_exists(labels_repo, f"{path}/manifest.json", repo_type="dataset", revision=parent_commit):
         restored = workspace / "previous-download"
-        hub.snapshot_download(repo_id=labels_repo, repo_type="dataset", revision=parent_commit,
-                              allow_patterns=[f"{path}/**"], local_dir=restored)
+        def download(name):
+            return hub.hf_hub_download(repo_id=labels_repo, repo_type="dataset", revision=parent_commit,
+                                       filename=f"{path}/{name}", local_dir=restored)
+
+        download("manifest.json")
+        names = set(read_json(restored / path / "manifest.json")["files"])
+        for name in names:
+            repo_path(name)
+        remote = {name[len(path) + 1:] for name in api.list_repo_files(
+            labels_repo, repo_type="dataset", revision=parent_commit) if name.startswith(f"{path}/")}
+        missing = sorted((names | {"manifest.json"}) - remote)
+        extra = sorted(remote - (names | {"manifest.json"}))
+        require(not missing and not extra,
+                f"远端日线归档与 manifest 不一致（{parent_commit}）：缺失 {len(missing)} 个 {missing[:5]}；"
+                f"多余 {len(extra)} 个 {extra[:5]}")
+        # 按清单逐文件下载，避免大型仓库快照的文件枚举遗漏；所有请求固定同一次提交。
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(download, sorted(names)))
         # 下载器的 .cache 位于 restored 根目录，不属于可校验的数据目录。
         previous = restored / path
         verify_release(previous)
