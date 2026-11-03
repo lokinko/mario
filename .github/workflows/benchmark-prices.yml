@@ -43,7 +43,7 @@ jobs:
           python -m pip install uv
           uv sync --frozen --group market --group publish
       - name: 验证增量更新与发布行为
-        run: uv run --frozen --group market --group publish python -m unittest benchmark.tests.test_daily_prices benchmark.tests.test_index_membership benchmark.tests.test_hub -v
+        run: uv run --frozen --group market --group publish python -m unittest benchmark.tests.test_baostock_market benchmark.tests.test_daily_prices benchmark.tests.test_index_membership benchmark.tests.test_hub -v
       - name: 采集并同步 Hugging Face
         run: |
           args=()
