@@ -1,7 +1,7 @@
 // Exercise the single deployment entry without touching system packages/services.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createConfig, defaults, readConfig, root, validateSecrets } from './start-common.mjs';
@@ -72,6 +72,47 @@ try {
   const bash = process.env.MARIO_TEST_BASH || 'bash';
   const probe = spawnSync(bash, ['--version'], { encoding: 'utf8' });
   if (probe.error) throw Error('脚本测试需要 Bash；Windows 可通过 MARIO_TEST_BASH 指定 Git Bash 路径');
+  const homeCheck = /^check_user_home\(\) \{[\s\S]*?^\}/m.exec(readFileSync(join(fixture, 'deploy.sh'), 'utf8'))?.[0];
+  assert(homeCheck, 'deploy must check the service user home before installing tools');
+  const home = join(fixture, 'user-home');
+  mkdirSync(home);
+  // Root CI must exercise permission checks as an unprivileged user too.
+  const rootTest = process.getuid?.() === 0;
+  chmodSync(fixture, 0o755);
+  chmodSync(home, 0o777);
+  function checkHome(expected, path = '') {
+    const script = `${homeCheck}\ncd "$TEST_ROOT"\nRUN_HOME="$PWD/user-home"\nRUN_USER=deploy-test\nas_user() { env HOME="$RUN_HOME" USER="$RUN_USER" "$@"; }\ncheck_user_home`;
+    const argv = ['-euc', script];
+    const result = spawnSync(rootTest ? 'runuser' : bash, rootTest ? ['-u', 'nobody', '--', bash, ...argv] : argv, {
+      encoding: 'utf8', env: { ...cleanEnv, TEST_ROOT: fixture },
+    });
+    assert.equal(result.status, expected, result.stdout + result.stderr);
+    if (expected !== 0) {
+      assert(result.stderr.includes(path), result.stderr);
+      assert.match(result.stderr, /namei -l/);
+      assert.match(result.stderr, /docs\/deploy-madeagents.md/);
+    }
+  }
+  checkHome(0); // Missing tool directories are created later by their installers.
+  if (process.platform !== 'win32') {
+    chmodSync(home, 0o500);
+    checkHome(1, 'user-home');
+    chmodSync(home, 0o777);
+  }
+  for (const path of ['.cargo', '.cargo/bin', '.rustup', '.local', '.local/bin']) {
+    const directory = join(home, path);
+    writeFileSync(directory, 'not a directory');
+    checkHome(1, path);
+    rmSync(directory);
+    mkdirSync(directory);
+    chmodSync(directory, 0o777);
+    if (process.platform !== 'win32') {
+      chmodSync(directory, 0o500);
+      checkHome(1, path);
+      chmodSync(directory, 0o777);
+    }
+    checkHome(0);
+  }
   for (const argv of [['-n', join(fixture, 'deploy.sh')], [join(fixture, 'deploy.sh'), '--help']])
     assert.equal(spawnSync(bash, argv, { encoding: 'utf8', env: cleanEnv }).status, 0);
   const shell = spawnSync(bash, [join(fixture, 'deploy.sh'), 'prepare', '--ip', '47.243.99.21', '--domain', 'www.madeagents.ai'], { encoding: 'utf8', env: cleanEnv });
@@ -81,7 +122,7 @@ try {
   assert.equal(spawnSync(bash, [join(fixture, 'deploy.sh'), 'prepare', '--domain'], { encoding: 'utf8', env: cleanEnv }).status, 1);
   assert.equal(readFileSync(envPath, 'utf8'), final);
   assert(!existsSync(join(fixture, '.runtime/native/postgres/PG_VERSION')));
-  console.log('PASS deploy entry: Bash syntax/help/prepare, persistent secrets, idempotent configuration, IP/domain/prefix/port validation, restore lock, generated Nginx route and headers');
+  console.log('PASS deploy entry: service user home/tool permissions, Bash syntax/help/prepare, persistent secrets, idempotent configuration, IP/domain/prefix/port validation, restore lock, generated Nginx route and headers');
 } finally {
   assert(resolve(fixture).startsWith(resolve(tmpdir()) + sep + 'mario-deploy-'));
   rmSync(fixture, { recursive: true, force: true });

@@ -123,6 +123,27 @@ install_tools() {
     node_ready || { echo '需要 Node.js 22+ 和 npm' >&2; exit 1; }
 }
 
+check_user_home() {
+    # 使用实际运行身份检查，root 的可写检查无法发现服务用户的权限问题。
+    as_user sh -eu -c '
+        if [ ! -d "$HOME" ] || [ ! -w "$HOME" ] || [ ! -x "$HOME" ]; then
+            printf "部署用户 %s 无法写入或进入 home：%s\n" "$USER" "$HOME" >&2
+            exit 1
+        fi
+        for path in "$HOME/.cargo" "$HOME/.cargo/bin" "$HOME/.rustup" "$HOME/.local" "$HOME/.local/bin"; do
+            if [ -e "$path" ] || [ -L "$path" ]; then
+                if [ ! -d "$path" ] || [ ! -w "$path" ] || [ ! -x "$path" ]; then
+                    printf "部署用户 %s 无法写入或进入工具目录：%s\n" "$USER" "$path" >&2
+                    exit 1
+                fi
+            fi
+        done
+    ' || {
+        printf '请用 namei -l 检查上述路径的逐层权限；修复方法见 docs/deploy-madeagents.md 的“服务用户 home 与工具目录权限”。\n' >&2
+        return 1
+    }
+}
+
 if [[ "$ACTION" == deploy ]]; then
     [[ "$PROJECT_DIR" != /root && "$PROJECT_DIR" != /root/* ]] || { echo '请将仓库克隆到 /srv/mario 或普通用户 home，PostgreSQL 不能作为 root 运行' >&2; exit 1; }
     if [[ -z "$RUN_USER" ]]; then
@@ -135,10 +156,7 @@ if [[ "$ACTION" == deploy ]]; then
     # 只接管当前项目；已有数据库须仍归运行用户所有，避免误接管别的 PostgreSQL。
     if [[ -f .runtime/native/postgres/PG_VERSION && "$(stat -c %U .runtime/native/postgres/PG_VERSION)" != "$RUN_USER" ]]; then echo '数据库所有者与 RUN_USER 不一致，请保留原运行用户' >&2; exit 1; fi
     [[ -f package.json && -f server/Cargo.toml && -f scripts/host-runtime.mjs ]] || { echo '不是完整的 Mario 源码目录' >&2; exit 1; }
-    install_tools
-    chown -R "$RUN_USER:$(id -gn "$RUN_USER")" -- "$PROJECT_DIR"
     RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
-    export PATH="$RUN_HOME/.cargo/bin:$RUN_HOME/.local/bin:$PATH"
     # sudo 调用者可能已激活 Python，或设置了 root 的工具/缓存目录；不能带入服务账号。
     as_user() {
         runuser -u "$RUN_USER" -- env -u CARGO_HOME -u RUSTUP_HOME \
@@ -146,6 +164,10 @@ if [[ "$ACTION" == deploy ]]; then
             -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_CONFIG_HOME \
             HOME="$RUN_HOME" USER="$RUN_USER" LOGNAME="$RUN_USER" PATH="$PATH" "$@"
     }
+    check_user_home
+    install_tools
+    chown -R "$RUN_USER:$(id -gn "$RUN_USER")" -- "$PROJECT_DIR"
+    export PATH="$RUN_HOME/.cargo/bin:$RUN_HOME/.local/bin:$PATH"
     if ! as_user cargo --version >/dev/null 2>&1; then
         [[ "$INSTALL_MISSING_TOOLS" == true ]] || { echo '请先给运行用户安装 Rust/rustup' >&2; exit 1; }
         # Rust 官方安装器作为普通服务用户运行，版本由 rust-toolchain.toml 固定。
