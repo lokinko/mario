@@ -2,13 +2,15 @@ import sys
 import tempfile
 import types
 import unittest
+import hashlib
+import subprocess
 from fnmatch import fnmatch
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from benchmark.files import Invalid, digest, read_json, write_json
 from benchmark.hub import (CANARY, dataset_card, fetch, prepare_daily_prices, publish,
-                           publish_daily_prices)
+                           publish_daily_prices, promote_daily_branch)
 from benchmark.release import verify_release
 
 REPORT = {"score": {"mean": 1.5, "bootstrap_95": [0.5, 2.5], "count": 4}, "beat_csi300_periods": 3,
@@ -35,12 +37,39 @@ def runs(root):
 
 class FakeApi:
     uploads, private, last_upload = {}, True, {}
+    branches, heads, created_branch = {}, {}, {}
 
     def create_repo(self, repo_id, **_):
         pass
 
     def repo_info(self, repo_id, **_):
-        return types.SimpleNamespace(private=self.private, sha=f"sha-{repo_id}")
+        return types.SimpleNamespace(private=self.private, sha=self.heads.get(repo_id, f"sha-{repo_id}"))
+
+    def create_branch(self, repo_id, branch, revision, **_):
+        FakeApi.created_branch = {"branch": branch, "revision": revision}
+        FakeApi.branches[repo_id, branch] = dict(FakeApi.uploads.get(repo_id, {}))
+
+    def delete_branch(self, repo_id, branch, **_):
+        del FakeApi.branches[repo_id, branch]
+
+    def upload_file(self, repo_id, path_or_fileobj, path_in_repo, revision, **_):
+        FakeApi.branches[repo_id, revision][path_in_repo] = path_or_fileobj.decode()
+        return types.SimpleNamespace(oid="sha-attrs")
+
+    def list_repo_tree(self, repo_id, path_in_repo, revision, **_):
+        for name, value in FakeApi.branches[repo_id, revision].items():
+            if name.startswith(path_in_repo + "/"):
+                content = value.encode()
+                yield types.SimpleNamespace(path=name, lfs=None,
+                    blob_id=hashlib.sha1(f"blob {len(content)}\0".encode() + content).hexdigest())
+
+    @staticmethod
+    def promote(api, repo, branch, parent, staged_commit):
+        if api.repo_info(repo).sha != parent:
+            raise Invalid("main advanced")
+        FakeApi.uploads[repo] = dict(FakeApi.branches[repo, branch])
+        FakeApi.heads[repo] = "sha-promoted"
+        return "sha-promoted"
 
     def file_exists(self, repo_id, name, **_):
         return name in FakeApi.uploads.get(repo_id, {})
@@ -48,16 +77,18 @@ class FakeApi:
     def list_repo_files(self, repo_id, **_):
         return list(FakeApi.uploads.get(repo_id, {}))
 
-    def upload_folder(self, repo_id, folder_path, path_in_repo="", **kwargs):
+    def upload_folder(self, repo_id, folder_path, path_in_repo="", revision=None, delete_patterns=None, **kwargs):
         FakeApi.last_upload = kwargs
         prefix = path_in_repo + "/" if path_in_repo else ""
-        if kwargs.get("delete_patterns") == "*":
-            FakeApi.uploads[repo_id] = {name: value for name, value in FakeApi.uploads.get(repo_id, {}).items()
-                                       if not name.startswith(prefix)}
-        FakeApi.uploads.setdefault(repo_id, {}).update(
+        target = FakeApi.branches[repo_id, revision] if revision else FakeApi.uploads.setdefault(repo_id, {})
+        if delete_patterns:
+            for name in list(target):
+                if name.startswith(prefix):
+                    del target[name]
+        target.update(
             {prefix + p.relative_to(folder_path).as_posix(): p.read_text(encoding="utf-8")
              for p in Path(folder_path).rglob("*") if p.is_file()})
-        return types.SimpleNamespace(oid=f"sha-{repo_id}")
+        return types.SimpleNamespace(oid=revision if revision else f"sha-{repo_id}")
 
     def create_tag(self, *_, **__):
         pass
@@ -82,10 +113,25 @@ def hf_hub_download(repo_id, filename, local_dir, **_):
 class HubTest(unittest.TestCase):
     def setUp(self):
         FakeApi.uploads, FakeApi.private, FakeApi.last_upload = {}, True, {}
-        hub = types.SimpleNamespace(HfApi=FakeApi, snapshot_download=snapshot_download, hf_hub_download=hf_hub_download)
+        FakeApi.branches, FakeApi.heads, FakeApi.created_branch = {}, {}, {}
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+
+        def download(repo_id, filename, local_dir=None, **kwargs):
+            if filename == ".gitattributes":
+                path = Path(temp.name) / "attrs"
+                path.write_text(FakeApi.uploads.get(repo_id, {}).get(filename, ""))
+                return str(path)
+            return hf_hub_download(repo_id, filename, local_dir, **kwargs)
+
+        self.attrs = download
+        hub = types.SimpleNamespace(HfApi=FakeApi, snapshot_download=snapshot_download, hf_hub_download=download)
         self.module = patch.dict(sys.modules, {"huggingface_hub": hub})
         self.module.start()
         self.addCleanup(self.module.stop)
+        promoter = patch("benchmark.hub.promote_daily_branch", side_effect=FakeApi.promote)
+        self.promoter = promoter.start()
+        self.addCleanup(promoter.stop)
 
     def test_outcomes_only_go_to_labels_repo_and_card_carries_canary(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -200,7 +246,7 @@ class HubTest(unittest.TestCase):
                 return snapshot_download(**kwargs)
 
             with patch("benchmark.hub.huggingface", return_value=types.SimpleNamespace(
-                    HfApi=FakeApi, snapshot_download=download, hf_hub_download=hf_hub_download)):
+                    HfApi=FakeApi, snapshot_download=download, hf_hub_download=self.attrs)):
                 source, previous, parent, provenance = prepare_daily_prices(
                     "me/bench", "me/labels", "v7", "daily-prices", base / "first")
                 self.assertIsNone(previous)
@@ -216,15 +262,15 @@ class HubTest(unittest.TestCase):
                 old = dict(FakeApi.uploads["me/labels"])
                 FakeApi.uploads["me/labels"]["daily-prices/retired-layout.jsonl"] = "old layout"
                 publish_daily_prices(daily, "me/labels", "daily-prices", parent)
-                self.assertEqual(FakeApi.last_upload["parent_commit"], "sha-me/labels")
-                self.assertEqual(FakeApi.last_upload["delete_patterns"], "*")
+                self.assertEqual(FakeApi.created_branch["revision"], "sha-me/labels")
+                self.assertFalse(FakeApi.branches)
                 self.assertNotIn("daily-prices/retired-layout.jsonl", FakeApi.uploads["me/labels"])
                 self.assertTrue(all(FakeApi.uploads["me/labels"][k] == v for k, v in old.items()))
                 direct = Mock(wraps=hf_hub_download)
                 adapter = types.SimpleNamespace(HfApi=FakeApi, snapshot_download=download, hf_hub_download=direct)
                 with patch("benchmark.hub.huggingface", return_value=adapter):
                     _, previous, _, _ = prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base / "next")
-                self.assertEqual({call.kwargs["revision"] for call in direct.call_args_list}, {"sha-me/labels"})
+                self.assertEqual({call.kwargs["revision"] for call in direct.call_args_list}, {"sha-promoted"})
                 self.assertEqual({call.kwargs["filename"] for call in direct.call_args_list},
                                  {"daily-prices/manifest.json", "daily-prices/config.json"})
                 self.assertTrue(verify_release(previous)["valid"])
@@ -311,9 +357,69 @@ class HubTest(unittest.TestCase):
             manifest["files"]["config.json"] = digest(config)
             write_json(base / "daily/manifest.json", manifest)
             with patch.object(FakeApi, "upload_folder", side_effect=RuntimeError("parent commit conflict")):
-                with self.assertRaisesRegex(RuntimeError, "conflict"):
+                with self.assertRaisesRegex(Invalid, "conflict"):
                     publish_daily_prices(base / "daily", "me/labels", "daily-prices", "old-sha")
             self.assertNotIn("me/labels", FakeApi.uploads)
+
+    def test_daily_staging_corruption_never_reaches_main(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            release(base / "daily")
+            config = base / "daily/config.json"
+            write_json(config, {"last_session": "2026-11-02"})
+            manifest = read_json(base / "daily/manifest.json")
+            manifest["files"]["config.json"] = digest(config)
+            write_json(base / "daily/manifest.json", manifest)
+            original = FakeApi.upload_folder
+
+            def corrupt(api, repo_id, revision, **kwargs):
+                result = original(api, repo_id=repo_id, revision=revision, **kwargs)
+                FakeApi.branches[repo_id, revision]["daily-prices/config.json"] = "tampered"
+                return result
+
+            with patch.object(FakeApi, "upload_folder", corrupt):
+                with self.assertRaisesRegex(Invalid, "不符"):
+                    publish_daily_prices(base / "daily", "me/labels", "daily-prices", "sha-me/labels")
+            self.promoter.assert_not_called()
+            self.assertNotIn("me/labels", FakeApi.uploads)
+            self.assertTrue(FakeApi.branches)
+
+
+class DailyPromotionGitTest(unittest.TestCase):
+    def test_multicommit_fast_forward_and_concurrent_changes(self):
+        # 真实Git提交图验证SDK分批提交的提升，避免浅克隆截断祖先造成 fetch-first。
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            remote = base / "datasets/me/labels"
+            remote.parent.mkdir(parents=True)
+            subprocess.run(["git", "init", "--bare", "--quiet", str(remote)], check=True)
+            work = base / "work"
+            work.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=work, text=True, stderr=subprocess.PIPE).strip()
+
+            git("init", "--quiet")
+            git("config", "user.name", "Benchmark test")
+            git("config", "user.email", "benchmark@example.invalid")
+            git("commit", "--quiet", "--allow-empty", "-m", "base")
+            parent = git("rev-parse", "HEAD")
+            git("remote", "add", "origin", str(remote))
+            git("push", "origin", "HEAD:refs/heads/main")
+            for name in ("attributes", "batch1", "batch2", "manifest"):
+                git("commit", "--quiet", "--allow-empty", "-m", name)
+            staged = git("rev-parse", "HEAD")
+            git("push", "origin", "HEAD:refs/heads/staging")
+            api = types.SimpleNamespace(endpoint=str(base), whoami=lambda: {"name": "me"})
+            with patch("benchmark.hub.huggingface", return_value=types.SimpleNamespace(get_token=lambda: "test-token")):
+                commit = promote_daily_branch(api, "me/labels", "staging", parent, staged)
+                self.assertEqual(commit, staged)
+                self.assertEqual(git("ls-remote", "origin", "refs/heads/main").split()[0], staged)
+                with self.assertRaisesRegex(Invalid, "主分支已前进"):
+                    promote_daily_branch(api, "me/labels", "staging", parent, staged)
+                with self.assertRaisesRegex(Invalid, "暂存分支已变更"):
+                    promote_daily_branch(api, "me/labels", "staging", staged, parent)
+                self.assertEqual(git("ls-remote", "origin", "refs/heads/main").split()[0], staged)
 
 
 if __name__ == "__main__":

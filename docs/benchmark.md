@@ -395,7 +395,7 @@ uv run --frozen --group market --group publish python scripts/benchmark_update_p
 uv run --frozen --group market --group publish python scripts/benchmark_update_prices.py --dry-run
 ```
 
-`benchmark_update_prices.py` 负责参数、临时目录、运行摘要与失败退出；`index_membership.py` 从中证官方 Excel 获取中证A50（930050）、上证50（000016）的完整成分；`daily_prices.py` 负责名单并集、日线合并和完整性；`hub.py` 负责 HF 下载/上传。数据流是固定标签年度选样 + 官方当前完整成分 → 上次成功日线 → 增量采集与校验 → 单次 HF 提交，不访问在线业务或账号数据库。
+`benchmark_update_prices.py` 负责参数、临时目录、运行摘要与失败退出；`index_membership.py` 从中证官方 Excel 获取中证A50（930050）、上证50（000016）的完整成分；`daily_prices.py` 负责名单并集、日线合并和完整性；`hub.py` 负责 HF 下载/上传。数据流是固定标签年度选样 + 官方当前完整成分 → 上次成功日线 → 增量采集与校验 → 临时 HF 分支完整上传与校验 → 主分支原子快进，不访问在线业务或账号数据库。
 
 - **证券范围**：默认读取 `pool-scoring-v7` 中红利、科技年度快照的 `selected` 历史成员，并加入中证A50、上证50各 **全部50只** 当前成分，按证券代码去重；历史退出成员和已退市公司继续保留。原始 OHLC、前收、成交量、成交额、交易状态、ST 标志、未复权/后复权口径、上市退市元数据与交易日历均归档；不从财报推定未经核验的财务指标。
 - **指数名单**：每天从[中证A50官方成分文件](https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/930050cons.xls)和[上证50官方成分文件](https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/000016cons.xls)获取最新名单，核对指数代码、名称、交易所、同一来源日期、重复代码及完整50只。原 Excel 与解释保存在 `index-membership/<指数>/<获取日>-<内容哈希>.xls/.json`，同时记录 `source_date`、`observed_on`、来源 URL 和 SHA-256；同日修正分别保留。后续调入股自动补采其历史价格，已观察过的调出股不删除。
@@ -406,12 +406,14 @@ uv run --frozen --group market --group publish python scripts/benchmark_update_p
 - **本地归档**：`--out .runtime/benchmark/<新目录>` 可保留通过校验的完整归档，上传失败时也不会删除；已有目录不可覆盖。省略时使用自动清理的临时目录。对保留目录运行 `python -m benchmark verify --root <目录>` 可独立核对全部哈希，再按远端状态重试发布。
 - **采集容量**：脚本默认 `--workers 4`，上限4；每个进程独占 Baostock 会话，用 `spawn` 避免继承连接，同一证券目录只有一个写入者。先校验基准数据，再采股票；任何进程失败都不提交半成品。单进程可用 `--workers 1` 排查来源问题。
 - **会话恢复**：Baostock 查询或分页失败时，适配器最多尝试3次；后续尝试重新登录，并从请求起点重查，失败分页的部分结果全部丢弃。持续失败仍终止任务，不上传不完整归档。
-- **持久化与恢复**：归档位于私有标签仓库 `daily-prices/`，包含选样快照、交易日历、证券元数据、覆盖统计、配置和逐文件 SHA-256。最新日线可能泄露历史决策的未来，不能放进时点输入仓库。每次固定远端提交，先核对远端文件全集与清单，再按清单逐文件下载并校验全部哈希，避免大型快照枚举遗漏；不依赖 GitHub cache/artifact。采集全部通过后才上传一次提交，`parent_commit` 防止远端前进时覆盖其他发布。失败保留远端上次成功版本，下次继续；本次临时目录自动清理。相同清单不会重复上传。
+- **持久化与恢复**：归档位于私有标签仓库 `daily-prices/`，包含选样快照、交易日历、证券元数据、覆盖统计、配置和逐文件 SHA-256。最新日线可能泄露历史决策的未来，不能放进时点输入仓库。每次固定远端提交，先核对远端文件全集与清单，再按清单逐文件下载并校验全部哈希，避免大型快照枚举遗漏；不依赖 GitHub cache/artifact。采集全部通过后，在基于原远端提交的专用临时分支上传；该目录使用 LFS，SDK 可以拆成多次提交，但主分支保持上次完整版本。上传后逐文件核对远端内容标识（LFS SHA-256 或 Git blob），文件集合或内容不符拒绝提升。最后通过完整 Git 祖先关系校验及非强制快进，一次更新主分支；远端前进则拒绝覆盖，保留临时分支供整合。成功后删除临时分支；失败的本地目录按 `--out` 约定保留或清理。相同清单不会重复上传。
 - **评分边界**：任务只维护日线，不改 `pool-scoring/`、不可变标签、数据集卡、策略参数、成绩或部署看板。新评分切片仍需保留 v7 特征并等待完整结果窗口，再走显式构建、评分与发布。
 
 Actions 的运行摘要列出股票数、年度范围、实际最后交易日与上传提交；失败在运行日志中标明来源和日期，不将未完成采集报告为成功。工作流用串行并发组防止两次调度重叠；超过 120 分钟会失败，可手动重新运行。[GitHub 定时触发说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
 
 若远端归档自身缺失文件，日常任务拒绝继续。确认需要完整补采时，可手动触发 workflow 并勾选 `rebuild`，或在 CLI 加 `--rebuild`。此模式校验旧配置和历史指数成分原件的哈希，保留已观察证券并从原起点完整采集，不允许缩小日期范围；缺少历史成分原件或配置损坏仍失败。新包全部通过校验后以原远端提交为 `parent_commit` 一次发布，HF 旧提交可用于审计和恢复；不删除旧提交，也不覆盖评分切片。重建的原提交、证券清单与缺失文件数记在新配置的 `source.rebuild` 中；定时运行默认关闭重建。
+
+持续维护优先级与验收规则见[维护清单](benchmark-maintenance.md)，本轮完整指数采集结果见[2026-11-03 验收记录](audits/benchmark-index-expansion-20261103.md)。
 
 ## Hugging Face 托管
 

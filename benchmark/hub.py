@@ -4,8 +4,13 @@
 再分发授权尚未核对，两个仓库都必须是私有仓库。
 """
 
+import hashlib
+import os
 import shutil
+import subprocess
 import tempfile
+import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -286,16 +291,94 @@ def prepare_daily_prices(repo, labels_repo, tag, path, workspace, rebuild=False)
     return source, previous, parent_commit, {"repo": repo, "tag": tag, "commit": source_commit}
 
 
+def promote_daily_branch(api, repo, branch, parent_commit, staged_commit):
+    """SDK大目录会拆提交；用无强推的Git快进一次切换主分支。"""
+    token = huggingface().get_token()
+    require(token, "缺少 HF 写入凭据")
+    username = api.whoami()["name"]
+    with tempfile.TemporaryDirectory(prefix="mario-hub-promote-") as folder:
+        base = Path(folder)
+        askpass = base / "askpass.sh"
+        askpass.write_text('#!/bin/sh\ncase "$1" in *Username*) printf "%s\\n" "$MARIO_HF_USER";; *) printf "%s\\n" "$MARIO_HF_TOKEN";; esac\n')
+        askpass.chmod(0o700)
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith("GIT_TRACE") and key != "GIT_CURL_VERBOSE"}
+        env.update({"GIT_ASKPASS": str(askpass), "GIT_TERMINAL_PROMPT": "0", "GIT_LFS_SKIP_SMUDGE": "1",
+                    "MARIO_HF_USER": username, "MARIO_HF_TOKEN": token, "LC_ALL": "C"})
+
+        def git(*args):
+            for attempt in range(3):
+                result = subprocess.run(["git", "-c", "credential.helper=", "-c", f"credential.username={username}",
+                                         "-c", "http.version=HTTP/1.1", *args], cwd=base,
+                                        env=env, capture_output=True, text=True)
+                if result.returncode == 0:
+                    return result.stdout.strip()
+                if attempt < 2:
+                    time.sleep(1 + attempt * 2)
+            require(result.returncode == 0, f"HF 主分支未切换: {result.stderr.strip()}")
+
+        git("init", "--quiet")
+        git("remote", "add", "origin", f"{api.endpoint.rstrip('/')}/datasets/{repo}")
+        git("fetch", "--quiet", "--filter=blob:none", "origin",
+            f"refs/heads/{branch}:refs/remotes/origin/staged",
+            "refs/heads/main:refs/remotes/origin/main")
+        commit = git("rev-parse", "refs/remotes/origin/staged")
+        require(commit == staged_commit, "HF 暂存分支已变更，拒绝提升未经核验的内容")
+        current = git("ls-remote", "origin", "refs/heads/main").split()[0]
+        require(current == parent_commit, "HF 主分支已前进，保留完整归档和临时分支，拒绝覆盖")
+        require(git("rev-parse", "refs/remotes/origin/main") == parent_commit,
+                "HF 下载期间主分支已前进，拒绝覆盖")
+        require(git("merge-base", parent_commit, commit) == parent_commit,
+                "HF 主分支不是暂存提交的祖先，保留临时分支等待整合，拒绝强推")
+        git("push", "origin", "refs/remotes/origin/staged:refs/heads/main")
+        return commit
+
+
+def verify_daily_upload(api, root, repo, path, revision):
+    expected = read_json(root / "manifest.json")["files"] | {"manifest.json": digest(root / "manifest.json")}
+    remote = {item.path[len(path) + 1:]: item for item in api.list_repo_tree(
+        repo_id=repo, repo_type="dataset", path_in_repo=path, recursive=True, revision=revision)
+              if getattr(item, "blob_id", None)}
+    require(set(remote) == set(expected), "HF 暂存归档的文件集合不完整，拒绝提升主分支")
+    for name, sha in expected.items():
+        item = remote[name]
+        if item.lfs is not None:
+            require(item.lfs.sha256 == sha, f"HF 暂存文件哈希不符: {name}")
+        else:
+            content = (root / name).read_bytes()
+            oid = hashlib.sha1(f"blob {len(content)}\0".encode() + content).hexdigest()
+            require(item.blob_id == oid, f"HF 暂存 Git 文件不符: {name}")
+
+
 def publish_daily_prices(root, repo, path, parent_commit):
-    """一个提交同时更新日线与清单，远端前进则拒绝覆盖；不触碰评分切片和数据集卡。"""
+    """临时分支完整上传，校验后原子快进；远端前进则拒绝覆盖。"""
     repo_path(path)
     require(path != ".", "每日行情必须使用独立子目录")
     require(not (path == "pool-scoring" or path.startswith("pool-scoring/")), "日线路径不能覆盖评分切片")
     verify_release(root)
-    api = huggingface().HfApi()
+    hub = huggingface()
+    api = hub.HfApi()
     require(api.repo_info(repo, repo_type="dataset").private, f"{repo} 不是私有仓库")
-    info = api.upload_folder(repo_id=repo, repo_type="dataset", folder_path=root, path_in_repo=path,
-                             delete_patterns="*",
-                             parent_commit=parent_commit,
-                             commit_message=f"更新每日行情至 {read_json(root / 'config.json')['last_session']}")
-    return {"repo": repo, "commit": info.oid, "path": path}
+    branch = f"codex/daily-prices-{uuid.uuid4().hex[:12]}"
+    api.create_branch(repo_id=repo, repo_type="dataset", branch=branch, revision=parent_commit)
+    try:
+        attrs = Path(hub.hf_hub_download(repo_id=repo, repo_type="dataset", filename=".gitattributes",
+                                       revision=parent_commit)).read_text(encoding="utf-8")
+        rule = f"{path}/** filter=lfs diff=lfs merge=lfs -text"
+        if rule not in attrs.splitlines():
+            attrs = attrs.rstrip() + "\n" + rule + "\n"
+            api.upload_file(repo_id=repo, repo_type="dataset", path_or_fileobj=attrs.encode(),
+                            path_in_repo=".gitattributes", revision=branch, parent_commit=parent_commit,
+                            commit_message="为独立每日行情目录启用大文件存储")
+        with tempfile.TemporaryDirectory(prefix="mario-hub-upload-") as folder:
+            staged = Path(folder) / "archive"
+            shutil.copytree(root, staged)
+            info = api.upload_folder(repo_id=repo, repo_type="dataset", folder_path=staged, path_in_repo=path,
+                              delete_patterns="*", revision=branch,
+                              commit_message=f"更新每日行情至 {read_json(root / 'config.json')['last_session']}")
+        verify_daily_upload(api, root, repo, path, info.oid)
+        commit = promote_daily_branch(api, repo, branch, parent_commit, info.oid)
+    except Exception as exc:
+        raise Invalid(f"HF 每日归档未提升，临时分支 {branch} 保留以供恢复: {exc}") from exc
+    api.delete_branch(repo_id=repo, repo_type="dataset", branch=branch)
+    return {"repo": repo, "commit": commit, "path": path}
