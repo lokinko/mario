@@ -1,224 +1,215 @@
+import io
+import json
 import tempfile
 import unittest
-from datetime import date, timedelta
+from contextlib import redirect_stdout
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from benchmark.daily_prices import checked_rows, update_prices
-from benchmark.files import Invalid, read_json, rows, write_json
+from benchmark.daily_prices import PRICE_BASIS, latest_quote, update_prices
+from benchmark.files import Invalid, digest, read_json, rows, write_json
+from benchmark.index_membership import collect_memberships
 from benchmark.release import verify_release
+from benchmark.tests.test_index_membership import workbook_content
 
 
-def calendar(start, end):
-    current = date.fromisoformat(start)
-    result = []
-    while current <= date.fromisoformat(end):
-        result.append({"calendar_date": current.isoformat(), "is_trading_day": "1" if current.weekday() < 5 else "0"})
-        current += timedelta(days=1)
-    return result
+def calendar():
+    return [(date(2026, 10, 26) + timedelta(days=i)).isoformat() for i in range(8)
+            if (date(2026, 10, 26) + timedelta(days=i)).weekday() < 5]
 
 
-class Market:
-    missing, duplicate, wrong_code, delisted, correction = None, False, False, "", False
-    calls = []
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        pass
-
-    def trade_dates(self, start, end):
-        return calendar(start, end)
-
-    def stock_basics(self):
-        return [{"code": code, "ipoDate": "2000-01-01", "outDate": self.delisted if code == "sh.600000" else ""}
-                for code in ("sh.600000", "sz.000001")]
-
-    def daily(self, code, start, end, flag, index=False):
-        self.calls.append((code, start, end, flag))
-        values = []
-        for entry in calendar(start, end):
-            day = entry["calendar_date"]
-            if entry["is_trading_day"] != "1" or day == self.missing:
-                continue
-            close = "11" if self.correction else "10"
-            row = {"date": day, "code": "wrong" if self.wrong_code else code[-2:].lower() + "." + code[:6],
-                   "open": "10", "high": "12", "low": "9", "close": close, "preclose": "10",
-                   "volume": "100", "amount": "1000"}
-            if not index:
-                row.update({"tradestatus": "0" if day == "2026-10-28" else "1", "isST": "0"})
-            values.append(row)
-        return values + values[:1] if self.duplicate else values
-
-
-def total_return(_, start, end):
-    return [{"date": r["calendar_date"], "close": "100"} for r in calendar(start, end) if r["is_trading_day"] == "1"]
+def history(code, close=10, closed=False):
+    days = calendar() + (["2026-10-31"] if closed else [])
+    quotes = {key: [close] * len(days) for key in ("open", "high", "low", "close")}
+    quotes["volume"] = [100] * len(days)
+    return {"meta": {"symbol": code.replace(".SH", ".SS")},
+            "timestamp": [int(datetime.fromisoformat(d).replace(tzinfo=timezone.utc).timestamp()) for d in days],
+            "indicators": {"quote": [quotes], "adjclose": [{"adjclose": [close - 1] * len(days)}]}}
 
 
 class DailyPricesTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        patcher = patch("benchmark.collect.time.sleep")
-        patcher.start()
-        self.addCleanup(patcher.stop)
         self.root = Path(self.temp.name)
         self.source = self.root / "source"
         (self.source / "universe").mkdir(parents=True)
         for pool, code in (("dividend", "600000.SH"), ("tech", "000001.SZ")):
-            write_json(self.source / "universe" / f"{pool}-2025.json",
-                       {"pool": pool, "year": 2025, "selected": [code]})
-        Market.missing, Market.duplicate, Market.wrong_code, Market.delisted, Market.correction = None, False, False, "", False
-        Market.calls = []
-        for name, value in (("Baostock", Market), ("csi_index_closes", total_return)):
+            write_json(self.source / "universe" / f"{pool}-2025.json", {"pool": pool, "year": 2025, "selected": [code]})
+        self.close, self.fail, self.closed = 10, set(), False
+        self.calls = []
+
+        def fetch(code, start, end):
+            self.calls.append((code, start, end))
+            if code in self.fail:
+                raise ValueError("source unavailable")
+            value = history(code, self.close, self.closed)
+            return "https://example.com/history", {"chart": {"result": [value]}}, value
+
+        for name, value in (("yahoo_history", fetch), ("download", lambda _: json.dumps(calendar()).encode())):
             patcher = patch(f"benchmark.daily_prices.{name}", value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        patcher = patch("benchmark.collect.time.sleep")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        quiet = redirect_stdout(io.StringIO())
+        quiet.__enter__()
+        self.addCleanup(quiet.__exit__, None, None, None)
 
-    def build(self, name="updated", previous=None, end="2026-11-02"):
+    def build(self, name="updated", previous=None, cache=None, refresh=False):
         out = self.root / name
-        result = update_prices(self.source, previous, out, "2026-10-26", end,
-                               {"commit": "source-sha"}, overlap_days=2)
+        result = update_prices(self.source, previous, out, "2026-10-26", "2026-11-02",
+                               {"commit": "source"}, workers=2, cache_root=cache, refresh_history=refresh)
         return out, result
 
-    def test_collects_both_bases_and_indices_with_suspensions_and_no_weekend_padding(self):
+    def test_archives_provider_basis_adjusted_close_and_raw_response_separately(self):
         out, result = self.build()
         self.assertTrue(verify_release(out)["valid"])
-        self.assertEqual((result["stocks"], result["series"], result["last_session"]), (2, 6, "2026-11-02"))
-        bars = rows(out / "prices/600000.SH/adjust1/2026.jsonl")
-        self.assertEqual(len(bars), 6)
-        self.assertEqual(bars[2]["tradestatus"], "0")
-        self.assertTrue((out / "prices/600000.SH/adjust3/2026.jsonl").exists())
-        self.assertTrue((out / "prices/H00300/adjusttotal_return/2026.jsonl").exists())
-        self.assertEqual(read_json(out / "config.json")["pools"], {"dividend": [2025], "tech": [2025]})
+        self.assertEqual(result["with_history"], 2)
+        bars = rows(out / "prices/600000.SH.jsonl")
+        self.assertEqual((bars[0]["close"], bars[0]["adjusted_close"]), ("10", "9"))
+        self.assertEqual(bars[0]["price_basis"], PRICE_BASIS)
+        self.assertNotIn("tradestatus", bars[0])
+        self.assertTrue((out / "sources/600000.SH.json").exists())
 
-    def test_incremental_refresh_replaces_corrections_and_retains_prior_rows(self):
-        previous, _ = self.build("previous", end="2026-10-30")
-        Market.calls = []
-        Market.correction = True
-        out, _ = self.build(previous=previous)
-        bars = rows(out / "prices/600000.SH/adjust1/2026.jsonl")
-        self.assertEqual([r["close"] for r in bars], ["10", "10", "11", "11", "11", "11"])
-        self.assertEqual(next(call for call in Market.calls if call[0] == "600000.SH")[1], "2026-10-28")
-        stable, _ = self.build("stable", previous=out)
-        repeat, _ = self.build("repeat", previous=stable)
-        self.assertEqual((stable / "manifest.json").read_bytes(), (repeat / "manifest.json").read_bytes())
-
-    def test_missing_latest_bar_does_not_publish_or_modify_previous(self):
-        previous, _ = self.build("previous", end="2026-10-30")
-        before = (previous / "manifest.json").read_bytes()
-        Market.missing = "2026-11-02"
-        with self.assertRaisesRegex(Invalid, "日线未到齐"):
-            self.build(previous=previous)
-        self.assertFalse((self.root / "updated").exists())
-        self.assertEqual((previous / "manifest.json").read_bytes(), before)
-
-    def test_missing_refetch_bar_cannot_be_hidden_by_cached_bar(self):
-        previous, _ = self.build("previous", end="2026-10-30")
-        Market.missing = "2026-10-30"
-        with self.assertRaisesRegex(Invalid, "日线未到齐"):
-            self.build(previous=previous, end="2026-10-30")
-
-    def test_rejects_duplicates_and_other_security_and_cleans_staging(self):
-        for attr in ("duplicate", "wrong_code"):
-            with self.subTest(attr=attr):
-                setattr(Market, attr, True)
-                with self.assertRaises(Invalid):
-                    self.build()
-                setattr(Market, attr, False)
-                self.assertFalse(list(self.root.glob(".benchmark-*")))
-
-    def test_delisted_security_does_not_require_prices_after_delisting(self):
-        Market.delisted = "2026-10-29"
-        out, _ = self.build()
-        bars = rows(out / "prices/600000.SH/adjust1/2026.jsonl")
-        self.assertEqual(bars[-1]["date"], "2026-10-28")
-
-    def test_refuses_date_rollback_and_corrupted_previous_snapshot(self):
+    def test_normal_daily_refresh_does_not_splice_recent_prices_into_history(self):
         previous, _ = self.build("previous")
-        with self.assertRaisesRegex(Invalid, "回退"):
-            self.build(previous=previous, end="2026-10-30")
-        (previous / "coverage.json").write_text("[]\n")
-        with self.assertRaisesRegex(Invalid, "改动"):
-            self.build(previous=previous)
+        self.close = 20
+        out, _ = self.build(previous=previous)
+        self.assertEqual(rows(out / "prices/600000.SH.jsonl"), rows(previous / "prices/600000.SH.jsonl"))
+        self.assertEqual(read_json(out / "sources/600000.SH.json"), read_json(previous / "sources/600000.SH.json"))
 
-    def test_requires_both_pools(self):
-        (self.source / "universe/tech-2025.json").unlink()
-        with self.assertRaisesRegex(Invalid, "同时包含"):
-            self.build()
-
-    def test_rebuild_retains_historical_symbols_and_refuses_date_rollback(self):
-        provenance = {"rebuild": {"start": "2026-10-26", "requested_end": "2026-11-02",
-                                  "symbols": ["600001.SH"]}}
-        basics = Market().stock_basics() + [{"code": "sh.600001", "ipoDate": "2000-01-01", "outDate": ""}]
-        out = self.root / "rebuilt"
-        with patch.object(Market, "stock_basics", return_value=basics):
-            result = update_prices(self.source, None, out, "2026-10-26", "2026-11-02", provenance)
-        self.assertEqual(result["stocks"], 3)
-        self.assertTrue((out / "prices/600001.SH/adjust1/2026.jsonl").exists())
-        self.assertTrue(verify_release(out)["valid"])
-        for start, end in (("2026-10-27", "2026-11-02"), ("2026-10-26", "2026-10-30")):
-            with self.subTest(start=start, end=end), self.assertRaisesRegex(Invalid, "重建不能"):
-                update_prices(self.source, None, self.root / "rollback", start, end, provenance)
-        self.assertFalse((self.root / "rollback").exists())
-
-    def test_known_suspension_empty_fields_stay_empty_with_structured_issues(self):
-        market = Market()
-        bars = market.daily("600000.SH", "2026-10-28", "2026-10-28", "1")
-        bars[0].update({"volume": "", "amount": "", "preclose": ""})
-        checked = checked_rows(bars, "600000.SH", "2026-10-28", "2026-10-28", {"2026-10-28"})
-        self.assertEqual(checked["2026-10-28"]["volume"], "")
-        self.assertEqual(checked["2026-10-28"]["issues"]["amount"], "provider_empty_suspended")
-        bars[0]["tradestatus"] = "1"
-        with self.assertRaisesRegex(Invalid, "600000.SH: 2026-10-28 字段 volume"):
-            checked_rows(bars, "600000.SH", "2026-10-28", "2026-10-28", {"2026-10-28"})
-
-    def test_official_index_closed_day_observation_is_archived_outside_trading_series(self):
-        with patch("benchmark.daily_prices.csi_index_closes",
-                   side_effect=lambda code, start, end: total_return(code, start, end) + [
-                       {"date": "2026-10-31", "close": "100"}]):
+    def test_compact_calendar_dates_are_supported(self):
+        with patch("benchmark.daily_prices.download", return_value=json.dumps([d.replace("-", "") for d in calendar()]).encode()):
             out, _ = self.build()
-        prices = rows(out / "prices/H00300/adjusttotal_return/2026.jsonl")
-        self.assertNotIn("2026-10-31", {r["date"] for r in prices})
-        observations = rows(out / "source-observations/H00300-calendar-closed.jsonl")
-        self.assertEqual(observations[0]["issue_code"], "calendar_closed_index_observation")
         self.assertTrue(verify_release(out)["valid"])
 
-    def test_requeries_incomplete_source_page_before_accepting_a_series(self):
-        original = Market.daily
-        first = set()
+    def test_replaces_complete_history_when_provider_revises_adjustment_scale(self):
+        previous, _ = self.build("previous")
+        self.close = 20
+        out, _ = self.build(previous=previous, refresh=True)
+        self.assertTrue(all(r["close"] == "20" for r in rows(out / "prices/600000.SH.jsonl")))
 
-        def incomplete(market, code, start, end, flag, index=False):
-            values = original(market, code, start, end, flag, index=index)
-            key = (code, flag)
-            if key not in first:
-                first.add(key)
-                return [row for row in values if row["date"] != "2026-10-29"]
-            return values
+    def test_unavailable_source_preserves_previous_prices_and_reports_its_scope(self):
+        previous, _ = self.build("previous")
+        self.fail = {"600000.SH"}
+        out, result = self.build(previous=previous)
+        report = read_json(out / "coverage.json")
+        issue = next(r for r in report["securities"] if r["symbol"] == "600000.SH")
+        self.assertEqual(issue["issue_code"], "public_history_unavailable")
+        self.assertEqual(result["source_unavailable"], 1)
+        self.assertEqual(rows(out / "prices/600000.SH.jsonl"), rows(previous / "prices/600000.SH.jsonl"))
 
-        with patch.object(Market, "daily", incomplete):
-            out, _ = self.build()
-        self.assertEqual(len(rows(out / "prices/600000.SH/adjust1/2026.jsonl")), 6)
+    def test_closed_source_observations_are_preserved_outside_trading_series(self):
+        self.closed = True
+        out, _ = self.build()
+        self.assertEqual(len(rows(out / "prices/600000.SH.jsonl")), 6)
+        excluded = rows(out / "source-observations/600000.SH.jsonl")
+        self.assertEqual(excluded[0]["issue_codes"], ["calendar_closed_observation"])
 
-    def test_complete_index_members_join_existing_archive_without_changing_annual_pools(self):
-        import json
-        from benchmark.index_membership import collect_memberships
-        from benchmark.tests.test_index_membership import workbook_content
+    def test_cache_only_resumes_initial_collection_and_corruption_never_becomes_prices(self):
+        cache = self.root / "cache"
+        first, _ = self.build("first", cache=cache)
+        self.calls = []
+        self.build("resumed", cache=cache)
+        self.assertFalse(self.calls)
+        self.build("refresh", previous=first, cache=cache)
+        self.assertEqual(len(self.calls), 2)
+        path = cache / "600000.SH.json"
+        record = read_json(path)
+        record["response"]["chart"]["result"][0]["meta"]["symbol"] = "wrong"
+        write_json(path, record)
+        bad, result = self.build("bad", cache=cache)
+        self.assertEqual(result["source_unavailable"], 1)
+        self.assertFalse((bad / "prices/600000.SH.jsonl").exists())
 
+    def test_complete_index_members_are_added_without_changing_annual_pools(self):
         with patch("benchmark.index_membership.sheet_rows", side_effect=json.loads), patch(
                 "benchmark.index_membership.download",
                 side_effect=lambda url, **_: workbook_content(url.rsplit("/", 1)[-1][:6])):
             collect_memberships(self.source, "2026-11-03")
-            basics = Market().stock_basics() + [
-                {"code": f"sh.{code}", "ipoDate": "2000-01-01", "outDate": ""} for code in range(600001, 600075)]
-            with patch.object(Market, "stock_basics", return_value=basics):
-                out, result = self.build()
-            self.assertEqual(result["stocks"], 76)
-            self.assertEqual(result["indices"]["930050"]["members_per_snapshot"], 50)
-            self.assertEqual(result["indices"]["000016"]["members_per_snapshot"], 50)
-            self.assertEqual(read_json(out / "config.json")["pools"], {"dividend": [2025], "tech": [2025]})
-            self.assertTrue(verify_release(out)["valid"])
+            out, result = self.build()
+        self.assertEqual(result["stocks"], 76)
+        for index in ("930050", "000016"):
+            self.assertEqual(result["indices"][index], {"members": 50, "with_history": 50, "at_last_session": 50, "daily_bars_at_last_session": 50, "quotes_at_last_session": 0})
+        self.assertEqual(read_json(out / "config.json")["pools"], {"dividend": [2025], "tech": [2025]})
+
+    def test_refuses_old_price_basis_and_modified_release(self):
+        previous, _ = self.build("previous")
+        config = read_json(previous / "config.json")
+        write_json(previous / "config.json", {**config, "schema_version": 1})
+        manifest = read_json(previous / "manifest.json")
+        manifest["files"]["config.json"] = digest(previous / "config.json")
+        write_json(previous / "manifest.json", manifest)
+        with self.assertRaisesRegex(Invalid, "价格口径不同"):
+            self.build(previous=previous)
+
+    def test_latest_quote_stays_separate_when_current_daily_bar_is_missing(self):
+        value = history("600000.SH")
+        for key in ("open", "high", "low", "close"):
+            value["indicators"]["quote"][0][key][-1] = None
+        value["meta"].update(regularMarketPrice=12, regularMarketTime=value["timestamp"][-1], currency="CNY")
+        with patch("benchmark.daily_prices.yahoo_history", side_effect=lambda c, *_: (
+                "https://example.com/history", {"chart": {"result": [value if c == "600000.SH" else history(c)]}}, {})):
+            out, _ = self.build()
+        issue = next(r for r in read_json(out / "coverage.json")["securities"] if r["symbol"] == "600000.SH")
+        self.assertEqual(issue["last_observed"], "2026-10-30")
+        self.assertEqual(issue["last_price_date"], "2026-11-02")
+        self.assertEqual(issue["latest_quote"]["price"], "12")
+        self.assertEqual(rows(out / "prices/600000.SH.jsonl")[-1]["date"], "2026-10-30")
+        quote = issue["latest_quote"]
+        source = read_json(out / quote["source_record"])[quote["source_key"]]
+        self.assertEqual(source["response"]["regularMarketPrice"], 12)
+
+    def test_quote_outside_cutoff_or_on_closed_day_is_not_used(self):
+        value = history("600000.SH")
+        value["meta"].update(regularMarketPrice=12)
+        for date_text in ("2026-11-03", "2026-10-31"):
+            value["meta"]["regularMarketTime"] = int(datetime.fromisoformat(date_text).replace(tzinfo=timezone.utc).timestamp())
+            record = {"response": {"chart": {"result": [value]}}}
+            self.assertIsNone(latest_quote("600000.SH", record, "2026-11-02", set(calendar())))
+
+    def test_retired_history_reference_remains_separate_from_new_provider_rows(self):
+        self.fail = {"600000.SH"}
+        historical = {"commit": "frozen", "securities": {"600000.SH": {
+            "outDate": "2026-10-30", "series": {"3": {"last_observed": "2026-10-29"}}}}}
+        out = self.root / "referenced"
+        result = update_prices(self.source, None, out, "2026-10-26", "2026-11-02", {}, historical=historical)
+        issue = next(r for r in read_json(out / "coverage.json")["securities"] if r["symbol"] == "600000.SH")
+        self.assertEqual(result["available_history"], 2)
+        self.assertEqual(result["unavailable_active"], 0)
+        self.assertTrue(issue["historical_retired"])
+        self.assertIsNone(issue["last_observed"])
+        self.assertFalse((out / "prices/600000.SH.jsonl").exists())
+        self.assertEqual(read_json(out / "historical-reference.json")["commit"], "frozen")
+        historical["securities"]["600000.SH"]["outDate"] = ""
+        result = update_prices(self.source, None, self.root / "active", "2026-10-26", "2026-11-02", {}, historical=historical)
+        self.assertEqual(result["unavailable_active"], 1)
+
+    def test_unknown_calendar_tail_is_not_fabricated_as_closed_days(self):
+        with patch("benchmark.daily_prices.download", return_value=json.dumps(calendar()[:-1]).encode()):
+            with self.assertRaisesRegex(Invalid, "日历原件未覆盖"):
+                self.build()
+        self.assertFalse((self.root / "updated").exists())
+
+    def test_rebuild_retains_prior_symbols_and_refuses_date_rollback(self):
+        provenance = {"rebuild": {"start": "2026-10-26", "requested_end": "2026-11-02", "symbols": ["600001.SH"]}}
+        out = self.root / "rebuilt"
+        result = update_prices(self.source, None, out, "2026-10-26", "2026-11-02", provenance)
+        self.assertEqual(result["stocks"], 3)
+        self.assertTrue((out / "prices/600001.SH.jsonl").exists())
+        with self.assertRaisesRegex(Invalid, "重建不能"):
+            update_prices(self.source, None, self.root / "rollback", "2026-10-27", "2026-11-02", provenance)
+
+    def test_other_symbol_response_does_not_become_the_requested_security(self):
+        value = history("000001.SZ")
+        with patch("benchmark.daily_prices.yahoo_history", return_value=(
+                "https://example.com/history", {"chart": {"result": [value]}}, value)):
+            out, result = self.build()
+        self.assertEqual(result["with_history"], 1)
+        self.assertFalse((out / "prices/600000.SH.jsonl").exists())
 
 
 if __name__ == "__main__":

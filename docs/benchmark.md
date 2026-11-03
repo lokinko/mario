@@ -6,7 +6,7 @@
 
 - **股票池评分切片**（当前主线）：红利池与科技池按时点选样，构建季度决策点和建仓后的逐日价格路径，用 `bench-run` 自动评测 `benchmark/strategies/` 下的选股与仓位策略，见“股票池切片评分”之后各节。
 - **中证红利 top-20 财报数据集**：按年末市值选样，采集日线、季度财报原件与宽指 ETF，构建带时点截断的输入、预测标签和发布包，见“目标与设计”至“验收、构建与评测”。
-- **完整指数每日行情**：中证A50、上证50各50只官方当前成分，与红利、科技历史成员合并去重后维护未复权/后复权日线，原件、名单与行情同步至 HF 标签仓库，见“每日行情自动更新”。
+- **完整指数每日行情**：中证A50、上证50各50只官方当前成分，与红利、科技历史成员合并去重后维护独立供应商日线及历史双口径引用，原件、名单与行情同步至 HF 标签仓库，见“每日行情自动更新”。
 
 ## 红利 top-20 数据集：目标与设计
 
@@ -396,38 +396,27 @@ npm run benchmark -- evaluate --root .runtime/benchmark/release-v1 --split test 
 
 ## 每日行情自动更新
 
-[GitHub Actions workflow](../.github/workflows/benchmark-prices.yml) 在 `main` 上每天北京时间 **22:37、23:37** 各执行一次，第二次用于补抓供应商延迟数据，也支持 Actions 页手动运行。GitHub 定时任务可能延迟；公开仓库长期无活动可能停用定时任务，需在 Actions 页恢复。此任务不依赖本机开机或 Mario 部署服务器。
+[工作流](../.github/workflows/benchmark-prices.yml)每天北京时间22:37、23:37执行，也可手动触发；与持续评测共用 `benchmark-hf-main` 并发组。GitHub调度可能延迟，实际状态以Actions运行记录为准。写入通过仓库Secret `HF_TOKEN`，公开读取不需要token；GitHub权限仅 `contents: read`，不访问账号数据库或部署服务器。
 
-仓库 Secret `HF_TOKEN` 需要对 `lokinko/mario_bench` 有读取权限、对 `lokinko/mario_bench_labels` 有读取和写入权限；建议使用限定到这两个仓库的 token。凭据只由 Actions Secret 注入，不写入源码、日志或产物。两个 HF 仓库按用户决定保持公开；工具支持公开及已有私有仓库，不修改已有仓库可见性，新建研究仓库默认为公开。公开读取不需要 token，Actions 发布仍需要写入凭据；workflow 的 GitHub 权限仅为 `contents: read`，不向 GitHub 提交行情。
-
-本地同一个入口：
+当前每日来源为已有 `public_sources.yahoo_history` 公开HTTP接口，不调用Baostock。原 `daily-prices/` 双口径归档停止自动更新，固定标签 `baostock-daily-20261102` 只读保留；新供应商写入独立目录 `daily-public-prices/`，脚本拒绝覆盖旧路径。历史引用须核验旧配置、覆盖和上市退市元数据的哈希，不拼接两种价格序列。
 
 ```bash
-uv sync --frozen --group market --group publish
-uv run --frozen --group market --group publish python scripts/benchmark_update_prices.py
-# 真实采集和校验，但不上传；可用于首次运行前探测来源。
-uv run --frozen --group market --group publish python scripts/benchmark_update_prices.py --dry-run
+uv sync --frozen --group publish
+uv run --frozen --group publish python scripts/benchmark_update_prices.py
+# 真实采集和校验，保留本地完整包，不上传；已有目录不可覆盖。
+uv run --frozen --group publish python scripts/benchmark_update_prices.py --dry-run --out .runtime/benchmark/<新目录>
 ```
 
-`benchmark_update_prices.py` 负责参数、临时目录、运行摘要与失败退出；`index_membership.py` 从中证官方 Excel 获取中证A50（930050）、上证50（000016）的完整成分；`daily_prices.py` 负责名单并集、日线合并和完整性；`hub.py` 负责 HF 下载/上传。数据流是固定标签年度选样 + 官方当前完整成分 → 上次成功日线 → 增量采集与校验 → 临时 HF 分支完整上传与校验 → 主分支原子快进，不访问在线业务或账号数据库。
+- **范围**：不可变标签 `pool-scoring-v7` 的红利/科技年度历史成员，加[中证A50](https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/930050cons.xls)、[上证50](https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/000016cons.xls)各50只官方当前成分，去重并保留过去观察过的成员。`index-membership/` 保存每次Excel原件、来源日期、获取日期、解释及SHA-256；当前成员不冒充历史成分，不加入正式评分 `POOLS`。
+- **口径**：OHLC明确标记 `yahoo_provider_history_unreconciled`，独立保存供应商 `adjusted_close`；不能当作原始未复权价或Baostock后复权价，不用于直接升级正式评分。缺少的成交状态、成交额、上市日及财务指标不补造。
+- **刷新与存储**：默认2005-08-01至北京时间截止日（18点前取前一天），首次及新证券获取全区间，保存 `prices/<证券>.jsonl`；22:37只查近期窗口更新独立报价；23:37工作流自动携带 `--refresh-history` 全区间替换历史，手动触发也可选择完整刷新。不完整的当日日线继续如实报告，不拼接供应商追溯调整前后的尺度。`sources/<证券>.json` 保存原始响应、请求范围及内容哈希，价格行使用稳定的 `source_record` 引用。每只证券一个完整文件，避免数千年度分片造成HF恢复限流；最多2个HTTP并发。
+- **来源完整性**：日历原件必须覆盖请求范围，未知日期不能推断为休市。闭市/无效价格观察另存 `source-observations/`，不填零、不推断停牌；`coverage.json` 逐证券报告实际首末日期、缺口和来源错误。两指数当前各50只必须覆盖最后交易日，其他活跃证券来源不可用也拒绝发布；`--out` 可在失败时保留完整本地包。
+- **最新报价与日线分别记录**：供应商时间戳不代表首次披露时间，数据不可直接作历史时点输入。供应商历史数组可能缺少最新日OHLC，但元数据已有带时间戳的 `regularMarketPrice`。`latest-quotes.json` 保存当前价格观察，`daily-quotes/<年-月>.json` 按交易日期累计报价，`quote-sources/<年-月>.json` 用 `source_key` 保留对应供应商元数据及哈希，不能补造OHLC或调整收盘。指数覆盖同时报告 `at_last_session`（日线或最新报价）、`daily_bars_at_last_session` 与 `quotes_at_last_session`；不把最新报价覆盖声称为当日日线完整。未来日期或闭市日期的报价不能用于截止日覆盖。
+- **退市历史**：新来源无法返回的退市证券，明确标记 `historical_retired` 及来源缺失；`historical-reference.json` 固定指向旧标签的双口径历史与元数据。它不算作Yahoo行情，也不把旧收盘写入新序列。只有存在经哈希核验的退市证据才允许这类来源缺失；活跃证券缺失不能用历史引用掩盖。
+- **恢复与发布**：HF是持久事实来源，本机响应缓存仅作首次采集恢复；后续默认更新独立报价；工作流每天23:37或手动携带 `--refresh-history` 刷新完整供应商历史区间。远端固定提交、文件全集与manifest通过校验后才继续；损坏恢复须显式 `--rebuild`，保留证券、历史成分与日期范围。完整包在专用HF分支启用LFS并分批上传，逐文件核对远端内容标识后，以非强制Git快进原子更新主分支；远端前进则保留分支，成功后清理。定时任务不依赖Actions cache或artifact。
+- **评分边界**：新归档为 `schema_version=2`、`storage_layout=one_file_per_security`、`release_ready=false`。原评分切片、策略、结果标签与看板继续使用既有不可变版本；未完成复权及历史成分核验不更新正式成绩。只有在需保留的历史证券得到独立覆盖且完成价格口径迁移后，才可显式移除旧历史引用；旧HF提交仍保留审计。
 
-- **证券范围**：默认读取 `pool-scoring-v7` 中红利、科技年度快照的 `selected` 历史成员，并加入中证A50、上证50各 **全部50只** 当前成分，按证券代码去重；历史退出成员和已退市公司继续保留。原始 OHLC、前收、成交量、成交额、交易状态、ST 标志、未复权/后复权口径、上市退市元数据与交易日历均归档；不从财报推定未经核验的财务指标。
-- **指数名单**：每天从[中证A50官方成分文件](https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/930050cons.xls)和[上证50官方成分文件](https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/000016cons.xls)获取最新名单，核对指数代码、名称、交易所、同一来源日期、重复代码及完整50只。原 Excel 与解释保存在 `index-membership/<指数>/<获取日>-<内容哈希>.xls/.json`，同时记录 `source_date`、`observed_on`、来源 URL 和 SHA-256；同日修正分别保留。后续调入股自动补采其历史价格，已观察过的调出股不删除。
-- **时点边界**：完整指数成分属于采集清单，不登记为 `pool_release.POOLS` 的季度评分股票池。当前成分向前补采日线不等于历史时点成分，`historical_membership_verified=false`；不会把中证A50在2024年发布后的当前名单当作2005年的指数股票池。新增历年选样和评分仍需另行获取历史成分证据、构建与发布新切片；红利、科技年度来源由变量 `BENCHMARK_SOURCE_TAG`（本地 `--tag`）选择。
-- **初次回补**：默认从 `2005-08-01` 到北京时间截止日，18 点前默认前一天，18 点后默认当天；交易日历排除周末、休市，首次下载历史较长。`--start` 可选择其他起点，但同一 HF 路径不能改变起点或倒退截止日，需要另用 `--path` 新建归档。`--end` 可以明确指定补采截止日。
-- **增量与修正**：按证券、价格口径、年份保存 `prices/<证券>/adjust<口径>/<年>.jsonl`。股票保留未复权 `3` 与后复权 `1`，另采沪深300 未复权日线、H00300 全收益收盘点位。每次从已存末日往前回拉 14 个自然日，覆盖供应商近期修正；更早修正需增大 `--overlap-days`。供应商分页提前结束时，按缺失年份缩小区间补取，仍不完整才失败；不以本次请求未返回的缓存行冒充成功。缺行、重复日期、错证券、非法数值和来源延迟均失败，不前向填充、不把缺行解释为停牌；上市前和退市日起不要求股票日线。供应商在明确 `tradestatus=0` 时返回的空数值保持空字符串，并用 `issues` 按字段标记 `provider_empty_suspended`；空前收单独标记 `provider_empty_preclose`，不把空字段伪造成0。正常交易日的 OHLC、成交量和成交额仍须是有效数值。
-- **闭市来源观察**：H00300 官方接口偶有闭市日点位，保留在 `source-observations/H00300-calendar-closed.jsonl` 并标记 `calendar_closed_index_observation`，不写入交易日价格序列、不增加收益观察日。
-- **本地归档**：`--out .runtime/benchmark/<新目录>` 可保留通过校验的完整归档，上传失败时也不会删除；已有目录不可覆盖。省略时使用自动清理的临时目录。对保留目录运行 `python -m benchmark verify --root <目录>` 可独立核对全部哈希，再按远端状态重试发布。
-- **采集容量**：脚本默认 `--workers 4`，上限4；每个进程独占 Baostock 会话，用 `spawn` 避免继承连接，同一证券目录只有一个写入者。先校验基准数据，再采股票；任何进程失败都不提交半成品。单进程可用 `--workers 1` 排查来源问题。
-- **会话恢复**：Baostock 查询或分页失败时，适配器最多尝试3次；后续尝试重新登录，并从请求起点重查，失败分页的部分结果全部丢弃。持续失败仍终止任务，不上传不完整归档。
-- **持久化与恢复**：归档位于标签仓库 `daily-prices/`，包含选样快照、交易日历、证券元数据、覆盖统计、配置和逐文件 SHA-256。最新日线可能泄露历史决策的未来，不能放进时点输入仓库。每次固定远端提交，先核对远端文件全集与清单，再按清单逐文件下载并校验全部哈希，避免大型快照枚举遗漏；不依赖 GitHub cache/artifact。采集全部通过后，在基于原远端提交的专用临时分支上传；该目录使用 LFS，SDK 可以拆成多次提交，但主分支保持上次完整版本。上传后逐文件核对远端内容标识（LFS SHA-256 或 Git blob），文件集合或内容不符拒绝提升。最后通过完整 Git 祖先关系校验及非强制快进，一次更新主分支；远端前进则拒绝覆盖，保留临时分支供整合。成功后删除临时分支；失败的本地目录按 `--out` 约定保留或清理。相同清单不会重复上传。
-- **评分边界**：任务只维护日线，不改 `pool-scoring/`、不可变标签、数据集卡、策略参数、成绩或部署看板。新评分切片仍需保留 v7 特征并等待完整结果窗口，再走显式构建、评分与发布。
-
-Actions 的运行摘要列出股票数、年度范围、实际最后交易日与上传提交；失败在运行日志中标明来源和日期，不将未完成采集报告为成功。每日行情与持续评测共用 `benchmark-hf-main` 串行并发组，防止同一HF主分支写入重叠；超过 120 分钟会失败，可手动重新运行。[GitHub 定时触发说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
-
-若远端归档自身缺失文件，日常任务拒绝继续。确认需要完整补采时，可手动触发 workflow 并勾选 `rebuild`，或在 CLI 加 `--rebuild`。此模式校验旧配置和历史指数成分原件的哈希，保留已观察证券并从原起点完整采集，不允许缩小日期范围；缺少历史成分原件或配置损坏仍失败。新包全部通过校验后以原远端提交为 `parent_commit` 一次发布，HF 旧提交可用于审计和恢复；不删除旧提交，也不覆盖评分切片。重建的原提交、证券清单与缺失文件数记在新配置的 `source.rebuild` 中；定时运行默认关闭重建。
-
-持续维护优先级与验收规则见[维护清单](benchmark-maintenance.md)，本轮完整指数采集结果见[2026-11-03 验收记录](audits/benchmark-index-expansion-20261103.md)。
+运行摘要区分新来源 `with_history`、含历史引用的 `available_history`、`source_unavailable`、`unavailable_active` 和两指数覆盖，不将“有历史引用”误写为“新来源有行情”。HTTP429遵守服务端等待要求，不增加身份或出口绕过限制。持续维护见[维护清单](benchmark-maintenance.md)，实际来源切换与验收见[2026-11-03记录](audits/benchmark-index-expansion-20261103.md)。
 
 ## Hugging Face 托管
 
