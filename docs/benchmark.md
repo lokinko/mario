@@ -121,7 +121,9 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pools-v<N>-<日期>
 
 自 v6 起另含 `stock.long_history.daily_returns_1m`，按日期给出决策月截至决策日的每日后复权收益，以及结构化 `issues`。已知停牌按此前已知价格持平估值，复牌收益相对此前有成交收盘计算；未知缺行保留 `null` 并断开下一日的收益基准。v6的`config.input_features=monthly-risk-v1`；原 v5 字段和全部结果标签保持不变。新组合方差策略要求此契约，不能在 v5 上静默退回旧逻辑。来源哈希和覆盖记在切片的 `long-history-study.json`。
 
-当前v7保留上述月内收益，另增加`stock.long_history.clenow_mark_90`：截至决策日最近90个市场交易日的log价格OLS回归，取`(exp(252×slope)-1)×100×R²`；明确停牌日沿用此前成交收盘估值，缺行、上市史不足或无法估值保留null，不缩短窗口。`config.input_features=monthly-risk-regression-v1`，20个已有策略的仓位与成绩不变；新回归权重倾斜策略要求v7，不在缺失字段时静默降级。原始回归价格、严格口径与R²冗余字段不随最小升级包发布。
+v7保留上述月内收益，另增加`stock.long_history.clenow_mark_90`：截至决策日最近90个市场交易日的log价格OLS回归，取`(exp(252×slope)-1)×100×R²`；明确停牌日沿用此前成交收盘估值，缺行、上市史不足或无法估值保留null，不缩短窗口。`config.input_features=monthly-risk-regression-v1`，20个已有策略的仓位与成绩不变；新回归权重倾斜策略要求v7，不在缺失字段时静默降级。原始回归价格、严格口径与R²冗余字段不随最小升级包发布。
+
+当前v8在v7上增加`stock.fugui`：`monthly_low`、`first_pullback`、`daily_lower`、`weekly_lower`四个截至决策日的布尔技术信号及`issues`。缺少连续预热或未知行情保留null，不当作无买点；正式切片不携带原始日线、未使用的月上轨或预热根数。`config.input_features=monthly-risk-regression-fugui-v1`，原21项策略、148个决策点和结果标签不变。富贵策略按用户明确要求登记默认看板，名称标明“技术底仓试验”，分数不代表完整基本面/滚动策略。来源与覆盖见`fugui-study.json`。
 
 公司行动的处理口径：
 
@@ -159,7 +161,7 @@ def decide(sample):
 ```
 
 ```bash
-npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v7
+npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v8
 ```
 
 `bench-run` 依次：校验发布包哈希；发现 `strategies/` 下的全部策略；对每个策略做静态检查，再在独立子进程（隔离模式，导入受白名单限制，单策略限时 600 秒）中只从标准输入喂入 `inputs.jsonl`，生成仓位并向下截断到 8 位小数；用主指标打分；最后刷新看板。输出目录默认 `.runtime/benchmark/bench/<发布包目录名>/`，每个策略一个子目录，含 `weights.jsonl`、`scorecard.json` 和 `run.json`（标题、说明、指纹、运行时间、状态）；看板为该目录下的 `dashboard.html`、`dashboard.js` 与 `dashboard.json`。
@@ -198,9 +200,9 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v7
 
 第五批[回归趋势实验](audits/benchmark-regression-signals-20261102.md)比较3类48组配置，`trend_regression_tilt`以3.4853进入第三，平均收益得分1.6778、胜率72.3%，早/后段3.4026/3.5938。它按独立90日趋势质量将核心/卫星持仓权重从弱到强乘0.5至2、并列平均排名，再重新计算倾斜后篮子的4%方差预算，保留原止盈/网格。只保存这一组最优参数；原第三至第九各降一位，原第十`trend_calm_pullback`变为第十一。未超过现第一3.5163，配对区间含0，全部选参属于样本内。新机制与最小输入正式登记为v7，20项原有成绩与v6逐字节相同。
 
-当前切片（HF 标签 `pool-scoring-v7`，148 个季度决策点：科技池 80、红利池 68）的成绩如下。v7只在v6上新增决策前回归趋势，20个原有策略的仓位和完整成绩与v6完全一致。本表与 `benchmark/strategies/` 目录是策略成绩的可追溯记录，看板由它们经 `bench-run` 生成，不进 Git；进入 Top-10 的新策略须同次更新本表（规则见 [协作规范](../AGENTS.md)）。
+当前切片（HF 标签 `pool-scoring-v8`，148 个季度决策点：科技池 80、红利池 68）的成绩如下。v8只新增富贵策略所需的技术信号，21项原有策略的仓位和完整成绩与v7完全一致。本表与 `benchmark/strategies/` 目录是策略成绩的可追溯记录，看板由它们经 `bench-run` 生成，不进 Git；进入 Top-10 的新策略须同次更新本表（规则见 [协作规范](../AGENTS.md)）。
 
-用户指定的[富贵策略方案与首轮测试](fugui-strategy.md)已将高股息国企准入、月下吸/龙回头、90% 底仓与 10% 机动资金、分批退出写成明确规则。当前历史基本面与滚动执行尚未就绪，首轮仅测试红利池的千亿选样市值、低波与技术底仓，总分 0.0831，红利池单独 0.1808；6 期有信号，共 9 个股票槽次。它在 18 个非基线候选中排第 18，未进入 Top-10，不加入正式策略目录，当前成绩表与正式看板排名不变。缺失月线预热、季度 90 天观察与未实施条件都在方案中列明，不能将此结果视为完整策略回测。
+用户指定的[富贵策略方案与首轮测试](fugui-strategy.md)已将高股息国企准入、月下吸/龙回头、90% 底仓与 10% 机动资金、分批退出写成明确规则。当前历史基本面与滚动执行尚未就绪，仅测试红利池的千亿选样市值、低波与技术底仓，总分0.0831、红利池单独0.1808，六期触发、九个持仓槽次，排名18/18。首轮曾因未入Top-10只保留在研究看板；2026-11-03根据用户明确要求，将唯一实现登记到`strategies/fugui/`并接入默认看板，不改参数或虚构基本面。现Top-10名次不变。缺失预热、季度90天观察与未实施条件仍在方案中列明，不能将此分数视为完整策略回测。
 
 | 名次 | 策略 | 总分 | 平均收益得分 | 胜率 | 2006–2017 总分 | 2018–2025 总分 |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
@@ -221,6 +223,7 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v7
 | 15 | `trend_lowvol_trailing` | 2.8091 | 1.5591 | 50.0% | 3.0629 | 2.4760 |
 | 16 | `trend` | 2.5741 | 1.2227 | 54.1% | 2.7229 | 2.3787 |
 | 17 | `trend_lowvol_take_profit` | 2.5079 | 0.9539 | 62.2% | 2.8132 | 2.1073 |
+| 18 | `fugui`（富贵策略·技术底仓试验） | 0.0831 | 0.0155 | 2.7% | 0.0407 | 0.1387 |
 | 对照 | `momentum` | 2.3530 | 0.9510 | 56.1% | 2.3367 | 2.3745 |
 | 对照 | `equal` | 2.2890 | 0.8532 | 57.4% | 2.5010 | 2.0107 |
 | 对照 | `size` | 2.2761 | 0.8234 | 58.1% | 2.4826 | 2.0050 |
@@ -267,7 +270,7 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v7
 
 仓位文件的条件卖出规则会显式补齐默认 `sell_fraction="1"`。每期成绩另含 `operations`，逐笔列出 `symbol`、`side`、`reason`、`signal_date`、`execution_date`、`budget_fraction`、`cash_fraction`、`position_fraction` 与 `remaining_value_fraction`。预算、成交资金、成交后持仓市值都以该期初始总资产=1 计；买入资金包括该笔买入费用预算，卖出资金为扣卖出费用前的毛额，收益计算继续扣除所有现有费用。`position_fraction` 只用于卖出，分母是该股成交前持股数量；买入时为空。成交后持仓按该次开盘价估值，不是组合当时净值下的权重。买不进、卖不出或仅有信号但窗口内无成交时，不伪造操作记录。
 
-看板每个决策点同时展示各股预算、计划首买、每次操作规则、实际首买与初始现金，并可展开“每次买卖操作”查看具体比例和成交日期。新增操作记录要求重新评分；`bench-run` 的引擎指纹自动使旧缓存失效，直接用旧成绩生成新看板会提示重新运行，不以空记录冒充没有成交。原有策略本次不调参，重跑后核对所有原有分数和名次；富贵策略仍是每只 18% 的技术底仓研究候选，完整分批退出与独立机动仓仍受其方案所列条件限制。
+看板每个决策点同时展示各股预算、计划首买、每次操作规则、实际首买与初始现金，并可展开“每次买卖操作”查看具体比例和成交日期。新增操作记录要求重新评分；`bench-run` 的引擎指纹自动使旧缓存失效，直接用旧成绩生成新看板会提示重新运行，不以空记录冒充没有成交。原有策略本次不调参，重跑后核对所有原有分数和名次；富贵策略按用户指定接入默认看板，仍是每只18%的技术底仓试验，完整分批退出与独立机动仓仍受其方案所列条件限制。
 
 2026-11-02 验证：v7 全部 21 个原有策略重新评分，除新增的 `operations` 和显式 `sell_fraction` 外，原完整成绩的每个字段均相同，Top-10 名次不变；共记录 18,682 笔成交。富贵策略研究看板也同步重建，九次建仓均明确记录投入期初资产 18%，总分仍为 0.0830748653。完整 `npm test` 通过（benchmark 169 项、前端 Vitest 266 项、Rust 常规 204 项；既有 4 项 ignored 未运行），部分卖出余仓估值、停牌顺延、资金/持股分母、旧报告重评分、Node 渲染和实际 HTTP 数据均已验证。本机浏览器预览被当前 Work 设置禁用，未完成视觉验收。
 
@@ -307,7 +310,7 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v7
 页面只重绘受影响的区块：切换股票池或区间重算全部（拖动时间轴期间暂不重绘逐期明细与当期持仓），隐藏策略只重绘图表与表格，悬停高亮只改样式，选期只更新明细。股票池、时间区间、隐藏、聚焦、选中的期与排序写入网址 `#` 之后，刷新页面或重新生成看板后保持原视图。本机查看看板时，在另一个终端运行：
 
 ```bash
-npm run benchmark -- bench-serve --release .runtime/benchmark/pool-scoring-v7
+npm run benchmark -- bench-serve --release .runtime/benchmark/pool-scoring-v8
 ```
 
 然后打开 `http://127.0.0.1:8765/dashboard`。`bench-serve` 只监听 `127.0.0.1`（默认端口 8765，`--port` 修改），只提供看板的三个文件，路径与部署后相同，输出目录中的仓位和成绩单不对外提供。它的数据响应带 `X-Bench-Live: 1`，页面据此每 3 秒查询一次数据文件的修改时间，`bench-run` 重新生成后自动载入。部署后的服务不带这个标记，页面不轮询，数据随部署更新。看板依赖 `fetch`，直接用浏览器打开 `dashboard.html` 文件无法加载数据。
@@ -315,7 +318,7 @@ npm run benchmark -- bench-serve --release .runtime/benchmark/pool-scoring-v7
 Agent 等外部程序生成的仓位文件不经过 `strategies/`，用 `pool-score` 单独打分：
 
 ```bash
-npm run benchmark -- pool-score --root .runtime/benchmark/pool-scoring-v7 --weights <仓位文件> --out <成绩文件>
+npm run benchmark -- pool-score --root .runtime/benchmark/pool-scoring-v8 --weights <仓位文件> --out <成绩文件>
 ```
 
 仓位文件，每行 `{"sample_id", "symbol", "weight"}`，可选字段 `exit` 为卖出规则（比例写成十进制字符串，`max_hold_days` 为整数）或 `grid` 为网格（`step` 为十进制字符串，`lots`、`initial` 为整数），`weight` 为十进制字符串，非负，同一决策点合计不超过 1，其余视为现金；只能引用该决策点股票池内的证券。主指标见下文“主指标”。评分报告的 `score` 为逐期总分汇总，`return_score` 为收益得分汇总，`win_rate` 为胜率，均给出均值、中位数、标准差、自助法 95% 区间，另有逐年、分池与逐期明细；沪深300 全收益指数和股票池等权组合以 `csi300_`、`pool_equal_weight_` 前缀给出同样三项作对照。买入扣 0.03% 佣金和 0.10% 滑点；停牌或一字涨停买不进的部分留作现金；持有期停牌按停牌价、退市后按退市前最后价格估值，未计换股、清算与红利税。未提交仓位的决策点收益得分计 0、不算胜。
@@ -414,12 +417,13 @@ npm run benchmark -- hub-publish --release <新切片目录> --runs <bench-run�
 `hub-fetch` 反向还原某个标签的切片：分别从两个仓库下载该标签的 `pool-scoring/`（标签仓库只取 `outcomes.jsonl`，不取成绩单），合并后用 `verify` 校验哈希，通过才放到 `--out`。目标目录已存在时只校验、不覆盖，校验失败即报错。下载后用 `pool-score` 或 `bench-run` 打分；部署时生成研究看板走的就是这一步。
 
 ```bash
-npm run benchmark -- hub-fetch --repo lokinko/mario_bench --labels-repo lokinko/mario_bench_labels --tag pool-scoring-v7 --out .runtime/benchmark/pool-scoring-v7
+npm run benchmark -- hub-fetch --repo lokinko/mario_bench --labels-repo lokinko/mario_bench_labels --tag pool-scoring-v8 --out .runtime/benchmark/pool-scoring-v8
 ```
 
 | 标签 | 内容 | `mario_bench` commit | `mario_bench_labels` commit |
 | --- | --- | --- | --- |
-| `pool-scoring-v7` | 当前版本：在v6上新增决策前回归趋势 `monthly-risk-regression-v1`，原字段/标签不变，附21项策略成绩；部署默认读取此标签 | `742fb368617a5486b46c9c5ec36c3099b562640c` | `44328f826492728458fa528e24f2a36bbabe7ef6` |
+| `pool-scoring-v8` | 当前版本：在v7上增加富贵策略四个技术信号 `monthly-risk-regression-fugui-v1`，原字段/标签不变，附22项成绩；部署默认读取此标签 | `1d4870f5734831e98a765e7d208c12143152a4df` | `551c82fc58d8725715baf82af751ff6db56cb481` |
+| `pool-scoring-v7` | 历史版本：在v6上新增决策前回归趋势 `monthly-risk-regression-v1`，附21项策略成绩；不能运行需要富贵技术信号的当前完整目录 | `742fb368617a5486b46c9c5ec36c3099b562640c` | `44328f826492728458fa528e24f2a36bbabe7ef6` |
 | `pool-scoring-v6` | 历史版本：新增决策前月内收益 `monthly-risk-v1`，附20项策略成绩；供旧提交复现 | `698ab24cc388e980f0cd8bbb25e45941760ee0f9` | `e55fa56f97c5c060981fc073d9305e01bcb8db9f` |
 | `pool-scoring-v5` | 历史版本：增加“能否买入”，主指标为平均收益得分 + 2.5 × 胜率，附14项成绩；供旧提交复现 | `22b160184faf8755717f38184e60874e5ccff128` | `1119a665ec044c51fdd935a750e56984021009b3` |
 | `pool-scoring-v4` | 路径含逐日开盘与可卖出状态，附 9 个策略成绩 | `6546c17e3fcdf38bb22624c3803eb5ba0bb5b4d4` | `48475ee82ef0f995599ae9e74393d95ae21b137c` |

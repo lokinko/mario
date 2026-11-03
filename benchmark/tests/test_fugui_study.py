@@ -7,9 +7,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from benchmark.files import Invalid, digest, rows, write_json, write_rows
-from benchmark.strategy_runner import check_source, generate_weights
-from scripts.benchmark_fugui_study import STRATEGY, boll, build, candidate, features, load_caches, macd
+from benchmark.files import Invalid, digest, read_json, rows, write_json, write_rows
+from benchmark.cli import DEFAULT_STRATEGIES
+from benchmark.dashboard import write_dashboard
+from benchmark.strategy_runner import bench_run, check_source, generate_weights
+from scripts.benchmark_fugui_study import MINIMAL_FIELDS, boll, build, features, load_caches, macd
+
+STRATEGY = (Path(__file__).resolve().parents[1] / "strategies" / "fugui" / "strategy.py").read_text(encoding="utf-8")
 
 
 def fixture(month_prices):
@@ -114,6 +118,36 @@ class FuguiSignalsTest(unittest.TestCase):
 
 
 class FuguiBuildTest(unittest.TestCase):
+    def test_default_strategy_directory_scores_fugui_and_includes_it_in_dashboard(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            release, output = root / "release", root / "runs"
+            release.mkdir()
+            stock = {"symbol": "600000.SH", "trade_status": "trading", "close": "10", "momentum_63": "0.2",
+                     "return_20": "0.01", "volatility_63": "0.02", "market_cap_at_selection": "200000000000",
+                     "sw_level1_name": None, "long_history": {"daily_returns_1m": {"2015-09-29": "0", "2015-09-30": "0.01"},
+                     "clenow_mark_90": "1"}, "fugui": {"monthly_low": True, "first_pullback": False,
+                     "daily_lower": False, "weekly_lower": False, "issues": {}}}
+            write_json(release / "config.json", {"version": "synthetic-v8", "built_on": "2026-11-03",
+                                                "input_features": "monthly-risk-regression-fugui-v1"})
+            write_rows(release / "inputs.jsonl", [{"id": "s", "pool": "dividend", "decision_date": "2015-09-30", "stocks": [stock]}])
+            path = [[d, p, p, True, True] for d, p in (("2015-10-08", "10"), ("2015-10-15", "11"),
+                                                    ("2015-11-06", "12"), ("2016-01-06", "13"))]
+            write_rows(release / "outcomes.jsonl", [{"sample_id": "s", "entry_date": "2015-10-08",
+                "boundaries": ["2015-10-15", "2015-11-06", "2016-01-06"],
+                "stocks": {"600000.SH": {"buyable": True, "entry_open": "10", "path": path}},
+                "index": {"entry_open": "10", "path": path}}])
+            write_json(release / "manifest.json", {"schema_version": 1, "files": {
+                p.name: digest(p) for p in release.iterdir()}})
+            results = bench_run(DEFAULT_STRATEGIES, release, output)
+            self.assertTrue(all(r["status"] == "scored" for r in results), results)
+            write_dashboard(output, output, release)
+            data = read_json(output / "dashboard.json")
+            entry = next(s for s in data["strategies"] if s["key"] == "fugui")
+            self.assertEqual(entry["label"], "富贵策略（技术底仓试验）")
+            self.assertGreater(data["periods"][0]["scores"]["fugui"], 0)
+            self.assertEqual(data["periods"][0]["holdings"]["fugui"], [["600000.SH", "0.18000000", None]])
+
     def test_build_preserves_all_original_fields_and_label_bytes_and_never_overwrites(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -143,11 +177,34 @@ class FuguiBuildTest(unittest.TestCase):
             with self.assertRaisesRegex(Invalid, "重叠行情不一致"):
                 load_caches([cache], {"600000.SH"})
 
-    def test_candidate_is_generated_outside_formal_strategy_directory(self):
+    def test_minimal_release_preserves_v7_fields_and_only_adds_required_signals(self):
         with tempfile.TemporaryDirectory() as folder:
-            out = Path(folder) / "candidates"
-            candidate(out)
-            self.assertEqual((out / "fugui" / "strategy.py").read_text(encoding="utf-8"), STRATEGY)
-            self.assertTrue((out / "fugui" / "strategy.md").read_text(encoding="utf-8").startswith("# 富贵策略"))
-            with self.assertRaises(Invalid):
-                candidate(out)
+            root = Path(folder)
+            release, cache, destination = root / "release", root / "cache", root / "v8"
+            release.mkdir()
+            history = cache / "raw/baostock/history"
+            history.mkdir(parents=True)
+            days, bars = fixture([100] * 36)
+            write_json(history / "600000.SH-synthetic-adjust1.json", list(bars.values()))
+            write_json(history / "trade_dates-synthetic.json", [{"calendar_date": d, "is_trading_day": "1"} for d in days])
+            sample = {"id": "s", "pool": "dividend", "decision_date": days[-1], "stocks": [{"symbol": "600000.SH",
+                      "momentum_63": "0", "return_20": "0", "long_history": {"daily_returns_1m": {}, "clenow_mark_90": "1"}}]}
+            write_rows(release / "inputs.jsonl", [sample])
+            write_json(release / "config.json", {"version": "synthetic", "input_features": "monthly-risk-regression-v1"})
+            (release / "outcomes.jsonl").write_bytes(b'{"secret":"not a signal"}\n')
+            write_json(release / "manifest.json", {"schema_version": 1, "files": {
+                p.name: digest(p) for p in release.iterdir()}})
+            with self.assertRaisesRegex(Invalid, "显式指定"):
+                build(release, [cache], destination, minimal=True)
+            report = build(release, [cache], destination, minimal=True, built_on="2026-11-03")
+            self.assertFalse(report["research_only"])
+            result = rows(destination / "inputs.jsonl")[0]
+            signal = result["stocks"][0].pop("fugui")
+            self.assertEqual(set(signal), {*MINIMAL_FIELDS, "issues"})
+            self.assertEqual(result, sample)
+            config = read_json(destination / "config.json")
+            self.assertEqual(config["input_features"], "monthly-risk-regression-fugui-v1")
+            self.assertEqual(config["built_on"], "2026-11-03")
+            self.assertEqual(digest(destination / "outcomes.jsonl"), digest(release / "outcomes.jsonl"))
+            with self.assertRaisesRegex(Invalid, "正式v7"):
+                build(destination, [cache], root / "invalid", minimal=True, built_on="2026-11-03")

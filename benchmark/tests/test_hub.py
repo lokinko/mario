@@ -128,6 +128,17 @@ class HubTest(unittest.TestCase):
             self.assertIn("不携带回归原始价格", card)
             self.assertIn("上市史不足或无法估值仍为 null", card)
 
+    def test_fugui_card_preserves_old_feature_notes_and_labels_partial_test(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder) / "release"
+            release(base)
+            config = read_json(base / "config.json")
+            write_json(base / "config.json", {**config, "input_features": "monthly-risk-regression-fugui-v1"})
+            card = dataset_card(base, "pool-scoring", "me/labels", {})
+            for text in ("daily_returns_1m", "clenow_mark_90", "stock.fugui", "monthly_low", "first_pullback",
+                         "历史不足或未知缺行保留 null", "不是完整高股息国企策略复现", "fugui-study.json"):
+                self.assertIn(text, card)
+
     def test_fetch_restores_published_release_without_scorecards_and_never_overwrites(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)

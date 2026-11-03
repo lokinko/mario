@@ -61,7 +61,7 @@ BOLL 为 20 期收盘均值 ±2 倍总体标准差，各自在日、周、月频
 
 沿用[架构说明的离线研究边界](architecture.md#离线-benchmark-研究工具)。数据流为既有 Baostock 后复权/交易日历缓存 → 决策前技术特征 → 独立研究切片 → 隔离策略子进程 → 原有评分器。状态与文件均在 `.runtime/benchmark/`，没有账号数据库、业务事务、在线 API 或发布切片替换。
 
-[`scripts/benchmark_fugui_study.py`](../scripts/benchmark_fugui_study.py) 拥有缓存对账、技术特征和临时候选生成；成交、成本及评分继续归 `benchmark/scoring.py`。正式 v7 输入、原有 `long_history` 和未来结果文件保持原样，只在独立研究输入的每只股票上增加 `fugui` 字段。失败保留源缓存，输出用不可覆盖的新目录重建。没有线上迁移或旧生产实现需要删除。
+[`scripts/benchmark_fugui_study.py`](../scripts/benchmark_fugui_study.py)拥有缓存对账与技术特征构建；策略唯一实现是[`strategies/fugui/strategy.py`](../benchmark/strategies/fugui/strategy.py)，成交、成本及评分继续归`scoring.py`。v8保留v7全部原字段、`long_history`及结果标签，只增加必要的`fugui`信号；旧临时候选代码生成入口和重复源码已删除。失败保留源缓存，输出用不可覆盖的新目录重建。没有账号数据或在线事务迁移。
 
 | 完整规则 | 首轮测试状态 |
 | --- | --- |
@@ -91,7 +91,7 @@ BOLL 为 20 期收盘均值 ±2 倍总体标准差，各自在日、周、月频
 
 “平均收益得分”沿用主指标的三段加权定义，不是年化回报或组合累计收益；现金期计入胜率分母，不能解释为实际交易胜率。九个股票槽次中，最多一期三只、底仓 54%，全样本平均目标股票仓位约 1.1%；没有为追求高分而在看到稀疏结果后放宽规则。
 
-红利池等权对照总分 2.2017、沪深300 全收益对照 1.8264。全部切片的现第一名 `trend_basket_risk` 为 3.5163，第十名 `trend_calm_pullback_take_profit` 为 3.0818。本次技术测试版按总分排在 **18 个非基线候选中的第 18**，未进入 Top-10；依[仓库准入规则](../AGENTS.md)，不新增正式策略目录，现有 Top-10 和名次均不变。富贵策略仍以本方案和可重建的研究候选保留。
+红利池等权对照总分2.2017、沪深300全收益对照1.8264。第一名`trend_basket_risk`为3.5163，第十名`trend_calm_pullback_take_profit`为3.0818。富贵策略排在**18个非基线候选中的第18**，未进入Top-10。首轮依默认准入规则只保留在独立研究看板；2026-11-03用户明确要求在默认dashboard看到它，因此登记唯一正式目录并发布最小v8输入，参数与成绩不变，Top-10名次不变。标题保留“技术底仓试验”，不声称完整策略已验证。
 
 历史覆盖限制很大：36 月低位信号可计算 1,379/2,960 条，首次回踩可计算 1,458/2,960 条，日/周下轨可计算 2,955/2,960 与 2,948/2,960 条。当前缓存原本服务于季度评分，没有为所有股票准备完整长预热，不能把未知技术历史当作“没有买点”。首轮把未知留现金是保守执行选择，也是低活跃度的一个原因。完整覆盖、基本面过滤、行业约束和多年持仓可能改变结果；此成绩既不证明也不否定原策略。
 
@@ -99,17 +99,23 @@ BOLL 为 20 期收盘均值 ±2 倍总体标准差，各自在日、周、月频
 
 ## 6. 复跑
 
+当前默认看板的复跑不再需要本机行情缓存或临时候选目录：
+
 ```bash
-npm run benchmark -- hub-fetch --repo lokinko/mario_bench --labels-repo lokinko/mario_bench_labels --tag pool-scoring-v7 --out .runtime/benchmark/pool-scoring-v7
-python scripts/benchmark_fugui_study.py build --release .runtime/benchmark/pool-scoring-v7 --universe-root .runtime/benchmark/dividend-universe-2009-2025 --universe-root .runtime/benchmark/tech-universe-2006-2025 --out .runtime/benchmark/fugui-inputs-20261102-v1
-python scripts/benchmark_fugui_study.py candidate --out .runtime/benchmark/fugui-study-20261102-v1/candidates
-cp -R benchmark/strategies/. .runtime/benchmark/fugui-study-20261102-v1/candidates
-npm run benchmark -- bench-run --release .runtime/benchmark/fugui-inputs-20261102-v1 --strategies .runtime/benchmark/fugui-study-20261102-v1/candidates --out .runtime/benchmark/fugui-study-20261102-v1/runs
+npm run benchmark -- hub-fetch --repo lokinko/mario_bench --labels-repo lokinko/mario_bench_labels --tag pool-scoring-v8 --out .runtime/benchmark/pool-scoring-v8
+npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v8
+npm run benchmark -- bench-serve --release .runtime/benchmark/pool-scoring-v8
+```
+
+从原始缓存重建相同最小输入时，先取v7，再使用明确构建日期与未存在的新目录：
+
+```bash
+python scripts/benchmark_fugui_study.py build --minimal --built-on 2026-11-03 --release .runtime/benchmark/pool-scoring-v7 --universe-root .runtime/benchmark/dividend-universe-2009-2025 --universe-root .runtime/benchmark/tech-universe-2006-2025 --out .runtime/benchmark/pool-scoring-v8-replay
 ```
 
 使用项目 Python 3.11+ 环境；第一次下载需要现有 HF 私有仓库读取权限。构建依赖现有两个股票池的 `raw/baostock/history/` 归档：`<证券>-<起日>-<止日>-adjust1.json` 与 `trade_dates-<起日>-<止日>.json`，来自已有 `pool-build` 流程，不使用未来 outcomes 反推技术输入。已存在输出不能覆盖；重建时改用新目录。`fugui-study.json` 保存全部实际使用的行情/日历哈希、源 manifest、特征版本、覆盖与共同字段对账。
 
-研究看板在 `.runtime/benchmark/fugui-study-20261102-v1/runs/`，可按现有 `bench-serve --release <研究切片> --out <研究输出>` 在本机查看。正式看板仍从 v7 和正式策略目录生成。本次不上传新数据标签，不执行部署。
+首轮研究看板保留在`.runtime/benchmark/fugui-study-20261102-v1/runs/`作为历史记录。当前默认看板从v8和正式策略目录生成，已包含富贵策略，不再要求用户另找研究目录。部署由`deploy.sh`默认v8标签重建，看板公开页面仍为`/mario/dashboard`，数据接口保持登录验证。
 
 ## 7. 完整策略验收还缺什么
 
@@ -127,3 +133,15 @@ npm run benchmark -- bench-run --release .runtime/benchmark/fugui-inputs-2026110
 21 个原有策略在扩展研究输入上重跑后，仓位和完整成绩文件与原 v7 逐字节一致。富贵策略的研究看板包含全部 22 项策略（其中四个基线不占名次）；前十依次为 `trend_basket_risk`、`trend_core_satellite`、`trend_regression_tilt`、`trend_single`、`calm_mid_momentum_sector`、`trend_risk_budget`、`calm_mid_momentum`、`trend_state_exit`、`trend_calm_pullback_grid`、`trend_calm_pullback_take_profit`，名次均未变化。
 
 全部验证结束后，在确认没有 Rust 构建/服务进程占用且路径位于仓库内的情况下，清理了 `server/target` 与 `.runtime/financial-build`（约 15.9 GiB）。本次研究切片、源缓存、运行日志和看板保留。
+
+## 9. 默认看板登记（2026-11-03）
+
+用户反馈已部署网站看不到分数后，登记`strategies/fugui/`并发布不可变`pool-scoring-v8`，切片manifest为`8a9bb3b6cf09a62cef1e20b595f876d32b74635ca07db12041c4ad441e47e460`。输入仓库提交`1d4870f5734831e98a765e7d208c12143152a4df`，标签仓库提交`551c82fc58d8725715baf82af751ff6db56cb481`；两个仓库保持私有，旧标签不修改。
+
+v8默认发现、评分与看板均包含“富贵策略（技术底仓试验）”，总分0.0830748653，红利池0.1808100010，排名18/18，Top-10均不变。21项原策略仓位及完整成绩与同一引擎的v7逐字节相同，148期输入除新增`fugui`外逐项相同，结果标签逐字节相同。默认目录到看板的合成回归测试直接运行全部策略并核对富贵策略的标题、分数与18%建仓，防止只生成独立研究看板再次漏入默认入口。
+
+部署代码改为从v8重建默认`/dashboard`。发布数据与推送代码不等于网站已部署；线上状态须在服务器执行`deploy.sh`并核对受认证的数据接口，不能以本机看板或HF标签存在替代线上验收。
+
+发布后重新下载v8，44个文件与本地逐字节一致，再用默认策略目录评分，22项仓位和成绩均与发布前一致。完整`npm test`重跑通过（当前工作区178项benchmark、266项前端、204项Rust常规测试；既有4项ignored未运行）。第一次检查因隔离的`CARGO_TARGET_DIR`未同步到`MARIO_TEST_SERVER_BIN`，在HTTP启动时报ENOENT；修正测试命令配置后重跑完整入口通过，没有修改业务代码绕过检查。
+
+本次线上部署尚受连接条件限制：本机没有目标服务器的已验证SSH主机记录，SSH agent也无已加载身份；已有终端应用不在当前工具可控制范围。已请求用户提供现有SSH连接方式及可核验主机指纹。在完成实际部署和受认证接口核对前，不能把线上缺失分数报告为已修复。

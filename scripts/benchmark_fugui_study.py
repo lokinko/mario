@@ -18,6 +18,7 @@ from benchmark.release import verify_release
 
 VERSION = "fugui-technical-v1"
 FIELDS = ("monthly_low", "first_pullback", "daily_lower", "weekly_lower", "monthly_upper_return")
+MINIMAL_FIELDS = FIELDS[:4]
 
 
 def boll(prices):
@@ -142,8 +143,13 @@ def load_caches(roots, symbols):
     return history, sorted(d for d, opened in calendars.items() if opened == "1"), hashes
 
 
-def build(release, roots, destination):
+def build(release, roots, destination, minimal=False, built_on=None):
     verify_release(release)
+    config = read_json(release / "config.json") if minimal else None
+    if minimal:
+        require(config.get("input_features") == "monthly-risk-regression-v1", "最小v8必须基于正式v7输入构建")
+        require(built_on is not None, "最小发布包必须显式指定 built_on")
+        built_on = date.fromisoformat(built_on).isoformat()
     samples = rows(release / "inputs.jsonl")
     history, calendar, hashes = load_caches(roots, {s["symbol"] for sample in samples for s in sample["stocks"]})
     enriched, coverage, comparisons = copy.deepcopy(samples), Counter(), Counter()
@@ -160,9 +166,12 @@ def build(release, roots, destination):
             key = stock["symbol"], decision
             if key not in cache:
                 cache[key] = features(bars, calendar, decision)
-            stock["fugui"] = cache[key]
-            coverage.update(f"{k}_known" for k in FIELDS if stock["fugui"][k] is not None)
-            coverage.update(k for k in FIELDS[:-1] if stock["fugui"][k] is True)
+            signal = cache[key]
+            stock["fugui"] = ({**{k: signal[k] for k in MINIMAL_FIELDS},
+                              "issues": {k: v for k, v in signal["issues"].items() if k in MINIMAL_FIELDS}}
+                             if minimal else signal)
+            coverage.update(f"{k}_known" for k in (MINIMAL_FIELDS if minimal else FIELDS) if stock["fugui"][k] is not None)
+            coverage.update(k for k in MINIMAL_FIELDS if stock["fugui"][k] is True)
     with new_directory(destination) as stage:
         for path in release.rglob("*"):
             relative = path.relative_to(release)
@@ -170,7 +179,11 @@ def build(release, roots, destination):
                 (stage / relative).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(path, stage / relative)
         write_rows(stage / "inputs.jsonl", enriched)
-        report = {"research_only": True, "feature_version": VERSION, "source_manifest_sha256": digest(release / "manifest.json"),
+        if minimal:
+            write_json(stage / "config.json", {**config, "version": config["version"] + "-fugui-v1",
+                "input_features": "monthly-risk-regression-fugui-v1", "built_on": built_on,
+                "base_comparison_tag": "pool-scoring-v7", "fugui_features": VERSION})
+        report = {"research_only": not minimal, "feature_version": VERSION, "source_manifest_sha256": digest(release / "manifest.json"),
                   "raw_hashes": hashes, "coverage": dict(coverage), "common_fields": dict(comparisons),
                   "fundamentals_available": False, "outcomes_unchanged": digest(stage / "outcomes.jsonl") == digest(release / "outcomes.jsonl")}
         write_json(stage / "fugui-study.json", report)
@@ -180,43 +193,6 @@ def build(release, roots, destination):
     return report
 
 
-STRATEGY = '''from decimal import Decimal
-
-
-def decide(sample):
-    # 本次仅测试红利池技术与底仓部分；不能将红利成分当作股息率或国企证明。
-    if sample["pool"] != "dividend":
-        return {}
-    chosen = []
-    for stock in sample["stocks"]:
-        signal = stock["fugui"]
-        if stock["trade_status"] != "trading" or Decimal(stock["market_cap_at_selection"]) < Decimal("100000000000"):
-            continue
-        if stock["volatility_63"] is None or Decimal(stock["volatility_63"]) > Decimal("0.025"):
-            continue
-        if signal["monthly_low"] is True or (signal["first_pullback"] is True
-                and signal["daily_lower"] is True and signal["weekly_lower"] is True):
-            chosen.append(stock)
-    chosen.sort(key=lambda s: (Decimal(s["volatility_63"]), s["symbol"]))
-    # 每只固定18%底仓，最多5只；空缺预算及10%机动资金留现金，不强行凑满。
-    return {s["symbol"]: Decimal("0.18") for s in chosen[:5]}
-'''
-
-
-def candidate(destination):
-    with new_directory(destination) as stage:
-        folder = stage / "fugui"
-        folder.mkdir()
-        (folder / "strategy.py").write_text(STRATEGY, encoding="utf-8")
-        (folder / "strategy.md").write_text(
-            "# 富贵策略（红利池技术底仓试验）\n\n"
-            "仅测千亿选样市值、日波动≤2.5%、月下吸或日周月首次回踩。每只18%，最多5只，机动资金留现金。"
-            "缺少历史股息率、国企属性与红利池行业，未实施基本面过滤、收益率卖点和10%滚动。"
-            "35月MACD预热、36月低位、5%触轨容差、2%下轨走平固定于查看本次成绩前，没有参数扫描。"
-            "原benchmark已被反复研究，2018–2025仅作后段诊断，非独立样本外验证。规则详见docs/fugui-strategy.md。\n",
-            encoding="utf-8")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -224,14 +200,11 @@ def main():
     builder.add_argument("--release", type=Path, required=True)
     builder.add_argument("--universe-root", type=Path, action="append", required=True)
     builder.add_argument("--out", type=Path, required=True)
-    generate = sub.add_parser("candidate")
-    generate.add_argument("--out", type=Path, required=True)
+    builder.add_argument("--minimal", action="store_true", help="仅加入默认富贵策略需要的四个信号，供v8发布")
+    builder.add_argument("--built-on", help="最小发布包必须显式指定构建日期")
     args = parser.parse_args()
-    if args.command == "candidate":
-        candidate(args.out)
-    else:
-        report = build(args.release, args.universe_root, args.out)
-        print(json.dumps({k: v for k, v in report.items() if k != "raw_hashes"}, ensure_ascii=False, indent=2))
+    report = build(args.release, args.universe_root, args.out, args.minimal, args.built_on)
+    print(json.dumps({k: v for k, v in report.items() if k != "raw_hashes"}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
