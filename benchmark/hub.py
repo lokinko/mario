@@ -9,7 +9,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from .files import Invalid, digest, read_json, require, write_json
+from .files import Invalid, day, digest, read_json, require, symbol, write_json
 from .release import verify_release
 from .strategy_runner import completed_runs
 
@@ -255,8 +255,12 @@ def prepare_daily_prices(repo, labels_repo, tag, path, workspace, rebuild=False)
             download("config.json")
             require(digest(restored / path / "config.json") == manifest["config.json"], "重建原归档配置哈希不符")
             old = read_json(restored / path / "config.json")
-            require(old.get("schema_version") == 1 and old.get("symbols") and old.get("start")
-                    and old.get("requested_end"), f"重建原归档配置格式不符：字段 {sorted(old)}")
+            # 重建只读取经哈希验证的范围元数据，旧行情布局/格式不作为新包输入。
+            require(isinstance(old.get("symbols"), list) and old["symbols"],
+                    f"重建原归档证券清单无效：{old.get('symbols')}")
+            for code in old["symbols"]:
+                symbol(code)
+            require(day(old["start"]) <= day(old["requested_end"]), "重建原归档日期范围无效")
             memberships = sorted(name for name in names if name.startswith("index-membership/"))
             require(set(memberships) <= remote, "重建缺少历史成分原件，拒绝丢弃历史记录")
             for name in memberships:

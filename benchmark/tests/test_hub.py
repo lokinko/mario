@@ -263,7 +263,7 @@ class HubTest(unittest.TestCase):
             FakeApi().upload_folder("me/bench", source, "pool-scoring")
             daily = base / "daily"
             daily.mkdir()
-            write_json(daily / "config.json", {"schema_version": 1, "start": "2005-08-01",
+            write_json(daily / "config.json", {"schema_version": "public-prices-v1", "start": "2005-08-01",
                        "requested_end": "2026-11-02", "symbols": ["600000.SH"]})
             (daily / "index-membership").mkdir()
             (daily / "index-membership/original.xls").write_text("original", encoding="utf-8")
