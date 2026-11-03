@@ -253,6 +253,8 @@ Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略
 
 每日行情归档由 `scripts/benchmark_update_prices.py` 编排，GitHub Actions 每天定时执行；`index_membership.py` 解析中证官方中证A50/上证50完整成分原件并保留获取日期、来源日期及哈希，不伪造历史成分。`daily_prices.py` 合并这两个指数完整成员与既有年度股票池历史成员，负责未复权/后复权日线合并及交易日完整性；默认最多4个独立进程，每个进程独占行情会话，同一证券只有一个写入者。明确停牌空字段保留原值并标结构化问题，正常交易日数值仍严格校验。`hub.py` 固定输入标签提交下载选样快照，在私有标签仓库独立的 `daily-prices/` 恢复上次成功归档并用单次带 `parent_commit` 的提交更新。日线包含未来价格，不能进入时点输入仓库；调度不改变年度选样、评分切片、策略成绩或部署看板。状态归 HF 提交与本次临时目录，不依赖 Actions 缓存，不进入在线服务和账号事务。详见 [每日行情自动更新](benchmark.md#每日行情自动更新)。
 
+远端日线归档损坏时，只有手动开启的 `rebuild` 才完整重采：`hub` 校验并保留旧配置、证券范围与历史成分原件，`daily_prices` 禁止日期回退，全部通过后以原提交为父提交原子替换该归档子目录。旧布局文件随替换移除，旧内容保留在 HF 提交历史；定时运行不自动降级到重建，恢复元数据归新归档的 `source.rebuild`。
+
 研究看板也随 Mario 部署：`host-runtime --build` 在构建网页和 API 后，用 `hub-fetch` 取得 `MARIO_BENCH_TAG` 对应的切片，再用 `bench-run` 生成看板，失败只告警、不阻止部署。API 以 `MARIO_BENCH_DIR` 指向输出目录，`/dashboard` 与 `/dashboard.js` 公开，`/api/benchmark/dashboard` 只验证会话令牌，不打开账号 schema、不加账号锁。依赖方向不变：在线服务只读取研究工具生成的文件，不调用研究 CLI，研究模块也不访问账号数据。看板页面读取 Mario 网页保存在 `localStorage` 的会话（`mario.session:<前缀>api` 的 `token` 与 `expiresAt`），这是两者之间唯一的约定，修改 `client/src/lib/webSession.ts` 的存储格式时要同步修改 `benchmark/dashboard.py`。
 
 策略目录按选股、仓位构建与执行机制区分；同一机制只保留当前切片总分最高的一组参数，参数更新在原目录完成，不以参数变体重复占榜。扫描记录可保留为历史审计，当前看板由去重后的目录重新生成。

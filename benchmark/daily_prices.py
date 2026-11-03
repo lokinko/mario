@@ -149,6 +149,10 @@ def update_prices(source, previous, destination, start, end, provenance, overlap
     require(overlap_days >= 1, "回拉天数必须为正数")
     require(1 <= workers <= 4, "日线采集进程数须为1至4")
     codes, pools = selection(source)
+    if recovery := provenance.get("rebuild"):
+        require(recovery["start"] == start, "重建不能改变原归档起点")
+        require(recovery["requested_end"] <= end, "重建不能回退原归档截止日期")
+        codes = sorted(set(codes) | {symbol(code) for code in recovery["symbols"]})
     if previous is not None:
         verify_release(previous)
         old = read_json(previous / "config.json")

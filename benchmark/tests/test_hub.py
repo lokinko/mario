@@ -51,6 +51,9 @@ class FakeApi:
     def upload_folder(self, repo_id, folder_path, path_in_repo="", **kwargs):
         FakeApi.last_upload = kwargs
         prefix = path_in_repo + "/" if path_in_repo else ""
+        if kwargs.get("delete_patterns") == "*":
+            FakeApi.uploads[repo_id] = {name: value for name, value in FakeApi.uploads.get(repo_id, {}).items()
+                                       if not name.startswith(prefix)}
         FakeApi.uploads.setdefault(repo_id, {}).update(
             {prefix + p.relative_to(folder_path).as_posix(): p.read_text(encoding="utf-8")
              for p in Path(folder_path).rglob("*") if p.is_file()})
@@ -211,8 +214,11 @@ class HubTest(unittest.TestCase):
                 write_json(daily / "config.json", {"last_session": "2026-11-02"})
                 write_json(daily / "manifest.json", {"files": {"config.json": digest(daily / "config.json")}})
                 old = dict(FakeApi.uploads["me/labels"])
+                FakeApi.uploads["me/labels"]["daily-prices/retired-layout.jsonl"] = "old layout"
                 publish_daily_prices(daily, "me/labels", "daily-prices", parent)
                 self.assertEqual(FakeApi.last_upload["parent_commit"], "sha-me/labels")
+                self.assertEqual(FakeApi.last_upload["delete_patterns"], "*")
+                self.assertNotIn("daily-prices/retired-layout.jsonl", FakeApi.uploads["me/labels"])
                 self.assertTrue(all(FakeApi.uploads["me/labels"][k] == v for k, v in old.items()))
                 direct = Mock(wraps=hf_hub_download)
                 adapter = types.SimpleNamespace(HfApi=FakeApi, snapshot_download=download, hf_hub_download=direct)
@@ -244,6 +250,42 @@ class HubTest(unittest.TestCase):
             with self.assertRaises(Invalid):
                 prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base)
             self.assertEqual(FakeApi.uploads, {})
+
+    def test_explicit_rebuild_preserves_scope_and_audit_without_trusting_missing_prices(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            source = base / "source"
+            source.mkdir()
+            (source / "universe").mkdir()
+            write_json(source / "universe/tech-2025.json", {"selected": ["000001.SZ"]})
+            write_json(source / "manifest.json", {"files": {
+                "universe/tech-2025.json": digest(source / "universe/tech-2025.json")}})
+            FakeApi().upload_folder("me/bench", source, "pool-scoring")
+            daily = base / "daily"
+            daily.mkdir()
+            write_json(daily / "config.json", {"schema_version": 1, "start": "2005-08-01",
+                       "requested_end": "2026-11-02", "symbols": ["600000.SH"]})
+            (daily / "index-membership").mkdir()
+            (daily / "index-membership/original.xls").write_text("original", encoding="utf-8")
+            write_json(daily / "manifest.json", {"files": {
+                "config.json": digest(daily / "config.json"),
+                "index-membership/original.xls": digest(daily / "index-membership/original.xls"),
+                "prices/missing.jsonl": "missing-hash"}})
+            FakeApi().upload_folder("me/labels", daily, "daily-prices")
+            before = FakeApi.uploads["me/labels"].copy()
+            with self.assertRaisesRegex(Invalid, "远端日线归档"):
+                prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base / "normal")
+            restored, previous, parent, provenance = prepare_daily_prices(
+                "me/bench", "me/labels", "v7", "daily-prices", base / "rebuild", rebuild=True)
+            self.assertIsNone(previous)
+            self.assertEqual(parent, "sha-me/labels")
+            self.assertEqual(provenance["rebuild"]["symbols"], ["600000.SH"])
+            self.assertEqual(provenance["rebuild"]["missing_files"], 1)
+            self.assertEqual((restored / "index-membership/original.xls").read_text(), "original")
+            self.assertEqual(FakeApi.uploads["me/labels"], before)
+            FakeApi.uploads["me/labels"]["daily-prices/config.json"] = "{}"
+            with self.assertRaisesRegex(Invalid, "配置哈希"):
+                prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base / "bad", rebuild=True)
 
     def test_manifest_mismatch_reports_missing_and_extra_files(self):
         with tempfile.TemporaryDirectory() as folder:

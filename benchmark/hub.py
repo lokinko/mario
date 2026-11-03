@@ -209,7 +209,7 @@ def publish(release, repo, labels_repo, path, runs_dir, tag=None):
     return result
 
 
-def prepare_daily_prices(repo, labels_repo, tag, path, workspace):
+def prepare_daily_prices(repo, labels_repo, tag, path, workspace, rebuild=False):
     """只下载已固定版本的选样快照；最新行情恢复自标签仓库的同一次提交。"""
     repo_path(path)
     require(path != "." and repo != labels_repo, "每日行情必须使用独立标签仓库及子目录")
@@ -242,11 +242,32 @@ def prepare_daily_prices(repo, labels_repo, tag, path, workspace):
                                        filename=f"{path}/{name}", local_dir=restored)
 
         download("manifest.json")
-        names = set(read_json(restored / path / "manifest.json")["files"])
+        manifest = read_json(restored / path / "manifest.json")["files"]
+        names = set(manifest)
         for name in names:
             repo_path(name)
         remote = {name[len(path) + 1:] for name in api.list_repo_files(
             labels_repo, repo_type="dataset", revision=parent_commit) if name.startswith(f"{path}/")}
+        if rebuild:
+            # 显式灾难恢复仍保留已观察的证券及成分原件，不能默默缩小采集范围。
+            require(remote <= names | {"manifest.json"}, "重建发现清单外文件，需先核对远端归档")
+            require("config.json" in names and "config.json" in remote, "重建缺少原归档配置，无法保留历史范围")
+            download("config.json")
+            require(digest(restored / path / "config.json") == manifest["config.json"], "重建原归档配置哈希不符")
+            old = read_json(restored / path / "config.json")
+            require(old.get("schema_version") == 1 and old.get("symbols") and old.get("start")
+                    and old.get("requested_end"), f"重建原归档配置格式不符：字段 {sorted(old)}")
+            memberships = sorted(name for name in names if name.startswith("index-membership/"))
+            require(set(memberships) <= remote, "重建缺少历史成分原件，拒绝丢弃历史记录")
+            for name in memberships:
+                download(name)
+                require(digest(restored / path / name) == manifest[name], f"重建历史成分哈希不符：{name}")
+            if memberships:
+                shutil.copytree(restored / path / "index-membership", source / "index-membership")
+            recovery = {"previous_commit": parent_commit, "start": old["start"],
+                        "requested_end": old["requested_end"], "symbols": old["symbols"],
+                        "missing_files": len(names - remote)}
+            return source, None, parent_commit, {"repo": repo, "tag": tag, "commit": source_commit, "rebuild": recovery}
         missing = sorted((names | {"manifest.json"}) - remote)
         extra = sorted(remote - (names | {"manifest.json"}))
         require(not missing and not extra,
@@ -270,6 +291,7 @@ def publish_daily_prices(root, repo, path, parent_commit):
     api = huggingface().HfApi()
     require(api.repo_info(repo, repo_type="dataset").private, f"{repo} 不是私有仓库")
     info = api.upload_folder(repo_id=repo, repo_type="dataset", folder_path=root, path_in_repo=path,
+                             delete_patterns="*",
                              parent_commit=parent_commit,
                              commit_message=f"更新每日行情至 {read_json(root / 'config.json')['last_session']}")
     return {"repo": repo, "commit": info.oid, "path": path}

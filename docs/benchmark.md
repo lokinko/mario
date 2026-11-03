@@ -410,6 +410,8 @@ uv run --frozen --group market --group publish python scripts/benchmark_update_p
 
 Actions 的运行摘要列出股票数、年度范围、实际最后交易日与上传提交；失败在运行日志中标明来源和日期，不将未完成采集报告为成功。工作流用串行并发组防止两次调度重叠；超过 120 分钟会失败，可手动重新运行。[GitHub 定时触发说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
 
+若远端归档自身缺失文件，日常任务拒绝继续。确认需要完整补采时，可手动触发 workflow 并勾选 `rebuild`，或在 CLI 加 `--rebuild`。此模式校验旧配置和历史指数成分原件的哈希，保留已观察证券并从原起点完整采集，不允许缩小日期范围；缺少历史成分原件或配置损坏仍失败。新包全部通过校验后以原远端提交为 `parent_commit` 一次发布，HF 旧提交可用于审计和恢复；不删除旧提交，也不覆盖评分切片。重建的原提交、证券清单与缺失文件数记在新配置的 `source.rebuild` 中；定时运行默认关闭重建。
+
 ## Hugging Face 托管
 
 股票池评分切片用 `hub-publish` 上传到两个私有数据集仓库：时点输入、选样快照、配置、统计、哈希清单和数据集卡进入 [`lokinko/mario_bench`](https://huggingface.co/datasets/lokinko/mario_bench)；`outcomes.jsonl` 与各策略成绩进入 [`lokinko/mario_bench_labels`](https://huggingface.co/datasets/lokinko/mario_bench_labels)，评测时再授权读取，降低泄漏和被模型训练语料收录的风险。命令先用 `verify` 校验发布包，并确认两个仓库都是私有仓库才上传。`huggingface_hub` 是 uv 依赖组 `publish` 中的可选依赖，只由 `hub.py` 导入；token 由本机 `hf auth login` 保存，不写进仓库。

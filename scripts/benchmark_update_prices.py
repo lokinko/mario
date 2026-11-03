@@ -34,13 +34,16 @@ def main(argv=None):
     parser.add_argument("--workers", type=int, default=4, help="独立行情进程数，1至4")
     parser.add_argument("--out", type=Path, help="可选：保留校验通过的本地归档；上传失败时仍保留，已有目录不可覆盖")
     parser.add_argument("--dry-run", action="store_true", help="真实下载、采集和校验，但不上传")
+    parser.add_argument("--rebuild", action="store_true", help="显式完整重建远端归档；保留历史证券、成分原件和 HF 提交历史")
     args = parser.parse_args(argv)
     try:
         socket.setdefaulttimeout(90)
         with tempfile.TemporaryDirectory(prefix="mario-daily-prices-") as folder:
             workspace = Path(folder)
             source, previous, parent, provenance = prepare_daily_prices(
-                args.repo, args.labels_repo, args.tag, args.path, workspace)
+                args.repo, args.labels_repo, args.tag, args.path, workspace, rebuild=args.rebuild)
+            if args.rebuild:
+                print("完整重建归档: " + json.dumps(provenance.get("rebuild"), ensure_ascii=False), flush=True)
             indices = collect_memberships(source)
             print("完整指数成分: " + json.dumps(indices, ensure_ascii=False), flush=True)
             out = args.out or workspace / "updated"

@@ -148,6 +148,21 @@ class DailyPricesTest(unittest.TestCase):
         with self.assertRaisesRegex(Invalid, "同时包含"):
             self.build()
 
+    def test_rebuild_retains_historical_symbols_and_refuses_date_rollback(self):
+        provenance = {"rebuild": {"start": "2026-10-26", "requested_end": "2026-11-02",
+                                  "symbols": ["600001.SH"]}}
+        basics = Market().stock_basics() + [{"code": "sh.600001", "ipoDate": "2000-01-01", "outDate": ""}]
+        out = self.root / "rebuilt"
+        with patch.object(Market, "stock_basics", return_value=basics):
+            result = update_prices(self.source, None, out, "2026-10-26", "2026-11-02", provenance)
+        self.assertEqual(result["stocks"], 3)
+        self.assertTrue((out / "prices/600001.SH/adjust1/2026.jsonl").exists())
+        self.assertTrue(verify_release(out)["valid"])
+        for start, end in (("2026-10-27", "2026-11-02"), ("2026-10-26", "2026-10-30")):
+            with self.subTest(start=start, end=end), self.assertRaisesRegex(Invalid, "重建不能"):
+                update_prices(self.source, None, self.root / "rollback", start, end, provenance)
+        self.assertFalse((self.root / "rollback").exists())
+
     def test_known_suspension_empty_fields_stay_empty_with_structured_issues(self):
         market = Market()
         bars = market.daily("600000.SH", "2026-10-28", "2026-10-28", "1")

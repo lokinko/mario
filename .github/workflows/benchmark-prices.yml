@@ -5,6 +5,11 @@ on:
     # UTC；北京时间每天 22:37，23:37 再次补抓供应商延迟的数据。
     - cron: '37 14,15 * * *'
   workflow_dispatch:
+    inputs:
+      rebuild:
+        description: '完整重建行情归档（保留历史证券和 HF 提交历史，仅损坏恢复时使用）'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,6 +28,7 @@ jobs:
       HF_HUB_DISABLE_PROGRESS_BARS: '1'
       PYTHONUTF8: '1'
       BENCHMARK_SOURCE_TAG: ${{ vars.BENCHMARK_SOURCE_TAG || 'pool-scoring-v7' }}
+      BENCHMARK_REBUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -39,4 +45,7 @@ jobs:
       - name: 验证增量更新与发布行为
         run: uv run --frozen --group market --group publish python -m unittest benchmark.tests.test_daily_prices benchmark.tests.test_index_membership benchmark.tests.test_hub -v
       - name: 采集并同步 Hugging Face
-        run: uv run --frozen --group market --group publish python scripts/benchmark_update_prices.py --tag "$BENCHMARK_SOURCE_TAG"
+        run: |
+          args=()
+          if [ "$BENCHMARK_REBUILD" = true ]; then args+=(--rebuild); fi
+          uv run --frozen --group market --group publish python scripts/benchmark_update_prices.py --tag "$BENCHMARK_SOURCE_TAG" "${args[@]}"
