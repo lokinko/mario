@@ -19,6 +19,15 @@ function ensureRunning() { if (stopping) throw Error('启动已取消'); }
 function cleanEnvironment() {
   return Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(MARIO_|DATABASE_URL$|POSTGRES_|PGPASSWORD$|PGSERVICE|PGOPTIONS$|PGPASSFILE$|VITE_)/i.test(key)));
 }
+function buildServer(env) {
+  const registry = process.env.MARIO_DEPLOY_CARGO_REGISTRY;
+  // Cargo source replacement has no native environment variable; scope it to this command.
+  const source = registry ? [
+    '--config', 'source.crates-io.replace-with="mario-deploy"',
+    '--config', `source.mario-deploy.registry=${JSON.stringify(registry)}`,
+  ] : [];
+  return run('cargo', [...source, 'build', '--release', '--locked', '--manifest-path', 'server/Cargo.toml'], { env });
+}
 function launch(name, command, commandArgs, env) {
   ensureRunning();
   const child = spawn(command, commandArgs, { cwd: root, env, stdio: 'inherit' });
@@ -109,7 +118,7 @@ try {
     const env = { ...cleanEnvironment(), VITE_BASE_PATH: basePath(config.MARIO_BASE_PATH) };
     await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['ci', '--prefix', 'client'], { env, shell: process.platform === 'win32' });
     await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--prefix', 'client'], { env, shell: process.platform === 'win32' });
-    await run('cargo', ['build', '--release', '--locked', '--manifest-path', 'server/Cargo.toml'], { env });
+    await buildServer(env);
     await buildDashboard(config, env);
   } else {
     acquireLock();
@@ -147,7 +156,7 @@ try {
       ensureRunning();
       await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--prefix', 'client'], { env: { ...baseEnv, VITE_BASE_PATH: prefix }, shell: process.platform === 'win32' });
       ensureRunning();
-      await run('cargo', ['build', '--release', '--locked', '--manifest-path', 'server/Cargo.toml'], { env: baseEnv });
+      await buildServer(baseEnv);
       ensureRunning();
       await buildDashboard(config, baseEnv);
     }

@@ -30,6 +30,6 @@
     "test:hosted": "node scripts/postgres-cluster.mjs node scripts/test-hosted.mjs",
     "test:financial": "node scripts/test-financial.mjs",
     "deploy": "bash deploy.sh",
-    "test:deploy": "node --test scripts/benchmark-deploy.test.mjs && node scripts/test-deploy.mjs"
+    "test:deploy": "node --test scripts/benchmark-deploy.test.mjs scripts/deploy-sources.test.mjs && node scripts/test-deploy.mjs"
   }
 }
