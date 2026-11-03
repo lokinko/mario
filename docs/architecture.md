@@ -259,7 +259,7 @@ Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略
 
 远端日线归档损坏时，只有手动开启的 `rebuild` 才完整重采：`hub` 校验并保留旧配置、证券范围与历史成分原件，`daily_prices` 禁止日期回退，全部通过后在临时分支上传核验，以原提交为祖先快进主分支并原子替换该归档子目录。旧布局文件随替换移除，旧内容保留在 HF 提交历史；定时运行不自动降级到重建，恢复元数据归新归档的 `source.rebuild`。
 
-研究看板由 Git 主分支持续维护：`.github/workflows/benchmark-live.yml` 在可信 main 的策略、引擎或依赖变化后执行 `benchmark.live evaluate`，复用 `strategy_runner` 和 `scoring`；`hub` 原子发布完整 JSON 快照到现有私有标签仓库的 `dashboard/current.json`。运行进度附着于上次成功成绩，全部成功才替换成绩；Git 提交、评分切片和 HF 历史提供可追溯性。并发归 Actions 的单一任务组，失败不替换成功成绩；不引入在线数据库、业务事务或消息队列。
+研究看板由 Git 主分支持续维护：`.github/workflows/benchmark-live.yml` 在可信 main 的策略、引擎或依赖变化后执行 `benchmark.live evaluate`，复用 `strategy_runner` 和 `scoring`；`hub` 原子发布完整 JSON 快照到现有私有标签仓库的 `dashboard/current.json`。运行进度附着于上次成功成绩，全部成功才替换成绩；Git 提交、评分切片和 HF 历史提供可追溯性。日线与持续评测共享HF标签仓库主分支，并发归 Actions 的同一 `benchmark-hf-main` 任务组，失败不替换成功成绩；不引入在线数据库、业务事务或消息队列。
 
 `benchmark-deploy` 仅准备服务用户的 Python 环境并同步当前快照；`host-runtime` 管理 `benchmark.live sync --watch` 的启动和退出，每 30 秒检查远端固定提交，只读同步至 `.runtime/benchmark/current/`。远端只提供数据，页面与脚本仍由本地部署版本生成；失败保留上次文件，进程内缓存避免重复下载。API 的 `MARIO_BENCH_DIR` 指向固定目录，`/dashboard` 与 `/dashboard.js` 公开，`/api/benchmark/dashboard` 只验证会话令牌，不打开账号 schema、不加账号锁。依赖方向不变：在线 API 只读派生文件，不执行策略；研究模块不访问账号数据。页面每 10 秒携带 Mario 会话轮询，状态更新保留视图，成绩更新后按原网址状态重载。会话存储格式变更时同步修改 `dashboard.py`。旧标签目录只供研究复现，生产不再在部署时评分；部署配置使用 `MARIO_BENCH_ENABLED=true` 启用同步，旧标签配置不再读取，评分切片由 Actions 的 `BENCHMARK_SCORING_TAG` 统一确定。
 

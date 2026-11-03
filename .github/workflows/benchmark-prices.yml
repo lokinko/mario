@@ -15,7 +15,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: benchmark-daily-prices
+  # 与持续评测共用 HF 标签仓库主分支，串行保护固定父提交。
+  group: benchmark-hf-main
   cancel-in-progress: false
 
 jobs:

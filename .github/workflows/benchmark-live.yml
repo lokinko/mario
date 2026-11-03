@@ -16,7 +16,8 @@ permissions:
 # Only trusted main commits run with private dataset access. Always evaluate the latest main
 # at execution time, so delayed workflow runs cannot publish an older strategy snapshot.
 concurrency:
-  group: benchmark-live
+  # 与每日行情共用 HF 标签仓库主分支，串行保护固定父提交。
+  group: benchmark-hf-main
   cancel-in-progress: false
 
 jobs:
