@@ -423,7 +423,7 @@ uv run --frozen --group market --group publish python scripts/benchmark_update_p
 - **持久化与恢复**：归档位于私有标签仓库 `daily-prices/`，包含选样快照、交易日历、证券元数据、覆盖统计、配置和逐文件 SHA-256。最新日线可能泄露历史决策的未来，不能放进时点输入仓库。每次固定远端提交，先核对远端文件全集与清单，再按清单逐文件下载并校验全部哈希，避免大型快照枚举遗漏；不依赖 GitHub cache/artifact。采集全部通过后，在基于原远端提交的专用临时分支上传；该目录使用 LFS，SDK 可以拆成多次提交，但主分支保持上次完整版本。上传后逐文件核对远端内容标识（LFS SHA-256 或 Git blob），文件集合或内容不符拒绝提升。最后通过完整 Git 祖先关系校验及非强制快进，一次更新主分支；远端前进则拒绝覆盖，保留临时分支供整合。成功后删除临时分支；失败的本地目录按 `--out` 约定保留或清理。相同清单不会重复上传。
 - **评分边界**：任务只维护日线，不改 `pool-scoring/`、不可变标签、数据集卡、策略参数、成绩或部署看板。新评分切片仍需保留 v7 特征并等待完整结果窗口，再走显式构建、评分与发布。
 
-Actions 的运行摘要列出股票数、年度范围、实际最后交易日与上传提交；失败在运行日志中标明来源和日期，不将未完成采集报告为成功。工作流用串行并发组防止两次调度重叠；超过 120 分钟会失败，可手动重新运行。[GitHub 定时触发说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
+Actions 的运行摘要列出股票数、年度范围、实际最后交易日与上传提交；失败在运行日志中标明来源和日期，不将未完成采集报告为成功。每日行情与持续评测共用 `benchmark-hf-main` 串行并发组，防止同一HF主分支写入重叠；超过 120 分钟会失败，可手动重新运行。[GitHub 定时触发说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
 
 若远端归档自身缺失文件，日常任务拒绝继续。确认需要完整补采时，可手动触发 workflow 并勾选 `rebuild`，或在 CLI 加 `--rebuild`。此模式校验旧配置和历史指数成分原件的哈希，保留已观察证券并从原起点完整采集，不允许缩小日期范围；缺少历史成分原件或配置损坏仍失败。新包全部通过校验后以原远端提交为 `parent_commit` 一次发布，HF 旧提交可用于审计和恢复；不删除旧提交，也不覆盖评分切片。重建的原提交、证券清单与缺失文件数记在新配置的 `source.rebuild` 中；定时运行默认关闭重建。
 
