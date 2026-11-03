@@ -11,7 +11,7 @@ from benchmark.files import Invalid, digest, read_json, rows, write_json, write_
 from benchmark.cli import DEFAULT_STRATEGIES
 from benchmark.dashboard import write_dashboard
 from benchmark.strategy_runner import bench_run, check_source, generate_weights
-from scripts.benchmark_fugui_study import MINIMAL_FIELDS, boll, build, features, load_caches, macd
+from scripts.benchmark_fugui_study import FIELDS, boll, build, features, load_caches, macd
 
 STRATEGY = (Path(__file__).resolve().parents[1] / "strategies" / "fugui" / "strategy.py").read_text(encoding="utf-8")
 
@@ -47,22 +47,26 @@ class FuguiSignalsTest(unittest.TestCase):
         bars[future] = {"close": "999999999999", "tradestatus": "1"}
         self.assertEqual(features(bars, days + [future], cutoff), expected)
 
-    def test_monthly_accumulation_requires_half_price_and_negative_monthly_macd(self):
-        prices = [200 * Decimal("0.98") ** i for i in range(36)]
+    def test_monthly_lower_does_not_require_a_fifty_percent_decline(self):
+        prices = [100 * Decimal("0.995") ** i for i in range(36)]
         days, bars = fixture(prices)
-        self.assertTrue(features(bars, days, days[-1])["monthly_low"])
-        days, bars = fixture([100] * 36)
-        self.assertFalse(features(bars, days, days[-1])["monthly_low"])
+        result = features(bars, days, days[-1])
+        self.assertGreater(prices[-1], max(prices) / 2)
+        self.assertTrue(result["monthly_lower"])
+        self.assertTrue(result["monthly_macd_negative"])
+        self.assertNotIn("monthly_low", result)
+        self.assertNotIn("first_pullback", result)
 
-    def test_only_first_support_retest_counts_and_missing_period_resets_history(self):
-        days, bars = fixture([100] * 35 + [140, 140, 100, 100])
+    def test_boll_middle_pullback_can_repeat_and_missing_period_resets_history(self):
+        days, bars = fixture([100] * 35 + [140, 140, 104, 140, 104])
         first = max(d for d in days if d[:7] == "2021-02")
-        self.assertTrue(features(bars, days, first)["first_pullback"])
-        self.assertFalse(features(bars, days, days[-1])["first_pullback"])
+        self.assertTrue(features(bars, days, first)["monthly_mid_pullback"])
+        self.assertTrue(features(bars, days, days[-1])["monthly_mid_pullback"])
         del bars["2021-01-15"]
         result = features(bars, days, first)
-        self.assertIsNone(result["monthly_low"])
-        self.assertIsNone(result["first_pullback"])
+        self.assertIsNone(result["monthly_lower"])
+        self.assertIsNone(result["monthly_mid_pullback"])
+        self.assertIsNone(result["monthly_macd_negative"])
         self.assertEqual(result["months"], 1)
         # 月内有缺行不能靠月底价覆盖；日线已有20个完整观察时仍可计算。
         self.assertIsNotNone(result["daily_lower"])
@@ -76,7 +80,16 @@ class FuguiSignalsTest(unittest.TestCase):
         del bars[days[-2]]
         changed = features(bars, days, cutoff)
         self.assertIsNone(changed["daily_lower"])
-        self.assertIsNone(changed["monthly_low"])
+        self.assertIsNone(changed["monthly_lower"])
+
+    def test_negative_monthly_histogram_allows_dif_and_dea_above_zero(self):
+        prices = [Decimal(100 + i * 2) for i in range(35)] + [Decimal(160), Decimal(155), Decimal(150)]
+        dif, dea, histogram = macd(prices)
+        self.assertGreater(dif, 0)
+        self.assertGreater(dea, 0)
+        self.assertLess(histogram, 0)
+        days, bars = fixture(prices)
+        self.assertTrue(features(bars, days, days[-1])["monthly_macd_negative"])
 
     def test_candidate_requires_technical_contract_and_leaves_vacant_slots_in_cash(self):
         self.assertEqual(check_source(STRATEGY), [])
@@ -84,8 +97,8 @@ class FuguiSignalsTest(unittest.TestCase):
             code = Path(folder) / "strategy.py"
             code.write_text(STRATEGY, encoding="utf-8")
             stock = {"symbol": "600000.SH", "trade_status": "trading", "market_cap_at_selection": "100000000000",
-                     "volatility_63": "0.025", "fugui": {"monthly_low": True, "first_pullback": None,
-                     "daily_lower": None, "weekly_lower": None}}
+                     "volatility_63": "0.025", "fugui": {"monthly_lower": True, "monthly_mid_pullback": None,
+                     "daily_lower": True, "weekly_lower": True, "monthly_macd_negative": True}}
             sample = {"id": "s1", "pool": "dividend", "stocks": [stock]}
             self.assertEqual(generate_weights(code, [sample])[0]["weight"], "0.18000000")
             for key, value in (("market_cap_at_selection", "99999999999"), ("trade_status", "suspended"),
@@ -93,7 +106,7 @@ class FuguiSignalsTest(unittest.TestCase):
                 wrong = copy.deepcopy(sample)
                 wrong["stocks"][0][key] = value
                 self.assertEqual(generate_weights(code, [wrong]), [], key)
-            stock["fugui"]["monthly_low"] = None
+            stock["fugui"]["monthly_lower"] = None
             self.assertEqual(generate_weights(code, [sample]), [])
             stock.pop("fugui")
             with self.assertRaises(Invalid):
@@ -106,8 +119,9 @@ class FuguiSignalsTest(unittest.TestCase):
             code = Path(folder) / "strategy.py"
             code.write_text(STRATEGY, encoding="utf-8")
             stocks = [{"symbol": f"60000{i}.SH", "trade_status": "trading", "market_cap_at_selection": "200000000000",
-                       "volatility_63": str(Decimal(i + 1) / 1000), "fugui": {"monthly_low": False,
-                       "first_pullback": True, "daily_lower": True, "weekly_lower": True}} for i in range(7)]
+                       "volatility_63": str(Decimal(i + 1) / 1000), "fugui": {"monthly_lower": False,
+                       "monthly_mid_pullback": True, "daily_lower": True, "weekly_lower": True,
+                       "monthly_macd_negative": True}} for i in range(7)]
             sample = {"id": "s", "pool": "dividend", "stocks": list(reversed(stocks))}
             result = generate_weights(code, [sample])
             self.assertEqual([r["symbol"] for r in result], [f"60000{i}.SH" for i in range(5)])
@@ -115,6 +129,27 @@ class FuguiSignalsTest(unittest.TestCase):
             for stock in stocks:
                 stock["fugui"]["weekly_lower"] = None
             self.assertEqual(generate_weights(code, [sample]), [])
+
+    def test_both_buy_points_require_daily_weekly_lower_and_negative_monthly_histogram(self):
+        with tempfile.TemporaryDirectory() as folder:
+            code = Path(folder) / "strategy.py"
+            code.write_text(STRATEGY, encoding="utf-8")
+            cases = [({"monthly_lower": True, "monthly_mid_pullback": False}, True),
+                     ({"monthly_lower": False, "monthly_mid_pullback": True}, True),
+                     ({"monthly_lower": True, "daily_lower": False}, False),
+                     ({"monthly_mid_pullback": True, "weekly_lower": False}, False),
+                     ({"monthly_lower": True, "monthly_macd_negative": False}, False),
+                     ({"monthly_mid_pullback": True, "monthly_macd_negative": None}, False),
+                     ({"monthly_lower": False, "monthly_mid_pullback": False}, False)]
+            samples = []
+            for index, (overrides, _) in enumerate(cases):
+                signal = {"daily_lower": True, "weekly_lower": True, "monthly_macd_negative": True,
+                          "monthly_lower": False, "monthly_mid_pullback": False, **overrides}
+                stock = {"symbol": "600000.SH", "trade_status": "trading", "market_cap_at_selection": "100000000000",
+                         "volatility_63": "0.02", "fugui": signal}
+                samples.append({"id": str(index), "pool": "dividend", "stocks": [stock]})
+            picked = {row["sample_id"] for row in generate_weights(code, samples)}
+            self.assertEqual(picked, {str(i) for i, (_, expected) in enumerate(cases) if expected})
 
 
 class FuguiBuildTest(unittest.TestCase):
@@ -126,10 +161,10 @@ class FuguiBuildTest(unittest.TestCase):
             stock = {"symbol": "600000.SH", "trade_status": "trading", "close": "10", "momentum_63": "0.2",
                      "return_20": "0.01", "volatility_63": "0.02", "market_cap_at_selection": "200000000000",
                      "sw_level1_name": None, "long_history": {"daily_returns_1m": {"2015-09-29": "0", "2015-09-30": "0.01"},
-                     "clenow_mark_90": "1"}, "fugui": {"monthly_low": True, "first_pullback": False,
-                     "daily_lower": False, "weekly_lower": False, "issues": {}}}
-            write_json(release / "config.json", {"version": "synthetic-v8", "built_on": "2026-11-03",
-                                                "input_features": "monthly-risk-regression-fugui-v1"})
+                     "clenow_mark_90": "1"}, "fugui": {"monthly_lower": True, "monthly_mid_pullback": False,
+                     "daily_lower": True, "weekly_lower": True, "monthly_macd_negative": True, "issues": {}}}
+            write_json(release / "config.json", {"version": "synthetic-v9", "built_on": "2026-11-03",
+                                                "input_features": "monthly-risk-regression-fugui-v2"})
             write_rows(release / "inputs.jsonl", [{"id": "s", "pool": "dividend", "decision_date": "2015-09-30", "stocks": [stock]}])
             path = [[d, p, p, True, True] for d, p in (("2015-10-08", "10"), ("2015-10-15", "11"),
                                                     ("2015-11-06", "12"), ("2016-01-06", "13"))]
@@ -177,10 +212,10 @@ class FuguiBuildTest(unittest.TestCase):
             with self.assertRaisesRegex(Invalid, "重叠行情不一致"):
                 load_caches([cache], {"600000.SH"})
 
-    def test_minimal_release_preserves_v7_fields_and_only_adds_required_signals(self):
+    def test_minimal_release_preserves_other_v8_fields_and_replaces_retired_signals(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            release, cache, destination = root / "release", root / "cache", root / "v8"
+            release, cache, destination = root / "release", root / "cache", root / "v9"
             release.mkdir()
             history = cache / "raw/baostock/history"
             history.mkdir(parents=True)
@@ -188,9 +223,10 @@ class FuguiBuildTest(unittest.TestCase):
             write_json(history / "600000.SH-synthetic-adjust1.json", list(bars.values()))
             write_json(history / "trade_dates-synthetic.json", [{"calendar_date": d, "is_trading_day": "1"} for d in days])
             sample = {"id": "s", "pool": "dividend", "decision_date": days[-1], "stocks": [{"symbol": "600000.SH",
-                      "momentum_63": "0", "return_20": "0", "long_history": {"daily_returns_1m": {}, "clenow_mark_90": "1"}}]}
+                      "momentum_63": "0", "return_20": "0", "long_history": {"daily_returns_1m": {}, "clenow_mark_90": "1"},
+                      "fugui": {"monthly_low": False, "first_pullback": False}}]}
             write_rows(release / "inputs.jsonl", [sample])
-            write_json(release / "config.json", {"version": "synthetic", "input_features": "monthly-risk-regression-v1"})
+            write_json(release / "config.json", {"version": "synthetic", "input_features": "monthly-risk-regression-fugui-v1"})
             (release / "outcomes.jsonl").write_bytes(b'{"secret":"not a signal"}\n')
             write_json(release / "manifest.json", {"schema_version": 1, "files": {
                 p.name: digest(p) for p in release.iterdir()}})
@@ -200,11 +236,12 @@ class FuguiBuildTest(unittest.TestCase):
             self.assertFalse(report["research_only"])
             result = rows(destination / "inputs.jsonl")[0]
             signal = result["stocks"][0].pop("fugui")
-            self.assertEqual(set(signal), {*MINIMAL_FIELDS, "issues"})
+            self.assertEqual(set(signal), {*FIELDS, "issues"})
+            sample["stocks"][0].pop("fugui")
             self.assertEqual(result, sample)
             config = read_json(destination / "config.json")
-            self.assertEqual(config["input_features"], "monthly-risk-regression-fugui-v1")
+            self.assertEqual(config["input_features"], "monthly-risk-regression-fugui-v2")
             self.assertEqual(config["built_on"], "2026-11-03")
             self.assertEqual(digest(destination / "outcomes.jsonl"), digest(release / "outcomes.jsonl"))
-            with self.assertRaisesRegex(Invalid, "正式v7"):
+            with self.assertRaisesRegex(Invalid, "正式v8"):
                 build(destination, [cache], root / "invalid", minimal=True, built_on="2026-11-03")
