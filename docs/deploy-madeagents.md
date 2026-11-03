@@ -16,7 +16,7 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 默认执行以下工作：
 
-- Ubuntu/Debian 安装编译依赖和 PostgreSQL 17；缺少 Node 22+ 时安装项目专用 Node，并验证下载校验和；缺少 Rust 时为服务用户安装官方 rustup。
+- Ubuntu/Debian 安装编译依赖和 PostgreSQL 17；缺少 Node 22+ 时安装项目专用 Node，并验证下载校验和；缺少 Rust 时为服务用户安装 rustup。Node、npm 和 Rust 默认使用脚本顶部配置的国内源。
 - 自动选择非 root 运行用户，首次生成数据库密码、主密钥与 Agent 令牌，持久保存在权限受限的 `.env`。
 - 按 `/mario/` 构建 React 网页，编译 Rust 服务，自动初始化或复用 `.runtime/native/postgres`。
 - 创建 `mario.service`，由 systemd 托管 PostgreSQL、API 和独立 Agent。断开 SSH 不停止服务，开机自动启动。
@@ -31,7 +31,7 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 部署在安装工具、下载依赖和停止已有服务之前，自动准备服务用户的 home 和工具目录，修复历史部署留下的属主、写入和遍历权限，再以服务用户身份验证。系统依赖和 systemd 由 root 管理，Rust/uv 安装、配置生成、构建和 PostgreSQL/API/Agent 运行统一使用服务用户，避免两种身份竞争写入同一工具或运行目录。
 
-安装来源：[Node 官方发行版](https://nodejs.org/dist/latest-v22.x/)、[PostgreSQL 官方源](https://www.postgresql.org/download/linux/ubuntu/)、[Rust 官方安装](https://rust-lang.org/tools/install/)、[uv 官方安装](https://docs.astral.sh/uv/getting-started/installation/)。
+默认下载来源：[npmmirror（Node/npm）](https://npmmirror.com/)、[RsProxy（Rustup/工具链/Cargo）](https://rsproxy.cn/)、[PostgreSQL 官方源](https://www.postgresql.org/download/linux/ubuntu/)、[uv 官方安装](https://docs.astral.sh/uv/getting-started/installation/)。源地址覆盖与切回官方源见下文。
 
 ## 服务用户 home 与工具目录权限
 
@@ -55,6 +55,32 @@ sudo bash /srv/mario/deploy.sh
 可选配置说明包括网页前缀、API/Agent/PG 端口、已有数据库 URL、PG 工具路径、跨域来源、服务用户、systemd 名称和依赖安装开关。脚本中的参数会合并到 `.env`，已有密码与密钥保持原值。`.env` 是运行配置和秘密存储，不是第二份需要同时维护的部署参数表。模型 API 地址由用户在“模型与隐私”中自行配置，无需管理员添加白名单。
 
 早期部署留下的 `.env.native` 会自动合并到 `.env` 并保留备份；如果新旧文件同时存在需先整理。保留并备份 `.env`，尤其 `MARIO_MASTER_KEY`；遗失主密钥后无法解密已有模型凭据。用户各自的模型 API Key 在网页登录后配置。
+
+## 部署下载源
+
+`deploy.sh` 顶部内置以下环境变量；可直接修改默认值，也可用 `sudo env 变量=值 bash deploy.sh` 覆盖。直接以普通用户执行脚本时，自动提权也会保留这些设置。
+
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `npm_config_registry`（也接受 `NPM_CONFIG_REGISTRY`） | `https://registry.npmmirror.com` | npm 包下载；小写变量优先 |
+| `NODE_DIST_URL` | `https://npmmirror.com/mirrors/node/latest-v22.x` | Node 22 安装包及 SHA256 校验清单 |
+| `RUSTUP_INIT_URL` | `https://rsproxy.cn/rustup-init.sh` | 首次安装 Rustup 的脚本 |
+| `RUSTUP_DIST_SERVER` | `https://rsproxy.cn` | Rust 工具链 |
+| `RUSTUP_UPDATE_ROOT` | `https://rsproxy.cn/rustup` | Rustup 自身安装及更新 |
+| `MARIO_DEPLOY_CARGO_REGISTRY` | `sparse+https://rsproxy.cn/index/` | Cargo 依赖；显式空值沿用机器已有的源配置 |
+
+例如临时切回官方源（机器未另设 Cargo 源时，Cargo 使用 crates.io）：
+
+```bash
+sudo env npm_config_registry=https://registry.npmjs.org \
+  NODE_DIST_URL=https://nodejs.org/dist/latest-v22.x \
+  RUSTUP_INIT_URL=https://sh.rustup.rs \
+  RUSTUP_DIST_SERVER=https://static.rust-lang.org \
+  RUSTUP_UPDATE_ROOT=https://static.rust-lang.org/rustup \
+  MARIO_DEPLOY_CARGO_REGISTRY= bash deploy.sh
+```
+
+这些设置只用于本次部署，不写入 `.env`、shell 启动文件、npm/Cargo 全局配置或 systemd 服务。Cargo 源替换通过本次构建命令的 `--config` 传入，保留 `--locked` 和依赖校验；Node 仍验证 SHA256。配置方式见 [npm 环境变量](https://docs.npmjs.com/cli/v11/using-npm/config#environment-variables)与 [Cargo 命令级配置](https://doc.rust-lang.org/cargo/reference/config.html#command-line-overrides)。apt/PostgreSQL、uv/Python 和 Hugging Face 下载继续使用已有来源。
 
 ## 一次性接入已有 Nginx
 
