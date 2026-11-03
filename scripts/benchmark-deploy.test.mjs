@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { join, resolve } from 'node:path';
-import { benchDir, buildDashboard } from './benchmark-deploy.mjs';
+import { benchDir, benchPython, buildDashboard } from './benchmark-deploy.mjs';
 import { root } from './start-common.mjs';
 
 test('dashboard uses its deployment interpreter despite inherited root settings', async () => {
@@ -23,7 +23,7 @@ test('dashboard uses its deployment interpreter despite inherited root settings'
   };
   const original = { ...inherited };
   const calls = [];
-  await buildDashboard({ MARIO_BENCH_TAG: 'pool-scoring-v5' }, inherited, async (command, argv, options) => {
+  await buildDashboard({ MARIO_BENCH_ENABLED: 'true' }, inherited, async (command, argv, options) => {
     calls.push([command, argv]);
     const env = options.env;
     const runtime = resolve(root, '.runtime/benchmark');
@@ -39,18 +39,17 @@ test('dashboard uses its deployment interpreter despite inherited root settings'
   assert.deepEqual(inherited, original);
   assert.deepEqual(calls, [
     ['uv', ['sync', '--frozen', '--group', 'publish', '--managed-python']],
-    [process.execPath, ['scripts/benchmark.mjs', 'hub-fetch', '--repo', 'lokinko/mario_bench', '--labels-repo', 'lokinko/mario_bench_labels', '--tag', 'pool-scoring-v5', '--out', join('.runtime/benchmark', 'pool-scoring-v5')]],
-    [process.execPath, ['scripts/benchmark.mjs', 'bench-run', '--release', join('.runtime/benchmark', 'pool-scoring-v5'), '--out', benchDir('pool-scoring-v5')]],
+    [benchPython(), ['-m', 'benchmark.live', 'sync', '--out', benchDir()]],
   ]);
 });
 
 test('optional dashboard failures stop subsequent steps and identify the failed stage', async t => {
-  for (const [failAt, stage] of ['准备 Python 环境', '下载并校验 Hugging Face 切片', '策略评分与生成看板'].entries()) {
+  for (const [failAt, stage] of ['准备 Python 环境', '同步在线评测快照'].entries()) {
     await t.test(stage, async t => {
       const warnings = [];
       t.mock.method(console, 'warn', message => warnings.push(message));
       let calls = 0;
-      await buildDashboard({ MARIO_BENCH_TAG: 'pool-scoring-v5' }, {}, async () => {
+      await buildDashboard({ MARIO_BENCH_ENABLED: 'true' }, {}, async () => {
         if (calls++ === failAt) throw Error('Permission denied');
       });
       assert.equal(calls, failAt + 1);
@@ -62,11 +61,11 @@ test('optional dashboard failures stop subsequent steps and identify the failed 
   }
 });
 
-test('empty tag skips tooling; invalid tag is rejected before execution', async t => {
+test('disabled dashboard skips tooling; invalid setting is rejected before execution', async t => {
   t.mock.method(console, 'log', () => {});
   let calls = 0;
   const runner = async () => { calls++; };
   await buildDashboard({}, {}, runner);
-  await assert.rejects(buildDashboard({ MARIO_BENCH_TAG: '../escape' }, {}, runner), /MARIO_BENCH_TAG/);
+  await assert.rejects(buildDashboard({ MARIO_BENCH_ENABLED: 'invalid' }, {}, runner), /MARIO_BENCH_ENABLED/);
   assert.equal(calls, 0);
 });

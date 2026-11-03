@@ -28,7 +28,7 @@ try {
   assert.equal(Object.hasOwn(before, 'MARIO_REGISTRATION_KEY'), false);
   assert.doesNotThrow(() => validateSecrets(before));
   assert.doesNotThrow(() => validateSecrets({ ...before, MARIO_REGISTRATION_KEY: 'obsolete' }));
-  const options = { MARIO_SETUP_DOMAIN: 'www.madeagents.ai', MARIO_SETUP_IP: '47.243.99.21', MARIO_SETUP_BASE_PATH: '/mario/', MARIO_SETUP_API_PORT: '4321', MARIO_SETUP_BENCH_TAG: 'pool-scoring-v5' };
+  const options = { MARIO_SETUP_DOMAIN: 'www.madeagents.ai', MARIO_SETUP_IP: '47.243.99.21', MARIO_SETUP_BASE_PATH: '/mario/', MARIO_SETUP_API_PORT: '4321', MARIO_SETUP_BENCH_ENABLED: 'true' };
   const result = prepare(options);
   const after = readConfig(envPath);
   for (const key of ['MARIO_MASTER_KEY', 'POSTGRES_PASSWORD', 'MARIO_AGENT_TOKEN']) {
@@ -39,7 +39,7 @@ try {
   assert.equal(after.MARIO_SERVER_IP, '47.243.99.21');
   assert.equal(after.MARIO_BASE_PATH, '/mario/');
   assert.equal(after.MARIO_BACKUP_MODE, 'native');
-  assert.equal(after.MARIO_BENCH_TAG, 'pool-scoring-v5');
+  assert.equal(after.MARIO_BENCH_ENABLED, 'true');
   const nginx = readFileSync(join(fixture, '.runtime/native/nginx.conf'), 'utf8');
   assert.match(nginx, /location = \/mario \{ return 308 \/mario\/\$is_args\$args;/);
   assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:4321\//);
@@ -55,7 +55,7 @@ try {
   for (const invalid of [
     { MARIO_SETUP_IP: 'not-an-ip' }, { MARIO_SETUP_DOMAIN: 'https://bad.example.test' },
     { MARIO_SETUP_BASE_PATH: '/mario' }, { MARIO_SETUP_API_PORT: '4218', MARIO_SETUP_AGENT_PORT: '4218' },
-    { MARIO_SETUP_BENCH_TAG: '../pool-scoring-v5' },
+    { MARIO_SETUP_BENCH_ENABLED: 'invalid' },
   ]) {
     prepare({ ...options, ...invalid }, 1);
     assert.equal(readFileSync(envPath, 'utf8'), stable);

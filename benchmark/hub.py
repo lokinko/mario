@@ -382,3 +382,35 @@ def publish_daily_prices(root, repo, path, parent_commit):
         raise Invalid(f"HF 每日归档未提升，临时分支 {branch} 保留以供恢复: {exc}") from exc
     api.delete_branch(repo_id=repo, repo_type="dataset", branch=branch)
     return {"repo": repo, "commit": commit, "path": path}
+
+
+def live_read(repo, path, missing=False, cache=None):
+    """固定远端提交读取持续看板；只有确认不存在才允许首次初始化。"""
+    import json
+    hub = huggingface()
+    api = hub.HfApi()
+    info = api.repo_info(repo, repo_type="dataset")
+    require(info.private, f"{repo} 不是私有仓库")
+    if cache is not None and cache.get("commit") == info.sha:
+        return cache["data"]
+    if not api.file_exists(repo, path, repo_type="dataset", revision=info.sha):
+        require(missing, "尚无在线评测结果，请先运行 Benchmark 持续评测工作流")
+        return None
+    with tempfile.TemporaryDirectory() as folder:
+        file = hub.hf_hub_download(repo, path, repo_type="dataset", revision=info.sha, local_dir=folder)
+        data = json.loads(Path(file).read_text(encoding="utf-8"))
+        if cache is not None:
+            cache.update(commit=info.sha, data=data)
+        return data
+
+
+def live_write(repo, path, data):
+    """一次 HF 提交原子发布一个完整 JSON；不覆盖行情归档或评分切片。"""
+    import json
+    hub = huggingface()
+    api = hub.HfApi()
+    info = api.repo_info(repo, repo_type="dataset")
+    require(info.private, f"{repo} 不是私有仓库")
+    return api.upload_file(repo_id=repo, repo_type="dataset", path_in_repo=path,
+                           path_or_fileobj=json.dumps(data, ensure_ascii=False, allow_nan=False).encode("utf-8"),
+                           commit_message=f"持续评测 {data['evaluation']['commit']} {data['evaluation']['status']}")

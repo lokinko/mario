@@ -290,9 +290,23 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v8
 - 未提交仓位的决策点按全部现金计，不能靠跳过样本提高均值。
 - Rank IC 等排序指标只在红利 top-20 数据集的 `evaluate` 中作辅助指标。
 
+### Git 提交后持续评测
+
+将 `benchmark/strategies/<名字>/strategy.py` 和 `strategy.md` 提交到 `main` 后，GitHub Actions 的“Benchmark 持续评测”自动运行；策略、评分器、依赖或该工作流变化都会触发，也可以手动运行。只运行可信主分支，不对 PR 提供私有数据凭据；执行时取最新 main，记录实际 Git 提交，串行发布，避免等待中的旧任务覆盖新代码成绩。
+
+流程为 Git → Actions → `benchmark.live evaluate` → 现有 HF 私有标签仓库的 `dashboard/current.json` → 宿主机每 30 秒同步 → 已登录看板每 10 秒读取。代码保留在 Git；HF 提交历史保留完整快照及状态，当前文件只是派生结果，不是账号业务存储。下载固定 HF 提交；网页脚本始终由本地部署代码生成，远端只提供 JSON。
+
+首次使用需要仓库 Secret `HF_TOKEN`（输入仓库读取、标签仓库写入权限），与每日行情使用同一凭据。评分数据由仓库 Variable `BENCHMARK_SCORING_TAG` 指定，缺省 `pool-scoring-v8`；修改它后手动触发工作流。数据标签继续不可变，所有策略在同一切片评分，数据升级不意味着重新建立在线入口。服务账号的 HF 凭据只需读取标签仓库。
+
+页面显示评测提交、已完成/总策略数、开始或完成状态；运行中和失败时继续展示明确标注提交与切片的上次成功成绩。全部成功才原子替换整张成绩快照，失败保留原因并让工作流失败。进程被强制终止或工作流超时，45 分钟未更新的运行状态显示“待核对”，到 Actions 查看日志并重新运行。首次尚无成功成绩时显示等待状态，不造空成绩。宿主机同步失败保留当前文件并在服务日志记录，恢复连接后自动继续。
+
+部署一次新版同步器后，提交策略不再需要部署整个网站。`MARIO_BENCH_ENABLED=true` 启用看板，旧 `MARIO_BENCH_TAG` 不再读取、可从 `.env` 删除；线上切片统一由 Actions 配置决定。旧 `.runtime/benchmark/bench/<标签>/` 可继续用于本地复现，不再是生产读取路径；历史语料和成绩不自动删除。本机 `bench-run`、`bench-serve` 保留用于研究和复现，不发布线上状态。
+
+同策略最优参数、Top-10 文档记录与样本外披露规则保持不变，自动评测不替代策略审阅。当前榜单只来自 Git 已登记策略，不自动写回代码或修改参数。
+
 ### 策略得分看板
 
-看板由 `bench-run` 写入输出目录的三个文件组成：`dashboard.html`（页面）、`dashboard.js`（统计与绘图脚本）和 `dashboard.json`（各策略成绩与说明）。页面和脚本不含任何成绩，脚本以 `fetch` 从相对路径 `api/benchmark/dashboard` 读取数据。不依赖第三方库，也没有内联脚本，可以在 Mario 网站 `default-src 'self'` 的 CSP 下运行。图表由 `dashboard.py` 统一生成，新增策略不需要改看板代码。各策略成绩的决策点或对照得分不一致时拒绝生成，防止混用不同发布包。
+看板由 `bench-run` 写入输出目录的三个文件组成：`dashboard.html`（页面）、`dashboard.js`（统计与绘图脚本）和 `dashboard.json`（各策略成绩与说明）。页面和脚本不含任何成绩，线上读取持续评测快照，本机读取 `bench-run` 结果；脚本以 `fetch` 从相对路径 `api/benchmark/dashboard` 读取数据。不依赖第三方库，也没有内联脚本，可以在 Mario 网站 `default-src 'self'` 的 CSP 下运行。图表由 `dashboard.py` 统一生成，新增策略不需要改看板代码。各策略成绩的决策点或对照得分不一致时拒绝生成，防止混用不同发布包。
 
 看板有两种打开方式，路径一致：
 
@@ -314,7 +328,7 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v8
 npm run benchmark -- bench-serve --release .runtime/benchmark/pool-scoring-v8
 ```
 
-然后打开 `http://127.0.0.1:8765/dashboard`。`bench-serve` 只监听 `127.0.0.1`（默认端口 8765，`--port` 修改），只提供看板的三个文件，路径与部署后相同，输出目录中的仓位和成绩单不对外提供。它的数据响应带 `X-Bench-Live: 1`，页面据此每 3 秒查询一次数据文件的修改时间，`bench-run` 重新生成后自动载入。部署后的服务不带这个标记，页面不轮询，数据随部署更新。看板依赖 `fetch`，直接用浏览器打开 `dashboard.html` 文件无法加载数据。
+然后打开 `http://127.0.0.1:8765/dashboard`。`bench-serve` 只监听 `127.0.0.1`（默认端口 8765，`--port` 修改），只提供看板的三个文件，路径与部署后相同，输出目录中的仓位和成绩单不对外提供。本机与线上页面均每 10 秒读取数据，成绩快照变化后自动载入并保留网址中的筛选；线上读取携带登录令牌。看板依赖 `fetch`，直接用浏览器打开 `dashboard.html` 文件无法加载数据。
 
 Agent 等外部程序生成的仓位文件不经过 `strategies/`，用 `pool-score` 单独打分：
 

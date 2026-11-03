@@ -177,7 +177,7 @@ def run_one(name, folder, release, samples, outcomes, target):
     return {"strategy": name, "status": "scored", "score": report["score"]["mean"]}
 
 
-def bench_run(strategies_dir, release, out, force=False):
+def bench_run(strategies_dir, release, out, force=False, progress=None):
     """对目录中全部策略生成仓位并打分；代码、发布包与打分引擎都未变的策略沿用缓存。已删除策略的结果一并清理。"""
     verify_release(release)
     strategies = discover(strategies_dir)
@@ -186,6 +186,8 @@ def bench_run(strategies_dir, release, out, force=False):
         if stale.is_dir() and stale.name not in strategies and (stale / "run.json").exists():
             shutil.rmtree(stale)
     samples, outcomes, results = None, None, []
+    if progress:
+        progress(results, len(strategies))
     for name, folder in strategies.items():
         target, previous = out / name, out / name / "run.json"
         try:
@@ -196,12 +198,16 @@ def bench_run(strategies_dir, release, out, force=False):
                 if (cached["title"], cached["description"]) != (title, description):
                     write_json(previous, {**cached, "title": title, "description": description})
                 results.append({"strategy": name, "status": "cached", "score": cached["score"]})
+                if progress:
+                    progress(results, len(strategies))
                 continue
         except (Invalid, OSError):
             pass
         if samples is None:
             samples, outcomes = rows(release / "inputs.jsonl"), rows(release / "outcomes.jsonl")
         results.append(run_one(name, folder, release, samples, outcomes, target))
+        if progress:
+            progress(results, len(strategies))
     return results
 
 

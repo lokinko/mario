@@ -20,7 +20,7 @@ ALLOWED_ORIGINS=""              # 可选跨域网页 Origin，逗号分隔；当
 RUN_USER=""                     # 服务用户；默认复用数据库所有者或 sudo 登录用户，root 登录则创建 mario。
 SERVICE_NAME="mario"            # systemd 服务名；一台服务器部署多份时需使用不同名称和端口。
 INSTALL_MISSING_TOOLS="true"    # true 自动安装缺失工具；false 由你提前安装 Node 22+/Rust/PG/uv。
-BENCH_TAG="pool-scoring-v8"     # 研究看板 /mario/dashboard 使用的 Hugging Face 切片标签；空值复用 .env，.env 也为空则不生成看板。
+BENCH_ENABLED="true"           # 启用持续研究看板；评分切片由 GitHub 的 BENCHMARK_SCORING_TAG 指定。
 # 不要手写数据库密码或密钥：首次自动生成并保存 .env，重启不会更换。
 # 用户自己的模型/API Key 在网页登录后的“模型与隐私”里配置。
 # .env 是自动生成的运行配置和秘密存储；迁移时必须一并备份，不提交 Git。
@@ -176,7 +176,7 @@ if [[ "$ACTION" == check ]]; then exec "$NODE" scripts/test-deployment.mjs; fi
 export MARIO_SETUP_IP="$SERVER_IP" MARIO_SETUP_DOMAIN="$DOMAIN" MARIO_SETUP_BASE_PATH="$BASE_PATH"
 export MARIO_SETUP_API_PORT="$API_PORT" MARIO_SETUP_AGENT_PORT="$AGENT_PORT" MARIO_SETUP_PG_PORT="$PG_PORT"
 export MARIO_SETUP_PG_BIN="$PG_BIN" MARIO_SETUP_DATABASE_URL="$DATABASE_URL"
-export MARIO_SETUP_ORIGINS="$ALLOWED_ORIGINS" MARIO_SETUP_BENCH_TAG="$BENCH_TAG"
+export MARIO_SETUP_ORIGINS="$ALLOWED_ORIGINS" MARIO_SETUP_BENCH_ENABLED="$BENCH_ENABLED"
 if [[ "$ACTION" == prepare ]]; then exec "$NODE" scripts/host-runtime.mjs --prepare; fi
 as_user "$NODE" scripts/host-runtime.mjs --prepare
 as_user "$NODE" scripts/host-runtime.mjs --build
@@ -222,11 +222,11 @@ echo '本机 Codex 桥接已部署：网页 设置 → 模型接口 → Codex �
 echo '在个人电脑的同版 Mario 源码目录执行 npm run codex:bridge，粘贴配对码；在线后点击启用本机 Codex。'
 echo '本次包含超时与重试修复：浏览器强制刷新；本机旧桥接请先 Ctrl+C，再更新源码、重新配对并启动。'
 echo '本机桥接主动通过 HTTPS 连接网页，无需开放个人电脑端口；服务重启后需要重新配对。'
-bench_tag="$(sed -n 's/^MARIO_BENCH_TAG=//p' .env)"
-if [[ -n "$bench_tag" && -f ".runtime/benchmark/bench/$bench_tag/dashboard.json" ]]; then
-    echo "研究看板已生成（$bench_tag）：登录后访问 ${BASE_PATH}dashboard。"
-elif [[ -n "$bench_tag" ]]; then
-    echo "研究看板未生成：先查看上方具体失败阶段；私有仓库认证失败时执行 sudo -u $RUN_USER -H $PROJECT_DIR/.runtime/benchmark/.venv/bin/hf auth login，再重新部署。"
+bench_enabled="$(sed -n 's/^MARIO_BENCH_ENABLED=//p' .env)"
+if [[ "$bench_enabled" == true && -f ".runtime/benchmark/current/dashboard.json" ]]; then
+    echo "持续研究看板已同步：登录后访问 ${BASE_PATH}dashboard。"
+elif [[ "$bench_enabled" == true ]]; then
+    echo "研究看板等待首次同步：查看上方失败阶段与持续评测工作流；后台将自动重试。"
 fi
 echo "将 $PROJECT_DIR/.runtime/native/nginx.conf 加入域名的 HTTPS server，运行 nginx -t 后重载。"
 echo '若 www 在 server 层跳到根域名，请把该 return 移到兜底 location /，让 /mario 留在 www。'

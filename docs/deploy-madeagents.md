@@ -111,11 +111,9 @@ bash deploy.sh prepare --ip 47.243.99.21 --domain www.madeagents.ai
 
 benchmark 策略得分看板与 Mario 一起部署，地址为 `https://www.madeagents.ai/mario/dashboard`，任何已登录账号都能查看；未登录只看到“前往 Mario 登录”。Nginx 不需要额外配置：`/mario/` 下的请求本来就会转给 API，`/dashboard`、`/dashboard.js` 和 `/api/benchmark/dashboard` 由 Rust 服务从 `MARIO_BENCH_DIR` 读取，只有最后一个数据接口需要登录。
 
-`deploy.sh` 顶部的 `BENCH_TAG` 指定看板使用的 Hugging Face 切片标签（当前为 `pool-scoring-v8`），写入 `.env` 的 `MARIO_BENCH_TAG`。v8保留v7月内收益和90日回归趋势，另加富贵策略所需的四个技术信号，原有决策点与结果标签不变；历史v5/v6/v7标签保留供对应旧提交复现，当前完整策略目录须使用v8。富贵策略按用户明确要求常驻默认看板，名称标明“技术底仓试验”，不代表完整高股息国企方案已验证。构建阶段依次执行：
+`deploy.sh` 顶部 `BENCH_ENABLED=true` 启用持续看板，写入 `.env` 的 `MARIO_BENCH_ENABLED`；线上数据切片由 GitHub Actions 的 `BENCHMARK_SCORING_TAG` 统一指定（默认 `pool-scoring-v8`）。策略提交至 main 后自动评测、发布状态与成绩，无需再次部署网页。首次需设置仓库 Secret `HF_TOKEN` 并运行“Benchmark 持续评测”工作流。
 
-1. 以服务用户执行 `uv sync --frozen --group publish --managed-python` 准备 Python 环境。部署固定 `UV_PROJECT_ENVIRONMENT=.runtime/benchmark/.venv`、`UV_PYTHON_INSTALL_DIR=.runtime/benchmark/python`、`UV_CACHE_DIR=.runtime/benchmark/uv-cache`（实际传入绝对路径），不复用仓库 `.venv` 或调用者激活的环境。缺少 uv 时安装到服务用户的 `~/.local/bin`；Python 由 uv 下载到上述项目目录。
-2. `hub-fetch` 从两个私有仓库下载该标签，合并后按清单校验哈希，存到 `.runtime/benchmark/<标签>/`；目录已存在时只校验，不重新下载。
-3. `bench-run` 运行 Git 中 `benchmark/strategies/` 的全部策略，打分后把看板写入 `.runtime/benchmark/bench/<标签>/`。结果按指纹缓存，首次约 15 秒。
+构建阶段准备独立 Python 环境并下载私有标签仓库的 `dashboard/current.json`，本地生成页面与脚本。运行阶段由 systemd 主运行器启动只读同步器，每 30 秒检查远端更新，写入固定 `.runtime/benchmark/current/`；API 沿用账号认证提供数据，网页每 10 秒刷新状态。同步失败保留旧成绩，首次无快照则等待工作流完成；查看 `journalctl -u mario` 排查服务用户的 HF 读取权限。旧版本目录不删除，继续用于历史复现。详情见 [持续评测](benchmark.md#git-提交后持续评测)。
 
 两个仓库都是私有的，服务器需要一个只读 token，首次部署后用服务用户保存一次：
 
@@ -124,9 +122,9 @@ sudo -u <服务用户> -H /srv/mario/.runtime/benchmark/.venv/bin/hf auth login
 sudo bash deploy.sh
 ```
 
-看板失败不阻止 Mario 部署：缺少 token、网络失败、哈希不符或有策略运行失败时，部署日志会打印“研究看板未更新”、失败阶段（准备 Python 环境、下载并校验 Hugging Face 切片、策略评分与生成看板）及原因，服务照常启动，`/mario/dashboard` 继续提供上次生成的版本；从未生成过时返回“尚未生成”。部署结束时脚本会提示看板是否已生成，`bash deploy.sh check` 也会检查页面和数据接口的登录保护。`BENCH_TAG` 与 `.env` 都为空时不生成看板。
+看板同步失败不阻止 Mario 部署：缺少 token、网络失败或尚无在线快照时，日志打印“研究看板未更新”、失败阶段（准备 Python 环境、同步在线评测快照）及原因。服务照常启动，继续提供上次同步的结果；从未生成时返回“尚未生成”，后台同步成功后即可访问。`bash deploy.sh check` 检查看板和数据接口的登录保护。`MARIO_BENCH_ENABLED=false` 时不启用同步。
 
-更新看板：新策略推送到 `main` 后，在服务器拉取代码并重新部署即可。数据切片升级时，先在本机用 `hub-publish` 发布新标签，再修改 `BENCH_TAG` 并重新部署。
+更新策略只需推送 main 并查看 Actions 的评测结果。评分数据升级先发布新的不可变标签，再修改 `BENCHMARK_SCORING_TAG` 并手动运行持续评测；不再修改服务器标签或重新部署看板。
 
 ### Python 安装与权限故障
 

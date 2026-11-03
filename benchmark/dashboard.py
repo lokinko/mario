@@ -116,7 +116,7 @@ def write_dashboard(runs_dir, folder, release=None):
 
 
 class DashboardHandler(SimpleHTTPRequestHandler):
-    """与部署后的 Mario 服务使用同一组路径；只暴露看板三个文件，数据响应带 X-Bench-Live 让页面开启自动刷新。"""
+    """与部署后的 Mario 服务使用同一组路径；只暴露看板三个文件，数据响应禁止缓存。"""
     ROUTES = {"/": "dashboard.html", "/dashboard": "dashboard.html", "/dashboard.html": "dashboard.html",
               "/dashboard.js": "dashboard.js", "/api/benchmark/dashboard": "dashboard.json"}
 
@@ -128,8 +128,6 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         return {".js": "text/javascript", ".json": "application/json"}.get(Path(path).suffix) or super().guess_type(path)
 
     def end_headers(self):
-        if self.path.startswith("/api/"):
-            self.send_header("X-Bench-Live", "1")
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
@@ -393,10 +391,37 @@ async function loadData() {
   if (response.status === 401) stop('看板只对已登录账号开放：请先在 Mario 登录，再回到本页', true);
   if (response.status === 404) stop('服务器上还没有生成看板，请检查部署日志');
   if (!response.ok) stop(`看板数据读取失败（HTTP ${response.status}）`);
-  return {data: await response.json(), live: response.headers.get('X-Bench-Live') === '1'};
+  return {data: await response.json()};
 }
 
-const {data: DATA, live: LIVE} = await loadData();
+const {data: DATA} = await loadData();
+function evaluationText(e) {
+  if (!e) return '自动同步已开启';
+  const label = {running: '评测中', completed: '评测完成', failed: '评测失败'}[e.status] || e.status;
+  const stale = e.status === 'running' && Date.now() - Date.parse(e.updated_at || e.started_at) > 45 * 60 * 1000;
+  return `${stale ? '评测状态待核对（可能已中断）' : label} · ${e.completed}/${e.total} 项 · 提交 ${e.commit.slice(0, 12)}` +
+    (e.error ? ` · ${e.error}` : '') + (e.finished_at ? ` · ${e.finished_at}` : '');
+}
+function showEvaluation(data) {
+  document.getElementById('live').textContent = evaluationText(data.evaluation) +
+    (data.result_commit ? ` · 当前成绩来自 ${data.result_commit.slice(0, 12)} / ${data.result_tag}` : '');
+  if (new RegExp("^https://github[.]com/lokinko/mario/actions/runs/[0-9]+$").test(data.evaluation?.run_url || '')) {
+    const link = document.createElement('a');
+    link.href = data.evaluation.run_url;
+    link.textContent = ' 查看评测日志';
+    link.target = '_blank';
+    link.rel = 'noopener';
+    document.getElementById('live').append(link);
+  }
+}
+// First evaluation has no scorecard yet, so do not initialize charts with empty periods.
+if (!DATA.periods.length) {
+  document.querySelector('.layout').hidden = true;
+  document.getElementById('meta').textContent = '首次评测尚未完成';
+  showEvaluation(DATA);
+  setTimeout(() => location.reload(), 10000);
+  throw Error('等待首次评测');
+}
 const PALETTE = ['#0969da', '#cf222e', '#1a7f37', '#8250df', '#e16f24', '#1b7c83', '#bf3989', '#6c8c00',
   '#4c2889', '#a40e26', '#54aeff', '#7d4e00', '#2da44e', '#d2a8ff', '#ff8182', '#0550ae'];
 const GREYS = ['#8c959f', '#6e7781', '#afb8c1', '#57606a'];
@@ -974,26 +999,26 @@ new ResizeObserver(([entry]) => {
 
 function watch() {
   const live = document.getElementById('live');
-  if (!LIVE) {
-    live.textContent = '数据随部署更新';
-    return;
-  }
-  live.textContent = '自动刷新已开启：bench-run 重新生成看板后自动载入';
-  let stamp = null;
+  showEvaluation(DATA);
+  let stamp = JSON.stringify([DATA.generated_at, DATA.result_commit]);
   const poll = async () => {
     if (!document.hidden) {
       try {
-        const r = await fetch(SOURCE, {method: 'HEAD', cache: 'no-store'});
-        const next = `${r.headers.get('Last-Modified')}|${r.headers.get('Content-Length')}`;
-        if (r.ok && stamp && next !== stamp) return location.reload();
-        if (r.ok) [stamp, live.textContent] = [next, '自动刷新已开启：bench-run 重新生成看板后自动载入'];
+        const token = sessionToken();
+        const r = await fetch(SOURCE, {cache: 'no-store', headers: token ? {Authorization: `Bearer ${token}`} : {}});
+        if (r.status === 401) return stop('登录已过期，请重新登录', true);
+        if (!r.ok) throw Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        const next = JSON.stringify([data.generated_at, data.result_commit]);
+        if (next !== stamp) return location.reload();
+        showEvaluation(data);
       } catch (error) {
-        live.textContent = '看板服务已停止，自动刷新暂停';
+        live.textContent = `同步暂未成功，保留当前成绩：${error.message}`;
       }
     }
-    setTimeout(poll, 3000);
+    setTimeout(poll, 10000);
   };
-  poll();
+  setTimeout(poll, 10000);
 }
 
 loadHash();

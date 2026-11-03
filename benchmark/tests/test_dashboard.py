@@ -164,7 +164,7 @@ console.log(JSON.stringify({initial: initialWeight('0.2', rule), grid: ruleText(
             self.assertAlmostEqual(page["return_mean"], expected["return_score"]["mean"], places=12)
             self.assertEqual(page["ci"], score["bootstrap_95"])
 
-    def test_server_uses_deployed_paths_marks_data_live_and_hides_other_files(self):
+    def test_server_uses_deployed_paths_disables_cache_and_hides_other_files(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
             with self.assertRaises(Invalid):
@@ -181,7 +181,7 @@ console.log(JSON.stringify({initial: initialWeight('0.2', rule), grid: ruleText(
                     with urlopen(f"{root}/dashboard.js", timeout=5) as response:
                         self.assertEqual(response.headers["Content-Type"], "text/javascript")
                     with urlopen(Request(f"{root}/api/benchmark/dashboard", method="HEAD"), timeout=5) as response:
-                        self.assertEqual(response.headers["X-Bench-Live"], "1")
+                        self.assertEqual(response.headers["Cache-Control"], "no-store")
                         self.assertTrue(response.headers["Last-Modified"])
                     with self.assertRaises(HTTPError) as missing:
                         urlopen(f"{root}/equal/weights.jsonl", timeout=5)
