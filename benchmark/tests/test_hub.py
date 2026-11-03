@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from benchmark.files import Invalid, digest, read_json, write_json
 from benchmark.hub import (CANARY, dataset_card, fetch, prepare_daily_prices, publish,
-                           publish_daily_prices, promote_daily_branch)
+                           publish_daily_prices, promote_daily_branch, historical_prices_reference)
 from benchmark.release import verify_release
 
 REPORT = {"score": {"mean": 1.5, "bootstrap_95": [0.5, 2.5], "count": 4}, "beat_csi300_periods": 3,
@@ -342,6 +342,23 @@ class HubTest(unittest.TestCase):
             FakeApi.uploads["me/labels"]["daily-prices/config.json"] = "{}"
             with self.assertRaisesRegex(Invalid, "配置哈希"):
                 prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base / "bad", rebuild=True)
+
+    def test_historical_reference_pins_metadata_and_refuses_tampering(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "archive"
+            root.mkdir()
+            write_json(root / "config.json", {"schema_version": 1, "symbols": ["600000.SH"], "last_session": "2026-11-02"})
+            write_json(root / "coverage.json", [{"symbol": "600000.SH", "adjustflag": f, "rows": 10,
+                        "last_observed": "2020-01-03"} for f in ("1", "3")])
+            write_json(root / "instruments.json", {"600000.SH": {"ipoDate": "2000-01-01", "outDate": "2020-01-04"}})
+            write_json(root / "manifest.json", {"files": {p.name: digest(p) for p in root.iterdir()}})
+            FakeApi().upload_folder("me/labels", root, "daily-prices")
+            result = historical_prices_reference("me/labels", "frozen")
+            self.assertEqual(result["commit"], "sha-me/labels")
+            self.assertEqual(result["securities"]["600000.SH"]["outDate"], "2020-01-04")
+            FakeApi.uploads["me/labels"]["daily-prices/instruments.json"] = "{}"
+            with self.assertRaisesRegex(Invalid, "哈希"):
+                historical_prices_reference("me/labels", "frozen")
 
     def test_manifest_mismatch_reports_missing_and_extra_files(self):
         with tempfile.TemporaryDirectory() as folder:
