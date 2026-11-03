@@ -22,16 +22,21 @@ pub struct ChatGptProvider {
     // An opaque local registration ID, pinned when the worker is paired. Never
     // consult the mutable active account again while serving that worker.
     account: String,
+    session: String,
 }
 
 impl ChatGptProvider {
-    pub fn new(model: String, account: String) -> Self {
-        Self { model, account }
+    pub fn new(model: String, account: String, session: String) -> Self {
+        Self {
+            model,
+            account,
+            session,
+        }
     }
 
-    pub async fn models(account: &str) -> AppResult<Vec<CodexModel>> {
+    pub async fn models(account: &str, session: &str) -> AppResult<Vec<CodexModel>> {
         tokio::time::timeout(MODEL_CALL_TIMEOUT, async {
-            let token = crate::chatgpt_auth::access_token(account).await?;
+            let token = crate::chatgpt_auth::access_token(account, session).await?;
             let response = client()?
                 .get(MODELS_URL)
                 .bearer_auth(token)
@@ -58,7 +63,7 @@ impl ChatGptProvider {
     ) -> AppResult<SearchCompletion> {
         tokio::time::timeout(MODEL_CALL_TIMEOUT, async {
             let body = request_body(&self.model, messages, search)?;
-            let token = crate::chatgpt_auth::access_token(&self.account).await?;
+            let token = crate::chatgpt_auth::access_token(&self.account, &self.session).await?;
             // There is deliberately no retry loop, even before the first delta.
             // Dropping this future drops both the HTTP response and its parser.
             let mut response = client()?

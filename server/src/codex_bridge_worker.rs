@@ -70,8 +70,8 @@ async fn connect(site: &str, backend: Backend) -> AppResult<()> {
     eprintln!("正在检查本机模型授权与模型列表…");
     let models = match &backend {
         Backend::Codex => CodexProvider::models().await?,
-        Backend::ChatGpt { account, .. } => {
-            crate::ai::chatgpt::ChatGptProvider::models(account).await?
+        Backend::ChatGpt { account, session } => {
+            crate::ai::chatgpt::ChatGptProvider::models(account, session).await?
         }
     };
     let model = &models
@@ -221,10 +221,14 @@ async fn execute(
                     .generate(job.messages, job.search, Some(callback))
                     .await
             }
-            Backend::ChatGpt { account, .. } => {
-                crate::ai::chatgpt::ChatGptProvider::new(job.model, account.clone())
-                    .generate(job.messages, job.search, Some(callback))
-                    .await
+            Backend::ChatGpt { account, session } => {
+                crate::ai::chatgpt::ChatGptProvider::new(
+                    job.model,
+                    account.clone(),
+                    session.clone(),
+                )
+                .generate(job.messages, job.search, Some(callback))
+                .await
             }
         }
     };

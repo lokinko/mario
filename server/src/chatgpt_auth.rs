@@ -185,19 +185,14 @@ pub(crate) fn active_account() -> AppResult<String> {
     }
     Ok(id.into())
 }
-/// The worker pins this ID; selecting another account cannot retarget its tasks.
-pub(crate) async fn access_token(id: &str) -> AppResult<String> {
+/// The worker pins this registration and grant; login cannot retarget its tasks.
+pub(crate) async fn access_token(id: &str, session: &str) -> AppResult<String> {
     let mut store = Store::open()?;
     let account = store.account(id)?.clone();
-    let previous = account
-        .tokens
-        .as_ref()
-        .ok_or_else(|| error("ChatGPT 已退出，请重新登录并重启桥接"))?;
-    if !plan_enabled(previous) {
-        return Err(error(
-            "此 ChatGPT 注册尚未开启订阅使用，请 login --account <注册 ID> 重新授权",
-        ));
-    }
+    // Check the pinned grant under the same lock as token lookup and refresh.
+    // A login between worker heartbeats must never lend its new grant to an
+    // already-paired worker, even when it reuses the same registration ID.
+    let previous = account.tokens_for_session(session)?;
     let time = now();
     if previous.expires_at > time + 120 {
         return Ok(previous.access_token.clone());

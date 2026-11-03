@@ -23,6 +23,14 @@ pub(super) struct Account {
     pub email: String,
     pub tokens: Option<Tokens>,
 }
+impl Account {
+    pub fn tokens_for_session(&self, session: &str) -> AppResult<&Tokens> {
+        self.tokens
+            .as_ref()
+            .filter(|tokens| super::plan_enabled(tokens) && tokens.session == session)
+            .ok_or_else(|| AppError::Auth("ChatGPT 授权会话已结束，请重新登录并重启桥接".into()))
+    }
+}
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Tokens {
     pub session: String,
@@ -105,11 +113,7 @@ impl Store {
             })
     }
     pub fn authorized(&self, id: &str, session: &str) -> AppResult<bool> {
-        Ok(self
-            .account(id)?
-            .tokens
-            .as_ref()
-            .is_some_and(|tokens| super::plan_enabled(tokens) && tokens.session == session))
+        Ok(self.account(id)?.tokens_for_session(session).is_ok())
     }
     pub fn save(&mut self) -> AppResult<()> {
         let mut tmp = tempfile::NamedTempFile::new_in(&self.dir)?;
@@ -387,6 +391,28 @@ mod tests {
             expires_at: super::super::now() + 3600,
             earliest_refresh_at: 0,
         }
+    }
+
+    #[test]
+    fn token_lookup_rejects_replaced_logged_out_and_disabled_sessions() {
+        let mut account = Account {
+            id: "registration".into(),
+            client_id: "client".into(),
+            subject: "subject".into(),
+            email: String::new(),
+            tokens: Some(local_tokens("original")),
+        };
+        assert!(account.tokens_for_session("original").is_ok());
+        // Simulate login completing between the worker check and token lookup.
+        account.tokens = Some(local_tokens("replacement"));
+        let error = account.tokens_for_session("original").err().unwrap();
+        assert!(matches!(error, AppError::Auth(_)));
+        assert!(!error.to_string().contains("test-only-access"));
+        assert!(account.tokens_for_session("replacement").is_ok());
+        account.tokens.as_mut().unwrap().refresh_token.clear();
+        assert!(account.tokens_for_session("replacement").is_err());
+        account.tokens = None;
+        assert!(account.tokens_for_session("replacement").is_err());
     }
 
     #[test]

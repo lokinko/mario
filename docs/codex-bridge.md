@@ -109,6 +109,7 @@ Codex 单次调用（含全部重试）最多 180 秒。在尚未产生任何助
 
 ## 自动化验收
 
+- 本机授权会话在模型目录和推理取令牌时再次校验，且与读取、刷新共用凭据锁。重新登录后，即使注册 ID 没有变化，旧 worker 也不能借用新会话；必须重启并重新配对。常规刷新保留会话，切换默认账号不改变已运行的 worker。
 - `npm run test:chatgpt` 是无需数据库、真实登录和模型额度的本机回归入口，包含启动参数安全、本机 RSA/JWK 签名和 OIDC 声明、OAuth 回调拒绝与单次消费、部分授权、刷新错误分类、会话与凭据权限、流式 Responses 解析；全部使用临时数据或明确的测试专用密钥。
 - `cargo test --manifest-path server/Cargo.toml --lib ai::chatgpt::tests` 运行纯 HTTP 载荷与 SSE 解析回归：分片 UTF-8、流中失败、完整终止、引用与搜索授权、模型目录及大小边界；不登录、不访问真实模型、不消耗额度。
 - 前端 `npm test --prefix client` 覆盖两种桥接命令说明、配对安全、在线后启用、撤销、模型保存和卸载期间的过期响应保护。
@@ -116,3 +117,5 @@ Codex 单次调用（含全部重试）最多 180 秒。在尚未产生任何助
 - `cargo test --manifest-path server/Cargo.toml bridge` 检查隔离、流式结果、取消、撤销、过期和安全 URL。`npm run test:codex-bridge` 自动创建一次性 PostgreSQL 集群，用模拟本机工作进程验证多账号 HTTP 全链路：账号隔离、独立 Agent 绕过、SSE 保存、浏览器取消和重启失效；结束后删除整个集群，不接触生产数据库。加 `-- --live` 会启动真实本机 Codex、消耗本机账号额度并验证连接及流式问答。
 
 自动化解析及模拟桥接验收不等于完成真实 OAuth 授权或订阅推理，也不能替代公网 Nginx、线上 PostgreSQL 和真实账号部署验收。真实登录和消耗额度的连接测试需由用户明确执行。
+
+2026-11-03 的实现复核与本机验证记录见 [OAuth 与 Responses 复核](audits/chatgpt-oauth-2026-11-03.md)。
