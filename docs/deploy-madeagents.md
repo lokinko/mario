@@ -21,7 +21,7 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 - 按 `/mario/` 构建 React 网页，编译 Rust 服务，自动初始化或复用 `.runtime/native/postgres`。
 - 创建 `mario.service`，由 systemd 托管 PostgreSQL、API 和独立 Agent。断开 SSH 不停止服务，开机自动启动。
 - 生成 `.runtime/native/nginx.conf`，供现有 HTTPS 站点接入。
-- 从 Hugging Face 私有仓库下载 benchmark 切片并生成研究看板 `/mario/dashboard`，见下文[研究看板](#研究看板-mariodashboard)。
+- 从 Hugging Face 数据集仓库同步 benchmark 快照并生成研究看板 `/mario/dashboard`，见下文[研究看板](#研究看板-mariodashboard)。
 
 项目专用 Node 位于 `/opt/mario-tools/node`，不替换宿主机已有 Node。PostgreSQL 包由官方 PGDG 源安装；发行版可能同时创建自己的默认数据库服务，本项目使用独立的 55432 端口和数据目录。其他发行版请预装工具，并将脚本中的 `INSTALL_MISSING_TOOLS` 改成 `false`。
 
@@ -148,16 +148,16 @@ benchmark 策略得分看板与 Mario 一起部署，地址为 `https://www.made
 
 `deploy.sh` 顶部 `BENCH_ENABLED=true` 启用持续看板，写入 `.env` 的 `MARIO_BENCH_ENABLED`；线上数据切片由 GitHub Actions 的 `BENCHMARK_SCORING_TAG` 统一指定（默认 `pool-scoring-v8`）。策略提交至 main 后自动评测、发布状态与成绩，无需再次部署网页。首次需设置仓库 Secret `HF_TOKEN` 并运行“Benchmark 持续评测”工作流。
 
-构建阶段准备独立 Python 环境并下载私有标签仓库的 `dashboard/current.json`，本地生成页面与脚本。运行阶段由 systemd 主运行器启动只读同步器，每 30 秒检查远端更新，写入固定 `.runtime/benchmark/current/`；API 沿用账号认证提供数据，网页每 10 秒刷新状态。同步失败保留旧成绩，首次无快照则等待工作流完成；查看 `journalctl -u mario` 排查服务用户的 HF 读取权限。旧版本目录不删除，继续用于历史复现。详情见 [持续评测](benchmark.md#git-提交后持续评测)。
+构建阶段准备独立 Python 环境并下载标签仓库的 `dashboard/current.json`，本地生成页面与脚本。运行阶段由 systemd 主运行器启动只读同步器，每 30 秒检查远端更新，写入固定 `.runtime/benchmark/current/`；API 沿用账号认证提供数据，网页每 10 秒刷新状态。同步失败保留旧成绩，首次无快照则等待工作流完成；查看 `journalctl -u mario` 排查服务用户的 HF 读取权限。旧版本目录不删除，继续用于历史复现。详情见 [持续评测](benchmark.md#git-提交后持续评测)。
 
-两个仓库都是私有的，服务器需要一个只读 token，首次部署后用服务用户保存一次：
+当前两个HF仓库公开，服务器可匿名读取，无需为公开读取配置token；GitHub发布仍通过Secret使用写入token。若改用私有仓库，才需要用服务用户保存只读token：
 
 ```bash
 sudo -u <服务用户> -H /srv/mario/.runtime/benchmark/.venv/bin/hf auth login
 sudo bash deploy.sh
 ```
 
-看板同步失败不阻止 Mario 部署：缺少 token、网络失败或尚无在线快照时，日志打印“研究看板未更新”、失败阶段（准备 Python 环境、同步在线评测快照）及原因。服务照常启动，继续提供上次同步的结果；从未生成时返回“尚未生成”，后台同步成功后即可访问。`bash deploy.sh check` 检查看板和数据接口的登录保护。`MARIO_BENCH_ENABLED=false` 时不启用同步。
+看板同步失败不阻止 Mario 部署：私有仓库缺少 token、网络失败或尚无在线快照时，日志打印“研究看板未更新”、失败阶段（准备 Python 环境、同步在线评测快照）及原因。服务照常启动，继续提供上次同步的结果；从未生成时返回“尚未生成”，后台同步成功后即可访问。`bash deploy.sh check` 检查看板和数据接口的登录保护。`MARIO_BENCH_ENABLED=false` 时不启用同步。
 
 更新策略只需推送 main 并查看 Actions 的评测结果。评分数据升级先发布新的不可变标签，再修改 `BENCHMARK_SCORING_TAG` 并手动运行持续评测；不再修改服务器标签或重新部署看板。
 

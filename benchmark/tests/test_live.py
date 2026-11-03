@@ -78,13 +78,13 @@ class LiveTest(unittest.TestCase):
             self.assertIn('sessionToken()', (out / 'dashboard.js').read_text())
             self.assertFalse(list(out.glob('*.part')))
 
-    def test_hub_pins_download_to_private_commit_and_only_missing_initializes(self):
+    def test_hub_pins_public_download_and_only_missing_initializes(self):
         with tempfile.TemporaryDirectory() as folder:
             file = Path(folder) / 'data.json'
             file.write_text('{"periods": []}')
             from unittest.mock import Mock
             api = Mock()
-            api.repo_info.return_value = SimpleNamespace(private=True, sha='fixed')
+            api.repo_info.return_value = SimpleNamespace(private=False, sha='fixed')
             api.file_exists.return_value = True
             adapter = Mock()
             adapter.HfApi.return_value = api
@@ -96,11 +96,16 @@ class LiveTest(unittest.TestCase):
                 self.assertIsNone(hub.live_read('labels', live.LIVE_PATH, missing=True))
                 with self.assertRaises(Invalid):
                     hub.live_read('labels', live.LIVE_PATH)
-                api.repo_info.return_value.private = False
-                with self.assertRaises(Invalid):
-                    hub.live_read('labels', live.LIVE_PATH, missing=True)
-                with self.assertRaises(Invalid):
-                    hub.live_write('labels', live.LIVE_PATH, {'evaluation': {}})
+                api.file_exists.return_value = True
+                cache = {}
+                self.assertEqual(hub.live_read('labels', live.LIVE_PATH, cache=cache), {'periods': []})
+                api.repo_info.return_value.private = True
+                self.assertEqual(hub.live_read('labels', live.LIVE_PATH, cache=cache), {'periods': []})
+                for private in (False, True):
+                    api.repo_info.return_value.private = private
+                    hub.live_write('labels', live.LIVE_PATH, {'evaluation': {'commit': 'next', 'status': 'running'}})
+                self.assertEqual(api.upload_file.call_count, 2)
+                self.assertFalse(api.upload_file.call_args.kwargs.get('private', False))
 
     def test_browser_polling_sends_session_and_keeps_view_until_result_changes(self):
         from benchmark.dashboard import SCRIPT
