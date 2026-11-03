@@ -36,7 +36,7 @@ def runs(root):
 
 
 class FakeApi:
-    uploads, private, last_upload = {}, True, {}
+    uploads, private, last_upload = {}, False, {}
     branches, heads, created_branch = {}, {}, {}
 
     def create_repo(self, repo_id, **_):
@@ -112,7 +112,7 @@ def hf_hub_download(repo_id, filename, local_dir, **_):
 
 class HubTest(unittest.TestCase):
     def setUp(self):
-        FakeApi.uploads, FakeApi.private, FakeApi.last_upload = {}, True, {}
+        FakeApi.uploads, FakeApi.private, FakeApi.last_upload = {}, False, {}
         FakeApi.branches, FakeApi.heads, FakeApi.created_branch = {}, {}, {}
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -144,6 +144,8 @@ class HubTest(unittest.TestCase):
         self.assertIn("pool-scoring/manifest.json", inputs)
         self.assertEqual(set(labels) - {"README.md"}, {"pool-scoring/outcomes.jsonl", "pool-scoring/scorecards/equal.json"})
         self.assertIn(CANARY, inputs["README.md"])
+        self.assertIn("公开仓库之间的分仓不限制访问", inputs["README.md"])
+        self.assertNotIn("私有研究数据集", inputs["README.md"])
         self.assertIn("1.50 [0.50, 2.50]", inputs["README.md"])
         self.assertEqual(result["labels"]["commit"], "sha-me/labels")
 
@@ -160,15 +162,24 @@ class HubTest(unittest.TestCase):
             self.assertIn("未知缺行保留 null", card)
             self.assertIn("不含决策后的收益", card)
 
-    def test_refuses_public_repo_and_tampered_release(self):
+    def test_public_publish_does_not_change_existing_private_repository_settings(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
             release(base / "release")
             runs(base / "cards")
-            FakeApi.private = False
-            with self.assertRaises(Invalid):
-                publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "cards")
             FakeApi.private = True
+            with patch.object(FakeApi, "create_repo") as create:
+                publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "cards")
+            self.assertEqual(create.call_count, 2)
+            self.assertTrue(all(call.kwargs == {"repo_type": "dataset", "private": False, "exist_ok": True}
+                                for call in create.call_args_list))
+            self.assertTrue(FakeApi.private)
+
+    def test_refuses_tampered_release_before_upload(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            release(base / "release")
+            runs(base / "cards")
             (base / "release" / "inputs.jsonl").write_text("[]\n", encoding="utf-8")
             with self.assertRaises(Invalid):
                 publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "cards")
@@ -251,6 +262,7 @@ class HubTest(unittest.TestCase):
                 source, previous, parent, provenance = prepare_daily_prices(
                     "me/bench", "me/labels", "v7", "daily-prices", base / "first")
                 self.assertIsNone(previous)
+                self.assertFalse(FakeApi.private)
                 self.assertEqual(provenance["commit"], "sha-me/bench")
                 self.assertEqual(calls[0]["revision"], "sha-me/bench")
                 self.assertTrue((source / "universe/tech-2025.json").exists())
@@ -288,14 +300,11 @@ class HubTest(unittest.TestCase):
                             prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base / name.replace("/", "_"))
                         FakeApi.uploads["me/labels"] = original
 
-    def test_daily_refuses_public_repo_and_scoring_path(self):
+    def test_daily_refuses_scoring_path_before_any_download(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)
             with self.assertRaises(Invalid):
                 prepare_daily_prices("me/bench", "me/labels", "v7", "pool-scoring", base)
-            FakeApi.private = False
-            with self.assertRaises(Invalid):
-                prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base)
             self.assertEqual(FakeApi.uploads, {})
 
     def test_explicit_rebuild_preserves_scope_and_audit_without_trusting_missing_prices(self):

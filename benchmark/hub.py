@@ -1,7 +1,7 @@
-"""在 Hugging Face 私有数据集仓库发布与下载股票池评分切片；唯一允许导入 huggingface_hub 的模块。
+"""在 Hugging Face 数据集仓库发布与下载股票池评分切片；唯一允许导入 huggingface_hub 的模块。
 
-时点输入与随包快照进入主仓库，未来结果与策略成绩进入单独的标签仓库，降低泄漏与被训练语料收录的风险。
-再分发授权尚未核对，两个仓库都必须是私有仓库。
+时点输入与随包快照进入主仓库，未来结果与策略成绩进入单独的标签仓库。
+支持公开及已有私有仓库，保留现有可见性；公开分仓是数据边界，不是访问控制。
 """
 
 import hashlib
@@ -85,7 +85,7 @@ tags:
 >
 > 本数据集含唯一 canary 字符串。请勿把本仓库内容加入任何模型训练语料。
 
-私有研究数据集，用于评估投资 Agent 在历史决策点给出的目标仓位。版本 `{config['version']}`，构建于 {config['built_on']}。
+研究数据集，用于评估投资 Agent 在历史决策点给出的目标仓位。版本 `{config['version']}`，构建于 {config['built_on']}。
 
 ## 股票池
 
@@ -123,15 +123,16 @@ tags:
 | `{path}/universe/<池>-<年>.json` | 年度选样快照 |
 | `{path}/summary.json`、`{path}/manifest.json` | 样本统计与逐文件 SHA-256（含标签文件） |
 
-未来结果 `outcomes.jsonl` 与逐期策略成绩放在单独的私有仓库 `{labels_repo}`，评测时再授权读取。
+未来结果 `outcomes.jsonl` 与逐期策略成绩放在独立标签仓库 `{labels_repo}`，只在评测阶段读取。
+公开仓库之间的分仓不限制访问；训练或决策输入不得读取标签、未来价格或已知结果。
 下载两个仓库的 `{path}/` 合并后，用仓库代码 `python -m benchmark verify --root <目录>` 校验哈希，再用 `pool-score` 打分。
 
 ## 已知限制
 
 - 申万行业历史为事后维护口径；红利池成分为基金持仓代理，年中临时调样未逐项还原。
 - 退市证券按退市前最后价格估值，未计换股、清算或退市整理期；后复权价格近似股息再投资，未计红利税。
-- 价格来自 Baostock，股本来自东方财富，成分来自中证指数官网与天天基金；再分发授权尚未核对，仅限私有使用。
-- LLM 可能记得历史行情，时间截断不能消除预训练数据污染。
+- 价格来自 Baostock，股本来自东方财富，成分来自中证指数官网与天天基金；公开托管不等于来源授予开放再分发许可，`license: other` 不构成开放许可。
+- LLM 可能记得历史行情或公开标签，时间截断和分仓不能消除训练数据污染。
 """
 
 
@@ -145,14 +146,10 @@ viewer: false
 
 > {CANARY}
 
-`{repo}` 的未来结果与策略成绩，只在评测时读取，请勿用于训练或提示。`{path}/outcomes.jsonl` 每行对应一个决策点的建仓日、
+`{repo}` 的未来结果与策略成绩，只在评测时读取，请勿用于训练或提示。
+仓库公开时，分仓不限制标签访问，不能据此声称评测标签未被模型见过。`{path}/outcomes.jsonl` 每行对应一个决策点的建仓日、
 三段分界日与复权收盘价路径；`{path}/scorecards/` 是各策略的逐期成绩。
 """
-
-
-def private_repo(api, repo_id):
-    api.create_repo(repo_id, repo_type="dataset", private=True, exist_ok=True)
-    require(api.repo_info(repo_id, repo_type="dataset").private, f"{repo_id} 不是私有仓库，拒绝上传")
 
 
 def huggingface():
@@ -198,7 +195,8 @@ def publish(release, repo, labels_repo, path, runs_dir, tag=None):
     require(scorecards, "缺少策略成绩，请先运行 bench-run")
     api = huggingface().HfApi()
     for repo_id in (repo, labels_repo):
-        private_repo(api, repo_id)
+        # exist_ok 不改变已有仓库可见性；新建研究仓库按当前公开发布约定创建。
+        api.create_repo(repo_id, repo_type="dataset", private=False, exist_ok=True)
     version = read_json(release / "config.json")["version"]
     result = {}
     with tempfile.TemporaryDirectory() as folder:
@@ -230,8 +228,6 @@ def prepare_daily_prices(repo, labels_repo, tag, path, workspace, rebuild=False)
     require(not (path == "pool-scoring" or path.startswith("pool-scoring/")), "日线路径不能覆盖评分切片")
     hub = huggingface()
     api = hub.HfApi()
-    for repo_id in (repo, labels_repo):
-        require(api.repo_info(repo_id, repo_type="dataset").private, f"{repo_id} 不是私有仓库")
     source_commit = api.repo_info(repo, repo_type="dataset", revision=tag).sha
     parent_commit = api.repo_info(labels_repo, repo_type="dataset").sha
     source_download = workspace / "source-download"
@@ -367,7 +363,6 @@ def publish_daily_prices(root, repo, path, parent_commit):
     verify_release(root)
     hub = huggingface()
     api = hub.HfApi()
-    require(api.repo_info(repo, repo_type="dataset").private, f"{repo} 不是私有仓库")
     branch = f"codex/daily-prices-{uuid.uuid4().hex[:12]}"
     api.create_branch(repo_id=repo, repo_type="dataset", branch=branch, revision=parent_commit)
     try:
@@ -399,7 +394,6 @@ def live_read(repo, path, missing=False, cache=None):
     hub = huggingface()
     api = hub.HfApi()
     info = api.repo_info(repo, repo_type="dataset")
-    require(info.private, f"{repo} 不是私有仓库")
     if cache is not None and cache.get("commit") == info.sha:
         return cache["data"]
     if not api.file_exists(repo, path, repo_type="dataset", revision=info.sha):
@@ -418,8 +412,6 @@ def live_write(repo, path, data):
     import json
     hub = huggingface()
     api = hub.HfApi()
-    info = api.repo_info(repo, repo_type="dataset")
-    require(info.private, f"{repo} 不是私有仓库")
     return api.upload_file(repo_id=repo, repo_type="dataset", path_in_repo=path,
                            path_or_fileobj=json.dumps(data, ensure_ascii=False, allow_nan=False).encode("utf-8"),
                            commit_message=f"持续评测 {data['evaluation']['commit']} {data['evaluation']['status']}")

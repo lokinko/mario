@@ -1,6 +1,6 @@
 # Benchmark 持续维护
 
-本清单维护离线研究数据及其证据。日线脚本与 GitHub 定时执行方式见 [每日行情自动更新](benchmark.md#每日行情自动更新)；当前覆盖以 HF 固定提交的 `config.json`、`coverage.json` 和 `manifest.json` 为准，验收记录放在 `docs/audits/`，不把一次性统计写入架构说明。
+本清单维护离线研究数据及其证据。HF输入和标签仓库按用户要求保持公开；不自动改变现有可见性，公开分仓不限制标签访问，未来结果仍不得进入历史决策或训练输入。日线脚本与 GitHub 定时执行方式见 [每日行情自动更新](benchmark.md#每日行情自动更新)；当前覆盖以 HF 固定提交的 `config.json`、`coverage.json` 和 `manifest.json` 为准，验收记录放在 `docs/audits/`，不把一次性统计写入架构说明。
 
 ## 每日检查
 
