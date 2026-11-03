@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from benchmark.daily_prices import update_prices
+from benchmark.daily_prices import checked_rows, update_prices
 from benchmark.files import Invalid, read_json, rows, write_json
 from benchmark.release import verify_release
 
@@ -60,6 +60,9 @@ class DailyPricesTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        patcher = patch("benchmark.collect.time.sleep")
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.root = Path(self.temp.name)
         self.source = self.root / "source"
         (self.source / "universe").mkdir(parents=True)
@@ -97,7 +100,7 @@ class DailyPricesTest(unittest.TestCase):
         out, _ = self.build(previous=previous)
         bars = rows(out / "prices/600000.SH/adjust1/2026.jsonl")
         self.assertEqual([r["close"] for r in bars], ["10", "10", "11", "11", "11", "11"])
-        self.assertEqual(Market.calls[0][1], "2026-10-28")
+        self.assertEqual(next(call for call in Market.calls if call[0] == "600000.SH")[1], "2026-10-28")
         stable, _ = self.build("stable", previous=out)
         repeat, _ = self.build("repeat", previous=stable)
         self.assertEqual((stable / "manifest.json").read_bytes(), (repeat / "manifest.json").read_bytes())
@@ -144,6 +147,63 @@ class DailyPricesTest(unittest.TestCase):
         (self.source / "universe/tech-2025.json").unlink()
         with self.assertRaisesRegex(Invalid, "同时包含"):
             self.build()
+
+    def test_known_suspension_empty_fields_stay_empty_with_structured_issues(self):
+        market = Market()
+        bars = market.daily("600000.SH", "2026-10-28", "2026-10-28", "1")
+        bars[0].update({"volume": "", "amount": "", "preclose": ""})
+        checked = checked_rows(bars, "600000.SH", "2026-10-28", "2026-10-28", {"2026-10-28"})
+        self.assertEqual(checked["2026-10-28"]["volume"], "")
+        self.assertEqual(checked["2026-10-28"]["issues"]["amount"], "provider_empty_suspended")
+        bars[0]["tradestatus"] = "1"
+        with self.assertRaisesRegex(Invalid, "600000.SH: 2026-10-28 字段 volume"):
+            checked_rows(bars, "600000.SH", "2026-10-28", "2026-10-28", {"2026-10-28"})
+
+    def test_official_index_closed_day_observation_is_archived_outside_trading_series(self):
+        with patch("benchmark.daily_prices.csi_index_closes",
+                   side_effect=lambda code, start, end: total_return(code, start, end) + [
+                       {"date": "2026-10-31", "close": "100"}]):
+            out, _ = self.build()
+        prices = rows(out / "prices/H00300/adjusttotal_return/2026.jsonl")
+        self.assertNotIn("2026-10-31", {r["date"] for r in prices})
+        observations = rows(out / "source-observations/H00300-calendar-closed.jsonl")
+        self.assertEqual(observations[0]["issue_code"], "calendar_closed_index_observation")
+        self.assertTrue(verify_release(out)["valid"])
+
+    def test_requeries_incomplete_source_page_before_accepting_a_series(self):
+        original = Market.daily
+        first = set()
+
+        def incomplete(market, code, start, end, flag, index=False):
+            values = original(market, code, start, end, flag, index=index)
+            key = (code, flag)
+            if key not in first:
+                first.add(key)
+                return [row for row in values if row["date"] != "2026-10-29"]
+            return values
+
+        with patch.object(Market, "daily", incomplete):
+            out, _ = self.build()
+        self.assertEqual(len(rows(out / "prices/600000.SH/adjust1/2026.jsonl")), 6)
+
+    def test_complete_index_members_join_existing_archive_without_changing_annual_pools(self):
+        import json
+        from benchmark.index_membership import collect_memberships
+        from benchmark.tests.test_index_membership import workbook_content
+
+        with patch("benchmark.index_membership.sheet_rows", side_effect=json.loads), patch(
+                "benchmark.index_membership.download",
+                side_effect=lambda url, **_: workbook_content(url.rsplit("/", 1)[-1][:6])):
+            collect_memberships(self.source, "2026-11-03")
+            basics = Market().stock_basics() + [
+                {"code": f"sh.{code}", "ipoDate": "2000-01-01", "outDate": ""} for code in range(600001, 600075)]
+            with patch.object(Market, "stock_basics", return_value=basics):
+                out, result = self.build()
+            self.assertEqual(result["stocks"], 76)
+            self.assertEqual(result["indices"]["930050"]["members_per_snapshot"], 50)
+            self.assertEqual(result["indices"]["000016"]["members_per_snapshot"], 50)
+            self.assertEqual(read_json(out / "config.json")["pools"], {"dividend": [2025], "tech": [2025]})
+            self.assertTrue(verify_release(out)["valid"])
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""每日更新 benchmark 已发布股票池成员的日线，并提交到私有 HF 标签仓库。"""
+"""每日更新红利/科技历史成员与中证A50/上证50完整成分日线，同步至私有 HF 标签仓库。"""
 
 import argparse
 import json
@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from benchmark.daily_prices import update_prices
 from benchmark.hub import prepare_daily_prices, publish_daily_prices
+from benchmark.index_membership import collect_memberships
 
 
 def default_end():
@@ -30,6 +31,8 @@ def main(argv=None):
     parser.add_argument("--start", default="2005-08-01", help="首次回补起点；同一路径后续不能改变")
     parser.add_argument("--end", default=default_end(), help="北京时间截止日期，18 点前默认前一日")
     parser.add_argument("--overlap-days", type=int, default=14)
+    parser.add_argument("--workers", type=int, default=4, help="独立行情进程数，1至4")
+    parser.add_argument("--out", type=Path, help="可选：保留校验通过的本地归档；上传失败时仍保留，已有目录不可覆盖")
     parser.add_argument("--dry-run", action="store_true", help="真实下载、采集和校验，但不上传")
     args = parser.parse_args(argv)
     try:
@@ -38,8 +41,10 @@ def main(argv=None):
             workspace = Path(folder)
             source, previous, parent, provenance = prepare_daily_prices(
                 args.repo, args.labels_repo, args.tag, args.path, workspace)
-            out = workspace / "updated"
-            result = update_prices(source, previous, out, args.start, args.end, provenance, args.overlap_days)
+            indices = collect_memberships(source)
+            print("完整指数成分: " + json.dumps(indices, ensure_ascii=False), flush=True)
+            out = args.out or workspace / "updated"
+            result = update_prices(source, previous, out, args.start, args.end, provenance, args.overlap_days, args.workers)
             if previous is not None and (previous / "manifest.json").read_bytes() == (out / "manifest.json").read_bytes():
                 result["status"] = "unchanged"
             elif args.dry_run:

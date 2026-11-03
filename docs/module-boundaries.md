@@ -138,7 +138,7 @@ flowchart TD
 
 `scripts/benchmark_fugui_study.py`只读取既有Baostock后复权与独立日历缓存，检查重叠档案及原动量字段，生成截至决策日的BOLL、月MACD与首次回踩信号；未知周期保持缺失，明确停牌沿用此前已知收盘。`--minimal`须显式指定构建日期，并只在正式v7上新增`fugui`四个信号和问题码，保留原字段与结果标签。富贵策略按用户明确要求登记唯一的`strategies/fugui/`实现，默认发现和看板不再依赖临时候选；删除旧`candidate`命令和重复源码。执行仍经隔离子进程与原评分器，不将缺失基本面视为满足，也不以固定网格冒充底仓/机动仓分账。规则及复跑见[富贵策略](fugui-strategy.md)，时点、缺失、首次回踩、仓位、最小v8和不可覆盖检查归`test_fugui_study.py`；数据卡说明归`hub.py`与`test_hub.py`。
 
-每日行情维护归 `daily_prices.py`，只消费已发布选样快照，复用 `baostock_market.py` 与 `public_sources.py`；不得引用年度选样实现、在线业务或策略内部代码。`scripts/benchmark_update_prices.py` 编排固定标签下载、增量合并、HF 提交与摘要；SDK 继续只在 `hub.py` 中使用。workflow 只调度此脚本，凭据由 Secret 注入，HF 私有标签仓库是持久状态来源；不使用 Actions cache 作为事实来源，不自动发布年度选样或成绩。修改时运行 `npm run test:benchmark` 与架构检查，特别验证回拉修正、真实缺日与停牌区别、退市边界、哈希损坏、失败不改远端、固定提交下载与远端前进冲突。使用及恢复见 [每日行情自动更新](benchmark.md#每日行情自动更新)。
+完整指数采集清单归 `index_membership.py`：复用 `xls.py` 与公开下载器，核对中证A50、上证50官方原件各50只成分，原件和解释分别保留来源/获取日期与哈希；当前名单不能冒充历史成员，不加入季度评分的 `POOLS`。每日行情维护归 `daily_prices.py`，消费已发布年度选样与这些采集清单，复用 `baostock_market.py` 与 `public_sources.py`；不得引用年度选样实现、在线业务或策略内部代码。并行采集只使用最多4个独立进程及独占会话，禁止多线程共享 SDK 连接；任一任务失败不发布。`scripts/benchmark_update_prices.py` 编排固定标签下载、增量合并、HF 提交与摘要；SDK 继续只在 `hub.py` 中使用。workflow 只调度此脚本，凭据由 Secret 注入，HF 私有标签仓库是持久状态来源；不使用 Actions cache 作为事实来源，不自动发布年度选样或成绩。修改时运行 `npm run test:benchmark` 与架构检查，特别验证回拉修正、真实缺日与停牌区别、退市边界、哈希损坏、失败不改远端、固定提交下载与远端前进冲突。使用及恢复见 [每日行情自动更新](benchmark.md#每日行情自动更新)。
 
 批量免费补采由 `collect.py` 拥有任务进度、固定请求与断点恢复，调用 `public_sources` 的目录和行情能力；`files.symbol` 明确支持沪深北代码，不按首位数字或默认深市猜测交易所。`universes/` 的当前成分清单只用于候选数据预采，不替代 `dataset` 的历史选样。价格口径不可隐式拼接，日历闭市与真实交易日缺口分别计数；测试覆盖节假日排除、范围截断、标题简写、来源隔离和恢复校验。
 
