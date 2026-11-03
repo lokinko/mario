@@ -123,6 +123,48 @@ install_tools() {
     node_ready || { echo '需要 Node.js 22+ 和 npm' >&2; exit 1; }
 }
 
+prepare_user_home() {
+    local group path
+    group="$(id -gn "$RUN_USER")"
+    # 只修复服务账号的 home 本身及工具目录，不递归接管整个 home。
+    [[ "$RUN_HOME" == /* && "$RUN_HOME" != / && "$RUN_HOME" != /root && "$RUN_HOME" != /root/* && "$RUN_HOME" != *'/../'* && "$RUN_HOME" != */.. ]] || {
+        echo "服务用户 home 路径无效：$RUN_HOME" >&2; return 1;
+    }
+    for path in "$RUN_HOME" "$RUN_HOME/.cargo" "$RUN_HOME/.rustup" "$RUN_HOME/.local" "$RUN_HOME/.local/bin"; do
+        if [[ -L "$path" || ( -e "$path" && ! -d "$path" ) ]]; then
+            echo "无法自动修复目录（符号链接或非目录）：$path" >&2; return 1;
+        fi
+    done
+    if [[ -d "$RUN_HOME" ]]; then
+        if [[ -n "$(find "$RUN_HOME" -prune ! -user 0 ! -user "$RUN_USER" -print)" ]]; then
+            echo "home 属于其他用户，保留原目录：$RUN_HOME" >&2; return 1;
+        fi
+        if [[ "$RUN_HOME" != "/home/$RUN_USER" && "$RUN_HOME" != "/var/lib/$RUN_USER" ]] && ! as_user test -O "$RUN_HOME"; then
+            echo "非默认 home 不属于服务用户，保留原目录：$RUN_HOME" >&2; return 1;
+        fi
+        chown "$RUN_USER:$group" "$RUN_HOME"
+        chmod u+rwx "$RUN_HOME"
+    else
+        install -d -m 700 -o "$RUN_USER" -g "$group" "$RUN_HOME"
+    fi
+    # .local 只修复父目录和 bin，不改动其下的其他应用数据。
+    if [[ -d "$RUN_HOME/.local" ]]; then
+        chown "$RUN_USER:$group" "$RUN_HOME/.local"
+        chmod u+rwx "$RUN_HOME/.local"
+    else
+        install -d -m 700 -o "$RUN_USER" -g "$group" "$RUN_HOME/.local"
+    fi
+    for path in "$RUN_HOME/.cargo" "$RUN_HOME/.rustup" "$RUN_HOME/.local/bin"; do
+        if [[ ! -d "$path" ]]; then install -d -m 700 -o "$RUN_USER" -g "$group" "$path"; fi
+        # 不跟随工具目录内部的链接，rustup 的可执行文件链接仍保持原样。
+        chown -hR "$RUN_USER:$group" "$path"
+        find -P "$path" -type d -exec chmod u+rwx {} +
+        find -P "$path" -type f -exec chmod u+rw {} +
+    done
+    as_user mkdir -p "$RUN_HOME/.cargo/bin"
+    check_user_home
+}
+
 check_user_home() {
     # 使用实际运行身份检查，root 的可写检查无法发现服务用户的权限问题。
     as_user sh -eu -c '
@@ -164,7 +206,7 @@ if [[ "$ACTION" == deploy ]]; then
             -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_CONFIG_HOME \
             HOME="$RUN_HOME" USER="$RUN_USER" LOGNAME="$RUN_USER" PATH="$PATH" "$@"
     }
-    check_user_home
+    prepare_user_home
     install_tools
     chown -R "$RUN_USER:$(id -gn "$RUN_USER")" -- "$PROJECT_DIR"
     export PATH="$RUN_HOME/.cargo/bin:$RUN_HOME/.local/bin:$PATH"

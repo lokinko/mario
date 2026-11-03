@@ -29,42 +29,24 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 部署脚本以 root 执行系统安装，但运行服务使用普通用户。默认复用已有数据库所有者或 sudo 登录用户；直接 root 登录时创建 `mario`。部署会把当前项目目录归运行用户所有，不移动现有数据库，不更换密钥。
 
-部署在安装工具、下载依赖和停止已有服务之前，以服务用户身份检查 home 及已有 `.cargo`、`.cargo/bin`、`.rustup`、`.local`、`.local/bin` 的写入和遍历权限。缺失的工具目录交给安装器创建；权限异常时直接报告具体路径，不自动接管已有 home。修复方法见下节。
+部署在安装工具、下载依赖和停止已有服务之前，自动准备服务用户的 home 和工具目录，修复历史部署留下的属主、写入和遍历权限，再以服务用户身份验证。系统依赖和 systemd 由 root 管理，Rust/uv 安装、配置生成、构建和 PostgreSQL/API/Agent 运行统一使用服务用户，避免两种身份竞争写入同一工具或运行目录。
 
 安装来源：[Node 官方发行版](https://nodejs.org/dist/latest-v22.x/)、[PostgreSQL 官方源](https://www.postgresql.org/download/linux/ubuntu/)、[Rust 官方安装](https://rust-lang.org/tools/install/)、[uv 官方安装](https://docs.astral.sh/uv/getting-started/installation/)。
 
 ## 服务用户 home 与工具目录权限
 
-若 Rust 安装报 `could not create bin directory: '/home/mario/.cargo/bin': Permission denied`，外层 `sudo` 不能解决：安装器实际以 `mario` 身份运行。已有 `mario` 账号可能缺少 home，或 home、工具目录曾由 root 创建。部署接管项目目录的权限不包含这些目录。
-
-先确认账号和路径归属：
+若旧部署的 Rust 安装报 `could not create bin directory: '/home/mario/.cargo/bin': Permission denied`，更新代码后直接重新部署即可，无需先手工 `chown`：
 
 ```bash
-getent passwd mario
-namei -l /home/mario/.cargo/bin
-ls -ld /home/mario /home/mario/.cargo /home/mario/.rustup /home/mario/.local
+sudo -u mario -H git -C /srv/mario pull --ff-only
+sudo bash /srv/mario/deploy.sh
 ```
 
-默认 `mario` 专用账号的 home 为 `/home/mario`，可按下面步骤修复。使用自定义服务账号时替换用户名和实际 home；仅调整 home 本身及该用户的工具目录，不递归接管整个 home 或 `/home`：
+脚本自动创建已有账号缺失的 home；对默认专用 home `/home/<服务用户>`、`/var/lib/<服务用户>`，修复 root 遗留的归属。自定义的已有 home 必须属于服务用户，属于其他用户的目录保持原样。只调整 home 本身，不递归接管其余个人文件。
 
-```bash
-sudo install -d -o mario -g "$(id -gn mario)" -m 700 /home/mario
-for dir in /home/mario/.cargo /home/mario/.rustup /home/mario/.local; do
-  if [ -d "$dir" ] && [ ! -L "$dir" ]; then
-    sudo chown -hR mario:"$(id -gn mario)" "$dir"
-  fi
-done
-sudo -u mario -H sh -eu -c '
-  mkdir -p "$HOME/.cargo/bin" "$HOME/.rustup" "$HOME/.local/bin"
-  for dir in "$HOME" "$HOME/.cargo" "$HOME/.cargo/bin" "$HOME/.rustup" "$HOME/.local" "$HOME/.local/bin"; do
-    test -w "$dir" && test -x "$dir"
-  done
-  echo "home 和工具目录权限检查通过"
-'
-sudo bash deploy.sh
-```
+自动修复范围为 `.cargo`、`.rustup`、`.local/bin` 及 `.local` 父目录：工具目录内修复属主并补齐所有者读写权限和目录遍历权限，保留已有可执行位与 rustup 链接，不跟随内部链接修改外部目标；`.local` 下其他应用数据保持原样。缺失目录按服务用户创建。数据库、配置与密钥沿用原位置和运行账号，无需数据迁移。
 
-后续仍用 `sudo bash deploy.sh` 部署，脚本会清除调用者的 `CARGO_HOME`、`RUSTUP_HOME` 和 Python 环境设置，再以服务用户身份安装工具。手工维护该用户的 Rust、uv 或其他用户级工具时也使用 `sudo -u mario -H`，不要以 root 配合 `HOME=/home/mario` 安装；恢复备份或迁移 home 后，应再次检查归属。若 `namei -l` 显示自定义 home 的父目录或符号链接目标不可遍历，应修复实际路径的权限，不能只修改链接本身。
+后续仍用 `sudo bash deploy.sh` 部署；手工维护用户级工具也使用 `sudo -u mario -H`。目录被替换为文件、工具根目录是符号链接、home 属于其他用户等情况不自动接管，脚本会保留数据并报告路径。若修复后仍无法访问，可用 `namei -l /home/mario/.cargo/bin` 检查实际父目录与链接目标的权限。
 
 ## 配置只改一个地方
 
