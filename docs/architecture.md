@@ -273,7 +273,7 @@ Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略
 
 `scripts/benchmark_risk_study.py` 在同一边界内构造三年周波动和月内历史日收益，复用构建/扫描函数的显式特征与规则参数；组合风险在候选策略中计算。最小输入升级只携带准入策略需要的字段，`hub` 数据卡按明确的 `input_features` 版本说明截止时点和缺失语义；原始日线不随最小升级包上传。
 
-本地研究分支的`pool-scoring-v9`保留月内日收益及90日回归趋势，将`stock.fugui`替换为日/周/月下轨、月中轨回踩和月MACD负柱五个布尔信号及问题码，契约`monthly-risk-regression-fugui-v2`。富贵两类买点共用日/周下轨与月MACD柱<0；月下吸用月下轨，龙回头用月中轨回踩；收盘容差5%，DIF/DEA不要求负值。`trend_basket_risk`和`trend_regression_tilt`输入保持不变，原21项策略和结果标签不变。本次按用户选择仅本地保留，研究分支不推送；main与持续评测默认仍为v8，已发布不可变标签供对应提交复现；需要新字段的策略不在缺失时静默换逻辑。
+本地main使用的研究切片`pool-scoring-v9`保留月内日收益及90日回归趋势，将`stock.fugui`替换为日/周/月下轨、月中轨回踩和月MACD负柱五个布尔信号及问题码，契约`monthly-risk-regression-fugui-v2`。富贵两类买点共用日/周下轨与月MACD柱<0；月下吸用月下轨，龙回头用月中轨回踩；收盘容差5%，DIF/DEA不要求负值。`trend_basket_risk`和`trend_regression_tilt`输入保持不变，原21项策略和结果标签不变。本次按用户选择仅本地保留，代码统一合入本地main、不推送；已发布切片与持续评测默认仍为v8，使用对应历史提交复现；需要新字段的策略不在缺失时静默换逻辑。
 
 `scripts/benchmark_regression_study.py`复用长历史构建/扫描及月内收益计算，比较严格90日与停牌估值口径；缺行不前填，窗口不延长。`--minimal`只输出准入机制必需的信号和原v6字段，发布仍经`hub`显式执行。它只依赖标准库与离线研究模块，不进入在线状态或账号事务。
 

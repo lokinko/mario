@@ -203,7 +203,7 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v9
 
 当前本地研究评分切片（仅本地目录名`pool-scoring-v9`，不是HF标签，148个季度决策点：科技池80、红利池68）的成绩如下。v9只替换富贵策略技术信号，21项其他策略的仓位和完整成绩与v8逐字节一致。本表与`benchmark/strategies/`是可追溯记录，看板由`bench-run`生成、不进Git；进入Top-10的策略须同次更新本表（见[协作规范](../AGENTS.md)）。
 
-[富贵策略](fugui-strategy.md)本次按用户确认更新为两组三周期BOLL买点，共用月MACD柱<0与收盘5%容差。其余千亿选样市值、低波与每只18%底仓不变；总分0.3331，平均收益得分0.0797，胜率10.1%，红利池单独0.7249，28期触发、82个持仓槽次，仍排18/18。历史v1总分0.0831保留在[审计](audits/benchmark-fugui-v1-20261103.md)。用户明确选择本次只保留本地成绩，研究分支不合入或推送main；主分支、HF标签和线上看板继续已有版本。当前Top-10名次全部不变。历史基本面、行业分散、滚动及股息率卖出仍未实现，不能视为完整策略回测；未根据新成绩扫描参数，早/后段不是严格样本外。
+[富贵策略](fugui-strategy.md)本次按用户确认更新为两组三周期BOLL买点，共用月MACD柱<0与收盘5%容差。其余千亿选样市值、低波与每只18%底仓不变；总分0.3331，平均收益得分0.0797，胜率10.1%，红利池单独0.7249，28期触发、82个持仓槽次，仍排18/18。历史v1总分0.0831保留在[审计](audits/benchmark-fugui-v1-20261103.md)。用户明确选择本次只保留本地成绩，新版策略与记录统一合入本地main、不推送远端；HF标签和线上看板继续已有版本。当前Top-10名次全部不变。历史基本面、行业分散、滚动及股息率卖出仍未实现，不能视为完整策略回测；未根据新成绩扫描参数，早/后段不是严格样本外。
 
 | 名次 | 策略 | 总分 | 平均收益得分 | 胜率 | 2006–2017 总分 | 2018–2025 总分 |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
@@ -447,8 +447,8 @@ npm run benchmark -- hub-fetch --repo lokinko/mario_bench --labels-repo lokinko/
 
 | 标签 | 内容 | `mario_bench` commit | `mario_bench_labels` commit |
 | --- | --- | --- | --- |
-| `pool-scoring-v9`（仅本地，无HF标签） | 本地研究分支：三周期BOLL与月MACD负柱，契约`monthly-risk-regression-fugui-v2`，22项本地成绩；用户选择仅本地保留，不发布 | 不上传 | 不上传 |
-| `pool-scoring-v8` | 当前已发布版本与线上默认：在v7上增加首版富贵四个技术信号`monthly-risk-regression-fugui-v1`；使用main对应策略复现 | `1d4870f5734831e98a765e7d208c12143152a4df` | `551c82fc58d8725715baf82af751ff6db56cb481` |
+| `pool-scoring-v9`（仅本地，无HF标签） | 本地main：三周期BOLL与月MACD负柱，契约`monthly-risk-regression-fugui-v2`，22项本地成绩；用户选择仅本地保留，不发布 | 不上传 | 不上传 |
+| `pool-scoring-v8` | 当前已发布版本与线上默认：在v7上增加首版富贵四个技术信号`monthly-risk-regression-fugui-v1`；使用历史Git提交`7b0fe04`对应策略复现 | `1d4870f5734831e98a765e7d208c12143152a4df` | `551c82fc58d8725715baf82af751ff6db56cb481` |
 | `pool-scoring-v7` | 历史版本：在v6上新增决策前回归趋势 `monthly-risk-regression-v1`，附21项策略成绩；不能运行需要富贵技术信号的当前完整目录 | `742fb368617a5486b46c9c5ec36c3099b562640c` | `44328f826492728458fa528e24f2a36bbabe7ef6` |
 | `pool-scoring-v6` | 历史版本：新增决策前月内收益 `monthly-risk-v1`，附20项策略成绩；供旧提交复现 | `698ab24cc388e980f0cd8bbb25e45941760ee0f9` | `e55fa56f97c5c060981fc073d9305e01bcb8db9f` |
 | `pool-scoring-v5` | 历史版本：增加“能否买入”，主指标为平均收益得分 + 2.5 × 胜率，附14项成绩；供旧提交复现 | `22b160184faf8755717f38184e60874e5ccff128` | `1119a665ec044c51fdd935a750e56984021009b3` |

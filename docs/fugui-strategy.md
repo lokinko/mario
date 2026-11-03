@@ -92,12 +92,12 @@ BOLL 为 20 期收盘均值 ±2 倍总体标准差，各自在日、周、月频
 
 ## 6. 复跑与发布
 
-本地研究分支`codex/fugui-boll-macd`只保留v2买点。用户于2026-11-03明确选择保留HF公开状态，本次仅保留本地成绩；v9不是已发布的HF标签，不执行hub-fetch v9。main与线上仍使用已有v8版本，不在本次合入新版策略。切片状态见[benchmark版本表](benchmark.md#hugging-face-托管)。
+本地`main`统一保存v2买点及本次研究记录，不再保留单独策略分支。用户于2026-11-03明确选择保留HF公开状态，本次仅保留本地成绩；v9不是已发布的HF标签，不执行hub-fetch v9。本地main使用v9输入复跑新版策略；已发布HF标签与线上仍是v8，使用对应历史提交复现。切片状态见[benchmark版本表](benchmark.md#hugging-face-托管)。
 
-本机研究工作树与数据目录分开存放，以下命令可直接复跑；换机器时替换绝对路径：
+在本机main工作区执行以下命令可直接复跑；换机器时替换绝对路径：
 
 ```bash
-cd /Users/lokinko/code_repo/mario/.runtime/worktrees/fugui-boll
+cd /Users/lokinko/code_repo/mario
 npm run benchmark -- bench-run --release /Users/lokinko/code_repo/mario/.runtime/benchmark/pool-scoring-v9 --out /Users/lokinko/code_repo/mario/.runtime/benchmark/bench/pool-scoring-v9
 npm run benchmark -- bench-serve --release /Users/lokinko/code_repo/mario/.runtime/benchmark/pool-scoring-v9 --out /Users/lokinko/code_repo/mario/.runtime/benchmark/bench/pool-scoring-v9
 ```
@@ -110,7 +110,7 @@ python scripts/benchmark_fugui_study.py build --minimal --built-on 2026-11-03 --
 
 使用项目Python 3.11+环境；仅本地评分无需HF写权限。重建时各缓存路径应指向主工作区的数据目录。行情归档为两个股票池的`raw/baostock/history/`，不使用未来outcomes反推信号。`fugui-study.json`记录实际使用的原始行情/日历哈希、源manifest、版本、覆盖与共同字段对账。输出不可覆盖，失败保留源缓存；v8不改写，回退必须同时使用对应历史策略提交与v8标签，不单独回退数据。
 
-持续评测默认标签保持v8。本次不改HF可见性、不上传v9、不写入`dashboard/current.json`，也不触发在线评测或部署。新版代码仅本地提交并保留研究分支，不推送至main，避免自动发布与用户选择冲突。线上dashboard没有更新为本次成绩。
+持续评测默认标签保持v8。本次不改HF可见性、不上传v9、不写入`dashboard/current.json`，也不触发在线评测或部署。新版代码已统一合入本地main，按用户选择不推送远端，避免触发在线发布。线上dashboard没有更新为本次成绩。
 
 ## 7. 完整策略验收还缺什么
 
@@ -127,6 +127,6 @@ python scripts/benchmark_fugui_study.py build --minimal --built-on 2026-11-03 --
 
 当前Top-10依次为`trend_basket_risk`、`trend_core_satellite`、`trend_regression_tilt`、`trend_single`、`calm_mid_momentum_sector`、`trend_risk_budget`、`calm_mid_momentum`、`trend_state_exit`、`trend_calm_pullback_grid`、`trend_calm_pullback_take_profit`，名次全部不变。
 
-本地v9 manifest SHA-256为`8bafe65e46b08977646571a080eb70e48c38f656f5eb81b4281fd7cfb32a944d`。22项策略已评分并生成本地看板。首次HF发布因两个仓库返回`private=false`而被`benchmark.hub.private_repo`拒绝。用户随后明确选择保留公开状态、本次只留本地成绩，故不再等待发布，也不改变私有上传校验。撤回本地工作分支中尚未生效的v9默认标签，线上默认继续v8。研究代码、切片和成绩本地保留，不合入、不推送、不部署。 按该选择收尾后，架构检查与193项benchmark测试通过，本地看板重新生成；22项策略、148期、富贵总分、28期买入/82笔建仓及输入manifest均与原评测一致。
+本地v9 manifest SHA-256为`8bafe65e46b08977646571a080eb70e48c38f656f5eb81b4281fd7cfb32a944d`。22项策略已评分并生成本地看板。首次HF发布因两个仓库返回`private=false`而被`benchmark.hub.private_repo`拒绝。用户随后明确选择保留公开状态、本次只留本地成绩，故不再等待发布，也不改变私有上传校验。撤回尚未生效的v9默认标签，线上默认继续v8。研究代码与记录统一合入本地main，切片及成绩保留原目录；不推送、不发布、不部署，整合后删除临时分支和工作树。 按该选择收尾后，架构检查与193项benchmark测试通过，本地看板重新生成；22项策略、148期、富贵总分、28期买入/82笔建仓及输入manifest均与原评测一致。
 
 全部验证后确认无构建/服务进程占用，使用cargo clean清理本次`.runtime/fugui-v9-build`及隔离工作树`.runtime/financial-build`；源行情、v8/v9切片、研究日志和本地看板继续保留。
