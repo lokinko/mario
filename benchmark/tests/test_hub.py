@@ -217,6 +217,15 @@ class HubTest(unittest.TestCase):
                 prepare_daily_prices("me/bench", "me/labels", "v7", "daily-prices", base)
             self.assertEqual(FakeApi.uploads, {})
 
+    def test_manifest_mismatch_reports_missing_and_extra_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "release"
+            release(root)
+            (root / "summary.json").unlink()
+            (root / "unexpected.json").write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(Invalid, r"缺失 1 个 \['summary.json'\]；多余 1 个 \['unexpected.json'\]"):
+                verify_release(root)
+
     def test_daily_rejects_changed_snapshot_and_upload_conflict(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)

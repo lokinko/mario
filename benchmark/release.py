@@ -71,7 +71,11 @@ def verify_release(root):
 
     manifest = read_json(root / "manifest.json")
     actual = {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}
-    require(actual == set(manifest["files"]) | {"manifest.json"}, "发布包文件集合与 manifest 不一致")
+    expected_files = set(manifest["files"]) | {"manifest.json"}
+    missing, extra = sorted(expected_files - actual), sorted(actual - expected_files)
+    require(not missing and not extra,
+            f"发布包文件集合与 manifest 不一致：缺失 {len(missing)} 个 {missing[:5]}；"
+            f"多余 {len(extra)} 个 {extra[:5]}")
     for name, expected in manifest["files"].items():
         require(digest(local_file(root, name)) == expected, f"发布包文件被改动: {name}")
     return {"valid": True, "files": len(actual)}
