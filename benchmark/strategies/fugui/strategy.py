@@ -12,8 +12,9 @@ def decide(sample):
             continue
         if stock["volatility_63"] is None or Decimal(stock["volatility_63"]) > Decimal("0.025"):
             continue
-        if signal["monthly_low"] is True or (signal["first_pullback"] is True
-                and signal["daily_lower"] is True and signal["weekly_lower"] is True):
+        if (signal["monthly_macd_negative"] is True and signal["daily_lower"] is True
+                and signal["weekly_lower"] is True
+                and (signal["monthly_lower"] is True or signal["monthly_mid_pullback"] is True)):
             chosen.append(stock)
     chosen.sort(key=lambda s: (Decimal(s["volatility_63"]), s["symbol"]))
     # 每只18%底仓、最多五只，空缺预算和10%机动资金留现金。
