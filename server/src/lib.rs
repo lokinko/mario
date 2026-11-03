@@ -15,6 +15,7 @@ mod hosted;
 mod http;
 mod market_data;
 mod models;
+mod openai_login;
 mod planning;
 mod ports;
 mod prices;

@@ -97,7 +97,10 @@ try {
     const mount = prefix === '/' ? '' : prefix.slice(0, -1);
     const redirect = mount ? `location = ${mount} { return 308 ${prefix}$is_args$args; }\n` : '';
     const nginx = `${redirect}location ^~ ${prefix} {\n    proxy_pass http://127.0.0.1:${values.MARIO_PORT}/;\n    proxy_http_version 1.1;\n    proxy_set_header Host $host;\n    proxy_set_header X-Real-IP $remote_addr;\n    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n    proxy_set_header X-Forwarded-Proto $scheme;\n    proxy_read_timeout 300s;\n    client_max_body_size 64m;\n    add_header X-Content-Type-Options nosniff always;\n    add_header X-Frame-Options DENY always;\n    add_header Referrer-Policy same-origin always;\n    add_header Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'" always;\n}\n`;
-    writeFileSync(join(runtime, 'nginx.conf'), nginx);
+    // OAuth callbacks redirect without a response script. Access logs must
+    // never retain the one-use authorization code in their query string.
+    const openAiCallback = `location = ${prefix}api/auth/openai/callback {\n    access_log off;\n    proxy_pass http://127.0.0.1:${values.MARIO_PORT}/api/auth/openai/callback;\n    proxy_http_version 1.1;\n    proxy_set_header Host $host;\n    proxy_set_header X-Forwarded-Proto $scheme;\n    proxy_read_timeout 90s;\n    add_header X-Content-Type-Options nosniff always;\n    add_header Referrer-Policy no-referrer always;\n}\n`;
+    writeFileSync(join(runtime, 'nginx.conf'), openAiCallback + nginx);
     console.log(`配置已准备：域名 ${domain}，网页路径 ${prefix}${ip ? `，DNS 目标 ${ip}` : ''}\nNginx 配置：${join(runtime, 'nginx.conf')}（加入现有 HTTPS server）`);
   } else if (options['--build']) {
     assertNoRestore();
@@ -176,6 +179,7 @@ try {
     launch('API', binary, ['--port', String(apiPort)], {
       ...baseEnv, ...shared, DATABASE_URL: databaseUrl, MARIO_MASTER_KEY: config.MARIO_MASTER_KEY,
       MARIO_ALLOWED_ORIGINS: config.MARIO_ALLOWED_ORIGINS ?? '',
+      ...Object.fromEntries(['MARIO_OPENAI_CLIENT_ID', 'MARIO_OPENAI_REDIRECT_URI', 'MARIO_OPENAI_TOKEN_AUTH_METHOD', 'MARIO_OPENAI_CLIENT_SECRET'].map(key => [key, config[key] ?? ''])),
       MARIO_HOST: '127.0.0.1', MARIO_AGENT_URL: `http://127.0.0.1:${agentPort}`, MARIO_WEB_DIR: resolve(root, 'client/dist'),
       ...(config.MARIO_BENCH_TAG ? { MARIO_BENCH_DIR: benchDir(benchTag(config.MARIO_BENCH_TAG)) } : {}),
     });

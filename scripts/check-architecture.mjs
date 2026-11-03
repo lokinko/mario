@@ -122,6 +122,10 @@ const core = new Set(['models', 'context', 'risk', 'planning', 'valuation', 'evi
 const infrastructure = new Set(['db', 'storage', 'accounts', 'secrets', 'prices', 'market_data']);
 const transport = new Set(['http', 'hosted', 'runtime', 'agent', 'streaming', 'composition', 'codex_bridge_worker']);
 export function serverViolation(source, target) {
+  if (source === 'openai_login' && target !== 'error')
+    return 'website OIDC verifies identity without account storage or model execution';
+  if (target === 'openai_login' && source !== 'hosted')
+    return 'website OIDC belongs to the hosted authentication adapter';
   if (source === 'chatgpt_auth' && target !== 'error')
     return 'local OAuth authentication cannot depend on server accounts, business state or AI execution';
   if (target === 'chatgpt_auth' && !['runtime', 'codex_bridge_worker', 'ai'].includes(source))

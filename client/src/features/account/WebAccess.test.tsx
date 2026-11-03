@@ -10,7 +10,40 @@ import { afterEach, expect, it, vi } from "vitest";
 import { AccountSettings, WebAccess } from "./WebAccess";
 import { savedWebAccounts, setWebToken, webToken } from "../../lib/webSession";
 import { acceptRevision, dataRevision } from "../../lib/service";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
+vi.mock("./OpenAiSignIn", () => ({ OpenAiSignIn: () => null }));
+
+it("completes the redirect handoff only once under StrictMode before showing account data", async () => {
+  history.replaceState(null, "", "/#openai-login=complete");
+  sessionStorage.setItem(
+    "mario.openai-login:/api",
+    JSON.stringify({ createdAt: Date.now() }),
+  );
+  const session = {
+    token: "a".repeat(64),
+    userId: "user",
+    email: "user@example.test",
+    expiresAt: Date.now() / 1000 + 3600,
+  };
+  const fetcher = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ session, linked: false }), {
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  render(
+    <StrictMode>
+      <WebAccess>
+        <p>授权后的个人资产</p>
+      </WebAccess>
+    </StrictMode>,
+  );
+  expect(await screen.findByText("授权后的个人资产")).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0][0]).toBe("/api/auth/openai/complete");
+  expect(webToken()).toBe(session.token);
+  expect(location.hash).toBe("");
+});
 vi.mock("../../lib/service", async (original) => ({
   ...(await original<typeof import("../../lib/service")>()),
   serviceUrl: () =>

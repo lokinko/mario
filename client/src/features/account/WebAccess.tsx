@@ -20,6 +20,8 @@ import {
 import { requestJson } from "../../lib/transport";
 import { acceptRevision, serviceUrl } from "../../lib/service";
 import { blockStaleWrites } from "../../lib/syncEvents";
+import { OpenAiSignIn } from "./OpenAiSignIn";
+import { completeOpenAiSignIn, type OpenAiLoginResult } from "./openaiLogin";
 
 const AccountAccess = createContext<{
   accounts: WebAccount[];
@@ -78,6 +80,7 @@ export function AccountSettings() {
       <p className="section-intro">
         已登录账号可直接切换，无需重复输入密码。切换时会清除未保存的输入，已保存的资料保留在各自账号中。
       </p>
+      <OpenAiSignIn link disabled={account.busy} />
       {account.picking ? (
         <>
           <SavedAccounts
@@ -146,7 +149,61 @@ export function WebAccess({ children }: { children: ReactNode }) {
   const [register, setRegister] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [openAiReturn] = useState(() =>
+    new URLSearchParams(window.location.hash.slice(1)).get("openai-login"),
+  );
+  const [completingOpenAi, setCompletingOpenAi] = useState(
+    openAiReturn === "complete",
+  );
+  const openAiCompletion = useRef<Promise<OpenAiLoginResult> | null>(null);
   const disconnecting = useRef(false);
+  useEffect(() => {
+    if (!openAiReturn) return;
+    history.replaceState(null, "", location.pathname + location.search);
+    if (openAiReturn !== "complete") {
+      setError(
+        openAiReturn === "conflict"
+          ? "邮箱或 ChatGPT 身份已有账号关联。请先用原 Mario 账号登录，再在账号设置关联或核对。"
+          : "ChatGPT 登录未完成、已取消或已过期，请重新发起。",
+      );
+      return;
+    }
+    let disposed = false;
+    setBusy(true);
+    // React StrictMode reattaches to the same one-use completion request.
+    openAiCompletion.current ??= completeOpenAiSignIn();
+    void openAiCompletion.current
+      .then(
+        ({ session }) => {
+          if (disposed) return;
+          if (session) {
+            setWebToken(session.token, session.expiresAt, session);
+            resetAccountState();
+            setConnected(session.token);
+            setAccounts(savedWebAccounts());
+            setAddingAccount(false);
+            setPicking(false);
+          } else
+            setNotice("已关联 ChatGPT，下次可直接使用 ChatGPT 登录 Mario。");
+        },
+        () => {
+          if (!disposed)
+            setError(
+              "无法完成 ChatGPT 登录交接，账号可能已切换或交接已过期，请重新登录。",
+            );
+        },
+      )
+      .finally(() => {
+        if (!disposed) {
+          setBusy(false);
+          setCompletingOpenAi(false);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
   const resetAccountState = () => {
     acceptRevision();
     blockStaleWrites(false);
@@ -222,6 +279,12 @@ export function WebAccess({ children }: { children: ReactNode }) {
     window.addEventListener("storage", restore);
     return () => window.removeEventListener("storage", restore);
   }, [connected]);
+  if (completingOpenAi)
+    return (
+      <div className="web-access">
+        <p role="status">正在完成 ChatGPT 登录…</p>
+      </div>
+    );
   if (connected && !addingAccount)
     return (
       <AccountAccess.Provider
@@ -245,6 +308,7 @@ export function WebAccess({ children }: { children: ReactNode }) {
         }}
       >
         {error && <p role="alert">{error}</p>}
+        {notice && <p role="status">{notice}</p>}
         <Fragment key={connected}>{children}</Fragment>
       </AccountAccess.Provider>
     );
@@ -311,6 +375,7 @@ export function WebAccess({ children }: { children: ReactNode }) {
           alt=""
         />
         <h1>{register ? "创建 mario 账号" : "登录 mario"}</h1>
+        <OpenAiSignIn disabled={busy} />
         {accounts.length > 0 && (
           <>
             <p>选择已登录账号，或登录其他账号。</p>

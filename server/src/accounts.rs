@@ -1,4 +1,5 @@
-//! Self-hosted account/session authority. No third-party identity service.
+//! Self-hosted account/session authority with optional verified external identity.
+mod openai;
 use crate::{
     storage::{params, Connection},
     AppError, AppResult,
@@ -7,6 +8,7 @@ use argon2::{
     password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
 };
+pub(crate) use openai::{OpenAiAttempt, OpenAiIdentity};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Mutex;
@@ -60,6 +62,8 @@ impl Accounts {
         ))?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires_at BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS session_expiry ON sessions(expires_at);")?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS login_limits(email TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at BIGINT NOT NULL);")?;
+        connection.execute_batch("CREATE TABLE IF NOT EXISTS external_identities(issuer TEXT NOT NULL,client_id TEXT NOT NULL,subject TEXT NOT NULL,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(issuer,client_id,subject)); CREATE INDEX IF NOT EXISTS external_identity_user ON external_identities(user_id); CREATE TABLE IF NOT EXISTS openai_login_attempts(state_hash TEXT PRIMARY KEY,browser_hash TEXT NOT NULL,verifier TEXT NOT NULL,nonce TEXT NOT NULL,client_id TEXT NOT NULL,redirect_uri TEXT NOT NULL,link_session TEXT,expires_at BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS openai_attempt_expiry ON openai_login_attempts(expires_at);")?;
+        connection.execute_batch("CREATE TABLE IF NOT EXISTS openai_login_results(result_hash TEXT PRIMARY KEY,browser_hash TEXT NOT NULL,session_hash TEXT,expires_at BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS openai_result_expiry ON openai_login_results(expires_at);")?;
         connection.execute_batch(&format!(
             "SELECT pg_advisory_unlock(hashtextextended('{schema}',0));"
         ))?;
@@ -212,7 +216,7 @@ mod tests {
     use super::*;
     use axum::{http::StatusCode, response::IntoResponse};
 
-    fn accounts() -> Accounts {
+    pub(super) fn accounts() -> Accounts {
         let url = std::env::var("MARIO_TEST_DATABASE_URL")
             .expect("set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database");
         Accounts::open_schema(url, format!("auth_{}", uuid::Uuid::new_v4().simple())).unwrap()

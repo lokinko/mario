@@ -90,6 +90,7 @@ flowchart TD
 | `application` | 依赖传输/进程适配器或具体行情供应商；`application/analysis.rs` 直接引用 `ai` |
 | `agent` | 依赖 `db`、`storage`、`accounts`、`application`、`http`、`hosted`、`runtime` |
 | 本机 OAuth | `chatgpt_auth` 依赖业务、账号或 AI 实现；在线 HTTP/Agent、领域及仓储依赖本机凭据；`ai/chatgpt.rs` 以外的 AI 模块读取本机 OAuth |
+| 网站 OIDC | `openai_login` 依赖账号仓储、模型执行或本机授权；`hosted` 以外的模块依赖网站 OIDC |
 | `secrets`、行情适配器 | `secrets` 依赖 `error` 以外模块；`prices`/`market_data` 依赖 `models`、`ports`、`error` 以外模块或持有静态可变资源 |
 | 通用 | 非 `db` 模块使用通配导入；契约、仓储、应用层使用 `axum`；`application`/`ports` 直接使用 `reqwest`；`storage.rs` 以外直接使用数据库驱动 |
 
@@ -103,7 +104,8 @@ flowchart TD
 | `composition.rs` | 创建行情供应商，组装 `MarketServices`，拥有后台刷新任务并在服务退出时取消 |
 | `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS、静态网页，以及只读提供研究看板文件（`MARIO_BENCH_DIR`，数据接口只验证会话，不打开账号库） |
 | `http/` | 按领域注册路由（`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
-| `accounts.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速；Agent 令牌的常量时间比较 |
+| `accounts.rs`、`accounts/openai.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速；可选网站 OpenAI 身份映射、短期 OAuth 事务及显式关联；Agent 令牌的常量时间比较 |
+| `openai_login.rs`、`hosted/openai.rs` | 网站身份登录：前者只做官方 OIDC 配置、授权码交换和签名声明校验，不访问账号或模型；后者转换 HTTP/Cookie、编排账号事务、固定站点重定向与一次性交接；与本机 `chatgpt_auth` 及订阅执行无依赖 |
 | `application/` | 跨仓储与外部端口的用例：`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型接口切换策略、Provider 构造与连接测试）、`codex_bridge`（账号配对） |
 | `ports/` | `analysis::AnalysisExecutor` 与事件通道；`market::FxRateProvider`、`SecurityPriceProvider` |
 | `agent.rs` | `AgentExecutor`：配置 `MARIO_AGENT_URL` 时把冻结任务发给独立 Agent，否则进程内执行；Codex 桥接任务始终在 API 进程经桥接中继执行。同文件提供 Agent HTTP 服务 |
@@ -148,11 +150,13 @@ flowchart TD
 
 ### 6.1 多用户请求生命周期
 
-1. Nginx 转发到 API；公开路由只有注册、登录、登出与服务信息，请求体上限 16 KB。
+1. Nginx 转发到 API；公开路由包含注册、登录、登出、可选 OpenAI 网站登录配置／发起／回调／交接和服务信息，请求体上限 16 KB。OpenAI 发起和交接接口校验 Origin，关联还必须提供有效 Mario 会话；回调只信任浏览器绑定且可一次性消费的 state。
 2. 私有路由先取并发槽位（业务 24、认证 2），满载返回繁忙。
 3. 校验 Bearer 会话，按用户 ID 打开该账号 schema 的连接，取数据库 advisory 账号锁并读取数据版本。
 4. 写入请求（由 `http/policy.rs` 判定）比较 `If-Match`；不一致时，财务写入先查回执，命中则返回原结果，否则返回 409 与当前版本。
 5. 构造只含该账号连接与共享依赖的 `RequestContext`，交给领域路由；响应带 `x-data-revision` 与 `no-store`。连接关闭时释放残留的会话锁。
+
+网站身份登录由 API 验证 OpenAI 身份后建立原有 Mario 会话。`mario_auth` 的外部身份按 issuer + client ID + subject 映射到 users；邮箱碰撞需要原账号登录后明确关联，不自动合并。10 分钟 OAuth 事务与 120 秒会话交接均由 PostgreSQL 原子消费，HttpOnly 临时 Cookie 绑定浏览器；回调整页返回固定站点，交接只返回 Mario 自有会话。OpenAI 原始令牌只在校验期间存在内存，不持久化或返回网页。流程及申请见 [网站 ChatGPT 登录](chatgpt-sign-in.md)。
 
 ### 6.2 AI 分析
 
@@ -197,7 +201,7 @@ sequenceDiagram
 | --- | --- | --- |
 | 启动配置、行情供应商、AI 执行器 | 进程（`runtime`、`composition`） | 可替换，不持有账号数据 |
 | 公开行情缓存 | `prices`/`market_data` 实例 | 有界、失败退避，跨账号共享，只含公开数据 |
-| 会话与账号 | `accounts` | 会话仅存哈希，可撤销 |
+| 会话与账号 | `accounts` | 会话仅存哈希，可撤销；网站 OpenAI 身份映射、账号创建／关联／会话签发归同一事务；短期 OAuth 事务原子消费后不重放 |
 | 账号业务数据与版本 | `db` 领域仓储 | 业务写入、回执、日志、投影与版本同事务提交 |
 | 模型配置与凭据 | `db/settings.rs` + `db/secrets.rs` + `secrets.rs` | 接口、地址、模型名、密文与目标绑定由 `save_model_configuration` 在同一事务写入，失败保留原配置；主密钥加密，AAD 绑定账号 schema 与用途 |
 | 冻结分析输入 | 单次分析请求 | 执行期间不可变，结果记录输入版本与轨迹 |

@@ -26,6 +26,9 @@ test('Rust scan handles nested imports, prompt strings, characters, comments, an
 });
 test('the checked-out project respects its boundaries', () => { checkArchitecture(); });
 test('local ChatGPT credentials cannot leak into hosted workflows or domain state', () => {
+  assert.equal(serverViolation('hosted', 'openai_login'), undefined);
+  for (const source of ['ai', 'agent', 'accounts', 'db', 'models']) assert(serverViolation(source, 'openai_login'));
+  for (const target of ['chatgpt_auth', 'accounts', 'storage', 'ai']) assert(serverViolation('openai_login', target));
   for (const source of ['db','models','http','hosted','agent','application','ports']) assert(serverViolation(source, 'chatgpt_auth'));
   for (const target of ['db','accounts','ai','application','models']) assert(serverViolation('chatgpt_auth', target));
   assert.equal(serverViolation('runtime', 'chatgpt_auth'), undefined);

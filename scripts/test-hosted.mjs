@@ -59,6 +59,8 @@ async function request(base,path,session,method='GET',body,expected=200,revision
 async function register(base){return request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'test-password-0123456789'});}
 try{
   const base=await start({MARIO_BENCH_DIR:dashboard}), replica=await start();
+  assert.deepEqual(await request(base,'/auth/openai/config'),{enabled:false});
+  await request(base,'/auth/openai/start',null,'POST',{link:false},404);
   const site=base.slice(0,-'/api'.length);
   const page=await fetch(site+'/dashboard');
   assert.equal(page.status,200);assert.match(page.headers.get('content-type'),/text\/html/);assert.match(await page.text(),/dashboard\.js/);

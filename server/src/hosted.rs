@@ -1,3 +1,4 @@
+mod openai;
 use crate::{
     accounts,
     application::portfolio::MarketServices,
@@ -38,6 +39,7 @@ struct ServerInfo {
 
 struct HostedState {
     accounts: Arc<Accounts>,
+    openai: Option<crate::openai_login::OpenAiLogin>,
     slots: tokio::sync::Semaphore,
     auth_slots: tokio::sync::Semaphore,
     market: Arc<MarketServices>,
@@ -60,6 +62,7 @@ where
     let market_runtime = MarketRuntime::new()?;
     let state = Arc::new(HostedState {
         accounts: Arc::new(Accounts::open(url)?),
+        openai: crate::openai_login::OpenAiLogin::from_env()?,
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
         auth_slots: tokio::sync::Semaphore::new(AUTH_SLOTS),
         market: market_runtime.services.clone(),
@@ -73,6 +76,10 @@ where
         .route_layer(middleware::from_fn_with_state(state.clone(), authenticate));
     let cors = cors_layer()?;
     let public = Router::new()
+        .route("/api/auth/openai/config", get(openai::config))
+        .route("/api/auth/openai/start", post(openai::start))
+        .route("/api/auth/openai/callback", get(openai::callback))
+        .route("/api/auth/openai/complete", post(openai::finish))
         .route("/api/auth/login", post(login))
         .route("/api/auth/register", post(register))
         .route("/api/auth/logout", post(logout))
@@ -88,7 +95,12 @@ where
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(cors)
         .layer(middleware::map_response(no_store))
-        .layer(TraceLayer::new_for_http());
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|request: &Request| {
+                // OAuth callback queries contain one-use authorization codes.
+                tracing::info_span!("http", method=%request.method(), path=%request.uri().path())
+            }),
+        );
     let app = if let Some(dir) = web_dir {
         app.fallback_service(tower_http::services::ServeDir::new(dir))
     } else {

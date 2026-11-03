@@ -20,6 +20,8 @@ Web 通过 Rust API 读写数据，PostgreSQL 保存独立账号、会话及各�
 
 账号在 `mario_auth` schema，各用户关系数据在 `user_<uuid>` schema。服务端根据经过认证的会话选择租户，客户端无法通过指定 user ID 或 schema 越权。数据库账号仅供服务端使用。
 
+可选的网站 **Sign in with ChatGPT** 需先申请 OAuth client ID，在服务器 `.env` 配置后显示入口；与 ChatGPT plan usage 申请分开，详见 [配置、账号关联与申请步骤](chatgpt-sign-in.md)。
+
 业务数据及同步版本在同一事务中更新。快照响应包含 `x-data-revision`，写请求携带 `If-Match`，缺失/过期返回 409；PostgreSQL 账户级 advisory lock 确保多个 API 实例也遵守同一版本顺序。
 
 前端合并版本检查，前台空闲时从 60 秒逐渐放缓到 5 分钟，断网指数退避；只有版本变化才获取快照。有未提交输入时提示核对，并阻止旧表单写入。当前是在线共享数据库模式，离线不能保存，没有后台离线写入队列。
