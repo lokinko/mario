@@ -1,9 +1,9 @@
 // Exercise the single deployment entry without touching system packages/services.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { createConfig, defaults, readConfig, root, validateSecrets } from './start-common.mjs';
 
 const fixture = mkdtempSync(join(tmpdir(), 'mario-deploy-'));
@@ -72,23 +72,31 @@ try {
   const bash = process.env.MARIO_TEST_BASH || 'bash';
   const probe = spawnSync(bash, ['--version'], { encoding: 'utf8' });
   if (probe.error) throw Error('脚本测试需要 Bash；Windows 可通过 MARIO_TEST_BASH 指定 Git Bash 路径');
-  const homeCheck = /^check_user_home\(\) \{[\s\S]*?^\}/m.exec(readFileSync(join(fixture, 'deploy.sh'), 'utf8'))?.[0];
+  const deployScript = readFileSync(join(fixture, 'deploy.sh'), 'utf8');
+  const homeCheck = /^check_user_home\(\) \{[\s\S]*?^\}/m.exec(deployScript)?.[0];
+  const homePrepare = /^prepare_user_home\(\) \{[\s\S]*?^\}/m.exec(deployScript)?.[0];
   assert(homeCheck, 'deploy must check the service user home before installing tools');
+  assert(homePrepare, 'deploy must repair service user home and tool permissions');
   const home = join(fixture, 'user-home');
   mkdirSync(home);
   // Root CI must exercise permission checks as an unprivileged user too.
   const rootTest = process.getuid?.() === 0;
+  const testUser = rootTest ? 'nobody' : userInfo().username;
   chmodSync(fixture, 0o755);
   chmodSync(home, 0o777);
-  function checkHome(expected, path = '') {
-    const script = `${homeCheck}\ncd "$TEST_ROOT"\nRUN_HOME="$PWD/user-home"\nRUN_USER=deploy-test\nas_user() { env HOME="$RUN_HOME" USER="$RUN_USER" "$@"; }\ncheck_user_home`;
-    const argv = ['-euc', script];
-    const result = spawnSync(rootTest ? 'runuser' : bash, rootTest ? ['-u', 'nobody', '--', bash, ...argv] : argv, {
-      encoding: 'utf8', env: { ...cleanEnv, TEST_ROOT: fixture },
+  function runHome(command, expected, path = '') {
+    const switchUser = rootTest ? 'runuser -u "$RUN_USER" -- ' : '';
+    const script = `${homePrepare}\n${homeCheck}\ncd "$TEST_ROOT"\nRUN_HOME="$PWD/user-home"\nRUN_USER="$TEST_RUN_USER"\nas_user() { ${switchUser}env HOME="$RUN_HOME" USER="$RUN_USER" "$@"; }\n${command}`;
+    const result = spawnSync(bash, ['-euc', script], {
+      encoding: 'utf8', env: { ...cleanEnv, TEST_ROOT: fixture, TEST_RUN_USER: testUser },
     });
     assert.equal(result.status, expected, result.stdout + result.stderr);
+    if (expected !== 0) assert(result.stderr.includes(path), result.stderr);
+    return result;
+  }
+  function checkHome(expected, path = '') {
+    const result = runHome('check_user_home', expected, path);
     if (expected !== 0) {
-      assert(result.stderr.includes(path), result.stderr);
       assert.match(result.stderr, /namei -l/);
       assert.match(result.stderr, /docs\/deploy-madeagents.md/);
     }
@@ -112,6 +120,53 @@ try {
       chmodSync(directory, 0o777);
     }
     checkHome(0);
+  }
+  if (process.platform !== 'win32') {
+    if (rootTest) assert.equal(spawnSync('chown', [testUser, home]).status, 0);
+    const rustup = join(home, '.cargo/bin/rustup');
+    writeFileSync(rustup, 'old');
+    chmodSync(rustup, 0o500);
+    symlinkSync('rustup', join(home, '.cargo/bin/cargo'));
+    const unrelated = join(home, 'keep.txt');
+    writeFileSync(unrelated, 'keep');
+    chmodSync(unrelated, 0o400);
+    const localData = join(home, '.local/share');
+    mkdirSync(localData);
+    chmodSync(localData, 0o500);
+    const external = join(fixture, 'external.txt');
+    writeFileSync(external, 'outside tool directories');
+    chmodSync(external, 0o400);
+    symlinkSync(external, join(home, '.cargo/external'));
+    const unchanged = [unrelated, localData, external].map(path => {
+      const { uid, gid, mode } = statSync(path);
+      return { path, uid, gid, mode };
+    });
+    for (const path of [home, join(home, '.cargo'), join(home, '.cargo/bin'), join(home, '.rustup'), join(home, '.local/bin')]) chmodSync(path, 0o500);
+    runHome('prepare_user_home\nas_user sh -eu -c \'printf fixed >> "$HOME/.cargo/bin/rustup"\'', 0);
+    assert.equal(readFileSync(rustup, 'utf8'), 'oldfixed');
+    assert.equal(statSync(rustup).mode & 0o777, 0o700, 'repair preserves executable bits');
+    assert.equal(readlinkSync(join(home, '.cargo/bin/cargo')), 'rustup');
+    for (const before of unchanged) {
+      const { uid, gid, mode } = statSync(before.path);
+      assert.deepEqual({ uid, gid, mode }, { uid: before.uid, gid: before.gid, mode: before.mode });
+    }
+    runHome('prepare_user_home', 0); // Repeated deploys keep toolchains and unrelated data.
+    renameSync(join(home, '.cargo'), join(home, '.cargo.saved'));
+    symlinkSync(localData, join(home, '.cargo'));
+    runHome('prepare_user_home', 1, '.cargo');
+    assert.equal(readlinkSync(join(home, '.cargo')), localData);
+    rmSync(join(home, '.cargo'));
+    renameSync(join(home, '.cargo.saved'), join(home, '.cargo'));
+    renameSync(home, join(fixture, 'saved-home'));
+    runHome('prepare_user_home', 0); // Existing account without a home is repaired too.
+    if (rootTest) {
+      assert.equal(spawnSync('chown', ['0', home]).status, 0);
+      runHome('prepare_user_home', 1, '非默认 home');
+      assert.equal(statSync(home).uid, 0, 'custom root-owned home is not taken over');
+    }
+    console.log('PASS deploy permissions: automatic home/tool repair, service-user write, executable links, idempotence, scoped ownership, missing home, linked-directory rejection');
+  } else {
+    console.log('SKIP deploy permission repair: Linux/macOS ownership semantics required; Windows only exercises prepare and permission diagnostics');
   }
   for (const argv of [['-n', join(fixture, 'deploy.sh')], [join(fixture, 'deploy.sh'), '--help']])
     assert.equal(spawnSync(bash, argv, { encoding: 'utf8', env: cleanEnv }).status, 0);

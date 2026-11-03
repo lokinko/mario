@@ -37,6 +37,8 @@ PostgreSQL 是唯一的数据存储，没有单机或免登录模式。本地开
 
 生产部署由 [`deploy.sh`](../deploy.sh) 在宿主机以 systemd 启动一个主运行器（[`scripts/host-runtime.mjs`](../scripts/host-runtime.mjs)），依次拉起 PostgreSQL、Agent（仅监听本机端口）和 API；Nginx 反向代理 API 与静态网页。推送代码不等于部署。
 
+部署中的系统依赖安装与 systemd 管理使用 root；用户工具安装、构建和主运行器统一使用非 root 服务账号。`deploy.sh` 在下载工具和停服前准备该账号的 home，自动修复默认专用 home 与 Rust/uv 工具目录的历史归属、所有者写入及遍历权限，不递归接管整个 home 或跟随工具链接修改外部文件。已有数据库继续使用原所有者，数据与事务归属不变。具体范围与异常处理见 [部署权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
+
 ## 2. 设计原则
 
 1. **服务端是唯一事实来源。** 前端只持有已显示快照和未保存草稿；金额、会计结果、估值状态和数据版本都由服务端计算并返回。

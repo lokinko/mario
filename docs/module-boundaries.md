@@ -129,6 +129,8 @@ flowchart TD
 
 ## 开发流程
 
+宿主机部署权限准备归 `deploy.sh`：root 仅管理系统依赖与 systemd，用户工具、配置生成、构建和服务运行归同一个非 root 账号。部署在下载工具和停服前自动创建缺失 home，修复默认专用 home 本身及 `.cargo`、`.rustup`、`.local/bin` 的历史权限；自定义已有 home 须属于服务账号，不递归修改其他个人文件或 `.local` 应用数据，不跟随工具链接写入外部目标。`npm run test:deploy` 覆盖旧权限修复、服务用户实际写入、可执行位/链接保留、重复执行、缺失 home 和修复范围；不要把构建改成 root 来绕过权限准备。既有数据库仍归原运行账号，不迁移数据。部署使用见 [服务用户权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
+
 研究看板的侧边栏入口由应用壳和 `app/navigation.ts` 管理，放在“研究”分组，使用网站前缀下的 `dashboard` 链接在新标签页打开；不作为内部 `View`，不触发当前页切换或清理草稿。导航链接沿用侧栏样式、移动端抽屉关闭和键盘焦点约束，看板继续使用现有页面与会话认证。
 
 持续评测由 `.github/workflows/benchmark-live.yml` 触发可信主分支，`benchmark/live.py` 编排评分、进度与完整快照发布，执行仍归 `strategy_runner`，计算仍归 `scoring`，所有 HF 访问归 `hub`；公开与已有私有仓库均可读取和发布，不自动改变可见性，新建研究仓库按当前约定公开。失败保留上次成功成绩，同一切片全部成功才替换；状态和成绩是 HF/Git 可追溯的研究派生文件，不进入账号事务。线上只同步 `dashboard/current.json`，不下载执行远端脚本。

@@ -21,6 +21,13 @@ RUN_USER=""                     # 服务用户；默认复用数据库所有者�
 SERVICE_NAME="mario"            # systemd 服务名；一台服务器部署多份时需使用不同名称和端口。
 INSTALL_MISSING_TOOLS="true"    # true 自动安装缺失工具；false 由你提前安装 Node 22+/Rust/PG/uv。
 BENCH_ENABLED="true"           # 启用持续研究看板；评分切片由 GitHub 的 BENCHMARK_SCORING_TAG 指定。
+# 国内下载源仅作用于本次部署；可在这里修改，或通过环境变量覆盖（sudo env 变量=值 bash deploy.sh）。
+export npm_config_registry="${npm_config_registry:-${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}}" # npm 包下载。
+export NODE_DIST_URL="${NODE_DIST_URL:-https://npmmirror.com/mirrors/node/latest-v22.x}" # Node 22 下载目录，含校验清单。
+export RUSTUP_INIT_URL="${RUSTUP_INIT_URL:-https://rsproxy.cn/rustup-init.sh}" # Rustup 安装脚本。
+export RUSTUP_DIST_SERVER="${RUSTUP_DIST_SERVER:-https://rsproxy.cn}" # Rust 工具链。
+export RUSTUP_UPDATE_ROOT="${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}" # Rustup 自身下载与更新。
+export MARIO_DEPLOY_CARGO_REGISTRY="${MARIO_DEPLOY_CARGO_REGISTRY-sparse+https://rsproxy.cn/index/}" # Cargo 依赖；显式空值沿用已有源配置。
 # 不要手写数据库密码或密钥：首次自动生成并保存 .env，重启不会更换。
 # 用户自己的模型/API Key 在网页登录后的“模型与隐私”里配置。
 # .env 是自动生成的运行配置和秘密存储；迁移时必须一并备份，不提交 Git。
@@ -53,6 +60,7 @@ case "$ACTION" in
   start / stop / restart / status / logs  管理本项目 systemd 服务。
   check    使用现有 .env 对公网域名和网页路径执行只读验收。
 首次可传 IP、域名；其他配置见脚本顶部中文注释。以后无需重复传参。
+默认使用 npm/Node/Rust/Cargo 国内源；脚本顶部可修改，或用 sudo env 变量=值 bash deploy.sh 覆盖。
 Ubuntu/Debian 自动安装依赖，其他 Linux 需预先安装 Node 22+、Rust、PostgreSQL。
 Linux 部署请将仓库放在普通用户 home 或 /srv/mario，不放在 /root 内。
 准备完成后按提示将 Nginx 片段加入现有 HTTPS server，再运行 check。
@@ -69,7 +77,12 @@ cd "$PROJECT_DIR"
 export PATH="/opt/mario-tools/node/bin:$PATH"
 if [[ "$ACTION" == deploy || "$ACTION" == start || "$ACTION" == stop || "$ACTION" == restart || "$ACTION" == logs ]]; then
     [[ "$(uname -s)" == Linux ]] || { echo 'systemd 部署仅支持 Linux；本地测试请使用开发命令' >&2; exit 1; }
-    if [[ "$EUID" -ne 0 ]]; then exec sudo bash "$SCRIPT" "${ORIGINAL_ARGS[@]}"; fi
+    if [[ "$EUID" -ne 0 ]]; then
+        exec sudo env npm_config_registry="$npm_config_registry" NODE_DIST_URL="$NODE_DIST_URL" \
+            RUSTUP_INIT_URL="$RUSTUP_INIT_URL" RUSTUP_DIST_SERVER="$RUSTUP_DIST_SERVER" \
+            RUSTUP_UPDATE_ROOT="$RUSTUP_UPDATE_ROOT" MARIO_DEPLOY_CARGO_REGISTRY="$MARIO_DEPLOY_CARGO_REGISTRY" \
+            bash "$SCRIPT" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
+    fi
     command -v systemctl >/dev/null || { echo '需要启用 systemd 的 Linux 主机' >&2; exit 1; }
 fi
 if [[ "$ACTION" == deploy && -e .runtime/restore.lock ]]; then echo '恢复操作尚未完成，请先检查 .runtime/restore.lock' >&2; exit 1; fi
@@ -93,11 +106,11 @@ install_tools() {
             case "$(uname -m)" in x86_64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) echo 'Node 自动安装支持 x86_64/arm64' >&2; exit 1 ;; esac
             local work
             work="$(mktemp -d)"
-            curl -fsS https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt -o "$work/SHASUMS256.txt"
+            curl -fsSL "${NODE_DIST_URL%/}/SHASUMS256.txt" -o "$work/SHASUMS256.txt"
             manifest="$(awk -v suffix="-linux-$arch.tar.xz" 'substr($2, length($2)-length(suffix)+1)==suffix {print; exit}' "$work/SHASUMS256.txt")"
             archive="${manifest##* }"
             [[ "$archive" =~ ^node-v22\.[0-9]+\.[0-9]+-linux-(x64|arm64)\.tar\.xz$ ]] || { echo 'Node 下载清单无效' >&2; exit 1; }
-            curl -fsS "https://nodejs.org/dist/latest-v22.x/$archive" -o "$work/$archive"
+            curl -fsSL "${NODE_DIST_URL%/}/$archive" -o "$work/$archive"
             (cd "$work"; printf '%s\n' "$manifest" | sha256sum --check --status)
             install -d -m 755 /opt/mario-tools/node
             tar -xJf "$work/$archive" -C /opt/mario-tools/node --strip-components=1
@@ -121,6 +134,48 @@ install_tools() {
         fi
     fi
     node_ready || { echo '需要 Node.js 22+ 和 npm' >&2; exit 1; }
+}
+
+prepare_user_home() {
+    local group path
+    group="$(id -gn "$RUN_USER")"
+    # 只修复服务账号的 home 本身及工具目录，不递归接管整个 home。
+    [[ "$RUN_HOME" == /* && "$RUN_HOME" != / && "$RUN_HOME" != /root && "$RUN_HOME" != /root/* && "$RUN_HOME" != *'/../'* && "$RUN_HOME" != */.. ]] || {
+        echo "服务用户 home 路径无效：$RUN_HOME" >&2; return 1;
+    }
+    for path in "$RUN_HOME" "$RUN_HOME/.cargo" "$RUN_HOME/.rustup" "$RUN_HOME/.local" "$RUN_HOME/.local/bin"; do
+        if [[ -L "$path" || ( -e "$path" && ! -d "$path" ) ]]; then
+            echo "无法自动修复目录（符号链接或非目录）：$path" >&2; return 1;
+        fi
+    done
+    if [[ -d "$RUN_HOME" ]]; then
+        if [[ -n "$(find "$RUN_HOME" -prune ! -user 0 ! -user "$RUN_USER" -print)" ]]; then
+            echo "home 属于其他用户，保留原目录：$RUN_HOME" >&2; return 1;
+        fi
+        if [[ "$RUN_HOME" != "/home/$RUN_USER" && "$RUN_HOME" != "/var/lib/$RUN_USER" ]] && ! as_user test -O "$RUN_HOME"; then
+            echo "非默认 home 不属于服务用户，保留原目录：$RUN_HOME" >&2; return 1;
+        fi
+        chown "$RUN_USER:$group" "$RUN_HOME"
+        chmod u+rwx "$RUN_HOME"
+    else
+        install -d -m 700 -o "$RUN_USER" -g "$group" "$RUN_HOME"
+    fi
+    # .local 只修复父目录和 bin，不改动其下的其他应用数据。
+    if [[ -d "$RUN_HOME/.local" ]]; then
+        chown "$RUN_USER:$group" "$RUN_HOME/.local"
+        chmod u+rwx "$RUN_HOME/.local"
+    else
+        install -d -m 700 -o "$RUN_USER" -g "$group" "$RUN_HOME/.local"
+    fi
+    for path in "$RUN_HOME/.cargo" "$RUN_HOME/.rustup" "$RUN_HOME/.local/bin"; do
+        if [[ ! -d "$path" ]]; then install -d -m 700 -o "$RUN_USER" -g "$group" "$path"; fi
+        # 不跟随工具目录内部的链接，rustup 的可执行文件链接仍保持原样。
+        chown -hR "$RUN_USER:$group" "$path"
+        find -P "$path" -type d -exec chmod u+rwx {} +
+        find -P "$path" -type f -exec chmod u+rw {} +
+    done
+    as_user mkdir -p "$RUN_HOME/.cargo/bin"
+    check_user_home
 }
 
 check_user_home() {
@@ -164,15 +219,15 @@ if [[ "$ACTION" == deploy ]]; then
             -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_CONFIG_HOME \
             HOME="$RUN_HOME" USER="$RUN_USER" LOGNAME="$RUN_USER" PATH="$PATH" "$@"
     }
-    check_user_home
+    prepare_user_home
     install_tools
     chown -R "$RUN_USER:$(id -gn "$RUN_USER")" -- "$PROJECT_DIR"
     export PATH="$RUN_HOME/.cargo/bin:$RUN_HOME/.local/bin:$PATH"
     if ! as_user cargo --version >/dev/null 2>&1; then
         [[ "$INSTALL_MISSING_TOOLS" == true ]] || { echo '请先给运行用户安装 Rust/rustup' >&2; exit 1; }
-        # Rust 官方安装器作为普通服务用户运行，版本由 rust-toolchain.toml 固定。
+        # Rustup 安装器与工具链使用配置的下载源；以服务用户运行，版本由 rust-toolchain.toml 固定。
         installer="$(mktemp)"
-        curl -fsS https://sh.rustup.rs -o "$installer"
+        curl -fsSL "$RUSTUP_INIT_URL" -o "$installer"
         chmod 644 "$installer"
         as_user sh "$installer" -y --profile minimal --default-toolchain none
         rm -- "$installer"
