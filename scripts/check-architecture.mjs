@@ -122,6 +122,10 @@ const core = new Set(['models', 'context', 'risk', 'planning', 'valuation', 'evi
 const infrastructure = new Set(['db', 'storage', 'accounts', 'secrets', 'prices', 'market_data']);
 const transport = new Set(['http', 'hosted', 'runtime', 'agent', 'streaming', 'composition', 'codex_bridge_worker']);
 export function serverViolation(source, target) {
+  if (source === 'chatgpt_auth' && target !== 'error')
+    return 'local OAuth authentication cannot depend on server accounts, business state or AI execution';
+  if (target === 'chatgpt_auth' && !['runtime', 'codex_bridge_worker', 'ai'].includes(source))
+    return 'ChatGPT credentials belong only to the local authentication command and worker';
   if (source === 'secrets' && !['error'].includes(target))
     return 'credential encryption cannot depend on account persistence';
   if (source === 'ports' && !['models', 'context', 'error', 'ports'].includes(target))
@@ -144,6 +148,8 @@ export function serverViolation(source, target) {
 }
 
 export function serverFileViolation(source, target) {
+  if (target === 'chatgpt_auth' && source.startsWith('ai/') && source !== 'ai/chatgpt.rs')
+    return 'only the local ChatGPT provider can read local OAuth credentials';
   if (source === 'application/analysis.rs' && target === 'ai')
     return 'analysis lifecycle depends on the execution port, not workflow implementations';
   return undefined;

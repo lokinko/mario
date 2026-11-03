@@ -25,6 +25,14 @@ test('Rust scan handles nested imports, prompt strings, characters, comments, an
   assert.deepEqual([...rustDependencies(source)].sort(), ['AppResult', 'db', 'models', 'risk', 'valuation']);
 });
 test('the checked-out project respects its boundaries', () => { checkArchitecture(); });
+test('local ChatGPT credentials cannot leak into hosted workflows or domain state', () => {
+  for (const source of ['db','models','http','hosted','agent','application','ports']) assert(serverViolation(source, 'chatgpt_auth'));
+  for (const target of ['db','accounts','ai','application','models']) assert(serverViolation('chatgpt_auth', target));
+  assert.equal(serverViolation('runtime', 'chatgpt_auth'), undefined);
+  assert.equal(serverViolation('codex_bridge_worker', 'chatgpt_auth'), undefined);
+  assert.equal(serverFileViolation('ai/chatgpt.rs', 'chatgpt_auth'), undefined);
+  assert(serverFileViolation('ai/orchestrator.rs', 'chatgpt_auth'));
+});
 
 test('domain clients can split internally without importing another domain', () => {
   assert.equal(clientViolation('api/portfolio.ts', 'api/portfolio/financialRequest.ts'), undefined);

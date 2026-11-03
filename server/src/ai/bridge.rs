@@ -79,7 +79,7 @@ fn hash(value: &str) -> String {
     format!("{:x}", Sha256::digest(value.as_bytes()))
 }
 fn offline() -> AppError {
-    AppError::Model("本机 Codex 桥接未连接或已过期，请在设置中重新配对并启动本机桥接".into())
+    AppError::Model("本机模型 桥接未连接或已过期，请在设置中重新配对并启动本机桥接".into())
 }
 impl Connection {
     fn expired(&self, state: &State) -> bool {
@@ -295,7 +295,7 @@ impl BridgeProvider {
             let mut state = connection.state.lock().unwrap();
             if state.active.is_some() {
                 return Err(AppError::Busy(
-                    "本机 Codex 正在处理另一请求，请稍后重试".into(),
+                    "本机模型 正在处理另一请求，请稍后重试".into(),
                 ));
             }
             state.active = Some(Active {
@@ -343,14 +343,14 @@ impl BridgeProvider {
                     Some(Event::Failure { reason }) => return Err(reason.into()),
                     _ => {
                         return Err(AppError::Model(
-                            "本机 Codex 调用失败或桥接已断开，请查看本机桥接窗口".into(),
+                            "本机模型 调用失败或桥接已断开，请查看本机桥接窗口".into(),
                         ))
                     }
                 }
             }
         })
         .await
-        .map_err(|_| AppError::Model("本机 Codex 桥接请求超时".into()))?
+        .map_err(|_| AppError::Model("本机模型 桥接请求超时".into()))?
     }
 }
 struct ActiveGuard {

@@ -21,6 +21,22 @@ afterEach(() => {
   cleanup();
   vi.resetAllMocks();
 });
+it("explains both local execution choices without asking the webpage for ChatGPT credentials", async () => {
+  vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({
+    paired: false,
+    online: false,
+    model: null,
+  });
+  render(<CodexBridge onUpdate={vi.fn()} disabled={false} />);
+  await screen.findByText("尚未配对或配对已过期");
+  expect(screen.getByText("npm run chatgpt:bridge")).toBeTruthy();
+  expect(screen.getByText("npm run codex:bridge")).toBeTruthy();
+  expect(screen.getByText(/没有已选择账号时会打开浏览器授权/)).toBeTruthy();
+  expect(screen.getByText(/浏览器回调仅监听 127\.0\.0\.1/)).toBeTruthy();
+  expect(screen.getByText(/不代表公开或商业化托管服务已获准使用/)).toBeTruthy();
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByLabelText(/密码|令牌|API Key/)).toBeNull();
+});
 it("requires an online paired computer before enabling and keeps pairing code out of storage", async () => {
   vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({
     paired: false,
@@ -34,9 +50,9 @@ it("requires an online paired computer before enabling and keeps pairing code ou
   const storage = vi.spyOn(Storage.prototype, "setItem");
   render(<CodexBridge onUpdate={vi.fn()} disabled={false} />);
   await screen.findByText("尚未配对或配对已过期");
-  expect(
-    (screen.getByText("启用本机 Codex") as HTMLButtonElement).disabled,
-  ).toBe(true);
+  expect((screen.getByText("启用本机模型") as HTMLButtonElement).disabled).toBe(
+    true,
+  );
   fireEvent.click(screen.getByText("生成配对码"));
   const code = await screen.findByLabelText("配对码");
   expect((code as HTMLInputElement).type).toBe("password");
@@ -65,7 +81,7 @@ it("enables the detected model and revokes the account pairing", async () => {
   const update = vi.fn();
   render(<CodexBridge onUpdate={update} disabled={false} />);
   await screen.findByText("本机在线 · 默认模型 fixture");
-  fireEvent.click(screen.getByText("启用本机 Codex"));
+  fireEvent.click(screen.getByText("启用本机模型"));
   await waitFor(() => expect(update).toHaveBeenCalledWith(model));
   fireEvent.click(screen.getByText("撤销配对"));
   await waitFor(() =>
@@ -88,7 +104,7 @@ it("does not update the account after the component unmounts during enable", asy
   const update = vi.fn();
   const view = render(<CodexBridge onUpdate={update} disabled={false} />);
   await screen.findByText("本机在线 · 默认模型 fixture");
-  fireEvent.click(screen.getByText("启用本机 Codex"));
+  fireEvent.click(screen.getByText("启用本机模型"));
   view.unmount();
   resolve({
     provider: "codex-bridge",

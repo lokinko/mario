@@ -12,6 +12,24 @@ pub async fn run_from_env() -> AppResult<()> {
         )
         .init();
 
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--chatgpt-auth") {
+        return tokio::select! {
+            result = crate::chatgpt_auth::command(&args[1..]) => result,
+            _ = tokio::signal::ctrl_c() => Ok(()),
+        };
+    }
+    if args.first().map(String::as_str) == Some("--chatgpt-bridge") {
+        if args.len() != 2 {
+            return Err(AppError::Validation(
+                "--chatgpt-bridge 需要 Mario 网站地址".into(),
+            ));
+        }
+        return tokio::select! {
+            result = crate::codex_bridge_worker::run_chatgpt(&args[1]) => result,
+            _ = tokio::signal::ctrl_c() => Ok(()),
+        };
+    }
     if let Some(site) = std::env::args()
         .skip_while(|arg| arg != "--codex-bridge")
         .nth(1)

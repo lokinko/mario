@@ -18,6 +18,8 @@ flowchart LR
     A -->|公开行情| Q[ECB / 免费行情 / Twelve Data]
     B[个人电脑桥接进程] -->|HTTPS 长轮询| A
     B --> C[本机 Codex App Server]
+    B -->|本机 OAuth 令牌| O[官方 OpenAI Responses API]
+    L[系统浏览器] -->|OAuth 回环回调| B
 ```
 
 同一个 `mario-server` 二进制由 [`runtime.rs`](../server/src/runtime.rs) 选择运行角色：
@@ -26,7 +28,9 @@ flowchart LR
 | --- | --- | --- | --- |
 | 多用户 API（默认） | 必须设置 `DATABASE_URL` | `hosted::serve` | PostgreSQL，按账号 schema 隔离 |
 | 无状态 Agent | `MARIO_ROLE=agent` | `agent::serve` | 无数据库，只接收 API 发来的冻结任务 |
-| Codex 桥接 worker | `--codex-bridge <站点>` | `codex_bridge_worker::run` | 运行在用户电脑，不监听端口，不读 `auth.json` |
+| Codex 桥接 worker | `--codex-bridge <站点>` | `codex_bridge_worker::run` | 用户电脑执行，不监听桥接端口，不读 `auth.json` |
+| ChatGPT 官方桥接 worker | `--chatgpt-bridge <站点>` | `codex_bridge_worker::run_chatgpt` | 用户电脑执行；OAuth 令牌留在本机，直连官方 Responses |
+| 本机 ChatGPT 账号管理 | `--chatgpt-auth <命令>` | `chatgpt_auth::command` | 浏览器 OAuth 仅回环回调；注册、刷新和退出；不连接业务数据库 |
 | 维护命令 | `--reset-password` | `runtime.rs` | 重置指定账号密码 |
 
 PostgreSQL 是唯一的数据存储，没有单机或免登录模式。本地开发（`npm run dev`）与测试使用同一条多用户路径：[`scripts/postgres-cluster.mjs`](../scripts/postgres-cluster.mjs) 在 `.runtime/dev` 维护持久开发集群，或为测试创建一次性集群；开发者在浏览器注册账号，与生产流程一致。
@@ -85,6 +89,7 @@ flowchart TD
 | `db` | 依赖 `application`、`ai`、`agent`、`http`、`hosted`、`runtime` 或行情网络模块 |
 | `application` | 依赖传输/进程适配器或具体行情供应商；`application/analysis.rs` 直接引用 `ai` |
 | `agent` | 依赖 `db`、`storage`、`accounts`、`application`、`http`、`hosted`、`runtime` |
+| 本机 OAuth | `chatgpt_auth` 依赖业务、账号或 AI 实现；在线 HTTP/Agent、领域及仓储依赖本机凭据；`ai/chatgpt.rs` 以外的 AI 模块读取本机 OAuth |
 | `secrets`、行情适配器 | `secrets` 依赖 `error` 以外模块；`prices`/`market_data` 依赖 `models`、`ports`、`error` 以外模块或持有静态可变资源 |
 | 通用 | 非 `db` 模块使用通配导入；契约、仓储、应用层使用 `axum`；`application`/`ports` 直接使用 `reqwest`；`storage.rs` 以外直接使用数据库驱动 |
 
@@ -102,8 +107,9 @@ flowchart TD
 | `application/` | 跨仓储与外部端口的用例：`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型接口切换策略、Provider 构造与连接测试）、`codex_bridge`（账号配对） |
 | `ports/` | `analysis::AnalysisExecutor` 与事件通道；`market::FxRateProvider`、`SecurityPriceProvider` |
 | `agent.rs` | `AgentExecutor`：配置 `MARIO_AGENT_URL` 时把冻结任务发给独立 Agent，否则进程内执行；Codex 桥接任务始终在 API 进程经桥接中继执行。同文件提供 Agent HTTP 服务 |
-| `ai/` | `orchestrator` 按 `workflow`（当前 v8）执行可选搜索与单次报告生成；格式错误只修复一次；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 只由用户电脑上的桥接 worker 调用；`structured_output` 负责确定性引用、输出校验；资料检索和连续原文摘录归领域层 `evidence`；`streaming` 解析流式草稿 |
-| `codex_bridge_worker.rs` | 用户电脑上的桥接进程，长轮询 API 领取任务并调用本机 Codex |
+| `ai/` | `orchestrator` 按 `workflow`（当前 v8）执行可选搜索与单次报告生成；格式错误只修复一次；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 和 `chatgpt` 只由用户电脑上的桥接 worker 调用，分别使用 Codex 登录和 Mario 自己的官方 OAuth 注册；`structured_output` 负责确定性引用、输出校验；资料检索和连续原文摘录归领域层 `evidence`；`streaming` 解析流式草稿 |
+| `codex_bridge_worker.rs` | 用户电脑上的共用桥接进程，固定注册及授权会话，长轮询 API 领取任务，选择 Codex App Server 或官方 ChatGPT Responses；不上传 OpenAI 凭据 |
+| `chatgpt_auth.rs`、`chatgpt_auth/` | 本机官方 OAuth、签名身份和 scopes 校验、多注册选择、跨进程串行刷新、原子凭据保存及退出；仅由本机运行角色与 `ai/chatgpt.rs` 调用，不依赖业务数据库 |
 | `market_data.rs`、`prices.rs` | 行情端口的网络实现与实例内有界缓存；只处理公开行情，不读写账号数据 |
 | `db/`、`storage.rs` | `Database` 门面下的领域仓储（持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
 | `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、期权合约计价及多空头重放、推理事件与执行时限 |
@@ -195,7 +201,8 @@ sequenceDiagram
 | 账号业务数据与版本 | `db` 领域仓储 | 业务写入、回执、日志、投影与版本同事务提交 |
 | 模型配置与凭据 | `db/settings.rs` + `db/secrets.rs` + `secrets.rs` | 接口、地址、模型名、密文与目标绑定由 `save_model_configuration` 在同一事务写入，失败保留原配置；主密钥加密，AAD 绑定账号 schema 与用途 |
 | 冻结分析输入 | 单次分析请求 | 执行期间不可变，结果记录输入版本与轨迹 |
-| 桥接配对 | `application/codex_bridge` + `ai/bridge` | 只存配对摘要与短期通道，不接触 OpenAI 凭据 |
+| 桥接配对 | `application/codex_bridge` + `ai/bridge` | 只存配对摘要与短期通道，不接触 OpenAI 凭据；沿用 `codex-bridge` 协议，不区分本机登录实现 |
+| ChatGPT 官方注册与令牌 | 用户电脑的 `chatgpt_auth/store` | 系统用户专属配置目录；稳定 host ID、按 subject + issued client ID 分开的注册；锁内轮换和原子替换；不是业务数据库或账号备份 |
 | 已显示快照、同步状态 | `app/useApplicationData` | 请求代次防止旧响应覆盖新数据 |
 | 显示偏好 | `app/useDisplayPreferences` | 当前浏览器 localStorage；不触发同步、账号写入或数据迁移 |
 | 未保存草稿与单页请求状态 | 各功能页 | 应用层只知道是否需要保护 |

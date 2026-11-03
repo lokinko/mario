@@ -4,6 +4,7 @@ mod ai;
 mod application;
 mod attachments;
 mod authentication;
+mod chatgpt_auth;
 mod codex_bridge_worker;
 mod composition;
 mod context;

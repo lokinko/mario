@@ -1,4 +1,5 @@
 pub(crate) mod bridge;
+pub(crate) mod chatgpt;
 mod codex;
 pub use codex::CodexProvider;
 mod native_provider;

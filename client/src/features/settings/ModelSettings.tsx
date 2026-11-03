@@ -269,7 +269,9 @@ export function ModelSettings({
                 </option>
                 <option value="openai-responses">OpenAI Responses</option>
                 <option value="anthropic">Anthropic Messages</option>
-                <option value="codex-bridge">Codex 本机桥接（线上网页）</option>
+                <option value="codex-bridge">
+                  本机桥接（ChatGPT 登录 / Codex）
+                </option>
               </select>
             </label>
             {provider !== "codex-bridge" && (
@@ -350,7 +352,7 @@ export function ModelSettings({
             <strong>密钥与业务数据分离</strong>
             <p>
               {provider === "codex-bridge"
-                ? "模型请求在配对电脑的 Codex 中执行；只发送你确认的问答资料，不上传 ChatGPT 登录凭据。关闭本机桥接后，线上问答会提示连接不可用。"
+                ? "模型请求由配对电脑通过 ChatGPT 官方授权或本机 Codex 执行；只发送你确认的问答资料，登录与刷新凭据保留在本机。关闭桥接后问答会提示连接不可用，订阅额度不足不会自动切换到 API Key 计费。"
                 : provider === "openai-chat"
                   ? "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥。第三方服务可选择 OpenAI 兼容接口；Chat Completions 问答仅使用已选资料，不启用原生网页搜索。"
                   : "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥；联网查找需模型支持原生网页搜索，连接测试仅验证普通调用。"}

@@ -3,6 +3,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root_dir" && npm run check:architecture)
+(cd "$root_dir" && node --test scripts/codex-bridge.test.mjs)
 (cd "$root_dir" && npm run test:qa-eval)
 (cd "$root_dir" && npm run test:benchmark)
 (cd "$root_dir" && npm run test:deploy)
