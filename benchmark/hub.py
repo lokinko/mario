@@ -43,13 +43,11 @@ def dataset_card(release, path, labels_repo, scorecards):
     reference = next(iter(scorecards.values()), None)
     references = ""
     feature_notes = ""
-    if config.get("input_features") in ("monthly-risk-v1", "monthly-risk-regression-v1", "monthly-risk-regression-fugui-v1",
-                                        "monthly-risk-regression-fugui-v2"):
+    if config.get("input_features") in ("monthly-risk-v1", "monthly-risk-regression-v1", "monthly-risk-regression-fugui-v1"):
         feature_notes = ("\n本版本另含 `stock.long_history.daily_returns_1m`：决策月截至决策日的每日后复权收益，"
                          "按日期映射为十进制字符串；已知停牌按已有价格持平估值，未知缺行保留 null。"
                          "它不含决策后的收益；原 v5 字段与结果标签不变。来源哈希和覆盖见 `long-history-study.json`。\n")
-    if config.get("input_features") in ("monthly-risk-regression-v1", "monthly-risk-regression-fugui-v1",
-                                        "monthly-risk-regression-fugui-v2"):
+    if config.get("input_features") in ("monthly-risk-regression-v1", "monthly-risk-regression-fugui-v1"):
         feature_notes += ("\n本版本在v6上另含 `stock.long_history.clenow_mark_90`：截至决策日最近90个市场交易日的"
                           "对数价格回归，信号为 `(exp(252 × slope) - 1) × 100 × R²`。已知停牌日用上一成交价估值，"
                           "不把停牌日供应商字段当作新成交价；缺行、上市史不足或无法估值仍为 null。"
@@ -59,13 +57,6 @@ def dataset_card(release, path, labels_repo, scorecards):
                           "`weekly_lower` 四个截至决策日的技术信号及 `issues`。信号为布尔值，历史不足或未知缺行保留 null，"
                           "不当作没有买点；不携带原始日线，不补写历史股息率、国资属性或行业。"
                           "富贵策略只验证红利池技术底仓，不是完整高股息国企策略复现；来源与覆盖见 `fugui-study.json`。\n")
-    if config.get("input_features") == "monthly-risk-regression-fugui-v2":
-        feature_notes += ("\nv9替换 `stock.fugui` 的旧买点，字段为 `daily_lower`、`weekly_lower`、`monthly_lower`、"
-                          "`monthly_mid_pullback`、`monthly_macd_negative`及 `issues`。买入必须同时满足日/周BOLL下轨、"
-                          "月BOLL下轨或月BOLL中轨回踩、月MACD柱值<0；DIF/DEA可在零轴上方。"
-                          "下轨按收盘≤下轨+收盘×5%，中轨回踩按上月收盘在中轨上方、本月进入中轨±5%。"
-                          "历史不足或未知缺行保留 null，不携带原始日线，不补写历史股息率或国资属性。"
-                          "富贵策略只验证技术底仓，不是完整高股息国企策略复现；来源与覆盖见 `fugui-study.json`。\n")
     if reference:
         references = (f"\n同一批决策点上，股票池等权总分 {reference['pool_equal_weight_score']['mean']:.2f}，"
                       f"沪深300 总分 {reference['csi300_score']['mean']:.2f}。\n")

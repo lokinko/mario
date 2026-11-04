@@ -155,7 +155,7 @@ flowchart TD
 
 买卖操作比重沿用同一仓位/执行路径：`strategy_runner.generate_weights` 将条件卖出的默认 `sell_fraction` 显式写入仓位；`scoring.exit_rule` 校验触发条件与持股比例，`simulate_exit` 只执行一次并保留余股，`simulate_grid` 按实际成交记录预算使用和减持股数；`portfolio_segments` 维护扣费估值并汇总逐笔 `operations` 到每期成绩。看板只展示这些记录，禁止按价格触发自行补造成交。调整比例或增加执行机制须验证部分卖出后估值、停牌顺延、网格跨格与不同分母、失败不记成交，以及既有策略得分不变；相关测试归 `test_operation_ratios.py`、`test_scoring.py`、`test_dashboard.py` 与策略输出测试。旧报告必须重跑，不维护第二条旧格式展示路径。
 
-`scripts/benchmark_fugui_study.py`只读既有Baostock后复权/独立日历缓存，对账后计算截至决策日的日/周/月BOLL下轨、月中轨回踩与月MACD负柱。两类买点均要求日/周下轨和月负柱，DIF/DEA允许为正；收盘5%容差，重复回踩允许，旧首次回踩/30月线/腰斩分支删除。未知周期切断历史，停牌沿用已知收盘；`--minimal`显式日期、只接受正式v8，替换五信号与问题码生成v9，其余字段/标签不变。唯一策略实现仍为`strategies/fugui/`，依用户要求参与默认看板；隔离执行器与评分器拥有执行和成绩，不推定缺失基本面、不模拟未实现机动仓。规则与复跑见[富贵策略](fugui-strategy.md)；时点、缺失、两组公共门槛、正DIF/DEA负柱、重复回踩、18%仓位、最小v9替换及不可覆盖检查归`test_fugui_study.py`，数据卡归`hub.py`及`test_hub.py`。
+`scripts/benchmark_fugui_study.py`只读取既有Baostock后复权与独立日历缓存，检查重叠档案及原动量字段，生成截至决策日的BOLL、月MACD与首次回踩信号；未知周期保持缺失，明确停牌沿用此前已知收盘。`--minimal`须显式指定构建日期，并只在正式v7上新增`fugui`四个信号和问题码，保留原字段与结果标签。富贵策略按用户明确要求登记唯一的`strategies/fugui/`实现，默认发现和看板不再依赖临时候选；删除旧`candidate`命令和重复源码。执行仍经隔离子进程与原评分器，不将缺失基本面视为满足，也不以固定网格冒充底仓/机动仓分账。规则及复跑见[富贵策略](fugui-strategy.md)，时点、缺失、首次回踩、仓位、最小v8和不可覆盖检查归`test_fugui_study.py`；数据卡说明归`hub.py`与`test_hub.py`。
 
 完整指数采集清单归 `index_membership.py`，复用XLS解析与公开下载器，核对中证A50/上证50各50只，保存原件、获取/来源日期和哈希。每日行情归 `daily_prices.py`，只调用 `public_sources`/`collect` 的公开HTTP能力，最多2个线程；按证券保存完整供应商历史，首次/显式整段刷新；22:37更新独立报价，23:37显式整段刷新历史，按月累计日期记录及源元数据，不混用价格尺度。旧Baostock每日采集代码已退役，SDK仍仅供其他显式研究工具使用；旧双口径归档按不可变标签只读引用，元数据核验归 `hub.historical_prices_reference`，不得用旧价格填充新来源。
 

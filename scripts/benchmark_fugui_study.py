@@ -1,4 +1,4 @@
-"""富贵策略技术信号构建：从既有同源缓存计算技术信号，不将缺失基本面当作满足。"""
+"""富贵策略首轮研究：从既有同源缓存计算技术信号，不将缺失基本面当作满足。"""
 
 import argparse
 import copy
@@ -16,8 +16,9 @@ from benchmark.pool_release import momentum
 from benchmark.release import verify_release
 
 
-VERSION = "fugui-boll-macd-v2"
-FIELDS = ("daily_lower", "weekly_lower", "monthly_lower", "monthly_mid_pullback", "monthly_macd_negative")
+VERSION = "fugui-technical-v1"
+FIELDS = ("monthly_low", "first_pullback", "daily_lower", "weekly_lower", "monthly_upper_return")
+MINIMAL_FIELDS = FIELDS[:4]
 
 
 def boll(prices):
@@ -78,17 +79,33 @@ def features(bars, calendar, decision):
     month_band, week_band, day_band = boll(months), boll(weeks), boll(daily)
     monthly_macd = macd(months)
     if now is not None:
-        for key, band in (("daily_lower", day_band), ("weekly_lower", week_band), ("monthly_lower", month_band)):
+        for key, band in (("daily_lower", day_band), ("weekly_lower", week_band)):
             if band:
                 output[key] = now <= band[0] + now * Decimal("0.05")
+        if month_band:
+            output["monthly_upper_return"] = str(month_band[2] / now - 1)
+    if len(months) >= 36 and monthly_macd is not None and now is not None:
         previous_band = boll(months[:-1])
-        if month_band and previous_band:
-            # 回踩仅指BOLL中轨：上月在中轨上方，本月进入中轨±5%，不限制首次或六个月突破。
-            middle = month_band[1]
-            output["monthly_mid_pullback"] = months[-2] > previous_band[1] and middle * Decimal("0.95") <= now <= middle * Decimal("1.05")
-    if monthly_macd is not None:
-        # 入坑按用户确认：柱值为负即可，DIF/DEA允许仍在零轴上方。
-        output["monthly_macd_negative"] = monthly_macd[2] < 0
+        high, low = max(months[-36:]), min(months[-36:])
+        flat = abs(month_band[0] - previous_band[0]) <= now * Decimal("0.02")
+        near_low = now <= low + (high - low) * Decimal("0.2")
+        underwater = all(value < 0 for value in monthly_macd)
+        output["monthly_low"] = now <= high * Decimal("0.5") and near_low and flat and underwater
+    if len(months) >= 35 and now is not None:
+        # 对20月与30月均线分别找最近6个月的突破；随后第一次进入支撑±5%才算回踩。
+        hit = False
+        for period in (20, 30):
+            averages = [sum(months[i - period + 1:i + 1]) / period if i >= period - 1 else None
+                        for i in range(len(months))]
+            crosses = [i for i in range(max(period, len(months) - 7), len(months) - 1)
+                       if months[i - 1] <= averages[i - 1] and months[i] > averages[i]]
+            if not crosses:
+                continue
+            cross = crosses[-1]
+            first = all(months[i] > averages[i] * Decimal("1.05") for i in range(cross + 1, len(months) - 1))
+            support = averages[-1]
+            hit |= first and support * Decimal("0.95") <= now <= support * Decimal("1.05")
+        output["first_pullback"] = hit
     for key in FIELDS:
         if output[key] is None:
             output["issues"][key] = "insufficient_contiguous_history"
@@ -130,7 +147,7 @@ def build(release, roots, destination, minimal=False, built_on=None):
     verify_release(release)
     config = read_json(release / "config.json") if minimal else None
     if minimal:
-        require(config.get("input_features") == "monthly-risk-regression-fugui-v1", "最小v9必须基于正式v8输入构建")
+        require(config.get("input_features") == "monthly-risk-regression-v1", "最小v8必须基于正式v7输入构建")
         require(built_on is not None, "最小发布包必须显式指定 built_on")
         built_on = date.fromisoformat(built_on).isoformat()
     samples = rows(release / "inputs.jsonl")
@@ -150,10 +167,11 @@ def build(release, roots, destination, minimal=False, built_on=None):
             if key not in cache:
                 cache[key] = features(bars, calendar, decision)
             signal = cache[key]
-            stock["fugui"] = ({**{k: signal[k] for k in FIELDS}, "issues": signal["issues"]}
+            stock["fugui"] = ({**{k: signal[k] for k in MINIMAL_FIELDS},
+                              "issues": {k: v for k, v in signal["issues"].items() if k in MINIMAL_FIELDS}}
                              if minimal else signal)
-            coverage.update(f"{k}_known" for k in FIELDS if stock["fugui"][k] is not None)
-            coverage.update(k for k in FIELDS if stock["fugui"][k] is True)
+            coverage.update(f"{k}_known" for k in (MINIMAL_FIELDS if minimal else FIELDS) if stock["fugui"][k] is not None)
+            coverage.update(k for k in MINIMAL_FIELDS if stock["fugui"][k] is True)
     with new_directory(destination) as stage:
         for path in release.rglob("*"):
             relative = path.relative_to(release)
@@ -162,9 +180,9 @@ def build(release, roots, destination, minimal=False, built_on=None):
                 shutil.copyfile(path, stage / relative)
         write_rows(stage / "inputs.jsonl", enriched)
         if minimal:
-            write_json(stage / "config.json", {**config, "version": config["version"] + "-boll-macd-v2",
-                "input_features": "monthly-risk-regression-fugui-v2", "built_on": built_on,
-                "base_comparison_tag": "pool-scoring-v8", "fugui_features": VERSION})
+            write_json(stage / "config.json", {**config, "version": config["version"] + "-fugui-v1",
+                "input_features": "monthly-risk-regression-fugui-v1", "built_on": built_on,
+                "base_comparison_tag": "pool-scoring-v7", "fugui_features": VERSION})
         report = {"research_only": not minimal, "feature_version": VERSION, "source_manifest_sha256": digest(release / "manifest.json"),
                   "raw_hashes": hashes, "coverage": dict(coverage), "common_fields": dict(comparisons),
                   "fundamentals_available": False, "outcomes_unchanged": digest(stage / "outcomes.jsonl") == digest(release / "outcomes.jsonl")}
@@ -182,7 +200,7 @@ def main():
     builder.add_argument("--release", type=Path, required=True)
     builder.add_argument("--universe-root", type=Path, action="append", required=True)
     builder.add_argument("--out", type=Path, required=True)
-    builder.add_argument("--minimal", action="store_true", help="替换富贵策略买点为五个BOLL/MACD信号，供v9发布")
+    builder.add_argument("--minimal", action="store_true", help="仅加入默认富贵策略需要的四个信号，供v8发布")
     builder.add_argument("--built-on", help="最小发布包必须显式指定构建日期")
     args = parser.parse_args()
     report = build(args.release, args.universe_root, args.out, args.minimal, args.built_on)
