@@ -1,5 +1,11 @@
 from decimal import Decimal
 
+REQUIRES = {
+    'stocks.*.momentum_63': 'decimal?',
+    'stocks.*.symbol': 'text',
+    'stocks.*.trade_status': 'text',
+}
+
 
 def decide(sample):
     chosen = [s["symbol"] for s in sample["stocks"]

@@ -18,6 +18,8 @@ from .dashboard import dashboard_server, write_dashboard
 from .pool_release import build_pool_release
 from .scoring import evaluate_weights
 from .strategy_runner import bench_run
+from .feature_pipeline import build_features, describe_indicators
+from .raw_data import import_raw, read_raw
 
 DEFAULT_CONFIG = Path(__file__).with_name("config.json")
 DEFAULT_STRATEGIES = Path(__file__).with_name("strategies")
@@ -61,6 +63,20 @@ def main(argv=None):
     bench.add_argument("--strategies", type=Path, default=DEFAULT_STRATEGIES)
     bench.add_argument("--out", type=Path, help="默认 .runtime/benchmark/bench/<发布包目录名>")
     bench.add_argument("--force", action="store_true", help="忽略缓存全部重跑")
+    bench.add_argument("--raw", type=Path, help="原始归档；按策略声明补算缺少的指标")
+    sub.add_parser("indicators", help="列出可组合指标、依赖、类型、口径和计算指纹")
+    raw = sub.add_parser("raw-import", help="将已有来源缓存整理为独立原始归档，不计算指标或联网")
+    raw.add_argument("--universe-root", type=Path, action="append", default=[])
+    raw.add_argument("--history", type=Path)
+    raw.add_argument("--calendar", type=Path)
+    raw.add_argument("--release", type=Path, help="仅用于确定需要导入的证券范围")
+    raw.add_argument("--out", type=Path, required=True)
+    features = sub.add_parser("features-build", help="由原始归档按字段组合衍生指标，不要求特定切片版本")
+    features.add_argument("--release", type=Path, required=True)
+    features.add_argument("--raw", type=Path, required=True)
+    features.add_argument("--field", action="append", help="可重复；不指定则补全所有注册指标")
+    features.add_argument("--built-on")
+    features.add_argument("--out", type=Path, required=True)
     serve = sub.add_parser("bench-serve", help="在本机提供看板；bench-run 重新生成后已打开的页面自动载入")
     serve.add_argument("--release", type=Path, required=True, help="pool-build 生成的评分切片")
     serve.add_argument("--out", type=Path, help="默认 .runtime/benchmark/bench/<发布包目录名>")
@@ -102,7 +118,15 @@ def main(argv=None):
     score.add_argument("--top-k", type=int, default=5)
     args = parser.parse_args(argv)
     try:
-        if args.command == "tech-universe":
+        if args.command == "indicators":
+            result = describe_indicators()
+        elif args.command == "raw-import":
+            symbols = {s["symbol"] for sample in rows(args.release / "inputs.jsonl") for s in sample["stocks"]} if args.release else None
+            result = import_raw(args.out, roots=args.universe_root, history=args.history,
+                                calendar_path=args.calendar, symbols=symbols)
+        elif args.command == "features-build":
+            result = build_features(args.release, args.raw, args.out, args.field, args.built_on)
+        elif args.command == "tech-universe":
             years = [int(value) for value in args.years.split(",") if value.strip()]
             result = collect_tech_universe(args.root, years, args.top, args.workers, args.sw_file)
         elif args.command == "dividend-universe":
@@ -110,7 +134,7 @@ def main(argv=None):
             result = collect_dividend_universe(args.root, years, args.top, args.workers)
         elif args.command == "bench-run":
             out = args.out or Path(".runtime/benchmark/bench") / args.release.resolve().name
-            runs = bench_run(args.strategies, args.release, out, args.force)
+            runs = bench_run(args.strategies, args.release, out, args.force, raw=read_raw(args.raw) if args.raw else None)
             board = write_dashboard(out, out, args.release)
             print(json.dumps({"runs": runs, "dashboard": board["dashboard"]}, ensure_ascii=False, indent=2))
             return 0 if all(run["status"] != "failed" for run in runs) else 1

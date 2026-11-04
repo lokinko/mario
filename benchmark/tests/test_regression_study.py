@@ -7,8 +7,9 @@ from decimal import Decimal, localcontext
 from pathlib import Path
 
 from benchmark.files import Invalid
+from benchmark.price_indicators import regression_features
 from benchmark.strategy_runner import check_source, generate_weights
-from scripts.benchmark_regression_study import GRIDS, regression_features, source_for
+from scripts.benchmark_regression_study import GRIDS, source_for
 from benchmark.tests.test_long_history_study import fixture
 
 

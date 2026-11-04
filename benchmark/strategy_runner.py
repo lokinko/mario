@@ -17,6 +17,8 @@ from decimal import ROUND_DOWN, Decimal
 from pathlib import Path
 
 from .files import Invalid, digest, read_json, require, rows, write_json, write_rows
+from .feature_pipeline import enrich, samples_digest
+from .input_contract import dependency_samples, requirements, stock_indicators, validate_inputs
 from .public_sources import SHANGHAI
 from .release import verify_release
 from .scoring import evaluate_weights
@@ -28,7 +30,8 @@ BLOCKED_NAMES = {"open", "exec", "eval", "compile", "__import__", "globals", "lo
                  "delattr", "input", "breakpoint", "help", "memoryview", "exit", "quit"}
 WEIGHT_STEP = Decimal("0.00000001")
 TIMEOUT_SECONDS = 600
-ENGINE_FILES = ("scoring.py", "strategy_runner.py")
+ENGINE_FILES = ("scoring.py", "strategy_runner.py", "input_contract.py", "feature_pipeline.py",
+                "price_indicators.py", "technical_indicators.py", "raw_data.py")
 
 SANDBOX = r"""
 import builtins, json, sys
@@ -121,6 +124,8 @@ def discover(directory):
 
 def generate_weights(code_path, samples, timeout=TIMEOUT_SECONDS):
     code_path = Path(code_path).resolve()
+    source = code_path.read_text(encoding="utf-8")
+    validate_inputs(dependency_samples(samples, source), requirements(source))
     payload = "".join(json.dumps(s, ensure_ascii=False) + "\n" for s in samples)
     try:
         done = subprocess.run([sys.executable, "-I", "-X", "utf8", "-c", SANDBOX, str(code_path), json.dumps(ALLOWED_IMPORTS),
@@ -143,13 +148,14 @@ def generate_weights(code_path, samples, timeout=TIMEOUT_SECONDS):
     return output
 
 
-def fingerprint(code_path, release):
+def fingerprint(code_path, release, raw_fingerprint=""):
     engine = Path(__file__).parent
-    parts = [digest(code_path), digest(release / "manifest.json"), *(digest(engine / name) for name in ENGINE_FILES)]
+    parts = [digest(code_path), digest(release / "manifest.json"), raw_fingerprint,
+             *(digest(engine / name) for name in ENGINE_FILES)]
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
 
-def run_one(name, folder, release, samples, outcomes, target):
+def run_one(name, folder, release, samples, outcomes, target, raw=None, raw_fingerprint=""):
     """成功时 target 下有 weights.jsonl、scorecard.json、run.json；失败只留下记录错误的 run.json。"""
     code_path = folder / "strategy.py"
     record = {"strategy": name, "fingerprint": None, "ran_at": datetime.now(SHANGHAI).isoformat(timespec="seconds")}
@@ -158,7 +164,16 @@ def run_one(name, folder, release, samples, outcomes, target):
         source = code_path.read_text(encoding="utf-8")
         problems = check_source(source)
         require(not problems, "静态检查未通过：" + "；".join(problems))
-        record.update(title=title, description=description, fingerprint=fingerprint(code_path, release))
+        record.update(title=title, description=description, fingerprint=fingerprint(code_path, release, raw_fingerprint))
+        required = requirements(source)
+        applicable = dependency_samples(samples, source)
+        if raw is not None:
+            prepared, record["features"] = enrich(applicable, raw, stock_indicators(required))
+            by_id = {sample["id"]: sample for sample in prepared}
+            samples = [by_id.get(sample["id"], sample) for sample in samples]
+            applicable = dependency_samples(samples, source)
+        validate_inputs(applicable, required)
+        record["input_sha256"] = samples_digest(samples)
         weights = generate_weights(code_path, samples)
         report = evaluate_weights(samples, outcomes, weights)
     except (Invalid, OSError, KeyError, ValueError, ArithmeticError) as exc:
@@ -177,10 +192,11 @@ def run_one(name, folder, release, samples, outcomes, target):
     return {"strategy": name, "status": "scored", "score": report["score"]["mean"]}
 
 
-def bench_run(strategies_dir, release, out, force=False, progress=None):
+def bench_run(strategies_dir, release, out, force=False, progress=None, raw=None):
     """对目录中全部策略生成仓位并打分；代码、发布包与打分引擎都未变的策略沿用缓存。已删除策略的结果一并清理。"""
     verify_release(release)
     strategies = discover(strategies_dir)
+    raw_fingerprint = samples_digest({"history": raw.history, "calendar": raw.calendar, "price_basis": raw.price_basis}) if raw else ""
     out.mkdir(parents=True, exist_ok=True)
     for stale in out.iterdir():
         if stale.is_dir() and stale.name not in strategies and (stale / "run.json").exists():
@@ -193,7 +209,7 @@ def bench_run(strategies_dir, release, out, force=False, progress=None):
         try:
             cached = read_json(previous) if not force and previous.exists() else None
             if cached and cached["status"] == "scored" and \
-                    cached["fingerprint"] == fingerprint(folder / "strategy.py", release):
+                    cached["fingerprint"] == fingerprint(folder / "strategy.py", release, raw_fingerprint):
                 title, description = describe((folder / "strategy.md").read_text(encoding="utf-8"))
                 if (cached["title"], cached["description"]) != (title, description):
                     write_json(previous, {**cached, "title": title, "description": description})
@@ -205,7 +221,7 @@ def bench_run(strategies_dir, release, out, force=False, progress=None):
             pass
         if samples is None:
             samples, outcomes = rows(release / "inputs.jsonl"), rows(release / "outcomes.jsonl")
-        results.append(run_one(name, folder, release, samples, outcomes, target))
+        results.append(run_one(name, folder, release, samples, outcomes, target, raw, raw_fingerprint))
         if progress:
             progress(results, len(strategies))
     return results

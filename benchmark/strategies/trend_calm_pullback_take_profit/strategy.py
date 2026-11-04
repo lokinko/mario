@@ -1,5 +1,14 @@
 from decimal import Decimal
 
+REQUIRES = {
+    'pool': 'text',
+    'stocks.*.momentum_63': 'decimal?',
+    'stocks.*.return_20': 'decimal?',
+    'stocks.*.symbol': 'text',
+    'stocks.*.trade_status': 'text',
+    'stocks.*.volatility_63': 'decimal?',
+}
+
 CALM = Decimal("0.028")
 TAKE_PROFIT = {"take_profit": "0.08"}
 

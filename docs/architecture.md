@@ -251,6 +251,8 @@ sequenceDiagram
 
 ### 离线 benchmark 研究工具
 
+研究数据的扩展边界为“来源事实 → 确定性指标 → 策略消费”：`raw_data.py` 适配既有缓存、验证原件证据并管理独立原始归档，`price_indicators.py`、`technical_indicators.py`、`announcement_indicators.py`、`financial_indicators.py` 只对传入值计算；`feature_pipeline.py` 按字段定义组合来源和计算器，`input_contract.py` 校验策略 `REQUIRES` 中实际需要的路径和类型。新增指标不要求修改整包版本或旧策略，已有字段和未知扩展保留；固定切片标签、文件哈希、来源口径与计算指纹用于追溯。执行器可显式接收原始归档补算缺失字段，明确 null 不被覆盖；价格来源、共同字段或截止时间不一致时拒绝混合。公告和 SUE 的证据装配仍属独立研究工具，未自动进入正式行情指标目录。细节、迁移和扩展步骤见 [原始数据与衍生指标](benchmark-data.md)。
+
 Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略资源，支持可编辑安装，不扫描前端和 Rust 目录。部署时由 `scripts/benchmark-deploy.mjs` 拥有看板环境准备与当前快照同步；虚拟环境、uv 管理的 Python 与缓存分别位于 `.runtime/benchmark/.venv`、`python`、`uv-cache`，均由服务用户创建。部署不复用仓库 `.venv`，不继承调用者的 Python 环境选择；两次研究 CLI 调用通过 `MARIO_BENCHMARK_PYTHON` 使用同一个部署解释器，下载仍使用服务用户保存的 HF 凭据。
 
 [`benchmark/`](../benchmark/) 是与生产模块隔离的 Python 标准库 CLI，由 `scripts/benchmark.mjs` 启动；`public_sources` 优先探测免费来源覆盖并归档响应，`sources` 提供可选授权行情和财报原件下载，`dataset` 负责契约、完整性和历史时点投影，`evaluate` 计算预测排序指标，`release` 创建不可覆盖且带哈希清单的本地发布包。CLI 依赖这些研究模块，研究模块不导入前后端源码、不访问 PostgreSQL、账号备份或生产凭据。边界测试限制其依赖为 Python 标准库和本包，例外只有两个单一适配器：`baostock_market` 可导入 uv 依赖组 `market` 中的 `baostock`，用于已退市证券的免费日线；`hub` 可导入依赖组 `publish` 中的 `huggingface_hub`，负责上传与按固定提交下载。在线服务不调用研究 CLI。
@@ -277,11 +279,11 @@ Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略
 
 独立研究脚本 `scripts/benchmark_long_history_study.py` 只消费已缓存公开行情与既有切片，生成截至决策日的长窗口特征和临时候选，再复用隔离执行器和评分器。扩充输入写到新的研究目录，保留原字段与结果标签；研究目录不自动替换线上切片，也不向正式策略目录安装候选。它不引用前后端模块或账号存储，来源与实验记录见研究清单和审计文档。
 
-`scripts/benchmark_risk_study.py` 在同一边界内构造三年周波动和月内历史日收益，复用构建/扫描函数的显式特征与规则参数；组合风险在候选策略中计算。最小输入升级只携带准入策略需要的字段，`hub` 数据卡按明确的 `input_features` 版本说明截止时点和缺失语义；原始日线不随最小升级包上传。
+`scripts/benchmark_risk_study.py` 在同一边界内构造三年周波动和月内历史日收益，复用构建/扫描函数的显式特征与规则参数；组合风险在候选策略中计算。最小输入升级只携带准入策略需要的字段，`hub` 数据卡按实际存在的字段和指标定义说明截止时点和缺失语义；原始日线不随最小升级包上传。
 
-当前 `pool-scoring-v8` 保留v7月内日收益及90日回归趋势，另增`stock.fugui`四个截至决策日的布尔信号与问题码，契约为`monthly-risk-regression-fugui-v1`。`trend_basket_risk`使用月内收益估计组合方差，`trend_regression_tilt`按回归趋势倾斜再估计方差，`fugui`只读取技术底仓所需信号；原21项策略输入和结果标签不变。部署默认标签为v8，旧不可变标签供对应旧提交复现；需要新字段的策略不在缺失时静默换逻辑。
+当前 `pool-scoring-v8` 保留v7月内日收益及90日回归趋势，另增`stock.fugui`四个截至决策日的布尔信号与问题码，历史整包标记为`monthly-risk-regression-fugui-v1`，该标记不再用于兼容判断。`trend_basket_risk`使用月内收益估计组合方差，`trend_regression_tilt`按回归趋势倾斜再估计方差，`fugui`只读取技术底仓所需信号；原21项策略输入和结果标签不变。持续评测默认样本快照仍为v8，旧不可变标签供研究复现；需要新字段时通过显式原始归档补算或报告依赖缺失，不静默换逻辑。
 
-`scripts/benchmark_regression_study.py`复用长历史构建/扫描及月内收益计算，比较严格90日与停牌估值口径；缺行不前填，窗口不延长。`--minimal`只输出准入机制必需的信号和原v6字段，发布仍经`hub`显式执行。它只依赖标准库与离线研究模块，不进入在线状态或账号事务。
+`scripts/benchmark_regression_study.py`复用长历史构建/扫描并调用共享行情指标计算，比较严格90日与停牌估值口径；缺行不前填，窗口不延长。`--minimal`只输出准入机制必需的信号和原v6字段，发布仍经`hub`显式执行。它只依赖标准库与离线研究模块，不进入在线状态或账号事务。
 
 `scripts/benchmark_earnings_study.py` 消费巨潮公告和中证市场行情的独立缓存，构造截至决策日已结束的报告公告反应窗口；公告解析仍复用 `public_sources`，不解析未核验EPS或读取未来标签生成特征。组织标识和证券代码分开处理，旧代码公告不会自动归入新代码。该扩充只用于独立研究输入，不改变正式切片数据契约。
 
@@ -289,7 +291,7 @@ Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略
 
 输入、请求缓存与发布包归 `.runtime/benchmark/`，是公开研究语料文件，不是第二个在线业务存储引擎。行情 token 只从终端环境读取。Hugging Face 是可选的后续分发渠道，本地构建不发布数据。完整原始归档与按披露时间截断的模型 inputs、未来 labels 分开；未核对历史成分、缺少日线或财报时不生成完成发布包。详细契约、失败恢复和研究限制见 [benchmark](benchmark.md)。
 
-`scripts/benchmark_fugui_study.py` 在同一离线边界内消费既有后复权/交易日历缓存，按截止时点构造 BOLL、MACD 与首次回踩特征；`--minimal --built-on <日期>`从v7生成只增加准入信号的v8发布输入。策略代码只存在于正式目录，旧临时代码生成入口已删除。它保留原字段和结果标签，不将缺失国资、股息与行业数据推定为通过；执行仍归隔离执行器和评分器，不新增在线状态。[富贵策略方案](fugui-strategy.md)区分完整设计、技术底仓与尚未实现的滚动/基本面规则。
+`scripts/benchmark_fugui_study.py` 在同一离线边界内消费既有后复权/交易日历缓存，按截止时点构造 BOLL、MACD 与首次回踩特征；`--minimal --built-on <日期>`仅增加底仓准入信号，不限定基础切片版本；通用组合使用`features-build`。策略代码只存在于正式目录，旧临时代码生成入口已删除。它保留原字段和结果标签，不将缺失国资、股息与行业数据推定为通过；执行仍归隔离执行器和评分器，不新增在线状态。[富贵策略方案](fugui-strategy.md)区分完整设计、技术底仓与尚未实现的滚动/基本面规则。
 
 `collect` 编排免费批量补采：固定显式证券清单和请求快照，保存逐证券行情/财报目录、逐 PDF 哈希与可恢复进度；仅依赖公开来源适配器和文件契约，不调用在线服务。交易日历闭市日不算价格缺口，少量未补齐交易日只记覆盖状态、不阻塞其他资料下载。Yahoo 与腾讯价格口径分开归档，当前成分采集清单与历史年度前 20 名选样分开，未核对的财报与历史成分不会被采集流程升级为评测就绪。
 

@@ -9,8 +9,9 @@ from pathlib import Path
 
 from benchmark.files import Invalid, digest, read_json, rows, write_json, write_rows
 from benchmark.release import verify_release
+from benchmark.price_indicators import long_features as features
 from benchmark.strategy_runner import check_source, generate_weights
-from scripts.benchmark_long_history_study import FIELDS, GRIDS, build, features, source_for
+from scripts.benchmark_long_history_study import FIELDS, GRIDS, build, source_for
 
 
 def fixture():

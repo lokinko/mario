@@ -9,7 +9,8 @@ from pathlib import Path
 
 from benchmark.strategy_runner import check_source, generate_weights
 from benchmark.files import Invalid
-from scripts.benchmark_risk_study import GRIDS, monthly_features, risk_features, source_for
+from benchmark.price_indicators import monthly_features, risk_features
+from scripts.benchmark_risk_study import GRIDS, source_for
 
 
 def fixture():

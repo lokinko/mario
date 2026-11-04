@@ -8,9 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .dashboard import render, write_dashboard
-from .files import Invalid, read_json, require
+from .files import Invalid, digest, read_json, require
 from .hub import fetch, live_read, live_write
 from .strategy_runner import bench_run
+from .raw_data import read_raw
 
 LIVE_PATH = "dashboard/current.json"
 
@@ -19,7 +20,7 @@ def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def evaluate(repo, labels_repo, tag, commit, run_url, workspace, strategies):
+def evaluate(repo, labels_repo, tag, commit, run_url, workspace, strategies, raw_root=None):
     require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", tag), "评分切片标签格式错误")
     previous = live_read(labels_repo, LIVE_PATH, missing=True)
     state = {"commit": commit, "tag": tag, "run_url": run_url, "started_at": now(),
@@ -37,7 +38,7 @@ def evaluate(repo, labels_repo, tag, commit, run_url, workspace, strategies):
             state.update(completed=len(results), total=total, strategies=results.copy(), updated_at=now())
             live_write(labels_repo, LIVE_PATH, data)
 
-        runs = bench_run(strategies, release, out, progress=progress)
+        runs = bench_run(strategies, release, out, progress=progress, raw=read_raw(raw_root) if raw_root else None)
         failures = [run for run in runs if run["status"] == "failed"]
         if failures:
             raise Invalid("；".join(f"{item['strategy']}: {item['error']}" for item in failures))
@@ -45,6 +46,8 @@ def evaluate(repo, labels_repo, tag, commit, run_url, workspace, strategies):
         candidate = read_json(out / "dashboard.json")
         candidate["result_commit"] = commit
         candidate["result_tag"] = tag
+        candidate["result_sources"] = {"input_manifest_sha256": digest(release / "manifest.json"),
+                                       "raw_manifest_sha256": digest(raw_root / "manifest.json") if raw_root else None}
         state.update(status="completed", finished_at=now())
         candidate["evaluation"] = state
         live_write(labels_repo, LIVE_PATH, candidate)
@@ -80,6 +83,7 @@ def main(argv=None):
     parser.add_argument("--commit")
     parser.add_argument("--run-url", default="")
     parser.add_argument("--strategies", type=Path, default=Path(__file__).with_name("strategies"))
+    parser.add_argument("--raw", type=Path, help="可选原始归档，用于按需补算策略指标")
     parser.add_argument("--out", type=Path, default=Path(".runtime/benchmark/current"))
     parser.add_argument("--watch", action="store_true")
     args = parser.parse_args(argv)
@@ -87,7 +91,7 @@ def main(argv=None):
         if not args.commit:
             parser.error("evaluate 必须提供 --commit")
         with tempfile.TemporaryDirectory(prefix="mario-benchmark-") as folder:
-            evaluate(args.repo, args.labels_repo, args.tag, args.commit, args.run_url, Path(folder), args.strategies)
+            evaluate(args.repo, args.labels_repo, args.tag, args.commit, args.run_url, Path(folder), args.strategies, args.raw)
         return
     stopping = threading.Event()
     if args.watch:

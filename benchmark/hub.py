@@ -14,7 +14,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from .files import Invalid, day, digest, read_json, require, symbol, write_json
+from .files import Invalid, day, digest, read_json, require, rows, symbol, write_json
+from .feature_pipeline import value_at
 from .release import verify_release
 from .strategy_runner import completed_runs
 
@@ -43,20 +44,28 @@ def dataset_card(release, path, labels_repo, scorecards):
     reference = next(iter(scorecards.values()), None)
     references = ""
     feature_notes = ""
-    if config.get("input_features") in ("monthly-risk-v1", "monthly-risk-regression-v1", "monthly-risk-regression-fugui-v1"):
+    stocks = [stock for sample in rows(release / "inputs.jsonl") for stock in sample.get("stocks", [])]
+    def present(path):
+        return any(value_at(stock, path)[0] for stock in stocks)
+    if present("long_history.daily_returns_1m"):
         feature_notes = ("\n本版本另含 `stock.long_history.daily_returns_1m`：决策月截至决策日的每日后复权收益，"
                          "按日期映射为十进制字符串；已知停牌按已有价格持平估值，未知缺行保留 null。"
-                         "它不含决策后的收益；原 v5 字段与结果标签不变。来源哈希和覆盖见 `long-history-study.json`。\n")
-    if config.get("input_features") in ("monthly-risk-regression-v1", "monthly-risk-regression-fugui-v1"):
-        feature_notes += ("\n本版本在v6上另含 `stock.long_history.clenow_mark_90`：截至决策日最近90个市场交易日的"
+                         "它不含决策后的收益。来源哈希和覆盖见指标构建记录。\n")
+    if present("long_history.clenow_mark_90"):
+        feature_notes += ("\n输入含 `stock.long_history.clenow_mark_90`：截至决策日最近90个市场交易日的"
                           "对数价格回归，信号为 `(exp(252 × slope) - 1) × 100 × R²`。已知停牌日用上一成交价估值，"
                           "不把停牌日供应商字段当作新成交价；缺行、上市史不足或无法估值仍为 null。"
                           "该信号只含决策前数据，不携带回归原始价格，不缩短90日窗口。\n")
-    if config.get("input_features") == "monthly-risk-regression-fugui-v1":
-        feature_notes += ("\nv8在v7上增加 `stock.fugui` 的 `monthly_low`、`first_pullback`、`daily_lower`、"
+    if present("fugui.monthly_low"):
+        feature_notes += ("\n输入含 `stock.fugui` 的 `monthly_low`、`first_pullback`、`daily_lower`、"
                           "`weekly_lower` 四个截至决策日的技术信号及 `issues`。信号为布尔值，历史不足或未知缺行保留 null，"
                           "不当作没有买点；不携带原始日线，不补写历史股息率、国资属性或行业。"
-                          "富贵策略只验证红利池技术底仓，不是完整高股息国企策略复现；来源与覆盖见 `fugui-study.json`。\n")
+                          "富贵策略只验证红利池技术底仓，不是完整高股息国企策略复现。\n")
+    if (release / "features.json").exists():
+        definitions = read_json(release / "features.json").get("indicators", {})
+        feature_notes += "\n指标按能力独立扩展，快照标识不作为兼容条件。定义、来源与计算指纹见 `features.json`。\n"
+        feature_notes += "\n| 指标 | 类型 | 单位 |\n| --- | --- | --- |\n" + "\n".join(
+            f"| `{name}` | {spec['kind']} | {spec['unit']} |" for name, spec in sorted(definitions.items())) + "\n"
     if reference:
         references = (f"\n同一批决策点上，股票池等权总分 {reference['pool_equal_weight_score']['mean']:.2f}，"
                       f"沪深300 总分 {reference['csi300_score']['mean']:.2f}。\n")

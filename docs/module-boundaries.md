@@ -129,6 +129,8 @@ flowchart TD
 
 ## 开发流程
 
+离线 benchmark 的数据扩展遵循 [原始数据与衍生指标](benchmark-data.md)：来源格式适配、原始归档与财报证据核验归 `raw_data.py`，确定性计算归四个 `*_indicators.py`，按字段组合与派生包归 `feature_pipeline.py`，实际策略输入检查归 `input_contract.py`。计算模块只依赖共享值校验，不能读原始文件、网络、来源 SDK 或标签；组合层不能依赖策略执行和 HF 发布。静态方向由 `check-architecture.mjs` 检查，AST 与行为边界由 `test_feature_pipeline.py` 检查。新增行情指标只增加定义和必要的纯函数，策略在 `REQUIRES` 声明消费路径；额外字段允许存在，不按整包版本限制。公式语义变化使用新输出名称或新建显式重算快照，保留来源、时点、单位、缺失原因与代码指纹。原始导入、`features-build`、`bench-run --raw` 的命令和迁移步骤均见该文档。
+
 宿主机部署权限准备归 `deploy.sh`：root 仅管理系统依赖与 systemd，用户工具、配置生成、构建和服务运行归同一个非 root 账号。部署在下载工具和停服前自动创建缺失 home，修复默认专用 home 本身及 `.cargo`、`.rustup`、`.local/bin` 的历史权限；自定义已有 home 须属于服务账号，不递归修改其他个人文件或 `.local` 应用数据，不跟随工具链接写入外部目标。`npm run test:deploy` 覆盖旧权限修复、服务用户实际写入、可执行位/链接保留、重复执行、缺失 home 和修复范围；不要把构建改成 root 来绕过权限准备。既有数据库仍归原运行账号，不迁移数据。部署使用见 [服务用户权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
 
 研究看板的侧边栏入口由应用壳和 `app/navigation.ts` 管理，放在“研究”分组，使用网站前缀下的 `dashboard` 链接在新标签页打开；不作为内部 `View`，不触发当前页切换或清理草稿。导航链接沿用侧栏样式、移动端抽屉关闭和键盘焦点约束，看板继续使用现有页面与会话认证。
@@ -147,17 +149,17 @@ HF 镜像配置 `HF_ENDPOINT` 由 `host-runtime --prepare` 保存到 `.env`，�
 
 `scripts/benchmark_risk_study.py` 通过显式特征函数、字段和规则配置复用上述工具，不改变默认长窗口研究结果。周末、三年回看与月内停牌估值归特征构建；协方差预算归候选策略，不能用个股标准差均值替代。`--minimal --built-on <日期>` 构造 `monthly-risk-v1` 最小升级输入，仍保留原标签与字段，发布和策略安装是另外的显式步骤。相关测试归 `benchmark/tests/test_risk_study.py`，数据卡说明归 `hub.py` 与 `test_hub.py`；新旧机制和升级评审见 [第三批实验](audits/benchmark-risk-signals-20261102.md)。
 
-`scripts/benchmark_earnings_study.py` 只消费公告/市场/个股缓存，复用 `public_sources.report_catalog`、长历史构建与月内收益计算；首次报告选择、修订排除、证券代码核对和公告窗口截止归该研究工具，检验见 `benchmark/tests/test_earnings_study.py`。公告源、排除记录和市场源哈希写入研究切片配置，未结束窗口保留问题码，不从未来标签补全。方法与缓存契约见[公告反应实验](audits/benchmark-earnings-signals-20261102.md)。
+`scripts/benchmark_earnings_study.py` 只消费公告/市场/个股缓存，复用 `public_sources.report_catalog`、长历史构建与月内收益计算；首次报告选择、修订排除和证券代码核对归该研究工具，公告窗口截止和CAR计算归`announcement_indicators.py`，检验见 `benchmark/tests/test_earnings_study.py`。公告源、排除记录和市场源哈希写入研究切片配置，未结束窗口保留问题码，不从未来标签补全。方法与缓存契约见[公告反应实验](audits/benchmark-earnings-signals-20261102.md)。
 
-`scripts/benchmark_sue_study.py` 是财务输入试点工具，读取已人工核验的普通股利润与恒定股数台账；原件路径/哈希和来源时间校验、累计转单季、季度版本选择与八季同比窗口归该工具，边界检验见`benchmark/tests/test_sue_study.py`。它不接入正式发布构建，不代替PDF语义审阅，不引入财务供应商SDK；口径、台账契约及未就绪项见[SUE试点](audits/benchmark-sue-pilot-20261102.md)。
+`scripts/benchmark_sue_study.py` 是财务输入试点工具，读取已人工核验的普通股利润与恒定股数台账；原件路径/哈希和来源时间校验归`raw_data.py`，累计转单季、季度版本选择与八季同比窗口归`financial_indicators.py`，该工具只装配研究输入与输出，边界检验见`benchmark/tests/test_sue_study.py`。它不接入正式发布构建，不代替PDF语义审阅，不引入财务供应商SDK；口径、台账契约及未就绪项见[SUE试点](audits/benchmark-sue-pilot-20261102.md)。
 
-`scripts/benchmark_regression_study.py`拥有90日回归信号、停牌估值敏感性口径与候选生成；复用长历史构建/扫描和月内收益，最小v7只添加`clenow_mark_90`。实际权重倾斜与倾斜后方差预算归正式策略，不把估计前旧权重的方差沿用到新篮子。时点、缺失、价格单位、并列排名、现金预算及正式契约测试见`benchmark/tests/test_regression_study.py`；数据卡说明归`hub.py`与`test_hub.py`，规则和成绩见[回归实验](audits/benchmark-regression-signals-20261102.md)。
+`price_indicators.py`拥有90日回归信号及停牌估值敏感性口径，`scripts/benchmark_regression_study.py`只编排研究构建与候选生成；复用长历史构建/扫描和月内收益，最小v7只添加`clenow_mark_90`。实际权重倾斜与倾斜后方差预算归正式策略，不把估计前旧权重的方差沿用到新篮子。时点、缺失、价格单位、并列排名、现金预算及正式契约测试见`benchmark/tests/test_regression_study.py`；数据卡说明归`hub.py`与`test_hub.py`，规则和成绩见[回归实验](audits/benchmark-regression-signals-20261102.md)。
 
 策略扩展先按机制去重：同一逻辑只更新原目录的最佳参数，删除被替代的参数目录、专属测试配置与当前文档入口，再用 `bench-run` 清理旧结果并刷新看板。不同选股、风险预算或执行机制可以分别登记；完整搜索空间及参数选择范围写入策略说明与审计，不把参数扫描变成多条策略。
 
 买卖操作比重沿用同一仓位/执行路径：`strategy_runner.generate_weights` 将条件卖出的默认 `sell_fraction` 显式写入仓位；`scoring.exit_rule` 校验触发条件与持股比例，`simulate_exit` 只执行一次并保留余股，`simulate_grid` 按实际成交记录预算使用和减持股数；`portfolio_segments` 维护扣费估值并汇总逐笔 `operations` 到每期成绩。看板只展示这些记录，禁止按价格触发自行补造成交。调整比例或增加执行机制须验证部分卖出后估值、停牌顺延、网格跨格与不同分母、失败不记成交，以及既有策略得分不变；相关测试归 `test_operation_ratios.py`、`test_scoring.py`、`test_dashboard.py` 与策略输出测试。旧报告必须重跑，不维护第二条旧格式展示路径。
 
-`scripts/benchmark_fugui_study.py`只读取既有Baostock后复权与独立日历缓存，检查重叠档案及原动量字段，生成截至决策日的BOLL、月MACD与首次回踩信号；未知周期保持缺失，明确停牌沿用此前已知收盘。`--minimal`须显式指定构建日期，并只在正式v7上新增`fugui`四个信号和问题码，保留原字段与结果标签。富贵策略按用户明确要求登记唯一的`strategies/fugui/`实现，默认发现和看板不再依赖临时候选；删除旧`candidate`命令和重复源码。执行仍经隔离子进程与原评分器，不将缺失基本面视为满足，也不以固定网格冒充底仓/机动仓分账。规则及复跑见[富贵策略](fugui-strategy.md)，时点、缺失、首次回踩、仓位、最小v8和不可覆盖检查归`test_fugui_study.py`；数据卡说明归`hub.py`与`test_hub.py`。
+`scripts/benchmark_fugui_study.py`只读取既有Baostock后复权与独立日历缓存，检查重叠档案及原动量字段，生成截至决策日的BOLL、月MACD与首次回踩信号；未知周期保持缺失，明确停牌沿用此前已知收盘。`--minimal`须显式指定构建日期，并按实际行情依赖新增`fugui`四个底仓信号和问题码，不限制基础切片版本，保留原字段与结果标签。富贵策略按用户明确要求登记唯一的`strategies/fugui/`实现，默认发现和看板不再依赖临时候选；删除旧`candidate`命令和重复源码。执行仍经隔离子进程与原评分器，不将缺失基本面视为满足，也不以固定网格冒充底仓/机动仓分账。规则及复跑见[富贵策略](fugui-strategy.md)，时点、缺失、首次回踩、仓位、最小v8和不可覆盖检查归`test_fugui_study.py`；数据卡说明归`hub.py`与`test_hub.py`。
 
 完整指数采集清单归 `index_membership.py`，复用XLS解析与公开下载器，核对中证A50/上证50各50只，保存原件、获取/来源日期和哈希。每日行情归 `daily_prices.py`，只调用 `public_sources`/`collect` 的公开HTTP能力，最多2个线程；按证券保存完整供应商历史，首次/显式整段刷新；22:37更新独立报价，23:37显式整段刷新历史，按月累计日期记录及源元数据，不混用价格尺度。旧Baostock每日采集代码已退役，SDK仍仅供其他显式研究工具使用；旧双口径归档按不可变标签只读引用，元数据核验归 `hub.historical_prices_reference`，不得用旧价格填充新来源。
 

@@ -1,5 +1,19 @@
 from decimal import Decimal
 
+REQUIRES_POOLS = ("dividend",)
+
+REQUIRES = {
+    'pool': 'text',
+    'stocks.*.fugui.daily_lower': 'boolean?',
+    'stocks.*.fugui.first_pullback': 'boolean?',
+    'stocks.*.fugui.monthly_low': 'boolean?',
+    'stocks.*.fugui.weekly_lower': 'boolean?',
+    'stocks.*.market_cap_at_selection': 'decimal',
+    'stocks.*.symbol': 'text',
+    'stocks.*.trade_status': 'text',
+    'stocks.*.volatility_63': 'decimal?',
+}
+
 
 def decide(sample):
     # 仅测红利池技术底仓，红利成分不能证明股息率、国资属性或分红连续性。

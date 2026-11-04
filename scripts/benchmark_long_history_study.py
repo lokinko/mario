@@ -22,109 +22,12 @@ from benchmark.files import digest, new_directory, read_json, require, rows, wri
 from benchmark.pool_release import momentum
 from benchmark.release import verify_release
 from benchmark.scoring import portfolio_segments
+from benchmark.price_indicators import long_features as features
+from benchmark.raw_data import load_history
 
 
 FIELDS = ("momentum_12m", "momentum_6m_skip1", "momentum_12m_skip1", "momentum_12_2",
           "price_to_sma_10m", "close_to_high_12m", "close_to_max_close_12m", "information_discreteness")
-
-
-def month_key(day, offset=0):
-    index = int(day[:4]) * 12 + int(day[5:7]) - 1 + offset
-    year, month = divmod(index, 12)
-    return f"{year:04}-{month + 1:02}"
-
-
-def features(bars, calendar, decision):
-    """所有分母、窗口、月末和观察数严格限制于 decision，不前填缺失价格。"""
-    days = [d for d in calendar if d <= decision]
-    require(days and days[-1] == decision, "决策日必须在交易日历中")
-    ends = {d[:7]: d for d in days}
-    anchors = {i: ends.get(month_key(decision, -i)) for i in range(14)}
-    output = {key: None for key in FIELDS}
-    issues = {}
-
-    def price(day, field="close"):
-        bar = bars.get(day)
-        if not bar or bar.get("tradestatus") != "1":
-            return None
-        value = Decimal(bar[field])
-        require(value.is_finite() and value > 0, f"无效价格: {day}")
-        return value
-
-    def ratio(key, a, b):
-        x, y = price(anchors[a]), price(anchors[b])
-        if x is not None and y is not None:
-            output[key] = str(x / y - 1)
-        else:
-            issues[key] = "missing_or_suspended_endpoint"
-
-    ratio("momentum_12m", 0, 12)
-    ratio("momentum_6m_skip1", 1, 7)
-    ratio("momentum_12m_skip1", 1, 13)
-    ratio("momentum_12_2", 1, 12)
-    monthly = [price(anchors[i]) for i in range(10)]
-    if all(v is not None for v in monthly):
-        output["price_to_sma_10m"] = str(monthly[0] / (sum(monthly) / 10) - 1)
-    else:
-        issues["price_to_sma_10m"] = "missing_or_suspended_month_end"
-
-    start = anchors[12]
-    window = [d for d in days if start and start < d <= decision]
-    complete = start is not None and start in bars and all(d in bars for d in window)
-    now = price(decision)
-    if complete and now is not None:
-        for field, key in (("high", "close_to_high_12m"), ("close", "close_to_max_close_12m")):
-            observed = [price(d, field) for d in window if bars[d]["tradestatus"] == "1"]
-            if observed:
-                output[key] = str(now / max(observed))
-    for key in ("close_to_high_12m", "close_to_max_close_12m"):
-        if output[key] is None:
-            issues[key] = "incomplete_year_or_unavailable_decision_price"
-
-    # FIP 的 12-2 操作定义：P[上月末]/P[12个月前月末]-1，共11个月；不混用13月端点。
-    formation_end = anchors[1]
-    formation = [d for d in window if formation_end and d <= formation_end]
-    if complete and output["momentum_12_2"] is not None:
-        previous = price(start)
-        signs = []
-        for day in formation:
-            current = price(day)
-            if current is not None:
-                if previous is not None:
-                    signs.append((current > previous) - (current < previous))
-                previous = current
-        if signs:
-            pret = Decimal(output["momentum_12_2"])
-            sign = (pret > 0) - (pret < 0)
-            output["information_discreteness"] = str(-Decimal(sign) * sum(signs) / len(signs))
-            output["fip_observations"] = len(signs)
-    if output["information_discreteness"] is None:
-        issues["information_discreteness"] = "incomplete_formation_or_missing_endpoint"
-    return {**output, "issues": issues}
-
-
-def load_history(history, symbols):
-    request = read_json(history / "request.json")
-    require(request["adjustflag"] == "1" and request["source"] == "https://www.baostock.com/",
-            "研究仅接受已对账的 Baostock 后复权缓存")
-    all_bars, hashes = {}, {}
-    requested = {r["symbol"]: r for r in request["requests"]}
-    require(symbols <= requested.keys(), "缓存请求不含全部历史股票")
-    for symbol in sorted(symbols):
-        path = history / "repaired" / f"{symbol}.json"
-        if not path.exists():
-            path = history / "raw" / f"{symbol}.json"
-        record = read_json(path)
-        require(record["status"] == "completed" and record["request"] == requested[symbol], f"采集未完成: {symbol}")
-        data = record["rows"]
-        require(data and len({r["date"] for r in data}) == len(data), f"空记录或重复日线: {symbol}")
-        code, market = symbol.split(".")
-        require(all(r["code"] == f"{market.lower()}.{code}" and
-                    requested[symbol]["start"] <= r["date"] <= requested[symbol]["end"] and
-                    r["tradestatus"] in ("0", "1") for r in data), f"日线代码/日期/状态不符: {symbol}")
-        all_bars[symbol] = {r["date"]: r for r in data}
-        hashes[path.relative_to(history).as_posix()] = digest(path)
-    return request, all_bars, hashes
 
 
 def build(release, history, calendar_path, destination, projection=features, fields=FIELDS, config_updates=None):
@@ -132,7 +35,6 @@ def build(release, history, calendar_path, destination, projection=features, fie
     samples = rows(release / "inputs.jsonl")
     symbols = {s["symbol"] for sample in samples for s in sample["stocks"]}
     request, all_bars, hashes = load_history(history, symbols)
-    require(request["release_manifest_sha256"] == digest(release / "manifest.json"), "缓存不是该原始切片的请求")
     calendar = read_json(calendar_path)
     calendar = [f"{d[:4]}-{d[4:6]}-{d[6:]}" if len(d) == 8 else d for d in calendar]
     require(calendar == sorted(set(calendar)), "交易日历必须升序且不重复")
@@ -155,7 +57,7 @@ def build(release, history, calendar_path, destination, projection=features, fie
             key = stock["symbol"], decision
             if key not in cache:
                 cache[key] = projection(bars, calendar, decision)
-            stock["long_history"] = cache[key]
+            stock["long_history"] = {**stock.get("long_history", {}), **cache[key]}
             coverage.update(k for k in fields if stock["long_history"][k] is not None)
     with new_directory(destination) as stage:
         # 标签只在所有特征生成后复制；不读其中的未来路径，也不从中取历史行情。

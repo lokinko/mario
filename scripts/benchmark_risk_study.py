@@ -2,75 +2,18 @@
 
 import argparse
 import sys
-from datetime import date, timedelta
-from decimal import Decimal
+from datetime import date
 from itertools import product
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.benchmark_long_history_study import COMMON, FIELDS, build, features, prune_source, scan
+from scripts.benchmark_long_history_study import COMMON, FIELDS, build, prune_source, scan
 from benchmark.files import read_json
+from benchmark.price_indicators import monthly_features, risk_features
 
 
 RISK_FIELDS = (*FIELDS, "volatility_3y_weekly", "daily_returns_1m")
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def monthly_features(bars, calendar, decision):
-    """新增正式输入只需要这个月内历史收益契约，不携带其他失败候选的特征。"""
-    days = [d for d in calendar if d <= decision]
-    previous = None
-    returns = {}
-    for day in days:
-        bar = bars.get(day)
-        if bar is None:
-            value, previous = None, None
-        elif bar["tradestatus"] == "0":
-            value = Decimal(0) if previous is not None else None
-        else:
-            current = Decimal(bar["close"])
-            value = current / previous - 1 if previous is not None else None
-            previous = current
-        if day[:7] == decision[:7]:
-            returns[day] = str(value) if value is not None else None
-    issues = {"daily_returns_1m": "missing_monthly_daily_return"} if any(v is None for v in returns.values()) else {}
-    return {"daily_returns_1m": returns, "issues": issues}
-
-
-def risk_features(bars, calendar, decision):
-    output = features(bars, calendar, decision)
-    days = [d for d in calendar if d <= decision]
-    cutoff = date.fromisoformat(decision)
-    try:
-        start = cutoff.replace(year=cutoff.year - 3)
-    except ValueError:
-        start = cutoff.replace(year=cutoff.year - 3, day=28)
-    # 固定周五网格；节假日用截至周五的最后一个市场交易日，决策后的周五不使用。
-    friday = start - timedelta(days=(start.weekday() - 4) % 7)
-    endpoints = []
-    index = 0
-    while friday <= cutoff:
-        while index < len(days) and days[index] <= friday.isoformat():
-            index += 1
-        endpoints.append(days[index - 1] if index else None)
-        friday += timedelta(days=7)
-    prices = []
-    for day in endpoints:
-        bar = bars.get(day)
-        prices.append(Decimal(bar["close"]) if bar and bar["tradestatus"] == "1" else None)
-    output["volatility_3y_weekly"] = None
-    if len(prices) >= 156 and all(p is not None and p.is_finite() and p > 0 for p in prices):
-        returns = [b / a - 1 for a, b in zip(prices, prices[1:])]
-        average = sum(returns) / len(returns)
-        # 总体标准差 × sqrt(52)，不偷偷换成63日或缩短上市史。
-        output["volatility_3y_weekly"] = str((sum((r - average) ** 2 for r in returns) / len(returns) * 52).sqrt())
-    else:
-        output["issues"]["volatility_3y_weekly"] = "incomplete_three_year_weekly_endpoints"
-
-    monthly = monthly_features(bars, calendar, decision)
-    output["daily_returns_1m"] = monthly["daily_returns_1m"]
-    output["issues"].update(monthly["issues"])
-    return output
 
 
 MSCI = '''

@@ -1,4 +1,16 @@
 from decimal import Decimal
+
+REQUIRES = {
+    'pool': 'text',
+    'stocks.*.long_history.clenow_mark_90': 'decimal?',
+    'stocks.*.long_history.daily_returns_1m': 'returns',
+    'stocks.*.momentum_63': 'decimal?',
+    'stocks.*.return_20': 'decimal?',
+    'stocks.*.sw_level1_name': 'text?',
+    'stocks.*.symbol': 'text',
+    'stocks.*.trade_status': 'text',
+    'stocks.*.volatility_63': 'decimal?',
+}
 PARAMS = {'target': '0.04', 'power': 2}
 
 

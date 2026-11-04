@@ -1,5 +1,13 @@
 from decimal import Decimal
 
+REQUIRES = {
+    'stocks.*.momentum_63': 'decimal?',
+    'stocks.*.return_20': 'decimal?',
+    'stocks.*.symbol': 'text',
+    'stocks.*.trade_status': 'text',
+    'stocks.*.volatility_63': 'decimal?',
+}
+
 
 def rank_sum(stocks, fields):
     total = {s["symbol"]: 0 for s in stocks}

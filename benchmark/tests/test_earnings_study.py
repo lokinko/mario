@@ -7,8 +7,9 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+from benchmark.announcement_indicators import announcement_signal
 from benchmark.strategy_runner import check_source, generate_weights
-from scripts.benchmark_earnings_study import GRIDS, announcement_signal, first_reports, source_for
+from scripts.benchmark_earnings_study import GRIDS, first_reports, source_for
 
 
 def announcement(identity="a", day="2020-03-05", title="2019年年度报告", code="600000"):

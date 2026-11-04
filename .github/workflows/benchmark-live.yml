@@ -42,7 +42,7 @@ jobs:
           python -m pip install uv
           uv sync --frozen --group publish
       - name: 验证持续评测与数据边界
-        run: uv run --frozen --group publish python -m unittest benchmark.tests.test_live benchmark.tests.test_strategy_runner benchmark.tests.test_dashboard benchmark.tests.test_benchmark -q
+        run: uv run --frozen --group publish python -m unittest discover -s benchmark/tests -q
       - name: 评测主分支策略并发布实时状态
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

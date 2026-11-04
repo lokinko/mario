@@ -7,7 +7,8 @@ from decimal import Decimal
 from pathlib import Path
 
 from benchmark.files import digest
-from scripts.benchmark_sue_study import normalize, period, quarter, sue, verify_sources
+from benchmark.raw_data import verify_sources
+from benchmark.financial_indicators import normalize, period, quarter, sue
 
 
 def fact(end, profit, available=None, basis="ordinary"):

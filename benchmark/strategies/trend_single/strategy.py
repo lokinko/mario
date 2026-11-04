@@ -1,5 +1,13 @@
 from decimal import Decimal
 
+REQUIRES = {
+    'pool': 'text',
+    'stocks.*.momentum_63': 'decimal?',
+    'stocks.*.symbol': 'text',
+    'stocks.*.trade_status': 'text',
+    'stocks.*.volatility_63': 'decimal?',
+}
+
 SATELLITE_THRESHOLD = Decimal("0.15")
 
 

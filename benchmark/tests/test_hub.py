@@ -8,7 +8,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from benchmark.files import Invalid, digest, read_json, write_json
+from benchmark.files import Invalid, digest, read_json, write_json, write_rows
 from benchmark.hub import (CANARY, dataset_card, fetch, prepare_daily_prices, publish,
                            publish_daily_prices, promote_daily_branch, historical_prices_reference)
 from benchmark.release import verify_release
@@ -86,7 +86,7 @@ class FakeApi:
                 if name.startswith(prefix):
                     del target[name]
         target.update(
-            {prefix + p.relative_to(folder_path).as_posix(): p.read_text(encoding="utf-8")
+            {prefix + p.relative_to(folder_path).as_posix(): p.read_bytes().decode("utf-8")
              for p in Path(folder_path).rglob("*") if p.is_file()})
         return types.SimpleNamespace(oid=revision if revision else f"sha-{repo_id}")
 
@@ -99,14 +99,14 @@ def snapshot_download(repo_id, allow_patterns, local_dir, **_):
         if any(fnmatch(name, pattern) for pattern in allow_patterns):
             target = Path(local_dir) / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text, encoding="utf-8")
+            target.write_bytes(text.encode("utf-8"))
     return local_dir
 
 
 def hf_hub_download(repo_id, filename, local_dir, **_):
     target = Path(local_dir) / filename
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(FakeApi.uploads[repo_id][filename], encoding="utf-8")
+    target.write_bytes(FakeApi.uploads[repo_id][filename].encode("utf-8"))
     return str(target)
 
 
@@ -156,7 +156,7 @@ class HubTest(unittest.TestCase):
             old = dataset_card(base, "pool-scoring", "me/labels", {})
             self.assertNotIn("daily_returns_1m", old)
             config = read_json(base / "config.json")
-            write_json(base / "config.json", {**config, "input_features": "monthly-risk-v1"})
+            write_rows(base / "inputs.jsonl", [{"stocks": [{"long_history": {"daily_returns_1m": {}}}]}])
             card = dataset_card(base, "pool-scoring", "me/labels", {})
             self.assertIn("daily_returns_1m", card)
             self.assertIn("未知缺行保留 null", card)
@@ -190,7 +190,7 @@ class HubTest(unittest.TestCase):
             base = Path(folder) / "release"
             release(base)
             config = read_json(base / "config.json")
-            write_json(base / "config.json", {**config, "input_features": "monthly-risk-regression-v1"})
+            write_rows(base / "inputs.jsonl", [{"stocks": [{"long_history": {"daily_returns_1m": {}, "clenow_mark_90": None}}]}])
             card = dataset_card(base, "pool-scoring", "me/labels", {})
             self.assertIn("daily_returns_1m", card)
             self.assertIn("clenow_mark_90", card)
@@ -203,10 +203,10 @@ class HubTest(unittest.TestCase):
             base = Path(folder) / "release"
             release(base)
             config = read_json(base / "config.json")
-            write_json(base / "config.json", {**config, "input_features": "monthly-risk-regression-fugui-v1"})
+            write_rows(base / "inputs.jsonl", [{"stocks": [{"long_history": {"daily_returns_1m": {}, "clenow_mark_90": None}, "fugui": {"monthly_low": None}}]}])
             card = dataset_card(base, "pool-scoring", "me/labels", {})
             for text in ("daily_returns_1m", "clenow_mark_90", "stock.fugui", "monthly_low", "first_pullback",
-                         "历史不足或未知缺行保留 null", "不是完整高股息国企策略复现", "fugui-study.json"):
+                         "历史不足或未知缺行保留 null", "不是完整高股息国企策略复现"):
                 self.assertIn(text, card)
 
     def test_fetch_restores_published_release_without_scorecards_and_never_overwrites(self):
@@ -430,13 +430,13 @@ class DailyPromotionGitTest(unittest.TestCase):
             git("config", "user.email", "benchmark@example.invalid")
             git("commit", "--quiet", "--allow-empty", "-m", "base")
             parent = git("rev-parse", "HEAD")
-            git("remote", "add", "origin", str(remote))
+            git("remote", "add", "origin", remote.as_uri())
             git("push", "origin", "HEAD:refs/heads/main")
             for name in ("attributes", "batch1", "batch2", "manifest"):
                 git("commit", "--quiet", "--allow-empty", "-m", name)
             staged = git("rev-parse", "HEAD")
             git("push", "origin", "HEAD:refs/heads/staging")
-            api = types.SimpleNamespace(endpoint=str(base), whoami=lambda: {"name": "me"})
+            api = types.SimpleNamespace(endpoint=base.as_uri(), whoami=lambda: {"name": "me"})
             with patch("benchmark.hub.huggingface", return_value=types.SimpleNamespace(get_token=lambda: "test-token")):
                 commit = promote_daily_branch(api, "me/labels", "staging", parent, staged)
                 self.assertEqual(commit, staged)

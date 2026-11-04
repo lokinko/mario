@@ -1,5 +1,11 @@
 from decimal import Decimal
 
+REQUIRES = {
+    'stocks.*.momentum_63': 'decimal?',
+    'stocks.*.symbol': 'text',
+    'stocks.*.trade_status': 'text',
+}
+
 
 def decide(sample):
     ranked = [s for s in sample["stocks"] if s["trade_status"] != "no_bar" and s["momentum_63"] is not None]

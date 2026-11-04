@@ -11,7 +11,10 @@ from benchmark.files import Invalid, digest, read_json, rows, write_json, write_
 from benchmark.cli import DEFAULT_STRATEGIES
 from benchmark.dashboard import write_dashboard
 from benchmark.strategy_runner import bench_run, check_source, generate_weights
-from scripts.benchmark_fugui_study import MINIMAL_FIELDS, boll, build, features, load_caches, macd
+from scripts.benchmark_fugui_study import MINIMAL_FIELDS, build
+
+from benchmark.technical_indicators import boll, macd, fugui_features as features
+from benchmark.raw_data import load_caches
 
 STRATEGY = (Path(__file__).resolve().parents[1] / "strategies" / "fugui" / "strategy.py").read_text(encoding="utf-8")
 
@@ -203,8 +206,7 @@ class FuguiBuildTest(unittest.TestCase):
             self.assertEqual(set(signal), {*MINIMAL_FIELDS, "issues"})
             self.assertEqual(result, sample)
             config = read_json(destination / "config.json")
-            self.assertEqual(config["input_features"], "monthly-risk-regression-fugui-v1")
             self.assertEqual(config["built_on"], "2026-11-03")
             self.assertEqual(digest(destination / "outcomes.jsonl"), digest(release / "outcomes.jsonl"))
-            with self.assertRaisesRegex(Invalid, "正式v7"):
-                build(destination, [cache], root / "invalid", minimal=True, built_on="2026-11-03")
+            build(destination, [cache], root / "extended", minimal=True, built_on="2026-11-03")
+            self.assertEqual(rows(root / "extended/inputs.jsonl"), rows(destination / "inputs.jsonl"))

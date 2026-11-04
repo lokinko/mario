@@ -12,6 +12,7 @@ from .files import digest, new_directory, read_json, require, write_json, write_
 from .market_cap import cached
 from .public_sources import CSI_INDEX_PERF, csi_index_closes
 from .scoring import BUY_COST, COST_BASIS, SEGMENT_DAYS, SEGMENT_WEIGHTS, boundaries, can_buy, can_sell
+from .price_indicators import momentum, volatility
 
 POOLS = ("dividend", "tech")
 INDEX = "000300.SH"
@@ -28,25 +29,8 @@ def quarter_decisions(calendar, year):
     return [output[q] for q in sorted(output)]
 
 
-def momentum(bars, calendar, day, sessions=LOOKBACK):
-    index = calendar.index(day)
-    if index < sessions:
-        return None
-    now, before = bars.get(day), bars.get(calendar[index - sessions])
-    if not now or not before or "0" in (now.get("tradestatus", "1"), before.get("tradestatus", "1")):
-        return None
-    return str(Decimal(now["close"]) / Decimal(before["close"]) - 1)
 
 
-def volatility(bars, calendar, day, sessions=LOOKBACK):
-    """最近 sessions 个有成交日的日收益率总体标准差（不年化）；停牌日跳过，不足时为空。"""
-    closes = [Decimal(bars[d]["close"]) for d in calendar[:calendar.index(day) + 1]
-              if d in bars and bars[d].get("tradestatus", "1") == "1"]
-    if len(closes) <= sessions:
-        return None
-    returns = [closes[i] / closes[i - 1] - 1 for i in range(len(closes) - sessions, len(closes))]
-    average = sum(returns) / sessions
-    return str((sum((r - average) ** 2 for r in returns) / sessions).sqrt())
 
 
 def sample_rows(pool, year, decision, snapshot, adjusted, raw, index_bars, calendar):

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from benchmark import hub, live
-from benchmark.files import Invalid
+from benchmark.files import Invalid, digest
 from benchmark.tests.test_strategy_runner import release, strategy
 
 
@@ -26,6 +26,8 @@ class LiveTest(unittest.TestCase):
             self.assertEqual([x['evaluation']['status'] for x in snapshots], ['running', 'running', 'running', 'completed'])
             self.assertEqual([x['evaluation']['completed'] for x in snapshots], [0, 0, 1, 1])
             self.assertEqual(result['result_commit'], 'first')
+            self.assertEqual(result['result_sources']['input_manifest_sha256'], digest(root / 'v8/manifest.json'))
+            self.assertIsNone(result['result_sources']['raw_manifest_sha256'])
             self.assertEqual([s['key'] for s in result['strategies']], ['cash'])
             previous = copy.deepcopy(result)
             strategy(root / 'strategies', 'broken', 'import os\ndef decide(sample):\n    return {}\n')
