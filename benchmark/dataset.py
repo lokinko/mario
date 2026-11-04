@@ -13,6 +13,14 @@ def close_time(value):
     return instant(value + "T18:00:00+08:00")
 
 
+def quarter_decisions(calendar, year):
+    output = {}
+    for value in calendar:
+        if value.startswith(str(year)):
+            output[(int(value[5:7]) - 1) // 3] = value
+    return [output[quarter] for quarter in sorted(output)]
+
+
 def validate_config(config):
     start, end = day(config["start"]), day(config["end"])
     require(day(config["source_start"]) < start <= end, "source_start 必须覆盖前置观察窗口")

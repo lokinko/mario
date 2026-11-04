@@ -4,6 +4,8 @@
 
 原始来源、衍生指标与策略依赖已分层，新增指标按字段组合，不再以整包格式标签或 v8/v9 判断兼容。现有快照继续用于复现；整理原始归档、按需构建指标及依赖声明见 [原始数据与衍生指标](benchmark-data.md)。
 
+逐股近五年分红原始记录与年度汇总见 [分红采集](benchmark-dividends.md)，包括实施日期、每10股税前现金、送转、方案状态、原始响应及来源无记录状态。
+
 工具包含以下数据线：
 
 - **股票池评分切片**（当前主线）：红利池与科技池按时点选样，构建季度决策点和建仓后的逐日价格路径，用 `bench-run` 自动评测 `benchmark/strategies/` 下的选股与仓位策略，见“股票池切片评分”之后各节。
@@ -296,9 +298,9 @@ npm run benchmark -- bench-run --release .runtime/benchmark/pool-scoring-v8
 
 将 `benchmark/strategies/<名字>/strategy.py` 和 `strategy.md` 提交到 `main` 后，GitHub Actions 的“Benchmark 持续评测”自动运行；策略、评分器、依赖或该工作流变化都会触发，也可以手动运行。只运行可信主分支，不对 PR 提供发布凭据；执行时取最新 main，记录实际 Git 提交，串行发布，避免等待中的旧任务覆盖新代码成绩。
 
-流程为 Git → Actions → `benchmark.live evaluate` → 现有 HF 标签仓库的 `dashboard/current.json` → 宿主机每 30 秒同步 → 已登录看板每 10 秒读取。代码保留在 Git；HF 提交历史保留完整快照及状态，当前文件只是派生结果，不是账号业务存储。下载固定 HF 提交；网页脚本始终由本地部署代码生成，远端只提供 JSON。
+流程为 Git → Actions → `benchmark.live prepare`（获取原始行情、选样事实和独立标签，不下载预计算输入）→ `benchmark.live evaluate`（按策略依赖从零计算指标并评分）→ 现有 HF 标签仓库的 `dashboard/current.json` → 宿主机每 30 秒同步 → 已登录看板每 10 秒读取。代码保留在 Git；HF 提交历史保留完整快照及状态，当前文件只是派生结果，不是账号业务存储。下载固定 HF 提交；网页脚本始终由本地部署代码生成，远端只提供 JSON。
 
-首次使用需要仓库 Secret `HF_TOKEN`（输入仓库读取、标签仓库写入权限），与每日行情使用同一凭据。评分数据由仓库 Variable `BENCHMARK_SCORING_TAG` 指定，缺省 `pool-scoring-v8`；修改它后手动触发工作流。数据标签继续不可变，所有策略在同一切片评分，数据升级不意味着重新建立在线入口。服务账号的 HF 凭据只需读取标签仓库。
+首次使用需要仓库 Secret `HF_TOKEN`（输入仓库读取、标签仓库写入权限），与每日行情使用同一凭据。评分计划由 Variable `BENCHMARK_PLAN_REVISION` 固定出处，缺省 `pool-scoring-v8`，只下载其范围、选样原始事实和独立标签，不下载 `inputs.jsonl`；原始行情由 `BENCHMARK_RAW_REVISION` 指定，缺省 `baostock-daily-20261102`。每次从原始事实按策略依赖生成新输入，旧 `BENCHMARK_SCORING_TAG` 已删除；新增指标不要求整包数据升级。服务账号的 HF 凭据只需读取标签仓库。
 
 页面显示评测提交、已完成/总策略数、开始或完成状态；运行中和失败时继续展示明确标注提交与切片的上次成功成绩。全部成功才原子替换整张成绩快照，失败保留原因并让工作流失败。进程被强制终止或工作流超时，45 分钟未更新的运行状态显示“待核对”，到 Actions 查看日志并重新运行。首次尚无成功成绩时显示等待状态，不造空成绩。宿主机同步失败保留当前文件并在服务日志记录，恢复连接后自动继续。
 
@@ -438,7 +440,7 @@ npm run benchmark -- hub-fetch --repo lokinko/mario_bench --labels-repo lokinko/
 
 | 标签 | 内容 | `mario_bench` commit | `mario_bench_labels` commit |
 | --- | --- | --- | --- |
-| `pool-scoring-v8` | 当前版本：在v7上增加富贵策略四个技术信号 `monthly-risk-regression-fugui-v1`，原字段/标签不变，附22项成绩；部署默认读取此标签 | `1d4870f5734831e98a765e7d208c12143152a4df` | `551c82fc58d8725715baf82af751ff6db56cb481` |
+| `pool-scoring-v8` | 历史预计算输入（持续评测仅引用选样事实及标签）：在v7上增加富贵策略四个技术信号 `monthly-risk-regression-fugui-v1`，原字段/标签不变，附22项历史成绩；部署读取持续评测快照 | `1d4870f5734831e98a765e7d208c12143152a4df` | `551c82fc58d8725715baf82af751ff6db56cb481` |
 | `pool-scoring-v7` | 历史版本：在v6上新增决策前回归趋势 `monthly-risk-regression-v1`，附21项策略成绩；不能运行需要富贵技术信号的当前完整目录 | `742fb368617a5486b46c9c5ec36c3099b562640c` | `44328f826492728458fa528e24f2a36bbabe7ef6` |
 | `pool-scoring-v6` | 历史版本：新增决策前月内收益 `monthly-risk-v1`，附20项策略成绩；供旧提交复现 | `698ab24cc388e980f0cd8bbb25e45941760ee0f9` | `e55fa56f97c5c060981fc073d9305e01bcb8db9f` |
 | `pool-scoring-v5` | 历史版本：增加“能否买入”，主指标为平均收益得分 + 2.5 × 胜率，附14项成绩；供旧提交复现 | `22b160184faf8755717f38184e60874e5ccff128` | `1119a665ec044c51fdd935a750e56984021009b3` |

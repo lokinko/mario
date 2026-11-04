@@ -129,17 +129,21 @@ flowchart TD
 
 ## 开发流程
 
+分红原始 HTTP 适配归`public_sources.dividend_page`，采集、分页核验、实施/其他方案分离与逐股输出归`dividends.py`，只依赖公开来源与文件契约，不依赖策略执行。`test_dividends`覆盖实施窗口、跨年报告、十进制单位、方案状态、空来源保留与分页缓存；数据不作为已核验历史时点指标。
+
 离线 benchmark 的数据扩展遵循 [原始数据与衍生指标](benchmark-data.md)：来源格式适配、原始归档与财报证据核验归 `raw_data.py`，确定性计算归四个 `*_indicators.py`，按字段组合与派生包归 `feature_pipeline.py`，实际策略输入检查归 `input_contract.py`。计算模块只依赖共享值校验，不能读原始文件、网络、来源 SDK 或标签；组合层不能依赖策略执行和 HF 发布。静态方向由 `check-architecture.mjs` 检查，AST 与行为边界由 `test_feature_pipeline.py` 检查。新增行情指标只增加定义和必要的纯函数，策略在 `REQUIRES` 声明消费路径；额外字段允许存在，不按整包版本限制。公式语义变化使用新输出名称或新建显式重算快照，保留来源、时点、单位、缺失原因与代码指纹。原始导入、`features-build`、`bench-run --raw` 的命令和迁移步骤均见该文档。
 
 宿主机部署权限准备归 `deploy.sh`：root 仅管理系统依赖与 systemd，用户工具、配置生成、构建和服务运行归同一个非 root 账号。部署在下载工具和停服前自动创建缺失 home，修复默认专用 home 本身及 `.cargo`、`.rustup`、`.local/bin` 的历史权限；自定义已有 home 须属于服务账号，不递归修改其他个人文件或 `.local` 应用数据，不跟随工具链接写入外部目标。`npm run test:deploy` 覆盖旧权限修复、服务用户实际写入、可执行位/链接保留、重复执行、缺失 home 和修复范围；不要把构建改成 root 来绕过权限准备。既有数据库仍归原运行账号，不迁移数据。部署使用见 [服务用户权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
 
 研究看板的侧边栏入口由应用壳和 `app/navigation.ts` 管理，放在“研究”分组，使用网站前缀下的 `dashboard` 链接在新标签页打开；不作为内部 `View`，不触发当前页切换或清理草稿。导航链接沿用侧栏样式、移动端抽屉关闭和键盘焦点约束，看板继续使用现有页面与会话认证。
 
+持续评测先执行`live.prepare`固定并下载原始来源和选样事实，禁止下载预计算`inputs.jsonl`；再由`evaluation_data.py`从零生成策略依赖字段。该模块只依赖原始读取、确定性日历/指标和契约检查，不访问网络、不执行策略、不解析未来标签；来源下载仍仅归`hub`，将未来标签原样复制进新评分包发生在输入计算和校验之后。`test_evaluation_data`覆盖预计算输入拒绝、原始缺失拒绝回退、新字段扩展和股数/价格重算；HF测试覆盖固定提交和下载白名单。
+
 持续评测由 `.github/workflows/benchmark-live.yml` 触发可信主分支，`benchmark/live.py` 编排评分、进度与完整快照发布，执行仍归 `strategy_runner`，计算仍归 `scoring`，所有 HF 访问归 `hub`；公开与已有私有仓库均可读取和发布，不自动改变可见性，新建研究仓库按当前约定公开。失败保留上次成功成绩，同一切片全部成功才替换；状态和成绩是 HF/Git 可追溯的研究派生文件，不进入账号事务。线上只同步 `dashboard/current.json`，不下载执行远端脚本。
 
 HF 镜像配置 `HF_ENDPOINT` 由 `host-runtime --prepare` 保存到 `.env`，不传时保留，显式空值恢复官方站；`benchmark-deploy.benchEnvironment` 为首次同步和后台同步统一注入端点，后台不依赖终端的 `export`。配置不注入 API 或 Agent；HF 请求仍只经 Python `hub` 适配器。部署测试覆盖镜像写入、重复部署保留、清空恢复及同步环境传递。
 
-部署看板环境归 `scripts/benchmark-deploy.mjs`，使用服务用户专属 Python，初次同步当前快照。`host-runtime` 管理 `benchmark.live sync --watch` 生命周期，固定 `.runtime/benchmark/current/` 为 API 读取目录；每 30 秒同步，临时文件替换保证单个 JSON 原子可见，失败保留旧结果。网页持现有会话每 10 秒读取，状态变化不重绘排行榜，成功结果变化才按原视图重载。数据版本由 Actions Variable `BENCHMARK_SCORING_TAG` 指定；`MARIO_BENCH_ENABLED=true` 启用同步，旧标签配置不再读取。本机 `bench-run`/`bench-serve` 仍用于复现，部署不再执行评分。`test_live` 覆盖成功、失败保留、公开读取与写入鉴权与会话轮询，`npm run test:deploy` 覆盖环境隔离和失败短路；二者纳入完整 `npm test`。
+部署看板环境归 `scripts/benchmark-deploy.mjs`，使用服务用户专属 Python，初次同步当前快照。`host-runtime` 管理 `benchmark.live sync --watch` 生命周期，固定 `.runtime/benchmark/current/` 为 API 读取目录；每 30 秒同步，临时文件替换保证单个 JSON 原子可见，失败保留旧结果。网页持现有会话每 10 秒读取，状态变化不重绘排行榜，成功结果变化才按原视图重载。评分计划及原始行情分别由 Actions Variable `BENCHMARK_PLAN_REVISION`、`BENCHMARK_RAW_REVISION` 固定；`MARIO_BENCH_ENABLED=true` 启用同步，旧标签配置不再读取。本机 `bench-run`/`bench-serve` 仍用于复现，部署不再执行评分。`test_live` 覆盖成功、失败保留、公开读取与写入鉴权与会话轮询，`npm run test:deploy` 覆盖环境隔离和失败短路；二者纳入完整 `npm test`。
 
 离线研究工具位于 `benchmark/`，契约与入口见 [benchmark](benchmark.md)。免费来源覆盖探测归 `public_sources.py`，授权来源与原件下载归 `sources.py`，确定性选样/时点规则归 `dataset.py`，指标归 `evaluate.py`，发布格式归 `release.py`，股票池共用的按时点市值口径、剔除原因与行情/股本缓存归 `market_cap.py`，科技股池候选归 `tech_universe.py`，红利股池成分重建归 `dividend_universe.py`（两个池子互不引用，新增股票池同样只依赖 `market_cap.py` 并产出同构的 `universe/<池>-<年>.json`，再在 `pool_release.POOLS` 登记），旧版 Excel 解析归 `xls.py`，多池切片构建归 `pool_release.py`，主指标（收益得分与胜率）打分、卖出规则与网格执行归 `scoring.py`（不访问网络），策略发现、静态检查、子进程生成仓位与结果缓存归 `strategy_runner.py`，策略本身是 `strategies/<名字>/` 下的 `strategy.md` 与只实现 `decide(sample)` 的 `strategy.py`（新增策略只加目录，不改其他模块；策略代码只能导入纯计算标准库；执行器以 `-I -X utf8` 启动隔离 Python，通信显式使用 UTF-8，不依赖会被隔离模式忽略的环境编码设置），策略得分看板与本机看板服务归 `dashboard.py`（只读 `bench-run` 输出的成绩与说明，不读输入与标签；输出页面、脚本、数据三个文件，部署后由 `hosted.rs` 按同一路径提供，数据接口只对已登录账号开放），Hugging Face 上传与按标签下载归 `hub.py`，CLI 只装配流程；这些模块只依赖 Python 标准库和本包，不引用在线业务实现或账号数据。第三方依赖只允许出现在单一适配器中：`baostock_market.py` 是唯一导入 `baostock` 的模块，`hub.py` 是唯一导入 `huggingface_hub` 的模块，依赖分别在 `pyproject.toml` 的 `market`、`publish` 依赖组声明，其他模块不得直接导入；新增此类适配器需同步更新边界测试的白名单。`npm run test:benchmark` 验证该隔离边界与数据行为，并纳入 `scripts/test.sh`。新增来源不能把未经证实的披露时间或供应商缺失自动升级成已核对事实；发布目录不可覆盖，原始数据修正需生成新版本，未来接入在线问答需走现有冻结和授权接口。
 

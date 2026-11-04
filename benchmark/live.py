@@ -1,17 +1,15 @@
 """Git 主分支评测编排与只读同步；HF 访问只经 hub，在线 API 不执行策略。"""
 import argparse
-import re
 import signal
-import tempfile
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .dashboard import render, write_dashboard
-from .files import Invalid, digest, read_json, require
-from .hub import fetch, live_read, live_write
-from .strategy_runner import bench_run
-from .raw_data import read_raw
+from .files import Invalid, digest, read_json, require, write_json
+from .hub import fetch_evaluation_plan, fetch_evaluation_raw, live_read, live_write
+from .strategy_runner import bench_run, check_source, discover
+from .evaluation_data import plan_symbols, rebuild_evaluation
 
 LIVE_PATH = "dashboard/current.json"
 
@@ -20,34 +18,52 @@ def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def evaluate(repo, labels_repo, tag, commit, run_url, workspace, strategies, raw_root=None):
-    require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", tag), "评分切片标签格式错误")
+def prepare(repo, labels_repo, plan_revision, raw_revision, workspace):
+    workspace.mkdir(parents=True, exist_ok=True)
+    plan = fetch_evaluation_plan(repo, labels_repo, plan_revision, workspace / "plan")
+    raw = fetch_evaluation_raw(labels_repo, raw_revision, plan_symbols(workspace / "plan"), workspace / "raw")
+    result = {"plan": plan, "raw": raw, "input_origin": "raw_facts"}
+    write_json(workspace / "prepared.json", result)
+    return result
+
+
+def evaluate(labels_repo, commit, run_url, workspace, strategies):
+    prepared = read_json(workspace / "prepared.json")
     previous = live_read(labels_repo, LIVE_PATH, missing=True)
-    state = {"commit": commit, "tag": tag, "run_url": run_url, "started_at": now(),
+    state = {"commit": commit, "tag": "raw", "run_url": run_url, "started_at": now(),
+             "input_origin": "raw_facts", "sources": prepared,
              "status": "running", "completed": 0, "total": 0, "strategies": []}
     # Last successful scores remain visible while the next complete snapshot is evaluated.
     data = previous or {"strategies": [], "periods": [], "generated_at": None}
     data["evaluation"] = state
     live_write(labels_repo, LIVE_PATH, data)
     try:
-        release = workspace / tag
-        fetch(repo, labels_repo, "pool-scoring", tag, release)
+        sources = []
+        for folder in discover(strategies).values():
+            source = (folder / "strategy.py").read_text(encoding="utf-8")
+            require(not check_source(source), f"策略静态检查失败: {folder.name}")
+            sources.append(source)
+        release = workspace / "derived"
+        built = rebuild_evaluation(workspace / "plan", workspace / "raw", release, sources)
+        state["tag"] = read_json(release / "config.json")["version"]
         out = workspace / "runs"
 
         def progress(results, total):
             state.update(completed=len(results), total=total, strategies=results.copy(), updated_at=now())
             live_write(labels_repo, LIVE_PATH, data)
 
-        runs = bench_run(strategies, release, out, progress=progress, raw=read_raw(raw_root) if raw_root else None)
+        runs = bench_run(strategies, release, out, progress=progress)
         failures = [run for run in runs if run["status"] == "failed"]
         if failures:
             raise Invalid("；".join(f"{item['strategy']}: {item['error']}" for item in failures))
         write_dashboard(out, out, release)
         candidate = read_json(out / "dashboard.json")
         candidate["result_commit"] = commit
-        candidate["result_tag"] = tag
+        candidate["result_tag"] = state["tag"]
         candidate["result_sources"] = {"input_manifest_sha256": digest(release / "manifest.json"),
-                                       "raw_manifest_sha256": digest(raw_root / "manifest.json") if raw_root else None}
+                                       "raw_manifest_sha256": built["raw_manifest_sha256"],
+                                       "plan_manifest_sha256": built["plan_manifest_sha256"],
+                                       "input_origin": "raw_facts", "plan": prepared["plan"], "raw": prepared["raw"]}
         state.update(status="completed", finished_at=now())
         candidate["evaluation"] = state
         live_write(labels_repo, LIVE_PATH, candidate)
@@ -76,22 +92,25 @@ def sync(labels_repo, out, cache=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="持续评测与研究看板同步")
-    parser.add_argument("command", choices=("evaluate", "sync"))
+    parser.add_argument("command", choices=("prepare", "evaluate", "sync"))
     parser.add_argument("--repo", default="lokinko/mario_bench")
     parser.add_argument("--labels-repo", default="lokinko/mario_bench_labels")
-    parser.add_argument("--tag", default="pool-scoring-v8")
+    parser.add_argument("--plan-revision", default="pool-scoring-v8", help="只取范围、选样事实和独立标签")
+    parser.add_argument("--raw-revision", default="baostock-daily-20261102", help="同源原始行情归档的固定出处")
+    parser.add_argument("--workspace", type=Path, default=Path(".runtime/benchmark/workflow"))
     parser.add_argument("--commit")
     parser.add_argument("--run-url", default="")
     parser.add_argument("--strategies", type=Path, default=Path(__file__).with_name("strategies"))
-    parser.add_argument("--raw", type=Path, help="可选原始归档，用于按需补算策略指标")
     parser.add_argument("--out", type=Path, default=Path(".runtime/benchmark/current"))
     parser.add_argument("--watch", action="store_true")
     args = parser.parse_args(argv)
+    if args.command == "prepare":
+        print(prepare(args.repo, args.labels_repo, args.plan_revision, args.raw_revision, args.workspace), flush=True)
+        return
     if args.command == "evaluate":
         if not args.commit:
             parser.error("evaluate 必须提供 --commit")
-        with tempfile.TemporaryDirectory(prefix="mario-benchmark-") as folder:
-            evaluate(args.repo, args.labels_repo, args.tag, args.commit, args.run_url, Path(folder), args.strategies, args.raw)
+        evaluate(args.labels_repo, args.commit, args.run_url, args.workspace, args.strategies)
         return
     stopping = threading.Event()
     if args.watch:

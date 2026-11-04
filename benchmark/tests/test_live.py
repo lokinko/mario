@@ -1,14 +1,25 @@
 import copy
 import json
 import tempfile
+import shutil
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from benchmark import hub, live
-from benchmark.files import Invalid, digest
+from benchmark.files import Invalid, digest, write_json
 from benchmark.tests.test_strategy_runner import release, strategy
+
+
+def prepared_fixture(root):
+    write_json(root / 'prepared.json', {'plan': {'commit': 'plan-source'}, 'raw': {'commit': 'raw-source'}})
+
+
+def fake_rebuild(plan, raw, destination, sources):
+    if not destination.exists():
+        shutil.copytree(plan.parent / 'v8', destination)
+    return {'raw_manifest_sha256': 'raw-hash', 'plan_manifest_sha256': 'plan-hash'}
 
 
 class LiveTest(unittest.TestCase):
@@ -16,25 +27,26 @@ class LiveTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             release(root / 'v8')
+            prepared_fixture(root)
             strategy(root / 'strategies', 'cash', 'def decide(sample):\n    return {}\n')
             snapshots = []
             def publish(repo, path, data):
                 snapshots.append(copy.deepcopy(data))
             with patch.object(live, 'live_read', return_value=None), patch.object(live, 'live_write', side_effect=publish), \
-                    patch.object(live, 'fetch'):
-                result = live.evaluate('inputs', 'labels', 'v8', 'first', '', root, root / 'strategies')
+                    patch.object(live, 'rebuild_evaluation', side_effect=fake_rebuild):
+                result = live.evaluate('labels', 'first', '', root, root / 'strategies')
             self.assertEqual([x['evaluation']['status'] for x in snapshots], ['running', 'running', 'running', 'completed'])
             self.assertEqual([x['evaluation']['completed'] for x in snapshots], [0, 0, 1, 1])
             self.assertEqual(result['result_commit'], 'first')
             self.assertEqual(result['result_sources']['input_manifest_sha256'], digest(root / 'v8/manifest.json'))
-            self.assertIsNone(result['result_sources']['raw_manifest_sha256'])
+            self.assertEqual(result['result_sources']['raw_manifest_sha256'], 'raw-hash')
             self.assertEqual([s['key'] for s in result['strategies']], ['cash'])
             previous = copy.deepcopy(result)
             strategy(root / 'strategies', 'broken', 'import os\ndef decide(sample):\n    return {}\n')
             with patch.object(live, 'live_read', return_value=copy.deepcopy(previous)), \
-                    patch.object(live, 'live_write', side_effect=publish), patch.object(live, 'fetch'):
+                    patch.object(live, 'live_write', side_effect=publish), patch.object(live, 'rebuild_evaluation', side_effect=fake_rebuild):
                 with self.assertRaises(Invalid):
-                    live.evaluate('inputs', 'labels', 'v8', 'second', '', root, root / 'strategies')
+                    live.evaluate('labels', 'second', '', root, root / 'strategies')
             failed = snapshots[-1]
             self.assertEqual(failed['evaluation']['status'], 'failed')
             self.assertIn('broken', failed['evaluation']['error'])
@@ -46,6 +58,7 @@ class LiveTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             release(root / 'v8')
+            prepared_fixture(root)
             strategy(root / 'strategies', 'cash', 'def decide(sample):\n    return {}\n')
             previous = {'strategies': [{'key': 'retired'}], 'periods': [], 'result_commit': 'old'}
             snapshots = []
@@ -54,14 +67,14 @@ class LiveTest(unittest.TestCase):
                     raise OSError('upload failed')
                 snapshots.append(copy.deepcopy(data))
             with patch.object(live, 'live_read', return_value=copy.deepcopy(previous)), \
-                    patch.object(live, 'live_write', side_effect=publish), patch.object(live, 'fetch'):
+                    patch.object(live, 'live_write', side_effect=publish), patch.object(live, 'rebuild_evaluation', side_effect=fake_rebuild):
                 with self.assertRaises(OSError):
-                    live.evaluate('inputs', 'labels', 'v8', 'next', '', root, root / 'strategies')
+                    live.evaluate('labels', 'next', '', root, root / 'strategies')
             self.assertEqual(snapshots[-1]['result_commit'], 'old')
             self.assertEqual(snapshots[-1]['strategies'], previous['strategies'])
             with patch.object(live, 'live_read', return_value=copy.deepcopy(previous)), \
-                    patch.object(live, 'live_write'), patch.object(live, 'fetch'):
-                result = live.evaluate('inputs', 'labels', 'v8', 'next', '', root, root / 'strategies')
+                    patch.object(live, 'live_write'), patch.object(live, 'rebuild_evaluation', side_effect=fake_rebuild):
+                result = live.evaluate('labels', 'next', '', root, root / 'strategies')
             self.assertEqual([item['key'] for item in result['strategies']], ['cash'])
 
     def test_sync_rejects_invalid_or_unavailable_remote_without_losing_current_file(self):

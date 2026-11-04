@@ -15,6 +15,7 @@ CSI_CONSTITUENTS = "https://oss-ch.csindex.com.cn/static/html/csindex/public/upl
 CSI_INDEX_PERF = "https://www.csindex.com.cn/csindex-home/perf/index-perf"
 CNINFO_STOCKS = "https://www.cninfo.com.cn/new/data/szse_stock.json"
 CNINFO_QUERY = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
+EASTMONEY_DIVIDENDS = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 
 
 def download(url, body=None, referer="https://www.cninfo.com.cn/"):
@@ -24,6 +25,20 @@ def download(url, body=None, referer="https://www.cninfo.com.cn/"):
         result = response.read(100 * 1024 * 1024 + 1)
     require(len(result) <= 100 * 1024 * 1024, "公开文件超过大小上限")
     return result
+
+
+def dividend_page(code, page=1):
+    """东方财富原始分红送转记录；查询全部报告期，避免漏掉跨年派息。"""
+    symbol(code)
+    params = {"reportName": "RPT_SHAREBONUS_DET", "columns": "ALL", "filter": f'(SECURITY_CODE="{code[:6]}")',
+              "pageSize": 100, "pageNumber": page, "sortColumns": "REPORT_DATE", "sortTypes": "-1",
+              "source": "WEB", "client": "WEB"}
+    url = EASTMONEY_DIVIDENDS + "?" + urlencode(params)
+    payload = json.loads(download(url, referer="https://data.eastmoney.com/yjfp/"), parse_float=str)
+    require(payload.get("success") is True and isinstance(payload.get("result"), dict)
+            or payload.get("code") == 9201 and payload.get("result") is None,
+            f"分红来源不可用: {code}: {payload.get('message')}")
+    return url, payload
 
 
 def csi_index_closes(code, start, end):

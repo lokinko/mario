@@ -251,7 +251,9 @@ sequenceDiagram
 
 ### 离线 benchmark 研究工具
 
-研究数据的扩展边界为“来源事实 → 确定性指标 → 策略消费”：`raw_data.py` 适配既有缓存、验证原件证据并管理独立原始归档，`price_indicators.py`、`technical_indicators.py`、`announcement_indicators.py`、`financial_indicators.py` 只对传入值计算；`feature_pipeline.py` 按字段定义组合来源和计算器，`input_contract.py` 校验策略 `REQUIRES` 中实际需要的路径和类型。新增指标不要求修改整包版本或旧策略，已有字段和未知扩展保留；固定切片标签、文件哈希、来源口径与计算指纹用于追溯。执行器可显式接收原始归档补算缺失字段，明确 null 不被覆盖；价格来源、共同字段或截止时间不一致时拒绝混合。公告和 SUE 的证据装配仍属独立研究工具，未自动进入正式行情指标目录。细节、迁移和扩展步骤见 [原始数据与衍生指标](benchmark-data.md)。
+`public_sources.dividend_page`提供分红原始响应，`dividends.py`按显式证券范围采集、核验分页并按除权除息日整理现金与送转事实，保留其他方案和空来源状态。结果属于独立研究原始数据，`pit_verified=false`，不把当前分红记录回填历史策略输入；不改变评分器或账号数据。命令与口径见[分红采集](benchmark-dividends.md)。
+
+研究数据的扩展边界为“来源事实 → 确定性指标 → 策略消费”：`raw_data.py` 适配既有缓存、验证原件证据并管理独立原始归档，`price_indicators.py`、`technical_indicators.py`、`announcement_indicators.py`、`financial_indicators.py` 只对传入值计算；`feature_pipeline.py` 按字段定义组合来源和计算器，`input_contract.py` 校验策略 `REQUIRES` 中实际需要的路径和类型。新增指标不要求修改整包版本或旧策略，已有字段和未知扩展保留；固定切片标签、文件哈希、来源口径与计算指纹用于追溯。持续评测通过`evaluation_data.py`从独立原始归档及选样事实全量重建输入，既有预计算字段不进入生产路径；显式研究入口才允许补算缺失字段，明确 null 不被覆盖；价格来源、共同字段或截止时间不一致时拒绝混合。公告和 SUE 的证据装配仍属独立研究工具，未自动进入正式行情指标目录。细节、迁移和扩展步骤见 [原始数据与衍生指标](benchmark-data.md)。
 
 Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略资源，支持可编辑安装，不扫描前端和 Rust 目录。部署时由 `scripts/benchmark-deploy.mjs` 拥有看板环境准备与当前快照同步；虚拟环境、uv 管理的 Python 与缓存分别位于 `.runtime/benchmark/.venv`、`python`、`uv-cache`，均由服务用户创建。部署不复用仓库 `.venv`，不继承调用者的 Python 环境选择；两次研究 CLI 调用通过 `MARIO_BENCHMARK_PYTHON` 使用同一个部署解释器，下载仍使用服务用户保存的 HF 凭据。
 
@@ -265,9 +267,11 @@ Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略
 
 `hub.py`固定输入标签与远端提交，恢复新归档并校验全集哈希；在临时分支启用LFS、完整分批上传和核验内容标识，再以非强制Git快进原子更新主分支，远端前进则拒绝覆盖。`rebuild`仅显式完整重采新来源，保留旧范围与历史成分，不回退日期。HF是持久状态来源，本机缓存仅支持首次恢复；状态不进入在线账号事务。供应商未对账数据标记 `release_ready=false`，不改变正式评分、策略或部署看板。见[每日行情自动更新](benchmark.md#每日行情自动更新)。
 
+`benchmark.live prepare`先通过`hub`获取固定提交的评分计划和原始行情；`evaluation_data`按独立日历、选样原始事实和策略声明从零构建时点输入，再把标签原样复制给评分器。`prepare`不下载旧`inputs.jsonl`，`evaluate`不提供读取预计算切片的生产分支。原始读取归`raw_data`，指标仍归共享纯计算模块；来源和新输入指纹写入看板快照。
+
 研究看板由 Git 主分支持续维护：`.github/workflows/benchmark-live.yml` 在可信 main 的策略、引擎或依赖变化后执行 `benchmark.live evaluate`，复用 `strategy_runner` 和 `scoring`；`hub` 原子发布完整 JSON 快照到现有标签仓库的 `dashboard/current.json`。运行进度附着于上次成功成绩，全部成功才替换成绩；Git 提交、评分切片和 HF 历史提供可追溯性。日线与持续评测共享HF标签仓库主分支，并发归 Actions 的同一 `benchmark-hf-main` 任务组，失败不替换成功成绩；不引入在线数据库、业务事务或消息队列。
 
-`benchmark-deploy` 仅准备服务用户的 Python 环境并同步当前快照；`host-runtime` 管理 `benchmark.live sync --watch` 的启动和退出，每 30 秒检查远端固定提交，只读同步至 `.runtime/benchmark/current/`。远端只提供数据，页面与脚本仍由本地部署版本生成；失败保留上次文件，进程内缓存避免重复下载。API 的 `MARIO_BENCH_DIR` 指向固定目录，`/dashboard` 与 `/dashboard.js` 公开，`/api/benchmark/dashboard` 只验证会话令牌，不打开账号 schema、不加账号锁。依赖方向不变：在线 API 只读派生文件，不执行策略；研究模块不访问账号数据。页面每 10 秒携带 Mario 会话轮询，状态更新保留视图，成绩更新后按原网址状态重载。会话存储格式变更时同步修改 `dashboard.py`。旧标签目录只供研究复现，生产不再在部署时评分；部署配置使用 `MARIO_BENCH_ENABLED=true` 启用同步，旧标签配置不再读取，评分切片由 Actions 的 `BENCHMARK_SCORING_TAG` 统一确定。
+`benchmark-deploy` 仅准备服务用户的 Python 环境并同步当前快照；`host-runtime` 管理 `benchmark.live sync --watch` 的启动和退出，每 30 秒检查远端固定提交，只读同步至 `.runtime/benchmark/current/`。远端只提供数据，页面与脚本仍由本地部署版本生成；失败保留上次文件，进程内缓存避免重复下载。API 的 `MARIO_BENCH_DIR` 指向固定目录，`/dashboard` 与 `/dashboard.js` 公开，`/api/benchmark/dashboard` 只验证会话令牌，不打开账号 schema、不加账号锁。依赖方向不变：在线 API 只读派生文件，不执行策略；研究模块不访问账号数据。页面每 10 秒携带 Mario 会话轮询，状态更新保留视图，成绩更新后按原网址状态重载。会话存储格式变更时同步修改 `dashboard.py`。旧标签目录只供研究复现，生产不再在部署时评分；部署配置使用 `MARIO_BENCH_ENABLED=true` 启用同步，旧标签配置不再读取，评分计划与原始来源分别由 Actions 的 `BENCHMARK_PLAN_REVISION`、`BENCHMARK_RAW_REVISION` 固定。
 
 看板 HF 下载端点由部署配置 `.env` 的 `HF_ENDPOINT` 保存，显式部署环境可更新该值，未提供时保留；空值使用官方站。`benchmark-deploy` 统一构造首次同步和后台同步的子进程环境，`host-runtime` 只向同步器注入该配置；systemd 重启不依赖交互终端的环境。镜像切换不改变 HF 文件的状态归属与固定提交读取方式。
 
@@ -281,7 +285,7 @@ Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略
 
 `scripts/benchmark_risk_study.py` 在同一边界内构造三年周波动和月内历史日收益，复用构建/扫描函数的显式特征与规则参数；组合风险在候选策略中计算。最小输入升级只携带准入策略需要的字段，`hub` 数据卡按实际存在的字段和指标定义说明截止时点和缺失语义；原始日线不随最小升级包上传。
 
-当前 `pool-scoring-v8` 保留v7月内日收益及90日回归趋势，另增`stock.fugui`四个截至决策日的布尔信号与问题码，历史整包标记为`monthly-risk-regression-fugui-v1`，该标记不再用于兼容判断。`trend_basket_risk`使用月内收益估计组合方差，`trend_regression_tilt`按回归趋势倾斜再估计方差，`fugui`只读取技术底仓所需信号；原21项策略输入和结果标签不变。持续评测默认样本快照仍为v8，旧不可变标签供研究复现；需要新字段时通过显式原始归档补算或报告依赖缺失，不静默换逻辑。
+当前 `pool-scoring-v8` 保留v7月内日收益及90日回归趋势，另增`stock.fugui`四个截至决策日的布尔信号与问题码，历史整包标记为`monthly-risk-regression-fugui-v1`，该标记不再用于兼容判断。`trend_basket_risk`使用月内收益估计组合方差，`trend_regression_tilt`按回归趋势倾斜再估计方差，`fugui`只读取技术底仓所需信号；原21项策略输入和结果标签不变。持续评测仅从该固定出处取选样事实、范围与独立标签，明确不下载其`inputs.jsonl`；行情及技术字段每次按策略依赖从同源原始归档生成。旧不可变输入仅供显式研究复现，不能在原始缺失时作为回退。
 
 `scripts/benchmark_regression_study.py`复用长历史构建/扫描并调用共享行情指标计算，比较严格90日与停牌估值口径；缺行不前填，窗口不延长。`--minimal`只输出准入机制必需的信号和原v6字段，发布仍经`hub`显式执行。它只依赖标准库与离线研究模块，不进入在线状态或账号事务。
 

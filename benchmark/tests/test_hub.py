@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from benchmark.files import Invalid, digest, read_json, write_json, write_rows
-from benchmark.hub import (CANARY, dataset_card, fetch, prepare_daily_prices, publish,
+from benchmark.hub import (CANARY, dataset_card, fetch, fetch_evaluation_plan, fetch_evaluation_raw, prepare_daily_prices, publish,
                            publish_daily_prices, promote_daily_branch, historical_prices_reference)
 from benchmark.release import verify_release
 
@@ -148,6 +148,48 @@ class HubTest(unittest.TestCase):
         self.assertNotIn("私有研究数据集", inputs["README.md"])
         self.assertIn("1.50 [0.50, 2.50]", inputs["README.md"])
         self.assertEqual(result["labels"]["commit"], "sha-me/labels")
+
+    def test_raw_workflow_plan_never_downloads_precomputed_inputs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            release(base / "release")
+            (base / "release/universe").mkdir()
+            write_json(base / "release/universe/tech-2025.json", {"selected": ["600000.SH"]})
+            manifest = read_json(base / "release/manifest.json")
+            manifest["files"]["universe/tech-2025.json"] = digest(base / "release/universe/tech-2025.json")
+            write_json(base / "release/manifest.json", manifest)
+            runs(base / "runs")
+            publish(base / "release", "me/bench", "me/labels", "pool-scoring", base / "runs")
+            calls = []
+            def snapshot(**kwargs):
+                calls.append(kwargs)
+                return snapshot_download(**kwargs)
+            adapter = types.SimpleNamespace(HfApi=FakeApi, snapshot_download=snapshot, hf_hub_download=self.attrs)
+            with patch("benchmark.hub.huggingface", return_value=adapter):
+                fetch_evaluation_plan("me/bench", "me/labels", "v8", base / "plan")
+            self.assertFalse((base / "plan/inputs.jsonl").exists())
+            self.assertTrue((base / "plan/outcomes.jsonl").exists())
+            self.assertTrue(verify_release(base / "plan")["valid"])
+            self.assertTrue(all(call["revision"] == "sha-me/bench" for call in calls))
+            self.assertTrue(all(not pattern.endswith("inputs.jsonl") for call in calls for pattern in call["allow_patterns"]))
+
+    def test_raw_download_filters_scope_and_checks_source_manifest(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            files = {"config.json": "{}\n", "calendar.jsonl": "{}\n", "instruments.json": "{}\n", "coverage.json": "[]\n",
+                     "prices/600000.SH/adjust1/2020.jsonl": "{}\n", "prices/600000.SH/adjust3/2020.jsonl": "{}\n",
+                     "prices/000001.SZ/adjust1/2020.jsonl": "excluded\n"}
+            import json
+            manifest = {"files": {name: hashlib.sha256(value.encode()).hexdigest() for name, value in files.items()}}
+            FakeApi.uploads["me/labels"] = {"daily-prices/" + name: value for name, value in files.items()}
+            FakeApi.uploads["me/labels"]["daily-prices/manifest.json"] = json.dumps(manifest)
+            fetch_evaluation_raw("me/labels", "fixed-source", {"600000.SH"}, base / "raw")
+            self.assertTrue(verify_release(base / "raw")["valid"])
+            self.assertFalse((base / "raw/prices/000001.SZ").exists())
+            self.assertEqual(read_json(base / "raw/source.json")["commit"], "sha-me/labels")
+            FakeApi.uploads["me/labels"]["daily-prices/config.json"] = "tampered"
+            with self.assertRaisesRegex(Invalid, "哈希不符"):
+                fetch_evaluation_raw("me/labels", "fixed-source", {"600000.SH"}, base / "tampered")
 
     def test_monthly_risk_card_describes_cutoff_and_missing_values_only_when_present(self):
         with tempfile.TemporaryDirectory() as folder:

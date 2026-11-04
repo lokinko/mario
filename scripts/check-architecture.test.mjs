@@ -8,6 +8,8 @@ test('benchmark raw adapters, indicators and composition keep dependency directi
   assert.ok(benchmarkViolation('raw_data.py', 'price_indicators'));
   assert.ok(benchmarkViolation('feature_pipeline.py', 'hub'));
   assert.ok(benchmarkViolation('input_contract.py', 'feature_pipeline'));
+  assert.ok(benchmarkViolation('evaluation_data.py', 'hub'));
+  assert.ok(benchmarkViolation('dividends.py', 'strategy_runner'));
   assert.equal(benchmarkViolation('feature_pipeline.py', 'raw_data'), undefined);
   assert.equal(benchmarkViolation('financial_indicators.py', 'files'), undefined);
 });

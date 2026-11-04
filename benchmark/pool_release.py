@@ -13,24 +13,13 @@ from .market_cap import cached
 from .public_sources import CSI_INDEX_PERF, csi_index_closes
 from .scoring import BUY_COST, COST_BASIS, SEGMENT_DAYS, SEGMENT_WEIGHTS, boundaries, can_buy, can_sell
 from .price_indicators import momentum, volatility
+from .dataset import quarter_decisions
 
 POOLS = ("dividend", "tech")
 INDEX = "000300.SH"
 TOTAL_RETURN_INDEX = "H00300"
 LOOKBACK = 63
 SHORT_LOOKBACK = 20
-
-
-def quarter_decisions(calendar, year):
-    output = {}
-    for day in calendar:
-        if day.startswith(str(year)):
-            output[(int(day[5:7]) - 1) // 3] = day
-    return [output[q] for q in sorted(output)]
-
-
-
-
 
 
 def sample_rows(pool, year, decision, snapshot, adjusted, raw, index_bars, calendar):

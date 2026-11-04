@@ -169,6 +169,10 @@ export function benchmarkViolation(source, target) {
     return 'feature composition depends on raw data and pure calculators';
   if (source === 'input_contract.py' && target !== 'files')
     return 'strategy input declarations cannot depend on execution or providers';
+  if (source === 'evaluation_data.py' && !['dataset', 'files', 'feature_pipeline', 'input_contract', 'raw_data', 'release'].includes(target))
+    return 'raw input reconstruction cannot fetch data or execute strategies';
+  if (source === 'dividends.py' && !['files', 'public_sources'].includes(target))
+    return 'dividend acquisition depends only on public sources and file contracts';
   return undefined;
 }
 
@@ -237,7 +241,7 @@ export function checkArchitecture() {
       if (violation) violations.push(`${name} -> ${target}: ${violation}`);
     }
   }
-  for (const name of ['price_indicators.py', 'technical_indicators.py', 'financial_indicators.py', 'announcement_indicators.py', 'raw_data.py', 'feature_pipeline.py', 'input_contract.py']) {
+  for (const name of ['price_indicators.py', 'technical_indicators.py', 'financial_indicators.py', 'announcement_indicators.py', 'raw_data.py', 'feature_pipeline.py', 'input_contract.py', 'evaluation_data.py', 'dividends.py']) {
     const source = readFileSync(resolve(root, 'benchmark', name), 'utf8');
     for (const match of source.matchAll(/^from \.(\w+) import /gm)) {
       const violation = benchmarkViolation(name, match[1]);

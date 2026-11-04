@@ -24,11 +24,13 @@ jobs:
   evaluate:
     if: github.repository == 'lokinko/mario' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       HF_HUB_DISABLE_PROGRESS_BARS: '1'
       PYTHONUTF8: '1'
-      BENCHMARK_SCORING_TAG: ${{ vars.BENCHMARK_SCORING_TAG || 'pool-scoring-v8' }}
+      BENCHMARK_PLAN_REVISION: ${{ vars.BENCHMARK_PLAN_REVISION || 'pool-scoring-v8' }}
+      BENCHMARK_RAW_REVISION: ${{ vars.BENCHMARK_RAW_REVISION || 'baostock-daily-20261102' }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -43,10 +45,12 @@ jobs:
           uv sync --frozen --group publish
       - name: 验证持续评测与数据边界
         run: uv run --frozen --group publish python -m unittest discover -s benchmark/tests -q
-      - name: 评测主分支策略并发布实时状态
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          BENCHMARK_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - name: 获取原始行情与评分计划（不下载预计算输入）
         run: |
           test -n "$HF_TOKEN" || { echo '缺少仓库 Secret HF_TOKEN'; exit 1; }
-          uv run --frozen --group publish python -m benchmark.live evaluate --tag "$BENCHMARK_SCORING_TAG" --commit "$(git rev-parse HEAD)" --run-url "$BENCHMARK_RUN_URL"
+          uv run --frozen --group publish python -m benchmark.live prepare --plan-revision "$BENCHMARK_PLAN_REVISION" --raw-revision "$BENCHMARK_RAW_REVISION" --workspace .runtime/benchmark/workflow
+      - name: 按策略依赖计算指标、评测并发布
+        env:
+          BENCHMARK_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          uv run --frozen --group publish python -m benchmark.live evaluate --workspace .runtime/benchmark/workflow --commit "$(git rev-parse HEAD)" --run-url "$BENCHMARK_RUN_URL"

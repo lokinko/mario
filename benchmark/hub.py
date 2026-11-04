@@ -14,7 +14,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from .files import Invalid, day, digest, read_json, require, rows, symbol, write_json
+from .files import Invalid, day, digest, new_directory, read_json, require, rows, symbol, write_json
 from .feature_pipeline import value_at
 from .release import verify_release
 from .strategy_runner import completed_runs
@@ -186,6 +186,76 @@ def fetch(repo, labels_repo, path, tag, out):
         verify_release(staged)
         staged.rename(out)
     return {"status": "downloaded", "release": str(out), "tag": tag}
+
+
+def _verified_subset(repo, revision, path, select, destination):
+    """固定提交后只取显式文件；局部包另建清单，保留原始完整清单用于追溯。"""
+    repo_path(path)
+    hub = huggingface()
+    api = hub.HfApi()
+    commit = api.repo_info(repo, repo_type="dataset", revision=revision).sha
+    with tempfile.TemporaryDirectory(prefix="mario-source-download-") as folder:
+        local = Path(folder)
+        manifest_path = Path(hub.hf_hub_download(repo_id=repo, repo_type="dataset", revision=commit,
+                                              filename=f"{path}/manifest.json", local_dir=local))
+        manifest = read_json(manifest_path)
+        names = sorted(name for name in manifest["files"] if select(name))
+        require(names, "原始数据文件范围为空")
+        for name in names:
+            repo_path(name)
+        hub.snapshot_download(repo_id=repo, repo_type="dataset", revision=commit,
+                              allow_patterns=[f"{path}/{name}" for name in names], local_dir=local, max_workers=6)
+        with new_directory(destination) as stage:
+            for name in names:
+                source = local / path / name
+                require(digest(source) == manifest["files"][name], f"来源哈希不符: {name}")
+                target = stage / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+            shutil.copyfile(manifest_path, stage / "source-manifest.json")
+            provenance = {"repo": repo, "revision": revision, "commit": commit, "path": path,
+                          "source_manifest_sha256": digest(manifest_path), "files": len(names)}
+            write_json(stage / "source.json", provenance)
+            write_json(stage / "manifest.json", {"files": {p.relative_to(stage).as_posix(): digest(p)
+                       for p in sorted(stage.rglob("*")) if p.is_file()}})
+    return provenance
+
+
+def fetch_evaluation_plan(repo, labels_repo, revision, destination):
+    """评分计划只取范围和选样原始事实；绝不下载 inputs.jsonl 或预计算指标。"""
+    hub = huggingface()
+    api = hub.HfApi()
+    with tempfile.TemporaryDirectory(prefix="mario-plan-") as folder:
+        plan = Path(folder) / "plan"
+        provenance = _verified_subset(repo, revision, "pool-scoring",
+                                      lambda name: name in ("config.json", "summary.json") or name.startswith("universe/"), plan)
+        labels_commit = api.repo_info(labels_repo, repo_type="dataset", revision=revision).sha
+        original = read_json(plan / "source-manifest.json")["files"]
+        label = Path(hub.hf_hub_download(repo_id=labels_repo, repo_type="dataset", revision=labels_commit,
+                                       filename="pool-scoring/outcomes.jsonl", local_dir=folder))
+        require(digest(label) == original["outcomes.jsonl"], "评分标签与计划不一致")
+        with new_directory(destination) as stage:
+            for file in plan.rglob("*"):
+                if file.is_file() and file.name != "manifest.json":
+                    target = stage / file.relative_to(plan)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(file, target)
+            shutil.copyfile(label, stage / "outcomes.jsonl")
+            write_json(stage / "plan-source.json", {**provenance, "labels_repo": labels_repo, "labels_commit": labels_commit})
+            write_json(stage / "manifest.json", {"files": {p.relative_to(stage).as_posix(): digest(p)
+                       for p in sorted(stage.rglob("*")) if p.is_file()}})
+    return {**provenance, "labels_commit": labels_commit}
+
+
+def fetch_evaluation_raw(repo, revision, symbols, destination, path="daily-prices"):
+    codes = set(symbols)
+    for code in codes:
+        symbol(code)
+    def select(name):
+        parts = name.split("/")
+        return name in ("config.json", "calendar.jsonl", "instruments.json", "coverage.json") or \
+            len(parts) == 4 and parts[0] == "prices" and parts[1] in codes and parts[2] in ("adjust1", "adjust3")
+    return _verified_subset(repo, revision, path, select, destination)
 
 
 def publish(release, repo, labels_repo, path, runs_dir, tag=None):

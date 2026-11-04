@@ -85,6 +85,37 @@ def read_raw(root):
                    {"raw_manifest_sha256": digest(root / "manifest.json"), **metadata}, metadata["price_basis"])
 
 
+def read_price_archive(root, symbols):
+    """读取经哈希验证的同源双口径归档；未来行情只在 at() 截止投影后进入指标。"""
+    verify_release(root)
+    config = read_json(root / "config.json")
+    require(config.get("price_source") == "https://www.baostock.com/", "原始行情来源不符")
+    calendar_rows = rows(root / "calendar.jsonl")
+    require(calendar_rows and len({r["calendar_date"] for r in calendar_rows}) == len(calendar_rows), "原始日历为空或重复")
+    require(all(r["is_trading_day"] in ("0", "1") for r in calendar_rows), "原始日历状态未知")
+    calendar = sorted(r["calendar_date"] for r in calendar_rows if r["is_trading_day"] == "1")
+    basics = read_json(root / "instruments.json")
+    stores = {}
+    for flag in ("1", "3"):
+        history = {}
+        for code in sorted(symbols):
+            symbol(code)
+            require(code in basics, f"原始证券元数据缺失: {code}")
+            records = []
+            for file in sorted((root / "prices" / code / f"adjust{flag}").glob("*.jsonl")):
+                records.extend(rows(file))
+            require(records and len({r["date"] for r in records}) == len(records), f"原始日线缺失或重复: {code}/adjust{flag}")
+            number, exchange = code.split(".")
+            require(all(r["code"] == f"{exchange.lower()}.{number}" for r in records), f"原始行情证券不符: {code}")
+            history[code] = {r["date"]: r for r in records}
+        stores[flag] = history
+    provenance = {"raw_manifest_sha256": digest(root / "manifest.json"),
+                  "source": read_json(root / "source.json"), "pit_verified": False}
+    raw = RawData(stores["1"], calendar, provenance)
+    RawData(stores["3"], calendar, provenance, "baostock_unadjusted")
+    return raw, stores["3"], basics
+
+
 def load_caches(roots, symbols):
     """仅接受 pool-build 使用的 Baostock 后复权档案，重叠价格必须一致。"""
     history = {code: {} for code in symbols}

@@ -31,7 +31,7 @@ BLOCKED_NAMES = {"open", "exec", "eval", "compile", "__import__", "globals", "lo
 WEIGHT_STEP = Decimal("0.00000001")
 TIMEOUT_SECONDS = 600
 ENGINE_FILES = ("scoring.py", "strategy_runner.py", "input_contract.py", "feature_pipeline.py",
-                "price_indicators.py", "technical_indicators.py", "raw_data.py")
+                "price_indicators.py", "technical_indicators.py", "raw_data.py", "evaluation_data.py")
 
 SANDBOX = r"""
 import builtins, json, sys

@@ -20,6 +20,7 @@ from .scoring import evaluate_weights
 from .strategy_runner import bench_run
 from .feature_pipeline import build_features, describe_indicators
 from .raw_data import import_raw, read_raw
+from .dividends import collect_dividends
 
 DEFAULT_CONFIG = Path(__file__).with_name("config.json")
 DEFAULT_STRATEGIES = Path(__file__).with_name("strategies")
@@ -77,6 +78,13 @@ def main(argv=None):
     features.add_argument("--field", action="append", help="可重复；不指定则补全所有注册指标")
     features.add_argument("--built-on")
     features.add_argument("--out", type=Path, required=True)
+    dividends = sub.add_parser("dividends-collect", help="采集显式股票范围的分红事实，保留实施记录、其他方案和空来源")
+    dividends.add_argument("--symbols-file", type=Path, required=True, help="含 symbols 列表的 JSON")
+    dividends.add_argument("--start", required=True)
+    dividends.add_argument("--end", required=True)
+    dividends.add_argument("--out", type=Path, required=True)
+    dividends.add_argument("--cache-root", type=Path, required=True)
+    dividends.add_argument("--workers", type=int, default=2)
     serve = sub.add_parser("bench-serve", help="在本机提供看板；bench-run 重新生成后已打开的页面自动载入")
     serve.add_argument("--release", type=Path, required=True, help="pool-build 生成的评分切片")
     serve.add_argument("--out", type=Path, help="默认 .runtime/benchmark/bench/<发布包目录名>")
@@ -118,7 +126,10 @@ def main(argv=None):
     score.add_argument("--top-k", type=int, default=5)
     args = parser.parse_args(argv)
     try:
-        if args.command == "indicators":
+        if args.command == "dividends-collect":
+            result = collect_dividends(read_json(args.symbols_file)["symbols"], args.start, args.end,
+                                       args.out, args.cache_root, args.workers)
+        elif args.command == "indicators":
             result = describe_indicators()
         elif args.command == "raw-import":
             symbols = {s["symbol"] for sample in rows(args.release / "inputs.jsonl") for s in sample["stocks"]} if args.release else None
