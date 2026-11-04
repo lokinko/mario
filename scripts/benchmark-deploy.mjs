@@ -8,6 +8,11 @@ export function benchEnabled(value = 'false') {
 export const benchDir = () => resolve(root, '.runtime/benchmark/current');
 export const benchPython = () => join(root, '.runtime/benchmark/.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 
+// Share the persisted endpoint between initial sync and the systemd watcher.
+export function benchEnvironment(config, env) {
+  return { ...env, HF_ENDPOINT: (config.HF_ENDPOINT ?? env.HF_ENDPOINT) || 'https://huggingface.co' };
+}
+
 // The deployment owns this environment, separately from an administrator's project .venv.
 export async function buildDashboard(config, env, runner = run) {
   if (!benchEnabled(config.MARIO_BENCH_ENABLED)) return console.log('未启用 MARIO_BENCH_ENABLED，跳过研究看板');
@@ -17,7 +22,7 @@ export async function buildDashboard(config, env, runner = run) {
   const isolated = Object.fromEntries(Object.entries(env).filter(([key]) =>
     !/^(VIRTUAL_ENV|CONDA_PREFIX|PYTHONHOME|PYTHONPATH|UV_PYTHON|UV_PYTHON_PREFERENCE|UV_NO_MANAGED_PYTHON|UV_ACTIVE)$/i.test(key)));
   const benchEnv = {
-    ...isolated,
+    ...benchEnvironment(config, isolated),
     UV_PROJECT_ENVIRONMENT: venv,
     UV_PYTHON_INSTALL_DIR: join(runtime, 'python'),
     UV_CACHE_DIR: join(runtime, 'uv-cache'),

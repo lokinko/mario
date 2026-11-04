@@ -7,7 +7,7 @@ import { tmpdir, userInfo } from 'node:os';
 import { createConfig, defaults, readConfig, root, validateSecrets } from './start-common.mjs';
 
 const fixture = mkdtempSync(join(tmpdir(), 'mario-deploy-'));
-const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(MARIO_|DATABASE_URL$|PG_BIN$)/i.test(key)));
+const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(MARIO_|DATABASE_URL$|PG_BIN$|HF_ENDPOINT$)/i.test(key)));
 // Git Bash otherwise rewrites /mario/ into a Windows filesystem path for Node.
 if (process.platform === 'win32') cleanEnv.MSYS2_ENV_CONV_EXCL = 'MARIO_SETUP_BASE_PATH';
 const envPath = join(fixture, '.env');
@@ -29,7 +29,7 @@ try {
   assert.doesNotThrow(() => validateSecrets(before));
   assert.doesNotThrow(() => validateSecrets({ ...before, MARIO_REGISTRATION_KEY: 'obsolete' }));
   const options = { MARIO_SETUP_DOMAIN: 'www.madeagents.ai', MARIO_SETUP_IP: '47.243.99.21', MARIO_SETUP_BASE_PATH: '/mario/', MARIO_SETUP_API_PORT: '4321', MARIO_SETUP_BENCH_ENABLED: 'true' };
-  const result = prepare(options);
+  const result = prepare({ ...options, HF_ENDPOINT: 'https://hf-mirror.com' });
   const after = readConfig(envPath);
   for (const key of ['MARIO_MASTER_KEY', 'POSTGRES_PASSWORD', 'MARIO_AGENT_TOKEN']) {
     assert.equal(after[key], before[key]);
@@ -40,6 +40,10 @@ try {
   assert.equal(after.MARIO_BASE_PATH, '/mario/');
   assert.equal(after.MARIO_BACKUP_MODE, 'native');
   assert.equal(after.MARIO_BENCH_ENABLED, 'true');
+  assert.equal(after.HF_ENDPOINT, 'https://hf-mirror.com');
+  prepare({ ...options, HF_ENDPOINT: '' });
+  assert.equal(readConfig(envPath).HF_ENDPOINT, '');
+  prepare({ ...options, HF_ENDPOINT: after.HF_ENDPOINT });
   const nginx = readFileSync(join(fixture, '.runtime/native/nginx.conf'), 'utf8');
   assert.match(nginx, /location = \/mario \{ return 308 \/mario\/\$is_args\$args;/);
   assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:4321\//);

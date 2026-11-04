@@ -18,7 +18,7 @@ const sources = {
   MARIO_DEPLOY_CARGO_REGISTRY: 'sparse+https://rsproxy.cn/index/',
 };
 const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-  !Object.hasOwn(sources, key) && !/^(MARIO_|NPM_CONFIG_REGISTRY$)/i.test(key)));
+  !Object.hasOwn(sources, key) && !/^(MARIO_|NPM_CONFIG_REGISTRY$|HF_ENDPOINT$)/i.test(key)));
 function configured(overrides = {}) {
   const result = spawnSync(bash, ['-euc', `${configuration}\nexec "$DEPLOY_TEST_NODE" -e 'console.log(JSON.stringify(process.env))'`], {
     env: { ...cleanEnv, ...overrides, DEPLOY_TEST_NODE: process.execPath }, encoding: 'utf8', timeout: 15000,
@@ -53,11 +53,16 @@ test('automatic sudo escalation preserves source configuration', { skip: process
     const command = rootTest ? 'runuser' : bash;
     const argv = rootTest ? ['-u', 'nobody', '--', bash, join(fixture, 'deploy.sh')] : [join(fixture, 'deploy.sh')];
     if (rootTest) chmodSync(fixture, 0o755);
-    const result = spawnSync(command, argv, { env, encoding: 'utf8', timeout: 15000 });
-    assert.equal(result.status, 0, result.stdout + result.stderr);
-    const forwarded = JSON.parse(result.stdout);
-    assert.equal(forwarded[0], 'env');
-    for (const key of Object.keys(sources)) assert(forwarded.includes(`${key}=${env[key]}`), key);
+    for (const endpoint of [undefined, '', 'https://hf-mirror.com']) {
+      const current = { ...env, ...(endpoint === undefined ? {} : { HF_ENDPOINT: endpoint }) };
+      const result = spawnSync(command, argv, { env: current, encoding: 'utf8', timeout: 15000 });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const forwarded = JSON.parse(result.stdout);
+      assert.equal(forwarded[0], 'env');
+      for (const key of Object.keys(sources)) assert(forwarded.includes(`${key}=${env[key]}`), key);
+      assert.equal(forwarded.find(value => value.startsWith('HF_ENDPOINT=')),
+        endpoint === undefined ? undefined : `HF_ENDPOINT=${endpoint}`);
+    }
   } finally { rmSync(fixture, { recursive: true, force: true }); }
 });
 

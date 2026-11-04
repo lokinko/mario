@@ -267,6 +267,8 @@ Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略
 
 `benchmark-deploy` 仅准备服务用户的 Python 环境并同步当前快照；`host-runtime` 管理 `benchmark.live sync --watch` 的启动和退出，每 30 秒检查远端固定提交，只读同步至 `.runtime/benchmark/current/`。远端只提供数据，页面与脚本仍由本地部署版本生成；失败保留上次文件，进程内缓存避免重复下载。API 的 `MARIO_BENCH_DIR` 指向固定目录，`/dashboard` 与 `/dashboard.js` 公开，`/api/benchmark/dashboard` 只验证会话令牌，不打开账号 schema、不加账号锁。依赖方向不变：在线 API 只读派生文件，不执行策略；研究模块不访问账号数据。页面每 10 秒携带 Mario 会话轮询，状态更新保留视图，成绩更新后按原网址状态重载。会话存储格式变更时同步修改 `dashboard.py`。旧标签目录只供研究复现，生产不再在部署时评分；部署配置使用 `MARIO_BENCH_ENABLED=true` 启用同步，旧标签配置不再读取，评分切片由 Actions 的 `BENCHMARK_SCORING_TAG` 统一确定。
 
+看板 HF 下载端点由部署配置 `.env` 的 `HF_ENDPOINT` 保存，显式部署环境可更新该值，未提供时保留；空值使用官方站。`benchmark-deploy` 统一构造首次同步和后台同步的子进程环境，`host-runtime` 只向同步器注入该配置；systemd 重启不依赖交互终端的环境。镜像切换不改变 HF 文件的状态归属与固定提交读取方式。
+
 策略目录按选股、仓位构建与执行机制区分；同一机制只保留当前切片总分最高的一组参数，参数更新在原目录完成，不以参数变体重复占榜。扫描记录可保留为历史审计，当前看板由去重后的目录重新生成。
 
 富贵策略是用户明确指定保留的策略，唯一实现位于`strategies/fugui/`，即使不在Top-10也参与默认发现、评分和看板；名称标注“技术底仓试验”，不将尚未实现的基本面和机动仓算作已验证能力。

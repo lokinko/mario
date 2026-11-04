@@ -5,7 +5,7 @@ import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isIP } from 'node:net';
 import { args, assertNoRestore, basePath, createDeploymentConfig, defaults, hostname, migrateNativeConfig, port, postgresBin, readConfig, root, run, startPostgres, updateConfig, validateSecrets } from './start-common.mjs';
-import { benchDir, benchPython, benchEnabled, buildDashboard } from './benchmark-deploy.mjs';
+import { benchDir, benchPython, benchEnabled, benchEnvironment, buildDashboard } from './benchmark-deploy.mjs';
 
 const runtime = resolve(root, '.runtime/native');
 const configPath = resolve(root, '.env');
@@ -95,6 +95,7 @@ try {
       PG_BIN: postgresBin(setup.MARIO_SETUP_PG_BIN || original.PG_BIN),
       MARIO_BACKUP_MODE: 'native',
       MARIO_BENCH_ENABLED: String(benchEnabled(setup.MARIO_SETUP_BENCH_ENABLED || original.MARIO_BENCH_ENABLED || 'false')),
+      HF_ENDPOINT: setup.HF_ENDPOINT ?? original.HF_ENDPOINT ?? '',
     };
     if (setup.MARIO_SETUP_DATABASE_URL) values.DATABASE_URL = setup.MARIO_SETUP_DATABASE_URL;
     if (setup.MARIO_SETUP_ORIGINS) values.MARIO_ALLOWED_ORIGINS = setup.MARIO_SETUP_ORIGINS;
@@ -194,7 +195,7 @@ try {
     });
     await ready(`http://127.0.0.1:${apiPort}/api/server`, body => body.mode === 'hosted');
     if (benchEnabled(config.MARIO_BENCH_ENABLED) && existsSync(benchPython())) {
-      launch('研究看板同步', benchPython(), ['-m', 'benchmark.live', 'sync', '--watch', '--out', benchDir()], baseEnv);
+      launch('研究看板同步', benchPython(), ['-m', 'benchmark.live', 'sync', '--watch', '--out', benchDir()], benchEnvironment(config, baseEnv));
     }
     console.log(`\nAPI 与 Agent 已就绪：http://127.0.0.1:${apiPort}\n公网网页：https://${config.MARIO_DOMAIN}${prefix}\n研究看板（登录后可见）：https://${config.MARIO_DOMAIN}${prefix}dashboard\n注册已开放，使用邮箱和密码即可创建账号。\n前台运行器由 systemd 托管；Ctrl+C/SIGTERM 停止并保留数据。`);
     if (prefix !== '/') console.log(`公网网页路径：${prefix}（外层代理需移除该前缀，本机上游仍使用根路径）`);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { join, resolve } from 'node:path';
-import { benchDir, benchPython, buildDashboard } from './benchmark-deploy.mjs';
+import { benchDir, benchPython, benchEnvironment, buildDashboard } from './benchmark-deploy.mjs';
 import { root } from './start-common.mjs';
 
 test('dashboard uses its deployment interpreter despite inherited root settings', async () => {
@@ -59,6 +59,24 @@ test('optional dashboard failures stop subsequent steps and identify the failed 
       assert.match(warnings[0], /\.runtime\/benchmark\/\.venv\/bin\/hf auth login/);
     });
   }
+});
+
+test('persisted HF endpoint reaches initial sync and watcher despite a different shell setting', async () => {
+  const config = { MARIO_BENCH_ENABLED: 'true', HF_ENDPOINT: 'https://hf-mirror.com' };
+  const inherited = { HOME: '/home/mario', HF_ENDPOINT: 'https://huggingface.co' };
+  const watcher = benchEnvironment(config, inherited);
+  assert.equal(watcher.HF_ENDPOINT, config.HF_ENDPOINT);
+  assert.equal(watcher.HOME, inherited.HOME);
+  let calls = 0;
+  await buildDashboard(config, inherited, async (_command, _argv, { env }) => {
+    calls++;
+    assert.equal(env.HF_ENDPOINT, watcher.HF_ENDPOINT);
+  });
+  assert.equal(calls, 2);
+  assert.equal(inherited.HF_ENDPOINT, 'https://huggingface.co');
+  assert.equal(benchEnvironment({}, { HF_ENDPOINT: config.HF_ENDPOINT }).HF_ENDPOINT, config.HF_ENDPOINT);
+  assert.equal(benchEnvironment({}, {}).HF_ENDPOINT, 'https://huggingface.co');
+  assert.equal(benchEnvironment({ HF_ENDPOINT: '' }, { HF_ENDPOINT: config.HF_ENDPOINT }).HF_ENDPOINT, 'https://huggingface.co');
 });
 
 test('disabled dashboard skips tooling; invalid setting is rejected before execution', async t => {

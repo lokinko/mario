@@ -21,6 +21,7 @@ RUN_USER=""                     # 服务用户；默认复用数据库所有者�
 SERVICE_NAME="mario"            # systemd 服务名；一台服务器部署多份时需使用不同名称和端口。
 INSTALL_MISSING_TOOLS="true"    # true 自动安装缺失工具；false 由你提前安装 Node 22+/Rust/PG/uv。
 BENCH_ENABLED="true"           # 启用持续研究看板；评分切片由 GitHub 的 BENCHMARK_SCORING_TAG 指定。
+# HF 镜像：sudo env HF_ENDPOINT=https://hf-mirror.com bash deploy.sh；保存到 .env 供后台同步。
 # 国内下载源仅作用于本次部署；可在这里修改，或通过环境变量覆盖（sudo env 变量=值 bash deploy.sh）。
 export npm_config_registry="${npm_config_registry:-${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}}" # npm 包下载。
 export NODE_DIST_URL="${NODE_DIST_URL:-https://npmmirror.com/mirrors/node/latest-v22.x}" # Node 22 下载目录，含校验清单。
@@ -78,7 +79,9 @@ export PATH="/opt/mario-tools/node/bin:$PATH"
 if [[ "$ACTION" == deploy || "$ACTION" == start || "$ACTION" == stop || "$ACTION" == restart || "$ACTION" == logs ]]; then
     [[ "$(uname -s)" == Linux ]] || { echo 'systemd 部署仅支持 Linux；本地测试请使用开发命令' >&2; exit 1; }
     if [[ "$EUID" -ne 0 ]]; then
-        exec sudo env npm_config_registry="$npm_config_registry" NODE_DIST_URL="$NODE_DIST_URL" \
+        hf_env=()
+        if [[ -v HF_ENDPOINT ]]; then hf_env+=("HF_ENDPOINT=$HF_ENDPOINT"); fi
+        exec sudo env ${hf_env[@]+"${hf_env[@]}"} npm_config_registry="$npm_config_registry" NODE_DIST_URL="$NODE_DIST_URL" \
             RUSTUP_INIT_URL="$RUSTUP_INIT_URL" RUSTUP_DIST_SERVER="$RUSTUP_DIST_SERVER" \
             RUSTUP_UPDATE_ROOT="$RUSTUP_UPDATE_ROOT" MARIO_DEPLOY_CARGO_REGISTRY="$MARIO_DEPLOY_CARGO_REGISTRY" \
             bash "$SCRIPT" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}

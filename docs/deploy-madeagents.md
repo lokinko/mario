@@ -169,6 +169,21 @@ sudo bash deploy.sh
 
 更新策略只需推送 main 并查看 Actions 的评测结果。评分数据升级先发布新的不可变标签，再修改 `BENCHMARK_SCORING_TAG` 并手动运行持续评测；不再修改服务器标签或重新部署看板。
 
+### Hugging Face 网络不可达与镜像
+
+若 Python 环境准备成功，但同步快照时报 `Network is unreachable`，说明连接 HF 的网络失败。可以使用 [HF-Mirror](https://hf-mirror.com/) 提供的 `HF_ENDPOINT` 镜像配置，在服务器项目目录执行：
+
+```bash
+git pull --ff-only
+sudo env HF_ENDPOINT=https://hf-mirror.com bash deploy.sh
+```
+
+部署会将显式传入的 `HF_ENDPOINT` 保存到 `.env`，首次同步和 systemd 后台同步共用此值；再次部署未传该变量时保留已有配置。直接执行 `export HF_ENDPOINT=https://hf-mirror.com` 后运行 `bash deploy.sh` 也会在脚本自动提权时保留变量；若自行使用 `sudo bash deploy.sh`，请改用上面的 `sudo env` 写法，避免 sudo 过滤变量。只修改 `.bashrc` 不会影响已经运行的 systemd 服务。
+
+已有此版本时，也可直接在服务器 `.env` 添加或修改 `HF_ENDPOINT=https://hf-mirror.com`，再运行 `sudo bash deploy.sh restart`，无需重新构建；后台在启动后立即尝试同步。通过 `sudo journalctl -u mario -n 50 --no-pager` 查看同步错误，并登录看板确认结果。恢复官方站可将 `.env` 的该项清空后重启，或执行 `sudo env HF_ENDPOINT=https://huggingface.co bash deploy.sh`。
+
+当前公开仓库可匿名读取。镜像仍需服务器能够访问，且可能存在同步延迟；本机验证不代表部署主机连通。可先运行 `curl -fL --connect-timeout 10 --max-time 30 https://hf-mirror.com/api/datasets/lokinko/mario_bench_labels` 检查镜像 API。网络失败继续保留上次看板并每 30 秒重试，HF 登录不能修复网络路由问题。
+
 ### Python 安装与权限故障
 
 `uv pip install -e .` 曾因缺少打包配置而报 `Multiple top-level packages discovered in a flat-layout`，将 `client`、`server` 等目录误当 Python 包。当前 `pyproject.toml` 明确只打包 `benchmark` 及配置、策略资源，支持可编辑安装；安装核心包不安装可选的 Hugging Face 依赖，部署使用上面的 `publish` 依赖组。
