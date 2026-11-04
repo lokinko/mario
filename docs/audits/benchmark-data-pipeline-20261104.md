@@ -39,3 +39,5 @@
 独立读取 HF `dashboard/current.json`，确认 `result_commit=2dbf84431f20a4e4d68edeff84d7ff0a750190c0`、`result_tag=pool-scoring-v8`、`completed=total=22`、`status=completed`，输入 manifest 与本地验证一致。`raw_manifest_sha256=null` 表示这次使用已有预计算输入，未给 workflow 自动接入尚未覆盖全评分区间的本地原始归档；新增指标需要显式提供满足范围和口径的原始来源。快照验证摘要保存在本地证据目录 `live-verified.json`。
 
 复核补充：研究脚本重算指标时合并命名空间，保留其他扩展字段及其问题码；按需补算成功时移除该指标过期的问题码，避免已有缺失提示与新结果冲突。
+
+补充提交 `dda64e3` 的 24 项相关本地测试和架构检查通过，[持续评测 41770611835](https://github.com/lokinko/mario/actions/runs/41770611835) 同样成功，204 项 benchmark 测试及真实评测/发布全部通过。独立核验 HF 快照已经切换到完整提交 `dda64e39fb9a2e81867718607773c218d0ef6472`，22/22 项完成；最终摘要为本地证据目录 `live-verified-final.json`。本机完整 `npm test` 的既有阻塞仍按上文保留，GitHub 的成功不等同于未运行的前端、Rust 和财务集成检查通过。
