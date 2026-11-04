@@ -136,6 +136,7 @@ pub fn fact_sheet(snapshot: &Snapshot, selection: &ContextSelection) -> Value {
                 .as_ref()
                 .map_or(Value::Null, |a| metric(&a.cash.value)),
         );
+        summary.insert("cashByCurrency".into(), json!(snapshot.cash_balances.iter().map(|b| (b.currency.clone(),json!({"amount":b.amount,"confirmedOn":b.confirmed_on,"needsReconciliation":b.needs_reconciliation}))).collect::<Map<_,_>>()));
         let total = snapshot
             .accounting
             .as_ref()
@@ -158,11 +159,21 @@ pub fn fact_sheet(snapshot: &Snapshot, selection: &ContextSelection) -> Value {
                 .and_then(|(profit, cost)| profit.checked_div(cost.abs()))
                 .and_then(|v| v.checked_mul(Decimal::ONE_HUNDRED));
             let valuation = snapshot.holding_valuations.iter().find(|v| v.holding_id == holding.id);
+            let mut trades: Vec<_> = snapshot.holding_trades.iter().filter(|t| t.holding_id == holding.id).collect();
+            trades.sort_by(|a,b| (b.occurred_on.as_str(),b.sequence,b.id.as_str()).cmp(&(a.occurred_on.as_str(),a.sequence,a.id.as_str())));
+            let trade_count = trades.len();
+            let recent_trades = trades.into_iter().take(20).map(|t| (t.id.clone(), json!({
+                "kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"originalQuantity":t.quantity,
+                "originalPrice":t.price,"grossAmount":t.gross_amount,"fees":t.fees,"taxes":t.taxes,
+                "currency":t.currency,"account":t.account,"note":t.note
+            }))).collect::<Map<_,_>>();
             (holding.id.clone(), json!({
                 "id":holding.id,"name":holding.name,"symbol":holding.symbol,"assetClass":holding.asset_class,"currency":holding.currency,
                 "marketValue":market,"weightPct":weight.map(text),"targetPct":target.map(text),
                 "deviationPct":weight.zip(target).and_then(|(w,t)| w.checked_sub(t)).map(text),
                 "costBasis":cost,"profitPct":profit.map(text),
+                "recordedTradeCount":trade_count,"recentTrades":recent_trades,
+                "tradeBasis":"最近20笔已录入真实成交与分红，数量和价格保留成交时单位；成本来自服务端重放，不能跨拆合股直接比较历史成交价。",
                 "priceDate":valuation.map_or(holding.valuation_date.as_str(), |v| v.observed_on.as_str()),
                 "priceSource":valuation.map_or("用户填写", |v| v.provider_name.as_str()),
                 "priceBasis":valuation.map(|v| v.price_basis.as_str()),

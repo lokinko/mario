@@ -19,3 +19,13 @@ pub(crate) trait SecurityPriceProvider: Send + Sync {
         api_key: &str,
     ) -> AppResult<SecurityPriceQuote>;
 }
+
+#[async_trait]
+pub(crate) trait WatchMarketProvider: Send + Sync {
+    async fn invalidate(&self) {}
+    async fn observation(
+        &self,
+        symbol: &str,
+        day: chrono::NaiveDate,
+    ) -> AppResult<crate::models::watch::WatchMarketData>;
+}

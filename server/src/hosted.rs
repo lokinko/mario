@@ -43,6 +43,7 @@ struct HostedState {
     slots: tokio::sync::Semaphore,
     auth_slots: tokio::sync::Semaphore,
     market: Arc<MarketServices>,
+    watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
     analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
     /// Output of the offline benchmark `bench-run`; the online service only serves these files.
     dashboard_dir: Option<PathBuf>,
@@ -59,16 +60,18 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     crate::secrets::validate_master_key()?;
-    let market_runtime = MarketRuntime::new()?;
+    let mut market_runtime = MarketRuntime::new()?;
     let state = Arc::new(HostedState {
         accounts: Arc::new(Accounts::open(url)?),
         openai: crate::openai_login::OpenAiLogin::from_env()?,
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
         auth_slots: tokio::sync::Semaphore::new(AUTH_SLOTS),
         market: market_runtime.services.clone(),
+        watch_provider: market_runtime.watch_provider.clone(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
         dashboard_dir,
     });
+    market_runtime.start_watch(state.accounts.clone());
     let private = api_router()
         .route("/api/sync/version", get(version))
         .route("/api/data/export", get(export))
@@ -179,6 +182,7 @@ async fn authenticate(
             .map_err(|_| AppError::Busy("服务繁忙，请稍后重试".into()))?;
         let user = host.accounts.authenticate(bearer(request.headers())?)?;
         let state = Arc::new(RequestContext {
+            watch_provider: host.watch_provider.clone(),
             db: Database::postgres(&host.accounts.url, &user)?,
             market: host.market.clone(),
             analysis_executor: host.analysis_executor.clone(),

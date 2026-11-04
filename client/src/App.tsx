@@ -1,3 +1,4 @@
+import { BuyWatch } from "./features/watch/BuyWatch";
 import { Callout } from "./components/Callout";
 import { DailyTracking } from "./features/portfolio/DailyTracking";
 import { useApplicationData } from "./app/useApplicationData";
@@ -370,6 +371,16 @@ function App() {
             模型配置暂时不可用，资料与复盘不受影响。
             <button onClick={loadApplication}>重试</button>
           </Callout>
+        )}
+        {view === "watch" && (
+          <BuyWatch
+            key={remoteViewRevision}
+            snapshot={snapshot}
+            onAsk={startAnalysis}
+            flash={flash}
+            onEdited={markEdited}
+            onSaved={clearDraft}
+          />
         )}
         {view === "facts" && (
           <MyFacts

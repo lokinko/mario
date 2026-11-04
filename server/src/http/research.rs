@@ -208,6 +208,9 @@ mod tests {
         db.set_setting("model.codex_bridge_id", "bridge-fixture")
             .unwrap();
         let state = Arc::new(RequestContext {
+            watch_provider: Arc::new(
+                crate::market_data::watch::PublicWatchProvider::new().unwrap(),
+            ),
             db,
             market: crate::composition::MarketRuntime::new()
                 .unwrap()

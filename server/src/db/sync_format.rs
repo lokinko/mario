@@ -362,9 +362,25 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         columns: &["holding_id", "payload"],
         order_by: "holding_id",
     },
+    SyncTableSpec {
+        name: "watch_entries",
+        columns: &[
+            "symbol",
+            "payload",
+            "checked_at",
+            "checked_for",
+            "refresh_failed",
+        ],
+        order_by: "symbol",
+    },
+    SyncTableSpec {
+        name: "watch_observations",
+        columns: &["symbol", "day", "payload", "alert", "read_at"],
+        order_by: "symbol,day",
+    },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 23;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 24;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
@@ -372,6 +388,10 @@ const V8_SYNC_TABLE_COUNT: usize = 13;
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
     if version == SYNC_DATASET_SCHEMA_VERSION {
+        return Ok(specs);
+    }
+    specs.retain(|s| !["watch_entries", "watch_observations"].contains(&s.name));
+    if version == 23 {
         return Ok(specs);
     }
     specs.retain(|s| s.name != "holding_options");

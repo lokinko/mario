@@ -151,11 +151,48 @@ fn relevant_evidence(
             .into_iter()
             .filter(|item| !existing.contains(&(item.source_url.clone(), item.claim.clone()))),
     );
-    Ok(search_evidence(
+    let board = db.watch_board(
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Shanghai)
+            .date_naive(),
+    )?;
+    let mut watch = Vec::new();
+    for row in board.rows {
+        if !(request.question.contains(&row.entry.input.symbol)
+            || request.question.contains(&row.entry.input.name))
+        {
+            continue;
+        }
+        let Some(observation) = row.latest else {
+            continue;
+        };
+        let Some(source_url) = observation.sources.first() else {
+            continue;
+        };
+        let week: Vec<_> = board.weekly.iter().filter(|v| v.symbol == observation.symbol).map(|v| serde_json::json!({
+            "date":v.observed_on,"status":v.status,"price":v.price,"yieldPct":v.yield_pct,
+            "dailyDistancePct":v.daily.as_ref().and_then(|b|b.distance_pct),"weeklyDistancePct":v.weekly.as_ref().and_then(|b|b.distance_pct)
+        })).collect();
+        let facts = serde_json::json!({"symbol":observation.symbol,"observedOn":observation.observed_on,
+            "price":observation.price,"dividendPerShare":observation.dividend_per_share,"yieldPct":observation.yield_pct,
+            "daily":observation.daily,"weekly":observation.weekly,"status":observation.status,"issues":observation.issues,"thisWeek":week});
+        watch.push(ResearchEvidence {
+            id: format!("watch-{}-{}",observation.symbol,observation.observed_on),
+            asset_name: row.entry.input.name.clone(), title: format!("{} 收盘买点观察",row.entry.input.name),
+            publisher: "Yahoo Finance / 东方财富；Mario 确定性计算".into(), source_url: source_url.clone(),
+            source_tier: "二手来源".into(), evidence_type: "market_data".into(), stance: "neutral".into(),
+            as_of_date: observation.observed_on.clone(),
+            claim: format!("规则：已实施税前现金分红TTM股息率至少5%；日/周BOLL(20,2)收盘价均在下轨±2%。技术价格为供应商调整收盘归一至当前价格，周线含截至当日的未结束周。该信号只表明进入关注区间，不证明低估或基本面稳定。观察原值：{}",serde_json::to_string(&facts)?),
+            notes: format!("仅覆盖已获得的数据；基本面和分红持续性需要另行核查。原始来源：{}",observation.sources.join("\n")), active: true, captured_at: observation.checked_at, attachments: Vec::new(),
+        });
+    }
+    watch.truncate(crate::evidence::ANALYSIS_EVIDENCE_LIMIT);
+    watch.extend(search_evidence(
         &query,
         &items,
-        crate::evidence::ANALYSIS_EVIDENCE_LIMIT,
-    ))
+        crate::evidence::ANALYSIS_EVIDENCE_LIMIT - watch.len(),
+    ));
+    Ok(watch)
 }
 
 #[cfg(test)]
@@ -163,6 +200,41 @@ mod tests {
     use super::*;
     use crate::models::ContextSelection;
     use serde_json::json;
+    #[test]
+    fn watch_evidence_freezes_the_week_and_respects_research_authorization() {
+        use crate::models::watch::{evaluate, tests::market_fixture, WatchInput};
+        let db = database();
+        let entry = db
+            .save_watch(WatchInput {
+                symbol: "600036.SS".into(),
+                name: "观察公司".into(),
+                thesis: String::new(),
+            })
+            .unwrap();
+        let today = chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Shanghai)
+            .date_naive();
+        let (data, day) = market_fixture();
+        let mut observation = evaluate("600036.SS", &data, day, chrono::Utc::now().to_rfc3339());
+        observation.observed_on = today.to_string();
+        db.save_watch_observation(&entry, Some(&observation), &observation.checked_at, today)
+            .unwrap();
+        let mut request = request();
+        request.question = "观察公司 600036.SS 本周复盘".into();
+        let service = AnalysisService::new(&db);
+        let preview = service.prepare(&request).unwrap();
+        assert_eq!(preview.evidence_candidates.len(), 1);
+        let evidence = &preview.evidence_candidates[0];
+        assert!(evidence.claim.contains("thisWeek"));
+        assert!(evidence.claim.contains(&today.to_string()));
+        assert!(evidence.claim.chars().count() < 2000);
+        request.context_selection.include_evidence = false;
+        assert!(service
+            .prepare(&request)
+            .unwrap()
+            .evidence_candidates
+            .is_empty());
+    }
     fn request() -> AnalysisRequest {
         AnalysisRequest {
             web_search: false,

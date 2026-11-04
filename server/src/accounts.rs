@@ -75,6 +75,13 @@ impl Accounts {
             dummy_hash,
         })
     }
+    pub(crate) fn user_ids(&self) -> AppResult<Vec<String>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare("SELECT id FROM users ORDER BY id")?;
+        Ok(statement
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<Vec<_>, _>>()?)
+    }
     pub fn register(&self, input: &Credentials) -> AppResult<Session> {
         let email = validate(input)?;
         let hash = hash_password(&input.password)?;

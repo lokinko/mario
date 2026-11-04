@@ -34,6 +34,39 @@ it("opens precise fact sheet values from the frozen report context", () => {
   expect(result.sources[0].title).toBe("本次事实卡 · 基金 · 市值");
 });
 
+it("identifies the company and transaction date behind an exact trade reference", () => {
+  const trace = {
+    personalContext: {
+      facts: {
+        holdings: {
+          asset: {
+            name: "测试公司",
+            recentTrades: {
+              t1: { occurredOn: "2026-11-04", originalPrice: "12.34567890" },
+            },
+          },
+        },
+      },
+    },
+    structuredReport: {
+      facts: [
+        {
+          statement: "原始成交价",
+          basis: "user_data",
+          evidenceIds: [],
+          sourceRefs: ["/facts/holdings/asset/recentTrades/t1/originalPrice"],
+        },
+      ],
+      suggestions: [],
+    },
+  } as unknown as AnalysisWorkflowTrace;
+  const result = reportSources(trace);
+  expect(result.sources[0].title).toBe(
+    "本次事实卡 · 测试公司 · 2026-11-04 · 原始成交价",
+  );
+  expect(result.sources[0].claim).toBe("12.34567890");
+});
+
 it("resolves original personal references even when evidence review is unavailable", () => {
   const trace = {
     personalContext: {

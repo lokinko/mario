@@ -31,6 +31,7 @@ mod research;
 mod reviews;
 mod secrets;
 mod settings;
+mod watch;
 pub(crate) use settings::model_key_binding;
 mod options;
 mod sync_store;

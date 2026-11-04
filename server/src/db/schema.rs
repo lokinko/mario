@@ -5,12 +5,21 @@ use crate::error::AppResult;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 11;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 12;
 
 // Keep migration order intact: re-running on an existing tenant schema is idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
     connection.execute_batch(
-        "CREATE TABLE IF NOT EXISTS daily_settings (
+        "CREATE TABLE IF NOT EXISTS watch_entries (
+           symbol TEXT PRIMARY KEY, payload TEXT NOT NULL, checked_at TEXT, checked_for TEXT,
+           refresh_failed INTEGER NOT NULL DEFAULT 0 CHECK (refresh_failed IN (0,1))
+         );
+         CREATE TABLE IF NOT EXISTS watch_observations (
+           symbol TEXT NOT NULL REFERENCES watch_entries(symbol) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
+           day TEXT NOT NULL, payload TEXT NOT NULL, alert INTEGER NOT NULL CHECK (alert IN (0,1)), read_at TEXT,
+           PRIMARY KEY(symbol,day)
+         );
+         CREATE TABLE IF NOT EXISTS daily_settings (
            id TEXT PRIMARY KEY, timezone TEXT NOT NULL
          );
          CREATE TABLE IF NOT EXISTS daily_entries (

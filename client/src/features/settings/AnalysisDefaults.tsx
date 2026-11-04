@@ -10,7 +10,7 @@ import type {
 
 const contextOptions: [keyof ContextSelection, string][] = [
   ["includeProfile", "财务档案"],
-  ["includeHoldings", "持仓明细"],
+  ["includeHoldings", "持仓与交易明细"],
   ["includeEvidence", "研究证据与历史搜索资料"],
 ];
 

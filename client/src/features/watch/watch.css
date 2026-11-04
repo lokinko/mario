@@ -1,0 +1,122 @@
+.watch-page {
+  max-width: 1120px;
+}
+.watch-intro > div:first-child,
+.watch-actions,
+.watch-summary,
+.watch-heading,
+.watch-change {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.watch-intro > div:first-child {
+  justify-content: space-between;
+}
+.watch-intro > div:first-child strong {
+  font-size: 22px;
+}
+.watch-intro p,
+.watch-meta,
+.watch-heading > div > span {
+  color: var(--text-muted, #64748b);
+}
+.watch-summary {
+  margin: 20px 0 12px;
+}
+.watch-summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.watch-list {
+  display: grid;
+  gap: 14px;
+}
+.watch-card {
+  min-width: 0;
+}
+.watch-heading {
+  justify-content: space-between;
+}
+.watch-heading h3 {
+  margin: 0 0 6px;
+}
+.watch-heading small,
+.watch-weekly small {
+  margin-left: 10px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 400;
+}
+.watch-unread {
+  border-left: 3px solid #37806c;
+}
+.watch-change {
+  color: #246b56;
+  font-size: 13px;
+}
+.watch-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0 12px;
+}
+.watch-metrics span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.watch-metrics strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.watch-meta {
+  font-size: 12px;
+}
+.watch-thesis {
+  white-space: pre-wrap;
+}
+.watch-details {
+  border-top: 1px solid #e2e8f0;
+  margin-top: 16px;
+  padding-top: 12px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.watch-data-issue {
+  background: #fff7e8;
+  color: #7c5815;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.watch-weekly {
+  margin-top: 22px;
+}
+.watch-week-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #edf0f3;
+  font-size: 13px;
+}
+.watch-weekly > button {
+  margin-top: 14px;
+}
+@media (max-width: 640px) {
+  .watch-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .watch-week-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .watch-intro > div:first-child {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

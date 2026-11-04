@@ -43,6 +43,18 @@ const labels: Record<string, string> = {
   note: "备注",
   valuationDate: "估值日期",
   currency: "币种",
+  originalPrice: "原始成交价",
+  originalQuantity: "原始成交数量",
+  occurredOn: "交易日期",
+  grossAmount: "成交金额",
+  fees: "费用",
+  taxes: "税费",
+  account: "交易账户",
+  sequence: "同日顺序",
+  kind: "交易类型",
+  recordedTradeCount: "已录入交易笔数",
+  confirmedOn: "余额核对日期",
+  needsReconciliation: "余额待核对状态",
 };
 
 function pointer(context: unknown, path: string): unknown {
@@ -90,13 +102,24 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
       trace?.personalContext,
       path.slice(0, path.lastIndexOf("/")),
     );
+    const holding =
+      parts[1] === "holdings"
+        ? pointer(trace?.personalContext, `/${parts.slice(0, 3).join("/")}`)
+        : undefined;
     const name =
       parent && typeof parent === "object" && "name" in parent
         ? String(parent.name)
+        : holding && typeof holding === "object" && "name" in holding
+          ? String(holding.name)
+          : "";
+    const tradeDate =
+      parent && typeof parent === "object" && "occurredOn" in parent
+        ? String(parent.occurredOn)
         : "";
     const title = [
       labels[parts[0]],
       name,
+      tradeDate,
       parts.length > 1 ? labels[parts.at(-1)!] : undefined,
     ]
       .filter(Boolean)

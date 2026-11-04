@@ -1,0 +1,53 @@
+use super::RequestContext;
+use crate::{
+    models::watch::{WatchBoard, WatchEntry, WatchInput},
+    AppResult,
+};
+use axum::{
+    extract::Path,
+    routing::{get, post},
+    Extension, Json, Router,
+};
+use std::sync::Arc;
+
+pub(super) fn router() -> Router {
+    Router::new()
+        .route("/api/watch", get(board).put(save))
+        .route("/api/watch/refresh", post(refresh))
+        .route("/api/watch/{symbol}", axum::routing::delete(remove))
+        .route("/api/watch/{symbol}/read", post(read))
+}
+async fn board(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<WatchBoard>> {
+    Ok(Json(
+        state.db.watch_board(
+            chrono::Utc::now()
+                .with_timezone(&chrono_tz::Asia::Shanghai)
+                .date_naive(),
+        )?,
+    ))
+}
+async fn save(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Json(input): Json<WatchInput>,
+) -> AppResult<Json<WatchEntry>> {
+    Ok(Json(state.db.save_watch(input)?))
+}
+async fn remove(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(symbol): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
+    state.db.delete_watch(&symbol)?;
+    Ok(Json(serde_json::json!({"ok":true})))
+}
+async fn read(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(symbol): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
+    state.db.read_watch_alerts(&symbol)?;
+    Ok(Json(serde_json::json!({"ok":true})))
+}
+async fn refresh(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<WatchBoard>> {
+    Ok(Json(
+        crate::application::watch::refresh(&state.db, state.watch_provider.clone(), true).await?,
+    ))
+}

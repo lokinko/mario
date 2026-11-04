@@ -5,3 +5,4 @@ pub(crate) mod fx;
 pub(crate) mod model_settings;
 pub(crate) mod portfolio;
 pub(crate) mod prices;
+pub(crate) mod watch;

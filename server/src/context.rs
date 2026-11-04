@@ -203,11 +203,11 @@ fn context_groups(
         ),
         group(
             "holdings",
-            "资产持仓",
+            "持仓与交易",
             selection.include_holdings,
             snapshot.holdings.len(),
             "高",
-            "去重的精确金额、预计算比例、时点、来源和结构化问题范围。",
+            "精确持仓、每项最近20笔交易原值、预计算比例、时点、来源和结构化问题范围。",
         ),
         group(
             "evidence",
@@ -272,6 +272,33 @@ mod tests {
         assert!(hidden.payload["facts"].get("dataIssues").is_none());
         assert!(hidden.valuation_evidence.is_empty());
         assert_ne!(revision, hidden.revision);
+    }
+
+    #[test]
+    fn transaction_facts_are_bounded_authorized_and_invalidate_previews() {
+        let mut snapshot = snapshot();
+        let id = snapshot.holdings[0].id.clone();
+        for index in 0..25 {
+            snapshot.holding_trades.push(serde_json::from_value(json!({
+                "id":format!("trade-{index:02}"),"holdingId":id,"kind":"buy","occurredOn":"2026-11-04","sequence":index,
+                "quantity":"10.00000001","price":"12.34567890","grossAmount":"123.45678912","fees":"0.01","taxes":"0",
+                "currency":"CNY","account":"测试账户","externalId":"","note":"原始记录","createdAt":"2026-11-04T00:00:00Z","updatedAt":"2026-11-04T00:00:00Z"
+            })).unwrap());
+        }
+        let mut request = request();
+        let before = ContextBuilder::build(&request, &snapshot, &ContextSources::default());
+        let trades = &before.payload["facts"]["holdings"][&id]["recentTrades"];
+        assert_eq!(trades.as_object().unwrap().len(), 20);
+        assert!(trades.get("trade-00").is_none());
+        assert_eq!(trades["trade-24"]["originalPrice"], "12.34567890");
+        snapshot.holding_trades[24].note = "更正后的原始记录".into();
+        assert_ne!(
+            before.revision,
+            ContextBuilder::build(&request, &snapshot, &ContextSources::default()).revision
+        );
+        request.context_selection.include_holdings = false;
+        let hidden = ContextBuilder::build(&request, &snapshot, &ContextSources::default());
+        assert!(!hidden.payload.to_string().contains("trade-24"));
     }
 
     #[test]

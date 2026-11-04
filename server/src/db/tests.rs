@@ -258,6 +258,8 @@ pub(super) fn add_retired_tables(dataset: &mut SyncDataset) {
             "corporate_actions",
             "holding_amounts",
             "holding_options",
+            "watch_entries",
+            "watch_observations",
         ]
         .contains(&t.name.as_str())
     });

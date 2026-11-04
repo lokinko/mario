@@ -6,6 +6,7 @@ pub(crate) mod information;
 pub(crate) mod market;
 pub(crate) mod methodology;
 mod provider;
+pub(crate) mod watch;
 pub(crate) use endpoint::validate_endpoint;
 pub use provider::ModelProviderKind;
 pub(crate) mod accounting;

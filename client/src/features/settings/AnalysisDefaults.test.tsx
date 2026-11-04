@@ -44,7 +44,7 @@ it("loads saved permissions and saves one preset for future questions", async ()
     "财务档案",
   )) as HTMLInputElement;
   expect(profile.checked).toBe(false);
-  fireEvent.click(screen.getByLabelText("持仓明细"));
+  fireEvent.click(screen.getByLabelText("持仓与交易明细"));
   fireEvent.click(screen.getByLabelText("联网查找相关资料"));
   fireEvent.click(screen.getByRole("button", { name: "保存问答预设" }));
   await waitFor(() => expect(flash).toHaveBeenCalled());
@@ -66,7 +66,11 @@ it("offers only the three supported data groups and uses single-call analysis", 
     />,
   );
   await screen.findByLabelText("财务档案");
-  for (const label of ["财务档案", "持仓明细", "研究证据与历史搜索资料"]) {
+  for (const label of [
+    "财务档案",
+    "持仓与交易明细",
+    "研究证据与历史搜索资料",
+  ]) {
     expect((screen.getByLabelText(label) as HTMLInputElement).checked).toBe(
       true,
     );

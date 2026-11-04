@@ -36,6 +36,16 @@ vi.mock("./api/portfolio", async (original) => ({
     error: "",
   }),
 }));
+vi.mock("./api/watch", () => ({
+  getWatchBoard: vi.fn().mockResolvedValue({
+    rows: [],
+    weekly: [],
+    weekStart: "2026-11-02",
+    weekEnd: "2026-11-08",
+    minYieldPct: 5,
+    bandDistancePct: 2,
+  }),
+}));
 vi.mock("./api/settings", async (original) => ({
   ...(await original<typeof import("./api/settings")>()),
   getModelConfig: vi.fn(),
@@ -160,7 +170,7 @@ it.each([true, false])(
 );
 
 it.each(["dashboard", "foundation", "goals", "ledger"])(
-  "falls back to holdings for the retired %s bookmark",
+  "falls back to buy watch for the retired %s bookmark",
   async (bookmark) => {
     window.location.hash = bookmark;
     vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
@@ -170,7 +180,7 @@ it.each(["dashboard", "foundation", "goals", "ledger"])(
       new Error("optional model unavailable"),
     );
     render(<App />);
-    const questions = await screen.findByRole("button", { name: "我的情况" });
+    const questions = await screen.findByRole("button", { name: "买点观察" });
     expect(questions.getAttribute("aria-current")).toBe("page");
     expect(screen.queryByRole("button", { name: "分析看板" })).toBeNull();
   },
@@ -213,7 +223,7 @@ it("offers retry when required local data fails to load", async () => {
   ).toBeTruthy();
 });
 
-it("opens on holdings and preserves a question draft when returning from supporting pages", async () => {
+it("opens on buy watch and preserves a question draft when returning from supporting pages", async () => {
   window.location.hash = "";
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
@@ -226,7 +236,7 @@ it("opens on holdings and preserves a question draft when returning from support
     hasApiKey: true,
   });
   render(<App />);
-  expect(await screen.findByRole("heading", { name: "我的情况" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "买点观察" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "问答" }));
   expect(await screen.findByRole("heading", { name: "问答" })).toBeTruthy();
   fireEvent.change(screen.getByRole("textbox"), {

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 export type View =
+  | "watch"
   | "facts"
   | "evidence"
   | "review"
@@ -17,6 +18,7 @@ export type View =
   | "settings";
 
 export const views: View[] = [
+  "watch",
   "facts",
   "evidence",
   "review",
@@ -28,7 +30,7 @@ export const views: View[] = [
 
 export function initialView(): View {
   const candidate = window.location.hash.replace("#", "") as View;
-  return views.includes(candidate) ? candidate : "facts";
+  return views.includes(candidate) ? candidate : "watch";
 }
 
 export const navGroups: {
@@ -43,7 +45,10 @@ export const navGroups: {
   },
   {
     caption: "决策",
-    items: [{ id: "advisor", label: "问答", icon: MessageCircle }],
+    items: [
+      { id: "watch", label: "买点观察", icon: ChartNoAxesCombined },
+      { id: "advisor", label: "问答", icon: MessageCircle },
+    ],
   },
   {
     caption: "研究",
@@ -62,6 +67,7 @@ export const navGroups: {
 ];
 
 export const viewLabels: Record<View, string> = {
+  watch: "买点观察",
   methodology: "投资方法论",
   advisor: "问答",
   facts: "我的情况",

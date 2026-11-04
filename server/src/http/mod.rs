@@ -6,6 +6,7 @@ mod portfolio;
 mod research;
 mod reviews;
 mod settings;
+mod watch;
 use crate::{
     application::portfolio::{MarketServices, PortfolioService},
     db::Database,
@@ -15,6 +16,7 @@ use std::sync::Arc;
 
 pub(crate) struct RequestContext {
     pub db: Database,
+    pub watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
     pub market: Arc<MarketServices>,
     pub analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
 }
@@ -34,6 +36,7 @@ pub(crate) fn api_router() -> Router {
         .merge(research::router())
         .merge(reviews::router())
         .merge(settings::router())
+        .merge(watch::router())
         .merge(codex_bridge::router())
 }
 async fn health() -> Json<serde_json::Value> {

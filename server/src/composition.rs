@@ -11,9 +11,39 @@ use std::sync::Arc;
 
 pub(crate) struct MarketRuntime {
     pub services: Arc<MarketServices>,
+    pub watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 impl MarketRuntime {
+    pub fn start_watch(&mut self, accounts: Arc<crate::accounts::Accounts>) {
+        let provider = self.watch_provider.clone();
+        self.tasks.push(tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                let users = match accounts.user_ids() {
+                    Ok(users) => users,
+                    Err(error) => {
+                        tracing::warn!(%error, "observation account enumeration failed");
+                        continue;
+                    }
+                };
+                for user in users {
+                    let result = async {
+                        let db = crate::db::Database::postgres(&accounts.url, &user)?;
+                        let _lock = db.lock_account()?;
+                        crate::application::watch::refresh(&db, provider.clone(), false).await?;
+                        Ok::<_, crate::AppError>(())
+                    }
+                    .await;
+                    if let Err(error) = result {
+                        tracing::warn!(%error, "account observation refresh failed");
+                    }
+                }
+            }
+        }));
+    }
     pub fn new() -> AppResult<Self> {
         let fx = Arc::new(EcbFxRateProvider::new()?);
         let prices = Arc::new(FreeSecurityPriceProvider::new()?);
@@ -37,6 +67,7 @@ impl MarketRuntime {
         });
         Ok(Self {
             services,
+            watch_provider: Arc::new(crate::market_data::watch::PublicWatchProvider::new()?),
             tasks: vec![price_task, fx_task],
         })
     }
