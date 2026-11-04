@@ -32,6 +32,16 @@ workflow 先执行 `benchmark.live prepare`，再执行 `benchmark.live evaluate
 
 `bench-run --raw` 和 `features-build` 仍是显式本地研究入口：可以为已有切片补算；它们不再是持续评测的生产路径。
 
+只读复现生产成绩不需要 HF 写入权限。在仓库根目录使用相同 Python 环境和一个新的工作目录：
+
+```bash
+python -m benchmark.live prepare --workspace .runtime/benchmark/raw-replay
+python -c "from pathlib import Path; from benchmark.evaluation_data import rebuild_evaluation; from benchmark.strategy_runner import discover; root=Path('.runtime/benchmark/raw-replay'); sources=[(folder/'strategy.py').read_text(encoding='utf-8') for folder in discover(Path('benchmark/strategies')).values()]; rebuild_evaluation(root/'plan',root/'raw',root/'derived',sources)"
+npm run benchmark -- bench-run --release .runtime/benchmark/raw-replay/derived --out .runtime/benchmark/raw-replay/runs
+```
+
+这条复现路径与 workflow 调用同一构建器和评分器，不读取旧预计算输入，也不上传看板。
+
 ## 数据与指标分组
 
 | 原始事实 | 衍生结果 | 计算模块 |

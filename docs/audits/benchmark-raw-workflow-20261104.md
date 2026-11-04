@@ -30,8 +30,32 @@
 
 本地交付目录：`.runtime/benchmark/raw-workflow-20261104/dividends-five-years-final/`，含 `summary.csv`（210 只股票逐年汇总）、`events.csv`（1097 条明细）、逐股 JSON、全部原始响应、JSONL 和哈希清单；采集缓存用于可复现恢复。代码和单位/状态约定见 [分红采集](../benchmark-dividends.md)。研究数据不进 Git。
 
+CSV、JSONL、证券范围和完整哈希清单已交叉核对：汇总 210 行、实施明细 1097 行，其中 1094 条每10股现金金额大于零。没有把 7 只空来源股票标成现金零分红。
+
 ## 验证记录
 
 新原始重建、分红、实时编排与评分相关 29 项本地测试通过，HF 下载白名单/固定提交/内容校验的两项测试通过，架构检查通过。测试明确验证不下载预计算输入、拒绝预计算计划、原始缺失不能回退、新指标无需改变整包标记、候选已算市值被忽略、未来标签不解析，以及实施日期/单位/分页/空来源的区分。
 
 完整 `npm test` 已执行：本轮 212 项 benchmark 测试中 211 项通过，仍被本机既有 `DailyPromotionGitTest` 的临时 Git 引用不稳定阻塞；没有删除或跳过门禁，后续前端、Rust 与财务集成阶段未执行。本轮未生成 Rust target。原始下载与真实评分验收记录在本地 `.runtime/benchmark/raw-workflow-20261104/` 保留；生产结果以后续真实 workflow 核验为准。
+
+补充的 70 项相关本地检查及架构检查通过。生成 JSON 元数据显式使用 LF 换行，避免 Windows/Linux 为同一份事实产生不同文件指纹。
+
+## 真实重建、成绩与发布验收
+
+完整原始文件下载后逐项核对了 6490 个数据文件哈希。真实 `fetch_evaluation_plan` 获取的计划包，与本地验证包的清单哈希完全相同，均没有 `inputs.jsonl`。从原始事实构建 148 个决策点（红利 68、科技 80），全部 22 项策略在未改变规则和参数的情况下评分成功；标签 SHA-256 仍为 `b364cd0da350dbf57933e86a0c23d2a45d44a752ad3b19ab8f24a079cab0b6e9`，与旧评分包逐字节一致。
+
+只比较策略实际消费的字段：动量、20日收益、选样市值、月内收益和90日回归值均未改变。连续原始历史补出 10 个原为 null 的63成交日波动值；红利池月线低位补出644个已知值（626个False、18个True），首次回踩补出604个已知值（571个False、33个True），周下轨条件补出2个False。不存在原有已知值被替换的情况，技术指标仍只读决策前历史。
+
+因此部分成绩改变，不能继续宣称与 v8 完全相同。当前第一 `trend_basket_risk` 为 3.5180，第三 `trend_regression_tilt` 为 3.4923；富贵为0.1428793815，红利池单独0.3109727715，12期触发、16个持仓槽次，仍为18/18。Top-10的全部策略及顺序与旧表相同，所有名次变化为0；完整均值、胜率和早/后段成绩已更新到 [成绩表](../benchmark.md)。没有重新选参、安装新候选或把原来的样本内参数称作严格样本外结果。
+
+本机证据在 `local-offline/plan`、`local-offline/raw`、`local-offline/derived`、`local-offline/runs`，以及 `raw-build-report.json`、`raw-comparison.json`、`consumed-field-changes.json`。当前输入为 `raw-4eb1d2724d2b258a`：
+
+- 计划包清单 SHA-256：`b8ac68a84f880276c2573a92dbdc6c4cd5e076c5c3e0c1a56a1f4175f72f8ee0`。
+- 原始局部包清单 SHA-256：`68f7c28a9ed4e41e2f4335a69cd60d4db08e7b14b23f079e55736de68cf7e959`。
+- 新评分输入包清单 SHA-256：`78f1eb8781e7700f89be60ff895f13fa93cd590c89a43b7707e777bdf5502bc8`。
+
+实现提交 `a366ace` 已推送 `origin/main`，[持续评测41789200379](https://github.com/lokinko/mario/actions/runs/41789200379) 成功：212项测试通过，原始下载、指标重建、22项评分及发布步骤全部完成。下载遇到HF 429时按服务方等待后恢复，没有降低覆盖要求或改用旧字段。
+
+独立读取HF当前快照，确认 `result_commit=a366ace1761ad3d3c7f66b175d206580d88955a8`、`input_origin=raw_facts`、`result_tag=raw-4eb1d2724d2b258a`、22/22项完成；计划、原始和输入三个清单哈希都与本机结果一致，验证摘要保存在本地 `live-verified.json`。只读复现命令见 [数据文档](../benchmark-data.md)，不要求具备HF写入权限。
+
+全部操作结束后，核对来源和最终归档逐文件哈希、分红事件集合及原始响应一致，且无任务进程再使用，已清理 `source-download/`、两份中间分红输出和重复 `local/plan/`。完整原始行情与选样事实仍保存在 `local-offline/raw/`、`local-offline/plan/`，最终分红与可复用缓存、评分及审计日志全部保留；本轮未生成 Rust 编译目录。
