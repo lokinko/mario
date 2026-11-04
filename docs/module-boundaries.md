@@ -2,6 +2,8 @@
 
 ## 设计选择
 
+当前功能增量优先解决[买点观察主线](product-vision.md)中的实际障碍。持仓和交易提供个人事实，AI 负责授权资料上的讨论，benchmark 保持独立研究边界；以下既有模块和扩展约束不是必须实施的路线图。
+
 采用模块化单体，保持 React Web、Rust API、PostgreSQL 和无状态 Agent 的运行方式。业务边界通过明确的接口、依赖方向和状态所有权约束；独立模块可以单独测试，涉及多个领域的流程由应用层组合。当前规模下，增加服务进程、通用事件总线或每张表一个仓储接口只会增加维护成本。
 
 ## 依赖方向
@@ -131,7 +133,7 @@ flowchart TD
 - `context/fact_sheet` 是领域层确定性投影：精确金额只输出一次，结余、占比、偏差和浮盈使用 Decimal；组合合计缺失时保留空值与结构化影响范围，其他持仓及现金继续计算。不重算或写入财务事实。`application/analysis` 不查询个人规则、复盘和每日资产。
 - `BuiltContext` 区分模型 payload 与授权估值审计，二者共同冻结指纹；模型只消费紧凑 payload，估值链进入轨迹。预览的事实卡与模型使用的卡一致。
 - `features/research/previousTurn` 按 Unicode 字符截取上一轮问题、结构化结论和最多 3 条动作（额度 200/300/每条 100）；纯文本历史记录最多取 300 字。`models::PreviousTurn` 校验总计 800 字符、非空正文及最多 3 条建议；`ContextBuilder` 单独冻结它，应用层保存当前 question，不把历史模型内容拼进问题。输出引用只允许当前问题与已授权事实卡。新对话清空摘要。
-- `evidence::search_evidence` 取前 5 条，`relevant_excerpt` 返回最多 2000 字连续原文；`application` 读取并授权候选，`context` 冻结原文与片段，AI 不读仓储、不额外筛选。网页搜索由用户主动开关授权，默认关闭，原生搜索结果直接进入生成。
+- `application/analysis` 优先组装问题中明确提及公司的最新及本周观察证据，`evidence::search_evidence` 补齐剩余额度，共最多 5 条；`relevant_excerpt` 返回最多 2000 字连续原文；`application` 读取并授权候选，`context` 冻结原文与片段，AI 不读仓储、不额外筛选。网页搜索由用户主动开关授权，默认关闭，原生搜索结果直接进入生成。
 
 ## 开发流程
 
@@ -153,7 +155,7 @@ HF 镜像配置 `HF_ENDPOINT` 由 `host-runtime --prepare` 保存到 `.env`，�
 
 离线研究工具位于 `benchmark/`，契约与入口见 [benchmark](benchmark.md)。免费来源覆盖探测归 `public_sources.py`，授权来源与原件下载归 `sources.py`，确定性选样/时点规则归 `dataset.py`，指标归 `evaluate.py`，发布格式归 `release.py`，股票池共用的按时点市值口径、剔除原因与行情/股本缓存归 `market_cap.py`，科技股池候选归 `tech_universe.py`，红利股池成分重建归 `dividend_universe.py`（两个池子互不引用，新增股票池同样只依赖 `market_cap.py` 并产出同构的 `universe/<池>-<年>.json`，再在 `pool_release.POOLS` 登记），旧版 Excel 解析归 `xls.py`，多池切片构建归 `pool_release.py`，主指标（收益得分与胜率）打分、卖出规则与网格执行归 `scoring.py`（不访问网络），策略发现、静态检查、子进程生成仓位与结果缓存归 `strategy_runner.py`，策略本身是 `strategies/<名字>/` 下的 `strategy.md` 与只实现 `decide(sample)` 的 `strategy.py`（新增策略只加目录，不改其他模块；策略代码只能导入纯计算标准库；执行器以 `-I -X utf8` 启动隔离 Python，通信显式使用 UTF-8，不依赖会被隔离模式忽略的环境编码设置），策略得分看板与本机看板服务归 `dashboard.py`（只读 `bench-run` 输出的成绩与说明，不读输入与标签；输出页面、脚本、数据三个文件，部署后由 `hosted.rs` 按同一路径提供，数据接口只对已登录账号开放），Hugging Face 上传与按标签下载归 `hub.py`，CLI 只装配流程；这些模块只依赖 Python 标准库和本包，不引用在线业务实现或账号数据。第三方依赖只允许出现在单一适配器中：`baostock_market.py` 是唯一导入 `baostock` 的模块，`hub.py` 是唯一导入 `huggingface_hub` 的模块，依赖分别在 `pyproject.toml` 的 `market`、`publish` 依赖组声明，其他模块不得直接导入；新增此类适配器需同步更新边界测试的白名单。`npm run test:benchmark` 验证该隔离边界与数据行为，并纳入 `scripts/test.sh`。新增来源不能把未经证实的披露时间或供应商缺失自动升级成已核对事实；发布目录不可覆盖，原始数据修正需生成新版本，未来接入在线问答需走现有冻结和授权接口。
 
-外部策略研究来源与数据依赖记在 [持续研究清单](benchmark-research.md)，逐批执行结果记在审计文档。自定义 `--strategies` 可以使用相对目录；执行器在进入子进程策略工作目录前解析策略文件绝对路径，避免路径重复拼接，输入与导入隔离保持不变。
+已开展的外部策略研究来源与数据依赖记在 [历史研究记录](benchmark-research.md)，逐批执行结果记在审计文档。自定义 `--strategies` 可以使用相对目录；执行器在进入子进程策略工作目录前解析策略文件绝对路径，避免路径重复拼接，输入与导入隔离保持不变。
 
 长窗口研究入口 `scripts/benchmark_long_history_study.py` 的 `build` 校验独立缓存、共同字段与历史完整性，构造只截至决策日的特征；`scan` 生成临时候选并比较配置，不安装正式策略或修改线上切片。它只依赖标准库与离线 `benchmark` 公开函数，不直接导入来源 SDK。缓存契约、命令和统计限制见 [长窗口实验](audits/benchmark-long-signals-20261102.md)，时点、缺失、停牌和隔离测试归 `benchmark/tests/test_long_history_study.py`。
 
