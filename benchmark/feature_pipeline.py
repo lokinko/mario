@@ -80,6 +80,12 @@ def put(record, path, value):
     record[key] = value
 
 
+def merge_projection(previous, values):
+    """研究重算只更新本次输出，保留其他字段及其问题码。"""
+    issues = {k: v for k, v in previous.get("issues", {}).items() if k not in values}
+    return {**previous, **values, "issues": {**issues, **values.get("issues", {})}}
+
+
 def enrich(samples, raw, fields, definitions=INDICATORS):
     """只补不存在的指标；明确的 null 是计算结果，不从其他来源隐式覆盖。"""
     available = catalog(definitions)
@@ -109,6 +115,9 @@ def enrich(samples, raw, fields, definitions=INDICATORS):
                 require(valid_value(result[field], item.kind), f"invalid_calculator_output: {context}: {item.kind}")
                 put(stock, path, result[field])
                 namespace = path.rsplit(".", 1)[0] + "." if "." in path else ""
+                _, issues = value_at(stock, namespace + "issues")
+                if isinstance(issues, dict):
+                    issues.pop(field, None)
                 if field in result.get("issues", {}):
                     put(stock, namespace + "issues." + field, result["issues"][field])
                 calculated[path] = calculated.get(path, 0) + 1

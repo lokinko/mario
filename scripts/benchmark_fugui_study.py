@@ -15,6 +15,7 @@ from benchmark.pool_release import momentum
 from benchmark.release import verify_release
 from benchmark.technical_indicators import fugui_features as features
 from benchmark.raw_data import load_caches
+from benchmark.feature_pipeline import merge_projection
 
 
 VERSION = "fugui-technical-v1"
@@ -45,9 +46,10 @@ def build(release, roots, destination, minimal=False, built_on=None):
             if key not in cache:
                 cache[key] = features(bars, calendar, decision)
             signal = cache[key]
-            stock["fugui"] = {**stock.get("fugui", {}), **({**{k: signal[k] for k in MINIMAL_FIELDS},
+            projected = ({**{k: signal[k] for k in MINIMAL_FIELDS},
                               "issues": {k: v for k, v in signal["issues"].items() if k in MINIMAL_FIELDS}}
-                             if minimal else signal)}
+                             if minimal else signal)
+            stock["fugui"] = merge_projection(stock.get("fugui", {}), projected)
             coverage.update(f"{k}_known" for k in (MINIMAL_FIELDS if minimal else FIELDS) if stock["fugui"][k] is not None)
             coverage.update(k for k in MINIMAL_FIELDS if stock["fugui"][k] is True)
     with new_directory(destination) as stage:

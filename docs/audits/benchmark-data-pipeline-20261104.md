@@ -31,3 +31,11 @@
 本机完整 `npm test` 已执行，但停止在 `DailyPromotionGitTest.test_multicommit_fast_forward_and_concurrent_changes`：本机 Git 对临时远端的 main 引用查询/获取出现空值或不一致。单独运行 HF 测试曾 16/16 通过，全量中该项再次失败；将发布函数替换为任务开始时的未修改实现也能复现，不能将全量验证记为通过。其余 203 项 benchmark 测试在该轮通过，后续部署、前端、Rust 与财务集成阶段未执行。
 
 本轮没有进入 Rust 构建阶段，未生成 Rust target。原始归档、研究结果和现有运行状态保留；任务中临时复制的旧策略源码在对照完成后清理。
+
+## GitHub 与发布验证
+
+主实现提交 `2dbf844` 已推送 `origin/main`，[持续评测 41770278173](https://github.com/lokinko/mario/actions/runs/41770278173) 成功，Linux runner 日志确认 `Ran 204 tests` / `OK`，并完成真实评测与发布步骤。
+
+独立读取 HF `dashboard/current.json`，确认 `result_commit=2dbf84431f20a4e4d68edeff84d7ff0a750190c0`、`result_tag=pool-scoring-v8`、`completed=total=22`、`status=completed`，输入 manifest 与本地验证一致。`raw_manifest_sha256=null` 表示这次使用已有预计算输入，未给 workflow 自动接入尚未覆盖全评分区间的本地原始归档；新增指标需要显式提供满足范围和口径的原始来源。快照验证摘要保存在本地证据目录 `live-verified.json`。
+
+复核补充：研究脚本重算指标时合并命名空间，保留其他扩展字段及其问题码；按需补算成功时移除该指标过期的问题码，避免已有缺失提示与新结果冲突。

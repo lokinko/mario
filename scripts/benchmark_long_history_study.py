@@ -24,6 +24,7 @@ from benchmark.release import verify_release
 from benchmark.scoring import portfolio_segments
 from benchmark.price_indicators import long_features as features
 from benchmark.raw_data import load_history
+from benchmark.feature_pipeline import merge_projection
 
 
 FIELDS = ("momentum_12m", "momentum_6m_skip1", "momentum_12m_skip1", "momentum_12_2",
@@ -57,7 +58,7 @@ def build(release, history, calendar_path, destination, projection=features, fie
             key = stock["symbol"], decision
             if key not in cache:
                 cache[key] = projection(bars, calendar, decision)
-            stock["long_history"] = {**stock.get("long_history", {}), **cache[key]}
+            stock["long_history"] = merge_projection(stock.get("long_history", {}), cache[key])
             coverage.update(k for k in fields if stock["long_history"][k] is not None)
     with new_directory(destination) as stage:
         # 标签只在所有特征生成后复制；不读其中的未来路径，也不从中取历史行情。

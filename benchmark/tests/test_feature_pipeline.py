@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from benchmark.feature_pipeline import (INDICATORS, Indicator, build_features, catalog,
-                                         enrich, value_at)
+                                         enrich, merge_projection, value_at)
 from benchmark.files import Invalid, digest, read_json, rows, write_json, write_rows
 from benchmark.input_contract import requirements, validate_inputs
 from benchmark.raw_data import RawData, import_raw, read_raw
@@ -43,6 +43,9 @@ class FeaturePipelineTest(unittest.TestCase):
         self.assertEqual(sample["stocks"][0], {"symbol": "600000.SH", "future_extension": {"x": 1}})
         self.assertEqual(set(report["calculated"]), {"fugui.monthly_macd_negative", "extension.custom"})
         validate_inputs(result, {"stocks.*.extension.custom": "decimal?"})
+        self.assertEqual(merge_projection({"extension": True, "issues": {"extension": "keep", "known": "old"}},
+                                         {"known": False, "issues": {}}),
+                         {"extension": True, "known": False, "issues": {"extension": "keep"}})
 
     def test_missing_dependency_fails_before_subprocess_but_null_is_valid(self):
         with tempfile.TemporaryDirectory() as folder:
