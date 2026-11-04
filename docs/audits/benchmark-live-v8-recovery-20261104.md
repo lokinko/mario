@@ -22,3 +22,8 @@
 完整`npm test`通过：benchmark197、前端275、Rust238（4项既有ignored未运行）、迁移6项与167表财务验收。`npm run check:architecture`和`git diff --check`通过。
 
 全部测试结束后，确认无进程占用，已清理本轮Rust target及财务临时编译目录；原采集语料、v9研究与新v8验收输出保留。
+
+
+## 远端实跑
+
+修复提交`000c1c3`已推送main，[持续评测41752379804](https://github.com/lokinko/mario/actions/runs/41752379804)于09:13:53成功。独立读取HF快照提交`9c258194eaceb4a639bc314c56c13d2a6a2d4844`，确认`result_commit=000c1c3`、`result_tag=pool-scoring-v8`、22/22项完成、富贵总分0.08307486533185736。与最近成功行情发布`7c6dfd4`比较，`daily-public-prices`、`daily-prices`和`pool-scoring`三棵目录树对象完全相同；两仓库仍公开，没有发布v9数据。
