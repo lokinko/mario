@@ -1,0 +1,321 @@
+/* The portfolio owns density and layout; all visual tokens come from tokens.css. */
+.facts-page .page-header {
+  margin-bottom: var(--space-5);
+}
+.facts-heading-actions {
+  gap: var(--space-2);
+}
+.facts-page .portfolio-summary {
+  margin-bottom: var(--space-5);
+}
+.facts-page .portfolio-summary .ant-card-body {
+  padding: 0;
+}
+.facts-page .asset-overview {
+  padding: var(--space-5) var(--space-6);
+  margin: 0;
+  border: 0;
+  background: transparent;
+  column-gap: var(--space-6);
+  row-gap: var(--space-3);
+  align-items: center;
+}
+.facts-page .hero-amount strong {
+  font-size: var(--fs-hero);
+  font-weight: 600;
+}
+.facts-page .hero-changes {
+  border-left: 1px solid var(--line);
+  padding-left: var(--space-6);
+}
+.facts-page .hero-changes strong {
+  font-size: var(--fs-title);
+}
+.facts-page .hero-stamp {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-3);
+  gap: var(--space-2);
+}
+.facts-page .hero-privacy {
+  color: var(--text-3);
+}
+.facts-page .hero-trend {
+  min-width: 0;
+}
+.facts-tabs > .ant-tabs-nav {
+  margin-bottom: var(--space-4);
+}
+.facts-tab-label {
+  font-size: var(--fs-body);
+  font-weight: 500;
+}
+.facts-page .investment-overview {
+  margin-bottom: var(--space-4);
+}
+.facts-page .investment-overview-grid {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  gap: var(--space-3);
+  overflow: visible;
+}
+.facts-page .portfolio-metric-card .ant-card-body {
+  padding: var(--space-4);
+}
+.facts-page .investment-overview-metric {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  gap: var(--space-2);
+}
+.facts-page .investment-overview-metric > strong {
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+.facts-page .investment-overview-metric > small {
+  white-space: normal;
+  line-height: 1.5;
+}
+.facts-page .cash-overview .investment-overview-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+.facts-page .cash-overview .investment-overview-metric {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.facts-page .cash-overview .investment-overview-metric > small {
+  grid-column: 1 / -1;
+}
+.facts-page .overview-caption {
+  font-size: var(--fs-caption);
+}
+.facts-page .holdings-toolbar {
+  padding: var(--space-3) var(--space-4);
+  gap: var(--space-3);
+}
+.facts-page .position-filters {
+  flex-wrap: wrap;
+}
+.facts-page .position-filters > strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.facts-page .holdings-tools {
+  flex: 1;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.facts-page .holdings-search {
+  width: min(280px, 100%);
+  border: 0;
+  padding: 0;
+}
+.facts-page .holdings-search .ant-input-affix-wrapper {
+  width: 100%;
+}
+.facts-page .holdings-search .ant-input-prefix {
+  margin-right: var(--space-2);
+  color: var(--text-3);
+}
+.facts-page .holdings-search input {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  background: transparent;
+}
+.facts-page .holdings-search:focus-within {
+  outline: none;
+}
+.facts-page .holdings-tools select {
+  display: block;
+  height: 36px;
+  min-height: 36px;
+  font-size: var(--fs-body-sm);
+}
+.facts-page .holdings-currency-header {
+  background: var(--surface-sunken);
+  padding-block: var(--space-2);
+}
+.facts-page .asset-list-row {
+  min-height: 64px;
+  padding-block: var(--space-3);
+  font-size: var(--fs-body-sm);
+}
+.facts-page .asset-list-row .asset-name strong {
+  font-size: var(--fs-body-sm);
+}
+.facts-page .asset-list-row small {
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+}
+.facts-page .row-actions .menu > button {
+  opacity: 1;
+}
+.facts-page .cash-panel {
+  padding: 0;
+  overflow: hidden;
+}
+.facts-page .cash-list-header {
+  padding: var(--space-3) var(--space-4);
+}
+.facts-page .cash-list-row {
+  padding-inline: var(--space-4);
+}
+.facts-page .empty-state {
+  padding: var(--space-7) var(--space-4);
+  min-height: 160px;
+}
+.facts-page .daily-assets {
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+}
+.facts-page .daily-assets .panel-title {
+  margin-bottom: var(--space-3);
+}
+.facts-page .daily-assets .section-switcher {
+  margin-bottom: var(--space-3);
+  gap: var(--space-4);
+}
+.facts-page .profile-panel {
+  padding: var(--space-5);
+}
+.profile-panel .panel-title {
+  margin-bottom: var(--space-2);
+}
+.profile-panel > .section-intro {
+  margin: 0 0 var(--space-5);
+  color: var(--text-3);
+  font-size: var(--fs-body-sm);
+}
+.portfolio-form .form-grid {
+  gap: var(--space-4);
+}
+.portfolio-form label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.portfolio-form .form-grid label > span {
+  color: var(--text-2);
+  font-size: var(--fs-body-sm);
+  font-weight: 500;
+}
+.portfolio-form .input-affix {
+  min-height: 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.portfolio-form .input-affix:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px var(--brand-tint);
+}
+.portfolio-form .input-affix > .ant-input {
+  border-radius: 0;
+}
+.portfolio-form .input-affix > i {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding-inline: var(--space-3);
+  color: var(--text-3);
+  font-size: var(--fs-caption);
+  font-style: normal;
+  white-space: nowrap;
+  background: var(--surface-sunken);
+}
+.portfolio-form select {
+  width: 100%;
+  height: 36px;
+  padding-block: var(--space-1);
+  border-radius: var(--radius-md);
+}
+.portfolio-form .ant-input[readonly] {
+  background: var(--surface-sunken);
+  color: var(--text-3);
+}
+.portfolio-form .holding-details {
+  margin-top: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+.portfolio-form .holding-details summary {
+  color: var(--text-2);
+  font-size: var(--fs-body-sm);
+  font-weight: 500;
+}
+.portfolio-form .holding-details[open] summary {
+  margin-bottom: var(--space-4);
+}
+.portfolio-form .form-actions {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+}
+.portfolio-form .section-intro {
+  font-size: var(--fs-caption);
+  color: var(--text-3);
+  line-height: 1.7;
+}
+.asset-editor .asset-cost-field > small {
+  margin-bottom: 0;
+  font-size: var(--fs-caption);
+}
+@media (max-width: 1200px) {
+  .facts-page .investment-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .facts-page .holdings-toolbar {
+    align-items: flex-start;
+  }
+  .facts-page .holdings-tools {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 900px) {
+  .facts-page .asset-overview {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--space-4);
+  }
+  .facts-page .hero-changes {
+    border-left: 0;
+    padding-left: 0;
+  }
+}
+@media (max-width: 600px) {
+  .facts-page .hero-amount strong {
+    font-size: var(--fs-figure);
+  }
+  .facts-page .hero-changes strong {
+    font-size: var(--fs-title-sm);
+  }
+  .facts-heading-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .facts-page .holdings-tools,
+  .facts-page .holdings-search {
+    width: 100%;
+  }
+  .facts-page .holdings-tools {
+    justify-content: flex-start;
+  }
+  .facts-page .portfolio-metric-card .ant-card-body {
+    padding: var(--space-3);
+  }
+  .facts-page .investment-overview-metric > strong {
+    font-size: var(--fs-title-sm);
+  }
+  .facts-page .profile-panel {
+    padding: var(--space-4);
+  }
+  .portfolio-form .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .portfolio-form .form-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+}

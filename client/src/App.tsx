@@ -1,4 +1,5 @@
 import { BuyWatch } from "./features/watch/BuyWatch";
+import { Breadcrumb, Button } from "antd";
 import { Callout } from "./components/Callout";
 import { DailyTracking } from "./features/portfolio/DailyTracking";
 import { useApplicationData } from "./app/useApplicationData";
@@ -11,6 +12,8 @@ import {
   Settings2,
   XCircle,
   X,
+  CircleUserRound,
+  PanelLeft,
 } from "lucide-react";
 import { ServerData } from "./features/account/ServerData";
 import { View, initialView, navGroups, viewLabels } from "./app/navigation";
@@ -323,6 +326,21 @@ function App() {
             markEdited();
         }}
       >
+        <div className="workspace-bar">
+          <div className="workspace-location">
+            <PanelLeft size={16} aria-hidden="true" />
+            <Breadcrumb
+              items={[{ title: "个人工作台" }, { title: viewLabels[view] }]}
+            />
+          </div>
+          <Button
+            type="text"
+            icon={<CircleUserRound size={17} />}
+            onClick={() => navigate("cloud")}
+          >
+            我的账号
+          </Button>
+        </div>
         <DailyTracking onNewDay={refreshForNewDay} />
         {remotePending && (
           <div className="remote-update-notice" role="status">

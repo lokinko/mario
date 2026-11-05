@@ -357,7 +357,7 @@ it("prioritizes holdings and keeps asset history below without reserving space f
 it("saves a code and quantity without requiring a manual price", async () => {
   vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
+  fireEvent.click(screen.getByRole("tab", { name: "投资持仓" }));
   fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
   fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
     target: { value: "贵州茅台" },
@@ -590,7 +590,7 @@ it("updates the manual OPPO price without rounding or recomputing execution cost
 it("only asks for monthly facts and preserves existing investment preferences", async () => {
   vi.mocked(portfolioApi.saveProfile).mockResolvedValue(snapshot);
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "收入与支出" }));
+  fireEvent.click(screen.getByRole("tab", { name: "收入与支出" }));
   expect(
     screen
       .getAllByRole("spinbutton")
@@ -612,10 +612,25 @@ it("only asks for monthly facts and preserves existing investment preferences", 
     ),
   );
 });
+it("preserves an unsaved exact monthly amount when switching Ant Design categories", () => {
+  mount();
+  fireEvent.click(screen.getByRole("tab", { name: "收入与支出" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "月收入 CNY" }), {
+    target: { value: "8000.12345678" },
+  });
+  fireEvent.click(screen.getByRole("tab", { name: "存款与现金" }));
+  expect(screen.getByRole("tabpanel", { name: "存款与现金" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "收入与支出" }));
+  expect(
+    (screen.getByRole("spinbutton", { name: "月收入 CNY" }) as HTMLInputElement)
+      .value,
+  ).toBe("8000.12345678");
+  expect(portfolioApi.saveProfile).not.toHaveBeenCalled();
+});
 it("stores deposits once as cash holdings, without adding them again to the profile", async () => {
   vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
+  fireEvent.click(screen.getByRole("tab", { name: "存款与现金" }));
   editAsset("CNY 存款");
   expect(screen.queryByRole("spinbutton", { name: /持仓成本/ })).toBeNull();
   fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
@@ -636,7 +651,7 @@ it("stores deposits once as cash holdings, without adding them again to the prof
 it("edits all investment preferences at the unified facts entry and validates before submission", async () => {
   vi.mocked(portfolioApi.saveProfile).mockResolvedValue(snapshot);
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "收入与支出" }));
+  fireEvent.click(screen.getByRole("tab", { name: "收入与支出" }));
   fireEvent.click(screen.getByText("投资偏好与记账币种"));
   const horizon = screen.getByRole("spinbutton", { name: "投资期限 年" });
   fireEvent.change(horizon, { target: { value: "81" } });
@@ -678,7 +693,7 @@ it("preserves the user's entered balance on failure and keeps existing cost and 
     new Error("保存失败"),
   );
   mount({ ...snapshot, holdings: [holding] });
-  fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
+  fireEvent.click(screen.getByRole("tab", { name: "投资持仓" }));
   editAsset("已有基金");
   fireEvent.change(screen.getByRole("spinbutton", { name: "当前市值 CNY" }), {
     target: { value: "1200" },
@@ -698,7 +713,7 @@ it("preserves the user's entered balance on failure and keeps existing cost and 
 it("shows exactly three currency balances and accepts zero without an FX rate", async () => {
   vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
+  fireEvent.click(screen.getByRole("tab", { name: "存款与现金" }));
   for (const currency of ["CNY", "HKD", "USD"]) {
     expect(
       within(screen.getByRole("table", { name: "现金列表" })).getByText(
@@ -730,23 +745,21 @@ it("shows exactly three currency balances and accepts zero without an FX rate", 
 
 it("keeps asset categories fixed while an asset form is open, then unlocks on cancel", () => {
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
+  fireEvent.click(screen.getByRole("tab", { name: "存款与现金" }));
   editAsset("CNY 存款");
   expect(
-    (screen.getByRole("button", { name: "投资持仓" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
+    screen.getByRole("tab", { name: "投资持仓" }).getAttribute("aria-disabled"),
+  ).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   expect(
-    (screen.getByRole("button", { name: "投资持仓" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(false);
+    screen.getByRole("tab", { name: "投资持仓" }).getAttribute("aria-disabled"),
+  ).not.toBe("true");
 });
 
 it("blocks negative monthly facts and re-enables saving after correction", async () => {
   vi.mocked(portfolioApi.saveProfile).mockResolvedValue(snapshot);
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "收入与支出" }));
+  fireEvent.click(screen.getByRole("tab", { name: "收入与支出" }));
   const input = screen.getByRole("spinbutton", { name: "月收入 CNY" });
   fireEvent.change(input, { target: { value: "-1" } });
   expect(
@@ -761,7 +774,7 @@ it("blocks negative monthly facts and re-enables saving after correction", async
 
 it("blocks invalid asset amounts even when a form is submitted with Enter", () => {
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
+  fireEvent.click(screen.getByRole("tab", { name: "存款与现金" }));
   editAsset("CNY 存款");
   fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
     target: { value: "1000000000000001" },
@@ -816,7 +829,7 @@ it("records investment cost in the holding's currency and shows the saved profit
 it("includes cost when adding an investment and keeps it optional", async () => {
   vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
+  fireEvent.click(screen.getByRole("tab", { name: "投资持仓" }));
   fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
   fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
     target: { value: "新基金" },
@@ -1060,7 +1073,7 @@ it("updates a currency balance with the form revision and preserves input on a c
     holdings: [cash],
     holdingRevisions: { cash: "old" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
+  fireEvent.click(screen.getByRole("tab", { name: "存款与现金" }));
   expect(screen.queryByRole("button", { name: "删除 CNY 存款" })).toBeNull();
   editAsset("CNY 存款");
   const input = screen.getByRole("spinbutton", { name: "当前金额 CNY" });
@@ -1091,7 +1104,7 @@ it("updates a currency balance with the form revision and preserves input on a c
 it("saves manually entered unit prices and fractional quantities with calculated totals", async () => {
   vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "投资持仓" }));
+  fireEvent.click(screen.getByRole("tab", { name: "投资持仓" }));
   fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
   fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
     target: { value: "新基金" },
@@ -1315,7 +1328,7 @@ it("shows reconciliation only in the affected currency row, including other cash
   ];
   render(<MyFacts snapshot={data} onUpdate={vi.fn()} flash={vi.fn()} />);
   expect(screen.queryByText("EUR 存款待核对")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "存款与现金" }));
+  fireEvent.click(screen.getByRole("tab", { name: "存款与现金" }));
   expect(screen.getAllByText("EUR 存款待核对")).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "核对存款" }));
   expect(screen.getByRole("dialog", { name: "编辑 欧元存款" })).toBeTruthy();

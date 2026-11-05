@@ -1,4 +1,5 @@
 import { Callout } from "../../components/Callout";
+import { Card } from "antd";
 import { useRef, useState } from "react";
 import { Badge } from "../../components/Badge";
 import type { Holding, Snapshot } from "../../types";
@@ -33,61 +34,61 @@ export function InvestmentOverview({
   const metrics = cash ? (["value"] as const) : overviewMetrics;
   return (
     <section
-      className="investment-overview"
+      className={`investment-overview${cash ? " cash-overview" : ""}`}
       aria-label={cash ? "现金概览" : "投资持仓概览"}
     >
       <div className="investment-overview-grid">
         {metrics.map((key) => (
-          <article
-            key={key}
-            className={"investment-overview-metric metric-" + key}
-          >
-            <span>
-              {cash ? "存款与现金" : labels[key]} <small>{baseCurrency}</small>
-            </span>
-            <strong
-              className={`num ${key === "unrealized" || key === "realized" ? (Number(totals[key].value) === 0 ? "" : Number(totals[key].value) > 0 ? "gain" : "loss") : ""}`}
-              data-money
-            >
-              {totals[key].value == null
-                ? "—"
-                : key === "unrealized" || key === "realized"
-                  ? formatSigned(totals[key].value!, (value) =>
-                      formatMoney(value, baseCurrency),
-                    )
-                  : formatMoney(totals[key].value!, baseCurrency)}
-            </strong>
-            {totals[key].missing > 0 && (
-              <button
-                className="metric-missing"
-                onClick={() => {
-                  setExpanded(true);
-                  requestAnimationFrame(() => {
-                    const row = breakdown.current?.querySelector<HTMLElement>(
-                      '[data-missing="true"]',
-                    );
-                    row?.focus();
-                    row?.scrollIntoView?.({ block: "nearest" });
-                  });
-                }}
+          <Card key={key} size="small" className="portfolio-metric-card">
+            <article className={"investment-overview-metric metric-" + key}>
+              <span>
+                {cash ? "存款与现金" : labels[key]}{" "}
+                <small>{baseCurrency}</small>
+              </span>
+              <strong
+                className={`num ${key === "unrealized" || key === "realized" ? (Number(totals[key].value) === 0 ? "" : Number(totals[key].value) > 0 ? "gain" : "loss") : ""}`}
+                data-money
               >
-                <Badge>待补 {totals[key].missing}</Badge>
-              </button>
-            )}
-            <small
-              title={
-                totals[key].missing
-                  ? `${totals[key].missing} 项未计入；查看原币明细核对原因`
-                  : undefined
-              }
-            >
-              {totals[key].missing
-                ? `已知部分 · ${totals[key].missing} 项未计入`
-                : key === "realized"
-                  ? "按当前汇率折算 · 含已清仓资产与净现金分红"
-                  : "全部" + (cash ? "币种余额" : "投资持仓")}
-            </small>
-          </article>
+                {totals[key].value == null
+                  ? "—"
+                  : key === "unrealized" || key === "realized"
+                    ? formatSigned(totals[key].value!, (value) =>
+                        formatMoney(value, baseCurrency),
+                      )
+                    : formatMoney(totals[key].value!, baseCurrency)}
+              </strong>
+              {totals[key].missing > 0 && (
+                <button
+                  className="metric-missing"
+                  onClick={() => {
+                    setExpanded(true);
+                    requestAnimationFrame(() => {
+                      const row = breakdown.current?.querySelector<HTMLElement>(
+                        '[data-missing="true"]',
+                      );
+                      row?.focus();
+                      row?.scrollIntoView?.({ block: "nearest" });
+                    });
+                  }}
+                >
+                  <Badge>待补 {totals[key].missing}</Badge>
+                </button>
+              )}
+              <small
+                title={
+                  totals[key].missing
+                    ? `${totals[key].missing} 项未计入；查看原币明细核对原因`
+                    : undefined
+                }
+              >
+                {totals[key].missing
+                  ? `已知部分 · ${totals[key].missing} 项未计入`
+                  : key === "realized"
+                    ? "按当前汇率折算 · 含已清仓资产与净现金分红"
+                    : "全部" + (cash ? "币种余额" : "投资持仓")}
+              </small>
+            </article>
+          </Card>
         ))}
       </div>
       <div className="overview-breakdown">

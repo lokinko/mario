@@ -1,3 +1,4 @@
+import { Button, Tabs } from "antd";
 import { Drawer } from "../../components/Drawer";
 import { AssetAmountRow } from "./AssetAmountRow";
 import { ExchangeRates } from "./ExchangeRates";
@@ -15,12 +16,12 @@ import { ProfileForm } from "./ProfileForm";
 import { sortInvestmentHoldings } from "./holdingMetrics";
 import { useHoldingRemoval } from "./useHoldingRemoval";
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw } from "lucide-react";
+import { CircleHelp, Plus, RefreshCw } from "lucide-react";
 import { refreshSecurityPrices } from "../../api/portfolio";
 import type { DataIssue, Holding, Snapshot } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
-import { formatMoney } from "../../lib/format";
 import { emptyHolding } from "./forms";
+import "./portfolio.css";
 
 const defaultCashCurrencies = ["CNY", "HKD", "USD"];
 
@@ -227,9 +228,9 @@ export function MyFacts({
           <div role="cell">未记录</div>
           <div role="cell">—</div>
           <div role="cell">
-            <button className="text-button" onClick={() => openEditor(item)}>
+            <Button type="link" size="small" onClick={() => openEditor(item)}>
               添加
-            </button>
+            </Button>
           </div>
         </div>
       );
@@ -286,57 +287,119 @@ export function MyFacts({
       </div>
     );
   };
+  const sectionContent = (
+    <>
+      {!editing && !selected && errorNotice}
+      {section === "holdings" &&
+        !priceWarningDismissed &&
+        Boolean(snapshot.priceRefreshErrors?.length) && (
+          <Callout tone="info" onClose={() => setPriceWarningDismissed(true)}>
+            部分价格更新失败，已保留原值：
+            {snapshot.priceRefreshErrors?.join("；")}
+          </Callout>
+        )}
+      {section !== "income" && (
+        <InvestmentOverview
+          holdings={section === "holdings" ? investments : cash}
+          accounting={displayAccounting}
+          baseCurrency={currency}
+          cash={section === "savings"}
+        />
+      )}
+      {section === "income" ? (
+        <ProfileForm
+          profile={profile}
+          onChange={setProfile}
+          busy={busy}
+          run={run}
+          onUpdate={onUpdate}
+          flash={flash}
+        />
+      ) : (
+        <section
+          className={`panel form-panel ${section === "holdings" ? "investment-panel" : "cash-panel"}`}
+        >
+          {section === "holdings" ? (
+            <HoldingsList
+              snapshot={snapshot}
+              holdings={investments}
+              filters={filters}
+              onFiltersChange={setFilters}
+              renderRow={renderAssetRow}
+              onRecordTrade={() => {
+                setTradeHolding(undefined);
+                setAddingTrade(true);
+              }}
+            />
+          ) : (
+            <div
+              className="facts-assets"
+              role="table"
+              aria-label="现金列表"
+              aria-colcount={4}
+            >
+              <div role="row" className="holdings-list-header cash-list-header">
+                {["币种", "余额", "核对日期", "操作"].map((label) => (
+                  <span role="columnheader" key={label}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+              <div role="rowgroup">{cashRows.map(renderAssetRow)}</div>
+            </div>
+          )}
+        </section>
+      )}
+    </>
+  );
   return (
     <div className="page facts-page">
       <PageHeader
         title="我的情况"
         description="核对资产、记录成交，保留每个数字的来源与时点。"
         action={
-          section === "holdings" ? (
-            <div className="trade-toolbar">
-              {section === "holdings" && investments.length > 0 && (
-                <button
-                  className="secondary"
-                  disabled={busy || Boolean(editing)}
-                  onClick={refreshPrices}
-                >
-                  <RefreshCw size={15} />
-                  {busy ? "更新中…" : "更新自动价格"}
-                </button>
-              )}
-              {section === "holdings" && (
-                <button
-                  className="primary"
-                  disabled={busy || Boolean(editing) || addingTrade}
-                  onClick={() => {
-                    setTradeHolding(undefined);
-                    setAddingTrade(true);
-                  }}
-                >
-                  <Plus size={16} />
-                  记录交易
-                </button>
-              )}
-              {section === "holdings" && (
-                <button
-                  className="secondary"
-                  disabled={busy || Boolean(editing) || addingTrade}
-                  onClick={add}
-                >
-                  <Plus size={16} />
-                  添加持仓
-                </button>
-              )}
-            </div>
-          ) : undefined
+          <div className="trade-toolbar facts-heading-actions">
+            <Button
+              type="text"
+              icon={<CircleHelp size={16} />}
+              onClick={() => setHelp(true)}
+            >
+              使用说明
+            </Button>
+            {section === "holdings" && investments.length > 0 && (
+              <Button
+                icon={<RefreshCw size={15} />}
+                disabled={busy || Boolean(editing)}
+                onClick={refreshPrices}
+              >
+                {busy ? "更新中…" : "更新自动价格"}
+              </Button>
+            )}
+            {section === "holdings" && (
+              <Button
+                type="primary"
+                icon={<Plus size={16} />}
+                disabled={busy || Boolean(editing) || addingTrade}
+                onClick={() => {
+                  setTradeHolding(undefined);
+                  setAddingTrade(true);
+                }}
+              >
+                记录交易
+              </Button>
+            )}
+            {section === "holdings" && (
+              <Button
+                icon={<Plus size={16} />}
+                disabled={busy || Boolean(editing) || addingTrade}
+                onClick={add}
+              >
+                添加持仓
+              </Button>
+            )}
+          </div>
         }
       />
-      <button
-        className="text-button facts-help-trigger"
-        onClick={() => setHelp(true)}
-      >
-        ？使用说明
-      </button>
       {help && (
         <Drawer title="资产记录使用说明" onClose={() => setHelp(false)}>
           <h3>持仓与盈亏</h3>
@@ -381,104 +444,28 @@ export function MyFacts({
           />
         </Drawer>
       )}
-      <div className="section-switcher" role="group" aria-label="我的情况分类">
-        {(
+      <Tabs
+        aria-label="我的情况分类"
+        className="facts-tabs"
+        activeKey={section}
+        destroyOnHidden
+        onChange={(id) => {
+          setSection(id as typeof section);
+          setError("");
+        }}
+        items={(
           [
             ["holdings", "投资持仓"],
             ["savings", "存款与现金"],
             ["income", "收入与支出"],
           ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            aria-label={label}
-            disabled={busy || Boolean(editing) || addingTrade}
-            aria-pressed={section === id}
-            onClick={() => {
-              setSection(id);
-              setError("");
-            }}
-          >
-            {label}
-            {id !== "income" && (
-              <small className="num" data-money>
-                {(id === "holdings"
-                  ? snapshot.accounting?.investments.value.value
-                  : snapshot.accounting?.cash.value.value) == null
-                  ? "—"
-                  : formatMoney(
-                      (id === "holdings"
-                        ? snapshot.accounting!.investments.value.value
-                        : snapshot.accounting!.cash.value.value)!,
-                      currency,
-                    )}
-              </small>
-            )}
-          </button>
-        ))}
-      </div>
-      {!editing && !selected && errorNotice}
-      {section === "holdings" &&
-        !priceWarningDismissed &&
-        Boolean(snapshot.priceRefreshErrors?.length) && (
-          <Callout tone="info" onClose={() => setPriceWarningDismissed(true)}>
-            部分价格更新失败，已保留原值：
-            {snapshot.priceRefreshErrors?.join("；")}
-          </Callout>
-        )}
-      {section !== "income" && (
-        <InvestmentOverview
-          holdings={section === "holdings" ? investments : cash}
-          accounting={displayAccounting}
-          baseCurrency={currency}
-          cash={section === "savings"}
-        />
-      )}
-      {section === "income" ? (
-        <ProfileForm
-          profile={profile}
-          onChange={setProfile}
-          busy={busy}
-          run={run}
-          onUpdate={onUpdate}
-          flash={flash}
-        />
-      ) : (
-        <section
-          className={`panel form-panel${section === "holdings" ? " investment-panel" : ""}`}
-        >
-          {section === "holdings" ? (
-            <HoldingsList
-              snapshot={snapshot}
-              holdings={investments}
-              filters={filters}
-              onFiltersChange={setFilters}
-              renderRow={renderAssetRow}
-              onRecordTrade={() => {
-                setTradeHolding(undefined);
-                setAddingTrade(true);
-              }}
-            />
-          ) : (
-            <div
-              className="facts-assets"
-              role="table"
-              aria-label="现金列表"
-              aria-colcount={4}
-            >
-              <div role="row" className="holdings-list-header cash-list-header">
-                {["币种", "余额", "核对日期", "操作"].map((label) => (
-                  <span role="columnheader" key={label}>
-                    {label}
-                  </span>
-                ))}
-              </div>
-              <div role="rowgroup">{cashRows.map(renderAssetRow)}</div>
-            </div>
-          )}
-        </section>
-      )}
-
+        ).map(([id, label]) => ({
+          key: id,
+          label: <span className="facts-tab-label">{label}</span>,
+          disabled: busy || Boolean(editing) || addingTrade,
+          children: section === id ? sectionContent : null,
+        }))}
+      />
       {(editing || selected) && (
         <Drawer
           title={

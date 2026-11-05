@@ -1,4 +1,5 @@
 import { Callout } from "../../components/Callout";
+import { Button, Input } from "antd";
 import {
   createContext,
   Fragment,
@@ -8,7 +9,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { LoaderCircle, LogOut, UsersRound } from "lucide-react";
+import {
+  ChartNoAxesCombined,
+  ArrowUpRight,
+  BookOpen,
+  LoaderCircle,
+  LogOut,
+  UsersRound,
+} from "lucide-react";
 import {
   forgetWebAccount,
   savedWebAccounts,
@@ -315,9 +323,51 @@ export function WebAccess({ children }: { children: ReactNode }) {
   return (
     <div className="web-access">
       <aside className="login-brand">
-        <strong>mario</strong>
-        <p>个人投资工作台</p>
-        <p>核对依据，记录判断，先看风险。</p>
+        <div className="login-wordmark">
+          <img
+            src={`${import.meta.env.BASE_URL}mario-mark.svg`}
+            width="36"
+            height="36"
+            alt=""
+          />
+          <strong>mario</strong>
+        </div>
+        <div className="login-story">
+          <span className="login-kicker">你的个人投资工作台</span>
+          <h2>
+            让每一次判断，
+            <br />
+            都有据可依。
+          </h2>
+          <p>
+            照看认可的公司，记录真实的交易。
+            <br />
+            在长期观察中，形成自己的投资判断。
+          </p>
+          <div className="login-preview" aria-hidden="true">
+            <div>
+              <ChartNoAxesCombined size={20} />
+              <span>观察 · 等待 · 复盘</span>
+              <ArrowUpRight size={18} />
+            </div>
+            <div className="login-preview-chart">
+              <svg viewBox="0 0 360 120" fill="none">
+                <path
+                  className="login-chart-grid"
+                  d="M0 30H360M0 60H360M0 90H360"
+                />
+                <path
+                  className="login-chart-line"
+                  d="M0 92L30 82L60 88L90 60L120 70L150 45L180 53L210 30L240 46L270 25L300 35L330 16L360 22"
+                />
+              </svg>
+            </div>
+            <span>核对依据，记录判断，先看风险。</span>
+          </div>
+        </div>
+        <div className="login-footnote">
+          <BookOpen size={15} /> 让耐心成为投资的一部分
+        </div>
       </aside>
       <form
         className="panel"
@@ -374,7 +424,11 @@ export function WebAccess({ children }: { children: ReactNode }) {
           height="48"
           alt=""
         />
-        <h1>{register ? "创建 mario 账号" : "登录 mario"}</h1>
+        <div className="login-heading">
+          <span className="login-kicker">欢迎来到你的投资工作台</span>
+          <h1>{register ? "创建 mario 账号" : "登录 mario"}</h1>
+          <p>从今天的观察，继续长期的积累。</p>
+        </div>
         <OpenAiSignIn disabled={busy} />
         {accounts.length > 0 && (
           <>
@@ -388,8 +442,9 @@ export function WebAccess({ children }: { children: ReactNode }) {
         )}
         <label>
           邮箱
-          <input
+          <Input
             type="email"
+            placeholder="输入邮箱地址"
             required
             autoComplete="username"
             value={email}
@@ -398,8 +453,9 @@ export function WebAccess({ children }: { children: ReactNode }) {
         </label>
         <label>
           密码
-          <input
+          <Input
             type="password"
+            placeholder="输入密码（至少 12 位）"
             required
             minLength={12}
             maxLength={256}
@@ -410,9 +466,16 @@ export function WebAccess({ children }: { children: ReactNode }) {
         </label>
         <p>资料存储在你的服务器，同一账号可在不同设备的浏览器访问。</p>
         {error && <Callout tone="danger">{error}</Callout>}
-        <button className="primary" disabled={busy}>
+        <Button
+          type="primary"
+          autoInsertSpace={false}
+          htmlType="submit"
+          disabled={busy}
+          loading={busy}
+          block
+        >
           {busy ? "连接中…" : register ? "创建账号" : "登录"}
-        </button>
+        </Button>
         <button
           type="button"
           className="text-button"

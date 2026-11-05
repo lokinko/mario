@@ -1,3 +1,4 @@
+import { Button, Input } from "antd";
 import { useId, useRef, useState } from "react";
 import {
   saveHolding,
@@ -115,6 +116,7 @@ export function AssetEditor({
 
   return (
     <form
+      className="portfolio-form asset-editor"
       onSubmit={(e) => {
         e.preventDefault();
         save();
@@ -130,7 +132,7 @@ export function AssetEditor({
             <>
               <label>
                 <span>名称</span>
-                <input
+                <Input
                   autoFocus
                   required
                   value={editing.name}
@@ -144,7 +146,7 @@ export function AssetEditor({
                 <span id={`${codeHelpId}-label`}>
                   证券代码（自动价格，选填）
                 </span>
-                <input
+                <Input
                   aria-labelledby={`${codeHelpId}-label`}
                   aria-describedby={tradeManaged ? codeHelpId : undefined}
                   value={editing.symbol}
@@ -176,7 +178,7 @@ export function AssetEditor({
             <span>{cash ? "当前金额" : "当前市值"}</span>
             <div className="input-affix">
               <i>{editing.currency}</i>
-              <input
+              <Input
                 data-money-input="true"
                 type="number"
                 required={manualAssetAmount}
@@ -213,7 +215,7 @@ export function AssetEditor({
                 <span>持仓总成本（选填）</span>
                 <div className="input-affix">
                   <i>{editing.currency}</i>
-                  <input
+                  <Input
                     data-money-input="true"
                     type="number"
                     min={0}
@@ -274,7 +276,7 @@ export function AssetEditor({
               </label>
               <label>
                 <span>余额日期</span>
-                <input
+                <Input
                   required
                   type="date"
                   max={localDateValue(new Date())}
@@ -316,9 +318,9 @@ export function AssetEditor({
           </p>
         )}
         <div className="form-actions">
-          <button className="primary" type="submit" disabled={!valid}>
+          <Button type="primary" htmlType="submit" disabled={busy || !valid}>
             {busy ? "保存中…" : "保存这笔资产"}
-          </button>
+          </Button>
         </div>
       </fieldset>
     </form>

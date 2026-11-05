@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Button, Input, Tag } from "antd";
 import {
   Plus,
   RefreshCw,
@@ -6,6 +7,8 @@ import {
   List,
   LayoutGrid,
   SlidersHorizontal,
+  ChartNoAxesCombined,
+  ArrowUpRight,
 } from "lucide-react";
 import {
   getWatchBoard,
@@ -183,33 +186,48 @@ export function BuyWatch({
       <PageHeader
         title="买点观察"
         description="照看你认可的公司，等待值得研究的变化。"
+        action={
+          <>
+            <Button
+              disabled={busy || !rows.length}
+              onClick={() => void run(refreshWatch)}
+              icon={
+                <RefreshCw size={15} className={busy ? "watch-spinning" : ""} />
+              }
+            >
+              {busy ? "处理中…" : "检查最新收盘"}
+            </Button>
+            <Button
+              type="primary"
+              disabled={busy}
+              onClick={() => edit()}
+              icon={<Plus size={16} />}
+            >
+              加入公司
+            </Button>
+          </>
+        }
       />
       <section className="panel watch-intro">
         <div>
-          <div>
-            <span className="watch-eyebrow">收盘观察 · 已实施分红</span>
-            <strong>把等待条件放在同一张桌面上</strong>
+          <div className="watch-intro-heading">
+            <span className="watch-intro-icon">
+              <ChartNoAxesCombined size={23} />
+            </span>
+            <div>
+              <span className="watch-eyebrow">收盘观察 · 已实施分红</span>
+              <strong>有依据地观察，有耐心地等待。</strong>
+            </div>
           </div>
-          <div className="watch-actions">
-            <button
-              className="secondary"
-              disabled={busy || !rows.length}
-              onClick={() => void run(refreshWatch)}
-            >
-              <RefreshCw size={16} className={busy ? "watch-spinning" : ""} />
-              {busy ? "处理中…" : "检查最新收盘"}
-            </button>
-            <button className="primary" disabled={busy} onClick={() => edit()}>
-              <Plus size={16} />
-              加入公司
-            </button>
-          </div>
+          <Tag variant="filled">日线 + 周线 · 双重观察</Tag>
         </div>
         <div className="watch-rule-strip">
           <span>① TTM 税前股息 ≥{minYield}%</span>
           <span>② 日线下轨 ±{tolerance}%</span>
           <span>③ 周线下轨 ±{tolerance}%</span>
-          <small>三项同时满足 → 进入关注区间</small>
+          <small>
+            三项同时满足 <ArrowUpRight size={14} /> 进入关注区间
+          </small>
         </div>
         <details className="watch-method">
           <summary>计算口径与检查时间</summary>
@@ -259,15 +277,15 @@ export function BuyWatch({
           </div>
           {rows.length > 0 && (
             <div className="watch-toolbar">
-              <label className="watch-search">
-                <Search size={16} />
-                <input
+              <div className="watch-search">
+                <Input
+                  prefix={<Search size={16} />}
                   aria-label="搜索观察公司"
                   placeholder="搜索名称、代码或关注理由"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
-              </label>
+              </div>
               <label className="watch-select">
                 <SlidersHorizontal size={15} />
                 <select
@@ -423,6 +441,7 @@ export function BuyWatch({
             title={editing ? "编辑观察公司" : "加入观察公司"}
           >
             <form
+              className="watch-editor"
               onSubmit={(e) => {
                 e.preventDefault();
                 save();
@@ -460,7 +479,7 @@ export function BuyWatch({
               <div className="form-grid">
                 <label>
                   证券代码
-                  <input
+                  <Input
                     required
                     disabled={editing || busy}
                     value={form.symbol}
@@ -470,7 +489,7 @@ export function BuyWatch({
                 </label>
                 <label>
                   公司名称
-                  <input
+                  <Input
                     required
                     maxLength={80}
                     disabled={busy}
@@ -481,7 +500,7 @@ export function BuyWatch({
               </div>
               <label>
                 我认可它的理由
-                <textarea
+                <Input.TextArea
                   rows={5}
                   maxLength={2000}
                   disabled={busy}
@@ -494,21 +513,16 @@ export function BuyWatch({
                 保存后纳入自动收盘观察。你填写的理由是研究起点，基本面是否稳定需要持续核查。
               </p>
               <div className="form-actions">
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={busy}
-                  onClick={close}
-                >
+                <Button disabled={busy} onClick={close}>
                   取消
-                </button>
-                <button
-                  type="submit"
-                  className="primary"
+                </Button>
+                <Button
+                  htmlType="submit"
+                  type="primary"
                   disabled={busy || !form.symbol.trim() || !form.name.trim()}
                 >
                   保存观察公司
-                </button>
+                </Button>
               </div>
             </form>
           </Drawer>

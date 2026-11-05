@@ -1,3 +1,4 @@
+import { Button } from "antd";
 import { Callout } from "../../components/Callout";
 import { useId } from "react";
 import { Save } from "lucide-react";
@@ -79,8 +80,14 @@ export function ProfileForm({
   };
 
   return (
-    <section className="panel form-panel" aria-label="收支与风险设置">
-      <h2>收入与支出</h2>
+    <section
+      className="panel form-panel profile-panel"
+      aria-label="收支与风险设置"
+    >
+      <div className="panel-title">
+        <h2>收入与支出</h2>
+        <span>按月记录 · {profile.baseCurrency}</span>
+      </div>
       <p className="section-intro">
         记录稳定月度现金流，作为风险承受能力的基础。
       </p>
@@ -91,6 +98,7 @@ export function ProfileForm({
         </Callout>
       )}
       <form
+        className="portfolio-form"
         onSubmit={(event) => {
           event.preventDefault();
           save();
@@ -169,10 +177,14 @@ export function ProfileForm({
             </div>
           </details>
           <div className="form-actions">
-            <button className="primary" type="submit" disabled={!valid}>
-              <Save size={16} />
+            <Button
+              type="primary"
+              htmlType="submit"
+              disabled={busy || !valid}
+              icon={<Save size={15} />}
+            >
               {busy ? "保存中…" : "保存收支"}
-            </button>
+            </Button>
           </div>
         </fieldset>
       </form>

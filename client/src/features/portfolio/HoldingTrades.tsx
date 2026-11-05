@@ -1,4 +1,5 @@
 import { isPendingFinancialRequest } from "../../api/portfolio/financialRequest";
+import { Button, Input } from "antd";
 import { Callout } from "../../components/Callout";
 import { FinancialHistory } from "./FinancialHistory";
 import { useDrawerControls } from "../../components/Drawer";
@@ -377,7 +378,7 @@ export function HoldingTrades({
   ) => (
     <label>
       <span>{label}</span>
-      <input
+      <Input
         type={options.type ?? "text"}
         inputMode={
           ["quantity", "price", "grossAmount", "fees", "taxes"].includes(key)
@@ -458,6 +459,7 @@ export function HoldingTrades({
       )}
       {open && !quarantined && (
         <form
+          className="portfolio-form"
           aria-label={editing ? "编辑真实交易" : "录入真实交易"}
           onSubmit={(e) => {
             e.preventDefault();
@@ -495,7 +497,7 @@ export function HoldingTrades({
                 <>
                   <label>
                     <span>证券名称</span>
-                    <input
+                    <Input
                       required
                       maxLength={200}
                       value={name}
@@ -504,7 +506,7 @@ export function HoldingTrades({
                   </label>
                   <label>
                     <span>证券代码（选填）</span>
-                    <input
+                    <Input
                       maxLength={80}
                       value={symbol}
                       onChange={(e) => setSymbol(e.target.value)}
@@ -603,7 +605,7 @@ export function HoldingTrades({
                     ? `税前现金分红（${currency}）`
                     : `成交金额（${currency}）`}
                 </span>
-                <input
+                <Input
                   aria-label={
                     isDividend
                       ? `税前现金分红（${currency}）`
@@ -701,17 +703,17 @@ export function HoldingTrades({
                 " 现金分红计入收益，不减少持仓成本；红利再投资请另录一笔真实买入。"}
             </p>
             <div className="form-actions">
-              <button
-                className="primary"
-                type="submit"
-                disabled={!valid || uncertain}
+              <Button
+                type="primary"
+                htmlType="submit"
+                disabled={busy || !valid || uncertain}
               >
                 {busy
                   ? "保存中…"
                   : editing
                     ? "保存修改并更新持仓"
                     : "保存交易并更新持仓"}
-              </button>
+              </Button>
             </div>
           </fieldset>
         </form>

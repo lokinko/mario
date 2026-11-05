@@ -1,4 +1,5 @@
 import { EmptyState } from "../../components/EmptyState";
+import { Button, Input, Tag } from "antd";
 import { Search } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Holding, Snapshot } from "../../types";
@@ -84,9 +85,9 @@ export function HoldingsList({
             <EmptyState
               title="还没有持仓"
               action={
-                <button className="primary" onClick={onRecordTrade}>
+                <Button type="primary" onClick={onRecordTrade}>
                   记录第一笔交易
-                </button>
+                </Button>
               }
             >
               从第一笔真实成交开始记录。
@@ -114,19 +115,21 @@ export function HoldingsList({
       </p>
       <div className="holdings-toolbar" data-presentation="true">
         <div className="position-filters">
+          <strong>投资持仓</strong>
+          <Tag variant="filled">{visible.length} 项</Tag>
           <span>按币种分组</span>
         </div>
         <div className="holdings-tools">
-          <label className="holdings-search">
-            <Search size={16} aria-hidden="true" />
-            <input
+          <div className="holdings-search">
+            <Input
+              prefix={<Search size={15} aria-hidden="true" />}
               type="search"
               aria-label="搜索持仓"
               placeholder="搜索名称、代码或币种"
               value={search}
               onChange={(event) => update({ search: event.target.value })}
             />
-          </label>
+          </div>
           <select
             aria-label="持仓排序"
             aria-describedby="holdings-sort-help"

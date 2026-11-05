@@ -8,4 +8,14 @@ if (dom) {
       value: dom.window[name],
     });
   }
+  // jsdom has no layout observer. Responsive layout is checked in the browser;
+  // Ant Design's textarea still needs the observer interface to mount in unit tests.
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    value: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
 }

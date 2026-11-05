@@ -1,3 +1,4 @@
+import { Input } from "antd";
 import type { Holding } from "../../types";
 
 export function hasHoldingDetails(holding: Omit<Holding, "id">) {
@@ -70,7 +71,7 @@ export function HoldingFields<T extends Omit<Holding, "id">>({
         <label key={key}>
           <span>{label}</span>
           <div className="input-affix">
-            <input
+            <Input
               data-money-input={key !== "quantity" || undefined}
               type="number"
               inputMode="decimal"

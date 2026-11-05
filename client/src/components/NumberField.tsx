@@ -1,3 +1,5 @@
+import { Input } from "antd";
+
 export function NumberField({
   label,
   value,
@@ -15,7 +17,7 @@ export function NumberField({
     <label>
       <span>{label}</span>
       <div className="input-affix">
-        <input
+        <Input
           data-money-input={
             (prefix && /^[A-Z]{3}$/.test(prefix)) ||
             (suffix && /^[A-Z]{3}$/.test(suffix))
