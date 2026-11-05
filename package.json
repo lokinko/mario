@@ -22,6 +22,7 @@
     "dev": "node scripts/dev.mjs",
     "test": "bash scripts/test.sh",
     "test:server": "node scripts/postgres-cluster.mjs cargo test --manifest-path server/Cargo.toml",
+    "test:watch-data": "node scripts/test-watch-dividends-data.mjs",
     "eval:qa": "node scripts/postgres-cluster.mjs cargo test --manifest-path server/Cargo.toml live_evidence_advice_evaluation -- --ignored --nocapture",
     "eval:qa:score": "node scripts/qa-eval-score.mjs",
     "test:qa-eval": "node --test scripts/qa-eval-score.test.mjs",

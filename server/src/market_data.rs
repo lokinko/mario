@@ -1,4 +1,5 @@
 pub(crate) mod watch;
+pub(crate) mod watch_archive;
 use std::{collections::BTreeMap, time::Duration};
 
 use async_trait::async_trait;

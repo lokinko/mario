@@ -6,6 +6,7 @@ root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root_dir" && node --test scripts/codex-bridge.test.mjs)
 (cd "$root_dir" && npm run test:qa-eval)
 (cd "$root_dir" && npm run test:benchmark)
+(cd "$root_dir" && npm run test:watch-data)
 (cd "$root_dir" && npm run test:deploy)
 npm run build --prefix "$root_dir/client"
 npm run format:check --prefix "$root_dir/client"

@@ -28,7 +28,9 @@ pub async fn refresh(
     let board = db.watch_board(day)?;
     let mut entries = Vec::new();
     for row in board.rows {
-        let history = db.watch_dividends(&row.entry.input.symbol)?;
+        let history = db
+            .watch_dividends(&row.entry.input.symbol)?
+            .or_else(|| provider.dividend_seed(&row.entry.input.symbol, day));
         if force
             || history.as_ref().is_none_or(|h| h.basis.as_of < day)
             || row.refresh_failed
@@ -134,6 +136,90 @@ mod tests {
         dividend_calls: AtomicUsize,
         dividend_fail: bool,
         price: f64,
+    }
+    struct SeededProvider {
+        live: Provider,
+        history: crate::models::watch::DividendHistory,
+    }
+    #[async_trait::async_trait]
+    impl WatchMarketProvider for SeededProvider {
+        fn dividend_seed(
+            &self,
+            symbol: &str,
+            day: NaiveDate,
+        ) -> Option<crate::models::watch::DividendHistory> {
+            (symbol == "600036.SS" && self.history.basis.as_of <= day).then(|| self.history.clone())
+        }
+        async fn dividends(
+            &self,
+            symbol: &str,
+            day: NaiveDate,
+        ) -> AppResult<crate::models::watch::DividendHistory> {
+            self.live.dividends(symbol, day).await
+        }
+        async fn observation(&self, symbol: &str, day: NaiveDate) -> AppResult<WatchMarketData> {
+            self.live.observation(symbol, day).await
+        }
+    }
+
+    #[tokio::test]
+    async fn bootstrap_only_populates_existing_watches_and_preserves_old_coverage() {
+        let db = Database::test();
+        for symbol in ["600036.SS", "600000.SS"] {
+            db.save_watch(WatchInput {
+                symbol: symbol.into(),
+                name: "公司".into(),
+                thesis: String::new(),
+            })
+            .unwrap();
+        }
+        let source = Provider {
+            calls: AtomicUsize::new(0),
+            fail: false,
+            dividend_calls: AtomicUsize::new(0),
+            dividend_fail: false,
+            price: 100.0,
+        };
+        let history = source.dividends("600036.SS", cutoff()).await.unwrap();
+        let provider = Arc::new(SeededProvider {
+            live: Provider {
+                dividend_fail: true,
+                ..source
+            },
+            history: history.clone(),
+        });
+        let _lock = db.lock_account().unwrap();
+        let board = refresh(&db, provider.clone(), false).await.unwrap();
+        assert_eq!(board.rows.len(), 2);
+        assert_eq!(db.watch_dividends("600036.SS").unwrap(), Some(history));
+        assert!(db.watch_dividends("600000.SS").unwrap().is_none());
+        // One fixture setup call and one unmatched watch source request; the matched
+        // company uses the bootstrap without contacting the dividend endpoint.
+        assert_eq!(provider.live.dividend_calls.load(Ordering::SeqCst), 2);
+        let mut old = provider.history.clone();
+        old.basis.as_of -= chrono::Duration::days(1);
+        let other = Database::test();
+        other
+            .save_watch(WatchInput {
+                symbol: "600036.SS".into(),
+                name: "公司".into(),
+                thesis: String::new(),
+            })
+            .unwrap();
+        let _other_lock = other.lock_account().unwrap();
+        let stale = Arc::new(SeededProvider {
+            history: old.clone(),
+            live: Provider {
+                calls: AtomicUsize::new(0),
+                fail: false,
+                dividend_calls: AtomicUsize::new(0),
+                dividend_fail: true,
+                price: 100.0,
+            },
+        });
+        let board = refresh(&other, stale, false).await.unwrap();
+        assert_eq!(other.watch_dividends("600036.SS").unwrap(), Some(old));
+        assert_eq!(board.rows[0].latest.as_ref().unwrap().yield_pct, None);
     }
     #[async_trait::async_trait]
     impl WatchMarketProvider for Provider {

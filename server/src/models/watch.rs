@@ -101,7 +101,7 @@ impl DividendHistory {
             || self.sources.iter().any(|s| !s.starts_with("https://"))
             || self.events.iter().any(|e| {
                 e.ex_date > self.basis.as_of
-                    || e.report_date.is_none_or(|d| d > e.ex_date)
+                    || e.report_date.is_none()
                     || !seen.insert((e.ex_date, e.report_date))
                     || [&e.cash_per_ten, &e.bonus_per_ten, &e.transfer_per_ten]
                         .iter()
@@ -216,7 +216,7 @@ fn band(values: &[Option<f64>], price: f64) -> Option<Band> {
     })
 }
 
-fn trailing_dividends(events: &[DividendEvent], day: NaiveDate) -> Option<Decimal> {
+pub fn trailing_dividends(events: &[DividendEvent], day: NaiveDate) -> Option<Decimal> {
     let start = day - chrono::Duration::days(365);
     let mut total = Decimal::ZERO;
     for event in events

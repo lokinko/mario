@@ -34,6 +34,7 @@ flowchart LR
 | ChatGPT 官方桥接 worker | `--chatgpt-bridge <站点>` | `codex_bridge_worker::run_chatgpt` | 用户电脑执行；OAuth 令牌留在本机，直连官方 Responses |
 | 本机 ChatGPT 账号管理 | `--chatgpt-auth <命令>` | `chatgpt_auth::command` | 浏览器 OAuth 仅回环回调；注册、刷新和退出；不连接业务数据库 |
 | 维护命令 | `--reset-password` | `runtime.rs` | 重置指定账号密码 |
+| 公开分红清单导出 | `--export-watch-dividends <CSV>` | `runtime` → `market_data/watch_archive` | 内置公开资料，不连接账号数据库 |
 
 PostgreSQL 是唯一的数据存储，没有单机或免登录模式。本地开发（`npm run dev`）与测试使用同一条多用户路径：[`scripts/postgres-cluster.mjs`](../scripts/postgres-cluster.mjs) 在 `.runtime/dev` 维护持久开发集群，或为测试创建一次性集群；开发者在浏览器注册账号，与生产流程一致。
 
@@ -203,6 +204,8 @@ sequenceDiagram
 ### 6.5 买点观察
 
 [买点观察助手](buy-watch.md)是当前默认入口。`models/watch` 计算固定 5% TTM 股息率及日、周 BOLL 下轨 ±2% 条件，`application/watch` 通过 `WatchMarketProvider` 获取输入；`market_data/watch` 读取公开日线、交易日期参考与已实施分红，缓存仅含公开数据。`composition` 管理按账号后台检查的生命周期，不调用离线 benchmark 或自动执行 AI。
+
+公开分红初始化资料由 `market_data/watch_archive` 读取随程序发布的版本化 JSON，经原始来源哈希核验的离线整理流程生成。应用层仅在账号未保存分红时，通过端口按既有观察名单取初始资料；截止日不能覆盖新行情时继续查询来源，旧资料不升级为当前值。运行时不调用研究 CLI 或读取研究目录，原账本与名单归属不变。公开 CSV 导出复用领域 TTM 计算，属于不访问账号库的维护命令；资料归属与补查规则见[买点观察](buy-watch.md#已有采集资料的接入)。
 
 `db/watch` 在账号 schema 的 `watch_entries`、`watch_observations`、`watch_dividends` 保存名单、逐日观察、未读状态和按证券存储的完整已实施分红事件集。网络期间释放账号锁，提交前重新核对条目；分红事件集、观察与检查状态同事务写入，未知结果不伪装为信号退出。分红端口与价格端口方法分开，应用层按截止日复用已持久化资料；手动检查重新核验来源。事件金额为十进制字符串，股息率随实际价格和 TTM 窗口重算，覆盖不足时只停用当前股息率。事件集保留完整来源历史，每日观察只冻结所用窗口事件及资料日期；分页与失败语义见[买点观察](buy-watch.md)。周报从保存的本周记录生成，相关观察通过分析应用层装配为授权研究证据，真实交易由原事实卡携带。前端 `features/watch` 只通过应用壳回调进入问答，不导入持仓或问答内部实现。schema 13、备份 v25 纳入独立分红事件集；v24 恢复名单与观察后重新核验分红，v23 及以前恢复为空名单，导入失败整体回滚。
 

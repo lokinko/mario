@@ -115,9 +115,9 @@ flowchart TD
 
 ### 买点观察
 
-`features/watch` 拥有名单草稿、观察卡片与周末汇总，`api/watch` 只处理领域请求；导航和进入问答由应用壳组合。`models/watch` 定义股息与 BOLL 规则及问题码，`ports/market` 暴露分别取价格与完整分红事件集的 `WatchMarketProvider`，来源适配归 `market_data/watch`，按账号刷新归 `application/watch`，独立分红事件集、状态事务和备份校验归 `db/watch`；后台任务由 `composition` 装配并随进程关闭。不得让观察计算调用 benchmark、读取账号库或依赖行情网络实现。
+`features/watch` 拥有名单草稿、观察卡片与周末汇总，`api/watch` 只处理领域请求；导航和进入问答由应用壳组合。`models/watch` 定义股息与 BOLL 规则及问题码，`ports/market` 暴露分别取价格与完整分红事件集的 `WatchMarketProvider`，来源适配归 `market_data/watch`，按账号刷新归 `application/watch`，公开初始化资料适配与 CSV 导出归 `market_data/watch_archive`，离线原件核验和资料包构建归 `scripts/prepare-watch-dividends.py`，独立分红事件集、状态事务和备份校验归 `db/watch`；后台任务由 `composition` 装配并随进程关闭。不得让观察计算调用 benchmark、读取账号库或依赖行情网络实现。
 
-扩展时验证：5% 与 ±2% 的包含边界、日周同时满足、未来数据和未结束周、缺行不填零、分红方案不提前计入、提醒去重/重入、来源失败保留旧日期、在途编辑/删除、账号隔离、分红跨重启复用/来源更正/已核验空集与失败区分/覆盖不足/滚动重算、v25/v24 及旧备份恢复，以及交易原值授权和冻结。接口、口径、迁移和产品边界见[买点观察](buy-watch.md)。
+扩展时验证：5% 与 ±2% 的包含边界、日周同时满足、未来数据和未结束周、缺行不填零、分红方案不提前计入、提醒去重/重入、来源失败保留旧日期、在途编辑/删除、账号隔离、分红跨重启复用/来源更正/已核验空集与失败区分/覆盖不足/滚动重算/内置资料只匹配已有名单/未知来源不初始化为零/原件篡改中止整理、v25/v24 及旧备份恢复，以及交易原值授权和冻结。接口、口径、迁移和产品边界见[买点观察](buy-watch.md)。
 
 ### 投资方法论
 

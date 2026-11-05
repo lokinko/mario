@@ -13,6 +13,14 @@ pub async fn run_from_env() -> AppResult<()> {
         .init();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--export-watch-dividends") {
+        if args.len() != 2 {
+            return Err(AppError::Validation(
+                "--export-watch-dividends 需要一个尚不存在的 CSV 文件路径".into(),
+            ));
+        }
+        return crate::market_data::watch_archive::export(std::path::Path::new(&args[1]));
+    }
     if args.first().map(String::as_str) == Some("--chatgpt-auth") {
         return tokio::select! {
             result = crate::chatgpt_auth::command(&args[1..]) => result,
