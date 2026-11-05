@@ -344,6 +344,33 @@ export function BuyWatch({
                         {number(latest?.weekly?.lower)} · TTM 每股分红{" "}
                         {latest?.dividendPerShare ?? "—"} 元
                       </p>
+                      {latest?.dividendBasis && (
+                        <p>
+                          分红资料覆盖至 {latest.dividendBasis.asOf} · 采集于{" "}
+                          {new Date(
+                            latest.dividendBasis.fetchedAt,
+                          ).toLocaleString("zh-CN", {
+                            timeZone: "Asia/Shanghai",
+                          })}
+                          。股息率按上述行情日期的收盘价重算。
+                        </p>
+                      )}
+                      {Boolean(latest?.dividendEvents.length) && (
+                        <ul>
+                          {latest?.dividendEvents.map((event, index) => (
+                            <li
+                              key={`${event.exDate}-${event.reportDate ?? index}`}
+                            >
+                              除息日 {event.exDate}
+                              {event.reportDate &&
+                                ` · 报告期 ${event.reportDate}`}
+                              {" · "}每十股税前派 {event.cashPerTen} 元，送{" "}
+                              {event.bonusPerTen} 股，转增{" "}
+                              {event.transferPerTen} 股
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       <ul>
                         {latest?.sources.map((url, i) => (
                           <li key={url}>

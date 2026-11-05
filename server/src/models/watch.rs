@@ -62,10 +62,56 @@ pub struct PriceBar {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DividendEvent {
+    // Absent only in observations saved before independent dividend storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_date: Option<NaiveDate>,
     pub ex_date: NaiveDate,
     pub cash_per_ten: String,
     pub bonus_per_ten: String,
     pub transfer_per_ten: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DividendBasis {
+    pub as_of: NaiveDate,
+    pub fetched_at: String,
+}
+
+/// One complete, replaceable source snapshot per security, including known-empty results.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DividendHistory {
+    #[serde(flatten)]
+    pub basis: DividendBasis,
+    pub sources: Vec<String>,
+    pub events: Vec<DividendEvent>,
+}
+
+impl DividendHistory {
+    pub fn validate(&self) -> AppResult<()> {
+        let fetched = chrono::DateTime::parse_from_rfc3339(&self.basis.fetched_at)
+            .map_err(|_| AppError::Validation("分红采集时间无效".into()))?;
+        let mut seen = std::collections::BTreeSet::new();
+        if self.basis.as_of
+            > fetched
+                .with_timezone(&chrono_tz::Asia::Shanghai)
+                .date_naive()
+            || self.sources.is_empty()
+            || self.sources.iter().any(|s| !s.starts_with("https://"))
+            || self.events.iter().any(|e| {
+                e.ex_date > self.basis.as_of
+                    || e.report_date.is_none_or(|d| d > e.ex_date)
+                    || !seen.insert((e.ex_date, e.report_date))
+                    || [&e.cash_per_ten, &e.bonus_per_ten, &e.transfer_per_ten]
+                        .iter()
+                        .any(|v| Decimal::from_str_exact(v).map_or(true, |v| v < Decimal::ZERO))
+            })
+        {
+            return Err(AppError::Validation("分红事件或来源覆盖无效".into()));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +119,7 @@ pub struct WatchMarketData {
     pub bars: Vec<PriceBar>,
     pub calendar: Vec<NaiveDate>,
     pub dividends: Option<Vec<DividendEvent>>,
+    pub dividend_basis: Option<DividendBasis>,
     pub sources: Vec<String>,
 }
 
@@ -119,6 +166,8 @@ pub struct Observation {
     pub issues: Vec<WatchIssue>,
     pub sources: Vec<String>,
     pub dividend_events: Vec<DividendEvent>,
+    #[serde(default)]
+    pub dividend_basis: Option<DividendBasis>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -189,7 +238,8 @@ fn trailing_dividends(events: &[DividendEvent], day: NaiveDate) -> Option<Decima
             if bonus < Decimal::ZERO || transfer < Decimal::ZERO {
                 return None;
             }
-            cash = cash.checked_div(Decimal::ONE + (bonus + transfer) / Decimal::TEN)?;
+            let factor = Decimal::ONE.checked_add(bonus.checked_add(transfer)? / Decimal::TEN)?;
+            cash = cash.checked_div(factor)?;
         }
         total = total.checked_add(cash)?;
     }
@@ -254,6 +304,7 @@ pub fn evaluate(
     let dividends = data
         .dividends
         .as_ref()
+        .filter(|_| data.dividend_basis.as_ref().is_none_or(|b| b.as_of >= day))
         .and_then(|d| trailing_dividends(d, day));
     let yield_decimal = dividends
         .zip(price.and_then(|p| Decimal::from_str_exact(&p.to_string()).ok()))
@@ -301,7 +352,18 @@ pub fn evaluate(
         status,
         issues,
         sources: data.sources.clone(),
-        dividend_events: data.dividends.clone().unwrap_or_default(),
+        dividend_events: data
+            .dividends
+            .as_ref()
+            .map(|events| {
+                events
+                    .iter()
+                    .filter(|e| e.ex_date > day - chrono::Duration::days(365) && e.ex_date <= day)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default(),
+        dividend_basis: data.dividend_basis.clone(),
     }
 }
 
@@ -330,7 +392,9 @@ pub(crate) mod tests {
             WatchMarketData {
                 bars,
                 calendar,
+                dividend_basis: None,
                 dividends: Some(vec![DividendEvent {
+                    report_date: None,
                     ex_date: day - chrono::Duration::days(2),
                     cash_per_ten: "50".into(),
                     bonus_per_ten: "0".into(),
@@ -395,18 +459,21 @@ pub(crate) mod tests {
     fn dividends_use_implemented_window_and_current_share_units() {
         let events = vec![
             DividendEvent {
+                report_date: None,
                 ex_date: date("2026-01-01"),
                 cash_per_ten: "10".into(),
                 bonus_per_ten: "0".into(),
                 transfer_per_ten: "0".into(),
             },
             DividendEvent {
+                report_date: None,
                 ex_date: date("2026-06-01"),
                 cash_per_ten: "0".into(),
                 bonus_per_ten: "10".into(),
                 transfer_per_ten: "0".into(),
             },
             DividendEvent {
+                report_date: None,
                 ex_date: date("2027-01-01"),
                 cash_per_ten: "999".into(),
                 bonus_per_ten: "0".into(),
@@ -421,6 +488,31 @@ pub(crate) mod tests {
             "0.5"
         );
     }
+    #[test]
+    fn stored_events_reprice_roll_out_and_require_current_coverage() {
+        let (mut data, day) = market_fixture();
+        data.dividend_basis = Some(DividendBasis {
+            as_of: day,
+            fetched_at: "2026-07-03T12:00:00Z".into(),
+        });
+        let first = evaluate("600036.SS", &data, day, String::new());
+        assert_eq!(first.yield_pct, Some(5.0));
+        data.bars.last_mut().unwrap().close = Some(50.0);
+        assert_eq!(
+            evaluate("600036.SS", &data, day, String::new()).yield_pct,
+            Some(10.0)
+        );
+        data.dividends.as_mut().unwrap()[0].ex_date = day - chrono::Duration::days(365);
+        let expired = evaluate("600036.SS", &data, day, String::new());
+        assert_eq!(expired.dividend_per_share.as_deref(), Some("0"));
+        assert_eq!(expired.yield_pct, Some(0.0));
+        assert!(expired.dividend_events.is_empty());
+        data.dividend_basis.as_mut().unwrap().as_of = day - chrono::Duration::days(1);
+        let stale = evaluate("600036.SS", &data, day, String::new());
+        assert_eq!(stale.yield_pct, None);
+        assert!(stale.issues.contains(&WatchIssue::DividendUnavailable));
+    }
+
     #[test]
     fn foreign_symbols_and_non_stock_codes_are_rejected() {
         for symbol in ["0941.HK", "510300.SS", "ABC", "中中中.SS"] {

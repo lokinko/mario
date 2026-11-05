@@ -22,6 +22,11 @@ pub(crate) trait SecurityPriceProvider: Send + Sync {
 
 #[async_trait]
 pub(crate) trait WatchMarketProvider: Send + Sync {
+    async fn dividends(
+        &self,
+        symbol: &str,
+        day: chrono::NaiveDate,
+    ) -> AppResult<crate::models::watch::DividendHistory>;
     async fn invalidate(&self) {}
     async fn observation(
         &self,

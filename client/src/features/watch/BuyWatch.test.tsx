@@ -156,3 +156,30 @@ it("opens grounded discussion, acknowledges alerts and preserves missing-data st
   expect(screen.queryByText("进入关注区间")).toBeNull();
   expect(screen.getByRole("button", { name: "重新检查数据" })).toBeTruthy();
 });
+
+it("shows the dividend coverage and exact events behind the closing yield", async () => {
+  const stored = structuredClone(row);
+  stored.latest!.dividendBasis = {
+    asOf: "2026-11-04",
+    fetchedAt: "2026-11-04T10:00:00Z",
+  };
+  stored.latest!.dividendEvents = [
+    {
+      reportDate: "2025-12-31",
+      exDate: "2026-07-01",
+      cashPerTen: "12.345",
+      bonusPerTen: "0",
+      transferPerTen: "2",
+    },
+  ];
+  vi.mocked(api.getWatchBoard).mockResolvedValue({ ...empty, rows: [stored] });
+  render(<BuyWatch {...props()} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "查看依据与交易" }),
+  );
+  expect(screen.getByText(/分红资料覆盖至 2026-11-04/)).toBeTruthy();
+  expect(screen.getByText(/除息日 2026-07-01/).textContent).toContain("12.345");
+  expect(screen.getByText(/除息日 2026-07-01/).textContent).toContain(
+    "报告期 2025-12-31",
+  );
+});

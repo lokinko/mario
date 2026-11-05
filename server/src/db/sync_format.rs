@@ -378,9 +378,14 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         columns: &["symbol", "day", "payload", "alert", "read_at"],
         order_by: "symbol,day",
     },
+    SyncTableSpec {
+        name: "watch_dividends",
+        columns: &["symbol", "payload"],
+        order_by: "symbol",
+    },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 24;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 25;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
@@ -388,6 +393,10 @@ const V8_SYNC_TABLE_COUNT: usize = 13;
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
     if version == SYNC_DATASET_SCHEMA_VERSION {
+        return Ok(specs);
+    }
+    specs.retain(|s| s.name != "watch_dividends");
+    if version == 24 {
         return Ok(specs);
     }
     specs.retain(|s| !["watch_entries", "watch_observations"].contains(&s.name));

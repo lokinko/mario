@@ -1,6 +1,6 @@
 //! Public observation data. Never reads accounts, holdings or transactions.
 use crate::{
-    models::watch::{DividendEvent, PriceBar, WatchMarketData},
+    models::watch::{DividendBasis, DividendEvent, DividendHistory, PriceBar, WatchMarketData},
     ports::market::WatchMarketProvider,
     AppError, AppResult,
 };
@@ -79,11 +79,7 @@ impl PublicWatchProvider {
         }
         Err(AppError::MarketData("公开日线暂时不可用".into()))
     }
-    async fn dividends(
-        &self,
-        symbol: &str,
-        day: NaiveDate,
-    ) -> AppResult<(Vec<DividendEvent>, String)> {
+    async fn dividend_page(&self, symbol: &str, page: u64) -> AppResult<(Value, String)> {
         let filter = format!("(SECURITY_CODE=\"{}\")", &symbol[..6]);
         let response = self
             .client
@@ -94,7 +90,7 @@ impl PublicWatchProvider {
                 ("columns", "ALL"),
                 ("filter", filter.as_str()),
                 ("pageSize", "100"),
-                ("pageNumber", "1"),
+                ("pageNumber", &page.to_string()),
                 ("sortColumns", "REPORT_DATE"),
                 ("sortTypes", "-1"),
                 ("source", "WEB"),
@@ -104,8 +100,7 @@ impl PublicWatchProvider {
             .await?
             .error_for_status()?;
         let url = response.url().to_string();
-        let payload = response.json::<Value>().await?;
-        Ok((parse_dividends(&payload, symbol, day)?, url))
+        Ok((response.json::<Value>().await?, url))
     }
 }
 
@@ -126,6 +121,21 @@ fn decimal(value: &Value, absent_zero: bool) -> AppResult<String> {
     }
     Ok(amount.normalize().to_string())
 }
+fn append_dividend_page(payload: &mut Value, next: &Value) -> AppResult<()> {
+    if next["success"] != true
+        || next["result"]["pages"] != payload["result"]["pages"]
+        || next["result"]["count"] != payload["result"]["count"]
+    {
+        return Err(bad());
+    }
+    let rows = next["result"]["data"].as_array().ok_or_else(bad)?;
+    payload["result"]["data"]
+        .as_array_mut()
+        .ok_or_else(bad)?
+        .extend(rows.iter().cloned());
+    Ok(())
+}
+
 fn parse_dividends(payload: &Value, symbol: &str, day: NaiveDate) -> AppResult<Vec<DividendEvent>> {
     // An explicit no-record result is usable; transport/schema failure is unknown.
     if payload["code"] == 9201 && payload["result"].is_null() {
@@ -153,13 +163,19 @@ fn parse_dividends(payload: &Value, symbol: &str, day: NaiveDate) -> AppResult<V
             .and_then(|s| s.get(..10))
             .ok_or_else(bad)?;
         let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|_| bad())?;
-        if date > day || date <= day - Days::days(365) {
+        if date > day {
             continue;
         }
-        if !found.insert((date, row["REPORT_DATE"].to_string())) {
+        let report_date = row["REPORT_DATE"]
+            .as_str()
+            .and_then(|s| s.get(..10))
+            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+            .ok_or_else(bad)?;
+        if report_date > date || !found.insert((date, report_date)) {
             return Err(bad());
         }
         events.push(DividendEvent {
+            report_date: Some(report_date),
             ex_date: date,
             cash_per_ten: decimal(&row["PRETAX_BONUS_RMB"], true)?,
             // In this vendor's implemented distribution rows, null means the
@@ -213,6 +229,37 @@ fn parse_bars(chart: &Value, symbol: &str, day: NaiveDate) -> AppResult<Vec<Pric
 
 #[async_trait]
 impl WatchMarketProvider for PublicWatchProvider {
+    async fn dividends(&self, symbol: &str, day: NaiveDate) -> AppResult<DividendHistory> {
+        let _permit = self.slots.acquire().await.map_err(|_| bad())?;
+        let (mut payload, source) = self.dividend_page(symbol, 1).await?;
+        let mut sources = vec![source];
+        if !(payload["code"] == 9201 && payload["result"].is_null()) {
+            let pages = payload["result"]["pages"]
+                .as_u64()
+                .filter(|n| *n > 0 && *n <= 50)
+                .ok_or_else(bad)?;
+            if payload["success"] != true {
+                return Err(bad());
+            }
+            for page in 2..=pages {
+                let (next, source) = self.dividend_page(symbol, page).await?;
+                append_dividend_page(&mut payload, &next)?;
+                sources.push(source);
+            }
+            // Only a fully collected result can certify an empty TTM window.
+            payload["result"]["pages"] = Value::from(1);
+        }
+        let history = DividendHistory {
+            basis: DividendBasis {
+                as_of: day,
+                fetched_at: chrono::Utc::now().to_rfc3339(),
+            },
+            events: parse_dividends(&payload, symbol, day)?,
+            sources,
+        };
+        history.validate()?;
+        Ok(history)
+    }
     async fn invalidate(&self) {
         self.cache.lock().await.clear();
     }
@@ -232,19 +279,12 @@ impl WatchMarketProvider for PublicWatchProvider {
             .filter(|b| b.close.is_some_and(|p| p > 0.0))
             .map(|b| b.day)
             .collect();
-        let mut sources = vec![price_source, calendar_source];
-        let dividends = match self.dividends(symbol, day).await {
-            Ok((events, source)) => {
-                sources.push(source);
-                Some(events)
-            }
-            Err(_) => None,
-        };
         let data = WatchMarketData {
             bars,
             calendar,
-            dividends,
-            sources,
+            dividends: None,
+            dividend_basis: None,
+            sources: vec![price_source, calendar_source],
         };
         let mut cache = self.cache.lock().await;
         if cache.len() >= 128 {
@@ -259,6 +299,45 @@ impl WatchMarketProvider for PublicWatchProvider {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn full_history_pagination_preserves_old_events_and_rejects_partial_or_duplicate_results() {
+        let day = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        let old = json!({"SECUCODE":"600036.SH","SECURITY_CODE":"600036","ASSIGN_PROGRESS":"实施分配","REPORT_DATE":"2020-12-31","EX_DIVIDEND_DATE":"2021-07-01 00:00:00","PRETAX_BONUS_RMB":"12.3456789","BONUS_RATIO":null,"IT_RATIO":null});
+        let mut recent = old.clone();
+        recent["REPORT_DATE"] = json!("2025-12-31");
+        recent["EX_DIVIDEND_DATE"] = json!("2026-07-01 00:00:00");
+        let first = json!({"success":true,"result":{"pages":2,"count":2,"data":[old]}});
+        let next = json!({"success":true,"result":{"pages":2,"count":2,"data":[recent]}});
+        let mut merged = first.clone();
+        append_dividend_page(&mut merged, &next).unwrap();
+        merged["result"]["pages"] = json!(1);
+        let events = parse_dividends(&merged, "600036.SS", day).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].cash_per_ten, "12.3456789");
+        assert_eq!(
+            events[0].report_date,
+            Some(NaiveDate::from_ymd_opt(2020, 12, 31).unwrap())
+        );
+        let mut partial = first.clone();
+        partial["result"]["pages"] = json!(1);
+        assert!(parse_dividends(&partial, "600036.SS", day).is_err());
+        let mut changed = next;
+        changed["result"]["count"] = json!(3);
+        assert!(append_dividend_page(&mut first.clone(), &changed).is_err());
+        let mut repeated = first.clone();
+        append_dividend_page(&mut repeated, &first).unwrap();
+        repeated["result"]["pages"] = json!(1);
+        assert!(parse_dividends(&repeated, "600036.SS", day).is_err());
+        assert!(
+            parse_dividends(&json!({"code":9201,"result":null}), "600036.SS", day)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            parse_dividends(&json!({"success":false,"result":null}), "600036.SS", day).is_err()
+        );
+    }
+
     #[test]
     fn proposals_future_events_and_incomplete_pages_do_not_inflate_yield() {
         let day = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();

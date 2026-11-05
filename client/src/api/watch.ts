@@ -35,11 +35,13 @@ export interface Observation {
   issues: WatchIssue[];
   sources: string[];
   dividendEvents: {
+    reportDate?: string;
     exDate: string;
     cashPerTen: string;
     bonusPerTen: string;
     transferPerTen: string;
   }[];
+  dividendBasis?: { asOf: string; fetchedAt: string } | null;
 }
 export interface WatchRow {
   entry: WatchEntry;

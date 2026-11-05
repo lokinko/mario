@@ -175,6 +175,7 @@ fn relevant_evidence(
         })).collect();
         let facts = serde_json::json!({"symbol":observation.symbol,"observedOn":observation.observed_on,
             "price":observation.price,"dividendPerShare":observation.dividend_per_share,"yieldPct":observation.yield_pct,
+            "dividendBasis":observation.dividend_basis,"dividendEvents":observation.dividend_events,
             "daily":observation.daily,"weekly":observation.weekly,"status":observation.status,"issues":observation.issues,"thisWeek":week});
         watch.push(ResearchEvidence {
             id: format!("watch-{}-{}",observation.symbol,observation.observed_on),
@@ -217,8 +218,14 @@ mod tests {
         let (data, day) = market_fixture();
         let mut observation = evaluate("600036.SS", &data, day, chrono::Utc::now().to_rfc3339());
         observation.observed_on = today.to_string();
-        db.save_watch_observation(&entry, Some(&observation), &observation.checked_at, today)
-            .unwrap();
+        db.save_watch_observation(
+            &entry,
+            Some(&observation),
+            &observation.checked_at,
+            today,
+            None,
+        )
+        .unwrap();
         let mut request = request();
         request.question = "观察公司 600036.SS 本周复盘".into();
         let service = AnalysisService::new(&db);
