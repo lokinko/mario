@@ -22,7 +22,6 @@ pub(crate) struct PublicWatchProvider {
     client: Client,
     slots: Semaphore,
     cache: Mutex<BTreeMap<(String, NaiveDate), Cached>>,
-    archive: BTreeMap<String, DividendHistory>,
 }
 impl PublicWatchProvider {
     pub fn new() -> AppResult<Self> {
@@ -33,11 +32,6 @@ impl PublicWatchProvider {
                 .build()?,
             slots: Semaphore::new(2),
             cache: Mutex::new(BTreeMap::new()),
-            archive: super::watch_archive::load()?
-                .stocks
-                .into_iter()
-                .filter_map(|s| s.history.map(|h| (s.symbol, h)))
-                .collect(),
         })
     }
     async fn chart(&self, symbol: &str, day: NaiveDate) -> AppResult<(Value, String)> {
@@ -236,12 +230,6 @@ fn parse_bars(chart: &Value, symbol: &str, day: NaiveDate) -> AppResult<Vec<Pric
 
 #[async_trait]
 impl WatchMarketProvider for PublicWatchProvider {
-    fn dividend_seed(&self, symbol: &str, day: NaiveDate) -> Option<DividendHistory> {
-        self.archive
-            .get(symbol)
-            .filter(|h| h.basis.as_of <= day)
-            .cloned()
-    }
     async fn dividends(&self, symbol: &str, day: NaiveDate) -> AppResult<DividendHistory> {
         let _permit = self.slots.acquire().await.map_err(|_| bad())?;
         let (mut payload, source) = self.dividend_page(symbol, 1).await?;

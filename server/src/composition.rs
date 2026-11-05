@@ -44,7 +44,11 @@ impl MarketRuntime {
             }
         }));
     }
-    pub fn new() -> AppResult<Self> {
+    pub fn new(database_url: &str) -> AppResult<Self> {
+        let public_dividends = Arc::new(crate::db::PublicDividends::postgres(
+            database_url,
+            &crate::market_data::watch_archive::initial_histories()?,
+        )?);
         let fx = Arc::new(EcbFxRateProvider::new()?);
         let prices = Arc::new(FreeSecurityPriceProvider::new()?);
         let keyed = Arc::new(TwelveDataSecurityPriceProvider::new()?);
@@ -67,7 +71,10 @@ impl MarketRuntime {
         });
         Ok(Self {
             services,
-            watch_provider: Arc::new(crate::market_data::watch::PublicWatchProvider::new()?),
+            watch_provider: Arc::new(crate::application::watch_market::SharedWatchProvider::new(
+                Arc::new(crate::market_data::watch::PublicWatchProvider::new()?),
+                public_dividends,
+            )),
             tasks: vec![price_task, fx_task],
         })
     }
@@ -85,7 +92,8 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn ending_the_server_lifetime_cancels_both_refresh_tasks() {
-        let runtime = MarketRuntime::new().unwrap();
+        let runtime =
+            MarketRuntime::new(&std::env::var("MARIO_TEST_DATABASE_URL").unwrap()).unwrap();
         let handles: Vec<_> = runtime
             .tasks
             .iter()

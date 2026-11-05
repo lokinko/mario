@@ -28,10 +28,18 @@ pub async fn refresh(
     let board = db.watch_board(day)?;
     let mut entries = Vec::new();
     for row in board.rows {
-        let history = db
-            .watch_dividends(&row.entry.input.symbol)?
-            .or_else(|| provider.dividend_seed(&row.entry.input.symbol, day));
+        let private = db.watch_dividends(&row.entry.input.symbol)?;
+        let public = provider.dividend_seed(&row.entry.input.symbol, day);
+        let catalogue_changed = public
+            .as_ref()
+            .is_some_and(|h| private.as_ref().is_none_or(|p| h.is_newer_than(p)));
+        let history = if catalogue_changed {
+            public
+        } else {
+            private.or(public)
+        };
         if force
+            || catalogue_changed
             || history.as_ref().is_none_or(|h| h.basis.as_of < day)
             || row.refresh_failed
             || row.checked_for.as_deref() != Some(day.to_string().as_str())

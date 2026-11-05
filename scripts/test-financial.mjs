@@ -17,10 +17,11 @@ await withDisposableCluster('mario-financial-', async ({ pg, pgEnv, createDataba
   await run(pg('pg_dump'), ['-Fc', '--file', dump, 'mario_financial'], pgEnv, true);
   await createDatabase('mario_restored');
   await run(pg('pg_restore'), ['--exit-on-error', '--single-transaction', '--dbname', 'mario_restored', dump], pgEnv, true);
-  const tables = (await run(pg('psql'), ['-X', '-At', '-c', "SELECT schemaname||'.'||tablename FROM pg_tables WHERE schemaname='mario_auth' OR schemaname LIKE 'user_%' ORDER BY 1"], { ...pgEnv, PGDATABASE: 'mario_financial' }, true)).trim().split(/\r?\n/).filter(Boolean);
+  const tables = (await run(pg('psql'), ['-X', '-At', '-c', "SELECT schemaname||'.'||tablename FROM pg_tables WHERE schemaname IN ('mario_auth','mario_market') OR schemaname LIKE 'user_%' ORDER BY 1"], { ...pgEnv, PGDATABASE: 'mario_financial' }, true)).trim().split(/\r?\n/).filter(Boolean);
   assert(tables.length > 0, 'acceptance must create real account data');
+  assert(tables.includes('mario_market.dividend_histories'), 'public dividend histories must be included in native restore verification');
   for (const table of tables) {
-    assert(/^(?:mario_auth|user_[a-f0-9]+)\.[a-z_]+$/.test(table));
+    assert(/^(?:mario_auth|mario_market|user_[a-f0-9]+)\.[a-z_]+$/.test(table));
     const sql = `SELECT md5(coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text,'[]')) FROM ${table} t`;
     const source = await run(pg('psql'), ['-X', '-At', '-c', sql], { ...pgEnv, PGDATABASE: 'mario_financial' }, true);
     const restored = await run(pg('psql'), ['-X', '-At', '-c', sql], { ...pgEnv, PGDATABASE: 'mario_restored' }, true);

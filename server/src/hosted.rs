@@ -35,6 +35,7 @@ struct ServerInfo {
     codex_bridge: u32,
     analysis_timeout_seconds: u64,
     codex_max_attempts: usize,
+    public_dividend_data: u32,
 }
 
 struct HostedState {
@@ -60,7 +61,7 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     crate::secrets::validate_master_key()?;
-    let mut market_runtime = MarketRuntime::new()?;
+    let mut market_runtime = MarketRuntime::new(&url)?;
     let state = Arc::new(HostedState {
         accounts: Arc::new(Accounts::open(url)?),
         openai: crate::openai_login::OpenAiLogin::from_env()?,
@@ -124,6 +125,7 @@ async fn server_info() -> Json<ServerInfo> {
         codex_bridge: 1,
         analysis_timeout_seconds: crate::models::inference::ANALYSIS_TIMEOUT.as_secs(),
         codex_max_attempts: crate::models::inference::CODEX_MAX_ATTEMPTS,
+        public_dividend_data: 1,
     })
 }
 async fn no_store(mut response: Response) -> Response {

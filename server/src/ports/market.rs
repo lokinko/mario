@@ -22,7 +22,7 @@ pub(crate) trait SecurityPriceProvider: Send + Sync {
 
 #[async_trait]
 pub(crate) trait WatchMarketProvider: Send + Sync {
-    /// A dated public bootstrap, used only when the account has no stored history.
+    /// The latest dated public history, reusable across accounts without network I/O.
     fn dividend_seed(
         &self,
         _symbol: &str,

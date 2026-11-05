@@ -13,8 +13,8 @@ const magic = Buffer.from('MARIOBK1');
 const scrypt = promisify(scryptCallback);
 export const timestamp = () => new Date().toISOString().replace(/[:.]/g, '-');
 export const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
-export const schemasSql = "SELECT nspname FROM pg_namespace WHERE nspname='mario_auth' OR nspname ~ '^user_[0-9a-f]{32}$' ORDER BY nspname";
-export const schemaName = name => name === 'mario_auth' || /^user_[0-9a-f]{32}$/.test(name);
+export const schemasSql = "SELECT nspname FROM pg_namespace WHERE nspname IN ('mario_auth','mario_market') OR nspname ~ '^user_[0-9a-f]{32}$' ORDER BY nspname";
+export const schemaName = name => ['mario_auth', 'mario_market'].includes(name) || /^user_[0-9a-f]{32}$/.test(name);
 export const masterKey = value => typeof value === 'string' && Buffer.from(value, 'base64').length === 32;
 
 export async function workspace() {
@@ -206,7 +206,7 @@ export async function database(modeOption, { temporaryStart = true, initialize =
       if (foreign) throw Error('数据库中有其他 user_ 前缀 schema，请将 Mario 使用的数据库与其他应用隔离后备份');
       // Let pg_dump enumerate all tenants inside its own consistent transaction;
       // a list captured before that snapshot could miss a newly registered tenant.
-      await this.tool('pg_dump', ['--format=custom', '--no-owner', '--no-privileges', '--schema=mario_auth', '--schema=user_*'], { output: destination });
+      await this.tool('pg_dump', ['--format=custom', '--no-owner', '--no-privileges', '--schema=mario_auth', '--schema=mario_market', '--schema=user_*'], { output: destination });
     },
     async restoreSql(dump, destination) {
       const argv = ['--no-owner', '--no-privileges', '--file=-'];

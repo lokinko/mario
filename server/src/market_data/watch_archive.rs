@@ -32,6 +32,14 @@ pub(super) fn load() -> AppResult<Archive> {
     parse(include_str!("../../data/watch-dividends-20261104.json"))
 }
 
+pub(crate) fn initial_histories() -> AppResult<Vec<(String, DividendHistory)>> {
+    Ok(load()?
+        .stocks
+        .into_iter()
+        .filter_map(|s| s.history.map(|h| (s.symbol, h)))
+        .collect())
+}
+
 fn parse(contents: &str) -> AppResult<Archive> {
     let archive: Archive = serde_json::from_str(contents)?;
     let invalid = || AppError::Validation("内置分红资料包无效".into());

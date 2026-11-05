@@ -152,6 +152,10 @@ export function serverViolation(source, target) {
 }
 
 export function serverFileViolation(source, target) {
+  if (source === 'db/public_dividends.rs' && !['models', 'storage', 'error'].includes(target))
+    return 'public dividend storage only depends on public contracts and the database driver boundary';
+  if (source === 'application/watch_market.rs' && !['models', 'db', 'ports', 'error'].includes(target))
+    return 'shared public dividend lookup cannot depend on accounts, private context or execution adapters';
   if (target === 'chatgpt_auth' && source.startsWith('ai/') && source !== 'ai/chatgpt.rs')
     return 'only the local ChatGPT provider can read local OAuth credentials';
   if (source === 'application/analysis.rs' && target === 'ai')

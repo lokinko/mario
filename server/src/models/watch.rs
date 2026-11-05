@@ -89,6 +89,18 @@ pub struct DividendHistory {
 }
 
 impl DividendHistory {
+    /// Coverage wins over collection time; a delayed older cutoff cannot downgrade facts.
+    pub fn is_newer_than(&self, other: &Self) -> bool {
+        self.basis
+            .as_of
+            .cmp(&other.basis.as_of)
+            .then_with(|| {
+                chrono::DateTime::parse_from_rfc3339(&self.basis.fetched_at)
+                    .ok()
+                    .cmp(&chrono::DateTime::parse_from_rfc3339(&other.basis.fetched_at).ok())
+            })
+            .is_gt()
+    }
     pub fn validate(&self) -> AppResult<()> {
         let fetched = chrono::DateTime::parse_from_rfc3339(&self.basis.fetched_at)
             .map_err(|_| AppError::Validation("分红采集时间无效".into()))?;

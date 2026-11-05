@@ -144,6 +144,22 @@ bash deploy.sh check
 
 升级后，已有账户首次访问 API 时会按数据库结构版本自动补齐表、列和数据版本触发器，保留原有数据；迁移在账户锁和事务内完成，失败会回滚。出现缺表或缺列错误时，同步最新代码并运行 `sudo bash deploy.sh`；`restart` 只重启已有二进制，不会编译修复。请求中的数据库错误可从服务日志和 `sudo tail -n 80 .runtime/native/postgres.log` 查看具体原因。
 
+### 公开分红资料上线
+
+更新前按[备份流程](data-migration.md)保留原备份，然后在已有部署目录执行：
+
+```bash
+git pull --ff-only
+sudo bash deploy.sh
+bash deploy.sh check
+```
+
+沿用现有 `.env`、数据库与 systemd 方式；本次不需要手动导入 CSV。API 启动时在同一 PostgreSQL 中事务创建 `mario_market.dividend_histories`，载入随程序发布的 202 份可用公开分红历史。所有账号按自己的观察名单直接复用；缺失或超过覆盖日期的标的在检查时查询公开来源，成功后持久化，供其他用户和重启后使用。手动检查会更新行情、重试失败来源，对已覆盖当日的分红继续复用。
+
+`GET /api/server` 返回 `publicDividendData: 1` 表示新版全用户分红路径已启用；`deploy.sh check` 同时检查这个标记。`lokinko.cn` 的入口为 `https://lokinko.cn/mario/`，可执行 `node scripts/test-deployment.mjs --url https://lokinko.cn/mario/` 作只读公网验收。该标记不代表外部来源永远可用；账号页面仍显示原始资料日期，补抓失败保持未知或旧依据。
+
+公开库只含公共事实，不包含账号、持仓、现金、交易或密钥；个人名单与观察历史继续按账号隔离。整站加密备份包含 `mario_market`，单账号 JSON 备份仅保留自己的观察与采用依据，恢复单账号不会覆盖公共库。较旧整站备份没有公共库时，启动会重新载入内置资料并补抓缺失信息；回退程序应配套更新前备份，并保留新整站备份以保存新采集的公开分红，不用旧版恢复脚本处理包含新 schema 的包。
+
 `prepare` 只准备 `.env` 和 Nginx 片段，适合恢复数据前使用，需已有 Node：
 
 ```bash

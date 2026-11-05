@@ -212,10 +212,12 @@ mod tests {
                 crate::market_data::watch::PublicWatchProvider::new().unwrap(),
             ),
             db,
-            market: crate::composition::MarketRuntime::new()
-                .unwrap()
-                .services
-                .clone(),
+            market: crate::composition::MarketRuntime::new(
+                &std::env::var("MARIO_TEST_DATABASE_URL").unwrap(),
+            )
+            .unwrap()
+            .services
+            .clone(),
             analysis_executor: Arc::new(Executor {
                 gate: gate.clone(),
                 dropped: dropped.clone(),

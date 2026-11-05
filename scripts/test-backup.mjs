@@ -84,6 +84,10 @@ try {
   await request(source, '/snapshot', b);
   await request(source, '/profile', a, 'PUT', { ...snapshot.profile, monthlyIncome: 45678 });
   await request(source, '/model-config', a, 'PUT', { provider: 'openai-responses', baseUrl: 'https://api.openai.com/v1', model: 'migration-test', apiKey: 'synthetic-provider-secret' });
+  const publicHistory = JSON.stringify({ asOf: '2026-11-05', fetchedAt: '2026-11-05T12:00:00Z',
+    sources: ['https://example.test/dividends'], events: [{ reportDate: '2025-12-31', exDate: '2026-07-01',
+      cashPerTen: '123.456789', bonusPerTen: '0', transferPerTen: '0' }] });
+  await sql(source, `UPDATE mario_market.dividend_histories SET payload=$$${publicHistory}$$ WHERE symbol='600036.SS'`);
   const first = join(fixture, 'first.mario-backup');
   await cli(source, 'backup.mjs', ['--output', first]); // Online consistent snapshot.
   const streamed = spawnSync(process.execPath, [join(source.directory, 'scripts/backup.mjs'), '--stdout', '--stdin-password'], { env: cleanEnv, input: passphrase + '\n', timeout: 120000 });
@@ -108,6 +112,8 @@ try {
   assert.equal(restoredConfig.MARIO_MASTER_KEY, source.config.MARIO_MASTER_KEY);
   for (const key of ['MARIO_DOMAIN', 'POSTGRES_PASSWORD', 'MARIO_AGENT_TOKEN', 'MARIO_PG_PORT']) assert.equal(restoredConfig[key], target.config[key]);
   await startDatabase(target); await startApi(target);
+  assert.equal(await sql(target, "SELECT payload FROM mario_market.dividend_histories WHERE symbol='600036.SS'"), publicHistory,
+    'encrypted backups must restore fetched public dividends instead of replacing them with bootstrap data');
   await request(target, '/snapshot', a, 'GET', undefined, 401); // Source session revoked.
   const restored = await login(target, a.email);
   assert.equal((await request(target, '/snapshot', restored)).profile.monthlyIncome, 45678);

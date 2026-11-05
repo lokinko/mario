@@ -172,17 +172,14 @@ impl Database {
                 .optional()?;
             if let Some(stored) = stored {
                 let stored: DividendHistory = serde_json::from_str(&stored)?;
-                if stored.basis.as_of > history.basis.as_of
-                    || chrono::DateTime::parse_from_rfc3339(&stored.basis.fetched_at).ok()
-                        > chrono::DateTime::parse_from_rfc3339(&history.basis.fetched_at).ok()
-                {
+                if stored.is_newer_than(history) {
                     // A later price request may still have read the old cache while
                     // another refresh was fetching a corrected distribution.
                     return Ok(());
                 }
             }
             // A slower in-flight request must not overwrite more recent source coverage.
-            tx.execute("INSERT INTO watch_dividends(symbol,payload) VALUES ($1,$2) ON CONFLICT(symbol) DO UPDATE SET payload=excluded.payload WHERE (watch_dividends.payload::jsonb->>'asOf') <= (excluded.payload::jsonb->>'asOf') AND (watch_dividends.payload::jsonb->>'fetchedAt')::timestamptz < (excluded.payload::jsonb->>'fetchedAt')::timestamptz",params![symbol,serde_json::to_string(history)?])?;
+            tx.execute("INSERT INTO watch_dividends(symbol,payload) VALUES ($1,$2) ON CONFLICT(symbol) DO UPDATE SET payload=excluded.payload WHERE (watch_dividends.payload::jsonb->>'asOf') < (excluded.payload::jsonb->>'asOf') OR ((watch_dividends.payload::jsonb->>'asOf') = (excluded.payload::jsonb->>'asOf') AND (watch_dividends.payload::jsonb->>'fetchedAt')::timestamptz < (excluded.payload::jsonb->>'fetchedAt')::timestamptz)",params![symbol,serde_json::to_string(history)?])?;
         }
         if let Some(observation) = result {
             let previous: Option<String> = tx.query_row("SELECT payload FROM watch_observations WHERE symbol=$1 ORDER BY day DESC LIMIT 1",[symbol],|r|r.get(0)).optional()?;
