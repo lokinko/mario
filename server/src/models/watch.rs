@@ -135,6 +135,14 @@ pub struct WatchMarketData {
     pub sources: Vec<String>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BandReference {
+    #[default]
+    Lower,
+    Middle,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Band {
@@ -142,7 +150,10 @@ pub struct Band {
     pub middle: f64,
     pub upper: f64,
     pub distance_pct: Option<f64>,
-    pub near_lower: bool,
+    #[serde(default)]
+    pub reference: BandReference,
+    #[serde(default)]
+    pub matches_rule: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -277,14 +288,77 @@ fn band(values: &[Option<f64>], price: f64) -> Option<Band> {
     let middle = values.iter().sum::<f64>() / 20.0;
     let deviation = (values.iter().map(|v| (v - middle).powi(2)).sum::<f64>() / 20.0).sqrt();
     let lower = middle - 2.0 * deviation;
-    let distance_pct = (lower > 0.0).then(|| (price / lower - 1.0) * 100.0);
-    Some(Band {
+    let mut result = Band {
         lower,
         middle,
         upper: middle + 2.0 * deviation,
-        distance_pct,
-        near_lower: distance_pct.is_some_and(|d| d.abs() <= BAND_DISTANCE_PCT + 1e-9),
-    })
+        distance_pct: None,
+        reference: BandReference::Lower,
+        matches_rule: false,
+    };
+    result.apply_rule(price, BandReference::Lower);
+    Some(result)
+}
+
+impl Band {
+    fn apply_rule(&mut self, price: f64, reference: BandReference) {
+        self.reference = reference;
+        let target = match reference {
+            BandReference::Lower => self.lower,
+            BandReference::Middle => self.middle,
+        };
+        self.distance_pct =
+            (target.is_finite() && target > 0.0 && price.is_finite() && price > 0.0)
+                .then(|| (price / target - 1.0) * 100.0);
+        self.matches_rule = self.distance_pct.is_some_and(|distance| match reference {
+            BandReference::Lower => distance.abs() <= BAND_DISTANCE_PCT + 1e-9,
+            BandReference::Middle => price <= target,
+        });
+    }
+}
+
+impl Observation {
+    /// Reuse the exact same rules for live inputs and migration of saved indicator facts.
+    pub(crate) fn apply_rules(&mut self) {
+        for (band, reference) in [
+            (&mut self.daily, BandReference::Lower),
+            (&mut self.weekly, BandReference::Middle),
+        ] {
+            if let (Some(band), Some(price)) = (band.as_mut(), self.price) {
+                band.apply_rule(price, reference);
+            }
+        }
+        self.issues
+            .retain(|issue| *issue != WatchIssue::NonPositiveBand);
+        if self
+            .daily
+            .iter()
+            .chain(self.weekly.iter())
+            .any(|b| b.distance_pct.is_none())
+        {
+            self.issues.push(WatchIssue::NonPositiveBand);
+        }
+        let yield_passes = self
+            .dividend_per_share
+            .as_deref()
+            .and_then(|v| Decimal::from_str_exact(v).ok())
+            .zip(
+                self.price
+                    .and_then(|p| Decimal::from_str_exact(&p.to_string()).ok()),
+            )
+            .and_then(|(d, p)| d.checked_mul(Decimal::ONE_HUNDRED)?.checked_div(p))
+            .is_some_and(|y| y >= Decimal::new(5, 0));
+        self.status = if !self.issues.is_empty() {
+            WatchStatus::Incomplete
+        } else if yield_passes
+            && self.daily.as_ref().is_some_and(|b| b.matches_rule)
+            && self.weekly.as_ref().is_some_and(|b| b.matches_rule)
+        {
+            WatchStatus::Attention
+        } else {
+            WatchStatus::Waiting
+        };
+    }
 }
 
 pub fn trailing_dividends(events: &[DividendEvent], day: NaiveDate) -> Option<Decimal> {
@@ -394,24 +468,7 @@ pub fn evaluate(
     if yield_pct.is_none() {
         issues.push(WatchIssue::DividendUnavailable);
     }
-    if daily
-        .iter()
-        .chain(weekly.iter())
-        .any(|b| b.distance_pct.is_none())
-    {
-        issues.push(WatchIssue::NonPositiveBand);
-    }
-    let status = if !issues.is_empty() {
-        WatchStatus::Incomplete
-    } else if yield_decimal.is_some_and(|y| y >= Decimal::new(5, 0))
-        && daily.as_ref().is_some_and(|b| b.near_lower)
-        && weekly.as_ref().is_some_and(|b| b.near_lower)
-    {
-        WatchStatus::Attention
-    } else {
-        WatchStatus::Waiting
-    };
-    Observation {
+    let mut observation = Observation {
         symbol: symbol.into(),
         observed_on: day.to_string(),
         checked_at,
@@ -420,7 +477,7 @@ pub fn evaluate(
         yield_pct,
         daily,
         weekly,
-        status,
+        status: WatchStatus::Incomplete,
         issues,
         sources: data.sources.clone(),
         dividend_events: data
@@ -435,7 +492,9 @@ pub fn evaluate(
             })
             .unwrap_or_default(),
         dividend_basis: data.dividend_basis.clone(),
-    }
+    };
+    observation.apply_rules();
+    observation
 }
 
 #[cfg(test)]
@@ -530,9 +589,18 @@ pub(crate) mod tests {
             bar.adjusted_close = Some(200.0);
         }
         let result = evaluate("600036.SS", &data, day, String::new());
-        assert!(result.daily.unwrap().near_lower);
-        assert!(!result.weekly.unwrap().near_lower);
-        assert_ne!(result.status, WatchStatus::Attention);
+        assert!(result.daily.unwrap().matches_rule);
+        assert!(result.weekly.as_ref().unwrap().matches_rule);
+        assert!(result.weekly.as_ref().unwrap().lower < 100.0);
+        assert_eq!(result.status, WatchStatus::Attention);
+        // A close above the weekly middle fails even when the daily lower still matches.
+        for bar in data.bars.iter_mut().take(80) {
+            bar.adjusted_close = Some(50.0);
+        }
+        let result = evaluate("600036.SS", &data, day, String::new());
+        assert!(result.daily.unwrap().matches_rule);
+        assert!(!result.weekly.unwrap().matches_rule);
+        assert_eq!(result.status, WatchStatus::Waiting);
     }
     #[test]
     fn future_rows_are_ignored_and_missing_history_is_unknown() {
@@ -555,13 +623,35 @@ pub(crate) mod tests {
     #[test]
     fn proximity_is_symmetric_two_percent_of_lower_price() {
         let values = vec![Some(100.0); 20];
-        assert!(band(&values, 98.0).unwrap().near_lower);
-        assert!(band(&values, 102.0).unwrap().near_lower);
-        assert!(!band(&values, 97.9).unwrap().near_lower);
-        assert!(!band(&values, 102.1).unwrap().near_lower);
+        assert!(band(&values, 98.0).unwrap().matches_rule);
+        assert!(band(&values, 102.0).unwrap().matches_rule);
+        assert!(!band(&values, 97.9).unwrap().matches_rule);
+        assert!(!band(&values, 102.1).unwrap().matches_rule);
         let mut missing = values;
         missing[10] = None;
         assert!(band(&missing, 100.0).is_none());
+    }
+    #[test]
+    fn weekly_middle_is_inclusive_and_does_not_require_a_positive_lower() {
+        let mut weekly = band(&[Some(100.0); 20], 100.0).unwrap();
+        weekly.lower = -10.0;
+        weekly.apply_rule(100.0, BandReference::Middle);
+        assert!(weekly.matches_rule);
+        assert_eq!(weekly.distance_pct, Some(0.0));
+        weekly.apply_rule(100.000001, BandReference::Middle);
+        assert!(!weekly.matches_rule);
+        weekly.apply_rule(40.0, BandReference::Middle);
+        assert!(weekly.matches_rule);
+        assert_eq!(weekly.distance_pct, Some(-60.0));
+        let (data, day) = market_fixture();
+        let mut observation = evaluate("600036.SS", &data, day, String::new());
+        observation.weekly.as_mut().unwrap().lower = -10.0;
+        observation.apply_rules();
+        assert_eq!(observation.status, WatchStatus::Attention);
+        observation.daily.as_mut().unwrap().lower = -10.0;
+        observation.apply_rules();
+        assert_eq!(observation.status, WatchStatus::Incomplete);
+        assert!(observation.issues.contains(&WatchIssue::NonPositiveBand));
     }
     #[test]
     fn dividends_use_implemented_window_and_current_share_units() {

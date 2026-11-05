@@ -126,7 +126,7 @@ export function BuyWatch({
   const ask = (row: WatchRow) => {
     const { entry, latest } = row;
     onAsk(
-      `请讨论买点观察名单中的${entry.name}（${entry.symbol}）。我的关注理由：${entry.thesis || "尚未补充，请帮助核查"}。观察规则是已实施税前现金分红TTM股息率至少5%，日线和周线BOLL(20,2)收盘价都在各自下轨价格的上下2%内。${latest ? `最近观察日期是${latest.observedOn}，状态为${statuses[latest.status]}。` : "尚无行情观察结果。"}请结合授权的当前持仓、现金和最近真实交易，讨论现在是否值得进一步研究买入或加仓；核查分红持续性和公司经营的支持与反方证据，区分已知事实和待核查项。不要仅由BOLL位置断言低估，也不要给出未经约定的精确买入数量。`,
+      `请讨论买点观察名单中的${entry.name}（${entry.symbol}）。我的关注理由：${entry.thesis || "尚未补充，请帮助核查"}。观察规则是已实施税前现金分红TTM股息率至少5%，日线BOLL(20,2)收盘价在日下轨价格的上下2%内、周收盘价≤周线BOLL(20,2)中轨。${latest ? `最近观察日期是${latest.observedOn}，状态为${statuses[latest.status]}。` : "尚无行情观察结果。"}请结合授权的当前持仓、现金和最近真实交易，讨论现在是否值得进一步研究买入或加仓；核查分红持续性和公司经营的支持与反方证据，区分已知事实和待核查项。不要仅由BOLL位置断言低估，也不要给出未经约定的精确买入数量。`,
     );
   };
   const rows = board?.rows ?? [];
@@ -178,7 +178,7 @@ export function BuyWatch({
   const weeklyAsk = () => {
     const selected = rows.slice(0, 5);
     onAsk(
-      `请为买点观察名单做${board?.weekStart}至${board?.weekEnd}的周末复盘，先讨论${selected.map((r) => `${r.entry.name}（${r.entry.symbol}，关注理由：${r.entry.thesis || "待补充"}）`).join("、")}。本周已保存${week.length}条收盘观察。请按5%股息率、日周BOLL下轨±2%的规则，结合授权的观察资料、持仓和最近交易，说明下周应该等待什么，以及分红和经营判断需要核查哪些证据。未提供历史时不要推测周内变化；不预设必须买入，不输出精确买入数量。`,
+      `请为买点观察名单做${board?.weekStart}至${board?.weekEnd}的周末复盘，先讨论${selected.map((r) => `${r.entry.name}（${r.entry.symbol}，关注理由：${r.entry.thesis || "待补充"}）`).join("、")}。本周已保存${week.length}条收盘观察。请按5%股息率、日线BOLL下轨±2%、周收盘价≤周线BOLL中轨的规则，结合授权的观察资料、持仓和最近交易，说明下周应该等待什么，以及分红和经营判断需要核查哪些证据。未提供历史时不要推测周内变化；不预设必须买入，不输出精确买入数量。`,
     );
   };
   return (
@@ -224,7 +224,7 @@ export function BuyWatch({
         <div className="watch-rule-strip">
           <span>① TTM 税前股息 ≥{minYield}%</span>
           <span>② 日线下轨 ±{tolerance}%</span>
-          <span>③ 周线下轨 ±{tolerance}%</span>
+          <span>③ 周线中轨及以下</span>
           <small>
             三项同时满足 <ArrowUpRight size={14} /> 进入关注区间
           </small>
@@ -233,9 +233,10 @@ export function BuyWatch({
           <summary>计算口径与检查时间</summary>
           <p>
             北京时间 19:00 后检查当日收盘。BOLL(20,2)
-            使用总体标准差，日线与周线分别计算；本周未结束时使用截至观察日的最后收盘。距下轨
-            =（收盘价 ÷ 下轨 − 1）×100%，按下轨价格衡量 ±2%，跌破超过 2%
-            也不满足。
+            使用总体标准差，日线与周线分别计算；本周未结束时使用截至观察日的最后收盘。日线距下轨
+            =（日收盘价 ÷ 日下轨 − 1）×100%，按日下轨价格衡量 ±2%，跌破超过 2%
+            也不满足；周线按收盘价≤中轨判断，距离为（周收盘价 ÷ 周中轨 −
+            1）×100%。
           </p>
           <p>
             TTM 为过去 365
@@ -260,7 +261,7 @@ export function BuyWatch({
                 ["all", "全部公司", rows.length],
                 ["attention", "关注区间", counts.attention],
                 ["yield", "股息达标", counts.yield],
-                ["bands", "日周接近下轨", counts.bands],
+                ["bands", "日周条件达标", counts.bands],
                 ["alerts", "未读变化", counts.alerts],
                 ["incomplete", "需要补查", counts.incomplete],
               ] as const
@@ -306,7 +307,7 @@ export function BuyWatch({
                 <option value="default">变化与关注优先</option>
                 <option value="yield">股息率从高到低</option>
                 <option value="daily">最接近日线下轨</option>
-                <option value="weekly">最接近周线下轨</option>
+                <option value="weekly">最接近周线中轨</option>
                 <option value="name">公司名称</option>
               </select>
               <div

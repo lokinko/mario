@@ -226,6 +226,32 @@ impl Database {
     }
 }
 
+/// Only for tenants/backups with the retired two-lower-band payload. Remove when
+/// those backups are no longer supported. The caller owns the migration/import transaction.
+pub(super) fn migrate_rules(conn: &crate::storage::Connection) -> AppResult<()> {
+    let mut stmt = conn.prepare("SELECT symbol,day,payload FROM watch_observations WHERE (payload::jsonb->'daily' ? 'nearLower') OR (payload::jsonb->'weekly' ? 'nearLower')")?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+    for (symbol, day, payload) in rows {
+        let mut observation: Observation = serde_json::from_str(&payload)?;
+        observation.apply_rules();
+        conn.execute("UPDATE watch_observations SET payload=$3,alert=0,read_at=NULL WHERE symbol=$1 AND day=$2", params![symbol, day, serde_json::to_string(&observation)?])?;
+        conn.execute(
+            "UPDATE watch_entries SET checked_for=NULL WHERE symbol=$1",
+            [symbol],
+        )?;
+    }
+    Ok(())
+}
+
 pub(super) fn validate(conn: &crate::storage::Connection) -> AppResult<()> {
     let mut stmt = conn.prepare("SELECT symbol,payload FROM watch_entries")?;
     let entries = stmt
@@ -303,6 +329,69 @@ mod tests {
             sources: vec!["https://example.test/dividends".into()],
             events: data.dividends.unwrap(),
         }
+    }
+    #[test]
+    fn retired_weekly_lower_payload_migrates_once_and_old_backups_cannot_restore_it() {
+        let account = crate::db::TestAccount::new();
+        let db = account.open();
+        let entry = entry(&db);
+        let (mut data, day) = market_fixture();
+        for bar in data.bars.iter_mut().take(80) {
+            bar.adjusted_close = Some(200.0);
+        }
+        let observation = evaluate(
+            &entry.input.symbol,
+            &data,
+            day,
+            "2026-07-03T12:00:00Z".into(),
+        );
+        let mut old = serde_json::to_value(&observation).unwrap();
+        old["status"] = serde_json::json!("waiting");
+        for name in ["daily", "weekly"] {
+            let band = old[name].as_object_mut().unwrap();
+            band.remove("reference");
+            band.remove("matchesRule");
+            band.insert("nearLower".into(), serde_json::json!(name == "daily"));
+            band.insert("distancePct".into(), serde_json::json!(999.0));
+        }
+        db.conn().unwrap().execute("INSERT INTO watch_observations(symbol,day,payload,alert,read_at) VALUES ($1,$2,$3,1,NULL)", params![entry.input.symbol,day.to_string(),old.to_string()]).unwrap();
+        let mut backup = db.export_sync_data().unwrap();
+        backup.schema_version = 25;
+        drop(db);
+        let db = account.reopen_from_old_release();
+        let board = db.watch_board(day).unwrap();
+        assert_eq!(board.rows[0].latest, Some(observation.clone()));
+        assert_eq!(board.weekly, vec![observation.clone()]);
+        assert!(!board.rows[0].alert);
+        assert_eq!(board.rows[0].checked_for, None);
+        let payload: String = db
+            .conn()
+            .unwrap()
+            .query_row("SELECT payload FROM watch_observations", [], |r| r.get(0))
+            .unwrap();
+        assert!(!payload.contains("nearLower"));
+        let revision = db.revision().unwrap();
+        drop(db);
+        let db = account.open();
+        assert_eq!(db.revision().unwrap(), revision);
+        let target = Database::test();
+        target.import_sync_data(&backup).unwrap();
+        assert_eq!(
+            target.watch_board(day).unwrap().rows[0].latest,
+            Some(observation)
+        );
+        assert!(!target.watch_board(day).unwrap().rows[0].alert);
+        // A failed migration/import restores the target's existing observations.
+        let before = target.export_sync_data().unwrap();
+        let table = backup
+            .tables
+            .iter_mut()
+            .find(|t| t.name == "watch_observations")
+            .unwrap();
+        old["price"] = serde_json::json!("invalid");
+        table.rows[0][2] = super::super::SyncValue::Text(old.to_string());
+        assert!(target.import_sync_data(&backup).is_err());
+        assert_eq!(target.export_sync_data().unwrap().tables, before.tables);
     }
     #[test]
     fn dividend_history_survives_migration_backup_and_corrections_without_duplicates() {

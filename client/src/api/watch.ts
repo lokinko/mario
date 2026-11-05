@@ -13,7 +13,8 @@ export interface Band {
   middle: number;
   upper: number;
   distancePct: number | null;
-  nearLower: boolean;
+  reference: "lower" | "middle";
+  matchesRule: boolean;
 }
 export type WatchStatus = "attention" | "waiting" | "incomplete";
 export type WatchIssue =

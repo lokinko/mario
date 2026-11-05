@@ -385,14 +385,14 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 25;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 26;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
 
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
-    if version == SYNC_DATASET_SCHEMA_VERSION {
+    if version == SYNC_DATASET_SCHEMA_VERSION || version == 25 {
         return Ok(specs);
     }
     specs.retain(|s| s.name != "watch_dividends");

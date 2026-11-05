@@ -76,7 +76,7 @@ export function WatchList({
               <th>TTM 股息率</th>
               <th>5% 参考价</th>
               <th>距日线下轨</th>
-              <th>距周线下轨</th>
+              <th>距周线中轨</th>
               <th>观察状态</th>
               <th>操作</th>
             </tr>
@@ -121,13 +121,13 @@ export function WatchList({
                 </td>
                 <td
                   data-label="距日线下轨"
-                  className={`watch-numeric ${row.latest?.daily?.nearLower ? "watch-met" : ""}`}
+                  className={`watch-numeric ${row.latest?.daily?.matchesRule ? "watch-met" : ""}`}
                 >
                   {distance(row.latest?.daily?.distancePct)}
                 </td>
                 <td
-                  data-label="距周线下轨"
-                  className={`watch-numeric ${row.latest?.weekly?.nearLower ? "watch-met" : ""}`}
+                  data-label="距周线中轨"
+                  className={`watch-numeric ${row.latest?.weekly?.matchesRule ? "watch-met" : ""}`}
                 >
                   {distance(row.latest?.weekly?.distancePct)}
                 </td>

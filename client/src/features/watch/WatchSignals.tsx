@@ -13,7 +13,7 @@ export function RuleChecks({
   const values = checks(row, minYield);
   return (
     <div className="watch-checks" aria-label="三项观察条件">
-      {[`股息 ≥${minYield}%`, "日线接近下轨", "周线接近下轨"].map(
+      {[`股息 ≥${minYield}%`, "日线接近下轨", "周线中轨及以下"].map(
         (label, i) => (
           <span key={label} className={values[i] === true ? "met" : ""}>
             <b aria-hidden="true">
@@ -45,7 +45,8 @@ export function BandTrack({
     band &&
     price != null &&
     price > 0 &&
-    band.lower > 0 &&
+    band.middle > 0 &&
+    (band.reference === "middle" || band.lower > 0) &&
     band.upper >= band.middle &&
     band.middle >= band.lower;
   if (!valid)
@@ -55,10 +56,12 @@ export function BandTrack({
         <span>轨道资料待补齐</span>
       </div>
     );
-  // Visual coordinates only. Threshold and nearLower are supplied by the server.
-  const low = Math.min(band.lower * (1 - tolerance / 100), price);
+  // Visual coordinates only. The reference and rule result come from the server.
+  const weekly = band.reference === "middle";
+  const referenceLabel = weekly ? "中轨" : "下轨";
+  const low = Math.min(band.lower, band.lower * (1 - tolerance / 100), price);
   const high = Math.max(band.upper, band.lower * (1 + tolerance / 100), price);
-  const width = Math.max(high - low, band.lower * 0.04);
+  const width = Math.max(high - low, band.middle * 0.04);
   const position = (value: number) =>
     4 + Math.max(0, Math.min(1, (value - low) / width)) * 92;
   const style = {
@@ -66,15 +69,15 @@ export function BandTrack({
     "--middle": `${position(band.middle)}%`,
     "--upper": `${position(band.upper)}%`,
     "--price": `${position(price)}%`,
-    "--zone-start": `${position(band.lower * (1 - tolerance / 100))}%`,
-    "--zone-width": `${position(band.lower * (1 + tolerance / 100)) - position(band.lower * (1 - tolerance / 100))}%`,
+    "--zone-start": `${position(weekly ? low : band.lower * (1 - tolerance / 100))}%`,
+    "--zone-width": `${position(weekly ? band.middle : band.lower * (1 + tolerance / 100)) - position(weekly ? low : band.lower * (1 - tolerance / 100))}%`,
   } as CSSProperties;
   return (
-    <div className={`watch-band ${band.nearLower ? "near" : ""}`}>
+    <div className={`watch-band ${band.matchesRule ? "near" : ""}`}>
       <div className="watch-band-title">
         <strong>{label} BOLL</strong>
         <span>
-          {band.nearLower ? "在关注范围内" : "距下轨"}{" "}
+          {band.matchesRule ? "在关注范围内" : "未满足"} · 距{referenceLabel}{" "}
           <b>{distance(band.distancePct)}</b>
         </span>
       </div>
@@ -82,7 +85,7 @@ export function BandTrack({
         className="watch-band-track"
         style={style}
         role="img"
-        aria-label={`${label}下轨 ${number(band.lower)}，中轨 ${number(band.middle)}，上轨 ${number(band.upper)}，收盘 ${number(price)}；距下轨 ${distance(band.distancePct)}`}
+        aria-label={`${label}下轨 ${number(band.lower)}，中轨 ${number(band.middle)}，上轨 ${number(band.upper)}，收盘 ${number(price)}；距${referenceLabel} ${distance(band.distancePct)}`}
       >
         <span className="watch-band-zone" />
         <i className="lower" />

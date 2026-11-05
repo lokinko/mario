@@ -53,14 +53,16 @@ const row: api.WatchRow = {
       middle: 102,
       upper: 104,
       distancePct: 0,
-      nearLower: true,
+      reference: "lower",
+      matchesRule: true,
     },
     weekly: {
       lower: 100,
       middle: 103,
       upper: 106,
-      distancePct: 0,
-      nearLower: true,
+      distancePct: (100 / 103 - 1) * 100,
+      reference: "middle",
+      matchesRule: true,
     },
     status: "attention",
     issues: [],
@@ -145,6 +147,9 @@ it("opens grounded discussion, acknowledges alerts and preserves missing-data st
   fireEvent.click(screen.getByRole("button", { name: "结合我的交易讨论" }));
   expect(p.onAsk).toHaveBeenCalledWith(expect.stringContaining("600036.SS"));
   expect(p.onAsk).toHaveBeenCalledWith(expect.stringContaining("最近真实交易"));
+  expect(p.onAsk).toHaveBeenCalledWith(
+    expect.stringContaining("周收盘价≤周线BOLL(20,2)中轨"),
+  );
   fireEvent.click(screen.getByRole("button", { name: "标为已读" }));
   await waitFor(() =>
     expect(api.readWatchAlerts).toHaveBeenCalledWith("600036.SS"),
@@ -338,4 +343,33 @@ it("uses exact server threshold results instead of rounding the displayed yield 
   await screen.findByRole("table", { name: "观察公司对比" });
   fireEvent.click(screen.getByRole("button", { name: "股息达标 0" }));
   expect(screen.queryByRole("table", { name: "观察公司对比" })).toBeNull();
+});
+
+it("filters by the weekly middle and shades that range even far from the weekly lower", async () => {
+  const below = structuredClone(row);
+  below.latest!.weekly!.lower = 50;
+  const above = structuredClone(row);
+  above.entry = { ...above.entry, symbol: "000001.SZ", name: "周线未达标" };
+  above.latest!.weekly!.distancePct = 0.000001;
+  above.latest!.weekly!.matchesRule = false;
+  above.latest!.status = "waiting";
+  vi.mocked(api.getWatchBoard).mockResolvedValue({
+    ...empty,
+    rows: [below, above],
+  });
+  render(<BuyWatch {...props()} />);
+  const table = await screen.findByRole("table", { name: "观察公司对比" });
+  expect(
+    within(table).getByRole("columnheader", { name: "距周线中轨" }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "日周条件达标 1" }));
+  expect(within(table).getAllByRole("row")).toHaveLength(2);
+  expect(within(table).queryByText("周线未达标")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
+  expect(screen.getByText("周线中轨及以下")).toBeTruthy();
+  const track = screen.getByRole("img", { name: /周线下轨.*距中轨/ });
+  const middle = parseFloat(track.style.getPropertyValue("--middle"));
+  const start = parseFloat(track.style.getPropertyValue("--zone-start"));
+  const width = parseFloat(track.style.getPropertyValue("--zone-width"));
+  expect(start + width).toBeCloseTo(middle);
 });

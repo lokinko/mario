@@ -11,7 +11,7 @@ export const issueLabels: Record<WatchIssue, string> = {
   daily_history_incomplete: "日线历史不足或存在缺口",
   weekly_history_incomplete: "周线历史不足或存在缺口",
   dividend_unavailable: "已实施分红数据暂不可用",
-  non_positive_band: "下轨不为正，无法使用比例区间",
+  non_positive_band: "日线下轨或周线中轨不为正，无法计算观察条件",
 };
 export const number = (value: number | null | undefined, suffix = "") =>
   value == null ? "—" : `${formatNumber(value, 2, true)}${suffix}`;
@@ -26,10 +26,12 @@ export function checks(row: WatchRow, minYield: number) {
       ? null
       : (row.dividendPrices.find((p) => p.yieldPct === minYield)?.reached ??
         (row.latest.yieldPct === 0 ? false : null)),
-    row.latest?.daily?.distancePct == null ? null : row.latest.daily.nearLower,
+    row.latest?.daily?.distancePct == null
+      ? null
+      : row.latest.daily.matchesRule,
     row.latest?.weekly?.distancePct == null
       ? null
-      : row.latest.weekly.nearLower,
+      : row.latest.weekly.matchesRule,
   ];
 }
 

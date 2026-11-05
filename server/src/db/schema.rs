@@ -5,7 +5,7 @@ use crate::error::AppResult;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 13;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 14;
 
 // Keep migration order intact: re-running on an existing tenant schema is idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -187,6 +187,7 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
         underlying_id TEXT NOT NULL REFERENCES holdings(id) DEFERRABLE INITIALLY IMMEDIATE,
         payload TEXT NOT NULL
     ); CREATE INDEX IF NOT EXISTS holding_options_underlying ON holding_options(underlying_id);")?;
+    super::watch::migrate_rules(connection)?;
     Ok(())
 }
 
