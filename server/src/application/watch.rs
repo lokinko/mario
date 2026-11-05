@@ -88,7 +88,14 @@ pub async fn refresh(
                             .await
                             {
                                 Ok(Ok(history)) => Some(history),
-                                _ => cached,
+                                Ok(Err(error)) => {
+                                    tracing::warn!(symbol = %entry.input.symbol, %error, "watch dividend refresh failed; retaining dated history");
+                                    cached
+                                }
+                                Err(error) => {
+                                    tracing::warn!(symbol = %entry.input.symbol, %error, "watch dividend refresh timed out; retaining dated history");
+                                    cached
+                                }
                             }
                         }
                     );
@@ -118,6 +125,9 @@ pub async fn refresh(
         })
         .await?;
     for (entry, checked_at, result, dividends) in results {
+        if let Err(error) = &result {
+            tracing::warn!(symbol = %entry.input.symbol, %error, "watch observation refresh failed; retaining previous result");
+        }
         db.save_watch_observation(
             &entry,
             result.as_ref().ok(),

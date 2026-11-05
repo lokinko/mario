@@ -208,6 +208,8 @@ sequenceDiagram
 
 [买点观察助手](buy-watch.md)是当前默认入口。`models/watch` 计算固定 5% TTM 股息率及日、周 BOLL 下轨 ±2% 条件，`application/watch` 通过 `WatchMarketProvider` 获取输入；`market_data/watch` 读取公开日线、交易日期参考与已实施分红，缓存仅含公开数据。`composition` 管理按账号后台检查的生命周期，不调用离线 benchmark 或自动执行 AI。
 
+`market_data/watch/eastmoney` 负责国内日线适配：校验证券代码、交易所、日期及重复行，将未复权和后复权收盘按日期对齐，并读取同源上证指数的实际交易日期。`market_data/watch` 优先采用这整组数据，来源请求或协议失败才整组回退 Yahoo；不混用供应商的复权序列、价格与日期。技术序列继续由领域计算器归一到观察日价格单位，原价继续作为 TTM 股息率分母。来源 URL 随观察保存；适配器记录逐来源失败，应用层记录行情或分红失败的证券和原因，最终失败仍保留已有账号结果。请求并发、缓存、分红仓储和账号事务的归属不变。
+
 公开分红主资料由 `db/public_dividends::PublicDividends` 在 PostgreSQL `mario_market.dividend_histories` 保存，按证券一行完整事件集。API 启动时事务初始化并从 `market_data/watch_archive` 提供的版本化原件资料包载入 202 份可用历史；启动种子不能覆盖覆盖日期更新或同日采集时间更新的资料。公共库只读写公开分红，不读取账号表或租户 schema，不推进账号数据版本。
 
 `application/watch_market::SharedWatchProvider` 装饰公开行情端口：先查公共库，缺失或截止日期不足时才调用来源；同一进程对同一证券合并在途抓取，成功后立即持久化，其他用户及服务重启后直接复用。失败保留原值和日期，并作 60 秒内存退避，避免多账号同时放大失败；手动检查清除失败退避、更新行情，仍复用已覆盖当日的成功分红。来源适配器不访问数据库。装配及单一公共连接的生命周期归 `composition`，仍是现有模块化单体。

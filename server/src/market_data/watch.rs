@@ -1,4 +1,7 @@
 //! Public observation data. Never reads accounts, holdings or transactions.
+mod eastmoney;
+#[cfg(test)]
+mod source_tests;
 use crate::{
     models::watch::{DividendBasis, DividendEvent, DividendHistory, PriceBar, WatchMarketData},
     ports::market::WatchMarketProvider,
@@ -34,50 +37,93 @@ impl PublicWatchProvider {
             cache: Mutex::new(BTreeMap::new()),
         })
     }
-    async fn chart(&self, symbol: &str, day: NaiveDate) -> AppResult<(Value, String)> {
-        for host in ["query1.finance.yahoo.com", "query2.finance.yahoo.com"] {
-            let url = format!("https://{host}/v8/finance/chart/{symbol}");
-            let response = self
-                .client
-                .get(&url)
-                .query(&[
-                    (
-                        "period1",
-                        (day - Days::days(730))
-                            .and_hms_opt(0, 0, 0)
-                            .unwrap()
-                            .and_utc()
-                            .timestamp()
-                            .to_string(),
-                    ),
-                    (
-                        "period2",
-                        (day + Days::days(1))
-                            .and_hms_opt(0, 0, 0)
-                            .unwrap()
-                            .and_utc()
-                            .timestamp()
-                            .to_string(),
-                    ),
-                    ("interval", "1d".into()),
-                    ("events", "splits".into()),
-                ])
-                .send()
-                .await;
-            if let Ok(response) = response {
+    async fn chart(
+        &self,
+        symbol: &str,
+        day: NaiveDate,
+        hosts: &[&str],
+    ) -> AppResult<(Vec<PriceBar>, String)> {
+        for host in hosts {
+            let url = format!("{host}/v8/finance/chart/{symbol}");
+            let result = async {
+                let response = self
+                    .client
+                    .get(&url)
+                    .query(&[
+                        (
+                            "period1",
+                            (day - Days::days(730))
+                                .and_hms_opt(0, 0, 0)
+                                .unwrap()
+                                .and_utc()
+                                .timestamp()
+                                .to_string(),
+                        ),
+                        (
+                            "period2",
+                            (day + Days::days(1))
+                                .and_hms_opt(0, 0, 0)
+                                .unwrap()
+                                .and_utc()
+                                .timestamp()
+                                .to_string(),
+                        ),
+                        ("interval", "1d".into()),
+                        ("events", "splits".into()),
+                    ])
+                    .send()
+                    .await?
+                    .error_for_status()?;
                 let source = response.url().to_string();
-                if let Ok(response) = response.error_for_status() {
-                    if let Ok(value) = response.json::<Value>().await {
-                        if value["chart"]["error"].is_null()
-                            && value["chart"]["result"][0].is_object()
-                        {
-                            return Ok((value["chart"]["result"][0].clone(), source));
-                        }
-                    }
+                let value = response.json::<Value>().await?;
+                if !value["chart"]["error"].is_null() {
+                    return Err(bad());
+                }
+                Ok((
+                    parse_bars(&value["chart"]["result"][0], symbol, day)?,
+                    source,
+                ))
+            }
+            .await;
+            match result {
+                Ok(data) => return Ok(data),
+                Err(error) => {
+                    tracing::warn!(symbol, host, %error, "watch Yahoo daily source failed")
                 }
             }
         }
         Err(AppError::MarketData("公开日线暂时不可用".into()))
+    }
+
+    async fn prices(
+        &self,
+        symbol: &str,
+        day: NaiveDate,
+        eastmoney_url: &str,
+        yahoo_hosts: &[&str],
+    ) -> AppResult<WatchMarketData> {
+        match eastmoney::observation(&self.client, eastmoney_url, symbol, day).await {
+            Ok(data) => return Ok(data),
+            Err(error) => {
+                tracing::warn!(symbol, %error, "watch Eastmoney daily source failed; trying Yahoo")
+            }
+        }
+        // Keep both price series and the calendar within one provider. Never
+        // splice a fallback close into another provider's adjustment history.
+        let (bars, price_source) = self.chart(symbol, day, yahoo_hosts).await?;
+        let (index, calendar_source) = self.chart("000001.SS", day, yahoo_hosts).await?;
+        let calendar = index
+            .into_iter()
+            .filter(|b| b.close.is_some_and(|p| p > 0.0))
+            .map(|b| b.day)
+            .collect();
+        Ok(WatchMarketData {
+            bars,
+            calendar,
+            dividends: None,
+            dividend_basis: None,
+            sources: vec![price_source, calendar_source],
+        })
     }
     async fn dividend_page(&self, symbol: &str, page: u64) -> AppResult<(Value, String)> {
         let filter = format!("(SECURITY_CODE=\"{}\")", &symbol[..6]);
@@ -225,6 +271,9 @@ fn parse_bars(chart: &Value, symbol: &str, day: NaiveDate) -> AppResult<Vec<Pric
         });
     }
     result.sort_by_key(|b| b.day);
+    if result.is_empty() {
+        return Err(bad());
+    }
     Ok(result)
 }
 
@@ -272,21 +321,17 @@ impl WatchMarketProvider for PublicWatchProvider {
             }
         }
         let _permit = self.slots.acquire().await.map_err(|_| bad())?;
-        let (chart, price_source) = self.chart(symbol, day).await?;
-        let bars = parse_bars(&chart, symbol, day)?;
-        let (index, calendar_source) = self.chart("000001.SS", day).await?;
-        let calendar = parse_bars(&index, "000001.SS", day)?
-            .into_iter()
-            .filter(|b| b.close.is_some_and(|p| p > 0.0))
-            .map(|b| b.day)
-            .collect();
-        let data = WatchMarketData {
-            bars,
-            calendar,
-            dividends: None,
-            dividend_basis: None,
-            sources: vec![price_source, calendar_source],
-        };
+        let data = self
+            .prices(
+                symbol,
+                day,
+                "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+                &[
+                    "https://query1.finance.yahoo.com",
+                    "https://query2.finance.yahoo.com",
+                ],
+            )
+            .await?;
         let mut cache = self.cache.lock().await;
         if cache.len() >= 128 {
             cache.clear();

@@ -249,4 +249,19 @@ curl -fsS http://127.0.0.1:4217/api/server
 
 301 去根域名检查旧 server 层跳转；502 检查 `status`/`logs`；资源 404 检查 `/mario/` 构建和代理尾斜杠；超时检查 DNS、安全组、防火墙。不要用 `curl -k` 绕过证书验证。
 
+### 买点观察显示“来源读取失败”
+
+收盘价和日周 BOLL 全为空时，先检查日线来源；公共分红已入库并不意味着能取得股息率所需的收盘价。当前版本优先读取 `push2his.eastmoney.com` 的日线，失败时整组回退 Yahoo；分红补抓访问 `datacenter-web.eastmoney.com`。仅能访问东方财富分红接口，不能证明日线接口也可用。旧的 Yahoo 单来源版本在无法连接 Yahoo 的主机上会整次失败，需拉取新代码并通过 `deploy.sh` 重新构建部署，单纯重启旧二进制无效。
+
+默认单元是 `mario.service`，不是 `mario-api.service`；修改过脚本顶部 `SERVICE_NAME` 时使用实际单元名。检查时执行：
+
+```bash
+git rev-parse --short HEAD
+sudo bash deploy.sh status
+sudo journalctl -u mario.service -n 100 --no-pager
+curl -sS --connect-timeout 5 --max-time 15 -o /dev/null -w 'HTTP=%{http_code} bytes=%{size_download}\n' 'https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=0.000807&klt=101&fqt=0&beg=20250101&end=20261104&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53'
+```
+
+日期参数仅为固定连通性样例，HTTP 200 仍需服务端校验证券、交易所、日期和数据行。观察相关日志使用 `watch Eastmoney daily source failed`、`watch Yahoo daily source failed`、`watch observation refresh failed` 和 `watch dividend refresh failed` 标识，并附证券和错误原因。分红补抓失败保留原事件及日期，股息率不伪造为零。部署会在构建阶段暂时停服；若进程列表里仍有 `host-runtime.mjs --build`，等待该次部署结束再看状态，不重复启动构建。部署成功后在买点观察点击“重新检查数据”，核对实际行情日、收盘价、股息率和来源。
+
 备份与频繁搬迁见 [数据迁移](data-migration.md)，账号、同步和密码重置见 [自建服务](self-hosting.md)。集成测试只用临时数据库，不连接线上数据库。
