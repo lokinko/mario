@@ -1,7 +1,7 @@
 use super::{params, AppResult, Database, OptionalRow};
 use crate::models::watch::{
-    DividendHistory, Observation, WatchBoard, WatchEntry, WatchInput, WatchRow, WatchStatus,
-    BAND_DISTANCE_PCT, MAX_WATCHES, MIN_YIELD_PCT,
+    dividend_prices, DividendHistory, Observation, WatchBoard, WatchEntry, WatchInput, WatchRow,
+    WatchStatus, BAND_DISTANCE_PCT, MAX_WATCHES, MIN_YIELD_PCT,
 };
 use crate::AppError;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
@@ -95,9 +95,13 @@ impl Database {
                 |r| r.get::<_, Option<String>>(0),
             )?;
             let alert = conn.query_row("SELECT EXISTS(SELECT 1 FROM watch_observations WHERE symbol=$1 AND alert=1 AND read_at IS NULL)",[symbol],|r|r.get(0))?;
+            let latest: Option<Observation> =
+                latest.as_deref().map(serde_json::from_str).transpose()?;
+            let dividend_prices = dividend_prices(latest.as_ref());
             rows.push(WatchRow {
                 entry,
-                latest: latest.as_deref().map(serde_json::from_str).transpose()?,
+                latest,
+                dividend_prices,
                 alert,
                 checked_at,
                 checked_for,
@@ -555,6 +559,7 @@ mod tests {
         .unwrap();
         let board = db.watch_board(day).unwrap();
         assert!(board.rows[0].refresh_failed);
+        assert_eq!(board.rows[0].dividend_prices[1].price, "100.00");
         assert_eq!(board.rows[0].latest, Some(observation));
         let mut backup = db.export_sync_data().unwrap();
         let row = &mut backup

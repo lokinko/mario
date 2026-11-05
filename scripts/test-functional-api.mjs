@@ -140,6 +140,9 @@ try {
   const watched = await api("/watch", "PUT", { symbol: "600036.SH", name: "观察测试", thesis: "核查分红持续性" });
   assert.equal(watched.symbol, "600036.SS");
   assert.equal((await api("/watch")).rows[0].entry.thesis, "核查分红持续性");
+  const referenceVersion = await api("/sync/version");
+  assert.deepEqual((await api("/watch")).rows[0].dividendPrices, [], "unobserved stocks have no invented reference prices");
+  assert.deepEqual(await api("/sync/version"), referenceVersion, "reference projections must not mutate observations");
   await api("/watch", "PUT", { symbol: "0941.HK", name: "港股", thesis: "" }, 400);
   const staleWatch = await fetch(base + "/watch", { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "If-Match": "-1" }, body: JSON.stringify({ symbol: "600036.SS", name: "旧表单", thesis: "" }) });
   assert.equal(staleWatch.status, 409);

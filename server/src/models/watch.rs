@@ -187,10 +187,69 @@ pub struct Observation {
 pub struct WatchRow {
     pub entry: WatchEntry,
     pub latest: Option<Observation>,
+    pub dividend_prices: Vec<DividendPrice>,
     pub alert: bool,
     pub checked_at: Option<String>,
     pub checked_for: Option<String>,
     pub refresh_failed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DividendPrice {
+    pub yield_pct: u32,
+    pub price: String,
+    pub reached: Option<bool>,
+    pub change_pct: Option<f64>,
+}
+
+/// Read projection only: historical observations and backup payloads stay unchanged.
+pub fn dividend_prices(observation: Option<&Observation>) -> Vec<DividendPrice> {
+    let Some(observation) = observation else {
+        return vec![];
+    };
+    if observation
+        .dividend_basis
+        .as_ref()
+        .is_some_and(|basis| basis.as_of.to_string().as_str() < observation.observed_on.as_str())
+    {
+        return vec![];
+    }
+    let Some(dividend) = observation
+        .dividend_per_share
+        .as_deref()
+        .and_then(|v| Decimal::from_str_exact(v).ok())
+        .filter(|v| *v > Decimal::ZERO)
+    else {
+        return vec![];
+    };
+    let current = observation
+        .price
+        .filter(|p| p.is_finite() && *p > 0.0)
+        .and_then(|p| Decimal::from_str_exact(&p.to_string()).ok());
+    [4, 5, 6, 7]
+        .into_iter()
+        .filter_map(|yield_pct| {
+            // Round down to a tradable cent so the shown price never overstates the threshold.
+            let price = dividend
+                .checked_mul(Decimal::ONE_HUNDRED)?
+                .checked_div(Decimal::from(yield_pct))?
+                .round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToNegativeInfinity);
+            let change_pct = current.and_then(|p| {
+                price
+                    .checked_div(p)?
+                    .checked_sub(Decimal::ONE)?
+                    .checked_mul(Decimal::ONE_HUNDRED)?
+                    .to_f64()
+            });
+            Some(DividendPrice {
+                yield_pct,
+                price: format!("{price:.2}"),
+                reached: current.map(|p| p <= price),
+                change_pct,
+            })
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -416,6 +475,43 @@ pub(crate) mod tests {
             },
             day,
         )
+    }
+    #[test]
+    fn dividend_reference_prices_are_exact_conservative_and_do_not_change_signals() {
+        let (data, day) = market_fixture();
+        let mut observation = evaluate("600036.SS", &data, day, String::new());
+        observation.dividend_per_share = Some("2.016".into());
+        observation.price = Some(40.32);
+        let before = observation.clone();
+        let prices = dividend_prices(Some(&observation));
+        assert_eq!(
+            prices.iter().map(|p| p.price.as_str()).collect::<Vec<_>>(),
+            vec!["50.40", "40.32", "33.60", "28.80"]
+        );
+        assert_eq!(prices[1].reached, Some(true));
+        assert_eq!(prices[1].change_pct, Some(0.0));
+        assert_eq!(prices[2].reached, Some(false));
+        assert_eq!(observation, before);
+        observation.dividend_per_share = Some("1".into());
+        observation.price = Some(16.67);
+        let prices = dividend_prices(Some(&observation));
+        assert_eq!(prices[2].price, "16.66");
+        assert_eq!(prices[2].reached, Some(false));
+        observation.price = None;
+        assert!(dividend_prices(Some(&observation))
+            .iter()
+            .all(|p| p.reached.is_none() && p.change_pct.is_none()));
+        for value in [None, Some("0"), Some("-1"), Some("invalid")] {
+            observation.dividend_per_share = value.map(String::from);
+            assert!(dividend_prices(Some(&observation)).is_empty());
+        }
+        observation.dividend_per_share = Some("1".into());
+        observation.dividend_basis = Some(DividendBasis {
+            as_of: day - chrono::Duration::days(1),
+            fetched_at: "2026-07-03T12:00:00Z".into(),
+        });
+        assert!(dividend_prices(Some(&observation)).is_empty());
+        assert!(dividend_prices(None).is_empty());
     }
     #[test]
     fn five_percent_is_inclusive_and_both_bands_are_required() {

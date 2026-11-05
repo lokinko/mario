@@ -131,7 +131,7 @@ flowchart TD
 | `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发 |
 | `app/useApplicationData.ts` | 服务端数据生命周期：启动、快照与模型配置加载、自动同步、请求代次、草稿保护与远程更新提示 |
 | `app/navigation.ts` | 视图、导航分组与标签；“研究 → 研究看板”以新标签页链接打开同源独立 dashboard，不增加 React 视图状态 |
-| `features/watch` | 默认买点观察页：名单草稿、收盘结果、站内提醒、本周汇总；通过应用壳进入讨论 |
+| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵；通过应用壳进入讨论 |
 | `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
@@ -203,6 +203,8 @@ sequenceDiagram
 前端按版本轮询，版本变化后才拉取快照，没有离线写入队列或实时推送。投资方法论随账号备份的 settings 行导出，恢复前校验非空及 4000 字符上限；缺少该项的旧备份恢复为初始范本。沿用现有备份结构，不新增 schema 迁移；恢复失败整体回滚。账号导出/导入使用版本化的同步数据集（`db/sync_format.rs`），导入在单一事务内校验表关联、精确金额与财务一致性后整体替换，失败整次回滚。宿主机级加密备份包含 `mario_auth`、`mario_market` 和全部 `user_<uuid>` schema；单账号 JSON 备份只包含该账号观察及最后使用的分红依据，不替换公共库。宿主机级加密备份与迁移见 [服务器间打包、下载与恢复](data-migration.md)。
 
 ### 6.5 买点观察
+
+观察桌面采用同一份账号观察结果生成紧凑列表、卡片与详情。`models/watch::dividend_prices` 从已保存观察的十进制 TTM 分红生成各档参考价及与收盘价的距离，`db/watch::watch_board` 将该只读投影放在 `WatchRow.dividendPrices`；不写历史观察、不修改备份数据格式，也不产生新的行情请求。前端只格式化金额与绘图，不重算参考价；搜索、排序、持仓/规则筛选和视图切换由观察页管理，日周 BOLL 和最终关注状态继续来自服务端。
 
 [买点观察助手](buy-watch.md)是当前默认入口。`models/watch` 计算固定 5% TTM 股息率及日、周 BOLL 下轨 ±2% 条件，`application/watch` 通过 `WatchMarketProvider` 获取输入；`market_data/watch` 读取公开日线、交易日期参考与已实施分红，缓存仅含公开数据。`composition` 管理按账号后台检查的生命周期，不调用离线 benchmark 或自动执行 AI。
 

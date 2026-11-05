@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Bell, Plus, RefreshCw, MessageCircle } from "lucide-react";
+import {
+  Plus,
+  RefreshCw,
+  Search,
+  List,
+  LayoutGrid,
+  SlidersHorizontal,
+} from "lucide-react";
 import {
   getWatchBoard,
   saveWatch,
@@ -9,32 +16,26 @@ import {
   type WatchBoard,
   type WatchInput,
   type WatchRow,
-  type WatchIssue,
 } from "../../api/watch";
 import type { Snapshot } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
-import { Badge } from "../../components/Badge";
 import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import "./watch.css";
 
-const statuses = {
-  attention: "进入关注区间",
-  waiting: "继续等待",
-  incomplete: "待补齐数据",
-};
-const issueLabels: Record<WatchIssue, string> = {
-  price_unavailable: "该交易日收盘价缺失",
-  daily_history_incomplete: "日线历史不足或存在缺口",
-  weekly_history_incomplete: "周线历史不足或存在缺口",
-  dividend_unavailable: "已实施分红数据暂不可用",
-  non_positive_band: "下轨不为正，无法使用比例区间",
-};
-const number = (value: number | null | undefined, suffix = "") =>
-  value == null ? "—" : `${value.toFixed(2)}${suffix}`;
-const canonical = (value: string) =>
-  value.trim().toUpperCase().replace(/\.SH$/, ".SS");
+import { WatchList } from "./WatchList";
+import { WatchDetails } from "./WatchDetails";
+import { WatchWeekly } from "./WatchWeekly";
+import {
+  canonical,
+  statuses,
+  selectRows,
+  checks,
+  type WatchFilter,
+  type WatchSort,
+} from "./presentation";
+
 const empty: WatchInput = { symbol: "", name: "", thesis: "" };
 
 export function BuyWatch({
@@ -58,6 +59,11 @@ export function BuyWatch({
   const [open, setOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<WatchFilter>("all");
+  const [sort, setSort] = useState<WatchSort>("default");
+  const [ownership, setOwnership] = useState("all");
+  const [view, setView] = useState<"compact" | "cards">("compact");
   const guard = useRequestGuard();
   const load = async () => {
     const current = guard.begin();
@@ -124,9 +130,46 @@ export function BuyWatch({
   const holdings = snapshot.holdings.filter((h) =>
     /^(60|68)\d{4}\.(SS|SH)$|^(00|30)\d{4}\.SZ$/i.test(h.symbol),
   );
+  const minYield = board?.minYieldPct ?? 5;
+  const tolerance = board?.bandDistancePct ?? 2;
+  const held = new Set(
+    holdings
+      .filter(
+        (h) =>
+          Number(
+            snapshot.accounting?.holdings[h.id]?.quantity ?? h.quantity ?? "0",
+          ) > 0,
+      )
+      .map((h) => canonical(h.symbol)),
+  );
   const counts = {
     attention: rows.filter((r) => r.latest?.status === "attention").length,
+    yield: rows.filter((r) => checks(r, minYield)[0] === true).length,
+    bands: rows.filter((r) =>
+      checks(r, minYield)
+        .slice(1)
+        .every((v) => v === true),
+    ).length,
     alerts: rows.filter((r) => r.alert).length,
+    incomplete: rows.filter(
+      (r) => !r.latest || r.latest.status === "incomplete" || r.refreshFailed,
+    ).length,
+  };
+  const visible = selectRows(
+    rows,
+    query,
+    filter,
+    sort,
+    held,
+    ownership,
+    minYield,
+  );
+  const active = rows.find((r) => r.entry.symbol === expanded);
+  const reset = () => {
+    setQuery("");
+    setFilter("all");
+    setOwnership("all");
+    setSort("default");
   };
   const week = board?.weekly ?? [];
   const weeklyAsk = () => {
@@ -143,29 +186,46 @@ export function BuyWatch({
       />
       <section className="panel watch-intro">
         <div>
-          <strong>股息率 ≥ 5%</strong>
-          <span>日线、周线均在 BOLL 下轨 ±2%</span>
+          <div>
+            <span className="watch-eyebrow">收盘观察 · 已实施分红</span>
+            <strong>把等待条件放在同一张桌面上</strong>
+          </div>
+          <div className="watch-actions">
+            <button
+              className="secondary"
+              disabled={busy || !rows.length}
+              onClick={() => void run(refreshWatch)}
+            >
+              <RefreshCw size={16} className={busy ? "watch-spinning" : ""} />
+              {busy ? "处理中…" : "检查最新收盘"}
+            </button>
+            <button className="primary" disabled={busy} onClick={() => edit()}>
+              <Plus size={16} />
+              加入公司
+            </button>
+          </div>
         </div>
-        <p>
-          北京时间 19:00
-          后检查当日收盘数据，站内保留变化提醒；周末集中复盘。基本面与分红持续性在讨论中核查。
-        </p>
-        <div className="watch-actions">
-          <button className="primary" disabled={busy} onClick={() => edit()}>
-            <Plus size={16} />
-            加入公司
-          </button>
-          <button
-            className="secondary"
-            disabled={busy || !rows.length}
-            onClick={() => void run(refreshWatch)}
-          >
-            <RefreshCw size={16} />
-            {busy ? "处理中…" : "检查最新收盘"}
-          </button>
+        <div className="watch-rule-strip">
+          <span>① TTM 税前股息 ≥{minYield}%</span>
+          <span>② 日线下轨 ±{tolerance}%</span>
+          <span>③ 周线下轨 ±{tolerance}%</span>
+          <small>三项同时满足 → 进入关注区间</small>
         </div>
+        <details className="watch-method">
+          <summary>计算口径与检查时间</summary>
+          <p>
+            北京时间 19:00 后检查当日收盘。BOLL(20,2)
+            使用总体标准差，日线与周线分别计算；本周未结束时使用截至观察日的最后收盘。距下轨
+            =（收盘价 ÷ 下轨 − 1）×100%，按下轨价格衡量 ±2%，跌破超过 2%
+            也不满足。
+          </p>
+          <p>
+            TTM 为过去 365
+            天已实施的税前现金分红，包含特别分红并按送转归一到当前股数；参考价只对应股息率条件。基本面与分红持续性在讨论中核查。
+          </p>
+        </details>
       </section>
-      {error && !open && (
+      {error && !open && !active && (
         <Callout tone="danger">
           <span>{error}</span>
           <button disabled={busy} onClick={() => void load()}>
@@ -176,14 +236,96 @@ export function BuyWatch({
       {!board && !error && <p role="status">正在读取观察名单…</p>}
       {board && (
         <>
-          <div className="watch-summary">
-            <span>{rows.length} 家观察公司</span>
-            <span>{counts.attention} 家进入关注区间</span>
-            <span>
-              <Bell size={15} />
-              {counts.alerts} 家有未读变化
-            </span>
+          <div className="watch-summary" role="group" aria-label="观察名单筛选">
+            {(
+              [
+                ["all", "全部公司", rows.length],
+                ["attention", "关注区间", counts.attention],
+                ["yield", "股息达标", counts.yield],
+                ["bands", "日周接近下轨", counts.bands],
+                ["alerts", "未读变化", counts.alerts],
+                ["incomplete", "需要补查", counts.incomplete],
+              ] as const
+            ).map(([key, label, count]) => (
+              <button
+                key={key}
+                aria-pressed={filter === key}
+                onClick={() => setFilter(key)}
+              >
+                <span>{label}</span>
+                <strong>{count}</strong>
+              </button>
+            ))}
           </div>
+          {rows.length > 0 && (
+            <div className="watch-toolbar">
+              <label className="watch-search">
+                <Search size={16} />
+                <input
+                  aria-label="搜索观察公司"
+                  placeholder="搜索名称、代码或关注理由"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
+              <label className="watch-select">
+                <SlidersHorizontal size={15} />
+                <select
+                  aria-label="持仓筛选"
+                  value={ownership}
+                  onChange={(e) => setOwnership(e.target.value)}
+                >
+                  <option value="all">全部持仓状态</option>
+                  <option value="held">已持有</option>
+                  <option value="unheld">未持有</option>
+                </select>
+              </label>
+              <select
+                aria-label="观察排序"
+                value={sort}
+                onChange={(e) => setSort(e.target.value as WatchSort)}
+              >
+                <option value="default">变化与关注优先</option>
+                <option value="yield">股息率从高到低</option>
+                <option value="daily">最接近日线下轨</option>
+                <option value="weekly">最接近周线下轨</option>
+                <option value="name">公司名称</option>
+              </select>
+              <div
+                className="watch-view-toggle"
+                role="group"
+                aria-label="展示方式"
+              >
+                <button
+                  aria-label="紧凑列表"
+                  aria-pressed={view === "compact"}
+                  onClick={() => setView("compact")}
+                >
+                  <List size={17} />
+                </button>
+                <button
+                  aria-label="详细卡片"
+                  aria-pressed={view === "cards"}
+                  onClick={() => setView("cards")}
+                >
+                  <LayoutGrid size={17} />
+                </button>
+              </div>
+            </div>
+          )}
+          {rows.length > 0 && (
+            <div className="watch-result-meta">
+              <span aria-live="polite">
+                显示 {visible.length} / {rows.length} 家 · 金额单位：元 ·
+                绿色数值表示满足对应条件
+              </span>
+              {(query || filter !== "all" || ownership !== "all") && (
+                <button className="text-button" onClick={reset}>
+                  清除筛选
+                </button>
+              )}
+            </div>
+          )}
           {!rows.length && (
             <section className="panel">
               <h3>从一家公司开始</h3>
@@ -195,302 +337,78 @@ export function BuyWatch({
               </button>
             </section>
           )}
-          <div className="watch-list">
-            {rows.map((row) => {
-              const { entry, latest } = row;
-              const related = snapshot.holdings.filter(
-                (h) => canonical(h.symbol) === entry.symbol,
-              );
-              const ids = new Set(related.map((h) => h.id));
-              const trades = (snapshot.holdingTrades ?? [])
-                .filter((t) => ids.has(t.holdingId))
-                .sort(
-                  (a, b) =>
-                    b.occurredOn.localeCompare(a.occurredOn) ||
-                    b.sequence - a.sequence,
-                )
-                .slice(0, 5);
-              return (
-                <article
-                  className={`panel watch-card ${row.alert ? "watch-unread" : ""}`}
-                  key={entry.symbol}
-                >
-                  <div className="watch-heading">
-                    <div>
-                      <h3>
-                        {entry.name}
-                        <small>{entry.symbol}</small>
-                      </h3>
-                      <span>
-                        {related.length
-                          ? `关联 ${related.length} 个账户持仓`
-                          : "尚未持有"}
-                      </span>
-                    </div>
-                    <Badge
-                      tone={
-                        latest?.status === "attention" ? "success" : "neutral"
-                      }
-                    >
-                      {latest ? statuses[latest.status] : "等待首次检查"}
-                    </Badge>
-                  </div>
-                  {row.alert && (
-                    <p className="watch-change">
-                      <Bell size={15} />
-                      关注状态发生变化
-                      <button
-                        className="text-button"
-                        disabled={busy}
-                        onClick={() =>
-                          void run(async () => {
-                            await readWatchAlerts(entry.symbol);
-                            return getWatchBoard();
-                          })
-                        }
-                      >
-                        标为已读
-                      </button>
-                    </p>
-                  )}
-                  <div className="watch-metrics">
-                    <div>
-                      <span>收盘价</span>
-                      <strong>{number(latest?.price)}</strong>
-                    </div>
-                    <div>
-                      <span>TTM 税前股息率</span>
-                      <strong>{number(latest?.yieldPct, "%")}</strong>
-                    </div>
-                    <div>
-                      <span>距日线下轨</span>
-                      <strong>{number(latest?.daily?.distancePct, "%")}</strong>
-                    </div>
-                    <div>
-                      <span>距周线下轨</span>
-                      <strong>
-                        {number(latest?.weekly?.distancePct, "%")}
-                      </strong>
-                    </div>
-                  </div>
-                  <p className="watch-meta">
-                    行情日期 {latest?.observedOn ?? "—"} · 最近检查{" "}
-                    {row.checkedAt
-                      ? new Date(row.checkedAt).toLocaleString("zh-CN", {
-                          timeZone: "Asia/Shanghai",
-                        })
-                      : "—"}
-                  </p>
-                  {(row.refreshFailed || Boolean(latest?.issues.length)) && (
-                    <div className="watch-data-issue">
-                      <span>
-                        {row.refreshFailed
-                          ? "本次来源读取失败，保留上次结果。"
-                          : latest?.issues
-                              .map((i) => issueLabels[i])
-                              .join("；")}
-                      </span>
-                      <button
-                        className="text-button"
-                        disabled={busy}
-                        onClick={() => void run(refreshWatch)}
-                      >
-                        重新检查数据
-                      </button>
-                    </div>
-                  )}
-                  {entry.thesis && (
-                    <p className="watch-thesis">关注理由：{entry.thesis}</p>
-                  )}
-                  <div className="watch-actions">
-                    <button className="primary" onClick={() => ask(row)}>
-                      <MessageCircle size={16} />
-                      结合我的交易讨论
-                    </button>
-                    <button
-                      className="text-button"
-                      onClick={() =>
-                        setExpanded(
-                          expanded === entry.symbol ? null : entry.symbol,
-                        )
-                      }
-                    >
-                      {expanded === entry.symbol
-                        ? "收起依据"
-                        : "查看依据与交易"}
-                    </button>
-                    <button
-                      className="text-button"
-                      disabled={busy}
-                      onClick={() => edit(entry)}
-                    >
-                      编辑
-                    </button>
-                  </div>
-                  {expanded === entry.symbol && (
-                    <div className="watch-details">
-                      <p>
-                        BOLL 使用 20 期收盘均值 ±2
-                        倍总体标准差。日线和周线分别计算；本周尚未结束时，周线使用截至观察日的收盘。距下轨
-                        =（收盘价 ÷ 下轨 − 1）×100%。
-                      </p>
-                      <p>
-                        技术价格使用供应商调整收盘价，并归一到当前价格单位。TTM
-                        股息采用过去 365
-                        天已实施的税前现金分红（含特别分红），按送转股份调整单位；未来分红需另行研究。
-                      </p>
-                      <p>
-                        日线下轨 {number(latest?.daily?.lower)} · 周线下轨{" "}
-                        {number(latest?.weekly?.lower)} · TTM 每股分红{" "}
-                        {latest?.dividendPerShare ?? "—"} 元
-                      </p>
-                      {latest?.dividendBasis && (
-                        <p>
-                          分红资料覆盖至 {latest.dividendBasis.asOf} · 采集于{" "}
-                          {new Date(
-                            latest.dividendBasis.fetchedAt,
-                          ).toLocaleString("zh-CN", {
-                            timeZone: "Asia/Shanghai",
-                          })}
-                          。股息率按上述行情日期的收盘价重算。
-                        </p>
-                      )}
-                      {Boolean(latest?.dividendEvents.length) && (
-                        <ul>
-                          {latest?.dividendEvents.map((event, index) => (
-                            <li
-                              key={`${event.exDate}-${event.reportDate ?? index}`}
-                            >
-                              除息日 {event.exDate}
-                              {event.reportDate &&
-                                ` · 报告期 ${event.reportDate}`}
-                              {" · "}每十股税前派 {event.cashPerTen} 元，送{" "}
-                              {event.bonusPerTen} 股，转增{" "}
-                              {event.transferPerTen} 股
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      <ul>
-                        {latest?.sources.map((url, i) => (
-                          <li key={url}>
-                            <a href={url} target="_blank" rel="noreferrer">
-                              {i === 0
-                                ? "证券日线来源"
-                                : i === 1
-                                  ? "交易日期参考来源"
-                                  : "已实施分红来源"}
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                      <h4>已有持仓与最近交易</h4>
-                      {related.map((h) => (
-                        <p key={h.id}>
-                          {h.name} · 数量{" "}
-                          {snapshot.accounting?.holdings[h.id]?.quantity ??
-                            h.quantity ??
-                            "—"}{" "}
-                          · 成本{" "}
-                          {snapshot.accounting?.holdings[h.id]?.costBasis ??
-                            "—"}{" "}
-                          {h.currency}
-                        </p>
-                      ))}
-                      {!trades.length ? (
-                        <p>没有关联的已录入交易。</p>
-                      ) : (
-                        <ul>
-                          {trades.map((t) => (
-                            <li key={t.id}>
-                              {t.occurredOn} · {t.account} ·{" "}
-                              {
-                                {
-                                  buy: "买入",
-                                  sell: "卖出",
-                                  dividend: "分红",
-                                  expire: "到期",
-                                }[t.kind]
-                              }{" "}
-                              · 成交金额 {t.grossAmount} {t.currency}
-                              {t.kind === "buy" || t.kind === "sell"
-                                ? ` · 原始成交价 ${t.price}`
-                                : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      <p>
-                        以上仅包含已录入记录；股票拆合股前后的原始成交价不能直接比较。讨论时按问答预设授权发送持仓、交易与研究资料。
-                      </p>
-                      <button
-                        className="text-button danger"
-                        disabled={busy}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `移除 ${entry.name} 的观察资料与观察历史？持仓和交易记录保留。`,
-                            )
-                          )
-                            void run(async () => {
-                              await deleteWatch(entry.symbol);
-                              return getWatchBoard();
-                            });
-                        }}
-                      >
-                        移出观察名单
-                      </button>
-                    </div>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-          <section className="panel watch-weekly">
-            <h3>
-              本周复盘{" "}
-              <small>
-                {board.weekStart} — {board.weekEnd}
-              </small>
-            </h3>
-            <p>
-              本周已保存 {week.length} 条收盘观察，
-              {
-                new Set(
-                  week
-                    .filter((v) => v.status === "attention")
-                    .map((v) => v.symbol),
-                ).size
-              }{" "}
-              家公司曾进入关注区间。空白日期表示没有保存的检查结果。
+          {visible.length > 0 && (
+            <WatchList
+              rows={visible}
+              view={view}
+              held={held}
+              busy={busy}
+              minYield={minYield}
+              tolerance={tolerance}
+              onDetails={(row) => setExpanded(row.entry.symbol)}
+              onAsk={ask}
+              onEdit={(row) => edit(row.entry)}
+              onRetry={() => void run(refreshWatch)}
+              onRead={(row) =>
+                void run(async () => {
+                  await readWatchAlerts(row.entry.symbol);
+                  return getWatchBoard();
+                })
+              }
+            />
+          )}
+          {rows.length > 0 && visible.length === 0 && (
+            <section className="panel watch-no-results">
+              <h3>当前条件下没有公司</h3>
+              <p>调整搜索或筛选，可以继续查看已有名单。</p>
+              <button className="secondary" onClick={reset}>
+                清除筛选
+              </button>
+            </section>
+          )}
+          {view === "compact" && visible.length > 0 && (
+            <p className="watch-meta">
+              5%
+              参考价仅用于股息条件比较。打开公司可查看多档参考价、日周轨道和分红来源。
             </p>
-            {rows.map((row) => {
-              const records = week.filter((v) => v.symbol === row.entry.symbol);
-              return (
-                <div className="watch-week-row" key={row.entry.symbol}>
-                  <strong>{row.entry.name}</strong>
-                  <span>
-                    {records.length
-                      ? records
-                          .map(
-                            (v) =>
-                              `${v.observedOn.slice(5)} ${statuses[v.status]}`,
-                          )
-                          .join("；")
-                      : "本周暂无观察记录"}
-                  </span>
-                </div>
-              );
-            })}
-            <button
-              className="secondary"
-              disabled={!rows.length}
-              onClick={weeklyAsk}
-            >
-              结合持仓做周末复盘{rows.length > 5 ? "（先讨论前 5 家）" : ""}
-            </button>
-          </section>
+          )}
+          <WatchWeekly
+            board={board}
+            onAsk={weeklyAsk}
+            onDetails={(row) => setExpanded(row.entry.symbol)}
+          />
         </>
+      )}
+      {active && !open && (
+        <WatchDetails
+          row={active}
+          snapshot={snapshot}
+          minYield={minYield}
+          tolerance={tolerance}
+          busy={busy}
+          error={error}
+          onClose={() => setExpanded(null)}
+          onAsk={() => {
+            setExpanded(null);
+            ask(active);
+          }}
+          onEdit={() => {
+            setExpanded(null);
+            edit(active.entry);
+          }}
+          onRemove={() => {
+            if (
+              window.confirm(
+                `移除 ${active.entry.name} 的观察资料与观察历史？持仓和交易记录保留。`,
+              )
+            )
+              void run(async () => {
+                await deleteWatch(active.entry.symbol);
+                setExpanded(null);
+                return getWatchBoard();
+              });
+          }}
+        />
       )}
       <>
         {open && (

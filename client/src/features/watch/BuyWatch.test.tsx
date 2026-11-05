@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BuyWatch } from "./BuyWatch";
@@ -28,6 +29,12 @@ const empty: api.WatchBoard = {
   bandDistancePct: 2,
 };
 const row: api.WatchRow = {
+  dividendPrices: [
+    { yieldPct: 4, price: "125.00", reached: true, changePct: 25 },
+    { yieldPct: 5, price: "100.00", reached: true, changePct: 0 },
+    { yieldPct: 6, price: "83.33", reached: false, changePct: -16.67 },
+    { yieldPct: 7, price: "71.42", reached: false, changePct: -28.58 },
+  ],
   entry: {
     symbol: "600036.SS",
     name: "测试公司",
@@ -75,7 +82,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(api.getWatchBoard).mockResolvedValue(structuredClone(empty));
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 it("adds an unheld company without creating a financial position", async () => {
   const p = props();
@@ -178,8 +188,154 @@ it("shows the dividend coverage and exact events behind the closing yield", asyn
     await screen.findByRole("button", { name: "查看依据与交易" }),
   );
   expect(screen.getByText(/分红资料覆盖至 2026-11-04/)).toBeTruthy();
-  expect(screen.getByText(/除息日 2026-07-01/).textContent).toContain("12.345");
-  expect(screen.getByText(/除息日 2026-07-01/).textContent).toContain(
-    "报告期 2025-12-31",
+  const event = screen.getByText(/除息日 2026-07-01/).closest("tr")!;
+  expect(event.textContent).toContain("12.345");
+  expect(event.textContent).toContain("报告期 2025-12-31");
+});
+
+it("combines search, holdings and rule filters without changing the watch list", async () => {
+  const missing = structuredClone(row);
+  missing.entry = { ...missing.entry, symbol: "600000.SS", name: "资料待查" };
+  missing.latest = null;
+  missing.dividendPrices = [];
+  missing.alert = false;
+  const waiting = structuredClone(row);
+  waiting.entry = { ...waiting.entry, symbol: "000001.SZ", name: "另一家公司" };
+  waiting.alert = false;
+  waiting.latest!.status = "waiting";
+  waiting.latest!.yieldPct = 4;
+  waiting.dividendPrices.find((p) => p.yieldPct === 5)!.reached = false;
+  vi.mocked(api.getWatchBoard).mockResolvedValue({
+    ...empty,
+    rows: [missing, waiting, structuredClone(row)],
+  });
+  render(<BuyWatch {...props()} />);
+  const table = await screen.findByRole("table", { name: "观察公司对比" });
+  expect(within(table).getAllByRole("row")).toHaveLength(4);
+  fireEvent.click(screen.getByRole("button", { name: /股息达标/ }));
+  expect(within(table).getAllByRole("row")).toHaveLength(2);
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索观察公司" }), {
+    target: { value: "不存在" },
+  });
+  expect(screen.queryByRole("table", { name: "观察公司对比" })).toBeNull();
+  // Weekly review retains every company despite filters on the latest-observation list.
+  expect(
+    within(screen.getByRole("table", { name: "本周逐日观察" })).getAllByRole(
+      "row",
+    ),
+  ).toHaveLength(4);
+  fireEvent.click(screen.getAllByRole("button", { name: "清除筛选" })[0]);
+  fireEvent.change(screen.getByRole("combobox", { name: "持仓筛选" }), {
+    target: { value: "held" },
+  });
+  expect(screen.queryByRole("table", { name: "观察公司对比" })).toBeNull();
+  expect(api.saveWatch).not.toHaveBeenCalled();
+  expect(api.deleteWatch).not.toHaveBeenCalled();
+});
+
+it("sorts missing metrics last and switches between compact and visual details", async () => {
+  const missing = structuredClone(row);
+  missing.entry = { ...missing.entry, symbol: "600000.SS", name: "未知公司" };
+  missing.latest = null;
+  missing.dividendPrices = [];
+  missing.alert = false;
+  vi.mocked(api.getWatchBoard).mockResolvedValue({
+    ...empty,
+    rows: [missing, structuredClone(row)],
+    weekly: [row.latest!],
+  });
+  render(<BuyWatch {...props()} />);
+  await screen.findByRole("table", { name: "观察公司对比" });
+  fireEvent.change(screen.getByRole("combobox", { name: "观察排序" }), {
+    target: { value: "yield" },
+  });
+  const records = within(
+    screen.getByRole("table", { name: "观察公司对比" }),
+  ).getAllByRole("row");
+  expect(records[1].textContent).toContain("测试公司");
+  expect(records[2].textContent).toContain("未知公司");
+  fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
+  expect(screen.queryByRole("table", { name: "观察公司对比" })).toBeNull();
+  expect(screen.getAllByRole("img", { name: /日线下轨/ })).toHaveLength(1);
+  expect(screen.getByText("¥83.33")).toBeTruthy();
+  expect(
+    screen.getByText("暂无可用参考价：需要有效且为正的 TTM 每股分红。"),
+  ).toBeTruthy();
+  expect(
+    within(screen.getByRole("table", { name: "本周逐日观察" })).getByText(
+      "关注",
+    ),
+  ).toBeTruthy();
+  expect(api.refreshWatch).not.toHaveBeenCalled();
+});
+
+it("shows removal failures inside the company drawer and preserves the company", async () => {
+  vi.mocked(api.getWatchBoard).mockResolvedValue({
+    ...empty,
+    rows: [structuredClone(row)],
+  });
+  vi.mocked(api.deleteWatch).mockRejectedValue(new Error("删除未完成"));
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<BuyWatch {...props()} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "查看依据与交易" }),
   );
+  fireEvent.click(screen.getByRole("button", { name: "移出观察名单" }));
+  await within(screen.getByRole("dialog")).findByText(/删除未完成/);
+  expect(api.deleteWatch).toHaveBeenCalledWith("600036.SS");
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});
+
+it("matches current holdings by canonical code and excludes closed positions", async () => {
+  const closed = structuredClone(row);
+  closed.entry = { ...closed.entry, symbol: "000001.SZ", name: "已清仓公司" };
+  vi.mocked(api.getWatchBoard).mockResolvedValue({
+    ...empty,
+    rows: [structuredClone(row), closed],
+  });
+  const p = props();
+  p.snapshot = structuredClone(p.snapshot);
+  const holding = {
+    id: "held",
+    symbol: "600036.SH",
+    name: "测试持仓",
+    assetClass: "股票" as const,
+    marketValue: 100,
+    costBasis: 100,
+    quantity: 1,
+    targetPct: 0,
+    currency: "CNY",
+    fxRateToBase: 1,
+    valuationDate: "2026-11-04",
+    fxRateSource: "manual",
+    fxRateObservedOn: "2026-11-04",
+  };
+  p.snapshot.holdings = [
+    holding,
+    { ...holding, id: "closed", symbol: "000001.SZ", quantity: 0 },
+  ];
+  render(<BuyWatch {...p} />);
+  await screen.findByRole("table", { name: "观察公司对比" });
+  fireEvent.change(screen.getByRole("combobox", { name: "持仓筛选" }), {
+    target: { value: "held" },
+  });
+  const table = screen.getByRole("table", { name: "观察公司对比" });
+  expect(within(table).getAllByRole("row")).toHaveLength(2);
+  expect(within(table).getByText("测试公司")).toBeTruthy();
+  expect(within(table).queryByText("已清仓公司")).toBeNull();
+});
+
+it("uses exact server threshold results instead of rounding the displayed yield into a pass", async () => {
+  const boundary = structuredClone(row);
+  boundary.latest!.status = "waiting";
+  boundary.latest!.yieldPct = 4.999999;
+  boundary.dividendPrices.find((p) => p.yieldPct === 5)!.reached = false;
+  vi.mocked(api.getWatchBoard).mockResolvedValue({
+    ...empty,
+    rows: [boundary],
+  });
+  render(<BuyWatch {...props()} />);
+  await screen.findByRole("table", { name: "观察公司对比" });
+  fireEvent.click(screen.getByRole("button", { name: "股息达标 0" }));
+  expect(screen.queryByRole("table", { name: "观察公司对比" })).toBeNull();
 });

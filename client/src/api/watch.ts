@@ -46,9 +46,16 @@ export interface Observation {
 export interface WatchRow {
   entry: WatchEntry;
   latest: Observation | null;
+  dividendPrices: DividendPrice[];
   alert: boolean;
   checkedAt: string | null;
   refreshFailed: boolean;
+}
+export interface DividendPrice {
+  yieldPct: number;
+  price: string;
+  reached: boolean | null;
+  changePct: number | null;
 }
 export interface WatchBoard {
   rows: WatchRow[];
