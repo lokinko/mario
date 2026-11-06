@@ -401,7 +401,7 @@ it("keeps data hidden until login, and revokes the session before disconnecting"
   fireEvent.click(screen.getByRole("button", { name: "登录" }));
   await screen.findByRole("alert");
   expect(webToken()).toBeUndefined();
-  fireEvent.click(screen.getByRole("button", { name: "登录" }));
+  fireEvent.click(await screen.findByRole("button", { name: "登录" }));
   await screen.findByText("个人资产");
   expect(webToken()).toBe("valid-session");
   fireEvent.click(screen.getByRole("button", { name: "退出账号" }));

@@ -16,6 +16,7 @@ import fixture from "../../test/emptySnapshot.json";
 vi.mock("../../api/watch", () => ({
   getWatchBoard: vi.fn(),
   saveWatch: vi.fn(),
+  setWatchPinned: vi.fn(),
   deleteWatch: vi.fn(),
   readWatchAlerts: vi.fn(),
   refreshWatch: vi.fn(),
@@ -40,6 +41,7 @@ const row: api.WatchRow = {
     name: "测试公司",
     thesis: "关注分红的持续性",
     createdAt: "2026-11-04T12:00:00Z",
+    pinned: false,
   },
   latest: {
     symbol: "600036.SS",
@@ -274,6 +276,112 @@ it("sorts missing metrics last and switches between compact and visual details",
   expect(api.refreshWatch).not.toHaveBeenCalled();
 });
 
+it("sorts all four metrics in both directions from the table headers", async () => {
+  const cheaper = structuredClone(row);
+  cheaper.entry = { ...cheaper.entry, symbol: "600000.SS", name: "低价公司" };
+  cheaper.latest!.price = 10;
+  cheaper.latest!.yieldPct = 0;
+  cheaper.latest!.daily!.distancePct = -3;
+  cheaper.latest!.weekly!.distancePct = 1;
+  const missing = {
+    ...row,
+    entry: { ...row.entry, symbol: "000001.SZ", name: "未知公司" },
+    latest: null,
+  };
+  vi.mocked(api.getWatchBoard).mockResolvedValue({
+    ...empty,
+    rows: [missing, cheaper, row],
+  });
+  render(<BuyWatch {...props()} />);
+  const table = await screen.findByRole("table", { name: "观察公司对比" });
+  for (const [label, first, second] of [
+    ["收盘价", "低价公司", "测试公司"],
+    ["TTM 股息率", "测试公司", "低价公司"],
+    ["距日线下轨", "测试公司", "低价公司"],
+    ["距周线中轨", "低价公司", "测试公司"],
+  ]) {
+    const header = within(table).getByRole("button", {
+      name: new RegExp(`^${label}：`),
+    });
+    for (const expected of [
+      [first, second],
+      [second, first],
+    ]) {
+      fireEvent.click(header);
+      const records = within(table).getAllByRole("row").slice(1);
+      [...expected, "未知公司"].forEach((name, i) => {
+        expect(within(records[i]).getByText(name)).toBeTruthy();
+      });
+    }
+  }
+});
+
+it("puts a pinned company first in both views without overriding filters", async () => {
+  const other = structuredClone(row);
+  other.entry = { ...other.entry, symbol: "600000.SS", name: "重点公司" };
+  other.latest!.yieldPct = 2;
+  vi.mocked(api.getWatchBoard).mockResolvedValue({
+    ...empty,
+    rows: [row, other],
+  });
+  vi.mocked(api.setWatchPinned).mockImplementation(async (_symbol, pinned) => ({
+    ...other.entry,
+    pinned,
+  }));
+  render(<BuyWatch {...props()} />);
+  const table = await screen.findByRole("table", { name: "观察公司对比" });
+  fireEvent.change(screen.getByRole("combobox", { name: "观察排序" }), {
+    target: { value: "yield" },
+  });
+  expect(within(table).getAllByRole("row")[1].textContent).toContain(
+    "测试公司",
+  );
+  fireEvent.click(within(table).getByRole("button", { name: "置顶重点公司" }));
+  await within(table).findByRole("button", { name: "取消置顶重点公司" });
+  expect(api.setWatchPinned).toHaveBeenCalledWith("600000.SS", true);
+  expect(within(table).getAllByRole("row")[1].textContent).toContain(
+    "重点公司",
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索观察公司" }), {
+    target: { value: "测试公司" },
+  });
+  expect(within(table).queryByText("重点公司")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+  fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
+  expect(screen.getAllByRole("article")[0].textContent).toContain("重点公司");
+  fireEvent.click(screen.getByRole("button", { name: "取消置顶重点公司" }));
+  await screen.findByRole("button", { name: "置顶重点公司" });
+  expect(api.setWatchPinned).toHaveBeenLastCalledWith("600000.SS", false);
+  expect(screen.getAllByRole("article")[0].textContent).toContain("测试公司");
+});
+
+it("keeps the saved pin state when the write fails and sends only editable fields on edit", async () => {
+  vi.mocked(api.getWatchBoard).mockResolvedValue({
+    ...empty,
+    rows: [{ ...row, entry: { ...row.entry, pinned: true } }],
+  });
+  vi.mocked(api.setWatchPinned).mockRejectedValue(new Error("未能取消置顶"));
+  render(<BuyWatch {...props()} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "取消置顶测试公司" }),
+  );
+  await screen.findByText(/未能取消置顶/);
+  expect(screen.getByRole("button", { name: "取消置顶测试公司" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
+  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+  fireEvent.change(screen.getByLabelText("公司名称"), {
+    target: { value: "更新名称" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存观察公司" }));
+  await waitFor(() =>
+    expect(api.saveWatch).toHaveBeenCalledWith({
+      symbol: row.entry.symbol,
+      name: "更新名称",
+      thesis: row.entry.thesis,
+    }),
+  );
+});
+
 it("shows removal failures inside the company drawer and preserves the company", async () => {
   vi.mocked(api.getWatchBoard).mockResolvedValue({
     ...empty,
@@ -360,7 +468,7 @@ it("filters by the weekly middle and shades that range even far from the weekly 
   render(<BuyWatch {...props()} />);
   const table = await screen.findByRole("table", { name: "观察公司对比" });
   expect(
-    within(table).getByRole("columnheader", { name: "距周线中轨" }),
+    within(table).getByRole("button", { name: /^距周线中轨：/ }),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "日周条件达标 1" }));
   expect(within(table).getAllByRole("row")).toHaveLength(2);

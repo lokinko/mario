@@ -139,6 +139,7 @@ try {
   assert.deepEqual(await api("/sync/version"), watchVersion, "reading watches must not mutate account data");
   const watched = await api("/watch", "PUT", { symbol: "600036.SH", name: "观察测试", thesis: "核查分红持续性" });
   assert.equal(watched.symbol, "600036.SS");
+  assert.equal(watched.pinned, false);
   assert.equal((await api("/watch")).rows[0].entry.thesis, "核查分红持续性");
   const referenceVersion = await api("/sync/version");
   assert.deepEqual((await api("/watch")).rows[0].dividendPrices, [], "unobserved stocks have no invented reference prices");
@@ -146,6 +147,17 @@ try {
   await api("/watch", "PUT", { symbol: "0941.HK", name: "港股", thesis: "" }, 400);
   const staleWatch = await fetch(base + "/watch", { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "If-Match": "-1" }, body: JSON.stringify({ symbol: "600036.SS", name: "旧表单", thesis: "" }) });
   assert.equal(staleWatch.status, 409);
+  const pinPath = "/watch/600036.SS/pin";
+  const pinBody = JSON.stringify({ pinned: true });
+  const pinHeaders = { "Content-Type": "application/json" };
+  assert.equal((await fetch(base + pinPath, { method: "PUT", headers: pinHeaders, body: pinBody })).status, 401);
+  assert.equal((await fetch(base + pinPath, { method: "PUT", headers: { ...pinHeaders, Authorization: `Bearer ${token}`, "If-Match": "-1" }, body: pinBody })).status, 409);
+  assert.equal((await api("/watch")).rows[0].entry.pinned, false);
+  await api("/watch/600000.SS/pin", "PUT", { pinned: true }, 404);
+  assert.equal((await api(pinPath, "PUT", { pinned: true })).pinned, true);
+  await api("/watch", "PUT", { symbol: watched.symbol, name: watched.name, thesis: "复核分红" });
+  assert.equal((await api("/watch")).rows[0].entry.pinned, true);
+  assert.equal((await api(pinPath, "PUT", { pinned: false })).pinned, false);
   assert.deepEqual((await api("/snapshot")).holdings, snap.holdings, "watching must not create holdings");
   await api("/watch/600036.SS/read", "POST");
   await api("/watch/600036.SS", "DELETE");

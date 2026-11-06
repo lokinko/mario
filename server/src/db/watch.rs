@@ -52,13 +52,42 @@ impl Database {
         {
             return Err(AppError::Validation("观察名单最多保留 50 家公司".into()));
         }
-        let created_at = old
+        let old = old
             .as_deref()
             .map(serde_json::from_str::<WatchEntry>)
-            .transpose()?
-            .map_or_else(|| Utc::now().to_rfc3339(), |v| v.created_at);
-        let entry = WatchEntry { input, created_at };
+            .transpose()?;
+        let entry = match old {
+            Some(entry) => WatchEntry { input, ..entry },
+            None => WatchEntry {
+                input,
+                created_at: Utc::now().to_rfc3339(),
+                pinned: false,
+            },
+        };
         tx.execute("INSERT INTO watch_entries(symbol,payload,checked_at,refresh_failed) VALUES ($1,$2,NULL,0) ON CONFLICT(symbol) DO UPDATE SET payload=excluded.payload",params![entry.input.symbol,serde_json::to_string(&entry)?])?;
+        tx.commit()?;
+        Ok(entry)
+    }
+
+    pub fn set_watch_pinned(&self, symbol: &str, pinned: bool) -> AppResult<WatchEntry> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let payload: String = tx
+            .query_row(
+                "SELECT payload FROM watch_entries WHERE symbol=$1",
+                [symbol],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| AppError::NotFound("观察公司不存在".into()))?;
+        let mut entry: WatchEntry = serde_json::from_str(&payload)?;
+        if entry.pinned != pinned {
+            entry.pinned = pinned;
+            tx.execute(
+                "UPDATE watch_entries SET payload=$2 WHERE symbol=$1",
+                params![symbol, serde_json::to_string(&entry)?],
+            )?;
+        }
         tx.commit()?;
         Ok(entry)
     }
@@ -150,8 +179,9 @@ impl Database {
             .as_deref()
             .map(serde_json::from_str::<WatchEntry>)
             .transpose()?
-            .as_ref()
-            != Some(expected)
+            .is_none_or(|entry| {
+                entry.input != expected.input || entry.created_at != expected.created_at
+            })
         {
             return Ok(());
         }
@@ -571,6 +601,12 @@ mod tests {
         let other = Database::test();
         let before = db.snapshot().unwrap();
         let entry = entry(&db);
+        let pinned = db.set_watch_pinned(&entry.input.symbol, true).unwrap();
+        assert!(pinned.pinned);
+        assert!(matches!(
+            other.set_watch_pinned(&entry.input.symbol, true),
+            Err(AppError::NotFound(_))
+        ));
         let (data, day) = market_fixture();
         let observation = evaluate(
             &entry.input.symbol,
@@ -589,13 +625,14 @@ mod tests {
         assert!(other.watch_entries().unwrap().is_empty());
         let backup = db.export_sync_data().unwrap();
         other.import_sync_data(&backup).unwrap();
+        assert!(other.watch_board(day).unwrap().rows[0].entry.pinned);
         assert_eq!(
             other.watch_board(day).unwrap().rows[0].latest,
             Some(observation.clone())
         );
         drop(db);
         let db = account.reopen_from_old_release();
-        assert_eq!(db.watch_entries().unwrap(), vec![entry.clone()]);
+        assert_eq!(db.watch_entries().unwrap(), vec![pinned]);
         db.delete_watch(&entry.input.symbol).unwrap();
         db.save_watch_observation(
             &entry,
@@ -612,6 +649,22 @@ mod tests {
             serde_json::to_value(after.holdings).unwrap()
         );
         assert_eq!(before.holding_trades, after.holding_trades);
+        // Older v26 backups did not serialize a pin preference.
+        let mut unpinned = backup.clone();
+        let saved = &mut unpinned
+            .tables
+            .iter_mut()
+            .find(|table| table.name == "watch_entries")
+            .unwrap()
+            .rows[0][1];
+        let super::super::SyncValue::Text(payload) = saved else {
+            panic!("watch entry must have a JSON payload");
+        };
+        let mut payload_value: serde_json::Value = serde_json::from_str(payload).unwrap();
+        payload_value.as_object_mut().unwrap().remove("pinned");
+        *payload = payload_value.to_string();
+        other.import_sync_data(&unpinned).unwrap();
+        assert!(!other.watch_entries().unwrap()[0].pinned);
         // v23 backups have no watch tables; restoring them deliberately restores an empty list.
         let mut old = backup;
         old.schema_version = 23;

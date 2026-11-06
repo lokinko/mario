@@ -37,7 +37,54 @@ export function checks(row: WatchRow, minYield: number) {
 
 export type WatchFilter =
   "all" | "attention" | "yield" | "bands" | "alerts" | "incomplete";
-export type WatchSort = "default" | "yield" | "daily" | "weekly" | "name";
+export const sortOptions = {
+  default: "变化与关注优先",
+  yield: "股息率从高到低",
+  "yield-asc": "股息率从低到高",
+  "price-asc": "收盘价从低到高",
+  "price-desc": "收盘价从高到低",
+  daily: "距日线下轨从近到远",
+  "daily-far": "距日线下轨从远到近",
+  weekly: "距周线中轨从近到远",
+  "weekly-far": "距周线中轨从远到近",
+  name: "公司名称",
+} as const;
+export type WatchSort = keyof typeof sortOptions;
+
+type MetricSort = Exclude<WatchSort, "default" | "name">;
+const metrics: Record<
+  MetricSort,
+  { value: (row: WatchRow) => number | null | undefined; direction: 1 | -1 }
+> = {
+  yield: { value: (r) => r.latest?.yieldPct, direction: -1 },
+  "yield-asc": { value: (r) => r.latest?.yieldPct, direction: 1 },
+  "price-asc": { value: (r) => r.latest?.price, direction: 1 },
+  "price-desc": { value: (r) => r.latest?.price, direction: -1 },
+  daily: { value: dailyDistance, direction: 1 },
+  "daily-far": { value: dailyDistance, direction: -1 },
+  weekly: { value: weeklyDistance, direction: 1 },
+  "weekly-far": { value: weeklyDistance, direction: -1 },
+};
+
+function dailyDistance(row: WatchRow) {
+  return Math.abs(row.latest?.daily?.distancePct ?? NaN);
+}
+
+function weeklyDistance(row: WatchRow) {
+  return Math.abs(row.latest?.weekly?.distancePct ?? NaN);
+}
+
+function compareMetric(
+  a: number | null | undefined,
+  b: number | null | undefined,
+  direction: 1 | -1,
+) {
+  if (a == null || !Number.isFinite(a))
+    return b == null || !Number.isFinite(b) ? 0 : 1;
+  if (b == null || !Number.isFinite(b)) return -1;
+  return direction * (a - b);
+}
+
 export function selectRows(
   rows: WatchRow[],
   query: string,
@@ -70,26 +117,14 @@ export function selectRows(
   });
   const rank = (r: WatchRow) =>
     r.alert ? 0 : r.latest?.status === "attention" ? 1 : 2;
-  const metric = (r: WatchRow) =>
-    sort === "yield"
-      ? r.latest?.yieldPct
-      : Math.abs(
-          (sort === "daily" ? r.latest?.daily : r.latest?.weekly)
-            ?.distancePct ?? NaN,
-        );
   return selected.sort((a, b) => {
+    const pinned = Number(b.entry.pinned) - Number(a.entry.pinned);
+    if (pinned) return pinned;
+    const symbol = a.entry.symbol.localeCompare(b.entry.symbol);
     if (sort === "name")
-      return a.entry.name.localeCompare(b.entry.name, "zh-CN");
-    if (sort === "default")
-      return rank(a) - rank(b) || a.entry.symbol.localeCompare(b.entry.symbol);
-    const av = metric(a),
-      bv = metric(b);
-    const knownA = av != null && Number.isFinite(av),
-      knownB = bv != null && Number.isFinite(bv);
-    if (!knownA || !knownB) return Number(knownB) - Number(knownA);
-    return (
-      (sort === "yield" ? bv! - av! : av! - bv!) ||
-      a.entry.symbol.localeCompare(b.entry.symbol)
-    );
+      return a.entry.name.localeCompare(b.entry.name, "zh-CN") || symbol;
+    if (sort === "default") return rank(a) - rank(b) || symbol;
+    const { value, direction } = metrics[sort];
+    return compareMetric(value(a), value(b), direction) || symbol;
   });
 }

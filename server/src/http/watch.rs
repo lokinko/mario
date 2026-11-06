@@ -5,7 +5,7 @@ use crate::{
 };
 use axum::{
     extract::Path,
-    routing::{get, post},
+    routing::{get, post, put},
     Extension, Json, Router,
 };
 use std::sync::Arc;
@@ -16,6 +16,7 @@ pub(super) fn router() -> Router {
         .route("/api/watch/refresh", post(refresh))
         .route("/api/watch/{symbol}", axum::routing::delete(remove))
         .route("/api/watch/{symbol}/read", post(read))
+        .route("/api/watch/{symbol}/pin", put(pin))
 }
 async fn board(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<WatchBoard>> {
     Ok(Json(
@@ -45,6 +46,18 @@ async fn read(
 ) -> AppResult<Json<serde_json::Value>> {
     state.db.read_watch_alerts(&symbol)?;
     Ok(Json(serde_json::json!({"ok":true})))
+}
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WatchPinInput {
+    pinned: bool,
+}
+async fn pin(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(symbol): Path<String>,
+    Json(input): Json<WatchPinInput>,
+) -> AppResult<Json<WatchEntry>> {
+    Ok(Json(state.db.set_watch_pinned(&symbol, input.pinned)?))
 }
 async fn refresh(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<WatchBoard>> {
     Ok(Json(

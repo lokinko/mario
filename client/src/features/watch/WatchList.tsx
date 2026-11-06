@@ -1,4 +1,12 @@
-import { Bell, MessageCircle } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Bell,
+  MessageCircle,
+  Pin,
+  PinOff,
+} from "lucide-react";
 import type { WatchRow } from "../../api/watch";
 import { Badge } from "../../components/Badge";
 import { formatAmount } from "../../lib/format";
@@ -9,6 +17,8 @@ import {
   issueLabels,
   number,
   statuses,
+  sortOptions,
+  type WatchSort,
 } from "./presentation";
 
 export function WatchList({
@@ -18,6 +28,9 @@ export function WatchList({
   busy,
   minYield,
   tolerance,
+  sort,
+  onSort,
+  onPin,
   onDetails,
   onAsk,
   onEdit,
@@ -30,6 +43,9 @@ export function WatchList({
   busy: boolean;
   minYield: number;
   tolerance: number;
+  sort: WatchSort;
+  onSort: (sort: WatchSort) => void;
+  onPin: (row: WatchRow) => void;
   onDetails: (row: WatchRow) => void;
   onAsk: (row: WatchRow) => void;
   onEdit: (row: WatchRow) => void;
@@ -65,6 +81,58 @@ export function WatchList({
         标为已读
       </button>
     );
+  const pin = (row: WatchRow) => {
+    const pinned = row.entry.pinned;
+    const Icon = pinned ? PinOff : Pin;
+    const label = pinned ? "取消置顶" : "置顶";
+    return (
+      <button
+        className="text-button"
+        disabled={busy}
+        onClick={() => onPin(row)}
+        aria-label={`${label}${row.entry.name}`}
+      >
+        <Icon size={15} aria-hidden="true" />
+        {label}
+      </button>
+    );
+  };
+  const sortHeader = (
+    label: string,
+    first: WatchSort,
+    second: WatchSort,
+    firstDirection: "ascending" | "descending",
+    absolute = false,
+  ) => {
+    const direction =
+      sort === first
+        ? firstDirection
+        : sort === second
+          ? firstDirection === "ascending"
+            ? "descending"
+            : "ascending"
+          : undefined;
+    const Icon =
+      direction === "ascending"
+        ? ArrowUp
+        : direction === "descending"
+          ? ArrowDown
+          : ArrowUpDown;
+    const next = sort === first ? second : first;
+    return (
+      <th scope="col" aria-sort={direction && absolute ? "other" : direction}>
+        <button
+          className="watch-sort-header"
+          onClick={() => onSort(next)}
+          aria-label={`${label}：${direction ? `当前${sortOptions[sort]}，` : ""}点击按${sortOptions[next]}`}
+          title={sortOptions[next]}
+        >
+          {label}
+          <Icon size={13} aria-hidden="true" />
+        </button>
+      </th>
+    );
+  };
   if (view === "compact")
     return (
       <div className="panel watch-overview table-scroll">
@@ -72,11 +140,23 @@ export function WatchList({
           <thead>
             <tr>
               <th>公司 / 行情日</th>
-              <th>收盘价</th>
-              <th>TTM 股息率</th>
+              {sortHeader("收盘价", "price-asc", "price-desc", "ascending")}
+              {sortHeader("TTM 股息率", "yield", "yield-asc", "descending")}
               <th>5% 参考价</th>
-              <th>距日线下轨</th>
-              <th>距周线中轨</th>
+              {sortHeader(
+                "距日线下轨",
+                "daily",
+                "daily-far",
+                "ascending",
+                true,
+              )}
+              {sortHeader(
+                "距周线中轨",
+                "weekly",
+                "weekly-far",
+                "ascending",
+                true,
+              )}
               <th>观察状态</th>
               <th>操作</th>
             </tr>
@@ -98,6 +178,9 @@ export function WatchList({
                       {held.has(row.entry.symbol) ? "已持有" : "未持有"}
                     </small>
                   </button>
+                  {row.entry.pinned && (
+                    <span className="watch-pinned">已置顶</span>
+                  )}
                   <small className="watch-row-date">
                     {row.latest?.observedOn ?? "尚无行情"}
                   </small>
@@ -140,6 +223,7 @@ export function WatchList({
                 </td>
                 <td data-label="操作">
                   <div className="watch-row-actions">
+                    {pin(row)}
                     <button
                       className="text-button"
                       onClick={() => onDetails(row)}
@@ -175,6 +259,7 @@ export function WatchList({
                 {row.entry.name}
                 <small>{row.entry.symbol}</small>
               </h3>
+              {row.entry.pinned && <span className="watch-pinned">已置顶</span>}
               <span>
                 {held.has(row.entry.symbol) ? "已关联原账本持仓" : "尚未持有"}
               </span>
@@ -221,6 +306,7 @@ export function WatchList({
             <p className="watch-thesis">{row.entry.thesis}</p>
           )}
           <div className="watch-actions">
+            {pin(row)}
             <button className="primary" onClick={() => onAsk(row)}>
               <MessageCircle size={15} />
               结合我的交易讨论

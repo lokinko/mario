@@ -187,6 +187,14 @@
   margin: 0;
   min-height: 38px;
 }
+.watch-toolbar .watch-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
 .watch-view-toggle {
   display: flex;
   border: 1px solid var(--line);
@@ -244,6 +252,31 @@
 }
 .watch-overview th:nth-child(n + 2):nth-child(-n + 6) {
   text-align: right;
+}
+.watch-sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+}
+.watch-sort-header:hover,
+.watch-overview th[aria-sort] .watch-sort-header {
+  color: var(--brand);
+}
+.watch-pinned,
+.watch-heading > div > .watch-pinned {
+  display: inline-block;
+  margin: 4px 6px 0 0;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--brand-tint);
+  color: var(--brand);
+  font-size: 11px;
+  white-space: nowrap;
 }
 .watch-company {
   display: block;
@@ -738,11 +771,13 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
-  .watch-toolbar > select {
+  .watch-toolbar .watch-sort {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .watch-toolbar .watch-sort select {
     flex: 1;
     min-width: 0;
-    max-width: 170px;
-    width: 100%;
     font-size: 12px;
   }
   .watch-select {
@@ -754,7 +789,6 @@
     font-size: 12px;
   }
   .watch-view-toggle {
-    grid-column: 1 / -1;
     justify-self: end;
   }
   .watch-overview {

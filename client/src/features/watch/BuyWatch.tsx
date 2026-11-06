@@ -13,6 +13,7 @@ import {
 import {
   getWatchBoard,
   saveWatch,
+  setWatchPinned,
   deleteWatch,
   readWatchAlerts,
   refreshWatch,
@@ -35,6 +36,7 @@ import {
   statuses,
   selectRows,
   checks,
+  sortOptions,
   type WatchFilter,
   type WatchSort,
 } from "./presentation";
@@ -103,9 +105,13 @@ export function BuyWatch({
     setDirty(false);
     onSaved();
   };
-  const edit = (value?: WatchInput) => {
-    setForm(value ?? empty);
-    setEditing(Boolean(value));
+  const edit = (entry?: WatchInput) => {
+    setForm(
+      entry
+        ? { symbol: entry.symbol, name: entry.name, thesis: entry.thesis }
+        : empty,
+    );
+    setEditing(Boolean(entry));
     setDirty(false);
     setOpen(true);
   };
@@ -172,7 +178,6 @@ export function BuyWatch({
     setQuery("");
     setFilter("all");
     setOwnership("all");
-    setSort("default");
   };
   const week = board?.weekly ?? [];
   const weeklyAsk = () => {
@@ -299,17 +304,20 @@ export function BuyWatch({
                   <option value="unheld">未持有</option>
                 </select>
               </label>
-              <select
-                aria-label="观察排序"
-                value={sort}
-                onChange={(e) => setSort(e.target.value as WatchSort)}
-              >
-                <option value="default">变化与关注优先</option>
-                <option value="yield">股息率从高到低</option>
-                <option value="daily">最接近日线下轨</option>
-                <option value="weekly">最接近周线中轨</option>
-                <option value="name">公司名称</option>
-              </select>
+              <label className="watch-sort">
+                排序
+                <select
+                  aria-label="观察排序"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as WatchSort)}
+                >
+                  {Object.entries(sortOptions).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div
                 className="watch-view-toggle"
                 role="group"
@@ -364,6 +372,24 @@ export function BuyWatch({
               busy={busy}
               minYield={minYield}
               tolerance={tolerance}
+              sort={sort}
+              onSort={setSort}
+              onPin={(row) =>
+                void run(async () => {
+                  const entry = await setWatchPinned(
+                    row.entry.symbol,
+                    !row.entry.pinned,
+                  );
+                  return {
+                    ...board,
+                    rows: board.rows.map((item) =>
+                      item.entry.symbol === entry.symbol
+                        ? { ...item, entry }
+                        : item,
+                    ),
+                  };
+                })
+              }
               onDetails={(row) => setExpanded(row.entry.symbol)}
               onAsk={ask}
               onEdit={(row) => edit(row.entry)}

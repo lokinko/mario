@@ -7,6 +7,7 @@ export interface WatchInput {
 }
 export interface WatchEntry extends WatchInput {
   createdAt: string;
+  pinned: boolean;
 }
 export interface Band {
   lower: number;
@@ -76,6 +77,11 @@ export const saveWatch = (input: WatchInput) =>
 export const deleteWatch = (symbol: string) =>
   httpRequest<{ ok: boolean }>(`/watch/${encodeURIComponent(symbol)}`, {
     method: "DELETE",
+  });
+export const setWatchPinned = (symbol: string, pinned: boolean) =>
+  httpRequest<WatchEntry>(`/watch/${encodeURIComponent(symbol)}/pin`, {
+    method: "PUT",
+    body: JSON.stringify({ pinned }),
   });
 export const readWatchAlerts = (symbol: string) =>
   httpRequest<{ ok: boolean }>(`/watch/${encodeURIComponent(symbol)}/read`, {

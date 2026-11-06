@@ -49,6 +49,8 @@ pub struct WatchEntry {
     #[serde(flatten)]
     pub input: WatchInput,
     pub created_at: String,
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
