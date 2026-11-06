@@ -1,6 +1,6 @@
 use super::RequestContext;
 use crate::{
-    models::watch::{WatchBoard, WatchEntry, WatchInput},
+    models::watch::{grid::GridPlan, WatchBoard, WatchEntry, WatchInput},
     AppResult,
 };
 use axum::{
@@ -17,15 +17,24 @@ pub(super) fn router() -> Router {
         .route("/api/watch/{symbol}", axum::routing::delete(remove))
         .route("/api/watch/{symbol}/read", post(read))
         .route("/api/watch/{symbol}/pin", put(pin))
+        .route("/api/watch/{symbol}/grid", put(save_grid))
 }
 async fn board(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<WatchBoard>> {
-    Ok(Json(
-        state.db.watch_board(
-            chrono::Utc::now()
-                .with_timezone(&chrono_tz::Asia::Shanghai)
-                .date_naive(),
-        )?,
-    ))
+    current_board(&state)
+}
+fn current_board(state: &RequestContext) -> AppResult<Json<WatchBoard>> {
+    let today = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Shanghai)
+        .date_naive();
+    Ok(Json(state.db.watch_board(today)?))
+}
+async fn save_grid(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(symbol): Path<String>,
+    Json(plan): Json<Option<GridPlan>>,
+) -> AppResult<Json<WatchBoard>> {
+    state.db.set_watch_grid(&symbol, plan)?;
+    current_board(&state)
 }
 async fn save(
     Extension(state): Extension<Arc<RequestContext>>,

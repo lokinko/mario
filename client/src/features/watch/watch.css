@@ -895,3 +895,9 @@
     padding: 14px !important;
   }
 }
+.watch-grid-inputs input {
+  min-width: 68px;
+  width: 100%;
+  max-width: 130px;
+  margin: 0;
+}

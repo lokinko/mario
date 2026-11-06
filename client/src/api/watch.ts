@@ -8,6 +8,23 @@ export interface WatchInput {
 export interface WatchEntry extends WatchInput {
   createdAt: string;
   pinned: boolean;
+  gridPlan?: WatchGridPlan;
+}
+export interface WatchGridPlan {
+  buyBasis: "budget" | "remainingCash";
+  sellBasis: "totalBought" | "remainingShares";
+  levels: { yieldBps: number; buyBps: number; sellBps: number }[];
+}
+export interface WatchGridProjection {
+  exitPrice: string | null;
+  levels: { yieldBps: number; price: string | null }[];
+  scenarios: {
+    deepestYieldBps: number;
+    investedPct: string;
+    exitSharesPct: string;
+    budgetReturnPct: string;
+    investedReturnPct: string;
+  }[];
 }
 export interface Band {
   lower: number;
@@ -49,6 +66,7 @@ export interface WatchRow {
   entry: WatchEntry;
   latest: Observation | null;
   dividendPrices: DividendPrice[];
+  gridProjection?: WatchGridProjection | null;
   alert: boolean;
   checkedAt: string | null;
   refreshFailed: boolean;
@@ -82,6 +100,11 @@ export const setWatchPinned = (symbol: string, pinned: boolean) =>
   httpRequest<WatchEntry>(`/watch/${encodeURIComponent(symbol)}/pin`, {
     method: "PUT",
     body: JSON.stringify({ pinned }),
+  });
+export const saveWatchGrid = (symbol: string, plan: WatchGridPlan | null) =>
+  httpRequest<WatchBoard>(`/watch/${encodeURIComponent(symbol)}/grid`, {
+    method: "PUT",
+    body: JSON.stringify(plan),
   });
 export const readWatchAlerts = (symbol: string) =>
   httpRequest<{ ok: boolean }>(`/watch/${encodeURIComponent(symbol)}/read`, {

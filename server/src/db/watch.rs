@@ -1,4 +1,5 @@
 use super::{params, AppResult, Database, OptionalRow};
+use crate::models::watch::grid::GridPlan;
 use crate::models::watch::{
     dividend_prices, DividendHistory, Observation, WatchBoard, WatchEntry, WatchInput, WatchRow,
     WatchStatus, BAND_DISTANCE_PCT, MAX_WATCHES, MIN_YIELD_PCT,
@@ -62,6 +63,7 @@ impl Database {
                 input,
                 created_at: Utc::now().to_rfc3339(),
                 pinned: false,
+                grid_plan: None,
             },
         };
         tx.execute("INSERT INTO watch_entries(symbol,payload,checked_at,refresh_failed) VALUES ($1,$2,NULL,0) ON CONFLICT(symbol) DO UPDATE SET payload=excluded.payload",params![entry.input.symbol,serde_json::to_string(&entry)?])?;
@@ -70,6 +72,22 @@ impl Database {
     }
 
     pub fn set_watch_pinned(&self, symbol: &str, pinned: bool) -> AppResult<WatchEntry> {
+        self.update_watch_entry(symbol, |entry| entry.pinned = pinned)
+    }
+
+    pub fn set_watch_grid(&self, symbol: &str, plan: Option<GridPlan>) -> AppResult<()> {
+        if let Some(plan) = &plan {
+            plan.validate()?;
+        }
+        self.update_watch_entry(symbol, |entry| entry.grid_plan = plan)?;
+        Ok(())
+    }
+
+    fn update_watch_entry(
+        &self,
+        symbol: &str,
+        update: impl FnOnce(&mut WatchEntry),
+    ) -> AppResult<WatchEntry> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         let payload: String = tx
@@ -80,9 +98,10 @@ impl Database {
             )
             .optional()?
             .ok_or_else(|| AppError::NotFound("观察公司不存在".into()))?;
-        let mut entry: WatchEntry = serde_json::from_str(&payload)?;
-        if entry.pinned != pinned {
-            entry.pinned = pinned;
+        let original: WatchEntry = serde_json::from_str(&payload)?;
+        let mut entry = original.clone();
+        update(&mut entry);
+        if entry != original {
             tx.execute(
                 "UPDATE watch_entries SET payload=$2 WHERE symbol=$1",
                 params![symbol, serde_json::to_string(&entry)?],
@@ -127,10 +146,15 @@ impl Database {
             let latest: Option<Observation> =
                 latest.as_deref().map(serde_json::from_str).transpose()?;
             let dividend_prices = dividend_prices(latest.as_ref());
+            let grid_projection = entry
+                .grid_plan
+                .as_ref()
+                .map(|plan| plan.project(latest.as_ref()));
             rows.push(WatchRow {
                 entry,
                 latest,
                 dividend_prices,
+                grid_projection,
                 alert,
                 checked_at,
                 checked_for,
@@ -297,6 +321,9 @@ pub(super) fn validate(conn: &crate::storage::Connection) -> AppResult<()> {
             || chrono::DateTime::parse_from_rfc3339(&entry.created_at).is_err()
         {
             return Err(AppError::Validation("观察名单备份无效".into()));
+        }
+        if let Some(plan) = entry.grid_plan {
+            plan.validate()?;
         }
     }
     let mut stmt =
@@ -596,11 +623,24 @@ mod tests {
     }
     #[test]
     fn watches_are_isolated_restored_and_deleted_without_financial_writes() {
+        use crate::models::watch::grid::{GridBuyBasis, GridLevel, GridSellBasis};
+
         let account = crate::db::TestAccount::new();
         let db = account.open();
         let other = Database::test();
         let before = db.snapshot().unwrap();
         let entry = entry(&db);
+        let plan = GridPlan {
+            buy_basis: GridBuyBasis::Budget,
+            sell_basis: GridSellBasis::TotalBought,
+            levels: vec![GridLevel {
+                yield_bps: 600,
+                buy_bps: 2000,
+                sell_bps: 0,
+            }],
+        };
+        db.set_watch_grid(&entry.input.symbol, Some(plan.clone()))
+            .unwrap();
         let pinned = db.set_watch_pinned(&entry.input.symbol, true).unwrap();
         assert!(pinned.pinned);
         assert!(matches!(
@@ -625,11 +665,13 @@ mod tests {
         assert!(other.watch_entries().unwrap().is_empty());
         let backup = db.export_sync_data().unwrap();
         other.import_sync_data(&backup).unwrap();
-        assert!(other.watch_board(day).unwrap().rows[0].entry.pinned);
-        assert_eq!(
-            other.watch_board(day).unwrap().rows[0].latest,
-            Some(observation.clone())
-        );
+        let restored = other.watch_board(day).unwrap().rows.remove(0);
+        assert!(restored.entry.pinned);
+        assert_eq!(restored.latest, Some(observation.clone()));
+        assert_eq!(restored.entry.grid_plan, Some(plan));
+        let projection = restored.grid_projection.unwrap();
+        assert_eq!(projection.exit_price.as_deref(), Some("125.0000"));
+        assert_eq!(projection.levels[0].price.as_deref(), Some("83.3333"));
         drop(db);
         let db = account.reopen_from_old_release();
         assert_eq!(db.watch_entries().unwrap(), vec![pinned]);
@@ -649,7 +691,7 @@ mod tests {
             serde_json::to_value(after.holdings).unwrap()
         );
         assert_eq!(before.holding_trades, after.holding_trades);
-        // Older v26 backups did not serialize a pin preference.
+        // Older v26 backups may contain neither a pin preference nor a grid plan.
         let mut unpinned = backup.clone();
         let saved = &mut unpinned
             .tables
@@ -661,10 +703,15 @@ mod tests {
             panic!("watch entry must have a JSON payload");
         };
         let mut payload_value: serde_json::Value = serde_json::from_str(payload).unwrap();
-        payload_value.as_object_mut().unwrap().remove("pinned");
+        let fields = payload_value.as_object_mut().unwrap();
+        fields.remove("pinned");
+        fields.remove("gridPlan");
         *payload = payload_value.to_string();
         other.import_sync_data(&unpinned).unwrap();
         assert!(!other.watch_entries().unwrap()[0].pinned);
+        assert!(other.watch_board(day).unwrap().rows[0]
+            .grid_projection
+            .is_none());
         // v23 backups have no watch tables; restoring them deliberately restores an empty list.
         let mut old = backup;
         old.schema_version = 23;

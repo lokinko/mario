@@ -158,6 +158,23 @@ try {
   await api("/watch", "PUT", { symbol: watched.symbol, name: watched.name, thesis: "复核分红" });
   assert.equal((await api("/watch")).rows[0].entry.pinned, true);
   assert.equal((await api(pinPath, "PUT", { pinned: false })).pinned, false);
+  const gridPath = "/watch/600036.SS/grid";
+  const grid = {
+    buyBasis: "budget",
+    sellBasis: "totalBought",
+    levels: [{ yieldBps: 500, buyBps: 2000, sellBps: 0 }, { yieldBps: 600, buyBps: 3000, sellBps: 0 }],
+  };
+  await api(gridPath, "PUT", { ...grid, levels: [{ yieldBps: 600, buyBps: 11000, sellBps: 0 }] }, 400);
+  assert.equal((await api("/watch")).rows[0].gridProjection, null);
+  const staleGrid = await fetch(base + gridPath, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "If-Match": "-1" }, body: JSON.stringify(grid) });
+  assert.equal(staleGrid.status, 409);
+  const { entry: gridEntry, gridProjection } = (await api(gridPath, "PUT", grid)).rows[0];
+  assert.deepEqual(gridEntry.gridPlan, grid);
+  assert.equal(gridProjection.exitPrice, null);
+  assert.equal(gridProjection.scenarios[1].budgetReturnPct, "20.0000");
+  assert.equal(gridProjection.scenarios[1].investedReturnPct, "40.0000");
+  assert.deepEqual((await api("/watch")).rows[0].entry.gridPlan, grid);
+  assert.equal((await api(gridPath, "PUT", null)).rows[0].gridProjection, null);
   assert.deepEqual((await api("/snapshot")).holdings, snap.holdings, "watching must not create holdings");
   await api("/watch/600036.SS/read", "POST");
   await api("/watch/600036.SS", "DELETE");

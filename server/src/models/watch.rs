@@ -1,4 +1,6 @@
 //! Buy-watch contracts and deterministic calculations. No account or network access.
+pub(crate) mod grid;
+
 use crate::{AppError, AppResult};
 use chrono::{Datelike, NaiveDate};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
@@ -51,6 +53,8 @@ pub struct WatchEntry {
     pub created_at: String,
     #[serde(default)]
     pub pinned: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_plan: Option<grid::GridPlan>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,6 +205,7 @@ pub struct WatchRow {
     pub entry: WatchEntry,
     pub latest: Option<Observation>,
     pub dividend_prices: Vec<DividendPrice>,
+    pub grid_projection: Option<grid::GridProjection>,
     pub alert: bool,
     pub checked_at: Option<String>,
     pub checked_for: Option<String>,
@@ -216,23 +221,25 @@ pub struct DividendPrice {
     pub change_pct: Option<f64>,
 }
 
-/// Read projection only: historical observations and backup payloads stay unchanged.
-pub fn dividend_prices(observation: Option<&Observation>) -> Vec<DividendPrice> {
-    let Some(observation) = observation else {
-        return vec![];
-    };
+fn positive_ttm_dividend(observation: &Observation) -> Option<Decimal> {
     if observation
         .dividend_basis
         .as_ref()
         .is_some_and(|basis| basis.as_of.to_string().as_str() < observation.observed_on.as_str())
     {
-        return vec![];
+        return None;
     }
-    let Some(dividend) = observation
+    observation
         .dividend_per_share
         .as_deref()
         .and_then(|v| Decimal::from_str_exact(v).ok())
         .filter(|v| *v > Decimal::ZERO)
+}
+
+/// Read projection only: historical observations and backup payloads stay unchanged.
+pub fn dividend_prices(observation: Option<&Observation>) -> Vec<DividendPrice> {
+    let Some((observation, dividend)) =
+        observation.and_then(|o| positive_ttm_dividend(o).map(|d| (o, d)))
     else {
         return vec![];
     };

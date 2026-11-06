@@ -119,6 +119,8 @@ flowchart TD
 
 观察桌面内部按职责划分：`BuyWatch` 负责读取、写入和本页筛选/展示状态，`presentation` 负责搜索排序与文本投影，`WatchList` 负责紧凑表格和卡片，`WatchSignals` 负责 BOLL 坐标与参考价呈现，`WatchDetails` 复用共享抽屉展示来源/事件/交易，`WatchWeekly` 将真实观察排成日期矩阵。新视图都消费同一份 `api/watch` 契约，不互相持有业务状态，不访问其他功能实现。`WatchList` 把表头和置顶操作回传给 `BuyWatch`；`presentation` 在筛选结果内将置顶公司排在最前，再按当前指标比较。置顶由 `db/watch` 写入已有名单 JSON，编辑保留该值；后台保存观察时只比较观察输入与条目创建时间。服务端 `models/watch::dividend_prices` 负责精确参考价，仓储仅在读取 `WatchRow` 时装配，不把展示字段写回历史或引入 schema 迁移。
 
+`WatchGrid` 展示网格并拥有编辑草稿，保存经 `BuyWatch` → `api/watch` → `http/watch` → `db/watch`。仓储保存方案并在备份导入时验证；`models/watch/grid` 用十进制生成下跌至不同深度再回到 4.0% 的价差测算，读取的参考价与已有分红依据共用覆盖校验。该投影不写观察、账本或提醒。
+
 桌面交互验证覆盖组合搜索/筛选、未知指标排序、视图切换、原持仓/交易讨论、提醒已读、空结果和完整周内矩阵；参考价测试覆盖含边界、循环小数向下舍分、未知/零分红、缺价格、过期依据及读取不推进账号版本。金额规则变更仍执行完整 `npm test`，不能只验收截图。
 
 `features/watch` 拥有名单草稿、观察卡片与周末汇总，`api/watch` 只处理领域请求；导航和进入问答由应用壳组合。`models/watch` 定义股息与 BOLL 规则及问题码，`ports/market` 暴露分别取价格与完整分红事件集的 `WatchMarketProvider`；公开仓储不读租户 schema，共享编排不依赖账号或私有事实，架构检查对这两个文件设独立约束。来源适配归 `market_data/watch`，按账号刷新归 `application/watch`，公开初始化资料适配与 CSV 导出归 `market_data/watch_archive`，离线原件核验和资料包构建归 `scripts/prepare-watch-dividends.py`，共享公开分红仓储归 `db/public_dividends`，跨账号读取、补抓和进程内合并归 `application/watch_market`，账号采用依据、状态事务和账号备份校验归 `db/watch`；后台任务由 `composition` 装配并随进程关闭。不得让观察计算调用 benchmark、读取账号库或依赖行情网络实现。

@@ -13,6 +13,7 @@ import {
 import {
   getWatchBoard,
   saveWatch,
+  saveWatchGrid,
   setWatchPinned,
   deleteWatch,
   readWatchAlerts,
@@ -86,15 +87,18 @@ export function BuyWatch({
     void load();
   }, []);
   const run = async (action: () => Promise<WatchBoard>) => {
-    if (busy) return;
+    if (busy) return false;
     const current = guard.begin();
     setBusy(true);
     setError("");
     try {
       const next = await action();
-      if (current()) setBoard(next);
+      if (!current()) return false;
+      setBoard(next);
+      return true;
     } catch (e) {
       if (current()) setError(String(e));
+      return false;
     } finally {
       if (current()) setBusy(false);
     }
@@ -433,6 +437,11 @@ export function BuyWatch({
           busy={busy}
           error={error}
           onClose={() => setExpanded(null)}
+          onGridEdited={onEdited}
+          onGridClosed={onSaved}
+          onGridSave={(plan) =>
+            run(() => saveWatchGrid(active.entry.symbol, plan))
+          }
           onAsk={() => {
             setExpanded(null);
             ask(active);
