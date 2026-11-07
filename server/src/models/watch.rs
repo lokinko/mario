@@ -1,8 +1,10 @@
 //! Buy-watch contracts and deterministic calculations. No account or network access.
+pub(crate) mod calendar;
 pub(crate) mod catalog;
 pub(crate) mod grid;
 pub(crate) mod rules;
 use rules::WatchRules;
+pub(crate) mod grid_archive;
 
 use crate::{AppError, AppResult};
 use chrono::{Datelike, NaiveDate};
@@ -58,6 +60,8 @@ pub struct WatchEntry {
     pub pinned: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grid_plan: Option<grid::GridPlan>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_grid_plan: Option<grid_archive::GridAllocationArchive>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

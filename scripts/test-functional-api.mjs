@@ -142,6 +142,18 @@ try {
   const catalog = await api("/watch/catalog");
   assert.deepEqual(catalog.catalog.industries.map(i => i.name), ["银行", "能源", "电力", "通信运营", "运输", "白酒", "白色家电", "保险", "中药", "消费", "券商"]);
   assert.equal(catalog.rows.length, 61);
+  assert.equal((await fetch(base + "/watch/dividend-calendar")).status, 401);
+  const calendarVersion = await api("/sync/version");
+  const calendar = await api("/watch/dividend-calendar");
+  assert.equal(calendar.coverage.length, catalog.rows.length);
+  assert.equal(calendar.scope, "all");
+  assert.equal((new Date(calendar.end) - new Date(calendar.start)) / 86400000, 29);
+  assert.deepEqual((await api("/watch/dividend-calendar?scope=favorites")).coverage, []);
+  await api("/watch/dividend-calendar?scope=unknown", "GET", undefined, 400);
+  await api("/watch/dividend-calendar?from=2026-02-30", "GET", undefined, 400);
+  await api("/watch/dividend-calendar/refresh?scope=favorites", "POST", { symbols: ["600000.SS"] }, 400);
+  await api("/watch/dividend-calendar/refresh?scope=favorites", "POST", {});
+  assert.deepEqual(await api("/sync/version"), calendarVersion, "calendar reads and empty public refresh do not change personal revision");
   assert.equal(catalog.canEdit, false);
   await api("/watch/catalog/resolve", "POST", { query: "国电电力" }, 403);
   await api("/watch/catalog", "PUT", { catalog: catalog.catalog, revision: catalog.revision }, 403);
@@ -192,21 +204,25 @@ try {
   assert.equal((await api(pinPath, "PUT", { pinned: false })).pinned, false);
   const gridPath = "/watch/600036.SS/grid";
   const grid = {
-    buyBasis: "budget",
-    sellBasis: "totalBought",
-    levels: [{ yieldBps: 500, buyBps: 2000, sellBps: 0 }, { yieldBps: 600, buyBps: 3000, sellBps: 0 }],
+    budget: "10000",
+    levels: [{ yieldBps: 375, buyShares: 0, sellShares: 50 }, { yieldBps: 500, buyShares: 100, sellShares: 50 }, { yieldBps: 650, buyShares: 200, sellShares: 0 }],
   };
-  await api(gridPath, "PUT", { ...grid, levels: [{ yieldBps: 600, buyBps: 11000, sellBps: 0 }] }, 400);
+  await api(gridPath, "PUT", { ...grid, budget: "0" }, 400);
+  await api(gridPath, "PUT", { ...grid, levels: [{ yieldBps: 600, buyShares: 1.5, sellShares: 0 }] }, 422);
   assert.equal((await api("/watch")).rows[0].gridProjection, null);
   const staleGrid = await fetch(base + gridPath, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "If-Match": "-1" }, body: JSON.stringify(grid) });
   assert.equal(staleGrid.status, 409);
   const { entry: gridEntry, gridProjection } = (await api(gridPath, "PUT", grid)).rows[0];
   assert.deepEqual(gridEntry.gridPlan, grid);
-  assert.equal(gridProjection.exitPrice, null);
-  assert.equal(gridProjection.scenarios[1].budgetReturnPct, "20.0000");
-  assert.equal(gridProjection.scenarios[1].investedReturnPct, "40.0000");
+  assert.equal(gridProjection.reboundYieldBps, 375);
+  assert.equal(gridProjection.levels[0].price, null);
+  assert.deepEqual(gridProjection.scenarios, []);
   assert.deepEqual((await api("/watch")).rows[0].entry.gridPlan, grid);
   const existingWatch = (await api("/watch")).rows[0].entry;
+  const personalCalendar = await api("/watch/dividend-calendar?scope=favorites");
+  assert.deepEqual(personalCalendar.coverage.map(c => c.symbol), [watched.symbol]);
+  assert.equal(personalCalendar.coverage[0].personal, true);
+
   const additionVersion = await api("/sync/version");
   assert.deepEqual(await api("/watch", "PUT", { symbol: watched.symbol, name: "公共目录名称", thesis: "", ifAbsent: true }), existingWatch);
   assert.deepEqual(await api("/sync/version"), additionVersion, "adding an existing catalogue company must preserve personal settings and revision");

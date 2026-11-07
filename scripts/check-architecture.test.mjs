@@ -51,6 +51,10 @@ test('shared public dividend data stays separate from accounts and private analy
   assert(serverFileViolation('db/public_watch.rs', 'db'));
   assert.equal(serverFileViolation('db/public_watch.rs', 'storage'), undefined);
   assert.equal(serverFileViolation('application/watch_catalog.rs', 'ports'), undefined);
+  for (const target of ['accounts', 'context', 'ai', 'http', 'application'])
+    assert(serverFileViolation('application/dividend_calendar.rs', target));
+  assert(serverFileViolation('db/public_watch/calendar.rs', 'accounts'));
+  assert.equal(serverFileViolation('application/dividend_calendar.rs', 'ports'), undefined);
   for (const target of ['accounts', 'db', 'storage', 'application', 'ai', 'http'])
     assert(serverFileViolation('market_data/watch_catalog.rs', target));
   assert.equal(serverFileViolation('market_data/watch_catalog.rs', 'models'), undefined);

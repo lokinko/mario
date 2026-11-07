@@ -13,22 +13,30 @@ pub(crate) struct MarketRuntime {
     pub services: Arc<MarketServices>,
     pub watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
     pub watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
+    pub dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 impl MarketRuntime {
     pub fn start_watch(&mut self, accounts: Arc<crate::accounts::Accounts>) {
         let catalog = self.watch_catalog.clone();
+        let calendar = self.dividend_calendar.clone();
         self.tasks.push(tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 interval.tick().await;
-                if let Err(error) = catalog.refresh(None, false).await {
+                let (market, plans) =
+                    tokio::join!(catalog.refresh(None, false), calendar.refresh_public());
+                if let Err(error) = market {
                     tracing::warn!(%error, "public catalogue refresh failed");
+                }
+                if let Err(error) = plans {
+                    tracing::warn!(%error, "public dividend calendar refresh failed");
                 }
             }
         }));
         let provider = self.watch_provider.clone();
+        let calendar = self.dividend_calendar.clone();
         self.tasks.push(tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -45,6 +53,14 @@ impl MarketRuntime {
                     let result = async {
                         let db = crate::db::Database::postgres(&accounts.url, &user)?;
                         let _lock = db.lock_account()?;
+                        let symbols = db
+                            .watch_entries()?
+                            .into_iter()
+                            .map(|entry| entry.input.symbol)
+                            .collect::<Vec<_>>();
+                        if let Err(error) = db.without_account_lock(calendar.refresh(&symbols, false)).await? {
+                            tracing::warn!(%error, "personal calendar refresh failed; price checks continue");
+                        }
                         crate::application::watch::refresh(&db, provider.clone(), false).await?;
                         Ok::<_, crate::AppError>(())
                     }
@@ -86,8 +102,15 @@ impl MarketRuntime {
                 Arc::new(crate::market_data::watch::PublicWatchProvider::new()?),
                 public_dividends,
             ));
+        let public_watch = Arc::new(crate::db::PublicWatch::postgres(database_url)?);
+        let dividend_calendar = Arc::new(
+            crate::application::dividend_calendar::DividendCalendarService::new(
+                public_watch.clone(),
+                watch_provider.clone(),
+            ),
+        );
         let watch_catalog = Arc::new(crate::application::watch_catalog::WatchCatalogService::new(
-            Arc::new(crate::db::PublicWatch::postgres(database_url)?),
+            public_watch,
             watch_provider.clone(),
             Arc::new(crate::market_data::watch_catalog::PublicCatalogSources::new()?),
         ));
@@ -95,6 +118,7 @@ impl MarketRuntime {
             services,
             watch_provider,
             watch_catalog,
+            dividend_calendar,
             tasks: vec![price_task, fx_task],
         })
     }

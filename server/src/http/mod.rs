@@ -20,6 +20,7 @@ pub(crate) struct RequestContext {
     pub is_superuser: bool,
     pub watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
     pub watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
+    pub dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
     pub market: Arc<MarketServices>,
     pub analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
 }

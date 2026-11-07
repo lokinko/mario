@@ -173,7 +173,7 @@ fn relevant_evidence(
             "date":v.observed_on,"status":v.status,"price":v.price,"yieldPct":v.yield_pct,
             "dailyDistancePct":v.daily.as_ref().and_then(|b|b.distance_pct),"weeklyDistancePct":v.weekly.as_ref().and_then(|b|b.distance_pct),"rules":v.rules,"weeklyReference":v.weekly.as_ref().map(|b|b.reference)
         })).collect();
-        let facts = serde_json::json!({"rules":observation.rules,"symbol":observation.symbol,"observedOn":observation.observed_on,
+        let facts = serde_json::json!({"rules":observation.rules,"yieldMatchesRule":observation.yield_matches_rule,"symbol":observation.symbol,"observedOn":observation.observed_on,
             "price":observation.price,"dividendPerShare":observation.dividend_per_share,"yieldPct":observation.yield_pct,
             "dividendBasis":observation.dividend_basis,"dividendEvents":observation.dividend_events,
             "daily":observation.daily,"weekly":observation.weekly,"status":observation.status,"issues":observation.issues,"thisWeek":week});

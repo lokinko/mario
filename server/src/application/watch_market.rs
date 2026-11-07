@@ -46,6 +46,14 @@ impl SharedWatchProvider {
 
 #[async_trait::async_trait]
 impl WatchMarketProvider for SharedWatchProvider {
+    async fn dividend_plans(
+        &self,
+        symbol: &str,
+        day: NaiveDate,
+    ) -> AppResult<Vec<crate::models::watch::calendar::DividendPlan>> {
+        self.source.dividend_plans(symbol, day).await
+    }
+
     fn dividend_seed(&self, symbol: &str, day: NaiveDate) -> Option<DividendHistory> {
         match self.store.get(symbol) {
             Ok(history) => history.filter(|h| h.basis.as_of <= day),

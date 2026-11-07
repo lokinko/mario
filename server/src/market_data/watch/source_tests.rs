@@ -205,3 +205,32 @@ async fn live_yunlu_prices_and_dividends() {
         result.observed_on, result.price, result.yield_pct, data.sources
     );
 }
+
+#[tokio::test]
+#[ignore = "manual public-source connectivity check; no account data"]
+async fn live_dividend_calendar_structured_plans() {
+    let provider = PublicWatchProvider::new().unwrap();
+    let day = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Shanghai)
+        .date_naive();
+    let (a, b) = tokio::time::timeout(std::time::Duration::from_secs(90), async {
+        tokio::join!(
+            provider.dividend_plans("600036.SS", day),
+            provider.dividend_plans("601009.SS", day)
+        )
+    })
+    .await
+    .expect("public-source requests timed out");
+    for (symbol, result) in [("600036.SS", a), ("601009.SS", b)] {
+        let plans = result.unwrap();
+        assert!(!plans.is_empty());
+        assert!(plans.iter().all(|p| p.symbol == symbol
+            && p.announced_on <= day
+            && p.payment_date.is_none()
+            && !p.sources.is_empty()));
+        println!(
+            "{symbol}: {} structured disclosed plans; no invented payment date",
+            plans.len()
+        );
+    }
+}

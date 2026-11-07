@@ -10,6 +10,7 @@ export function isDataWrite(path: string, method = "GET") {
       // Shared catalogue writes use their own revision, independent of account data.
       "/watch/catalog",
       "/watch/catalog/resolve",
+      "/watch/dividend-calendar/refresh",
     ].includes(resource)
   );
 }
@@ -19,7 +20,9 @@ export function requestPolicy(path: string) {
     ? 1800000
     : resource === "/watch/catalog/resolve"
       ? 30000
-      : resource === "/watch/refresh" || resource === "/watch/catalog/refresh"
+      : resource === "/watch/refresh" ||
+          resource === "/watch/catalog/refresh" ||
+          resource === "/watch/dividend-calendar/refresh"
         ? 180000
         : resource === "/model-config/test"
           ? 300000

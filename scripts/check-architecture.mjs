@@ -152,8 +152,10 @@ export function serverViolation(source, target) {
 }
 
 export function serverFileViolation(source, target) {
-  if (['db/public_dividends.rs', 'db/public_watch.rs'].includes(source) && !['models', 'storage', 'error'].includes(target))
+  if (['db/public_dividends.rs', 'db/public_watch.rs', 'db/public_watch/calendar.rs'].includes(source) && !['models', 'storage', 'error'].includes(target))
     return 'public market storage only depends on public contracts and the database driver boundary';
+  if (source === 'application/dividend_calendar.rs' && !['models', 'db', 'ports', 'error'].includes(target))
+    return 'public dividend calendars cannot depend on accounts, private context or model execution';
   if (source === 'application/watch_catalog.rs' && !['models', 'db', 'ports', 'error', 'application'].includes(target))
     return 'public catalogue checks cannot depend on private context or execution adapters';
   if (source === 'market_data/watch_catalog.rs' && !['models', 'ports', 'error'].includes(target))

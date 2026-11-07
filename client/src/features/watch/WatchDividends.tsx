@@ -15,14 +15,6 @@ export function WatchDividends({ latest }: { latest: Observation | null }) {
           除息日 {history.start} 至 {history.end} · 金额为税前、当次每十股口径
         </p>
       )}
-      {latest?.dividendBasis && (
-        <p className="watch-meta">
-          分红资料覆盖至 {latest.dividendBasis.asOf} · 采集于{" "}
-          {new Date(latest.dividendBasis.fetchedAt).toLocaleString("zh-CN", {
-            timeZone: "Asia/Shanghai",
-          })}
-        </p>
-      )}
       {events.length ? (
         <div className="table-scroll">
           <table
@@ -76,7 +68,6 @@ export function WatchDividends({ latest }: { latest: Observation | null }) {
           {covered ? "近三年没有已实施的分红方案。" : "暂无可展示的分红事件。"}
         </p>
       )}
-      {!history && <p className="watch-meta">下次成功检查后补全三年明细。</p>}
       <div className="watch-sources">
         {latest?.sources.map((url, i) => (
           <a key={url} href={url} target="_blank" rel="noreferrer">

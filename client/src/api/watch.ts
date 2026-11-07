@@ -9,19 +9,43 @@ export interface WatchEntry extends WatchInput {
   createdAt: string;
   pinned: boolean;
   gridPlan?: WatchGridPlan;
+  previousGridPlan?: {
+    buyBasis: "budget" | "remainingCash";
+    sellBasis: "totalBought" | "remainingShares";
+    levels: { yieldBps: number; buyBps: number; sellBps: number }[];
+  };
+}
+export interface WatchGridGenerator {
+  startYieldBps: number;
+  endYieldBps: number;
+  stepBps: number;
+  initialBuyShares: number;
+  initialSellShares: number;
+  buyGrowthBps: number;
+  sellGrowthBps: number;
 }
 export interface WatchGridPlan {
-  buyBasis: "budget" | "remainingCash";
-  sellBasis: "totalBought" | "remainingShares";
-  levels: { yieldBps: number; buyBps: number; sellBps: number }[];
+  budget: string;
+  generator?: WatchGridGenerator;
+  levels: { yieldBps: number; buyShares: number; sellShares: number }[];
 }
 export interface WatchGridProjection {
-  exitPrice: string | null;
-  levels: { yieldBps: number; price: string | null }[];
+  reboundYieldBps: number | null;
+  levels: {
+    yieldBps: number;
+    price: string | null;
+    buyAmount: string | null;
+    sellAmount: string | null;
+  }[];
   scenarios: {
     deepestYieldBps: number;
-    investedPct: string;
-    exitSharesPct: string;
+    investedAmount: string;
+    budgetGap: string;
+    soldShares: number;
+    remainingShares: number;
+    unfilledSellShares: number;
+    saleProceeds: string;
+    profit: string;
     budgetReturnPct: string;
     investedReturnPct: string;
   }[];
@@ -183,3 +207,74 @@ export const saveWatchRules = (rules: WatchRules, expectedRules: WatchRules) =>
     method: "PUT",
     body: JSON.stringify({ rules, expectedRules }),
   });
+
+export type DividendCalendarScope = "all" | "favorites" | "public";
+export type DividendPlanStage =
+  | "preannounced"
+  | "proposed"
+  | "approved"
+  | "scheduled"
+  | "cancelled"
+  | "no_distribution"
+  | "unknown";
+export interface DividendPlan {
+  id: string;
+  symbol: string;
+  reportDate: string;
+  announcedOn: string;
+  stage: DividendPlanStage;
+  sourceProgress: string;
+  profile: string;
+  cashPerTen: string | null;
+  bonusPerTen: string | null;
+  transferPerTen: string | null;
+  recordDate: string | null;
+  exDate: string | null;
+  paymentDate: string | null;
+  issues: ("invalid_dates" | "invalid_amount" | "unknown_progress")[];
+  sources: string[];
+}
+export interface DividendCalendarCompany {
+  symbol: string;
+  name: string;
+  personal: boolean;
+}
+export interface DividendCalendarEntry extends DividendCalendarCompany {
+  plan: DividendPlan;
+  fetchedAt: string | null;
+}
+export interface DividendCalendarBoard {
+  start: string;
+  end: string;
+  asOf: string;
+  scope: DividendCalendarScope;
+  entries: DividendCalendarEntry[];
+  pending: DividendCalendarEntry[];
+  coverage: (DividendCalendarCompany & {
+    attemptedAt: string | null;
+    fetchedAt: string | null;
+    refreshFailed: boolean;
+  })[];
+}
+function dividendCalendarQuery(scope: DividendCalendarScope, from: string) {
+  return new URLSearchParams({ scope, ...(from ? { from } : {}) }).toString();
+}
+export const getDividendCalendar = (
+  scope: DividendCalendarScope = "all",
+  from = "",
+) =>
+  httpRequest<DividendCalendarBoard>(
+    `/watch/dividend-calendar?${dividendCalendarQuery(scope, from)}`,
+  );
+export const refreshDividendCalendar = (
+  scope: DividendCalendarScope,
+  from: string,
+  symbols?: string[],
+) =>
+  httpRequest<DividendCalendarBoard>(
+    `/watch/dividend-calendar/refresh?${dividendCalendarQuery(scope, from)}`,
+    {
+      method: "POST",
+      body: JSON.stringify(symbols ? { symbols } : {}),
+    },
+  );
