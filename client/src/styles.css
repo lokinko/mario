@@ -787,11 +787,6 @@ main {
 .conversation-welcome {
   padding: 40px 0 var(--space-7);
 }
-.conversation-welcome > span {
-  color: var(--brand);
-  font-size: var(--fs-caption);
-  letter-spacing: 0.12em;
-}
 .conversation-welcome h2 {
   margin: 10px 0;
   color: var(--text-1);
@@ -800,9 +795,8 @@ main {
   font-weight: 400;
   letter-spacing: -0.01em;
 }
-.conversation-welcome p {
-  color: var(--text-3);
-  margin: 0 0 22px;
+.conversation-welcome > .text-button {
+  margin-bottom: var(--space-4);
 }
 @media (max-width: 600px) {
   .conversation-welcome {

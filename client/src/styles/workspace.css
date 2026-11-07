@@ -1579,10 +1579,6 @@ input[type="number"] {
   box-shadow: var(--shadow-lift);
   transform: translateY(-2px);
 }
-.conversation-starters button small {
-  color: var(--text-3);
-  font-size: var(--fs-caption);
-}
 .conversation-starters button strong {
   font-weight: 500;
 }
@@ -1636,9 +1632,6 @@ input[type="number"] {
   line-height: 1.8;
   resize: none;
   max-height: 192px;
-}
-.composer-context {
-  font-size: var(--fs-caption);
 }
 .generation-steps {
   display: flex;

@@ -356,9 +356,6 @@ export function Advisor({
           {turns.length === 0 && !draft && !running && (
             <section className="conversation-welcome" aria-label="开始问答">
               <h2>从一个问题开始</h2>
-              <p>
-                按你的问答预设读取已选持仓、现金、方法论与复盘规则，梳理依据、风险和待核实的信息。
-              </p>
               <button
                 className="text-button"
                 onClick={() => void inspectContext()}
@@ -367,22 +364,10 @@ export function Advisor({
               </button>
               <div className="conversation-starters">
                 {[
-                  [
-                    "风险",
-                    "帮我梳理当前持仓的主要风险",
-                    "识别集中度与信息缺口",
-                  ],
-                  [
-                    "配置",
-                    "我的现金和投资配置是否合理？",
-                    "先核对现金流与风险承受能力",
-                  ],
-                  [
-                    "复盘",
-                    "如何复盘最近的一次投资决策？",
-                    "回看当时依据与证伪条件",
-                  ],
-                ].map(([category, prompt, description]) => (
+                  ["风险", "帮我梳理当前持仓的主要风险"],
+                  ["配置", "我的现金和投资配置是否合理？"],
+                  ["复盘", "如何复盘最近的一次投资决策？"],
+                ].map(([category, prompt]) => (
                   <button
                     key={prompt}
                     aria-label={prompt}
@@ -395,7 +380,6 @@ export function Advisor({
                   >
                     <Badge>{category}</Badge>
                     <strong>{prompt}</strong>
-                    <small>{description}</small>
                   </button>
                 ))}
               </div>
@@ -507,14 +491,6 @@ export function Advisor({
               />
             </label>
             <div className="composer-footer">
-              <button
-                className="text-button composer-context"
-                type="button"
-                disabled={running}
-                onClick={() => void inspectContext()}
-              >
-                将使用：查看已选资料
-              </button>
               <span role="status">
                 {running
                   ? stage
