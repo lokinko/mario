@@ -35,9 +35,7 @@ export function initialView(): View {
 
 export const navGroups: {
   caption: string;
-  items: ({ label: string; icon: typeof MessageCircle } & (
-    { id: View } | { id: "benchmark"; href: string }
-  ))[];
+  items: { id: View; label: string; icon: typeof MessageCircle }[];
 }[] = [
   {
     caption: "资产",
@@ -56,12 +54,6 @@ export const navGroups: {
       { id: "evidence", label: "参考资料", icon: Database },
       { id: "review", label: "复盘记录", icon: History },
       { id: "methodology", label: "投资方法论", icon: BookOpen },
-      {
-        id: "benchmark",
-        label: "研究看板",
-        icon: ChartNoAxesCombined,
-        href: `${import.meta.env.BASE_URL}dashboard`,
-      },
     ],
   },
 ];

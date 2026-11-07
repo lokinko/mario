@@ -72,7 +72,6 @@ button > svg {
   letter-spacing: 0.08em;
 }
 .sidebar nav button,
-.sidebar nav a,
 .settings-link {
   width: 100%;
   color: var(--text-2);
@@ -92,13 +91,11 @@ button > svg {
     color var(--duration-hover) var(--ease);
 }
 .sidebar nav button > svg,
-.sidebar nav a > svg,
 .settings-link > svg {
   color: var(--text-3);
   transition: color var(--duration-hover) var(--ease);
 }
 .sidebar nav button:hover,
-.sidebar nav a:hover,
 .settings-link:hover {
   background: var(--sidebar-active);
   color: var(--text-1);
@@ -600,7 +597,6 @@ main {
     margin-left: auto;
   }
   .sidebar nav button,
-  .sidebar nav a,
   .sidebar .settings-link {
     min-height: 48px;
   }

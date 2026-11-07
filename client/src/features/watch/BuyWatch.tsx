@@ -194,7 +194,6 @@ export function BuyWatch({
     <div className="page watch-page">
       <PageHeader
         title="买点观察"
-        description="照看你认可的公司，等待值得研究的变化。"
         action={
           <>
             <Button
@@ -414,12 +413,6 @@ export function BuyWatch({
                 清除筛选
               </button>
             </section>
-          )}
-          {view === "compact" && visible.length > 0 && (
-            <p className="watch-meta">
-              5%
-              参考价仅用于股息条件比较。打开公司可查看多档参考价、日周轨道和分红来源。
-            </p>
           )}
           <WatchWeekly
             board={board}

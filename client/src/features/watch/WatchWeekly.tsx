@@ -92,9 +92,6 @@ export function WatchWeekly({
           </table>
         </div>
       )}
-      <p className="watch-meta">
-        只展示已保存的真实观察；未保存日期保持空白，周中周线采用截至观察日的最后收盘。
-      </p>
     </section>
   );
 }
