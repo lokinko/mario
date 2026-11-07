@@ -319,16 +319,48 @@
 .watch-met {
   color: var(--success);
 }
-.watch-row-status,
-.watch-row-actions {
+.watch-row-status {
   display: flex;
   align-items: flex-start;
   flex-direction: column;
   gap: 8px;
 }
-.watch-row-actions button {
-  white-space: nowrap;
-  font-size: 12px;
+.watch-company-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+.watch-pin-toggle {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  opacity: 0;
+  transition:
+    opacity var(--duration-hover) var(--ease),
+    color var(--duration-hover) var(--ease);
+}
+.watch-pin-toggle.pinned,
+.watch-pin-toggle:focus-visible,
+.watch-overview tr:hover .watch-pin-toggle {
+  opacity: 1;
+}
+.watch-pin-toggle.pinned {
+  color: var(--brand);
+}
+.watch-pin-toggle:hover {
+  color: var(--brand);
+  background: var(--brand-tint);
+}
+@media (hover: none) {
+  .watch-pin-toggle {
+    opacity: 1;
+  }
 }
 .watch-unread {
   box-shadow: inset 3px 0 var(--accent);
@@ -851,16 +883,11 @@
   .watch-overview td:last-child::before {
     display: none;
   }
-  .watch-overview td:nth-child(7),
   .watch-overview td:last-child {
     grid-column: 1/-1;
     flex-wrap: wrap;
   }
-  .watch-overview td:nth-child(7)::before {
-    display: none;
-  }
-  .watch-row-status,
-  .watch-row-actions {
+  .watch-row-status {
     flex-direction: row;
     align-items: center;
     flex-wrap: wrap;
@@ -869,10 +896,6 @@
     border-top: 1px solid var(--line);
     padding-top: 8px;
     margin-top: 2px;
-  }
-  .watch-row-actions {
-    width: 100%;
-    justify-content: space-between;
   }
   .watch-overview .watch-numeric {
     font-size: 13px;

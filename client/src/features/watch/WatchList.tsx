@@ -81,19 +81,24 @@ export function WatchList({
         标为已读
       </button>
     );
-  const pin = (row: WatchRow) => {
+  const pin = (row: WatchRow, iconOnly = false) => {
     const pinned = row.entry.pinned;
     const Icon = pinned ? PinOff : Pin;
     const label = pinned ? "取消置顶" : "置顶";
     return (
       <button
-        className="text-button"
+        className={
+          iconOnly
+            ? `watch-pin-toggle ${pinned ? "pinned" : ""}`
+            : "text-button"
+        }
         disabled={busy}
         onClick={() => onPin(row)}
         aria-label={`${label}${row.entry.name}`}
+        title={iconOnly ? label : undefined}
       >
-        <Icon size={15} aria-hidden="true" />
-        {label}
+        <Icon size={iconOnly ? 14 : 15} aria-hidden="true" />
+        {!iconOnly && label}
       </button>
     );
   };
@@ -158,7 +163,6 @@ export function WatchList({
                 true,
               )}
               <th>观察状态</th>
-              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -168,19 +172,19 @@ export function WatchList({
                 className={row.alert ? "watch-unread" : ""}
               >
                 <td data-label="公司">
-                  <button
-                    className="watch-company"
-                    onClick={() => onDetails(row)}
-                  >
-                    <strong>{row.entry.name}</strong>
-                    <small>
-                      {row.entry.symbol} ·{" "}
-                      {held.has(row.entry.symbol) ? "已持有" : "未持有"}
-                    </small>
-                  </button>
-                  {row.entry.pinned && (
-                    <span className="watch-pinned">已置顶</span>
-                  )}
+                  <div className="watch-company-line">
+                    <button
+                      className="watch-company"
+                      onClick={() => onDetails(row)}
+                    >
+                      <strong>{row.entry.name}</strong>
+                      <small>
+                        {row.entry.symbol} ·{" "}
+                        {held.has(row.entry.symbol) ? "已持有" : "未持有"}
+                      </small>
+                    </button>
+                    {pin(row, true)}
+                  </div>
                   <small className="watch-row-date">
                     {row.latest?.observedOn ?? "尚无行情"}
                   </small>
@@ -220,25 +224,6 @@ export function WatchList({
                     {alert(row)}
                   </div>
                   {issue(row)}
-                </td>
-                <td data-label="操作">
-                  <div className="watch-row-actions">
-                    {pin(row)}
-                    <button
-                      className="text-button"
-                      onClick={() => onDetails(row)}
-                    >
-                      查看依据与交易
-                    </button>
-                    <button
-                      className="text-button"
-                      onClick={() => onAsk(row)}
-                      aria-label="结合我的交易讨论"
-                    >
-                      <MessageCircle size={15} />
-                      讨论
-                    </button>
-                  </div>
                 </td>
               </tr>
             ))}

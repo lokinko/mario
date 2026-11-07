@@ -147,6 +147,12 @@ it("opens grounded discussion, acknowledges alerts and preserves missing-data st
   const p = props();
   render(<BuyWatch {...p} />);
   await screen.findByText("进入关注区间");
+  fireEvent.click(
+    within(screen.getByRole("table", { name: "观察公司对比" })).getByRole(
+      "button",
+      { name: /^测试公司/ },
+    ),
+  );
   fireEvent.click(screen.getByRole("button", { name: "结合我的交易讨论" }));
   expect(p.onAsk).toHaveBeenCalledWith(expect.stringContaining("600036.SS"));
   expect(p.onAsk).toHaveBeenCalledWith(expect.stringContaining("最近真实交易"));
@@ -193,7 +199,9 @@ it("shows the dividend coverage and exact events behind the closing yield", asyn
   vi.mocked(api.getWatchBoard).mockResolvedValue({ ...empty, rows: [stored] });
   render(<BuyWatch {...props()} />);
   fireEvent.click(
-    await screen.findByRole("button", { name: "查看依据与交易" }),
+    within(
+      await screen.findByRole("table", { name: "观察公司对比" }),
+    ).getByRole("button", { name: /^测试公司/ }),
   );
   expect(screen.getByText(/分红资料覆盖至 2026-11-04/)).toBeTruthy();
   const event = screen.getByText(/除息日 2026-07-01/).closest("tr")!;
@@ -422,7 +430,9 @@ it("saves an explicit per-company grid, keeps invalid input and displays both re
     });
   render(<BuyWatch {...props()} />);
   fireEvent.click(
-    await screen.findByRole("button", { name: "查看依据与交易" }),
+    within(
+      await screen.findByRole("table", { name: "观察公司对比" }),
+    ).getByRole("button", { name: /^测试公司/ }),
   );
   fireEvent.click(screen.getByRole("button", { name: "设置网格方案" }));
   fireEvent.change(screen.getByLabelText("添加股息率档位"), {
@@ -457,7 +467,9 @@ it("shows removal failures inside the company drawer and preserves the company",
   vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<BuyWatch {...props()} />);
   fireEvent.click(
-    await screen.findByRole("button", { name: "查看依据与交易" }),
+    within(
+      await screen.findByRole("table", { name: "观察公司对比" }),
+    ).getByRole("button", { name: /^测试公司/ }),
   );
   fireEvent.click(screen.getByRole("button", { name: "移出观察名单" }));
   await within(screen.getByRole("dialog")).findByText(/删除未完成/);
