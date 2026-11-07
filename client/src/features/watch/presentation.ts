@@ -35,8 +35,7 @@ export function checks(row: WatchRow, minYield: number) {
   ];
 }
 
-export type WatchFilter =
-  "all" | "attention" | "yield" | "bands" | "alerts" | "incomplete";
+export type WatchFilter = "all" | "yield" | "daily" | "weekly";
 export const sortOptions = {
   default: "变化与关注优先",
   yield: "股息率从高到低",
@@ -105,14 +104,9 @@ export function selectRows(
       (ownership === "all" ||
         held.has(row.entry.symbol) === (ownership === "held")) &&
       (filter === "all" ||
-        (filter === "attention" && row.latest?.status === "attention") ||
         (filter === "yield" && values[0] === true) ||
-        (filter === "bands" && values[1] === true && values[2] === true) ||
-        (filter === "alerts" && row.alert) ||
-        (filter === "incomplete" &&
-          (!row.latest ||
-            row.latest.status === "incomplete" ||
-            row.refreshFailed)))
+        (filter === "daily" && values[1] === true) ||
+        (filter === "weekly" && values[2] === true))
     );
   });
   const rank = (r: WatchRow) =>

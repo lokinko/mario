@@ -16,14 +16,13 @@ export function WatchWeekly({
     return day.toISOString().slice(0, 10);
   });
   return (
-    <section className="panel watch-weekly">
+    <section className="panel watch-weekly" aria-label="本周观察足迹">
       <div className="watch-section-title">
-        <div>
-          <h3>本周观察足迹</h3>
-          <span>
-            {board.weekStart} — {board.weekEnd} · 已保存 {board.weekly.length}{" "}
-            条
-          </span>
+        <div className="watch-week-legend">
+          <span className="attention">关注</span>
+          <span className="waiting">等待</span>
+          <span className="incomplete">待补齐</span>
+          <span>— 未保存</span>
         </div>
         <button
           className="secondary"
@@ -32,12 +31,6 @@ export function WatchWeekly({
         >
           结合持仓做周末复盘{board.rows.length > 5 ? "（先讨论前 5 家）" : ""}
         </button>
-      </div>
-      <div className="watch-week-legend">
-        <span className="attention">关注</span>
-        <span className="waiting">等待</span>
-        <span className="incomplete">待补齐</span>
-        <span>— 未保存</span>
       </div>
       {board.rows.length > 0 && (
         <div className="table-scroll">

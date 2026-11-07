@@ -7,7 +7,6 @@ import {
   List,
   LayoutGrid,
   SlidersHorizontal,
-  ChartNoAxesCombined,
   ArrowUpRight,
 } from "lucide-react";
 import {
@@ -156,17 +155,9 @@ export function BuyWatch({
       .map((h) => canonical(h.symbol)),
   );
   const counts = {
-    attention: rows.filter((r) => r.latest?.status === "attention").length,
     yield: rows.filter((r) => checks(r, minYield)[0] === true).length,
-    bands: rows.filter((r) =>
-      checks(r, minYield)
-        .slice(1)
-        .every((v) => v === true),
-    ).length,
-    alerts: rows.filter((r) => r.alert).length,
-    incomplete: rows.filter(
-      (r) => !r.latest || r.latest.status === "incomplete" || r.refreshFailed,
-    ).length,
+    daily: rows.filter((r) => checks(r, minYield)[1] === true).length,
+    weekly: rows.filter((r) => checks(r, minYield)[2] === true).length,
   };
   const visible = selectRows(
     rows,
@@ -217,18 +208,6 @@ export function BuyWatch({
         }
       />
       <section className="panel watch-intro">
-        <div>
-          <div className="watch-intro-heading">
-            <span className="watch-intro-icon">
-              <ChartNoAxesCombined size={23} />
-            </span>
-            <div>
-              <span className="watch-eyebrow">收盘观察 · 已实施分红</span>
-              <strong>有依据地观察，有耐心地等待。</strong>
-            </div>
-          </div>
-          <Tag variant="filled">日线 + 周线 · 双重观察</Tag>
-        </div>
         <div className="watch-rule-strip">
           <span>① TTM 税前股息 ≥{minYield}%</span>
           <span>② 日线下轨 ±{tolerance}%</span>
@@ -236,6 +215,7 @@ export function BuyWatch({
           <small>
             三项同时满足 <ArrowUpRight size={14} /> 进入关注区间
           </small>
+          <Tag variant="filled">日线 + 周线 · 双重观察</Tag>
         </div>
         <details className="watch-method">
           <summary>计算口径与检查时间</summary>
@@ -267,11 +247,9 @@ export function BuyWatch({
             {(
               [
                 ["all", "全部公司", rows.length],
-                ["attention", "关注区间", counts.attention],
                 ["yield", "股息达标", counts.yield],
-                ["bands", "日周条件达标", counts.bands],
-                ["alerts", "未读变化", counts.alerts],
-                ["incomplete", "需要补查", counts.incomplete],
+                ["daily", "日线达标", counts.daily],
+                ["weekly", "周线达标", counts.weekly],
               ] as const
             ).map(([key, label, count]) => (
               <button
@@ -345,9 +323,8 @@ export function BuyWatch({
           )}
           {rows.length > 0 && (
             <div className="watch-result-meta">
-              <span aria-live="polite">
-                显示 {visible.length} / {rows.length} 家 · 金额单位：元 ·
-                绿色数值表示满足对应条件
+              <span className="sr-only" aria-live="polite">
+                显示 {visible.length} / {rows.length} 家
               </span>
               {(query || filter !== "all" || ownership !== "all") && (
                 <button className="text-button" onClick={reset}>

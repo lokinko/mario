@@ -32,24 +32,6 @@
     ),
     var(--surface);
 }
-.watch-intro-heading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-.watch-intro-icon {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  background: var(--surface-raised);
-  color: var(--brand);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card);
-  border: 1px solid var(--line);
-}
-.watch-intro > div:first-child,
 .watch-actions,
 .watch-heading,
 .watch-section-title,
@@ -60,19 +42,6 @@
   gap: 12px;
   flex-wrap: wrap;
 }
-.watch-intro > div:first-child strong {
-  display: block;
-  color: var(--text-1);
-  font-family: var(--font-serif);
-  font-size: var(--fs-title);
-  font-weight: 500;
-  margin: 4px 0;
-}
-.watch-eyebrow {
-  color: var(--brand);
-  font-size: var(--fs-caption);
-  letter-spacing: 0.08em;
-}
 .watch-actions {
   justify-content: flex-start;
   gap: 8px;
@@ -82,10 +51,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
   font-size: 13px;
+}
+.watch-rule-strip > .ant-tag {
+  margin: 0 0 0 auto;
 }
 .watch-rule-strip > span {
   display: inline-flex;
@@ -121,7 +90,7 @@
 }
 .watch-summary {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
   margin: var(--space-6) 0;
 }
@@ -248,10 +217,10 @@
   box-shadow: var(--shadow-card);
 }
 .watch-result-meta {
+  justify-content: flex-end;
   font-size: 12px;
   color: var(--text-3);
-  margin: 12px 0;
-  min-height: 20px;
+  margin: var(--space-2) 0;
 }
 .watch-overview {
   padding: 0 !important;
@@ -696,7 +665,9 @@
   gap: 12px;
   color: var(--text-3);
   font-size: 11px;
-  margin: 12px 0;
+}
+.watch-weekly .watch-section-title {
+  align-items: center;
 }
 .watch-week-legend .attention {
   color: var(--success);
@@ -782,12 +753,6 @@
   }
 }
 @media (max-width: 640px) {
-  .watch-intro > div:first-child {
-    align-items: flex-start;
-  }
-  .watch-intro > div:first-child strong {
-    font-size: 18px;
-  }
   .watch-rule-strip {
     font-size: 11px;
     gap: 6px;
@@ -796,7 +761,7 @@
     padding: 4px 6px;
   }
   .watch-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
     margin-top: 16px;
   }

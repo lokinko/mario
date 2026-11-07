@@ -536,7 +536,7 @@ it("filters by the weekly middle and shades that range even far from the weekly 
   expect(
     within(table).getByRole("button", { name: /^距周线中轨：/ }),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "日周条件达标 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "周线达标 1" }));
   expect(within(table).getAllByRole("row")).toHaveLength(2);
   expect(within(table).queryByText("周线未达标")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
