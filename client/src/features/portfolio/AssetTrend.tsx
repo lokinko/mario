@@ -36,10 +36,7 @@ export function AssetTrend({
     return mini ? null : (
       <p className="empty">当前总值不可用，原币记录已保存。</p>
     );
-  if (points.length < 2)
-    return mini ? null : (
-      <p className="daily-freshness">记录满两天后显示资产趋势。</p>
-    );
+  if (points.length < 2) return null;
   const min = Math.min(...values),
     max = Math.max(...values),
     span = Math.max(max - min, 1);

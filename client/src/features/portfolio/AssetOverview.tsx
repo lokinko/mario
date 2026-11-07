@@ -21,6 +21,8 @@ export function AssetOverview({
   const latest = snapshot.valuationStatus.comparable
     ? history?.records[0]
     : undefined;
+  const carried =
+    latest?.assets.filter((a) => a.carried && !a.removed).length ?? 0;
   const currency = latest?.baseCurrency ?? snapshot.profile.baseCurrency;
   const total = !snapshot.valuationStatus.comparable
     ? null
@@ -141,22 +143,8 @@ export function AssetOverview({
             </details>
           )}
           <div className="hero-stamp">
-            <DataStamp
-              date={latest?.day ?? snapshot.updatedAt.slice(0, 10)}
-              source={
-                latest
-                  ? latest.carried
-                    ? "今日沿用上次余额"
-                    : "今日已更新"
-                  : "当前会计快照"
-              }
-            />
-            {latest && (
-              <span>
-                {latest.assets.filter((a) => a.carried && !a.removed).length}{" "}
-                项资产沿用原值
-              </span>
-            )}
+            <DataStamp date={latest?.day ?? snapshot.updatedAt.slice(0, 10)} />
+            {carried > 0 && <span>{carried} 项资产沿用原值</span>}
           </div>
         </div>
       </Card>

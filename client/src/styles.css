@@ -821,6 +821,9 @@ main {
 .daily-assets .panel-title {
   margin-bottom: var(--space-2);
 }
+.daily-assets .section-switcher:last-child {
+  margin-bottom: 0;
+}
 .daily-assets h2 {
   font-size: var(--fs-body);
 }

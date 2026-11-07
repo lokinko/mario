@@ -356,7 +356,6 @@ export function MyFacts({
     <div className="page facts-page">
       <PageHeader
         title="我的情况"
-        description="核对资产、记录成交，保留每个数字的来源与时点。"
         action={
           <div className="trade-toolbar facts-heading-actions">
             <Button

@@ -29,7 +29,6 @@
   display: flex;
   justify-content: space-between;
 }
-.investment-overview-metric > small,
 .review-metrics small {
   color: var(--text-3);
   font-size: var(--fs-caption);
@@ -482,9 +481,6 @@
   .investment-overview-metric > strong {
     font-size: var(--fs-title);
   }
-  .investment-overview-metric > small {
-    line-height: 1.5;
-  }
   .overview-breakdown summary span {
     float: none;
     margin-left: var(--space-2);
@@ -910,11 +906,6 @@ strong {
   font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1.35;
-}
-.investment-overview-metric > small {
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
 }
 .metric-label,
 .investment-overview-metric > span,

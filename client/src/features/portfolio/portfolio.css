@@ -72,10 +72,6 @@
   font-size: var(--fs-title);
   font-weight: 600;
 }
-.facts-page .investment-overview-metric > small {
-  white-space: normal;
-  line-height: 1.5;
-}
 .facts-page .cash-overview .investment-overview-grid {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -83,9 +79,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-}
-.facts-page .cash-overview .investment-overview-metric > small {
-  grid-column: 1 / -1;
 }
 .facts-page .overview-caption {
   font-size: var(--fs-caption);

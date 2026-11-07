@@ -89,9 +89,7 @@ export function HoldingsList({
                   记录第一笔交易
                 </Button>
               }
-            >
-              从第一笔真实成交开始记录。
-            </EmptyState>
+            />
           </div>
         </div>
       </div>

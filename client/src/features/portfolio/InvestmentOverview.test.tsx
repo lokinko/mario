@@ -78,7 +78,6 @@ it("preserves server missing-data status and hides unusable per-holding amounts"
       }}
     />,
   );
-  expect(screen.getByText(/1 项未计入/)).toBeTruthy();
   expect(screen.queryByText("100.12")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "待补 1" }));
   expect(screen.getAllByText("—")).toHaveLength(5);

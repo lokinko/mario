@@ -58,7 +58,7 @@ beforeEach(() => {
 afterEach(cleanup);
 it("shows one shared history in the overview and an expanded keyboard accessible trend", async () => {
   render(<History />);
-  await screen.findByText(/今日沿用上次余额/);
+  await screen.findByRole("group", { name: /每日总资产趋势/ });
   expect(screen.getByText("资产趋势").closest("details")).toBeNull();
   expect(portfolioApi.getDailyAssets).toHaveBeenCalledTimes(1);
   const chart = screen.getByRole("group", { name: /每日总资产趋势/ });
