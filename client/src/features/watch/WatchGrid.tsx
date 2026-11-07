@@ -173,10 +173,6 @@ export function WatchGridEditor({
         });
       }}
     >
-      <p>
-        下跌时从较低股息率向较高股息率依次投入。反弹经过比最深触及更低的档位时减仓，回到
-        4.0% 卖完本轮剩余份额。留空表示该档不操作。
-      </p>
       <div className="form-grid">
         <label>
           每档买入占

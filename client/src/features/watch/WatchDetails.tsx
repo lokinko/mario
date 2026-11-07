@@ -55,8 +55,12 @@ export function WatchDetails({
     .slice(0, 5);
   return (
     <Drawer
-      title={editingGrid ? `${entry.name} · 股息网格` : entry.name}
-      subtitle={`${entry.symbol} · ${latest ? statuses[latest.status] : "等待首次检查"}`}
+      title={editingGrid ? "股息网格" : entry.name}
+      subtitle={
+        editingGrid
+          ? `${entry.name} · ${entry.symbol}`
+          : `${entry.symbol} · ${latest ? statuses[latest.status] : "等待首次检查"}`
+      }
       onClose={() => {
         if (editingGrid) onGridClosed();
         onClose();
