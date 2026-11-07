@@ -28,7 +28,7 @@ workflow 先执行 `benchmark.live prepare`，再执行 `benchmark.live evaluate
 
 `evaluation_data.py` 从独立市场日历生成季度末决策日，从年度快照取证券与选样原始收盘/已公告股数；市值重新相乘，不读取候选记录中已经计算的市值。证券当前简称不进入输入。交易状态与决策日收盘来自未复权原始日线，行情指标来自同源后复权历史。输入起初没有 `momentum_63`、`long_history`、`fugui` 等指标；按适用策略依赖的并集计算，检查完成后才把标签原样复制进评分目录。计划中出现预计算 `inputs.jsonl` 会被拒绝，无法从原始来源计算时不会借用旧切片字段。
 
-`BENCHMARK_PLAN_REVISION` 默认 `pool-scoring-v8`，仅定位原始选样事实、评分范围及标签；`BENCHMARK_RAW_REVISION` 默认 `baostock-daily-20261102`，定位同源原始行情。它们是来源身份，新增指标不要求改这些出处。旧 `BENCHMARK_SCORING_TAG` 已删除。新输入标识为 `raw-<内容指纹>`，看板记录计划与原始来源的固定提交、清单哈希和 `input_origin=raw_facts`。
+`BENCHMARK_PLAN_REVISION` 默认 `pool-scoring-v8`，仅定位原始选样事实、评分范围及标签；`BENCHMARK_RAW_REVISION` 默认 `baostock-daily-20261102`，定位同源原始行情。默认值来自 [`benchmark-live.yml`](../.github/workflows/benchmark-live.yml) 和 [`live.py`](../benchmark/live.py)，是可配置的来源身份，新增指标不要求改这些出处。旧 `BENCHMARK_SCORING_TAG` 已删除。新输入标识为 `raw-<内容指纹>`，看板记录计划与原始来源的固定提交、清单哈希和 `input_origin=raw_facts`；历史成绩中的具体 `raw-` 标识仅对应那次来源和计算实现，不承诺等于此刻线上快照。
 
 `bench-run --raw` 和 `features-build` 仍是显式本地研究入口：可以为已有切片补算；它们不再是持续评测的生产路径。
 
@@ -114,4 +114,4 @@ npm run benchmark -- bench-run \
 
 评分仍固定数据快照、标签及 Git 提交；固定标签是实验样本身份，不是策略兼容版本。`run.json` 记录实际输入哈希及按需补算信息，缓存指纹包含策略、切片、计算实现与原始数据内容。来源或计算改变后不能沿用旧成绩。持续评测先跑全部 benchmark 测试，再对下载后的真实输入执行依赖检查；失败保留上次成功结果，不用跳过策略掩盖缺字段。
 
-迁移不删除历史切片。已有预计算字段只供显式历史复现或本地研究；持续评测始终从原始事实构建所需指标，采集来源缺口仍如实保留。架构静态检查限制新模块依赖方向，行为与来源边界由 `test_feature_pipeline.py` 及既有研究测试验证。
+迁移不删除历史切片。已有预计算字段只供显式历史复现或本地研究；持续评测始终从原始事实构建所需指标，采集来源缺口仍如实保留。实现分别见 [`evaluation_data.py`](../benchmark/evaluation_data.py)、[`feature_pipeline.py`](../benchmark/feature_pipeline.py) 和 [`input_contract.py`](../benchmark/input_contract.py)。架构静态检查限制依赖方向；[`test_evaluation_data.py`](../benchmark/tests/test_evaluation_data.py) 覆盖拒绝预计算输入、原始缺失不回退和标签不变，[`test_feature_pipeline.py`](../benchmark/tests/test_feature_pipeline.py) 覆盖缺字段与 null 区别、时点隔离、来源口径及缓存指纹。这些合成回归不核验真实 HF 当前内容或历史来源的时点真实性。

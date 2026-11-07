@@ -20,7 +20,7 @@ ALLOWED_ORIGINS=""              # 可选跨域网页 Origin，逗号分隔；当
 RUN_USER=""                     # 服务用户；默认复用数据库所有者或 sudo 登录用户，root 登录则创建 mario。
 SERVICE_NAME="mario"            # systemd 服务名；一台服务器部署多份时需使用不同名称和端口。
 INSTALL_MISSING_TOOLS="true"    # true 自动安装缺失工具；false 由你提前安装 Node 22+/Rust/PG/uv。
-BENCH_ENABLED="true"           # 启用持续研究看板；评分切片由 GitHub 的 BENCHMARK_SCORING_TAG 指定。
+BENCH_ENABLED="true"           # 同步持续研究看板；GitHub 以 BENCHMARK_PLAN_REVISION / BENCHMARK_RAW_REVISION 固定评测输入。
 # HF 镜像：sudo env HF_ENDPOINT=https://hf-mirror.com bash deploy.sh；保存到 .env 供后台同步。
 # 国内下载源仅作用于本次部署；可在这里修改，或通过环境变量覆盖（sudo env 变量=值 bash deploy.sh）。
 export npm_config_registry="${npm_config_registry:-${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}}" # npm 包下载。
@@ -30,7 +30,7 @@ export RUSTUP_DIST_SERVER="${RUSTUP_DIST_SERVER:-https://rsproxy.cn}" # Rust 工
 export RUSTUP_UPDATE_ROOT="${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}" # Rustup 自身下载与更新。
 export MARIO_DEPLOY_CARGO_REGISTRY="${MARIO_DEPLOY_CARGO_REGISTRY-sparse+https://rsproxy.cn/index/}" # Cargo 依赖；显式空值沿用已有源配置。
 # 不要手写数据库密码或密钥：首次自动生成并保存 .env，重启不会更换。
-# 用户自己的模型/API Key 在网页登录后的“模型与隐私”里配置。
+# 用户自己的模型/API Key 在网页登录后的“设置”里配置。
 # .env 是自动生成的运行配置和秘密存储；迁移时必须一并备份，不提交 Git。
 # 数据目录继续使用 .runtime/native/postgres，兼容此前宿主机部署和加密备份。
 # =================== 配置区结束 ===================

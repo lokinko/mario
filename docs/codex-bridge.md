@@ -1,6 +1,6 @@
 # 网页使用个人电脑的 ChatGPT / Codex
 
-Mario 共用一条账号配对桥接，支持两种本机执行方式：
+本规范说明个人电脑上的模型执行桥接。它与[网站 ChatGPT 身份登录](chatgpt-sign-in.md)分开：网站登录建立 Mario 会话，不提供模型额度；本机授权用于模型执行，不登录 Mario 网站账号。两种本机执行方式共用账号配对通道：
 
 | 方式 | 本机命令 | 登录与模型调用 | 本机要求 |
 | --- | --- | --- | --- |
@@ -89,7 +89,7 @@ ChatGPT 订阅调用遵循官方预览约束：每次 Responses HTTP 请求固�
 
 - 配对码是随机 256 位的 Mario 通道凭证，不是 ChatGPT 登录令牌；请只粘贴进自己电脑的桥接进程。网页仅临时显示，服务端通道只保存摘要。普通账号请求不能指定其他账号的桥接 ID。
 - 配对等待 10 分钟后过期；已连接的配对最长有效 12 小时。重新配对、撤销、服务重启都会使旧通道失效；重启本机进程也需重新配对。网络短断可以由同一进程重连，已经开始的推理不会自动重放。
-- 面向个人自用、单 API 进程部署，通道保存在进程内存中。多副本负载均衡需要后续共享通道或固定路由支持，不能直接扩容使用。
+- 面向个人自用、单 API 进程部署，通道保存在进程内存中，重启后重新配对；数据库或账号 JSON 恢复不恢复在线通道。当前不支持跨 API 副本转发配对任务，不能把已有数据库多副本验收当作桥接可直接负载均衡的证明。
 - 每个配对同时执行一个模型请求；另一个请求得到忙碌提示。正常执行经过 Mario 的上下文冻结、结构化校验和结果保存流程，只有完整成功的回答入库。
 - 本机每 500ms 发送结果片段或心跳。浏览器停止生成或撤销配对后，服务端取消请求，本机下一次提交发现取消后释放官方 HTTP 请求或 Codex 子进程；网络不可用时最多等待当前桥接 HTTP 请求的 25 秒期限。
 - 本机进程仅接收模型、文本消息和是否联网搜索，不接收任意命令、工作目录或工具配置。Codex 使用只读临时会话并关闭文件、终端、MCP、应用和子代理工具；官方 Responses 路径没有这些本机工具的执行入口。
@@ -114,8 +114,14 @@ Codex 单次调用（含全部重试）最多 180 秒。在尚未产生任何助
 - `cargo test --manifest-path server/Cargo.toml --lib ai::chatgpt::tests` 运行纯 HTTP 载荷与 SSE 解析回归：分片 UTF-8、流中失败、完整终止、引用与搜索授权、模型目录及大小边界；不登录、不访问真实模型、不消耗额度。
 - 前端 `npm test --prefix client` 覆盖两种桥接命令说明、配对安全、在线后启用、撤销、模型保存和卸载期间的过期响应保护。
 - `npm run test:codex-bridge -- --protocol-fixture` 编译只读的假 App Server（不访问登录或真实模型），通过真正的 Codex 本机桥接进程验证 503 恢复、重试状态、联网与结果保存，以及用量限制、已有输出和原生恢复不重放。客户端虚拟时钟回归覆盖带心跳的六分钟流程、断线和总时限；服务端虚拟时钟回归覆盖超过五分钟的成功执行，以及总超时取消和不落库。
-- `cargo test --manifest-path server/Cargo.toml bridge` 检查隔离、流式结果、取消、撤销、过期和安全 URL。`npm run test:codex-bridge` 自动创建一次性 PostgreSQL 集群，用模拟本机工作进程验证多账号 HTTP 全链路：账号隔离、独立 Agent 绕过、SSE 保存、浏览器取消和重启失效；结束后删除整个集群，不接触生产数据库。加 `-- --live` 会启动真实本机 Codex、消耗本机账号额度并验证连接及流式问答。
+- `npm run test:server -- bridge` 通过一次性 PostgreSQL 集群运行桥接相关 Rust 测试，检查隔离、流式结果、取消、撤销、过期和安全 URL。`npm run test:codex-bridge` 同样自动创建一次性集群，用模拟本机工作进程验证多账号 HTTP 全链路：账号隔离、独立 Agent 绕过、SSE 保存、浏览器取消和重启失效；结束后删除整个集群，不接触生产数据库。加 `-- --live` 会启动真实本机 Codex、消耗本机账号额度并验证连接及流式问答。
+
+完整 `npm test` 包含 Rust 非忽略测试、前端 Vitest 和默认的模拟 worker HTTP 验收。默认 HTTP 验收由 JavaScript 模拟 worker，不启动真正的本机桥接进程；`--protocol-fixture` 的真实 worker / 假 App Server 组合须单独显式执行，未接入完整门禁。真实 `--live`、官方 OAuth 浏览器登录和订阅推理也不属于默认门禁。
 
 自动化解析及模拟桥接验收不等于完成真实 OAuth 授权或订阅推理，也不能替代公网 Nginx、线上 PostgreSQL 和真实账号部署验收。真实登录和消耗额度的连接测试需由用户明确执行。
 
-2026-11-03 的实现复核与本机验证记录见 [OAuth 与 Responses 复核](audits/chatgpt-oauth-2026-11-03.md)。
+## 实现依据与恢复边界
+
+[桥接 worker](../server/src/codex_bridge_worker.rs) 负责配对、长轮询、会话固定与取消；[服务端桥接](../server/src/ai/bridge.rs) 管理进程内通道。[本机授权](../server/src/chatgpt_auth.rs)、[凭据存储与测试](../server/src/chatgpt_auth/store.rs)、[OAuth 回调测试](../server/src/chatgpt_auth/oauth/tests_extra.rs) 和[官方模型协议](../server/src/ai/chatgpt.rs)覆盖注册、锁、权限、会话替换与 SSE；[HTTP 验收脚本](../scripts/test-codex-bridge.mjs) 区分模拟、协议夹具和真实模型模式。
+
+本机凭据文件独立于 Mario 数据库及其备份，不能通过网站备份恢复本机授权；丢失、退出或失效后在本机重新登录并配对。内部 `codex-bridge` 命名同时服务两种本机方式，属于当前共享契约，不是退役 Codex 登录的服务器兼容入口。2026-11-03 的[OAuth 与 Responses 复核](audits/chatgpt-oauth-2026-11-03.md)仅记录当时的检查，不代表当前真实账号已重新授权或线上已部署。

@@ -20,7 +20,9 @@
 
 ## 相关性检索与冻结
 
-分析应用层优先为问题中明确提及的观察公司装配已保存的最新和本周观察证据，包括规则、原值、日期、问题码及来源；再通过 `search_evidence` 检索未归档手工资料和历史搜索资料，补足剩余额度，合计最多5条。检索使用本次问题及已授权持仓名称/代码；身份字段（资产、标题、发布方、附件名）的匹配权重高于正文与备注。每条资料由 `relevant_excerpt` 截取最多 2000 字连续原文进入模型，原文与片段一同冻结。
+分析应用层优先为问题中明确提及的观察公司装配已保存的最新和本周观察证据，包括本账号的观察规则、原值、日期、问题码及来源；再通过 `search_evidence` 检索未归档手工资料和历史搜索资料，补足剩余额度，本地候选合计最多5条。检索使用本次问题及已授权持仓名称/代码；身份字段（资产、标题、发布方、附件名）的匹配权重高于正文与备注。每条资料由 `relevant_excerpt` 截取最多 2000 字连续原文进入模型，原文与片段一同冻结。此处观察规则不等于个人投资规则或复盘正文，后两者不自动进入问答。
+
+历史搜索资料只从最近 30 天、最近 50 条分析的轨迹提取合格的原生网页来源，按 URL 和原文去重，上限 200 条后再参与上述检索；保留原采集日期，不因复用刷新时效，也不提取历史答案作为已核实事实。当前执行中新取得的原生搜索来源另限最多5条，不占发送前的本地候选名额。
 
 候选证据直接显示在发送前预览，并参与上下文一致性指纹：
 
@@ -32,7 +34,7 @@
 
 ## AI 引用规则
 
-固定系统方法论将 `researchEvidence` 视为不受信任的数据，而不是指令。模型必须忽略证据摘要里的指令性文字。
+固定系统策略将 `researchEvidence` 视为不受信任的数据，而不是指令；用户可编辑的方法论也不能把资料提升为系统指令。模型须忽略证据摘要里的指令性文字，引用门禁不构成对抗提示注入的完整证明。
 
 当回答使用某项外部事实时，模型必须把事实标为 `research_evidence` 并引用记录 ID。服务端只接受本次冻结候选和原生网页引用目录中的 ID，再由本地保存的证据目录提供已有来源信息。用户纯文本资料可以引用记录 ID；没有提供的链接、发布方和资料日期不能补造。模型不能自行提交或改写链接。没有进入载荷的事实不得伪造引用；没有证据支持的外部事实必须明确标为未知。
 
@@ -42,7 +44,7 @@
 
 模型接口支持 OpenAI 兼容 Chat Completions（`openai-chat`，`POST /chat/completions`，Bearer 认证）、OpenAI Responses（`POST /responses`，Bearer 认证）和 Anthropic Messages（`POST /messages`，`x-api-key` 和 `anthropic-version`）。用户可自行填写任意 HTTP/HTTPS Base URL、端口、路径和模型名称，无需服务器主机白名单。Base URL 包含供应商要求的路径（通常为 `/v1`），不包含具体端点。仅实现 Chat Completions 的第三方服务请选择“OpenAI 兼容 · Chat Completions”。切换协议或地址且已有密钥时，必须填写对应密钥，避免沿用另一供应商凭据。
 
-新账号网页搜索默认关闭；Responses / Messages 可在问答预设开启“联网查找相关资料”；Chat Completions 接口禁用该开关，仅使用已选资料。预览只构建本地上下文，搜索开关写入预览指纹；发送后先执行原生搜索，再生成结构化报告。OpenAI 使用 `web_search`，Anthropic 使用 `web_search_20250305`。结构修复和连接测试不启用搜索工具。网页搜索权限和费用由供应商控制；预览明确说明查询可能交给其搜索服务。
+新账号网页搜索默认关闭；Responses / Messages 及本机桥接可在问答预设开启“联网查找相关资料”；Chat Completions 接口禁用该开关，仅使用已选资料。预览只构建本地上下文，搜索开关写入预览指纹；发送后先执行原生搜索，再生成结构化报告。OpenAI 使用 `web_search`，Anthropic 使用 `web_search_20250305`；本机桥接按对应 Codex / 官方 ChatGPT 协议请求搜索。结构修复和连接测试不启用搜索工具。网页搜索权限和费用由供应商控制；预览明确说明查询可能交给其搜索服务。
 
 搜索模型收到当前问题和已授权持仓的名称/代码，系统要求查询只使用公开研究主题；这是模型指令约束，不是对任意用户文本的确定性脱敏。关闭持仓后不传入其名称/代码。前轮回答仅作为追问上下文，不作为事实证据。
 
@@ -52,8 +54,12 @@ Anthropic `pause_turn` 最多续接两次，原样回传包括加密字段在内
 
 ## 建议与事实关联
 
-报告的每条建议用 `factIndices` 引用本报告 `facts` 的零基索引，并写明 `why` 与不适用的前提 `unlessWhen`。每条事实的 `basis` 为 `user_data` 或 `research_evidence`：前者必须用 `sourceRefs` 指向已授权的个人原值，后者必须用 `evidenceIds` 引用本次授权的证据 ID。服务端拒绝缺失、越界或未授权的关联。问答直接展示每条建议的关联事实和来源；早期报告按其原有结构只读展示。
+报告的每条建议用 `factIndices` 引用本报告 `facts` 的零基索引，并写明 `why` 与不适用的前提 `unlessWhen`。每条事实的 `basis` 为 `user_data` 或 `research_evidence`：前者必须用 `sourceRefs` 指向已授权的个人原值，后者必须用 `evidenceIds` 引用本次授权的证据 ID。服务端拒绝缺失、越界或未授权的关联。问答展示建议理由和关联引用编号，事实原文在“依据与局限”中展开，引用编号打开原始资料；早期报告按其原有结构只读展示。
 
 引用校验证明来源存在且已授权，不证明语义忠实或建议正确；外部检索由原生工具完成，覆盖效果需在真实使用中评估。
 
-协议依据：[OpenAI Web search](https://developers.openai.com/api/docs/guides/tools-web-search)、[Anthropic Web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool)。
+## 实现与验证依据
+
+[research 仓储及测试](../server/src/db/research.rs) 覆盖正文原样保存、归档、附件原子写入与认证下载、备份恢复和历史搜索来源去重；[附件模块](../server/src/attachments.rs) 用真实 PDF/DOCX 夹具检查提取、截断及大小限制。[检索计算](../server/src/evidence.rs)、[分析准备](../server/src/application/analysis.rs) 和 [ContextBuilder](../server/src/context.rs) 负责候选排序、观察授权及片段冻结。网页引用解析由[普通 Provider](../server/src/ai/native_provider.rs)、[Codex](../server/src/ai/codex.rs) 与[本机 ChatGPT](../server/src/ai/chatgpt.rs) 的协议测试核对，不能把解析通过视为真实来源已核实。前端[资料工作台](../client/src/features/research/EvidenceWorkbench.test.tsx)及[引用抽屉](../client/src/features/research/ReportSources.test.tsx)有对应交互回归；这些非忽略用例纳入完整 `npm test`。
+
+协议参考：[OpenAI Web search](https://developers.openai.com/api/docs/guides/tools-web-search)、[Anthropic Web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool)。当前行为以仓库实现和本节测试为准，上游文档不代表任意供应商或账号已获搜索权限。

@@ -7,13 +7,13 @@ mario 是给自己使用的投资辅助工具。当前优先做成一件事：**
 ## 从买点观察开始
 
 1. 在“买点观察”加入认可的沪深 A 股，已有持仓和未持有的公司都可以加入；关注理由可选填。
-2. 服务端在收盘后检查：已实施现金分红的 **TTM 税前股息率 ≥5%**，且**日线与周线同时处于各自 BOLL(20,2) 下轨价格的上下 2%**。接近下轨按下轨价格计算，不按带宽计算；跌破下轨超过 2% 不满足。
+2. 服务端按账号保存的规则在收盘后检查，自选与行业列表共用配置。默认要求 **TTM 税前股息率 ≥5%**、**日收盘价在 BOLL(20,2) 日线下轨价格上下 2% 内**，且**周收盘价不高于周线中轨**；三个条件同时满足。股息门槛、日周参考轨及比较方式可在观察页调整，距离按所选轨道价格计算。
 3. 查看站内变化提醒、数据日期及来源；对值得关注的公司，点击“结合我的交易讨论”。问答按已保存授权使用观察资料、持仓、现金及最近真实交易，核查基本面和分红持续性。
 4. 周末查看本周已保存的观察，讨论下周等待什么；需要时在“复盘记录”保存自己的判断。
 
 “高股息让我愿意长期持有、公司需求与经营相对稳定、价格进入合意区间”是选公司的出发点。技术条件只用于提示进一步研究，不能单独证明低估、分红可持续或应该买入。近期上涨也不能证明规则已经有效。
 
-首版只做认可公司的买点观察。陌生公司发现、盘中盯盘、站外通知、卖出与滚动仓管理、自动下单不在当前范围；不预设买入数量或新增仓位限制。完整口径、来源、失败处理和接口见[买点观察助手](docs/buy-watch.md)。
+当前围绕认可公司的观察，提供个人自选、人工维护的公共目录、已披露分红日历及用户配置的股数网格计划测算。陌生公司自动发现、盘中盯盘、站外通知、卖出管理和自动下单不在当前范围；观察信号不生成买入数量、仓位限制或真实成交。完整口径、来源、失败处理和接口见[买点观察助手](docs/buy-watch.md)。
 
 ## 已有能力如何服务这件事
 
@@ -29,7 +29,7 @@ mario 是给自己使用的投资辅助工具。当前优先做成一件事：**
 
 ## 自建部署
 
-当前采用 **React Web → Rust API → PostgreSQL**，AI Agent 独立部署。账号、会话与数据由自己管理，无第三方账户或云存储依赖。
+当前采用 **React Web → Rust API → PostgreSQL**，部署脚本启动独立 AI Agent，本地开发可在同一 API 进程执行分析。账号、会话与业务数据由自己管理；默认邮箱密码登录，可选的网站 ChatGPT 身份登录与用户电脑上的模型桥接各有独立用途。
 
 服务器部署只有一个入口：根目录 [deploy.sh](deploy.sh)，在服务器手动执行。产品网站仍由该脚本手动部署，推送或创建 PR 不会自动部署网站；benchmark 的已有采集与评测使用独立 GitHub Actions。公网 IP、域名和可选参数集中在脚本顶部，逐项附中文注释。默认 Ubuntu/Debian 自动安装缺少的工具、生成持久密钥、构建源码，并通过 systemd 后台运行和开机自启，不需要 Docker。
 
@@ -47,11 +47,11 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 ## 文档入口
 
-- 产品目标与取舍：[产品主线](docs/product-vision.md)、[买点观察](docs/buy-watch.md)、[讨论方法](docs/methodology.md)。
-- 使用与数据：[持仓交易](docs/holding-trades.md)、[行情与汇率](docs/market-data.md)、[每日资产](docs/daily-assets.md)、[复盘记录](docs/review-and-rules.md)、[参考资料](docs/research-evidence.md)。
-- AI：[数据授权边界](docs/ai-data-boundary.md)、[问答流式回复](docs/ai-streaming.md)、[工作流契约](docs/ai-workflow.md)、[分析历史](docs/analysis-history.md)、[Codex 桥接](docs/codex-bridge.md)。
-- 开发与运维：[协作规范](AGENTS.md)、[架构](docs/architecture.md)、[模块边界](docs/module-boundaries.md)、[自建部署](docs/self-hosting.md)、[数据迁移](docs/data-migration.md)、[账号与同步](docs/cloud-sync.md)、[信任边界](docs/threat-model.md)。
-- 独立研究：[benchmark 当前能力与成绩](docs/benchmark.md)、[已有研究维护](docs/benchmark-maintenance.md)。`docs/audits/` 与明确标记的历史研究记录只供追溯，不构成当前待办。
+从[当前文档与模块 spec 索引](docs/README.md)查找各模块的规范、实现与验证入口。仓库沿用现有领域文档作为 spec，不另维护一套重复需求。
+
+- 产品取舍以[产品主线](docs/product-vision.md)为准，观察行为见[买点观察](docs/buy-watch.md)。
+- 协作先读[项目规范](AGENTS.md)，结构与依赖见[架构](docs/architecture.md)，扩展与验证见[模块边界](docs/module-boundaries.md)。
+- 历史实验、审计和未采纳建议与当前 spec 分开；清理旧文档不表示删除用户数据、停用已有任务或完成部署。
 
 ## 仓库结构
 

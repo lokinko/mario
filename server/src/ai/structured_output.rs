@@ -40,9 +40,11 @@ pub fn validate_source_types(
             if !path.starts_with('/')
                 || !seen.insert(path)
                 || !allowed
-                || !context
-                    .pointer(path)
-                    .is_some_and(|v| !v.is_null() && !v.is_object() && !v.is_array())
+                || !context.pointer(path).is_some_and(|value| match value {
+                    serde_json::Value::String(text) => !text.trim().is_empty(),
+                    serde_json::Value::Number(_) | serde_json::Value::Bool(_) => true,
+                    _ => false,
+                })
             {
                 return Err(format!("个人原始资料引用路径无效或未授权：{path}"));
             }
@@ -214,6 +216,53 @@ mod tests {
         ] {
             report.facts[0].source_refs = vec![path.into()];
             assert!(validate_source_types(&report, &context).is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_blank_personal_source_values_in_all_authorized_groups() {
+        let mut report =
+            parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
+        for blank in ["", " \t\r\n", "\u{3000}\u{a0}"] {
+            let context = serde_json::json!({
+                "question": blank,
+                "facts": {
+                    "summary": {"monthlySurplus": blank},
+                    "holdings": {"fund": {"name": blank}},
+                    "dataIssues": [{"code": blank}],
+                    "options": {"option": {"account": blank}}
+                }
+            });
+            for path in [
+                "/question",
+                "/facts/summary/monthlySurplus",
+                "/facts/holdings/fund/name",
+                "/facts/dataIssues/0/code",
+                "/facts/options/option/account",
+            ] {
+                report.facts[0].source_refs = vec![path.into()];
+                let error = validate_source_types(&report, &context).unwrap_err();
+                assert!(error.contains(path), "{error}");
+            }
+        }
+    }
+
+    #[test]
+    fn accepts_nonblank_personal_source_values_including_zero_and_false() {
+        let mut report =
+            parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
+        report.facts[0].source_refs = vec!["/facts/summary/value".into()];
+        for value in [
+            serde_json::json!("有效原值"),
+            serde_json::json!(" \t有效原值\u{3000}"),
+            serde_json::json!("0"),
+            serde_json::json!(0),
+            serde_json::json!(-1.25),
+            serde_json::json!(false),
+            serde_json::json!(true),
+        ] {
+            let context = serde_json::json!({"facts": {"summary": {"value": value}}});
+            assert!(validate_source_types(&report, &context).is_ok());
         }
     }
 

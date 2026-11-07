@@ -18,9 +18,9 @@ Web 通过 Rust API 读写数据，PostgreSQL 保存独立账号、会话及各�
 
 ## 数据与同步
 
-账号在 `mario_auth` schema，各用户关系数据在 `user_<uuid>` schema。服务端根据经过认证的会话选择租户，客户端无法通过指定 user ID 或 schema 越权。数据库账号仅供服务端使用。
+账号在 `mario_auth` schema，各用户关系数据在 `user_<uuid>` schema；公共公司目录、观察快照、分红历史和计划缓存归 `mario_market`，不含个人持仓或交易。服务端根据经过认证的会话选择租户，客户端无法通过指定 user ID 或 schema 越权。数据库账号仅供服务端使用。单账号 JSON、租户 schema 与加密整站备份的版本区别及升级边界见[数据迁移](data-migration.md#备份格式与升级边界)。
 
-可选的网站 **Sign in with ChatGPT** 需先申请 OAuth client ID，在服务器 `.env` 配置后显示入口；与 ChatGPT plan usage 申请分开，详见 [配置、账号关联与申请步骤](chatgpt-sign-in.md)。
+可选的网站 **Sign in with ChatGPT** 需先申请 OAuth client ID，在服务器 `.env` 配置后显示入口，详见 [配置、账号关联与申请步骤](chatgpt-sign-in.md)。它只建立 Mario 网页会话；模型执行所用的本机 ChatGPT 授权和 Codex 桥接另在用户电脑配置与配对，见[桥接说明](codex-bridge.md)，不因网站登录而自动获得执行凭据。
 
 业务数据及同步版本在同一事务中更新。快照响应包含 `x-data-revision`，写请求携带 `If-Match`，缺失/过期返回 409；PostgreSQL 账户级 advisory lock 确保多个 API 实例也遵守同一版本顺序。
 
@@ -38,13 +38,13 @@ Web 通过 Rust API 读写数据，PostgreSQL 保存独立账号、会话及各�
 
 通常无需手动设置内部参数。服务运行器自动配置 `MARIO_HOST=127.0.0.1`、网页目录、Agent URL 和 Agent 模式。PostgreSQL 当前驱动不启用数据库连接 TLS；外部数据库放在受保护的专用网络/隧道，不直接暴露公网。
 
-用户模型 API Key 在服务端按账号加密，浏览器不能读取原值。用户在“模型与隐私”选择接口并填写任意 HTTP/HTTPS Base URL、模型名称和密钥，无需配置 `MARIO_MODEL_HOSTS`。Base URL 包含供应商要求的路径（如 `/v1`），不包含 `/chat/completions`、`/responses` 或 `/messages` 端点。自建网关可使用自定义端口和 HTTP；请求从服务器发出，本机地址指服务器本机。公网模型连接建议使用 HTTPS。内置登录每账号每分钟最多 10 次，每个 API 进程最多同时执行 2 次密码运算。
+用户模型 API Key 在服务端按账号加密，浏览器不能读取原值。用户在“设置”的模型配置中选择接口并填写 HTTP/HTTPS Base URL、模型名称和密钥，无需配置 `MARIO_MODEL_HOSTS`。Base URL 包含供应商要求的路径（如 `/v1`），不包含 `/chat/completions`、`/responses` 或 `/messages` 端点。自建网关可使用自定义端口和 HTTP；请求从服务器发出，本机地址指服务器本机。公网模型连接建议使用 HTTPS。内置登录每账号每分钟最多 10 次，每个 API 进程最多同时执行 2 次密码运算。
 
 ```bash
 npm ci --prefix client
 VITE_BASE_PATH=/mario/ npm run web:build
 ```
 
-Web 产物的源码版本与校验值见 `outputs/build-manifest.json`。构建、浏览器文件交互与子路径配置见 [Web 构建](client-builds.md)。
+上面的 `web:build` 生成 `client/dist`、复制的 `outputs/web` 和 `outputs/build-manifest.json`。生产 `deploy.sh` 则直接构建并服务 `client/dist`，其来源信息在 `client/dist/build-info.json`；部署不会刷新本地分发包的 manifest。构建、浏览器文件交互与子路径配置见 [Web 构建](client-builds.md)。
 
 本地开发运行 `npm run dev`：脚本在 `.runtime/dev` 创建并启动开发用 PostgreSQL 集群（端口 `MARIO_DEV_PG_PORT`，默认 54329），生成该目录专用的数据库密码与 `MARIO_MASTER_KEY`，再启动 API（`127.0.0.1:4217`）和 Vite；在浏览器注册开发账号即可，退出时一并停止集群。开发机需安装 PostgreSQL 工具，脚本从 `MARIO_TEST_PG_BIN` 或 `pg_config --bindir` 查找。前端可用 `VITE_API_URL` 连接其他临时 API。不要把线上数据库传给开发或集成测试。

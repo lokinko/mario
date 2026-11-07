@@ -49,7 +49,7 @@ flowchart TD
 - 启动配置属于进程。行情 Provider 和 AI 执行器属于进程依赖，可以替换；它们不持有账号数据库。
 - 多用户请求先认证，再按服务端用户 ID 选择数据库连接。`RequestContext` 只组合该请求的账号数据库与共享服务依赖；客户端不能提供租户 ID。
 - 公开行情缓存有界、共享并在失败时退避。用户汇率覆盖、持仓、密钥和分析历史归账号数据库，不进入跨账号缓存。
-- 多用户请求在数据库账户锁内检查 `If-Match`。分析预览和模型连接测试不要求写入版本；CSV 预览会缓存汇率，所以仍按写入处理。新增操作默认要求版本，不能因为名字含 `preview` 或 `test` 就自动豁免。
+- 多用户请求在数据库账户锁内检查 `If-Match`。分析预览、模型连接测试等实际例外只由 `http/policy.rs` 声明，前端 `requestPolicy` 同步对应政策。新增操作默认要求版本，不能因为名字含 `preview` 或 `test` 就自动豁免。
 - 分析执行在锁内冻结上下文、模型配置、密钥目的地和指纹；模型执行期间释放账户锁，执行结束重新取锁后保存。失败不产生分析历史；请求退出会关闭连接并释放残留的数据库会话锁。
 
 - 组合快照先读取 `db/snapshot::SnapshotData`，`amounts::build` 生成精确投影，再调用一次 `build_snapshot`。AI 上下文消费结构化问题及规划范围，`structured_output` 校验结构与来源，不按固定中文动作判定有效性。数据问题只由 `valuation::issues` 判定，问题码、持仓 ID 和币种是公开契约；不得按文案筛选风险项或在仓储中事后清空规划。`planning` 拥有再平衡范围与精确金额计算，未平仓期权及标的只排除自身动作，分母仍用完整组合。
@@ -144,6 +144,10 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 
 扩展时验证：5% 与日线 ±2% 的包含边界、周线中轨相等/略高/低于下轨、周下轨非正不阻断周条件、日周同时满足、未来数据和未结束周、缺行不填零、分红方案不提前计入、提醒去重/重入、来源失败保留旧日期、在途编辑/删除、账号隔离、分红跨账号与重启复用/同一标的并发合并/公共资料更新触发重算/失败退避/公开库整站恢复/来源更正/已核验空集与失败区分/覆盖不足/滚动重算/内置资料只匹配已有名单/未知来源不初始化为零/原件篡改中止整理、v28/v27/v26/v25/v24 及旧备份恢复，以及交易原值授权和冻结。接口、口径、迁移和产品边界见[买点观察](buy-watch.md)。
 
+### 买点分红三年明细
+
+`models/watch::evaluate` 从来源完整事件集生成可选 `Observation.dividendHistory`（实际行情日向前 36 个月，含两端），原 `dividendEvents` 继续作为 TTM 计算证据；不从旧观察推断完整历史。`features/watch/WatchDividends` 展示倒序明细和 TTM 标记，不计算股息。公开补充包经 `prepare-watch-dividends.py` 核验后由 `market_data/watch_archive` 按证券选择较新历史，CSV 依据各证券覆盖日计算，不批量更改旧证券日期。验证覆盖三年边界、闰日、未来事件排除、TTM 不变、旧记录读取、未知/过期资料与种子日期。当前口径归[买点观察](buy-watch.md#分红事件存储与股息率重算)，首次采集范围和原件留在[历史审计](audits/watch-dividend-history-20261107.md)，不作为新一轮采集要求。
+
 ### 分红日历
 
 日历解决买点观察中逐家公司查找未来一个月已披露分红安排的障碍，沿用架构说明第 6.5 节及第 7 节的状态归属。`models/watch/calendar` 拥有阶段、日期、十进制金额、问题码、30 天投影和公共/自选范围合并；`market_data/watch/plans` 校验结构化公开来源，`WatchMarketProvider::dividend_plans` 是替换接口，`SharedWatchProvider` 只转发该查询，不把计划送入 `PublicDividends`。
@@ -170,7 +174,7 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 - `features/research/previousTurn` 按 Unicode 字符截取上一轮问题、结构化结论和最多 3 条动作（额度 200/300/每条 100）；纯文本历史记录最多取 300 字。`models::PreviousTurn` 校验总计 800 字符、非空正文及最多 3 条建议；`ContextBuilder` 单独冻结它，应用层保存当前 question，不把历史模型内容拼进问题。输出引用只允许当前问题与已授权事实卡。新对话清空摘要。
 - `application/analysis` 优先组装问题中明确提及公司的最新及本周观察证据，`evidence::search_evidence` 补齐剩余额度，共最多 5 条；`relevant_excerpt` 返回最多 2000 字连续原文；`application` 读取并授权候选，`context` 冻结原文与片段，AI 不读仓储、不额外筛选。网页搜索由用户主动开关授权，默认关闭，原生搜索结果直接进入生成。
 
-## 开发流程
+### 独立研究与看板
 
 分红原始 HTTP 适配归`public_sources.dividend_page`，采集、分页核验、实施/其他方案分离与逐股输出归`dividends.py`，只依赖公开来源与文件契约，不依赖策略执行。`test_dividends`覆盖实施窗口、跨年报告、十进制单位、方案状态、空来源保留与分页缓存；数据不作为已核验历史时点指标。
 
@@ -192,27 +196,23 @@ HF 镜像配置 `HF_ENDPOINT` 由 `host-runtime --prepare` 保存到 `.env`，�
 
 已开展的外部策略研究来源与数据依赖记在 [历史研究记录](benchmark-research.md)，逐批执行结果记在审计文档。自定义 `--strategies` 可以使用相对目录；执行器在进入子进程策略工作目录前解析策略文件绝对路径，避免路径重复拼接，输入与导入隔离保持不变。
 
-长窗口研究入口 `scripts/benchmark_long_history_study.py` 的 `build` 校验独立缓存、共同字段与历史完整性，构造只截至决策日的特征；`scan` 生成临时候选并比较配置，不安装正式策略或修改线上切片。它只依赖标准库与离线 `benchmark` 公开函数，不直接导入来源 SDK。缓存契约、命令和统计限制见 [长窗口实验](audits/benchmark-long-signals-20261102.md)，时点、缺失、停牌和隔离测试归 `benchmark/tests/test_long_history_study.py`。
-
-`scripts/benchmark_risk_study.py` 通过显式特征函数、字段和规则配置复用上述工具，不改变默认长窗口研究结果。周末、三年回看与月内停牌估值归特征构建；协方差预算归候选策略，不能用个股标准差均值替代。`--minimal --built-on <日期>` 构造 `monthly-risk-v1` 最小升级输入，仍保留原标签与字段，发布和策略安装是另外的显式步骤。相关测试归 `benchmark/tests/test_risk_study.py`，数据卡说明归 `hub.py` 与 `test_hub.py`；新旧机制和升级评审见 [第三批实验](audits/benchmark-risk-signals-20261102.md)。
-
-`scripts/benchmark_earnings_study.py` 只消费公告/市场/个股缓存，复用 `public_sources.report_catalog`、长历史构建与月内收益计算；首次报告选择、修订排除和证券代码核对归该研究工具，公告窗口截止和CAR计算归`announcement_indicators.py`，检验见 `benchmark/tests/test_earnings_study.py`。公告源、排除记录和市场源哈希写入研究切片配置，未结束窗口保留问题码，不从未来标签补全。方法与缓存契约见[公告反应实验](audits/benchmark-earnings-signals-20261102.md)。
-
-`scripts/benchmark_sue_study.py` 是财务输入试点工具，读取已人工核验的普通股利润与恒定股数台账；原件路径/哈希和来源时间校验归`raw_data.py`，累计转单季、季度版本选择与八季同比窗口归`financial_indicators.py`，该工具只装配研究输入与输出，边界检验见`benchmark/tests/test_sue_study.py`。它不接入正式发布构建，不代替PDF语义审阅，不引入财务供应商SDK；口径、台账契约及未就绪项见[SUE试点](audits/benchmark-sue-pilot-20261102.md)。
-
-`price_indicators.py`拥有90日回归信号及停牌估值敏感性口径，`scripts/benchmark_regression_study.py`只编排研究构建与候选生成；复用长历史构建/扫描和月内收益，最小v7只添加`clenow_mark_90`。实际权重倾斜与倾斜后方差预算归正式策略，不把估计前旧权重的方差沿用到新篮子。时点、缺失、价格单位、并列排名、现金预算及正式契约测试见`benchmark/tests/test_regression_study.py`；数据卡说明归`hub.py`与`test_hub.py`，规则和成绩见[回归实验](audits/benchmark-regression-signals-20261102.md)。
+已有长窗口、风险、回归、公告与 SUE 工具继续受离线依赖与来源时点边界约束：脚本只编排文件输入和纯计算，不访问账号数据、不自动发布或安装候选，来源和标签不能反向进入特征。对应回归在 `benchmark/tests/test_*_study.py`，逐批参数和实验结果见[历史研究记录](benchmark-research.md)及其审计链接。新工作从[数据与指标规范](benchmark-data.md)确定实际字段依赖，不沿用某批实验的最小版本号作为当前生产要求。
 
 策略扩展先按机制去重：同一逻辑只更新原目录的最佳参数，删除被替代的参数目录、专属测试配置与当前文档入口，再用 `bench-run` 清理旧结果并刷新看板。不同选股、风险预算或执行机制可以分别登记；完整搜索空间及参数选择范围写入策略说明与审计，不把参数扫描变成多条策略。
 
 买卖操作比重沿用同一仓位/执行路径：`strategy_runner.generate_weights` 将条件卖出的默认 `sell_fraction` 显式写入仓位；`scoring.exit_rule` 校验触发条件与持股比例，`simulate_exit` 只执行一次并保留余股，`simulate_grid` 按实际成交记录预算使用和减持股数；`portfolio_segments` 维护扣费估值并汇总逐笔 `operations` 到每期成绩。看板只展示这些记录，禁止按价格触发自行补造成交。调整比例或增加执行机制须验证部分卖出后估值、停牌顺延、网格跨格与不同分母、失败不记成交，以及既有策略得分不变；相关测试归 `test_operation_ratios.py`、`test_scoring.py`、`test_dashboard.py` 与策略输出测试。旧报告必须重跑，不维护第二条旧格式展示路径。
 
-`scripts/benchmark_fugui_study.py`只读取既有Baostock后复权与独立日历缓存，检查重叠档案及原动量字段，生成截至决策日的BOLL、月MACD与首次回踩信号；未知周期保持缺失，明确停牌沿用此前已知收盘。`--minimal`须显式指定构建日期，并按实际行情依赖新增`fugui`四个底仓信号和问题码，不限制基础切片版本，保留原字段与结果标签。富贵策略按用户明确要求登记唯一的`strategies/fugui/`实现，默认发现和看板不再依赖临时候选；删除旧`candidate`命令和重复源码。执行仍经隔离子进程与原评分器，不将缺失基本面视为满足，也不以固定网格冒充底仓/机动仓分账。规则及复跑见[富贵策略](fugui-strategy.md)，时点、缺失、首次回踩、仓位、最小v8和不可覆盖检查归`test_fugui_study.py`；数据卡说明归`hub.py`与`test_hub.py`。
+富贵策略只保留 `strategies/fugui/` 的唯一实现，研究构建复用共享技术指标，仍经隔离执行器与评分器；缺失基本面不视为满足，不自动成为线上观察条件。现有命令与技术底仓范围见[富贵策略](fugui-strategy.md)，字段/来源规范见[数据与指标](benchmark-data.md)，对应回归归 `test_fugui_study.py`；不在模块边界重复某次实验的字段升级和历史版本。
 
 完整指数采集清单归 `index_membership.py`，复用XLS解析与公开下载器，核对中证A50/上证50各50只，保存原件、获取/来源日期和哈希。每日行情归 `daily_prices.py`，只调用 `public_sources`/`collect` 的公开HTTP能力，最多2个线程；按证券保存完整供应商历史，首次/显式整段刷新；22:37更新独立报价，23:37显式整段刷新历史，按月累计日期记录及源元数据，不混用价格尺度。旧Baostock每日采集代码已退役，SDK仍仅供其他显式研究工具使用；旧双口径归档按不可变标签只读引用，元数据核验归 `hub.historical_prices_reference`，不得用旧价格填充新来源。
 
 脚本只编排范围、来源、门禁与摘要。退市引用、来源缺失、闭市及非法观察、日线及独立最新报价覆盖归行情模块；两指数最新覆盖不足、活跃来源缺失或日历范围不明时不能发布。新布局使用 `prices/<证券>.jsonl`，缓存仅支持首次恢复；不使用Actions cache作为事实来源。HF固定版本恢复、临时分支上传、远端全集/内容核验和非强制快进归 `hub`；workflow与持续评测共用 `benchmark-hf-main`，只安装发布依赖，不调用被限制的供应商。测试覆盖来源隔离、退市引用不掩盖活跃缺失、全区间调整、完整名单、日历截断、缓存损坏、旧路径只读、缺口拒绝发布与原子发布；见[每日行情](benchmark.md#每日行情自动更新)。
 
 批量免费补采由 `collect.py` 拥有任务进度、固定请求与断点恢复，调用 `public_sources` 的目录和行情能力；`files.symbol` 明确支持沪深北代码，不按首位数字或默认深市猜测交易所。`universes/` 的当前成分清单只用于候选数据预采，不替代 `dataset` 的历史选样。价格口径不可隐式拼接，日历闭市与真实交易日缺口分别计数；测试覆盖节假日排除、范围截断、标题简写、来源隔离和恢复校验。
+
+## 开发流程
+
+先从[当前 spec 索引](README.md)确定模块、已采纳行为、实现与验证入口，避免把历史实验或未采纳建议当作需求。并行修改按文件分工，共享契约和架构由主负责人整合；行为或边界变化同次更新所属 spec 与索引。
 
 新增功能时先确定数据与事务的所属领域，再放置共享契约和仓储操作。需要调用市场接口、检索多类资料或执行模型时，在 `application` 增加用例，并从 HTTP 装配执行依赖。HTTP handler 只解析请求、调用该用例并返回结果。
 
@@ -236,7 +236,3 @@ cargo build --manifest-path server/Cargo.toml
 跨前后端、数据格式、财务逻辑或公共契约的修改运行完整 `npm test`（[`scripts/test.sh`](../scripts/test.sh)）：上述检查之后，在同一个临时集群中依次运行 Rust 测试、`test-functional-api`、`test-web`、`test-codex-bridge`，再运行独立建集群的 `npm run test:financial`。
 
 依赖检查解析 TypeScript 导入/导出，包括类型导入与动态导入；Rust 检查去除字符串、注释与测试专属项后提取显式 crate 依赖。它阻止上层反向引用、跨功能 UI 引用、领域客户端之间的引用以及依赖循环。DB 内部实现仍允许使用父模块门面的共享导入。检查属于静态约束，与编译及行为测试互补，不代表所有宏展开或运行时隔离已经被证明。
-
-### 买点分红三年明细
-
-`models/watch::evaluate` 从来源完整事件集生成可选 `Observation.dividendHistory`（实际行情日向前 36 个月，含两端），原 `dividendEvents` 继续作为 TTM 计算证据；不从旧观察推断完整历史。`features/watch/WatchDividends` 展示倒序明细和 TTM 标记，不计算股息。新增公开补充包经 `prepare-watch-dividends.py` 核验后由 `market_data/watch_archive` 按证券选择较新历史，CSV 依据各证券覆盖日计算，不批量更改旧证券日期。此增量不修改表结构、账号事务、行情端口或备份版本；验证覆盖三年边界、闰日、未来事件排除、TTM 不变、旧记录读取、未知/过期资料与种子日期。采集范围和原件记录见[三年分红审计](audits/watch-dividend-history-20261107.md)。

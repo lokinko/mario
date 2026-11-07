@@ -1,17 +1,17 @@
 # 外部投资策略研究记录（历史）
 
-本文保留2026-11-02各批次已开展的外部策略研究、来源及当时缺口，属于历史记录，不构成当前持续探索任务。产品优先级以[买点观察主线](product-vision.md)为准。它不把外部历史业绩当作本切片结果，也不把数据不全时的近似实现标为原策略复现。每种逻辑只保留一组最优参数，当前有效成绩以 [benchmark 成绩表](benchmark.md#新增策略与自动评测) 和策略目录为准。
+本文保留2026-11-02各批次已开展的外部策略研究、来源及当时缺口，属于历史记录，不构成当前持续探索任务。产品优先级以[买点观察主线](product-vision.md)为准。它不把外部历史业绩当作本切片结果，也不把数据不全时的近似实现标为原策略复现。每种逻辑只保留一组最优参数，已核验成绩及其明确日期、切片见 [benchmark 成绩表](benchmark.md#新增策略与自动评测)。下文的 v5/v6/v7、私有仓库、当批排名和“未部署”均描述当时状态；当前持续评测从原始事实重建输入，仓库可见性及运行路径以[现行工具规范](benchmark.md#git-提交后持续评测)为准，不能用历史状态推断当前部署。
 
 ## 验证口径
 
 - **规则适配已测**：明确改变了资产池、输入窗口或执行方式，在现有切片上验证改写后的规则；不能据此确认或否定原论文策略。
-- **待补数据**：现有时点输入不能计算关键规则，先验证来源和时间口径，不用近似指标偷偷替换。
+- **当时资料缺口**：当次时点输入不能计算关键规则，记录尚未核验的来源与时间口径，不用近似指标替换，也不据此安排当前补采。
 - **原组合不兼容**：原规则要求做空、杠杆、池外资产或不同调仓频率。可以测试声明过差异的信号迁移，但不声称得到原组合收益。
 - 参数比较都属于样本内研究。原有 148 期已被反复研究，2006–2017 和 2018–2025 仅作分段诊断；外部规则事先发表，并不使本项目的适配和参数选择自动变成样本外。
 
 ## 已核对来源与进度（2026-11-02）
 
-| ID | 外部来源与核心规则 | 与现有 benchmark 的关系 | 当时结果与未验证范围 |
+| ID | 外部来源与核心规则 | 与现有 benchmark 的关系 | 当次结果与未验证范围 |
 | --- | --- | --- | --- |
 | E01 | [Gary Antonacci：Dual, Relative & Absolute Momentum](https://www.optimalmomentum.com/dual-relative-absolute-momentum/) 与 [作者 FAQ](https://www.optimalmomentum.com/faq/)：区分横截面的相对强弱与自身超额收益的绝对趋势；公开模型采用较长回看与跨资产防御配置 | 正式 v5 只有 63 日动量；独立研究输入已补 12 个月收益，仍缺无风险收益与池外防御资产 | **63 日代理已测** 2.6928；**12 个月季度股票长仓/现金适配已测** 1.9659，完整 GEM 组合与现有资产约束不同 |
 | E02 | [Moskowitz、Ooi、Pedersen：Time Series Momentum，2012](https://www.aqr.com/Insights/Research/Journal-Article/Time-Series-Momentum)：用自身过去 12 个月超额收益方向形成多空趋势，研究对象为跨资产期货及远期 | 不允许做空或杠杆；研究输入已有 12 个月收益和三年周波动，仍缺无风险收益 | **63 日代理已测** 2.0119；**12 个月/三年周波动逆风险版已测** 1.4373，完整三年覆盖不足导致部分期现金；不解释为原期货策略复现 |
@@ -19,7 +19,7 @@
 | E04 | [Moreira、Muir：Volatility-Managed Portfolios，2017，§I.B、表 IV–V](https://amoreira2.github.io/alan-moreira.github.io/VolPortfolios_published.pdf)：按前一月组合已实现方差的倒数缩放风险敞口；另讨论不加杠杆版本 | 同源历史日线已补齐，已计算固定当前权重的历史篮子日收益；它仍不同于原文过去实际因子组合收益 | **平均个股逆方差代理已测** 3.2671；**核心/卫星篮子协方差预算已正式准入** 3.5163，v6 第一，较原最高高0.0204但区间含0；用户确认后已发布并下载复核 |
 | E05 | [Asness、Frazzini、Pedersen：Low-Risk Investing without Industry Bets，2014](https://www.aqr.com/-/media/AQR/Documents/Insights/Journal-Article/FAJ-LowRisk-Investing-Without-Industry-Bets.pdf)：研究行业内部的低 beta 效应及行业暴露影响 | 当前没有 beta；个股波动不能等同于市场 beta，也不允许原研究的多空构建 | **行业等预算、行业内低波长仓代理已测**，最优 2.5375；原 beta 计算与多空组合未复现 |
 | E06 | [Meb Faber：A Quantitative Approach to Tactical Asset Allocation，作者原规则回顾](https://mebfaber.com/2017/12/13/episode-86-quantitative-approach-tactical-asset-allocation/)：月末价格高于 10 个月简单均线时持有，否则现金 | 独立研究输入已补 10 个月月末价格；原多资产、月度调仓及现金收益与季度股票窗口不同 | **真实 10 月均线信号、季度股票适配已测**，1.8064；低于均线或数据不足的固定预算留现金，未复现原多资产组合 |
-| E07 | [Robeco：Guide to Conservative Investing，2023，p.6](https://www.robeco.com/docm/docu-202302-guide-to-conservative-investing.pdf)：先从大市值股票选三年低波，再按净派息率与动量选择，等权季度调仓 | 缺三年波动和可证明历史披露时点的净派息/回购数据；红利池身份不等于净派息率 | **待补数据**，先明确现金股息与净回购分子、时点市值分母及披露日期，不声称此前“低波+动量”就是完整 Conservative Formula |
+| E07 | [Robeco：Guide to Conservative Investing，2023，p.6](https://www.robeco.com/docm/docu-202302-guide-to-conservative-investing.pdf)：先从大市值股票选三年低波，再按净派息率与动量选择，等权季度调仓 | 缺三年波动和可证明历史披露时点的净派息/回购数据；红利池身份不等于净派息率 | **当时资料不足，未验证**：缺现金股息与净回购分子、时点市值分母及披露日期依据，不声称此前“低波+动量”就是完整 Conservative Formula |
 | E08 | [Da、Gurun、Warachka：Frog in the Pan，2011-11 完整工作稿，§2–3](https://business.uq.edu.au/sites/default/files/events/files/mitch-warachka-paper.pdf)：ID = sign(PRET) ×（负收益日比例 − 正收益日比例），在过去赢家中再找低 ID | 已核对每日符号、零收益分母和跳最近一月；研究输入已补真实日线；仍缺原文财务过滤及月度多空/六个月持仓协议 | **12-2 形成期、季度长仓双排序适配已测**，2.8760；不是原文多空组合复现 |
 | E09 | [George、Hwang：The 52-Week High and Momentum Investing，2004，作者全文，§I、表 I–IV](https://www.bauer.uh.edu/tgeorge/papers/gh4-paper.pdf)：当前月末价/过去十二个月最高价排序，原多空组合持有六个月 | 研究输入分别补日最高价与最高收盘价；采用原描述性表格不跳月的信号，未复现月度重叠多空组合 | **季度长仓适配已测**，2.6155；进一步与低波等权排名合成的研究扩展为 2.9548，都未进入 Top-10 |
 | E10 | [Novy-Marx：Fundamentally, momentum is fundamental momentum，作者工作稿，§2.1、2.3、3](https://mysimon.rochester.edu/novy-marx/research/FMFM.pdf)：研究SUE和CAR3两种盈利惊喜，以及对价格动量的控制 | 已取得公告目录和独立H00300全收益；SUE已完成一家公司15份原报告输入试点，完整版本、股份变化、全池EPS和快报时点仍待核验 | **CAR3三类/30组适配已测**，最高2.9939，未入当前前十；**SUE输入试点通过**，还没有全池策略成绩，不用净利润增速替代 |
@@ -35,7 +35,7 @@ E01–E05 的短窗口适配见 [第一批实验](audits/benchmark-external-stra
 
 [SUE财务试点](audits/benchmark-sue-pilot-20261102.md)核验601098.SH的2012Q1–2015Q3原报告，确认累计EPS舍入及季度/YTD表头不能直接混用；新增按时点的单季EPS和八季同比计算工具。2015-09-30在八项同比完整时得到输入值2.4512，经利润尺度独立复核；它不是收益得分。缺少已审阅股数证明时保留null，未扩充v6或改变排名。
 
-第五批[回归趋势实验](audits/benchmark-regression-signals-20261102.md)先测严格90日窗口，再补已知停牌持平估值的敏感性检验，后者有效覆盖2,955/2,960；两种口径合计48组。`trend_regression_tilt`按新的路径趋势逐期倾斜已选持仓，区别于只改变固定资金比例。用户确认成绩后已将唯一最优配置与最小v7输入正式登记；第一仍为3.5163，新策略第三3.4853，不作显著改善声明。v7只增加一个决策前信号、保留v6所有字段与标签；当前21项，网站未部署。
+第五批[回归趋势实验](audits/benchmark-regression-signals-20261102.md)先测严格90日窗口，再补已知停牌持平估值的敏感性检验，后者有效覆盖2,955/2,960；两种口径合计48组。`trend_regression_tilt`按新的路径趋势逐期倾斜已选持仓，区别于只改变固定资金比例。用户确认成绩后已将唯一最优配置与最小v7输入正式登记；第一仍为3.5163，新策略第三3.4853，不作显著改善声明。v7只增加一个决策前信号、保留v6所有字段与标签；当时21项，未在该批次部署网站。
 
 ## 长历史来源核查
 

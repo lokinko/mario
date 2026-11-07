@@ -19,7 +19,13 @@ GitHub 数据采集按现有工作流在北京时间22:37更新独立报价，23
 
 研究不读取个人资产、不执行真实交易；网站部署需另有任务授权。实际开展策略研究时仍遵守仓库的参数去重、成绩与Top-10记录规则。
 
-## 最近验收
+## 运行依据与验证边界
+
+既有定时配置见 [`benchmark-prices.yml`](../.github/workflows/benchmark-prices.yml)；22:37 轮更新独立报价，23:37 轮附加 `--refresh-history`，首次缺少当前来源历史时仍会抓取历史。[`benchmark_update_prices.py`](../scripts/benchmark_update_prices.py) 只向当前 `daily-public-prices/` 路径发布，历史 `daily-prices/` 保持只读；不要将维护核对改成重复采集旧来源的任务。
+
+[`test_daily_update_script.py`](../benchmark/tests/test_daily_update_script.py) 覆盖历史目标拒绝、指数覆盖不足及活跃证券失败时不发布；[`test_daily_prices.py`](../benchmark/tests/test_daily_prices.py)、[`test_hub.py`](../benchmark/tests/test_hub.py) 覆盖来源记录、完整性与固定提交发布。持续评分与失败保留另见 [`test_live.py`](../benchmark/tests/test_live.py)。这些测试使用替代来源或临时数据，不证明当前 Actions、HF 或站点已经成功运行，实际运行结果仍按前文核对。
+
+## 历史验收记录
 
 - [2026-11-04 公开v8持续评测恢复](audits/benchmark-live-v8-recovery-20261104.md)。
 

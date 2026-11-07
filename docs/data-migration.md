@@ -46,7 +46,7 @@ sudo install -d -m 700 -o "$RUN_USER" -g "$(id -gn "$RUN_USER")" /srv/mario/back
 
 包包含共享的 `mario_market` 公开分红资料库（来源采集与内置初始化历史），以及密码哈希（无需知道用户明文密码）、外部登录账号映射、每账号业务表、附件、历史分析、同步版本和模型凭据主密钥。**包不包含整份 `.env`、源码、Nginx/证书、SSH 密钥、个人电脑桥接凭据或 benchmark 文件。** 保留旧机器原配置作为受控运维备份；目标数据库密码、端口等继续使用新机器配置，不要直接覆盖目标 `.env`。
 
-如果启用了 ChatGPT 网站登录，在新机器另行配置原 `MARIO_OPENAI_CLIENT_ID`、认证方式及所需 secret；域名不变时保留原回调，换域名时先完成新回调注册并更新 `MARIO_OPENAI_REDIRECT_URI`。身份映射绑定 client ID，更换 client ID 不能自动继承旧关联；仅有 ChatGPT 登录的账号也不能假定已有可用密码。见 [网站登录配置](chatgpt-sign-in.md)。研究看板需按部署指南重新下载切片、评分，私有仓库认证另行配置。
+如果启用了 ChatGPT 网站登录，在新机器另行配置原 `MARIO_OPENAI_CLIENT_ID`、认证方式及所需 secret；域名不变时保留原回调，换域名时先完成新回调注册并更新 `MARIO_OPENAI_REDIRECT_URI`。身份映射绑定 client ID，更换 client ID 不能自动继承旧关联；仅有 ChatGPT 登录的账号也不能假定已有可用密码。见 [网站登录配置](chatgpt-sign-in.md)。研究看板按部署指南重新同步 HF 的 `dashboard/current.json`，在目标生成页面与脚本；迁移不要求重新采集或评分。公开快照可匿名读取，已有私有仓库的读取认证另行配置。
 
 ### 2. 停旧机器，生成最终迁移包
 
@@ -138,7 +138,7 @@ npm run data:backup
 # 或 bash scripts/backup.sh
 ```
 
-备份使用 `pg_dump` 一致性快照，只导出 `mario_auth` 和 `user_<uuid>` schemas。源码、证书、其他应用数据与 PostgreSQL 角色不包含在包里。数据库停止时临时启动，结束后关闭；已运行数据库保持运行。
+备份使用 `pg_dump` 一致性快照，导出 `mario_auth`、`mario_market` 和 `user_<uuid>` schemas。公开公司目录、行业观察快照、分红历史及分红计划缓存随 `mario_market` 一起保存；源码、证书、其他应用数据与 PostgreSQL 角色不包含在包里。数据库停止时临时启动，结束后关闭；已运行数据库保持运行。
 
 日常可在线备份。最终搬迁前等待 AI 操作结束并停服，生成最后一份备份，切换期间保持源服务停止，避免数据分叉：
 
@@ -192,14 +192,20 @@ MARIO_DATA_DIR=/path/to/旧资料目录 cargo run --manifest-path server/Cargo.t
 
 `MARIO_DATA_DIR` 指向包含 `mario.db` 的目录；导出文件以 `0600` 权限新建，已存在时拒绝覆盖。登录当前版本的新账号后，在“账号与数据”导入该文件；服务端会校验并升级旧数据集版本，失败整次回滚。旧账号、会话与模型密钥不随业务数据导入，需重新配置。导出文件含完整财务资料，导入后删除，并用 `git worktree remove ../mario-legacy` 清理旧版本目录。
 
+## 备份格式与升级边界
+
+网页“账号与数据”导出的单账号 JSON 当前为 v28，租户 PostgreSQL schema 当前为 15；两者是独立版本，分别由 [`sync_format.rs`](../server/src/db/sync_format.rs) 与 [`schema.rs`](../server/src/db/schema.rs) 定义。单账号 JSON 包含本账号观察规则、名单、采用的分红依据和历史，不替换公共 `mario_market`。旧格式导入的校验与迁移沿用[同步规范](cloud-sync.md)和[观察规范](buy-watch.md#数据升级与验证)。
+
+本文的 `.mario-backup` 则是加密的整站 `pg_dump` 包，封装标识为 `MARIOBK1`、封装格式版本为 1，不是 v28 JSON。恢复器核对项目 `package.json` 版本及 PostgreSQL 主版本，但不核对 Git 提交；迁移时仍须按前文记录并匹配源码提交，恢复成功后再另行升级。不要手改包内版本来跳过检查。
+
 ## 验证
 
 ```bash
 MARIO_TEST_PG_BIN=/usr/lib/postgresql/17/bin npm run test:backup
 ```
 
-测试使用两个独立临时集群，验证加密、凭据迁移、配置保留、会话撤销、服务运行保护、事务回滚、反复替换、公开分红原值恢复和回退。禁止将生产数据库传给集成测试。
+[`test-backup.mjs`](../scripts/test-backup.mjs) 使用两个独立临时集群，验证加密、凭据迁移、配置保留、会话撤销、服务运行保护、事务回滚、反复替换、公开分红原值恢复和回退；需预先提供已构建的服务端二进制（默认 `server/target/debug/mario-server`，或设置 `MARIO_TEST_SERVER_BIN`）。此加密包测试是独立入口，当前 `npm test` 不自动运行它；完整门禁中的 `test:financial` 另验证原生 PostgreSQL dump/restore 和逐表一致性，不能替代加密包测试。禁止将生产数据库传给集成测试。
 
 ## 公开分红资料与旧备份
 
-公开分红资料库由新版 API 启动时事务初始化，旧整站备份未包含它时不影响账号恢复，随后从内置资料和公开来源补齐。单账号 JSON 导入只恢复本账号观察及采用依据，不修改公共库。新整站包应使用同提交或更新版本恢复；回退旧程序请使用升级前备份，并保留新备份以保存后续抓取结果。
+公开资料库由 API 启动时事务初始化，旧整站备份未包含它时不影响账号恢复，随后从内置资料和公开来源补齐；这不能恢复备份中原本没有的人工公共目录修改或抓取快照。单账号 JSON 导入只恢复本账号资料，不修改公共库。整站包优先使用同提交程序恢复；项目版本号不同会被恢复器拒绝，应先用匹配版本恢复，再按升级说明更新。回退旧程序请使用升级前备份，并保留新备份以保存后续目录维护与抓取结果。

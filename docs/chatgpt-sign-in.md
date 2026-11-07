@@ -6,13 +6,13 @@
 
 本功能只请求 `openid profile email`，不申请订阅额度、不调用模型、不读取 ChatGPT 对话或记忆。模型提供方和本机 Codex／ChatGPT 执行能力保持原有配置；网站身份登录与这些模型执行方式独立。
 
-**代码接入不等于 OpenAI 已开放该网站的登录资格。** 当前官方要求申请 OAuth client ID 和注册精确回调地址；网站登录仍面向获批合作伙伴。未配置时登录页和账号设置隐藏相关入口，不影响邮箱密码登录。
+**代码接入不等于 OpenAI 已批准该网站使用登录能力。** 服务器需要获批的 OAuth client ID 和逐字匹配的注册回调地址；接入资格及申请信息以官方实际授予为准，下方申请资料保留 2026-11-03 的核查日期。未配置时登录页和账号设置隐藏相关入口，不影响邮箱密码登录。
 
 ## 申请 client ID 与 ChatGPT plan usage
 
 官方入口：[Request a client ID](https://developers.openai.com/siwc/request-client-id)，该页指向 [Sign in with ChatGPT interest form](https://openai.com/form/sign-in-with-chatgpt-interest/)。截至 2026-11-03，表单包含工作邮箱、姓名、公司、网站、可选职位、所需能力和产品说明。公司／主体信息须按实际情况填写。
 
-如果同时希望使用订阅额度，能力项选择 **Sign in and ChatGPT plan use for AI requests**，而不只选择身份登录。在产品说明中分别描述当前身份登录和希望后续启用的模型请求，提交后等待 OpenAI 的接入评估与注册信息；公开页面没有给出保证获批、费用或审核时限。填写或提交表单不会自动授予能力。
+若申请范围另外包含订阅额度，2026-11-03 核查时的能力项为 **Sign in and ChatGPT plan use for AI requests**。应分别描述网站身份登录和拟申请的模型执行方式，以官方实际表单与评估为准；不承诺获批、费用或审核时限。当前网站代码只实现身份登录，本段申请说明不代表已采纳远程托管订阅推理方案。填写或提交表单不会自动授予能力。
 
 可据实调整的 Mario 产品说明草稿：
 
@@ -27,7 +27,7 @@
 - 账号策略：以 issuer、client ID、subject 映射；邮箱相同不自动合并，原账号持有人需先登录后明确关联。
 - 单独说明未来是否由远程托管服务执行模型请求。官方开源／本机订阅文档不自动覆盖远程托管产品。
 
-网站身份 client ID 的批准不代表 ChatGPT plan usage 同时获批；即使同时申请，也应以 OpenAI 实际授予的注册能力和用户授权为准。此次没有替用户提交申请。
+网站身份 client ID 的批准不代表 ChatGPT plan usage 同时获批；即使同时申请，也应以 OpenAI 实际授予的注册能力和用户授权为准。本机模型执行及其独立 OAuth 注册见[本机桥接](codex-bridge.md)，不把网站 client ID 或身份令牌当作模型凭据。
 
 ## 获批后的服务器配置
 
@@ -42,7 +42,7 @@ MARIO_OPENAI_CLIENT_SECRET=
 
 若 OpenAI 签发 confidential client，则将认证方式改成 `client_secret_basic` 并在服务器填入 secret。认证方式必须与注册一致；不能为缺失或无效 secret 自动退回 public client。部署运行器仅将上述配置传给 API，不传给 Agent。日常 `deploy.sh` 更新保留已存在的 `.env` 项。
 
-沿用根目录 `deploy.sh` 更新并重启服务器；此次代码交付不会自动部署。将新生成的 `.runtime/native/nginx.conf` 中 OAuth 回调的精确 location 一并更新到现有 HTTPS server，再执行 `nginx -t` 并重载；该 location 关闭授权回调访问日志。检查同源 `GET /mario/api/auth/openai/config` 返回 `{"enabled":true}` 后，登录页才显示按钮。
+沿用根目录 `deploy.sh` 更新并重启服务器；Git 推送或文档整理不会自动部署。将新生成的 `.runtime/native/nginx.conf` 中 OAuth 回调的精确 location 一并更新到现有 HTTPS server，再执行 `nginx -t` 并重载；该 location 关闭授权回调访问日志。检查同源 `GET /mario/api/auth/openai/config` 返回 `{"enabled":true}` 后，登录页才显示按钮。
 
 开发环境需同源访问构建后的网页与 API，或让开发代理正确转发 API 和 Cookie；分离端口的跨源 `VITE_API_URL` 客户端不显示该入口。本机 HTTP 仅允许 localhost／回环地址，生产要求 HTTPS。更改前缀时应重新注册回调并同步配置。
 
@@ -64,6 +64,12 @@ MARIO_OPENAI_CLIENT_SECRET=
 
 启动时在 `mario_auth` 添加 `external_identities`、`openai_login_attempts`、`openai_login_results` 及索引，不改已有 users／sessions 或用户业务 schema。账号创建／关联／会话签发在单一事务内，短期会话交接另行落库并一次性消费；失败回滚相应事务，OAuth 事务或交接已消费时需重新登录。新增表可重复初始化，原邮箱密码登录继续有效；回退旧程序不会删除映射或用户数据。数据库备份包含这些账号级映射，恢复按现有宿主机备份流程执行。
 
-测试包含签名与声明拒绝、配置和官方端点约束、重复回调字段、浏览器绑定、事务／交接单次消费、身份隔离、邮箱冲突、关联会话撤销和旧密码保持，以及同源限制、取消、过期响应、账号切换和 StrictMode 一次性交接。数据库测试必须通过一次性 PostgreSQL 集群运行；未运行的检查不视为通过，没有真实 client ID 时自动化不能替代官方端到端登录验收。本次执行结果见[验收记录](audits/chatgpt-website-login-2026-11-03.md)。
+当前账号初始化独立于业务 schema 版本执行，不能用个人 JSON 业务备份迁移网站身份映射；整站备份包含 `mario_auth`。回退旧程序后这些表可能不被使用，仍须保留，不因停用入口删除账号身份或会话数据。
+
+## 实现与验证依据
+
+[网站 OAuth 客户端](../server/src/openai_login.rs)、[HTTP 回调与交接](../server/src/hosted/openai.rs) 和[账号身份事务](../server/src/accounts/openai.rs)负责上述流程，同目录测试覆盖签名/声明拒绝、官方端点约束、重复字段、浏览器绑定、一次性消费、邮箱冲突、关联会话撤销和旧密码保持。前端 [openaiLogin](../client/src/features/account/openaiLogin.test.ts) 与 [OpenAiSignIn](../client/src/features/account/OpenAiSignIn.test.tsx) 测试覆盖同源、取消、迟到响应、账号切换和 StrictMode 交接复用；[部署回归](../scripts/test-deploy.mjs)检查回调 location 的日志策略。
+
+数据库用例通过 `npm run test:server` 的一次性 PostgreSQL 集群运行，前端通过 `npm test --prefix client` 运行，均在完整 `npm test` 中；它们使用夹具，不持有真实网站 client ID，也不能替代 OpenAI 真实登录、实际回调域名或线上 Nginx 验收。2026-11-03 的[验收记录](audits/chatgpt-website-login-2026-11-03.md)仅是历史执行记录，不表示本次重新测试或部署。
 
 官方资料：[网站身份登录](https://developers.openai.com/siwc/website)、[Quickstart](https://developers.openai.com/siwc/quickstart)、[订阅使用适用范围](https://developers.openai.com/siwc/token-sharing-open-source)。
