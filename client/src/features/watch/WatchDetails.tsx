@@ -4,6 +4,7 @@ import type { Snapshot } from "../../types";
 import { Drawer } from "../../components/Drawer";
 import { Callout } from "../../components/Callout";
 import { BandTrack, RuleChecks, YieldGrid } from "./WatchSignals";
+import { WatchDividends } from "./WatchDividends";
 import { WatchGrid, WatchGridEditor } from "./WatchGrid";
 import { canonical, number, statuses } from "./presentation";
 
@@ -111,60 +112,7 @@ export function WatchDetails({
             </div>
             <YieldGrid row={row} />
             <WatchGrid row={row} onEdit={() => setEditingGrid(true)} />
-            <section className="watch-detail-section">
-              <h3>分红依据</h3>
-              {latest?.dividendEvents.length ? (
-                <div className="table-scroll">
-                  <table
-                    className="watch-events"
-                    aria-label="TTM 窗口已实施分红事件"
-                  >
-                    <thead>
-                      <tr>
-                        <th>除息日</th>
-                        <th>报告期</th>
-                        <th>每十股派现 / 元</th>
-                        <th>每十股送股</th>
-                        <th>每十股转增</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...latest.dividendEvents]
-                        .sort((a, b) => b.exDate.localeCompare(a.exDate))
-                        .map((e, i) => (
-                          <tr key={`${e.exDate}-${e.reportDate ?? i}`}>
-                            <td>除息日 {e.exDate}</td>
-                            <td>
-                              {e.reportDate ? `报告期 ${e.reportDate}` : "—"}
-                            </td>
-                            <td>{e.cashPerTen}</td>
-                            <td>{e.bonusPerTen}</td>
-                            <td>{e.transferPerTen}</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="watch-meta">
-                  {latest?.dividendPerShare === "0"
-                    ? "本次窗口内已核验的现金分红为零。"
-                    : "本次观察暂无可展示的分红事件。"}
-                </p>
-              )}
-              <div className="watch-sources">
-                {latest?.sources.map((url, i) => (
-                  <a key={url} href={url} target="_blank" rel="noreferrer">
-                    {i === 0
-                      ? "证券日线来源"
-                      : i === 1
-                        ? "交易日期参考来源"
-                        : "已实施分红来源"}{" "}
-                    ↗
-                  </a>
-                ))}
-              </div>
-            </section>
+            <WatchDividends latest={latest} />
             {entry.thesis && (
               <section className="watch-detail-section">
                 <h3>关注理由</h3>

@@ -213,3 +213,7 @@ cargo build --manifest-path server/Cargo.toml
 跨前后端、数据格式、财务逻辑或公共契约的修改运行完整 `npm test`（[`scripts/test.sh`](../scripts/test.sh)）：上述检查之后，在同一个临时集群中依次运行 Rust 测试、`test-functional-api`、`test-web`、`test-codex-bridge`，再运行独立建集群的 `npm run test:financial`。
 
 依赖检查解析 TypeScript 导入/导出，包括类型导入与动态导入；Rust 检查去除字符串、注释与测试专属项后提取显式 crate 依赖。它阻止上层反向引用、跨功能 UI 引用、领域客户端之间的引用以及依赖循环。DB 内部实现仍允许使用父模块门面的共享导入。检查属于静态约束，与编译及行为测试互补，不代表所有宏展开或运行时隔离已经被证明。
+
+### 买点分红三年明细
+
+`models/watch::evaluate` 从来源完整事件集生成可选 `Observation.dividendHistory`（实际行情日向前 36 个月，含两端），原 `dividendEvents` 继续作为 TTM 计算证据；不从旧观察推断完整历史。`features/watch/WatchDividends` 展示倒序明细和 TTM 标记，不计算股息。新增公开补充包经 `prepare-watch-dividends.py` 核验后由 `market_data/watch_archive` 按证券选择较新历史，CSV 依据各证券覆盖日计算，不批量更改旧证券日期。此增量不修改表结构、账号事务、行情端口或备份版本；验证覆盖三年边界、闰日、未来事件排除、TTM 不变、旧记录读取、未知/过期资料与种子日期。采集范围和原件记录见[三年分红审计](audits/watch-dividend-history-20261107.md)。

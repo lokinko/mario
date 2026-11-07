@@ -61,6 +61,11 @@ export interface Observation {
     transferPerTen: string;
   }[];
   dividendBasis?: { asOf: string; fetchedAt: string } | null;
+  dividendHistory?: {
+    start: string;
+    end: string;
+    events: Observation["dividendEvents"];
+  } | null;
 }
 export interface WatchRow {
   entry: WatchEntry;

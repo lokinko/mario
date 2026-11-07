@@ -197,6 +197,17 @@ pub struct Observation {
     pub dividend_events: Vec<DividendEvent>,
     #[serde(default)]
     pub dividend_basis: Option<DividendBasis>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dividend_history: Option<DividendWindow>,
+}
+
+/// Display evidence only; TTM amounts and frozen calculation events stay independent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DividendWindow {
+    pub start: NaiveDate,
+    pub end: NaiveDate,
+    pub events: Vec<DividendEvent>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -501,6 +512,18 @@ pub fn evaluate(
             })
             .unwrap_or_default(),
         dividend_basis: data.dividend_basis.clone(),
+        dividend_history: data.dividends.as_ref().map(|events| {
+            let start = day.checked_sub_months(chrono::Months::new(36)).unwrap();
+            DividendWindow {
+                start,
+                end: day,
+                events: events
+                    .iter()
+                    .filter(|e| e.ex_date >= start && e.ex_date <= day)
+                    .cloned()
+                    .collect(),
+            }
+        }),
     };
     observation.apply_rules();
     observation
@@ -718,6 +741,53 @@ pub(crate) mod tests {
         let stale = evaluate("600036.SS", &data, day, String::new());
         assert_eq!(stale.yield_pct, None);
         assert!(stale.issues.contains(&WatchIssue::DividendUnavailable));
+    }
+
+    #[test]
+    fn three_year_history_includes_boundaries_and_never_changes_ttm() {
+        let (mut data, day) = market_fixture();
+        let original = evaluate("600036.SS", &data, day, String::new());
+        let start = day.checked_sub_months(chrono::Months::new(36)).unwrap();
+        let template = data.dividends.as_ref().unwrap()[0].clone();
+        for ex_date in [
+            start - chrono::Duration::days(1),
+            start,
+            day,
+            day + chrono::Duration::days(1),
+        ] {
+            data.dividends.as_mut().unwrap().push(DividendEvent {
+                ex_date,
+                cash_per_ten: if ex_date == day { "0" } else { "999" }.into(),
+                ..template.clone()
+            });
+        }
+        let result = evaluate("600036.SS", &data, day, String::new());
+        assert_eq!(result.dividend_per_share, original.dividend_per_share);
+        assert_eq!(result.yield_pct, original.yield_pct);
+        let history = result.dividend_history.as_ref().unwrap();
+        assert_eq!(history.start, start);
+        assert_eq!(history.end, day);
+        assert_eq!(history.events.len(), 3);
+        assert!(history.events.iter().any(|e| e.ex_date == start));
+        assert!(!result.dividend_events.iter().any(|e| e.ex_date == start));
+        data.dividends = None;
+        assert!(evaluate("600036.SS", &data, day, String::new())
+            .dividend_history
+            .is_none());
+        // Calendar months preserve a true three-year window across leap years.
+        assert_eq!(
+            date("2024-02-29")
+                .checked_sub_months(chrono::Months::new(36))
+                .unwrap(),
+            date("2021-02-28")
+        );
+        // Old saved observations lack the field; reading them never invents history.
+        let mut old = serde_json::to_value(&original).unwrap();
+        old.as_object_mut().unwrap().remove("dividendHistory");
+        assert!(serde_json::from_value::<Observation>(old)
+            .unwrap()
+            .dividend_history
+            .is_none());
     }
 
     #[test]
