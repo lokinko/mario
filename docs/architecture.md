@@ -119,7 +119,7 @@ flowchart TD
 | `codex_bridge_worker.rs` | 用户电脑上的共用桥接进程，固定注册及授权会话，长轮询 API 领取任务，选择 Codex App Server 或官方 ChatGPT Responses；模型目录及推理取令牌时在凭据锁内核对同一会话，不借用重新登录后的授权；不上传 OpenAI 凭据 |
 | `chatgpt_auth.rs`、`chatgpt_auth/` | 本机官方 OAuth、签名身份和 scopes 校验、多注册选择、跨进程串行刷新、原子凭据保存及退出；仅由本机运行角色与 `ai/chatgpt.rs` 调用，不依赖业务数据库 |
 | `market_data.rs`、`prices.rs` | 行情端口的网络实现与实例内有界缓存；只处理公开行情，不读写账号数据 |
-| `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
+| `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共行业最新观察；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
 | `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、买点观察计算、期权合约计价及多空头重放、推理事件与执行时限 |
 | `context.rs` / `context/fact_sheet.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：分析上下文构建与预览、再平衡规划、风险检查、估值状态、本地证据检索 |
 | `attachments.rs`、`secrets.rs`、`streaming.rs`、`error.rs` | 附件解码与文本提取、主密钥加解密（AAD 绑定 schema 与用途）、共享 SSE 响应、统一错误类型 |
@@ -205,7 +205,11 @@ sequenceDiagram
 
 ### 6.5 买点观察
 
-观察桌面采用同一份账号观察结果生成紧凑列表、卡片与详情。`models/watch::dividend_prices` 从已保存观察的十进制 TTM 分红生成各档参考价及与收盘价的距离，`db/watch::watch_board` 将该只读投影放在 `WatchRow.dividendPrices`；不写历史观察、不修改备份数据格式，也不产生新的行情请求。前端只格式化金额与绘图，不重算参考价；搜索、排序、持仓/规则筛选和视图切换由观察页管理，日周 BOLL 和最终关注状态继续来自服务端。`presentation` 先按账号置顶状态分组，再按页面所选指标排序；表头和菜单共用页面排序状态。股息网格编辑归 `features/watch`，`models/watch/grid` 校验档位与比例，用十进制按单轮下跌和反弹路径测算；`db/watch::watch_board` 使用同一最新观察生成参考价与测算投影，前端仅呈现。
+观察桌面默认“自选”，其后按固定八个领域浏览 21 家公共公司。目录契约及静态资料归 `models/watch/catalog`，资料包含代码、名称、行业、核查日期及交易所/公司报告来源。`application/watch_catalog` 编排公共检查，依赖公开仓储、领域计算和行情端口；`db/public_watch` 在 `mario_market.watch_snapshots` 保存各公司的最新成功结果及检查状态，只依赖公开契约、错误类型和 `storage`，不读取账号表。`composition` 装配公共服务并管理启动补查及每 30 分钟检查的任务；复用 19:00 截止规则、同一观察计算器、参考价与公共行情/分红能力。相同标的在途检查合并，价格与分红请求共同受供应商的最多 2 并发限制，单轮 120 秒；已完成当前截止日则跳过，缺项、失败和行情滞后可重试，失败保留已有日期和结果。公共快照不产生个人观察、提醒或账号版本变更，整站备份包含公共表，个人 JSON 备份不包含它。
+
+`GET /watch/catalog` 只读快照，`POST /watch/catalog/refresh` 按行业执行检查，HTTP 保持认证与 `If-Match` 并在网络期间释放账号锁。行业页每 30 秒读取快照，不通过 GET 抓取来源。前端的 `WatchDisplayRow` 将公共市场数据与可选个人观察分开，同一 `WatchList`、`WatchSignals` 和 `WatchEvidence` 复用公司对比及依据展示；公共公司不伪造个人条目。自选状态由个人名单匹配，加入自选使用原 `PUT /watch` 的 `ifAbsent` 添加语义，仓储事务保留已存在条目及其个人设置。页面拥有分组、搜索和筛选；切换分组清空筛选，保留排序与视图。行业详情不装配个人交易、网格、提醒或周内矩阵。
+
+自选采用同一份账号观察结果生成紧凑列表、卡片与详情。`models/watch::dividend_prices` 从已保存观察的十进制 TTM 分红生成各档参考价及与收盘价的距离，`db/watch::watch_board` 将该只读投影放在 `WatchRow.dividendPrices`；不写历史观察、不修改备份数据格式，也不产生新的行情请求。前端只格式化金额与绘图，不重算参考价；搜索、排序、持仓/规则筛选和视图切换由观察页管理，日周 BOLL 和最终关注状态继续来自服务端。`presentation` 先按账号置顶状态分组，再按页面所选指标排序；表头和菜单共用页面排序状态。股息网格编辑归 `features/watch`，`models/watch/grid` 校验档位与比例，用十进制按单轮下跌和反弹路径测算；`db/watch::watch_board` 使用同一最新观察生成参考价与测算投影，前端仅呈现。
 
 [买点观察助手](buy-watch.md)是当前默认入口。`models/watch` 计算固定 5% TTM 股息率、日线 BOLL 下轨 ±2% 及周收盘价 ≤ 周线 BOLL 中轨条件，`application/watch` 通过 `WatchMarketProvider` 获取输入；`market_data/watch` 读取公开日线、交易日期参考与已实施分红，缓存仅含公开数据。`composition` 管理按账号后台检查的生命周期，不调用离线 benchmark 或自动执行 AI。
 
@@ -224,6 +228,7 @@ sequenceDiagram
 | 状态 | 所有者 | 说明 |
 | --- | --- | --- |
 | 启动配置、行情供应商、AI 执行器 | 进程（`runtime`、`composition`） | 可替换，不持有账号数据 |
+| 公共行业目录及最新观察 | 目录归领域契约，快照归 `db/public_watch` | 固定公司池；公开检查不读取账号、不写个人记录；后台任务归 `composition` |
 | 公开行情缓存 | `prices`/`market_data` 实例 | 有界、失败退避，跨账号共享，只含公开数据 |
 | 会话与账号 | `accounts` | 会话仅存哈希，可撤销；网站 OpenAI 身份映射、账号创建／关联／会话签发归同一事务；短期 OAuth 事务原子消费后不重放 |
 | 账号业务数据与版本 | `db` 领域仓储 | 业务写入、回执、日志、投影与版本同事务提交 |

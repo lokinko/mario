@@ -19,6 +19,7 @@ import {
   statuses,
   sortOptions,
   type WatchSort,
+  type WatchDisplayRow,
 } from "./presentation";
 
 export function WatchList({
@@ -36,8 +37,11 @@ export function WatchList({
   onEdit,
   onRead,
   onRetry,
+  favorites,
+  canAdd,
+  onAdd,
 }: {
-  rows: WatchRow[];
+  rows: WatchDisplayRow[];
   view: "compact" | "cards";
   held: Set<string>;
   busy: boolean;
@@ -46,18 +50,21 @@ export function WatchList({
   sort: WatchSort;
   onSort: (sort: WatchSort) => void;
   onPin: (row: WatchRow) => void;
-  onDetails: (row: WatchRow) => void;
+  onDetails: (row: WatchDisplayRow) => void;
   onAsk: (row: WatchRow) => void;
   onEdit: (row: WatchRow) => void;
   onRead: (row: WatchRow) => void;
   onRetry: () => void;
+  favorites: Set<string>;
+  canAdd: boolean;
+  onAdd: (row: WatchDisplayRow) => void;
 }) {
-  const state = (row: WatchRow) => (
+  const state = (row: WatchDisplayRow) => (
     <Badge tone={row.latest?.status === "attention" ? "success" : "neutral"}>
       {row.latest ? statuses[row.latest.status] : "等待首次检查"}
     </Badge>
   );
-  const issue = (row: WatchRow) =>
+  const issue = (row: WatchDisplayRow) =>
     (row.refreshFailed || Boolean(row.latest?.issues.length)) && (
       <div className="watch-data-issue">
         <span>
@@ -70,19 +77,20 @@ export function WatchList({
         </button>
       </div>
     );
-  const alert = (row: WatchRow) =>
-    row.alert && (
+  const alert = (row: WatchDisplayRow) =>
+    row.watch?.alert && (
       <button
         className="watch-alert-button"
         disabled={busy}
-        onClick={() => onRead(row)}
+        onClick={() => row.watch && onRead(row.watch)}
       >
         <Bell size={13} />
         标为已读
       </button>
     );
-  const pin = (row: WatchRow, iconOnly = false) => {
-    const pinned = row.entry.pinned;
+  const pin = (row: WatchDisplayRow, iconOnly = false) => {
+    if (!row.watch) return null;
+    const pinned = row.watch?.entry.pinned;
     const Icon = pinned ? PinOff : Pin;
     const label = pinned ? "取消置顶" : "置顶";
     return (
@@ -93,8 +101,8 @@ export function WatchList({
             : "text-button"
         }
         disabled={busy}
-        onClick={() => onPin(row)}
-        aria-label={`${label}${row.entry.name}`}
+        onClick={() => row.watch && onPin(row.watch)}
+        aria-label={`${label}${row.company.name}`}
         title={iconOnly ? label : undefined}
       >
         <Icon size={iconOnly ? 14 : 15} aria-hidden="true" />
@@ -102,6 +110,16 @@ export function WatchList({
       </button>
     );
   };
+  const add = (row: WatchDisplayRow) => (
+    <button
+      className="text-button"
+      disabled={busy || favorites.has(row.company.symbol) || !canAdd}
+      aria-label={`${favorites.has(row.company.symbol) ? "已在自选" : "加入自选"}${row.company.name}`}
+      onClick={() => onAdd(row)}
+    >
+      {favorites.has(row.company.symbol) ? "已在自选" : "加入自选"}
+    </button>
+  );
   const sortHeader = (
     label: string,
     first: WatchSort,
@@ -168,8 +186,8 @@ export function WatchList({
           <tbody>
             {rows.map((row) => (
               <tr
-                key={row.entry.symbol}
-                className={row.alert ? "watch-unread" : ""}
+                key={row.company.symbol}
+                className={row.watch?.alert ? "watch-unread" : ""}
               >
                 <td data-label="公司">
                   <div className="watch-company-line">
@@ -177,10 +195,10 @@ export function WatchList({
                       className="watch-company"
                       onClick={() => onDetails(row)}
                     >
-                      <strong>{row.entry.name}</strong>
+                      <strong>{row.company.name}</strong>
                       <small>
-                        {row.entry.symbol} ·{" "}
-                        {held.has(row.entry.symbol) ? "已持有" : "未持有"}
+                        {row.company.symbol} ·{" "}
+                        {held.has(row.company.symbol) ? "已持有" : "未持有"}
                       </small>
                     </button>
                     {pin(row, true)}
@@ -222,6 +240,7 @@ export function WatchList({
                   <div className="watch-row-status">
                     {state(row)}
                     {alert(row)}
+                    {!row.watch && add(row)}
                   </div>
                   {issue(row)}
                 </td>
@@ -235,18 +254,20 @@ export function WatchList({
     <div className="watch-list">
       {rows.map((row) => (
         <article
-          className={`panel watch-card ${row.alert ? "watch-unread" : ""}`}
-          key={row.entry.symbol}
+          className={`panel watch-card ${row.watch?.alert ? "watch-unread" : ""}`}
+          key={row.company.symbol}
         >
           <div className="watch-heading">
             <div>
               <h3>
-                {row.entry.name}
-                <small>{row.entry.symbol}</small>
+                {row.company.name}
+                <small>{row.company.symbol}</small>
               </h3>
-              {row.entry.pinned && <span className="watch-pinned">已置顶</span>}
+              {row.watch?.entry.pinned && (
+                <span className="watch-pinned">已置顶</span>
+              )}
               <span>
-                {held.has(row.entry.symbol) ? "已关联原账本持仓" : "尚未持有"}
+                {held.has(row.company.symbol) ? "已关联原账本持仓" : "尚未持有"}
               </span>
             </div>
             {state(row)}
@@ -287,25 +308,33 @@ export function WatchList({
             {row.latest?.dividendBasis?.asOf ?? "—"}
           </p>
           {issue(row)}
-          {row.entry.thesis && (
-            <p className="watch-thesis">{row.entry.thesis}</p>
+          {row.watch?.entry.thesis && (
+            <p className="watch-thesis">{row.watch?.entry.thesis}</p>
           )}
           <div className="watch-actions">
             {pin(row)}
-            <button className="primary" onClick={() => onAsk(row)}>
-              <MessageCircle size={15} />
-              结合我的交易讨论
-            </button>
+            {!row.watch && add(row)}
+            {row.watch && (
+              <button
+                className="primary"
+                onClick={() => row.watch && onAsk(row.watch)}
+              >
+                <MessageCircle size={15} />
+                结合我的交易讨论
+              </button>
+            )}
             <button className="text-button" onClick={() => onDetails(row)}>
-              查看依据与交易
+              {row.watch ? "查看依据与交易" : "查看依据"}
             </button>
-            <button
-              className="text-button"
-              disabled={busy}
-              onClick={() => onEdit(row)}
-            >
-              编辑
-            </button>
+            {row.watch && (
+              <button
+                className="text-button"
+                disabled={busy}
+                onClick={() => row.watch && onEdit(row.watch)}
+              >
+                编辑
+              </button>
+            )}
           </div>
         </article>
       ))}

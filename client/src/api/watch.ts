@@ -67,14 +67,37 @@ export interface Observation {
     events: Observation["dividendEvents"];
   } | null;
 }
-export interface WatchRow {
-  entry: WatchEntry;
+export interface WatchMarketRow {
   latest: Observation | null;
   dividendPrices: DividendPrice[];
-  gridProjection?: WatchGridProjection | null;
-  alert: boolean;
   checkedAt: string | null;
   refreshFailed: boolean;
+}
+export interface WatchRow extends WatchMarketRow {
+  entry: WatchEntry;
+  gridProjection?: WatchGridProjection | null;
+  alert: boolean;
+}
+export interface CatalogCompany {
+  symbol: string;
+  name: string;
+  sources: string[];
+}
+export interface WatchIndustry {
+  id: string;
+  name: string;
+  companies: CatalogCompany[];
+}
+export interface CatalogRow extends WatchMarketRow {
+  company: CatalogCompany;
+  industryId: string;
+  checkedFor: string | null;
+}
+export interface CatalogBoard {
+  catalog: { version: number; verifiedOn: string; industries: WatchIndustry[] };
+  rows: CatalogRow[];
+  minYieldPct: number;
+  bandDistancePct: number;
 }
 export interface DividendPrice {
   yieldPct: number;
@@ -92,10 +115,17 @@ export interface WatchBoard {
 }
 
 export const getWatchBoard = () => httpRequest<WatchBoard>("/watch");
-export const saveWatch = (input: WatchInput) =>
+export const getWatchCatalog = () =>
+  httpRequest<CatalogBoard>("/watch/catalog");
+export const refreshWatchCatalog = (industryId: string) =>
+  httpRequest<CatalogBoard>("/watch/catalog/refresh", {
+    method: "POST",
+    body: JSON.stringify({ industryId }),
+  });
+export const saveWatch = (input: WatchInput, ifAbsent = false) =>
   httpRequest<WatchEntry>("/watch", {
     method: "PUT",
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, ...(ifAbsent ? { ifAbsent: true } : {}) }),
   });
 export const deleteWatch = (symbol: string) =>
   httpRequest<{ ok: boolean }>(`/watch/${encodeURIComponent(symbol)}`, {

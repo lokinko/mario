@@ -12,10 +12,22 @@ use std::sync::Arc;
 pub(crate) struct MarketRuntime {
     pub services: Arc<MarketServices>,
     pub watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
+    pub watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 impl MarketRuntime {
     pub fn start_watch(&mut self, accounts: Arc<crate::accounts::Accounts>) {
+        let catalog = self.watch_catalog.clone();
+        self.tasks.push(tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                if let Err(error) = catalog.refresh(None, false).await {
+                    tracing::warn!(%error, "public catalogue refresh failed");
+                }
+            }
+        }));
         let provider = self.watch_provider.clone();
         self.tasks.push(tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
@@ -69,12 +81,20 @@ impl MarketRuntime {
                 }
             }
         });
-        Ok(Self {
-            services,
-            watch_provider: Arc::new(crate::application::watch_market::SharedWatchProvider::new(
+        let watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider> =
+            Arc::new(crate::application::watch_market::SharedWatchProvider::new(
                 Arc::new(crate::market_data::watch::PublicWatchProvider::new()?),
                 public_dividends,
-            )),
+            ));
+        let watch_catalog = Arc::new(crate::application::watch_catalog::WatchCatalogService::new(
+            crate::models::watch::catalog::Catalog::bundled()?,
+            Arc::new(crate::db::PublicWatch::postgres(database_url)?),
+            watch_provider.clone(),
+        ));
+        Ok(Self {
+            services,
+            watch_provider,
+            watch_catalog,
             tasks: vec![price_task, fx_task],
         })
     }

@@ -135,6 +135,17 @@ try {
   assert.equal(snap.holdings.length, 0);
   assert.equal((await fetch(base + "/watch")).status, 401);
   const watchVersion = await api("/sync/version");
+  assert.equal((await fetch(base + "/watch/catalog")).status, 401);
+  const catalog = await api("/watch/catalog");
+  assert.deepEqual(catalog.catalog.industries.map(i => i.name), ["银行", "煤炭", "石油石化", "电力", "通信运营", "高速公路", "白酒", "家电"]);
+  assert.equal(catalog.rows.length, 21);
+  for (const row of catalog.rows) {
+    for (const privateKey of ["entry", "thesis", "pinned", "gridPlan", "alert", "trades"]) assert.equal(row[privateKey], undefined);
+  }
+  await api("/watch/catalog/refresh", "POST", { industryId: "unknown" }, 400);
+  const staleCatalog = await fetch(base + "/watch/catalog/refresh", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "If-Match": "-1" }, body: JSON.stringify({ industryId: "banks" }) });
+  assert.equal(staleCatalog.status, 409);
+  assert.deepEqual(await api("/sync/version"), watchVersion, "catalogue reads and rejected refreshes must not mutate accounts");
   assert.deepEqual((await api("/watch")).rows, []);
   assert.deepEqual(await api("/sync/version"), watchVersion, "reading watches must not mutate account data");
   const watched = await api("/watch", "PUT", { symbol: "600036.SH", name: "观察测试", thesis: "核查分红持续性" });
@@ -174,6 +185,10 @@ try {
   assert.equal(gridProjection.scenarios[1].budgetReturnPct, "20.0000");
   assert.equal(gridProjection.scenarios[1].investedReturnPct, "40.0000");
   assert.deepEqual((await api("/watch")).rows[0].entry.gridPlan, grid);
+  const existingWatch = (await api("/watch")).rows[0].entry;
+  const additionVersion = await api("/sync/version");
+  assert.deepEqual(await api("/watch", "PUT", { symbol: watched.symbol, name: "公共目录名称", thesis: "", ifAbsent: true }), existingWatch);
+  assert.deepEqual(await api("/sync/version"), additionVersion, "adding an existing catalogue company must preserve personal settings and revision");
   assert.equal((await api(gridPath, "PUT", null)).rows[0].gridProjection, null);
   assert.deepEqual((await api("/snapshot")).holdings, snap.holdings, "watching must not create holdings");
   await api("/watch/600036.SS/read", "POST");

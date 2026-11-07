@@ -14,7 +14,7 @@ export function requestPolicy(path: string) {
   const resource = path.split("?")[0];
   const timeoutMs = ["/analysis", "/analysis/stream"].includes(resource)
     ? 1800000
-    : resource === "/watch/refresh"
+    : resource === "/watch/refresh" || resource === "/watch/catalog/refresh"
       ? 180000
       : resource === "/model-config/test"
         ? 300000

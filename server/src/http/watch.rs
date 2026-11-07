@@ -13,11 +13,33 @@ use std::sync::Arc;
 pub(super) fn router() -> Router {
     Router::new()
         .route("/api/watch", get(board).put(save))
+        .route("/api/watch/catalog", get(catalog))
+        .route("/api/watch/catalog/refresh", post(refresh_catalog))
         .route("/api/watch/refresh", post(refresh))
         .route("/api/watch/{symbol}", axum::routing::delete(remove))
         .route("/api/watch/{symbol}/read", post(read))
         .route("/api/watch/{symbol}/pin", put(pin))
         .route("/api/watch/{symbol}/grid", put(save_grid))
+}
+async fn catalog(
+    Extension(state): Extension<Arc<RequestContext>>,
+) -> AppResult<Json<crate::models::watch::catalog::CatalogBoard>> {
+    Ok(Json(state.watch_catalog.board()?))
+}
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CatalogRefreshInput {
+    industry_id: String,
+}
+async fn refresh_catalog(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Json(input): Json<CatalogRefreshInput>,
+) -> AppResult<Json<crate::models::watch::catalog::CatalogBoard>> {
+    let board = state
+        .db
+        .without_account_lock(state.watch_catalog.refresh(Some(&input.industry_id), true))
+        .await?;
+    Ok(Json(board?))
 }
 async fn board(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<WatchBoard>> {
     current_board(&state)
@@ -38,9 +60,21 @@ async fn save_grid(
 }
 async fn save(
     Extension(state): Extension<Arc<RequestContext>>,
-    Json(input): Json<WatchInput>,
+    Json(input): Json<WatchSaveInput>,
 ) -> AppResult<Json<WatchEntry>> {
-    Ok(Json(state.db.save_watch(input)?))
+    Ok(Json(if input.if_absent {
+        state.db.add_watch_if_missing(input.company)?
+    } else {
+        state.db.save_watch(input.company)?
+    }))
+}
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WatchSaveInput {
+    #[serde(flatten)]
+    company: WatchInput,
+    #[serde(default)]
+    if_absent: bool,
 }
 async fn remove(
     Extension(state): Extension<Arc<RequestContext>>,
@@ -72,4 +106,67 @@ async fn refresh(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<
     Ok(Json(
         crate::application::watch::refresh(&state.db, state.watch_provider.clone(), true).await?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn public_refresh_returns_public_results_without_advancing_the_account_or_copying_history(
+    ) {
+        let runtime = crate::composition::MarketRuntime::new(
+            &std::env::var("MARIO_TEST_DATABASE_URL").unwrap(),
+        )
+        .unwrap();
+        let state = Arc::new(RequestContext {
+            db: crate::db::Database::test(),
+            watch_provider: runtime.watch_provider.clone(),
+            watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
+            market: runtime.services.clone(),
+            analysis_executor: Arc::new(crate::agent::AgentExecutor),
+        });
+        let revision = state.db.revision().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = router().layer(Extension(state.clone()));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = reqwest::Client::new();
+        let _lock = state.db.lock_account().unwrap();
+        let response = client
+            .post(format!("{base}/api/watch/catalog/refresh"))
+            .json(&serde_json::json!({"industryId":"banks"}))
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success(), "{}", response.status());
+        let board: serde_json::Value = response.json().await.unwrap();
+        assert!(board["rows"][0]["latest"]["price"].is_number());
+        assert_eq!(
+            board["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| !r["latest"].is_null())
+                .count(),
+            3
+        );
+        assert_eq!(state.db.revision().unwrap(), revision);
+        assert!(state.db.watch_entries().unwrap().is_empty());
+        assert!(state
+            .db
+            .watch_board(super::super::super::application::watch::cutoff())
+            .unwrap()
+            .weekly
+            .is_empty());
+        let response = client
+            .get(format!("{base}/api/watch/catalog"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.json::<serde_json::Value>().await.unwrap(), board);
+        server.abort();
+    }
 }

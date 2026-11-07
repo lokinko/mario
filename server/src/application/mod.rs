@@ -6,4 +6,5 @@ pub(crate) mod model_settings;
 pub(crate) mod portfolio;
 pub(crate) mod prices;
 pub(crate) mod watch;
+pub(crate) mod watch_catalog;
 pub(crate) mod watch_market;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Input } from "antd";
+import { Button, Input, Tabs } from "antd";
 import {
   Plus,
   RefreshCw,
@@ -10,6 +10,9 @@ import {
 } from "lucide-react";
 import {
   getWatchBoard,
+  getWatchCatalog,
+  refreshWatchCatalog,
+  type CatalogBoard,
   saveWatch,
   saveWatchGrid,
   setWatchPinned,
@@ -28,10 +31,13 @@ import { useRequestGuard } from "../../lib/useRequestGuard";
 import "./watch.css";
 
 import { WatchList } from "./WatchList";
+import { WatchCatalogDetails } from "./WatchCatalogDetails";
 import { WatchDetails } from "./WatchDetails";
 import { WatchWeekly } from "./WatchWeekly";
 import {
   canonical,
+  displayWatch,
+  type WatchDisplayRow,
   statuses,
   selectRows,
   checks,
@@ -56,6 +62,9 @@ export function BuyWatch({
   onSaved: () => void;
 }) {
   const [board, setBoard] = useState<WatchBoard | null>(null);
+  const [catalog, setCatalog] = useState<CatalogBoard | null>(null);
+  const [catalogError, setCatalogError] = useState("");
+  const [group, setGroup] = useState("favorites");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<WatchInput>(empty);
@@ -69,6 +78,19 @@ export function BuyWatch({
   const [ownership, setOwnership] = useState("all");
   const [view, setView] = useState<"compact" | "cards">("compact");
   const guard = useRequestGuard();
+  const catalogGuard = useRequestGuard();
+  const loadCatalog = async () => {
+    const current = catalogGuard.begin();
+    try {
+      const data = await getWatchCatalog();
+      if (current()) {
+        setCatalog(data);
+        setCatalogError("");
+      }
+    } catch (e) {
+      if (current()) setCatalogError(String(e));
+    }
+  };
   const load = async () => {
     const current = guard.begin();
     try {
@@ -83,8 +105,16 @@ export function BuyWatch({
   };
   useEffect(() => {
     void load();
+    void loadCatalog();
   }, []);
-  const run = async (action: () => Promise<WatchBoard>) => {
+  useEffect(() => {
+    if (group === "favorites" || busy) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadCatalog();
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [group, busy]);
+  const run = async (action: () => Promise<WatchBoard | void>) => {
     if (busy) return false;
     const current = guard.begin();
     setBusy(true);
@@ -92,7 +122,7 @@ export function BuyWatch({
     try {
       const next = await action();
       if (!current()) return false;
-      setBoard(next);
+      if (next) setBoard(next);
       return true;
     } catch (e) {
       if (current()) setError(String(e));
@@ -138,6 +168,43 @@ export function BuyWatch({
     );
   };
   const rows = board?.rows ?? [];
+  const own = group === "favorites";
+  const favorites = new Set(rows.map((row) => row.entry.symbol));
+  const canAdd = rows.length < 50;
+  const currentRows: WatchDisplayRow[] = own
+    ? rows.map(displayWatch)
+    : (catalog?.rows.filter((row) => row.industryId === group) ?? []);
+  const publicActive = !own
+    ? catalog?.rows.find((row) => row.company.symbol === expanded)
+    : undefined;
+  const refresh = () =>
+    own
+      ? run(refreshWatch)
+      : run(async () => {
+          const current = catalogGuard.begin();
+          const next = await refreshWatchCatalog(group);
+          if (current()) {
+            setCatalog(next);
+            setCatalogError("");
+          }
+        });
+  const add = (row: WatchDisplayRow) => {
+    if (!board || favorites.has(row.company.symbol) || !canAdd || busy) return;
+    void run(async () => {
+      await saveWatch(
+        {
+          symbol: row.company.symbol,
+          name: row.company.name,
+          thesis: "",
+        },
+        true,
+      );
+      flash(
+        `已将${row.company.name}加入自选，收盘后自动检查，也可在自选中立即检查。`,
+      );
+      return getWatchBoard();
+    });
+  };
   const holdings = snapshot.holdings.filter((h) =>
     /^(60|68)\d{4}\.(SS|SH)$|^(00|30)\d{4}\.SZ$/i.test(h.symbol),
   );
@@ -154,12 +221,12 @@ export function BuyWatch({
       .map((h) => canonical(h.symbol)),
   );
   const counts = {
-    yield: rows.filter((r) => checks(r, minYield)[0] === true).length,
-    daily: rows.filter((r) => checks(r, minYield)[1] === true).length,
-    weekly: rows.filter((r) => checks(r, minYield)[2] === true).length,
+    yield: currentRows.filter((r) => checks(r, minYield)[0] === true).length,
+    daily: currentRows.filter((r) => checks(r, minYield)[1] === true).length,
+    weekly: currentRows.filter((r) => checks(r, minYield)[2] === true).length,
   };
   const visible = selectRows(
-    rows,
+    currentRows,
     query,
     filter,
     sort,
@@ -167,11 +234,19 @@ export function BuyWatch({
     ownership,
     minYield,
   );
-  const active = rows.find((r) => r.entry.symbol === expanded);
+  const active = own
+    ? rows.find((r) => r.entry.symbol === expanded)
+    : undefined;
   const reset = () => {
     setQuery("");
     setFilter("all");
     setOwnership("all");
+  };
+  const changeGroup = (next: string) => {
+    setGroup(next);
+    setExpanded(null);
+    setError("");
+    reset();
   };
   const week = board?.weekly ?? [];
   const weeklyAsk = () => {
@@ -187,8 +262,8 @@ export function BuyWatch({
         action={
           <>
             <Button
-              disabled={busy || !rows.length}
-              onClick={() => void run(refreshWatch)}
+              disabled={busy || !currentRows.length}
+              onClick={() => void refresh()}
               icon={
                 <RefreshCw size={15} className={busy ? "watch-spinning" : ""} />
               }
@@ -205,6 +280,19 @@ export function BuyWatch({
             </Button>
           </>
         }
+      />
+      <Tabs
+        className="watch-industry-tabs"
+        aria-label="公司分组"
+        activeKey={group}
+        onChange={changeGroup}
+        items={[
+          { key: "favorites", label: `自选 ${rows.length}` },
+          ...(catalog?.catalog.industries.map((industry) => ({
+            key: industry.id,
+            label: `${industry.name} ${industry.companies.length}`,
+          })) ?? []),
+        ]}
       />
       <section className="panel watch-intro">
         <div className="watch-rule-strip">
@@ -227,7 +315,7 @@ export function BuyWatch({
           </p>
         </details>
       </section>
-      {error && !open && !active && (
+      {error && !open && !active && !publicActive && (
         <Callout tone="danger">
           <span>{error}</span>
           <button disabled={busy} onClick={() => void load()}>
@@ -235,13 +323,22 @@ export function BuyWatch({
           </button>
         </Callout>
       )}
+      {catalogError && !open && !publicActive && (
+        <Callout tone="danger">
+          <span>行业目录读取失败：{catalogError}</span>
+          <button disabled={busy} onClick={() => void loadCatalog()}>
+            重新读取行业目录
+          </button>
+        </Callout>
+      )}
+      {!catalog && !catalogError && <p role="status">正在读取行业目录…</p>}
       {!board && !error && <p role="status">正在读取观察名单…</p>}
       {board && (
         <>
           <div className="watch-summary" role="group" aria-label="观察名单筛选">
             {(
               [
-                ["all", "全部公司", rows.length],
+                ["all", "全部公司", currentRows.length],
                 ["yield", "股息达标", counts.yield],
                 ["daily", "日线达标", counts.daily],
                 ["weekly", "周线达标", counts.weekly],
@@ -257,13 +354,15 @@ export function BuyWatch({
               </button>
             ))}
           </div>
-          {rows.length > 0 && (
+          {currentRows.length > 0 && (
             <div className="watch-toolbar">
               <div className="watch-search">
                 <Input
                   prefix={<Search size={16} />}
                   aria-label="搜索观察公司"
-                  placeholder="搜索名称、代码或关注理由"
+                  placeholder={
+                    own ? "搜索名称、代码或关注理由" : "搜索名称或代码"
+                  }
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
@@ -316,10 +415,10 @@ export function BuyWatch({
               </div>
             </div>
           )}
-          {rows.length > 0 && (
+          {currentRows.length > 0 && (
             <div className="watch-result-meta">
               <span className="sr-only" aria-live="polite">
-                显示 {visible.length} / {rows.length} 家
+                显示 {visible.length} / {currentRows.length} 家
               </span>
               {(query || filter !== "all" || ownership !== "all") && (
                 <button className="text-button" onClick={reset}>
@@ -328,7 +427,7 @@ export function BuyWatch({
               )}
             </div>
           )}
-          {!rows.length && (
+          {own && !rows.length && (
             <section className="panel">
               <h3>从一家公司开始</h3>
               <p>
@@ -337,6 +436,14 @@ export function BuyWatch({
               <button className="secondary" onClick={() => edit()}>
                 加入第一家公司
               </button>
+              {catalog && (
+                <button
+                  className="text-button"
+                  onClick={() => changeGroup(catalog.catalog.industries[0].id)}
+                >
+                  按行业浏览公司
+                </button>
+              )}
             </section>
           )}
           {visible.length > 0 && (
@@ -365,10 +472,13 @@ export function BuyWatch({
                   };
                 })
               }
-              onDetails={(row) => setExpanded(row.entry.symbol)}
+              favorites={favorites}
+              canAdd={canAdd}
+              onAdd={add}
+              onDetails={(row) => setExpanded(row.company.symbol)}
               onAsk={ask}
               onEdit={(row) => edit(row.entry)}
-              onRetry={() => void run(refreshWatch)}
+              onRetry={() => void refresh()}
               onRead={(row) =>
                 void run(async () => {
                   await readWatchAlerts(row.entry.symbol);
@@ -377,7 +487,7 @@ export function BuyWatch({
               }
             />
           )}
-          {rows.length > 0 && visible.length === 0 && (
+          {currentRows.length > 0 && visible.length === 0 && (
             <section className="panel watch-no-results">
               <h3>当前条件下没有公司</h3>
               <p>调整搜索或筛选，可以继续查看已有名单。</p>
@@ -386,12 +496,36 @@ export function BuyWatch({
               </button>
             </section>
           )}
-          <WatchWeekly
-            board={board}
-            onAsk={weeklyAsk}
-            onDetails={(row) => setExpanded(row.entry.symbol)}
-          />
+          {!own && !canAdd && (
+            <p>自选已达 50 家，请先在自选中移除公司后再添加。</p>
+          )}
+          {own && (
+            <WatchWeekly
+              board={board}
+              onAsk={weeklyAsk}
+              onDetails={(row) => setExpanded(row.entry.symbol)}
+            />
+          )}
         </>
+      )}
+      {publicActive && catalog && !open && (
+        <WatchCatalogDetails
+          row={publicActive}
+          industry={
+            catalog.catalog.industries.find((industry) => industry.id === group)
+              ?.name ?? ""
+          }
+          verifiedOn={catalog.catalog.verifiedOn}
+          minYield={minYield}
+          tolerance={tolerance}
+          busy={busy}
+          error={error || catalogError}
+          joined={favorites.has(publicActive.company.symbol)}
+          canAdd={canAdd}
+          onClose={() => setExpanded(null)}
+          onAdd={() => add(publicActive)}
+          onRetry={() => void refresh()}
+        />
       )}
       {active && !open && (
         <WatchDetails

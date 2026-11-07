@@ -44,6 +44,13 @@ test('shared public dividend data stays separate from accounts and private analy
     assert(serverFileViolation('application/watch_market.rs', target));
   assert.equal(serverFileViolation('db/public_dividends.rs', 'storage'), undefined);
   assert.equal(serverFileViolation('application/watch_market.rs', 'ports'), undefined);
+  for (const target of ['accounts', 'context', 'ai', 'market_data', 'http']) {
+    assert(serverFileViolation('db/public_watch.rs', target));
+    assert(serverFileViolation('application/watch_catalog.rs', target));
+  }
+  assert(serverFileViolation('db/public_watch.rs', 'db'));
+  assert.equal(serverFileViolation('db/public_watch.rs', 'storage'), undefined);
+  assert.equal(serverFileViolation('application/watch_catalog.rs', 'ports'), undefined);
 });
 test('local ChatGPT credentials cannot leak into hosted workflows or domain state', () => {
   assert.equal(serverViolation('hosted', 'openai_login'), undefined);

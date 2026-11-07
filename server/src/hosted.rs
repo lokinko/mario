@@ -45,6 +45,7 @@ struct HostedState {
     auth_slots: tokio::sync::Semaphore,
     market: Arc<MarketServices>,
     watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
+    watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
     analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
     /// Output of the offline benchmark `bench-run`; the online service only serves these files.
     dashboard_dir: Option<PathBuf>,
@@ -69,6 +70,7 @@ where
         auth_slots: tokio::sync::Semaphore::new(AUTH_SLOTS),
         market: market_runtime.services.clone(),
         watch_provider: market_runtime.watch_provider.clone(),
+        watch_catalog: market_runtime.watch_catalog.clone(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
         dashboard_dir,
     });
@@ -185,6 +187,7 @@ async fn authenticate(
         let user = host.accounts.authenticate(bearer(request.headers())?)?;
         let state = Arc::new(RequestContext {
             watch_provider: host.watch_provider.clone(),
+            watch_catalog: host.watch_catalog.clone(),
             db: Database::postgres(&host.accounts.url, &user)?,
             market: host.market.clone(),
             analysis_executor: host.analysis_executor.clone(),

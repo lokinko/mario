@@ -12,9 +12,12 @@ import { BuyWatch } from "./BuyWatch";
 import * as api from "../../api/watch";
 import type { Snapshot } from "../../types";
 import fixture from "../../test/emptySnapshot.json";
+import catalogFixture from "../../../../server/data/watch-catalog.json";
 
 vi.mock("../../api/watch", () => ({
   getWatchBoard: vi.fn(),
+  getWatchCatalog: vi.fn(),
+  refreshWatchCatalog: vi.fn(),
   saveWatch: vi.fn(),
   saveWatchGrid: vi.fn(),
   setWatchPinned: vi.fn(),
@@ -83,13 +86,217 @@ const props = () => ({
   onEdited: vi.fn(),
   onSaved: vi.fn(),
 });
+const catalog: api.CatalogBoard = {
+  catalog: catalogFixture,
+  rows: catalogFixture.industries.flatMap((industry) =>
+    industry.companies.map((company) => ({
+      company,
+      industryId: industry.id,
+      checkedFor: "2026-11-04",
+      latest: { ...row.latest!, symbol: company.symbol },
+      dividendPrices: row.dividendPrices,
+      checkedAt: row.checkedAt,
+      refreshFailed: false,
+    })),
+  ),
+  minYieldPct: 5,
+  bandDistancePct: 2,
+};
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(api.getWatchBoard).mockResolvedValue(structuredClone(empty));
+  vi.mocked(api.getWatchCatalog).mockResolvedValue(structuredClone(catalog));
 });
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+});
+
+it("defaults to personal watches and switches all eight industry groups without private controls", async () => {
+  vi.mocked(api.getWatchBoard).mockResolvedValue({ ...empty, rows: [row] });
+  render(<BuyWatch {...props()} />);
+  expect(await screen.findByRole("tab", { name: "自选 1" })).toHaveProperty(
+    "ariaSelected",
+    "true",
+  );
+  expect(await screen.findAllByRole("tab")).toHaveLength(9);
+  for (const industry of catalog.catalog.industries) {
+    fireEvent.click(
+      screen.getByRole("tab", {
+        name: `${industry.name} ${industry.companies.length}`,
+      }),
+    );
+    const table = screen.getByRole("table", { name: "观察公司对比" });
+    expect(within(table).getAllByRole("row")).toHaveLength(
+      industry.companies.length + 1,
+    );
+    expect(screen.queryByRole("button", { name: /置顶/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "周末复盘" })).toBeNull();
+    expect(
+      within(screen.getByRole("group", { name: "观察名单筛选" })).getByRole(
+        "button",
+        { name: `全部公司 ${industry.companies.length}` },
+      ),
+    ).toBeTruthy();
+  }
+  fireEvent.click(screen.getByRole("tab", { name: "自选 1" }));
+  expect(screen.getByRole("button", { name: /置顶测试公司/ })).toBeTruthy();
+  expect(api.saveWatch).not.toHaveBeenCalled();
+  expect(api.refreshWatchCatalog).not.toHaveBeenCalled();
+});
+
+it("clears search and filters on group changes while keeping sorting and cards", async () => {
+  render(<BuyWatch {...props()} />);
+  fireEvent.click(await screen.findByRole("tab", { name: "银行 3" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索观察公司" }), {
+    target: { value: "招商" },
+  });
+  fireEvent.change(screen.getByRole("combobox", { name: "持仓筛选" }), {
+    target: { value: "held" },
+  });
+  fireEvent.change(screen.getByRole("combobox", { name: "观察排序" }), {
+    target: { value: "yield-asc" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
+  expect(screen.getByText("当前条件下没有公司")).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "煤炭 3" }));
+  expect(screen.getByRole("textbox", { name: "搜索观察公司" })).toHaveProperty(
+    "value",
+    "",
+  );
+  expect(screen.getByRole("combobox", { name: "持仓筛选" })).toHaveProperty(
+    "value",
+    "all",
+  );
+  expect(screen.getByRole("combobox", { name: "观察排序" })).toHaveProperty(
+    "value",
+    "yield-asc",
+  );
+  expect(screen.getByRole("button", { name: "详细卡片" })).toHaveProperty(
+    "ariaPressed",
+    "true",
+  );
+  expect(screen.getAllByRole("button", { name: "查看依据" })).toHaveLength(3);
+  expect(screen.queryByRole("button", { name: "结合我的交易讨论" })).toBeNull();
+});
+
+it("adds from an industry once without overwriting existing personal reasons or copying public history", async () => {
+  const personal = {
+    ...row,
+    entry: { ...row.entry, thesis: "我的独立关注理由", pinned: true },
+  };
+  vi.mocked(api.getWatchBoard).mockResolvedValue({
+    ...empty,
+    rows: [personal],
+  });
+  const company = catalog.rows.find(
+    (r) => r.company.symbol === "601398.SS",
+  )!.company;
+  vi.mocked(api.saveWatch).mockResolvedValue({
+    ...row.entry,
+    ...company,
+    thesis: "",
+    pinned: false,
+  });
+  vi.mocked(api.getWatchBoard)
+    .mockResolvedValueOnce({ ...empty, rows: [personal] })
+    .mockResolvedValue({
+      ...empty,
+      rows: [
+        personal,
+        {
+          ...row,
+          entry: { ...row.entry, ...company, thesis: "", pinned: false },
+          latest: null,
+          dividendPrices: [],
+        },
+      ],
+    });
+  render(<BuyWatch {...props()} />);
+  fireEvent.click(await screen.findByRole("tab", { name: "银行 3" }));
+  expect(
+    screen.getByRole("button", { name: "已在自选招商银行" }),
+  ).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "加入自选工商银行" }));
+  expect(
+    await screen.findByRole("button", { name: "已在自选工商银行" }),
+  ).toHaveProperty("disabled", true);
+  expect(api.saveWatch).toHaveBeenCalledExactlyOnceWith(
+    {
+      symbol: company.symbol,
+      name: company.name,
+      thesis: "",
+    },
+    true,
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "自选 2" }));
+  expect(screen.getByRole("button", { name: "取消置顶测试公司" })).toBeTruthy();
+  expect(screen.getByText("等待首次检查")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /测试公司.*600036/ }));
+  expect(screen.getByText("我的独立关注理由")).toBeTruthy();
+});
+
+it("keeps public details separate and refreshes only the selected industry", async () => {
+  vi.mocked(api.refreshWatchCatalog).mockRejectedValue(
+    new Error("行业来源暂不可用"),
+  );
+  render(<BuyWatch {...props()} />);
+  fireEvent.click(await screen.findByRole("tab", { name: "银行 3" }));
+  fireEvent.click(screen.getByRole("button", { name: /招商银行.*600036/ }));
+  const drawer = await screen.findByRole("dialog");
+  expect(within(drawer).getByText("公司与行业来源")).toBeTruthy();
+  expect(
+    within(drawer).getByRole("link", { name: "公司公开报告 ↗" }),
+  ).toHaveProperty("href", catalog.rows[0].company.sources[1]);
+  expect(within(drawer).queryByText("已有持仓与最近交易")).toBeNull();
+  expect(
+    within(drawer).queryByRole("button", { name: "编辑观察资料" }),
+  ).toBeNull();
+  fireEvent.click(within(drawer).getByRole("button", { name: "重新检查数据" }));
+  expect(await within(drawer).findByText(/行业来源暂不可用/)).toBeTruthy();
+  expect(api.refreshWatchCatalog).toHaveBeenCalledExactlyOnceWith("banks");
+  expect(within(drawer).getByText("收盘价 · 2026-11-04")).toBeTruthy();
+  expect(api.refreshWatch).not.toHaveBeenCalled();
+});
+
+it("enforces the personal limit in industry lists and drawers", async () => {
+  const full = Array.from({ length: 50 }, (_, i) => ({
+    ...row,
+    entry: {
+      ...row.entry,
+      symbol: `600${String(i + 100).padStart(3, "0")}.SS`,
+    },
+  }));
+  vi.mocked(api.getWatchBoard).mockResolvedValue({ ...empty, rows: full });
+  render(<BuyWatch {...props()} />);
+  fireEvent.click(await screen.findByRole("tab", { name: "银行 3" }));
+  expect(
+    screen.getByRole("button", { name: "加入自选招商银行" }),
+  ).toHaveProperty("disabled", true);
+  expect(screen.getByText(/自选已达 50 家/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /招商银行.*600036/ }));
+  expect(
+    within(screen.getByRole("dialog")).getByRole("button", {
+      name: "加入自选",
+    }),
+  ).toHaveProperty("disabled", true);
+  expect(api.saveWatch).not.toHaveBeenCalled();
+});
+
+it("allows existing watches when the catalogue fails and can retry its read independently", async () => {
+  vi.mocked(api.getWatchBoard).mockResolvedValue({ ...empty, rows: [row] });
+  vi.mocked(api.getWatchCatalog)
+    .mockRejectedValueOnce(new Error("目录不可用"))
+    .mockResolvedValue(catalog);
+  render(<BuyWatch {...props()} />);
+  expect(
+    await screen.findByRole("button", { name: /置顶测试公司/ }),
+  ).toBeTruthy();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "重新读取行业目录" }),
+  );
+  expect(await screen.findByRole("tab", { name: "银行 3" })).toBeTruthy();
+  expect(api.getWatchBoard).toHaveBeenCalledTimes(1);
 });
 
 it("adds an unheld company without creating a financial position", async () => {

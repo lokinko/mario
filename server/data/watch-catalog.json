@@ -1,0 +1,222 @@
+{
+  "version": 1,
+  "verifiedOn": "2026-11-07",
+  "industries": [
+    {
+      "id": "banks",
+      "name": "银行",
+      "companies": [
+        {
+          "symbol": "600036.SS",
+          "name": "招商银行",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600036",
+            "https://static.cninfo.com.cn/finalpage/2026-03-27/1225048860.PDF"
+          ]
+        },
+        {
+          "symbol": "601398.SS",
+          "name": "工商银行",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601398",
+            "https://static.cninfo.com.cn/finalpage/2026-03-28/1225047240.PDF"
+          ]
+        },
+        {
+          "symbol": "601288.SS",
+          "name": "农业银行",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601288",
+            "https://dataclouds.cninfo.com.cn/shgonggao/hsomarket/2026/20260330/8c6afd3c013d439ba89b65bbc18eeb76.PDF"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "coal",
+      "name": "煤炭",
+      "companies": [
+        {
+          "symbol": "601088.SS",
+          "name": "中国神华",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601088",
+            "https://static.cninfo.com.cn/finalpage/2026-03-31/1225064293.PDF"
+          ]
+        },
+        {
+          "symbol": "601225.SS",
+          "name": "陕西煤业",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601225",
+            "https://static.cninfo.com.cn/finalpage/2026-04-25/1225178190.PDF"
+          ]
+        },
+        {
+          "symbol": "600188.SS",
+          "name": "兖矿能源",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600188",
+            "https://static.cninfo.com.cn/finalpage/2026-03-28/1225048701.PDF"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oil",
+      "name": "石油石化",
+      "companies": [
+        {
+          "symbol": "601857.SS",
+          "name": "中国石油",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601857",
+            "https://static.cninfo.com.cn/finalpage/2026-03-30/1225049376.PDF"
+          ]
+        },
+        {
+          "symbol": "600028.SS",
+          "name": "中国石化",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600028",
+            "https://static.cninfo.com.cn/finalpage/2026-03-23/1225024100.PDF"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "power",
+      "name": "电力",
+      "companies": [
+        {
+          "symbol": "600900.SS",
+          "name": "长江电力",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600900",
+            "https://static.cninfo.com.cn/finalpage/2026-04-30/1225262036.PDF"
+          ]
+        },
+        {
+          "symbol": "600011.SS",
+          "name": "华能国际",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600011",
+            "https://static.cninfo.com.cn/finalpage/2026-03-25/1225029354.PDF"
+          ]
+        },
+        {
+          "symbol": "000027.SZ",
+          "name": "深圳能源",
+          "sources": [
+            "https://www.szse.cn/market/product/stock/list/index.html",
+            "https://disc.static.szse.cn/disc/disk03/finalpage/2026-04-17/34f1b012-dc9b-4fbd-8c22-74976be19767.PDF"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "telecom",
+      "name": "通信运营",
+      "companies": [
+        {
+          "symbol": "600941.SS",
+          "name": "中国移动",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600941",
+            "https://static.cninfo.com.cn/finalpage/2026-03-27/1225036280.PDF"
+          ]
+        },
+        {
+          "symbol": "601728.SS",
+          "name": "中国电信",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601728",
+            "https://static.cninfo.com.cn/finalpage/2026-03-24/1225027691.PDF"
+          ]
+        },
+        {
+          "symbol": "600050.SS",
+          "name": "中国联通",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600050",
+            "https://static.cninfo.com.cn/finalpage/2026-03-20/1225020076.PDF"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "highways",
+      "name": "高速公路",
+      "companies": [
+        {
+          "symbol": "600350.SS",
+          "name": "山东高速",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600350",
+            "https://static.cninfo.com.cn/finalpage/2026-04-04/1225079921.PDF"
+          ]
+        },
+        {
+          "symbol": "600377.SS",
+          "name": "宁沪高速",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600377",
+            "https://static.cninfo.com.cn/finalpage/2026-03-30/1225049417.PDF"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "spirits",
+      "name": "白酒",
+      "companies": [
+        {
+          "symbol": "600519.SS",
+          "name": "贵州茅台",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600519",
+            "https://static.cninfo.com.cn/finalpage/2026-04-17/1225114741.PDF"
+          ]
+        },
+        {
+          "symbol": "000858.SZ",
+          "name": "五粮液",
+          "sources": [
+            "https://www.szse.cn/market/product/stock/list/index.html",
+            "https://disc.static.szse.cn/disc/disk03/finalpage/2026-04-30/aa3ca6db-ee29-4669-94de-0d149347ac51.PDF"
+          ]
+        },
+        {
+          "symbol": "000568.SZ",
+          "name": "泸州老窖",
+          "sources": [
+            "https://www.szse.cn/market/product/stock/list/index.html",
+            "https://disc.static.szse.cn/disc/disk03/finalpage/2026-04-29/cf59a79b-c278-40d4-9ff0-411fb6d306c6.PDF"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "appliances",
+      "name": "家电",
+      "companies": [
+        {
+          "symbol": "000333.SZ",
+          "name": "美的集团",
+          "sources": [
+            "https://www.szse.cn/market/product/stock/list/index.html",
+            "https://disc.static.szse.cn/download/disc/disk03/finalpage/2026-03-31/70e81c5f-97d4-4c87-8e4b-fcc5a3bcd361.PDF"
+          ]
+        },
+        {
+          "symbol": "000651.SZ",
+          "name": "格力电器",
+          "sources": [
+            "https://www.szse.cn/market/product/stock/list/index.html",
+            "https://disc.static.szse.cn/disc/disk03/finalpage/2026-04-29/6a4d5a07-1358-4f92-a80f-a0b8af7afffc.PDF"
+          ]
+        }
+      ]
+    }
+  ]
+}

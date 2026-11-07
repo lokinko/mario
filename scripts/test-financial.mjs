@@ -20,6 +20,7 @@ await withDisposableCluster('mario-financial-', async ({ pg, pgEnv, createDataba
   const tables = (await run(pg('psql'), ['-X', '-At', '-c', "SELECT schemaname||'.'||tablename FROM pg_tables WHERE schemaname IN ('mario_auth','mario_market') OR schemaname LIKE 'user_%' ORDER BY 1"], { ...pgEnv, PGDATABASE: 'mario_financial' }, true)).trim().split(/\r?\n/).filter(Boolean);
   assert(tables.length > 0, 'acceptance must create real account data');
   assert(tables.includes('mario_market.dividend_histories'), 'public dividend histories must be included in native restore verification');
+  assert(tables.includes('mario_market.watch_snapshots'), 'public catalogue snapshots must be included in native restore verification');
   for (const table of tables) {
     assert(/^(?:mario_auth|mario_market|user_[a-f0-9]+)\.[a-z_]+$/.test(table));
     const sql = `SELECT md5(coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text,'[]')) FROM ${table} t`;

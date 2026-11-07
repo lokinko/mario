@@ -1,4 +1,9 @@
-import type { WatchIssue, WatchStatus, WatchRow } from "../../api/watch";
+import type {
+  WatchIssue,
+  WatchStatus,
+  WatchRow,
+  WatchMarketRow,
+} from "../../api/watch";
 import { formatNumber, formatSigned } from "../../lib/format";
 
 export const statuses: Record<WatchStatus, string> = {
@@ -20,7 +25,21 @@ export const distance = (value: number | null | undefined) =>
 export const canonical = (value: string) =>
   value.trim().toUpperCase().replace(/\.SH$/, ".SS");
 
-export function checks(row: WatchRow, minYield: number) {
+export interface WatchDisplayRow extends WatchMarketRow {
+  company: { symbol: string; name: string };
+  watch?: WatchRow;
+}
+
+export const displayWatch = (watch: WatchRow): WatchDisplayRow => ({
+  latest: watch.latest,
+  dividendPrices: watch.dividendPrices,
+  checkedAt: watch.checkedAt,
+  refreshFailed: watch.refreshFailed,
+  company: watch.entry,
+  watch,
+});
+
+export function checks(row: WatchMarketRow, minYield: number) {
   return [
     row.latest?.yieldPct == null
       ? null
@@ -53,7 +72,10 @@ export type WatchSort = keyof typeof sortOptions;
 type MetricSort = Exclude<WatchSort, "default" | "name">;
 const metrics: Record<
   MetricSort,
-  { value: (row: WatchRow) => number | null | undefined; direction: 1 | -1 }
+  {
+    value: (row: WatchDisplayRow) => number | null | undefined;
+    direction: 1 | -1;
+  }
 > = {
   yield: { value: (r) => r.latest?.yieldPct, direction: -1 },
   "yield-asc": { value: (r) => r.latest?.yieldPct, direction: 1 },
@@ -65,11 +87,11 @@ const metrics: Record<
   "weekly-far": { value: weeklyDistance, direction: -1 },
 };
 
-function dailyDistance(row: WatchRow) {
+function dailyDistance(row: WatchDisplayRow) {
   return Math.abs(row.latest?.daily?.distancePct ?? NaN);
 }
 
-function weeklyDistance(row: WatchRow) {
+function weeklyDistance(row: WatchDisplayRow) {
   return Math.abs(row.latest?.weekly?.distancePct ?? NaN);
 }
 
@@ -85,7 +107,7 @@ function compareMetric(
 }
 
 export function selectRows(
-  rows: WatchRow[],
+  rows: WatchDisplayRow[],
   query: string,
   filter: WatchFilter,
   sort: WatchSort,
@@ -98,25 +120,27 @@ export function selectRows(
     const values = checks(row, minYield);
     return (
       (!term ||
-        `${row.entry.name} ${row.entry.symbol} ${row.entry.thesis}`
+        `${row.company.name} ${row.company.symbol} ${row.watch?.entry.thesis ?? ""}`
           .toLocaleLowerCase()
           .includes(term)) &&
       (ownership === "all" ||
-        held.has(row.entry.symbol) === (ownership === "held")) &&
+        held.has(row.company.symbol) === (ownership === "held")) &&
       (filter === "all" ||
         (filter === "yield" && values[0] === true) ||
         (filter === "daily" && values[1] === true) ||
         (filter === "weekly" && values[2] === true))
     );
   });
-  const rank = (r: WatchRow) =>
-    r.alert ? 0 : r.latest?.status === "attention" ? 1 : 2;
+  const rank = (r: WatchDisplayRow) =>
+    r.watch?.alert ? 0 : r.latest?.status === "attention" ? 1 : 2;
   return selected.sort((a, b) => {
-    const pinned = Number(b.entry.pinned) - Number(a.entry.pinned);
+    const pinned =
+      Number(Boolean(b.watch?.entry.pinned)) -
+      Number(Boolean(a.watch?.entry.pinned));
     if (pinned) return pinned;
-    const symbol = a.entry.symbol.localeCompare(b.entry.symbol);
+    const symbol = a.company.symbol.localeCompare(b.company.symbol);
     if (sort === "name")
-      return a.entry.name.localeCompare(b.entry.name, "zh-CN") || symbol;
+      return a.company.name.localeCompare(b.company.name, "zh-CN") || symbol;
     if (sort === "default") return rank(a) - rank(b) || symbol;
     const { value, direction } = metrics[sort];
     return compareMetric(value(a), value(b), direction) || symbol;

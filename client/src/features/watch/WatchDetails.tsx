@@ -3,10 +3,9 @@ import type { WatchGridPlan, WatchRow } from "../../api/watch";
 import type { Snapshot } from "../../types";
 import { Drawer } from "../../components/Drawer";
 import { Callout } from "../../components/Callout";
-import { BandTrack, RuleChecks, YieldGrid } from "./WatchSignals";
-import { WatchDividends } from "./WatchDividends";
+import { WatchEvidence } from "./WatchEvidence";
 import { WatchGrid, WatchGridEditor } from "./WatchGrid";
-import { canonical, number, statuses } from "./presentation";
+import { canonical, statuses } from "./presentation";
 
 export function WatchDetails({
   row,
@@ -81,38 +80,9 @@ export function WatchDetails({
           />
         ) : (
           <>
-            <div className="watch-metrics">
-              <div>
-                <span>收盘价 · {latest?.observedOn ?? "—"}</span>
-                <strong>{number(latest?.price)}</strong>
-              </div>
-              <div>
-                <span>TTM 税前股息率</span>
-                <strong>{number(latest?.yieldPct, "%")}</strong>
-              </div>
-              <div>
-                <span>TTM 每股分红 / 元</span>
-                <strong>{latest?.dividendPerShare ?? "—"}</strong>
-              </div>
-            </div>
-            <RuleChecks row={row} minYield={minYield} />
-            <div className="watch-bands">
-              <BandTrack
-                label="日线"
-                band={latest?.daily}
-                price={latest?.price}
-                tolerance={tolerance}
-              />
-              <BandTrack
-                label="周线"
-                band={latest?.weekly}
-                price={latest?.price}
-                tolerance={tolerance}
-              />
-            </div>
-            <YieldGrid row={row} />
-            <WatchGrid row={row} onEdit={() => setEditingGrid(true)} />
-            <WatchDividends latest={latest} />
+            <WatchEvidence row={row} minYield={minYield} tolerance={tolerance}>
+              <WatchGrid row={row} onEdit={() => setEditingGrid(true)} />
+            </WatchEvidence>
             {entry.thesis && (
               <section className="watch-detail-section">
                 <h3>关注理由</h3>

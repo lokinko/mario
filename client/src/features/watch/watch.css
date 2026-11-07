@@ -936,3 +936,12 @@
   max-width: 130px;
   margin: 0;
 }
+.watch-industry-tabs {
+  min-width: 0;
+}
+.watch-industry-tabs .ant-tabs-nav {
+  margin-bottom: 12px;
+}
+.watch-industry-tabs .ant-tabs-tab {
+  white-space: nowrap;
+}

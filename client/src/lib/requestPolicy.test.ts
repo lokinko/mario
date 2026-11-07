@@ -19,4 +19,6 @@ it("accepts only revisions corresponding to displayed data or completed ordinary
   expect(requestPolicy("/analysis").timeoutMs).toBe(1800000);
   expect(requestPolicy("/analysis/stream").timeoutMs).toBe(1800000);
   expect(requestPolicy("/analysis/stream").idleTimeoutMs).toBe(60000);
+  expect(isDataWrite("/watch/catalog/refresh", "POST")).toBe(true);
+  expect(requestPolicy("/watch/catalog/refresh").timeoutMs).toBe(180000);
 });

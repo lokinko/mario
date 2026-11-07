@@ -207,17 +207,17 @@ mod tests {
         .unwrap();
         db.set_setting("model.codex_bridge_id", "bridge-fixture")
             .unwrap();
+        let market_runtime = crate::composition::MarketRuntime::new(
+            &std::env::var("MARIO_TEST_DATABASE_URL").unwrap(),
+        )
+        .unwrap();
         let state = Arc::new(RequestContext {
+            watch_catalog: market_runtime.watch_catalog.clone(),
             watch_provider: Arc::new(
                 crate::market_data::watch::PublicWatchProvider::new().unwrap(),
             ),
             db,
-            market: crate::composition::MarketRuntime::new(
-                &std::env::var("MARIO_TEST_DATABASE_URL").unwrap(),
-            )
-            .unwrap()
-            .services
-            .clone(),
+            market: market_runtime.services.clone(),
             analysis_executor: Arc::new(Executor {
                 gate: gate.clone(),
                 dropped: dropped.clone(),

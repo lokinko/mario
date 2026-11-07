@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Band, WatchRow } from "../../api/watch";
+import type { Band, WatchMarketRow } from "../../api/watch";
 import { formatAmount } from "../../lib/format";
 import { checks, distance, number } from "./presentation";
 
@@ -7,7 +7,7 @@ export function RuleChecks({
   row,
   minYield,
 }: {
-  row: WatchRow;
+  row: WatchMarketRow;
   minYield: number;
 }) {
   const values = checks(row, minYield);
@@ -102,7 +102,7 @@ export function BandTrack({
   );
 }
 
-export function YieldGrid({ row }: { row: WatchRow }) {
+export function YieldGrid({ row }: { row: WatchMarketRow }) {
   return (
     <section className="watch-yield-grid" aria-label="股息率参考价格">
       <div className="watch-section-title">

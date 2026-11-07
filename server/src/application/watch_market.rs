@@ -89,6 +89,8 @@ impl WatchMarketProvider for SharedWatchProvider {
     }
 
     async fn observation(&self, symbol: &str, day: NaiveDate) -> AppResult<WatchMarketData> {
+        let lock = self.symbol_lock(&format!("prices:{symbol}")).await;
+        let _guard = lock.lock().await;
         self.source.observation(symbol, day).await
     }
 

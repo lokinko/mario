@@ -126,6 +126,7 @@ impl PublicWatchProvider {
         })
     }
     async fn dividend_page(&self, symbol: &str, page: u64) -> AppResult<(Value, String)> {
+        let _permit = self.slots.acquire().await.map_err(|_| bad())?;
         let filter = format!("(SECURITY_CODE=\"{}\")", &symbol[..6]);
         let response = self
             .client

@@ -36,6 +36,14 @@ impl Database {
     }
 
     pub fn save_watch(&self, input: WatchInput) -> AppResult<WatchEntry> {
+        self.save_watch_entry(input, false)
+    }
+
+    pub fn add_watch_if_missing(&self, input: WatchInput) -> AppResult<WatchEntry> {
+        self.save_watch_entry(input, true)
+    }
+
+    fn save_watch_entry(&self, input: WatchInput, if_absent: bool) -> AppResult<WatchEntry> {
         let input = input.normalize()?;
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
@@ -57,6 +65,11 @@ impl Database {
             .as_deref()
             .map(serde_json::from_str::<WatchEntry>)
             .transpose()?;
+        if if_absent {
+            if let Some(entry) = old {
+                return Ok(entry);
+            }
+        }
         let entry = match old {
             Some(entry) => WatchEntry { input, ..entry },
             None => WatchEntry {
@@ -365,6 +378,42 @@ pub(super) fn validate(conn: &crate::storage::Connection) -> AppResult<()> {
 mod tests {
     use super::*;
     use crate::models::watch::{evaluate, tests::market_fixture, WatchIssue};
+
+    #[test]
+    fn catalogue_addition_preserves_an_existing_personal_entry_even_at_the_limit() {
+        let db = Database::test();
+        let original = entry(&db);
+        db.set_watch_pinned(&original.input.symbol, true).unwrap();
+        for n in 100..149 {
+            db.save_watch(WatchInput {
+                symbol: format!("600{n:03}.SS"),
+                name: format!("公司{n}"),
+                thesis: String::new(),
+            })
+            .unwrap();
+        }
+        let before = db.watch_entries().unwrap();
+        let version = db.revision().unwrap();
+        let added = db
+            .add_watch_if_missing(WatchInput {
+                symbol: original.input.symbol.clone(),
+                name: "目录名称".into(),
+                thesis: String::new(),
+            })
+            .unwrap();
+        assert_eq!(added.input, original.input);
+        assert!(added.pinned);
+        assert_eq!(db.revision().unwrap(), version);
+        assert_eq!(db.watch_entries().unwrap(), before);
+        assert!(db
+            .add_watch_if_missing(WatchInput {
+                symbol: "601398.SS".into(),
+                name: "工商银行".into(),
+                thesis: String::new()
+            })
+            .is_err());
+    }
+
     fn entry(db: &Database) -> WatchEntry {
         db.save_watch(WatchInput {
             symbol: "600036.SS".into(),
