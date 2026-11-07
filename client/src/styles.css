@@ -29,7 +29,7 @@ button > svg {
   background: var(--sidebar-bg);
   color: var(--text-1);
   border-right: 1px solid var(--line);
-  padding: var(--space-6) var(--space-4) var(--space-4);
+  padding: var(--space-5) var(--space-3) var(--space-4);
   display: flex;
   flex-direction: column;
   z-index: 10;
@@ -45,8 +45,12 @@ button > svg {
   display: block;
 }
 .brand strong {
+  font-family: var(--font-serif);
   font-size: var(--fs-title);
-  letter-spacing: -0.04em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--text-1);
 }
 .mobile-menu,
 .mobile-topbar,
@@ -61,25 +65,25 @@ button > svg {
 }
 .nav-caption {
   padding: 0 var(--space-3);
-  margin: 0 0 6px;
-  color: var(--text-3);
-  font-size: var(--fs-caption);
+  margin: 0 0 var(--space-1);
+  color: var(--text-4);
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
 }
 .sidebar nav button,
 .sidebar nav a,
 .settings-link {
   width: 100%;
-  color: var(--text-3);
+  color: var(--text-2);
   background: transparent;
   border: 0;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: 10px 13px;
-  margin: 2px 0;
+  padding: 8px 12px;
+  margin: 1px 0;
   font-size: var(--fs-body);
   text-align: left;
   text-decoration: none;
@@ -87,10 +91,16 @@ button > svg {
     background var(--duration-hover) var(--ease),
     color var(--duration-hover) var(--ease);
 }
+.sidebar nav button > svg,
+.sidebar nav a > svg,
+.settings-link > svg {
+  color: var(--text-3);
+  transition: color var(--duration-hover) var(--ease);
+}
 .sidebar nav button:hover,
 .sidebar nav a:hover,
 .settings-link:hover {
-  background: var(--surface-sunken);
+  background: var(--sidebar-active);
   color: var(--text-1);
 }
 .sidebar-spacer {
@@ -132,8 +142,8 @@ main {
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
   box-shadow: var(--shadow-card);
 }
 .panel-title {
@@ -160,12 +170,7 @@ main {
   margin-bottom: 15px;
 }
 .new-trade-panel {
-  scroll-margin-top: 24px;
-}
-@media (max-width: 900px) {
-  .new-trade-panel {
-    scroll-margin-top: calc(84px + env(safe-area-inset-top));
-  }
+  scroll-margin-top: calc(var(--chrome-height) + var(--space-6));
 }
 .holding-fields {
   border: 0;
@@ -541,8 +546,15 @@ main {
     z-index: 40;
     min-height: 64px;
     padding: env(safe-area-inset-top) var(--space-4) 0;
-    background: var(--surface);
+    background: var(--material-bar);
+    -webkit-backdrop-filter: var(--material-blur);
+    backdrop-filter: var(--material-blur);
     border-bottom: 1px solid var(--line);
+  }
+  .mobile-topbar > strong {
+    font-family: var(--font-serif);
+    font-size: var(--fs-title-sm);
+    color: var(--text-1);
   }
   .mobile-topbar > span {
     margin-left: auto;
@@ -571,11 +583,15 @@ main {
     z-index: 60;
     visibility: hidden;
     transform: translateX(-100%);
-    transition: transform var(--duration-enter) var(--ease);
+    transition:
+      transform var(--duration-enter) var(--ease),
+      visibility 0s linear var(--duration-enter);
+    box-shadow: var(--shadow-drawer);
   }
   .sidebar.mobile-open {
     visibility: visible;
     transform: translateX(0);
+    transition: transform var(--duration-enter) var(--ease);
   }
   .brand {
     padding: 0 0 var(--space-5);
@@ -594,7 +610,10 @@ main {
     inset: 0;
     z-index: 55;
     background: var(--overlay);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
     border: 0;
+    animation: fade-in var(--duration-enter) var(--ease);
   }
   main {
     grid-column: auto;
@@ -707,12 +726,16 @@ main {
   }
 }
 .conversation-composer {
-  padding: var(--space-5) var(--space-6);
-  border-radius: var(--radius-md);
-  box-shadow: none;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lift);
+  transition:
+    border-color var(--duration-hover) var(--ease),
+    box-shadow var(--duration-hover) var(--ease);
 }
 .conversation-composer:focus-within {
-  border-color: var(--brand);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-pop);
 }
 .conversation-welcome {
   padding: 40px 0 var(--space-7);
@@ -724,17 +747,15 @@ main {
 }
 .conversation-welcome h2 {
   margin: 10px 0;
-  font-size: var(--fs-figure);
-  font-weight: 600;
-  letter-spacing: -0.03em;
+  color: var(--text-1);
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }
 .conversation-welcome p {
   color: var(--text-3);
   margin: 0 0 22px;
-}
-.conversation-starters button:hover {
-  color: var(--brand);
-  border-color: var(--brand);
 }
 @media (max-width: 600px) {
   .conversation-welcome {
@@ -774,6 +795,8 @@ main {
 }
 .assistant-answer .answer {
   margin: var(--space-4) 0;
+  color: var(--text-1);
+  font-family: var(--font-serif);
   font-size: var(--fs-title-sm);
   line-height: 1.9;
   overflow-wrap: anywhere;

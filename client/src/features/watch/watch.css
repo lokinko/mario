@@ -24,7 +24,13 @@
 }
 .watch-intro {
   padding: var(--space-6);
-  background: var(--surface);
+  background:
+    radial-gradient(
+      110% 160% at 0% 0%,
+      color-mix(in srgb, var(--brand-tint) 70%, transparent) 0%,
+      transparent 42%
+    ),
+    var(--surface);
 }
 .watch-intro-heading {
   display: flex;
@@ -37,9 +43,11 @@
   width: 48px;
   height: 48px;
   flex-shrink: 0;
-  background: var(--brand-tint);
+  background: var(--surface-raised);
   color: var(--brand);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--line);
 }
 .watch-intro > div:first-child,
 .watch-actions,
@@ -54,8 +62,11 @@
 }
 .watch-intro > div:first-child strong {
   display: block;
-  font-size: var(--fs-title-sm);
-  margin: 5px 0;
+  color: var(--text-1);
+  font-family: var(--font-serif);
+  font-size: var(--fs-title);
+  font-weight: 500;
+  margin: 4px 0;
 }
 .watch-eyebrow {
   color: var(--brand);
@@ -77,10 +88,17 @@
   font-size: 13px;
 }
 .watch-rule-strip > span {
-  padding: 5px 9px;
-  background: var(--brand-tint);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px 10px;
+  background: var(--surface-raised);
+  color: var(--text-1);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.watch-rule-strip > span > svg {
   color: var(--brand);
-  border-radius: 4px;
 }
 .watch-rule-strip small {
   color: var(--text-3);
@@ -111,26 +129,35 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
   color: var(--text-3);
   text-align: left;
   box-shadow: var(--shadow-card);
   transition:
-    border-color var(--duration-hover),
-    background var(--duration-hover);
+    border-color var(--duration-hover) var(--ease),
+    background var(--duration-hover) var(--ease),
+    box-shadow var(--duration-enter) var(--ease),
+    transform var(--duration-enter) var(--ease-spring);
 }
 .watch-summary > button:hover {
-  border-color: var(--brand);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-lift);
+  transform: translateY(-2px);
+}
+.watch-summary > button:active {
+  transform: translateY(0) scale(0.98);
+  transition-duration: 80ms;
 }
 .watch-summary strong {
   font-family: var(--font-num);
-  font-size: var(--fs-figure);
+  font-size: 28px;
   line-height: 1;
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: -0.02em;
   color: var(--text-1);
 }
 .watch-summary > button[aria-pressed="true"] {
@@ -197,19 +224,28 @@
 }
 .watch-view-toggle {
   display: flex;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  overflow: hidden;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-hover);
+  border-radius: var(--radius-sm);
 }
 .watch-view-toggle button {
-  padding: 9px;
-  background: var(--surface);
+  display: grid;
+  place-items: center;
+  padding: 6px 8px;
+  background: transparent;
   border: 0;
+  border-radius: 6px;
   color: var(--text-3);
+  transition:
+    background var(--duration-hover) var(--ease),
+    color var(--duration-hover) var(--ease),
+    box-shadow var(--duration-hover) var(--ease);
 }
 .watch-view-toggle button[aria-pressed="true"] {
-  background: var(--brand-tint);
-  color: var(--brand);
+  background: var(--surface-raised);
+  color: var(--text-1);
+  box-shadow: var(--shadow-card);
 }
 .watch-result-meta {
   font-size: 12px;
@@ -230,9 +266,13 @@
   background: var(--surface-sunken);
   font-size: 12px;
   font-weight: 500;
+  letter-spacing: 0.02em;
   white-space: nowrap;
   text-align: left;
-  padding: 12px;
+  padding: 10px 12px;
+}
+.watch-overview td {
+  transition: background var(--duration-hover) var(--ease);
 }
 .watch-overview td {
   padding: 14px 12px;
@@ -356,7 +396,10 @@
 }
 .watch-heading h3 {
   margin: 0 0 4px;
-  font-size: 16px;
+  color: var(--text-1);
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 500;
 }
 .watch-heading small {
   margin-left: 8px;
@@ -421,7 +464,7 @@
 }
 .watch-band {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   min-width: 0;
   background: var(--surface-sunken);
@@ -487,7 +530,9 @@
   border-radius: 50%;
   background: var(--brand);
   transform: translateX(-50%);
-  box-shadow: 0 0 0 1px var(--brand);
+  box-shadow:
+    0 0 0 1px var(--brand),
+    0 0 0 5px var(--brand-tint);
 }
 .watch-band-labels {
   display: flex;
@@ -531,10 +576,10 @@
   gap: 6px;
 }
 .watch-price-cells > div {
-  padding: 10px 8px;
+  padding: 10px;
   border: 1px solid var(--line);
   background: var(--surface-sunken);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   min-width: 0;
 }
 .watch-price-cells > .threshold {
@@ -689,7 +734,7 @@
   display: block;
   min-width: 48px;
   padding: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--surface-sunken);
   color: var(--text-4);
 }
