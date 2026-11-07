@@ -165,7 +165,9 @@ async fn security_price_quote(
     Extension(state): Extension<Arc<RequestContext>>,
     Query(query): Query<SecurityPriceQuery>,
 ) -> AppResult<Json<SecurityPriceQuote>> {
-    Ok(Json(state.portfolio().security_quote(&query).await?))
+    Ok(Json(
+        state.portfolio().preview_security_quote(&query).await?,
+    ))
 }
 
 async fn security_price_config(

@@ -1,4 +1,7 @@
 mod openai;
+#[cfg(test)]
+#[path = "hosted_quote_tests.rs"]
+mod quote_tests;
 use crate::{
     accounts,
     application::portfolio::MarketServices,

@@ -12,6 +12,7 @@ import {
 import { checkServerVersion, prepareDataReplacement } from "./api/account";
 import { previewAnalysis } from "./api/research";
 import { acceptRevision, dataRevision, serviceUrl } from "./lib/service";
+import { httpRequest } from "./lib/httpClient";
 import { setWebToken, webToken } from "./lib/webSession";
 import { beginSync, endSync, blockStaleWrites } from "./lib/syncEvents";
 import type { FinancialProfile } from "./types";
@@ -305,6 +306,25 @@ it("keeps a local FX read from acknowledging unrelated remote portfolio changes"
   expect((await checkServerVersion()).sync?.localUpdated).toBe(true);
   await expect(saveProfile({} as FinancialProfile)).rejects.toThrow("conflict");
   expect(fetcher.mock.calls[3][1].headers["If-Match"]).toBe("10");
+  expect(dataRevision()).toBe("10");
+});
+
+it.each([
+  "/market-data/fx-rate?fromCurrency=USD&toCurrency=CNY&onDate=2026-01-02",
+  "/market-data/security-price?symbol=AAPL&onDate=2026-01-02",
+])("keeps %s from acknowledging a newer account revision", async (path) => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(response({}, "10"))
+    .mockResolvedValueOnce(response({ providerCode: "synthetic-quote" }, "12"))
+    .mockResolvedValueOnce(response({ error: "conflict" }, "12", 409));
+  vi.stubGlobal("fetch", fetcher);
+  await getSnapshot();
+  await httpRequest(path);
+  expect(fetcher.mock.calls[1][0]).toBe(`${serviceUrl()}${path}`);
+  expect(dataRevision()).toBe("10");
+  await expect(saveProfile({} as FinancialProfile)).rejects.toThrow("conflict");
+  expect(fetcher.mock.calls[2][1].headers["If-Match"]).toBe("10");
   expect(dataRevision()).toBe("10");
 });
 

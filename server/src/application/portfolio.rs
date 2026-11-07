@@ -47,15 +47,28 @@ impl PortfolioService<'_> {
     pub async fn fx_quote(&self, query: &FxRateQuery) -> AppResult<crate::models::FxRateQuote> {
         fx::historical_quote(self.db, self.market.fx.as_ref(), query).await
     }
+    fn security_quote_source(&self) -> (&dyn SecurityPriceProvider, String) {
+        match self.db.secret("security-price") {
+            Ok(key) => (self.market.keyed_prices.as_ref(), key),
+            Err(_) => (self.market.prices.as_ref(), String::new()),
+        }
+    }
     pub async fn security_quote(
         &self,
         query: &SecurityPriceQuery,
     ) -> AppResult<SecurityPriceQuote> {
-        if let Ok(key) = self.db.secret("security-price") {
-            self.market.keyed_prices.quote(query, &key).await
-        } else {
-            self.market.prices.quote(query, "").await
-        }
+        let (provider, key) = self.security_quote_source();
+        provider.quote(query, &key).await
+    }
+    /// The caller holds one account lock; only the frozen provider query runs unlocked.
+    pub async fn preview_security_quote(
+        &self,
+        query: &SecurityPriceQuery,
+    ) -> AppResult<SecurityPriceQuote> {
+        let (provider, key) = self.security_quote_source();
+        self.db
+            .without_account_lock(provider.quote(query, &key))
+            .await?
     }
     pub fn security_config(&self) -> SecurityPriceConfig {
         let has_api_key = self.db.secret("security-price").is_ok();
@@ -222,3 +235,7 @@ mod integration_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "portfolio_quote_tests.rs"]
+mod quote_preview_tests;

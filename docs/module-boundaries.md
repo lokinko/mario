@@ -108,6 +108,12 @@ flowchart TD
 - worker 将注册 ID 与授权会话一起传给本机 ChatGPT Provider；模型目录和 Responses 请求均在读取或刷新令牌的同一凭据锁内校验会话。重新登录复用注册 ID 时，旧 worker 不能取得新授权的访问令牌；刷新保留原会话，选择其他默认账号不改变已配对 worker。
 - `npm run test:chatgpt` 使用测试 RSA 密钥、临时凭据目录和本机 HTTP 回调，覆盖签名和授权拒绝、账号注册、刷新字段、文件锁与原子替换、SSE 分片及不完整输出；真实 OAuth 和订阅推理需用户本人执行。使用步骤与上游适用范围见 [本机桥接](codex-bridge.md)。
 
+### 只读证券报价
+
+`GET /market-data/security-price` 的网络锁边界归 `application/portfolio::preview_security_quote`：HTTP 仍经统一认证和外层账号锁，应用层在锁内选定供应商与 key，仅 `SecurityPriceProvider::quote` 的等待通过既有 `without_account_lock` 释放一层锁。该 Future 不读写账号库，成功或错误返回前重获锁。新增调用方必须确认已有一层账号锁，不能再次套锁导致只释放内层；取消整个 Future 沿用 helper 原有的保持释放语义。
+
+预览可按开始时来源完成，不因并发无关写入新增冲突；不写账号、不推进版本，也不自动重试或切换来源。认证响应头仍取结束时版本，前端报价 GET 不据此接受新的资料基准。原 `security_quote` 被核验估值复用，仍持锁；保存、刷新和汇率路径没有本次解锁。并发回归必须使用同账号的独立 PostgreSQL 连接，在供应商挂起时实测 advisory lock，而不能仅凭快照读取或同连接重入宣称锁已释放。行为定义见[行情规范](market-data.md#只读证券报价与并发)，验证入口见[应用锁回归](../server/src/application/portfolio_quote_tests.rs)、[认证 HTTP](../server/src/hosted_quote_tests.rs)及[客户端版本回归](../client/src/api.hosted.test.ts)。
+
 ### 期权
 
 期权契约、合约计价及多空头重放归 `models/options.rs`；`db/options.rs` 管理标的关联、独立权利金报价与标的汇总投影，不联网。合约复用持仓、成交、现金基准及财务回执；`db/trades.rs` 验证公共成交形状后，经 `db/corporate.rs` 按合约类型分派到股票或期权计算，不把股票拆股重放套用到期权。股票股数和成本仍只由股票成交维护。
