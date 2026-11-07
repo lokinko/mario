@@ -181,7 +181,7 @@ it("opens grounded discussion, acknowledges alerts and preserves missing-data st
   expect(screen.getByRole("button", { name: "重新检查数据" })).toBeTruthy();
 });
 
-it("shows the dividend coverage and exact events behind the closing yield", async () => {
+it("shows the exact dividend events behind the closing yield", async () => {
   const stored = structuredClone(row);
   stored.latest!.dividendBasis = {
     asOf: "2026-11-04",
@@ -203,7 +203,6 @@ it("shows the dividend coverage and exact events behind the closing yield", asyn
       await screen.findByRole("table", { name: "观察公司对比" }),
     ).getByRole("button", { name: /^测试公司/ }),
   );
-  expect(screen.getByText(/分红资料覆盖至 2026-11-04/)).toBeTruthy();
   const event = screen.getByText(/除息日 2026-07-01/).closest("tr")!;
   expect(event.textContent).toContain("12.345");
   expect(event.textContent).toContain("报告期 2025-12-31");

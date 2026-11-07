@@ -113,27 +113,19 @@ export function WatchDetails({
             <WatchGrid row={row} onEdit={() => setEditingGrid(true)} />
             <section className="watch-detail-section">
               <h3>分红依据</h3>
-              {latest?.dividendBasis && (
-                <p className="watch-meta">
-                  分红资料覆盖至 {latest.dividendBasis.asOf} · 采集于{" "}
-                  {new Date(latest.dividendBasis.fetchedAt).toLocaleString(
-                    "zh-CN",
-                    { timeZone: "Asia/Shanghai" },
-                  )}
-                  。股息率按上述行情日期的收盘价重算。
-                </p>
-              )}
               {latest?.dividendEvents.length ? (
                 <div className="table-scroll">
-                  <table className="watch-events">
-                    <caption>本次 TTM 窗口的已实施事件（每十股，税前）</caption>
+                  <table
+                    className="watch-events"
+                    aria-label="TTM 窗口已实施分红事件"
+                  >
                     <thead>
                       <tr>
                         <th>除息日</th>
                         <th>报告期</th>
-                        <th>派现 / 元</th>
-                        <th>送股</th>
-                        <th>转增</th>
+                        <th>每十股派现 / 元</th>
+                        <th>每十股送股</th>
+                        <th>每十股转增</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -173,12 +165,12 @@ export function WatchDetails({
                 ))}
               </div>
             </section>
-            <section className="watch-detail-section">
-              <h3>关注理由</h3>
-              <p className="watch-thesis">
-                {entry.thesis || "尚未补充关注理由。"}
-              </p>
-            </section>
+            {entry.thesis && (
+              <section className="watch-detail-section">
+                <h3>关注理由</h3>
+                <p className="watch-thesis">{entry.thesis}</p>
+              </section>
+            )}
             <section className="watch-detail-section">
               <h3>已有持仓与最近交易</h3>
               {related.map((h) => (
@@ -214,9 +206,6 @@ export function WatchDetails({
                   ))}
                 </ul>
               )}
-              <p className="watch-meta">
-                以上仅包含已录入记录；股票拆合股前后的原始成交价不能直接比较。讨论时按问答预设授权发送持仓、交易与研究资料。
-              </p>
             </section>
             <div className="watch-actions">
               <button className="primary" onClick={onAsk}>

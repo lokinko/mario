@@ -134,11 +134,6 @@ export function YieldGrid({ row }: { row: WatchRow }) {
       ) : (
         <p>暂无可用参考价：需要有效且为正的 TTM 每股分红。</p>
       )}
-      <p className="watch-meta">
-        按 {row.latest?.observedOn ?? "—"}{" "}
-        的已实施分红口径，参考价向下取至分。仅比较股息条件，日周 BOLL
-        仍须同时满足。
-      </p>
     </section>
   );
 }
