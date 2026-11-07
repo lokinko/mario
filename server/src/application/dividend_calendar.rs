@@ -125,7 +125,8 @@ impl DividendCalendarService {
     }
 }
 fn fresh(snapshot: &PlanSnapshot) -> bool {
-    let ttl = if snapshot.refresh_failed { 60 } else { 3600 };
+    // Persisted attempts throttle automatic source requests, including failures and restarts.
+    let ttl = 24 * 60 * 60;
     snapshot
         .attempted_at
         .as_ref()
@@ -179,6 +180,58 @@ pub(crate) mod tests {
             }),
         ))
     }
+    #[tokio::test]
+    async fn automatic_fetches_wait_a_day_after_success_or_failure_and_manual_refresh_bypasses_it()
+    {
+        let store = Arc::new(PublicWatch::test());
+        let source = Arc::new(Source {
+            calls: AtomicUsize::new(0),
+            fail: AtomicBool::new(false),
+        });
+        for (symbol, hours, failed) in [
+            ("600000.SS", 23, false),
+            ("600001.SS", 23, true),
+            ("600002.SS", 25, false),
+            ("600003.SS", 25, true),
+        ] {
+            let attempted = (Utc::now() - chrono::Duration::hours(hours)).to_rfc3339();
+            store
+                .save_calendar_snapshot(
+                    symbol,
+                    &PlanSnapshot {
+                        plans: vec![plan(symbol, PlanStage::Scheduled)],
+                        attempted_at: Some(attempted.clone()),
+                        fetched_at: (!failed).then_some(attempted),
+                        refresh_failed: failed,
+                    },
+                )
+                .unwrap();
+        }
+        // A new service must respect the persisted attempt times, without any warm memory cache.
+        let service = Arc::new(DividendCalendarService::new(store.clone(), source.clone()));
+        let recent = vec!["600000.SS".into(), "600001.SS".into()];
+        service.refresh(&recent, false).await.unwrap();
+        assert_eq!(source.calls.load(Ordering::SeqCst), 0);
+        let expired = vec!["600002.SS".into(), "600003.SS".into()];
+        service.refresh(&expired, false).await.unwrap();
+        assert_eq!(source.calls.load(Ordering::SeqCst), 2);
+        service.refresh(&expired, false).await.unwrap();
+        assert_eq!(source.calls.load(Ordering::SeqCst), 2);
+        service.refresh(&recent, true).await.unwrap();
+        assert_eq!(source.calls.load(Ordering::SeqCst), 4);
+        let restarted = Arc::new(DividendCalendarService::new(store, source.clone()));
+        restarted.refresh(&recent, false).await.unwrap();
+        assert_eq!(source.calls.load(Ordering::SeqCst), 4);
+        let new_company = vec!["600004.SS".into()];
+        source.fail.store(true, Ordering::SeqCst);
+        restarted.refresh(&new_company, false).await.unwrap();
+        restarted.refresh(&new_company, false).await.unwrap();
+        assert_eq!(source.calls.load(Ordering::SeqCst), 5);
+        source.fail.store(false, Ordering::SeqCst);
+        restarted.refresh(&new_company, true).await.unwrap();
+        assert_eq!(source.calls.load(Ordering::SeqCst), 6);
+    }
+
     #[tokio::test]
     async fn scoped_reads_do_no_network_and_failures_keep_prior_plans_without_advancing_accounts() {
         let store = Arc::new(PublicWatch::test());

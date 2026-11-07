@@ -145,11 +145,11 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 
 日历解决买点观察中逐家公司查找未来一个月已披露分红安排的障碍，沿用架构说明第 6.5 节及第 7 节的状态归属。`models/watch/calendar` 拥有阶段、日期、十进制金额、问题码、30 天投影和公共/自选范围合并；`market_data/watch/plans` 校验结构化公开来源，`WatchMarketProvider::dividend_plans` 是替换接口，`SharedWatchProvider` 只转发该查询，不把计划送入 `PublicDividends`。
 
-`application/dividend_calendar` 拥有每证券并发合并、时效、120 秒截止和公共仓储投影；显式禁止依赖账号、HTTP、AI 及具体供应商。`db/public_watch/calendar` 拥有计划缓存原子 upsert，必须符合与公共目录仓储相同的禁止私有依赖规则，并防止较慢失败覆盖较新成功。HTTP 只负责认证、从本账号取得范围、校验指定证券和释放/重新取得账号锁；POST 只更新公共缓存，免账号版本例外必须同时写入 `http/policy` 和 `lib/requestPolicy`。后台生命周期归 `composition`，不增加模型执行、全市场扫描或另一套调度框架。
+`application/dividend_calendar` 拥有每证券并发合并、成功/失败统一 24 小时的自动抓取间隔、120 秒截止和公共仓储投影；间隔以上次持久尝试时间计，重启继续复用，手动刷新可绕过，既有半小时调度只作到期检查。显式禁止依赖账号、HTTP、AI 及具体供应商。`db/public_watch/calendar` 拥有计划缓存原子 upsert，必须符合与公共目录仓储相同的禁止私有依赖规则，并防止较慢失败覆盖较新成功。HTTP 只负责认证、从本账号取得范围、校验指定证券和释放/重新取得账号锁；POST 只更新公共缓存，免账号版本例外必须同时写入 `http/policy` 和 `lib/requestPolicy`。后台生命周期归 `composition`，不增加模型执行、全市场扫描或另一套调度框架。
 
 前端 `features/watch/DividendCalendar` 持有展示筛选和日期、只读轮询、更新状态；通过 `api/watch` 请求，不依赖其他功能目录。实际登记/除息/派息日分列，日期待定独立，未知金额和到账日不填零或猜测；问题定位到对应计划并提供重新抓取。公开计划与个人账本、已实施分红和当前观察门槛保持独立。
 
-验证覆盖：范围去重与账号隔离、GET 无网络、公告/报告期与真实实施日区别、未来公告排除、方案取消、预案不入日期格、空金额与派息日未知、局部坏数据、分页/身份失败、并发合并、失败与重启保留、旧请求不覆盖、免个人版本、整站备份恢复，以及前端日期选择、待定列表和重试。跨前后端执行完整 `npm test`。公开来源另可手动执行 `cargo test --manifest-path server/Cargo.toml live_dividend_calendar_structured_plans -- --ignored --nocapture`，只查公开公司，不连接账号数据；联网测试默认忽略，不能把忽略称为联网验证通过。
+验证覆盖：24 小时内成功/失败均不重复抓取、过期再取、重启复用与手动绕过、范围去重与账号隔离、GET 无网络、公告/报告期与真实实施日区别、未来公告排除、方案取消、预案不入日期格、空金额与派息日未知、局部坏数据、分页/身份失败、并发合并、失败与重启保留、旧请求不覆盖、免个人版本、整站备份恢复，以及前端日期选择、待定列表和重试。跨前后端执行完整 `npm test`。公开来源另可手动执行 `cargo test --manifest-path server/Cargo.toml live_dividend_calendar_structured_plans -- --ignored --nocapture`，只查公开公司，不连接账号数据；联网测试默认忽略，不能把忽略称为联网验证通过。
 
 ### 投资方法论
 
