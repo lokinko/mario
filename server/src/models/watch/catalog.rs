@@ -48,7 +48,7 @@ impl Catalog {
         let catalog = self;
         let mut industries = BTreeSet::new();
         let mut symbols = BTreeSet::new();
-        if !matches!(catalog.version, 1..=3)
+        if !matches!(catalog.version, 1..=4)
             || chrono::NaiveDate::parse_from_str(&catalog.verified_on, "%Y-%m-%d").is_err()
             || catalog.industries.is_empty()
         {
@@ -102,7 +102,7 @@ impl Catalog {
         if self.version == 1 {
             self.upgrade_v1(seed)?;
         }
-        if self.version == 2 && seed.version == 3 {
+        if self.version == 2 && seed.version >= 3 {
             let requested: BTreeSet<String> = serde_json::from_str(include_str!(
                 "../../../data/watch-catalog-screened-additions-20261107.json"
             ))?;
@@ -129,6 +129,36 @@ impl Catalog {
                 }
             }
             self.version = 3;
+        }
+        if self.version == 3 && seed.version == 4 {
+            let requested: BTreeSet<String> = serde_json::from_str(include_str!(
+                "../../../data/watch-catalog-broker-additions-20261107.json"
+            ))?;
+            let mut existing: BTreeSet<String> = self
+                .industries
+                .iter()
+                .flat_map(|i| &i.companies)
+                .map(|c| c.symbol.clone())
+                .collect();
+            let template = seed.industry("brokers")?;
+            if !self.industries.iter().any(|i| i.id == template.id) {
+                self.industries.push(Industry {
+                    id: template.id.clone(),
+                    name: template.name.clone(),
+                    companies: Vec::new(),
+                });
+            }
+            let target = self
+                .industries
+                .iter_mut()
+                .find(|i| i.id == template.id)
+                .unwrap();
+            for company in &template.companies {
+                if requested.contains(&company.symbol) && existing.insert(company.symbol.clone()) {
+                    target.companies.push(company.clone());
+                }
+            }
+            self.version = 4;
         }
         if self.version != seed.version {
             return Err(AppError::Validation("目录升级版本不受支持".into()));
@@ -273,6 +303,63 @@ mod tests {
     use super::*;
 
     #[test]
+    fn broker_screening_reproduces_implemented_ttm_and_strict_three_percent_selection() {
+        use crate::models::watch::{trailing_dividends, DividendEvent};
+        use rust_decimal::Decimal;
+        let audit: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../docs/audits/watch-catalog-brokers-20261107.json"
+        ))
+        .unwrap();
+        let requested: BTreeSet<String> = serde_json::from_str(include_str!(
+            "../../../data/watch-catalog-broker-additions-20261107.json"
+        ))
+        .unwrap();
+        let day = chrono::NaiveDate::parse_from_str(audit["priceOn"].as_str().unwrap(), "%Y-%m-%d")
+            .unwrap();
+        let mut selected = BTreeSet::new();
+        for row in audit["selected"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(audit["excluded"].as_array().unwrap())
+        {
+            let events: Vec<DividendEvent> =
+                serde_json::from_value(row["implementedEvents"].clone()).unwrap();
+            let cash = trailing_dividends(&events, day).unwrap();
+            assert_eq!(
+                cash,
+                Decimal::from_str_exact(row["ttmDividendPerShare"].as_str().unwrap()).unwrap()
+            );
+            let price = Decimal::from_str_exact(row["price"].as_str().unwrap()).unwrap();
+            let passes = cash * Decimal::ONE_HUNDRED > price * Decimal::from(3);
+            assert_eq!(passes, row["passesThreePct"].as_bool().unwrap());
+            assert_eq!(
+                (cash * Decimal::ONE_HUNDRED / price).round_dp(4),
+                Decimal::from_str_exact(row["yieldPct"].as_str().unwrap())
+                    .unwrap()
+                    .round_dp(4)
+            );
+            if passes {
+                selected.insert(row["symbol"].as_str().unwrap().to_string());
+            }
+        }
+        assert_eq!(selected, requested);
+        let catalog = Catalog::bundled().unwrap();
+        assert_eq!(
+            catalog
+                .industry("brokers")
+                .unwrap()
+                .companies
+                .iter()
+                .map(|c| c.symbol.clone())
+                .collect::<BTreeSet<_>>(),
+            requested
+        );
+        assert_eq!(MIN_YIELD_PCT, 5.0);
+        assert_eq!(BAND_DISTANCE_PCT, 2.0);
+    }
+
+    #[test]
     fn screened_additions_reproduce_the_dated_ttm_above_four_without_changing_watch_rules() {
         use crate::models::watch::{trailing_dividends, DividendEvent};
         use rust_decimal::Decimal;
@@ -332,7 +419,8 @@ mod tests {
                 "白色家电",
                 "保险",
                 "中药",
-                "消费"
+                "消费",
+                "券商"
             ]
         );
         assert_eq!(
@@ -341,7 +429,7 @@ mod tests {
                 .iter()
                 .map(|i| i.companies.len())
                 .sum::<usize>(),
-            51
+            61
         );
         assert!(catalog.industry("unknown").is_err());
         let mut value = serde_json::to_value(&catalog).unwrap();

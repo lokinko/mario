@@ -276,7 +276,7 @@ mod tests {
             .unwrap();
         let upgraded = PublicWatch::open(&store.url, &store.schema).unwrap();
         let (mut current, revision) = upgraded.catalog().unwrap();
-        assert_eq!(current.version, 3);
+        assert_eq!(current.version, 4);
         assert!(current.industry("coal").is_err());
         assert!(current
             .industries
@@ -372,6 +372,53 @@ mod tests {
             .companies
             .iter()
             .any(|c| c.symbol == "601166.SS"));
+    }
+
+    #[test]
+    fn broker_release_upgrades_v3_once_preserving_edits_removals_and_global_uniqueness() {
+        let store = PublicWatch::test();
+        let (mut old, revision) = store.catalog().unwrap();
+        old.version = 3;
+        let brokers = old.industries.pop().unwrap();
+        assert_eq!(brokers.id, "brokers");
+        let mut existing = brokers.companies[0].clone();
+        existing.name = "人工保留名称".into();
+        existing.sources.clear();
+        existing.sources_checked_on = None;
+        old.industries[0].companies.push(existing.clone());
+        old.industries[0]
+            .companies
+            .retain(|c| c.symbol != "601166.SS" && c.symbol != "600036.SS");
+        store
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE watch_catalog SET payload=$1",
+                [serde_json::to_string(&old).unwrap()],
+            )
+            .unwrap();
+        let migrated = PublicWatch::open(&store.url, &store.schema).unwrap();
+        let (mut current, next) = migrated.catalog().unwrap();
+        assert_eq!(current.version, 4);
+        assert_eq!(next, revision + 1);
+        assert_eq!(current.industries[0].companies, old.industries[0].companies);
+        let added = current.industry("brokers").unwrap();
+        assert_eq!(added.companies.len(), brokers.companies.len() - 1);
+        assert!(!added.companies.iter().any(|c| c.symbol == existing.symbol));
+        assert!(current.industries[0].companies.contains(&existing));
+        current
+            .industries
+            .iter_mut()
+            .find(|i| i.id == "brokers")
+            .unwrap()
+            .companies
+            .clear();
+        migrated.save_catalog(&current, next, "owner").unwrap();
+        let reopened = PublicWatch::open(&store.url, &store.schema).unwrap();
+        let (saved, final_revision) = reopened.catalog().unwrap();
+        assert_eq!(final_revision, next + 1);
+        assert!(saved.industry("brokers").unwrap().companies.is_empty());
+        assert_eq!(saved.industries[0].companies, old.industries[0].companies);
     }
 
     #[test]

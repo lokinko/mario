@@ -1,0 +1,3145 @@
+{
+  "screenedOn": "2026-11-07",
+  "priceOn": "2026-11-06",
+  "scope": "本次用户明确要求新增券商板块，一次性核对16家已列明的沪深A股券商候选；不是全行业穷尽名单或自动扩池。",
+  "yieldMethod": "(2025-11-06,2026-11-06]内已实施税前现金分红，按后续及当次送转归一现股数，除以2026-11-06未复权收盘价；十进制严格大于3%，不按显示舍入筛选。",
+  "qualityScope": "核对官方证券身份、年报全文来源和已实施分红记录；不因股息率通过就认定基本面稳定、未来分红可持续、低估或适合个人买入。券商盈利与派息受资本市场周期、投资收益及监管资本约束影响。",
+  "productionWatchRuleUnchanged": "TTM税前股息率>=5%，日线BOLL下轨价格±2%，周收盘<=周线中轨，同时满足。",
+  "candidateCount": 16,
+  "selectedCount": 10,
+  "selected": [
+    {
+      "symbol": "002736.SZ",
+      "name": "国信证券",
+      "orgId": "9900004734",
+      "price": "9.03",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sz002736",
+      "priceObservedAt": "20261106161448",
+      "priceResponseSha256": "777c34aa742855d7b95b2fc7a3ca76547798ca8b4622da3762855dff4a5687cb",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22002736%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "a5f3428917660ff735ee752855182b1203bb797c2d930b457811e49bb7eb4c7a"
+      ],
+      "completeDividendRecords": 14,
+      "implementedEvents": [
+        {
+          "exDate": "2015-06-25",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-06-24",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-06-09",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-06-15",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-06-12",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "1.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-04-29",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-06-17",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "2.3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-06-22",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-06-21",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "2.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-19",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "2.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-16",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-02-11",
+          "reportDate": "2025-09-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-22",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-11-06",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-02-11",
+          "reportDate": "2025-09-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.1"
+        },
+        {
+          "exDate": "2026-06-22",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.35"
+        },
+        {
+          "exDate": "2026-11-06",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.1"
+        }
+      ],
+      "ttmDividendPerShare": "0.55",
+      "yieldPct": "6.090808416389811738648947951",
+      "passesThreePct": true,
+      "annualReport": {
+        "title": "2025年年度报告",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-04-18/1225120973.PDF",
+        "announcementTime": 1776441600000,
+        "responseSha256": "61261528807e3c90ca4b03a8cc05f9d0e3df54f2dcfac842c27788670a654338"
+      },
+      "profileSource": "https://www.szse.cn/certificate/individual/index.html?code=002736"
+    },
+    {
+      "symbol": "000783.SZ",
+      "name": "长江证券",
+      "orgId": "gssz0000783",
+      "price": "6.96",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sz000783",
+      "priceObservedAt": "20261106161418",
+      "priceResponseSha256": "d88a4afac6a6ca29b7cc98df069547411e5e00515a8faf3353de0db9257bb207",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000783%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "423b39bd99f7d38a82031da1b8c7cf8e057b228b1f7a6942a3b112a89c886cb5"
+      ],
+      "completeDividendRecords": 22,
+      "implementedEvents": [
+        {
+          "exDate": "1998-06-17",
+          "reportDate": "1997-12-31",
+          "cashPerTen": "0",
+          "bonusPerTen": "2",
+          "transferPerTen": "3"
+        },
+        {
+          "exDate": "2000-06-13",
+          "reportDate": "1999-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2008-07-21",
+          "reportDate": "2007-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2009-06-11",
+          "reportDate": "2008-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2010-06-09",
+          "reportDate": "2009-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2011-07-06",
+          "reportDate": "2010-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2012-07-17",
+          "reportDate": "2011-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2013-07-22",
+          "reportDate": "2012-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2014-07-09",
+          "reportDate": "2013-12-31",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "10"
+        },
+        {
+          "exDate": "2015-06-18",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-04-29",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-06-09",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-07-17",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-07-15",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "0.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-06-02",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-07-20",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-07-07",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-07-13",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-26",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "1.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-12",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-15",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-10-20",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-06-15",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.3"
+        },
+        {
+          "exDate": "2026-10-20",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.05"
+        }
+      ],
+      "ttmDividendPerShare": "0.35",
+      "yieldPct": "5.028735632183908045977011494",
+      "passesThreePct": true,
+      "annualReport": {
+        "title": "2025年年度报告",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-04-28/1225212469.PDF",
+        "announcementTime": 1777305600000,
+        "responseSha256": "3ee49cb9fa4a6a3a4e2c8ad62b9afa5dcefc9a101c3c659095835da0c4f83499"
+      },
+      "profileSource": "https://www.szse.cn/certificate/individual/index.html?code=000783"
+    },
+    {
+      "symbol": "601688.SS",
+      "name": "华泰证券",
+      "orgId": "qsgn0000161",
+      "price": "17.84",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh601688",
+      "priceObservedAt": "20261106161457",
+      "priceResponseSha256": "d12a571affdb73aef5ada798cbc8add141f8f1cad35393ba21637d6fed220687",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601688%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "62a8767b99d20d32b349fc8342b5a4d7f8e9d0740116c4d502ae594f034405f6"
+      ],
+      "completeDividendRecords": 19,
+      "implementedEvents": [
+        {
+          "exDate": "2011-06-21",
+          "reportDate": "2010-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2012-06-21",
+          "reportDate": "2011-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2013-06-13",
+          "reportDate": "2012-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2014-06-25",
+          "reportDate": "2013-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2015-04-30",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-08-05",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-08-08",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-11-15",
+          "reportDate": "2018-06-30",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-08-16",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-07-16",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-08-06",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-08-05",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "4.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-08-11",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "4.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-08-16",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "4.3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-10-25",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-08-15",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "3.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-12-12",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-08-21",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-10-23",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2025-12-12",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.15"
+        },
+        {
+          "exDate": "2026-08-21",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.4"
+        },
+        {
+          "exDate": "2026-10-23",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.18"
+        }
+      ],
+      "ttmDividendPerShare": "0.73",
+      "yieldPct": "4.091928251121076233183856502",
+      "passesThreePct": true,
+      "annualReport": {
+        "title": "华泰证券股份有限公司2025年年度报告",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-03-31/1225050753.PDF",
+        "announcementTime": 1774886400000,
+        "responseSha256": "90363fc4161a82b8cce0a407787bfda44384ae1b6637ce263150bf7071a997a7"
+      },
+      "profileSource": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601688"
+    },
+    {
+      "symbol": "000728.SZ",
+      "name": "国元证券",
+      "orgId": "gssz0000728",
+      "price": "6.92",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sz000728",
+      "priceObservedAt": "20261106161415",
+      "priceResponseSha256": "0edb3fea9689b73b063bf48df0a0593b8f2e58eb3e8939b5d30916cbd6272fac",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000728%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "ac1afa92ba0a974703b448b8a2e1552ba56cc359f6f1660c650cbc506a1002d4"
+      ],
+      "completeDividendRecords": 26,
+      "implementedEvents": [
+        {
+          "exDate": "1999-06-28",
+          "reportDate": "1998-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2000-07-19",
+          "reportDate": "1999-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2008-04-09",
+          "reportDate": "2007-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2009-05-08",
+          "reportDate": "2008-12-31",
+          "cashPerTen": "1.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2010-04-12",
+          "reportDate": "2009-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2011-04-29",
+          "reportDate": "2010-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2012-04-26",
+          "reportDate": "2011-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2013-06-06",
+          "reportDate": "2012-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2014-05-28",
+          "reportDate": "2013-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2015-05-27",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-08-31",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-09-21",
+          "reportDate": "2016-06-30",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-05-23",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "5"
+        },
+        {
+          "exDate": "2018-07-02",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-07-10",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-11-12",
+          "reportDate": "2019-06-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-05-12",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-05-20",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-11-09",
+          "reportDate": "2021-06-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-05-19",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "1.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-05-23",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-05-30",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-27",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-11-12",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "0.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-26",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-10-30",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2025-11-12",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "0.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.08"
+        },
+        {
+          "exDate": "2026-06-26",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.1"
+        },
+        {
+          "exDate": "2026-10-30",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.1"
+        }
+      ],
+      "ttmDividendPerShare": "0.28",
+      "yieldPct": "4.046242774566473988439306358",
+      "passesThreePct": true,
+      "annualReport": {
+        "title": "2025年年度报告",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-04-21/1225131651.PDF",
+        "announcementTime": 1776700800000,
+        "responseSha256": "13edb26a9356f4bda3ba037b62e3ffc1c38356f6350f49850fbedeb42a4d0860"
+      },
+      "profileSource": "https://www.szse.cn/certificate/individual/index.html?code=000728"
+    },
+    {
+      "symbol": "601211.SS",
+      "name": "国泰海通",
+      "orgId": "qsgn0000116",
+      "price": "16.46",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh601211",
+      "priceObservedAt": "20261106161456",
+      "priceResponseSha256": "64956ebf1b7697c7fe37857865442926bfb25ffc063a01dc3bb22a54093d06eb",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601211%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "23e8834f3539790cb328672e8ee021c7a3ba4b7b9312f7838d7d89578f3a2606"
+      ],
+      "completeDividendRecords": 15,
+      "implementedEvents": [
+        {
+          "exDate": "2015-10-22",
+          "reportDate": "2015-06-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-06-08",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "5.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-03-29",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "3.9",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-06-29",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-08-12",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "2.75",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-08-12",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "3.9",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-08-20",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "5.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-07-15",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "6.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-06-29",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "5.3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-28",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-10-21",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-28",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "2.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-10-28",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-26",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-10-16",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-06-26",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.35"
+        },
+        {
+          "exDate": "2026-10-16",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.3"
+        }
+      ],
+      "ttmDividendPerShare": "0.65",
+      "yieldPct": "3.948967193195625759416767922",
+      "passesThreePct": true,
+      "annualReport": {
+        "title": "国泰海通证券股份有限公司2025年年度报告",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-03-28/1225047952.PDF",
+        "announcementTime": 1774627200000,
+        "responseSha256": "9efb6d1dfd1d4194427d20c1a80c5da6a2f7454ee3e16da6527b7498e4eed88f"
+      },
+      "profileSource": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601211"
+    },
+    {
+      "symbol": "000776.SZ",
+      "name": "广发证券",
+      "orgId": "gssz0000776",
+      "price": "19.10",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sz000776",
+      "priceObservedAt": "20261106161500",
+      "priceResponseSha256": "a5a6609093360b199a5f42583847523ce623b0b256bc4a4881816d043c9c44b8",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000776%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "1e2d15d4b2cb43c78fd8ee59d957017472f0e55b9092fbc368928e0a944c7814"
+      ],
+      "completeDividendRecords": 22,
+      "implementedEvents": [
+        {
+          "exDate": "1999-04-29",
+          "reportDate": "1998-12-31",
+          "cashPerTen": "0",
+          "bonusPerTen": "0",
+          "transferPerTen": "1.9467"
+        },
+        {
+          "exDate": "2000-06-06",
+          "reportDate": "1999-12-31",
+          "cashPerTen": "0",
+          "bonusPerTen": "5",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2001-07-31",
+          "reportDate": "2000-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2011-06-22",
+          "reportDate": "2010-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2012-07-05",
+          "reportDate": "2011-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "10"
+        },
+        {
+          "exDate": "2013-07-11",
+          "reportDate": "2012-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2014-07-09",
+          "reportDate": "2013-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2015-05-08",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-08-24",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-07-05",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-08-15",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-12-13",
+          "reportDate": "2019-06-30",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-08-05",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-07-07",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "4.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-07-13",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-08-11",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-03",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-11-28",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-30",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-10-22",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-08-07",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-10-14",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-08-07",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.5"
+        },
+        {
+          "exDate": "2026-10-14",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.25"
+        }
+      ],
+      "ttmDividendPerShare": "0.75",
+      "yieldPct": "3.926701570680628272251308901",
+      "passesThreePct": true,
+      "annualReport": {
+        "title": "2025年年度报告",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-03-31/1225060422.PDF",
+        "announcementTime": 1774886400000,
+        "responseSha256": "f50d64c6f8670ae4d128db4943efbd79fd21e68b5b4011d795ff08aa3ad68492"
+      },
+      "profileSource": "https://www.szse.cn/certificate/individual/index.html?code=000776"
+    },
+    {
+      "symbol": "600999.SS",
+      "name": "招商证券",
+      "orgId": "qsgn0000118",
+      "price": "16.21",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh600999",
+      "priceObservedAt": "20261106161458",
+      "priceResponseSha256": "93b35d2deff906594ded1606238768f72f3f819e9ce660a152a94a5c514e5180",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600999%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "5697cc8ee3c87febdfd3cddd30abb2838db7f5586de494f1149a2635d34553d8"
+      ],
+      "completeDividendRecords": 22,
+      "implementedEvents": [
+        {
+          "exDate": "2010-07-13",
+          "reportDate": "2009-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2011-07-14",
+          "reportDate": "2010-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "3"
+        },
+        {
+          "exDate": "2012-08-02",
+          "reportDate": "2011-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2013-07-22",
+          "reportDate": "2012-12-31",
+          "cashPerTen": "1.42",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2014-11-05",
+          "reportDate": "2014-06-30",
+          "cashPerTen": "1.53",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2015-05-21",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "2.65",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2015-10-12",
+          "reportDate": "2015-06-30",
+          "cashPerTen": "5.04",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-06-17",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "2.47",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-09-29",
+          "reportDate": "2016-06-30",
+          "cashPerTen": "1.54",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-07-21",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "1.89",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-08-17",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "3.46",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-08-27",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "2.64",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-12-11",
+          "reportDate": "2020-06-30",
+          "cashPerTen": "3.35",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-07-30",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "4.37",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-08-08",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "5.4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-07-25",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1.85",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-16",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "2.52",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-09-20",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "1.01",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-16",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "3.77",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-09-18",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.19",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-16",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "4.49",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-09-15",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1.67",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-07-16",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "4.49",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.449"
+        },
+        {
+          "exDate": "2026-09-15",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1.67",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.167"
+        }
+      ],
+      "ttmDividendPerShare": "0.616",
+      "yieldPct": "3.800123380629241209130166564",
+      "passesThreePct": true,
+      "annualReport": {
+        "title": "招商证券股份有限公司2025年年度报告",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-03-28/1225047540.PDF",
+        "announcementTime": 1774627200000,
+        "responseSha256": "fd6cd56acc83696224be7b07a42ba94902f4867eab33cacca2f7d96e050fc1c9"
+      },
+      "profileSource": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600999"
+    },
+    {
+      "symbol": "601377.SS",
+      "name": "兴业证券",
+      "orgId": "qsgn0000076",
+      "price": "5.50",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh601377",
+      "priceObservedAt": "20261106161445",
+      "priceResponseSha256": "4dc98d77f250aa60659a2021f5d1b12adbeca01537ba08adf09f388ffd823ffc",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601377%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "bc8cbb6783c38253f8b1ea748a4e4bf0ce93aff87f001249fe25a20dccb812e1"
+      ],
+      "completeDividendRecords": 20,
+      "implementedEvents": [
+        {
+          "exDate": "2011-06-13",
+          "reportDate": "2010-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2012-06-25",
+          "reportDate": "2011-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2013-04-11",
+          "reportDate": "2012-12-31",
+          "cashPerTen": "1.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2014-06-17",
+          "reportDate": "2013-12-31",
+          "cashPerTen": "0.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2014-09-19",
+          "reportDate": "2014-06-30",
+          "cashPerTen": "0",
+          "bonusPerTen": "0",
+          "transferPerTen": "10"
+        },
+        {
+          "exDate": "2015-05-19",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-05-19",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-08-02",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-08-22",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-08-26",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-08-20",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "0.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-08-25",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "1.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-12-26",
+          "reportDate": "2022-06-30",
+          "cashPerTen": "1.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-08-25",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1.3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-08-21",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-12-30",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "0.3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-08-14",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-12-18",
+          "reportDate": "2025-09-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-31",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-10-15",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2025-12-18",
+          "reportDate": "2025-09-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.05"
+        },
+        {
+          "exDate": "2026-07-31",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.1"
+        },
+        {
+          "exDate": "2026-10-15",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.05"
+        }
+      ],
+      "ttmDividendPerShare": "0.20",
+      "yieldPct": "3.636363636363636363636363636",
+      "passesThreePct": true,
+      "annualReport": {
+        "title": "兴业证券2025年年度报告",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-03-28/1225046462.PDF",
+        "announcementTime": 1774627200000,
+        "responseSha256": "ec608b7eac00285d78e4ed0c69ffb3acbe43a0b3660a26c8e2005e373cfce286"
+      },
+      "profileSource": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601377"
+    },
+    {
+      "symbol": "000686.SZ",
+      "name": "东北证券",
+      "orgId": "gssz0000686",
+      "price": "7.18",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sz000686",
+      "priceObservedAt": "20261106161427",
+      "priceResponseSha256": "54fa789e45f57e135892a1a3f885fc885dfbbf9edf4aff3bfe617b23779d85e8",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000686%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "2705febf835d64d7209d611d4e540e239b6c28019c67faf1057fdc515325deed"
+      ],
+      "completeDividendRecords": 25,
+      "implementedEvents": [
+        {
+          "exDate": "1997-06-17",
+          "reportDate": "1996-12-31",
+          "cashPerTen": "0",
+          "bonusPerTen": "3",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "1998-05-07",
+          "reportDate": "1997-12-31",
+          "cashPerTen": "0",
+          "bonusPerTen": "3",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2001-06-13",
+          "reportDate": "2000-12-31",
+          "cashPerTen": "0.8788",
+          "bonusPerTen": "1.7576",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2002-08-20",
+          "reportDate": "2001-12-31",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "1"
+        },
+        {
+          "exDate": "2009-06-09",
+          "reportDate": "2008-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2010-04-23",
+          "reportDate": "2009-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2011-05-11",
+          "reportDate": "2010-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2013-06-18",
+          "reportDate": "2012-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2014-04-16",
+          "reportDate": "2013-12-31",
+          "cashPerTen": "0.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "10"
+        },
+        {
+          "exDate": "2015-06-03",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "0.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-06-29",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-07-12",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-06-13",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-06-27",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-06-29",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-05-31",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-05-26",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-05-31",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-05-22",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-01-24",
+          "reportDate": "2024-09-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-05-30",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "0.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-11-12",
+          "reportDate": "2025-09-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-05-28",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2025-11-12",
+          "reportDate": "2025-09-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.1"
+        },
+        {
+          "exDate": "2026-05-28",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.15"
+        }
+      ],
+      "ttmDividendPerShare": "0.25",
+      "yieldPct": "3.481894150417827298050139276",
+      "passesThreePct": true,
+      "annualReport": {
+        "title": "2025年年度报告",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-04-25/1225189476.PDF",
+        "announcementTime": 1777046400000,
+        "responseSha256": "9af9b7ac73b19a55c37339ca307376ad911e69df2fba600f9065c8b7cb04860b"
+      },
+      "profileSource": "https://www.szse.cn/certificate/individual/index.html?code=000686"
+    },
+    {
+      "symbol": "601236.SS",
+      "name": "红塔证券",
+      "orgId": "qsgn0000641",
+      "price": "6.71",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh601236",
+      "priceObservedAt": "20261106161457",
+      "priceResponseSha256": "a0492ab19df2676a446bfddfa33a50d8c39ee6ef5788d967947352c624888929",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601236%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "6301bcf26df66cc002d03dad5a8550fe6bf1725f7b9f1b75eed05063f803d1ca"
+      ],
+      "completeDividendRecords": 10,
+      "implementedEvents": [
+        {
+          "exDate": "2020-06-17",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-05-11",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "1.55",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-06-23",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "1.0026",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-06-02",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-05-16",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "0.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-10-11",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "0.47",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-05-12",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1.03",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-10-16",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-05-28",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-09-17",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-05-28",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.16"
+        },
+        {
+          "exDate": "2026-09-17",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.05"
+        }
+      ],
+      "ttmDividendPerShare": "0.21",
+      "yieldPct": "3.129657228017883755588673621",
+      "passesThreePct": true,
+      "annualReport": {
+        "title": "红塔证券股份有限公司2025年年度报告",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-03-28/1225042948.PDF",
+        "announcementTime": 1774627200000,
+        "responseSha256": "a848c277e694085769f3a63ae79bf7f1e52fedf6de0062807a696c5092ac887b"
+      },
+      "profileSource": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601236"
+    }
+  ],
+  "excluded": [
+    {
+      "symbol": "600958.SS",
+      "name": "东方证券",
+      "orgId": "qsgn0000065",
+      "price": "8.38",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh600958",
+      "priceObservedAt": "20261106161446",
+      "priceResponseSha256": "06c2beaf5d02f8bc21730ebe3849a29a27da26c2d11bc3da7328322d2f2483a2",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600958%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "3175535e54142e1db45a4f0b57e61424d9792df0db39a0241c39a34cbe0676fe"
+      ],
+      "completeDividendRecords": 16,
+      "implementedEvents": [
+        {
+          "exDate": "2015-06-26",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2015-11-04",
+          "reportDate": "2015-06-30",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-06-17",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-08-02",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-07-10",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-07-10",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-06-29",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-07-08",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-07-29",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-06-28",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-28",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-12-13",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "0.75",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-27",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-10-28",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-20",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-07-20",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.2"
+        }
+      ],
+      "ttmDividendPerShare": "0.2",
+      "yieldPct": "2.386634844868735083532219570",
+      "passesThreePct": false,
+      "exclusionReason": "已实施税前TTM股息率未严格大于3%。"
+    },
+    {
+      "symbol": "601555.SS",
+      "name": "东吴证券",
+      "orgId": "qsgn0000325",
+      "price": "7.63",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh601555",
+      "priceObservedAt": "20261106161449",
+      "priceResponseSha256": "364795dccac2fe09b50459df4992466e7e61250f9ed65ca1a38d5d80e7717242",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601555%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "0e31d29a816378e3d99e7e1c34913ce1c9741bf9192cb8627d7703b65ed4e641"
+      ],
+      "completeDividendRecords": 17,
+      "implementedEvents": [
+        {
+          "exDate": "2012-06-21",
+          "reportDate": "2011-12-31",
+          "cashPerTen": "0.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2013-06-24",
+          "reportDate": "2012-12-31",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2014-04-30",
+          "reportDate": "2013-12-31",
+          "cashPerTen": "0.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2015-06-26",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "1.25",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-06-16",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-05-19",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-05-10",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-07-05",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "0.9",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-06-10",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "1.3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-07-23",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "1.57",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-06-21",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "1.68",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-06-20",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1.58",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-13",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "1.88",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-10-17",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "0.75",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-11",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "2.37",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-10-15",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.38",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-08-07",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-08-07",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.22"
+        }
+      ],
+      "ttmDividendPerShare": "0.22",
+      "yieldPct": "2.883355176933158584534731324",
+      "passesThreePct": false,
+      "exclusionReason": "已实施税前TTM股息率未严格大于3%。"
+    },
+    {
+      "symbol": "600909.SS",
+      "name": "华安证券",
+      "orgId": "qsgn0000505",
+      "price": "6.86",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh600909",
+      "priceObservedAt": "20261106161447",
+      "priceResponseSha256": "93cdb22654d696a24b1419a77a10b92a5005d29d37b783f3c16c3ca99d3833dd",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600909%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "42e1e2a637ed56b7d1dd5c5bdf8aa54c9558bf5ba5a6e91d35d0fee0fdf1386b"
+      ],
+      "completeDividendRecords": 12,
+      "implementedEvents": [
+        {
+          "exDate": "2017-07-17",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "0.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-07-03",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "0.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-06-14",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "0.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-07-06",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-05-10",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "1.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-06-17",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-06-29",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-28",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-30",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-11-06",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "0.4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-07-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.12"
+        }
+      ],
+      "ttmDividendPerShare": "0.12",
+      "yieldPct": "1.749271137026239067055393586",
+      "passesThreePct": false,
+      "exclusionReason": "已实施税前TTM股息率未严格大于3%。"
+    },
+    {
+      "symbol": "600030.SS",
+      "name": "中信证券",
+      "orgId": "gssh0600030",
+      "price": "25.72",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh600030",
+      "priceObservedAt": "20261106161457",
+      "priceResponseSha256": "59e15f8bd4cfb74657923e6abc77453428426fa7966dfa6f288629bf57d30520",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600030%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "22d90a8c4f5c2fbe40164bbd734ffea5ca20bb5ebd13fe8f04e0c16d08aa097f"
+      ],
+      "completeDividendRecords": 27,
+      "implementedEvents": [
+        {
+          "exDate": "2003-08-28",
+          "reportDate": "2002-12-31",
+          "cashPerTen": "0.037",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2004-06-11",
+          "reportDate": "2003-12-31",
+          "cashPerTen": "1.1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2005-07-15",
+          "reportDate": "2004-12-31",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2006-07-04",
+          "reportDate": "2005-12-31",
+          "cashPerTen": "1.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2007-05-21",
+          "reportDate": "2006-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2008-04-24",
+          "reportDate": "2007-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "10"
+        },
+        {
+          "exDate": "2009-06-11",
+          "reportDate": "2008-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2010-06-24",
+          "reportDate": "2009-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "5"
+        },
+        {
+          "exDate": "2011-06-16",
+          "reportDate": "2010-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2012-08-02",
+          "reportDate": "2011-12-31",
+          "cashPerTen": "4.3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2013-08-08",
+          "reportDate": "2012-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2014-08-15",
+          "reportDate": "2013-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2015-08-14",
+          "reportDate": "2014-12-31",
+          "cashPerTen": "2.8185",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2016-08-19",
+          "reportDate": "2015-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-08-18",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-08-24",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-08-02",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "3.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-08-21",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-08-20",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-08-26",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "5.4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-08-25",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "4.9",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-08-26",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "4.75",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-12-20",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "2.4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-08-25",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "2.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-02-09",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "2.9",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-10",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "4.1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-02-09",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "2.9",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.29"
+        },
+        {
+          "exDate": "2026-06-10",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "4.1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.41"
+        }
+      ],
+      "ttmDividendPerShare": "0.70",
+      "yieldPct": "2.721617418351477449455676516",
+      "passesThreePct": false,
+      "exclusionReason": "已实施税前TTM股息率未严格大于3%。"
+    },
+    {
+      "symbol": "601881.SS",
+      "name": "中国银河",
+      "orgId": "qsgn0000512",
+      "price": "11.81",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh601881",
+      "priceObservedAt": "20261106161453",
+      "priceResponseSha256": "77947284b236f54d8b0d2d820e679fbdbd1ad664a103dbb7a623cb7bc1d17706",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601881%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "d1dbc5a4edf11bf9e35a52d9bf8d24f95dd37ee8021a570971afa57ffbe6f4f3"
+      ],
+      "completeDividendRecords": 13,
+      "implementedEvents": [
+        {
+          "exDate": "2017-07-04",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "1.55",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-07-06",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "1.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-06-10",
+          "reportDate": "2018-12-31",
+          "cashPerTen": "0.9",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2020-07-15",
+          "reportDate": "2019-12-31",
+          "cashPerTen": "1.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-07-15",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "2.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-07-15",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "3.1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-07-17",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "2.2533",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-16",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "2.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-12-12",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "0.84",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-14",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1.96",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-11-17",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.25",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.25",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2025-11-17",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.25",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.125"
+        },
+        {
+          "exDate": "2026-07-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.25",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.225"
+        }
+      ],
+      "ttmDividendPerShare": "0.350",
+      "yieldPct": "2.963590177815410668924640135",
+      "passesThreePct": false,
+      "exclusionReason": "已实施税前TTM股息率未严格大于3%。"
+    },
+    {
+      "symbol": "601375.SS",
+      "name": "中原证券",
+      "orgId": "qsgn0000802",
+      "price": "3.81",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh601375",
+      "priceObservedAt": "20261106161442",
+      "priceResponseSha256": "df75acd4178e1bda089f0cdf4168445347f627c7407b856f5d0bb084e623e27c",
+      "identitySource": "https://www.cninfo.com.cn/new/data/szse_stock.json",
+      "identityResponseSha256": "46fb0872ac53e646bb7c245af7bcc3de8f1132c1dbe2adab1d103ec4c1a008ea",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601375%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "fefb033c6b220bf130a3a00404879361f5f2cbe05b18938f6e815b5519d12375"
+      ],
+      "completeDividendRecords": 15,
+      "implementedEvents": [
+        {
+          "exDate": "2017-06-12",
+          "reportDate": "2016-12-31",
+          "cashPerTen": "1.21",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2017-10-27",
+          "reportDate": "2017-06-30",
+          "cashPerTen": "0.73",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-06-01",
+          "reportDate": "2017-12-31",
+          "cashPerTen": "0.35",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2018-11-06",
+          "reportDate": "2018-06-30",
+          "cashPerTen": "0.1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2019-12-03",
+          "reportDate": "2019-06-30",
+          "cashPerTen": "0.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-08-02",
+          "reportDate": "2020-12-31",
+          "cashPerTen": "0.17",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2021-12-02",
+          "reportDate": "2021-06-30",
+          "cashPerTen": "0.17",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2022-07-12",
+          "reportDate": "2021-12-31",
+          "cashPerTen": "0.21",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-06-19",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "0.07",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-08-06",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "0.14",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-10-25",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "0.06",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-08-14",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "0.17",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-10-24",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "0.08",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-08-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "0.22",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-10-23",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "0.12",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "ttmEvents": [
+        {
+          "exDate": "2026-08-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "0.22",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.022"
+        },
+        {
+          "exDate": "2026-10-23",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "0.12",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.012"
+        }
+      ],
+      "ttmDividendPerShare": "0.034",
+      "yieldPct": "0.8923884514435695538057742782",
+      "passesThreePct": false,
+      "exclusionReason": "已实施税前TTM股息率未严格大于3%。"
+    }
+  ],
+  "officialImplementationSources": [
+    {
+      "symbol": "002736.SZ",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "100",
+        "column": "szse",
+        "tabName": "fulltext",
+        "stock": "002736,9900004734",
+        "seDate": "2025-09-01~2026-11-07",
+        "searchkey": "实施",
+        "sortName": "time",
+        "sortType": "desc",
+        "category": "",
+        "isHLtitle": "false"
+      },
+      "responseSha256": "254c1ddc57c4347d37fa36cbb1dc7ffb23ec18fed7bf9dc445ab4bcf62d59fa6",
+      "announcements": [
+        {
+          "title": "2026年中期分红派息实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-10-30/1225642365.PDF",
+          "announcementTime": 1793289600000
+        },
+        {
+          "title": "2025年度分红派息实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-06-13/1225369725.PDF",
+          "announcementTime": 1781280000000
+        },
+        {
+          "title": "2025年前三季度分红派息实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-02-04/1224965550.PDF",
+          "announcementTime": 1770134400000
+        }
+      ]
+    },
+    {
+      "symbol": "000783.SZ",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "100",
+        "column": "szse",
+        "tabName": "fulltext",
+        "stock": "000783,gssz0000783",
+        "seDate": "2025-09-01~2026-11-07",
+        "searchkey": "实施",
+        "sortName": "time",
+        "sortType": "desc",
+        "category": "",
+        "isHLtitle": "false"
+      },
+      "responseSha256": "394f3298d1fc2490df2fc38f3815b41f048d741c3da0175017bf5d16c9b18c00",
+      "announcements": [
+        {
+          "title": "2026年半年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-10-14/1225604165.PDF",
+          "announcementTime": 1791907200000
+        },
+        {
+          "title": "2025年年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-06-06/1225354983.PDF",
+          "announcementTime": 1780675200000
+        }
+      ]
+    },
+    {
+      "symbol": "601211.SS",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "100",
+        "column": "szse",
+        "tabName": "fulltext",
+        "stock": "601211,qsgn0000116",
+        "seDate": "2025-09-01~2026-11-07",
+        "searchkey": "实施",
+        "sortName": "time",
+        "sortType": "desc",
+        "category": "",
+        "isHLtitle": "false"
+      },
+      "responseSha256": "2f40b09ef3a7a42ecf7e622684c4be1bbfb23deea9f005ca2b6bf0e29e4e340b",
+      "announcements": [
+        {
+          "title": "国泰海通证券股份有限公司2026年半年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-10-10/1225599137.PDF",
+          "announcementTime": 1791561600000
+        },
+        {
+          "title": "国泰海通证券股份有限公司2025年年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-06-19/1225378672.PDF",
+          "announcementTime": 1781798400000
+        },
+        {
+          "title": "国泰海通证券股份有限公司2025年半年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-10-21/1224721367.PDF",
+          "announcementTime": 1760976000000
+        }
+      ]
+    },
+    {
+      "symbol": "000776.SZ",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "100",
+        "column": "szse",
+        "tabName": "fulltext",
+        "stock": "000776,gssz0000776",
+        "seDate": "2025-11-06~2026-11-07",
+        "searchkey": "实施",
+        "sortName": "time",
+        "sortType": "desc",
+        "category": "",
+        "isHLtitle": "false"
+      },
+      "responseSha256": "d312c09dd189a1cedc4852e0eeb7e0414dd762be2a6922af263774a2dda04edc",
+      "announcements": [
+        {
+          "title": "2026年度中期A股利润分配实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-09-30/1225588391.PDF",
+          "announcementTime": 1790697600000
+        },
+        {
+          "title": "2025年度A股利润分配实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-07-31/1225449683.PDF",
+          "announcementTime": 1785427200000
+        }
+      ]
+    },
+    {
+      "symbol": "600999.SS",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "100",
+        "column": "szse",
+        "tabName": "fulltext",
+        "stock": "600999,qsgn0000118",
+        "seDate": "2025-09-01~2026-11-07",
+        "searchkey": "实施",
+        "sortName": "time",
+        "sortType": "desc",
+        "category": "",
+        "isHLtitle": "false"
+      },
+      "responseSha256": "92e3d0e4afe7695013633bdc1ff8c086b6a19dbb28221850c60ab5571266b4e7",
+      "announcements": [
+        {
+          "title": "2026年半年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-09-08/1225551687.PDF",
+          "announcementTime": 1788796800000
+        },
+        {
+          "title": "2025年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-07-09/1225415016.PDF",
+          "announcementTime": 1783526400000
+        },
+        {
+          "title": "2025年半年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-09-11/1224649802.PDF",
+          "announcementTime": 1757520000000
+        }
+      ]
+    },
+    {
+      "symbol": "601377.SS",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "100",
+        "column": "szse",
+        "tabName": "fulltext",
+        "stock": "601377,qsgn0000076",
+        "seDate": "2025-09-01~2026-11-07",
+        "searchkey": "实施",
+        "sortName": "time",
+        "sortType": "desc",
+        "category": "",
+        "isHLtitle": "false"
+      },
+      "responseSha256": "9b3b0d24eac0d870fc17b12e07c7588d69cb4fd80a0bd778603688907d4e924a",
+      "announcements": [
+        {
+          "title": "兴业证券2026年中期权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-09-30/1225588862.PDF",
+          "announcementTime": 1790697600000
+        },
+        {
+          "title": "兴业证券2025年年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-07-25/1225441740.PDF",
+          "announcementTime": 1784908800000
+        },
+        {
+          "title": "兴业证券2025年中期权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-12-12/1224868706.PDF",
+          "announcementTime": 1765468800000
+        }
+      ]
+    },
+    {
+      "symbol": "601688.SS",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "100",
+        "column": "szse",
+        "tabName": "fulltext",
+        "stock": "601688,qsgn0000161",
+        "seDate": "2025-09-01~2026-11-07",
+        "searchkey": "实施",
+        "sortName": "time",
+        "sortType": "desc",
+        "category": "",
+        "isHLtitle": "false"
+      },
+      "responseSha256": "41c0085d0d277e4f202a752477bf6712dcb79e20d5f6d4a2584c67ca98f686ca",
+      "announcements": [
+        {
+          "title": "华泰证券股份有限公司2026年半年度A股权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-10-15/1225604979.PDF",
+          "announcementTime": 1791993600000
+        },
+        {
+          "title": "华泰证券股份有限公司2025年年度A股权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-08-13/1225470644.PDF",
+          "announcementTime": 1786550400000
+        },
+        {
+          "title": "华泰证券股份有限公司2025年半年度A股权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-12-04/1224847115.PDF",
+          "announcementTime": 1764777600000
+        }
+      ]
+    },
+    {
+      "symbol": "000686.SZ",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "100",
+        "column": "szse",
+        "tabName": "fulltext",
+        "stock": "000686,gssz0000686",
+        "seDate": "2025-09-01~2026-11-07",
+        "searchkey": "实施",
+        "sortName": "time",
+        "sortType": "desc",
+        "category": "",
+        "isHLtitle": "false"
+      },
+      "responseSha256": "a40823c3e5ece7b6dddba1ae7b726452b666112ecfa5bcc71962fb63c48b3a9c",
+      "announcements": [
+        {
+          "title": "2026年度中期权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-11-03/1225654325.PDF",
+          "announcementTime": 1793635200000
+        },
+        {
+          "title": "东北证券股份有限公司2025年年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-05-21/1225320811.PDF",
+          "announcementTime": 1779292800000
+        },
+        {
+          "title": "2025年度中期权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-11-05/1224787338.PDF",
+          "announcementTime": 1762272000000
+        }
+      ]
+    },
+    {
+      "symbol": "000728.SZ",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "100",
+        "column": "szse",
+        "tabName": "fulltext",
+        "stock": "000728,gssz0000728",
+        "seDate": "2025-09-01~2026-11-07",
+        "searchkey": "实施",
+        "sortName": "time",
+        "sortType": "desc",
+        "category": "",
+        "isHLtitle": "false"
+      },
+      "responseSha256": "0ee692e368411646f4e9bb0e5ef95a71b45c5336456e78acd489d886d822fa97",
+      "announcements": [
+        {
+          "title": "国元证券股份有限公司2026年半年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-10-24/1225620158.PDF",
+          "announcementTime": 1792771200000
+        },
+        {
+          "title": "国元证券股份有限公司2025年年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-06-18/1225376744.PDF",
+          "announcementTime": 1781712000000
+        },
+        {
+          "title": "国元证券股份有限公司2025年半年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-11-05/1224786113.PDF",
+          "announcementTime": 1762272000000
+        }
+      ]
+    },
+    {
+      "symbol": "601236.SS",
+      "query": {
+        "pageNum": "1",
+        "pageSize": "100",
+        "column": "szse",
+        "tabName": "fulltext",
+        "stock": "601236,qsgn0000641",
+        "seDate": "2025-09-01~2026-11-07",
+        "searchkey": "实施",
+        "sortName": "time",
+        "sortType": "desc",
+        "category": "",
+        "isHLtitle": "false"
+      },
+      "responseSha256": "edbf2e1744123819b909b71c5c479f9ed36be45287857b67d49f2c31e2d728bd",
+      "announcements": [
+        {
+          "title": "红塔证券股份有限公司2026年半年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-09-11/1225558618.PDF",
+          "announcementTime": 1789056000000
+        },
+        {
+          "title": "红塔证券股份有限公司关于2025年年度权益分派实施后调整回购股份价格上限的公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-05-20/1225317032.PDF",
+          "announcementTime": 1779206400000
+        },
+        {
+          "title": "红塔证券股份有限公司2025年年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-05-20/1225317028.PDF",
+          "announcementTime": 1779206400000
+        },
+        {
+          "title": "红塔证券股份有限公司关于2025年半年度权益分派实施后调整回购股份价格上限的公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-10-10/1224702557.PDF",
+          "announcementTime": 1760025600000
+        },
+        {
+          "title": "红塔证券股份有限公司2025年半年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-10-10/1224702558.PDF",
+          "announcementTime": 1760025600000
+        }
+      ]
+    }
+  ],
+  "verificationLimits": "全部计算复核东方财富完整已实施事件及腾讯同日收盘时间戳；官方实施公告保留检索身份与原始结果，不宣称逐份全文审计。国信2026中期实施公告已抽查每10股1元、2026-11-06除息，与来源一致。年报链接仅确认身份和报告类型，未据此给出基本面评级。",
+  "timingNotes": {
+    "601688.SS": "TTM包含2025中期、2025末期和2026中期三笔现金；2025完整年度每股0.55元与同价对应约3.08%，仍不可外推未来。",
+    "000728.SZ": "TTM包含两期中期及一期末期；2025完整年度每股0.18元与现价约2.60%，派息时点抬升TTM，不代表未来稳定大于3%。",
+    "601377.SS": "TTM包含两期中期及一期末期；2025完整年度每股0.15元与现价约2.73%，不能将当前TTM视为稳定年化。",
+    "000686.SZ": "TTM包括2025-11-12每股0.10元，该笔将于2026-11-12滚出365天窗口；2026中期公告的未来除息未计入。",
+    "002736.SZ": "包含2026-11-06新实施中期每股0.10元，以及2025前三季度、2025年度已实施分红；不沿用11月初媒体股息率。"
+  },
+  "archiveDirectory": ".runtime/broker-catalog-20261107/raw",
+  "archiveManifestSha256": "fa3d5fbfeda2eb2818c1ed626aa0b7d091eb4b8ce2bfcbcd736e469bdf69b3db"
+}

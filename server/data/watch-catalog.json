@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "verifiedOn": "2026-11-07",
   "industries": [
     {
@@ -516,6 +516,102 @@
           "sources": [
             "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600887",
             "https://static.cninfo.com.cn/finalpage/2026-04-30/1225259562.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        }
+      ]
+    },
+    {
+      "id": "brokers",
+      "name": "券商",
+      "companies": [
+        {
+          "symbol": "002736.SZ",
+          "name": "国信证券",
+          "sources": [
+            "https://www.szse.cn/certificate/individual/index.html?code=002736",
+            "https://static.cninfo.com.cn/finalpage/2026-04-18/1225120973.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "000783.SZ",
+          "name": "长江证券",
+          "sources": [
+            "https://www.szse.cn/certificate/individual/index.html?code=000783",
+            "https://static.cninfo.com.cn/finalpage/2026-04-28/1225212469.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "601688.SS",
+          "name": "华泰证券",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601688",
+            "https://static.cninfo.com.cn/finalpage/2026-03-31/1225050753.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "000728.SZ",
+          "name": "国元证券",
+          "sources": [
+            "https://www.szse.cn/certificate/individual/index.html?code=000728",
+            "https://static.cninfo.com.cn/finalpage/2026-04-21/1225131651.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "601211.SS",
+          "name": "国泰海通",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601211",
+            "https://static.cninfo.com.cn/finalpage/2026-03-28/1225047952.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "000776.SZ",
+          "name": "广发证券",
+          "sources": [
+            "https://www.szse.cn/certificate/individual/index.html?code=000776",
+            "https://static.cninfo.com.cn/finalpage/2026-03-31/1225060422.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "600999.SS",
+          "name": "招商证券",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600999",
+            "https://static.cninfo.com.cn/finalpage/2026-03-28/1225047540.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "601377.SS",
+          "name": "兴业证券",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601377",
+            "https://static.cninfo.com.cn/finalpage/2026-03-28/1225046462.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "000686.SZ",
+          "name": "东北证券",
+          "sources": [
+            "https://www.szse.cn/certificate/individual/index.html?code=000686",
+            "https://static.cninfo.com.cn/finalpage/2026-04-25/1225189476.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "601236.SS",
+          "name": "红塔证券",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601236",
+            "https://static.cninfo.com.cn/finalpage/2026-03-28/1225042948.PDF"
           ],
           "sourcesCheckedOn": "2026-11-07"
         }
