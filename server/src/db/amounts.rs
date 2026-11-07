@@ -159,11 +159,20 @@ pub(super) fn apply_quote(
         .find(|h| h.id == id)
         .ok_or_else(|| AppError::Validation("持仓不存在".into()))?;
     let mut values = read(conn, id)?.unwrap_or_else(|| from_holding(h));
-    values.quantity = snapshot
-        .holding_trade_summaries
-        .get(id)
-        .map(|s| s.quantity.clone())
-        .or_else(|| Some(quantity.to_string()));
+    if let Some(summary) = snapshot.holding_trade_summaries.get(id) {
+        values.quantity = Some(summary.quantity.clone());
+    } else if values
+        .quantity
+        .as_deref()
+        .map(dec)
+        .transpose()?
+        .and_then(|value| value.to_f64())
+        != Some(quantity)
+    {
+        // The caller already updated the holdings float projection. Compare the
+        // persisted exact quantity so refreshing a quote cannot round it away.
+        values.quantity = Some(quantity.to_string());
+    }
     values.current_price = Some(
         quote
             .exact_close

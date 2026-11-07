@@ -101,12 +101,15 @@ pub async fn historical_quote(
             return Ok(quote);
         }
     }
-    let quote = if query.on_date == today() {
-        let current = refresh(db, provider, false).await?;
-        current
-            .quotes
-            .into_iter()
-            .find(|q| q.from_currency == from && q.requested_on == query.on_date)
+    // Quote reads may reuse a fresh book for the requested pair, but must never
+    // refresh the account's valuation book or acknowledge unrelated data changes.
+    let quote = if query.on_date == today()
+        && book.requested_on == query.on_date
+        && Utc::now().timestamp() - book.checked_at < if book.error.is_empty() { 3600 } else { 60 }
+    {
+        book.quotes.into_iter().find(|q| {
+            q.from_currency == from && q.to_currency == to && q.requested_on == query.on_date
+        })
     } else {
         None
     };
@@ -286,6 +289,59 @@ mod tests {
         assert_eq!(
             historical_quote(&db, &source, &current).await.unwrap().rate,
             8.0
+        );
+    }
+    #[tokio::test]
+    async fn current_quotes_match_the_requested_pair_without_changing_account_data() {
+        let db = db();
+        refresh(&db, &provider(7.0), false).await.unwrap();
+        db.add_holding(&input("USD")).unwrap();
+        db.ensure_daily(&crate::models::daily::EnsureInput {
+            timezone: "Asia/Shanghai".into(),
+        })
+        .unwrap();
+        let before = db.export_sync_data().unwrap().content_hash().unwrap();
+        let revision = db.revision().unwrap();
+        let source = provider(7.8);
+        let mut query = FxRateQuery {
+            from_currency: "USD".into(),
+            to_currency: "HKD".into(),
+            on_date: today(),
+        };
+        let quote = historical_quote(&db, &source, &query).await.unwrap();
+        assert_eq!(quote.from_currency, "USD");
+        assert_eq!(quote.to_currency, "HKD");
+        assert_eq!(quote.rate, 7.8);
+        assert_eq!(source.calls.load(Ordering::SeqCst), 1);
+
+        query.to_currency = "CNY".into();
+        let cached = historical_quote(&db, &source, &query).await.unwrap();
+        assert_eq!(cached.to_currency, "CNY");
+        assert_eq!(cached.rate, 7.0);
+        assert_eq!(source.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(db.revision().unwrap(), revision);
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            before
+        );
+
+        let mut book = db.fx_book("CNY").unwrap();
+        book.checked_at = Utc::now().timestamp() - 3601;
+        db.save_fx_book(&book).unwrap();
+        let stale = db.export_sync_data().unwrap().content_hash().unwrap();
+        let stale_revision = db.revision().unwrap();
+        let fresh = historical_quote(&db, &source, &query).await.unwrap();
+        assert_eq!(fresh.rate, 7.8);
+        assert_eq!(source.calls.load(Ordering::SeqCst), 2);
+        let failed = Provider {
+            fail: true,
+            ..provider(1.0)
+        };
+        assert!(historical_quote(&db, &failed, &query).await.is_err());
+        assert_eq!(db.revision().unwrap(), stale_revision);
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            stale
         );
     }
     #[test]

@@ -69,13 +69,16 @@ export function Advisor({
 
   useEffect(() => {
     if (!active || running || !pendingQuestion) return;
+    historyRequest.invalidate();
+    setHistoryBusy("");
+    setHistoryError("");
     setQuestion(pendingQuestion.question);
     setTurns([]);
     setDraft(null);
     setStopped(false);
     setError("");
     onQuestionAccepted?.(pendingQuestion.id);
-  }, [active, running, pendingQuestion, onQuestionAccepted]);
+  }, [active, running, pendingQuestion, onQuestionAccepted, historyRequest]);
 
   useEffect(() => {
     let mounted = true;

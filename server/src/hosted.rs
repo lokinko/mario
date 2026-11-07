@@ -215,6 +215,7 @@ async fn authenticate(
                     && ((request.method() == axum::http::Method::DELETE
                         && !path[14..].contains('/'))
                         || path.ends_with("/amount")
+                        || path.ends_with("/option-price")
                         || path.ends_with("/trade-repair")
                         || path.ends_with("/corporate-actions")))
             {

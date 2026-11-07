@@ -137,32 +137,45 @@ function App() {
       noticeTimer.current = window.setTimeout(() => setNotice(""), 2400);
   };
 
+  const changeView = useCallback(
+    (nextView: View) => {
+      if (nextView === currentView.current) return true;
+      if (
+        currentView.current !== "advisor" &&
+        hasDraft() &&
+        !window.confirm("有未保存的修改，离开当前页面会丢弃输入。确认离开？")
+      )
+        return false;
+      clearDraft();
+      // History navigation may deliver both popstate and hashchange before render.
+      currentView.current = nextView;
+      setView(nextView);
+      if (nextView === "advisor") setAdvisorVisited(true);
+      setMobileNavOpen(false);
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return true;
+    },
+    [clearDraft, hasDraft],
+  );
+
   const navigate = (nextView: View, section?: FactsSection) => {
-    clearDraft();
+    const changed = currentView.current !== nextView;
+    if (!changeView(nextView)) return false;
     if (section) setFactsSection(section);
-    setView(nextView);
-    if (nextView === "advisor") setAdvisorVisited(true);
     setMobileNavOpen(false);
-    if (currentView.current !== nextView)
-      window.history.pushState(null, "", `#${nextView}`);
-    window.scrollTo({ top: 0, behavior: "auto" });
+    if (changed) window.history.pushState(null, "", `#${nextView}`);
+    return true;
   };
 
   const startAnalysis = (question: string) => {
+    if (!navigate("advisor")) return;
     setPendingQuestion({ id: ++questionId.current, question });
-    navigate("advisor");
   };
 
   useEffect(() => {
     const followLocation = () => {
-      const next = initialView();
-      if (next !== currentView.current) {
-        clearDraft();
-        setView(next);
-        if (next === "advisor") setAdvisorVisited(true);
-        setMobileNavOpen(false);
-        window.scrollTo({ top: 0, behavior: "auto" });
-      }
+      if (!changeView(initialView()))
+        window.history.replaceState(null, "", `#${currentView.current}`);
     };
     window.addEventListener("hashchange", followLocation);
     window.addEventListener("popstate", followLocation);
@@ -170,7 +183,7 @@ function App() {
       window.removeEventListener("hashchange", followLocation);
       window.removeEventListener("popstate", followLocation);
     };
-  }, []);
+  }, [changeView]);
 
   if (loading) {
     return <ApplicationSkeleton />;

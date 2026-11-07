@@ -39,7 +39,6 @@ export function requestPolicy(path: string) {
     ...(resource === "/analysis/stream" ? { idleTimeoutMs: 60000 } : {}),
     acceptsRevision: (dataWrite: boolean) =>
       resource === "/snapshot" ||
-      resource === "/fx-settings" ||
       (dataWrite && !["/analysis", "/analysis/stream"].includes(resource)),
   };
 }

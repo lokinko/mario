@@ -465,7 +465,7 @@ export function BuyWatch({
             ))}
           </div>
           {currentRows.length > 0 && (
-            <div className="watch-toolbar">
+            <div className="watch-toolbar" data-presentation>
               <div className="watch-search">
                 <Input
                   prefix={<Search size={16} />}
@@ -643,6 +643,7 @@ export function BuyWatch({
           busy={busy}
           error={error}
           onClose={() => setExpanded(null)}
+          onRetry={() => void refresh()}
           onGridEdited={onEdited}
           onGridClosed={onSaved}
           onGridSave={(plan) =>

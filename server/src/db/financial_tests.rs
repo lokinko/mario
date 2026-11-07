@@ -562,6 +562,77 @@ fn decimal_source_and_daily_history_keep_cents_below_float_resolution_and_restor
 }
 
 #[test]
+fn quote_refresh_preserves_manual_exact_quantity_and_restore_but_accepts_explicit_changes() {
+    let db = Database::test();
+    let quantity = "1000000000.00000001";
+    let input: HoldingInput = serde_json::from_value(serde_json::json!({
+        "symbol":"SPLIT", "name":"精确手工股数", "assetClass":"股票",
+        "currency":"CNY", "targetPct":100, "valuationDate":crate::models::market::today(),
+        "marketValue":100000000000000.0, "costBasis":100000000000000.0,
+        "exactValues":{
+            "priceStatus":"manual", "quantity":quantity, "costPrice":"100000",
+            "currentPrice":"100000", "marketValue":"100000000000000.001",
+            "costBasis":"100000000000000.001"
+        }
+    }))
+    .unwrap();
+    let initial = db.add_holding(&input).unwrap();
+    let id = initial.holdings[0].id.clone();
+    let projected_quantity = initial.holdings[0].quantity.unwrap();
+    assert_ne!(projected_quantity.to_string(), quantity);
+    let mut quote = split_quote();
+    quote.splits.clear();
+    quote.close = 100001.0;
+    quote.exact_close = Some("100001".into());
+    let refreshed = db
+        .apply_verified_holding_valuation(&id, projected_quantity, &quote)
+        .unwrap();
+    let amounts = &refreshed.accounting.as_ref().unwrap().holdings[&id].amounts;
+    assert_eq!(amounts.quantity.as_deref(), Some(quantity));
+    assert_eq!(amounts.cost_basis, "100000000000000.001");
+    assert_eq!(amounts.market_value, "100001000000000.00100001");
+    let history = db
+        .daily_history(&crate::models::daily::HistoryQuery::default())
+        .unwrap();
+    assert_eq!(
+        history.records[0].exact_total_assets.as_deref(),
+        Some("100001000000000.00100001")
+    );
+
+    let copy = Database::test();
+    copy.import_sync_data(&db.export_sync_data().unwrap())
+        .unwrap();
+    let restored = copy.snapshot().unwrap();
+    assert_eq!(
+        serde_json::to_value(&restored.accounting.as_ref().unwrap().holdings[&id].amounts).unwrap(),
+        serde_json::to_value(amounts).unwrap()
+    );
+    assert_eq!(
+        copy.daily_history(&crate::models::daily::HistoryQuery::default())
+            .unwrap()
+            .records[0]
+            .exact_total_assets,
+        history.records[0].exact_total_assets
+    );
+    let repeated = copy
+        .apply_verified_holding_valuation(&id, projected_quantity, &quote)
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&repeated.accounting.as_ref().unwrap().holdings[&id].amounts).unwrap(),
+        serde_json::to_value(amounts).unwrap()
+    );
+    // apply_quote runs after the float holdings projection is updated; retaining
+    // every stored quantity would incorrectly ignore this explicit change.
+    let changed = copy
+        .apply_verified_holding_valuation(&id, 2.0, &quote)
+        .unwrap();
+    let changed = &changed.accounting.as_ref().unwrap().holdings[&id].amounts;
+    assert_eq!(changed.quantity.as_deref(), Some("2"));
+    assert_eq!(changed.cost_basis, "200000");
+    assert_eq!(changed.market_value, "200002");
+}
+
+#[test]
 fn old_price_observation_is_metadata_not_a_rebalancing_gate() {
     let db = funded();
     let s = db

@@ -423,6 +423,110 @@ it("accepts an explicit question only when active", async () => {
   );
 });
 
+it.each(["success", "error"] as const)(
+  "keeps a new company question when an old history request later returns %s",
+  async (outcome) => {
+    let resolveHistory!: (analysis: StoredAnalysis) => void;
+    let rejectHistory!: (error: Error) => void;
+    vi.mocked(researchApi.getAnalysisHistory).mockResolvedValue([
+      {
+        id: "old-company",
+        question: "旧公司的历史问题",
+        createdAt: "2026-11-01T12:00:00Z",
+      },
+    ]);
+    vi.mocked(researchApi.getAnalysis).mockReturnValueOnce(
+      new Promise((resolve, reject) => {
+        resolveHistory = resolve;
+        rejectHistory = reject;
+      }),
+    );
+    const onQuestionAccepted = vi.fn();
+    const view = render(
+      <Advisor {...props} onQuestionAccepted={onQuestionAccepted} />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /旧公司的历史问题/ }),
+    );
+    expect(researchApi.getAnalysis).toHaveBeenCalledWith("old-company");
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+
+    view.rerender(
+      <Advisor
+        {...props}
+        active={false}
+        onQuestionAccepted={onQuestionAccepted}
+      />,
+    );
+    const pendingQuestion = {
+      id: 2,
+      question: "请结合我的真实交易讨论招商银行（600036.SS）。",
+    };
+    view.rerender(
+      <Advisor
+        {...props}
+        active
+        pendingQuestion={pendingQuestion}
+        onQuestionAccepted={onQuestionAccepted}
+      />,
+    );
+    expect(onQuestionAccepted).toHaveBeenCalledOnce();
+    expect(onQuestionAccepted).toHaveBeenCalledWith(pendingQuestion.id);
+    view.rerender(
+      <Advisor {...props} active onQuestionAccepted={onQuestionAccepted} />,
+    );
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(input.value).toBe(pendingQuestion.question);
+    expect(input.disabled).toBe(false);
+    expect(
+      (screen.getByRole("button", { name: "发送" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+
+    await act(async () => {
+      if (outcome === "success") {
+        resolveHistory({
+          id: "old-company",
+          question: "旧公司的历史问题",
+          answer: "旧公司的迟到历史答案",
+          createdAt: "2026-11-01T12:00:00Z",
+        });
+      } else {
+        rejectHistory(new Error("旧公司的迟到历史错误"));
+      }
+    });
+    expect(input.value).toBe(pendingQuestion.question);
+    expect(input.disabled).toBe(false);
+    expect(screen.queryByText("旧公司的迟到历史答案")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    const currentSettings = { ...analysisSettings, webSearch: false };
+    vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(
+      currentSettings,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await screen.findByText(result.answer);
+    expect(researchApi.previewAnalysis).toHaveBeenCalledWith({
+      ...currentSettings,
+      question: pendingQuestion.question,
+      previousTurn: undefined,
+    });
+    expect(researchApi.runAnalysis).toHaveBeenCalledWith(
+      {
+        ...currentSettings,
+        question: pendingQuestion.question,
+        previousTurn: undefined,
+        previewRevision: preview.contextRevision,
+      },
+      expect.any(Function),
+      expect.any(AbortSignal),
+    );
+    expect(researchApi.runAnalysis).toHaveBeenCalledOnce();
+  },
+);
+
 it("previews the actual selected payload without sending an analysis", async () => {
   vi.mocked(researchApi.previewAnalysis).mockResolvedValue({
     ...preview,

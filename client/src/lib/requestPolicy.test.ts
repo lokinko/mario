@@ -21,6 +21,10 @@ it("accepts only revisions corresponding to displayed data or completed ordinary
   expect(requestPolicy("/analysis").acceptsRevision(true)).toBe(false);
   expect(requestPolicy("/snapshot").acceptsRevision(false)).toBe(true);
   expect(requestPolicy("/fx-settings?refresh=1").acceptsRevision(false)).toBe(
+    false,
+  );
+  expect(requestPolicy("/fx-settings").acceptsRevision(true)).toBe(true);
+  expect(requestPolicy("/fx-settings/refresh").acceptsRevision(true)).toBe(
     true,
   );
   expect(requestPolicy("/holdings/a").acceptsRevision(true)).toBe(true);

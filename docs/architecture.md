@@ -128,7 +128,7 @@ flowchart TD
 
 | 模块 | 职责 |
 | --- | --- |
-| `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发 |
+| `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发；离开将卸载的编辑页前确认未保存草稿，取消历史跳转时恢复当前地址 |
 | `app/useApplicationData.ts` | 服务端数据生命周期：启动、快照与模型配置加载、自动同步、请求代次、草稿保护与远程更新提示 |
 | `app/navigation.ts` | 视图、导航分组与标签；研究看板是同源独立 dashboard，不在侧栏提供入口，也不增加 React 视图状态 |
 | `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿、公司查询输入和打开时的独立版本，`DividendCalendar` 拥有日历范围、日期选择、读取轮询与手动刷新；通过应用壳进入讨论 |
@@ -191,7 +191,7 @@ sequenceDiagram
 
 ### 6.3 行情与汇率
 
-`composition::MarketRuntime` 在进程启动时创建供应商并定时刷新公开行情；`application/prices.rs`、`fx.rs` 通过端口查询并在账号事务中写入估值与汇率来源。快照、版本与历史汇率的 GET 不触发刷新或写入；持仓编辑的外部查询在提交事务前完成，成交保存不依赖外部行情。
+`composition::MarketRuntime` 在进程启动时创建供应商并定时刷新公开行情；`application/prices.rs`、`fx.rs` 通过端口查询并在账号事务中写入估值与汇率来源。快照、版本与汇率的 GET 不触发账号刷新或写入；当日汇率查询只读复用正确目标币的有效缓存，未命中经端口查询请求币对。行情刷新保留手工持仓的持久精确股数，浮点数量仅用于与既有投影比较；成交管理数量继续由重放结果决定。持仓编辑的外部查询在提交事务前完成，成交保存不依赖外部行情。
 
 ### 股票与关联期权
 

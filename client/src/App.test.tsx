@@ -12,6 +12,7 @@ import App from "./App";
 import * as portfolioApi from "./api/portfolio";
 import * as settingsApi from "./api/settings";
 import * as researchApi from "./api/research";
+import * as watchApi from "./api/watch";
 import emptySnapshot from "./test/emptySnapshot.json";
 import { WebAccess } from "./features/account/WebAccess";
 import { setWebToken, webToken } from "./lib/webSession";
@@ -77,9 +78,13 @@ vi.mock("./features/account/ServerData", async () => {
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   window.location.hash = "cloud";
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 it("keeps exchange rates outside the main page and available across navigation", async () => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
@@ -218,6 +223,7 @@ it("offers retry when required local data fails to load", async () => {
 });
 
 it("opens on buy watch and preserves a question draft when returning from supporting pages", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   window.location.hash = "";
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
@@ -251,6 +257,7 @@ it("opens on buy watch and preserves a question draft when returning from suppor
     ),
   );
   expect(screen.getByDisplayValue("暂存的问题")).toBeTruthy();
+  expect(confirm).not.toHaveBeenCalled();
 });
 
 it("shows frequently used records in primary navigation", async () => {
@@ -520,4 +527,139 @@ it("opens the investment methodology editor directly from the sidebar without a 
   ).toBe("我的方法论");
   expect(window.location.hash).toBe("#methodology");
   load.mockRestore();
+});
+
+async function editMethodologyDraft() {
+  window.history.replaceState(null, "", "#methodology");
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
+    provider: "openai-responses",
+    baseUrl: "",
+    model: "test-model",
+    hasApiKey: true,
+  });
+  vi.spyOn(settingsApi, "getInvestmentMethodology").mockResolvedValue({
+    prompt: "已保存的方法论",
+    defaultPrompt: "范本",
+    maxLength: 4000,
+  });
+  render(<App />);
+  const input = await screen.findByLabelText("投资方法论正文");
+  fireEvent.change(input, { target: { value: "尚未保存的方法论草稿" } });
+  return input;
+}
+
+it("keeps a methodology draft when sidebar navigation is declined, then discards it only after confirmation", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const input = await editMethodologyDraft();
+  fireEvent.click(screen.getByRole("button", { name: "买点观察" }));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText("投资方法论正文")).toBe(input);
+  expect((input as HTMLTextAreaElement).value).toBe("尚未保存的方法论草稿");
+  expect(window.location.hash).toBe("#methodology");
+  confirm.mockReturnValue(true);
+  fireEvent.click(screen.getByRole("button", { name: "买点观察" }));
+  await screen.findByRole("heading", { name: "买点观察" });
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(window.location.hash).toBe("#watch");
+});
+
+it.each([false, true])(
+  "handles paired history events once when discarding a draft is %s",
+  async (accepted) => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(accepted);
+    await editMethodologyDraft();
+    window.history.replaceState(null, "", "#cloud");
+    fireEvent(window, new PopStateEvent("popstate"));
+    fireEvent(window, new HashChangeEvent("hashchange"));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(window.location.hash).toBe(accepted ? "#cloud" : "#methodology");
+    if (accepted) await screen.findByRole("button", { name: "测试恢复数据" });
+    else expect(screen.getByDisplayValue("尚未保存的方法论草稿")).toBeTruthy();
+  },
+);
+
+it("keeps the draft guard when selecting the current page again", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  await editMethodologyDraft();
+  fireEvent.click(screen.getByRole("button", { name: "投资方法论" }));
+  expect(confirm).not.toHaveBeenCalled();
+  expect(screen.getByDisplayValue("尚未保存的方法论草稿")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "买点观察" }));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(screen.getByDisplayValue("尚未保存的方法论草稿")).toBeTruthy();
+});
+
+it("preserves the income draft guard when a mobile tab changes only the facts section", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  window.history.replaceState(null, "", "#facts");
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
+    new Error("no model"),
+  );
+  render(<App />);
+  fireEvent.click(await screen.findByRole("tab", { name: "收入与支出" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: /月收入/ }), {
+    target: { value: "12345" },
+  });
+  const mobile = screen.getByRole("navigation", { name: "快捷导航" });
+  fireEvent.click(within(mobile).getByRole("button", { name: "存款" }));
+  expect(confirm).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("tab", { name: "收入与支出" }));
+  expect(
+    (screen.getByRole("spinbutton", { name: /月收入/ }) as HTMLInputElement)
+      .value,
+  ).toBe("12345");
+  fireEvent.click(screen.getByRole("button", { name: "投资方法论" }));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("heading", { name: "我的情况" })).toBeTruthy();
+});
+
+it("does not treat buy-watch search and sort changes as unsaved input", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  window.history.replaceState(null, "", "#watch");
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
+    new Error("no model"),
+  );
+  const emptyBoard = await watchApi.getWatchBoard();
+  vi.mocked(watchApi.getWatchBoard).mockResolvedValueOnce({
+    ...emptyBoard,
+    rows: [
+      {
+        entry: {
+          symbol: "600036.SS",
+          name: "招商银行",
+          thesis: "长期持有",
+          createdAt: "2026-11-01T00:00:00Z",
+          pinned: false,
+        },
+        latest: null,
+        checkedAt: null,
+        refreshFailed: false,
+        alert: false,
+        dividendPrices: [],
+      },
+    ],
+  });
+  render(<App />);
+  fireEvent.change(
+    await screen.findByRole("textbox", { name: "搜索观察公司" }),
+    { target: { value: "招商" } },
+  );
+  fireEvent.change(screen.getByRole("combobox", { name: "观察排序" }), {
+    target: { value: "name" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "投资方法论" }));
+  expect(confirm).not.toHaveBeenCalled();
+  await screen.findByRole("heading", { name: "投资方法论" });
 });

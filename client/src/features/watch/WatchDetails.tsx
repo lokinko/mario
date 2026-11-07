@@ -20,6 +20,7 @@ export function WatchDetails({
   onAsk,
   onEdit,
   onRemove,
+  onRetry,
 }: {
   row: WatchRow;
   snapshot: Snapshot;
@@ -33,6 +34,7 @@ export function WatchDetails({
   onAsk: () => void;
   onEdit: () => void;
   onRemove: () => void;
+  onRetry: () => void;
 }) {
   const { entry, latest } = row;
   const [editingGrid, setEditingGrid] = useState(false);
@@ -82,6 +84,25 @@ export function WatchDetails({
           />
         ) : (
           <>
+            {row.refreshFailed && (
+              <Callout
+                tone="warning"
+                action={
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={busy}
+                    onClick={onRetry}
+                  >
+                    重新检查数据
+                  </button>
+                }
+              >
+                {latest
+                  ? `本次来源读取失败，保留 ${latest.observedOn} 的观察结果。`
+                  : "本次来源读取失败，尚无可用的观察结果。"}
+              </Callout>
+            )}
             <WatchEvidence row={row} rules={rules}>
               <WatchGrid row={row} onEdit={() => setEditingGrid(true)} />
             </WatchEvidence>

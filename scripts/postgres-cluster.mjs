@@ -26,7 +26,10 @@ export function testPostgresBin() {
 
 export function run(command, args, env = {}, capture = false) {
   return new Promise((accept, reject) => {
-    const childEnv = { ...process.env, ...env };
+    const childEnv = { ...process.env };
+    // Only callers that created their own temporary API may select an external target.
+    delete childEnv.MARIO_FUNCTIONAL_BASE_URL; delete childEnv.MARIO_FUNCTIONAL_TOKEN;
+    Object.assign(childEnv, env);
     delete childEnv.PGSERVICE; delete childEnv.PGSERVICEFILE; delete childEnv.PGOPTIONS;
     const child = spawn(command, args, { cwd: root, env: childEnv, windowsHide: true, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit' });
     let output = '', error = '';

@@ -57,6 +57,75 @@ async function request(base,path,session,method='GET',body,expected=200,revision
   return text?(response.headers.get("content-type")?.includes("application/json")?JSON.parse(text):text):undefined;
 }
 async function register(base){return request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'test-password-0123456789'});}
+async function optionPriceReceipts(base, replica) {
+  // Dedicated tenants keep the main account's later empty-portfolio assertions intact.
+  const owner = await register(base), other = await register(base);
+  await request(base, '/snapshot', owner);
+  await request(base, '/snapshot', other);
+  const otherRevision = other.revision;
+  const stockRequest = {
+    requestId: randomUUID(),
+    newHolding: {name: '期权报价回执标的', symbol: '', assetClass: '股票', currency: 'CNY'},
+    kind: 'buy', occurredOn: '2026-01-01', sequence: 1,
+    quantity: '10', price: '10', grossAmount: '100', fees: '0', taxes: '0',
+    account: '期权回执账户', settlementMode: 'history',
+  };
+  const stock = await request(base, '/holding-trades', owner, 'POST', stockRequest);
+  const underlyingId = stock.holdingTrades.find(t => t.id === stockRequest.requestId).holdingId;
+  const opening = {
+    ...stockRequest, requestId: randomUUID(), occurredOn: '2026-01-02',
+    newHolding: {
+      name: '期权报价回执合约', symbol: '', assetClass: '期权', currency: 'CNY',
+      option: {
+        underlyingId, account: stockRequest.account, optionType: 'call', side: 'long',
+        strike: '10', expiresOn: '2026-02-01', multiplier: '100',
+      },
+    },
+    quantity: '1', price: '2', grossAmount: '200',
+  };
+  const opened = await request(base, '/holding-trades', owner, 'POST', opening);
+  const optionId = opened.holdingTrades.find(t => t.id === opening.requestId).holdingId;
+  const path = `/holdings/${optionId}/option-price`;
+  const quote = {
+    requestId: randomUUID(), expectedRevision: opened.holdingRevisions[optionId],
+    price: '1.25', observedOn: '2026-01-03',
+  };
+  const staleRevision = owner.revision;
+  const quoted = await request(base, path, owner, 'PUT', quote);
+  const committedRevision = owner.revision;
+  assert.notEqual(committedRevision, staleRevision);
+  assert.equal(quoted.accounting.holdings[optionId].currentPrice, '1.25');
+  assert.equal(quoted.accounting.holdings[optionId].marketValue, '125');
+  const committed = await request(base, '/data/export', owner);
+  const operations = committed.tables.find(t => t.name === 'financial_operations');
+  const operationIdIndex = operations.columns.indexOf('id');
+  assert.equal(operations.rows.filter(row => row[operationIdIndex]?.Text === `option.price:${quote.requestId}`).length, 1);
+
+  // The caller lost the successful response and retries its original request on another API instance.
+  const recovered = await request(replica, path, owner, 'PUT', quote, 200, staleRevision);
+  assert.deepEqual(recovered, quoted);
+  assert.equal(owner.revision, committedRevision, 'option quote replay must not advance the data revision');
+  const history = await request(replica, `/holdings/${optionId}/financial-history`, owner);
+  assert.equal(history.records.filter(record => record.kind === 'option.price').length, 1);
+  assert.deepEqual((await request(replica, '/data/export', owner)).tables, committed.tables,
+    'option quote replay must preserve receipts, journal, prices and daily observations');
+
+  await request(replica, path, owner, 'PUT', {...quote, price: '2'}, 409, staleRevision);
+  await request(replica, path, owner, 'PUT', {...quote, requestId: randomUUID()}, 409, staleRevision);
+  const resolved = await request(replica, '/financial-operations/resolve', other, 'POST', {
+    method: 'PUT', path: `/api${path}`, input: quote,
+  });
+  assert.deepEqual(resolved, {committed: false, snapshot: null}, 'another tenant cannot resolve the quote receipt');
+  await request(replica, path, other, 'PUT', quote, 409, '-1');
+  assert.deepEqual(await request(replica, `/holdings/${optionId}/financial-history`, other),
+    {records: [], quarantine: null});
+  assert.equal((await request(replica, '/snapshot', other)).holdings.length, 0);
+  assert.equal(other.revision, otherRevision, 'foreign receipt requests must leave the tenant unchanged');
+  assert.deepEqual((await request(replica, '/data/export', owner)).tables, committed.tables,
+    'rejected or foreign requests must not mutate the original option quote');
+  assert.equal(owner.revision, committedRevision);
+  console.log('PASS option quote HTTP receipts: stale replay across replicas, one journal entry, content conflicts and tenant isolation');
+}
 try{
   const base=await start({MARIO_BENCH_DIR:dashboard}), replica=await start();
   assert.deepEqual(await request(base,'/auth/openai/config'),{enabled:false});
@@ -176,6 +245,7 @@ try{
   const verifiedCash=await request(base,'/snapshot',a);
   await request(base,`/holdings/${id}/amount`,a,'PUT',{amount:'0',expectedRevision:verifiedCash.holdingRevisions[id],requestId:randomUUID()});
   console.log('PASS financial HTTP receipts: lost response, stale retry across replicas, nonce mismatch, tenant isolation and permanent correction journal');
+  await optionPriceReceipts(base, replica);
   const backup=await request(base,'/data/export',a);
   assert(!JSON.stringify(backup).includes('test-secret'));
   const c=await register(base);await request(base,'/snapshot',c);await request(base,'/daily-assets/ensure',c,'POST',{timezone:'UTC'});
