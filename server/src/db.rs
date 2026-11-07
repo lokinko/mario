@@ -34,6 +34,7 @@ mod reviews;
 mod secrets;
 mod settings;
 mod watch;
+mod watch_grid_migration;
 pub(crate) use public_dividends::PublicDividends;
 pub(crate) use public_watch::PublicWatch;
 pub(crate) use settings::model_key_binding;

@@ -930,6 +930,16 @@
     padding: 14px !important;
   }
 }
+.watch-grid-editor fieldset {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+}
+.watch-grid-editor legend {
+  padding: 0 6px;
+  font-size: 14px;
+}
 .watch-grid-inputs input {
   min-width: 68px;
   width: 100%;

@@ -9,19 +9,43 @@ export interface WatchEntry extends WatchInput {
   createdAt: string;
   pinned: boolean;
   gridPlan?: WatchGridPlan;
+  previousGridPlan?: {
+    buyBasis: "budget" | "remainingCash";
+    sellBasis: "totalBought" | "remainingShares";
+    levels: { yieldBps: number; buyBps: number; sellBps: number }[];
+  };
+}
+export interface WatchGridGenerator {
+  startYieldBps: number;
+  endYieldBps: number;
+  stepBps: number;
+  initialBuyShares: number;
+  initialSellShares: number;
+  buyGrowthBps: number;
+  sellGrowthBps: number;
 }
 export interface WatchGridPlan {
-  buyBasis: "budget" | "remainingCash";
-  sellBasis: "totalBought" | "remainingShares";
-  levels: { yieldBps: number; buyBps: number; sellBps: number }[];
+  budget: string;
+  generator?: WatchGridGenerator;
+  levels: { yieldBps: number; buyShares: number; sellShares: number }[];
 }
 export interface WatchGridProjection {
-  exitPrice: string | null;
-  levels: { yieldBps: number; price: string | null }[];
+  reboundYieldBps: number | null;
+  levels: {
+    yieldBps: number;
+    price: string | null;
+    buyAmount: string | null;
+    sellAmount: string | null;
+  }[];
   scenarios: {
     deepestYieldBps: number;
-    investedPct: string;
-    exitSharesPct: string;
+    investedAmount: string;
+    budgetGap: string;
+    soldShares: number;
+    remainingShares: number;
+    unfilledSellShares: number;
+    saleProceeds: string;
+    profit: string;
     budgetReturnPct: string;
     investedReturnPct: string;
   }[];

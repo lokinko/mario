@@ -189,19 +189,19 @@ try {
   assert.equal((await api(pinPath, "PUT", { pinned: false })).pinned, false);
   const gridPath = "/watch/600036.SS/grid";
   const grid = {
-    buyBasis: "budget",
-    sellBasis: "totalBought",
-    levels: [{ yieldBps: 500, buyBps: 2000, sellBps: 0 }, { yieldBps: 600, buyBps: 3000, sellBps: 0 }],
+    budget: "10000",
+    levels: [{ yieldBps: 375, buyShares: 0, sellShares: 50 }, { yieldBps: 500, buyShares: 100, sellShares: 50 }, { yieldBps: 650, buyShares: 200, sellShares: 0 }],
   };
-  await api(gridPath, "PUT", { ...grid, levels: [{ yieldBps: 600, buyBps: 11000, sellBps: 0 }] }, 400);
+  await api(gridPath, "PUT", { ...grid, budget: "0" }, 400);
+  await api(gridPath, "PUT", { ...grid, levels: [{ yieldBps: 600, buyShares: 1.5, sellShares: 0 }] }, 422);
   assert.equal((await api("/watch")).rows[0].gridProjection, null);
   const staleGrid = await fetch(base + gridPath, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "If-Match": "-1" }, body: JSON.stringify(grid) });
   assert.equal(staleGrid.status, 409);
   const { entry: gridEntry, gridProjection } = (await api(gridPath, "PUT", grid)).rows[0];
   assert.deepEqual(gridEntry.gridPlan, grid);
-  assert.equal(gridProjection.exitPrice, null);
-  assert.equal(gridProjection.scenarios[1].budgetReturnPct, "20.0000");
-  assert.equal(gridProjection.scenarios[1].investedReturnPct, "40.0000");
+  assert.equal(gridProjection.reboundYieldBps, 375);
+  assert.equal(gridProjection.levels[0].price, null);
+  assert.deepEqual(gridProjection.scenarios, []);
   assert.deepEqual((await api("/watch")).rows[0].entry.gridPlan, grid);
   const existingWatch = (await api("/watch")).rows[0].entry;
   const personalCalendar = await api("/watch/dividend-calendar?scope=favorites");

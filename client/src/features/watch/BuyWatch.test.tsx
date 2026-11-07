@@ -614,14 +614,16 @@ it("keeps the saved pin state when the write fails and sends only editable field
   );
 });
 
-it("saves an explicit per-company grid, keeps invalid input and displays both return bases", async () => {
+it("saves budget and share quantities, keeps failed drafts and displays both return bases", async () => {
   vi.mocked(api.getWatchBoard).mockResolvedValue({ ...empty, rows: [row] });
   const grid: api.WatchGridPlan = {
-    buyBasis: "budget",
-    sellBasis: "totalBought",
+    budget: "10000",
     levels: [
-      { yieldBps: 470, buyBps: 0, sellBps: 3000 },
-      { yieldBps: 550, buyBps: 3000, sellBps: 0 },
+      { yieldBps: 400, buyShares: 0, sellShares: 0 },
+      { yieldBps: 450, buyShares: 0, sellShares: 30 },
+      { yieldBps: 500, buyShares: 0, sellShares: 0 },
+      { yieldBps: 550, buyShares: 100, sellShares: 0 },
+      { yieldBps: 600, buyShares: 0, sellShares: 0 },
     ],
   };
   vi.mocked(api.saveWatchGrid)
@@ -633,18 +635,25 @@ it("saves an explicit per-company grid, keeps invalid input and displays both re
           ...row,
           entry: { ...row.entry, gridPlan: grid },
           gridProjection: {
-            exitPrice: "125.0000",
-            levels: [
-              { yieldBps: 470, price: "106.3830" },
-              { yieldBps: 550, price: "90.9091" },
-            ],
+            reboundYieldBps: 400,
+            levels: grid.levels.map((l) => ({
+              yieldBps: l.yieldBps,
+              price: "90.9091",
+              buyAmount: "9090.91",
+              sellAmount: "0.00",
+            })),
             scenarios: [
               {
                 deepestYieldBps: 550,
-                investedPct: "30.0000",
-                exitSharesPct: "70.0000",
-                budgetReturnPct: "9.4069",
-                investedReturnPct: "31.3564",
+                investedAmount: "9090.91",
+                budgetGap: "909.09",
+                soldShares: 30,
+                remainingShares: 70,
+                unfilledSellShares: 0,
+                saleProceeds: "3333.33",
+                profit: "2992.42",
+                budgetReturnPct: "29.9242",
+                investedReturnPct: "32.9167",
               },
             ],
           },
@@ -658,27 +667,31 @@ it("saves an explicit per-company grid, keeps invalid input and displays both re
     ).getByRole("button", { name: /^测试公司/ }),
   );
   fireEvent.click(screen.getByRole("button", { name: "设置网格方案" }));
-  fireEvent.change(screen.getByLabelText("添加股息率档位"), {
-    target: { value: "470" },
+  fireEvent.change(screen.getByLabelText("标的配置金额（元）"), {
+    target: { value: "10000" },
   });
-  fireEvent.change(screen.getByLabelText("4.7% 反弹减仓比例"), {
+  fireEvent.change(screen.getByLabelText("4.5% 上涨卖出股数"), {
     target: { value: "30" },
   });
-  fireEvent.change(screen.getByLabelText("5.5% 下跌投入比例"), {
-    target: { value: "30" },
+  fireEvent.change(screen.getByLabelText("5.5% 下跌买入股数"), {
+    target: { value: "100" },
   });
   fireEvent.click(screen.getByRole("button", { name: "保存并测算" }));
   await screen.findByText(/暂时无法保存网格/);
   expect(
-    (screen.getByLabelText("5.5% 下跌投入比例") as HTMLInputElement).value,
-  ).toBe("30");
+    (screen.getByLabelText("5.5% 下跌买入股数") as HTMLInputElement).value,
+  ).toBe("100");
+  expect(
+    (screen.getByLabelText("标的配置金额（元）") as HTMLInputElement).value,
+  ).toBe("10000");
   fireEvent.click(screen.getByRole("button", { name: "保存并测算" }));
   const result = await screen.findByRole("table", {
-    name: "跌到各档后回到 4.0% 的价差测算",
+    name: "跌到各档后回到 4% 的价差测算",
   });
   expect(api.saveWatchGrid).toHaveBeenLastCalledWith(row.entry.symbol, grid);
-  expect(within(result).getByText("+31.36%")).toBeTruthy();
-  expect(within(result).getByText("+9.41%")).toBeTruthy();
+  expect(within(result).getByText("+32.92%")).toBeTruthy();
+  expect(within(result).getByText("+29.92%")).toBeTruthy();
+  expect(within(result).getByText("70 股")).toBeTruthy();
 });
 
 it("shows removal failures inside the company drawer and preserves the company", async () => {

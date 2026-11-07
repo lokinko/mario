@@ -4,128 +4,157 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-const EXIT_YIELD: u16 = 400;
-const MAX_YIELD: u16 = 600;
-const FULL: u32 = 10_000;
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum GridBuyBasis {
-    Budget,
-    RemainingCash,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum GridSellBasis {
-    TotalBought,
-    RemainingShares,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GridLevel {
     pub yield_bps: u16,
-    pub buy_bps: u16,
-    pub sell_bps: u16,
+    pub buy_shares: u32,
+    pub sell_shares: u32,
+}
+
+/// Generation settings are a draft aid; explicit levels are the saved instructions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GridGenerator {
+    pub start_yield_bps: u16,
+    pub end_yield_bps: u16,
+    pub step_bps: u16,
+    pub initial_buy_shares: u32,
+    pub initial_sell_shares: u32,
+    pub buy_growth_bps: i32,
+    pub sell_growth_bps: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GridPlan {
-    pub buy_basis: GridBuyBasis,
-    pub sell_basis: GridSellBasis,
+    pub budget: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generator: Option<GridGenerator>,
     pub levels: Vec<GridLevel>,
 }
 
 impl GridPlan {
     pub fn validate(&self) -> AppResult<()> {
         let invalid = |message: &str| AppError::Validation(message.into());
+        if Decimal::from_str_exact(&self.budget)
+            .ok()
+            .is_none_or(|budget| {
+                budget <= Decimal::ZERO
+                    || budget > Decimal::from(1_000_000_000_000_u64)
+                    || budget.scale() > 2
+            })
+        {
+            return Err(invalid(
+                "请填写大于 0、最多两位小数且不超过一万亿元的配置金额",
+            ));
+        }
+        if self.levels.is_empty() || self.levels.len() > 100 {
+            return Err(invalid("请设置 1 至 100 个网格档位"));
+        }
         let mut yields = BTreeSet::new();
-        let mut buy = 0;
-        let mut sell = 0;
         for level in &self.levels {
-            if !(EXIT_YIELD..=MAX_YIELD).contains(&level.yield_bps)
-                || level.yield_bps % 10 != 0
-                || !yields.insert(level.yield_bps)
+            if !(1..=10_000).contains(&level.yield_bps) || !yields.insert(level.yield_bps) {
+                return Err(invalid("股息率须为 0.01% 至 100% 内不重复的档位"));
+            }
+            if level.buy_shares > 1_000_000_000 || level.sell_shares > 1_000_000_000 {
+                return Err(invalid("每档买卖股数须为 0 至 10 亿之间的整数"));
+            }
+        }
+        if !self.levels.iter().any(|level| level.buy_shares > 0) {
+            return Err(invalid("至少填写一档买入股数"));
+        }
+        if let Some(g) = &self.generator {
+            if g.start_yield_bps == 0
+                || g.end_yield_bps > 10_000
+                || g.start_yield_bps >= g.end_yield_bps
+                || g.step_bps == 0
+                || (g.end_yield_bps - g.start_yield_bps) % g.step_bps != 0
+                || (g.end_yield_bps - g.start_yield_bps) / g.step_bps >= 100
+                || g.initial_buy_shares > 1_000_000_000
+                || g.initial_sell_shares > 1_000_000_000
+                || !(-10_000..=100_000).contains(&g.buy_growth_bps)
+                || !(-10_000..=100_000).contains(&g.sell_growth_bps)
             {
-                return Err(invalid("档位须为 4.0% 至 6.0% 内不重复的 0.1% 刻度"));
+                return Err(invalid(
+                    "请检查网格范围、间距、初始股数及递增比例（-100% 至 1000%）",
+                ));
             }
-            if u32::from(level.buy_bps) > FULL || u32::from(level.sell_bps) > FULL {
-                return Err(invalid("每档买入和卖出比例须在 0% 至 100% 之间"));
-            }
-            if [EXIT_YIELD, MAX_YIELD].contains(&level.yield_bps) && level.sell_bps != 0 {
-                return Err(invalid("中途减仓档位须高于 4.0% 且低于 6.0%"));
-            }
-            buy += u32::from(level.buy_bps);
-            sell += u32::from(level.sell_bps);
-        }
-        if buy == 0 {
-            return Err(invalid("至少填写一档买入比例"));
-        }
-        if self.buy_basis == GridBuyBasis::Budget && buy > FULL {
-            return Err(invalid("买入比例合计不能超过计划资金的 100%"));
-        }
-        if self.sell_basis == GridSellBasis::TotalBought && sell > FULL {
-            return Err(invalid("中途减仓比例合计不能超过本轮买入股数的 100%"));
         }
         Ok(())
     }
 
     pub fn project(&self, observation: Option<&Observation>) -> GridProjection {
+        self.project_with_dividend(observation.and_then(positive_ttm_dividend))
+    }
+
+    fn project_with_dividend(&self, dividend: Option<Decimal>) -> GridProjection {
         let mut levels: Vec<_> = self.levels.iter().collect();
         levels.sort_unstable_by_key(|level| level.yield_bps);
-        let dividend = observation.and_then(positive_ttm_dividend);
-        let price = |yield_bps: u16| {
-            dividend?
-                .checked_mul(Decimal::from(FULL))?
-                .checked_div(Decimal::from(yield_bps))
-                .map(|price| format!("{price:.4}"))
-        };
+        let prices: Option<Vec<_>> = dividend.and_then(|d| {
+            levels
+                .iter()
+                .map(|level| {
+                    d.checked_div(Decimal::from(level.yield_bps))?
+                        .checked_mul(Decimal::from(10_000))
+                        // Bound subsequent money operations even for malformed external data.
+                        .filter(|p| {
+                            *p > Decimal::ZERO && *p <= Decimal::from(1_000_000_000_000_u64)
+                        })
+                })
+                .collect()
+        });
+        let budget = Decimal::from_str_exact(&self.budget).unwrap_or_default();
         let mut invested = Decimal::ZERO;
-        // Share units are normalized by one fixed dividend. This cancels the
-        // dividend in scenario returns and never represents ledger quantities.
-        let mut bought = Decimal::ZERO;
+        let mut bought = 0_u64;
         let mut scenarios = Vec::new();
-        for (index, level) in levels.iter().enumerate() {
-            let available = match self.buy_basis {
-                GridBuyBasis::Budget => Decimal::ONE,
-                GridBuyBasis::RemainingCash => Decimal::ONE - invested,
-            };
-            let investment = available * fraction(level.buy_bps);
-            invested += investment;
-            bought += investment * Decimal::from(level.yield_bps);
-            if invested.is_zero() || (level.buy_bps == 0 && level.sell_bps == 0) {
-                continue;
+        if let Some(prices) = &prices {
+            for (index, level) in levels.iter().enumerate() {
+                invested += prices[index] * Decimal::from(level.buy_shares);
+                bought += u64::from(level.buy_shares);
+                if bought == 0 {
+                    continue;
+                }
+                let mut remaining = bought;
+                let mut proceeds = Decimal::ZERO;
+                let mut unfilled = 0_u64;
+                for sell_index in (0..index).rev() {
+                    let requested = u64::from(levels[sell_index].sell_shares);
+                    let units = requested.min(remaining);
+                    proceeds += prices[sell_index] * Decimal::from(units);
+                    remaining -= units;
+                    unfilled += requested - units;
+                }
+                // Unsold shares are valued at the rebound endpoint, never auto-liquidated.
+                let profit = proceeds + prices[0] * Decimal::from(remaining) - invested;
+                scenarios.push(GridScenario {
+                    deepest_yield_bps: level.yield_bps,
+                    invested_amount: money(invested),
+                    budget_gap: money(budget - invested),
+                    sold_shares: bought - remaining,
+                    remaining_shares: remaining,
+                    unfilled_sell_shares: unfilled,
+                    sale_proceeds: money(proceeds),
+                    profit: money(profit),
+                    budget_return_pct: percent(profit / budget),
+                    invested_return_pct: percent(profit / invested),
+                });
             }
-            let mut remaining = bought;
-            let mut proceeds = Decimal::ZERO;
-            for sell in levels[..index].iter().rev() {
-                let base = match self.sell_basis {
-                    GridSellBasis::TotalBought => bought,
-                    GridSellBasis::RemainingShares => remaining,
-                };
-                let units = (base * fraction(sell.sell_bps)).min(remaining);
-                proceeds += units / Decimal::from(sell.yield_bps);
-                remaining -= units;
-            }
-            proceeds += remaining / Decimal::from(EXIT_YIELD);
-            let profit = proceeds - invested;
-            scenarios.push(GridScenario {
-                deepest_yield_bps: level.yield_bps,
-                invested_pct: percent(invested),
-                exit_shares_pct: percent(remaining / bought),
-                budget_return_pct: percent(profit),
-                invested_return_pct: percent(profit / invested),
-            });
         }
         GridProjection {
-            exit_price: price(EXIT_YIELD),
+            rebound_yield_bps: levels.first().map(|level| level.yield_bps),
             levels: levels
-                .into_iter()
-                .map(|level| GridPrice {
+                .iter()
+                .enumerate()
+                .map(|(index, level)| GridPrice {
                     yield_bps: level.yield_bps,
-                    price: price(level.yield_bps),
+                    price: prices.as_ref().map(|p| format!("{:.4}", p[index])),
+                    buy_amount: prices
+                        .as_ref()
+                        .map(|p| money(p[index] * Decimal::from(level.buy_shares))),
+                    sell_amount: prices
+                        .as_ref()
+                        .map(|p| money(p[index] * Decimal::from(level.sell_shares))),
                 })
                 .collect(),
             scenarios,
@@ -133,10 +162,9 @@ impl GridPlan {
     }
 }
 
-fn fraction(bps: u16) -> Decimal {
-    Decimal::from(bps) / Decimal::from(FULL)
+fn money(value: Decimal) -> String {
+    format!("{:.2}", value.round_dp(2))
 }
-
 fn percent(value: Decimal) -> String {
     format!("{:.4}", (value * Decimal::ONE_HUNDRED).round_dp(4))
 }
@@ -144,24 +172,29 @@ fn percent(value: Decimal) -> String {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GridProjection {
-    pub exit_price: Option<String>,
+    pub rebound_yield_bps: Option<u16>,
     pub levels: Vec<GridPrice>,
     pub scenarios: Vec<GridScenario>,
 }
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GridPrice {
     pub yield_bps: u16,
     pub price: Option<String>,
+    pub buy_amount: Option<String>,
+    pub sell_amount: Option<String>,
 }
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GridScenario {
     pub deepest_yield_bps: u16,
-    pub invested_pct: String,
-    pub exit_shares_pct: String,
+    pub invested_amount: String,
+    pub budget_gap: String,
+    pub sold_shares: u64,
+    pub remaining_shares: u64,
+    pub unfilled_sell_shares: u64,
+    pub sale_proceeds: String,
+    pub profit: String,
     pub budget_return_pct: String,
     pub invested_return_pct: String,
 }
@@ -169,78 +202,111 @@ pub struct GridScenario {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn level(yield_bps: u16, buy_bps: u16, sell_bps: u16) -> GridLevel {
-        GridLevel {
-            yield_bps,
-            buy_bps,
-            sell_bps,
+    fn plan() -> GridPlan {
+        GridPlan {
+            budget: "10000".into(),
+            generator: None,
+            levels: vec![
+                GridLevel {
+                    yield_bps: 400,
+                    buy_shares: 0,
+                    sell_shares: 50,
+                },
+                GridLevel {
+                    yield_bps: 500,
+                    buy_shares: 100,
+                    sell_shares: 50,
+                },
+                GridLevel {
+                    yield_bps: 625,
+                    buy_shares: 200,
+                    sell_shares: 0,
+                },
+            ],
         }
     }
-
     #[test]
-    fn models_partial_and_full_rebounds_with_interim_sales() {
-        let plan = GridPlan {
-            buy_basis: GridBuyBasis::Budget,
-            sell_basis: GridSellBasis::TotalBought,
-            levels: vec![
-                level(600, 5000, 0),
-                level(550, 3000, 0),
-                level(500, 2000, 2000),
-                level(450, 0, 3000),
-            ],
-        };
+    fn computes_explicit_shares_budget_and_unsold_value_without_forced_exit() {
+        let plan = plan();
         plan.validate().unwrap();
-        let result = plan.project(None);
-        assert_eq!(result.exit_price, None);
+        let result = plan.project_with_dividend(Some(Decimal::from(5)));
+        assert_eq!(result.levels[2].buy_amount.as_deref(), Some("16000.00"));
+        let partial = &result.scenarios[0];
+        assert_eq!(partial.invested_amount, "10000.00");
+        assert_eq!(partial.sold_shares, 50);
+        assert_eq!(partial.remaining_shares, 50);
+        assert_eq!(partial.profit, "2500.00");
+        let full = &result.scenarios[1];
+        assert_eq!(full.invested_amount, "26000.00");
+        assert_eq!(full.budget_gap, "-16000.00");
+        assert_eq!(full.sold_shares, 100);
+        assert_eq!(full.remaining_shares, 200);
+        assert_eq!(full.sale_proceeds, "11250.00");
+        assert_eq!(full.profit, "10250.00");
+        assert_eq!(full.budget_return_pct, "102.5000");
+        assert_eq!(full.invested_return_pct, "39.4231");
+    }
+    #[test]
+    fn reports_sell_shortfall_and_keeps_quantities_without_dividend() {
+        let mut plan = plan();
+        plan.levels[0].sell_shares = 500;
+        let result = plan.project_with_dividend(Some(Decimal::from(5)));
+        assert_eq!(result.scenarios[0].unfilled_sell_shares, 400);
+        assert_eq!(result.scenarios[0].remaining_shares, 0);
+        let missing = plan.project(None);
+        assert!(missing.scenarios.is_empty());
+        assert_eq!(missing.levels.len(), 3);
+        assert!(missing
+            .levels
+            .iter()
+            .all(|p| p.price.is_none() && p.buy_amount.is_none()));
+    }
+    #[test]
+    fn deeper_touch_without_new_buy_can_cross_another_sell_level() {
+        let mut p = plan();
+        p.levels.push(GridLevel {
+            yield_bps: 700,
+            buy_shares: 0,
+            sell_shares: 0,
+        });
+        p.levels[2].sell_shares = 25;
+        let result = p.project_with_dividend(Some(Decimal::from(5)));
         assert_eq!(result.scenarios.len(), 3);
-        let first = &result.scenarios[0];
-        assert_eq!(first.deepest_yield_bps, 500);
-        assert_eq!(first.invested_pct, "20.0000");
-        assert_eq!(first.exit_shares_pct, "70.0000");
-        assert_eq!(first.budget_return_pct, "4.1667");
-        assert_eq!(first.invested_return_pct, "20.8333");
-        let full = &result.scenarios[2];
-        assert_eq!(full.invested_pct, "100.0000");
-        assert_eq!(full.exit_shares_pct, "50.0000");
-        assert_eq!(full.budget_return_pct, "30.8917");
+        let deepest = result.scenarios.last().unwrap();
+        assert_eq!(deepest.invested_amount, "26000.00");
+        assert_eq!(deepest.sold_shares, 125);
+        assert_eq!(deepest.remaining_shares, 175);
+        assert_eq!(deepest.sale_proceeds, "13250.00");
     }
 
     #[test]
-    fn remaining_cash_and_share_percentages_apply_to_a_shrinking_base() {
-        let plan = GridPlan {
-            buy_basis: GridBuyBasis::RemainingCash,
-            sell_basis: GridSellBasis::RemainingShares,
-            levels: vec![
-                level(450, 0, 5000),
-                level(500, 5000, 5000),
-                level(600, 5000, 0),
-            ],
-        };
-        plan.validate().unwrap();
-        let result = plan.project(None);
-        let full = result.scenarios.last().unwrap();
-        assert_eq!(full.invested_pct, "75.0000");
-        assert_eq!(full.exit_shares_pct, "25.0000");
-        assert_eq!(full.budget_return_pct, "12.2222");
-        assert_eq!(full.invested_return_pct, "16.2963");
-    }
-
-    #[test]
-    fn prevents_overallocation_duplicate_levels_and_overriding_liquidation() {
-        for levels in [
-            vec![level(500, 5001, 0), level(600, 5000, 0)],
-            vec![level(500, 2000, 1000), level(500, 3000, 0)],
-            vec![level(400, 2000, 1000)],
-            vec![level(500, 1000, 4001), level(550, 1000, 6000)],
-            vec![level(500, 0, 5000)],
-        ] {
-            let plan = GridPlan {
-                buy_basis: GridBuyBasis::Budget,
-                sell_basis: GridSellBasis::TotalBought,
-                levels,
-            };
-            assert!(plan.validate().is_err());
+    fn validates_budget_shares_and_custom_yield_ranges() {
+        let mut p = plan();
+        p.levels[2].yield_bps = 731;
+        assert!(p.validate().is_ok());
+        for budget in ["0", "-1", "NaN", "1.001", "1000000000001"] {
+            let mut invalid = p.clone();
+            invalid.budget = budget.into();
+            assert!(invalid.validate().is_err());
         }
+        p.levels[2].yield_bps = 500;
+        assert!(p.validate().is_err());
+        p.levels[2].yield_bps = 0;
+        assert!(p.validate().is_err());
+        assert!(serde_json::from_str::<GridLevel>(
+            r#"{"yieldBps":500,"buyShares":1.5,"sellShares":0}"#
+        )
+        .is_err());
+        let mut p = plan();
+        p.generator = Some(GridGenerator {
+            start_yield_bps: 400,
+            end_yield_bps: 600,
+            step_bps: 30,
+            initial_buy_shares: 100,
+            initial_sell_shares: 50,
+            buy_growth_bps: 0,
+            sell_growth_bps: 0,
+        });
+        assert!(p.validate().is_err());
     }
 }
