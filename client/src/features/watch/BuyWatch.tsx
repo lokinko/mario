@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Input, Tag } from "antd";
+import { Button, Input } from "antd";
 import {
   Plus,
   RefreshCw,
@@ -7,7 +7,6 @@ import {
   List,
   LayoutGrid,
   SlidersHorizontal,
-  ArrowUpRight,
 } from "lucide-react";
 import {
   getWatchBoard,
@@ -209,13 +208,9 @@ export function BuyWatch({
       />
       <section className="panel watch-intro">
         <div className="watch-rule-strip">
-          <span>① TTM 税前股息 ≥{minYield}%</span>
-          <span>② 日线下轨 ±{tolerance}%</span>
-          <span>③ 周线中轨及以下</span>
-          <small>
-            三项同时满足 <ArrowUpRight size={14} /> 进入关注区间
-          </small>
-          <Tag variant="filled">日线 + 周线 · 双重观察</Tag>
+          <span className="yield">① TTM 税前股息 ≥{minYield}%</span>
+          <span className="daily">② 日线下轨 ±{tolerance}%</span>
+          <span className="weekly">③ 周线中轨及以下</span>
         </div>
         <details className="watch-method">
           <summary>计算口径与检查时间</summary>

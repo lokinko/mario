@@ -53,27 +53,29 @@
   gap: 8px;
   font-size: 13px;
 }
-.watch-rule-strip > .ant-tag {
-  margin: 0 0 0 auto;
-}
 .watch-rule-strip > span {
+  --rule: var(--accent);
+  --rule-tint: var(--accent-tint);
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: 4px 10px;
-  background: var(--surface-raised);
-  color: var(--text-1);
-  border: 1px solid var(--line);
+  padding: 4px 12px;
+  background: var(--rule-tint);
+  color: var(--rule);
+  border: 1px solid color-mix(in srgb, var(--rule) 45%, transparent);
   border-radius: 999px;
+  font-weight: 500;
 }
-.watch-rule-strip > span > svg {
-  color: var(--brand);
+.watch-rule-strip > .yield {
+  --rule: var(--warning);
+  --rule-tint: var(--warning-tint);
 }
-.watch-rule-strip small {
-  color: var(--text-3);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+.watch-rule-strip > .daily {
+  --rule: var(--info);
+  --rule-tint: var(--info-tint);
+}
+.watch-rule-strip > .weekly {
+  --rule: var(--success);
+  --rule-tint: var(--success-tint);
 }
 .watch-method {
   margin-top: 12px;
