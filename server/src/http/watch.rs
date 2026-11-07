@@ -199,7 +199,15 @@ mod tests {
                 .iter()
                 .filter(|r| !r["latest"].is_null())
                 .count(),
-            6
+            state
+                .watch_catalog
+                .board()
+                .unwrap()
+                .catalog
+                .industry("banks")
+                .unwrap()
+                .companies
+                .len()
         );
         assert_eq!(state.db.revision().unwrap(), revision);
         assert!(state.db.watch_entries().unwrap().is_empty());

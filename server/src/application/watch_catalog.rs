@@ -361,6 +361,15 @@ pub(crate) mod tests {
         }
     }
 
+    fn banks() -> usize {
+        Catalog::bundled()
+            .unwrap()
+            .industry("banks")
+            .unwrap()
+            .companies
+            .len()
+    }
+
     fn service(source: Arc<Source>) -> Arc<WatchCatalogService> {
         Arc::new(WatchCatalogService::new(
             Arc::new(PublicWatch::test()),
@@ -470,8 +479,8 @@ pub(crate) mod tests {
         assert_eq!(source.prices.load(Ordering::SeqCst), 0);
         let day = market_fixture().1;
         let board = service.refresh_on(Some("banks"), false, day).await.unwrap();
-        assert_eq!(source.prices.load(Ordering::SeqCst), 6);
-        for row in &board.rows[..6] {
+        assert_eq!(source.prices.load(Ordering::SeqCst), banks());
+        for row in &board.rows[..banks()] {
             let observation = row.snapshot.latest.as_ref().unwrap();
             assert_eq!(observation.status, WatchStatus::Attention);
             assert_eq!(observation.yield_pct, Some(5.0));
@@ -486,7 +495,9 @@ pub(crate) mod tests {
             );
             assert_eq!(observation.sources.len(), 2);
         }
-        assert!(board.rows[6..].iter().all(|r| r.snapshot.latest.is_none()));
+        assert!(board.rows[banks()..]
+            .iter()
+            .all(|r| r.snapshot.latest.is_none()));
         let serialized = serde_json::to_value(board).unwrap();
         for row in serialized["rows"].as_array().unwrap() {
             for key in ["entry", "thesis", "alert", "pinned", "gridPlan", "trades"] {
@@ -501,7 +512,7 @@ pub(crate) mod tests {
         assert!(personal.rows[0].entry.pinned);
         assert!(second.watch_entries().unwrap().is_empty());
         service.refresh_on(Some("banks"), false, day).await.unwrap();
-        assert_eq!(source.prices.load(Ordering::SeqCst), 6);
+        assert_eq!(source.prices.load(Ordering::SeqCst), banks());
     }
 
     #[tokio::test]
@@ -515,7 +526,7 @@ pub(crate) mod tests {
         );
         a.unwrap();
         b.unwrap();
-        assert_eq!(source.prices.load(Ordering::SeqCst), 6);
+        assert_eq!(source.prices.load(Ordering::SeqCst), banks());
         source.fail_price.store(true, Ordering::SeqCst);
         let next = day + chrono::Duration::days(3);
         let failed = service.refresh_on(Some("banks"), true, next).await.unwrap();
@@ -543,7 +554,7 @@ pub(crate) mod tests {
                 .observed_on,
             next.to_string()
         );
-        assert_eq!(source.prices.load(Ordering::SeqCst), 13);
+        assert_eq!(source.prices.load(Ordering::SeqCst), banks() * 2 + 1);
     }
 
     #[tokio::test]
@@ -563,7 +574,7 @@ pub(crate) mod tests {
         let lagging = self::service(source.clone());
         lagging.refresh_on(Some("banks"), false, day).await.unwrap();
         let board = lagging.refresh_on(Some("banks"), false, day).await.unwrap();
-        assert_eq!(source.prices.load(Ordering::SeqCst), 18);
+        assert_eq!(source.prices.load(Ordering::SeqCst), banks() * 3);
         assert!(board.rows[0].snapshot.latest.as_ref().unwrap().observed_on < day.to_string());
         assert!(needs_check(&board.rows[0].snapshot, day));
     }
@@ -583,7 +594,7 @@ pub(crate) mod tests {
         let start = tokio::time::Instant::now();
         let board = service.refresh_on(Some("banks"), false, day).await.unwrap();
         assert!(start.elapsed() <= Duration::from_secs(120));
-        assert!(board.rows[..6]
+        assert!(board.rows[..banks()]
             .iter()
             .all(|r| r.snapshot.latest.is_none() && r.snapshot.refresh_failed));
     }

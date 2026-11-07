@@ -1,0 +1,2780 @@
+{
+  "screenedOn": "2026-11-07",
+  "priceOn": "2026-11-06",
+  "scope": "本次用户明确授权的现有十领域一次性候选扩充；不建立自动全市场发现或动态扩池。",
+  "yieldMethod": "(2025-11-06,2026-11-06]内已实施税前每股现金分红，按窗口内后续送转归一现股数单位，除以2026-11-06未复权收盘价；严格大于4%。纳入前逐笔与发行人实施公告核对，并用同日收盘后报价交叉核对价格。",
+  "qualityMethod": "人工核对2025年报摘要、已实施分红记录与2026三季报；非金融企业看盈利和经营现金流并记录资本支出风险；银行改看资产质量、拨备和资本。不是自动评分、永久优质评级、个人适用性或买入建议。",
+  "productionWatchRuleUnchanged": "TTM税前股息率>=5%，日线BOLL下轨价格±2%，周收盘<=周线中轨，同时满足。",
+  "candidateCount": 26,
+  "selectedCount": 8,
+  "selected": [
+    {
+      "industryId": "banks",
+      "symbol": "601166.SS",
+      "name": "兴业银行",
+      "orgId": "9900002081",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "19.73",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh601166",
+      "priceObservedAt": "20261106161452",
+      "priceBasis": "Tencent post-close quote on requested session, not intraday or adjusted history",
+      "priceResponseSha256": "191f64701743ef05bd5e38e691a80fefe523e06de28b47616d4c806229db8cf4",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601166%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "ccc0e2713b67aa91614730bb6cafd60311f9987bf56d318f09b5d07f9e87bcbe"
+      ],
+      "completeDividendRecords": 22,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "1.066",
+      "yieldPct": "5.402939685757729346173340091",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-02-06",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "5.65",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.565"
+        },
+        {
+          "exDate": "2026-06-12",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "5.01",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.501"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-06-19",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "11.88",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-09",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "10.4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-20",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "10.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-02-06",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "5.65",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-12",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "5.01",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "1.188",
+        "2024": "1.04",
+        "2025": "1.06",
+        "2026": "1.066"
+      },
+      "issuerReportSources": {
+        "code": "601166",
+        "name": "兴业银行",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-03-27/1225039240.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "兴业银行2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-30/1225643700.PDF",
+            "sha256": "a0e378385bf2e942f3d246d552ce3037e4d06f146e80bc95f7c44f4392203920",
+            "pages": 20
+          },
+          {
+            "kind": "summary",
+            "title": "兴业银行2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-03-27/1225039289.PDF",
+            "sha256": "0d7d9c67928df47207f62db6b54c7182b7355da0bdf070b54699c8c63849697c",
+            "pages": 23
+          }
+        ]
+      },
+      "qualityAssessment": {
+        "period": "2026-01-01~2026-09-30",
+        "supportingFacts": {
+          "revenueYoyPct": "0.22",
+          "netProfitYoyPct": "-3.79",
+          "nplPct": "1.08",
+          "provisionCoveragePct": "222.68",
+          "consolidatedCet1Pct": "9.52"
+        },
+        "rationale": "全国性股份制银行，持续现金分红；不良率持平，拨备与资本提供一定缓冲。",
+        "risks": [
+          "净息差和利息收入承压，拨备覆盖率较年初下降；银行经营现金流受存贷款及同业往来影响，不能套用工业企业自由现金流评价。"
+        ],
+        "standing": "本次公开目录候选初筛，不是买入判断或基本面持续监控结论"
+      },
+      "implementedDividendCrossChecks": [
+        {
+          "exDate": "2026-02-06",
+          "cashPerTen": "5.65",
+          "issuerAnnouncement": {
+            "title": "兴业银行2025年半年度A股权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-02-02/1224960943.PDF",
+            "sha256": "28cc7cb1472dfd5043e39535cb9d61241dc9fa0a45fd9d04d5f68e514313b2b1"
+          }
+        },
+        {
+          "exDate": "2026-06-12",
+          "cashPerTen": "5.01",
+          "issuerAnnouncement": {
+            "title": "兴业银行2025年年度A股权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-06-08/1225356324.PDF",
+            "sha256": "92829ae3b4d7fc6526f3a4bb3caab9e82307cce3d7fa58bfada5f50c9bba460a"
+          }
+        }
+      ],
+      "postCloseQuoteCrossCheck": {
+        "url": "https://qt.gtimg.cn/q=sh601166",
+        "observedAt": "20261106161452",
+        "price": "19.73",
+        "sha256": "191f64701743ef05bd5e38e691a80fefe523e06de28b47616d4c806229db8cf4"
+      },
+      "fullYear2025Comparison": {
+        "dividendPerCurrentShare": "1.066",
+        "yieldAtSameClosePct": "5.402939685757729346173340091",
+        "basis": "以发行人2025年度全部现金分配方案辅助比较，不以报告期标签判断实施日；当前TTM仍严格按除息日。不是2026或未来分红预测。"
+      }
+    },
+    {
+      "industryId": "banks",
+      "symbol": "600919.SS",
+      "name": "江苏银行",
+      "orgId": "9900006248",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "12.74",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh600919",
+      "priceObservedAt": "20261106161459",
+      "priceBasis": "Tencent post-close quote on requested session, not intraday or adjusted history",
+      "priceResponseSha256": "0ece6c70e0d5f11884699df00369db3acf972287226bc50d1f083b34d63138b2",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600919%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "7800f4d0cbe00a34c669d4af2e8e1c9a8b3a9d67954917c316d4c21777015257"
+      ],
+      "completeDividendRecords": 12,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.5641",
+      "yieldPct": "4.427786499215070643642072214",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-01-14",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "3.309",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.3309"
+        },
+        {
+          "exDate": "2026-07-10",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.332",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.2332"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-07-17",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "4.907",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-14",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "4.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-01-10",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "3.062",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-10",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "2.144",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-01-14",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "3.309",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-10",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.332",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.4907",
+        "2024": "0.47",
+        "2025": "0.5206",
+        "2026": "0.5641"
+      },
+      "issuerReportSources": {
+        "code": "600919",
+        "name": "江苏银行",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225247387.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "江苏银行2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-30/1225642695.PDF",
+            "sha256": "20dcc7c802a50700138e9c44cef33582d626c95ba853a0d497bda3d96c4df504",
+            "pages": 15
+          },
+          {
+            "kind": "summary",
+            "title": "江苏银行2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225247342.PDF",
+            "sha256": "1a31f147f74d387b626c17d421cb476b48a11a3b7031e1f8a0513c2d338255ee",
+            "pages": 12
+          }
+        ]
+      },
+      "qualityAssessment": {
+        "period": "2026-01-01~2026-09-30",
+        "supportingFacts": {
+          "revenueYoyPct": "13.24",
+          "netProfitYoyPct": "8.21",
+          "nplPct": "0.81",
+          "provisionCoveragePct": "316.70",
+          "consolidatedCet1Pct": "8.86"
+        },
+        "rationale": "江苏区域银行，营业收入和利润增长，不良率较年初下降；近年连续实施现金分红。",
+        "risks": [
+          "区域与对公信贷集中、净息差和资本补充需求仍须跟踪；不由高拨备直接推断无信用风险。"
+        ],
+        "standing": "本次公开目录候选初筛，不是买入判断或基本面持续监控结论"
+      },
+      "implementedDividendCrossChecks": [
+        {
+          "exDate": "2026-01-14",
+          "cashPerTen": "3.309",
+          "issuerAnnouncement": {
+            "title": "江苏银行2025年半年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-01-08/1224923261.PDF",
+            "sha256": "1ee0f7431daa4d345623beeaa98218225f8365a40385a3b97d944506d879601f"
+          }
+        },
+        {
+          "exDate": "2026-07-10",
+          "cashPerTen": "2.332",
+          "issuerAnnouncement": {
+            "title": "江苏银行2025年年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-07-04/1225409009.PDF",
+            "sha256": "0530d83cd0c7e1cd81d6c8eba5f1477bab2f6c5420d1d3e30246c1750f8d2f26"
+          }
+        }
+      ],
+      "postCloseQuoteCrossCheck": {
+        "url": "https://qt.gtimg.cn/q=sh600919",
+        "observedAt": "20261106161459",
+        "price": "12.74",
+        "sha256": "0ece6c70e0d5f11884699df00369db3acf972287226bc50d1f083b34d63138b2"
+      },
+      "fullYear2025Comparison": {
+        "dividendPerCurrentShare": "0.5641",
+        "yieldAtSameClosePct": "4.427786499215070643642072214",
+        "basis": "以发行人2025年度全部现金分配方案辅助比较，不以报告期标签判断实施日；当前TTM仍严格按除息日。不是2026或未来分红预测。"
+      }
+    },
+    {
+      "industryId": "banks",
+      "symbol": "601009.SS",
+      "name": "南京银行",
+      "orgId": "9900003284",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "12.31",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.601009&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "d0cd4d34c61b69d0a9f477f67bf4aade36737b229fa9b0744dc22e3995db5b9a",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601009%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "6b7a73c11e0197a1db40325ef901100038cde8e58251376659c8adf23f9607b7"
+      ],
+      "completeDividendRecords": 22,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.52915",
+      "yieldPct": "4.298537774167343623070674249",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2025-11-20",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "3.062",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.3062"
+        },
+        {
+          "exDate": "2026-06-15",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.2295",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.22295"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-06-21",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "5.339",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-14",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "5.367",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-11-01",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "3.4626",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-23",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1.9931",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-11-20",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "3.062",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-15",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.2295",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.5339",
+        "2024": "0.88296",
+        "2025": "0.50551",
+        "2026": "0.22295"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "601009",
+        "name": "南京银行",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-04-23/1225157414.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "南京银行股份有限公司2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-29/1225636622.PDF",
+            "sha256": "8e404dedd665b283be8885ab506d7a5ffd4fef3628ba9763a7551678908bed48",
+            "pages": 12
+          },
+          {
+            "kind": "summary",
+            "title": "南京银行股份有限公司2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-04-23/1225157431.PDF",
+            "sha256": "184f29ec58f832ca1d098a99fe2c5227de4345709c777f377b64b5d4c370a923",
+            "pages": 18
+          }
+        ]
+      },
+      "qualityAssessment": {
+        "period": "2026-01-01~2026-09-30",
+        "supportingFacts": {
+          "revenueYoyPct": "12.49",
+          "netProfitYoyPct": "8.03",
+          "nplPct": "0.83",
+          "provisionCoveragePct": "321.15",
+          "consolidatedCet1Pct": "9.49"
+        },
+        "rationale": "区域存贷款及综合金融需求具持续性，营收利润增长、不良率持平且拨备增加；连续现金分红。",
+        "risks": [
+          "投资业务估值和债市波动、区域集中及净息差压力；过去分红不保证后续金额。"
+        ],
+        "standing": "本次公开目录候选初筛，不是买入判断或基本面持续监控结论"
+      },
+      "implementedDividendCrossChecks": [
+        {
+          "exDate": "2025-11-20",
+          "cashPerTen": "3.062",
+          "issuerAnnouncement": {
+            "title": "南京银行股份有限公司2025年半年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2025-11-14/1224804424.PDF",
+            "sha256": "3155f55fcbe7ea099f8833f4c43ff26e7612dc93395c264bb81e5a2c476ae0d0"
+          }
+        },
+        {
+          "exDate": "2026-06-15",
+          "cashPerTen": "2.2295",
+          "issuerAnnouncement": {
+            "title": "南京银行股份有限公司2025年年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-06-05/1225351881.PDF",
+            "sha256": "8dbd21d2a5409520f93396d857b3a45ff97b64d0ab5d594975ee18ec3e588655"
+          }
+        }
+      ],
+      "postCloseQuoteCrossCheck": {
+        "url": "https://qt.gtimg.cn/q=sh601009",
+        "observedAt": "20261106161500",
+        "price": "12.31",
+        "sha256": "300a956042057678cfe9756fea68fd4db6d401c4dd4ef2ba599cb313be77a4ea"
+      },
+      "fullYear2025Comparison": {
+        "dividendPerCurrentShare": "0.52915",
+        "yieldAtSameClosePct": "4.298537774167343623070674249",
+        "basis": "以发行人2025年度全部现金分配方案辅助比较，不以报告期标签判断实施日；当前TTM仍严格按除息日。不是2026或未来分红预测。"
+      }
+    },
+    {
+      "industryId": "banks",
+      "symbol": "601838.SS",
+      "name": "成都银行",
+      "orgId": "9900021318",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "20.18",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh601838",
+      "priceObservedAt": "20261106161446",
+      "priceBasis": "Tencent post-close quote on requested session, not intraday or adjusted history",
+      "priceResponseSha256": "89da3112120d0014a10f39aeea2d143d50c92766a9487870afd15f4fad9e0847",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601838%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "5f60d588f0340e59fb0892c6b09f63bf18efa490c2c233a322dba72834a50fff"
+      ],
+      "completeDividendRecords": 10,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "1.410",
+      "yieldPct": "6.987115956392467789890981169",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-07-13",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "9.21",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.921"
+        },
+        {
+          "exDate": "2026-09-18",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "4.89",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.489"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-07-26",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "7.6793",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-05",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "8.968",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-28",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "8.91",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-13",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "9.21",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-09-18",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "4.89",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.76793",
+        "2024": "0.8968",
+        "2025": "0.891",
+        "2026": "1.410"
+      },
+      "issuerReportSources": {
+        "code": "601838",
+        "name": "成都银行",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-04-23/1225153907.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "成都银行股份有限公司2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-29/1225636378.PDF",
+            "sha256": "1c04828137c55251b14ebe114cd2e6b24697208636d376af0c7fa4f77fc57c27",
+            "pages": 18
+          },
+          {
+            "kind": "summary",
+            "title": "成都银行股份有限公司2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-04-23/1225153902.PDF",
+            "sha256": "a55f0805891076a933e1b773c3da1ca450c5e6f210d9e370deec7171d0741a51",
+            "pages": 18
+          }
+        ]
+      },
+      "qualityAssessment": {
+        "period": "2026-01-01~2026-09-30",
+        "supportingFacts": {
+          "revenueYoyPct": "9.84",
+          "netProfitYoyPct": "4.48",
+          "nplPct": "0.68",
+          "provisionCoveragePct": "448.06",
+          "consolidatedCet1Pct": "8.85"
+        },
+        "rationale": "成都区域银行，利润仍增长、不良率低且稳定、拨备较高；已实施年度及中期现金分红。",
+        "risks": [
+          "区域及政信相关信贷集中、资本约束；TTM 包含2025年度与新一期2026中期分红，6.99%不能直接当作未来年化承诺。"
+        ],
+        "standing": "本次公开目录候选初筛，不是买入判断或基本面持续监控结论"
+      },
+      "implementedDividendCrossChecks": [
+        {
+          "exDate": "2026-07-13",
+          "cashPerTen": "9.21",
+          "issuerAnnouncement": {
+            "title": "成都银行股份有限公司2025年年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-07-07/1225411908.PDF",
+            "sha256": "cd4fd5c255de68531291ea43df4bba108f7c250d5b0d178eed30d230872340f6"
+          }
+        },
+        {
+          "exDate": "2026-09-18",
+          "cashPerTen": "4.89",
+          "issuerAnnouncement": {
+            "title": "成都银行股份有限公司2026年半年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-09-12/1225560707.PDF",
+            "sha256": "7462a2d74699e054e043d33e1c14f7c187252be1fb10ac9d16e2b5cebb7eee1e"
+          }
+        }
+      ],
+      "postCloseQuoteCrossCheck": {
+        "url": "https://qt.gtimg.cn/q=sh601838",
+        "observedAt": "20261106161446",
+        "price": "20.18",
+        "sha256": "89da3112120d0014a10f39aeea2d143d50c92766a9487870afd15f4fad9e0847"
+      },
+      "fullYear2025Comparison": {
+        "dividendPerCurrentShare": "0.921",
+        "yieldAtSameClosePct": "4.563924677898909811694747275",
+        "basis": "以发行人2025年度全部现金分配方案辅助比较，不以报告期标签判断实施日；当前TTM仍严格按除息日。不是2026或未来分红预测。"
+      }
+    },
+    {
+      "industryId": "banks",
+      "symbol": "601825.SS",
+      "name": "沪农商行",
+      "orgId": "9900010687",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "9.04",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh601825",
+      "priceObservedAt": "20261106161437",
+      "priceBasis": "Tencent post-close quote on requested session, not intraday or adjusted history",
+      "priceResponseSha256": "38186b49a2db2e897a92a93d99dccd49799b70f9de416afc10a1df309ef082d4",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601825%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "f00230d913aa148bad07ce3a215be10a05b84775ba1f9f8b635f525bdd60f7c4"
+      ],
+      "completeDividendRecords": 9,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.4439",
+      "yieldPct": "4.910398230088495575221238938",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-06-29",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.94",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.194"
+        },
+        {
+          "exDate": "2026-09-24",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "2.499",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.2499"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-06-28",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "3.42",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-26",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "3.79",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-09-25",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "2.39",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-27",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1.93",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-09-26",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "2.41",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-29",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.94",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-09-24",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "2.499",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.342",
+        "2024": "0.618",
+        "2025": "0.434",
+        "2026": "0.4439"
+      },
+      "issuerReportSources": {
+        "code": "601825",
+        "name": "沪农商行",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-04-23/1225150337.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "上海农村商业银行股份有限公司2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-31/1225649417.PDF",
+            "sha256": "30455f38e446176ad041f9171754069f54f8fd7ed5cea44cf040858d2be04599",
+            "pages": 21
+          },
+          {
+            "kind": "summary",
+            "title": "上海农村商业银行股份有限公司2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-04-23/1225150824.PDF",
+            "sha256": "cb9510d8291395504ad937cc3fe7eefd42117d29890da56365f4d3a22d4f385b",
+            "pages": 23
+          }
+        ]
+      },
+      "qualityAssessment": {
+        "period": "2026-01-01~2026-09-30",
+        "supportingFacts": {
+          "revenueYoyPct": "2.07",
+          "netProfitYoyPct": "1.06",
+          "nplPct": "0.94",
+          "provisionCoveragePct": "303.09",
+          "consolidatedCet1Pct": "13.57"
+        },
+        "rationale": "上海本地零售与中小企业银行，营收利润正增长、不良率略降，资本与拨备有缓冲；持续分红。",
+        "risks": [
+          "地产及中小企业信用周期、盈利增速偏低；拨备覆盖率和资本充足率较年初下降。"
+        ],
+        "standing": "本次公开目录候选初筛，不是买入判断或基本面持续监控结论"
+      },
+      "implementedDividendCrossChecks": [
+        {
+          "exDate": "2026-06-29",
+          "cashPerTen": "1.94",
+          "issuerAnnouncement": {
+            "title": "上海农村商业银行股份有限公司2025年年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-06-22/1225379971.PDF",
+            "sha256": "f3a31924cad3603016c184866a90732e0db60962f719402b010748cd199f3c42"
+          }
+        },
+        {
+          "exDate": "2026-09-24",
+          "cashPerTen": "2.499",
+          "issuerAnnouncement": {
+            "title": "上海农村商业银行股份有限公司2026年半年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-09-17/1225567582.PDF",
+            "sha256": "a89e588f21e6ad9df933d2cd9f5e5b914a9b68f98179889bf9db1ba6100f8c4f"
+          }
+        }
+      ],
+      "postCloseQuoteCrossCheck": {
+        "url": "https://qt.gtimg.cn/q=sh601825",
+        "observedAt": "20261106161437",
+        "price": "9.04",
+        "sha256": "38186b49a2db2e897a92a93d99dccd49799b70f9de416afc10a1df309ef082d4"
+      },
+      "fullYear2025Comparison": {
+        "dividendPerCurrentShare": "0.435",
+        "yieldAtSameClosePct": "4.811946902654867256637168142",
+        "basis": "以发行人2025年度全部现金分配方案辅助比较，不以报告期标签判断实施日；当前TTM仍严格按除息日。不是2026或未来分红预测。"
+      }
+    },
+    {
+      "industryId": "transport",
+      "symbol": "000429.SZ",
+      "name": "粤高速A",
+      "orgId": "gssz0000429",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "13.73",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=0.000429&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "95d09ab859e29f2f31fbfc067bd985d9a301839e579f424c3cf0be683972cdaf",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000429%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "a1db37fd06cda1312cb1ba84f46246405216ba9c6aa80b579998af43c851753e"
+      ],
+      "completeDividendRecords": 29,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.604",
+      "yieldPct": "4.399126001456664238892935178",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-08-10",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "6.04",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.604"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-07-14",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "4.28",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-15",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "5.47",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-14",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "5.23",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-08-10",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "6.04",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.428",
+        "2024": "0.547",
+        "2025": "0.523",
+        "2026": "0.604"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "000429",
+        "name": "粤高速A",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-03-14/1225008769.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "2026年三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-27/1225623106.PDF",
+            "sha256": "af7b1a3fe70d12b82917f7d5ba06c341d5559d204fd6319b5ab89e5f1aff9826",
+            "pages": 10
+          },
+          {
+            "kind": "summary",
+            "title": "2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-03-14/1225008768.PDF",
+            "sha256": "8eda781beb2f7f09bbe5ce212e6fd2bc75169546588d22edf006028615fa93ee",
+            "pages": 4
+          }
+        ]
+      },
+      "qualityAssessment": {
+        "period": "2026-01-01~2026-09-30",
+        "supportingFacts": {
+          "revenueYoyPct": "-0.25",
+          "netProfitYoyPct": "-15.45",
+          "recurringNetProfitYoyPct": "1.25",
+          "operatingCashFlowCny": "2676755205.42",
+          "operatingCashFlowYoyPct": "-12.09",
+          "operatingCashFlow2025Cny": "3559494395.28"
+        },
+        "rationale": "成熟高速公路路网具有位置和收费权基础；扣非利润微增，经营现金流为正并覆盖最近年度现金分红。",
+        "risks": [
+          "2026前三季度归母净利下降15.45%；改扩建资本支出、借款增加及收费权期限约束未来可分配现金，不能只看经营现金流。"
+        ],
+        "standing": "本次公开目录候选初筛，不是买入判断或基本面持续监控结论"
+      },
+      "implementedDividendCrossChecks": [
+        {
+          "exDate": "2026-08-10",
+          "cashPerTen": "6.04",
+          "issuerAnnouncement": {
+            "title": "2025年年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-07-31/1225448017.PDF",
+            "sha256": "57377629516b0cf25ef502ee67b2fb39ff7b18efa886594fb60959e1b4fe37ae"
+          }
+        }
+      ],
+      "postCloseQuoteCrossCheck": {
+        "url": "https://qt.gtimg.cn/q=sz000429",
+        "observedAt": "20261106161445",
+        "price": "13.73",
+        "sha256": "679480c8fc2552ad227aeb30798f999f94c90f50699adcf498ea037ed06365f9"
+      },
+      "fullYear2025Comparison": {
+        "dividendPerCurrentShare": "0.604",
+        "yieldAtSameClosePct": "4.399126001456664238892935178",
+        "basis": "以发行人2025年度全部现金分配方案辅助比较，不以报告期标签判断实施日；当前TTM仍严格按除息日。不是2026或未来分红预测。"
+      }
+    },
+    {
+      "industryId": "transport",
+      "symbol": "601000.SS",
+      "name": "唐山港",
+      "orgId": "9900013088",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "4.80",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.601000&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "bce11cc17209764a368e03cb00c14c6ba70695e6c5cfdc72324eb49902fe9d16",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601000%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "a4713f6907a37edee418fdddd355a871c073ac7d025a51690b91ef95f883dbfc"
+      ],
+      "completeDividendRecords": 18,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.2",
+      "yieldPct": "4.166666666666666666666666667",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-05-27",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.2"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-05-22",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-05-23",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-05-30",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-05-27",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.2",
+        "2024": "0.2",
+        "2025": "0.2",
+        "2026": "0.2"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "601000",
+        "name": "唐山港",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-03-28/1225040947.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "唐山港集团股份有限公司2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-30/1225639413.PDF",
+            "sha256": "2804f13b3282837d9b082690f1ece4ef7aed710c4f47859dfa6057b5e0007a39",
+            "pages": 17
+          },
+          {
+            "kind": "summary",
+            "title": "唐山港集团股份有限公司2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-03-28/1225041049.PDF",
+            "sha256": "1753776d482adfb8cc610b6ec3516570f29a4e3850611e97adb5c92a72386ca6",
+            "pages": 7
+          }
+        ]
+      },
+      "qualityAssessment": {
+        "period": "2026-01-01~2026-09-30",
+        "supportingFacts": {
+          "revenueYoyPct": "9.65",
+          "netProfitYoyPct": "7.85",
+          "recurringNetProfitYoyPct": "8.91",
+          "operatingCashFlowCny": "1624598015.93",
+          "operatingCashFlowYoyPct": "15.29",
+          "operatingCashFlow2025Cny": "1887859802.80",
+          "netProfit2025Cny": "1998358912.60",
+          "annualDividend2025Cny": "1185185722.80"
+        },
+        "rationale": "京唐港区大宗货运枢纽，业务有实体物流基础；营收、利润与经营现金流增长，连续四年每股实施0.20元分红。",
+        "risks": [
+          "钢铁、煤炭货运需求与港口竞争有周期性，股息率仅略高于4%；2025经营现金流较2024下降，不能假定吞吐持续增长。"
+        ],
+        "standing": "本次公开目录候选初筛，不是买入判断或基本面持续监控结论"
+      },
+      "implementedDividendCrossChecks": [
+        {
+          "exDate": "2026-05-27",
+          "cashPerTen": "2",
+          "issuerAnnouncement": {
+            "title": "唐山港集团股份有限公司2025年年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-05-20/1225316820.PDF",
+            "sha256": "ca9b867f76f1b7e3c3547d6bf0f30932b8a187c4e4d0a9d3878c5cb775f3234a"
+          }
+        }
+      ],
+      "postCloseQuoteCrossCheck": {
+        "url": "https://qt.gtimg.cn/q=sh601000",
+        "observedAt": "20261106161457",
+        "price": "4.80",
+        "sha256": "1d660632f41056c656a232064ad7391e1aa2ee3f9abc440d71a6c489834b89ce"
+      },
+      "fullYear2025Comparison": {
+        "dividendPerCurrentShare": "0.2",
+        "yieldAtSameClosePct": "4.166666666666666666666666667",
+        "basis": "以发行人2025年度全部现金分配方案辅助比较，不以报告期标签判断实施日；当前TTM仍严格按除息日。不是2026或未来分红预测。"
+      }
+    },
+    {
+      "industryId": "tcm",
+      "symbol": "600750.SS",
+      "name": "华润江中",
+      "orgId": "gssh0600750",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "23.21",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.600750&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "337ecfd3596d0c803c1df12d30197c772280fe41a78d4b06b5dba2ad0c42fa95",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600750%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "6bbe2f491181407a18257f0b59cbae7bc09693f2baa75124b3c864a2a72cf9ce"
+      ],
+      "completeDividendRecords": 34,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "1.38",
+      "yieldPct": "5.945713054717794054286945282",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-06-22",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "8.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.88"
+        },
+        {
+          "exDate": "2026-09-11",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.5"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-05-19",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "6.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-11-27",
+          "reportDate": "2023-09-30",
+          "cashPerTen": "6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-13",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-10-10",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-20",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-10-13",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-22",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "8.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-09-11",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "1.25",
+        "2024": "1.2",
+        "2025": "1.2",
+        "2026": "1.38"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "600750",
+        "name": "华润江中",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-03-20/1225018212.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "华润江中2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-24/1225619057.PDF",
+            "sha256": "7da5f9a2ad8c89085bf6d3f80f9bf5c6f2fc33ce6279e40007bb7e52ae72f03b",
+            "pages": 12
+          },
+          {
+            "kind": "summary",
+            "title": "华润江中2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-03-20/1225018210.PDF",
+            "sha256": "b5acc046397b65bd2dd42374446555eb01d3c74b9f6444b62ab40df1db2ba306",
+            "pages": 12
+          }
+        ]
+      },
+      "qualityAssessment": {
+        "period": "2026-01-01~2026-09-30",
+        "supportingFacts": {
+          "revenueYoyPct": "-9.25",
+          "netProfitYoyPct": "-9.68",
+          "recurringNetProfitYoyPct": "-7.94",
+          "operatingCashFlowCny": "1001809320.33",
+          "operatingCashFlowYoyPct": "2.88",
+          "operatingCashFlow2025Cny": "970867419.63",
+          "annualPayoutRatio2025Pct": "96.71"
+        },
+        "rationale": "消化道和咽喉类OTC品牌具既有消费需求，现金转化较好；最新经营现金流为正且增长、近年持续分红。",
+        "risks": [
+          "营收及利润下滑，2025全年现金分红占归母净利润96.71%，接近全部利润；分红持续性尤其需要跟踪，来源核查不等于永久优质评级。"
+        ],
+        "standing": "本次公开目录候选初筛，不是买入判断或基本面持续监控结论"
+      },
+      "implementedDividendCrossChecks": [
+        {
+          "exDate": "2026-06-22",
+          "cashPerTen": "8.8",
+          "issuerAnnouncement": {
+            "title": "华润江中2025年年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-06-13/1225367423.PDF",
+            "sha256": "9497b07d56ab176daee9571dcb0acf160d7f3873d27f49edea74cf2b039c4391"
+          }
+        },
+        {
+          "exDate": "2026-09-11",
+          "cashPerTen": "5",
+          "issuerAnnouncement": {
+            "title": "华润江中2026年半年度权益分派实施公告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-09-03/1225544240.PDF",
+            "sha256": "ad24611bd4be5b02a1b37e4a5b9fb34aedeece540ec273d2dc961e5468399e39"
+          }
+        }
+      ],
+      "postCloseQuoteCrossCheck": {
+        "url": "https://qt.gtimg.cn/q=sh600750",
+        "observedAt": "20261106161455",
+        "price": "23.21",
+        "sha256": "aa791a0fb372b9be936f9e7370016e6d732a87c6aff0b8ed827a0e7587813c81"
+      },
+      "fullYear2025Comparison": {
+        "dividendPerCurrentShare": "1.38",
+        "yieldAtSameClosePct": "5.945713054717794054286945282",
+        "basis": "以发行人2025年度全部现金分配方案辅助比较，不以报告期标签判断实施日；当前TTM仍严格按除息日。不是2026或未来分红预测。"
+      }
+    }
+  ],
+  "excluded": [
+    {
+      "industryId": "power",
+      "symbol": "600027.SS",
+      "name": "华电国际",
+      "orgId": "gssh0600027",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "5.16",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.600027&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "fa2ba5489d95467e1675f73e44bdd5517d779ae5d69ea220ed040b74bdb8bded",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600027%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "d647c46988b0899d9e26e01a52c784e03e62bff98ab057849539fec62fb26d30"
+      ],
+      "completeDividendRecords": 22,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.23",
+      "yieldPct": "4.457364341085271317829457364",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2025-11-12",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "0.9",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.09"
+        },
+        {
+          "exDate": "2026-06-26",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.14"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-07-19",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-25",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "1.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-10-16",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "0.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-14",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1.3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-11-12",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "0.9",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-26",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.2",
+        "2024": "0.23",
+        "2025": "0.22",
+        "2026": "0.14"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "600027",
+        "name": "华电国际",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-03-27/1225039299.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-30/1225639415.PDF",
+            "sha256": "5df418bffb4e3a5072a052e8c2597770e94a5a9e5f4db9b99e8bd764769630a0",
+            "pages": 20
+          },
+          {
+            "kind": "summary",
+            "title": "2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-03-27/1225039316.PDF",
+            "sha256": "d9439abaf203392b93faa047fcf8cfa370aaaa912be75c249d4d2f7494147c5e",
+            "pages": 21
+          }
+        ]
+      },
+      "exclusionReason": "盈利承压：2026前三季度归母净利同比-39.29%，经营现金流-34.21%，本轮不将高TTM股息当作稳定分红依据。"
+    },
+    {
+      "industryId": "power",
+      "symbol": "600642.SS",
+      "name": "申能股份",
+      "orgId": "gssh0600642",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "9.13",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.600642&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "3281aef01ed1de3b2b0c2d0325ca83d8932991620aba816a968a415259d62250",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600642%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "cdb7dbec8b10a26811248bbed1a32d240c859003943971529e83909b71bf7b70"
+      ],
+      "completeDividendRecords": 33,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.46",
+      "yieldPct": "5.038335158817086527929901424",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-07-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "4.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.46"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-06-21",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-26",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-11",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "4.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "4.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.16",
+        "2024": "0.4",
+        "2025": "0.45",
+        "2026": "0.46"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "600642",
+        "name": "申能股份",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-04-27/1225197325.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "申能股份有限公司2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-31/1225647781.PDF",
+            "sha256": "327b24e2da2c0ecb9b2dc563e299711125ecbd8c19bab96a5c895fcbc769fb80",
+            "pages": 16
+          },
+          {
+            "kind": "summary",
+            "title": "申能股份有限公司2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-04-27/1225197490.PDF",
+            "sha256": "e32a4dd3953688ade2cc15f53e4a1a2a910fc653c10e408abf73bc883e208e27",
+            "pages": 11
+          }
+        ]
+      },
+      "exclusionReason": "盈利承压：2026前三季度归母净利同比-35.78%，扣非净利-29.19%；现金流虽为正，仍暂缓新增。"
+    },
+    {
+      "industryId": "power",
+      "symbol": "000543.SZ",
+      "name": "皖能电力",
+      "orgId": "gssz0000543",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "error": "URLError(TimeoutError('_ssl.c:1129: The handshake operation timed out'))",
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "exclusionReason": "行情或分红来源连接失败，未完整核验，不以缺失数据视为通过。"
+    },
+    {
+      "industryId": "power",
+      "symbol": "600023.SS",
+      "name": "浙能电力",
+      "orgId": "9900027828",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "5.39",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.600023&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "9847628e18f8ea0ab5a5c02c06b075e8f828738bdaaa1bbe6dc9a73e2073ae67",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600023%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "e252b69592fe201340217da34db950b44632da8dc84a63400518360b63a32b38"
+      ],
+      "completeDividendRecords": 13,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.30",
+      "yieldPct": "5.565862708719851576994434137",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-07-30",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.28"
+        },
+        {
+          "exDate": "2026-10-23",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "0.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.02"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2024-07-09",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-09",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "2.9",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-10-17",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "0.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-30",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-10-23",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "0.2",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0",
+        "2024": "0.25",
+        "2025": "0.34",
+        "2026": "0.30"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "600023",
+        "name": "浙能电力",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-04-28/1225200695.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-29/1225634267.PDF",
+            "sha256": "842cac64c8db3ecc5115ddac797ba73150adc403bca889270f536b448afd3190",
+            "pages": 11
+          },
+          {
+            "kind": "summary",
+            "title": "2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-04-28/1225200701.PDF",
+            "sha256": "4998e9d4aa853c6c8862e3ca20443b27a858203f2140b2afed2eb47b38eb5782",
+            "pages": 7
+          }
+        ]
+      },
+      "exclusionReason": "盈利承压：2026前三季度归母净利同比-76.79%，第三季度亏损，暂缓新增。"
+    },
+    {
+      "industryId": "energy",
+      "symbol": "601898.SS",
+      "name": "中煤能源",
+      "orgId": "9900004221",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "12.91",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.601898&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "d35e69d9a6969abe3490c9ef74afd74fea23606f0765cc9f08d4e5cd65e56fc1",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601898%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "465c7a973f398a8cf83599242a46b20dab072f7c1e636a8532256e1be6af8635"
+      ],
+      "completeDividendRecords": 21,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.401",
+      "yieldPct": "3.106119287374128582494190550",
+      "passesFourPct": false,
+      "ttmEvents": [
+        {
+          "exDate": "2026-08-26",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.17",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.217"
+        },
+        {
+          "exDate": "2026-10-20",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1.84",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.184"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-07-26",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "4.13",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-08-20",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "4.42",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-10-23",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "2.21",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-08-27",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "2.58",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-10-22",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.66",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-08-26",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.17",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-10-20",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1.84",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.413",
+        "2024": "0.663",
+        "2025": "0.424",
+        "2026": "0.401"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "exclusionReason": "按已实施税前TTM现金分红和2026-11-06实际未复权价格计算，股息率未严格大于4%。"
+    },
+    {
+      "industryId": "energy",
+      "symbol": "600985.SS",
+      "name": "淮北矿业",
+      "orgId": "gssh0600985",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "14.12",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.600985&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "50bc13b3ad9796fcbd11e4cfaf6aef2a1537a792a90f747bc8f634a4c3cf3a3a",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600985%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "8ecf015e7d5558f1bef7c20a1af3930e2de8d40fc7cddc35edd6a8c75a91cbd8"
+      ],
+      "completeDividendRecords": 23,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.25",
+      "yieldPct": "1.770538243626062322946175637",
+      "passesFourPct": false,
+      "ttmEvents": [
+        {
+          "exDate": "2026-06-10",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.25"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-06-08",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "10.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-07",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "10",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-13",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "7.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-10",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "1.05",
+        "2024": "1",
+        "2025": "0.75",
+        "2026": "0.25"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "exclusionReason": "按已实施税前TTM现金分红和2026-11-06实际未复权价格计算，股息率未严格大于4%。"
+    },
+    {
+      "industryId": "energy",
+      "symbol": "600971.SS",
+      "name": "恒源煤电",
+      "orgId": "gssh0600971",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "7.23",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.600971&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "cd8fb65d3058e6bb129260586a2a1fdb3c9f11a6a3d468e24b97ccbb4ad623f0",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600971%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "320f63eb4bcf96cbbdae9fb92a4d9b05c3841322c3010dee1792f35e2376f276"
+      ],
+      "completeDividendRecords": 16,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.25",
+      "yieldPct": "3.457814661134163208852005533",
+      "passesFourPct": false,
+      "ttmEvents": [
+        {
+          "exDate": "2026-05-29",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.25"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-06-08",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "10",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-05-24",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "8.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-05-23",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "2.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-05-29",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "1",
+        "2024": "0.85",
+        "2025": "0.27",
+        "2026": "0.25"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "exclusionReason": "按已实施税前TTM现金分红和2026-11-06实际未复权价格计算，股息率未严格大于4%。"
+    },
+    {
+      "industryId": "transport",
+      "symbol": "600012.SS",
+      "name": "皖通高速",
+      "orgId": "gssh0600012",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "17.67",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.600012&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "d3ed9b0b55a2c6a2568962581e2e715efdb2e899219de11cc2c4d5e35f47df32",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600012%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "86a69144cfcaf6025336e50db7ef33e92f1ac1be255608168f1470d149fe45cd"
+      ],
+      "completeDividendRecords": 24,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.66",
+      "yieldPct": "3.735144312393887945670628183",
+      "passesFourPct": false,
+      "ttmEvents": [
+        {
+          "exDate": "2026-07-31",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "6.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.66"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-07-19",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "5.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-12",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "6.01",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-30",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "6.04",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-31",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "6.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.55",
+        "2024": "0.601",
+        "2025": "0.604",
+        "2026": "0.66"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "exclusionReason": "按已实施税前TTM现金分红和2026-11-06实际未复权价格计算，股息率未严格大于4%。"
+    },
+    {
+      "industryId": "transport",
+      "symbol": "600548.SS",
+      "name": "深高速",
+      "orgId": "gssh0600548",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "8.73",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sh600548",
+      "priceObservedAt": "20261106161447",
+      "priceBasis": "Tencent post-close quote on requested session, not intraday or adjusted history",
+      "priceResponseSha256": "c0b6f5777c81e827a8fb44c7a90a4bfe857bbb9ed72d97ec7d917d4da23521e0",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600548%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "794a9ad6f05cd76318367ab198be9feccd9a57f0a220bf42bad384c98aee2cd7"
+      ],
+      "completeDividendRecords": 25,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.244",
+      "yieldPct": "2.794959908361970217640320733",
+      "passesFourPct": false,
+      "ttmEvents": [
+        {
+          "exDate": "2026-07-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.44",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.244"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-05-31",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "4.62",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-10",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "5.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-07-15",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "2.44",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "2.44",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.462",
+        "2024": "0.55",
+        "2025": "0.244",
+        "2026": "0.244"
+      },
+      "exclusionReason": "按已实施税前TTM现金分红和2026-11-06实际未复权价格计算，股息率未严格大于4%。"
+    },
+    {
+      "industryId": "transport",
+      "symbol": "600269.SS",
+      "name": "赣粤高速",
+      "orgId": "gssh0600269",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "4.10",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.600269&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "2ea83e58b2c47b61f8c67f445a21ea5e487888b424e3a53168665f6233d77c83",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600269%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "5cc7b941bdf3c67508d1d2da22ce0fe3bda5b260644c0a7bdcb8e6a2a31550a6"
+      ],
+      "completeDividendRecords": 28,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.17",
+      "yieldPct": "4.146341463414634146341463415",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-07-08",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.17"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-08-25",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-18",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "1.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-05-30",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-08",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.1",
+        "2024": "0.16",
+        "2025": "0.17",
+        "2026": "0.17"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "600269",
+        "name": "赣粤高速",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-03-31/1225056936.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "赣粤高速2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-24/1225618333.PDF",
+            "sha256": "bf6bbe166319e53f83f78ba350ef886a38e913d9e74675534708e5e9c3f2e121",
+            "pages": 20
+          },
+          {
+            "kind": "summary",
+            "title": "赣粤高速2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-03-31/1225057026.PDF",
+            "sha256": "db8b4d88bf315284bf26c254fa5fc96acdcf2c708434a3fd6a1b012e551b79c2",
+            "pages": 10
+          }
+        ]
+      },
+      "exclusionReason": "2026前三季度归母净利同比-66.98%、扣非净利-10.27%，投资估值波动与经营承压需进一步核查，暂缓新增。"
+    },
+    {
+      "industryId": "transport",
+      "symbol": "601298.SS",
+      "name": "青岛港",
+      "orgId": "GD025907",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "9.75",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.601298&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "f008e262dff141d0b5efd1772ddae93a7ece1393c5588143a21a08963f29d155",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601298%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "aa837389e9fd75c3c9ab0f971a81e4d57b95f1d3de0f5712719147fa4a4324ea"
+      ],
+      "completeDividendRecords": 11,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.4853",
+      "yieldPct": "4.977435897435897435897435897",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2025-12-24",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.466",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.1466"
+        },
+        {
+          "exDate": "2026-08-10",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.988",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.1988"
+        },
+        {
+          "exDate": "2026-10-28",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1.399",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.1399"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-08-01",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "2.693",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-07-31",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "2.927",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-12-30",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "1.134",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-08-25",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "2.007",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-12-24",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "1.466",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-08-10",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.988",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-10-28",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1.399",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.2693",
+        "2024": "0.4061",
+        "2025": "0.3473",
+        "2026": "0.3387"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "601298",
+        "name": "青岛港",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-03-28/1225041511.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "青岛港国际股份有限公司2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-30/1225642468.PDF",
+            "sha256": "f8246a1c764ce96f0f66e39cbf0f4249e4852aca87181da14d40a09ba931493f",
+            "pages": 13
+          },
+          {
+            "kind": "summary",
+            "title": "青岛港国际股份有限公司2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-03-28/1225041452.PDF",
+            "sha256": "f03d7a2b2e178886c4612fbd97f281d2354e448c257e8c5c424daebf93f5f220",
+            "pages": 7
+          }
+        ]
+      },
+      "exclusionReason": "TTM计入2025中期、2025末期、2026中期三次真实派息；2025完整年度每股现金0.3454元，相对现价约3.54%，不把派息时点带来的TTM抬升外推为稳态回报。"
+    },
+    {
+      "industryId": "appliances",
+      "symbol": "000921.SZ",
+      "name": "海信家电",
+      "orgId": "gssz0000921",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "23.53",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=0.000921&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "1af0b913ff1fa694d698d220c035e8369396b3248f0f4eed78d54281b39d7336",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000921%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "ea05ada4eeaba4644d8cb5a67517feafcbfd2cddaacf6e18e67bcb8b4549c91d"
+      ],
+      "completeDividendRecords": 12,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "1.265",
+      "yieldPct": "5.376115597110072248193795155",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-08-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "12.65",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "1.265"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-07-17",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "5.171314",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-08-15",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "10.13",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-08-15",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "12.3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-08-14",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "12.65",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.5171314",
+        "2024": "1.013",
+        "2025": "1.23",
+        "2026": "1.265"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "000921",
+        "name": "海信家电",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-03-31/1225050277.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "2026年三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-26/1225618395.PDF",
+            "sha256": "59637f11d884d44ce891162ce6e2b18a9c6a2a3a7468d1551e244025742614de",
+            "pages": 11
+          },
+          {
+            "kind": "summary",
+            "title": "2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-03-31/1225050276.PDF",
+            "sha256": "a90702e0cb4c63164f79db3ca129762973cc09b20cd7a1d766c17d98cc6b6f3a",
+            "pages": 14
+          }
+        ]
+      },
+      "exclusionReason": "2026前三季度归母净利同比-34.23%，第三季度-74.00%，不因5.38%的历史派息率忽视经营下滑。"
+    },
+    {
+      "industryId": "tcm",
+      "symbol": "000999.SZ",
+      "name": "华润三九",
+      "orgId": "gssz0000999",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "error": "URLError(TimeoutError('_ssl.c:1129: The handshake operation timed out'))",
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "exclusionReason": "行情或分红来源连接失败，未完整核验，不以缺失数据视为通过。"
+    },
+    {
+      "industryId": "consumer",
+      "symbol": "000895.SZ",
+      "name": "双汇发展",
+      "orgId": "gssz0000895",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "24.52",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://qt.gtimg.cn/q=sz000895",
+      "priceObservedAt": "20261106161430",
+      "priceBasis": "Tencent post-close quote on requested session, not intraday or adjusted history",
+      "priceResponseSha256": "99e692462141f95860d40f4c47fc88afec3949c43815bbcc2e5795015b369c7c",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000895%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "17d6d013bcda65fb9c99e4beefac9f84d1910a82fa4a92a5551a919e7ca2c9e5"
+      ],
+      "completeDividendRecords": 36,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.8",
+      "yieldPct": "3.262642740619902120717781403",
+      "passesFourPct": false,
+      "ttmEvents": [
+        {
+          "exDate": "2026-04-29",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.8"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-04-27",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "10",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2023-09-11",
+          "reportDate": "2023-06-30",
+          "cashPerTen": "7.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-04-26",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-09-11",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "6.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-04-30",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "7.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-08-22",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "6.5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-04-29",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "8",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "1.75",
+        "2024": "1.36",
+        "2025": "1.40",
+        "2026": "0.8"
+      },
+      "exclusionReason": "按已实施税前TTM现金分红和2026-11-06实际未复权价格计算，股息率未严格大于4%。"
+    },
+    {
+      "industryId": "consumer",
+      "symbol": "000848.SZ",
+      "name": "承德露露",
+      "orgId": "gssz0000848",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "7.91",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=0.000848&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "d4d7d134c77b36e7c6d873c864b0052146c599775e44b2119ef8d9b2b2863785",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000848%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "36f79b98394627f22a387ce8c176608ec606521cb2f5cdac030a60f0e579f36a"
+      ],
+      "completeDividendRecords": 25,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.5",
+      "yieldPct": "6.321112515802781289506953224",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-05-29",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.5"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-05-24",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-05-30",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-04",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-05-29",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "5",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.3",
+        "2024": "0.4",
+        "2025": "0.3",
+        "2026": "0.5"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "000848",
+        "name": "承德露露",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-04-28/1225208968.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "2026年三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-24/1225619754.PDF",
+            "sha256": "4ba56ec58824e6e7aa667ce3f2caa78e0834e51c57b470dad6b9433e66b6f464",
+            "pages": 9
+          },
+          {
+            "kind": "summary",
+            "title": "2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-04-28/1225208967.PDF",
+            "sha256": "943a060f12b44c072fdc1a7f4b558f8f47ac7b664232621da95a8041b6afe02a",
+            "pages": 6
+          }
+        ]
+      },
+      "exclusionReason": "2026前三季度经营现金流为-62482124.65元，同比-126.35%，第三季度归母净利-39.05%，暂不纳入。"
+    },
+    {
+      "industryId": "spirits",
+      "symbol": "000596.SZ",
+      "name": "古井贡酒",
+      "orgId": "gssz0000596",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "105.01",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=0.000596&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "5ac22ef0c234d1d0e50399e0b5a883e71dd7e1b0fd9950a5c55d8644194a0a7f",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000596%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "b59afb65832e2c4c7fb3db2b95efe4253380fcbd595f26bcabb3fa4584f87d74"
+      ],
+      "completeDividendRecords": 27,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "4.4",
+      "yieldPct": "4.190077135510903723454909056",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2026-02-10",
+          "reportDate": "2025-09-30",
+          "cashPerTen": "10",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "1"
+        },
+        {
+          "exDate": "2026-07-17",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "34",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "3.4"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-07-13",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "30",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-20",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "45",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-01-24",
+          "reportDate": "2024-09-30",
+          "cashPerTen": "10",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-26",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "50",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-02-10",
+          "reportDate": "2025-09-30",
+          "cashPerTen": "10",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-17",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "34",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "3",
+        "2024": "4.5",
+        "2025": "6",
+        "2026": "4.4"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "000596",
+        "name": "古井贡酒",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237594.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "2026年三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-30/1225642369.PDF",
+            "sha256": "bb46bbbd937b08bf6aac16ac415acca0ec0ca6190684d56f5ff4dc8cf7fdf351",
+            "pages": 12
+          },
+          {
+            "kind": "summary",
+            "title": "2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237593.PDF",
+            "sha256": "5dc475babf12a843c56104158556efd50ac38a507d2b9e0d1ac3af89fa52f868",
+            "pages": 4
+          }
+        ]
+      },
+      "exclusionReason": "2026前三季度归母净利同比-42.94%，现金流-19.27%，且派息金额下降，暂缓新增。"
+    },
+    {
+      "industryId": "spirits",
+      "symbol": "002304.SZ",
+      "name": "洋河股份",
+      "orgId": "9900008689",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "37.86",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=0.002304&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "56c15bc75d3d83ce850d211d44a840665228146e92e1b7d4153584039189b82d",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22002304%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "3bb320e93638480fa26314df709843b04ad9e82b174006c1ae6ff5488bc581eb"
+      ],
+      "completeDividendRecords": 18,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "1.47",
+      "yieldPct": "3.882725832012678288431061807",
+      "passesFourPct": false,
+      "ttmEvents": [
+        {
+          "exDate": "2026-06-30",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "14.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "1.47"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-06-21",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "37.4",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-06-26",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "46.6",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-01-27",
+          "reportDate": "2024-09-30",
+          "cashPerTen": "23.3",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-06-27",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "23.17",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-06-30",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "14.7",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "3.74",
+        "2024": "4.66",
+        "2025": "4.647",
+        "2026": "1.47"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "exclusionReason": "按已实施税前TTM现金分红和2026-11-06实际未复权价格计算，股息率未严格大于4%。"
+    },
+    {
+      "industryId": "insurance",
+      "symbol": "601319.SS",
+      "name": "中国人保",
+      "orgId": "9900024684",
+      "asOf": "2026-11-06",
+      "sources": [],
+      "price": "7.26",
+      "priceOn": "2026-11-06",
+      "priceSource": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.601319&klt=101&fqt=0&beg=20261101&end=20261106&fields1=f1%2Cf2%2Cf3%2Cf4%2Cf5%2Cf6&fields2=f51%2Cf52%2Cf53",
+      "priceResponseSha256": "1b6ffd54d23487f97f880db22b3208aee07f62c049e9e6ddb515bbe70f581628",
+      "dividendSources": [
+        "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601319%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+      ],
+      "dividendResponseSha256": [
+        "020a018dea7d71ea815efad659cbb0b06d2e3ea70e9991876a0d4acb637b47ba"
+      ],
+      "completeDividendRecords": 13,
+      "ttmWindowStartExclusive": "2025-11-06",
+      "ttmDividendPerShare": "0.330",
+      "yieldPct": "4.545454545454545454545454545",
+      "passesFourPct": true,
+      "ttmEvents": [
+        {
+          "exDate": "2025-12-12",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "0.75",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.075"
+        },
+        {
+          "exDate": "2026-07-31",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.45",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.145"
+        },
+        {
+          "exDate": "2026-11-06",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1.1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0",
+          "cashPerCurrentShare": "0.11"
+        }
+      ],
+      "implementedEventsSince2023": [
+        {
+          "exDate": "2023-07-28",
+          "reportDate": "2022-12-31",
+          "cashPerTen": "1.66",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2024-08-09",
+          "reportDate": "2023-12-31",
+          "cashPerTen": "1.56",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-01-10",
+          "reportDate": "2024-06-30",
+          "cashPerTen": "0.63",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-08-08",
+          "reportDate": "2024-12-31",
+          "cashPerTen": "1.17",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2025-12-12",
+          "reportDate": "2025-06-30",
+          "cashPerTen": "0.75",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-07-31",
+          "reportDate": "2025-12-31",
+          "cashPerTen": "1.45",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        },
+        {
+          "exDate": "2026-11-06",
+          "reportDate": "2026-06-30",
+          "cashPerTen": "1.1",
+          "bonusPerTen": "0",
+          "transferPerTen": "0"
+        }
+      ],
+      "unadjustedCashByPaymentYear": {
+        "2023": "0.166",
+        "2024": "0.156",
+        "2025": "0.255",
+        "2026": "0.255"
+      },
+      "priceBasis": "Eastmoney unadjusted daily close on requested session",
+      "issuerReportSources": {
+        "code": "601319",
+        "name": "中国人保",
+        "annualReport": "https://static.cninfo.com.cn/finalpage/2026-03-27/1225037867.PDF",
+        "documents": [
+          {
+            "kind": "quarter",
+            "title": "中国人保2026年第三季度报告",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-10-31/1225648849.PDF",
+            "sha256": "5340ff0907159c083dc6212a2df54fabfc02dddbec1ee61e3b93881ee13d44a8",
+            "pages": 15
+          },
+          {
+            "kind": "summary",
+            "title": "中国人保2025年年度报告摘要",
+            "url": "https://static.cninfo.com.cn/finalpage/2026-03-27/1225037863.PDF",
+            "sha256": "dbdc0596bf8e5ecb4256f80ce46f857ce3613cdf1bd0a4749ae11c5f90d0458b",
+            "pages": 15
+          }
+        ]
+      },
+      "exclusionReason": "TTM计入2025中期、2025末期、2026中期三次真实派息；2025完整年度每股现金0.22元，相对现价约3.03%，本轮不按派息时点抬升后的4.55%判断稳态分红。"
+    }
+  ]
+}

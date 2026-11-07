@@ -276,7 +276,7 @@ mod tests {
             .unwrap();
         let upgraded = PublicWatch::open(&store.url, &store.schema).unwrap();
         let (mut current, revision) = upgraded.catalog().unwrap();
-        assert_eq!(current.version, 2);
+        assert_eq!(current.version, 3);
         assert!(current.industry("coal").is_err());
         assert!(current
             .industries
@@ -319,6 +319,59 @@ mod tests {
                 .any(|c| c.symbol == "600795.SS"),
             "restarts do not undo later removals"
         );
+    }
+
+    #[test]
+    fn screened_release_adds_only_selected_companies_once_and_preserves_curated_v2_data() {
+        let store = PublicWatch::test();
+        let (mut old, _) = store.catalog().unwrap();
+        let selected: std::collections::BTreeSet<String> = serde_json::from_str(include_str!(
+            "../../data/watch-catalog-screened-additions-20261107.json"
+        ))
+        .unwrap();
+        old.version = 2;
+        for industry in &mut old.industries {
+            industry
+                .companies
+                .retain(|c| !selected.contains(&c.symbol) && c.symbol != "600036.SS");
+        }
+        let mut custom = old.industries[0].companies[0].clone();
+        custom.symbol = "600000.SS".into();
+        custom.name = "自定义公司名".into();
+        old.industries[0].companies.push(custom.clone());
+        store
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE watch_catalog SET payload=$1",
+                [serde_json::to_string(&old).unwrap()],
+            )
+            .unwrap();
+        let migrated = PublicWatch::open(&store.url, &store.schema).unwrap();
+        let (mut current, revision) = migrated.catalog().unwrap();
+        let companies: Vec<_> = current
+            .industries
+            .iter()
+            .flat_map(|i| &i.companies)
+            .collect();
+        assert!(selected
+            .iter()
+            .all(|s| companies.iter().any(|c| &c.symbol == s)));
+        assert!(companies.contains(&&custom));
+        assert!(
+            !companies.iter().any(|c| c.symbol == "600036.SS"),
+            "v2 removals are not replayed as v1 additions"
+        );
+        current.industries[0]
+            .companies
+            .retain(|c| c.symbol != "601166.SS");
+        migrated.save_catalog(&current, revision, "owner").unwrap();
+        let reopened = PublicWatch::open(&store.url, &store.schema).unwrap();
+        assert_eq!(reopened.catalog().unwrap().1, revision + 1);
+        assert!(!reopened.catalog().unwrap().0.industries[0]
+            .companies
+            .iter()
+            .any(|c| c.symbol == "601166.SS"));
     }
 
     #[test]

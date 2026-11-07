@@ -48,7 +48,7 @@ impl Catalog {
         let catalog = self;
         let mut industries = BTreeSet::new();
         let mut symbols = BTreeSet::new();
-        if !matches!(catalog.version, 1 | 2)
+        if !matches!(catalog.version, 1..=3)
             || chrono::NaiveDate::parse_from_str(&catalog.verified_on, "%Y-%m-%d").is_err()
             || catalog.industries.is_empty()
         {
@@ -94,12 +94,52 @@ impl Catalog {
         Ok(())
     }
 
-    /// One-time migration for the explicitly requested November company additions.
-    /// Existing custom entries and prior removals outside this request remain intact.
+    /// Apply each explicitly authorized catalogue release once, preserving later removals.
     pub fn upgrade(&mut self, seed: &Catalog) -> AppResult<bool> {
         if self.version == seed.version {
             return Ok(false);
         }
+        if self.version == 1 {
+            self.upgrade_v1(seed)?;
+        }
+        if self.version == 2 && seed.version == 3 {
+            let requested: BTreeSet<String> = serde_json::from_str(include_str!(
+                "../../../data/watch-catalog-screened-additions-20261107.json"
+            ))?;
+            let mut existing: BTreeSet<String> = self
+                .industries
+                .iter()
+                .flat_map(|i| &i.companies)
+                .map(|c| c.symbol.clone())
+                .collect();
+            for template in &seed.industries {
+                for company in &template.companies {
+                    if requested.contains(&company.symbol)
+                        && existing.insert(company.symbol.clone())
+                    {
+                        let target = self
+                            .industries
+                            .iter_mut()
+                            .find(|i| i.id == template.id)
+                            .ok_or_else(|| {
+                                AppError::Validation("旧目录领域不完整，请保留原数据核对".into())
+                            })?;
+                        target.companies.push(company.clone());
+                    }
+                }
+            }
+            self.version = 3;
+        }
+        if self.version != seed.version {
+            return Err(AppError::Validation("目录升级版本不受支持".into()));
+        }
+        self.verified_on.clone_from(&seed.verified_on);
+        self.validate()?;
+        Ok(true)
+    }
+
+    /// Minimal adapter for pre-domain-reorganization data and whole-site backups.
+    fn upgrade_v1(&mut self, seed: &Catalog) -> AppResult<()> {
         let requested: BTreeSet<String> = serde_json::from_str(include_str!(
             "../../../data/watch-catalog-additions-20261107.json"
         ))?;
@@ -160,10 +200,9 @@ impl Catalog {
                 ));
             }
         }
-        self.version = seed.version;
-        self.verified_on.clone_from(&seed.verified_on);
+        self.version = 2;
         self.validate()?;
-        Ok(true)
+        Ok(())
     }
 
     pub fn industry(&self, id: &str) -> AppResult<&Industry> {
@@ -234,6 +273,47 @@ mod tests {
     use super::*;
 
     #[test]
+    fn screened_additions_reproduce_the_dated_ttm_above_four_without_changing_watch_rules() {
+        use crate::models::watch::{trailing_dividends, DividendEvent};
+        use rust_decimal::Decimal;
+        let audit: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../docs/audits/watch-catalog-screening-20261107.json"
+        ))
+        .unwrap();
+        let selected = audit["selected"].as_array().unwrap();
+        let requested: BTreeSet<String> = serde_json::from_str(include_str!(
+            "../../../data/watch-catalog-screened-additions-20261107.json"
+        ))
+        .unwrap();
+        assert_eq!(selected.len(), 8);
+        let mut found = BTreeSet::new();
+        let day = chrono::NaiveDate::parse_from_str(audit["priceOn"].as_str().unwrap(), "%Y-%m-%d")
+            .unwrap();
+        for row in selected {
+            let events: Vec<DividendEvent> =
+                serde_json::from_value(row["implementedEventsSince2023"].clone()).unwrap();
+            let cash = trailing_dividends(&events, day).unwrap();
+            assert_eq!(
+                cash,
+                Decimal::from_str_exact(row["ttmDividendPerShare"].as_str().unwrap()).unwrap()
+            );
+            let price = Decimal::from_str_exact(row["price"].as_str().unwrap()).unwrap();
+            let yield_pct = cash * Decimal::ONE_HUNDRED / price;
+            assert!(yield_pct > Decimal::from(4));
+            assert_eq!(
+                yield_pct.round_dp(4),
+                Decimal::from_str_exact(row["yieldPct"].as_str().unwrap())
+                    .unwrap()
+                    .round_dp(4)
+            );
+            found.insert(row["symbol"].as_str().unwrap().to_string());
+        }
+        assert_eq!(found, requested);
+        assert_eq!(MIN_YIELD_PCT, 5.0);
+        assert_eq!(BAND_DISTANCE_PCT, 2.0);
+    }
+
+    #[test]
     fn bundled_catalog_is_unique_and_contains_the_agreed_industries_and_companies() {
         let catalog = Catalog::bundled().unwrap();
         assert_eq!(
@@ -261,7 +341,7 @@ mod tests {
                 .iter()
                 .map(|i| i.companies.len())
                 .sum::<usize>(),
-            43
+            51
         );
         assert!(catalog.industry("unknown").is_err());
         let mut value = serde_json::to_value(&catalog).unwrap();

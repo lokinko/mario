@@ -141,7 +141,7 @@ try {
   assert.equal((await fetch(base + "/watch/catalog")).status, 401);
   const catalog = await api("/watch/catalog");
   assert.deepEqual(catalog.catalog.industries.map(i => i.name), ["银行", "能源", "电力", "通信运营", "运输", "白酒", "白色家电", "保险", "中药", "消费"]);
-  assert.equal(catalog.rows.length, 43);
+  assert.equal(catalog.rows.length, 51);
   assert.equal(catalog.canEdit, false);
   await api("/watch/catalog/resolve", "POST", { query: "国电电力" }, 403);
   await api("/watch/catalog", "PUT", { catalog: catalog.catalog, revision: catalog.revision }, 403);

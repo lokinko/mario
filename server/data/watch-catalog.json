@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "verifiedOn": "2026-11-07",
   "industries": [
     {
@@ -57,6 +57,51 @@
           "sources": [
             "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601939",
             "https://static.cninfo.com.cn/finalpage/2026-04-28/1225204147.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "601166.SS",
+          "name": "兴业银行",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601166",
+            "https://static.cninfo.com.cn/finalpage/2026-03-27/1225039240.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "600919.SS",
+          "name": "江苏银行",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600919",
+            "https://static.cninfo.com.cn/finalpage/2026-04-29/1225247387.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "601009.SS",
+          "name": "南京银行",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601009",
+            "https://static.cninfo.com.cn/finalpage/2026-04-23/1225157414.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "601838.SS",
+          "name": "成都银行",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601838",
+            "https://static.cninfo.com.cn/finalpage/2026-04-23/1225153907.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "601825.SS",
+          "name": "沪农商行",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601825",
+            "https://static.cninfo.com.cn/finalpage/2026-04-23/1225150337.PDF"
           ],
           "sourcesCheckedOn": "2026-11-07"
         }
@@ -299,6 +344,24 @@
             "https://static.cninfo.com.cn/finalpage/2026-04-30/1225257951.PDF"
           ],
           "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "000429.SZ",
+          "name": "粤高速A",
+          "sources": [
+            "https://www.szse.cn/certificate/individual/index.html?code=000429",
+            "https://static.cninfo.com.cn/finalpage/2026-03-14/1225008769.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "601000.SS",
+          "name": "唐山港",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601000",
+            "https://static.cninfo.com.cn/finalpage/2026-03-28/1225040947.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
         }
       ]
     },
@@ -429,6 +492,15 @@
           "sources": [
             "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600285",
             "https://static.cninfo.com.cn/finalpage/2026-04-28/1225201875.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "600750.SS",
+          "name": "华润江中",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600750",
+            "https://static.cninfo.com.cn/finalpage/2026-03-20/1225018212.PDF"
           ],
           "sourcesCheckedOn": "2026-11-07"
         }
