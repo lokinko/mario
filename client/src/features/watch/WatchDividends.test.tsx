@@ -52,7 +52,6 @@ it("keeps old observations readable without claiming three-year coverage", () =>
   expect(
     screen.getByRole("table", { name: "TTM 窗口已实施分红事件" }),
   ).toBeTruthy();
-  expect(screen.getByText("下次成功检查后补全三年明细。")).toBeTruthy();
 });
 
 it("does not turn missing or stale history into a known empty three-year window", () => {

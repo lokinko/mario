@@ -34,11 +34,7 @@ export function WatchGrid({
           {plan ? "编辑网格方案" : "设置网格方案"}
         </button>
       </div>
-      {!plan || !result ? (
-        <p>
-          设置下跌时的分批投入和反弹时的减仓比例，测算回到 4.0% 时的价差收益。
-        </p>
-      ) : (
+      {plan && result && (
         <>
           <p>
             买入比例按{buyBasisLabels[plan.buyBasis]}，减仓比例按
