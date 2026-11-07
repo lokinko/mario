@@ -45,7 +45,12 @@ export function WatchCatalogDetails({
         <section className="watch-detail-section">
           <h3>公司与行业来源</h3>
           <p className="watch-meta">
-            目录核查于 {verifiedOn} · 按主营业务归入{industry}，用于同行比较。
+            目录更新于 {verifiedOn} · 按主营业务归入{industry}，用于同行比较。
+          </p>
+          <p className="watch-meta">
+            {row.company.sourcesCheckedOn
+              ? `公开来源核查于 ${row.company.sourcesCheckedOn}`
+              : "公开来源待补充，系统会在后续检查时重试"}
           </p>
           <div className="watch-sources">
             {row.company.sources.map((url, i) => (

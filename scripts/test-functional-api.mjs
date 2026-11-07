@@ -140,9 +140,10 @@ try {
   const watchVersion = await api("/sync/version");
   assert.equal((await fetch(base + "/watch/catalog")).status, 401);
   const catalog = await api("/watch/catalog");
-  assert.deepEqual(catalog.catalog.industries.map(i => i.name), ["银行", "煤炭", "石油石化", "电力", "通信运营", "高速公路", "白酒", "家电"]);
-  assert.equal(catalog.rows.length, 21);
+  assert.deepEqual(catalog.catalog.industries.map(i => i.name), ["银行", "能源", "电力", "通信运营", "运输", "白酒", "白色家电", "保险", "中药", "消费"]);
+  assert.equal(catalog.rows.length, 43);
   assert.equal(catalog.canEdit, false);
+  await api("/watch/catalog/resolve", "POST", { query: "国电电力" }, 403);
   await api("/watch/catalog", "PUT", { catalog: catalog.catalog, revision: catalog.revision }, 403);
   for (const row of catalog.rows) {
     for (const privateKey of ["entry", "thesis", "pinned", "gridPlan", "alert", "trades"]) assert.equal(row[privateKey], undefined);
@@ -204,9 +205,13 @@ try {
     role(true);
     const adminBoard = await api("/watch/catalog");
     assert.equal(adminBoard.canEdit, true, "existing sessions immediately use current server permissions");
+    const identified = await api("/watch/catalog/resolve", "POST", { query: "国电电力" });
+    assert.equal(identified.symbol, "600795.SS");
+    assert(identified.sourcesCheckedOn);
+    await api("/watch/catalog/resolve", "POST", { query: "" }, 400);
     const draft = structuredClone(adminBoard.catalog);
     draft.industries[0].companies = draft.industries[0].companies.filter(c => c.symbol !== watched.symbol);
-    draft.industries[0].companies.push({ symbol: "600000.SS", name: "浦发银行", sources: ["https://example.test/exchange", "https://example.test/report"] });
+    draft.industries[0].companies.push({ symbol: "600000.SS", name: "浦发银行", sources: [] });
     const changed = await api("/watch/catalog", "PUT", { catalog: draft, revision: adminBoard.revision });
     assert.equal(changed.revision, adminBoard.revision + 1);
     assert.equal(changed.canEdit, true);

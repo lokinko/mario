@@ -89,6 +89,7 @@ impl MarketRuntime {
         let watch_catalog = Arc::new(crate::application::watch_catalog::WatchCatalogService::new(
             Arc::new(crate::db::PublicWatch::postgres(database_url)?),
             watch_provider.clone(),
+            Arc::new(crate::market_data::watch_catalog::PublicCatalogSources::new()?),
         ));
         Ok(Self {
             services,

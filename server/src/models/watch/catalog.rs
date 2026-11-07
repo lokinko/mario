@@ -22,12 +22,15 @@ pub struct Industry {
     pub companies: Vec<Company>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Company {
     pub symbol: String,
     pub name: String,
+    #[serde(default)]
     pub sources: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sources_checked_on: Option<String>,
 }
 
 impl Catalog {
@@ -45,7 +48,7 @@ impl Catalog {
         let catalog = self;
         let mut industries = BTreeSet::new();
         let mut symbols = BTreeSet::new();
-        if catalog.version != 1
+        if !matches!(catalog.version, 1 | 2)
             || chrono::NaiveDate::parse_from_str(&catalog.verified_on, "%Y-%m-%d").is_err()
             || catalog.industries.is_empty()
         {
@@ -72,7 +75,10 @@ impl Catalog {
                 if input.symbol != company.symbol
                     || input.name != company.name
                     || !symbols.insert(&company.symbol)
-                    || company.sources.len() < 2
+                    || (company.sources_checked_on.is_some() && company.sources.len() < 2)
+                    || company.sources_checked_on.as_ref().is_some_and(|date| {
+                        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err()
+                    })
                     || company.sources.iter().any(|s| {
                         !s.starts_with("https://")
                             || s.len() <= 8
@@ -86,6 +92,78 @@ impl Catalog {
             }
         }
         Ok(())
+    }
+
+    /// One-time migration for the explicitly requested November company additions.
+    /// Existing custom entries and prior removals outside this request remain intact.
+    pub fn upgrade(&mut self, seed: &Catalog) -> AppResult<bool> {
+        if self.version == seed.version {
+            return Ok(false);
+        }
+        let requested: BTreeSet<String> = serde_json::from_str(include_str!(
+            "../../../data/watch-catalog-additions-20261107.json"
+        ))?;
+        let mut groups = std::mem::take(&mut self.industries);
+        for group in &mut groups {
+            match group.id.as_str() {
+                "coal" | "oil" => {
+                    group.id = "energy".into();
+                    group.name = "能源".into();
+                }
+                "highways" => {
+                    group.id = "transport".into();
+                    group.name = "运输".into();
+                }
+                "appliances" => group.name = "白色家电".into(),
+                _ => {}
+            }
+        }
+        for template in &seed.industries {
+            let mut companies = Vec::new();
+            for group in &mut groups {
+                let mut retained = Vec::new();
+                for company in group.companies.drain(..) {
+                    let target = seed
+                        .industries
+                        .iter()
+                        .find(|i| i.companies.iter().any(|c| c.symbol == company.symbol));
+                    let belongs = if requested.contains(&company.symbol) {
+                        target.is_some_and(|i| i.id == template.id)
+                    } else {
+                        group.id == template.id
+                    };
+                    if belongs {
+                        companies.push(company);
+                    } else {
+                        retained.push(company);
+                    }
+                }
+                group.companies = retained;
+            }
+            for company in &template.companies {
+                if requested.contains(&company.symbol)
+                    && !companies.iter().any(|c| c.symbol == company.symbol)
+                {
+                    companies.push(company.clone());
+                }
+            }
+            self.industries.push(Industry {
+                id: template.id.clone(),
+                name: template.name.clone(),
+                companies,
+            });
+        }
+        for group in groups {
+            if !group.companies.is_empty() {
+                return Err(AppError::Validation(
+                    "旧公共目录包含无法迁移的领域，请保留原数据核对".into(),
+                ));
+            }
+        }
+        self.version = seed.version;
+        self.verified_on.clone_from(&seed.verified_on);
+        self.validate()?;
+        Ok(true)
     }
 
     pub fn industry(&self, id: &str) -> AppResult<&Industry> {
@@ -166,13 +244,15 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 "银行",
-                "煤炭",
-                "石油石化",
+                "能源",
                 "电力",
                 "通信运营",
-                "高速公路",
+                "运输",
                 "白酒",
-                "家电"
+                "白色家电",
+                "保险",
+                "中药",
+                "消费"
             ]
         );
         assert_eq!(
@@ -181,7 +261,7 @@ mod tests {
                 .iter()
                 .map(|i| i.companies.len())
                 .sum::<usize>(),
-            21
+            43
         );
         assert!(catalog.industry("unknown").is_err());
         let mut value = serde_json::to_value(&catalog).unwrap();
@@ -192,6 +272,12 @@ mod tests {
         assert!(Catalog::parse(&value.to_string()).is_err());
         value = serde_json::to_value(&catalog).unwrap();
         value["industries"][0]["companies"][0]["sources"] = serde_json::json!([]);
+        value["industries"][0]["companies"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("sourcesCheckedOn");
+        assert!(Catalog::parse(&value.to_string()).is_ok());
+        value["industries"][0]["companies"][0]["sourcesCheckedOn"] = "invalid".into();
         assert!(Catalog::parse(&value.to_string()).is_err());
     }
 }

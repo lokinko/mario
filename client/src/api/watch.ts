@@ -82,6 +82,7 @@ export interface CatalogCompany {
   symbol: string;
   name: string;
   sources: string[];
+  sourcesCheckedOn?: string;
 }
 export interface WatchIndustry {
   id: string;
@@ -119,6 +120,11 @@ export interface WatchBoard {
 export const getWatchBoard = () => httpRequest<WatchBoard>("/watch");
 export const getWatchCatalog = () =>
   httpRequest<CatalogBoard>("/watch/catalog");
+export const resolveCatalogCompany = (query: string) =>
+  httpRequest<CatalogCompany>("/watch/catalog/resolve", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+  });
 export const saveWatchCatalog = (
   catalog: CatalogBoard["catalog"],
   revision: number,

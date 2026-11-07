@@ -14,7 +14,13 @@ import catalogFixture from "../../../../server/data/watch-catalog.json";
 vi.mock("../../api/watch", () => ({
   saveWatchCatalog: vi.fn(),
   getWatchCatalog: vi.fn(),
+  resolveCatalogCompany: vi.fn(),
 }));
+const company: api.CatalogCompany = {
+  symbol: "600000.SS",
+  name: "浦发银行",
+  sources: [],
+};
 const board = (): api.CatalogBoard => ({
   catalog: structuredClone(catalogFixture),
   revision: 3,
@@ -32,27 +38,25 @@ const props = () => ({
 });
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.resolveCatalogCompany).mockResolvedValue(company);
 });
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-function fillCompany(
-  symbol = "600000.SH",
-  name = "浦发银行",
-  sources = "https://example.test/exchange\nhttps://example.test/report",
-) {
-  fireEvent.change(screen.getByLabelText("证券代码"), {
-    target: { value: symbol },
+async function apply(query = "浦发银行") {
+  fireEvent.change(screen.getByLabelText("公司名称或证券代码"), {
+    target: { value: query },
   });
-  fireEvent.change(screen.getByLabelText("公司名称"), {
-    target: { value: name },
-  });
-  fireEvent.change(screen.getByLabelText("公开来源（每行一个，至少两个）"), {
-    target: { value: sources },
-  });
+  fireEvent.click(screen.getByRole("button", { name: "应用公司修改" }));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "保存公共目录" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
 }
-it("adds, edits and removes companies only after explicit shared-directory save", async () => {
+it("looks up company identity without asking for public sources and saves pending evidence", async () => {
   const p = props();
   vi.mocked(api.saveWatchCatalog).mockResolvedValue({
     ...board(),
@@ -60,49 +64,52 @@ it("adds, edits and removes companies only after explicit shared-directory save"
   });
   vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<WatchCatalogEditor {...p} />);
-  fillCompany();
-  expect(
-    (screen.getByRole("button", { name: "保存公共目录" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "应用公司修改" }));
+  expect(screen.queryByLabelText(/公开来源/)).toBeNull();
+  await apply();
+  expect(api.resolveCatalogCompany).toHaveBeenCalledWith("浦发银行");
   expect(api.saveWatchCatalog).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "编辑 招商银行" }));
-  fireEvent.change(screen.getByLabelText("公司名称"), {
-    target: { value: "招商银行（已核查）" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "应用公司修改" }));
   fireEvent.click(screen.getByRole("button", { name: "移除 工商银行" }));
   fireEvent.click(screen.getByRole("button", { name: "保存公共目录" }));
   await waitFor(() => expect(p.onSaved).toHaveBeenCalled());
   const [catalog, revision] = vi.mocked(api.saveWatchCatalog).mock.calls[0];
   expect(revision).toBe(3);
-  expect(catalog.industries[0].companies.map((c) => c.name)).toEqual([
-    "农业银行",
-    "浦发银行",
-    "招商银行（已核查）",
-  ]);
-  expect(catalog.industries[0].companies[1].symbol).toBe("600000.SS");
+  expect(catalog.industries[0].companies.at(-1)).toEqual(company);
+  expect(
+    catalog.industries[0].companies.some((c) => c.symbol === "601398.SS"),
+  ).toBe(false);
   expect(catalog.industries[1]).toEqual(catalogFixture.industries[1]);
 });
-it("rejects duplicates and missing source evidence without a request", () => {
+it("rejects a duplicate resolved code and preserves input when identity lookup fails", async () => {
+  vi.mocked(api.resolveCatalogCompany).mockResolvedValue(
+    catalogFixture.industries[0].companies[0],
+  );
   render(<WatchCatalogEditor {...props()} />);
-  fillCompany("600036.SH");
+  fireEvent.change(screen.getByLabelText("公司名称或证券代码"), {
+    target: { value: "600036" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "应用公司修改" }));
-  expect(screen.getByText("该公司已在公共目录中，请编辑原有记录")).toBeTruthy();
-  fillCompany("600000.SH", "浦发银行", "https://example.test/exchange");
+  await screen.findByText("该公司已在公共目录中，请编辑原有记录");
+  vi.mocked(api.resolveCatalogCompany).mockRejectedValue(
+    new Error("公司身份暂未确认，请稍后重试"),
+  );
+  fireEvent.change(screen.getByLabelText("公司名称或证券代码"), {
+    target: { value: "未知公司" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "应用公司修改" }));
-  expect(screen.getByText(/请至少填写两个 HTTPS 来源/)).toBeTruthy();
+  await screen.findByText(/公司身份暂未确认/);
+  expect(screen.getByLabelText("公司名称或证券代码")).toHaveProperty(
+    "value",
+    "未知公司",
+  );
   expect(api.saveWatchCatalog).not.toHaveBeenCalled();
 });
-it("keeps the draft and its original revision when background reads advance the parent board", async () => {
+it("keeps the draft and original revision when background source enrichment advances the board", async () => {
   const p = props();
   vi.mocked(api.saveWatchCatalog).mockRejectedValue(
     new Error("公共目录已被更新"),
   );
   const view = render(<WatchCatalogEditor {...p} />);
-  fillCompany();
-  fireEvent.click(screen.getByRole("button", { name: "应用公司修改" }));
+  await apply("600000");
   view.rerender(
     <WatchCatalogEditor {...p} board={{ ...board(), revision: 9 }} />,
   );

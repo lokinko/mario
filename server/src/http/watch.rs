@@ -15,6 +15,7 @@ pub(super) fn router() -> Router {
         .route("/api/watch", get(board).put(save))
         .route("/api/watch/catalog", get(catalog).put(save_catalog))
         .route("/api/watch/catalog/refresh", post(refresh_catalog))
+        .route("/api/watch/catalog/resolve", post(resolve_company))
         .route("/api/watch/refresh", post(refresh))
         .route("/api/watch/{symbol}", axum::routing::delete(remove))
         .route("/api/watch/{symbol}/read", post(read))
@@ -27,6 +28,26 @@ async fn catalog(
     let mut board = state.watch_catalog.board()?;
     board.can_edit = state.is_superuser;
     Ok(Json(board))
+}
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CompanyQuery {
+    query: String,
+}
+async fn resolve_company(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Json(input): Json<CompanyQuery>,
+) -> AppResult<Json<crate::models::watch::catalog::Company>> {
+    if !state.is_superuser {
+        return Err(crate::AppError::Forbidden(
+            "仅超级账户可维护公共公司目录".into(),
+        ));
+    }
+    let company = state
+        .db
+        .without_account_lock(state.watch_catalog.resolve(&input.query))
+        .await??;
+    Ok(Json(company))
 }
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -178,7 +199,7 @@ mod tests {
                 .iter()
                 .filter(|r| !r["latest"].is_null())
                 .count(),
-            3
+            6
         );
         assert_eq!(state.db.revision().unwrap(), revision);
         assert!(state.db.watch_entries().unwrap().is_empty());

@@ -9,6 +9,7 @@ export function isDataWrite(path: string, method = "GET") {
       "/financial-operations/resolve",
       // Shared catalogue writes use their own revision, independent of account data.
       "/watch/catalog",
+      "/watch/catalog/resolve",
     ].includes(resource)
   );
 }
@@ -16,18 +17,20 @@ export function requestPolicy(path: string) {
   const resource = path.split("?")[0];
   const timeoutMs = ["/analysis", "/analysis/stream"].includes(resource)
     ? 1800000
-    : resource === "/watch/refresh" || resource === "/watch/catalog/refresh"
-      ? 180000
-      : resource === "/model-config/test"
-        ? 300000
-        : resource === "/snapshot" ||
-            resource.startsWith("/fx-settings") ||
-            resource.startsWith("/market-data/fx-rate")
-          ? 30000
-          : resource.startsWith("/research-evidence") ||
-              resource.startsWith("/data/")
-            ? 60000
-            : 15000;
+    : resource === "/watch/catalog/resolve"
+      ? 30000
+      : resource === "/watch/refresh" || resource === "/watch/catalog/refresh"
+        ? 180000
+        : resource === "/model-config/test"
+          ? 300000
+          : resource === "/snapshot" ||
+              resource.startsWith("/fx-settings") ||
+              resource.startsWith("/market-data/fx-rate")
+            ? 30000
+            : resource.startsWith("/research-evidence") ||
+                resource.startsWith("/data/")
+              ? 60000
+              : 15000;
   return {
     timeoutMs,
     ...(resource === "/analysis/stream" ? { idleTimeoutMs: 60000 } : {}),

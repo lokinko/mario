@@ -42,3 +42,10 @@ pub(crate) trait WatchMarketProvider: Send + Sync {
         day: chrono::NaiveDate,
     ) -> AppResult<crate::models::watch::WatchMarketData>;
 }
+
+#[async_trait]
+pub(crate) trait CatalogSourceProvider: Send + Sync {
+    /// Resolve an exact A-share name or code and collect official public sources.
+    /// A verified identity can be returned while its report source is still pending.
+    async fn resolve(&self, query: &str) -> AppResult<crate::models::watch::catalog::Company>;
+}

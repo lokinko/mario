@@ -18,6 +18,7 @@ vi.mock("../../api/watch", () => ({
   getWatchBoard: vi.fn(),
   getWatchCatalog: vi.fn(),
   saveWatchCatalog: vi.fn(),
+  resolveCatalogCompany: vi.fn(),
   refreshWatchCatalog: vi.fn(),
   saveWatch: vi.fn(),
   saveWatchGrid: vi.fn(),
@@ -115,14 +116,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("defaults to personal watches and switches all eight industry groups without private controls", async () => {
+it("defaults to personal watches and switches all industry groups without private controls", async () => {
   vi.mocked(api.getWatchBoard).mockResolvedValue({ ...empty, rows: [row] });
   render(<BuyWatch {...props()} />);
   expect(await screen.findByRole("tab", { name: "自选 1" })).toHaveProperty(
     "ariaSelected",
     "true",
   );
-  expect(await screen.findAllByRole("tab")).toHaveLength(9);
+  expect(await screen.findAllByRole("tab")).toHaveLength(
+    catalog.catalog.industries.length + 1,
+  );
   for (const industry of catalog.catalog.industries) {
     fireEvent.click(
       screen.getByRole("tab", {
@@ -150,7 +153,7 @@ it("defaults to personal watches and switches all eight industry groups without 
 
 it("clears search and filters on group changes while keeping sorting and cards", async () => {
   render(<BuyWatch {...props()} />);
-  fireEvent.click(await screen.findByRole("tab", { name: "银行 3" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "银行 6" }));
   fireEvent.change(screen.getByRole("textbox", { name: "搜索观察公司" }), {
     target: { value: "招商" },
   });
@@ -162,7 +165,7 @@ it("clears search and filters on group changes while keeping sorting and cards",
   });
   fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
   expect(screen.getByText("当前条件下没有公司")).toBeTruthy();
-  fireEvent.click(screen.getByRole("tab", { name: "煤炭 3" }));
+  fireEvent.click(screen.getByRole("tab", { name: "能源 6" }));
   expect(screen.getByRole("textbox", { name: "搜索观察公司" })).toHaveProperty(
     "value",
     "",
@@ -179,7 +182,7 @@ it("clears search and filters on group changes while keeping sorting and cards",
     "ariaPressed",
     "true",
   );
-  expect(screen.getAllByRole("button", { name: "查看依据" })).toHaveLength(3);
+  expect(screen.getAllByRole("button", { name: "查看依据" })).toHaveLength(6);
   expect(screen.queryByRole("button", { name: "结合我的交易讨论" })).toBeNull();
 });
 
@@ -216,7 +219,7 @@ it("adds from an industry once without overwriting existing personal reasons or 
       ],
     });
   render(<BuyWatch {...props()} />);
-  fireEvent.click(await screen.findByRole("tab", { name: "银行 3" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "银行 6" }));
   expect(
     screen.getByRole("button", { name: "已在自选招商银行" }),
   ).toHaveProperty("disabled", true);
@@ -244,7 +247,7 @@ it("keeps public details separate and refreshes only the selected industry", asy
     new Error("行业来源暂不可用"),
   );
   render(<BuyWatch {...props()} />);
-  fireEvent.click(await screen.findByRole("tab", { name: "银行 3" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "银行 6" }));
   fireEvent.click(screen.getByRole("button", { name: /招商银行.*600036/ }));
   const drawer = await screen.findByRole("dialog");
   expect(within(drawer).getByText("公司与行业来源")).toBeTruthy();
@@ -272,7 +275,7 @@ it("enforces the personal limit in industry lists and drawers", async () => {
   }));
   vi.mocked(api.getWatchBoard).mockResolvedValue({ ...empty, rows: full });
   render(<BuyWatch {...props()} />);
-  fireEvent.click(await screen.findByRole("tab", { name: "银行 3" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "银行 6" }));
   expect(
     screen.getByRole("button", { name: "加入自选招商银行" }),
   ).toHaveProperty("disabled", true);
@@ -298,7 +301,7 @@ it("allows existing watches when the catalogue fails and can retry its read inde
   fireEvent.click(
     await screen.findByRole("button", { name: "重新读取行业目录" }),
   );
-  expect(await screen.findByRole("tab", { name: "银行 3" })).toBeTruthy();
+  expect(await screen.findByRole("tab", { name: "银行 6" })).toBeTruthy();
   expect(api.getWatchBoard).toHaveBeenCalledTimes(1);
 });
 
@@ -772,7 +775,7 @@ it("filters by the weekly middle and shades that range even far from the weekly 
 it("shows public maintenance only for the server-authorized superuser", async () => {
   const p = props();
   const view = render(<BuyWatch {...p} />);
-  await screen.findByRole("tab", { name: "银行 3" });
+  await screen.findByRole("tab", { name: "银行 6" });
   expect(screen.queryByRole("button", { name: "维护公共公司" })).toBeNull();
   view.unmount();
   vi.mocked(api.getWatchCatalog).mockResolvedValue({

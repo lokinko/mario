@@ -113,7 +113,7 @@ flowchart TD
 | `accounts.rs`、`accounts/openai.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速、持久化超级账户权限；可选网站 OpenAI 身份映射、短期 OAuth 事务及显式关联；Agent 令牌的常量时间比较 |
 | `openai_login.rs`、`hosted/openai.rs` | 网站身份登录：前者只做官方 OIDC 配置、授权码交换和签名声明校验，不访问账号或模型；后者转换 HTTP/Cookie、编排账号事务、固定站点重定向与一次性交接；与本机 `chatgpt_auth` 及订阅执行无依赖 |
 | `application/` | 跨仓储与外部端口的用例：`watch`（账号观察检查）、`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型接口切换策略、Provider 构造与连接测试）、`codex_bridge`（账号配对） |
-| `ports/` | `analysis::AnalysisExecutor` 与事件通道；`market::FxRateProvider`、`SecurityPriceProvider`、`WatchMarketProvider` |
+| `ports/` | `analysis::AnalysisExecutor` 与事件通道；`market::FxRateProvider`、`SecurityPriceProvider`、`WatchMarketProvider`、`CatalogSourceProvider` |
 | `agent.rs` | `AgentExecutor`：配置 `MARIO_AGENT_URL` 时把冻结任务发给独立 Agent，否则进程内执行；Codex 桥接任务始终在 API 进程经桥接中继执行。同文件提供 Agent HTTP 服务 |
 | `ai/` | `orchestrator` 按 `workflow`（当前 v8）执行可选搜索与单次报告生成；格式错误只修复一次；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 和 `chatgpt` 只由用户电脑上的桥接 worker 调用，分别使用 Codex 登录和 Mario 自己的官方 OAuth 注册；`structured_output` 负责确定性引用、输出校验；资料检索和连续原文摘录归领域层 `evidence`；`streaming` 解析流式草稿 |
 | `codex_bridge_worker.rs` | 用户电脑上的共用桥接进程，固定注册及授权会话，长轮询 API 领取任务，选择 Codex App Server 或官方 ChatGPT Responses；模型目录及推理取令牌时在凭据锁内核对同一会话，不借用重新登录后的授权；不上传 OpenAI 凭据 |
@@ -131,7 +131,7 @@ flowchart TD
 | `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发 |
 | `app/useApplicationData.ts` | 服务端数据生命周期：启动、快照与模型配置加载、自动同步、请求代次、草稿保护与远程更新提示 |
 | `app/navigation.ts` | 视图、导航分组与标签；研究看板是同源独立 dashboard，不在侧栏提供入口，也不增加 React 视图状态 |
-| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿和打开时的独立版本；通过应用壳进入讨论 |
+| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿、公司查询输入和打开时的独立版本；通过应用壳进入讨论 |
 | `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
@@ -205,9 +205,15 @@ sequenceDiagram
 
 ### 6.5 买点观察
 
-观察桌面默认“自选”，其后按固定八个领域浏览超级账户人工维护的公共公司。目录契约及校验归 `models/watch/catalog`，`server/data/watch-catalog.json` 只在首次建库时初始化 21 家公司；线上名单、独立版本、最后维护者及时间归 `db/public_watch` 的 `mario_market.watch_catalog`，后续启动不覆盖。资料包含代码、名称、行业、核查日期及交易所/公司报告来源。`application/watch_catalog` 编排公共检查，依赖公开仓储、领域计算和行情端口；`db/public_watch` 在 `mario_market.watch_snapshots` 保存各公司的最新成功结果及检查状态，只依赖公开契约、错误类型和 `storage`，不读取账号表。`composition` 装配公共服务并管理启动补查及每 30 分钟检查的任务；复用 19:00 截止规则、同一观察计算器、参考价与公共行情/分红能力。相同标的在途检查合并，价格与分红请求共同受供应商的最多 2 并发限制，单轮 120 秒；已完成当前截止日则跳过，缺项、失败和行情滞后可重试，失败保留已有日期和结果。公共快照不产生个人观察、提醒或账号版本变更，整站备份包含公共表，个人 JSON 备份不包含它。
+观察桌面默认“自选”，其后按固定十个领域浏览超级账户人工维护的公共公司。目录契约及校验归 `models/watch/catalog`，`server/data/watch-catalog.json` 在首次建库时初始化 43 家公司，并为 v1 目录执行一次用户明确授权的 33 公司合并迁移；线上名单、独立版本、最后维护者及时间归 `db/public_watch` 的 `mario_market.watch_catalog`，后续启动不覆盖。资料包含代码、名称、行业、核查日期及交易所/公司报告来源。`application/watch_catalog` 编排公共检查，依赖公开仓储、领域计算和行情端口；`db/public_watch` 在 `mario_market.watch_snapshots` 保存各公司的最新成功结果及检查状态，只依赖公开契约、错误类型和 `storage`，不读取账号表。`composition` 装配公共服务并管理启动补查及每 30 分钟检查的任务；复用 19:00 截止规则、同一观察计算器、参考价与公共行情/分红能力。相同标的在途检查合并，价格与分红请求共同受供应商的最多 2 并发限制，单轮 120 秒；已完成当前截止日则跳过，缺项、失败和行情滞后可重试，失败保留已有日期和结果。公共快照不产生个人观察、提醒或账号版本变更，整站备份包含公共表，个人 JSON 备份不包含它。
 
-`PUT /watch/catalog` 由 HTTP 根据认证后的 `is_superuser` 校验权限，普通账号返回 403；`application/watch_catalog` 把保存交给公共仓储。仓储事务锁定目录行，校验八领域身份不变、证券与来源合法及代码唯一，并比较请求自带的公共 `revision`，内容、版本及维护元数据同时提交；冲突返回 409。该 PUT 是 `http/policy` 显式声明的账号 `If-Match` 例外，前端 `requestPolicy` 不把它当作个人资料写入；公共仓储仍强制独立版本比较。编辑器冻结打开时的内容与版本，轮询不能提高草稿版本，冲突保留草稿且仅在用户确认后重读。移除成员不改个人自选或账本；在途检查只更新行情快照，不能恢复成员。检查每轮读取持久目录，动态按证券合并并发，新增公司无需重启即可参与检查。
+`PUT /watch/catalog` 由 HTTP 根据认证后的 `is_superuser` 校验权限，普通账号返回 403；`application/watch_catalog` 把保存交给公共仓储。仓储事务锁定目录行，校验十领域身份不变、证券及已有来源合法、代码唯一，允许来源待补齐，并比较请求自带的公共 `revision`，内容、版本及维护元数据同时提交；冲突返回 409。该 PUT 是 `http/policy` 显式声明的账号 `If-Match` 例外，前端 `requestPolicy` 不把它当作个人资料写入；公共仓储仍强制独立版本比较。编辑器冻结打开时的内容与版本，轮询不能提高草稿版本，冲突保留草稿且仅在用户确认后重读。移除成员不改个人自选或账本；在途检查只更新行情快照，不能恢复成员。检查每轮读取持久目录，动态按证券合并并发，新增公司无需重启即可参与检查。
+
+公司来源由 `CatalogSourceProvider` 注入公共目录服务，网络适配在 `market_data/watch_catalog`。`POST /watch/catalog/resolve` 只对超级账户开放，HTTP 在网络期间释放账号锁，输入精确简称或代码，返回已确认公司及可用来源，不写库、不检查账号版本；前端不再提供来源和日期输入。适配器从官方证券目录匹配唯一沪深 A 股身份，再查巨潮年报公告，核对证券/组织标识、公告日、全文类型和可信路径；失败允许已确认身份保持来源待补充，不伪造报告。证券目录仅作实例内身份查询缓存（成功一天、失败一分钟），不写入全市场研究库；报告查询最多并发 2 个，不执行模型。
+
+公共检查与缺失来源补齐并行，生命周期仍归 `composition` 的既有半小时任务；补齐每轮上限 30 秒，只请求当前名单中 `sourcesCheckedOn` 缺失或来源不足的公司。`db/public_watch::complete_sources` 在独立公共事务中核对公司仍存在且待补资料未改，只更新来源及核查日期并推进目录版本，保留最后人工维护者信息；失败保留已有资料，删除或编辑后的在途结果不能覆盖当前目录。来源缺失不参与买点规则，不停用可计算的行情。
+
+v1 → v2 目录迁移归领域契约和公共仓储，依据单独的明确添加代码清单重组领域、合并 33 家指定公司，保留自定义公司和未被点名的历史删除；整个迁移及版本推进原子提交。v1 解析只服务旧数据迁移/恢复，生产目录唯一为 v2；后续重启不覆盖人工增减，不修改个人名单或备份格式。停止支持 v1 整站备份恢复后，可删除 v1 解析及这次合并适配，原名单与请求仍可由 Git 追溯。
 
 `accounts` 首次添加 `users.is_superuser` 时只升级已有的 `lokinko.cs@gmail.com`；注册默认 FALSE，后续重启不重新授予。角色与账号 ID 绑定，每次认证从库中读取，不信任客户端标记或缓存会话角色，也不扩大账号数据访问范围。权限和公共目录进入整站备份，不进入个人 JSON。升级失败由数据库语句/事务回滚，保留已有个人数据；旧程序不消费新目录，回退须先保留新版整站备份。
 

@@ -3,11 +3,11 @@ import { Button, Input } from "antd";
 import {
   getWatchCatalog,
   saveWatchCatalog,
+  resolveCatalogCompany,
   type CatalogBoard,
 } from "../../api/watch";
 import { Drawer } from "../../components/Drawer";
 import { Callout } from "../../components/Callout";
-import { canonical } from "./presentation";
 
 export function WatchCatalogEditor({
   board,
@@ -26,9 +26,7 @@ export function WatchCatalogEditor({
   const [revision, setRevision] = useState(board.revision);
   const [industryId, setIndustryId] = useState(initialIndustry);
   const [selected, setSelected] = useState("");
-  const [symbol, setSymbol] = useState("");
-  const [name, setName] = useState("");
-  const [sources, setSources] = useState("");
+  const [query, setQuery] = useState("");
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -40,69 +38,49 @@ export function WatchCatalogEditor({
   };
   const reset = () => {
     setSelected("");
-    setSymbol("");
-    setName("");
-    setSources("");
+    setQuery("");
     setFormDirty(false);
   };
   const discardForm = () =>
     !formDirty || window.confirm("当前公司尚未应用修改，确认放弃？");
-  const apply = () => {
-    const company = {
-      symbol: canonical(symbol),
-      name: name.trim(),
-      sources: sources
-        .split(/\r?\n/)
-        .map((url) => url.trim())
-        .filter(Boolean),
-    };
-    if (!/^\d{6}\.(SS|SZ)$/.test(company.symbol) || !company.name) {
-      setError("请填写沪深 A 股代码和公司名称");
-      return;
-    }
-    if (
-      company.sources.length < 2 ||
-      company.sources.some((source) => {
-        try {
-          const url = new URL(source);
-          return url.protocol !== "https:" || !url.hostname;
-        } catch {
-          return true;
-        }
-      })
-    ) {
-      setError(
-        "请至少填写两个 HTTPS 来源，每行一个：交易所公司资料、公司公开报告",
-      );
-      return;
-    }
-    if (
-      draft.industries.some((item) =>
-        item.companies.some(
-          (other) =>
-            other.symbol === company.symbol && other.symbol !== selected,
-        ),
-      )
-    ) {
-      setError("该公司已在公共目录中，请编辑原有记录");
-      return;
-    }
-    setDraft({
-      ...draft,
-      industries: draft.industries.map((item) => ({
-        ...item,
-        companies:
-          item.id === industryId
-            ? [
-                ...item.companies.filter((other) => other.symbol !== selected),
-                company,
-              ]
-            : item.companies.filter((other) => other.symbol !== selected),
-      })),
-    });
-    edited();
-    reset();
+  const apply = async () => {
+    setBusy(true);
     setError("");
+    try {
+      const company = await resolveCatalogCompany(query.trim());
+      if (
+        draft.industries.some((item) =>
+          item.companies.some(
+            (other) =>
+              other.symbol === company.symbol && other.symbol !== selected,
+          ),
+        )
+      ) {
+        setError("该公司已在公共目录中，请编辑原有记录");
+        return;
+      }
+      setDraft({
+        ...draft,
+        industries: draft.industries.map((item) => ({
+          ...item,
+          companies:
+            item.id === industryId
+              ? [
+                  ...item.companies.filter(
+                    (other) => other.symbol !== selected,
+                  ),
+                  company,
+                ]
+              : item.companies.filter((other) => other.symbol !== selected),
+        })),
+      });
+      edited();
+      reset();
+    } catch (error) {
+      setError(String(error));
+    } finally {
+      setBusy(false);
+    }
   };
   const reload = async () => {
     if (
@@ -147,7 +125,7 @@ export function WatchCatalogEditor({
     >
       <div className="watch-catalog-editor">
         <p>
-          在领域内增减公司、修改名称及公开来源。移除公共公司会保留用户已有自选和交易。
+          输入公司名称或证券代码即可添加，公开来源由系统查找，缺失时自动补充。移除公共公司会保留用户已有自选和交易。
         </p>
         {error && (
           <Callout tone="danger">
@@ -157,18 +135,6 @@ export function WatchCatalogEditor({
             </Button>
           </Callout>
         )}
-        <label>
-          目录核查日期
-          <Input
-            type="date"
-            value={draft.verifiedOn}
-            disabled={busy}
-            onChange={(event) => {
-              setDraft({ ...draft, verifiedOn: event.target.value });
-              edited();
-            }}
-          />
-        </label>
         <label>
           领域
           <select
@@ -198,9 +164,7 @@ export function WatchCatalogEditor({
                 onClick={() => {
                   if (!discardForm()) return;
                   setSelected(company.symbol);
-                  setSymbol(company.symbol);
-                  setName(company.name);
-                  setSources(company.sources.join("\n"));
+                  setQuery(company.symbol);
                   setFormDirty(false);
                   setError("");
                 }}
@@ -239,7 +203,7 @@ export function WatchCatalogEditor({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            apply();
+            void apply();
           }}
           onChange={() => {
             setFormDirty(true);
@@ -248,37 +212,17 @@ export function WatchCatalogEditor({
         >
           <h3>{selected ? "修改公司" : "添加公司"}</h3>
           <label>
-            证券代码
+            公司名称或证券代码
             <Input
-              value={symbol}
+              value={query}
               disabled={busy}
               required
-              placeholder="例如 600036.SH"
-              onChange={(event) => setSymbol(event.target.value)}
-            />
-          </label>
-          <label>
-            公司名称
-            <Input
-              value={name}
-              disabled={busy}
-              required
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <label>
-            公开来源（每行一个，至少两个）
-            <Input.TextArea
-              value={sources}
-              disabled={busy}
-              required
-              rows={3}
-              placeholder="交易所公司资料和公司公开报告的 HTTPS 地址"
-              onChange={(event) => setSources(event.target.value)}
+              placeholder="例如 国电电力 或 600795"
+              onChange={(event) => setQuery(event.target.value)}
             />
           </label>
           <div className="watch-actions">
-            <Button htmlType="submit" disabled={busy}>
+            <Button htmlType="submit" loading={busy} disabled={busy}>
               应用公司修改
             </Button>
             {selected && (

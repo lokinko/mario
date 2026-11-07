@@ -32,8 +32,21 @@ impl PublicWatch {
             revision BIGINT NOT NULL, updated_by TEXT, updated_at TEXT
         );",
         )?;
+        let seed = Catalog::bundled()?;
         tx.execute("INSERT INTO watch_catalog(id,payload,revision) VALUES (1,$1,1) ON CONFLICT(id) DO NOTHING",
-            [serde_json::to_string(&Catalog::bundled()?)?])?;
+            [serde_json::to_string(&seed)?])?;
+        let payload: String = tx.query_row(
+            "SELECT payload FROM watch_catalog WHERE id=1 FOR UPDATE",
+            [],
+            |r| r.get(0),
+        )?;
+        let mut current = Catalog::parse(&payload)?;
+        if current.upgrade(&seed)? {
+            tx.execute(
+                "UPDATE watch_catalog SET payload=$1, revision=revision+1 WHERE id=1",
+                [serde_json::to_string(&current)?],
+            )?;
+        }
         tx.commit()?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -75,17 +88,18 @@ impl PublicWatch {
             |r| r.get(0),
         )?;
         let old = Catalog::parse(&payload)?;
-        // Only company membership and metadata are editable; the eight domains stay stable.
-        if old
-            .industries
-            .iter()
-            .map(|i| (&i.id, &i.name))
-            .collect::<Vec<_>>()
-            != catalog
+        // Only company membership and metadata are editable; the current domains stay stable.
+        if old.version != catalog.version
+            || old
                 .industries
                 .iter()
                 .map(|i| (&i.id, &i.name))
                 .collect::<Vec<_>>()
+                != catalog
+                    .industries
+                    .iter()
+                    .map(|i| (&i.id, &i.name))
+                    .collect::<Vec<_>>()
         {
             return Err(AppError::Validation(
                 "请保留现有领域，仅维护领域内的公司".into(),
@@ -99,6 +113,43 @@ impl PublicWatch {
             return Err(AppError::Conflict(
                 "公共目录已被更新，请重新读取后核对；当前草稿已保留".into(),
             ));
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Public-source enrichment never restores removed companies or replaces edits.
+    pub fn complete_sources(
+        &self,
+        expected: &crate::models::watch::catalog::Company,
+        resolved: &crate::models::watch::catalog::Company,
+    ) -> AppResult<()> {
+        if expected.symbol != resolved.symbol || resolved.sources_checked_on.is_none() {
+            return Ok(());
+        }
+        let mut connection = self.conn()?;
+        let tx = connection.transaction()?;
+        let payload: String = tx.query_row(
+            "SELECT payload FROM watch_catalog WHERE id=1 FOR UPDATE",
+            [],
+            |r| r.get(0),
+        )?;
+        let mut catalog = Catalog::parse(&payload)?;
+        if let Some(company) = catalog
+            .industries
+            .iter_mut()
+            .flat_map(|i| &mut i.companies)
+            .find(|c| *c == expected)
+        {
+            company.sources.clone_from(&resolved.sources);
+            company
+                .sources_checked_on
+                .clone_from(&resolved.sources_checked_on);
+            catalog.validate()?;
+            tx.execute(
+                "UPDATE watch_catalog SET payload=$1,revision=revision+1 WHERE id=1",
+                [serde_json::to_string(&catalog)?],
+            )?;
         }
         tx.commit()?;
         Ok(())
@@ -183,6 +234,121 @@ mod tests {
         invalid.industries.remove(0);
         assert!(store.save_catalog(&invalid, next, "owner-id").is_err());
         assert_eq!(store.catalog().unwrap().1, next);
+    }
+
+    #[test]
+    fn requested_company_migration_preserves_custom_entries_and_only_runs_once() {
+        use crate::models::watch::catalog::{Company, Industry};
+        let store = PublicWatch::test();
+        let seed = Catalog::bundled().unwrap();
+        let custom = Company {
+            symbol: "600000.SS".into(),
+            name: "浦发银行".into(),
+            sources: vec![],
+            sources_checked_on: None,
+        };
+        let mut old = seed.clone();
+        old.version = 1;
+        old.industries = vec![
+            Industry {
+                id: "banks".into(),
+                name: "银行".into(),
+                companies: vec![custom.clone()],
+            },
+            Industry {
+                id: "coal".into(),
+                name: "煤炭".into(),
+                companies: vec![seed.industry("energy").unwrap().companies[0].clone()],
+            },
+            Industry {
+                id: "oil".into(),
+                name: "石油石化".into(),
+                companies: vec![],
+            },
+        ];
+        store
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE watch_catalog SET payload=$1",
+                [serde_json::to_string(&old).unwrap()],
+            )
+            .unwrap();
+        let upgraded = PublicWatch::open(&store.url, &store.schema).unwrap();
+        let (mut current, revision) = upgraded.catalog().unwrap();
+        assert_eq!(current.version, 2);
+        assert!(current.industry("coal").is_err());
+        assert!(current
+            .industries
+            .iter()
+            .flat_map(|i| &i.companies)
+            .any(|c| c == &custom));
+        assert!(
+            !current
+                .industries
+                .iter()
+                .flat_map(|i| &i.companies)
+                .any(|c| c.symbol == "600036.SS"),
+            "unrequested prior removal remains removed"
+        );
+        for symbol in serde_json::from_str::<Vec<String>>(include_str!(
+            "../../data/watch-catalog-additions-20261107.json"
+        ))
+        .unwrap()
+        {
+            assert!(current
+                .industries
+                .iter()
+                .flat_map(|i| &i.companies)
+                .any(|c| c.symbol == symbol));
+        }
+        current
+            .industries
+            .iter_mut()
+            .for_each(|i| i.companies.retain(|c| c.symbol != "600795.SS"));
+        upgraded.save_catalog(&current, revision, "owner").unwrap();
+        let reopened = PublicWatch::open(&store.url, &store.schema).unwrap();
+        assert!(
+            !reopened
+                .catalog()
+                .unwrap()
+                .0
+                .industries
+                .iter()
+                .flat_map(|i| &i.companies)
+                .any(|c| c.symbol == "600795.SS"),
+            "restarts do not undo later removals"
+        );
+    }
+
+    #[test]
+    fn source_completion_preserves_manual_edits_and_cannot_restore_removed_members() {
+        let store = PublicWatch::test();
+        let (mut catalog, revision) = store.catalog().unwrap();
+        let resolved = catalog.industries[0].companies[0].clone();
+        let mut pending = resolved.clone();
+        pending.sources.clear();
+        pending.sources_checked_on = None;
+        catalog.industries[0].companies[0] = pending.clone();
+        store.save_catalog(&catalog, revision, "owner").unwrap();
+        let before = store.catalog().unwrap().1;
+        store.complete_sources(&pending, &resolved).unwrap();
+        let (mut current, after) = store.catalog().unwrap();
+        assert_eq!(after, before + 1);
+        assert_eq!(current.industries[0].companies[0], resolved);
+        assert!(matches!(
+            store.save_catalog(&catalog, before, "stale"),
+            Err(AppError::Conflict(_))
+        ));
+        current.industries[0].companies.remove(0);
+        store.save_catalog(&current, after, "owner").unwrap();
+        let removed_revision = store.catalog().unwrap().1;
+        store.complete_sources(&pending, &resolved).unwrap();
+        assert_eq!(store.catalog().unwrap().1, removed_revision);
+        assert!(!store.catalog().unwrap().0.industries[0]
+            .companies
+            .iter()
+            .any(|c| c.symbol == pending.symbol));
     }
 
     #[test]

@@ -2,10 +2,10 @@
 use crate::{
     db::PublicWatch,
     models::watch::{
-        catalog::{Catalog, CatalogBoard, CatalogRow, CatalogSnapshot},
+        catalog::{Catalog, CatalogBoard, CatalogRow, CatalogSnapshot, Company},
         evaluate, WatchStatus,
     },
-    ports::market::WatchMarketProvider,
+    ports::market::{CatalogSourceProvider, WatchMarketProvider},
     AppResult,
 };
 use chrono::{Datelike, NaiveDate, Utc};
@@ -15,20 +15,77 @@ use tokio::sync::Mutex;
 pub(crate) struct WatchCatalogService {
     store: Arc<PublicWatch>,
     provider: Arc<dyn WatchMarketProvider>,
+    sources: Arc<dyn CatalogSourceProvider>,
     locks: Mutex<BTreeMap<String, Arc<Mutex<()>>>>,
 }
 
 impl WatchCatalogService {
-    pub fn new(store: Arc<PublicWatch>, provider: Arc<dyn WatchMarketProvider>) -> Self {
+    pub fn new(
+        store: Arc<PublicWatch>,
+        provider: Arc<dyn WatchMarketProvider>,
+        sources: Arc<dyn CatalogSourceProvider>,
+    ) -> Self {
         Self {
             store,
             provider,
+            sources,
             locks: Mutex::new(BTreeMap::new()),
         }
     }
 
+    pub async fn resolve(&self, query: &str) -> AppResult<Company> {
+        if query.trim().is_empty() || query.len() > 120 {
+            return Err(crate::AppError::Validation(
+                "请输入公司名称或沪深 A 股代码".into(),
+            ));
+        }
+        let canonical = query.trim().to_uppercase().replace(".SH", ".SS");
+        let (catalog, _) = self.store.catalog()?;
+        if let Some(company) = catalog
+            .industries
+            .iter()
+            .flat_map(|i| &i.companies)
+            .find(|c| c.symbol == canonical || c.name == canonical || c.symbol[..6] == canonical)
+        {
+            return Ok(company.clone());
+        }
+        self.sources.resolve(query).await
+    }
+
+    async fn repair_sources(self: &Arc<Self>, industry: Option<&str>) -> AppResult<()> {
+        let (catalog, _) = self.store.catalog()?;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        let mut work = tokio::task::JoinSet::new();
+        for company in catalog
+            .industries
+            .iter()
+            .filter(|i| industry.is_none_or(|id| i.id == id))
+            .flat_map(|i| &i.companies)
+            .filter(|c| c.sources_checked_on.is_none() || c.sources.len() < 2)
+        {
+            let company = company.clone();
+            let service = self.clone();
+            work.spawn(async move {
+                match tokio::time::timeout_at(deadline, service.sources.resolve(&company.symbol)).await {
+                    Ok(Ok(resolved)) => service.store.complete_sources(&company, &resolved),
+                    Ok(Err(error)) => { tracing::warn!(symbol=%company.symbol, %error, "public company sources remain pending"); Ok(()) }
+                    Err(_) => Ok(()),
+                }
+            });
+        }
+        while let Some(result) = work.join_next().await {
+            result.map_err(|error| crate::AppError::MarketData(error.to_string()))??;
+        }
+        Ok(())
+    }
+
     pub fn save(&self, catalog: &Catalog, revision: i64, user_id: &str) -> AppResult<CatalogBoard> {
-        self.store.save_catalog(catalog, revision, user_id)?;
+        let mut catalog = catalog.clone();
+        catalog.verified_on = Utc::now()
+            .with_timezone(&chrono_tz::Asia::Shanghai)
+            .date_naive()
+            .to_string();
+        self.store.save_catalog(&catalog, revision, user_id)?;
         self.board()
     }
 
@@ -57,6 +114,24 @@ impl WatchCatalogService {
     }
 
     async fn refresh_on(
+        self: &Arc<Self>,
+        industry: Option<&str>,
+        force: bool,
+        day: NaiveDate,
+    ) -> AppResult<CatalogBoard> {
+        if let Some(id) = industry {
+            self.store.catalog()?.0.industry(id)?;
+        }
+        let (market, sources) = tokio::join!(
+            self.refresh_market_on(industry, force, day),
+            self.repair_sources(industry)
+        );
+        market?;
+        sources?;
+        self.board()
+    }
+
+    async fn refresh_market_on(
         self: &Arc<Self>,
         industry: Option<&str>,
         force: bool,
@@ -213,6 +288,14 @@ pub(crate) mod tests {
     };
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+    struct TestSources;
+    #[async_trait::async_trait]
+    impl CatalogSourceProvider for TestSources {
+        async fn resolve(&self, _: &str) -> AppResult<Company> {
+            Err(AppError::MarketData("测试来源暂缺".into()))
+        }
+    }
+
     struct Source {
         prices: AtomicUsize,
         dividends: AtomicUsize,
@@ -282,11 +365,55 @@ pub(crate) mod tests {
         Arc::new(WatchCatalogService::new(
             Arc::new(PublicWatch::test()),
             source,
+            Arc::new(TestSources),
         ))
     }
 
     pub(crate) fn fixture_service() -> Arc<WatchCatalogService> {
         service(Arc::new(Source::new()))
+    }
+
+    #[tokio::test]
+    async fn missing_sources_save_without_evidence_and_retry_without_affecting_market_results() {
+        struct Sources {
+            fail: AtomicBool,
+            resolved: Company,
+        }
+        #[async_trait::async_trait]
+        impl CatalogSourceProvider for Sources {
+            async fn resolve(&self, _: &str) -> AppResult<Company> {
+                if self.fail.load(Ordering::SeqCst) {
+                    return Err(AppError::MarketData("资料来源暂不可用".into()));
+                }
+                Ok(self.resolved.clone())
+            }
+        }
+        let store = Arc::new(PublicWatch::test());
+        let (mut catalog, revision) = store.catalog().unwrap();
+        let resolved = catalog.industries[0].companies[0].clone();
+        catalog.industries[0].companies[0].sources.clear();
+        catalog.industries[0].companies[0].sources_checked_on = None;
+        store.save_catalog(&catalog, revision, "owner").unwrap();
+        let sources = Arc::new(Sources {
+            fail: AtomicBool::new(true),
+            resolved,
+        });
+        let service = Arc::new(WatchCatalogService::new(
+            store.clone(),
+            Arc::new(Source::new()),
+            sources.clone(),
+        ));
+        let before = store.catalog().unwrap().1;
+        let day = market_fixture().1;
+        let pending = service.refresh_on(Some("banks"), true, day).await.unwrap();
+        assert!(pending.rows[0].snapshot.latest.is_some());
+        assert!(pending.rows[0].company.sources_checked_on.is_none());
+        assert_eq!(store.catalog().unwrap().1, before);
+        sources.fail.store(false, Ordering::SeqCst);
+        let filled = service.refresh_on(Some("banks"), false, day).await.unwrap();
+        assert!(filled.rows[0].company.sources_checked_on.is_some());
+        assert_eq!(store.catalog().unwrap().1, before + 1);
+        assert!(filled.rows[0].snapshot.latest.is_some());
     }
 
     #[tokio::test]
@@ -343,8 +470,8 @@ pub(crate) mod tests {
         assert_eq!(source.prices.load(Ordering::SeqCst), 0);
         let day = market_fixture().1;
         let board = service.refresh_on(Some("banks"), false, day).await.unwrap();
-        assert_eq!(source.prices.load(Ordering::SeqCst), 3);
-        for row in &board.rows[..3] {
+        assert_eq!(source.prices.load(Ordering::SeqCst), 6);
+        for row in &board.rows[..6] {
             let observation = row.snapshot.latest.as_ref().unwrap();
             assert_eq!(observation.status, WatchStatus::Attention);
             assert_eq!(observation.yield_pct, Some(5.0));
@@ -359,7 +486,7 @@ pub(crate) mod tests {
             );
             assert_eq!(observation.sources.len(), 2);
         }
-        assert!(board.rows[3..].iter().all(|r| r.snapshot.latest.is_none()));
+        assert!(board.rows[6..].iter().all(|r| r.snapshot.latest.is_none()));
         let serialized = serde_json::to_value(board).unwrap();
         for row in serialized["rows"].as_array().unwrap() {
             for key in ["entry", "thesis", "alert", "pinned", "gridPlan", "trades"] {
@@ -374,7 +501,7 @@ pub(crate) mod tests {
         assert!(personal.rows[0].entry.pinned);
         assert!(second.watch_entries().unwrap().is_empty());
         service.refresh_on(Some("banks"), false, day).await.unwrap();
-        assert_eq!(source.prices.load(Ordering::SeqCst), 3);
+        assert_eq!(source.prices.load(Ordering::SeqCst), 6);
     }
 
     #[tokio::test]
@@ -388,7 +515,7 @@ pub(crate) mod tests {
         );
         a.unwrap();
         b.unwrap();
-        assert_eq!(source.prices.load(Ordering::SeqCst), 3);
+        assert_eq!(source.prices.load(Ordering::SeqCst), 6);
         source.fail_price.store(true, Ordering::SeqCst);
         let next = day + chrono::Duration::days(3);
         let failed = service.refresh_on(Some("banks"), true, next).await.unwrap();
@@ -416,7 +543,7 @@ pub(crate) mod tests {
                 .observed_on,
             next.to_string()
         );
-        assert_eq!(source.prices.load(Ordering::SeqCst), 7);
+        assert_eq!(source.prices.load(Ordering::SeqCst), 13);
     }
 
     #[tokio::test]
@@ -436,7 +563,7 @@ pub(crate) mod tests {
         let lagging = self::service(source.clone());
         lagging.refresh_on(Some("banks"), false, day).await.unwrap();
         let board = lagging.refresh_on(Some("banks"), false, day).await.unwrap();
-        assert_eq!(source.prices.load(Ordering::SeqCst), 9);
+        assert_eq!(source.prices.load(Ordering::SeqCst), 18);
         assert!(board.rows[0].snapshot.latest.as_ref().unwrap().observed_on < day.to_string());
         assert!(needs_check(&board.rows[0].snapshot, day));
     }
@@ -456,7 +583,7 @@ pub(crate) mod tests {
         let start = tokio::time::Instant::now();
         let board = service.refresh_on(Some("banks"), false, day).await.unwrap();
         assert!(start.elapsed() <= Duration::from_secs(120));
-        assert!(board.rows[..3]
+        assert!(board.rows[..6]
             .iter()
             .all(|r| r.snapshot.latest.is_none() && r.snapshot.refresh_failed));
     }

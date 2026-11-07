@@ -156,6 +156,8 @@ export function serverFileViolation(source, target) {
     return 'public market storage only depends on public contracts and the database driver boundary';
   if (source === 'application/watch_catalog.rs' && !['models', 'db', 'ports', 'error', 'application'].includes(target))
     return 'public catalogue checks cannot depend on private context or execution adapters';
+  if (source === 'market_data/watch_catalog.rs' && !['models', 'ports', 'error'].includes(target))
+    return 'public catalogue source lookup cannot depend on accounts, storage or workflows';
   if (source === 'application/watch_market.rs' && !['models', 'db', 'ports', 'error'].includes(target))
     return 'shared public dividend lookup cannot depend on accounts, private context or execution adapters';
   if (target === 'chatgpt_auth' && source.startsWith('ai/') && source !== 'ai/chatgpt.rs')
