@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { resolve } from 'node:path';
+import { join } from 'node:path';
+import { root, serverBinary } from './server-artifacts.mjs';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -13,11 +14,11 @@ await once(probe, 'listening');
 const port = probe.address().port;
 await new Promise(r => probe.close(r));
 const masterKey = randomBytes(32).toString('base64');
-const binary = resolve(process.env.MARIO_TEST_SERVER_BIN ?? ('server/target/debug/mario-server' + (process.platform === 'win32' ? '.exe' : '')));
+const binary = serverBinary();
 let child, log = '';
 const origin = `http://127.0.0.1:${port}`;
 async function start() {
-  const env = { ...process.env, DATABASE_URL: database, MARIO_MASTER_KEY: masterKey, MARIO_WEB_DIR: resolve('client/dist'), MARIO_HOST: '127.0.0.1' };
+  const env = { ...process.env, DATABASE_URL: database, MARIO_MASTER_KEY: masterKey, MARIO_WEB_DIR: join(root, 'client/dist'), MARIO_HOST: '127.0.0.1' };
   delete env.MARIO_AGENT_URL;
   child = spawn(binary, ['--port', String(port)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', b => log += b); child.stderr.on('data', b => log += b);

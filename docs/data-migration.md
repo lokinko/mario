@@ -204,7 +204,7 @@ MARIO_DATA_DIR=/path/to/旧资料目录 cargo run --manifest-path server/Cargo.t
 MARIO_TEST_PG_BIN=/usr/lib/postgresql/17/bin npm run test:backup
 ```
 
-[`test-backup.mjs`](../scripts/test-backup.mjs) 使用两个独立临时集群，验证加密、凭据迁移、配置保留、会话撤销、服务运行保护、事务回滚、反复替换、公开分红原值恢复和回退；需预先提供已构建的服务端二进制（默认 `server/target/debug/mario-server`，或设置 `MARIO_TEST_SERVER_BIN`）。此加密包测试是独立入口，当前 `npm test` 不自动运行它；完整门禁中的 `test:financial` 另验证原生 PostgreSQL dump/restore 和逐表一致性，不能替代加密包测试。禁止将生产数据库传给集成测试。
+[`test-backup.mjs`](../scripts/test-backup.mjs) 使用两个独立临时集群，验证加密、凭据迁移、配置保留、会话撤销、服务运行保护、事务回滚、反复替换、公开分红原值恢复和回退；需预先提供已构建的服务端二进制：未覆盖时按 `CARGO_TARGET_DIR` 选择 debug 程序，未指定 target 时为 `server/target/debug/mario-server`（Windows 加 `.exe`）；也可用 `MARIO_TEST_SERVER_BIN` 显式指定独立验收程序。产物定位统一见[模块边界](module-boundaries.md#开发流程)。此加密包测试是独立入口，当前 `npm test` 不自动运行它；完整门禁中的 `test:financial` 另验证原生 PostgreSQL dump/restore 和逐表一致性，不能替代加密包测试。禁止将生产数据库传给集成测试。
 
 ## 公开分红资料与旧备份
 

@@ -58,7 +58,7 @@
 1. 从索引确定模块 spec、实现与测试，再说明本次增量。新模块或边界变化同次更新索引；调整已有模块不另建一份互相竞争的规范。
 2. 并行工作按文件划分修改范围；共享契约、架构与跨模块文字由主负责人整合。修改前重新读取当前文件，保护其他在途工作。
 3. 行为变更同步所属 spec；取消要求从当前文档删除，必要证据保留为历史。实现仍有偏离时明确记录，不通过改文案声称缺陷已解决。
-4. 验证命令以根目录与前端的 [package.json](../package.json)、[client/package.json](../client/package.json)和[完整门禁](../scripts/test.sh)为准，具体要求见[项目规范](../AGENTS.md#4-验证要求)。上表列的是现有验证依据，不代表每次文档整理都重新运行了全部测试。
+4. 验证命令以根目录与前端的 [package.json](../package.json)、[client/package.json](../client/package.json)和[完整门禁](../scripts/test.sh)为准，具体要求见[项目规范](../AGENTS.md#4-验证要求)。构建产物的定位与完整门禁绑定见[模块边界](module-boundaries.md#开发流程)，实现及回归为 [server-artifacts](../scripts/server-artifacts.mjs) 与[子进程测试](../scripts/server-artifacts.test.mjs)。上表列的是现有验证依据，不代表每次文档整理都重新运行了全部测试。
 5. 纯文档改动检查事实、相对路径与锚点、过时文案及 `git diff --check`；只有运行代码变化才增加对应业务验证。真实 OAuth、付费模型、联网来源、协议夹具与加密备份独立验收是否执行，须在交付中分别说明。
 
 仓库 `main` 与远端同步不代表运行中的网站已部署该版本；本机其他 worktree 也可能是历史开发分支，不能当作当前规范来源。最新状态以交付提交及对应验证记录为准。

@@ -9,6 +9,7 @@ import { resolve, join, sep } from 'node:path';
 import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { root, defaults, createConfig, readConfig, postgresStartOptions } from './start-common.mjs';
+import { serverBinary } from './server-artifacts.mjs';
 
 const fixture = mkdtempSync(join(tmpdir(), 'mario-start-'));
 const executable = 'mario-server' + (process.platform === 'win32' ? '.exe' : '');
@@ -50,7 +51,7 @@ try {
   for (const dir of ['scripts', 'server/target/release', 'client']) mkdirSync(join(fixture, dir), { recursive: true });
   for (const name of ['start-common.mjs', 'host-runtime.mjs', 'benchmark-deploy.mjs']) copyFileSync(join(root, 'scripts', name), join(fixture, 'scripts', name));
   copyFileSync(join(root, '.env.example'), join(fixture, '.env.example'));
-  copyFileSync(join(root, 'server/target/debug', executable), join(fixture, 'server/target/release', executable));
+  copyFileSync(serverBinary(), join(fixture, 'server/target/release', executable));
   cpSync(join(root, 'client/dist'), join(fixture, 'client/dist'), { recursive: true });
   const apiPort = await freePort(), agentPort = await freePort(), pgPort = await freePort();
   const configPath = join(fixture, '.env');

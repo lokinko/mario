@@ -7,11 +7,12 @@ import {createServer as httpServer} from 'node:http';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join,resolve} from 'node:path';
+import {join} from 'node:path';
+import {root,serverBinary} from './server-artifacts.mjs';
 import {setTimeout as sleep} from 'node:timers/promises';
 const database=process.env.MARIO_TEST_DATABASE_URL;
 assert(database,'Set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database');
-const binary=resolve(process.env.MARIO_TEST_SERVER_BIN || 'server/target/debug/mario-server'+(process.platform==='win32'?'.exe':''));
+const binary=serverBinary();
 const master=randomBytes(32).toString('base64');
 const children=[]; let logs=''; let assertions=0;
 const agentToken=randomBytes(32).toString('hex');
@@ -44,7 +45,7 @@ const agentUrl=`http://127.0.0.1:${mockAgent.address().port}`;
 
 async function start(extra={}){
   const socket=createServer().listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(r=>socket.close(r));
-  const child=spawn(binary,['--port',String(port)],{env:{...process.env,DATABASE_URL:database,MARIO_MASTER_KEY:master,MARIO_HOST:'127.0.0.1',MARIO_WEB_DIR:resolve('client/dist'),MARIO_AGENT_URL:agentUrl,MARIO_AGENT_TOKEN:agentToken,...extra},stdio:['ignore','pipe','pipe']});
+  const child=spawn(binary,['--port',String(port)],{env:{...process.env,DATABASE_URL:database,MARIO_MASTER_KEY:master,MARIO_HOST:'127.0.0.1',MARIO_WEB_DIR:join(root,'client/dist'),MARIO_AGENT_URL:agentUrl,MARIO_AGENT_TOKEN:agentToken,...extra},stdio:['ignore','pipe','pipe']});
   children.push(child);child.stdout.on('data',b=>logs+=b);child.stderr.on('data',b=>logs+=b);
   const base=`http://127.0.0.1:${port}/api`;
   for(let i=0;i<150;i++){try {if((await fetch(base+'/server')).ok)return base;}catch{} if(child.exitCode!==null)throw Error(logs);await sleep(100);}
@@ -270,7 +271,7 @@ try{
   const resetSession=await request(base,'/auth/login',null,'POST',{email:b.email,password:resetPassword});
   await request(base,'/snapshot',resetSession);
   const functional=await register(base);
-  const suite=spawn(process.execPath,['scripts/test-functional-api.mjs'],{env:{...process.env,MARIO_FUNCTIONAL_BASE_URL:base,MARIO_FUNCTIONAL_TOKEN:functional.token},stdio:'inherit'});
+  const suite=spawn(process.execPath,[join(root,'scripts/test-functional-api.mjs')],{env:{...process.env,MARIO_FUNCTIONAL_BASE_URL:base,MARIO_FUNCTIONAL_TOKEN:functional.token},stdio:'inherit'});
   const [code]=await once(suite,'exit');assert.equal(code,0,'full domain suite on PostgreSQL');
   // Leave non-empty exact accounting and company-action evidence for native restore verification.
   const financialAccount=await register(base);

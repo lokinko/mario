@@ -8,12 +8,13 @@ import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join, sep } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { root, serverBinary } from './server-artifacts.mjs';
 const live = process.argv.includes('--live');
 const protocolFixture = process.argv.includes('--protocol-fixture');
 const webSearch = protocolFixture || process.argv.includes('--web-search');
 assert(!(live && protocolFixture), '--live and --protocol-fixture are mutually exclusive');
 assert(process.env.MARIO_TEST_DATABASE_URL, 'Set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database (npm run test:codex-bridge starts one)');
-const binary = resolve(process.env.MARIO_TEST_SERVER_BIN || `server/target/debug/mario-server${process.platform === 'win32' ? '.exe' : ''}`);
+const binary = serverBinary();
 const directory = await mkdtemp(join(tmpdir(), 'mario-bridge-test-'));
 const probe = createServer().listen(0, '127.0.0.1'); await once(probe, 'listening');
 const port = probe.address().port; await new Promise(done => probe.close(done));
@@ -47,7 +48,7 @@ let expectedModel = 'bridge-fixture';
 try {
   if (protocolFixture) {
     const fixture=join(directory,`codex-fixture${process.platform==='win32'?'.exe':''}`);
-    execFileSync('rustc',[resolve('scripts/fixtures/codex-app-server.rs'),'--edition','2021','-o',fixture],{stdio:'pipe'});
+    execFileSync('rustc',[join(root,'scripts/fixtures/codex-app-server.rs'),'--edition','2021','-o',fixture],{stdio:'pipe'});
     environment.MARIO_CODEX_BIN=fixture;
     environment.MARIO_TEST_CODEX_SCENARIO=join(directory,'scenario');
     environment.MARIO_TEST_CODEX_COUNTER=join(directory,'counter');

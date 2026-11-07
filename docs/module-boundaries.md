@@ -220,6 +220,8 @@ HF 镜像配置 `HF_ENDPOINT` 由 `host-runtime --prepare` 保存到 `.env`，�
 
 开发与测试需要本机 PostgreSQL 工具（从 `MARIO_TEST_PG_BIN` 或 `pg_config --bindir` 查找）。Rust 测试与 HTTP 脚本只连接 `MARIO_TEST_DATABASE_URL` 指向的一次性数据库；`scripts/postgres-cluster.mjs <命令…>` 创建临时集群、设置该变量并在命令结束后删除集群。统一子进程启动边界剔除父环境的功能测试站点与令牌，仅允许调用方显式传入自己创建的临时服务目标；对应 Node 回归纳入完整门禁。
 
+后端构建与验收产物定位由 [`server-artifacts.mjs`](../scripts/server-artifacts.mjs) 统一维护。`CARGO_TARGET_DIR` 相对路径按仓库根解析；构建入口先将其规范为明确绝对目录或显式传给 Cargo，空值使用该入口的默认目录。完整 `npm test` 固定在仓库根执行，清除继承的 `MARIO_TEST_SERVER_BIN`，构建与后续 HTTP 验收使用同一 target，不能只因磁盘已有可执行文件就验收旧产物。独立 HTTP、备份和启动验收仍允许显式 `MARIO_TEST_SERVER_BIN`，建议使用绝对路径；显式 binary 的相对路径保留调用者当前目录语义，未指定时使用相应 Cargo target 的 debug 程序。财务门禁将迁移测试、构建和 HTTP 的 target 一起绑定：有显式 target 时复用，否则使用独立 `.runtime/financial-build`。本机桥接源码启动器显式构建并启动同一 target，不增加 CLI 参数。路径和真实子进程启动回归归 [`server-artifacts.test.mjs`](../scripts/server-artifacts.test.mjs)。
+
 提交前执行：
 
 ```bash

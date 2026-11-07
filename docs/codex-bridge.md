@@ -11,6 +11,8 @@
 
 两种方式的登录凭据都留在本机，不上传到 Mario 服务器。网页沿用同一个 `codex-bridge` Provider 契约；无需为了切换执行方式修改服务器模型地址或粘贴令牌。
 
+本机 npm 启动器会先构建源码，再启动该次构建的 debug 程序。指定 `CARGO_TARGET_DIR` 时，相对目录按 Mario 仓库根解析，构建显式使用同一目录；未指定或为空时使用 `server/target`。它不使用独立测试的 `MARIO_TEST_SERVER_BIN` 覆盖，也不新增二进制选择参数。产物定位与回归见[模块边界](module-boundaries.md#开发流程)。
+
 ## 部署和配对
 
 1. 更新服务器源码，在项目目录执行 `sudo bash deploy.sh`。脚本构建前后端并验证 `api/server` 的 `codexBridge: 1`；不需要给服务器安装 Codex，也不在服务器登录 ChatGPT。

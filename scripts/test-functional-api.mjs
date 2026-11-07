@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:net";
-import { resolve, join } from "node:path";
+import { join } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { testPostgresBin } from "./postgres-cluster.mjs";
+import { serverBinary } from "./server-artifacts.mjs";
 
 const database = process.env.MARIO_TEST_DATABASE_URL;
 const socket = createServer();
@@ -50,7 +51,7 @@ async function startServer() {
   const serverEnv={...process.env,DATABASE_URL:database,MARIO_MASTER_KEY:masterKey};
   delete serverEnv.MARIO_AGENT_URL;
   child = spawn(
-    resolve(process.env.MARIO_TEST_SERVER_BIN ?? (process.platform === "win32" ? "server/target/debug/mario-server.exe" : "server/target/debug/mario-server")),
+    serverBinary(),
     ["--port", String(port)],
     {
       env: serverEnv,

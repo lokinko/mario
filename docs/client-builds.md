@@ -5,9 +5,9 @@
 ## 文件与来源
 
 - 备份 JSON 和参考资料附件统一使用浏览器下载，保留中文文件名、UTF-8 文本与原始附件二进制内容。
-- 文件选择、JSON 导入与 CSV 导入使用浏览器文件输入，由服务端校验。
+- JSON 备份导入与参考资料附件选取使用浏览器文件输入，由服务端校验。
 - HTTP/HTTPS 来源链接在新标签页打开；无效或其他协议的来源仅显示文字。
-- 复盘到期事项在页面内显示。
+- 复盘与手工规则在各自分类中维护，当前交互见[复盘规范](review-and-rules.md)。
 
 ## 构建与部署
 
@@ -34,4 +34,4 @@ Web 资源、logo 和 API 使用同一部署前缀。生产登录页无需填写
 
 生产服务器执行根目录 `deploy.sh`，由运行器调用 `npm run build --prefix client`，直接构建和服务 `client/dist`；这条路径会生成 `build-info.json`，但不复制 `outputs/web` 或更新 `outputs/build-manifest.json`。源码提交、构建来源与运行中服务是否已更新须分别核对，不能仅凭 Git 推送或旧分发 manifest 判定已经部署。部署、更新与验收见 [自建部署](self-hosting.md)。
 
-构建实现见 [`build-web.mjs`](../scripts/build-web.mjs)、[`client-source.mjs`](../scripts/client-source.mjs) 和 [`vite.config.ts`](../client/vite.config.ts)。当前 `npm test` 包含前端构建、格式检查与组件测试，并通过 [`test-web.mjs`](../scripts/test-web.mjs) 验证静态资源、认证和重启持久化；它不运行 `web:build` 的分发复制，也不构成手机或浏览器视觉验收。
+构建实现见 [`build-web.mjs`](../scripts/build-web.mjs)、[`client-source.mjs`](../scripts/client-source.mjs) 和 [`vite.config.ts`](../client/vite.config.ts)。当前 `npm test` 包含前端构建、格式检查与组件测试，并通过 [`test-web.mjs`](../scripts/test-web.mjs) 验证静态资源、认证和重启持久化。完整门禁将后端构建与 HTTP 验收绑定至同一 Cargo target，忽略继承的测试二进制覆盖；独立 Web 验收仍可明确指定 `MARIO_TEST_SERVER_BIN`，未指定则按 `CARGO_TARGET_DIR` 定位。路径规则和子进程回归见[模块边界](module-boundaries.md#开发流程)。完整门禁不运行 `web:build` 的分发复制，也不构成手机或浏览器视觉验收。

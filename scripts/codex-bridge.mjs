@@ -2,8 +2,8 @@
 // Neither path sends OpenAI credentials to the Mario site.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+import { existsSync, realpathSync } from 'node:fs';
+import { root, cargoTargetDir, serverBinary } from './server-artifacts.mjs';
 
 export function workerArguments(input) {
   const args = [...input];
@@ -32,11 +32,12 @@ function run(command, args) {
     child.once('exit', code => code === 0 ? done() : reject(Error(`本机进程退出 (${code})`)));
   });
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   try {
     const args = workerArguments(process.argv.slice(2));
-    await run('cargo', ['build', '--manifest-path', 'server/Cargo.toml', '--bin', 'mario-server']);
-    await run(resolve(root, `server/target/debug/mario-server${process.platform === 'win32' ? '.exe' : ''}`), args);
+    const target = cargoTargetDir();
+    await run('cargo', ['build', '--manifest-path', 'server/Cargo.toml', '--target-dir', target, '--bin', 'mario-server']);
+    await run(serverBinary({ targetDir: target, binary: '' }), args);
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

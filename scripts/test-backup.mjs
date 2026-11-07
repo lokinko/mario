@@ -3,13 +3,17 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
-import { mkdtempSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { accessSync, constants, mkdtempSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { root, defaults, createConfig, readConfig, startPostgres } from './start-common.mjs';
 import { command } from './backup-common.mjs';
+import { serverBinary } from './server-artifacts.mjs';
 
+// Fail before creating fixtures or PostgreSQL clusters when the selected artifact is missing.
+const binary = serverBinary();
+accessSync(binary, constants.X_OK);
 const fixture = mkdtempSync(join(tmpdir(), 'mario-migration-'));
 const pgBin = process.env.MARIO_TEST_PG_BIN;
 const pg = name => pgBin ? join(pgBin, name + (process.platform === 'win32' ? '.exe' : '')) : name;
@@ -42,10 +46,10 @@ async function stopDatabase(site) {
 }
 async function startApi(site) {
   const actual = readConfig(join(site.directory, '.env'));
-  const binary = resolve(process.env.MARIO_TEST_SERVER_BIN ?? join(root, 'server/target/debug/mario-server' + (process.platform === 'win32' ? '.exe' : '')));
   const child = spawn(binary, ['--port', actual.MARIO_PORT], { env: { ...cleanEnv, DATABASE_URL: `postgresql://mario:${actual.POSTGRES_PASSWORD}@127.0.0.1:${actual.MARIO_PG_PORT}/postgres`, MARIO_HOST: '127.0.0.1', MARIO_MASTER_KEY: actual.MARIO_MASTER_KEY }, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = ''; child.stdout.on('data', chunk => { logs += chunk; }); child.stderr.on('data', chunk => { logs += chunk; });
   children.push(child); site.child = child; site.base = `http://127.0.0.1:${actual.MARIO_PORT}/api`;
+  await once(child, 'spawn');
   for (let i = 0; i < 150; i++) {
     try { if ((await fetch(site.base + '/server')).ok) return; } catch {}
     if (child.exitCode !== null) throw Error(logs);
@@ -54,7 +58,7 @@ async function startApi(site) {
   throw Error('API startup timed out');
 }
 async function stopApi(site) {
-  if (site.child?.exitCode === null && site.child.signalCode === null) { const done = once(site.child, 'exit'); site.child.kill(); await done; }
+  if (site.child?.pid && site.child.exitCode === null && site.child.signalCode === null) { const done = once(site.child, 'exit'); site.child.kill(); await done; }
 }
 async function request(site, path, session, method = 'GET', body, expected = 200) {
   const response = await fetch(site.base + path, { method, headers: { 'Content-Type': 'application/json', ...(session ? { Authorization: `Bearer ${session.token}` } : {}), ...(session?.revision ? { 'If-Match': session.revision } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -84,10 +88,16 @@ try {
   await request(source, '/snapshot', b);
   await request(source, '/profile', a, 'PUT', { ...snapshot.profile, monthlyIncome: 45678 });
   await request(source, '/model-config', a, 'PUT', { provider: 'openai-responses', baseUrl: 'https://api.openai.com/v1', model: 'migration-test', apiKey: 'synthetic-provider-secret' });
-  const publicHistory = JSON.stringify({ asOf: '2026-11-05', fetchedAt: '2026-11-05T12:00:00Z',
+  const historyQuery = "SELECT payload FROM mario_market.dividend_histories WHERE symbol='600036.SS'";
+  const seededHistory = JSON.parse(await sql(source, historyQuery));
+  const seededFetchedAt = Date.parse(seededHistory.fetchedAt);
+  assert(Number.isFinite(seededFetchedAt), 'the loaded public dividend seed must have a valid capture timestamp');
+  // Model a newer fetch on the same coverage date, independent of the seed release or wall clock.
+  const publicHistory = JSON.stringify({ asOf: seededHistory.asOf, fetchedAt: new Date(seededFetchedAt + 1000).toISOString(),
     sources: ['https://example.test/dividends'], events: [{ reportDate: '2025-12-31', exDate: '2026-07-01',
       cashPerTen: '123.456789', bonusPerTen: '0', transferPerTen: '0' }] });
   await sql(source, `UPDATE mario_market.dividend_histories SET payload=$$${publicHistory}$$ WHERE symbol='600036.SS'`);
+  assert.equal(await sql(source, historyQuery), publicHistory, 'the source must contain the exact synthetic public dividend fixture');
   const first = join(fixture, 'first.mario-backup');
   await cli(source, 'backup.mjs', ['--output', first]); // Online consistent snapshot.
   const streamed = spawnSync(process.execPath, [join(source.directory, 'scripts/backup.mjs'), '--stdout', '--stdin-password'], { env: cleanEnv, input: passphrase + '\n', timeout: 120000 });
@@ -111,9 +121,12 @@ try {
   const restoredEnvText = readFileSync(join(target.directory, '.env'), 'utf8');
   assert.equal(restoredConfig.MARIO_MASTER_KEY, source.config.MARIO_MASTER_KEY);
   for (const key of ['MARIO_DOMAIN', 'POSTGRES_PASSWORD', 'MARIO_AGENT_TOKEN', 'MARIO_PG_PORT']) assert.equal(restoredConfig[key], target.config[key]);
-  await startDatabase(target); await startApi(target);
-  assert.equal(await sql(target, "SELECT payload FROM mario_market.dividend_histories WHERE symbol='600036.SS'"), publicHistory,
-    'encrypted backups must restore fetched public dividends instead of replacing them with bootstrap data');
+  await startDatabase(target);
+  assert.equal(await sql(target, historyQuery), publicHistory,
+    'encrypted backups must restore the exact public dividend payload before API initialization');
+  await startApi(target);
+  assert.equal(await sql(target, historyQuery), publicHistory,
+    'API initialization must preserve restored public dividends fetched more recently than its bootstrap data');
   await request(target, '/snapshot', a, 'GET', undefined, 401); // Source session revoked.
   const restored = await login(target, a.email);
   assert.equal((await request(target, '/snapshot', restored)).profile.monthlyIncome, 45678);
@@ -145,6 +158,7 @@ try {
   await cli(target, 'restore-backup.mjs', ['--input', second, '--replace']);
   await startDatabase(target); await startApi(target);
   const latest = await login(target, a.email);
+  assert.equal(await sql(target, historyQuery), publicHistory, 'offline backup replacement must preserve the exact public dividend payload');
   assert.equal((await request(target, '/snapshot', latest)).profile.monthlyIncome, 77777);
   await request(target, '/auth/login', null, 'POST', { email: extra.email, password: accountPassword }, 401);
   assert.equal(await sql(target, `SELECT count(*) FROM pg_namespace WHERE nspname='user_${extra.userId.replaceAll('-', '')}'`), '0');
