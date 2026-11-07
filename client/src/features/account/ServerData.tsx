@@ -13,6 +13,7 @@ import { serviceUrl } from "../../lib/service";
 import { saveTextDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
 import { useRequestGuard } from "../../lib/useRequestGuard";
+import { AccountSettings } from "./WebAccess";
 export function ServerData({
   flash,
   onRestore,
@@ -70,6 +71,7 @@ export function ServerData({
   return (
     <section className="page narrow cloud-page">
       <PageHeader title="账号与数据" />
+      <AccountSettings />
       <section className="panel server-connection">
         <div className="panel-title">
           <h2>

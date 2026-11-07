@@ -13,7 +13,6 @@ import * as portfolioApi from "./api/portfolio";
 import * as settingsApi from "./api/settings";
 import * as researchApi from "./api/research";
 import emptySnapshot from "./test/emptySnapshot.json";
-import { analysisSettings as defaultAnalysisSettings } from "./test/analysisSettings";
 import { WebAccess } from "./features/account/WebAccess";
 import { setWebToken, webToken } from "./lib/webSession";
 
@@ -57,11 +56,17 @@ vi.mock("./api/research", async (original) => ({
 vi.mock("./api/reviews", async (original) => ({
   ...(await original<typeof import("./api/reviews")>()),
 }));
-vi.mock("./features/account/ServerData", () => ({
-  ServerData: ({ onRestore }: { onRestore: () => Promise<void> }) => (
-    <button onClick={() => void onRestore()}>测试恢复数据</button>
-  ),
-}));
+vi.mock("./features/account/ServerData", async () => {
+  const { AccountSettings } = await import("./features/account/WebAccess");
+  return {
+    ServerData: ({ onRestore }: { onRestore: () => Promise<void> }) => (
+      <>
+        <AccountSettings />
+        <button onClick={() => void onRestore()}>测试恢复数据</button>
+      </>
+    ),
+  };
+});
 beforeEach(() => {
   vi.clearAllMocks();
   window.location.hash = "cloud";
@@ -86,88 +91,69 @@ it("keeps exchange rates outside the main page and available across navigation",
   expect(screen.getByRole("button", { name: "查看汇率" })).toBeTruthy();
 });
 
-it.each([true, false])(
-  "switches accounts from the settings page even when model configuration is available=%s",
-  async (modelAvailable) => {
-    const securityConfig = vi
-      .spyOn(portfolioApi, "getSecurityPriceConfig")
-      .mockResolvedValue({ provider: "twelve-data", hasApiKey: false });
-    const analysisSettings = vi
-      .spyOn(settingsApi, "getAnalysisSettings")
-      .mockResolvedValue(defaultAnalysisSettings);
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    const fetcher = vi.fn().mockResolvedValue(new Response('{"ok":true}'));
-    vi.stubGlobal("fetch", fetcher);
-    setWebToken("account-b", undefined, { email: "b@example.test" });
-    setWebToken("account-a", undefined, { email: "a@example.test" });
-    vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
-      {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+it("switches accounts from the account and data page", async () => {
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  const fetcher = vi.fn().mockResolvedValue(new Response('{"ok":true}'));
+  vi.stubGlobal("fetch", fetcher);
+  setWebToken("account-b", undefined, { email: "b@example.test" });
+  setWebToken("account-a", undefined, { email: "a@example.test" });
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
+    provider: "openai-responses",
+    model: "test",
+    baseUrl: "https://api.openai.com/v1",
+    hasApiKey: false,
+  });
+  try {
+    render(
+      <WebAccess>
+        <App />
+      </WebAccess>,
     );
-    if (modelAvailable)
-      vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
-        provider: "openai-responses",
-        model: "test",
-        baseUrl: "https://api.openai.com/v1",
-        hasApiKey: false,
-      });
-    else
-      vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
-        new Error("model unavailable"),
-      );
-    try {
-      render(
-        <WebAccess>
-          <App />
-        </WebAccess>,
-      );
-      fireEvent.click(await screen.findByRole("button", { name: "设置" }));
-      await screen.findByRole("heading", { name: "设置" });
-      const account = await screen.findByRole("region", { name: "账号" });
-      expect(
-        within(account).getByRole("button", { name: "退出账号" }),
-      ).toBeTruthy();
-      fireEvent.click(
-        within(account).getByRole("button", { name: "切换账号" }),
-      );
-      expect(
-        within(account).getByRole("button", { name: "退出账号" }),
-      ).toBeTruthy();
-      fireEvent.click(
-        within(account).getByRole("button", { name: "切换到 b@example.test" }),
-      );
-      await waitFor(() =>
-        expect(portfolioApi.getSnapshot).toHaveBeenCalledTimes(2),
-      );
-      expect(
-        screen.queryByRole("complementary", { name: "主导航" }),
-      ).toBeTruthy();
-      expect(webToken()).toBe("account-b");
-      expect(fetcher).not.toHaveBeenCalled();
-      const switchedAccount = await screen.findByRole("region", {
-        name: "账号",
-      });
-      fireEvent.click(
-        within(switchedAccount).getByRole("button", { name: "退出账号" }),
-      );
-      await screen.findByRole("button", { name: "登录" });
-      expect(webToken()).toBeUndefined();
-      expect(fetcher).toHaveBeenCalledTimes(1);
-      expect(fetcher.mock.calls[0][1].headers.Authorization).toBe(
-        "Bearer account-b",
-      );
-      expect(
-        screen.getByRole("button", { name: "切换到 a@example.test" }),
-      ).toBeTruthy();
-    } finally {
-      cleanup();
-      securityConfig.mockRestore();
-      analysisSettings.mockRestore();
-      vi.unstubAllGlobals();
-      localStorage.clear();
-      sessionStorage.clear();
-    }
-  },
-);
+    fireEvent.click(await screen.findByRole("button", { name: "账号与数据" }));
+    const account = await screen.findByRole("region", { name: "账号" });
+    expect(
+      within(account).getByRole("button", { name: "退出账号" }),
+    ).toBeTruthy();
+    fireEvent.click(within(account).getByRole("button", { name: "切换账号" }));
+    expect(
+      within(account).getByRole("button", { name: "退出账号" }),
+    ).toBeTruthy();
+    fireEvent.click(
+      within(account).getByRole("button", { name: "切换到 b@example.test" }),
+    );
+    await waitFor(() =>
+      expect(portfolioApi.getSnapshot).toHaveBeenCalledTimes(2),
+    );
+    expect(
+      screen.queryByRole("complementary", { name: "主导航" }),
+    ).toBeTruthy();
+    expect(webToken()).toBe("account-b");
+    expect(fetcher).not.toHaveBeenCalled();
+    const switchedAccount = await screen.findByRole("region", {
+      name: "账号",
+    });
+    fireEvent.click(
+      within(switchedAccount).getByRole("button", { name: "退出账号" }),
+    );
+    await screen.findByRole("button", { name: "登录" });
+    expect(webToken()).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][1].headers.Authorization).toBe(
+      "Bearer account-b",
+    );
+    expect(
+      screen.getByRole("button", { name: "切换到 a@example.test" }),
+    ).toBeTruthy();
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    sessionStorage.clear();
+  }
+});
 
 it.each(["dashboard", "foundation", "goals", "ledger"])(
   "falls back to buy watch for the retired %s bookmark",

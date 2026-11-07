@@ -34,13 +34,11 @@ import type { ReactNode } from "react";
 
 export function ModelSettings({
   model,
-  accountSettings,
   displaySettings,
   onUpdate,
   flash,
 }: {
   model: ModelConfig;
-  accountSettings?: ReactNode;
   displaySettings?: ReactNode;
   onUpdate: (m: ModelConfig) => void;
   flash: (s: string) => void;
@@ -223,16 +221,6 @@ export function ModelSettings({
         >
           显示偏好
         </button>
-        <button
-          type="button"
-          onClick={() =>
-            document
-              .getElementById("account-settings")
-              ?.scrollIntoView({ behavior: "smooth" })
-          }
-        >
-          账号
-        </button>
       </nav>
       <section className="panel form-panel" id="model-settings">
         <div className="panel-title">
@@ -283,10 +271,6 @@ export function ModelSettings({
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder="https://api.openai.com/v1"
                 />
-                <small>
-                  填写供应商的 HTTP/HTTPS
-                  基础地址，支持自定义域名、端口和路径，无需配置服务器白名单。
-                </small>
               </label>
             )}
             {provider === "codex-bridge" ? (
@@ -527,7 +511,6 @@ export function ModelSettings({
         </div>
       </details>
       {displaySettings}
-      <div id="account-settings">{accountSettings}</div>
     </div>
   );
 }

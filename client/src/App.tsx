@@ -23,7 +23,6 @@ import { ReviewCenter } from "./features/reviews/ReviewCenter";
 import { Advisor } from "./features/research/Advisor";
 import { InvestmentMethodology } from "./features/methodology/InvestmentMethodology";
 import { ModelSettings } from "./features/settings/ModelSettings";
-import { AccountSettings } from "./features/account/WebAccess";
 import { PageHeader } from "./components/PageHeader";
 import { ExchangeRateAccess } from "./features/portfolio/ExchangeRateAccess";
 import { useDisplayPreferences } from "./app/useDisplayPreferences";
@@ -436,7 +435,6 @@ function App() {
         )}
         {view === "settings" && model && (
           <ModelSettings
-            accountSettings={<AccountSettings />}
             displaySettings={<DisplayPreferences {...display} />}
             key={remoteViewRevision}
             model={model}
@@ -448,7 +446,6 @@ function App() {
           <div className="page narrow settings-page">
             <PageHeader title="设置" />
             <DisplayPreferences {...display} />
-            <AccountSettings />
           </div>
         )}
         {(view === "advisor" || view === "settings") && !model && (
