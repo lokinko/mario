@@ -46,6 +46,7 @@ struct HostedState {
     market: Arc<MarketServices>,
     watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
     watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
+    dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
     analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
     /// Output of the offline benchmark `bench-run`; the online service only serves these files.
     dashboard_dir: Option<PathBuf>,
@@ -71,6 +72,7 @@ where
         market: market_runtime.services.clone(),
         watch_provider: market_runtime.watch_provider.clone(),
         watch_catalog: market_runtime.watch_catalog.clone(),
+        dividend_calendar: market_runtime.dividend_calendar.clone(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
         dashboard_dir,
     });
@@ -190,6 +192,7 @@ async fn authenticate(
             user_id: user.clone(),
             watch_provider: host.watch_provider.clone(),
             watch_catalog: host.watch_catalog.clone(),
+            dividend_calendar: host.dividend_calendar.clone(),
             db: Database::postgres(&host.accounts.url, &user)?,
             market: host.market.clone(),
             analysis_executor: host.analysis_executor.clone(),

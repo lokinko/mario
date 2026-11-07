@@ -7,6 +7,10 @@ it("keeps data updates behind revision checks and defaults unknown operations to
   expect(isDataWrite("/model-config/test", "POST")).toBe(false);
   expect(isDataWrite("/watch/catalog", "PUT")).toBe(false);
   expect(isDataWrite("/watch/catalog/resolve", "POST")).toBe(false);
+  expect(isDataWrite("/watch/dividend-calendar/refresh", "POST")).toBe(false);
+  expect(requestPolicy("/watch/dividend-calendar/refresh").timeoutMs).toBe(
+    180000,
+  );
   expect(requestPolicy("/watch/catalog/resolve").timeoutMs).toBe(30000);
   expect(isDataWrite("/watch/catalog/company", "PUT")).toBe(true);
   expect(isDataWrite("/future/preview", "POST")).toBe(true);

@@ -215,6 +215,7 @@ mod tests {
             user_id: "test-user".into(),
             is_superuser: false,
             watch_catalog: market_runtime.watch_catalog.clone(),
+            dividend_calendar: market_runtime.dividend_calendar.clone(),
             watch_provider: Arc::new(
                 crate::market_data::watch::PublicWatchProvider::new().unwrap(),
             ),

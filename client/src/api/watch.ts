@@ -165,3 +165,74 @@ export const refreshWatch = () =>
   httpRequest<WatchBoard>("/watch/refresh", {
     method: "POST",
   });
+
+export type DividendCalendarScope = "all" | "favorites" | "public";
+export type DividendPlanStage =
+  | "preannounced"
+  | "proposed"
+  | "approved"
+  | "scheduled"
+  | "cancelled"
+  | "no_distribution"
+  | "unknown";
+export interface DividendPlan {
+  id: string;
+  symbol: string;
+  reportDate: string;
+  announcedOn: string;
+  stage: DividendPlanStage;
+  sourceProgress: string;
+  profile: string;
+  cashPerTen: string | null;
+  bonusPerTen: string | null;
+  transferPerTen: string | null;
+  recordDate: string | null;
+  exDate: string | null;
+  paymentDate: string | null;
+  issues: ("invalid_dates" | "invalid_amount" | "unknown_progress")[];
+  sources: string[];
+}
+export interface DividendCalendarCompany {
+  symbol: string;
+  name: string;
+  personal: boolean;
+}
+export interface DividendCalendarEntry extends DividendCalendarCompany {
+  plan: DividendPlan;
+  fetchedAt: string | null;
+}
+export interface DividendCalendarBoard {
+  start: string;
+  end: string;
+  asOf: string;
+  scope: DividendCalendarScope;
+  entries: DividendCalendarEntry[];
+  pending: DividendCalendarEntry[];
+  coverage: (DividendCalendarCompany & {
+    attemptedAt: string | null;
+    fetchedAt: string | null;
+    refreshFailed: boolean;
+  })[];
+}
+function dividendCalendarQuery(scope: DividendCalendarScope, from: string) {
+  return new URLSearchParams({ scope, ...(from ? { from } : {}) }).toString();
+}
+export const getDividendCalendar = (
+  scope: DividendCalendarScope = "all",
+  from = "",
+) =>
+  httpRequest<DividendCalendarBoard>(
+    `/watch/dividend-calendar?${dividendCalendarQuery(scope, from)}`,
+  );
+export const refreshDividendCalendar = (
+  scope: DividendCalendarScope,
+  from: string,
+  symbols?: string[],
+) =>
+  httpRequest<DividendCalendarBoard>(
+    `/watch/dividend-calendar/refresh?${dividendCalendarQuery(scope, from)}`,
+    {
+      method: "POST",
+      body: JSON.stringify(symbols ? { symbols } : {}),
+    },
+  );

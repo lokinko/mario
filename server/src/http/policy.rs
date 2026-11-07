@@ -12,6 +12,7 @@ pub(crate) fn requires_revision(method: &Method, path: &str) -> bool {
                 | "/api/model-config/test"
                 | "/api/financial-operations/resolve"
                 | "/api/watch/catalog/resolve"
+                | "/api/watch/dividend-calendar/refresh"
         )
 }
 #[cfg(test)]
@@ -24,6 +25,10 @@ mod tests {
         assert!(!requires_revision(&Method::POST, "/api/model-config/test"));
         assert!(requires_revision(&Method::POST, "/api/future/preview"));
         assert!(!requires_revision(&Method::GET, "/api/snapshot"));
+        assert!(!requires_revision(
+            &Method::POST,
+            "/api/watch/dividend-calendar/refresh"
+        ));
         assert!(!requires_revision(&Method::PUT, "/api/watch/catalog"));
         assert!(!requires_revision(
             &Method::POST,

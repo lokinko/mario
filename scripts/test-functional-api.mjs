@@ -142,6 +142,18 @@ try {
   const catalog = await api("/watch/catalog");
   assert.deepEqual(catalog.catalog.industries.map(i => i.name), ["银行", "能源", "电力", "通信运营", "运输", "白酒", "白色家电", "保险", "中药", "消费", "券商"]);
   assert.equal(catalog.rows.length, 61);
+  assert.equal((await fetch(base + "/watch/dividend-calendar")).status, 401);
+  const calendarVersion = await api("/sync/version");
+  const calendar = await api("/watch/dividend-calendar");
+  assert.equal(calendar.coverage.length, catalog.rows.length);
+  assert.equal(calendar.scope, "all");
+  assert.equal((new Date(calendar.end) - new Date(calendar.start)) / 86400000, 29);
+  assert.deepEqual((await api("/watch/dividend-calendar?scope=favorites")).coverage, []);
+  await api("/watch/dividend-calendar?scope=unknown", "GET", undefined, 400);
+  await api("/watch/dividend-calendar?from=2026-02-30", "GET", undefined, 400);
+  await api("/watch/dividend-calendar/refresh?scope=favorites", "POST", { symbols: ["600000.SS"] }, 400);
+  await api("/watch/dividend-calendar/refresh?scope=favorites", "POST", {});
+  assert.deepEqual(await api("/sync/version"), calendarVersion, "calendar reads and empty public refresh do not change personal revision");
   assert.equal(catalog.canEdit, false);
   await api("/watch/catalog/resolve", "POST", { query: "国电电力" }, 403);
   await api("/watch/catalog", "PUT", { catalog: catalog.catalog, revision: catalog.revision }, 403);
@@ -192,6 +204,10 @@ try {
   assert.equal(gridProjection.scenarios[1].investedReturnPct, "40.0000");
   assert.deepEqual((await api("/watch")).rows[0].entry.gridPlan, grid);
   const existingWatch = (await api("/watch")).rows[0].entry;
+  const personalCalendar = await api("/watch/dividend-calendar?scope=favorites");
+  assert.deepEqual(personalCalendar.coverage.map(c => c.symbol), [watched.symbol]);
+  assert.equal(personalCalendar.coverage[0].personal, true);
+
   const additionVersion = await api("/sync/version");
   assert.deepEqual(await api("/watch", "PUT", { symbol: watched.symbol, name: "公共目录名称", thesis: "", ifAbsent: true }), existingWatch);
   assert.deepEqual(await api("/sync/version"), additionVersion, "adding an existing catalogue company must preserve personal settings and revision");

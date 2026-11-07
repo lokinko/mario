@@ -4,7 +4,7 @@ use crate::{
     AppResult,
 };
 use axum::{
-    extract::Path,
+    extract::{Path, Query},
     routing::{get, post, put},
     Extension, Json, Router,
 };
@@ -16,11 +16,89 @@ pub(super) fn router() -> Router {
         .route("/api/watch/catalog", get(catalog).put(save_catalog))
         .route("/api/watch/catalog/refresh", post(refresh_catalog))
         .route("/api/watch/catalog/resolve", post(resolve_company))
+        .route("/api/watch/dividend-calendar", get(dividend_calendar))
+        .route(
+            "/api/watch/dividend-calendar/refresh",
+            post(refresh_dividend_calendar),
+        )
         .route("/api/watch/refresh", post(refresh))
         .route("/api/watch/{symbol}", axum::routing::delete(remove))
         .route("/api/watch/{symbol}/read", post(read))
         .route("/api/watch/{symbol}/pin", put(pin))
         .route("/api/watch/{symbol}/grid", put(save_grid))
+}
+#[derive(serde::Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct CalendarQuery {
+    #[serde(default)]
+    scope: crate::models::watch::calendar::CalendarScope,
+    from: Option<chrono::NaiveDate>,
+}
+fn calendar_inputs(state: &RequestContext) -> AppResult<Vec<WatchInput>> {
+    Ok(state
+        .db
+        .watch_entries()?
+        .into_iter()
+        .map(|entry| entry.input)
+        .collect())
+}
+async fn dividend_calendar(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Query(query): Query<CalendarQuery>,
+) -> AppResult<Json<crate::models::watch::calendar::CalendarBoard>> {
+    Ok(Json(
+        state.dividend_calendar.board(
+            &calendar_inputs(&state)?,
+            query.scope,
+            query
+                .from
+                .unwrap_or_else(crate::application::dividend_calendar::today),
+        )?,
+    ))
+}
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CalendarRefreshInput {
+    symbols: Option<Vec<String>>,
+}
+async fn refresh_dividend_calendar(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Query(query): Query<CalendarQuery>,
+    Json(input): Json<CalendarRefreshInput>,
+) -> AppResult<Json<crate::models::watch::calendar::CalendarBoard>> {
+    let companies = state
+        .dividend_calendar
+        .companies(&calendar_inputs(&state)?, query.scope)?;
+    let permitted = companies
+        .into_iter()
+        .map(|c| c.symbol)
+        .collect::<std::collections::BTreeSet<_>>();
+    let symbols = input
+        .symbols
+        .unwrap_or_else(|| permitted.iter().cloned().collect());
+    if symbols.iter().any(|symbol| !permitted.contains(symbol)) {
+        return Err(crate::AppError::Validation(
+            "只能检查当前公共目录或本账号自选中的公司".into(),
+        ));
+    }
+    let symbols = symbols
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    state
+        .db
+        .without_account_lock(state.dividend_calendar.refresh(&symbols, true))
+        .await??;
+    Ok(Json(
+        state.dividend_calendar.board(
+            &calendar_inputs(&state)?,
+            query.scope,
+            query
+                .from
+                .unwrap_or_else(crate::application::dividend_calendar::today),
+        )?,
+    ))
 }
 async fn catalog(
     Extension(state): Extension<Arc<RequestContext>>,
@@ -171,6 +249,7 @@ mod tests {
             db: crate::db::Database::test(),
             watch_provider: runtime.watch_provider.clone(),
             watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
+            dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),
             market: runtime.services.clone(),
             analysis_executor: Arc::new(crate::agent::AgentExecutor),
         });
@@ -223,6 +302,60 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.json::<serde_json::Value>().await.unwrap(), board);
+        state
+            .db
+            .save_watch(WatchInput {
+                symbol: "600000.SS".into(),
+                name: "本账号自选".into(),
+                thesis: "私有理由".into(),
+            })
+            .unwrap();
+        let calendar_revision = state.db.revision().unwrap();
+        let unread = client
+            .get(format!(
+                "{base}/api/watch/dividend-calendar?scope=favorites"
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json::<serde_json::Value>()
+            .await
+            .unwrap();
+        assert!(unread["entries"].as_array().unwrap().is_empty());
+        assert_eq!(unread["coverage"][0]["symbol"], "600000.SS");
+        let rejected = client
+            .post(format!(
+                "{base}/api/watch/dividend-calendar/refresh?scope=public"
+            ))
+            .json(&serde_json::json!({"symbols":["600000.SS"]}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(rejected.status(), reqwest::StatusCode::BAD_REQUEST);
+        let response = client
+            .post(format!(
+                "{base}/api/watch/dividend-calendar/refresh?scope=favorites"
+            ))
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+        let calendar: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(calendar["entries"].as_array().unwrap().len(), 1);
+        assert_eq!(calendar["entries"][0]["plan"]["stage"], "scheduled");
+        assert!(calendar["entries"][0]["plan"]["paymentDate"].is_null());
+        assert_eq!(state.db.revision().unwrap(), calendar_revision);
+        assert!(
+            state
+                .db
+                .watch_board(crate::application::dividend_calendar::today())
+                .unwrap()
+                .rows[0]
+                .latest
+                .is_none(),
+            "future plans must not create implemented observations or a TTM yield"
+        );
         server.abort();
     }
 }

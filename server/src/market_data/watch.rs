@@ -1,5 +1,6 @@
 //! Public observation data. Never reads accounts, holdings or transactions.
 mod eastmoney;
+mod plans;
 #[cfg(test)]
 mod source_tests;
 use crate::{
@@ -126,7 +127,6 @@ impl PublicWatchProvider {
         })
     }
     async fn dividend_page(&self, symbol: &str, page: u64) -> AppResult<(Value, String)> {
-        let _permit = self.slots.acquire().await.map_err(|_| bad())?;
         let filter = format!("(SECURITY_CODE=\"{}\")", &symbol[..6]);
         let response = self
             .client
@@ -148,6 +148,28 @@ impl PublicWatchProvider {
             .error_for_status()?;
         let url = response.url().to_string();
         Ok((response.json::<Value>().await?, url))
+    }
+    async fn dividend_payload(&self, symbol: &str) -> AppResult<(Value, Vec<String>)> {
+        let _permit = self.slots.acquire().await.map_err(|_| bad())?;
+        let (mut payload, source) = self.dividend_page(symbol, 1).await?;
+        let mut sources = vec![source];
+        if !(payload["code"] == 9201 && payload["result"].is_null()) {
+            let pages = payload["result"]["pages"]
+                .as_u64()
+                .filter(|n| *n > 0 && *n <= 50)
+                .ok_or_else(bad)?;
+            if payload["success"] != true {
+                return Err(bad());
+            }
+            for page in 2..=pages {
+                let (next, source) = self.dividend_page(symbol, page).await?;
+                append_dividend_page(&mut payload, &next)?;
+                sources.push(source);
+            }
+            // Only a fully collected result can certify an empty TTM window.
+            payload["result"]["pages"] = Value::from(1);
+        }
+        Ok((payload, sources))
     }
 }
 
@@ -280,26 +302,17 @@ fn parse_bars(chart: &Value, symbol: &str, day: NaiveDate) -> AppResult<Vec<Pric
 
 #[async_trait]
 impl WatchMarketProvider for PublicWatchProvider {
+    async fn dividend_plans(
+        &self,
+        symbol: &str,
+        day: NaiveDate,
+    ) -> AppResult<Vec<crate::models::watch::calendar::DividendPlan>> {
+        let (payload, sources) = self.dividend_payload(symbol).await?;
+        plans::parse(&payload, symbol, day, &sources)
+    }
+
     async fn dividends(&self, symbol: &str, day: NaiveDate) -> AppResult<DividendHistory> {
-        let _permit = self.slots.acquire().await.map_err(|_| bad())?;
-        let (mut payload, source) = self.dividend_page(symbol, 1).await?;
-        let mut sources = vec![source];
-        if !(payload["code"] == 9201 && payload["result"].is_null()) {
-            let pages = payload["result"]["pages"]
-                .as_u64()
-                .filter(|n| *n > 0 && *n <= 50)
-                .ok_or_else(bad)?;
-            if payload["success"] != true {
-                return Err(bad());
-            }
-            for page in 2..=pages {
-                let (next, source) = self.dividend_page(symbol, page).await?;
-                append_dividend_page(&mut payload, &next)?;
-                sources.push(source);
-            }
-            // Only a fully collected result can certify an empty TTM window.
-            payload["result"]["pages"] = Value::from(1);
-        }
+        let (payload, sources) = self.dividend_payload(symbol).await?;
         let history = DividendHistory {
             basis: DividendBasis {
                 as_of: day,

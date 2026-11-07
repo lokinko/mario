@@ -17,6 +17,8 @@ import catalogFixture from "../../../../server/data/watch-catalog.json";
 vi.mock("../../api/watch", () => ({
   getWatchBoard: vi.fn(),
   getWatchCatalog: vi.fn(),
+  getDividendCalendar: vi.fn(),
+  refreshDividendCalendar: vi.fn(),
   saveWatchCatalog: vi.fn(),
   resolveCatalogCompany: vi.fn(),
   refreshWatchCatalog: vi.fn(),
@@ -109,6 +111,15 @@ const catalog: api.CatalogBoard = {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(api.getWatchBoard).mockResolvedValue(structuredClone(empty));
+  vi.mocked(api.getDividendCalendar).mockResolvedValue({
+    start: "2026-11-07",
+    end: "2026-12-06",
+    asOf: "2026-11-07",
+    scope: "all",
+    entries: [],
+    pending: [],
+    coverage: [],
+  });
   vi.mocked(api.getWatchCatalog).mockResolvedValue(structuredClone(catalog));
 });
 afterEach(() => {
@@ -787,4 +798,15 @@ it("shows public maintenance only for the server-authorized superuser", async ()
   expect(screen.getByRole("dialog", { name: "维护公共公司目录" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   expect(p.onSaved).toHaveBeenCalled();
+});
+
+it("opens the dividend calendar from buy watch without editing personal facts", async () => {
+  const p = props();
+  render(<BuyWatch {...p} />);
+  fireEvent.click(await screen.findByRole("button", { name: "分红日历" }));
+  expect(await screen.findByRole("dialog", { name: "分红日历" })).toBeTruthy();
+  expect(await screen.findByRole("tab", { name: "已定日期 0" })).toBeTruthy();
+  expect(api.getDividendCalendar).toHaveBeenCalledWith("all", "");
+  expect(p.onEdited).not.toHaveBeenCalled();
+  expect(api.refreshDividendCalendar).not.toHaveBeenCalled();
 });

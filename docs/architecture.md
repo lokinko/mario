@@ -112,14 +112,14 @@ flowchart TD
 | `http/` | 按领域注册路由（`watch`、`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
 | `accounts.rs`、`accounts/openai.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速、持久化超级账户权限；可选网站 OpenAI 身份映射、短期 OAuth 事务及显式关联；Agent 令牌的常量时间比较 |
 | `openai_login.rs`、`hosted/openai.rs` | 网站身份登录：前者只做官方 OIDC 配置、授权码交换和签名声明校验，不访问账号或模型；后者转换 HTTP/Cookie、编排账号事务、固定站点重定向与一次性交接；与本机 `chatgpt_auth` 及订阅执行无依赖 |
-| `application/` | 跨仓储与外部端口的用例：`watch`（账号观察检查）、`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型接口切换策略、Provider 构造与连接测试）、`codex_bridge`（账号配对） |
+| `application/` | 跨仓储与外部端口的用例：`watch`（账号观察检查）、`watch_catalog`（公共目录及来源补齐）、`dividend_calendar`（公开计划刷新与账号范围投影）、`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型接口切换策略、Provider 构造与连接测试）、`codex_bridge`（账号配对） |
 | `ports/` | `analysis::AnalysisExecutor` 与事件通道；`market::FxRateProvider`、`SecurityPriceProvider`、`WatchMarketProvider`、`CatalogSourceProvider` |
 | `agent.rs` | `AgentExecutor`：配置 `MARIO_AGENT_URL` 时把冻结任务发给独立 Agent，否则进程内执行；Codex 桥接任务始终在 API 进程经桥接中继执行。同文件提供 Agent HTTP 服务 |
 | `ai/` | `orchestrator` 按 `workflow`（当前 v8）执行可选搜索与单次报告生成；格式错误只修复一次；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 和 `chatgpt` 只由用户电脑上的桥接 worker 调用，分别使用 Codex 登录和 Mario 自己的官方 OAuth 注册；`structured_output` 负责确定性引用、输出校验；资料检索和连续原文摘录归领域层 `evidence`；`streaming` 解析流式草稿 |
 | `codex_bridge_worker.rs` | 用户电脑上的共用桥接进程，固定注册及授权会话，长轮询 API 领取任务，选择 Codex App Server 或官方 ChatGPT Responses；模型目录及推理取令牌时在凭据锁内核对同一会话，不借用重新登录后的授权；不上传 OpenAI 凭据 |
 | `chatgpt_auth.rs`、`chatgpt_auth/` | 本机官方 OAuth、签名身份和 scopes 校验、多注册选择、跨进程串行刷新、原子凭据保存及退出；仅由本机运行角色与 `ai/chatgpt.rs` 调用，不依赖业务数据库 |
 | `market_data.rs`、`prices.rs` | 行情端口的网络实现与实例内有界缓存；只处理公开行情，不读写账号数据 |
-| `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共公司目录、独立版本及公共行业最新观察；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
+| `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共公司目录、独立版本、公共行业最新观察及分红计划快照；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
 | `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、买点观察计算、期权合约计价及多空头重放、推理事件与执行时限 |
 | `context.rs` / `context/fact_sheet.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：分析上下文构建与预览、再平衡规划、风险检查、估值状态、本地证据检索 |
 | `attachments.rs`、`secrets.rs`、`streaming.rs`、`error.rs` | 附件解码与文本提取、主密钥加解密（AAD 绑定 schema 与用途）、共享 SSE 响应、统一错误类型 |
@@ -131,7 +131,7 @@ flowchart TD
 | `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发 |
 | `app/useApplicationData.ts` | 服务端数据生命周期：启动、快照与模型配置加载、自动同步、请求代次、草稿保护与远程更新提示 |
 | `app/navigation.ts` | 视图、导航分组与标签；研究看板是同源独立 dashboard，不在侧栏提供入口，也不增加 React 视图状态 |
-| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿、公司查询输入和打开时的独立版本；通过应用壳进入讨论 |
+| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿、公司查询输入和打开时的独立版本，`DividendCalendar` 拥有日历范围、日期选择、读取轮询与手动刷新；通过应用壳进入讨论 |
 | `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
@@ -233,6 +233,16 @@ sequenceDiagram
 
 网络期间释放账号锁，提交前重新核对条目的观察输入与创建时间；置顶与网格编辑不影响已开始的检查；账号观察、检查状态及最后采用依据同事务写入；公开分红抓取成功独立落库，行情失败或用户随后删除条目不撤销公开事实。未知结果不伪装为信号退出。事件金额为十进制字符串，股息率随实际价格和 TTM 窗口重算，覆盖不足时只停用当前股息率。当前观察的 `dividendEvents` 保留本次 TTM 窗口事件及资料日期；独立的可选 `dividendHistory` 保存按实际行情日向前 36 个日历月（含两端）的已实施事件，供详情检查连续性，不参与 TTM 计算。旧观察缺字段时只展示原 TTM 证据，下次成功检查补齐，不追溯重写。前端 `features/watch/WatchDividends` 统一展示税前当次每十股口径、送转、来源和 TTM 标记；公共资料更新只触发当前实际行情日的重算，更早交易日及已完成分析的冻结依据保持原值。周报和授权问答沿用原有冻结路径，前端仍通过应用壳进入讨论。账号 schema 14 和备份 v26 使用显式 `Band.reference`（日线 `lower`、周线 `middle`）及 `matchesRule`，`distancePct` 表示相对该参考轨的百分比距离。升级和旧备份导入在原事务内调用 `db/watch::migrate_rules`，以保存的收盘价、分红和轨道重算观察条件与状态，移除 `nearLower`，清除旧条件提醒并允许当前行情日重新检查；价格、来源、日期和已完成分析的冻结原文不变。迁移失败整体回滚；此适配仅服务旧观察备份，不保留旧条件的生产判定。新增公共 schema 在 API 启动时幂等创建，整站备份恢复规则见[数据迁移](data-migration.md)。
 
+#### 分红日历
+
+`models/watch/calendar` 定义公开分红计划、进度、局部问题码和 30 天只读投影，不依赖数据库或网络。`market_data/watch/plans` 经 `WatchMarketProvider::dividend_plans` 从东方财富结构化数据校验完整分页、证券身份、公告日期、方案状态、金额及日期顺序。历史分红与计划共用一处分页获取和来源并发预算（2），各自独立解析；空值、未来实施安排与预案不反向写入已实施历史。来源缺可靠派息日时保持空值，不以除息日代替。
+
+`application/dividend_calendar` 只依赖领域、公开仓储、端口和错误：按当前公共目录与 HTTP 提供的本账号名单合并范围，读取缓存生成日期事件、日期待定项和逐公司覆盖元数据。它不读取账号仓储、私有事实或 AI。`composition` 在既有半小时公共/个人循环调用刷新，成功缓存一小时、失败一分钟，按证券合并在途请求，每轮最多 120 秒；个人循环先冻结授权代码，网络期间释放账号锁，计划失败不阻断价格检查。生命周期仍归原后台任务，未新增运行角色或定时服务。
+
+`db/public_watch/calendar` 在公共 schema 的 `dividend_plan_snapshots` 按证券保存计划及采集元数据。单次原子 upsert 比较尝试时间，失败保留较新的成功计划与日期，较慢的旧请求不得覆盖新结果。快照不保存账号 ID、私人名称或理由，不修改目录版本、账号版本、TTM 历史或财务事务。启动在公共仓储原初始化事务幂等创建新表；不改账号 schema 和 JSON 备份版本。已有数据不转换，新增缓存可由来源重建；迁移失败回滚公共初始化，旧程序回退前应保留新版整站 PostgreSQL 备份。
+
+HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/dividend-calendar/refresh` 冻结当前允许范围、释放账号锁抓取，重新取得锁后按当前自选返回投影，移除不会复活。后者仅更新公共缓存，因此在 `http/policy` 和前端 `requestPolicy` 显式免账号版本与个人数据变更通知。前端 `features/watch/DividendCalendar` 经 `api/watch` 读取与刷新，筛选属于展示状态，关闭不触发草稿确认。后台缓存可以跨账号复用；返回范围和个人名称始终按当前会话计算，不暴露其他账号名单。详见[分红日历](buy-watch.md#分红日历)。
+
 ## 7. 状态与事务归属
 
 | 状态 | 所有者 | 说明 |
@@ -243,6 +253,7 @@ sequenceDiagram
 | 会话与账号 | `accounts` | 会话仅存哈希，可撤销；网站 OpenAI 身份映射、账号创建／关联／会话签发归同一事务；短期 OAuth 事务原子消费后不重放 |
 | 账号业务数据与版本 | `db` 领域仓储 | 业务写入、回执、日志、投影与版本同事务提交 |
 | 模型配置与凭据 | `db/settings.rs` + `db/secrets.rs` + `secrets.rs` | 接口、地址、模型名、密文与目标绑定由 `save_model_configuration` 在同一事务写入，失败保留原配置；主密钥加密，AAD 绑定账号 schema 与用途 |
+| 公开分红计划快照与日历范围 | `db/public_watch/calendar` + `application/dividend_calendar` | 来源事实公共缓存，账号范围仅作实时投影；失败保留成功资料，整站备份保留；不进入已实施历史、账号版本或资产 |
 | 公开分红主资料 | `db/public_dividends` + `application/watch_market` | 所有账号复用；只有公开来源和内置原件可写入，整站备份保留；没有账号 ID 或个人记录 |
 | 观察名单、置顶和网格方案、最后采用的分红依据、收盘历史与未读状态 | `db/watch` | 独立于财务账本；按账号事务保存，后台网络不持有账号锁，来源失败保留上次观测日期 |
 | 冻结分析输入 | 单次分析请求 | 执行期间不可变，结果记录输入版本与轨迹 |

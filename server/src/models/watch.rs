@@ -1,4 +1,5 @@
 //! Buy-watch contracts and deterministic calculations. No account or network access.
+pub(crate) mod calendar;
 pub(crate) mod catalog;
 pub(crate) mod grid;
 

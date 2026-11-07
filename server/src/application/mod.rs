@@ -8,3 +8,5 @@ pub(crate) mod prices;
 pub(crate) mod watch;
 pub(crate) mod watch_catalog;
 pub(crate) mod watch_market;
+
+pub(crate) mod dividend_calendar;

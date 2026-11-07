@@ -22,6 +22,14 @@ pub(crate) trait SecurityPriceProvider: Send + Sync {
 
 #[async_trait]
 pub(crate) trait WatchMarketProvider: Send + Sync {
+    async fn dividend_plans(
+        &self,
+        _symbol: &str,
+        _day: chrono::NaiveDate,
+    ) -> AppResult<Vec<crate::models::watch::calendar::DividendPlan>> {
+        Err(crate::AppError::MarketData("分红计划来源暂不可用".into()))
+    }
+
     /// The latest dated public history, reusable across accounts without network I/O.
     fn dividend_seed(
         &self,
