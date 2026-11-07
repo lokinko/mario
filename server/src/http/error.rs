@@ -13,6 +13,7 @@ impl IntoResponse for AppError {
             AppError::RateLimit(_) => StatusCode::TOO_MANY_REQUESTS,
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
             AppError::Auth(_) => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Model(_) | AppError::Network(_) | AppError::Codex(_) => {

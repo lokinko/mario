@@ -30,6 +30,7 @@ import { Drawer } from "../../components/Drawer";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import "./watch.css";
 
+import { WatchCatalogEditor } from "./WatchCatalogEditor";
 import { WatchList } from "./WatchList";
 import { WatchCatalogDetails } from "./WatchCatalogDetails";
 import { WatchDetails } from "./WatchDetails";
@@ -63,6 +64,7 @@ export function BuyWatch({
 }) {
   const [board, setBoard] = useState<WatchBoard | null>(null);
   const [catalog, setCatalog] = useState<CatalogBoard | null>(null);
+  const [catalogEditing, setCatalogEditing] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const [group, setGroup] = useState("favorites");
   const [error, setError] = useState("");
@@ -261,6 +263,14 @@ export function BuyWatch({
         title="买点观察"
         action={
           <>
+            {catalog?.canEdit && (
+              <Button
+                disabled={busy || open || !!expanded}
+                onClick={() => setCatalogEditing(true)}
+              >
+                维护公共公司
+              </Button>
+            )}
             <Button
               disabled={busy || !currentRows.length}
               onClick={() => void refresh()}
@@ -281,6 +291,26 @@ export function BuyWatch({
           </>
         }
       />
+      {catalogEditing && catalog && (
+        <WatchCatalogEditor
+          board={catalog}
+          initialIndustry={
+            group === "favorites" ? catalog.catalog.industries[0].id : group
+          }
+          onClose={() => {
+            setCatalogEditing(false);
+            onSaved();
+          }}
+          onEdited={onEdited}
+          onSaved={(data) => {
+            catalogGuard.begin();
+            setCatalog(data);
+            setCatalogEditing(false);
+            onSaved();
+            flash("公共公司目录已更新，所有账号可见");
+          }}
+        />
+      )}
       <Tabs
         className="watch-industry-tabs"
         aria-label="公司分组"

@@ -18,6 +18,7 @@ const externalBase = process.env.MARIO_FUNCTIONAL_BASE_URL;
 const base = externalBase ?? `http://127.0.0.1:${port}/api`;
 assert(externalBase || database, "Set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database");
 let revision;
+let registeredUserId;
 let token = process.env.MARIO_FUNCTIONAL_TOKEN;
 const masterKey = randomBytes(32).toString("base64");
 let child,
@@ -96,7 +97,9 @@ try {
       body: JSON.stringify({ email: `${randomUUID()}@example.test`, password: "functional-password-0123456789" }),
     });
     assert.equal(registered.status, 200, await registered.clone().text());
-    token = (await registered.json()).token;
+    const session = await registered.json();
+    token = session.token;
+    registeredUserId = session.userId;
   }
   assert.equal((await fetch(base + "/daily-assets")).status, 401);
   if (!externalBase) {
@@ -139,6 +142,8 @@ try {
   const catalog = await api("/watch/catalog");
   assert.deepEqual(catalog.catalog.industries.map(i => i.name), ["银行", "煤炭", "石油石化", "电力", "通信运营", "高速公路", "白酒", "家电"]);
   assert.equal(catalog.rows.length, 21);
+  assert.equal(catalog.canEdit, false);
+  await api("/watch/catalog", "PUT", { catalog: catalog.catalog, revision: catalog.revision }, 403);
   for (const row of catalog.rows) {
     for (const privateKey of ["entry", "thesis", "pinned", "gridPlan", "alert", "trades"]) assert.equal(row[privateKey], undefined);
   }
@@ -189,6 +194,44 @@ try {
   const additionVersion = await api("/sync/version");
   assert.deepEqual(await api("/watch", "PUT", { symbol: watched.symbol, name: "公共目录名称", thesis: "", ifAbsent: true }), existingWatch);
   assert.deepEqual(await api("/sync/version"), additionVersion, "adding an existing catalogue company must preserve personal settings and revision");
+  if (!externalBase && registeredUserId) {
+    assert.match(registeredUserId, /^[0-9a-f-]{36}$/);
+    const role = enabled => {
+      const result = spawnSync(join(testPostgresBin(), "psql" + (process.platform === "win32" ? ".exe" : "")),
+        ["-X", "-v", "ON_ERROR_STOP=1", database, "-c", `UPDATE mario_auth.users SET is_superuser=${enabled ? "TRUE" : "FALSE"} WHERE id='${registeredUserId}'`], { encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+    };
+    role(true);
+    const adminBoard = await api("/watch/catalog");
+    assert.equal(adminBoard.canEdit, true, "existing sessions immediately use current server permissions");
+    const draft = structuredClone(adminBoard.catalog);
+    draft.industries[0].companies = draft.industries[0].companies.filter(c => c.symbol !== watched.symbol);
+    draft.industries[0].companies.push({ symbol: "600000.SS", name: "浦发银行", sources: ["https://example.test/exchange", "https://example.test/report"] });
+    const changed = await api("/watch/catalog", "PUT", { catalog: draft, revision: adminBoard.revision });
+    assert.equal(changed.revision, adminBoard.revision + 1);
+    assert.equal(changed.canEdit, true);
+    assert(changed.rows.some(r => r.company.symbol === "600000.SS"));
+    assert(!changed.rows.some(r => r.company.symbol === watched.symbol));
+    assert.deepEqual((await api("/watch")).rows[0].entry, existingWatch, "public removal preserves personal settings");
+    assert.deepEqual(await api("/sync/version"), additionVersion, "public maintenance has an independent revision");
+    await api("/watch/catalog", "PUT", { catalog: adminBoard.catalog, revision: adminBoard.revision }, 409);
+    const invalid = structuredClone(draft);
+    invalid.industries[1].companies.push(invalid.industries[0].companies[0]);
+    await api("/watch/catalog", "PUT", { catalog: invalid, revision: changed.revision }, 400);
+    const reader = await fetch(base + "/auth/register", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: `${randomUUID()}@example.test`, password: "functional-password-0123456789" }) });
+    assert.equal(reader.status, 200);
+    const readerToken = (await reader.json()).token;
+    const shared = await fetch(base + "/watch/catalog", { headers: { Authorization: `Bearer ${readerToken}` } });
+    const sharedBoard = await shared.json();
+    assert.equal(sharedBoard.canEdit, false);
+    assert.deepEqual(sharedBoard.catalog, changed.catalog, "other accounts read the maintained public directory");
+    await api("/watch/catalog", "PUT", { catalog: adminBoard.catalog, revision: changed.revision });
+    role(false);
+    assert.equal((await api("/watch/catalog")).canEdit, false);
+    await api("/watch/catalog", "PUT", { catalog: draft, revision: changed.revision + 1 }, 403);
+  }
+
   assert.equal((await api(gridPath, "PUT", null)).rows[0].gridProjection, null);
   assert.deepEqual((await api("/snapshot")).holdings, snap.holdings, "watching must not create holdings");
   await api("/watch/600036.SS/read", "POST");

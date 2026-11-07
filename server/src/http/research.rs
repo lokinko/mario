@@ -212,6 +212,8 @@ mod tests {
         )
         .unwrap();
         let state = Arc::new(RequestContext {
+            user_id: "test-user".into(),
+            is_superuser: false,
             watch_catalog: market_runtime.watch_catalog.clone(),
             watch_provider: Arc::new(
                 crate::market_data::watch::PublicWatchProvider::new().unwrap(),

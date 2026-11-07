@@ -94,6 +94,8 @@ export interface CatalogRow extends WatchMarketRow {
   checkedFor: string | null;
 }
 export interface CatalogBoard {
+  revision: number;
+  canEdit: boolean;
   catalog: { version: number; verifiedOn: string; industries: WatchIndustry[] };
   rows: CatalogRow[];
   minYieldPct: number;
@@ -117,6 +119,14 @@ export interface WatchBoard {
 export const getWatchBoard = () => httpRequest<WatchBoard>("/watch");
 export const getWatchCatalog = () =>
   httpRequest<CatalogBoard>("/watch/catalog");
+export const saveWatchCatalog = (
+  catalog: CatalogBoard["catalog"],
+  revision: number,
+) =>
+  httpRequest<CatalogBoard>("/watch/catalog", {
+    method: "PUT",
+    body: JSON.stringify({ catalog, revision }),
+  });
 export const refreshWatchCatalog = (industryId: string) =>
   httpRequest<CatalogBoard>("/watch/catalog/refresh", {
     method: "POST",

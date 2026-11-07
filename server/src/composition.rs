@@ -87,7 +87,6 @@ impl MarketRuntime {
                 public_dividends,
             ));
         let watch_catalog = Arc::new(crate::application::watch_catalog::WatchCatalogService::new(
-            crate::models::watch::catalog::Catalog::bundled()?,
             Arc::new(crate::db::PublicWatch::postgres(database_url)?),
             watch_provider.clone(),
         ));

@@ -16,6 +16,8 @@ use std::sync::Arc;
 
 pub(crate) struct RequestContext {
     pub db: Database,
+    pub user_id: String,
+    pub is_superuser: bool,
     pub watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
     pub watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
     pub market: Arc<MarketServices>,

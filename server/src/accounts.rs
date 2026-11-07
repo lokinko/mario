@@ -61,6 +61,14 @@ impl Accounts {
             "SELECT pg_advisory_lock(hashtextextended('{schema}',0));"
         ))?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires_at BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS session_expiry ON sessions(expires_at);")?;
+        // One-time upgrade of the explicitly designated existing account. New registrations
+        // always retain the default role, including registrations using this email later.
+        connection.execute_batch("DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='is_superuser') THEN
+                ALTER TABLE users ADD COLUMN is_superuser BOOLEAN NOT NULL DEFAULT FALSE;
+                UPDATE users SET is_superuser=TRUE WHERE email='lokinko.cs@gmail.com';
+            END IF;
+        END $$;")?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS login_limits(email TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at BIGINT NOT NULL);")?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS external_identities(issuer TEXT NOT NULL,client_id TEXT NOT NULL,subject TEXT NOT NULL,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(issuer,client_id,subject)); CREATE INDEX IF NOT EXISTS external_identity_user ON external_identities(user_id); CREATE TABLE IF NOT EXISTS openai_login_attempts(state_hash TEXT PRIMARY KEY,browser_hash TEXT NOT NULL,verifier TEXT NOT NULL,nonce TEXT NOT NULL,client_id TEXT NOT NULL,redirect_uri TEXT NOT NULL,link_session TEXT,expires_at BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS openai_attempt_expiry ON openai_login_attempts(expires_at);")?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS openai_login_results(result_hash TEXT PRIMARY KEY,browser_hash TEXT NOT NULL,session_hash TEXT,expires_at BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS openai_result_expiry ON openai_login_results(expires_at);")?;
@@ -168,6 +176,13 @@ impl Accounts {
                 error => AppError::Database(error),
             })
     }
+    pub(crate) fn is_superuser(&self, user_id: &str) -> AppResult<bool> {
+        Ok(self.conn()?.query_row(
+            "SELECT is_superuser FROM users WHERE id=$1",
+            [user_id],
+            |row| row.get(0),
+        )?)
+    }
     pub fn logout(&self, token: &str) -> AppResult<()> {
         self.conn()?
             .execute("DELETE FROM sessions WHERE token_hash=$1", [digest(token)])?;
@@ -227,6 +242,59 @@ mod tests {
         let url = std::env::var("MARIO_TEST_DATABASE_URL")
             .expect("set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database");
         Accounts::open_schema(url, format!("auth_{}", uuid::Uuid::new_v4().simple())).unwrap()
+    }
+
+    #[test]
+    fn superuser_migration_only_promotes_the_existing_designated_account_once() {
+        let original = accounts();
+        let owner = original
+            .register(&Credentials {
+                email: "lokinko.cs@gmail.com".into(),
+                password: "long-password-1234".into(),
+            })
+            .unwrap();
+        let other = original
+            .register(&Credentials {
+                email: "other@example.test".into(),
+                password: "long-password-1234".into(),
+            })
+            .unwrap();
+        assert!(
+            !original.is_superuser(&owner.user_id).unwrap(),
+            "registration never grants privileges"
+        );
+        original
+            .conn()
+            .unwrap()
+            .execute_batch("ALTER TABLE users DROP COLUMN is_superuser")
+            .unwrap();
+        let url = original.url.clone();
+        let schema = original.schema.clone();
+        drop(original);
+        let upgraded = Accounts::open_schema(url.clone(), schema.clone()).unwrap();
+        assert!(upgraded.is_superuser(&owner.user_id).unwrap());
+        assert!(!upgraded.is_superuser(&other.user_id).unwrap());
+        assert_eq!(upgraded.authenticate(&owner.token).unwrap(), owner.user_id);
+        upgraded
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE users SET is_superuser=FALSE WHERE id=$1",
+                [&owner.user_id],
+            )
+            .unwrap();
+        drop(upgraded);
+        assert!(
+            !Accounts::open_schema(url, schema)
+                .unwrap()
+                .is_superuser(&owner.user_id)
+                .unwrap(),
+            "restarting never restores revoked privileges"
+        );
+        assert!(serde_json::from_value::<Credentials>(serde_json::json!({
+            "email": "attacker@example.test", "password": "long-password-1234", "isSuperuser": true,
+        }))
+        .is_err());
     }
 
     #[test]

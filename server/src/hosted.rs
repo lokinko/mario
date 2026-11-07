@@ -186,6 +186,8 @@ async fn authenticate(
             .map_err(|_| AppError::Busy("服务繁忙，请稍后重试".into()))?;
         let user = host.accounts.authenticate(bearer(request.headers())?)?;
         let state = Arc::new(RequestContext {
+            is_superuser: host.accounts.is_superuser(&user)?,
+            user_id: user.clone(),
             watch_provider: host.watch_provider.clone(),
             watch_catalog: host.watch_catalog.clone(),
             db: Database::postgres(&host.accounts.url, &user)?,

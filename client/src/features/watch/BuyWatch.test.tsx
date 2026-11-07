@@ -17,6 +17,7 @@ import catalogFixture from "../../../../server/data/watch-catalog.json";
 vi.mock("../../api/watch", () => ({
   getWatchBoard: vi.fn(),
   getWatchCatalog: vi.fn(),
+  saveWatchCatalog: vi.fn(),
   refreshWatchCatalog: vi.fn(),
   saveWatch: vi.fn(),
   saveWatchGrid: vi.fn(),
@@ -87,6 +88,8 @@ const props = () => ({
   onSaved: vi.fn(),
 });
 const catalog: api.CatalogBoard = {
+  revision: 1,
+  canEdit: false,
   catalog: catalogFixture,
   rows: catalogFixture.industries.flatMap((industry) =>
     industry.companies.map((company) => ({
@@ -764,4 +767,21 @@ it("filters by the weekly middle and shades that range even far from the weekly 
   const start = parseFloat(track.style.getPropertyValue("--zone-start"));
   const width = parseFloat(track.style.getPropertyValue("--zone-width"));
   expect(start + width).toBeCloseTo(middle);
+});
+
+it("shows public maintenance only for the server-authorized superuser", async () => {
+  const p = props();
+  const view = render(<BuyWatch {...p} />);
+  await screen.findByRole("tab", { name: "银行 3" });
+  expect(screen.queryByRole("button", { name: "维护公共公司" })).toBeNull();
+  view.unmount();
+  vi.mocked(api.getWatchCatalog).mockResolvedValue({
+    ...catalog,
+    canEdit: true,
+  });
+  render(<BuyWatch {...p} />);
+  fireEvent.click(await screen.findByRole("button", { name: "维护公共公司" }));
+  expect(screen.getByRole("dialog", { name: "维护公共公司目录" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+  expect(p.onSaved).toHaveBeenCalled();
 });

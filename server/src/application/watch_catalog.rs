@@ -13,35 +13,29 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 pub(crate) struct WatchCatalogService {
-    catalog: Catalog,
     store: Arc<PublicWatch>,
     provider: Arc<dyn WatchMarketProvider>,
-    locks: BTreeMap<String, Mutex<()>>,
+    locks: Mutex<BTreeMap<String, Arc<Mutex<()>>>>,
 }
 
 impl WatchCatalogService {
-    pub fn new(
-        catalog: Catalog,
-        store: Arc<PublicWatch>,
-        provider: Arc<dyn WatchMarketProvider>,
-    ) -> Self {
-        let locks = catalog
-            .industries
-            .iter()
-            .flat_map(|i| &i.companies)
-            .map(|c| (c.symbol.clone(), Mutex::new(())))
-            .collect();
+    pub fn new(store: Arc<PublicWatch>, provider: Arc<dyn WatchMarketProvider>) -> Self {
         Self {
-            catalog,
             store,
             provider,
-            locks,
+            locks: Mutex::new(BTreeMap::new()),
         }
     }
 
+    pub fn save(&self, catalog: &Catalog, revision: i64, user_id: &str) -> AppResult<CatalogBoard> {
+        self.store.save_catalog(catalog, revision, user_id)?;
+        self.board()
+    }
+
     pub fn board(&self) -> AppResult<CatalogBoard> {
+        let (catalog, revision) = self.store.catalog()?;
         let mut rows = Vec::new();
-        for industry in &self.catalog.industries {
+        for industry in &catalog.industries {
             for company in &industry.companies {
                 rows.push(CatalogRow::new(
                     company.clone(),
@@ -50,7 +44,7 @@ impl WatchCatalogService {
                 ));
             }
         }
-        Ok(CatalogBoard::new(self.catalog.clone(), rows))
+        Ok(CatalogBoard::new(catalog, rows, revision))
     }
 
     pub async fn refresh(
@@ -68,10 +62,10 @@ impl WatchCatalogService {
         force: bool,
         day: NaiveDate,
     ) -> AppResult<CatalogBoard> {
+        let (catalog, _) = self.store.catalog()?;
         let companies: Vec<_> = match industry {
-            Some(id) => self.catalog.industry(id)?.companies.iter().collect(),
-            None => self
-                .catalog
+            Some(id) => catalog.industry(id)?.companies.iter().collect(),
+            None => catalog
                 .industries
                 .iter()
                 .flat_map(|i| &i.companies)
@@ -114,7 +108,14 @@ impl WatchCatalogService {
         deadline: tokio::time::Instant,
     ) -> AppResult<()> {
         let before = self.store.get(symbol)?;
-        let _guard = self.locks[symbol].lock().await;
+        let lock = self
+            .locks
+            .lock()
+            .await
+            .entry(symbol.into())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        let _guard = lock.lock().await;
         let previous = self.store.get(symbol)?;
         // A concurrent caller already refreshed this company while we were waiting.
         if previous.checked_at != before.checked_at {
@@ -279,7 +280,6 @@ pub(crate) mod tests {
 
     fn service(source: Arc<Source>) -> Arc<WatchCatalogService> {
         Arc::new(WatchCatalogService::new(
-            Catalog::bundled().unwrap(),
             Arc::new(PublicWatch::test()),
             source,
         ))
@@ -287,6 +287,36 @@ pub(crate) mod tests {
 
     pub(crate) fn fixture_service() -> Arc<WatchCatalogService> {
         service(Arc::new(Source::new()))
+    }
+
+    #[tokio::test]
+    async fn maintenance_changes_the_live_pool_and_inflight_removal_does_not_restore_membership() {
+        let source = Arc::new(Source::new());
+        let service = service(source.clone());
+        let board = service.board().unwrap();
+        let mut catalog = board.catalog;
+        let mut company = catalog.industries[0].companies[0].clone();
+        company.symbol = "600000.SS".into();
+        company.name = "浦发银行".into();
+        catalog.industries[0].companies = vec![company];
+        let added = service.save(&catalog, board.revision, "owner").unwrap();
+        let checking = service.clone();
+        let day = market_fixture().1;
+        let task = tokio::spawn(async move { checking.refresh_on(Some("banks"), true, day).await });
+        while source.prices.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+        catalog.industries[0].companies.clear();
+        service.save(&catalog, added.revision, "owner").unwrap();
+        let finished = task.await.unwrap().unwrap();
+        assert!(finished.catalog.industries[0].companies.is_empty());
+        assert!(!finished
+            .rows
+            .iter()
+            .any(|row| row.company.symbol == "600000.SS"));
+        assert!(service.store.get("600000.SS").unwrap().latest.is_some());
+        service.refresh_on(Some("banks"), true, day).await.unwrap();
+        assert_eq!(source.prices.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

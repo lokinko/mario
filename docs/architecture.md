@@ -45,7 +45,7 @@ PostgreSQL 是唯一的数据存储，没有单机或免登录模式。本地开
 ## 2. 设计原则
 
 1. **服务端是唯一事实来源。** 前端只持有已显示快照和未保存草稿；金额、会计结果、估值状态和数据版本都由服务端计算并返回。
-2. **账号隔离由服务端决定。** 请求不能指定租户；认证后由服务端按用户 ID 选择数据库连接，账号数据不进入跨账号缓存；`mario_market` 只保存公开分红事实，供所有账号复用。
+2. **账号隔离由服务端决定。** 请求不能指定租户；认证后由服务端按用户 ID 选择数据库连接，账号数据不进入跨账号缓存；`mario_market` 保存公共目录、行情及分红事实，供所有账号复用；目录维护的操作者 ID 仅作内部元数据。
 3. **写入有版本，财务写入有回执。** 业务写入与数据版本在同一事务推进；客户端用 `If-Match` 提交，过期写入返回 409；财务写入的回执与领域变化同事务提交，丢失响应可以安全重放。
 4. **精确金额。** 金额以十进制原文和精确值持久化，浮点只作展示投影；前端显示不经过二进制浮点重算。
 5. **AI 只消费冻结输入。** 分析前在服务端读取、授权、冻结上下文并计算指纹；AI 模块不读数据库、不写资产、不执行交易，模型输出必须经过结构校验才成为结果。新生成的每条个人事实须有非空且授权的原值引用；这保证可回查，不代替语义核对，历史报告保留原文读取。
@@ -110,7 +110,7 @@ flowchart TD
 | `composition.rs` | 创建行情供应商，组装 `MarketServices`，拥有后台刷新任务并在服务退出时取消 |
 | `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS、静态网页，以及只读提供研究看板文件（`MARIO_BENCH_DIR`，数据接口只验证会话，不打开账号库） |
 | `http/` | 按领域注册路由（`watch`、`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
-| `accounts.rs`、`accounts/openai.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速；可选网站 OpenAI 身份映射、短期 OAuth 事务及显式关联；Agent 令牌的常量时间比较 |
+| `accounts.rs`、`accounts/openai.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速、持久化超级账户权限；可选网站 OpenAI 身份映射、短期 OAuth 事务及显式关联；Agent 令牌的常量时间比较 |
 | `openai_login.rs`、`hosted/openai.rs` | 网站身份登录：前者只做官方 OIDC 配置、授权码交换和签名声明校验，不访问账号或模型；后者转换 HTTP/Cookie、编排账号事务、固定站点重定向与一次性交接；与本机 `chatgpt_auth` 及订阅执行无依赖 |
 | `application/` | 跨仓储与外部端口的用例：`watch`（账号观察检查）、`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`fx`（行情刷新与估值编排）、`model_settings`（模型接口切换策略、Provider 构造与连接测试）、`codex_bridge`（账号配对） |
 | `ports/` | `analysis::AnalysisExecutor` 与事件通道；`market::FxRateProvider`、`SecurityPriceProvider`、`WatchMarketProvider` |
@@ -119,7 +119,7 @@ flowchart TD
 | `codex_bridge_worker.rs` | 用户电脑上的共用桥接进程，固定注册及授权会话，长轮询 API 领取任务，选择 Codex App Server 或官方 ChatGPT Responses；模型目录及推理取令牌时在凭据锁内核对同一会话，不借用重新登录后的授权；不上传 OpenAI 凭据 |
 | `chatgpt_auth.rs`、`chatgpt_auth/` | 本机官方 OAuth、签名身份和 scopes 校验、多注册选择、跨进程串行刷新、原子凭据保存及退出；仅由本机运行角色与 `ai/chatgpt.rs` 调用，不依赖业务数据库 |
 | `market_data.rs`、`prices.rs` | 行情端口的网络实现与实例内有界缓存；只处理公开行情，不读写账号数据 |
-| `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共行业最新观察；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
+| `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共公司目录、独立版本及公共行业最新观察；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
 | `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、买点观察计算、期权合约计价及多空头重放、推理事件与执行时限 |
 | `context.rs` / `context/fact_sheet.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：分析上下文构建与预览、再平衡规划、风险检查、估值状态、本地证据检索 |
 | `attachments.rs`、`secrets.rs`、`streaming.rs`、`error.rs` | 附件解码与文本提取、主密钥加解密（AAD 绑定 schema 与用途）、共享 SSE 响应、统一错误类型 |
@@ -131,7 +131,7 @@ flowchart TD
 | `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发 |
 | `app/useApplicationData.ts` | 服务端数据生命周期：启动、快照与模型配置加载、自动同步、请求代次、草稿保护与远程更新提示 |
 | `app/navigation.ts` | 视图、导航分组与标签；研究看板是同源独立 dashboard，不在侧栏提供入口，也不增加 React 视图状态 |
-| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵；通过应用壳进入讨论 |
+| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿和打开时的独立版本；通过应用壳进入讨论 |
 | `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
@@ -160,9 +160,9 @@ flowchart TD
 
 1. Nginx 转发到 API；公开路由包含注册、登录、登出、可选 OpenAI 网站登录配置／发起／回调／交接和服务信息，请求体上限 16 KB。OpenAI 发起和交接接口校验 Origin，关联还必须提供有效 Mario 会话；回调只信任浏览器绑定且可一次性消费的 state。
 2. 私有路由先取并发槽位（业务 24、认证 2），满载返回繁忙。
-3. 校验 Bearer 会话，按用户 ID 打开该账号 schema 的连接，取数据库 advisory 账号锁并读取数据版本。
+3. 校验 Bearer 会话，按用户 ID 读取数据库中的超级账户权限并打开该账号 schema 的连接，取数据库 advisory 账号锁并读取数据版本。
 4. 写入请求（由 `http/policy.rs` 判定）比较 `If-Match`；不一致时，财务写入先查回执，命中则返回原结果，否则返回 409 与当前版本。
-5. 构造只含该账号连接与共享依赖的 `RequestContext`，交给领域路由；响应带 `x-data-revision` 与 `no-store`。连接关闭时释放残留的会话锁。
+5. 构造含已认证用户 ID、超级账户标记、该账号连接与共享依赖的 `RequestContext`，交给领域路由；响应带 `x-data-revision` 与 `no-store`。连接关闭时释放残留的会话锁。
 
 网站身份登录由 API 验证 OpenAI 身份后建立原有 Mario 会话。`mario_auth` 的外部身份按 issuer + client ID + subject 映射到 users；邮箱碰撞需要原账号登录后明确关联，不自动合并。10 分钟 OAuth 事务与 120 秒会话交接均由 PostgreSQL 原子消费，HttpOnly 临时 Cookie 绑定浏览器；回调整页返回固定站点，交接只返回 Mario 自有会话。OpenAI 原始令牌只在校验期间存在内存，不持久化或返回网页。流程及申请见 [网站 ChatGPT 登录](chatgpt-sign-in.md)。
 
@@ -205,7 +205,11 @@ sequenceDiagram
 
 ### 6.5 买点观察
 
-观察桌面默认“自选”，其后按固定八个领域浏览 21 家公共公司。目录契约及静态资料归 `models/watch/catalog`，资料包含代码、名称、行业、核查日期及交易所/公司报告来源。`application/watch_catalog` 编排公共检查，依赖公开仓储、领域计算和行情端口；`db/public_watch` 在 `mario_market.watch_snapshots` 保存各公司的最新成功结果及检查状态，只依赖公开契约、错误类型和 `storage`，不读取账号表。`composition` 装配公共服务并管理启动补查及每 30 分钟检查的任务；复用 19:00 截止规则、同一观察计算器、参考价与公共行情/分红能力。相同标的在途检查合并，价格与分红请求共同受供应商的最多 2 并发限制，单轮 120 秒；已完成当前截止日则跳过，缺项、失败和行情滞后可重试，失败保留已有日期和结果。公共快照不产生个人观察、提醒或账号版本变更，整站备份包含公共表，个人 JSON 备份不包含它。
+观察桌面默认“自选”，其后按固定八个领域浏览超级账户人工维护的公共公司。目录契约及校验归 `models/watch/catalog`，`server/data/watch-catalog.json` 只在首次建库时初始化 21 家公司；线上名单、独立版本、最后维护者及时间归 `db/public_watch` 的 `mario_market.watch_catalog`，后续启动不覆盖。资料包含代码、名称、行业、核查日期及交易所/公司报告来源。`application/watch_catalog` 编排公共检查，依赖公开仓储、领域计算和行情端口；`db/public_watch` 在 `mario_market.watch_snapshots` 保存各公司的最新成功结果及检查状态，只依赖公开契约、错误类型和 `storage`，不读取账号表。`composition` 装配公共服务并管理启动补查及每 30 分钟检查的任务；复用 19:00 截止规则、同一观察计算器、参考价与公共行情/分红能力。相同标的在途检查合并，价格与分红请求共同受供应商的最多 2 并发限制，单轮 120 秒；已完成当前截止日则跳过，缺项、失败和行情滞后可重试，失败保留已有日期和结果。公共快照不产生个人观察、提醒或账号版本变更，整站备份包含公共表，个人 JSON 备份不包含它。
+
+`PUT /watch/catalog` 由 HTTP 根据认证后的 `is_superuser` 校验权限，普通账号返回 403；`application/watch_catalog` 把保存交给公共仓储。仓储事务锁定目录行，校验八领域身份不变、证券与来源合法及代码唯一，并比较请求自带的公共 `revision`，内容、版本及维护元数据同时提交；冲突返回 409。该 PUT 是 `http/policy` 显式声明的账号 `If-Match` 例外，前端 `requestPolicy` 不把它当作个人资料写入；公共仓储仍强制独立版本比较。编辑器冻结打开时的内容与版本，轮询不能提高草稿版本，冲突保留草稿且仅在用户确认后重读。移除成员不改个人自选或账本；在途检查只更新行情快照，不能恢复成员。检查每轮读取持久目录，动态按证券合并并发，新增公司无需重启即可参与检查。
+
+`accounts` 首次添加 `users.is_superuser` 时只升级已有的 `lokinko.cs@gmail.com`；注册默认 FALSE，后续重启不重新授予。角色与账号 ID 绑定，每次认证从库中读取，不信任客户端标记或缓存会话角色，也不扩大账号数据访问范围。权限和公共目录进入整站备份，不进入个人 JSON。升级失败由数据库语句/事务回滚，保留已有个人数据；旧程序不消费新目录，回退须先保留新版整站备份。
 
 `GET /watch/catalog` 只读快照，`POST /watch/catalog/refresh` 按行业执行检查，HTTP 保持认证与 `If-Match` 并在网络期间释放账号锁。行业页每 30 秒读取快照，不通过 GET 抓取来源。前端的 `WatchDisplayRow` 将公共市场数据与可选个人观察分开，同一 `WatchList`、`WatchSignals` 和 `WatchEvidence` 复用公司对比及依据展示；公共公司不伪造个人条目。自选状态由个人名单匹配，加入自选使用原 `PUT /watch` 的 `ifAbsent` 添加语义，仓储事务保留已存在条目及其个人设置。页面拥有分组、搜索和筛选；切换分组清空筛选，保留排序与视图。行业详情不装配个人交易、网格、提醒或周内矩阵。
 
@@ -228,7 +232,7 @@ sequenceDiagram
 | 状态 | 所有者 | 说明 |
 | --- | --- | --- |
 | 启动配置、行情供应商、AI 执行器 | 进程（`runtime`、`composition`） | 可替换，不持有账号数据 |
-| 公共行业目录及最新观察 | 目录归领域契约，快照归 `db/public_watch` | 固定公司池；公开检查不读取账号、不写个人记录；后台任务归 `composition` |
+| 公共行业目录及最新观察 | 契约归领域层，持久目录、独立版本与快照归 `db/public_watch` | 超级账户维护现有领域内的公司；公共仓储不读账号表、不写个人记录，目录事务比较独立版本；后台任务归 `composition` |
 | 公开行情缓存 | `prices`/`market_data` 实例 | 有界、失败退避，跨账号共享，只含公开数据 |
 | 会话与账号 | `accounts` | 会话仅存哈希，可撤销；网站 OpenAI 身份映射、账号创建／关联／会话签发归同一事务；短期 OAuth 事务原子消费后不重放 |
 | 账号业务数据与版本 | `db` 领域仓储 | 业务写入、回执、日志、投影与版本同事务提交 |

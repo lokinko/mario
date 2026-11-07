@@ -13,7 +13,7 @@ use std::sync::Arc;
 pub(super) fn router() -> Router {
     Router::new()
         .route("/api/watch", get(board).put(save))
-        .route("/api/watch/catalog", get(catalog))
+        .route("/api/watch/catalog", get(catalog).put(save_catalog))
         .route("/api/watch/catalog/refresh", post(refresh_catalog))
         .route("/api/watch/refresh", post(refresh))
         .route("/api/watch/{symbol}", axum::routing::delete(remove))
@@ -24,7 +24,30 @@ pub(super) fn router() -> Router {
 async fn catalog(
     Extension(state): Extension<Arc<RequestContext>>,
 ) -> AppResult<Json<crate::models::watch::catalog::CatalogBoard>> {
-    Ok(Json(state.watch_catalog.board()?))
+    let mut board = state.watch_catalog.board()?;
+    board.can_edit = state.is_superuser;
+    Ok(Json(board))
+}
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CatalogSaveInput {
+    catalog: crate::models::watch::catalog::Catalog,
+    revision: i64,
+}
+async fn save_catalog(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Json(input): Json<CatalogSaveInput>,
+) -> AppResult<Json<crate::models::watch::catalog::CatalogBoard>> {
+    if !state.is_superuser {
+        return Err(crate::AppError::Forbidden(
+            "仅超级账户可维护公共公司目录".into(),
+        ));
+    }
+    let mut board = state
+        .watch_catalog
+        .save(&input.catalog, input.revision, &state.user_id)?;
+    board.can_edit = true;
+    Ok(Json(board))
 }
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -39,7 +62,9 @@ async fn refresh_catalog(
         .db
         .without_account_lock(state.watch_catalog.refresh(Some(&input.industry_id), true))
         .await?;
-    Ok(Json(board?))
+    let mut board = board?;
+    board.can_edit = state.is_superuser;
+    Ok(Json(board))
 }
 async fn board(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<WatchBoard>> {
     current_board(&state)
@@ -120,6 +145,8 @@ mod tests {
         )
         .unwrap();
         let state = Arc::new(RequestContext {
+            user_id: "test-user".into(),
+            is_superuser: false,
             db: crate::db::Database::test(),
             watch_provider: runtime.watch_provider.clone(),
             watch_catalog: crate::application::watch_catalog::tests::fixture_service(),

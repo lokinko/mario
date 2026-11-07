@@ -945,3 +945,30 @@
 .watch-industry-tabs .ant-tabs-tab {
   white-space: nowrap;
 }
+
+.watch-catalog-editor,
+.watch-catalog-editor form {
+  display: grid;
+  gap: 16px;
+}
+.watch-catalog-editor label {
+  display: grid;
+  gap: 6px;
+}
+.watch-catalog-companies {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.watch-catalog-companies li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.watch-catalog-companies li span {
+  flex: 1;
+  min-width: 160px;
+}

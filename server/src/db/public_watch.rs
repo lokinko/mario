@@ -1,8 +1,8 @@
-//! Only public latest observations; never opens a tenant schema.
+//! Shared company directory and public latest observations; never opens a tenant schema.
 use crate::{
-    models::watch::catalog::CatalogSnapshot,
+    models::watch::catalog::{Catalog, CatalogSnapshot},
     storage::{params, Connection, OptionalRow},
-    AppResult,
+    AppError, AppResult,
 };
 use std::sync::Mutex;
 
@@ -26,6 +26,14 @@ impl PublicWatch {
                 symbol TEXT PRIMARY KEY, payload TEXT NOT NULL
             );",
         )?;
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS watch_catalog (
+            id INTEGER PRIMARY KEY CHECK (id=1), payload TEXT NOT NULL,
+            revision BIGINT NOT NULL, updated_by TEXT, updated_at TEXT
+        );",
+        )?;
+        tx.execute("INSERT INTO watch_catalog(id,payload,revision) VALUES (1,$1,1) ON CONFLICT(id) DO NOTHING",
+            [serde_json::to_string(&Catalog::bundled()?)?])?;
         tx.commit()?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -46,6 +54,54 @@ impl PublicWatch {
             *connection = Connection::postgres(&self.url, &self.schema)?;
         }
         Ok(connection)
+    }
+
+    pub fn catalog(&self) -> AppResult<(Catalog, i64)> {
+        let (payload, revision): (String, i64) = self.conn()?.query_row(
+            "SELECT payload,revision FROM watch_catalog WHERE id=1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok((Catalog::parse(&payload)?, revision))
+    }
+
+    pub fn save_catalog(&self, catalog: &Catalog, revision: i64, user_id: &str) -> AppResult<()> {
+        catalog.validate()?;
+        let mut connection = self.conn()?;
+        let tx = connection.transaction()?;
+        let payload: String = tx.query_row(
+            "SELECT payload FROM watch_catalog WHERE id=1 FOR UPDATE",
+            [],
+            |r| r.get(0),
+        )?;
+        let old = Catalog::parse(&payload)?;
+        // Only company membership and metadata are editable; the eight domains stay stable.
+        if old
+            .industries
+            .iter()
+            .map(|i| (&i.id, &i.name))
+            .collect::<Vec<_>>()
+            != catalog
+                .industries
+                .iter()
+                .map(|i| (&i.id, &i.name))
+                .collect::<Vec<_>>()
+        {
+            return Err(AppError::Validation(
+                "请保留现有领域，仅维护领域内的公司".into(),
+            ));
+        }
+        let changed = tx.execute(
+            "UPDATE watch_catalog SET payload=$1,revision=revision+1,updated_by=$2,updated_at=$3 WHERE id=1 AND revision=$4",
+            params![serde_json::to_string(catalog)?, user_id, chrono::Utc::now().to_rfc3339(), revision],
+        )?;
+        if changed == 0 {
+            return Err(AppError::Conflict(
+                "公共目录已被更新，请重新读取后核对；当前草稿已保留".into(),
+            ));
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn get(&self, symbol: &str) -> AppResult<CatalogSnapshot> {
@@ -95,6 +151,39 @@ impl PublicWatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn catalog_edits_persist_allow_empty_groups_and_reject_conflicts_or_invalid_replacements() {
+        let store = PublicWatch::test();
+        let (mut catalog, revision) = store.catalog().unwrap();
+        let old = catalog.industries[0].companies.remove(0);
+        catalog.industries[0].companies.clear();
+        catalog.industries[1].companies.push(old);
+        store.save_catalog(&catalog, revision, "owner-id").unwrap();
+        let reopened = PublicWatch::open(&store.url, &store.schema).unwrap();
+        let (saved, next) = reopened.catalog().unwrap();
+        assert_eq!(next, revision + 1);
+        assert!(saved.industries[0].companies.is_empty());
+        assert!(matches!(
+            store.save_catalog(&catalog, revision, "stale-editor"),
+            Err(AppError::Conflict(_))
+        ));
+        let actor: String = reopened
+            .conn()
+            .unwrap()
+            .query_row("SELECT updated_by FROM watch_catalog", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(actor, "owner-id");
+        let mut invalid = saved.clone();
+        invalid.industries[0]
+            .companies
+            .push(saved.industries[1].companies[0].clone());
+        assert!(store.save_catalog(&invalid, next, "owner-id").is_err());
+        invalid = saved;
+        invalid.industries.remove(0);
+        assert!(store.save_catalog(&invalid, next, "owner-id").is_err());
+        assert_eq!(store.catalog().unwrap().1, next);
+    }
 
     #[test]
     fn snapshots_survive_reopen_and_delayed_writes_cannot_replace_newer_results() {

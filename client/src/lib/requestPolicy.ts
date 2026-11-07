@@ -7,6 +7,8 @@ export function isDataWrite(path: string, method = "GET") {
       "/analysis/preview",
       "/model-config/test",
       "/financial-operations/resolve",
+      // Shared catalogue writes use their own revision, independent of account data.
+      "/watch/catalog",
     ].includes(resource)
   );
 }

@@ -17,6 +17,8 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     #[error("账户认证失败：{0}")]
     Auth(String),
+    #[error("{0}")]
+    Forbidden(String),
     #[error("数据版本冲突：{0}")]
     Conflict(String),
     #[error("市场数据服务错误：{0}")]

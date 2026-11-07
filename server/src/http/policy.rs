@@ -1,6 +1,10 @@
 //! Explicit exceptions to optimistic concurrency.
 use axum::http::Method;
 pub(crate) fn requires_revision(method: &Method, path: &str) -> bool {
+    // Public catalogue edits compare their own durable revision in the repository.
+    if method == Method::PUT && path == "/api/watch/catalog" {
+        return false;
+    }
     method != Method::GET
         && !matches!(
             path,
@@ -19,5 +23,11 @@ mod tests {
         assert!(!requires_revision(&Method::POST, "/api/model-config/test"));
         assert!(requires_revision(&Method::POST, "/api/future/preview"));
         assert!(!requires_revision(&Method::GET, "/api/snapshot"));
+        assert!(!requires_revision(&Method::PUT, "/api/watch/catalog"));
+        assert!(requires_revision(
+            &Method::POST,
+            "/api/watch/catalog/refresh"
+        ));
+        assert!(requires_revision(&Method::DELETE, "/api/watch/catalog"));
     }
 }

@@ -35,8 +35,14 @@ impl Catalog {
         Self::parse(include_str!("../../../data/watch-catalog.json"))
     }
 
-    fn parse(json: &str) -> AppResult<Self> {
+    pub fn parse(json: &str) -> AppResult<Self> {
         let catalog: Self = serde_json::from_str(json)?;
+        catalog.validate()?;
+        Ok(catalog)
+    }
+
+    pub fn validate(&self) -> AppResult<()> {
+        let catalog = self;
         let mut industries = BTreeSet::new();
         let mut symbols = BTreeSet::new();
         if catalog.version != 1
@@ -53,7 +59,6 @@ impl Catalog {
                     .all(|c| c.is_ascii_lowercase() || c == b'-')
                 || !industries.insert(&industry.id)
                 || industry.name.trim().is_empty()
-                || industry.companies.is_empty()
             {
                 return Err(AppError::Validation("行业目录分组无效或重复".into()));
             }
@@ -68,7 +73,11 @@ impl Catalog {
                     || input.name != company.name
                     || !symbols.insert(&company.symbol)
                     || company.sources.len() < 2
-                    || company.sources.iter().any(|s| !s.starts_with("https://"))
+                    || company.sources.iter().any(|s| {
+                        !s.starts_with("https://")
+                            || s.len() <= 8
+                            || s.chars().any(char::is_whitespace)
+                    })
                 {
                     return Err(AppError::Validation(
                         "行业目录公司身份、来源或唯一性无效".into(),
@@ -76,7 +85,7 @@ impl Catalog {
                 }
             }
         }
-        Ok(catalog)
+        Ok(())
     }
 
     pub fn industry(&self, id: &str) -> AppResult<&Industry> {
@@ -121,6 +130,8 @@ impl CatalogRow {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogBoard {
+    pub revision: i64,
+    pub can_edit: bool,
     pub catalog: Catalog,
     pub rows: Vec<CatalogRow>,
     pub min_yield_pct: f64,
@@ -128,8 +139,10 @@ pub struct CatalogBoard {
 }
 
 impl CatalogBoard {
-    pub fn new(catalog: Catalog, rows: Vec<CatalogRow>) -> Self {
+    pub fn new(catalog: Catalog, rows: Vec<CatalogRow>, revision: i64) -> Self {
         Self {
+            revision,
+            can_edit: false,
             catalog,
             rows,
             min_yield_pct: MIN_YIELD_PCT,
