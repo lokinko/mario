@@ -7,7 +7,8 @@ import {
   Pin,
   PinOff,
 } from "lucide-react";
-import type { WatchRow } from "../../api/watch";
+import type { WatchRules, WatchRow } from "../../api/watch";
+import { referenceLabels } from "./rules";
 import { Badge } from "../../components/Badge";
 import { formatAmount } from "../../lib/format";
 import { BandTrack, RuleChecks, YieldGrid } from "./WatchSignals";
@@ -27,8 +28,7 @@ export function WatchList({
   view,
   held,
   busy,
-  minYield,
-  tolerance,
+  rules,
   sort,
   onSort,
   onPin,
@@ -45,8 +45,7 @@ export function WatchList({
   view: "compact" | "cards";
   held: Set<string>;
   busy: boolean;
-  minYield: number;
-  tolerance: number;
+  rules: WatchRules;
   sort: WatchSort;
   onSort: (sort: WatchSort) => void;
   onPin: (row: WatchRow) => void;
@@ -59,6 +58,7 @@ export function WatchList({
   canAdd: boolean;
   onAdd: (row: WatchDisplayRow) => void;
 }) {
+  const minYield = rules.minYieldBps / 100;
   const state = (row: WatchDisplayRow) => (
     <Badge tone={row.latest?.status === "attention" ? "success" : "neutral"}>
       {row.latest ? statuses[row.latest.status] : "等待首次检查"}
@@ -165,16 +165,16 @@ export function WatchList({
               <th>公司 / 行情日</th>
               {sortHeader("收盘价", "price-asc", "price-desc", "ascending")}
               {sortHeader("TTM 股息率", "yield", "yield-asc", "descending")}
-              <th>5% 参考价</th>
+              <th>{minYield}% 参考价</th>
               {sortHeader(
-                "距日线下轨",
+                `距日线${referenceLabels[rules.daily.reference]}`,
                 "daily",
                 "daily-far",
                 "ascending",
                 true,
               )}
               {sortHeader(
-                "距周线中轨",
+                `距周线${referenceLabels[rules.weekly.reference]}`,
                 "weekly",
                 "weekly-far",
                 "ascending",
@@ -212,26 +212,30 @@ export function WatchList({
                 </td>
                 <td
                   data-label="TTM 股息率"
-                  className={`watch-numeric ${checks(row, minYield)[0] === true ? "watch-met" : ""}`}
+                  className={`watch-numeric ${checks(row)[0] === true ? "watch-met" : ""}`}
                 >
                   {number(row.latest?.yieldPct, "%")}
                 </td>
-                <td data-label="5% 参考价" className="watch-numeric">
-                  {row.dividendPrices.find((p) => p.yieldPct === 5)?.price !=
-                  null
+                <td
+                  data-label={`${minYield}% 参考价`}
+                  className="watch-numeric"
+                >
+                  {row.dividendPrices.find((p) => p.yieldPct === minYield)
+                    ?.price != null
                     ? formatAmount(
-                        row.dividendPrices.find((p) => p.yieldPct === 5)!.price,
+                        row.dividendPrices.find((p) => p.yieldPct === minYield)!
+                          .price,
                       )
                     : "—"}
                 </td>
                 <td
-                  data-label="距日线下轨"
+                  data-label={`距日线${referenceLabels[rules.daily.reference]}`}
                   className={`watch-numeric ${row.latest?.daily?.matchesRule ? "watch-met" : ""}`}
                 >
                   {distance(row.latest?.daily?.distancePct)}
                 </td>
                 <td
-                  data-label="距周线中轨"
+                  data-label={`距周线${referenceLabels[rules.weekly.reference]}`}
                   className={`watch-numeric ${row.latest?.weekly?.matchesRule ? "watch-met" : ""}`}
                 >
                   {distance(row.latest?.weekly?.distancePct)}
@@ -287,22 +291,22 @@ export function WatchList({
               <strong>{row.latest?.dividendPerShare ?? "—"}</strong>
             </div>
           </div>
-          <RuleChecks row={row} minYield={minYield} />
+          <RuleChecks row={row} rules={rules} />
           <div className="watch-bands">
             <BandTrack
               label="日线"
               band={row.latest?.daily}
               price={row.latest?.price}
-              tolerance={tolerance}
+              rule={rules.daily}
             />
             <BandTrack
               label="周线"
               band={row.latest?.weekly}
               price={row.latest?.price}
-              tolerance={tolerance}
+              rule={rules.weekly}
             />
           </div>
-          <YieldGrid row={row} />
+          <YieldGrid row={row} minYield={minYield} />
           <p className="watch-meta">
             行情日期 {row.latest?.observedOn ?? "—"} · 分红覆盖至{" "}
             {row.latest?.dividendBasis?.asOf ?? "—"}

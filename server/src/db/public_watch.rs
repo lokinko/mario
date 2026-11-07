@@ -480,6 +480,7 @@ mod tests {
         let store = PublicWatch::test();
         let (market, day) = crate::models::watch::tests::market_fixture();
         let latest = crate::models::watch::evaluate(
+            &Default::default(),
             "600036.SS",
             &market,
             day,

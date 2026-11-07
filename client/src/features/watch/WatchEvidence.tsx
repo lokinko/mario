@@ -1,20 +1,19 @@
 import type { ReactNode } from "react";
-import type { WatchMarketRow } from "../../api/watch";
+import type { WatchRules, WatchMarketRow } from "../../api/watch";
 import { BandTrack, RuleChecks, YieldGrid } from "./WatchSignals";
 import { WatchDividends } from "./WatchDividends";
 import { number } from "./presentation";
 
 export function WatchEvidence({
   row,
-  minYield,
-  tolerance,
+  rules,
   children,
 }: {
   row: WatchMarketRow;
-  minYield: number;
-  tolerance: number;
+  rules: WatchRules;
   children?: ReactNode;
 }) {
+  const minYield = rules.minYieldBps / 100;
   const { latest } = row;
   return (
     <>
@@ -32,22 +31,22 @@ export function WatchEvidence({
           <strong>{latest?.dividendPerShare ?? "—"}</strong>
         </div>
       </div>
-      <RuleChecks row={row} minYield={minYield} />
+      <RuleChecks row={row} rules={rules} />
       <div className="watch-bands">
         <BandTrack
           label="日线"
           band={latest?.daily}
           price={latest?.price}
-          tolerance={tolerance}
+          rule={rules.daily}
         />
         <BandTrack
           label="周线"
           band={latest?.weekly}
           price={latest?.price}
-          tolerance={tolerance}
+          rule={rules.weekly}
         />
       </div>
-      <YieldGrid row={row} />
+      <YieldGrid row={row} minYield={minYield} />
       {children}
       <WatchDividends latest={latest} />
     </>

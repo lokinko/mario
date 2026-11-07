@@ -230,7 +230,8 @@ impl WatchCatalogService {
                     data.dividend_basis = Some(history.basis);
                     data.sources.extend(history.sources);
                 }
-                let observation = evaluate(symbol, &data, day, checked_at.clone());
+                let observation =
+                    evaluate(&Default::default(), symbol, &data, day, checked_at.clone());
                 if previous
                     .latest
                     .as_ref()
@@ -488,7 +489,7 @@ pub(crate) mod tests {
             assert_eq!(
                 row.dividend_prices
                     .iter()
-                    .find(|p| p.yield_pct == 5)
+                    .find(|p| p.yield_pct == 5.0)
                     .unwrap()
                     .price,
                 "100.00"

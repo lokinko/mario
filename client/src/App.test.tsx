@@ -41,8 +41,16 @@ vi.mock("./api/watch", () => ({
     weekly: [],
     weekStart: "2026-11-02",
     weekEnd: "2026-11-08",
-    minYieldPct: 5,
-    bandDistancePct: 2,
+    defaultRules: {
+      minYieldBps: 500,
+      daily: { reference: "lower", mode: "near", offsetBps: 200 },
+      weekly: { reference: "middle", mode: "at_or_below", offsetBps: 0 },
+    },
+    rules: {
+      minYieldBps: 500,
+      daily: { reference: "lower", mode: "near", offsetBps: 200 },
+      weekly: { reference: "middle", mode: "at_or_below", offsetBps: 0 },
+    },
   }),
 }));
 vi.mock("./api/settings", async (original) => ({

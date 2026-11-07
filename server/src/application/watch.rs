@@ -26,6 +26,7 @@ pub async fn refresh(
 ) -> AppResult<WatchBoard> {
     let day = cutoff();
     let board = db.watch_board(day)?;
+    let rules = board.rules;
     let mut entries = Vec::new();
     for row in board.rows {
         let private = db.watch_dividends(&row.entry.input.symbol)?;
@@ -109,7 +110,7 @@ pub async fn refresh(
                                 data.dividend_basis = Some(history.basis.clone());
                                 data.sources.extend(history.sources.clone());
                             }
-                            evaluate(&entry.input.symbol, &data, day, checked_at.clone())
+                            evaluate(&rules, &entry.input.symbol, &data, day, checked_at.clone())
                         });
                     (entry, checked_at, result, dividends)
                 });

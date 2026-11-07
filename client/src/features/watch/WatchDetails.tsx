@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { WatchGridPlan, WatchRow } from "../../api/watch";
+import type { WatchRules, WatchGridPlan, WatchRow } from "../../api/watch";
 import type { Snapshot } from "../../types";
 import { Drawer } from "../../components/Drawer";
 import { Callout } from "../../components/Callout";
@@ -10,8 +10,7 @@ import { canonical, statuses } from "./presentation";
 export function WatchDetails({
   row,
   snapshot,
-  minYield,
-  tolerance,
+  rules,
   busy,
   error,
   onClose,
@@ -24,8 +23,7 @@ export function WatchDetails({
 }: {
   row: WatchRow;
   snapshot: Snapshot;
-  minYield: number;
-  tolerance: number;
+  rules: WatchRules;
   busy: boolean;
   error: string;
   onClose: () => void;
@@ -80,7 +78,7 @@ export function WatchDetails({
           />
         ) : (
           <>
-            <WatchEvidence row={row} minYield={minYield} tolerance={tolerance}>
+            <WatchEvidence row={row} rules={rules}>
               <WatchGrid row={row} onEdit={() => setEditingGrid(true)} />
             </WatchEvidence>
             {entry.thesis && (

@@ -16,7 +16,7 @@ export const issueLabels: Record<WatchIssue, string> = {
   daily_history_incomplete: "日线历史不足或存在缺口",
   weekly_history_incomplete: "周线历史不足或存在缺口",
   dividend_unavailable: "已实施分红数据暂不可用",
-  non_positive_band: "日线下轨或周线中轨不为正，无法计算观察条件",
+  non_positive_band: "所选参考轨不为正，无法计算观察条件",
 };
 export const number = (value: number | null | undefined, suffix = "") =>
   value == null ? "—" : `${formatNumber(value, 2, true)}${suffix}`;
@@ -39,12 +39,9 @@ export const displayWatch = (watch: WatchRow): WatchDisplayRow => ({
   watch,
 });
 
-export function checks(row: WatchMarketRow, minYield: number) {
+export function checks(row: WatchMarketRow) {
   return [
-    row.latest?.yieldPct == null
-      ? null
-      : (row.dividendPrices.find((p) => p.yieldPct === minYield)?.reached ??
-        (row.latest.yieldPct === 0 ? false : null)),
+    row.latest?.yieldMatchesRule ?? null,
     row.latest?.daily?.distancePct == null
       ? null
       : row.latest.daily.matchesRule,
@@ -61,10 +58,10 @@ export const sortOptions = {
   "yield-asc": "股息率从低到高",
   "price-asc": "收盘价从低到高",
   "price-desc": "收盘价从高到低",
-  daily: "距日线下轨从近到远",
-  "daily-far": "距日线下轨从远到近",
-  weekly: "距周线中轨从近到远",
-  "weekly-far": "距周线中轨从远到近",
+  daily: "距日线参考轨从近到远",
+  "daily-far": "距日线参考轨从远到近",
+  weekly: "距周线参考轨从近到远",
+  "weekly-far": "距周线参考轨从远到近",
   name: "公司名称",
 } as const;
 export type WatchSort = keyof typeof sortOptions;
@@ -113,11 +110,10 @@ export function selectRows(
   sort: WatchSort,
   held: Set<string>,
   ownership: string,
-  minYield: number,
 ) {
   const term = query.trim().toLocaleLowerCase();
   const selected = rows.filter((row) => {
-    const values = checks(row, minYield);
+    const values = checks(row);
     return (
       (!term ||
         `${row.company.name} ${row.company.symbol} ${row.watch?.entry.thesis ?? ""}`

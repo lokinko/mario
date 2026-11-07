@@ -1,6 +1,6 @@
 use super::RequestContext;
 use crate::{
-    models::watch::{grid::GridPlan, WatchBoard, WatchEntry, WatchInput},
+    models::watch::{grid::GridPlan, rules::WatchRules, WatchBoard, WatchEntry, WatchInput},
     AppResult,
 };
 use axum::{
@@ -17,6 +17,7 @@ pub(super) fn router() -> Router {
         .route("/api/watch/catalog/refresh", post(refresh_catalog))
         .route("/api/watch/catalog/resolve", post(resolve_company))
         .route("/api/watch/refresh", post(refresh))
+        .route("/api/watch/rules", put(save_rules))
         .route("/api/watch/{symbol}", axum::routing::delete(remove))
         .route("/api/watch/{symbol}/read", post(read))
         .route("/api/watch/{symbol}/pin", put(pin))
@@ -27,6 +28,7 @@ async fn catalog(
 ) -> AppResult<Json<crate::models::watch::catalog::CatalogBoard>> {
     let mut board = state.watch_catalog.board()?;
     board.can_edit = state.is_superuser;
+    board.apply_rules(state.db.watch_rules()?);
     Ok(Json(board))
 }
 #[derive(serde::Deserialize)]
@@ -68,6 +70,7 @@ async fn save_catalog(
         .watch_catalog
         .save(&input.catalog, input.revision, &state.user_id)?;
     board.can_edit = true;
+    board.apply_rules(state.db.watch_rules()?);
     Ok(Json(board))
 }
 #[derive(serde::Deserialize)]
@@ -85,6 +88,7 @@ async fn refresh_catalog(
         .await?;
     let mut board = board?;
     board.can_edit = state.is_superuser;
+    board.apply_rules(state.db.watch_rules()?);
     Ok(Json(board))
 }
 async fn board(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<WatchBoard>> {
@@ -95,6 +99,21 @@ fn current_board(state: &RequestContext) -> AppResult<Json<WatchBoard>> {
         .with_timezone(&chrono_tz::Asia::Shanghai)
         .date_naive();
     Ok(Json(state.db.watch_board(today)?))
+}
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WatchRulesSave {
+    rules: WatchRules,
+    expected_rules: WatchRules,
+}
+async fn save_rules(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Json(input): Json<WatchRulesSave>,
+) -> AppResult<Json<WatchBoard>> {
+    state
+        .db
+        .save_watch_rules(input.rules, input.expected_rules)?;
+    current_board(&state)
 }
 async fn save_grid(
     Extension(state): Extension<Arc<RequestContext>>,
@@ -223,6 +242,33 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.json::<serde_json::Value>().await.unwrap(), board);
+        let public_before = serde_json::to_value(state.watch_catalog.board().unwrap()).unwrap();
+        let custom = WatchRules {
+            min_yield_bps: 725,
+            ..WatchRules::default()
+        };
+        state
+            .db
+            .save_watch_rules(custom, WatchRules::default())
+            .unwrap();
+        let custom_revision = state.db.revision().unwrap();
+        let projected: serde_json::Value = client
+            .get(format!("{base}/api/watch/catalog"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(projected["rules"]["minYieldBps"], 725);
+        assert_eq!(projected["rows"][0]["latest"]["rules"]["minYieldBps"], 725);
+        assert_eq!(projected["rows"][0]["latest"]["yieldMatchesRule"], false);
+        assert_eq!(
+            serde_json::to_value(state.watch_catalog.board().unwrap()).unwrap(),
+            public_before,
+            "account projection never writes shared snapshots"
+        );
+        assert_eq!(state.db.revision().unwrap(), custom_revision);
         server.abort();
     }
 }

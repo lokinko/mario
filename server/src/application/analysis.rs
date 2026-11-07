@@ -171,9 +171,9 @@ fn relevant_evidence(
         };
         let week: Vec<_> = board.weekly.iter().filter(|v| v.symbol == observation.symbol).map(|v| serde_json::json!({
             "date":v.observed_on,"status":v.status,"price":v.price,"yieldPct":v.yield_pct,
-            "dailyDistancePct":v.daily.as_ref().and_then(|b|b.distance_pct),"weeklyDistancePct":v.weekly.as_ref().and_then(|b|b.distance_pct),"weeklyReference":"middle"
+            "dailyDistancePct":v.daily.as_ref().and_then(|b|b.distance_pct),"weeklyDistancePct":v.weekly.as_ref().and_then(|b|b.distance_pct),"rules":v.rules,"weeklyReference":v.weekly.as_ref().map(|b|b.reference)
         })).collect();
-        let facts = serde_json::json!({"symbol":observation.symbol,"observedOn":observation.observed_on,
+        let facts = serde_json::json!({"rules":observation.rules,"symbol":observation.symbol,"observedOn":observation.observed_on,
             "price":observation.price,"dividendPerShare":observation.dividend_per_share,"yieldPct":observation.yield_pct,
             "dividendBasis":observation.dividend_basis,"dividendEvents":observation.dividend_events,
             "daily":observation.daily,"weekly":observation.weekly,"status":observation.status,"issues":observation.issues,"thisWeek":week});
@@ -183,7 +183,7 @@ fn relevant_evidence(
             publisher: "Yahoo Finance / 东方财富；Mario 确定性计算".into(), source_url: source_url.clone(),
             source_tier: "二手来源".into(), evidence_type: "market_data".into(), stance: "neutral".into(),
             as_of_date: observation.observed_on.clone(),
-            claim: format!("规则：已实施税前现金分红TTM股息率至少5%；日线BOLL(20,2)收盘价在日下轨±2%、周收盘价≤周线BOLL(20,2)中轨。技术价格为供应商调整收盘归一至当前价格，周线含截至当日的未结束周。该信号只表明进入关注区间，不证明低估或基本面稳定。观察原值：{}",serde_json::to_string(&facts)?),
+            claim: format!("当前规则：{}。历史记录按各自保存的规则解释。技术价格为供应商调整收盘归一至当前价格，周线含截至当日的未结束周。该信号只表明进入关注区间，不证明低估或基本面稳定。观察原值：{}",observation.rules.description(),serde_json::to_string(&facts)?),
             notes: format!("仅覆盖已获得的数据；基本面和分红持续性需要另行核查。原始来源：{}",observation.sources.join("\n")), active: true, captured_at: observation.checked_at, attachments: Vec::new(),
         });
     }
@@ -216,7 +216,13 @@ mod tests {
             .with_timezone(&chrono_tz::Asia::Shanghai)
             .date_naive();
         let (data, day) = market_fixture();
-        let mut observation = evaluate("600036.SS", &data, day, chrono::Utc::now().to_rfc3339());
+        let mut observation = evaluate(
+            &Default::default(),
+            "600036.SS",
+            &data,
+            day,
+            chrono::Utc::now().to_rfc3339(),
+        );
         observation.observed_on = today.to_string();
         db.save_watch_observation(
             &entry,
@@ -233,7 +239,9 @@ mod tests {
         assert_eq!(preview.evidence_candidates.len(), 1);
         let evidence = &preview.evidence_candidates[0];
         assert!(evidence.claim.contains("thisWeek"));
-        assert!(evidence.claim.contains("周收盘价≤周线BOLL(20,2)中轨"));
+        assert!(evidence
+            .claim
+            .contains(&crate::models::watch::rules::WatchRules::default().description()));
         assert!(evidence.claim.contains("\"weeklyReference\":\"middle\""));
         assert!(evidence.claim.contains(&today.to_string()));
         assert!(evidence.claim.chars().count() < 2000);

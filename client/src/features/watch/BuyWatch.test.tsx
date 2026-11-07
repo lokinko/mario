@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { defaultRules } from "../../test/watchRules";
 import {
   cleanup,
   fireEvent,
@@ -26,14 +27,15 @@ vi.mock("../../api/watch", () => ({
   deleteWatch: vi.fn(),
   readWatchAlerts: vi.fn(),
   refreshWatch: vi.fn(),
+  saveWatchRules: vi.fn(),
 }));
 const empty: api.WatchBoard = {
   rows: [],
   weekly: [],
   weekStart: "2026-11-02",
   weekEnd: "2026-11-08",
-  minYieldPct: 5,
-  bandDistancePct: 2,
+  rules: defaultRules,
+  defaultRules,
 };
 const row: api.WatchRow = {
   dividendPrices: [
@@ -50,6 +52,8 @@ const row: api.WatchRow = {
     pinned: false,
   },
   latest: {
+    rules: defaultRules,
+    yieldMatchesRule: true,
     symbol: "600036.SS",
     observedOn: "2026-11-04",
     checkedAt: "2026-11-04T12:00:00Z",
@@ -103,8 +107,7 @@ const catalog: api.CatalogBoard = {
       refreshFailed: false,
     })),
   ),
-  minYieldPct: 5,
-  bandDistancePct: 2,
+  rules: defaultRules,
 };
 beforeEach(() => {
   vi.resetAllMocks();
@@ -370,7 +373,7 @@ it("opens grounded discussion, acknowledges alerts and preserves missing-data st
   expect(p.onAsk).toHaveBeenCalledWith(expect.stringContaining("600036.SS"));
   expect(p.onAsk).toHaveBeenCalledWith(expect.stringContaining("最近真实交易"));
   expect(p.onAsk).toHaveBeenCalledWith(
-    expect.stringContaining("周收盘价≤周线BOLL(20,2)中轨"),
+    expect.stringContaining("周线BOLL(20,2)不高于中轨"),
   );
   fireEvent.click(screen.getByRole("button", { name: "标为已读" }));
   await waitFor(() =>
@@ -432,6 +435,7 @@ it("combines search, holdings and rule filters without changing the watch list",
   waiting.alert = false;
   waiting.latest!.status = "waiting";
   waiting.latest!.yieldPct = 4;
+  waiting.latest!.yieldMatchesRule = false;
   waiting.dividendPrices.find((p) => p.yieldPct === 5)!.reached = false;
   vi.mocked(api.getWatchBoard).mockResolvedValue({
     ...empty,
@@ -502,6 +506,7 @@ it("sorts all four metrics in both directions from the table headers", async () 
   cheaper.entry = { ...cheaper.entry, symbol: "600000.SS", name: "低价公司" };
   cheaper.latest!.price = 10;
   cheaper.latest!.yieldPct = 0;
+  cheaper.latest!.yieldMatchesRule = false;
   cheaper.latest!.daily!.distancePct = -3;
   cheaper.latest!.weekly!.distancePct = 1;
   const missing = {
@@ -541,6 +546,7 @@ it("puts a pinned company first in both views without overriding filters", async
   const other = structuredClone(row);
   other.entry = { ...other.entry, symbol: "600000.SS", name: "重点公司" };
   other.latest!.yieldPct = 2;
+  other.latest!.yieldMatchesRule = false;
   vi.mocked(api.getWatchBoard).mockResolvedValue({
     ...empty,
     rows: [row, other],
@@ -732,6 +738,7 @@ it("uses exact server threshold results instead of rounding the displayed yield 
   const boundary = structuredClone(row);
   boundary.latest!.status = "waiting";
   boundary.latest!.yieldPct = 4.999999;
+  boundary.latest!.yieldMatchesRule = false;
   boundary.dividendPrices.find((p) => p.yieldPct === 5)!.reached = false;
   vi.mocked(api.getWatchBoard).mockResolvedValue({
     ...empty,
@@ -764,7 +771,7 @@ it("filters by the weekly middle and shades that range even far from the weekly 
   expect(within(table).getAllByRole("row")).toHaveLength(2);
   expect(within(table).queryByText("周线未达标")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
-  expect(screen.getByText("周线中轨及以下")).toBeTruthy();
+  expect(screen.getByText("周线不高于中轨")).toBeTruthy();
   const track = screen.getByRole("img", { name: /周线下轨.*距中轨/ });
   const middle = parseFloat(track.style.getPropertyValue("--middle"));
   const start = parseFloat(track.style.getPropertyValue("--zone-start"));
@@ -787,4 +794,71 @@ it("shows public maintenance only for the server-authorized superuser", async ()
   expect(screen.getByRole("dialog", { name: "维护公共公司目录" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   expect(p.onSaved).toHaveBeenCalled();
+});
+
+it("applies saved account rules to summaries, reference prices, both periods and discussions", async () => {
+  const p = props();
+  const custom: api.WatchRules = {
+    minYieldBps: 333,
+    daily: { reference: "upper", mode: "near", offsetBps: 125 },
+    weekly: { reference: "lower", mode: "at_or_above", offsetBps: -250 },
+  };
+  const updated = structuredClone(row);
+  updated.latest!.rules = custom;
+  updated.latest!.daily!.reference = "upper";
+  updated.latest!.weekly!.reference = "lower";
+  updated.dividendPrices.push({
+    yieldPct: 3.33,
+    price: "150.15",
+    reached: true,
+    changePct: 50.15,
+  });
+  vi.mocked(api.getWatchBoard).mockResolvedValue({ ...empty, rows: [row] });
+  vi.mocked(api.saveWatchRules).mockResolvedValue({
+    ...empty,
+    rules: custom,
+    rows: [updated],
+  });
+  render(<BuyWatch {...p} />);
+  fireEvent.click(await screen.findByRole("button", { name: "观察规则" }));
+  fireEvent.change(screen.getByLabelText("最低税前 TTM 股息率（%）"), {
+    target: { value: "3.33" },
+  });
+  fireEvent.change(screen.getByLabelText("日线参考轨"), {
+    target: { value: "upper" },
+  });
+  fireEvent.change(screen.getByLabelText("日线偏移（%）"), {
+    target: { value: "1.25" },
+  });
+  fireEvent.change(screen.getByLabelText("周线参考轨"), {
+    target: { value: "lower" },
+  });
+  fireEvent.change(screen.getByLabelText("周线比较方式"), {
+    target: { value: "at_or_above" },
+  });
+  fireEvent.change(screen.getByLabelText("周线偏移（%）"), {
+    target: { value: "-2.5" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存观察规则" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByText("① TTM 税前股息 ≥3.33%")).toBeTruthy();
+  expect(
+    screen.getByRole("columnheader", { name: "3.33% 参考价" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("columnheader", { name: /距日线上轨/ })).toBeTruthy();
+  expect(screen.getByRole("columnheader", { name: /距周线下轨/ })).toBeTruthy();
+  expect(screen.getByText("150.15")).toBeTruthy();
+  fireEvent.click(
+    within(screen.getByRole("table", { name: "观察公司对比" })).getByRole(
+      "button",
+      { name: /^测试公司/ },
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "结合我的交易讨论" }));
+  expect(p.onAsk).toHaveBeenCalledWith(
+    expect.stringContaining("股息率至少3.33%"),
+  );
+  expect(p.onAsk).toHaveBeenCalledWith(
+    expect.stringContaining("日线BOLL(20,2)上轨 ±1.25%"),
+  );
 });

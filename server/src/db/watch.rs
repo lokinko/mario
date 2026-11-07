@@ -1,8 +1,9 @@
 use super::{params, AppResult, Database, OptionalRow};
+mod rules;
 use crate::models::watch::grid::GridPlan;
 use crate::models::watch::{
     dividend_prices, DividendHistory, Observation, WatchBoard, WatchEntry, WatchInput, WatchRow,
-    WatchStatus, BAND_DISTANCE_PCT, MAX_WATCHES, MIN_YIELD_PCT,
+    WatchStatus, MAX_WATCHES,
 };
 use crate::AppError;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
@@ -140,6 +141,7 @@ impl Database {
         let start = today - Duration::days(today.weekday().num_days_from_monday() as i64);
         let end = start + Duration::days(6);
         let entries = self.watch_entries()?;
+        let rules = self.watch_rules()?;
         let conn = self.conn()?;
         let mut rows = Vec::new();
         for entry in entries {
@@ -156,8 +158,11 @@ impl Database {
                 |r| r.get::<_, Option<String>>(0),
             )?;
             let alert = conn.query_row("SELECT EXISTS(SELECT 1 FROM watch_observations WHERE symbol=$1 AND alert=1 AND read_at IS NULL)",[symbol],|r|r.get(0))?;
-            let latest: Option<Observation> =
+            let mut latest: Option<Observation> =
                 latest.as_deref().map(serde_json::from_str).transpose()?;
+            if let Some(observation) = &mut latest {
+                observation.apply_rules(&rules);
+            }
             let dividend_prices = dividend_prices(latest.as_ref());
             let grid_projection = entry
                 .grid_plan
@@ -185,12 +190,12 @@ impl Database {
             .map(|p| serde_json::from_str(p))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(WatchBoard {
+            default_rules: Default::default(),
             rows,
             weekly,
             week_start: start.to_string(),
             week_end: end.to_string(),
-            min_yield_pct: MIN_YIELD_PCT,
-            band_distance_pct: BAND_DISTANCE_PCT,
+            rules,
         })
     }
 
@@ -253,6 +258,10 @@ impl Database {
             tx.execute("INSERT INTO watch_dividends(symbol,payload) VALUES ($1,$2) ON CONFLICT(symbol) DO UPDATE SET payload=excluded.payload WHERE (watch_dividends.payload::jsonb->>'asOf') < (excluded.payload::jsonb->>'asOf') OR ((watch_dividends.payload::jsonb->>'asOf') = (excluded.payload::jsonb->>'asOf') AND (watch_dividends.payload::jsonb->>'fetchedAt')::timestamptz < (excluded.payload::jsonb->>'fetchedAt')::timestamptz)",params![symbol,serde_json::to_string(history)?])?;
         }
         if let Some(observation) = result {
+            let rules = rules::load(&tx)?;
+            let mut current_observation = observation.clone();
+            current_observation.apply_rules(&rules);
+            let observation = &current_observation;
             let previous: Option<String> = tx.query_row("SELECT payload FROM watch_observations WHERE symbol=$1 ORDER BY day DESC LIMIT 1",[symbol],|r|r.get(0)).optional()?;
             let previous = previous
                 .as_deref()
@@ -265,11 +274,22 @@ impl Database {
                 return Ok(());
             }
             // Unknown data is not evidence that a price signal ended.
-            let known: Option<String> = tx.query_row("SELECT payload FROM watch_observations WHERE symbol=$1 AND payload::jsonb->>'status' <> 'incomplete' ORDER BY day DESC LIMIT 1",[symbol],|r|r.get(0)).optional()?;
-            let known = known
-                .as_deref()
-                .map(serde_json::from_str::<Observation>)
-                .transpose()?;
+            let mut stmt = tx.prepare(
+                "SELECT payload FROM watch_observations WHERE symbol=$1 ORDER BY day DESC",
+            )?;
+            let payloads = stmt
+                .query_map([symbol], |r| r.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            drop(stmt);
+            let mut known = None;
+            for payload in payloads {
+                let mut prior: Observation = serde_json::from_str(&payload)?;
+                prior.apply_rules(&rules);
+                if prior.status != WatchStatus::Incomplete {
+                    known = Some(prior);
+                    break;
+                }
+            }
             let alert = observation.status != WatchStatus::Incomplete
                 && match known {
                     Some(v) => v.status != observation.status,
@@ -309,7 +329,7 @@ pub(super) fn migrate_rules(conn: &crate::storage::Connection) -> AppResult<()> 
     drop(stmt);
     for (symbol, day, payload) in rows {
         let mut observation: Observation = serde_json::from_str(&payload)?;
-        observation.apply_rules();
+        observation.apply_rules(&Default::default());
         conn.execute("UPDATE watch_observations SET payload=$3,alert=0,read_at=NULL WHERE symbol=$1 AND day=$2", params![symbol, day, serde_json::to_string(&observation)?])?;
         conn.execute(
             "UPDATE watch_entries SET checked_for=NULL WHERE symbol=$1",
@@ -320,6 +340,7 @@ pub(super) fn migrate_rules(conn: &crate::storage::Connection) -> AppResult<()> 
 }
 
 pub(super) fn validate(conn: &crate::storage::Connection) -> AppResult<()> {
+    rules::load(conn)?;
     let mut stmt = conn.prepare("SELECT symbol,payload FROM watch_entries")?;
     let entries = stmt
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
@@ -354,6 +375,7 @@ pub(super) fn validate(conn: &crate::storage::Connection) -> AppResult<()> {
         .collect::<Result<Vec<_>, _>>()?;
     for (symbol, day, payload, alert, read_at) in rows {
         let value: Observation = serde_json::from_str(&payload)?;
+        value.rules.validate()?;
         if symbol != value.symbol
             || day != value.observed_on
             || NaiveDate::parse_from_str(&day, "%Y-%m-%d").is_err()
@@ -446,6 +468,7 @@ mod tests {
             bar.adjusted_close = Some(200.0);
         }
         let observation = evaluate(
+            &Default::default(),
             &entry.input.symbol,
             &data,
             day,
@@ -555,6 +578,7 @@ mod tests {
         let older = self::history();
         let (data, _) = market_fixture();
         let stale = evaluate(
+            &Default::default(),
             &entry.input.symbol,
             &data,
             day,
@@ -607,6 +631,7 @@ mod tests {
         let history = history();
         let (data, day) = market_fixture();
         let observation = evaluate(
+            &Default::default(),
             &entry.input.symbol,
             &data,
             day,
@@ -637,6 +662,7 @@ mod tests {
         let entry = entry(&db);
         let (data, day) = market_fixture();
         let mut observation = evaluate(
+            &Default::default(),
             &entry.input.symbol,
             &data,
             day,
@@ -662,11 +688,15 @@ mod tests {
         assert!(!db.watch_board(day).unwrap().rows[0].alert);
         observation.observed_on = (day + Duration::days(4)).to_string();
         observation.status = WatchStatus::Waiting;
+        observation.dividend_per_share = Some("4".into());
+        observation.yield_pct = Some(4.0);
         save(&observation);
         assert!(db.watch_board(day).unwrap().rows[0].alert);
         db.read_watch_alerts(&entry.input.symbol).unwrap();
         observation.observed_on = (day + Duration::days(5)).to_string();
         observation.status = WatchStatus::Attention;
+        observation.dividend_per_share = Some("5".into());
+        observation.yield_pct = Some(5.0);
         save(&observation);
         assert!(db.watch_board(day).unwrap().rows[0].alert);
     }
@@ -698,6 +728,7 @@ mod tests {
         ));
         let (data, day) = market_fixture();
         let observation = evaluate(
+            &Default::default(),
             &entry.input.symbol,
             &data,
             day,
@@ -774,6 +805,7 @@ mod tests {
         let entry = entry(&db);
         let (data, day) = market_fixture();
         let observation = evaluate(
+            &Default::default(),
             &entry.input.symbol,
             &data,
             day,

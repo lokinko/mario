@@ -1,31 +1,39 @@
 import type { CSSProperties } from "react";
-import type { Band, WatchMarketRow } from "../../api/watch";
+import type {
+  Band,
+  BandRule,
+  WatchRules,
+  WatchMarketRow,
+} from "../../api/watch";
 import { formatAmount } from "../../lib/format";
+import { bandRuleLabel, referenceLabels } from "./rules";
 import { checks, distance, number } from "./presentation";
 
 export function RuleChecks({
   row,
-  minYield,
+  rules,
 }: {
   row: WatchMarketRow;
-  minYield: number;
+  rules: WatchRules;
 }) {
-  const values = checks(row, minYield);
+  const values = checks(row);
   return (
     <div className="watch-checks" aria-label="三项观察条件">
-      {[`股息 ≥${minYield}%`, "日线接近下轨", "周线中轨及以下"].map(
-        (label, i) => (
-          <span key={label} className={values[i] === true ? "met" : ""}>
-            <b aria-hidden="true">
-              {values[i] == null ? "?" : values[i] ? "✓" : "·"}
-            </b>
-            {label}
-            <span className="sr-only">
-              {values[i] == null ? "未知" : values[i] ? "满足" : "未满足"}
-            </span>
+      {[
+        `股息 ≥${rules.minYieldBps / 100}%`,
+        `日线${bandRuleLabel(rules.daily)}`,
+        `周线${bandRuleLabel(rules.weekly)}`,
+      ].map((label, i) => (
+        <span key={label} className={values[i] === true ? "met" : ""}>
+          <b aria-hidden="true">
+            {values[i] == null ? "?" : values[i] ? "✓" : "·"}
+          </b>
+          {label}
+          <span className="sr-only">
+            {values[i] == null ? "未知" : values[i] ? "满足" : "未满足"}
           </span>
-        ),
-      )}
+        </span>
+      ))}
     </div>
   );
 }
@@ -34,19 +42,19 @@ export function BandTrack({
   label,
   band,
   price,
-  tolerance,
+  rule,
 }: {
   label: string;
   band: Band | null | undefined;
   price: number | null | undefined;
-  tolerance: number;
+  rule: BandRule;
 }) {
   const valid =
     band &&
     price != null &&
     price > 0 &&
     band.middle > 0 &&
-    (band.reference === "middle" || band.lower > 0) &&
+    band[rule.reference] > 0 &&
     band.upper >= band.middle &&
     band.middle >= band.lower;
   if (!valid)
@@ -57,10 +65,22 @@ export function BandTrack({
       </div>
     );
   // Visual coordinates only. The reference and rule result come from the server.
-  const weekly = band.reference === "middle";
-  const referenceLabel = weekly ? "中轨" : "下轨";
-  const low = Math.min(band.lower, band.lower * (1 - tolerance / 100), price);
-  const high = Math.max(band.upper, band.lower * (1 + tolerance / 100), price);
+  const referenceLabel = referenceLabels[rule.reference];
+  const reference = band[rule.reference];
+  const offset = rule.offsetBps / 10000;
+  const target = reference * (1 + offset);
+  const zoneLow =
+    rule.mode === "near"
+      ? reference * (1 - offset)
+      : rule.mode === "at_or_below"
+        ? Math.min(band.lower, price, target)
+        : target;
+  const zoneHigh =
+    rule.mode === "near" || rule.mode === "at_or_below"
+      ? target
+      : Math.max(band.upper, price, target);
+  const low = Math.min(band.lower, zoneLow, price, target);
+  const high = Math.max(band.upper, zoneHigh, price, target);
   const width = Math.max(high - low, band.middle * 0.04);
   const position = (value: number) =>
     4 + Math.max(0, Math.min(1, (value - low) / width)) * 92;
@@ -69,8 +89,8 @@ export function BandTrack({
     "--middle": `${position(band.middle)}%`,
     "--upper": `${position(band.upper)}%`,
     "--price": `${position(price)}%`,
-    "--zone-start": `${position(weekly ? low : band.lower * (1 - tolerance / 100))}%`,
-    "--zone-width": `${position(weekly ? band.middle : band.lower * (1 + tolerance / 100)) - position(weekly ? low : band.lower * (1 - tolerance / 100))}%`,
+    "--zone-start": `${position(zoneLow)}%`,
+    "--zone-width": `${position(zoneHigh) - position(zoneLow)}%`,
   } as CSSProperties;
   return (
     <div className={`watch-band ${band.matchesRule ? "near" : ""}`}>
@@ -102,7 +122,13 @@ export function BandTrack({
   );
 }
 
-export function YieldGrid({ row }: { row: WatchMarketRow }) {
+export function YieldGrid({
+  row,
+  minYield,
+}: {
+  row: WatchMarketRow;
+  minYield: number;
+}) {
   return (
     <section className="watch-yield-grid" aria-label="股息率参考价格">
       <div className="watch-section-title">
@@ -114,11 +140,11 @@ export function YieldGrid({ row }: { row: WatchMarketRow }) {
           {row.dividendPrices.map((point) => (
             <div
               key={point.yieldPct}
-              className={`${point.yieldPct === 5 ? "threshold" : ""} ${point.reached ? "reached" : ""}`}
+              className={`${point.yieldPct === minYield ? "threshold" : ""} ${point.reached ? "reached" : ""}`}
             >
               <span>
                 {point.yieldPct}%
-                {point.yieldPct === 5 && <small>观察门槛</small>}
+                {point.yieldPct === minYield && <small>观察门槛</small>}
               </span>
               <strong>¥{formatAmount(point.price)}</strong>
               <small>

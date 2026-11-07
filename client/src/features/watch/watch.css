@@ -972,3 +972,23 @@
   flex: 1;
   min-width: 160px;
 }
+
+.watch-rules-editor {
+  max-width: 640px;
+}
+.watch-rules-editor fieldset {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+.watch-rules-editor fieldset .watch-meta {
+  grid-column: 1 / -1;
+}
+@media (max-width: 560px) {
+  .watch-rules-editor fieldset {
+    grid-template-columns: 1fr;
+  }
+}

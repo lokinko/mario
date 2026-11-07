@@ -1,7 +1,5 @@
 //! Public catalogue contracts; no account metadata is stored in public snapshots.
-use super::{
-    dividend_prices, DividendPrice, Observation, WatchInput, BAND_DISTANCE_PCT, MIN_YIELD_PCT,
-};
+use super::{dividend_prices, rules::WatchRules, DividendPrice, Observation, WatchInput};
 use crate::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -281,19 +279,28 @@ pub struct CatalogBoard {
     pub can_edit: bool,
     pub catalog: Catalog,
     pub rows: Vec<CatalogRow>,
-    pub min_yield_pct: f64,
-    pub band_distance_pct: f64,
+    pub rules: WatchRules,
 }
 
 impl CatalogBoard {
+    /// Project the shared market facts using this authenticated account's preferences.
+    pub fn apply_rules(&mut self, rules: WatchRules) {
+        self.rules = rules;
+        for row in &mut self.rows {
+            if let Some(observation) = &mut row.snapshot.latest {
+                observation.apply_rules(&rules);
+            }
+            row.dividend_prices = dividend_prices(row.snapshot.latest.as_ref());
+        }
+    }
+
     pub fn new(catalog: Catalog, rows: Vec<CatalogRow>, revision: i64) -> Self {
         Self {
             revision,
             can_edit: false,
             catalog,
             rows,
-            min_yield_pct: MIN_YIELD_PCT,
-            band_distance_pct: BAND_DISTANCE_PCT,
+            rules: WatchRules::default(),
         }
     }
 }
@@ -301,6 +308,7 @@ impl CatalogBoard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::watch::{BAND_DISTANCE_PCT, MIN_YIELD_PCT};
 
     #[test]
     fn broker_screening_reproduces_implemented_ttm_and_strict_three_percent_selection() {

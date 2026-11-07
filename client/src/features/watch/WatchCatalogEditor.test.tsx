@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { defaultRules } from "../../test/watchRules";
 import {
   cleanup,
   fireEvent,
@@ -26,8 +27,7 @@ const board = (): api.CatalogBoard => ({
   revision: 3,
   canEdit: true,
   rows: [],
-  minYieldPct: 5,
-  bandDistancePct: 2,
+  rules: defaultRules,
 });
 const props = () => ({
   board: board(),

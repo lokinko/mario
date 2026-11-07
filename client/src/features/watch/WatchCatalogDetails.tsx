@@ -1,4 +1,4 @@
-import type { CatalogRow } from "../../api/watch";
+import type { WatchRules, CatalogRow } from "../../api/watch";
 import { Drawer } from "../../components/Drawer";
 import { Callout } from "../../components/Callout";
 import { WatchEvidence } from "./WatchEvidence";
@@ -8,8 +8,7 @@ export function WatchCatalogDetails({
   row,
   industry,
   verifiedOn,
-  minYield,
-  tolerance,
+  rules,
   busy,
   error,
   joined,
@@ -21,8 +20,7 @@ export function WatchCatalogDetails({
   row: CatalogRow;
   industry: string;
   verifiedOn: string;
-  minYield: number;
-  tolerance: number;
+  rules: WatchRules;
   busy: boolean;
   error: string;
   joined: boolean;
@@ -41,7 +39,7 @@ export function WatchCatalogDetails({
     >
       <div className="watch-detail-body">
         {error && <Callout tone="danger">{error}</Callout>}
-        <WatchEvidence row={row} minYield={minYield} tolerance={tolerance} />
+        <WatchEvidence row={row} rules={rules} />
         <section className="watch-detail-section">
           <h3>公司与行业来源</h3>
           <p className="watch-meta">

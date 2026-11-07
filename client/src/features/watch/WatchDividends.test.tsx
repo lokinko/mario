@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { defaultRules } from "../../test/watchRules";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import type { Observation } from "../../api/watch";
@@ -14,6 +15,8 @@ const current = {
 };
 const older = { ...current, reportDate: "2023-12-31", exDate: "2024-07-11" };
 const latest: Observation = {
+  rules: defaultRules,
+  yieldMatchesRule: null,
   symbol: "600036.SS",
   observedOn: "2026-11-06",
   checkedAt: "2026-11-07T06:00:00Z",

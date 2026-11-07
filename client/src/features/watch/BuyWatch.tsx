@@ -30,6 +30,8 @@ import { Drawer } from "../../components/Drawer";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import "./watch.css";
 
+import { WatchRulesEditor } from "./WatchRulesEditor";
+import { bandRuleLabel, rulesSummary } from "./rules";
 import { WatchCatalogEditor } from "./WatchCatalogEditor";
 import { WatchList } from "./WatchList";
 import { WatchCatalogDetails } from "./WatchCatalogDetails";
@@ -65,6 +67,7 @@ export function BuyWatch({
   const [board, setBoard] = useState<WatchBoard | null>(null);
   const [catalog, setCatalog] = useState<CatalogBoard | null>(null);
   const [catalogEditing, setCatalogEditing] = useState(false);
+  const [rulesEditing, setRulesEditing] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const [group, setGroup] = useState("favorites");
   const [error, setError] = useState("");
@@ -110,12 +113,40 @@ export function BuyWatch({
     void loadCatalog();
   }, []);
   useEffect(() => {
-    if (group === "favorites" || busy) return;
+    if (busy) return;
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void loadCatalog();
+      if (document.visibilityState === "visible") {
+        void load();
+        if (group !== "favorites") void loadCatalog();
+      }
     }, 30000);
     return () => window.clearInterval(timer);
   }, [group, busy]);
+  const activeRules =
+    (group === "favorites" ? board?.rules : catalog?.rules) ??
+    board?.rules ??
+    catalog?.rules;
+  if (!activeRules)
+    return (
+      <div className="page watch-page">
+        <PageHeader title="买点观察" />
+        {error || catalogError ? (
+          <Callout tone="danger">
+            <span>{error || catalogError}</span>
+            <Button
+              onClick={() => {
+                void load();
+                void loadCatalog();
+              }}
+            >
+              重新读取
+            </Button>
+          </Callout>
+        ) : (
+          <p>正在读取观察资料…</p>
+        )}
+      </div>
+    );
   const run = async (action: () => Promise<WatchBoard | void>) => {
     if (busy) return false;
     const current = guard.begin();
@@ -166,7 +197,7 @@ export function BuyWatch({
   const ask = (row: WatchRow) => {
     const { entry, latest } = row;
     onAsk(
-      `请讨论买点观察名单中的${entry.name}（${entry.symbol}）。我的关注理由：${entry.thesis || "尚未补充，请帮助核查"}。观察规则是已实施税前现金分红TTM股息率至少5%，日线BOLL(20,2)收盘价在日下轨价格的上下2%内、周收盘价≤周线BOLL(20,2)中轨。${latest ? `最近观察日期是${latest.observedOn}，状态为${statuses[latest.status]}。` : "尚无行情观察结果。"}请结合授权的当前持仓、现金和最近真实交易，讨论现在是否值得进一步研究买入或加仓；核查分红持续性和公司经营的支持与反方证据，区分已知事实和待核查项。不要仅由BOLL位置断言低估，也不要给出未经约定的精确买入数量。`,
+      `请讨论买点观察名单中的${entry.name}（${entry.symbol}）。我的关注理由：${entry.thesis || "尚未补充，请帮助核查"}。观察规则是${rulesSummary(rules)}。${latest ? `最近观察日期是${latest.observedOn}，状态为${statuses[latest.status]}。` : "尚无行情观察结果。"}请结合授权的当前持仓、现金和最近真实交易，讨论现在是否值得进一步研究买入或加仓；核查分红持续性和公司经营的支持与反方证据，区分已知事实和待核查项。不要仅由BOLL位置断言低估，也不要给出未经约定的精确买入数量。`,
     );
   };
   const rows = board?.rows ?? [];
@@ -210,8 +241,7 @@ export function BuyWatch({
   const holdings = snapshot.holdings.filter((h) =>
     /^(60|68)\d{4}\.(SS|SH)$|^(00|30)\d{4}\.SZ$/i.test(h.symbol),
   );
-  const minYield = board?.minYieldPct ?? 5;
-  const tolerance = board?.bandDistancePct ?? 2;
+  const rules = activeRules;
   const held = new Set(
     holdings
       .filter(
@@ -223,19 +253,11 @@ export function BuyWatch({
       .map((h) => canonical(h.symbol)),
   );
   const counts = {
-    yield: currentRows.filter((r) => checks(r, minYield)[0] === true).length,
-    daily: currentRows.filter((r) => checks(r, minYield)[1] === true).length,
-    weekly: currentRows.filter((r) => checks(r, minYield)[2] === true).length,
+    yield: currentRows.filter((r) => checks(r)[0] === true).length,
+    daily: currentRows.filter((r) => checks(r)[1] === true).length,
+    weekly: currentRows.filter((r) => checks(r)[2] === true).length,
   };
-  const visible = selectRows(
-    currentRows,
-    query,
-    filter,
-    sort,
-    held,
-    ownership,
-    minYield,
-  );
+  const visible = selectRows(currentRows, query, filter, sort, held, ownership);
   const active = own
     ? rows.find((r) => r.entry.symbol === expanded)
     : undefined;
@@ -254,7 +276,7 @@ export function BuyWatch({
   const weeklyAsk = () => {
     const selected = rows.slice(0, 5);
     onAsk(
-      `请为买点观察名单做${board?.weekStart}至${board?.weekEnd}的周末复盘，先讨论${selected.map((r) => `${r.entry.name}（${r.entry.symbol}，关注理由：${r.entry.thesis || "待补充"}）`).join("、")}。本周已保存${week.length}条收盘观察。请按5%股息率、日线BOLL下轨±2%、周收盘价≤周线BOLL中轨的规则，结合授权的观察资料、持仓和最近交易，说明下周应该等待什么，以及分红和经营判断需要核查哪些证据。未提供历史时不要推测周内变化；不预设必须买入，不输出精确买入数量。`,
+      `请为买点观察名单做${board?.weekStart}至${board?.weekEnd}的周末复盘，先讨论${selected.map((r) => `${r.entry.name}（${r.entry.symbol}，关注理由：${r.entry.thesis || "待补充"}）`).join("、")}。本周已保存${week.length}条收盘观察。请按当前${rulesSummary(rules)}的规则；历史观察以各记录当时规则为准，，结合授权的观察资料、持仓和最近交易，说明下周应该等待什么，以及分红和经营判断需要核查哪些证据。未提供历史时不要推测周内变化；不预设必须买入，不输出精确买入数量。`,
     );
   };
   return (
@@ -263,6 +285,12 @@ export function BuyWatch({
         title="买点观察"
         action={
           <>
+            <Button
+              disabled={busy || !board || open || !!expanded || catalogEditing}
+              onClick={() => setRulesEditing(true)}
+            >
+              观察规则
+            </Button>
             {catalog?.canEdit && (
               <Button
                 disabled={busy || open || !!expanded}
@@ -291,6 +319,45 @@ export function BuyWatch({
           </>
         }
       />
+      {rulesEditing && board && (
+        <WatchRulesEditor
+          rules={board.rules}
+          defaults={board.defaultRules}
+          onEdited={onEdited}
+          onClose={() => {
+            setRulesEditing(false);
+            onSaved();
+          }}
+          onReload={(next) => {
+            guard.invalidate();
+            setBoard(next);
+            onSaved();
+            void loadCatalog();
+          }}
+          onSaved={(next) => {
+            guard.invalidate();
+            catalogGuard.invalidate();
+            setBoard(next);
+            setCatalog((previous) =>
+              previous
+                ? {
+                    ...previous,
+                    rules: next.rules,
+                    rows: previous.rows.map((row) => ({
+                      ...row,
+                      latest: null,
+                      dividendPrices: [],
+                    })),
+                  }
+                : previous,
+            );
+            setRulesEditing(false);
+            onSaved();
+            flash("观察规则已保存，自选与行业列表按新规则计算");
+            void loadCatalog();
+          }}
+        />
+      )}
       {catalogEditing && catalog && (
         <WatchCatalogEditor
           board={catalog}
@@ -326,18 +393,20 @@ export function BuyWatch({
       />
       <section className="panel watch-intro">
         <div className="watch-rule-strip">
-          <span className="yield">① TTM 税前股息 ≥{minYield}%</span>
-          <span className="daily">② 日线下轨 ±{tolerance}%</span>
-          <span className="weekly">③ 周线中轨及以下</span>
+          <span className="yield">
+            ① TTM 税前股息 ≥{rules.minYieldBps / 100}%
+          </span>
+          <span className="daily">② 日线{bandRuleLabel(rules.daily)}</span>
+          <span className="weekly">③ 周线{bandRuleLabel(rules.weekly)}</span>
         </div>
         <details className="watch-method">
           <summary>计算口径与检查时间</summary>
           <p>
             北京时间 19:00 后检查当日收盘。BOLL(20,2)
-            使用总体标准差，日线与周线分别计算；本周未结束时使用截至观察日的最后收盘。日线距下轨
-            =（日收盘价 ÷ 日下轨 − 1）×100%，按日下轨价格衡量 ±2%，跌破超过 2%
-            也不满足；周线按收盘价≤中轨判断，距离为（周收盘价 ÷ 周中轨 −
-            1）×100%。
+            使用总体标准差，日线与周线分别计算；本周未结束时使用截至观察日的最后收盘。距离
+            =（收盘价 ÷ 所选参考轨价格 −
+            1）×100%，按轨道价格衡量。附近使用上下偏离范围；不高于／不低于先将参考轨乘以（1
+            + 偏移百分比）再比较，均包含边界。
           </p>
           <p>
             TTM 为过去 365
@@ -482,8 +551,7 @@ export function BuyWatch({
               view={view}
               held={held}
               busy={busy}
-              minYield={minYield}
-              tolerance={tolerance}
+              rules={rules}
               sort={sort}
               onSort={setSort}
               onPin={(row) =>
@@ -546,8 +614,7 @@ export function BuyWatch({
               ?.name ?? ""
           }
           verifiedOn={catalog.catalog.verifiedOn}
-          minYield={minYield}
-          tolerance={tolerance}
+          rules={rules}
           busy={busy}
           error={error || catalogError}
           joined={favorites.has(publicActive.company.symbol)}
@@ -561,8 +628,7 @@ export function BuyWatch({
         <WatchDetails
           row={active}
           snapshot={snapshot}
-          minYield={minYield}
-          tolerance={tolerance}
+          rules={rules}
           busy={busy}
           error={error}
           onClose={() => setExpanded(null)}

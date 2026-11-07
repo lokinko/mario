@@ -1,6 +1,8 @@
 //! Buy-watch contracts and deterministic calculations. No account or network access.
 pub(crate) mod catalog;
 pub(crate) mod grid;
+pub(crate) mod rules;
+use rules::WatchRules;
 
 use crate::{AppError, AppResult};
 use chrono::{Datelike, NaiveDate};
@@ -148,6 +150,7 @@ pub enum BandReference {
     #[default]
     Lower,
     Middle,
+    Upper,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -184,6 +187,10 @@ pub enum WatchIssue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Observation {
+    #[serde(default)]
+    pub rules: WatchRules,
+    #[serde(default)]
+    pub yield_matches_rule: Option<bool>,
     pub symbol: String,
     pub observed_on: String,
     pub checked_at: String,
@@ -227,7 +234,7 @@ pub struct WatchRow {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DividendPrice {
-    pub yield_pct: u32,
+    pub yield_pct: f64,
     pub price: String,
     pub reached: Option<bool>,
     pub change_pct: Option<f64>,
@@ -259,13 +266,17 @@ pub fn dividend_prices(observation: Option<&Observation>) -> Vec<DividendPrice> 
         .price
         .filter(|p| p.is_finite() && *p > 0.0)
         .and_then(|p| Decimal::from_str_exact(&p.to_string()).ok());
-    [4, 5, 6, 7]
+    let mut levels = vec![400, 500, 600, 700, observation.rules.min_yield_bps];
+    levels.sort_unstable();
+    levels.dedup();
+    levels
         .into_iter()
-        .filter_map(|yield_pct| {
+        .filter_map(|yield_bps| {
+            let yield_pct = Decimal::new(yield_bps.into(), 2);
             // Round down to a tradable cent so the shown price never overstates the threshold.
             let price = dividend
                 .checked_mul(Decimal::ONE_HUNDRED)?
-                .checked_div(Decimal::from(yield_pct))?
+                .checked_div(yield_pct)?
                 .round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToNegativeInfinity);
             let change_pct = current.and_then(|p| {
                 price
@@ -275,9 +286,11 @@ pub fn dividend_prices(observation: Option<&Observation>) -> Vec<DividendPrice> 
                     .to_f64()
             });
             Some(DividendPrice {
-                yield_pct,
+                yield_pct: yield_bps as f64 / 100.0,
                 price: format!("{price:.2}"),
-                reached: current.map(|p| p <= price),
+                reached: current.and_then(|p| {
+                    Some(dividend.checked_mul(Decimal::ONE_HUNDRED)? >= p.checked_mul(yield_pct)?)
+                }),
                 change_pct,
             })
         })
@@ -287,12 +300,12 @@ pub fn dividend_prices(observation: Option<&Observation>) -> Vec<DividendPrice> 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchBoard {
+    pub default_rules: WatchRules,
     pub rows: Vec<WatchRow>,
     pub week_start: String,
     pub week_end: String,
     pub weekly: Vec<Observation>,
-    pub min_yield_pct: f64,
-    pub band_distance_pct: f64,
+    pub rules: WatchRules,
 }
 
 fn band(values: &[Option<f64>], price: f64) -> Option<Band> {
@@ -317,36 +330,20 @@ fn band(values: &[Option<f64>], price: f64) -> Option<Band> {
         reference: BandReference::Lower,
         matches_rule: false,
     };
-    result.apply_rule(price, BandReference::Lower);
+    result.apply_rule(price, &WatchRules::default().daily);
     Some(result)
-}
-
-impl Band {
-    fn apply_rule(&mut self, price: f64, reference: BandReference) {
-        self.reference = reference;
-        let target = match reference {
-            BandReference::Lower => self.lower,
-            BandReference::Middle => self.middle,
-        };
-        self.distance_pct =
-            (target.is_finite() && target > 0.0 && price.is_finite() && price > 0.0)
-                .then(|| (price / target - 1.0) * 100.0);
-        self.matches_rule = self.distance_pct.is_some_and(|distance| match reference {
-            BandReference::Lower => distance.abs() <= BAND_DISTANCE_PCT + 1e-9,
-            BandReference::Middle => price <= target,
-        });
-    }
 }
 
 impl Observation {
     /// Reuse the exact same rules for live inputs and migration of saved indicator facts.
-    pub(crate) fn apply_rules(&mut self) {
-        for (band, reference) in [
-            (&mut self.daily, BandReference::Lower),
-            (&mut self.weekly, BandReference::Middle),
+    pub(crate) fn apply_rules(&mut self, rules: &WatchRules) {
+        self.rules = *rules;
+        for (band, rule) in [
+            (&mut self.daily, &rules.daily),
+            (&mut self.weekly, &rules.weekly),
         ] {
             if let (Some(band), Some(price)) = (band.as_mut(), self.price) {
-                band.apply_rule(price, reference);
+                band.apply_rule(price, rule);
             }
         }
         self.issues
@@ -359,19 +356,30 @@ impl Observation {
         {
             self.issues.push(WatchIssue::NonPositiveBand);
         }
-        let yield_passes = self
+        self.yield_matches_rule = self
             .dividend_per_share
             .as_deref()
+            .filter(|_| {
+                self.yield_pct.is_some()
+                    && self
+                        .dividend_basis
+                        .as_ref()
+                        .is_none_or(|b| b.as_of.to_string() >= self.observed_on)
+            })
             .and_then(|v| Decimal::from_str_exact(v).ok())
             .zip(
                 self.price
                     .and_then(|p| Decimal::from_str_exact(&p.to_string()).ok()),
             )
-            .and_then(|(d, p)| d.checked_mul(Decimal::ONE_HUNDRED)?.checked_div(p))
-            .is_some_and(|y| y >= Decimal::new(5, 0));
+            .and_then(|(d, p)| {
+                Some(
+                    d.checked_mul(Decimal::ONE_HUNDRED)?
+                        >= p.checked_mul(Decimal::new(rules.min_yield_bps.into(), 2))?,
+                )
+            });
         self.status = if !self.issues.is_empty() {
             WatchStatus::Incomplete
-        } else if yield_passes
+        } else if self.yield_matches_rule == Some(true)
             && self.daily.as_ref().is_some_and(|b| b.matches_rule)
             && self.weekly.as_ref().is_some_and(|b| b.matches_rule)
         {
@@ -413,6 +421,7 @@ pub fn trailing_dividends(events: &[DividendEvent], day: NaiveDate) -> Option<De
 }
 
 pub fn evaluate(
+    rules: &WatchRules,
     symbol: &str,
     data: &WatchMarketData,
     cutoff: NaiveDate,
@@ -490,6 +499,8 @@ pub fn evaluate(
         issues.push(WatchIssue::DividendUnavailable);
     }
     let mut observation = Observation {
+        rules: *rules,
+        yield_matches_rule: None,
         symbol: symbol.into(),
         observed_on: day.to_string(),
         checked_at,
@@ -526,7 +537,7 @@ pub fn evaluate(
             }
         }),
     };
-    observation.apply_rules();
+    observation.apply_rules(rules);
     observation
 }
 
@@ -571,7 +582,7 @@ pub(crate) mod tests {
     #[test]
     fn dividend_reference_prices_are_exact_conservative_and_do_not_change_signals() {
         let (data, day) = market_fixture();
-        let mut observation = evaluate("600036.SS", &data, day, String::new());
+        let mut observation = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         observation.dividend_per_share = Some("2.016".into());
         observation.price = Some(40.32);
         let before = observation.clone();
@@ -608,12 +619,18 @@ pub(crate) mod tests {
     #[test]
     fn five_percent_is_inclusive_and_both_bands_are_required() {
         let (mut data, day) = market_fixture();
-        let observation = evaluate("600036.SS", &data, day, "2026-07-03T12:00:00Z".into());
+        let observation = evaluate(
+            &Default::default(),
+            "600036.SS",
+            &data,
+            day,
+            "2026-07-03T12:00:00Z".into(),
+        );
         assert_eq!(observation.yield_pct, Some(5.0));
         assert_eq!(observation.status, WatchStatus::Attention);
         data.dividends.as_mut().unwrap()[0].cash_per_ten = "49.99".into();
         assert_eq!(
-            evaluate("600036.SS", &data, day, String::new()).status,
+            evaluate(&Default::default(), "600036.SS", &data, day, String::new()).status,
             WatchStatus::Waiting
         );
         data.dividends.as_mut().unwrap()[0].cash_per_ten = "50".into();
@@ -621,7 +638,7 @@ pub(crate) mod tests {
         for bar in data.bars.iter_mut().take(80) {
             bar.adjusted_close = Some(200.0);
         }
-        let result = evaluate("600036.SS", &data, day, String::new());
+        let result = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         assert!(result.daily.unwrap().matches_rule);
         assert!(result.weekly.as_ref().unwrap().matches_rule);
         assert!(result.weekly.as_ref().unwrap().lower < 100.0);
@@ -630,7 +647,7 @@ pub(crate) mod tests {
         for bar in data.bars.iter_mut().take(80) {
             bar.adjusted_close = Some(50.0);
         }
-        let result = evaluate("600036.SS", &data, day, String::new());
+        let result = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         assert!(result.daily.unwrap().matches_rule);
         assert!(!result.weekly.unwrap().matches_rule);
         assert_eq!(result.status, WatchStatus::Waiting);
@@ -638,16 +655,19 @@ pub(crate) mod tests {
     #[test]
     fn future_rows_are_ignored_and_missing_history_is_unknown() {
         let (mut data, day) = market_fixture();
-        let before = evaluate("600036.SS", &data, day, String::new());
+        let before = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         data.bars.push(PriceBar {
             day: day + chrono::Duration::days(3),
             close: Some(1.0),
             adjusted_close: Some(1.0),
         });
         data.calendar.push(day + chrono::Duration::days(3));
-        assert_eq!(before, evaluate("600036.SS", &data, day, String::new()));
+        assert_eq!(
+            before,
+            evaluate(&Default::default(), "600036.SS", &data, day, String::new())
+        );
         data.bars.remove(data.bars.len() - 3);
-        let missing = evaluate("600036.SS", &data, day, String::new());
+        let missing = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         assert_eq!(missing.status, WatchStatus::Incomplete);
         assert_eq!(missing.yield_pct, Some(5.0));
         assert!(missing.daily.is_none());
@@ -668,21 +688,21 @@ pub(crate) mod tests {
     fn weekly_middle_is_inclusive_and_does_not_require_a_positive_lower() {
         let mut weekly = band(&[Some(100.0); 20], 100.0).unwrap();
         weekly.lower = -10.0;
-        weekly.apply_rule(100.0, BandReference::Middle);
+        weekly.apply_rule(100.0, &WatchRules::default().weekly);
         assert!(weekly.matches_rule);
         assert_eq!(weekly.distance_pct, Some(0.0));
-        weekly.apply_rule(100.000001, BandReference::Middle);
+        weekly.apply_rule(100.000001, &WatchRules::default().weekly);
         assert!(!weekly.matches_rule);
-        weekly.apply_rule(40.0, BandReference::Middle);
+        weekly.apply_rule(40.0, &WatchRules::default().weekly);
         assert!(weekly.matches_rule);
         assert_eq!(weekly.distance_pct, Some(-60.0));
         let (data, day) = market_fixture();
-        let mut observation = evaluate("600036.SS", &data, day, String::new());
+        let mut observation = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         observation.weekly.as_mut().unwrap().lower = -10.0;
-        observation.apply_rules();
+        observation.apply_rules(&Default::default());
         assert_eq!(observation.status, WatchStatus::Attention);
         observation.daily.as_mut().unwrap().lower = -10.0;
-        observation.apply_rules();
+        observation.apply_rules(&Default::default());
         assert_eq!(observation.status, WatchStatus::Incomplete);
         assert!(observation.issues.contains(&WatchIssue::NonPositiveBand));
     }
@@ -726,20 +746,20 @@ pub(crate) mod tests {
             as_of: day,
             fetched_at: "2026-07-03T12:00:00Z".into(),
         });
-        let first = evaluate("600036.SS", &data, day, String::new());
+        let first = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         assert_eq!(first.yield_pct, Some(5.0));
         data.bars.last_mut().unwrap().close = Some(50.0);
         assert_eq!(
-            evaluate("600036.SS", &data, day, String::new()).yield_pct,
+            evaluate(&Default::default(), "600036.SS", &data, day, String::new()).yield_pct,
             Some(10.0)
         );
         data.dividends.as_mut().unwrap()[0].ex_date = day - chrono::Duration::days(365);
-        let expired = evaluate("600036.SS", &data, day, String::new());
+        let expired = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         assert_eq!(expired.dividend_per_share.as_deref(), Some("0"));
         assert_eq!(expired.yield_pct, Some(0.0));
         assert!(expired.dividend_events.is_empty());
         data.dividend_basis.as_mut().unwrap().as_of = day - chrono::Duration::days(1);
-        let stale = evaluate("600036.SS", &data, day, String::new());
+        let stale = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         assert_eq!(stale.yield_pct, None);
         assert!(stale.issues.contains(&WatchIssue::DividendUnavailable));
     }
@@ -747,7 +767,7 @@ pub(crate) mod tests {
     #[test]
     fn three_year_history_includes_boundaries_and_never_changes_ttm() {
         let (mut data, day) = market_fixture();
-        let original = evaluate("600036.SS", &data, day, String::new());
+        let original = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         let start = day.checked_sub_months(chrono::Months::new(36)).unwrap();
         let template = data.dividends.as_ref().unwrap()[0].clone();
         for ex_date in [
@@ -762,7 +782,7 @@ pub(crate) mod tests {
                 ..template.clone()
             });
         }
-        let result = evaluate("600036.SS", &data, day, String::new());
+        let result = evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         assert_eq!(result.dividend_per_share, original.dividend_per_share);
         assert_eq!(result.yield_pct, original.yield_pct);
         let history = result.dividend_history.as_ref().unwrap();
@@ -772,9 +792,11 @@ pub(crate) mod tests {
         assert!(history.events.iter().any(|e| e.ex_date == start));
         assert!(!result.dividend_events.iter().any(|e| e.ex_date == start));
         data.dividends = None;
-        assert!(evaluate("600036.SS", &data, day, String::new())
-            .dividend_history
-            .is_none());
+        assert!(
+            evaluate(&Default::default(), "600036.SS", &data, day, String::new())
+                .dividend_history
+                .is_none()
+        );
         // Calendar months preserve a true three-year window across leap years.
         assert_eq!(
             date("2024-02-29")

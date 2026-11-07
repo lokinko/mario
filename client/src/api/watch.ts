@@ -26,12 +26,23 @@ export interface WatchGridProjection {
     investedReturnPct: string;
   }[];
 }
+export type BandReference = "lower" | "middle" | "upper";
+export interface BandRule {
+  reference: BandReference;
+  mode: "near" | "at_or_below" | "at_or_above";
+  offsetBps: number;
+}
+export interface WatchRules {
+  minYieldBps: number;
+  daily: BandRule;
+  weekly: BandRule;
+}
 export interface Band {
   lower: number;
   middle: number;
   upper: number;
   distancePct: number | null;
-  reference: "lower" | "middle";
+  reference: BandReference;
   matchesRule: boolean;
 }
 export type WatchStatus = "attention" | "waiting" | "incomplete";
@@ -42,6 +53,8 @@ export type WatchIssue =
   | "dividend_unavailable"
   | "non_positive_band";
 export interface Observation {
+  rules: WatchRules;
+  yieldMatchesRule: boolean | null;
   symbol: string;
   observedOn: string;
   checkedAt: string;
@@ -99,8 +112,7 @@ export interface CatalogBoard {
   canEdit: boolean;
   catalog: { version: number; verifiedOn: string; industries: WatchIndustry[] };
   rows: CatalogRow[];
-  minYieldPct: number;
-  bandDistancePct: number;
+  rules: WatchRules;
 }
 export interface DividendPrice {
   yieldPct: number;
@@ -109,12 +121,12 @@ export interface DividendPrice {
   changePct: number | null;
 }
 export interface WatchBoard {
+  defaultRules: WatchRules;
   rows: WatchRow[];
   weekly: Observation[];
   weekStart: string;
   weekEnd: string;
-  minYieldPct: number;
-  bandDistancePct: number;
+  rules: WatchRules;
 }
 
 export const getWatchBoard = () => httpRequest<WatchBoard>("/watch");
@@ -164,4 +176,10 @@ export const readWatchAlerts = (symbol: string) =>
 export const refreshWatch = () =>
   httpRequest<WatchBoard>("/watch/refresh", {
     method: "POST",
+  });
+
+export const saveWatchRules = (rules: WatchRules, expectedRules: WatchRules) =>
+  httpRequest<WatchBoard>("/watch/rules", {
+    method: "PUT",
+    body: JSON.stringify({ rules, expectedRules }),
   });

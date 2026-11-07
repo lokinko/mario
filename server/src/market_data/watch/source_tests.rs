@@ -95,7 +95,7 @@ async fn domestic_prices_work_without_yahoo_and_align_adjustments_by_date() {
             .unwrap();
         let (fixture, _) = crate::models::watch::tests::market_fixture();
         data.dividends = fixture.dividends;
-        let result = evaluate("000807.SZ", &data, day, "test".into());
+        let result = evaluate(&Default::default(), "000807.SZ", &data, day, "test".into());
         assert_eq!(result.price, Some(100.0));
         assert_eq!(result.yield_pct, Some(5.0));
         assert_eq!(result.daily.is_none(), missing);
@@ -188,7 +188,13 @@ async fn live_yunlu_prices_and_dividends() {
     let history = provider.dividends("000807.SZ", day).await.unwrap();
     data.dividends = Some(history.events);
     data.dividend_basis = Some(history.basis);
-    let result = evaluate("000807.SZ", &data, day, chrono::Utc::now().to_rfc3339());
+    let result = evaluate(
+        &Default::default(),
+        "000807.SZ",
+        &data,
+        day,
+        chrono::Utc::now().to_rfc3339(),
+    );
     assert!(result.price.is_some());
     assert!(result.yield_pct.is_some());
     assert!(result.daily.is_some());

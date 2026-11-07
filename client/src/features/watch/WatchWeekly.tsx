@@ -1,4 +1,5 @@
 import type { WatchBoard, WatchRow } from "../../api/watch";
+import { rulesSummary } from "./rules";
 import { statuses } from "./presentation";
 
 export function WatchWeekly({
@@ -32,6 +33,9 @@ export function WatchWeekly({
           结合持仓做周末复盘{board.rows.length > 5 ? "（先讨论前 5 家）" : ""}
         </button>
       </div>
+      <p className="watch-meta">
+        历史状态使用检查当时的规则，悬停查看该记录的规则。
+      </p>
       {board.rows.length > 0 && (
         <div className="table-scroll">
           <table className="watch-week-table" aria-label="本周逐日观察">
@@ -66,7 +70,7 @@ export function WatchWeekly({
                       <td key={day}>
                         <span
                           className={`watch-week-cell ${record?.status ?? ""}`}
-                          title={`${row.entry.name} ${day} ${record ? statuses[record.status] : "没有保存的检查结果"}`}
+                          title={`${row.entry.name} ${day} ${record ? `${statuses[record.status]}；${rulesSummary(record.rules)}` : "没有保存的检查结果"}`}
                         >
                           {record
                             ? {
