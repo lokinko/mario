@@ -5,7 +5,10 @@ import {
   WalletCards,
   BookOpen,
   ChartNoAxesCombined,
+  ChartPie,
+  PiggyBank,
 } from "lucide-react";
+import type { FactsSection } from "../features/portfolio/MyFacts";
 
 export type View =
   | "watch"
@@ -56,6 +59,31 @@ export const navGroups: {
       { id: "methodology", label: "投资方法论", icon: BookOpen },
     ],
   },
+];
+
+export const mobileTabs: {
+  id: string;
+  view: View;
+  section?: FactsSection;
+  label: string;
+  icon: typeof MessageCircle;
+}[] = [
+  { id: "watch", view: "watch", label: "买点", icon: ChartNoAxesCombined },
+  {
+    id: "holdings",
+    view: "facts",
+    section: "holdings",
+    label: "持仓",
+    icon: ChartPie,
+  },
+  {
+    id: "savings",
+    view: "facts",
+    section: "savings",
+    label: "存款",
+    icon: PiggyBank,
+  },
+  { id: "advisor", view: "advisor", label: "问答", icon: MessageCircle },
 ];
 
 export const viewLabels: Record<View, string> = {

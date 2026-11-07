@@ -555,8 +555,8 @@
     padding: var(--space-6) var(--space-4);
   }
   .chat-main .conversation-composer {
-    bottom: 76px;
-    margin-bottom: 64px;
+    bottom: calc(var(--tabbar-height) + 8px);
+    margin-bottom: 0;
   }
   .section-switcher {
     gap: 0;
@@ -2038,16 +2038,12 @@ input[type="number"] {
   .conversation-starters {
     grid-template-columns: 1fr;
   }
-  .chat-main .conversation-composer {
-    bottom: 8px;
-    margin-bottom: 0;
-  }
   .composer-footer {
     flex-wrap: wrap;
   }
   .toast {
     right: 16px;
-    bottom: max(16px, env(safe-area-inset-bottom));
+    bottom: calc(var(--tabbar-height) + 12px);
   }
   .drawer {
     inset: 0;

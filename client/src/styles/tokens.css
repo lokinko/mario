@@ -62,6 +62,7 @@
   --radius-lg: 18px;
   --radius-xl: 24px;
   --chrome-height: 56px;
+  --tabbar-height: 0px;
   --shadow-card:
     0 1px 2px rgb(54 42 26 / 4%), 0 2px 8px -4px rgb(54 42 26 / 6%);
   --shadow-lift:
@@ -78,6 +79,7 @@
 @media (max-width: 900px) {
   :root {
     --chrome-height: calc(64px + env(safe-area-inset-top));
+    --tabbar-height: calc(60px + env(safe-area-inset-bottom));
   }
 }
 @supports (transition-timing-function: linear(0, 1)) {

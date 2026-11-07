@@ -41,13 +41,19 @@ function withExactValues(snapshot: Snapshot, holding: Holding): Holding {
     : holding;
 }
 
+export type FactsSection = "holdings" | "savings" | "income";
+
 export function MyFacts({
   snapshot,
   onUpdate,
   flash,
+  section: requestedSection,
+  onSectionChange,
   display = { maskAmounts: false, setMaskAmounts: () => {} },
 }: {
   display?: Pick<DisplayPreferenceProps, "maskAmounts" | "setMaskAmounts">;
+  section?: FactsSection;
+  onSectionChange?: (section: FactsSection) => void;
   snapshot: Snapshot;
   onUpdate: (snapshot: Snapshot) => void;
   flash: (message: string) => void;
@@ -83,9 +89,9 @@ export function MyFacts({
     },
   });
   const busy = working || removal.uncertain;
-  const [section, setSection] = useState<"income" | "savings" | "holdings">(
-    "holdings",
-  );
+  const [ownSection, setOwnSection] = useState<FactsSection>("holdings");
+  const section = requestedSection ?? ownSection;
+  const setSection = onSectionChange ?? setOwnSection;
   const cash = snapshot.holdings.filter((item) => item.assetClass === "现金");
   const cashCurrencies = [
     ...new Set([...defaultCashCurrencies, ...cash.map((h) => h.currency)]),
@@ -449,7 +455,7 @@ export function MyFacts({
         activeKey={section}
         destroyOnHidden
         onChange={(id) => {
-          setSection(id as typeof section);
+          setSection(id as FactsSection);
           setError("");
         }}
         items={(

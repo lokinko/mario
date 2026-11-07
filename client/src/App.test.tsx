@@ -223,7 +223,12 @@ it("opens on buy watch and preserves a question draft when returning from suppor
   });
   render(<App />);
   expect(await screen.findByRole("heading", { name: "买点观察" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "问答" }));
+  fireEvent.click(
+    within(screen.getByRole("complementary", { name: "主导航" })).getByRole(
+      "button",
+      { name: "问答" },
+    ),
+  );
   expect(await screen.findByRole("heading", { name: "问答" })).toBeTruthy();
   fireEvent.change(screen.getByRole("textbox"), {
     target: { value: "暂存的问题" },
@@ -231,7 +236,12 @@ it("opens on buy watch and preserves a question draft when returning from suppor
   fireEvent.click(screen.getByRole("button", { name: "账号与数据" }));
   await screen.findByRole("button", { name: "测试恢复数据" });
   expect(screen.queryByRole("textbox")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "问答" }));
+  fireEvent.click(
+    within(screen.getByRole("complementary", { name: "主导航" })).getByRole(
+      "button",
+      { name: "问答" },
+    ),
+  );
   expect(screen.getByDisplayValue("暂存的问题")).toBeTruthy();
 });
 
@@ -246,7 +256,7 @@ it("shows frequently used records in primary navigation", async () => {
     hasApiKey: true,
   });
   render(<App />);
-  await screen.findByRole("button", { name: "问答" });
+  await screen.findAllByRole("button", { name: "问答" });
   expect(screen.getByRole("button", { name: "我的情况" })).toBeTruthy();
   for (const name of ["复盘记录", "参考资料"]) {
     const entry = screen.getByRole("button", { name });
@@ -280,7 +290,7 @@ it("responds to hash navigation without leaving the old page on screen", async (
   expect(screen.queryByRole("button", { name: "测试恢复数据" })).toBeNull();
 });
 
-it("closes the left drawer with Escape and restores focus without changing the page", async () => {
+it("closes the more-navigation sheet with Escape and restores focus without changing the page", async () => {
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
     {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
@@ -291,7 +301,7 @@ it("closes the left drawer with Escape and restores focus without changing the p
     hasApiKey: true,
   });
   render(<App />);
-  const trigger = await screen.findByRole("button", { name: "打开导航" });
+  const trigger = await screen.findByRole("button", { name: "更多" });
   fireEvent.click(trigger);
   expect(
     document.querySelector("aside")?.classList.contains("mobile-open"),
@@ -309,6 +319,46 @@ it("closes the left drawer with Escape and restores focus without changing the p
   expect(document.activeElement).toBe(trigger);
   expect(document.querySelector("main")?.hasAttribute("inert")).toBe(false);
   expect(screen.getByRole("button", { name: "测试恢复数据" })).toBeTruthy();
+});
+
+it("opens holdings and savings sections from the mobile tab bar", async () => {
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
+    provider: "openai-responses",
+    model: "test",
+    baseUrl: "",
+    hasApiKey: false,
+  });
+  render(<App />);
+  const tabs = await screen.findByRole("navigation", { name: "快捷导航" });
+  fireEvent.click(within(tabs).getByRole("button", { name: "存款" }));
+  await screen.findByRole("heading", { name: "我的情况" });
+  expect(
+    screen
+      .getByRole("tab", { name: "存款与现金" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(
+    within(tabs)
+      .getByRole("button", { name: "存款" })
+      .getAttribute("aria-current"),
+  ).toBe("page");
+  fireEvent.click(within(tabs).getByRole("button", { name: "持仓" }));
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("tab", { name: "投资持仓" })
+        .getAttribute("aria-selected"),
+    ).toBe("true"),
+  );
+  expect(
+    within(tabs)
+      .getByRole("button", { name: "存款" })
+      .hasAttribute("aria-current"),
+  ).toBe(false);
 });
 
 it.each([
@@ -399,7 +449,12 @@ it("composes source questions through the shell and consumes them before a data 
     );
     fireEvent.change(question, { target: { value: "继续编辑后的草稿" } });
     fireEvent.click(screen.getByRole("button", { name: "参考资料" }));
-    fireEvent.click(screen.getByRole("button", { name: "问答" }));
+    fireEvent.click(
+      within(screen.getByRole("complementary", { name: "主导航" })).getByRole(
+        "button",
+        { name: "问答" },
+      ),
+    );
     expect(
       (screen.getByRole("textbox", { name: "输入问题" }) as HTMLTextAreaElement)
         .value,
@@ -411,7 +466,12 @@ it("composes source questions through the shell and consumes them before a data 
     await waitFor(() =>
       expect(portfolioApi.getSnapshot).toHaveBeenCalledTimes(2),
     );
-    fireEvent.click(screen.getByRole("button", { name: "问答" }));
+    fireEvent.click(
+      within(screen.getByRole("complementary", { name: "主导航" })).getByRole(
+        "button",
+        { name: "问答" },
+      ),
+    );
     await waitFor(() =>
       expect(
         (

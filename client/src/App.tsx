@@ -8,7 +8,7 @@ import {
   AlertTriangle,
   Check,
   Cloud,
-  Menu,
+  Ellipsis,
   Settings2,
   XCircle,
   X,
@@ -16,8 +16,14 @@ import {
   PanelLeft,
 } from "lucide-react";
 import { ServerData } from "./features/account/ServerData";
-import { View, initialView, navGroups, viewLabels } from "./app/navigation";
-import { MyFacts } from "./features/portfolio/MyFacts";
+import {
+  View,
+  initialView,
+  mobileTabs,
+  navGroups,
+  viewLabels,
+} from "./app/navigation";
+import { MyFacts, type FactsSection } from "./features/portfolio/MyFacts";
 import { EvidenceWorkbench } from "./features/research/EvidenceWorkbench";
 import { ReviewCenter } from "./features/reviews/ReviewCenter";
 import { Advisor } from "./features/research/Advisor";
@@ -71,6 +77,7 @@ function App() {
   );
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [factsSection, setFactsSection] = useState<FactsSection>("holdings");
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -130,8 +137,9 @@ function App() {
       noticeTimer.current = window.setTimeout(() => setNotice(""), 2400);
   };
 
-  const navigate = (nextView: View) => {
+  const navigate = (nextView: View, section?: FactsSection) => {
     clearDraft();
+    if (section) setFactsSection(section);
     setView(nextView);
     if (nextView === "advisor") setAdvisorVisited(true);
     setMobileNavOpen(false);
@@ -185,16 +193,11 @@ function App() {
   return (
     <div className="app-shell">
       <header className="mobile-topbar" inert={mobileNavOpen}>
-        <button
-          ref={menuTrigger}
-          className="mobile-menu"
-          aria-label="打开导航"
-          aria-expanded={mobileNavOpen}
-          aria-controls="main-navigation"
-          onClick={() => setMobileNavOpen(true)}
-        >
-          <Menu size={22} />
-        </button>
+        <img
+          className="mobile-mark"
+          src={`${import.meta.env.BASE_URL}mario-mark.svg`}
+          alt=""
+        />
         <strong>mario</strong>
         <span>{viewLabels[view]}</span>
         <button
@@ -258,7 +261,12 @@ function App() {
                 <button
                   key={item.id}
                   aria-current={view === item.id ? "page" : undefined}
-                  className={view === item.id ? "active" : ""}
+                  className={[
+                    view === item.id ? "active" : "",
+                    mobileTabs.some((tab) => tab.view === item.id)
+                      ? "in-tabbar"
+                      : "",
+                  ].join(" ")}
                   onClick={() => navigate(item.id)}
                 >
                   <item.icon size={18} />
@@ -389,6 +397,8 @@ function App() {
             onUpdate={setSnapshot}
             display={display}
             flash={flash}
+            section={factsSection}
+            onSectionChange={setFactsSection}
           />
         )}
         {view === "evidence" && (
@@ -458,6 +468,40 @@ function App() {
           </div>
         )}
       </main>
+      <nav
+        className="mobile-tabbar"
+        aria-label="快捷导航"
+        inert={mobileNavOpen}
+      >
+        {mobileTabs.map((tab) => {
+          const active =
+            view === tab.view && (!tab.section || tab.section === factsSection);
+          return (
+            <button
+              key={tab.id}
+              className={active ? "active" : ""}
+              aria-current={active ? "page" : undefined}
+              onClick={() => navigate(tab.view, tab.section)}
+            >
+              <tab.icon size={22} aria-hidden="true" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+        <button
+          ref={menuTrigger}
+          className={
+            mobileTabs.some((tab) => tab.view === view) ? "" : "active"
+          }
+          aria-label="更多"
+          aria-expanded={mobileNavOpen}
+          aria-controls="main-navigation"
+          onClick={() => setMobileNavOpen(true)}
+        >
+          <Ellipsis size={22} aria-hidden="true" />
+          <span>更多</span>
+        </button>
+      </nav>
     </div>
   );
 }
