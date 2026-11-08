@@ -108,17 +108,9 @@ export function ProfileForm({
           <div className="form-grid">
             {amountField("monthlyIncome", "月收入")}
             {amountField("monthlyExpense", "月支出")}
+            {amountField("liabilities", "负债")}
+            {amountField("emergencyFund", "备用金")}
           </div>
-          <details className="holding-details">
-            <summary>有负债或预留备用金？（选填）</summary>
-            <div className="form-grid">
-              {amountField("liabilities", "尚未还清的负债")}
-              {amountField("emergencyFund", "存款中预留的备用金")}
-            </div>
-            <p className="section-intro">
-              备用金是存款中留作急用的部分，不会再次计入资产。
-            </p>
-          </details>
           <details className="holding-details">
             <summary>投资偏好与记账币种</summary>
             <div className="form-grid">

@@ -593,10 +593,9 @@ it("only asks for monthly facts and preserves existing investment preferences", 
     screen
       .getAllByRole("spinbutton")
       .filter((input) => !input.closest("details")),
-  ).toHaveLength(2);
-  expect(
-    screen.getByText("有负债或预留备用金？（选填）").closest("details")?.open,
-  ).toBe(false);
+  ).toHaveLength(4);
+  expect(screen.getByRole("spinbutton", { name: "负债 CNY" })).toBeTruthy();
+  expect(screen.getByRole("spinbutton", { name: "备用金 CNY" })).toBeTruthy();
   fireEvent.change(screen.getByRole("spinbutton", { name: "月收入 CNY" }), {
     target: { value: "8000" },
   });

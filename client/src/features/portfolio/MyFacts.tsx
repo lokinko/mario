@@ -15,7 +15,7 @@ import { ProfileForm } from "./ProfileForm";
 import { sortInvestmentHoldings } from "./holdingMetrics";
 import { useHoldingRemoval } from "./useHoldingRemoval";
 import { useEffect, useRef, useState } from "react";
-import { CircleHelp, Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { refreshSecurityPrices } from "../../api/portfolio";
 import type { DataIssue, Holding, Snapshot } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
@@ -58,7 +58,6 @@ export function MyFacts({
   flash: (message: string) => void;
 }) {
   const history = useAssetHistory(snapshot);
-  const [help, setHelp] = useState(false);
   const [fxCurrency, setFxCurrency] = useState<string | null>(null);
   const [issueTarget, setIssueTarget] = useState<string | null>(null);
   const [priceWarningDismissed, setPriceWarningDismissed] = useState(false);
@@ -359,24 +358,17 @@ export function MyFacts({
       <PageHeader
         title="我的情况"
         action={
-          <div className="trade-toolbar facts-heading-actions">
-            <Button
-              type="text"
-              icon={<CircleHelp size={16} />}
-              onClick={() => setHelp(true)}
-            >
-              使用说明
-            </Button>
-            {section === "holdings" && investments.length > 0 && (
-              <Button
-                icon={<RefreshCw size={15} />}
-                disabled={busy || Boolean(editing)}
-                onClick={refreshPrices}
-              >
-                {busy ? "更新中…" : "更新自动价格"}
-              </Button>
-            )}
-            {section === "holdings" && (
+          section === "holdings" && (
+            <div className="trade-toolbar facts-heading-actions">
+              {investments.length > 0 && (
+                <Button
+                  icon={<RefreshCw size={15} />}
+                  disabled={busy || Boolean(editing)}
+                  onClick={refreshPrices}
+                >
+                  {busy ? "更新中…" : "更新自动价格"}
+                </Button>
+              )}
               <Button
                 type="primary"
                 icon={<Plus size={16} />}
@@ -388,8 +380,6 @@ export function MyFacts({
               >
                 记录交易
               </Button>
-            )}
-            {section === "holdings" && (
               <Button
                 icon={<Plus size={16} />}
                 disabled={busy || Boolean(editing) || addingTrade}
@@ -397,22 +387,10 @@ export function MyFacts({
               >
                 添加持仓
               </Button>
-            )}
-          </div>
+            </div>
+          )
         }
       />
-      {help && (
-        <Drawer title="资产记录使用说明" onClose={() => setHelp(false)}>
-          <h3>持仓与盈亏</h3>
-          <p>
-            从最早一笔真实成交开始，按账户录入买入、卖出和现金分红。数量、成本和已结算盈亏由服务端计算；首次交易替换手工数量和成本，不自动补期初余额。当前行情与成交分别管理，填写代码后可更新价格，无代码资产请手动核对。
-          </p>
-          <h3>存款与现金</h3>
-          <p>
-            按币种核对实际余额，保存后建立核对基准。新增成交可结算同币种存款；历史补录不重放已包含的现金流。核对基准之前的更正会提示重新核对余额。
-          </p>
-        </Drawer>
-      )}
       {fxCurrency && (
         <Drawer
           title={`补充 ${fxCurrency} 汇率`}
