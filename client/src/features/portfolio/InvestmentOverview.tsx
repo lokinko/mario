@@ -80,7 +80,6 @@ export function InvestmentOverview({
       </div>
       <div className="overview-breakdown">
         <div className="overview-caption">
-          按持仓估值汇率折算 {baseCurrency} · {cash ? "币种余额" : "不含现金"}{" "}
           <button
             className="text-button"
             aria-expanded={expanded}

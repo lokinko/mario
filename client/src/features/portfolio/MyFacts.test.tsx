@@ -1267,7 +1267,7 @@ it("shows old dates and reference prices without warning colors or global restri
     <MyFacts snapshot={data} onUpdate={vi.fn()} flash={vi.fn()} />,
   );
   expect(screen.getByText("参考价")).toBeTruthy();
-  expect(screen.getByText(/2025-01-01 · 手工估值/)).toBeTruthy();
+  expect(screen.getByTitle("2025-01-01 · 手工估值")).toBeTruthy();
   expect(
     container.querySelector(".badge-warning, .callout-warning"),
   ).toBeNull();

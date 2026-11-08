@@ -85,16 +85,11 @@ export function AssetAmountRow({
         >
           <strong>{holding.name}</strong>
         </button>
-        <small>
-          {holding.symbol && holding.symbol + " · "}
-          {holding.currency} · {holding.assetClass}
-          {optionTotals ? " · 含关联期权" : ""}
-          {closed && <Badge>已清仓</Badge>}
-        </small>
-        {investment && (
+        {(holding.symbol || optionTotals || closed) && (
           <small>
-            {observedOn || holding.valuationDate || "日期未记录"} ·{" "}
-            {source || "手工估值"}
+            {holding.symbol}
+            {optionTotals ? `${holding.symbol ? " · " : ""}含关联期权` : ""}
+            {closed && <Badge>已清仓</Badge>}
           </small>
         )}
         {issues.map((issue) => (
@@ -147,7 +142,10 @@ export function AssetAmountRow({
             </span>
           </div>
           <div role="cell" data-label="现价 / 成本价" className="num">
-            <span data-money>
+            <span
+              data-money
+              title={`${observedOn || holding.valuationDate || "日期未记录"} · ${source || "手工估值"}`}
+            >
               {exact?.usable === false || holding.currentPrice == null
                 ? "—"
                 : formatNumber(exact?.currentPrice ?? holding.currentPrice, 4)}
