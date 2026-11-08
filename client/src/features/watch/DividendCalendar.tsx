@@ -78,7 +78,7 @@ function PlanCard({
           <span> · 转增 {plan.transferPerTen} 股</span>
         )}
       </div>
-      {plan.profile && <p>{plan.profile}</p>}
+      {plan.cashPerTen === null && plan.profile && <p>{plan.profile}</p>}
       {plan.stage === "scheduled" && (
         <dl className="dividend-plan-dates">
           <div>
@@ -246,16 +246,6 @@ export function DividendCalendar() {
               >
                 后30天
               </Button>
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  setFrom("");
-                  setSelected(null);
-                  if (!from) void load();
-                }}
-              >
-                今天起30天
-              </Button>
             </div>
             <Tabs
               activeKey={tab}
@@ -340,9 +330,6 @@ export function DividendCalendar() {
               </>
             ) : (
               <>
-                <p className="watch-meta">
-                  近12个月已披露、尚无完整实施日期的计划。无法确认是否会在未来30天实施，不按历史分红时间猜测日期。
-                </p>
                 {!board.pending.length && <p>当前已获取资料中暂无待定计划。</p>}
                 {board.pending.map((row) => (
                   <PlanCard
