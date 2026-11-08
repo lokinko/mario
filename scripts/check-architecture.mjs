@@ -169,23 +169,6 @@ export function serverFileViolation(source, target) {
   return undefined;
 }
 
-// Offline data flows toward pure indicators; strategy execution cannot become a data source.
-export function benchmarkViolation(source, target) {
-  if (source.endsWith('_indicators.py') && target !== 'files')
-    return 'indicator calculations depend only on shared value validation';
-  if (source === 'raw_data.py' && !['files', 'release'].includes(target))
-    return 'raw adapters cannot depend on indicators or strategy execution';
-  if (source === 'feature_pipeline.py' && !['files', 'input_contract', 'price_indicators', 'technical_indicators', 'raw_data', 'release'].includes(target))
-    return 'feature composition depends on raw data and pure calculators';
-  if (source === 'input_contract.py' && target !== 'files')
-    return 'strategy input declarations cannot depend on execution or providers';
-  if (source === 'evaluation_data.py' && !['dataset', 'files', 'feature_pipeline', 'input_contract', 'raw_data', 'release'].includes(target))
-    return 'raw input reconstruction cannot fetch data or execute strategies';
-  if (source === 'dividends.py' && !['files', 'public_sources'].includes(target))
-    return 'dividend acquisition depends only on public sources and file contracts';
-  return undefined;
-}
-
 export function checkArchitecture() {
   const violations = [], clientGraph = new Map(), serverGraph = new Map();
   const clientRoot = resolve(root, 'client/src');
@@ -249,13 +232,6 @@ export function checkArchitecture() {
       serverGraph.get(owner).add(target);
       const violation = serverViolation(owner, target) ?? serverFileViolation(name, target);
       if (violation) violations.push(`${name} -> ${target}: ${violation}`);
-    }
-  }
-  for (const name of ['price_indicators.py', 'technical_indicators.py', 'financial_indicators.py', 'announcement_indicators.py', 'raw_data.py', 'feature_pipeline.py', 'input_contract.py', 'evaluation_data.py', 'dividends.py']) {
-    const source = readFileSync(resolve(root, 'benchmark', name), 'utf8');
-    for (const match of source.matchAll(/^from \.(\w+) import /gm)) {
-      const violation = benchmarkViolation(name, match[1]);
-      if (violation) violations.push(`benchmark/${name} -> ${match[1]}: ${violation}`);
     }
   }
   violations.push(...cycles(clientGraph).map(c => `client cycle: ${c}`), ...cycles(serverGraph).map(c => `server cycle: ${c}`));

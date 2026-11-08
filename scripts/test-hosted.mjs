@@ -5,8 +5,6 @@ import {once} from 'node:events';
 import {createServer} from 'node:net';
 import {createServer as httpServer} from 'node:http';
 import {randomBytes,randomUUID} from 'node:crypto';
-import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
-import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {root,serverBinary} from './server-artifacts.mjs';
 import {setTimeout as sleep} from 'node:timers/promises';
@@ -17,10 +15,6 @@ const master=randomBytes(32).toString('base64');
 const children=[]; let logs=''; let assertions=0;
 const agentToken=randomBytes(32).toString('hex');
 const modelRequests=[];
-const dashboard=mkdtempSync(join(tmpdir(),'mario-dashboard-'));
-writeFileSync(join(dashboard,'dashboard.html'),'<script type="module" src="dashboard.js"></script>');
-writeFileSync(join(dashboard,'dashboard.js'),'export {};');
-writeFileSync(join(dashboard,'dashboard.json'),JSON.stringify({strategies:[{key:'cash'}]}));
 const mockModel=httpServer(async(req,res)=>{
   let body='';for await(const chunk of req)body+=chunk;
   modelRequests.push({path:req.url,auth:req.headers.authorization,body:JSON.parse(body)});
@@ -128,19 +122,9 @@ async function optionPriceReceipts(base, replica) {
   console.log('PASS option quote HTTP receipts: stale replay across replicas, one journal entry, content conflicts and tenant isolation');
 }
 try{
-  const base=await start({MARIO_BENCH_DIR:dashboard}), replica=await start();
+  const base=await start(), replica=await start();
   assert.deepEqual(await request(base,'/auth/openai/config'),{enabled:false});
   await request(base,'/auth/openai/start',null,'POST',{link:false},404);
-  const site=base.slice(0,-'/api'.length);
-  const page=await fetch(site+'/dashboard');
-  assert.equal(page.status,200);assert.match(page.headers.get('content-type'),/text\/html/);assert.match(await page.text(),/dashboard\.js/);
-  assert.match((await fetch(site+'/dashboard.js')).headers.get('content-type'),/javascript/);
-  await request(base,'/benchmark/dashboard',null,'GET',undefined,401);
-  await request(base,'/benchmark/dashboard',{token:'not-a-session'},'GET',undefined,401);
-  const reader=await register(base);
-  assert.deepEqual(await request(base,'/benchmark/dashboard',reader),{strategies:[{key:'cash'}]});
-  await request(replica,'/benchmark/dashboard',reader,'GET',undefined,404);
-  assert.equal((await fetch(replica.slice(0,-'/api'.length)+'/dashboard')).status,404);
   await request(base,'/snapshot',null,'GET',undefined,401);
   await request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'test-password-0123456789',registrationKey:'obsolete'},422);
   await request(base,'/auth/register',null,'POST',{email:`${randomUUID()}@example.test`,password:'short'},400);
@@ -343,5 +327,5 @@ try{
   assert.equal((await request(restart,'/snapshot',c)).holdings[0].id,id);
   console.log(`PASS hosted PostgreSQL: ${assertions} HTTP checks; tenant isolation, replica conflicts, durable revisions, secrets, migration, sessions and restart persistence`);
 } catch(error){console.error(logs.slice(-5000));throw error;}
-finally{rmSync(dashboard,{recursive:true,force:true});releaseAgent?.();mockAgent.closeAllConnections();await new Promise(r=>mockAgent.close(r));mockModel.closeAllConnections();await new Promise(r=>mockModel.close(r));for(const child of children){if(child.exitCode===null && child.signalCode===null){const ended=once(child,'exit');child.kill();await ended;}}}
+finally{releaseAgent?.();mockAgent.closeAllConnections();await new Promise(r=>mockAgent.close(r));mockModel.closeAllConnections();await new Promise(r=>mockModel.close(r));for(const child of children){if(child.exitCode===null && child.signalCode===null){const ended=once(child,'exit');child.kill();await ended;}}}
 

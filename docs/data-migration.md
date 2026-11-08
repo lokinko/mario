@@ -44,9 +44,9 @@ sudo install -d -m 700 -o "$RUN_USER" -g "$(id -gn "$RUN_USER")" /srv/mario/back
 
 此时不切 DNS，也不让用户访问新服务。提前按 [部署指南](deploy-madeagents.md#一次性接入已有-nginx) 配好新机器的 HTTPS 证书和 Nginx，安全组只开放所需公网端口。源/目标 PostgreSQL 优先保持相同主版本，目标不能低于源；源 `pg_dump` 不能低于源数据库主版本，目标恢复工具建议与源打包工具同主版本或更高。逻辑备份跨机器迁移的版本约束见 [PostgreSQL 官方文档](https://www.postgresql.org/docs/17/app-pgdump.html#PG-DUMP-NOTES)。
 
-包包含共享的 `mario_market` 公开分红资料库（来源采集与内置初始化历史），以及密码哈希（无需知道用户明文密码）、外部登录账号映射、每账号业务表、附件、历史分析、同步版本和模型凭据主密钥。**包不包含整份 `.env`、源码、Nginx/证书、SSH 密钥、个人电脑桥接凭据或 benchmark 文件。** 保留旧机器原配置作为受控运维备份；目标数据库密码、端口等继续使用新机器配置，不要直接覆盖目标 `.env`。
+包包含共享的 `mario_market` 公开分红资料库（来源采集与内置初始化历史），以及密码哈希（无需知道用户明文密码）、外部登录账号映射、每账号业务表、附件、历史分析、同步版本和模型凭据主密钥。**包不包含整份 `.env`、源码、Nginx/证书、SSH 密钥、个人电脑桥接凭据。** 保留旧机器原配置作为受控运维备份；目标数据库密码、端口等继续使用新机器配置，不要直接覆盖目标 `.env`。
 
-如果启用了 ChatGPT 网站登录，在新机器另行配置原 `MARIO_OPENAI_CLIENT_ID`、认证方式及所需 secret；域名不变时保留原回调，换域名时先完成新回调注册并更新 `MARIO_OPENAI_REDIRECT_URI`。身份映射绑定 client ID，更换 client ID 不能自动继承旧关联；仅有 ChatGPT 登录的账号也不能假定已有可用密码。见 [网站登录配置](chatgpt-sign-in.md)。研究看板按部署指南重新同步 HF 的 `dashboard/current.json`，在目标生成页面与脚本；迁移不要求重新采集或评分。公开快照可匿名读取，已有私有仓库的读取认证另行配置。
+如果启用了 ChatGPT 网站登录，在新机器另行配置原 `MARIO_OPENAI_CLIENT_ID`、认证方式及所需 secret；域名不变时保留原回调，换域名时先完成新回调注册并更新 `MARIO_OPENAI_REDIRECT_URI`。身份映射绑定 client ID，更换 client ID 不能自动继承旧关联；仅有 ChatGPT 登录的账号也不能假定已有可用密码。见 [网站登录配置](chatgpt-sign-in.md)。
 
 ### 2. 停旧机器，生成最终迁移包
 

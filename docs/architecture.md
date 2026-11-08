@@ -40,7 +40,7 @@ PostgreSQL 是唯一的数据存储，没有单机或免登录模式。本地开
 
 生产部署由 [`deploy.sh`](../deploy.sh) 在宿主机以 systemd 启动一个主运行器（[`scripts/host-runtime.mjs`](../scripts/host-runtime.mjs)），依次拉起 PostgreSQL、Agent（仅监听本机端口）和 API；Nginx 反向代理 API 与静态网页。推送代码不等于部署。
 
-部署中的系统依赖安装与 systemd 管理使用 root；用户工具安装、构建和主运行器统一使用非 root 服务账号。`deploy.sh` 在下载工具和停服前准备该账号的 home，自动修复默认专用 home 与 Rust/uv 工具目录的历史归属、所有者写入及遍历权限，不递归接管整个 home 或跟随工具链接修改外部文件。已有数据库继续使用原所有者，数据与事务归属不变。具体范围与异常处理见 [部署权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
+部署中的系统依赖安装与 systemd 管理使用 root；用户工具安装、构建和主运行器统一使用非 root 服务账号。`deploy.sh` 在下载工具和停服前准备该账号的 home，自动修复默认专用 home 与 Rust 工具目录的历史归属、所有者写入及遍历权限，不递归接管整个 home 或跟随工具链接修改外部文件。已有数据库继续使用原所有者，数据与事务归属不变。具体范围与异常处理见 [部署权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
 
 ## 2. 设计原则
 
@@ -108,7 +108,7 @@ flowchart TD
 | --- | --- |
 | `main.rs`、`lib.rs`、`runtime.rs` | 进程入口、模块声明、环境与参数解析、模式选择、维护命令、优雅退出 |
 | `composition.rs` | 创建行情供应商，组装 `MarketServices`，拥有后台刷新任务并在服务退出时取消 |
-| `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS、静态网页，以及只读提供研究看板文件（`MARIO_BENCH_DIR`，数据接口只验证会话，不打开账号库） |
+| `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS、静态网页 |
 | `http/` | 按领域注册路由（`watch`、`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
 | `accounts.rs`、`accounts/openai.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速、持久化超级账户权限；可选网站 OpenAI 身份映射、短期 OAuth 事务及显式关联；Agent 令牌的常量时间比较 |
 | `openai_login.rs`、`hosted/openai.rs` | 网站身份登录：前者只做官方 OIDC 配置、授权码交换和签名声明校验，不访问账号或模型；后者转换 HTTP/Cookie、编排账号事务、固定站点重定向与一次性交接；与本机 `chatgpt_auth` 及订阅执行无依赖 |
@@ -130,7 +130,7 @@ flowchart TD
 | --- | --- |
 | `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发；离开将卸载的编辑页前确认未保存草稿，取消历史跳转时恢复当前地址 |
 | `app/useApplicationData.ts` | 服务端数据生命周期：启动、快照与模型配置加载、自动同步、请求代次、草稿保护与远程更新提示 |
-| `app/navigation.ts` | 视图、导航分组与标签；研究看板是同源独立 dashboard，不在侧栏提供入口，也不增加 React 视图状态 |
+| `app/navigation.ts` | 视图、导航分组与标签 |
 | `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿、公司查询输入和打开时的独立版本，`DividendCalendar` 拥有日历范围、日期选择、读取轮询与手动刷新；通过应用壳进入讨论 |
 | `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
@@ -225,7 +225,7 @@ sequenceDiagram
 
 自选采用同一份账号观察结果生成紧凑列表、卡片与详情。`models/watch::dividend_prices` 从已保存观察的十进制 TTM 分红生成各档参考价及与收盘价的距离，`db/watch::watch_board` 将该只读投影放在 `WatchRow.dividendPrices`；不写历史观察、不修改备份数据格式，也不产生新的行情请求。前端只格式化金额与绘图，不重算参考价；搜索、排序、持仓/规则筛选和视图切换由观察页管理，日周 BOLL 和最终关注状态继续来自服务端。`presentation` 先按账号置顶状态分组，再按页面所选指标排序；表头和菜单共用页面排序状态。股息网格编辑归 `features/watch`，`gridDraft` 按用户间距和两个方向的股数递增比例生成可编辑档位；`models/watch/grid` 校验配置金额、档位、整数股数与生成设置，用十进制按单轮下跌和反弹路径测算实际用款、预算差额、卖出不足及余股估值（不强制清仓）；`db/watch::watch_board` 使用同一最新观察生成参考价与测算投影，前端仅呈现。
 
-[买点观察助手](buy-watch.md)是当前默认入口。`models/watch/rules` 定义账号观察配置与日周比较，`models/watch` 统一计算 TTM 和关注状态；默认是 5% 股息率、日线 BOLL 下轨 ±2% 及周收盘价 ≤ 周线 BOLL 中轨，`application/watch` 通过 `WatchMarketProvider` 获取输入；`market_data/watch` 读取公开日线、交易日期参考与已实施分红，缓存仅含公开数据。`composition` 管理按账号后台检查的生命周期，不调用离线 benchmark 或自动执行 AI。
+[买点观察助手](buy-watch.md)是当前默认入口。`models/watch/rules` 定义账号观察配置与日周比较，`models/watch` 统一计算 TTM 和关注状态；默认是 5% 股息率、日线 BOLL 下轨 ±2% 及周收盘价 ≤ 周线 BOLL 中轨，`application/watch` 通过 `WatchMarketProvider` 获取输入；`market_data/watch` 读取公开日线、交易日期参考与已实施分红，缓存仅含公开数据。`composition` 管理按账号后台检查的生命周期，不自动执行 AI。
 
 `market_data/watch/eastmoney` 负责国内日线适配：校验证券代码、交易所、日期及重复行，将未复权和后复权收盘按日期对齐，并读取同源上证指数的实际交易日期。`market_data/watch` 优先采用这整组数据，来源请求或协议失败才整组回退 Yahoo；不混用供应商的复权序列、价格与日期。技术序列继续由领域计算器归一到观察日价格单位，原价继续作为 TTM 股息率分母。来源 URL 随观察保存；适配器记录逐来源失败，应用层记录行情或分红失败的证券和原因，最终失败仍保留已有账号结果。请求并发、缓存、分红仓储和账号事务的归属不变。
 
@@ -304,48 +304,6 @@ HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/div
 
 ## 10. 容量边界与已知架构债
 
-### 离线 benchmark 研究工具
-
-以下描述现有研究与运行边界；研究扩展须有明确任务，不由模块存在、历史待办或数据缺口自动触发。在线买点观察不调用研究 CLI，研究成绩不直接作为个人买入建议。
-
-`public_sources.dividend_page`提供分红原始响应，`dividends.py`按显式证券范围采集、核验分页并按除权除息日整理现金与送转事实，保留其他方案和空来源状态。结果属于独立研究原始数据，`pit_verified=false`，不把当前分红记录回填历史策略输入；不改变评分器或账号数据。命令与口径见[分红采集](benchmark-dividends.md)。
-
-研究数据的扩展边界为“来源事实 → 确定性指标 → 策略消费”：`raw_data.py` 适配既有缓存、验证原件证据并管理独立原始归档，`price_indicators.py`、`technical_indicators.py`、`announcement_indicators.py`、`financial_indicators.py` 只对传入值计算；`feature_pipeline.py` 按字段定义组合来源和计算器，`input_contract.py` 校验策略 `REQUIRES` 中实际需要的路径和类型。新增指标不要求修改整包版本或旧策略，已有字段和未知扩展保留；固定切片标签、文件哈希、来源口径与计算指纹用于追溯。持续评测通过`evaluation_data.py`从独立原始归档及选样事实全量重建输入，既有预计算字段不进入生产路径；显式研究入口才允许补算缺失字段，明确 null 不被覆盖；价格来源、共同字段或截止时间不一致时拒绝混合。公告和 SUE 的证据装配仍属独立研究工具，未自动进入正式行情指标目录。细节、迁移和扩展步骤见 [原始数据与衍生指标](benchmark-data.md)。
-
-Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略资源，支持可编辑安装，不扫描前端和 Rust 目录。部署时由 `scripts/benchmark-deploy.mjs` 拥有看板环境准备与当前快照同步；虚拟环境、uv 管理的 Python 与缓存分别位于 `.runtime/benchmark/.venv`、`python`、`uv-cache`，均由服务用户创建。部署不复用仓库 `.venv`，不继承调用者的 Python 环境选择；两次研究 CLI 调用通过 `MARIO_BENCHMARK_PYTHON` 使用同一个部署解释器，下载仍使用服务用户保存的 HF 凭据。
-
-[`benchmark/`](../benchmark/) 是与生产模块隔离的 Python 标准库 CLI，由 `scripts/benchmark.mjs` 启动；`public_sources` 优先探测免费来源覆盖并归档响应，`sources` 提供可选授权行情和财报原件下载，`dataset` 负责契约、完整性和历史时点投影，`evaluate` 计算预测排序指标，`release` 创建不可覆盖且带哈希清单的本地发布包。CLI 依赖这些研究模块，研究模块不导入前后端源码、不访问 PostgreSQL、账号备份或生产凭据。边界测试限制其依赖为 Python 标准库和本包，例外只有两个单一适配器：`baostock_market` 可导入 uv 依赖组 `market` 中的 `baostock`，用于已退市证券的免费日线；`hub` 可导入依赖组 `publish` 中的 `huggingface_hub`，负责上传与按固定提交下载。在线服务不调用研究 CLI。
-
-两个股票池只在候选来源上不同，按时点市值的口径由 `market_cap` 统一：选样日未复权收盘价（经 `baostock_market`）乘以当时已公告的总股本（东方财富），连同剔除原因与缓存布局。`tech_universe` 以 `xls` 解析的申万个股行业变更历史确定科技池候选；`dividend_universe` 以被动指数基金年报全部持仓为中证红利成分代理，再按中证官方调样公告修正生效时点。两者互不引用，只产出带出处的年度候选提案，不修改 `dataset` 的正式校验规则。`pool_release` 把一个或多个股票池的提案合并为季度决策切片，时点输入、选样快照与建仓后价格路径分文件写入不可覆盖目录；`scoring` 是无网络的纯计算模块，按用户确定的主指标（平均收益得分加 2.5 × 胜率，全部现金为 0，收益得分为建仓后 0–7、7–30、30–90 自然日总资产增长按 0.3/0.3/0.4 加权）给仓位文件打分，并以同一公式计算沪深300 全收益指数与股票池等权对照；仓位可附在决策日确定的卖出规则或网格，由 `scoring` 按结果路径中的逐日开盘、收盘与可卖出、可买入状态执行，策略本身不接触未来价格。策略以 `benchmark/strategies/<名字>/` 目录提交（说明 `strategy.md` 与只含 `decide(sample)` 的 `strategy.py`），`strategy_runner` 静态检查后在隔离子进程中只喂入时点输入生成仓位（显式启用 Python UTF-8 模式，父子进程以 UTF-8 通信，避免 Windows 本地编码影响中文行业输入与错误诊断），交给 `scoring` 打分，并以代码、发布包和打分引擎的哈希缓存结果；`dashboard` 只读取 `strategy_runner` 输出的成绩与说明，生成看板的页面、脚本与数据三个文件，`bench-run` 一条命令串起这一流程；`bench-serve` 只在本机提供这三个文件，看板重新生成后已打开的页面自动载入。`hub` 校验发布包后把输入与标签分别上传到两个 Hugging Face 数据集仓库，`hub-fetch` 按标签下载并校验还原。当前输入与标签仓库按用户要求公开；适配器也支持已有私有仓库，不修改可见性。公开分仓不是访问隔离，未来标签仍禁止进入策略决策或训练输入。
-
-每日行情由 `scripts/benchmark_update_prices.py` 编排，GitHub Actions定时执行；`index_membership.py`保留中证A50/上证50各50只当前成分原件及获取/来源日期，不伪造历史成分。`daily_prices.py`合并年度历史成员与当前完整成分，通过既有公开HTTP适配器更新供应商OHLC与独立调整收盘价，最多2个线程；每证券一个完整历史文件，首次回补或显式全区间刷新，不拼接调整尺度；22:37更新独立报价，23:37显式整段刷新历史，按月累计报价及原始元数据。来源缺失、闭市观察与日期缺口结构化保存；当前指数覆盖不足或活跃证券来源不可用时不发布，未知日历不能推断休市。最新报价及其原始元数据与日线分开保存，保留供应商时间戳；当前价格覆盖和当日日线覆盖分开计数，不用报价补造OHLC。新来源不生成交易状态、财务指标或季度评分。
-
-原Baostock双口径 `daily-prices/`只读保留，不再由每日工作流调用该供应商。`hub.historical_prices_reference`按固定旧标签核验配置、覆盖及上市退市元数据，供新 `daily-public-prices/` 的历史引用使用；不把旧价格拼入新序列。只有经证据确认的退市证券才允许以这类历史引用保留覆盖，活跃来源失败仍失败。此适配只服务尚未迁移的历史数据；完成所有相关证券及复权口径迁移后可显式移除，旧提交保留审计。
-
-`hub.py`固定输入标签与远端提交，恢复新归档并校验全集哈希；在临时分支启用LFS、完整分批上传和核验内容标识，再以非强制Git快进原子更新主分支，远端前进则拒绝覆盖。`rebuild`仅显式完整重采新来源，保留旧范围与历史成分，不回退日期。HF是持久状态来源，本机缓存仅支持首次恢复；状态不进入在线账号事务。供应商未对账数据标记 `release_ready=false`，不改变正式评分、策略或部署看板。见[每日行情自动更新](benchmark.md#每日行情自动更新)。
-
-`benchmark.live prepare`先通过`hub`获取固定提交的评分计划和原始行情；`evaluation_data`按独立日历、选样原始事实和策略声明从零构建时点输入，再把标签原样复制给评分器。`prepare`不下载旧`inputs.jsonl`，`evaluate`不提供读取预计算切片的生产分支。原始读取归`raw_data`，指标仍归共享纯计算模块；来源和新输入指纹写入看板快照。
-
-研究看板由 Git 主分支持续维护：`.github/workflows/benchmark-live.yml` 在可信 main 的策略、引擎或依赖变化后执行 `benchmark.live evaluate`，复用 `strategy_runner` 和 `scoring`；`hub` 原子发布完整 JSON 快照到现有标签仓库的 `dashboard/current.json`。运行进度附着于上次成功成绩，全部成功才替换成绩；Git 提交、评分切片和 HF 历史提供可追溯性。日线与持续评测共享HF标签仓库主分支，并发归 Actions 的同一 `benchmark-hf-main` 任务组，失败不替换成功成绩；不引入在线数据库、业务事务或消息队列。
-
-`benchmark-deploy` 仅准备服务用户的 Python 环境并同步当前快照；`host-runtime` 管理 `benchmark.live sync --watch` 的启动和退出，每 30 秒检查远端固定提交，只读同步至 `.runtime/benchmark/current/`。远端只提供数据，页面与脚本仍由本地部署版本生成；失败保留上次文件，进程内缓存避免重复下载。API 的 `MARIO_BENCH_DIR` 指向固定目录，`/dashboard` 与 `/dashboard.js` 公开，`/api/benchmark/dashboard` 只验证会话令牌，不打开账号 schema、不加账号锁。依赖方向不变：在线 API 只读派生文件，不执行策略；研究模块不访问账号数据。页面每 10 秒携带 Mario 会话轮询，状态更新保留视图，成绩更新后按原网址状态重载。会话存储格式变更时同步修改 `dashboard.py`。旧标签目录只供研究复现，生产不再在部署时评分；部署配置使用 `MARIO_BENCH_ENABLED=true` 启用同步，旧标签配置不再读取，评分计划与原始来源分别由 Actions 的 `BENCHMARK_PLAN_REVISION`、`BENCHMARK_RAW_REVISION` 固定。
-
-看板 HF 下载端点由部署配置 `.env` 的 `HF_ENDPOINT` 保存，显式部署环境可更新该值，未提供时保留；空值使用官方站。`benchmark-deploy` 统一构造首次同步和后台同步的子进程环境，`host-runtime` 只向同步器注入该配置；systemd 重启不依赖交互终端的环境。镜像切换不改变 HF 文件的状态归属与固定提交读取方式。
-
-策略目录按选股、仓位构建与执行机制区分；同一机制只保留当前切片总分最高的一组参数，参数更新在原目录完成，不以参数变体重复占榜。扫描记录可保留为历史审计，当前看板由去重后的目录重新生成。
-
-富贵策略是用户明确指定保留的策略，唯一实现位于`strategies/fugui/`，即使不在Top-10也参与默认发现、评分和看板；名称标注“技术底仓试验”，不将尚未实现的基本面和机动仓算作已验证能力。
-
-每个决策点的操作比重由策略仓位与执行规则确定：`weight` 是占期初总资产的预算，网格首买/加仓按资金份数，条件卖出的 `sell_fraction` 按该股当时持股数量。`scoring` 拥有部分卖出后余股/现金估值和逐笔 `operations`，`strategy_runner` 规范化默认全卖比例，`dashboard` 只读取记录并展示每期预算、首买、加减仓与实际成交比重，不自行模拟交易或从未来路径推断。旧成绩通过引擎指纹重新评分，不把缺少操作记录解释成没有成交；详见 [操作比重与逐笔记录](benchmark.md#操作比重与逐笔记录)。
-
-现有长窗口、风险、回归、公告、SUE 与富贵研究脚本只在明确任务下消费独立缓存和文件契约，复用纯计算、隔离执行器与评分器，不读取账号存储、不自动安装候选或替换持续评测输入。逐批实验的参数、最小字段升级与成绩归[历史研究记录](benchmark-research.md)和审计；当前输入依赖、来源、标签与指纹契约归[研究数据规范](benchmark-data.md)，不在全局架构维护另一份版本表。
-
-输入、请求缓存与发布包归 `.runtime/benchmark/`，是公开研究语料文件，不是第二个在线业务存储引擎。行情 token 只从终端环境读取。Hugging Face 承担现有研究分发和持续看板快照，本地构建本身不发布数据。完整原始归档与按披露时间截断的模型 inputs、未来 labels 分开；未核对历史成分、缺少日线或财报时不生成完成发布包。详细契约、失败恢复和研究限制见 [benchmark](benchmark.md)。
-
-[富贵策略研究边界](fugui-strategy.md)说明现有技术底仓试验及未验证范围；研究参数不替代[线上观察规则](buy-watch.md#明确规则)，缺失基本面也不被视为满足。
-
-`collect` 编排免费批量补采：固定显式证券清单和请求快照，保存逐证券行情/财报目录、逐 PDF 哈希与可恢复进度；仅依赖公开来源适配器和文件契约，不调用在线服务。交易日历闭市日不算价格缺口，少量未补齐交易日只记覆盖状态、不阻塞其他资料下载。Yahoo 与腾讯价格口径分开归档，当前成分采集清单与历史年度前 20 名选样分开，未核对的财报与历史成分不会被采集流程升级为评测就绪。
-
 当前实现面向小规模自建：PostgreSQL 连接按请求创建，业务并发有固定上限，快照为全量读取，同步为轮询，分析没有持久作业或跨实例取消。扩大规模时的接入点分别是连接池、分页/增量资源接口和任务队列；在需求出现前不预先引入。
 
 已知架构债（架构检查通过不代表它们已消失）：
@@ -369,4 +327,3 @@ Python 打包由 `pyproject.toml` 限定为 `benchmark` 包及其配置、策略
 - 领域行为：[真实成交与持仓](holding-trades.md)、[每日资产](daily-assets.md)、[研究证据](research-evidence.md)、[复盘与规则](review-and-rules.md)
 - AI：[AI 分析工作流契约](ai-workflow.md)、[问答流式回复](ai-streaming.md)、[可审计的 AI 分析档案](analysis-history.md)、[Codex 桥接](codex-bridge.md)
 - 运维：[自建宿主机服务](self-hosting.md)、[宿主机部署](deploy-madeagents.md)、[数据迁移](data-migration.md)、[Web 构建](client-builds.md)
-- 离线研究：[A 股研究 benchmark](benchmark.md)、[已有研究维护](benchmark-maintenance.md)

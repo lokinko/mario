@@ -5,10 +5,7 @@ import { spawnSync } from 'node:child_process';
 const root = resolve(import.meta.dirname, '..');
 const interpreter = process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python';
 const python = [
-  process.env.MARIO_BENCHMARK_PYTHON,
   process.env.VIRTUAL_ENV && resolve(process.env.VIRTUAL_ENV, interpreter),
-  resolve(root, '.venv', interpreter),
-  resolve(root, '../../.venv', interpreter),
 ].filter(Boolean).find(path => existsSync(path)) ?? (process.platform === 'win32' ? 'python' : 'python3');
 const result = spawnSync(python, ['-X', 'utf8', 'scripts/test-watch-dividends-data.py'], {
   cwd: root, stdio: 'inherit', env: { ...process.env, PYTHONUTF8: '1' },

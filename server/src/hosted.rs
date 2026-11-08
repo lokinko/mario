@@ -51,15 +51,12 @@ struct HostedState {
     watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
     dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
     analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
-    /// Output of the offline benchmark `bench-run`; the online service only serves these files.
-    dashboard_dir: Option<PathBuf>,
 }
 
 pub async fn serve<F>(
     url: String,
     address: SocketAddr,
     web_dir: Option<PathBuf>,
-    dashboard_dir: Option<PathBuf>,
     shutdown: F,
 ) -> AppResult<()>
 where
@@ -77,7 +74,6 @@ where
         watch_catalog: market_runtime.watch_catalog.clone(),
         dividend_calendar: market_runtime.dividend_calendar.clone(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
-        dashboard_dir,
     });
     market_runtime.start_watch(state.accounts.clone());
     let private = api_router()
@@ -95,9 +91,6 @@ where
         .route("/api/auth/register", post(register))
         .route("/api/auth/logout", post(logout))
         .route("/api/server", get(server_info))
-        .route("/dashboard", get(dashboard_page))
-        .route("/dashboard.js", get(dashboard_script))
-        .route("/api/benchmark/dashboard", get(dashboard_data))
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024))
         .with_state(state);
     let app = private
@@ -306,45 +299,6 @@ async fn logout(
 ) -> AppResult<Json<serde_json::Value>> {
     state.accounts.logout(bearer(&headers)?)?;
     Ok(Json(serde_json::json!({"ok":true})))
-}
-async fn dashboard_file(
-    state: &HostedState,
-    name: &str,
-    content_type: &'static str,
-) -> AppResult<Response> {
-    let dir = state
-        .dashboard_dir
-        .as_ref()
-        .ok_or_else(|| AppError::NotFound("研究看板未部署".into()))?;
-    let bytes = tokio::fs::read(dir.join(name))
-        .await
-        .map_err(|error| match error.kind() {
-            std::io::ErrorKind::NotFound => AppError::NotFound("研究看板尚未生成".into()),
-            _ => AppError::Io(error),
-        })?;
-    Ok((
-        [(header::CONTENT_TYPE, HeaderValue::from_static(content_type))],
-        bytes,
-    )
-        .into_response())
-}
-/// The page and script carry no results; only the data file requires a signed-in account.
-async fn dashboard_page(State(state): State<Arc<HostedState>>) -> AppResult<Response> {
-    dashboard_file(&state, "dashboard.html", "text/html; charset=utf-8").await
-}
-async fn dashboard_script(State(state): State<Arc<HostedState>>) -> AppResult<Response> {
-    dashboard_file(&state, "dashboard.js", "text/javascript; charset=utf-8").await
-}
-async fn dashboard_data(
-    State(state): State<Arc<HostedState>>,
-    headers: axum::http::HeaderMap,
-) -> AppResult<Response> {
-    let _permit = state
-        .slots
-        .try_acquire()
-        .map_err(|_| AppError::Busy("服务繁忙，请稍后重试".into()))?;
-    state.accounts.authenticate(bearer(&headers)?)?;
-    dashboard_file(&state, "dashboard.json", "application/json").await
 }
 async fn version(
     Extension(state): Extension<Arc<RequestContext>>,

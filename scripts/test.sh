@@ -10,7 +10,6 @@ export CARGO_TARGET_DIR
 (cd "$root_dir" && npm run check:architecture)
 (cd "$root_dir" && node --test scripts/codex-bridge.test.mjs scripts/postgres-cluster.test.mjs scripts/server-artifacts.test.mjs)
 (cd "$root_dir" && npm run test:qa-eval)
-(cd "$root_dir" && npm run test:benchmark)
 (cd "$root_dir" && npm run test:watch-data)
 (cd "$root_dir" && npm run test:deploy)
 npm run build --prefix "$root_dir/client"

@@ -21,7 +21,6 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 - 按 `/mario/` 构建 React 网页，编译 Rust 服务，自动初始化或复用 `.runtime/native/postgres`。
 - 创建 `mario.service`，由 systemd 托管 PostgreSQL、API 和独立 Agent。断开 SSH 不停止服务，开机自动启动。
 - 生成 `.runtime/native/nginx.conf`，供现有 HTTPS 站点接入。
-- 从 Hugging Face 数据集仓库同步 benchmark 快照并生成研究看板 `/mario/dashboard`，见下文[研究看板](#研究看板-mariodashboard)。
 
 项目专用 Node 位于 `/opt/mario-tools/node`，不替换宿主机已有 Node。PostgreSQL 包由官方 PGDG 源安装；发行版可能同时创建自己的默认数据库服务，本项目使用独立的 55432 端口和数据目录。其他发行版请预装工具，并将脚本中的 `INSTALL_MISSING_TOOLS` 改成 `false`。
 
@@ -29,9 +28,9 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 部署脚本以 root 执行系统安装，但运行服务使用普通用户。默认复用已有数据库所有者或 sudo 登录用户；直接 root 登录时创建 `mario`。部署会把当前项目目录归运行用户所有，不移动现有数据库，不更换密钥。
 
-部署在安装工具、下载依赖和停止已有服务之前，自动准备服务用户的 home 和工具目录，修复历史部署留下的属主、写入和遍历权限，再以服务用户身份验证。系统依赖和 systemd 由 root 管理，Rust/uv 安装、配置生成、构建和 PostgreSQL/API/Agent 运行统一使用服务用户，避免两种身份竞争写入同一工具或运行目录。
+部署在安装工具、下载依赖和停止已有服务之前，自动准备服务用户的 home 和工具目录，修复历史部署留下的属主、写入和遍历权限，再以服务用户身份验证。系统依赖和 systemd 由 root 管理，Rust 安装、配置生成、构建和 PostgreSQL/API/Agent 运行统一使用服务用户，避免两种身份竞争写入同一工具或运行目录。
 
-默认下载来源：[npmmirror（Node/npm）](https://npmmirror.com/)、[RsProxy（Rustup/工具链/Cargo）](https://rsproxy.cn/)、[PostgreSQL 官方源](https://www.postgresql.org/download/linux/ubuntu/)、[uv 官方安装](https://docs.astral.sh/uv/getting-started/installation/)。源地址覆盖与切回官方源见下文。
+默认下载来源：[npmmirror（Node/npm）](https://npmmirror.com/)、[RsProxy（Rustup/工具链/Cargo）](https://rsproxy.cn/)、[PostgreSQL 官方源](https://www.postgresql.org/download/linux/ubuntu/)。源地址覆盖与切回官方源见下文。
 
 ## 服务用户 home 与工具目录权限
 
@@ -80,7 +79,7 @@ sudo env npm_config_registry=https://registry.npmjs.org \
   MARIO_DEPLOY_CARGO_REGISTRY= bash deploy.sh
 ```
 
-这些设置只用于本次部署，不写入 `.env`、shell 启动文件、npm/Cargo 全局配置或 systemd 服务。Cargo 源替换通过本次构建命令的 `--config` 传入，保留 `--locked` 和依赖校验；Node 仍验证 SHA256。配置方式见 [npm 环境变量](https://docs.npmjs.com/cli/v11/using-npm/config#environment-variables)与 [Cargo 命令级配置](https://doc.rust-lang.org/cargo/reference/config.html#command-line-overrides)。apt/PostgreSQL、uv/Python 和 Hugging Face 下载继续使用已有来源。
+这些设置只用于本次部署，不写入 `.env`、shell 启动文件、npm/Cargo 全局配置或 systemd 服务。Cargo 源替换通过本次构建命令的 `--config` 传入，保留 `--locked` 和依赖校验；Node 仍验证 SHA256。配置方式见 [npm 环境变量](https://docs.npmjs.com/cli/v11/using-npm/config#environment-variables)与 [Cargo 命令级配置](https://doc.rust-lang.org/cargo/reference/config.html#command-line-overrides)。apt/PostgreSQL 下载继续使用已有来源。
 
 ## 一次性接入已有 Nginx
 
@@ -166,48 +165,6 @@ bash deploy.sh check
 bash deploy.sh prepare --ip 47.243.99.21 --domain www.madeagents.ai
 ```
 
-## 研究看板 /mario/dashboard
-
-benchmark 策略得分看板与 Mario 一起部署，地址为 `https://www.madeagents.ai/mario/dashboard`，任何已登录账号都能查看；未登录只看到“前往 Mario 登录”。Nginx 不需要额外配置：`/mario/` 下的请求本来就会转给 API，`/dashboard`、`/dashboard.js` 和 `/api/benchmark/dashboard` 由 Rust 服务从 `MARIO_BENCH_DIR` 读取，只有最后一个数据接口需要登录。
-
-`deploy.sh` 顶部 `BENCH_ENABLED=true` 启用持续看板，写入 `.env` 的 `MARIO_BENCH_ENABLED`。GitHub Actions 用 `BENCHMARK_PLAN_REVISION`（默认 `pool-scoring-v8`）定位选样事实、范围和独立标签，用 `BENCHMARK_RAW_REVISION`（默认 `baostock-daily-20261102`）定位同源原始行情；按策略依赖从零生成输入，不下载历史预计算 `inputs.jsonl`。策略提交至 main 后自动评测并发布状态与成绩；已部署同步器的站点无需为每次成绩更新重新部署。首次需设置仓库 Secret `HF_TOKEN` 并运行“Benchmark 持续评测”工作流。
-
-构建阶段准备独立 Python 环境并下载标签仓库的 `dashboard/current.json`，本地生成页面与脚本。运行阶段由 systemd 主运行器启动只读同步器，每 30 秒检查远端更新，写入固定 `.runtime/benchmark/current/`；API 沿用账号认证提供数据，网页每 10 秒刷新状态。同步失败保留旧成绩，首次无快照则等待工作流完成；查看 `journalctl -u mario` 排查服务用户的 HF 读取权限。旧版本目录不删除，继续用于历史复现。详情见 [持续评测](benchmark.md#git-提交后持续评测)。
-
-当前两个HF仓库公开，服务器可匿名读取，无需为公开读取配置token；GitHub发布仍通过Secret使用写入token。若改用私有仓库，才需要用服务用户保存只读token：
-
-```bash
-sudo -u <服务用户> -H /srv/mario/.runtime/benchmark/.venv/bin/hf auth login
-sudo bash deploy.sh
-```
-
-看板同步失败不阻止 Mario 部署：私有仓库缺少 token、网络失败或尚无在线快照时，日志打印“研究看板未更新”、失败阶段（准备 Python 环境、同步在线评测快照）及原因。服务照常启动，继续提供上次同步的结果；从未生成时返回“尚未生成”，后台同步成功后即可访问。`bash deploy.sh check` 检查看板和数据接口的登录保护。`MARIO_BENCH_ENABLED=false` 时不启用同步。
-
-更新策略只需推送 main 并查看 Actions 的评测结果。新增指标沿用字段依赖与原始事实构建，无需为指标更改整包版本；确有范围、标签或原始来源更新时，先核验并发布固定出处，再调整相应的 `BENCHMARK_PLAN_REVISION` 或 `BENCHMARK_RAW_REVISION`，手动运行持续评测。服务器只同步评测快照及运行状态，不承担评分；旧 `BENCHMARK_SCORING_TAG` 和服务器侧 `MARIO_BENCH_TAG` 已不再使用。
-
-### Hugging Face 网络不可达与镜像
-
-若 Python 环境准备成功，但同步快照时报 `Network is unreachable`，说明连接 HF 的网络失败。可以使用 [HF-Mirror](https://hf-mirror.com/) 提供的 `HF_ENDPOINT` 镜像配置，在服务器项目目录执行：
-
-```bash
-git pull --ff-only
-sudo env HF_ENDPOINT=https://hf-mirror.com bash deploy.sh
-```
-
-部署会将显式传入的 `HF_ENDPOINT` 保存到 `.env`，首次同步和 systemd 后台同步共用此值；再次部署未传该变量时保留已有配置。直接执行 `export HF_ENDPOINT=https://hf-mirror.com` 后运行 `bash deploy.sh` 也会在脚本自动提权时保留变量；若自行使用 `sudo bash deploy.sh`，请改用上面的 `sudo env` 写法，避免 sudo 过滤变量。只修改 `.bashrc` 不会影响已经运行的 systemd 服务。
-
-已有此版本时，也可直接在服务器 `.env` 添加或修改 `HF_ENDPOINT=https://hf-mirror.com`，再运行 `sudo bash deploy.sh restart`，无需重新构建；后台在启动后立即尝试同步。通过 `sudo journalctl -u mario -n 50 --no-pager` 查看同步错误，并登录看板确认结果。恢复官方站可将 `.env` 的该项清空后重启，或执行 `sudo env HF_ENDPOINT=https://huggingface.co bash deploy.sh`。
-
-当前公开仓库可匿名读取。镜像仍需服务器能够访问，且可能存在同步延迟；本机验证不代表部署主机连通。可先运行 `curl -fL --connect-timeout 10 --max-time 30 https://hf-mirror.com/api/datasets/lokinko/mario_bench_labels` 检查镜像 API。网络失败继续保留上次看板并每 30 秒重试，HF 登录不能修复网络路由问题。
-
-### Python 安装与权限故障
-
-`uv pip install -e .` 曾因缺少打包配置而报 `Multiple top-level packages discovered in a flat-layout`，将 `client`、`server` 等目录误当 Python 包。当前 `pyproject.toml` 明确只打包 `benchmark` 及配置、策略资源，支持可编辑安装；安装核心包不安装可选的 Hugging Face 依赖，部署使用上面的 `publish` 依赖组。
-
-若旧部署报 `failed to canonicalize path /srv/mario/.venv/bin/python: Permission denied`，常见原因是该解释器链接到 `/root/.local/share/uv/python/...`。`chown -R` 项目目录无法让服务用户穿过 `/root`。可用 `namei -l /srv/mario/.venv/bin/python` 核对每层目录与链接目标，不要放宽 `/root` 权限。
-
-更新代码后直接重新执行 `sudo bash deploy.sh`：新部署在 `.runtime/benchmark/` 建立服务用户独立环境，不再访问旧 `.venv`，无需删除旧环境、数据库、配置或看板。若准备 Python 环境成功后出现私有仓库 401/403，再按上面的新路径登录 token 并重新部署。若仍在 Python 阶段失败，按详细错误检查项目父目录的遍历权限、磁盘空间及 Python 下载网络；HF 登录不能解决解释器权限问题。
-
 ## PostgreSQL 启动失败
 
 `pg_ctl: could not start server` 只是摘要，具体错误在项目日志。先在服务器项目目录停止自动重启并查看：
@@ -227,9 +184,9 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 
 ## 验收 Web
 
-部署器与看板同步的实现分别见 [`host-runtime.mjs`](../scripts/host-runtime.mjs) 和 [`benchmark-deploy.mjs`](../scripts/benchmark-deploy.mjs)。`npm run test:deploy` 检查配置保留、Nginx 生成、服务用户权限及模拟的看板同步；不连接真实公网服务。启动生命周期另有 `npm run test:startup`，它需要预先构建的前后端产物和隔离 PostgreSQL，未包含在当前 `npm test` 中。以下公网检查与浏览器步骤仍须在实际部署后分别执行，代码或文档更新本身不代表验收完成。
+部署运行器的实现见 [`host-runtime.mjs`](../scripts/host-runtime.mjs)。`npm run test:deploy` 检查配置保留、Nginx 生成、服务用户权限；不连接真实公网服务。启动生命周期另有 `npm run test:startup`，它需要预先构建的前后端产物和隔离 PostgreSQL，未包含在当前 `npm test` 中。以下公网检查与浏览器步骤仍须在实际部署后分别执行，代码或文档更新本身不代表验收完成。
 
-公网只读验收使用 `bash deploy.sh check`，检查入口跳转、API 模式、JS/CSS/图标、研究看板及未登录保护。也可在本机项目中运行：
+公网只读验收使用 `bash deploy.sh check`，检查入口跳转、API 模式、JS/CSS/图标及未登录保护。也可在本机项目中运行：
 
 ```bash
 node scripts/test-deployment.mjs --url https://www.madeagents.ai/mario

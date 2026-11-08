@@ -4,7 +4,7 @@
 
 ## 整理范围与结果
 
-本次按用户明确要求，将 2026-11-04 已采集的 210 只股票分红原件整理为在线观察可复用的公开初始化资料。原件位于 `.runtime/benchmark/raw-workflow-20261104/dividends-five-years-final/`，原始五年汇总及原件保持不变，不重新采集市场股票、不修改 benchmark 策略或成绩。
+本次按用户明确要求，将 2026-11-04 已采集的 210 只股票分红原件整理为在线观察可复用的公开初始化资料。公开初始化资料独立保存在 `server/data/watch-dividends-20261104.json`，原始采集工具现已移除；在线观察不依赖外部研究归档。
 
 原始请求返回全部报告期，因此除 2021-11-04 至 2026-11-04 的五年汇总外，还能恢复更早的已实施历史。按原件核验后，可用股票 202 只、来源标为已实施的记录 3957 条（含送转和零现金方案，股息只计算现金分项），事件日期整体为 1991-03-11 至 2026-11-04；不同股票历史长度不同，不能将最早日期理解为全部股票均覆盖该日起。未来除息、预披露与未实施方案均排除。
 
@@ -36,10 +36,10 @@
 - 公开资料包 SHA-256：`eaa0368917119d82d2d94c6a231ae225ece148497a7824c54ac87ac282dac053`。
 - 本次参考 CSV SHA-256：`9046b8a883052025d0b9a95245f2bb9bb56fb7f93e95c1c9f4079023c3c00813`。
 
-重新整理（使用同一原件应生成相同资料包）：
+原始采集归档已退出当前产品；如需从另行保存的同一原件重建，整理工具只依赖 Python 标准库：
 
 ```bash
-python scripts/prepare-watch-dividends.py --archive .runtime/benchmark/raw-workflow-20261104/dividends-five-years-final --out server/data/watch-dividends-20261104.json
+python scripts/prepare-watch-dividends.py --archive /path/to/verified-dividends --out server/data/watch-dividends-20261104.json
 cargo run --manifest-path server/Cargo.toml -- --export-watch-dividends 分红参考.csv
 ```
 
@@ -50,4 +50,4 @@ cargo run --manifest-path server/Cargo.toml -- --export-watch-dividends 分红�
 - 同一原件重新整理得到完全相同的公开资料包字节与哈希；CSV 210 行、202 可用、7 无记录、1 待核查，未知分红与参考价保持空白。
 - 19 项分红相关 Rust 测试及 4 项整理工具测试通过，覆盖原件篡改、未来/提案排除、十进制、旧报告期标签、空来源、初始化仅匹配已有名单、数据库落库和过期覆盖。
 - `npm run test:server`：259 通过，4 项既有真实模型/外部行情测试按原设置忽略；格式、Clippy、构建与架构检查通过。
-- 完整 `npm test` 重跑通过：212 项 benchmark、4 项整理工具、280 项前端、真实 HTTP/Web/桥接、多实例财务回执及 PostgreSQL 188 张表备份恢复比对。既有平台相关跳过项保留。首轮曾遇到原 benchmark 临时目录重命名的 Windows `PermissionError`，没有修改或削弱该测试；完整重跑通过。
+- 完整 `npm test` 重跑通过：4 项整理工具、280 项前端、真实 HTTP/Web/桥接、多实例财务回执及 PostgreSQL 188 张表备份恢复比对。既有平台相关跳过项保留。

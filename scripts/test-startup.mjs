@@ -49,7 +49,7 @@ async function stopByFailure(external = false) {
 }
 try {
   for (const dir of ['scripts', 'server/target/release', 'client']) mkdirSync(join(fixture, dir), { recursive: true });
-  for (const name of ['start-common.mjs', 'host-runtime.mjs', 'benchmark-deploy.mjs']) copyFileSync(join(root, 'scripts', name), join(fixture, 'scripts', name));
+  for (const name of ['start-common.mjs', 'host-runtime.mjs']) copyFileSync(join(root, 'scripts', name), join(fixture, 'scripts', name));
   copyFileSync(join(root, '.env.example'), join(fixture, '.env.example'));
   copyFileSync(serverBinary(), join(fixture, 'server/target/release', executable));
   cpSync(join(root, 'client/dist'), join(fixture, 'client/dist'), { recursive: true });

@@ -19,9 +19,7 @@ DATABASE_URL=""                 # 可选已有数据库 URL；空值复用已有
 ALLOWED_ORIGINS=""              # 可选跨域网页 Origin，逗号分隔；当前同源网页无需填写。
 RUN_USER=""                     # 服务用户；默认复用数据库所有者或 sudo 登录用户，root 登录则创建 mario。
 SERVICE_NAME="mario"            # systemd 服务名；一台服务器部署多份时需使用不同名称和端口。
-INSTALL_MISSING_TOOLS="true"    # true 自动安装缺失工具；false 由你提前安装 Node 22+/Rust/PG/uv。
-BENCH_ENABLED="true"           # 同步持续研究看板；GitHub 以 BENCHMARK_PLAN_REVISION / BENCHMARK_RAW_REVISION 固定评测输入。
-# HF 镜像：sudo env HF_ENDPOINT=https://hf-mirror.com bash deploy.sh；保存到 .env 供后台同步。
+INSTALL_MISSING_TOOLS="true"    # true 自动安装缺失工具；false 由你提前安装 Node 22+/Rust/PG。
 # 国内下载源仅作用于本次部署；可在这里修改，或通过环境变量覆盖（sudo env 变量=值 bash deploy.sh）。
 export npm_config_registry="${npm_config_registry:-${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}}" # npm 包下载。
 export NODE_DIST_URL="${NODE_DIST_URL:-https://npmmirror.com/mirrors/node/latest-v22.x}" # Node 22 下载目录，含校验清单。
@@ -79,9 +77,7 @@ export PATH="/opt/mario-tools/node/bin:$PATH"
 if [[ "$ACTION" == deploy || "$ACTION" == start || "$ACTION" == stop || "$ACTION" == restart || "$ACTION" == logs ]]; then
     [[ "$(uname -s)" == Linux ]] || { echo 'systemd 部署仅支持 Linux；本地测试请使用开发命令' >&2; exit 1; }
     if [[ "$EUID" -ne 0 ]]; then
-        hf_env=()
-        if [[ -v HF_ENDPOINT ]]; then hf_env+=("HF_ENDPOINT=$HF_ENDPOINT"); fi
-        exec sudo env ${hf_env[@]+"${hf_env[@]}"} npm_config_registry="$npm_config_registry" NODE_DIST_URL="$NODE_DIST_URL" \
+        exec sudo env npm_config_registry="$npm_config_registry" NODE_DIST_URL="$NODE_DIST_URL" \
             RUSTUP_INIT_URL="$RUSTUP_INIT_URL" RUSTUP_DIST_SERVER="$RUSTUP_DIST_SERVER" \
             RUSTUP_UPDATE_ROOT="$RUSTUP_UPDATE_ROOT" MARIO_DEPLOY_CARGO_REGISTRY="$MARIO_DEPLOY_CARGO_REGISTRY" \
             bash "$SCRIPT" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"}
@@ -215,10 +211,9 @@ if [[ "$ACTION" == deploy ]]; then
     if [[ -f .runtime/native/postgres/PG_VERSION && "$(stat -c %U .runtime/native/postgres/PG_VERSION)" != "$RUN_USER" ]]; then echo '数据库所有者与 RUN_USER 不一致，请保留原运行用户' >&2; exit 1; fi
     [[ -f package.json && -f server/Cargo.toml && -f scripts/host-runtime.mjs ]] || { echo '不是完整的 Mario 源码目录' >&2; exit 1; }
     RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
-    # sudo 调用者可能已激活 Python，或设置了 root 的工具/缓存目录；不能带入服务账号。
+    # sudo 调用者可能设置了 root 的工具/缓存目录；不能带入服务账号。
     as_user() {
         runuser -u "$RUN_USER" -- env -u CARGO_HOME -u RUSTUP_HOME \
-            -u VIRTUAL_ENV -u PYTHONHOME -u PYTHONPATH -u UV_PYTHON \
             -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_CONFIG_HOME \
             HOME="$RUN_HOME" USER="$RUN_USER" LOGNAME="$RUN_USER" PATH="$PATH" "$@"
     }
@@ -235,15 +230,6 @@ if [[ "$ACTION" == deploy ]]; then
         as_user sh "$installer" -y --profile minimal --default-toolchain none
         rm -- "$installer"
     fi
-    if ! as_user uv --version >/dev/null 2>&1; then
-        [[ "$INSTALL_MISSING_TOOLS" == true ]] || { echo '请先给运行用户安装 uv（研究看板的 Python 环境）' >&2; exit 1; }
-        # uv 官方安装器装到服务用户的 ~/.local/bin，不改 shell 配置；Python 版本由 uv 按 pyproject.toml 选择。
-        installer="$(mktemp)"
-        curl -LsSf https://astral.sh/uv/install.sh -o "$installer"
-        chmod 644 "$installer"
-        as_user env UV_INSTALL_DIR="$RUN_HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh "$installer"
-        rm -- "$installer"
-    fi
     NODE="$(command -v node)"
     # 重复部署停止已有服务后构建，防止网页构建目录被正在运行的 API 使用。
     if systemctl cat "$SERVICE_NAME.service" >/dev/null 2>&1; then systemctl stop "$SERVICE_NAME.service"; fi
@@ -256,7 +242,7 @@ if [[ "$ACTION" == check ]]; then exec "$NODE" scripts/test-deployment.mjs; fi
 export MARIO_SETUP_IP="$SERVER_IP" MARIO_SETUP_DOMAIN="$DOMAIN" MARIO_SETUP_BASE_PATH="$BASE_PATH"
 export MARIO_SETUP_API_PORT="$API_PORT" MARIO_SETUP_AGENT_PORT="$AGENT_PORT" MARIO_SETUP_PG_PORT="$PG_PORT"
 export MARIO_SETUP_PG_BIN="$PG_BIN" MARIO_SETUP_DATABASE_URL="$DATABASE_URL"
-export MARIO_SETUP_ORIGINS="$ALLOWED_ORIGINS" MARIO_SETUP_BENCH_ENABLED="$BENCH_ENABLED"
+export MARIO_SETUP_ORIGINS="$ALLOWED_ORIGINS"
 if [[ "$ACTION" == prepare ]]; then exec "$NODE" scripts/host-runtime.mjs --prepare; fi
 as_user "$NODE" scripts/host-runtime.mjs --prepare
 as_user "$NODE" scripts/host-runtime.mjs --build
@@ -302,12 +288,6 @@ echo '本机 Codex 桥接已部署：网页 设置 → 模型接口 → Codex �
 echo '在个人电脑的同版 Mario 源码目录执行 npm run codex:bridge，粘贴配对码；在线后点击启用本机 Codex。'
 echo '本次包含超时与重试修复：浏览器强制刷新；本机旧桥接请先 Ctrl+C，再更新源码、重新配对并启动。'
 echo '本机桥接主动通过 HTTPS 连接网页，无需开放个人电脑端口；服务重启后需要重新配对。'
-bench_enabled="$(sed -n 's/^MARIO_BENCH_ENABLED=//p' .env)"
-if [[ "$bench_enabled" == true && -f ".runtime/benchmark/current/dashboard.json" ]]; then
-    echo "持续研究看板已同步：登录后访问 ${BASE_PATH}dashboard。"
-elif [[ "$bench_enabled" == true ]]; then
-    echo "研究看板等待首次同步：查看上方失败阶段与持续评测工作流；后台将自动重试。"
-fi
 echo "将 $PROJECT_DIR/.runtime/native/nginx.conf 加入域名的 HTTPS server，运行 nginx -t 后重载。"
 echo '若 www 在 server 层跳到根域名，请把该 return 移到兜底 location /，让 /mario 留在 www。'
 echo '详细步骤：docs/deploy-madeagents.md；公网验收：bash deploy.sh check；日志：sudo bash deploy.sh logs'

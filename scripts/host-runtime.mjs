@@ -5,7 +5,6 @@ import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isIP } from 'node:net';
 import { args, assertNoRestore, basePath, createDeploymentConfig, defaults, hostname, migrateNativeConfig, port, postgresBin, readConfig, root, run, startPostgres, updateConfig, validateSecrets } from './start-common.mjs';
-import { benchDir, benchPython, benchEnabled, benchEnvironment, buildDashboard } from './benchmark-deploy.mjs';
 
 const runtime = resolve(root, '.runtime/native');
 const configPath = resolve(root, '.env');
@@ -94,8 +93,6 @@ try {
       MARIO_PG_PORT: String(port(setup.MARIO_SETUP_PG_PORT || original.MARIO_PG_PORT || '55432', 'MARIO_PG_PORT')),
       PG_BIN: postgresBin(setup.MARIO_SETUP_PG_BIN || original.PG_BIN),
       MARIO_BACKUP_MODE: 'native',
-      MARIO_BENCH_ENABLED: String(benchEnabled(setup.MARIO_SETUP_BENCH_ENABLED || original.MARIO_BENCH_ENABLED || 'false')),
-      HF_ENDPOINT: setup.HF_ENDPOINT ?? original.HF_ENDPOINT ?? '',
     };
     if (setup.MARIO_SETUP_DATABASE_URL) values.DATABASE_URL = setup.MARIO_SETUP_DATABASE_URL;
     if (setup.MARIO_SETUP_ORIGINS) values.MARIO_ALLOWED_ORIGINS = setup.MARIO_SETUP_ORIGINS;
@@ -120,7 +117,6 @@ try {
     await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['ci', '--prefix', 'client'], { env, shell: process.platform === 'win32' });
     await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--prefix', 'client'], { env, shell: process.platform === 'win32' });
     await buildServer(env);
-    await buildDashboard(config, env);
   } else {
     acquireLock();
     assertNoRestore();
@@ -159,7 +155,6 @@ try {
       ensureRunning();
       await buildServer(baseEnv);
       ensureRunning();
-      await buildDashboard(config, baseEnv);
     }
     ensureRunning();
     if (!existsSync(binary) || !existsSync(resolve(root, 'client/dist/index.html'))) throw Error('缺少构建产物；去掉 --skip-build 重新运行');
@@ -191,13 +186,9 @@ try {
       MARIO_ALLOWED_ORIGINS: config.MARIO_ALLOWED_ORIGINS ?? '',
       ...Object.fromEntries(['MARIO_OPENAI_CLIENT_ID', 'MARIO_OPENAI_REDIRECT_URI', 'MARIO_OPENAI_TOKEN_AUTH_METHOD', 'MARIO_OPENAI_CLIENT_SECRET'].map(key => [key, config[key] ?? ''])),
       MARIO_HOST: '127.0.0.1', MARIO_AGENT_URL: `http://127.0.0.1:${agentPort}`, MARIO_WEB_DIR: resolve(root, 'client/dist'),
-      ...(benchEnabled(config.MARIO_BENCH_ENABLED) ? { MARIO_BENCH_DIR: benchDir() } : {}),
     });
     await ready(`http://127.0.0.1:${apiPort}/api/server`, body => body.mode === 'hosted');
-    if (benchEnabled(config.MARIO_BENCH_ENABLED) && existsSync(benchPython())) {
-      launch('研究看板同步', benchPython(), ['-m', 'benchmark.live', 'sync', '--watch', '--out', benchDir()], benchEnvironment(config, baseEnv));
-    }
-    console.log(`\nAPI 与 Agent 已就绪：http://127.0.0.1:${apiPort}\n公网网页：https://${config.MARIO_DOMAIN}${prefix}\n研究看板（登录后可见）：https://${config.MARIO_DOMAIN}${prefix}dashboard\n注册已开放，使用邮箱和密码即可创建账号。\n前台运行器由 systemd 托管；Ctrl+C/SIGTERM 停止并保留数据。`);
+    console.log(`\nAPI 与 Agent 已就绪：http://127.0.0.1:${apiPort}\n公网网页：https://${config.MARIO_DOMAIN}${prefix}\n注册已开放，使用邮箱和密码即可创建账号。\n前台运行器由 systemd 托管；Ctrl+C/SIGTERM 停止并保留数据。`);
     if (prefix !== '/') console.log(`公网网页路径：${prefix}（外层代理需移除该前缀，本机上游仍使用根路径）`);
     await stopRequested;
   }

@@ -26,7 +26,7 @@
 - 桥接取消、撤销、隔离、失败分类等 4 项单元测试及 worker 安全 URL 1 项测试通过。
 - `cargo fmt --check`、全部 target 的 Clippy（`-D warnings`）、Rust 构建：通过。
 - `npm run test:server`：缺少本机 PostgreSQL 的 `pg_config`／`MARIO_TEST_PG_BIN`，在创建一次性集群前失败；没有使用开发或生产数据库替代。
-- `npm test`：用本机 Git Bash 和指定 Python 虚拟环境执行，架构、启动参数、QA 评分、184 项 benchmark 测试、部署脚本、前端全部测试、Rust 格式／Clippy／构建通过，随后因上述 PostgreSQL 工具缺失失败。未执行数据库 Rust 测试、HTTP／Web／Codex 桥接全链路及后续财务集成验收，不能视为完整测试通过。
-- 全部验证结束后核对目录绝对路径和进程占用，执行 `cargo clean --manifest-path server/Cargo.toml --target-dir server/target`，移除本次产生的 3.7 GiB 编译产物并确认目标已删除或为空。`.runtime/` 没有本次遗留临时目录，保留原有 `benchmark/` 与 `financial-audit/` 数据。
+- `npm test`：用本机 Git Bash 和指定 Python 虚拟环境执行，架构、启动参数、QA 评分、部署脚本、前端全部测试、Rust 格式／Clippy／构建通过，随后因上述 PostgreSQL 工具缺失失败。未执行数据库 Rust 测试、HTTP／Web／Codex 桥接全链路及后续财务集成验收，不能视为完整测试通过。
+- 全部验证结束后核对目录绝对路径和进程占用，执行 `cargo clean --manifest-path server/Cargo.toml --target-dir server/target`，移除本次产生的 3.7 GiB 编译产物并确认目标已删除或为空。`.runtime/` 没有本次遗留临时目录，保留原有 `financial-audit/` 数据。
 
 未执行真实浏览器登录、订阅额度调用或部署；测试只使用隔离临时数据和测试专用密钥。真实 OAuth 授权和连接测试仍需账号持有人在本机完成。

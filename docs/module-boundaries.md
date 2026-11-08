@@ -2,7 +2,7 @@
 
 ## 设计选择
 
-当前功能增量优先解决[买点观察主线](product-vision.md)中的实际障碍。持仓和交易提供个人事实，AI 负责授权资料上的讨论，benchmark 保持独立研究边界；以下既有模块和扩展约束不是必须实施的路线图。
+当前功能增量优先解决[买点观察主线](product-vision.md)中的实际障碍。持仓和交易提供个人事实，AI 负责授权资料上的讨论。以下既有模块和扩展约束不是必须实施的路线图。
 
 采用模块化单体，保持 React Web、Rust API、PostgreSQL 和无状态 Agent 的运行方式。业务边界通过明确的接口、依赖方向和状态所有权约束；独立模块可以单独测试，涉及多个领域的流程由应用层组合。当前规模下，增加服务进程、通用事件总线或每张表一个仓储接口只会增加维护成本。
 
@@ -142,7 +142,7 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 
 桌面交互验证覆盖组合搜索/筛选、未知指标排序、视图切换、原持仓/交易讨论、提醒已读、空结果和完整周内矩阵；参考价测试覆盖含边界、循环小数向下舍分、未知/零分红、缺价格、过期依据及读取不推进账号版本。金额规则变更仍执行完整 `npm test`，不能只验收截图。
 
-`features/watch` 拥有名单草稿、观察卡片与周末汇总，`api/watch` 只处理领域请求；导航和进入问答由应用壳组合。`models/watch` 定义股息与 BOLL 规则及问题码，`ports/market` 暴露分别取价格与完整分红事件集的 `WatchMarketProvider`；公开仓储不读租户 schema，共享编排不依赖账号或私有事实，架构检查对这两个文件设独立约束。来源适配归 `market_data/watch`，按账号刷新归 `application/watch`，公开初始化资料适配与 CSV 导出归 `market_data/watch_archive`，离线原件核验和资料包构建归 `scripts/prepare-watch-dividends.py`，共享公开分红仓储归 `db/public_dividends`，跨账号读取、补抓和进程内合并归 `application/watch_market`，账号采用依据、状态事务和账号备份校验归 `db/watch`；后台任务由 `composition` 装配并随进程关闭。不得让观察计算调用 benchmark、读取账号库或依赖行情网络实现。
+`features/watch` 拥有名单草稿、观察卡片与周末汇总，`api/watch` 只处理领域请求；导航和进入问答由应用壳组合。`models/watch` 定义股息与 BOLL 规则及问题码，`ports/market` 暴露分别取价格与完整分红事件集的 `WatchMarketProvider`；公开仓储不读租户 schema，共享编排不依赖账号或私有事实，架构检查对这两个文件设独立约束。来源适配归 `market_data/watch`，按账号刷新归 `application/watch`，公开初始化资料适配与 CSV 导出归 `market_data/watch_archive`，离线原件核验和资料包构建归 `scripts/prepare-watch-dividends.py`，共享公开分红仓储归 `db/public_dividends`，跨账号读取、补抓和进程内合并归 `application/watch_market`，账号采用依据、状态事务和账号备份校验归 `db/watch`；后台任务由 `composition` 装配并随进程关闭。不得让观察计算读取账号库或依赖行情网络实现。
 
 国内日线协议归 `market_data/watch/eastmoney`，未复权、后复权和上证日期组成一次完整来源查询；`market_data/watch` 负责优先国内来源及失败后整组回退 Yahoo。新增来源必须校验证券与交易所、按日期而非数组下标对齐，不得跨来源拼接；调整序列和原价的单位归一仍只在 `models/watch` 完成。`market_data/watch/source_tests` 使用本地 HTTP 验证无 Yahoo 时的国内查询、复权缺行保留价格与股息、整组回退及全失败；真实云铝股份查询作为显式忽略的联网检查，通过 `cargo test --manifest-path server/Cargo.toml live_yunlu_prices_and_dividends -- --ignored --nocapture` 手动执行。失败日志归来源适配与账号检查应用层，不修改公开接口或备份格式。
 
@@ -181,41 +181,9 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 - `application/analysis` 优先组装问题中明确提及公司的最新及本周观察证据，`evidence::search_evidence` 补齐剩余额度，共最多 5 条；`relevant_excerpt` 返回最多 2000 字连续原文；`application` 读取并授权候选，`context` 冻结原文与片段，AI 不读仓储、不额外筛选。网页搜索由用户主动开关授权，默认关闭，原生搜索结果直接进入生成。
 - [真实质量评测](../server/tests/fixtures/qa_eval/README.md)的场景输入、模型调用与人工评阅分别留证。子集先检查依赖，不隐式补题增加付费调用；默认／场景授权在实际请求中记录。它只使用虚构资料，不把当前模型参数复用声称为读取用户账号数据。质量判断按相关事实、推理、反方与下一步核对，格式和引用门禁不代替逐题语义检查。
 
-### 独立研究与看板
-
-分红原始 HTTP 适配归`public_sources.dividend_page`，采集、分页核验、实施/其他方案分离与逐股输出归`dividends.py`，只依赖公开来源与文件契约，不依赖策略执行。`test_dividends`覆盖实施窗口、跨年报告、十进制单位、方案状态、空来源保留与分页缓存；数据不作为已核验历史时点指标。
-
-离线 benchmark 的数据扩展遵循 [原始数据与衍生指标](benchmark-data.md)：来源格式适配、原始归档与财报证据核验归 `raw_data.py`，确定性计算归四个 `*_indicators.py`，按字段组合与派生包归 `feature_pipeline.py`，实际策略输入检查归 `input_contract.py`。计算模块只依赖共享值校验，不能读原始文件、网络、来源 SDK 或标签；组合层不能依赖策略执行和 HF 发布。静态方向由 `check-architecture.mjs` 检查，AST 与行为边界由 `test_feature_pipeline.py` 检查。新增行情指标只增加定义和必要的纯函数，策略在 `REQUIRES` 声明消费路径；额外字段允许存在，不按整包版本限制。公式语义变化使用新输出名称或新建显式重算快照，保留来源、时点、单位、缺失原因与代码指纹。原始导入、`features-build`、`bench-run --raw` 的命令和迁移步骤均见该文档。
+### 宿主机部署权限
 
 宿主机部署权限准备归 `deploy.sh`：root 仅管理系统依赖与 systemd，用户工具、配置生成、构建和服务运行归同一个非 root 账号。部署在下载工具和停服前自动创建缺失 home，修复默认专用 home 本身及 `.cargo`、`.rustup`、`.local/bin` 的历史权限；自定义已有 home 须属于服务账号，不递归修改其他个人文件或 `.local` 应用数据，不跟随工具链接写入外部目标。`npm run test:deploy` 覆盖旧权限修复、服务用户实际写入、可执行位/链接保留、重复执行、缺失 home 和修复范围；不要把构建改成 root 来绕过权限准备。既有数据库仍归原运行账号，不迁移数据。部署使用见 [服务用户权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
-
-研究看板不在应用侧栏提供入口，直接访问网站前缀下的 `dashboard`；它不作为内部 `View`，继续使用现有页面与会话认证。
-
-持续评测先执行`live.prepare`固定并下载原始来源和选样事实，禁止下载预计算`inputs.jsonl`；再由`evaluation_data.py`从零生成策略依赖字段。该模块只依赖原始读取、确定性日历/指标和契约检查，不访问网络、不执行策略、不解析未来标签；来源下载仍仅归`hub`，将未来标签原样复制进新评分包发生在输入计算和校验之后。`test_evaluation_data`覆盖预计算输入拒绝、原始缺失拒绝回退、新字段扩展和股数/价格重算；HF测试覆盖固定提交和下载白名单。
-
-持续评测由 `.github/workflows/benchmark-live.yml` 触发可信主分支，`benchmark/live.py` 编排评分、进度与完整快照发布，执行仍归 `strategy_runner`，计算仍归 `scoring`，所有 HF 访问归 `hub`；公开与已有私有仓库均可读取和发布，不自动改变可见性，新建研究仓库按当前约定公开。失败保留上次成功成绩，同一切片全部成功才替换；状态和成绩是 HF/Git 可追溯的研究派生文件，不进入账号事务。线上只同步 `dashboard/current.json`，不下载执行远端脚本。
-
-HF 镜像配置 `HF_ENDPOINT` 由 `host-runtime --prepare` 保存到 `.env`，不传时保留，显式空值恢复官方站；`benchmark-deploy.benchEnvironment` 为首次同步和后台同步统一注入端点，后台不依赖终端的 `export`。配置不注入 API 或 Agent；HF 请求仍只经 Python `hub` 适配器。部署测试覆盖镜像写入、重复部署保留、清空恢复及同步环境传递。
-
-部署看板环境归 `scripts/benchmark-deploy.mjs`，使用服务用户专属 Python，初次同步当前快照。`host-runtime` 管理 `benchmark.live sync --watch` 生命周期，固定 `.runtime/benchmark/current/` 为 API 读取目录；每 30 秒同步，临时文件替换保证单个 JSON 原子可见，失败保留旧结果。网页持现有会话每 10 秒读取，状态变化不重绘排行榜，成功结果变化才按原视图重载。评分计划及原始行情分别由 Actions Variable `BENCHMARK_PLAN_REVISION`、`BENCHMARK_RAW_REVISION` 固定；`MARIO_BENCH_ENABLED=true` 启用同步，旧标签配置不再读取。本机 `bench-run`/`bench-serve` 仍用于复现，部署不再执行评分。`test_live` 覆盖成功、失败保留、公开读取与写入鉴权与会话轮询，`npm run test:deploy` 覆盖环境隔离和失败短路；二者纳入完整 `npm test`。
-
-离线研究工具位于 `benchmark/`，契约与入口见 [benchmark](benchmark.md)。免费来源覆盖探测归 `public_sources.py`，授权来源与原件下载归 `sources.py`，确定性选样/时点规则归 `dataset.py`，指标归 `evaluate.py`，发布格式归 `release.py`，股票池共用的按时点市值口径、剔除原因与行情/股本缓存归 `market_cap.py`，科技股池候选归 `tech_universe.py`，红利股池成分重建归 `dividend_universe.py`（两个池子互不引用，新增股票池同样只依赖 `market_cap.py` 并产出同构的 `universe/<池>-<年>.json`，再在 `pool_release.POOLS` 登记），旧版 Excel 解析归 `xls.py`，多池切片构建归 `pool_release.py`，主指标（收益得分与胜率）打分、卖出规则与网格执行归 `scoring.py`（不访问网络），策略发现、静态检查、子进程生成仓位与结果缓存归 `strategy_runner.py`，策略本身是 `strategies/<名字>/` 下的 `strategy.md` 与只实现 `decide(sample)` 的 `strategy.py`（新增策略只加目录，不改其他模块；策略代码只能导入纯计算标准库；执行器以 `-I -X utf8` 启动隔离 Python，通信显式使用 UTF-8，不依赖会被隔离模式忽略的环境编码设置），策略得分看板与本机看板服务归 `dashboard.py`（只读 `bench-run` 输出的成绩与说明，不读输入与标签；输出页面、脚本、数据三个文件，部署后由 `hosted.rs` 按同一路径提供，数据接口只对已登录账号开放），Hugging Face 上传与按标签下载归 `hub.py`，CLI 只装配流程；这些模块只依赖 Python 标准库和本包，不引用在线业务实现或账号数据。第三方依赖只允许出现在单一适配器中：`baostock_market.py` 是唯一导入 `baostock` 的模块，`hub.py` 是唯一导入 `huggingface_hub` 的模块，依赖分别在 `pyproject.toml` 的 `market`、`publish` 依赖组声明，其他模块不得直接导入；新增此类适配器需同步更新边界测试的白名单。`npm run test:benchmark` 验证该隔离边界与数据行为，并纳入 `scripts/test.sh`。新增来源不能把未经证实的披露时间或供应商缺失自动升级成已核对事实；发布目录不可覆盖，原始数据修正需生成新版本，未来接入在线问答需走现有冻结和授权接口。
-
-已开展的外部策略研究来源与数据依赖记在 [历史研究记录](benchmark-research.md)，逐批执行结果记在审计文档。自定义 `--strategies` 可以使用相对目录；执行器在进入子进程策略工作目录前解析策略文件绝对路径，避免路径重复拼接，输入与导入隔离保持不变。
-
-已有长窗口、风险、回归、公告与 SUE 工具继续受离线依赖与来源时点边界约束：脚本只编排文件输入和纯计算，不访问账号数据、不自动发布或安装候选，来源和标签不能反向进入特征。对应回归在 `benchmark/tests/test_*_study.py`，逐批参数和实验结果见[历史研究记录](benchmark-research.md)及其审计链接。新工作从[数据与指标规范](benchmark-data.md)确定实际字段依赖，不沿用某批实验的最小版本号作为当前生产要求。
-
-策略扩展先按机制去重：同一逻辑只更新原目录的最佳参数，删除被替代的参数目录、专属测试配置与当前文档入口，再用 `bench-run` 清理旧结果并刷新看板。不同选股、风险预算或执行机制可以分别登记；完整搜索空间及参数选择范围写入策略说明与审计，不把参数扫描变成多条策略。
-
-买卖操作比重沿用同一仓位/执行路径：`strategy_runner.generate_weights` 将条件卖出的默认 `sell_fraction` 显式写入仓位；`scoring.exit_rule` 校验触发条件与持股比例，`simulate_exit` 只执行一次并保留余股，`simulate_grid` 按实际成交记录预算使用和减持股数；`portfolio_segments` 维护扣费估值并汇总逐笔 `operations` 到每期成绩。看板只展示这些记录，禁止按价格触发自行补造成交。调整比例或增加执行机制须验证部分卖出后估值、停牌顺延、网格跨格与不同分母、失败不记成交，以及既有策略得分不变；相关测试归 `test_operation_ratios.py`、`test_scoring.py`、`test_dashboard.py` 与策略输出测试。旧报告必须重跑，不维护第二条旧格式展示路径。
-
-富贵策略只保留 `strategies/fugui/` 的唯一实现，研究构建复用共享技术指标，仍经隔离执行器与评分器；缺失基本面不视为满足，不自动成为线上观察条件。现有命令与技术底仓范围见[富贵策略](fugui-strategy.md)，字段/来源规范见[数据与指标](benchmark-data.md)，对应回归归 `test_fugui_study.py`；不在模块边界重复某次实验的字段升级和历史版本。
-
-完整指数采集清单归 `index_membership.py`，复用XLS解析与公开下载器，核对中证A50/上证50各50只，保存原件、获取/来源日期和哈希。每日行情归 `daily_prices.py`，只调用 `public_sources`/`collect` 的公开HTTP能力，最多2个线程；按证券保存完整供应商历史，首次/显式整段刷新；22:37更新独立报价，23:37显式整段刷新历史，按月累计日期记录及源元数据，不混用价格尺度。旧Baostock每日采集代码已退役，SDK仍仅供其他显式研究工具使用；旧双口径归档按不可变标签只读引用，元数据核验归 `hub.historical_prices_reference`，不得用旧价格填充新来源。
-
-脚本只编排范围、来源、门禁与摘要。退市引用、来源缺失、闭市及非法观察、日线及独立最新报价覆盖归行情模块；两指数最新覆盖不足、活跃来源缺失或日历范围不明时不能发布。新布局使用 `prices/<证券>.jsonl`，缓存仅支持首次恢复；不使用Actions cache作为事实来源。HF固定版本恢复、临时分支上传、远端全集/内容核验和非强制快进归 `hub`；workflow与持续评测共用 `benchmark-hf-main`，只安装发布依赖，不调用被限制的供应商。测试覆盖来源隔离、退市引用不掩盖活跃缺失、全区间调整、完整名单、日历截断、缓存损坏、旧路径只读、缺口拒绝发布与原子发布；见[每日行情](benchmark.md#每日行情自动更新)。
-
-批量免费补采由 `collect.py` 拥有任务进度、固定请求与断点恢复，调用 `public_sources` 的目录和行情能力；`files.symbol` 明确支持沪深北代码，不按首位数字或默认深市猜测交易所。`universes/` 的当前成分清单只用于候选数据预采，不替代 `dataset` 的历史选样。价格口径不可隐式拼接，日历闭市与真实交易日缺口分别计数；测试覆盖节假日排除、范围截断、标题简写、来源隔离和恢复校验。
 
 ## 开发流程
 

@@ -71,12 +71,10 @@ pub async fn run_from_env() -> AppResult<()> {
             ));
         }
     }
-    let dashboard_dir = std::env::var_os("MARIO_BENCH_DIR").map(PathBuf::from);
     hosted::serve(
         database_url,
         SocketAddr::new(host, port),
         web_dir,
-        dashboard_dir,
         shutdown_signal(),
     )
     .await

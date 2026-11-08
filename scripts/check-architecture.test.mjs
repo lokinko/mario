@@ -1,18 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { clientViolation, serverViolation, serverFileViolation, benchmarkViolation, cycles, rustDependencies, checkArchitecture } from './check-architecture.mjs';
-
-test('benchmark raw adapters, indicators and composition keep dependency direction', () => {
-  assert.ok(benchmarkViolation('price_indicators.py', 'strategy_runner'));
-  assert.ok(benchmarkViolation('technical_indicators.py', 'raw_data'));
-  assert.ok(benchmarkViolation('raw_data.py', 'price_indicators'));
-  assert.ok(benchmarkViolation('feature_pipeline.py', 'hub'));
-  assert.ok(benchmarkViolation('input_contract.py', 'feature_pipeline'));
-  assert.ok(benchmarkViolation('evaluation_data.py', 'hub'));
-  assert.ok(benchmarkViolation('dividends.py', 'strategy_runner'));
-  assert.equal(benchmarkViolation('feature_pipeline.py', 'raw_data'), undefined);
-  assert.equal(benchmarkViolation('financial_indicators.py', 'files'), undefined);
-});
+import { clientViolation, serverViolation, serverFileViolation, cycles, rustDependencies, checkArchitecture } from './check-architecture.mjs';
 
 test('rejects reverse dependencies and cross-feature UI while allowing ports and domain data', () => {
   assert(clientViolation('features/research/Report.tsx', 'features/reviews/List.tsx'));

@@ -109,7 +109,6 @@ async fn authenticated_security_preview_allows_reads_and_profile_writes_without_
         watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
         dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
-        dashboard_dir: None,
     });
     // Authenticate creates a real account Database for each request, as in production.
     let app = api_router().route_layer(middleware::from_fn_with_state(host, authenticate));

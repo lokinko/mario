@@ -11,7 +11,7 @@
 | 全局架构 | [架构](architecture.md) | 说明系统结构、依赖方向、状态与事务归属，以及已知架构债 |
 | 协作与验证 | [项目规范](../AGENTS.md)、[模块边界](module-boundaries.md) | 规定分工、修改方式、验证与 Git 交付 |
 | 运维操作 | 下方部署、构建与迁移文档 | 说明当前脚本的使用方式；不证明线上已运行该版本 |
-| 历史与审计 | [历史研究记录](benchmark-research.md)、[审计目录](audits/) | 保存特定时间的实验、验收与未采纳建议，不作为当前待办 |
+| 历史与审计 | [审计目录](audits/) | 保存特定时间的实验、验收与未采纳建议，不作为当前待办 |
 
 产品目标决定取舍；实现与测试用于核实当前事实。若两者冲突，须说明是文档过时、实现缺陷还是未采纳设计，不能只把其中一侧改写成“已经一致”。已知实现偏离集中见[架构债](architecture.md#10-容量边界与已知架构债)。
 
@@ -34,22 +34,16 @@
 | 可选网站 ChatGPT 身份登录 | [网站登录](chatgpt-sign-in.md)、[信任边界](threat-model.md) | [OIDC 校验](../server/src/openai_login.rs)、[网站适配](../server/src/hosted/openai.rs)、[账号映射](../server/src/accounts/openai.rs) | [登录界面](../client/src/features/account/OpenAiSignIn.test.tsx)、对应 Rust 模块内测试与[托管验收](../scripts/test-hosted.mjs) |
 | 前端应用壳、共享展示与会话生命周期 | [架构前端地图](architecture.md#5-前端模块地图)、[模块边界](module-boundaries.md#前端)、[Web 构建](client-builds.md) | [应用壳](../client/src/App.tsx)、[应用层](../client/src/app/)、[共享组件](../client/src/components/)、[传输基础](../client/src/lib/)、[主题](../client/src/styles/) | [应用回归](../client/src/App.test.tsx)、[生命周期](../client/src/app/useApplicationData.test.tsx)、[架构检查](../scripts/check-architecture.mjs)、前端构建与测试 |
 
-## 独立研究与运行模块
+## 运行模块
 
 | 模块 | 当前规范或操作指南 | 实现与验证入口 |
 | --- | --- | --- |
-| 研究 CLI、评分、策略与看板 | [benchmark](benchmark.md)、[已有研究维护](benchmark-maintenance.md) | [CLI](../benchmark/cli.py)、[隔离执行](../benchmark/strategy_runner.py)、[评分](../benchmark/scoring.py)、[当前策略](../benchmark/strategies/)、[研究测试](../benchmark/tests/)，`npm run test:benchmark` |
-| 原始行情、指标与输入构建 | [数据与指标](benchmark-data.md)、[分红采集](benchmark-dividends.md) | [原始读取](../benchmark/raw_data.py)、[指标组合](../benchmark/feature_pipeline.py)、[依赖契约](../benchmark/input_contract.py)、[实时输入重建](../benchmark/evaluation_data.py)、[分红来源](../benchmark/dividends.py)；[特征边界测试](../benchmark/tests/test_feature_pipeline.py)、[分红测试](../benchmark/tests/test_dividends.py) |
-| 每日研究采集、持续评测与快照同步 | [benchmark 当前运行方式](benchmark.md)、[数据契约](benchmark-data.md) | [每日工作流](../.github/workflows/benchmark-prices.yml)、[持续评测工作流](../.github/workflows/benchmark-live.yml)、[HF 适配](../benchmark/hub.py)、[同步部署](../scripts/benchmark-deploy.mjs)；[持续评测测试](../benchmark/tests/test_live.py)、[发布测试](../benchmark/tests/test_hub.py) |
-| 研究版富贵策略 | [研究边界与现有实现](fugui-strategy.md) | [唯一策略](../benchmark/strategies/fugui/)、[历史构建工具](../scripts/benchmark_fugui_study.py)、[回归](../benchmark/tests/test_fugui_study.py)；不作为线上观察门槛来源 |
 | 宿主机启动、部署与 Web 发布 | [自建服务](self-hosting.md)、[部署验收](deploy-madeagents.md)、[Web 构建](client-builds.md) | [部署入口](../deploy.sh)、[主运行器](../scripts/host-runtime.mjs)、[Web 构建脚本](../scripts/build-web.mjs)、[部署测试](../scripts/test-deploy.mjs) |
 | 整站加密备份、下载与恢复 | [数据迁移](data-migration.md)、[信任边界](threat-model.md) | [备份](../scripts/backup.mjs)、[下载](../scripts/download-backup.mjs)、[恢复](../scripts/restore-backup.mjs)、[独立加密备份验收](../scripts/test-backup.mjs)、[财务原生恢复验收](../scripts/test-financial.mjs) |
 
 ## 当前规范与历史记录的边界
 
 当前观察规则按账号保存；默认值见[观察规则](buy-watch.md#明确规则)。个人备份版本与升级要求见[账号与同步](cloud-sync.md#备份版本)及[观察升级](buy-watch.md#数据升级与验证)，全局索引不重复维护版本数字。
-
-[历史研究记录](benchmark-research.md)和[审计目录](audits/)中的实验参数、当时排名、待补资料或建议，只证明当时做过什么；不能自动进入当前产品要求或新任务。仍在运行的研究任务及其配置以当前工作流和相应 spec 为准，不能因文档归档而停止。个人规则、复盘、AI 历史、旧网格与旧备份的必要读取/迁移能力按各模块恢复契约保留。
 
 已退役的 SQLite 运行模式、长期记忆写入和旧多阶段报告生成不恢复为当前入口；必要旧数据适配见[架构迁移边界](architecture.md#9-保留的迁移适配)。产品取舍以[最新讨论复核](audits/product-decisions-20261108.md)说明当前能力、候选方案与代价；[旧审查](audits/team-review-20261107.md#待讨论的产品取舍)保留当时依据。所有未获用户选择的建议仍未采纳，不作为当前 spec 或实施待办。
 
