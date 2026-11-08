@@ -177,16 +177,28 @@ async fn refresh_inner(
                     if quote.observed_on > end {
                         return Err(AppError::MarketData("来源返回了尚未完成的日收盘价".into()));
                     }
-                    if quote.observed_on < holding.valuation_date {
-                        return Ok(false);
-                    }
-                    if current
-                        .holding_valuations
-                        .iter()
-                        .any(|v| v.holding_id == holding.id && v.observed_on >= quote.observed_on)
-                    {
-                        return Ok(false);
-                    }
+                }
+                // valuation_date is the request date, not the date of a verified close.
+                let evidence = current
+                    .holding_valuations
+                    .iter()
+                    .find(|v| v.holding_id == holding.id);
+                if evidence.is_some_and(|v| {
+                    v.observed_on > quote.observed_on
+                        || (automatic.is_some() && v.observed_on == quote.observed_on)
+                }) {
+                    return Ok(false);
+                }
+                if automatic.is_some()
+                    && evidence.is_none()
+                    && current
+                        .accounting
+                        .as_ref()
+                        .and_then(|a| a.holdings.get(&holding.id))
+                        .is_some_and(|a| a.amounts.price_status == "manual")
+                    && quote.observed_on < holding.valuation_date
+                {
+                    return Ok(false);
                 }
                 if !holding.currency.eq_ignore_ascii_case(&quote.currency) {
                     return Err(AppError::MarketData(format!(
@@ -483,7 +495,12 @@ mod tests {
     #[ignore = "requires live free public API"]
     async fn live_free_quotes() {
         let provider = crate::prices::FreeSecurityPriceProvider::new().unwrap();
-        for (symbol, currency) in [("AAPL", "USD"), ("0700.HK", "HKD"), ("600519.SS", "CNY")] {
+        for (symbol, currency) in [
+            ("AAPL", "USD"),
+            ("0700.HK", "HKD"),
+            ("600519.SS", "CNY"),
+            ("600941.SS", "CNY"),
+        ] {
             let q = provider
                 .quote(
                     &SecurityPriceQuery {
@@ -500,6 +517,10 @@ mod tests {
             let db = db();
             let mut input = holding(symbol, "股票", Some(10.0));
             input.currency = currency.into();
+            if symbol == "600941.SS" {
+                input.current_price = Some(100.49);
+                input.market_value = 1004.9;
+            }
             db.add_holding(&input).unwrap();
             let applied = refresh(&db, &provider).await.unwrap();
             assert!(applied.errors.is_empty(), "{:?}", applied.errors);

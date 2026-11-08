@@ -94,6 +94,13 @@ export function AssetAmountRow({
             {closed && <Badge>已清仓</Badge>}
           </small>
         )}
+        {investment && holding.currentPrice != null && (
+          <small title={source || "手工估值"}>
+            {observedOn
+              ? `收盘 ${observedOn}`
+              : `参考价 ${holding.valuationDate || "日期未记录"}`}
+          </small>
+        )}
         {issues.map((issue) => (
           <div
             className="holding-data-issue"

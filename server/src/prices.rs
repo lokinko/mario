@@ -299,6 +299,19 @@ fn parse_quote(
         .quote
         .first()
         .ok_or_else(|| AppError::MarketData("行情缺少收盘价".into()))?;
+    if result.timestamp.len() != prices.close.len() {
+        return Err(AppError::MarketData("行情日期与收盘价数量不一致".into()));
+    }
+    let mut dates = std::collections::BTreeSet::new();
+    for timestamp in &result.timestamp {
+        let date = DateTime::from_timestamp(*timestamp, 0)
+            .ok_or_else(|| AppError::MarketData("行情时间戳无效".into()))?
+            .with_timezone(&zone)
+            .date_naive();
+        if !dates.insert(date) {
+            return Err(AppError::MarketData("行情交易日期重复".into()));
+        }
+    }
     let selected = result
         .timestamp
         .iter()
@@ -514,6 +527,7 @@ mod tests {
             .unwrap()
             .and_utc()
             .timestamp()]);
+        json["chart"]["result"][0]["indicators"]["quote"][0]["close"] = serde_json::json!([220]);
         let q = parse_quote(
             &serde_json::to_vec(&json).unwrap(),
             "7203.T",
@@ -523,6 +537,35 @@ mod tests {
         )
         .unwrap();
         assert_eq!(q.observed_on, "2026-09-07");
+    }
+
+    #[test]
+    fn parser_rejects_mismatched_arrays_duplicate_days_and_invalid_timestamps() {
+        let base: serde_json::Value = serde_json::from_slice(&payload(
+            "AAPL",
+            "USD",
+            &[("2026-09-04", Some(220.0)), ("2026-09-07", Some(230.0))],
+        ))
+        .unwrap();
+        for stamps in [
+            serde_json::json!([base["chart"]["result"][0]["timestamp"][0]]),
+            serde_json::json!([
+                base["chart"]["result"][0]["timestamp"][0],
+                base["chart"]["result"][0]["timestamp"][0]
+            ]),
+            serde_json::json!([i64::MAX, base["chart"]["result"][0]["timestamp"][1]]),
+        ] {
+            let mut value = base.clone();
+            value["chart"]["result"][0]["timestamp"] = stamps;
+            assert!(parse_quote(
+                &serde_json::to_vec(&value).unwrap(),
+                "AAPL",
+                day("2026-09-08"),
+                day("2026-09-07"),
+                String::new()
+            )
+            .is_err());
+        }
     }
 
     #[tokio::test(start_paused = true)]

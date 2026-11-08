@@ -58,7 +58,7 @@ enum Mutation {
 struct Provider {
     calls: AtomicUsize,
     failed_symbol: Option<&'static str>,
-    observed: Option<&'static str>,
+    observed: Option<String>,
     peer: Option<(Database, Mutation)>,
 }
 impl Provider {
@@ -78,7 +78,11 @@ impl SecurityPriceProvider for Provider {
         if self.failed_symbol == Some(query.symbol.as_str()) {
             return Err(AppError::MarketData("来源延迟".into()));
         }
-        let result = quote(query, self.observed.unwrap_or("2026-09-08"), 12.0);
+        let result = quote(
+            query,
+            self.observed.as_deref().unwrap_or("2026-09-08"),
+            12.0,
+        );
         if let Some((peer, mutation)) = &self.peer {
             let acquired: bool = peer
                 .conn()
@@ -129,6 +133,115 @@ impl SecurityPriceProvider for Provider {
         }
         Ok(result)
     }
+}
+
+#[tokio::test]
+async fn delayed_close_is_compared_to_observed_date_instead_of_request_date() {
+    let db = Database::test();
+    let id = db
+        .add_holding(&holding("600519.SS", Some(10.0)))
+        .unwrap()
+        .holdings[0]
+        .id
+        .clone();
+    let query = SecurityPriceQuery {
+        symbol: "600519.SS".into(),
+        on_date: "2026-09-08".into(),
+        action_from: None,
+    };
+    db.apply_verified_holding_valuation(&id, 10.0, &quote(&query, "2026-09-04", 11.0))
+        .unwrap();
+    let provider = Provider {
+        observed: Some("2026-09-07".into()),
+        ..Provider::new()
+    };
+    let before = "2026-09-08T07:04:59Z".parse().unwrap();
+    let result = refresh_after_close(&db, &provider, before).await.unwrap();
+    assert_eq!(result.updated_count, 1);
+    assert_eq!(result.snapshot.holdings[0].current_price, Some(12.0));
+    assert_eq!(
+        result.snapshot.holding_valuations[0].observed_on,
+        "2026-09-07"
+    );
+    assert_eq!(
+        result.snapshot.holding_valuations[0].requested_on,
+        "2026-09-08"
+    );
+    provider.calls.store(0, Ordering::SeqCst);
+    assert_eq!(
+        refresh_after_close(&db, &provider, before)
+            .await
+            .unwrap()
+            .updated_count,
+        0
+    );
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn provisional_prices_can_use_previous_close_but_newer_manual_values_are_preserved() {
+    for status in ["provisional", "manual"] {
+        let db = Database::test();
+        let mut input = holding("600519.SS", Some(10.0));
+        input.valuation_date = "2026-09-08".into();
+        input.exact_values = Some(
+            serde_json::from_value(serde_json::json!({
+                "priceStatus": status, "marketValue":"100", "costBasis":"50",
+                "quantity":"10", "costPrice":null, "currentPrice":"10"
+            }))
+            .unwrap(),
+        );
+        db.add_holding(&input).unwrap();
+        let provider = Provider {
+            observed: Some("2026-09-07".into()),
+            ..Provider::new()
+        };
+        let result = refresh_after_close(&db, &provider, "2026-09-08T07:04:59Z".parse().unwrap())
+            .await
+            .unwrap();
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.updated_count, usize::from(status == "provisional"));
+        assert_eq!(
+            result.snapshot.holdings[0].current_price,
+            Some(if status == "provisional" { 12.0 } else { 10.0 })
+        );
+    }
+}
+
+#[tokio::test]
+async fn explicit_refresh_does_not_replace_a_newer_verified_close_with_a_delayed_source() {
+    let db = Database::test();
+    let id = db
+        .add_holding(&holding("600519.SS", Some(10.0)))
+        .unwrap()
+        .holdings[0]
+        .id
+        .clone();
+    let day: NaiveDate = crate::models::market::today().parse().unwrap();
+    let observed = (day - chrono::Duration::days(1)).to_string();
+    let query = SecurityPriceQuery {
+        symbol: "600519.SS".into(),
+        on_date: day.to_string(),
+        action_from: None,
+    };
+    db.apply_verified_holding_valuation(&id, 10.0, &quote(&query, &observed, 30.0))
+        .unwrap();
+    let hash = db.export_sync_data().unwrap().content_hash().unwrap();
+    let mut provider = Provider {
+        observed: Some((day - chrono::Duration::days(2)).to_string()),
+        ..Provider::new()
+    };
+    let result = super::refresh(&db, &provider).await.unwrap();
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert_eq!(result.updated_count, 0);
+    assert_eq!(result.snapshot.holdings[0].current_price, Some(30.0));
+    assert_eq!(db.export_sync_data().unwrap().content_hash().unwrap(), hash);
+    // An explicit refresh can still adopt a correction for the same trading date.
+    provider.observed = Some(observed);
+    let corrected = super::refresh(&db, &provider).await.unwrap();
+    assert!(corrected.errors.is_empty(), "{:?}", corrected.errors);
+    assert_eq!(corrected.updated_count, 1);
+    assert_eq!(corrected.snapshot.holdings[0].current_price, Some(12.0));
 }
 
 #[tokio::test]
@@ -252,7 +365,7 @@ async fn failures_and_stale_sources_preserve_values_while_other_holdings_continu
     let result = refresh_after_close(&db, &provider, now()).await.unwrap();
     assert_eq!(result.updated_count, 1);
     let revision = db.revision().unwrap();
-    provider.observed = Some("2026-09-07");
+    provider.observed = Some("2026-09-07".into());
     let tomorrow = "2026-09-09T07:05:00Z".parse().unwrap();
     assert_eq!(
         refresh_after_close(&db, &provider, tomorrow)
