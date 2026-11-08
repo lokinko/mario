@@ -17,7 +17,37 @@ pub(crate) struct MarketRuntime {
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 impl MarketRuntime {
-    pub fn start_watch(&mut self, accounts: Arc<crate::accounts::Accounts>) {
+    pub fn start_account_tasks(&mut self, accounts: Arc<crate::accounts::Accounts>) {
+        let services = self.services.clone();
+        let price_accounts = accounts.clone();
+        self.tasks.push(tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                let users = match price_accounts.user_ids() {
+                    Ok(users) => users,
+                    Err(error) => {
+                        tracing::warn!(%error, "closing price account enumeration failed");
+                        continue;
+                    }
+                };
+                for user in users {
+                    let result = async {
+                        let db = crate::db::Database::postgres(&price_accounts.url, &user)?;
+                        services.for_account(&db).refresh_closing_prices().await
+                    }.await;
+                    match result {
+                        Ok(result) => {
+                            for error in result.errors {
+                                tracing::warn!(%user, %error, "holding closing price refresh failed; keeping prior valuation");
+                            }
+                        }
+                        Err(error) => tracing::warn!(%user, %error, "account closing price refresh failed"),
+                    }
+                }
+            }
+        }));
         let catalog = self.watch_catalog.clone();
         let calendar = self.dividend_calendar.clone();
         self.tasks.push(tokio::spawn(async move {

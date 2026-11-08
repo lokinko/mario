@@ -55,7 +55,11 @@ ECB 的 [Data Portal API](https://data.ecb.europa.eu/help/api/data-examples) 提
 
 Twelve Data [`/time_series`](https://twelvedata.com/docs/market-data/time-series) 是主动查询的可选来源。配置个人 Key 后，主动查询采用 Twelve Data；自动更新始终用免费公共来源。密钥按账号加密保存，通过 `Authorization: apikey …` 请求头发送，不进入行情公共缓存、AI 载荷或同步包。
 
-每次查询明确提交证券代码和估值日。服务端回看最多 10 个自然日，只采用不晚于请求日的最近有效交易日。为避免把尚未收盘的当日日线误称为收盘价，观察日最晚只取 UTC 昨日；交易所本地日期按来源的 IANA 时区解析，周末及假日明确保留实际观察日。自动查询使用上海日期，与统一汇率一致。Yahoo 读取 `indicators.quote.close`，不采用分红复权的 `adjclose`；其历史收盘价可能经过拆股调整，记录为 `split_adjusted_daily_close`，不冒称未复权。London 的 `GBp` / `GBX` 价格从便士换为 GBP，避免百倍金额错误。Yahoo 未提供 MIC 时保留空值。Twelve Data 使用 `adjust=none`，记录为 `unadjusted_daily_close`。
+每次查询明确提交证券代码和估值日。服务端回看最多 10 个自然日，只采用不晚于请求日的最近有效交易日。收盘截止按证券所属市场判断：沪深 `.SS` / `.SZ` 在北京时间 15:05 起允许采用当日收盘，港股 `.HK` 在香港时间 16:15 起、美股普通代码在纽约时间 16:15 起允许采用当日收盘，纽约时区自动处理夏令时；提前收市日仍等待通常收盘阈值，其他未识别市场保留 UTC 昨日的保守截止。阈值包含来源发布时间缓冲；沪深竞价收盘为 [15:00](https://www.sse.com.cn/lawandrules/sselawsrules2025/trade/universal/c/c_20260424_10816492.shtml)，港股收市竞价最晚至 [16:10](https://www.hkex.com.hk/Services/Trading-hours-and-Severe-Weather-Arrangements/Trading-Hours/Securities-Market)，美股核心时段至 [16:00](https://www.nyse.com/trade/hours-calendars)。交易所本地日期按来源的 IANA 时区解析，已识别市场的时区必须匹配；周末及假日仅采用来源实际返回的交易日期，不补造当日行情。自动查询使用上海日期，与统一汇率一致。Yahoo 读取 `indicators.quote.close`，不采用分红复权的 `adjclose`；其历史收盘价可能经过拆股调整，记录为 `split_adjusted_daily_close`，不冒称未复权。London 的 `GBp` / `GBX` 价格从便士换为 GBP，避免百倍金额错误。Yahoo 未提供 MIC 时保留空值。Twelve Data 使用 `adjust=none`，记录为 `unadjusted_daily_close`。
+
+服务器启动时补查，并每 5 分钟按账号检查有证券代码、正数数量的普通持仓；现金、已清仓、无代码手工资产和期权不查价。后台采用上述收盘截止，只查询尚未取得该截止日收盘的持仓；已保存的行情日期作为重启后的完成依据，无需新增调度表或迁移数据。来源延迟、失败和节假日未取得新行情时继续重试，保留已有价格和真实日期；旧于已保存行情或手工估值日期的报价不覆盖当前值。服务器继续运行即可更新，浏览器无需打开，前端通过既有账号版本同步取得新快照。
+
+后台查询先在账号锁内冻结持仓版本，等待行情时释放锁，返回后重新取锁并校验版本。查询期间发生交易、数量／代码编辑、删除或另一轮估值更新时，本次旧结果跳过，下轮重新读取；单只失败不阻塞其他持仓。价格、市值、精确会计、来源与当日资产观测沿用同一仓储事务；不修改真实成交、持仓成本或存款，不补写过去日期的价格，也不触发 AI。买点观察的收盘检查及 19:00 截止保持独立。
 
 “更新自动价格”（`POST /api/market-data/security/refresh`）对有代码、正数数量的非现金、非期权持仓查询免费来源并逐项保存。保存普通持仓时，只有代码和正数数量已填而当前价格为空才先补查价格；已有价格不会因读取快照、每日补齐或版本检查而自动替换。`GET /api/market-data/security-price` 只返回报价，`PUT /api/holdings/{id}/verified-valuation` 才把指定报价日期的估值应用到账号。持仓写入由所属账号的锁和事务保护，服务端校验 Provider 币种与持仓币种一致，再以：
 
@@ -75,9 +79,9 @@ Twelve Data [`/time_series`](https://twelvedata.com/docs/market-data/time-series
 
 ## 服务全局缓存
 
-免费价格 Provider 由运行时装配并跨账号共享实例、HTTP 连接池和进程内缓存；键包含规范化证券代码、请求日期及公司行动查询起点，避免不同成交历史范围复用不完整结果。仅缓存公共行情，不缓存持仓数量、个人市值或用户密钥；多 API 进程各有独立缓存。成功结果保存 1 小时，失败保存 1 分钟；同一键使用独立异步锁合并并发查询，单个 API 实例最多 4 个上游查询，不让网络等待占住全缓存锁。最多 512 条记录，在容量不足时淘汰不在使用的记录，全部繁忙时返回可重试错误。每次响应流式限制 1 MB，每个上游请求超时 8 秒。
+免费价格 Provider 由运行时装配并跨账号共享实例、HTTP 连接池和进程内缓存；键包含规范化证券代码、请求日期及公司行动查询起点，缓存条目同时记录收盘截止日；收盘阈值跨越后立即重新查询，避免收盘前缓存挡住当日新价格，也避免不同成交历史范围复用不完整结果。仅缓存公共行情，不缓存持仓数量、个人市值或用户密钥；多 API 进程各有独立缓存。已覆盖收盘截止日的成功结果保存 1 小时，来源仍滞后的成功结果及失败仅保存 1 分钟；同一键使用独立异步锁合并并发查询，单个 API 实例最多 4 个上游查询，不让网络等待占住全缓存锁。最多 512 条记录，在容量不足时淘汰不在使用的记录，全部繁忙时返回可重试错误。每次响应流式限制 1 MB，每个上游请求超时 8 秒。
 
-运行期间每小时刷新缓存中近期的当前标的，跨日使用新日期，不触碰账号数据；账号随后显式刷新价格时再应用可用报价。无变化时不重复写持仓、每日记录或数据版本。服务重启后按需重新获取，账号已保存的价格证据仍然保留。`POST /api/market-data/security/refresh` 返回 `{snapshot,updatedCount,errors}`；该操作尊重共享缓存和失败退避，不因重复点击增加上游请求。失败详情也放入本次返回快照的 `priceRefreshErrors`，不作为持久错误状态；界面保留原价并提示，币种、来源、日期或价格不合格时不更新对应持仓。
+运行期间每小时刷新缓存中近期的当前标的，跨日使用新日期，不触碰账号数据；账号后台收盘刷新或用户点击更新时再应用可用报价。无变化时不重复写持仓、每日记录或数据版本。服务重启后按需重新获取，账号已保存的价格证据仍然保留。`POST /api/market-data/security/refresh` 返回 `{snapshot,updatedCount,errors}`；该操作尊重共享缓存和失败退避，不因重复点击增加上游请求。失败详情也放入本次返回快照的 `priceRefreshErrors`，不作为持久错误状态；界面保留原价并提示，币种、来源、日期或价格不合格时不更新对应持仓。
 
 Twelve Data 的个人方案用于个人、内部和非商业用途；调用额度、市场覆盖、展示和再分发权利取决于用户自己的方案及交易所许可。当前 [个人价格页](https://twelvedata.com/pricing) 列出 Basic 免费方案的分钟和每日额度，完整使用限制见 [服务条款](https://twelvedata.com/terms)。mario 不内置共享密钥、不代理转售行情，也不保证任一代码或市场在用户方案中可用。
 
@@ -92,6 +96,7 @@ Twelve Data 的个人方案用于个人、内部和非商业用途；调用额�
 
 ## 实现与验证依据
 
+- [收盘时间策略](../server/src/models/market/close.rs)、[后台估值回归](../server/src/application/closing_price_tests.rs)及免费 Provider 模块内测试覆盖当日收盘、盘中拒绝、缓存跨收盘失效、来源重试、重启幂等、并发编辑保护、账号隔离与日记录失败回滚。
 - 接口与账号写入职责见[行情端口](../server/src/ports/market.rs)、[HTTP 财务路由](../server/src/http/portfolio.rs)、[持仓应用用例](../server/src/application/portfolio.rs)和[后台任务装配](../server/src/composition.rs)。
 - [汇率用例及测试](../server/src/application/fx.rs)中的 `current_quotes_match_the_requested_pair_without_changing_account_data` 覆盖当日币对匹配与 GET 不写账号；[汇率持久化](../server/src/db/fx.rs)负责统一设置和当日观测的事务更新。
 - [免费行情及测试](../server/src/prices.rs)覆盖收盘日期、便士换算、共享缓存和失败退避；[持仓报价用例及测试](../server/src/application/prices.rs)覆盖刷新幂等、失败保留及成交原值；[财务回归](../server/src/db/financial_tests.rs)中的 `quote_refresh_preserves_manual_exact_quantity_and_restore_but_accepts_explicit_changes` 覆盖精确股数与备份恢复。

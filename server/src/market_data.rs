@@ -4,7 +4,7 @@ pub(crate) mod watch_catalog;
 use std::{collections::BTreeMap, time::Duration};
 
 use async_trait::async_trait;
-use chrono::{Local, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use reqwest::{Client, Url};
 use serde::Deserialize;
 
@@ -73,11 +73,16 @@ impl SecurityPriceProvider for TwelveDataSecurityPriceProvider {
         }
         let requested_on = NaiveDate::parse_from_str(query.on_date.trim(), "%Y-%m-%d")
             .map_err(|_| AppError::Validation("证券价格日期必须使用 YYYY-MM-DD".into()))?;
-        if requested_on > Local::now().date_naive() {
+        if requested_on
+            > Utc::now()
+                .with_timezone(&chrono_tz::Asia::Shanghai)
+                .date_naive()
+        {
             return Err(AppError::Validation("证券价格日期不能晚于今天".into()));
         }
         let start = requested_on - chrono::Duration::days(PRICE_LOOKBACK_DAYS);
-        let completed_through = completed_price_end_date(requested_on, Utc::now().date_naive());
+        let completed_through =
+            crate::models::market::close::completed_day(&symbol, requested_on, Utc::now());
         let url = self.request_url(&symbol, start, completed_through)?;
         let response = self
             .client
@@ -107,12 +112,12 @@ impl SecurityPriceProvider for TwelveDataSecurityPriceProvider {
                 safe_provider_error(&body)
             )));
         }
-        parse_twelve_data_quote(&body, &symbol, requested_on, url.to_string())
+        let quote = parse_twelve_data_quote(&body, &symbol, requested_on, url.to_string())?;
+        if quote.observed_on > completed_through.to_string() {
+            return Err(AppError::MarketData("行情尚未完成当日收盘".into()));
+        }
+        Ok(quote)
     }
-}
-
-fn completed_price_end_date(requested_on: NaiveDate, utc_today: NaiveDate) -> NaiveDate {
-    requested_on.min(utc_today - chrono::Duration::days(1))
 }
 
 #[derive(Deserialize)]
@@ -559,18 +564,5 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("API credits exhausted"));
-    }
-
-    #[test]
-    fn never_requests_an_in_progress_utc_daily_bar() {
-        let utc_today = NaiveDate::from_ymd_opt(2026, 9, 8).unwrap();
-        assert_eq!(
-            completed_price_end_date(utc_today, utc_today),
-            NaiveDate::from_ymd_opt(2026, 9, 7).unwrap()
-        );
-        assert_eq!(
-            completed_price_end_date(NaiveDate::from_ymd_opt(2026, 9, 1).unwrap(), utc_today),
-            NaiveDate::from_ymd_opt(2026, 9, 1).unwrap()
-        );
     }
 }

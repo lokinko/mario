@@ -72,8 +72,30 @@ pub async fn refresh(
     db: &Database,
     provider: &dyn SecurityPriceProvider,
 ) -> AppResult<RefreshResult> {
+    refresh_inner(db, provider, None).await
+}
+
+/// Background work freezes account input, releases the lock for I/O and checks it again.
+pub async fn refresh_after_close(
+    db: &Database,
+    provider: &dyn SecurityPriceProvider,
+    now: chrono::DateTime<chrono::Utc>,
+) -> AppResult<RefreshResult> {
+    let _lock = db.lock_account()?;
+    refresh_inner(db, provider, Some(now)).await
+}
+
+async fn refresh_inner(
+    db: &Database,
+    provider: &dyn SecurityPriceProvider,
+    automatic: Option<chrono::DateTime<chrono::Utc>>,
+) -> AppResult<RefreshResult> {
     let snapshot = db.snapshot()?;
-    let day = crate::models::market::today();
+    let day = automatic.map_or_else(crate::models::market::today, |now| {
+        now.with_timezone(&chrono_tz::Asia::Shanghai)
+            .date_naive()
+            .to_string()
+    });
     let mut errors = Vec::new();
     let mut updated_count = 0;
     let holdings = snapshot
@@ -84,6 +106,21 @@ pub async fn refresh(
                 && h.asset_class != "现金"
                 && !snapshot.option_contracts.contains_key(&h.id)
                 && !h.symbol.trim().is_empty()
+                && automatic.is_none_or(|now| {
+                    let Ok(symbol) = crate::models::market::canonical_symbol(&h.symbol) else {
+                        return true;
+                    };
+                    let end = crate::models::market::close::completed_day(
+                        &symbol,
+                        day.parse().unwrap(),
+                        now,
+                    )
+                    .to_string();
+                    !snapshot
+                        .holding_valuations
+                        .iter()
+                        .any(|v| v.holding_id == h.id && v.observed_on >= end)
+                })
         })
         .collect::<Vec<_>>();
     for chunk in holdings.chunks(4) {
@@ -110,11 +147,47 @@ pub async fn refresh(
                 }
             }
         };
-        let (a, b, c, d) = tokio::join!(fetch(0), fetch(1), fetch(2), fetch(3));
+        let fetch_chunk = async { tokio::join!(fetch(0), fetch(1), fetch(2), fetch(3)) };
+        let (a, b, c, d) = if automatic.is_some() {
+            db.without_account_lock(fetch_chunk).await?
+        } else {
+            fetch_chunk.await
+        };
+        let current = automatic.map(|_| db.snapshot()).transpose()?;
+        let current = current.as_ref().unwrap_or(&snapshot);
         for (holding, quote) in [a, b, c, d].into_iter().flatten() {
             let quantity = holding.quantity.unwrap();
             let result = (|| {
                 let quote = quote?;
+                if let Some(now) = automatic {
+                    // A concurrent sale, edit, deletion or refresh invalidates the frozen input.
+                    if !current.holding_revisions.contains_key(&holding.id)
+                        || current.holding_revisions.get(&holding.id)
+                            != snapshot.holding_revisions.get(&holding.id)
+                    {
+                        return Ok(false);
+                    }
+                    let symbol = crate::models::market::canonical_symbol(&holding.symbol)?;
+                    let end = crate::models::market::close::completed_day(
+                        &symbol,
+                        day.parse().unwrap(),
+                        now,
+                    )
+                    .to_string();
+                    if quote.observed_on > end {
+                        return Err(AppError::MarketData("来源返回了尚未完成的日收盘价".into()));
+                    }
+                    if quote.observed_on < holding.valuation_date {
+                        return Ok(false);
+                    }
+                    if current
+                        .holding_valuations
+                        .iter()
+                        .any(|v| v.holding_id == holding.id && v.observed_on >= quote.observed_on)
+                    {
+                        return Ok(false);
+                    }
+                }
                 if !holding.currency.eq_ignore_ascii_case(&quote.currency) {
                     return Err(AppError::MarketData(format!(
                         "行情币种 {} 与持仓币种 {} 不一致",
@@ -156,6 +229,10 @@ pub async fn refresh(
         errors,
     })
 }
+
+#[cfg(test)]
+#[path = "closing_price_tests.rs"]
+mod closing_price_tests;
 
 #[cfg(test)]
 mod tests {
@@ -419,7 +496,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(q.currency, currency);
-            assert!(q.close > 0.0 && q.staleness_days > 0);
+            assert!(q.close > 0.0 && q.staleness_days >= 0);
             let db = db();
             let mut input = holding(symbol, "股票", Some(10.0));
             input.currency = currency.into();
@@ -427,7 +504,16 @@ mod tests {
             let applied = refresh(&db, &provider).await.unwrap();
             assert!(applied.errors.is_empty(), "{:?}", applied.errors);
             assert_eq!(applied.updated_count, 1);
-            assert_eq!(applied.snapshot.holdings[0].market_value, q.close * 10.0);
+            let expected = rust_decimal::Decimal::from_str_exact(q.exact_close.as_ref().unwrap())
+                .unwrap()
+                * rust_decimal::Decimal::from(10);
+            assert_eq!(
+                applied.snapshot.accounting.as_ref().unwrap().holdings
+                    [&applied.snapshot.holdings[0].id]
+                    .amounts
+                    .market_value,
+                expected.normalize().to_string(),
+            );
             println!(
                 "{symbol}: {} {} observed {}",
                 q.close, q.currency, q.observed_on

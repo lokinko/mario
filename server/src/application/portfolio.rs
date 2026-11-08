@@ -44,6 +44,9 @@ impl PortfolioService<'_> {
     pub async fn refresh_prices(&self) -> AppResult<prices::RefreshResult> {
         prices::refresh(self.db, self.market.prices.as_ref()).await
     }
+    pub async fn refresh_closing_prices(&self) -> AppResult<prices::RefreshResult> {
+        prices::refresh_after_close(self.db, self.market.prices.as_ref(), chrono::Utc::now()).await
+    }
     pub async fn fx_quote(&self, query: &FxRateQuery) -> AppResult<crate::models::FxRateQuote> {
         fx::historical_quote(self.db, self.market.fx.as_ref(), query).await
     }

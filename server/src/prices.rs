@@ -16,7 +16,7 @@ use crate::{
     AppError, AppResult,
 };
 
-use crate::models::market::{canonical_symbol, METHODOLOGY_URL};
+use crate::models::market::{canonical_symbol, close, METHODOLOGY_URL};
 const SUCCESS_TTL: Duration = Duration::from_secs(3600);
 const FAILURE_TTL: Duration = Duration::from_secs(60);
 const MAX_ENTRIES: usize = 512;
@@ -26,6 +26,7 @@ type QuoteEntries = BTreeMap<(String, String, Option<String>), Arc<Mutex<Entry>>
 #[derive(Default)]
 struct Entry {
     fetched: Option<(Instant, QuoteResult)>,
+    completed_through: Option<NaiveDate>,
 }
 #[derive(Default)]
 struct Cache {
@@ -58,6 +59,7 @@ impl FreeSecurityPriceProvider {
         &self,
         symbol: &str,
         day: NaiveDate,
+        end: NaiveDate,
         action_from: Option<&str>,
     ) -> AppResult<SecurityPriceQuote> {
         let _permit = self
@@ -65,7 +67,6 @@ impl FreeSecurityPriceProvider {
             .acquire()
             .await
             .map_err(|_| AppError::MarketData("行情服务已停止".into()))?;
-        let end = day.min(Utc::now().date_naive() - chrono::Duration::days(1));
         // Yahoo normalizes older closes to current share units, so a historical
         // valuation of a managed position still needs actions through today.
         let event_end = if action_from.is_some() {
@@ -149,14 +150,25 @@ impl SecurityPriceProvider for FreeSecurityPriceProvider {
         query: &SecurityPriceQuery,
         _api_key: &str,
     ) -> AppResult<SecurityPriceQuote> {
+        self.quote_at(query, Utc::now()).await
+    }
+}
+
+impl FreeSecurityPriceProvider {
+    async fn quote_at(
+        &self,
+        query: &SecurityPriceQuery,
+        now: DateTime<Utc>,
+    ) -> AppResult<SecurityPriceQuote> {
         let symbol = canonical_symbol(&query.symbol)?;
         let day = NaiveDate::parse_from_str(query.on_date.trim(), "%Y-%m-%d")
             .map_err(|_| AppError::Validation("证券价格日期必须使用 YYYY-MM-DD".into()))?;
-        let today = NaiveDate::parse_from_str(&crate::models::market::today(), "%Y-%m-%d").unwrap();
+        let today = now.with_timezone(&chrono_tz::Asia::Shanghai).date_naive();
         if day > today || day < NaiveDate::from_ymd_opt(1970, 1, 12).unwrap() {
             return Err(AppError::Validation("证券价格日期超出支持范围".into()));
         }
         let key = (symbol.clone(), day.to_string(), query.action_from.clone());
+        let end = close::completed_day(&symbol, day, now);
         let entry = {
             let mut cache = self.cache.entries.lock().await;
             if !cache.contains_key(&key) && cache.len() >= MAX_ENTRIES {
@@ -175,23 +187,28 @@ impl SecurityPriceProvider for FreeSecurityPriceProvider {
         };
         let mut entry = entry.lock().await;
         let result = if let Some((_, result)) = entry.fetched.as_ref().filter(|(at, result)| {
-            at.elapsed()
-                < if result.is_ok() {
-                    SUCCESS_TTL
-                } else {
-                    FAILURE_TTL
-                }
+            entry.completed_through == Some(end)
+                && at.elapsed()
+                    < if result
+                        .as_ref()
+                        .is_ok_and(|q| q.observed_on == end.to_string())
+                    {
+                        SUCCESS_TTL
+                    } else {
+                        FAILURE_TTL
+                    }
         }) {
             result.clone()
         } else {
             let result = self
-                .fetch(&symbol, day, query.action_from.as_deref())
+                .fetch(&symbol, day, end, query.action_from.as_deref())
                 .await
                 .map_err(|error| match error {
                     AppError::MarketData(message) => message,
                     other => other.to_string(),
                 });
             entry.fetched = Some((Instant::now(), result.clone()));
+            entry.completed_through = Some(end);
             result
         };
         let mut quote = result.map_err(AppError::MarketData)?;
@@ -274,6 +291,9 @@ fn parse_quote(
         .exchange_timezone_name
         .parse()
         .map_err(|_| AppError::MarketData("行情交易所时区无效".into()))?;
+    if !close::matches_timezone(symbol, zone) {
+        return Err(AppError::MarketData("行情时区与证券所属市场不一致".into()));
+    }
     let prices = result
         .indicators
         .quote
@@ -431,7 +451,7 @@ mod tests {
     }
     fn payload(symbol: &str, currency: &str, dates: &[(&str, Option<f64>)]) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({"chart":{"error":null,"result":[{
-            "meta":{"symbol":symbol,"currency":currency,"exchangeName":"NMS","exchangeTimezoneName":"America/New_York","instrumentType":"EQUITY"},
+            "meta":{"symbol":symbol,"currency":currency,"exchangeName":"NMS","exchangeTimezoneName":if symbol.ends_with(".SS") || symbol.ends_with(".SZ") { "Asia/Shanghai" } else { "America/New_York" },"instrumentType":"EQUITY"},
             "timestamp":dates.iter().map(|(d,_)| day(d).and_hms_opt(14,0,0).unwrap().and_utc().timestamp()).collect::<Vec<_>>(),
             "indicators":{"quote":[{"close":dates.iter().map(|(_,price)| price).collect::<Vec<_>>() }],"adjclose":[{"adjclose":[1,1,1]}]}
         }]}})).unwrap()
@@ -487,6 +507,7 @@ mod tests {
         .is_err());
         let mut json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         // Tokyo midnight is the previous UTC calendar date.
+        json["chart"]["result"][0]["meta"]["symbol"] = "7203.T".into();
         json["chart"]["result"][0]["meta"]["exchangeTimezoneName"] = "Asia/Tokyo".into();
         json["chart"]["result"][0]["timestamp"] = serde_json::json!([day("2026-09-06")
             .and_hms_opt(15, 0, 0)
@@ -495,13 +516,86 @@ mod tests {
             .timestamp()]);
         let q = parse_quote(
             &serde_json::to_vec(&json).unwrap(),
-            "AAPL",
+            "7203.T",
             day("2026-09-08"),
             day("2026-09-07"),
             String::new(),
         )
         .unwrap();
         assert_eq!(q.observed_on, "2026-09-07");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn china_close_invalidates_pre_close_cache_and_retries_delayed_daily_data() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let ready = Arc::new(AtomicBool::new(false));
+        let counter = calls.clone();
+        let published = ready.clone();
+        let router = axum::Router::new().route(
+            "/v8/finance/chart/{symbol}",
+            axum::routing::get(move || {
+                let counter = counter.clone();
+                let published = published.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    let mut value: serde_json::Value = serde_json::from_slice(&payload(
+                        "600519.SS",
+                        "CNY",
+                        &[
+                            ("2026-09-07", Some(10.0)),
+                            (
+                                "2026-09-08",
+                                published.load(Ordering::SeqCst).then_some(12.0),
+                            ),
+                        ],
+                    ))
+                    .unwrap();
+                    value["chart"]["result"][0]["meta"]["exchangeTimezoneName"] =
+                        "Asia/Shanghai".into();
+                    serde_json::to_vec(&value).unwrap()
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let provider = FreeSecurityPriceProvider {
+            client: Client::new(),
+            hosts: vec![url],
+            cache: Arc::new(Cache::default()),
+            slots: Semaphore::new(4),
+        };
+        let query = SecurityPriceQuery {
+            symbol: "sh600519".into(),
+            on_date: "2026-09-08".into(),
+            action_from: None,
+        };
+        let before = "2026-09-08T07:04:59Z".parse().unwrap();
+        let after = "2026-09-08T07:05:00Z".parse().unwrap();
+        assert_eq!(
+            provider.quote_at(&query, before).await.unwrap().observed_on,
+            "2026-09-07"
+        );
+        // Same request date, still within its successful TTL: must fetch again at close.
+        assert_eq!(
+            provider.quote_at(&query, after).await.unwrap().observed_on,
+            "2026-09-07"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        ready.store(true, Ordering::SeqCst);
+        tokio::time::advance(FAILURE_TTL).await;
+        let quote = provider.quote_at(&query, after).await.unwrap();
+        assert_eq!(
+            (
+                quote.observed_on.as_str(),
+                quote.close,
+                quote.staleness_days
+            ),
+            ("2026-09-08", 12.0, 0)
+        );
+        assert_eq!(quote.symbol, "sh600519");
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        task.abort();
     }
     #[test]
     fn codes_are_unambiguous_and_aliases_share_keys() {

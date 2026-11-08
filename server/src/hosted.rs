@@ -75,7 +75,7 @@ where
         dividend_calendar: market_runtime.dividend_calendar.clone(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
     });
-    market_runtime.start_watch(state.accounts.clone());
+    market_runtime.start_account_tasks(state.accounts.clone());
     let private = api_router()
         .route("/api/sync/version", get(version))
         .route("/api/data/export", get(export))
