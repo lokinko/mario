@@ -213,10 +213,6 @@ export function DividendCalendar() {
             </select>
           </label>
         </div>
-        <p className="watch-meta">
-          自动定期检查，页面读取已保存资料；也可手动更新。当前来源提供登记日和除息日，未提供的派息日保留未知。预案不计入已实施分红、TTM
-          或账本。
-        </p>
         {error && (
           <Callout tone="danger">
             {error}
@@ -261,11 +257,6 @@ export function DividendCalendar() {
                 今天起30天
               </Button>
             </div>
-            <p className="watch-meta">
-              范围内 {board.coverage.length} 家公司，
-              {board.coverage.filter((row) => !!row.fetchedAt).length}{" "}
-              家已有资料，{incomplete.length} 家尚未抓取或需重试。
-            </p>
             <Tabs
               activeKey={tab}
               onChange={setTab}
@@ -394,9 +385,6 @@ export function DividendCalendar() {
                 </div>
               ))}
             </details>
-            <p className="watch-meta">
-              来源：东方财富分红送配结构化数据。方案、日期及金额可能更新，以发行人后续公告为准；当前版本不调用大模型。
-            </p>
           </>
         )}
       </div>
