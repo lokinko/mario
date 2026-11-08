@@ -550,6 +550,20 @@ it("keeps an uncertain edit frozen and retries exactly the original content", as
   expect(portfolioApi.saveHoldingTrade).not.toHaveBeenCalled();
 });
 
+it("omits the position summary where the holding detail already shows it", () => {
+  const props = {
+    snapshot: value,
+    holding,
+    onUpdate: vi.fn(),
+    flash: vi.fn(),
+  };
+  const { container, rerender } = render(<HoldingTrades {...props} />);
+  expect(container.querySelector(".trade-summary")).not.toBeNull();
+  rerender(<HoldingTrades {...props} hideSummary />);
+  expect(container.querySelector(".trade-summary")).toBeNull();
+  expect(screen.getByRole("table")).toBeTruthy();
+});
+
 it("keeps original executions visible while suppressing an unusable position summary", () => {
   const s = structuredClone(value);
   s.accounting!.holdings[holding.id] = {

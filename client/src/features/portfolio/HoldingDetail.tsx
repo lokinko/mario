@@ -87,20 +87,6 @@ export function HoldingDetail({
             </span>
           </dd>
         </div>
-        <div>
-          <dt>估值日期</dt>
-          <dd>{holding.valuationDate || "待补"}</dd>
-        </div>
-        <div>
-          <dt>证券代码 / 币种</dt>
-          <dd>
-            {holding.symbol || "—"} / {holding.currency}
-          </dd>
-        </div>
-        <div>
-          <dt>行情来源</dt>
-          <dd>{valuations[0]?.providerName || "手动记录"}</dd>
-        </div>
       </dl>
       {valuations.map((v) => (
         <p className="section-intro" key={v.holdingId}>
@@ -129,6 +115,7 @@ export function HoldingDetail({
               key={holding.id}
               snapshot={snapshot}
               holding={holding}
+              hideSummary
               onEditingChange={setStockEditing}
               onUpdate={onUpdate}
               flash={flash}

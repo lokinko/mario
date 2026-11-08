@@ -426,7 +426,8 @@ it("refreshes prices and displays the source date and partial failures", async (
   });
   const { onUpdate } = mount(value);
   fireEvent.click(screen.getByRole("button", { name: /查看 / }));
-  expect(screen.getByText("Yahoo Finance")).toBeTruthy();
+  expect(screen.getByText("2026-10-09 · Yahoo Finance")).toBeTruthy();
+  expect(screen.queryByText("行情来源")).toBeNull();
   expect(screen.getByText(/收盘日 2026-10-09/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   expect(screen.getByText(/部分价格更新失败，已保留原值/)).toBeTruthy();

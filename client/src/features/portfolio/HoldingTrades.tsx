@@ -78,6 +78,7 @@ export function HoldingTrades({
   onClose,
   onEditingChange,
   flash,
+  hideSummary = false,
 }: {
   snapshot: Snapshot;
   holding?: Holding;
@@ -86,6 +87,7 @@ export function HoldingTrades({
   onClose?: () => void;
   onEditingChange?: (editing: boolean) => void;
   flash: (message: string) => void;
+  hideSummary?: boolean;
 }) {
   const option = holding
     ? snapshot.optionContracts?.[holding.id]
@@ -714,6 +716,7 @@ export function HoldingTrades({
         </form>
       )}
       {summary &&
+        !hideSummary &&
         (!holding ||
           snapshot.accounting?.holdings[holding.id]?.usable !== false) && (
           <p className="trade-summary">
