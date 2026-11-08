@@ -131,7 +131,7 @@ flowchart TD
 | `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发；离开将卸载的编辑页前确认未保存草稿，取消历史跳转时恢复当前地址 |
 | `app/useApplicationData.ts` | 服务端数据生命周期：启动、快照与模型配置加载、自动同步、请求代次、草稿保护与远程更新提示 |
 | `app/navigation.ts` | 视图、导航分组与标签 |
-| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿、公司查询输入和打开时的独立版本，`DividendCalendar` 拥有日历范围、日期选择、读取轮询与手动刷新；通过应用壳进入讨论 |
+| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchTrends` 展示服务端历史曲线与金叉、拥有显示范围和查看日期，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿、公司查询输入和打开时的独立版本，`DividendCalendar` 拥有日历范围、日期选择、读取轮询与手动刷新；通过应用壳进入讨论 |
 | `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
@@ -208,6 +208,8 @@ sequenceDiagram
 前端按版本轮询，版本变化后才拉取快照，没有离线写入队列或实时推送。投资方法论随账号备份的 settings 行导出，恢复前校验非空及 4000 字符上限；缺少该项的旧备份恢复为初始范本。沿用现有备份结构，不新增 schema 迁移；恢复失败整体回滚。账号导出/导入使用版本化的同步数据集（`db/sync_format.rs`），导入在单一事务内校验表关联、精确金额与财务一致性后整体替换，失败整次回滚。宿主机级加密备份包含 `mario_auth`、`mario_market` 和全部 `user_<uuid>` schema；单账号 JSON 备份只包含该账号观察及最后使用的分红依据，不替换公共库。宿主机级加密备份与迁移见 [服务器间打包、下载与恢复](data-migration.md)。
 
 ### 6.5 买点观察
+
+趋势图沿用本节观察路径：`market_data/watch` 经原行情端口提供同源日线与交易日期，`models/watch` 统一归一价格，`models/watch/trends` 纯计算周 BOLL、月中轨、长短周中轨及实际金叉。结果以有界的可选 `Observation.trends` 随原观察事务保存，账号历史与公共最新快照仍各归原仓储，不增加服务、状态来源或 schema。`WatchEvidence` 在自选及公共详情装配 `WatchTrends`，前端只作曲线坐标与日期范围投影；历史不足独立留空，不改变观察条件和提醒，图表不自动进入 AI 上下文。窗口、暂态、缺口和旧观察补齐行为统一见[趋势 spec](buy-watch.md#股价趋势与金叉图)。JSON 浮点解析启用精确往返，保存和恢复不改变已计算的指标值。
 
 观察桌面默认“自选”，其后按固定十一个领域浏览超级账户人工维护的公共公司。目录契约及校验归 `models/watch/catalog`，`server/data/watch-catalog.json` 在首次建库时初始化 61 家公司；旧目录按发布版本一次性执行用户明确授权的名单迁移；线上名单、独立版本、最后维护者及时间归 `db/public_watch` 的 `mario_market.watch_catalog`，后续启动不覆盖。资料包含代码、名称、行业、核查日期及交易所/公司报告来源。`application/watch_catalog` 编排公共检查，依赖公开仓储、领域计算和行情端口；`db/public_watch` 在 `mario_market.watch_snapshots` 保存各公司的最新成功结果及检查状态，只依赖公开契约、错误类型和 `storage`，不读取账号表。`composition` 装配公共服务并管理启动补查及每 30 分钟检查的任务；复用 19:00 截止规则、同一观察计算器、参考价与公共行情/分红能力。相同标的在途检查合并，价格与分红请求共同受供应商的最多 2 并发限制，单轮 120 秒；已完成当前截止日则跳过，缺项、失败和行情滞后可重试，失败保留已有日期和结果。公共快照不产生个人观察、提醒或账号版本变更，整站备份包含公共表，个人 JSON 备份不包含它。
 

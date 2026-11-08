@@ -3,6 +3,7 @@ pub(crate) mod calendar;
 pub(crate) mod catalog;
 pub(crate) mod grid;
 pub(crate) mod rules;
+pub(crate) mod trends;
 use rules::WatchRules;
 pub(crate) mod grid_archive;
 
@@ -211,6 +212,8 @@ pub struct Observation {
     pub dividend_basis: Option<DividendBasis>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dividend_history: Option<DividendWindow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trends: Option<Vec<trends::TrendPoint>>,
 }
 
 /// Display evidence only; TTM amounts and frozen calculation events stay independent.
@@ -454,6 +457,7 @@ pub fn evaluate(
         .map(|(p, a)| p / a);
     let mut weeks: BTreeMap<(i32, u32), Vec<Option<f64>>> = BTreeMap::new();
     let mut daily = Vec::new();
+    let mut sessions = Vec::new();
     for date in data.calendar.iter().filter(|d| **d <= day) {
         let value = bars
             .get(date)
@@ -462,6 +466,7 @@ pub fn evaluate(
             .filter(|(v, s)| v.is_finite() && *v > 0.0 && s.is_finite())
             .map(|(v, s)| v * s);
         daily.push(value);
+        sessions.push((*date, value));
         let week = date.iso_week();
         weeks
             .entry((week.year(), week.week()))
@@ -528,6 +533,7 @@ pub fn evaluate(
             })
             .unwrap_or_default(),
         dividend_basis: data.dividend_basis.clone(),
+        trends: Some(trends::calculate(&sessions)),
         dividend_history: data.dividends.as_ref().map(|events| {
             let start = day.checked_sub_months(chrono::Months::new(36)).unwrap();
             DividendWindow {

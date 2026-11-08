@@ -70,6 +70,18 @@ export interface Band {
   matchesRule: boolean;
 }
 export type WatchStatus = "attention" | "waiting" | "incomplete";
+export interface WatchTrendPoint {
+  day: string;
+  close: number | null;
+  weeklyLower: number | null;
+  weeklyMiddle: number | null;
+  weeklyUpper: number | null;
+  monthlyMiddle: number | null;
+  ma20: number | null;
+  ma60: number | null;
+  goldenCross: boolean;
+  provisional: boolean;
+}
 export type WatchIssue =
   | "price_unavailable"
   | "daily_history_incomplete"
@@ -103,6 +115,7 @@ export interface Observation {
     end: string;
     events: Observation["dividendEvents"];
   } | null;
+  trends?: WatchTrendPoint[] | null;
 }
 export interface WatchMarketRow {
   latest: Observation | null;

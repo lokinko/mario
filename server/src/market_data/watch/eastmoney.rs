@@ -81,7 +81,9 @@ async fn history(
             ("fqt", adjustment.into()),
             (
                 "beg",
-                (day - Duration::days(730)).format("%Y%m%d").to_string(),
+                (day - Duration::days(super::HISTORY_DAYS))
+                    .format("%Y%m%d")
+                    .to_string(),
             ),
             ("end", day.format("%Y%m%d").to_string()),
             ("fields1", "f1,f2,f3,f4,f5,f6".into()),

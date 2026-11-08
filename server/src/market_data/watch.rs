@@ -22,6 +22,7 @@ use tokio::{
 };
 
 type Cached = (Instant, WatchMarketData);
+const HISTORY_DAYS: i64 = 1460;
 pub(crate) struct PublicWatchProvider {
     client: Client,
     slots: Semaphore,
@@ -53,7 +54,7 @@ impl PublicWatchProvider {
                     .query(&[
                         (
                             "period1",
-                            (day - Days::days(730))
+                            (day - Days::days(HISTORY_DAYS))
                                 .and_hms_opt(0, 0, 0)
                                 .unwrap()
                                 .and_utc()

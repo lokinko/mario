@@ -3,6 +3,7 @@ import type { WatchRules, WatchMarketRow } from "../../api/watch";
 import { BandTrack, RuleChecks, YieldGrid } from "./WatchSignals";
 import { WatchDividends } from "./WatchDividends";
 import { WatchSources } from "./WatchSources";
+import { WatchTrends } from "./WatchTrends";
 import { number } from "./presentation";
 
 export function WatchEvidence({
@@ -49,6 +50,7 @@ export function WatchEvidence({
           rule={rules.weekly}
         />
       </div>
+      <WatchTrends key={latest?.symbol} latest={latest} />
       <YieldGrid row={row} minYield={minYield} />
       {children}
       <WatchDividends latest={latest} />

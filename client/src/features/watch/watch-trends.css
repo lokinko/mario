@@ -1,0 +1,113 @@
+.watch-trends .watch-section-title h3 {
+  margin: 0;
+}
+.watch-trends .watch-section-title label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-3);
+  font-size: var(--fs-caption);
+}
+.watch-trends select {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-1);
+}
+.watch-trend-chart {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  min-width: 0;
+}
+.watch-trend-chart h4 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+.watch-trend-chart svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.watch-trend-axis {
+  fill: var(--text-3);
+  font-family: var(--font-num);
+  font-size: var(--fs-caption);
+}
+.watch-trend-grid {
+  stroke: var(--line);
+  stroke-dasharray: 3 4;
+}
+.watch-trend-cursor {
+  stroke: var(--text-4);
+  stroke-dasharray: 3 3;
+}
+.watch-trend-cross {
+  fill: var(--warning);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.watch-trend-date {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--text-3);
+}
+.watch-trend-date strong {
+  color: var(--text-2);
+  font-family: var(--font-num);
+  font-weight: 500;
+}
+.watch-trend-date span {
+  color: var(--warning);
+}
+.watch-trend-chart input[type="range"] {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: var(--space-2) 0 var(--space-3);
+  accent-color: var(--brand);
+}
+.watch-trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+.watch-trend-legend dt {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  color: var(--text-3);
+}
+.watch-trend-legend i {
+  width: 14px;
+  border-top: 2px solid var(--series-color);
+}
+.watch-trend-legend dd {
+  margin: var(--space-1) 0 0 18px;
+  color: var(--text-1);
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+.watch-trend-summary {
+  margin: var(--space-2) 0;
+  font-size: var(--fs-body-sm);
+  color: var(--text-2);
+}
+@media (max-width: 600px) {
+  .watch-trend-chart {
+    padding: var(--space-2);
+  }
+  .watch-trend-legend {
+    gap: var(--space-2) var(--space-3);
+  }
+}

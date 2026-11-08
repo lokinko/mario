@@ -59,7 +59,11 @@ fn domestic(url: &reqwest::Url, missing_adjusted: bool) -> Value {
     assert_eq!(query["end"], "20261104");
     let (market, code) = query["secid"].split_once('.').unwrap();
     let day = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
-    let rows: Vec<_> = (0..160)
+    assert_eq!(
+        query["beg"],
+        (day - Days::days(1460)).format("%Y%m%d").to_string()
+    );
+    let rows: Vec<_> = (0..1460)
         .rev()
         .filter_map(|n| {
             let date = day - Days::days(n);
@@ -100,6 +104,24 @@ async fn domestic_prices_work_without_yahoo_and_align_adjustments_by_date() {
         assert_eq!(result.yield_pct, Some(5.0));
         assert_eq!(result.daily.is_none(), missing);
         assert_eq!(result.weekly.is_none(), missing);
+        let trends = result.trends.as_ref().unwrap();
+        assert_eq!(trends.len(), 104);
+        let last = trends.last().unwrap();
+        assert_eq!(last.day.to_string(), result.observed_on);
+        assert_eq!(last.ma60.is_none(), missing);
+        assert_eq!(last.monthly_middle.is_none(), missing);
+        if !missing {
+            assert_eq!(last.close, Some(100.0));
+            assert_eq!(last.ma20, Some(100.0));
+            assert_eq!(last.monthly_middle, Some(100.0));
+        }
+        assert_eq!(
+            serde_json::from_str::<crate::models::watch::Observation>(
+                &serde_json::to_string(&result).unwrap()
+            )
+            .unwrap(),
+            result
+        );
         if missing {
             assert!(result.issues.contains(&WatchIssue::DailyHistoryIncomplete));
             assert!(data
@@ -131,6 +153,17 @@ async fn invalid_domestic_data_falls_back_as_a_whole_and_all_failures_stay_error
             return json!({"rc":0,"data":{"code":"WRONG","market":0,"klines":["2026-11-04,1,1"]}});
         }
         let symbol = url.path().rsplit('/').next().unwrap();
+        let query: BTreeMap<_, _> = url.query_pairs().into_owned().collect();
+        let day = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+        assert_eq!(
+            query["period1"],
+            (day - Days::days(1460))
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_utc()
+                .timestamp()
+                .to_string()
+        );
         json!({"chart":{"error":null,"result":[{
             "meta":{"symbol":symbol,"currency":"CNY","exchangeTimezoneName":"Asia/Shanghai"},
             "timestamp":[1793750400],
