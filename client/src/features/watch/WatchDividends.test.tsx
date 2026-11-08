@@ -46,7 +46,6 @@ it("shows every history event in reverse order and marks only TTM events", () =>
   expect(rows[1].textContent).toContain("计入");
   expect(rows[2].textContent).toContain("2024-07-11");
   expect(rows[2].textContent).not.toContain("计入");
-  expect(screen.getByText(/金额为税前、当次每十股口径/)).toBeTruthy();
 });
 
 it("keeps old observations readable without claiming three-year coverage", () => {

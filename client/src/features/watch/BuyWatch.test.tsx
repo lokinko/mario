@@ -264,10 +264,11 @@ it("keeps public details separate and refreshes only the selected industry", asy
   fireEvent.click(await screen.findByRole("tab", { name: "银行 11" }));
   fireEvent.click(screen.getByRole("button", { name: /招商银行.*600036/ }));
   const drawer = await screen.findByRole("dialog");
-  expect(within(drawer).getByText("公司与行业来源")).toBeTruthy();
-  expect(
-    within(drawer).getByRole("link", { name: "公司公开报告 ↗" }),
-  ).toHaveProperty("href", catalog.rows[0].company.sources[1]);
+  const report = within(drawer).getByText("公司公开报告").closest("li")!;
+  expect(within(report).getByRole("link")).toHaveProperty(
+    "href",
+    catalog.rows[0].company.sources[1],
+  );
   expect(within(drawer).queryByText("已有持仓与最近交易")).toBeNull();
   expect(
     within(drawer).queryByRole("button", { name: "编辑观察资料" }),

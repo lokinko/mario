@@ -10,11 +10,6 @@ export function WatchDividends({ latest }: { latest: Observation | null }) {
   return (
     <section className="watch-detail-section">
       <h3>{history ? "近三年已实施分红" : "TTM 已实施分红"}</h3>
-      {history && (
-        <p className="watch-meta">
-          除息日 {history.start} 至 {history.end} · 金额为税前、当次每十股口径
-        </p>
-      )}
       {events.length ? (
         <div className="table-scroll">
           <table
@@ -68,18 +63,6 @@ export function WatchDividends({ latest }: { latest: Observation | null }) {
           {covered ? "近三年没有已实施的分红方案。" : "暂无可展示的分红事件。"}
         </p>
       )}
-      <div className="watch-sources">
-        {latest?.sources.map((url, i) => (
-          <a key={url} href={url} target="_blank" rel="noreferrer">
-            {i === 0
-              ? "证券日线来源"
-              : i === 1
-                ? "交易日期参考来源"
-                : "已实施分红来源"}{" "}
-            ↗
-          </a>
-        ))}
-      </div>
     </section>
   );
 }

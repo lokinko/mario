@@ -758,11 +758,36 @@
   color: var(--text-3);
 }
 .watch-sources {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: 12px 0;
-  font-size: 11px;
+  margin: 4px 0 12px;
+  font-size: var(--fs-body-sm);
+}
+.watch-sources summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--text-3);
+}
+.watch-sources summary:hover {
+  color: var(--text-1);
+}
+.watch-sources ul {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.watch-sources li {
+  display: grid;
+  grid-template-columns: 10em minmax(0, 1fr);
+  gap: 12px;
+}
+.watch-sources li span {
+  color: var(--text-3);
+}
+.watch-sources li a {
+  overflow-wrap: anywhere;
 }
 .watch-trades {
   padding-left: 20px;

@@ -594,7 +594,6 @@ export function BuyWatch({
             catalog.catalog.industries.find((industry) => industry.id === group)
               ?.name ?? ""
           }
-          verifiedOn={catalog.catalog.verifiedOn}
           rules={rules}
           busy={busy}
           error={error || catalogError}
