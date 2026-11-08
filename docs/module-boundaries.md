@@ -173,12 +173,13 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 
 ### 问答报告、事实卡与追问
 
-- `models::StructuredAnalysis` 是生成契约；`models/analysis_history` 的独立类型只读历史报告，仓储以 `headline()` 获取两类报告的列表摘要，不转换历史正文。
+- `models::StructuredAnalysis` 是生成契约；唯一生产工作流为 v9，沿用单次生成与至多一次格式修复，不新增语义评判模型阶段。结论、理由与前提可按问题展开，字符预算以[输出规范](ai-workflow.md#结构化输出契约)为准；不强制每个动作带金额，依赖目标的动作先写明假设。`models/analysis_history` 的独立类型只读历史报告，仓储以 `headline()` 获取两类报告的列表摘要，不转换历史正文。
 - `ai/structured_output` 校验字段、数量、字数、事实索引和引用，拒绝缺少原值引用的个人事实；路径校验保证存在与授权，不替代语义核对。`ai/streaming` 只投影报告的用户可见字段。`features/research/ModelReport` 共享来源抽屉，按报告形状读取历史或显示新回答。
 - `context/fact_sheet` 是领域层确定性投影：精确金额只输出一次，结余、占比、偏差和浮盈使用 Decimal；组合合计缺失时保留空值与结构化影响范围，其他持仓及现金继续计算。不重算或写入财务事实。`application/analysis` 不查询个人规则、复盘和每日资产。
 - `BuiltContext` 区分模型 payload 与授权估值审计，二者共同冻结指纹；模型只消费紧凑 payload，估值链进入轨迹。预览的事实卡与模型使用的卡一致。
 - `features/research/previousTurn` 按 Unicode 字符截取上一轮问题、结构化结论和最多 3 条动作（额度 200/300/每条 100）；纯文本历史记录最多取 300 字。`models::PreviousTurn` 校验总计 800 字符、非空正文及最多 3 条建议；`ContextBuilder` 单独冻结它，应用层保存当前 question，不把历史模型内容拼进问题。输出引用只允许当前问题与已授权事实卡。新对话清空摘要。
 - `application/analysis` 优先组装问题中明确提及公司的最新及本周观察证据，`evidence::search_evidence` 补齐剩余额度，共最多 5 条；`relevant_excerpt` 返回最多 2000 字连续原文；`application` 读取并授权候选，`context` 冻结原文与片段，AI 不读仓储、不额外筛选。网页搜索由用户主动开关授权，默认关闭，原生搜索结果直接进入生成。
+- [真实质量评测](../server/tests/fixtures/qa_eval/README.md)的场景输入、模型调用与人工评阅分别留证。子集先检查依赖，不隐式补题增加付费调用；默认／场景授权在实际请求中记录。它只使用虚构资料，不把当前模型参数复用声称为读取用户账号数据。质量判断按相关事实、推理、反方与下一步核对，格式和引用门禁不代替逐题语义检查。
 
 ### 独立研究与看板
 

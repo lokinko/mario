@@ -1,11 +1,16 @@
 # 理财问答基线评测
 
-用固定虚构快照比较问答工作流的建议质量与资源消耗。只通过显式忽略测试调用真实模型，不连接账号数据库，不改变产品行为。
+用固定虚构快照比较问答工作流的建议质量与资源消耗。只通过显式忽略测试调用真实模型，不连接账号数据库，不改变产品行为。输入经过真实 `ContextBuilder` 和模型工作流，但这不是账号数据库或 HTTP 端到端验收，也不验证真实市场事实。
 
 - `snapshot.json` 是完全虚构的固定快照：成长基金 80 万元、债券基金 15 万元、缺少汇率的美元基金、人民币现金和待核对港币现金。应急金不足 1 个月，每月结余 8000 元。
 - 原币金额与精确会计值并存，沿用当前生产输入。缺汇率时总资产为 `null`，投资资产已知小计不冒充完整合计；港币现金待核对不阻止其他现金计算。
-- `questions.json` 包含 12 题；`previousCaseId` 仅引用前面成功完成的题目。追问与前端一致通过 previousTurn 携带 800 字以内的上一轮问题、结论与动作，不新增总结调用。
-- 默认沿用 `AnalysisSettings::default()` 的工作流、资料组和搜索授权；Chat Completions 与前端一致关闭不支持的原生搜索。默认值变化后，同一题集自然走新路径。
+- [`questions.json`](questions.json) 包含 15 题：原 12 题继续使用原快照与空研究来源，三个观察场景显式指定 `scenario`。`previousCaseId` 仅引用前面成功完成的题目。追问与前端一致通过 previousTurn 携带 800 字以内的上一轮问题、结论与动作，不新增总结调用。
+- 原 12 题沿用 `AnalysisSettings::default()` 的工作流、资料组和搜索授权；Chat Completions 与前端一致关闭不支持的原生搜索。默认值变化后，同一题集自然走新路径。评测不读取用户保存的方法论或账号资料；模型接口与模型名由评测环境显式提供。
+- [`watch.json`](watch.json) 是三个观察场景的固定虚构输入。`QA-WATCH` 不是实际证券代码，所有公司资料与 `fictional.example` URL 均为虚构，不抓取这些 URL。用两个不同账户的独立持仓替换原成长基金：各 16000 股，历史买价分别为 30 元、32.5 元，现价 25 元，合计 32000 股、成本 100 万元、市值 80 万元。原币投影、精确会计值和原始成交相互核对；原有其他资产与资料缺口保留。两个纯买入持仓已结算收益均为零，其余两项投资的已结算收益未知；日期保留各持仓真实的夹具日期，混合日期时没有统一估值日。这些是固定输入，不声称执行了数据库总账重放。
+- `watch-add` 发送持仓、收支、两笔原始成交及观察、支持、反方三项公开来源；实际 TTM 每股 1.5 元含普通 1.0 元和特别 0.5 元，现价 25 元对应 6%，满足该场景保存的最低 5% 门槛。普通分红情景 4% 用于讨论持续性，不能替换实际 TTM 的观察结果。
+- `watch-no-personal` 显式关闭收支与持仓授权，只发送公开观察与反方两项来源；问题和公开来源均不夹带个人金额、账户或成交。事实卡 `summary` 为空，模型收不到持仓、现金或交易，不能据观察信号猜买入股数或仓位上限。
+- `watch-weekly` 发送收支、持仓、原始成交和四项来源，覆盖本周实际保存记录、缺记录日、支持与反方材料。当前最低股息率为 6.5%，此前记录按当时的 5% 解释；价格与分红未变化时的配置变更不能说成价格下跌或行情退出。只有列出的记录可用于描述周内变化。
+- 新场景的来源均经过实际证据目录和摘录路径，每题最多五项、每项不超过 2000 字；当前三题分别发送三、二、四项。新场景显式选择授权组并保留原生搜索默认设置；逐题 `request.contextSelection` 和冻结 `context` 是该题实际输入，报告顶层 `settings` 是共同默认值。报告保持 `schemaVersion: 1`，只为新题增加可选 `scenario` 字段，既有评分脚本继续读取。
 
 ## 运行
 
@@ -16,8 +21,8 @@ mkdir -p .runtime/qa-eval
 # 在当前终端安全配置以下环境变量，勿把密钥写进代码或报告：
 # MARIO_EVAL_BASE_URL、MARIO_EVAL_MODEL、MARIO_EVAL_API_KEY
 # 可选 MARIO_EVAL_PROVIDER：openai-responses（默认）、openai-chat、anthropic
-MARIO_EVAL_REPORT_PATH="$PWD/.runtime/qa-eval/baseline-v8.json" npm run eval:qa
-npm run eval:qa:score -- .runtime/qa-eval/baseline-v8.json
+MARIO_EVAL_REPORT_PATH="$PWD/.runtime/qa-eval/baseline-current.json" npm run eval:qa
+npm run eval:qa:score -- .runtime/qa-eval/baseline-current.json
 ```
 
 也可以把配置保存到被 Git 忽略的 `.runtime/qa-eval.env`（建议权限 `600`），内容为上述环境变量以及绝对路径的 `MARIO_EVAL_REPORT_PATH`，然后运行：
@@ -34,8 +39,8 @@ node --env-file=.runtime/qa-eval.env scripts/postgres-cluster.mjs \
 首次评分生成 `<报告>.manual.csv` 和 `<报告>.score.json`。再次评分不会覆盖已有 CSV；修改评分后须显式传入 CSV 路径：
 
 ```sh
-npm run eval:qa:score -- .runtime/qa-eval/baseline-v8.json \
-  .runtime/qa-eval/baseline-v8.json.manual.csv
+npm run eval:qa:score -- .runtime/qa-eval/baseline-current.json \
+  .runtime/qa-eval/baseline-current.json.manual.csv
 ```
 
 逐题评阅完整回答及冻结输入，在 CSV 填写：
@@ -43,15 +48,21 @@ npm run eval:qa:score -- .runtime/qa-eval/baseline-v8.json \
 | 字段 | 含义 |
 | --- | --- |
 | `suggestionCount` | 建议总数，模板用结构化行动数预填，可按实际展示修正 |
-| `usefulSuggestionCount` | 同时有对象、方向和幅度、数字依据、适用前提的建议数 |
+| `usefulSuggestionCount` | 与当前问题相关，写清对象、具体下一步或等待条件、事实与推理依据、适用前提的建议数；金额或数量仅在本题需要且资料支持时必要，不为凑数字加分 |
 | `directAnswer` | 第一句直接回答本题为 `1`，否则 `0` |
 | `fabricated` | 出现资料中没有依据的事实数字或来源为 `1`，否则 `0`；合理且可复核的计算与明确提出的目标幅度不算编造 |
-| `notes` | 数字错配、依据缺口和具体评分理由 |
+| `notes` | 逐项记录直接回答、事实准确、推理、有效反方与未知、行动或等待条件是否满足，附关键原句和具体缺口 |
 
-空白表示未评阅，不代表 `0`。只有所有题目执行完成且人工评分齐全，才输出三项质量率；建议率按建议总数加权，另两项按回答数计算。任何编造都不合格。
+空白表示未评阅，不代表 `0`。只有所有题目执行完成且人工评分齐全，才输出三项质量率；建议率按建议总数加权，另两项按回答数计算。任何编造都不合格。三项汇总率不自动证明建议详实：每题还须判断是否将关键事实推导到结论、是否正面处理反方与未知、是否有与本题相关的行动或等待条件，不以平均率抵消关键失败。
+
+明确提出的应急金目标等方案假设不冒充用户事实，且应在给具体金额前说明它是可选前提及改变后会影响什么。合理等待、核查指定来源或补齐影响本题的数据可以是有用建议；只重复“谨慎”“进一步研究”不算，转去与本题无关的精确配款也不算。观察条件满足不证明低估、经营稳定或应该成交；未授权个人资料时不能编造持仓、现金、买量或仓位上限。详实按事实、推理、反方和条件判断，字数与 token 只作资源指标。
+
+观察场景还须区分公司分红与个人到账：公司 TTM 每股分红乘当前 32000 股只能是清楚标注持股与分红假设的情景，不能说成用户过去 12 个月已收到的分红或收益。两笔虚构买入分别发生在 9 月与 10 月，未提供个人分红到账或除息时持仓记录；没有这些记录不能证明个人已收到现金，也不能把未记录等同实际未收到。将公司 TTM 或当前股数直接当成个人历史到账，应按无依据事实记录并判不合格。
 
 机器指标包含 Unicode 字符数（包括正文中的标题与告警）、阶段数、按 `requestCount` 汇总的实际请求次数、输入/输出 token、调用累计耗时和题目端到端耗时。供应商未返回某次 token 时，该题对应 token 合计为 `null`；均值只计用量完整的题目，同时输出覆盖数量，不按零估算。应使用相同模型和接口比较，并记录搜索开启时实时网页资料的变动。
 
 离线验证：`npm run test:qa-eval`，以及 `npm run test:server -- ai::qa_eval`。完整 `npm test` 包含评分回归及虚构快照、追问截取回归；不会隐式调用真实模型。
 
-需要单独复测时，可设置 `MARIO_EVAL_CASE_IDS=reduce,followup`，只运行指定题目；追问依赖的上一题也应在列表中。子集报告 expectedCases 为子集数量，不能冒充完整12题结果；初次失败记录应保留，重测报告用新文件名。
+需要单独复测时，可设置 `MARIO_EVAL_CASE_IDS=reduce,followup`，只运行指定题目；或用 `MARIO_EVAL_CASE_IDS=watch-add,watch-no-personal,watch-weekly` 复测三个观察场景。ID 和追问依赖会在构造模型 provider、创建报告文件及付费调用前预检；空 ID、重复 ID、未知 ID 或遗漏依赖直接失败，不自动追加隐含调用。选择 `followup` 时必须显式包含 `reduce`，执行顺序仍按题集顺序。上游在实际模型执行中失败时，后续依赖题仍标为跳过，不伪造上一轮答案。
+
+普通 fixture 单元测试始终检查完整 15 题，不读取 live 子集环境变量。子集报告 `expectedCases` 为子集数量，不能冒充完整 15 题结果；初次失败记录应保留，重测报告用新文件名。

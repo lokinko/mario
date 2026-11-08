@@ -1,10 +1,10 @@
 use serde_json::Value;
 
-use super::structured_output::STRUCTURED_ANALYSIS_CONTRACT;
+use super::structured_output::{MAX_STRUCTURED_OUTPUT_CHARS, STRUCTURED_ANALYSIS_CONTRACT};
 use super::ChatMessage;
 use crate::context::INVESTMENT_SYSTEM_POLICY;
 
-pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v8";
+pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v9";
 
 pub struct StagePrompt {
     pub key: &'static str,
@@ -42,9 +42,9 @@ pub trait AnalysisWorkflow: Send + Sync {
     ) -> StagePrompt;
 }
 
-pub struct InvestmentWorkflowV8;
+pub struct InvestmentWorkflowV9;
 
-impl AnalysisWorkflow for InvestmentWorkflowV8 {
+impl AnalysisWorkflow for InvestmentWorkflowV9 {
     fn version(&self) -> &'static str {
         INVESTMENT_WORKFLOW_VERSION
     }
@@ -77,7 +77,7 @@ impl AnalysisWorkflow for InvestmentWorkflowV8 {
                 ChatMessage::user(format!(
                     "待修复阶段：{stage_label}\n校验错误：{validation_error}\n本次允许引用的证据 ID：{}\n\n原输出：\n{}\n\n请严格按契约重写。\n{STRUCTURED_ANALYSIS_CONTRACT}",
                     serde_json::to_string(allowed_evidence_ids).unwrap_or_else(|_| "[]".into()),
-                    truncate_chars(invalid_output, 12_000)
+                    truncate_chars(invalid_output, MAX_STRUCTURED_OUTPUT_CHARS)
                 )),
             ],
         }
@@ -94,14 +94,34 @@ mod tests {
 
     #[test]
     fn generation_keeps_untrusted_data_boundary_and_machine_contract() {
-        let prompt = InvestmentWorkflowV8.quick("上下文");
+        let prompt = InvestmentWorkflowV9.quick("上下文");
         assert!(prompt.messages[0].content.contains("不可信数据"));
         assert!(prompt.messages[1].content.contains("evidenceIds"));
-        assert!(
-            INVESTMENT_SYSTEM_POLICY.chars().count() + STRUCTURED_ANALYSIS_CONTRACT.chars().count()
-                < 800
-        );
-        let repair = InvestmentWorkflowV8.repair_output("生成", "无效输出", "字段缺失", &[]);
+        let repair = InvestmentWorkflowV9.repair_output("生成", "无效输出", "字段缺失", &[]);
         assert_eq!(repair.messages[0].content, "只修复格式，不添加新事实。");
+    }
+
+    #[test]
+    fn repair_preserves_the_tail_of_detailed_output_within_the_parser_budget() {
+        let invalid = serde_json::json!({
+            "answer": "待修复的理由".repeat(2_500),
+            "tail": "最后的条件与引用不能被旧截断丢弃"
+        })
+        .to_string();
+        assert!(invalid.chars().count() > 12_000);
+        assert!(invalid.chars().count() < MAX_STRUCTURED_OUTPUT_CHARS);
+        let prompt = InvestmentWorkflowV9.repair_output("生成", &invalid, "字段无效", &[]);
+        assert!(prompt.messages[1].content.contains(&invalid));
+    }
+
+    #[test]
+    fn repair_bounds_oversized_originals_by_unicode_characters() {
+        let retained = "🙂".repeat(MAX_STRUCTURED_OUTPUT_CHARS);
+        let oversized = format!("{retained}BEYOND_ORIGINAL_BUDGET");
+        let prompt = InvestmentWorkflowV9.repair_output("生成", &oversized, "输出过大", &[]);
+        assert!(prompt.messages[1].content.contains(&retained));
+        assert!(!prompt.messages[1]
+            .content
+            .contains("BEYOND_ORIGINAL_BUDGET"));
     }
 }
