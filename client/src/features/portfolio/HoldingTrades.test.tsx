@@ -125,16 +125,16 @@ it("pages five newest executions per holding and can edit older pages without lo
       }}
     />,
   );
-  const receipts = () =>
-    Array.from(container.querySelectorAll("tbody tr")).map(
-      (row) => row.textContent?.match(/receipt-\d+/)?.[0],
+  const rows = () =>
+    Array.from(container.querySelectorAll("tbody tr")).map((row) =>
+      row.textContent?.replace(/^2026-(\d\d-\d\d)第 (\d) 笔.*$/, "$1#$2"),
     );
-  expect(receipts()).toEqual([
-    "receipt-12",
-    "receipt-11",
-    "receipt-10",
-    "receipt-9",
-    "receipt-8",
+  expect(rows()).toEqual([
+    "01-06#2",
+    "01-06#1",
+    "01-05#2",
+    "01-05#1",
+    "01-04#2",
   ]);
   expect(screen.getByText("第 1 / 3 页")).toBeTruthy();
   expect(screen.getByRole("button", { name: "上一页" })).toHaveProperty(
@@ -148,24 +148,24 @@ it("pages five newest executions per holding and can edit older pages without lo
     "卖出",
   );
   fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-  expect(receipts()).toEqual([
-    "receipt-7",
-    "receipt-6",
-    "receipt-5",
-    "receipt-4",
-    "receipt-3",
+  expect(rows()).toEqual([
+    "01-04#1",
+    "01-03#2",
+    "01-03#1",
+    "01-02#2",
+    "01-02#1",
   ]);
   fireEvent.click(screen.getAllByRole("button", { name: "编辑交易" })[0]);
   expect(screen.getByLabelText("交易备注")).toHaveProperty("value", "note-7");
   fireEvent.click(screen.getByRole("button", { name: "关闭交易录入" }));
   fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-  expect(receipts()).toEqual(["receipt-2", "receipt-1"]);
+  expect(rows()).toEqual(["01-01#2", "01-01#1"]);
   expect(screen.getByRole("button", { name: "下一页" })).toHaveProperty(
     "disabled",
     true,
   );
   fireEvent.click(screen.getByRole("button", { name: "上一页" }));
-  expect(receipts()).toHaveLength(5);
+  expect(rows()).toHaveLength(5);
   rerender(
     <HoldingTrades
       {...props}
@@ -173,7 +173,7 @@ it("pages five newest executions per holding and can edit older pages without lo
     />,
   );
   expect(screen.getByText("第 1 / 1 页")).toBeTruthy();
-  expect(receipts()).toEqual(["receipt-2", "receipt-1"]);
+  expect(rows()).toEqual(["01-01#2", "01-01#1"]);
 });
 it("confirms deletion, prevents duplicate writes and refreshes the empty position", async () => {
   const confirm = vi
@@ -236,7 +236,7 @@ it("keeps a rejected deletion visible and allows retry after refreshing the hold
   expect((await screen.findByRole("alert")).textContent).toContain(
     "卖出超过当时持仓",
   );
-  expect(screen.getByText("receipt")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "删除交易" })).toBeTruthy();
   expect(props.onUpdate).not.toHaveBeenCalled();
   rerender(
     <HoldingTrades
@@ -277,7 +277,7 @@ it("deleting the only record on the last page returns to the preceding page", as
   rerender(<HoldingTrades {...props} snapshot={updated} />);
   expect(screen.getByText("第 1 / 1 页")).toBeTruthy();
   expect(screen.getAllByRole("button", { name: "删除交易" })).toHaveLength(5);
-  expect(screen.queryByText("receipt-0")).toBeNull();
+  expect(screen.queryByText("第 1 笔")).toBeNull();
 });
 it("records exact real executions, separated charges and retry identity without an artificial opening", async () => {
   const onUpdate = vi.fn();
@@ -548,6 +548,29 @@ it("keeps an uncertain edit frozen and retries exactly the original content", as
     first,
   );
   expect(portfolioApi.saveHoldingTrade).not.toHaveBeenCalled();
+});
+
+it("folds fees into the actual cash flow and lists them only when charged", () => {
+  const props = { holding, onUpdate: vi.fn(), flash: vi.fn() };
+  const { container, rerender } = render(
+    <HoldingTrades {...props} snapshot={value} />,
+  );
+  const cell = () =>
+    container.querySelector('td[data-label="实际现金收支"]')?.textContent;
+  expect(cell()).toContain("费用");
+  expect(cell()).toContain("税费");
+  expect(screen.queryByText("券商A")).toBeNull();
+  rerender(
+    <HoldingTrades
+      {...props}
+      snapshot={{
+        ...value,
+        holdingTrades: [{ ...buy, fees: "0", taxes: "0.00" }],
+      }}
+    />,
+  );
+  expect(cell()).not.toContain("费用");
+  expect(container.querySelectorAll("thead th")).toHaveLength(5);
 });
 
 it("omits the position summary where the holding detail already shows it", () => {

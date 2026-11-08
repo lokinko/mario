@@ -749,9 +749,7 @@ export function HoldingTrades({
                   <th>日期 / 顺序</th>
                   <th>类型 / 数量</th>
                   <th>成交 / 分红金额</th>
-                  <th>费用 / 税费</th>
                   <th>实际现金收支</th>
-                  <th>账户 / 凭据</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -783,21 +781,22 @@ export function HoldingTrades({
                       </span>
                       <small>{t.currency}</small>
                     </td>
-                    <td data-label="费用 / 税费">
-                      <span className="num" data-money>
-                        {money(t.fees)}
-                      </span>
-                      <small>
-                        税费{" "}
-                        <span className="num" data-money>
-                          {money(t.taxes)}
-                        </span>
-                      </small>
-                    </td>
                     <td data-label="实际现金收支">
                       <span className="num" data-money>
                         {money(summary?.cashFlows[t.id] ?? "0")}
                       </span>
+                      {(Number(t.fees) !== 0 || Number(t.taxes) !== 0) && (
+                        <small>
+                          费用{" "}
+                          <span className="num" data-money>
+                            {money(t.fees)}
+                          </span>{" "}
+                          · 税费{" "}
+                          <span className="num" data-money>
+                            {money(t.taxes)}
+                          </span>
+                        </small>
+                      )}
                       {summary?.profits[t.id] !== undefined && (
                         <small>
                           卖出盈亏{" "}
@@ -806,11 +805,6 @@ export function HoldingTrades({
                           </span>
                         </small>
                       )}
-                    </td>
-                    <td data-label="账户 / 凭据" className="trade-account">
-                      {t.account}
-                      <small>{t.externalId}</small>
-                      <small>{t.note}</small>
                     </td>
                     <td className="trade-actions">
                       <button

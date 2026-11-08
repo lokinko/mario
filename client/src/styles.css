@@ -1438,7 +1438,6 @@ main {
     color: var(--text-3);
     font-size: var(--fs-caption);
   }
-  .trade-table .trade-account,
   .trade-table .trade-actions {
     grid-column: 1 / -1;
   }
