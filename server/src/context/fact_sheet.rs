@@ -38,7 +38,6 @@ pub fn fact_sheet(snapshot: &Snapshot, selection: &ContextSelection) -> Value {
                 monthly_expense: profile.monthly_expense.to_string(),
                 emergency_fund: profile.emergency_fund.to_string(),
                 liabilities: profile.liabilities.to_string(),
-                investable_assets: profile.investable_assets.to_string(),
             }
         });
         let exact = Some(&saved);
@@ -88,14 +87,6 @@ pub fn fact_sheet(snapshot: &Snapshot, selection: &ContextSelection) -> Value {
                 json!("未填写")
             } else {
                 json!(profile.horizon_years)
-            },
-        );
-        summary.insert(
-            "riskLevel".into(),
-            if profile.risk_level == initial.risk_level || profile.risk_level.is_empty() {
-                json!("未填写")
-            } else {
-                json!(profile.risk_level)
             },
         );
         summary.insert(

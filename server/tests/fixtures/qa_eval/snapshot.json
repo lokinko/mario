@@ -4,17 +4,14 @@
     "monthlyExpense": 12000,
     "emergencyFund": 10000,
     "liabilities": 50000,
-    "investableAssets": 0,
     "horizonYears": 3,
     "maxDrawdownPct": 15,
-    "riskLevel": "稳健",
     "baseCurrency": "CNY",
     "exactAmounts": {
       "monthlyIncome": "20000",
       "monthlyExpense": "12000",
       "emergencyFund": "10000",
-      "liabilities": "50000",
-      "investableAssets": "0"
+      "liabilities": "50000"
     }
   },
   "holdings": [

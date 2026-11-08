@@ -401,7 +401,6 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
         || profile.monthly_expense != normalized.monthly_expense
         || profile.emergency_fund != normalized.emergency_fund
         || profile.liabilities != normalized.liabilities
-        || profile.investable_assets != normalized.investable_assets
     {
         return Err(AppError::Validation("精确财务资料与数值投影不一致".into()));
     }

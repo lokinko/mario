@@ -134,7 +134,6 @@ impl Database {
             profile.monthly_expense,
             profile.emergency_fund,
             profile.liabilities,
-            profile.investable_assets,
             profile.max_drawdown_pct,
         ])?;
         if !(0..=80).contains(&profile.horizon_years) {

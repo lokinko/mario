@@ -70,22 +70,6 @@ pub fn analyze(
         });
     }
 
-    if let Some(total) = total.filter(|_| profile.investable_assets > 0.0) {
-        let difference_pct =
-            (total - profile.investable_assets).abs() / profile.investable_assets * 100.0;
-        if difference_pct > 10.0 {
-            findings.push(RiskFinding {
-                level: "medium".into(),
-                title: "资产档案尚未对齐".into(),
-                detail: format!(
-                    "持仓市值与填写的可投资资产相差 {:.1}%，当前组合分析可能不完整。",
-                    difference_pct
-                ),
-                action: "补齐遗漏资产，或更新财务档案中的可投资资产总额。".into(),
-            });
-        }
-    }
-
     if profile.horizon_years <= 2
         && holdings
             .iter()

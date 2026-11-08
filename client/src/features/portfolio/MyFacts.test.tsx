@@ -589,11 +589,7 @@ it("only asks for monthly facts and preserves existing investment preferences", 
   vi.mocked(portfolioApi.saveProfile).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
-  expect(
-    screen
-      .getAllByRole("spinbutton")
-      .filter((input) => !input.closest("details")),
-  ).toHaveLength(4);
+  expect(screen.getAllByRole("spinbutton")).toHaveLength(6);
   expect(screen.getByRole("spinbutton", { name: "负债 CNY" })).toBeTruthy();
   expect(screen.getByRole("spinbutton", { name: "备用金 CNY" })).toBeTruthy();
   fireEvent.change(screen.getByRole("spinbutton", { name: "月收入 CNY" }), {
@@ -649,7 +645,6 @@ it("edits all investment preferences at the unified facts entry and validates be
   vi.mocked(portfolioApi.saveProfile).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
-  fireEvent.click(screen.getByText("投资偏好与记账币种"));
   const horizon = screen.getByRole("spinbutton", { name: "投资期限 年" });
   fireEvent.change(horizon, { target: { value: "81" } });
   fireEvent.submit(horizon.closest("form")!);
@@ -659,19 +654,21 @@ it("edits all investment preferences at the unified facts entry and validates be
     screen.getByRole("spinbutton", { name: "可承受最大回撤 %" }),
     { target: { value: "20" } },
   );
-  fireEvent.change(screen.getByRole("combobox", { name: "风险倾向" }), {
-    target: { value: "均衡" },
-  });
-  fireEvent.change(screen.getByRole("combobox", { name: "基准币种" }), {
+  fireEvent.change(screen.getByRole("combobox", { name: "记账币种" }), {
     target: { value: "USD" },
   });
+  expect(screen.getByRole("spinbutton", { name: "月收入 USD" })).toBeTruthy();
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+  fireEvent.submit(horizon.closest("form")!);
+  expect(confirm).toHaveBeenCalledOnce();
+  expect(portfolioApi.saveProfile).not.toHaveBeenCalled();
+  confirm.mockReturnValueOnce(true);
   fireEvent.submit(horizon.closest("form")!);
   await waitFor(() =>
     expect(portfolioApi.saveProfile).toHaveBeenCalledWith(
       expect.objectContaining({
         horizonYears: 12,
         maxDrawdownPct: 20,
-        riskLevel: "均衡",
         baseCurrency: "USD",
       }),
     ),

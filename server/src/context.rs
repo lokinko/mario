@@ -359,7 +359,6 @@ mod tests {
             "emergencyMonths",
             "monthlySurplus",
             "horizonYears",
-            "riskLevel",
             "maxDrawdownPct",
         ] {
             assert_eq!(facts["summary"][field], "未填写");

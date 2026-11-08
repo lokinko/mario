@@ -31,7 +31,7 @@ pub fn analyze(
         .and_then(|v| v.to_f64())
         .unwrap_or(0.0);
     let has_portfolio = holdings.iter().any(|holding| holding.market_value > 0.0);
-    let (annual_return, annual_volatility) = portfolio_assumptions(profile, holdings);
+    let (annual_return, annual_volatility) = portfolio_assumptions(holdings);
     let emergency_months = if profile.monthly_expense > 0.0 {
         profile.emergency_fund / profile.monthly_expense
     } else {
@@ -89,15 +89,10 @@ pub fn analyze(
     })
 }
 
-fn portfolio_assumptions(profile: &FinancialProfile, holdings: &[Holding]) -> (f64, f64) {
+fn portfolio_assumptions(holdings: &[Holding]) -> (f64, f64) {
     let total: f64 = holdings.iter().map(|holding| holding.market_value).sum();
     if total <= 0.0 {
-        return match profile.risk_level.as_str() {
-            "保守" => (0.03, 0.05),
-            "均衡" => (0.055, 0.12),
-            "进取" => (0.07, 0.17),
-            _ => (0.042, 0.08),
-        };
+        return (0.042, 0.08);
     }
 
     let mut expected_return = 0.0;

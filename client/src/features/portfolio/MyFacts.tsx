@@ -344,6 +344,7 @@ export function MyFacts({
       {section === "savings" && (
         <ProfileForm
           profile={profile}
+          savedBaseCurrency={snapshot.profile.baseCurrency}
           onChange={setProfile}
           busy={busy}
           run={run}

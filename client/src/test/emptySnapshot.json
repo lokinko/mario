@@ -4,10 +4,8 @@
     "monthlyExpense": 0,
     "emergencyFund": 0,
     "liabilities": 0,
-    "investableAssets": 0,
     "horizonYears": 5,
     "maxDrawdownPct": 15,
-    "riskLevel": "稳健",
     "baseCurrency": "CNY"
   },
   "holdings": [],

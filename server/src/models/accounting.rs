@@ -52,14 +52,15 @@ pub struct AccountingSnapshot {
     pub cash: AccountingTotals,
 }
 
+// Profiles and backups saved before investable assets were retired still carry
+// `investableAssets`, so unknown fields are ignored rather than rejected.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfileAmounts {
     pub monthly_income: String,
     pub monthly_expense: String,
     pub emergency_fund: String,
     pub liabilities: String,
-    pub investable_assets: String,
 }
 
 pub(crate) fn normalize_profile(
@@ -77,14 +78,12 @@ pub(crate) fn normalize_profile(
         normalized.monthly_expense = value(&exact.monthly_expense)?;
         normalized.emergency_fund = value(&exact.emergency_fund)?;
         normalized.liabilities = value(&exact.liabilities)?;
-        normalized.investable_assets = value(&exact.investable_assets)?;
     }
     if [
         normalized.monthly_income,
         normalized.monthly_expense,
         normalized.emergency_fund,
         normalized.liabilities,
-        normalized.investable_assets,
     ]
     .iter()
     .any(|v| !v.is_finite() || *v < 0.0 || *v > 1e15)
@@ -97,4 +96,28 @@ pub(crate) fn normalize_profile(
         ));
     }
     Ok(normalized)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn profiles_saved_with_retired_fields_still_load_and_drop_them() {
+        let profile: super::super::FinancialProfile = serde_json::from_value(serde_json::json!({
+            "monthlyIncome": 1, "monthlyExpense": 0, "emergencyFund": 0, "liabilities": 0,
+            "investableAssets": 5, "horizonYears": 5, "maxDrawdownPct": 15,
+            "riskLevel": "进取", "baseCurrency": "CNY",
+            "exactAmounts": {
+                "monthlyIncome": "1", "monthlyExpense": "0", "emergencyFund": "0",
+                "liabilities": "0", "investableAssets": "5"
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            super::normalize_profile(&profile).unwrap().monthly_income,
+            1.0
+        );
+        let saved = serde_json::to_value(&profile).unwrap();
+        assert!(saved.get("riskLevel").is_none() && saved.get("investableAssets").is_none());
+        assert!(saved["exactAmounts"].get("investableAssets").is_none());
+    }
 }

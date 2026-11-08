@@ -1,17 +1,12 @@
 import { Button } from "antd";
 import { Callout } from "../../components/Callout";
-import { useId } from "react";
 import { Save } from "lucide-react";
 import { saveProfile } from "../../api/portfolio";
 import type { FinancialProfile, Snapshot } from "../../types";
 import { NumberField } from "../../components/NumberField";
 
 type ProfileAmount =
-  | "monthlyIncome"
-  | "monthlyExpense"
-  | "emergencyFund"
-  | "liabilities"
-  | "investableAssets";
+  "monthlyIncome" | "monthlyExpense" | "emergencyFund" | "liabilities";
 
 function validProfile(profile: FinancialProfile) {
   return (
@@ -20,7 +15,6 @@ function validProfile(profile: FinancialProfile) {
       profile.monthlyExpense,
       profile.liabilities,
       profile.emergencyFund,
-      profile.investableAssets,
     ].every((value) => Number.isFinite(value) && value >= 0 && value <= 1e15) &&
     Number.isInteger(profile.horizonYears) &&
     profile.horizonYears >= 0 &&
@@ -33,6 +27,7 @@ function validProfile(profile: FinancialProfile) {
 
 export function ProfileForm({
   profile,
+  savedBaseCurrency,
   onChange: setProfile,
   busy,
   run,
@@ -40,13 +35,13 @@ export function ProfileForm({
   flash,
 }: {
   profile: FinancialProfile;
+  savedBaseCurrency: string;
   onChange: (profile: FinancialProfile) => void;
   busy: boolean;
   run: (task: () => Promise<void>) => Promise<void>;
   onUpdate: (snapshot: Snapshot) => void;
   flash: (message: string) => void;
 }) {
-  const currencyHelpId = useId();
   const valid = validProfile(profile);
 
   const setAmount = (key: ProfileAmount, value: string) => {
@@ -55,7 +50,6 @@ export function ProfileForm({
       monthlyExpense: String(profile.monthlyExpense),
       emergencyFund: String(profile.emergencyFund),
       liabilities: String(profile.liabilities),
-      investableAssets: String(profile.investableAssets),
     };
     setProfile({
       ...profile,
@@ -73,6 +67,13 @@ export function ProfileForm({
   );
   const save = () => {
     if (busy || !valid) return;
+    if (
+      profile.baseCurrency !== savedBaseCurrency &&
+      !window.confirm(
+        `币种将从 ${savedBaseCurrency} 改为 ${profile.baseCurrency}，总资产等汇总也会改用该币种，已填金额不会自动换算。继续？`,
+      )
+    )
+      return;
     void run(async () => {
       onUpdate(await saveProfile(profile));
       flash("收支已保存");
@@ -86,7 +87,18 @@ export function ProfileForm({
     >
       <div className="panel-title">
         <h2>收入与支出</h2>
-        <span>按月记录 · {profile.baseCurrency}</span>
+        <select
+          aria-label="记账币种"
+          value={profile.baseCurrency}
+          disabled={busy}
+          onChange={(event) =>
+            setProfile({ ...profile, baseCurrency: event.target.value })
+          }
+        >
+          {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => (
+            <option key={value}>{value}</option>
+          ))}
+        </select>
       </div>
       <p className="section-intro">
         记录稳定月度现金流，作为风险承受能力的基础。
@@ -110,64 +122,23 @@ export function ProfileForm({
             {amountField("monthlyExpense", "月支出")}
             {amountField("liabilities", "负债")}
             {amountField("emergencyFund", "备用金")}
+            <NumberField
+              label="投资期限"
+              value={profile.horizonYears}
+              suffix="年"
+              onChange={(value) =>
+                setProfile({ ...profile, horizonYears: Number(value) })
+              }
+            />
+            <NumberField
+              label="可承受最大回撤"
+              value={profile.maxDrawdownPct}
+              suffix="%"
+              onChange={(value) =>
+                setProfile({ ...profile, maxDrawdownPct: Number(value) })
+              }
+            />
           </div>
-          <details className="holding-details">
-            <summary>投资偏好与记账币种</summary>
-            <div className="form-grid">
-              <label>
-                <span>基准币种</span>
-                <select
-                  aria-label="基准币种"
-                  aria-describedby={currencyHelpId}
-                  value={profile.baseCurrency}
-                  onChange={(event) =>
-                    setProfile({ ...profile, baseCurrency: event.target.value })
-                  }
-                >
-                  {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-                <small id={currencyHelpId}>
-                  汇总和目标使用此币种；切换不会自动换算已填金额。
-                </small>
-              </label>
-              {amountField("investableAssets", "可投资资产")}
-              <NumberField
-                label="投资期限"
-                value={profile.horizonYears}
-                suffix="年"
-                onChange={(value) =>
-                  setProfile({ ...profile, horizonYears: Number(value) })
-                }
-              />
-              <NumberField
-                label="可承受最大回撤"
-                value={profile.maxDrawdownPct}
-                suffix="%"
-                onChange={(value) =>
-                  setProfile({ ...profile, maxDrawdownPct: Number(value) })
-                }
-              />
-              <label>
-                <span>风险倾向</span>
-                <select
-                  value={profile.riskLevel}
-                  onChange={(event) =>
-                    setProfile({
-                      ...profile,
-                      riskLevel: event.target
-                        .value as FinancialProfile["riskLevel"],
-                    })
-                  }
-                >
-                  {["保守", "稳健", "均衡", "进取"].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </details>
           <div className="form-actions">
             <Button
               type="primary"

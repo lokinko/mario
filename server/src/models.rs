@@ -168,10 +168,8 @@ pub struct FinancialProfile {
     pub monthly_expense: f64,
     pub emergency_fund: f64,
     pub liabilities: f64,
-    pub investable_assets: f64,
     pub horizon_years: i64,
     pub max_drawdown_pct: f64,
-    pub risk_level: String,
     #[serde(default = "default_currency")]
     pub base_currency: String,
 }
@@ -184,10 +182,8 @@ impl Default for FinancialProfile {
             monthly_expense: 0.0,
             emergency_fund: 0.0,
             liabilities: 0.0,
-            investable_assets: 0.0,
             horizon_years: 5,
             max_drawdown_pct: 15.0,
-            risk_level: "稳健".into(),
             base_currency: default_currency(),
         }
     }

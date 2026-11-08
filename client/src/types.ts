@@ -1,21 +1,16 @@
-export type RiskLevel = "保守" | "稳健" | "均衡" | "进取";
-
 export interface FinancialProfile {
   exactAmounts?: {
     monthlyIncome: string;
     monthlyExpense: string;
     emergencyFund: string;
     liabilities: string;
-    investableAssets: string;
   } | null;
   monthlyIncome: number;
   monthlyExpense: number;
   emergencyFund: number;
   liabilities: number;
-  investableAssets: number;
   horizonYears: number;
   maxDrawdownPct: number;
-  riskLevel: RiskLevel;
   baseCurrency: string;
 }
 
