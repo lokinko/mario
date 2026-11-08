@@ -64,10 +64,10 @@ flowchart TD
 - 版本轮询、局部汇率读取和长时间分析返回的版本，不直接代替页面已核对的资料版本。普通写入与完整快照按请求策略采纳版本；不能用局部 GET 的版本提前确认尚未加载的远端资产变化。
 - 应用壳在离开会卸载的页面前确认草稿；拒绝浏览器历史或地址跳转时恢复原地址与输入。同页导航保留草稿，常驻问答的离开不要求放弃输入。问答接收新公司问题时使旧历史详情请求失效，避免较晚响应清空新问题。
 - 功能代码与测试直接引用领域 API 模块。财务回执未确认时 `financialRequest` 抛出 `FinancialRequestError`（`kind: "pending"`），页面经类型守卫保留原请求和输入，不匹配错误文案。
-- `MyFacts` 组合问题导航和修复入口，`AssetAmountRow` 只显示属于该持仓（包括关联期权）的 `issues`；日期、参考价与来源使用中性样式。汇率修复复用 `ExchangeRates`，拆合股和交易链修复复用已展开的 `FinancialHistory`，不引入第二套修复状态。不可用会计投影的派生数量、价格和盈亏汇总隐藏，原始成交与审计记录仍保留；概览和趋势不推测缺失原因，具体原因归行内问题。
+- `MyFacts` 组合问题导航和修复入口，`AssetAmountRow` 只显示属于该持仓（包括关联期权）的 `issues`；日期、参考价与来源使用中性样式。汇率修复复用 `ExchangeRates`，拆合股和交易链修复复用已展开的 `FinancialHistory`，不引入第二套修复状态。不可用会计投影的派生数量、价格和盈亏汇总隐藏，原始成交与审计记录仍保留；概览和迷你走势不推测缺失原因，具体原因归行内问题。
 - 资产页的 Ant Design 标签页只拥有展示选择；收支草稿由 `MyFacts` 通过受控属性传给 `ProfileForm`，资产与交易草稿归各自编辑器。打开编辑器和保存期间禁止切换分类。`portfolio.css` 只管理本领域的紧凑布局，继续使用统一设计变量。共享 `NumberField` 用 `Input type="number"` 传递原始字符串和单位，不能用显示格式化结果替换金额输入或改变财务保存协议。
 - `app/useDisplayPreferences` 管理本地涨跌色与金额隐藏偏好。功能页通过属性接收值和回调，共享 `DisplayPreferences` 表单不导入应用壳；显示控件标注 `data-presentation`，不将本地偏好视为业务草稿。
-- `features/portfolio/useAssetHistory` 是资产页历史查询的唯一状态来源，总览与完整趋势共用请求、区间与分页；不得分别发起相同查询，或从持仓投影重算服务端总资产。
+- `features/portfolio/useAssetHistory` 是资产页历史查询的唯一状态来源，只供总览读取最近 30 条记录；不得从持仓投影重算服务端总资产。
 - 共享界面能力放在 `components/`，无领域 API 依赖。新增提示使用 `Callout`，状态使用 `Badge`，时点使用 `DataStamp`；行尾操作使用支持方向键、Esc 和焦点恢复的 `Menu`。抽屉内 Esc 先关闭菜单，再关闭抽屉。
 - `components/InterfaceProvider` 只负责 Ant Design 中文语言与视觉主题，从 `styles/tokens.css` 读取设计变量并跟随系统明暗切换，不持有账号、路由或领域状态。买点观察主要操作与搜索、登录输入使用 Ant Design；既有共享菜单、抽屉和领域控件保留自身的键盘、焦点与草稿保护契约。顶部位置导航由应用壳组合，不让共享展示层反向引用 `app/`。
 - 新增金额输出使用 `data-money`，输入使用 `data-money-input`，数量与百分比保持可见；金额格式化仅作用于输出，原生数值输入保留源精度。颜色与字号只在 `styles/tokens.css` 定义，新增颜色须同时给出明暗两套取值；品牌色上的文字使用 `--on-brand`，吸顶元素以 `--chrome-height` 计算偏移。

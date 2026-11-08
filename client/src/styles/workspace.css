@@ -638,9 +638,6 @@ input[type="number"],
 [data-mask-amounts] .hero-amount [data-money]::after {
   font-size: var(--fs-hero);
 }
-[data-mask-amounts] .axis-money {
-  visibility: hidden;
-}
 h1,
 h2,
 h3,
@@ -998,10 +995,6 @@ th,
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  background: transparent;
-  border: 0;
-  padding: 0;
-  text-align: left;
 }
 .asset-sparkline {
   width: 180px;
@@ -1505,33 +1498,6 @@ input[type="number"] {
   position: sticky;
   top: 0;
   background: var(--surface-sunken);
-}
-.asset-trend {
-  position: relative;
-}
-.asset-trend svg {
-  margin-top: var(--space-3);
-  width: 100%;
-  display: block;
-  color: var(--text-3);
-}
-.asset-trend text {
-  fill: var(--text-3);
-  font-size: var(--fs-caption);
-}
-.trend-tooltip {
-  position: absolute;
-  top: 16px;
-  left: 40px;
-  pointer-events: none;
-  display: grid;
-  gap: var(--space-1);
-  padding: var(--space-3);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-pop);
-  font-size: var(--fs-caption);
 }
 .chat-main {
   min-width: 0;

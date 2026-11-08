@@ -7,7 +7,6 @@ import { AssetOverview } from "./AssetOverview";
 import { useAssetHistory } from "./useAssetHistory";
 import { Callout } from "../../components/Callout";
 import type { DisplayPreferenceProps } from "../../components/DisplayPreferences";
-import { AssetHistory } from "./AssetHistory";
 import { HoldingDetail } from "./HoldingDetail";
 import { HoldingTrades } from "./HoldingTrades";
 import { HoldingsList, defaultHoldingFilters } from "./HoldingsList";
@@ -41,7 +40,7 @@ function withExactValues(snapshot: Snapshot, holding: Holding): Holding {
     : holding;
 }
 
-export type FactsSection = "holdings" | "savings" | "income";
+export type FactsSection = "holdings" | "savings";
 
 export function MyFacts({
   snapshot,
@@ -304,15 +303,46 @@ export function MyFacts({
             {snapshot.priceRefreshErrors?.join("；")}
           </Callout>
         )}
-      {section !== "income" && (
-        <InvestmentOverview
-          holdings={section === "holdings" ? investments : cash}
-          accounting={displayAccounting}
-          baseCurrency={currency}
-          cash={section === "savings"}
-        />
-      )}
-      {section === "income" ? (
+      <InvestmentOverview
+        holdings={section === "holdings" ? investments : cash}
+        accounting={displayAccounting}
+        baseCurrency={currency}
+        cash={section === "savings"}
+      />
+      <section
+        className={`panel form-panel ${section === "holdings" ? "investment-panel" : "cash-panel"}`}
+      >
+        {section === "holdings" ? (
+          <HoldingsList
+            snapshot={snapshot}
+            holdings={investments}
+            filters={filters}
+            onFiltersChange={setFilters}
+            renderRow={renderAssetRow}
+            onRecordTrade={() => {
+              setTradeHolding(undefined);
+              setAddingTrade(true);
+            }}
+          />
+        ) : (
+          <div
+            className="facts-assets"
+            role="table"
+            aria-label="现金列表"
+            aria-colcount={4}
+          >
+            <div role="row" className="holdings-list-header cash-list-header">
+              {["币种", "余额", "核对日期", "操作"].map((label) => (
+                <span role="columnheader" key={label}>
+                  {label}
+                </span>
+              ))}
+            </div>
+            <div role="rowgroup">{cashRows.map(renderAssetRow)}</div>
+          </div>
+        )}
+      </section>
+      {section === "savings" && (
         <ProfileForm
           profile={profile}
           onChange={setProfile}
@@ -321,40 +351,6 @@ export function MyFacts({
           onUpdate={onUpdate}
           flash={flash}
         />
-      ) : (
-        <section
-          className={`panel form-panel ${section === "holdings" ? "investment-panel" : "cash-panel"}`}
-        >
-          {section === "holdings" ? (
-            <HoldingsList
-              snapshot={snapshot}
-              holdings={investments}
-              filters={filters}
-              onFiltersChange={setFilters}
-              renderRow={renderAssetRow}
-              onRecordTrade={() => {
-                setTradeHolding(undefined);
-                setAddingTrade(true);
-              }}
-            />
-          ) : (
-            <div
-              className="facts-assets"
-              role="table"
-              aria-label="现金列表"
-              aria-colcount={4}
-            >
-              <div role="row" className="holdings-list-header cash-list-header">
-                {["币种", "余额", "核对日期", "操作"].map((label) => (
-                  <span role="columnheader" key={label}>
-                    {label}
-                  </span>
-                ))}
-              </div>
-              <div role="rowgroup">{cashRows.map(renderAssetRow)}</div>
-            </div>
-          )}
-        </section>
       )}
     </>
   );
@@ -435,7 +431,7 @@ export function MyFacts({
         issuesDisabled={
           busy || Boolean(editing) || Boolean(selected) || addingTrade
         }
-        history={history.history}
+        history={history}
         display={display}
       />
       {addingTrade && (
@@ -461,8 +457,7 @@ export function MyFacts({
         items={(
           [
             ["holdings", "投资持仓"],
-            ["savings", "存款与现金"],
-            ["income", "收入与支出"],
+            ["savings", "存款与收支"],
           ] as const
         ).map(([id, label]) => ({
           key: id,
@@ -525,7 +520,6 @@ export function MyFacts({
           ) : null}
         </Drawer>
       )}
-      <AssetHistory state={history} />
     </div>
   );
 }

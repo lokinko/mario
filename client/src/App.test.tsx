@@ -354,7 +354,7 @@ it("opens holdings and savings sections from the mobile tab bar", async () => {
   await screen.findByRole("heading", { name: "我的情况" });
   expect(
     screen
-      .getByRole("tab", { name: "存款与现金" })
+      .getByRole("tab", { name: "存款与收支" })
       .getAttribute("aria-selected"),
   ).toBe("true");
   expect(
@@ -606,14 +606,13 @@ it("preserves the income draft guard when a mobile tab changes only the facts se
     new Error("no model"),
   );
   render(<App />);
-  fireEvent.click(await screen.findByRole("tab", { name: "收入与支出" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "存款与收支" }));
   fireEvent.change(screen.getByRole("spinbutton", { name: /月收入/ }), {
     target: { value: "12345" },
   });
   const mobile = screen.getByRole("navigation", { name: "快捷导航" });
   fireEvent.click(within(mobile).getByRole("button", { name: "存款" }));
   expect(confirm).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("tab", { name: "收入与支出" }));
   expect(
     (screen.getByRole("spinbutton", { name: /月收入/ }) as HTMLInputElement)
       .value,

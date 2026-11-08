@@ -159,18 +159,8 @@
   padding: var(--space-7) var(--space-4);
   min-height: 160px;
 }
-.facts-page .daily-assets {
-  margin-top: var(--space-5);
-  padding: var(--space-4) var(--space-5);
-}
-.facts-page .daily-assets .panel-title {
-  margin-bottom: var(--space-3);
-}
-.facts-page .daily-assets .section-switcher {
-  margin-bottom: var(--space-3);
-  gap: var(--space-4);
-}
 .facts-page .profile-panel {
+  margin-top: var(--space-4);
   padding: var(--space-5);
 }
 .profile-panel .panel-title {

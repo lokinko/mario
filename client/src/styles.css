@@ -860,27 +860,6 @@ main {
   margin-bottom: var(--space-5);
   scroll-margin-top: 84px;
 }
-.daily-assets {
-  margin-bottom: var(--space-4);
-}
-.daily-assets .panel-title {
-  margin-bottom: var(--space-2);
-}
-.daily-assets .section-switcher:last-child {
-  margin-bottom: 0;
-}
-.daily-assets h2 {
-  font-size: var(--fs-body);
-}
-.daily-assets .daily-freshness {
-  margin: var(--space-2) 0;
-  font-size: var(--fs-caption);
-}
-.daily-freshness,
-.asset-trend > small {
-  font-size: var(--fs-body-sm);
-  color: var(--text-3);
-}
 .asset-name small {
   font-size: var(--fs-caption);
   color: var(--text-3);
@@ -899,11 +878,6 @@ main {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-@media (max-width: 600px) {
-  .daily-assets .panel-title {
-    flex-wrap: wrap;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar {

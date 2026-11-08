@@ -104,23 +104,14 @@ export function AssetOverview({
             history.records.filter(
               (r) => r.baseCurrency === currency && r.totalAssets != null,
             ).length > 1 && (
-              <button
-                className="hero-trend"
-                aria-label="查看完整资产趋势"
-                onClick={() =>
-                  document
-                    .getElementById("asset-history")
-                    ?.scrollIntoView({ behavior: "smooth" })
-                }
-              >
+              <div className="hero-trend">
                 <AssetTrend
-                  records={history.records
-                    .filter((r) => r.baseCurrency === currency)
-                    .slice(0, 30)}
-                  mini
+                  records={history.records.filter(
+                    (r) => r.baseCurrency === currency,
+                  )}
                 />
-                <span>30 日走势 ›</span>
-              </button>
+                <span>30 日走势</span>
+              </div>
             )}
           {snapshot.valuationStatus.issues.length > 0 && (
             <details className="hero-issues">
