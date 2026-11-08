@@ -81,9 +81,11 @@ export function AssetAmountRow({
           className="text-button asset-name"
           disabled={disabled}
           onClick={onOpen ?? onEdit}
-          aria-label={"查看 " + holding.name}
+          aria-label={
+            "查看 " + (investment ? holding.name : `${holding.currency} 存款`)
+          }
         >
-          <strong>{holding.name}</strong>
+          <strong>{investment ? holding.name : holding.currency}</strong>
         </button>
         {(holding.symbol || optionTotals || closed) && (
           <small>
