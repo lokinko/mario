@@ -116,19 +116,6 @@ pub struct ManualCorporateActionInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SecurityPriceConfig {
-    pub provider: String,
-    pub has_api_key: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SecurityPriceConfigInput {
-    pub api_key: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct VerifiedHoldingValuationInput {
     pub symbol: String,
     pub quantity: f64,

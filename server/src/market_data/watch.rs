@@ -1,32 +1,20 @@
 //! Public observation data. Never reads accounts, holdings or transactions.
-mod eastmoney;
 mod plans;
-#[cfg(test)]
-mod source_tests;
 use crate::{
-    models::watch::{DividendBasis, DividendEvent, DividendHistory, PriceBar, WatchMarketData},
+    models::watch::{DividendBasis, DividendEvent, DividendHistory},
     ports::market::WatchMarketProvider,
     AppError, AppResult,
 };
 use async_trait::async_trait;
-use chrono::{DateTime, Duration as Days, NaiveDate};
+use chrono::NaiveDate;
 use reqwest::Client;
 use serde_json::Value;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    time::Duration,
-};
-use tokio::{
-    sync::{Mutex, Semaphore},
-    time::Instant,
-};
+use std::{collections::BTreeSet, time::Duration};
+use tokio::sync::Semaphore;
 
-type Cached = (Instant, WatchMarketData);
-const HISTORY_DAYS: i64 = 1460;
 pub(crate) struct PublicWatchProvider {
     client: Client,
     slots: Semaphore,
-    cache: Mutex<BTreeMap<(String, NaiveDate), Cached>>,
 }
 impl PublicWatchProvider {
     pub fn new() -> AppResult<Self> {
@@ -36,95 +24,6 @@ impl PublicWatchProvider {
                 .user_agent("Mozilla/5.0 (compatible; mario/observation)")
                 .build()?,
             slots: Semaphore::new(2),
-            cache: Mutex::new(BTreeMap::new()),
-        })
-    }
-    async fn chart(
-        &self,
-        symbol: &str,
-        day: NaiveDate,
-        hosts: &[&str],
-    ) -> AppResult<(Vec<PriceBar>, String)> {
-        for host in hosts {
-            let url = format!("{host}/v8/finance/chart/{symbol}");
-            let result = async {
-                let response = self
-                    .client
-                    .get(&url)
-                    .query(&[
-                        (
-                            "period1",
-                            (day - Days::days(HISTORY_DAYS))
-                                .and_hms_opt(0, 0, 0)
-                                .unwrap()
-                                .and_utc()
-                                .timestamp()
-                                .to_string(),
-                        ),
-                        (
-                            "period2",
-                            (day + Days::days(1))
-                                .and_hms_opt(0, 0, 0)
-                                .unwrap()
-                                .and_utc()
-                                .timestamp()
-                                .to_string(),
-                        ),
-                        ("interval", "1d".into()),
-                        ("events", "splits".into()),
-                    ])
-                    .send()
-                    .await?
-                    .error_for_status()?;
-                let source = response.url().to_string();
-                let value = response.json::<Value>().await?;
-                if !value["chart"]["error"].is_null() {
-                    return Err(bad());
-                }
-                Ok((
-                    parse_bars(&value["chart"]["result"][0], symbol, day)?,
-                    source,
-                ))
-            }
-            .await;
-            match result {
-                Ok(data) => return Ok(data),
-                Err(error) => {
-                    tracing::warn!(symbol, host, %error, "watch Yahoo daily source failed")
-                }
-            }
-        }
-        Err(AppError::MarketData("公开日线暂时不可用".into()))
-    }
-
-    async fn prices(
-        &self,
-        symbol: &str,
-        day: NaiveDate,
-        eastmoney_url: &str,
-        yahoo_hosts: &[&str],
-    ) -> AppResult<WatchMarketData> {
-        match eastmoney::observation(&self.client, eastmoney_url, symbol, day).await {
-            Ok(data) => return Ok(data),
-            Err(error) => {
-                tracing::warn!(symbol, %error, "watch Eastmoney daily source failed; trying Yahoo")
-            }
-        }
-        // Keep both price series and the calendar within one provider. Never
-        // splice a fallback close into another provider's adjustment history.
-        let (bars, price_source) = self.chart(symbol, day, yahoo_hosts).await?;
-        let (index, calendar_source) = self.chart("000001.SS", day, yahoo_hosts).await?;
-        let calendar = index
-            .into_iter()
-            .filter(|b| b.close.is_some_and(|p| p > 0.0))
-            .map(|b| b.day)
-            .collect();
-        Ok(WatchMarketData {
-            bars,
-            calendar,
-            dividends: None,
-            dividend_basis: None,
-            sources: vec![price_source, calendar_source],
         })
     }
     async fn dividend_payload(&self, symbol: &str) -> AppResult<(Value, Vec<String>)> {
@@ -280,49 +179,6 @@ pub(super) fn parse_dividends(
     events.sort_by_key(|e| e.ex_date);
     Ok(events)
 }
-fn parse_bars(chart: &Value, symbol: &str, day: NaiveDate) -> AppResult<Vec<PriceBar>> {
-    if chart["meta"]["symbol"] != symbol
-        || chart["meta"]["exchangeTimezoneName"] != "Asia/Shanghai"
-        || chart["meta"]["currency"] != "CNY"
-    {
-        return Err(bad());
-    }
-    let stamps = chart["timestamp"].as_array().ok_or_else(bad)?;
-    let closes = chart["indicators"]["quote"][0]["close"]
-        .as_array()
-        .ok_or_else(bad)?;
-    let adjusted = chart["indicators"]["adjclose"][0]["adjclose"]
-        .as_array()
-        .ok_or_else(bad)?;
-    if stamps.len() != closes.len() || stamps.len() != adjusted.len() {
-        return Err(bad());
-    }
-    let mut result = Vec::new();
-    let mut seen = BTreeSet::new();
-    for (i, stamp) in stamps.iter().enumerate() {
-        let date = DateTime::from_timestamp(stamp.as_i64().ok_or_else(bad)?, 0)
-            .ok_or_else(bad)?
-            .with_timezone(&chrono_tz::Asia::Shanghai)
-            .date_naive();
-        if date > day {
-            continue;
-        }
-        if !seen.insert(date) {
-            return Err(bad());
-        }
-        result.push(PriceBar {
-            day: date,
-            close: closes[i].as_f64(),
-            adjusted_close: adjusted[i].as_f64(),
-        });
-    }
-    result.sort_by_key(|b| b.day);
-    if result.is_empty() {
-        return Err(bad());
-    }
-    Ok(result)
-}
-
 #[async_trait]
 impl WatchMarketProvider for PublicWatchProvider {
     async fn dividend_plans(
@@ -346,35 +202,6 @@ impl WatchMarketProvider for PublicWatchProvider {
         };
         history.validate()?;
         Ok(history)
-    }
-    async fn invalidate(&self) {
-        self.cache.lock().await.clear();
-    }
-    async fn observation(&self, symbol: &str, day: NaiveDate) -> AppResult<WatchMarketData> {
-        let key = (symbol.to_owned(), day);
-        if let Some((when, data)) = self.cache.lock().await.get(&key) {
-            if when.elapsed() < Duration::from_secs(1800) {
-                return Ok(data.clone());
-            }
-        }
-        let _permit = self.slots.acquire().await.map_err(|_| bad())?;
-        let data = self
-            .prices(
-                symbol,
-                day,
-                "https://push2his.eastmoney.com/api/qt/stock/kline/get",
-                &[
-                    "https://query1.finance.yahoo.com",
-                    "https://query2.finance.yahoo.com",
-                ],
-            )
-            .await?;
-        let mut cache = self.cache.lock().await;
-        if cache.len() >= 128 {
-            cache.clear();
-        }
-        cache.insert(key, (Instant::now(), data.clone()));
-        Ok(data)
     }
 }
 
@@ -433,5 +260,38 @@ mod tests {
         assert_eq!(events[0].cash_per_ten, "10");
         payload["result"]["pages"] = json!(2);
         assert!(parse_dividends(&payload, "600036.SS", day).is_err());
+    }
+}
+
+#[cfg(test)]
+mod live_calendar_check {
+    use crate::ports::market::WatchMarketProvider;
+    #[tokio::test]
+    #[ignore = "manual public-source connectivity check; no account data"]
+    async fn live_dividend_calendar_structured_plans() {
+        let provider = super::PublicWatchProvider::new().unwrap();
+        let day = chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Shanghai)
+            .date_naive();
+        let (a, b) = tokio::time::timeout(std::time::Duration::from_secs(90), async {
+            tokio::join!(
+                provider.dividend_plans("600036.SS", day),
+                provider.dividend_plans("601009.SS", day)
+            )
+        })
+        .await
+        .expect("public-source requests timed out");
+        for (symbol, result) in [("600036.SS", a), ("601009.SS", b)] {
+            let plans = result.unwrap();
+            assert!(!plans.is_empty());
+            assert!(plans.iter().all(|p| p.symbol == symbol
+                && p.announced_on <= day
+                && p.payment_date.is_none()
+                && !p.sources.is_empty()));
+            println!(
+                "{symbol}: {} structured disclosed plans; no invented payment date",
+                plans.len()
+            );
+        }
     }
 }

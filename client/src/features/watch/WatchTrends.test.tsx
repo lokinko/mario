@@ -43,6 +43,7 @@ function observation(trends?: WatchTrendPoint[]): Observation {
     sources: [],
     dividendEvents: [],
     trends,
+    trendWindowYears: 5,
   };
 }
 afterEach(cleanup);
@@ -136,4 +137,19 @@ it("shows older observations and first checks without inventing history", () => 
   view.rerender(<WatchTrends latest={observation()} />);
   expect(screen.getByText(/尚无趋势资料/)).toBeTruthy();
   expect(screen.queryByRole("slider")).toBeNull();
+});
+
+it("shows the complete five-year window by default rather than clipping it to two years", () => {
+  const trends = Array.from({ length: 261 }, (_, i) => point(i));
+  render(<WatchTrends latest={observation(trends)} />);
+  expect(
+    (screen.getByRole("combobox", { name: "趋势图范围" }) as HTMLSelectElement)
+      .value,
+  ).toBe("0");
+  expect(
+    screen
+      .getByRole("slider", { name: "趋势图 · 月线中轨与周线 BOLL查看日期" })
+      .getAttribute("max"),
+  ).toBe("260");
+  expect(screen.getByText(/前复权序列 · 五年数据窗口/)).toBeTruthy();
 });

@@ -116,6 +116,8 @@ export interface Observation {
     events: Observation["dividendEvents"];
   } | null;
   trends?: WatchTrendPoint[] | null;
+  trendWindowYears?: number;
+  priceRevision?: string;
 }
 export interface WatchMarketRow {
   latest: Observation | null;

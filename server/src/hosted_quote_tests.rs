@@ -22,8 +22,7 @@ struct Prices {
 }
 #[async_trait::async_trait]
 impl SecurityPriceProvider for Prices {
-    async fn quote(&self, query: &SecurityPriceQuery, key: &str) -> AppResult<SecurityPriceQuote> {
-        assert!(key.is_empty());
+    async fn quote(&self, query: &SecurityPriceQuery) -> AppResult<SecurityPriceQuote> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if let Some(gate) = self.gate.lock().await.take() {
             self.entered.notify_one();
@@ -100,11 +99,7 @@ async fn authenticated_security_preview_allows_reads_and_profile_writes_without_
         openai: None,
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
         auth_slots: tokio::sync::Semaphore::new(AUTH_SLOTS),
-        market: Arc::new(MarketServices::new(
-            provider.clone(),
-            provider.clone(),
-            provider.clone(),
-        )),
+        market: Arc::new(MarketServices::new(provider.clone(), provider.clone())),
         watch_provider: provider.clone(),
         watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
         dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),

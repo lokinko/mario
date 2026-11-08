@@ -2,7 +2,7 @@
 use crate::{
     db::PublicDividends,
     models::watch::{DividendHistory, WatchMarketData},
-    ports::market::WatchMarketProvider,
+    ports::market::{SecurityHistoryProvider, WatchMarketProvider},
     AppError, AppResult,
 };
 use chrono::NaiveDate;
@@ -18,15 +18,21 @@ const FAILURE_RETRY: Duration = Duration::from_secs(60);
 pub(crate) struct SharedWatchProvider {
     source: Arc<dyn WatchMarketProvider>,
     store: Arc<PublicDividends>,
+    prices: Arc<dyn SecurityHistoryProvider>,
     locks: Mutex<BTreeMap<String, Weak<Mutex<()>>>>,
     failures: Mutex<BTreeMap<(String, NaiveDate), Instant>>,
 }
 
 impl SharedWatchProvider {
-    pub fn new(source: Arc<dyn WatchMarketProvider>, store: Arc<PublicDividends>) -> Self {
+    pub fn new(
+        source: Arc<dyn WatchMarketProvider>,
+        store: Arc<PublicDividends>,
+        prices: Arc<dyn SecurityHistoryProvider>,
+    ) -> Self {
         Self {
             source,
             store,
+            prices,
             locks: Mutex::new(BTreeMap::new()),
             failures: Mutex::new(BTreeMap::new()),
         }
@@ -46,6 +52,12 @@ impl SharedWatchProvider {
 
 #[async_trait::async_trait]
 impl WatchMarketProvider for SharedWatchProvider {
+    fn price_revision(&self, symbol: &str) -> Option<String> {
+        self.prices.cached_revision(symbol).unwrap_or_else(|error| {
+            tracing::warn!(symbol,%error,"public price revision read failed");
+            None
+        })
+    }
     async fn dividend_plans(
         &self,
         symbol: &str,
@@ -97,15 +109,65 @@ impl WatchMarketProvider for SharedWatchProvider {
     }
 
     async fn observation(&self, symbol: &str, day: NaiveDate) -> AppResult<WatchMarketData> {
-        let lock = self.symbol_lock(&format!("prices:{symbol}")).await;
-        let _guard = lock.lock().await;
-        self.source.observation(symbol, day).await
+        let history = self.prices.history(symbol, day).await?;
+        let calendar = self.prices.history("000001.SS", day).await?;
+        history_market(&history, &calendar, day)
     }
 
     async fn invalidate(&self) {
         self.failures.lock().await.clear();
         self.source.invalidate().await;
     }
+}
+
+fn history_market(
+    history: &crate::models::market::history::PriceHistory,
+    calendar: &crate::models::market::history::PriceHistory,
+    through: NaiveDate,
+) -> AppResult<WatchMarketData> {
+    use rust_decimal::{prelude::ToPrimitive, Decimal};
+    history.validate()?;
+    calendar.validate()?;
+    let number = |p: &Option<String>| -> AppResult<Option<f64>> {
+        p.as_deref()
+            .map(|p| {
+                Decimal::from_str_exact(p)
+                    .or_else(|_| Decimal::from_scientific(p))
+                    .map_err(|_| AppError::MarketData("公共价格精度无效".into()))?
+                    .to_f64()
+                    .ok_or_else(|| AppError::MarketData("公共价格超出范围".into()))
+            })
+            .transpose()
+    };
+    let bars = history
+        .bars
+        .iter()
+        .filter(|b| b.day <= through)
+        .map(|b| {
+            Ok(crate::models::watch::PriceBar {
+                day: b.day,
+                close: number(&b.raw_close)?,
+                adjusted_close: number(&b.adjusted_close)?,
+            })
+        })
+        .collect::<AppResult<_>>()?;
+    Ok(WatchMarketData {
+        price_revision: Some(history.revision()?),
+        bars,
+        calendar: calendar
+            .bars
+            .iter()
+            .filter(|b| b.day <= through && b.raw_close.is_some())
+            .map(|b| b.day)
+            .collect(),
+        dividends: None,
+        dividend_basis: None,
+        sources: vec![
+            history.raw_source_url.clone(),
+            history.adjusted_source_url.clone(),
+            calendar.raw_source_url.clone(),
+        ],
+    })
 }
 
 #[cfg(test)]
@@ -170,6 +232,19 @@ mod tests {
             Ok(data)
         }
     }
+    #[async_trait::async_trait]
+    impl SecurityHistoryProvider for Source {
+        async fn history(
+            &self,
+            symbol: &str,
+            day: NaiveDate,
+        ) -> AppResult<crate::models::market::history::PriceHistory> {
+            if self.price_fail.load(Ordering::SeqCst) {
+                return Err(AppError::MarketData("测试行情失败".into()));
+            }
+            Ok(crate::models::market::history::tests::fixture(symbol, day))
+        }
+    }
     fn watch(db: &Database, symbol: &str) {
         db.save_watch(WatchInput {
             symbol: symbol.into(),
@@ -184,7 +259,11 @@ mod tests {
         let day = super::super::watch::cutoff();
         let source = source();
         let store = Arc::new(PublicDividends::test());
-        let provider = Arc::new(SharedWatchProvider::new(source.clone(), store.clone()));
+        let provider = Arc::new(SharedWatchProvider::new(
+            source.clone(),
+            store.clone(),
+            source.clone(),
+        ));
         let (a, b) = tokio::join!(
             provider.dividends("600036.SS", day),
             provider.dividends("600036.SS", day)
@@ -204,7 +283,7 @@ mod tests {
         assert_eq!(source.calls.load(Ordering::SeqCst), 1);
         first.delete_watch("600036.SS").unwrap();
         assert!(second.watch_dividends("600036.SS").unwrap().is_some());
-        let restarted = SharedWatchProvider::new(source.clone(), store.clone());
+        let restarted = SharedWatchProvider::new(source.clone(), store.clone(), source.clone());
         restarted.dividends("600036.SS", day).await.unwrap();
         assert_eq!(source.calls.load(Ordering::SeqCst), 1);
         assert!(store.get("600036.SS").unwrap().is_some());
@@ -224,7 +303,11 @@ mod tests {
         let store = Arc::new(PublicDividends::test());
         let old = history(day - chrono::Duration::days(1));
         store.save("600036.SS", &old).unwrap();
-        let provider = Arc::new(SharedWatchProvider::new(source.clone(), store.clone()));
+        let provider = Arc::new(SharedWatchProvider::new(
+            source.clone(),
+            store.clone(),
+            source.clone(),
+        ));
         assert!(provider.dividends("600036.SS", day).await.is_err());
         assert!(provider.dividends("600036.SS", day).await.is_err());
         assert_eq!(source.calls.load(Ordering::SeqCst), 1);
@@ -266,7 +349,11 @@ mod tests {
         let store = Arc::new(PublicDividends::test());
         let mut facts = history(day);
         store.save("600036.SS", &facts).unwrap();
-        let provider = Arc::new(SharedWatchProvider::new(source.clone(), store.clone()));
+        let provider = Arc::new(SharedWatchProvider::new(
+            source.clone(),
+            store.clone(),
+            source.clone(),
+        ));
         let db = Database::test();
         watch(&db, "600036.SS");
         let _lock = db.lock_account().unwrap();

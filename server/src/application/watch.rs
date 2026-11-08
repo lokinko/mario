@@ -39,13 +39,19 @@ pub async fn refresh(
         } else {
             private.or(public)
         };
+        let price_revision = provider.price_revision(&row.entry.input.symbol);
+        let price_changed = price_revision.as_ref().is_some_and(|revision| {
+            row.latest.as_ref().and_then(|o| o.price_revision.as_ref()) != Some(revision)
+        });
         if force
+            || price_changed
             || catalogue_changed
             || history.as_ref().is_none_or(|h| h.basis.as_of < day)
             || row.refresh_failed
             || row.checked_for.as_deref() != Some(day.to_string().as_str())
             || row.latest.as_ref().is_some_and(|o| {
-                o.dividend_basis.is_none()
+                o.trend_window_years != Some(crate::models::market::history::HISTORY_YEARS)
+                    || o.dividend_basis.is_none()
                     || o.status == crate::models::watch::WatchStatus::Incomplete
                     || (day.weekday().num_days_from_monday() < 5
                         && o.observed_on < day.to_string()

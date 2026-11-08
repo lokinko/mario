@@ -142,6 +142,7 @@ impl DividendHistory {
 
 #[derive(Debug, Clone)]
 pub struct WatchMarketData {
+    pub price_revision: Option<String>,
     pub bars: Vec<PriceBar>,
     pub calendar: Vec<NaiveDate>,
     pub dividends: Option<Vec<DividendEvent>>,
@@ -214,6 +215,10 @@ pub struct Observation {
     pub dividend_history: Option<DividendWindow>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trends: Option<Vec<trends::TrendPoint>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trend_window_years: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price_revision: Option<String>,
 }
 
 /// Display evidence only; TTM amounts and frozen calculation events stay independent.
@@ -534,6 +539,8 @@ pub fn evaluate(
             .unwrap_or_default(),
         dividend_basis: data.dividend_basis.clone(),
         trends: Some(trends::calculate(&sessions)),
+        price_revision: data.price_revision.clone(),
+        trend_window_years: Some(crate::models::market::history::HISTORY_YEARS),
         dividend_history: data.dividends.as_ref().map(|events| {
             let start = day.checked_sub_months(chrono::Months::new(36)).unwrap();
             DividendWindow {
@@ -574,6 +581,7 @@ pub(crate) mod tests {
             .collect();
         (
             WatchMarketData {
+                price_revision: None,
                 bars,
                 calendar,
                 dividend_basis: None,

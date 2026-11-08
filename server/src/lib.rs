@@ -18,7 +18,6 @@ mod models;
 mod openai_login;
 mod planning;
 mod ports;
-mod prices;
 mod risk;
 mod runtime;
 mod secrets;

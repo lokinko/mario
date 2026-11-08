@@ -1,5 +1,6 @@
 //! Market value contracts and deterministic identity/date policies. No providers or storage.
 pub(crate) mod close;
+pub(crate) mod history;
 use super::FxRateQuote;
 use crate::{AppError, AppResult};
 use chrono::Utc;

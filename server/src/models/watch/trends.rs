@@ -43,7 +43,11 @@ fn average(values: &[Option<f64>], length: usize) -> Option<f64> {
 /// Monthly values are frozen at each weekly endpoint, including that partial
 /// month; a later monthly close must never be copied into earlier weeks.
 pub fn calculate(sessions: &[(NaiveDate, Option<f64>)]) -> Vec<TrendPoint> {
-    let sessions: BTreeMap<_, _> = sessions.iter().copied().collect();
+    let mut sessions: BTreeMap<_, _> = sessions.iter().copied().collect();
+    if let Some((&end, _)) = sessions.last_key_value() {
+        let start = crate::models::market::history::history_start(end);
+        sessions.retain(|day, _| *day >= start);
+    }
     let mut weeks = BTreeMap::<_, Period>::new();
     let mut months = BTreeMap::<_, Period>::new();
     let mut points = Vec::new();
@@ -101,7 +105,6 @@ pub fn calculate(sessions: &[(NaiveDate, Option<f64>)]) -> Vec<TrendPoint> {
             provisional: dates.peek().is_none() && day.weekday().num_days_from_monday() < 4,
         });
     }
-    points.drain(..points.len().saturating_sub(104));
     points
 }
 
@@ -124,7 +127,7 @@ mod tests {
     fn bounded_chart_uses_existing_boll_and_independent_monthly_windows() {
         let input = sessions();
         let points = calculate(&input);
-        assert_eq!(points.len(), 104);
+        assert!(points.len() > 104 && points.len() <= 263);
         assert!(points.windows(2).all(|p| p[0].day < p[1].day));
         let last = points.last().unwrap();
         let mut weeks = BTreeMap::new();
@@ -210,8 +213,10 @@ mod tests {
             super::super::evaluate(&Default::default(), "600036.SS", &data, day, String::new());
         let mut payload = serde_json::to_value(&observation).unwrap();
         payload.as_object_mut().unwrap().remove("trends");
+        payload.as_object_mut().unwrap().remove("trendWindowYears");
         let old: super::super::Observation = serde_json::from_value(payload).unwrap();
         assert!(old.trends.is_none());
+        assert!(old.trend_window_years.is_none());
         assert_eq!(old.daily, observation.daily);
         assert_eq!(old.weekly, observation.weekly);
         assert_eq!(old.status, observation.status);

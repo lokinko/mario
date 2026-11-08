@@ -35,4 +35,13 @@ it("accepts only revisions corresponding to displayed data or completed ordinary
   expect(requestPolicy("/watch/catalog/refresh").timeoutMs).toBe(180000);
   expect(requestPolicy("/market-data/security/refresh").timeoutMs).toBe(180000);
   expect(isDataWrite("/market-data/security/refresh", "POST")).toBe(true);
+  expect(
+    requestPolicy("/market-data/security-price?symbol=600941.SS").timeoutMs,
+  ).toBe(180000);
+  expect(requestPolicy("/holdings", "POST").timeoutMs).toBe(180000);
+  expect(requestPolicy("/holdings/a", "PUT").timeoutMs).toBe(180000);
+  expect(requestPolicy("/holdings/a/verified-valuation", "PUT").timeoutMs).toBe(
+    180000,
+  );
+  expect(requestPolicy("/holdings/a", "DELETE").timeoutMs).toBe(15000);
 });

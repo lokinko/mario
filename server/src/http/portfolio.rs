@@ -1,8 +1,7 @@
 use super::RequestContext;
 use crate::models::{
-    FinancialProfile, FxRateQuery, FxRateQuote, HoldingInput, SecurityPriceConfig,
-    SecurityPriceConfigInput, SecurityPriceQuery, SecurityPriceQuote, Snapshot,
-    VerifiedHoldingValuationInput,
+    FinancialProfile, FxRateQuery, FxRateQuote, HoldingInput, SecurityPriceQuery,
+    SecurityPriceQuote, Snapshot, VerifiedHoldingValuationInput,
 };
 use crate::{
     application::prices,
@@ -50,14 +49,6 @@ pub(super) fn router() -> Router {
         .route("/api/fx-settings", get(fx_settings).put(save_fx_override))
         .route("/api/fx-settings/refresh", post(refresh_fx_settings))
         .route("/api/market-data/security-price", get(security_price_quote))
-        .route(
-            "/api/market-data/security/config",
-            get(security_price_config).put(save_security_price_config),
-        )
-        .route(
-            "/api/market-data/security/key",
-            axum::routing::delete(delete_security_price_key),
-        )
         .route("/api/profile", put(save_profile))
         .route("/api/holdings", post(add_holding))
         .route("/api/holding-trades", post(save_holding_trade))
@@ -127,7 +118,7 @@ async fn review_corporate_action(
 }
 
 async fn snapshot(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.snapshot()?))
+    Ok(Json(state.portfolio().snapshot()?))
 }
 
 #[derive(serde::Deserialize)]
@@ -168,29 +159,6 @@ async fn security_price_quote(
     Ok(Json(
         state.portfolio().preview_security_quote(&query).await?,
     ))
-}
-
-async fn security_price_config(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<SecurityPriceConfig>> {
-    Ok(Json(state.portfolio().security_config()))
-}
-
-async fn save_security_price_config(
-    Extension(state): Extension<Arc<RequestContext>>,
-    Json(input): Json<SecurityPriceConfigInput>,
-) -> AppResult<Json<SecurityPriceConfig>> {
-    Ok(Json(
-        state
-            .portfolio()
-            .save_security_config(input.api_key.as_deref())?,
-    ))
-}
-
-async fn delete_security_price_key(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<SecurityPriceConfig>> {
-    Ok(Json(state.portfolio().delete_security_key()?))
 }
 
 async fn apply_verified_holding_valuation(

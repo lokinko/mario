@@ -14,8 +14,13 @@ export function isDataWrite(path: string, method = "GET") {
     ].includes(resource)
   );
 }
-export function requestPolicy(path: string) {
+export function requestPolicy(path: string, method = "GET") {
   const resource = path.split("?")[0];
+  const preparesPrices =
+    resource === "/market-data/security-price" ||
+    resource.endsWith("/verified-valuation") ||
+    (["POST", "PUT"].includes(method.toUpperCase()) &&
+      (resource === "/holdings" || /^\/holdings\/[^/]+$/.test(resource)));
   const timeoutMs = ["/analysis", "/analysis/stream"].includes(resource)
     ? 1800000
     : resource === "/watch/catalog/resolve"
@@ -23,7 +28,8 @@ export function requestPolicy(path: string) {
       : resource === "/watch/refresh" ||
           resource === "/watch/catalog/refresh" ||
           resource === "/watch/dividend-calendar/refresh" ||
-          resource === "/market-data/security/refresh"
+          resource === "/market-data/security/refresh" ||
+          preparesPrices
         ? 180000
         : resource === "/model-config/test"
           ? 300000

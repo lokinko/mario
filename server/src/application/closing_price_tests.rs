@@ -73,7 +73,7 @@ impl Provider {
 }
 #[async_trait]
 impl SecurityPriceProvider for Provider {
-    async fn quote(&self, query: &SecurityPriceQuery, _: &str) -> AppResult<SecurityPriceQuote> {
+    async fn quote(&self, query: &SecurityPriceQuery) -> AppResult<SecurityPriceQuote> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if self.failed_symbol == Some(query.symbol.as_str()) {
             return Err(AppError::MarketData("来源延迟".into()));
@@ -171,7 +171,7 @@ struct SlowQuotes {
 }
 #[async_trait]
 impl SecurityPriceProvider for SlowQuotes {
-    async fn quote(&self, query: &SecurityPriceQuery, _: &str) -> AppResult<SecurityPriceQuote> {
+    async fn quote(&self, query: &SecurityPriceQuery) -> AppResult<SecurityPriceQuote> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if query.symbol != "600941.SS" {
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
@@ -255,11 +255,11 @@ async fn delayed_close_is_compared_to_observed_date_instead_of_request_date() {
             .updated_count,
         0
     );
-    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
-async fn provisional_prices_can_use_previous_close_but_newer_manual_values_are_preserved() {
+async fn ordinary_holdings_adopt_shared_prices_even_when_previously_manual() {
     for status in ["provisional", "manual"] {
         let db = Database::test();
         let mut input = holding("600519.SS", Some(10.0));
@@ -280,11 +280,8 @@ async fn provisional_prices_can_use_previous_close_but_newer_manual_values_are_p
             .await
             .unwrap();
         assert!(result.errors.is_empty(), "{:?}", result.errors);
-        assert_eq!(result.updated_count, usize::from(status == "provisional"));
-        assert_eq!(
-            result.snapshot.holdings[0].current_price,
-            Some(if status == "provisional" { 12.0 } else { 10.0 })
-        );
+        assert_eq!(result.updated_count, 1);
+        assert_eq!(result.snapshot.holdings[0].current_price, Some(12.0));
     }
 }
 
@@ -365,7 +362,7 @@ async fn same_day_close_updates_value_once_and_skips_cash_closed_and_manual_asse
             .updated_count,
         0
     );
-    assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
     assert_eq!(db.revision().unwrap(), revision);
     let history = db.daily_history(&Default::default()).unwrap();
     assert_eq!(
@@ -411,7 +408,7 @@ async fn pre_close_and_weekends_skip_completed_dates_and_restart_uses_saved_evid
             .updated_count,
         0
     );
-    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
     assert_eq!(
         refresh_after_close(&db, &provider, now())
             .await

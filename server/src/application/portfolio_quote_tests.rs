@@ -10,7 +10,7 @@ use std::{
     pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc,
     },
 };
 use tokio::sync::{oneshot, Notify};
@@ -19,7 +19,6 @@ struct Quotes {
     name: &'static str,
     entered: Notify,
     gate: tokio::sync::Mutex<Option<oneshot::Receiver<()>>>,
-    keys: Mutex<Vec<String>>,
     dropped: AtomicBool,
     fail: bool,
 }
@@ -29,7 +28,6 @@ impl Quotes {
             name,
             entered: Notify::new(),
             gate: tokio::sync::Mutex::new(gate),
-            keys: Mutex::new(Vec::new()),
             dropped: AtomicBool::new(false),
             fail,
         })
@@ -45,7 +43,7 @@ impl FxRateProvider for Quotes {
 }
 #[async_trait::async_trait]
 impl SecurityPriceProvider for Quotes {
-    async fn quote(&self, query: &SecurityPriceQuery, key: &str) -> AppResult<SecurityPriceQuote> {
+    async fn quote(&self, query: &SecurityPriceQuery) -> AppResult<SecurityPriceQuote> {
         struct Dropped<'a>(&'a AtomicBool);
         impl Drop for Dropped<'_> {
             fn drop(&mut self) {
@@ -53,7 +51,6 @@ impl SecurityPriceProvider for Quotes {
             }
         }
         let _dropped = Dropped(&self.dropped);
-        self.keys.lock().unwrap().push(key.into());
         if let Some(gate) = self.gate.lock().await.take() {
             self.entered.notify_one();
             let _ = gate.await; // A failed assertion also releases the provider when its sender drops.
@@ -126,7 +123,7 @@ async fn preview_releases_and_reacquires_the_real_account_lock_on_success_and_er
         let before = fingerprint(&db);
         let (release, gate) = oneshot::channel();
         let provider = Quotes::new("public-fixture", Some(gate), fail);
-        let market = MarketServices::new(provider.clone(), provider.clone(), provider.clone());
+        let market = MarketServices::new(provider.clone(), provider.clone());
         let service = market.for_account(&db);
         let query = query();
         let outer = db.lock_account().unwrap();
@@ -161,71 +158,12 @@ async fn preview_releases_and_reacquires_the_real_account_lock_on_success_and_er
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn preview_keeps_its_starting_key_without_reverting_concurrent_configuration_or_profile_writes(
-) {
-    crate::secrets::use_test_master_key();
-    for replacement in [Some("synthetic-key-b"), None] {
-        let (db, peer) = databases();
-        db.save_secret("security-price", "synthetic-key-a").unwrap();
-        let (release, gate) = oneshot::channel();
-        let keyed = Quotes::new("keyed-fixture", Some(gate), false);
-        let public = Quotes::new("public-fixture", None, false);
-        let market = MarketServices::new(public.clone(), public.clone(), keyed.clone());
-        let service = market.for_account(&db);
-        let query = query();
-        let outer = db.lock_account().unwrap();
-        let mut work = Box::pin(service.preview_security_quote(&query));
-        wait_for_provider(work.as_mut(), &keyed).await;
-        assert!(peer_can_lock(&peer));
-        let after_write = {
-            let _peer_lock = peer.lock_account().unwrap();
-            if let Some(key) = replacement {
-                peer.save_secret("security-price", key).unwrap();
-            } else {
-                peer.remove_secret("security-price").unwrap();
-            }
-            let mut profile = peer.snapshot().unwrap().profile;
-            profile.monthly_income = 45678.0;
-            peer.save_profile(&profile).unwrap();
-            fingerprint(&peer)
-        };
-        release.send(()).unwrap();
-        assert_eq!(work.await.unwrap().provider_code, "keyed-fixture");
-        assert_eq!(
-            fingerprint(&db),
-            after_write,
-            "finishing the old preview must not write account data"
-        );
-        assert_eq!(keyed.keys.lock().unwrap().len(), 1);
-        assert!(keyed
-            .keys
-            .lock()
-            .unwrap()
-            .iter()
-            .all(|key| key == "synthetic-key-a"));
-        let next = service.preview_security_quote(&query).await.unwrap();
-        if let Some(expected) = replacement {
-            assert!(db.secret("security-price").unwrap() == expected);
-            assert_eq!(next.provider_code, "keyed-fixture");
-            assert!(keyed.keys.lock().unwrap().last().unwrap() == expected);
-        } else {
-            assert!(db.secret("security-price").is_err());
-            assert_eq!(next.provider_code, "public-fixture");
-            assert!(public.keys.lock().unwrap().iter().all(String::is_empty));
-        }
-        assert_eq!(fingerprint(&db), after_write);
-        drop(outer);
-        assert!(peer_can_lock(&peer));
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancelling_a_pending_preview_drops_the_provider_and_leaves_the_account_unlocked() {
     let (db, peer) = databases();
     let before = fingerprint(&db);
     let (_release, gate) = oneshot::channel();
     let provider = Quotes::new("public-fixture", Some(gate), false);
-    let market = MarketServices::new(provider.clone(), provider.clone(), provider.clone());
+    let market = MarketServices::new(provider.clone(), provider.clone());
     let service = market.for_account(&db);
     let query = query();
     let outer = db.lock_account().unwrap();
@@ -245,7 +183,7 @@ async fn the_shared_quote_used_by_verified_valuation_keeps_the_write_account_loc
     let before = fingerprint(&db);
     let (release, gate) = oneshot::channel();
     let provider = Quotes::new("public-fixture", Some(gate), false);
-    let market = MarketServices::new(provider.clone(), provider.clone(), provider.clone());
+    let market = MarketServices::new(provider.clone(), provider.clone());
     let service = market.for_account(&db);
     let query = query();
     let outer = db.lock_account().unwrap();

@@ -1,10 +1,8 @@
 import { Badge } from "../../components/Badge";
 import { Callout } from "../../components/Callout";
-import { ExternalLink } from "../../components/ExternalLink";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Bot,
-  Cloud,
   KeyRound,
   Eye,
   EyeOff,
@@ -18,15 +16,8 @@ import {
   testModelConnection,
   type CodexBridgeStatus,
 } from "../../api/settings";
-import {
-  deleteSecurityPriceKey,
-  getSecurityPrice,
-  getSecurityPriceConfig,
-  saveSecurityPriceConfig,
-} from "../../api/portfolio";
-import type { ModelConfig, SecurityPriceConfig } from "../../types";
+import type { ModelConfig } from "../../types";
 import { PageHeader } from "../../components/PageHeader";
-import { localDateValue } from "../../lib/dates";
 import { AnalysisDefaults } from "./AnalysisDefaults";
 import { CodexBridge } from "./CodexBridge";
 import { CodexModelSelect } from "./CodexModelSelect";
@@ -52,33 +43,11 @@ export function ModelSettings({
     null,
   );
   const [showKey, setShowKey] = useState(false);
-  const [showMarketKey, setShowMarketKey] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [connectionResult, setConnectionResult] = useState("");
   const [error, setError] = useState("");
-  const [securityConfig, setSecurityConfig] =
-    useState<SecurityPriceConfig | null>(null);
-  const [securityApiKey, setSecurityApiKey] = useState("");
-  const [marketBusy, setMarketBusy] = useState(false);
-  const [marketResult, setMarketResult] = useState("");
-  const [marketError, setMarketError] = useState("");
-
-  useEffect(() => {
-    let active = true;
-    void getSecurityPriceConfig()
-      .then((value) => {
-        if (active) setSecurityConfig(value);
-      })
-      .catch((nextError) => {
-        if (active) setMarketError(String(nextError));
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
   const persist = async () => {
     setSaving(true);
     setError("");
@@ -126,54 +95,6 @@ export function ModelSettings({
       setError(String(nextError));
     } finally {
       setSaving(false);
-    }
-  };
-
-  const persistSecurityKey = async () => {
-    if (!securityApiKey.trim()) return;
-    setMarketBusy(true);
-    setMarketError("");
-    setMarketResult("");
-    try {
-      setSecurityConfig(await saveSecurityPriceConfig(securityApiKey));
-      setSecurityApiKey("");
-      flash("行情密钥已安全保存");
-    } catch (nextError) {
-      setMarketError(String(nextError));
-    } finally {
-      setMarketBusy(false);
-    }
-  };
-
-  const testSecurityConnection = async () => {
-    setMarketBusy(true);
-    setMarketError("");
-    setMarketResult("");
-    try {
-      const quote = await getSecurityPrice("AAPL", localDateValue(new Date()));
-      setMarketResult(
-        `${quote.symbol} · ${quote.observedOn} · ${quote.close} ${quote.currency} · ${quote.exchange || quote.micCode}`,
-      );
-    } catch (nextError) {
-      setMarketError(String(nextError));
-    } finally {
-      setMarketBusy(false);
-    }
-  };
-
-  const clearSecurityKey = async () => {
-    if (!window.confirm("确认从账户密钥存储中移除 Twelve Data API Key？"))
-      return;
-    setMarketBusy(true);
-    setMarketError("");
-    setMarketResult("");
-    try {
-      setSecurityConfig(await deleteSecurityPriceKey());
-      flash("行情密钥已从账户密钥存储移除");
-    } catch (nextError) {
-      setMarketError(String(nextError));
-    } finally {
-      setMarketBusy(false);
     }
   };
 
@@ -390,127 +311,12 @@ export function ModelSettings({
       <div id="analysis-settings">
         <AnalysisDefaults model={model} flash={flash} />
       </div>
-      <details
-        className="panel form-panel optional-settings"
-        id="market-settings"
-      >
-        <summary className="panel-title">
-          <div>
-            <h2>行情数据 · Twelve Data</h2>
-          </div>
-          <Badge tone={securityConfig?.hasApiKey ? "success" : "neutral"}>
-            {securityConfig?.hasApiKey ? "已配置" : "未配置"}
-          </Badge>
-        </summary>
+      <section className="panel form-panel" id="market-settings">
+        <h2>行情数据</h2>
         <p className="section-intro">
-          A 股股票自动价格优先使用东方财富日线，失败后尝试 Yahoo
-          Finance；其他证券使用 Yahoo Finance。 这里可选配置 Twelve
-          Data，供主动查询使用；密钥按账号加密保存，不发送给 AI。
+          所有账号共享同一证券的五年前复权日线，后台自动更新。持仓与趋势使用同一份有效收盘数据，并保留真实日期、来源和复权基准；成交和成本按原始记录保存。
         </p>
-        <div className="form-grid single-column">
-          <label>
-            <span>Twelve Data API Key</span>
-            <div className="secure-input">
-              <KeyRound size={16} />
-              <input
-                disabled={marketBusy}
-                type={showMarketKey ? "text" : "password"}
-                value={securityApiKey}
-                onChange={(event) => setSecurityApiKey(event.target.value)}
-                placeholder={
-                  securityConfig?.hasApiKey
-                    ? "已保存在账户密钥存储；留空则不修改"
-                    : "输入个人 Twelve Data 密钥"
-                }
-              />
-              <button
-                type="button"
-                className="icon-button"
-                disabled={marketBusy}
-                aria-label={showMarketKey ? "隐藏行情密钥" : "显示行情密钥"}
-                onClick={() => setShowMarketKey(!showMarketKey)}
-              >
-                {showMarketKey ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </label>
-        </div>
-        <details className="inline-help">
-          <summary>数据来源与许可</summary>
-          <p>
-            保存来源、观察日和未复权收盘价。使用范围和额度以你的 Twelve Data
-            账户条款为准。
-          </p>
-          <p>
-            <ExternalLink
-              href="https://twelvedata.com/docs/market-data/time-series"
-              target="_blank"
-              rel="noreferrer"
-            >
-              接口方法
-            </ExternalLink>{" "}
-            ·{" "}
-            <ExternalLink
-              href="https://twelvedata.com/pricing"
-              target="_blank"
-              rel="noreferrer"
-            >
-              额度
-            </ExternalLink>{" "}
-            ·{" "}
-            <ExternalLink
-              href="https://twelvedata.com/terms"
-              target="_blank"
-              rel="noreferrer"
-            >
-              许可条款
-            </ExternalLink>
-          </p>
-        </details>
-        {marketError && <Callout tone="danger">{marketError}</Callout>}
-        {marketResult && (
-          <Callout tone="success">
-            <span>
-              <strong>价格连接成功</strong>
-              {marketResult}
-            </span>
-          </Callout>
-        )}
-        <div className="form-actions">
-          <div className="key-actions">
-            {securityConfig?.hasApiKey && (
-              <button
-                className="danger-text"
-                onClick={clearSecurityKey}
-                disabled={marketBusy}
-              >
-                <Trash2 size={14} />
-                移除密钥
-              </button>
-            )}
-            <button
-              className="secondary"
-              onClick={testSecurityConnection}
-              disabled={marketBusy || !securityConfig?.hasApiKey}
-            >
-              {marketBusy ? (
-                <LoaderCircle size={15} className="spin" />
-              ) : (
-                <Cloud size={15} />
-              )}
-              测试 AAPL 日线
-            </button>
-          </div>
-          <button
-            className="primary"
-            onClick={persistSecurityKey}
-            disabled={marketBusy || !securityApiKey.trim()}
-          >
-            <Save size={16} />
-            保存行情密钥
-          </button>
-        </div>
-      </details>
+      </section>
       {displaySettings}
     </div>
   );

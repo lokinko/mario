@@ -162,7 +162,7 @@ pub(super) fn validate_holding_valuation_evidence(
             .date_naive()
         || observed_on > requested_on
         || (requested_on - observed_on).num_days() != quote.staleness_days
-        || !(0..=10).contains(&quote.staleness_days)
+        || !(0..=1830).contains(&quote.staleness_days)
     {
         return Err(AppError::Validation("证券价格日期或回退天数不一致".into()));
     }
@@ -219,12 +219,25 @@ pub(super) fn validate_holding_valuation_evidence(
                 )
         })
         && unique_param("klt", "101")
-        && unique_param("fqt", "0");
+        && unique_param(
+            "fqt",
+            if quote.price_basis == "forward_adjusted_daily_close" {
+                "1"
+            } else {
+                "0"
+            },
+        );
     let supported = (eastmoney_is_canonical
-        && quote.provider_code == "eastmoney_daily_close"
+        && matches!(
+            quote.provider_code.as_str(),
+            "eastmoney_daily_close" | "eastmoney_forward_close"
+        )
         && quote.provider_name == "东方财富"
         && quote.currency == "CNY"
-        && quote.price_basis == "unadjusted_daily_close"
+        && ((quote.provider_code == "eastmoney_daily_close"
+            && quote.price_basis == "unadjusted_daily_close")
+            || (quote.provider_code == "eastmoney_forward_close"
+                && quote.price_basis == "forward_adjusted_daily_close"))
         && quote.methodology_url == crate::models::market::ASHARE_METHODOLOGY_URL)
         || (twelve_is_canonical
             && quote.provider_code == "twelve_data_raw_close"
@@ -232,9 +245,15 @@ pub(super) fn validate_holding_valuation_evidence(
             && quote.price_basis == "unadjusted_daily_close"
             && quote.methodology_url == "https://twelvedata.com/docs/market-data/time-series")
         || (yahoo_is_canonical
-            && quote.provider_code == "yahoo_daily_close"
+            && matches!(
+                quote.provider_code.as_str(),
+                "yahoo_daily_close" | "yahoo_forward_close"
+            )
             && quote.provider_name == "Yahoo Finance"
-            && quote.price_basis == "split_adjusted_daily_close"
+            && ((quote.provider_code == "yahoo_daily_close"
+                && quote.price_basis == "split_adjusted_daily_close")
+                || (quote.provider_code == "yahoo_forward_close"
+                    && quote.price_basis == "forward_adjusted_daily_close"))
             && quote.methodology_url == crate::models::market::METHODOLOGY_URL);
     if quote.symbol.trim().is_empty()
         || quote.symbol.chars().count() > 80

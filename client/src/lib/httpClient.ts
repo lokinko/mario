@@ -28,7 +28,7 @@ export async function httpRequest<T>(
     const baseRevision = dataRevision();
     const result = await transport(`${baseUrl}${path}`, {
       ...init,
-      timeoutMs: requestPolicy(path).timeoutMs,
+      timeoutMs: requestPolicy(path, init?.method).timeoutMs,
       onResponse: (response) => {
         if (webToken() !== authToken || serviceUrl() !== baseUrl) return;
         if (requestPolicy(path).acceptsRevision(dataWrite)) {

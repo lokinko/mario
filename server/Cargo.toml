@@ -44,6 +44,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+url = "2"
 # reqwest/url currently allow newer ICU4X releases requiring Rust 1.88.
 # These exact constraints keep builds reproducible on the declared toolchain.
 icu_collections = "=2.2.0"

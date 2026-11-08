@@ -20,12 +20,6 @@ impl Database {
             .ok_or_else(|| AppError::Validation("请先配置 API Key".into()))?;
         decrypt(&encrypted, &self.secret_scope(name)?)
     }
-    pub fn save_secret(&self, name: &str, value: &str) -> AppResult<()> {
-        self.set_setting(
-            &format!("secret.{name}"),
-            &self.encrypted_secret(name, value)?,
-        )
-    }
     pub(super) fn encrypted_secret(&self, name: &str, value: &str) -> AppResult<String> {
         if value.trim().is_empty() {
             return Err(AppError::Validation("API Key 不能为空".into()));

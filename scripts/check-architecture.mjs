@@ -119,7 +119,7 @@ export function rustDependencies(source, modulePath = []) {
   return names;
 }
 const core = new Set(['models', 'context', 'risk', 'planning', 'valuation', 'evidence', 'event_import']);
-const infrastructure = new Set(['db', 'storage', 'accounts', 'secrets', 'prices', 'market_data']);
+const infrastructure = new Set(['db', 'storage', 'accounts', 'secrets', 'market_data']);
 const transport = new Set(['http', 'hosted', 'runtime', 'agent', 'streaming', 'composition', 'codex_bridge_worker']);
 export function serverViolation(source, target) {
   if (source === 'openai_login' && target !== 'error')
@@ -134,16 +134,16 @@ export function serverViolation(source, target) {
     return 'credential encryption cannot depend on account persistence';
   if (source === 'ports' && !['models', 'context', 'error', 'ports'].includes(target))
     return 'execution contracts cannot depend on implementations or account state';
-  if (['prices', 'market_data'].includes(source) && !['models', 'ports', 'error'].includes(target))
+  if (source === 'market_data' && !['models', 'ports', 'error'].includes(target))
     return 'market adapters only implement query ports; account workflows belong in application';
-  if (source === 'application' && ['prices', 'market_data'].includes(target))
+  if (source === 'application' && target === 'market_data')
     return 'application receives market ports; concrete providers belong in composition';
   if (core.has(source) && target === 'ports') return 'domain rules cannot execute external ports';
   if (core.has(source) && (infrastructure.has(target) || transport.has(target) || ['application', 'ai'].includes(target)))
     return 'domain contracts and deterministic rules cannot depend on execution, persistence or transport';
   if (source === 'ai' && (infrastructure.has(target) || transport.has(target) || target === 'application'))
     return 'AI consumes frozen data and cannot depend on database or HTTP adapters';
-  if (source === 'db' && ['application', 'ai', 'agent', 'http', 'hosted', 'runtime', 'fx', 'prices', 'market_data'].includes(target))
+  if (source === 'db' && ['application', 'ai', 'agent', 'http', 'hosted', 'runtime', 'fx', 'market_data'].includes(target))
     return 'repositories cannot depend on workflows, providers or network refresh services';
   if (source === 'application' && transport.has(target)) return 'use cases depend on execution ports, not process adapters';
   if (source === 'agent' && ['db', 'storage', 'accounts', 'application', 'http', 'hosted', 'runtime'].includes(target))
@@ -152,8 +152,10 @@ export function serverViolation(source, target) {
 }
 
 export function serverFileViolation(source, target) {
-  if (['db/public_dividends.rs', 'db/public_watch.rs', 'db/public_watch/calendar.rs'].includes(source) && !['models', 'storage', 'error'].includes(target))
+  if (['db/public_dividends.rs', 'db/public_watch.rs', 'db/public_watch/calendar.rs', 'db/public_prices.rs'].includes(source) && !['models', 'storage', 'error'].includes(target))
     return 'public market storage only depends on public contracts and the database driver boundary';
+  if (source === 'application/public_prices.rs' && !['models', 'db', 'ports', 'error'].includes(target))
+    return 'public price orchestration cannot depend on accounts, HTTP or concrete sources';
   if (source === 'application/dividend_calendar.rs' && !['models', 'db', 'ports', 'error'].includes(target))
     return 'public dividend calendars cannot depend on accounts, private context or model execution';
   if (source === 'application/watch_catalog.rs' && !['models', 'db', 'ports', 'error', 'application'].includes(target))

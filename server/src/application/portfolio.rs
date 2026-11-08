@@ -4,10 +4,7 @@ use crate::models::market::{FxBook, FxOverrideInput};
 use crate::{
     db::Database,
     models,
-    models::{
-        FxRateQuery, HoldingInput, SecurityPriceConfig, SecurityPriceQuery, SecurityPriceQuote,
-        Snapshot,
-    },
+    models::{FxRateQuery, HoldingInput, SecurityPriceQuery, SecurityPriceQuote, Snapshot},
     ports::market::{FxRateProvider, SecurityPriceProvider},
     AppResult,
 };
@@ -15,19 +12,10 @@ use std::sync::Arc;
 pub(crate) struct MarketServices {
     fx: Arc<dyn FxRateProvider>,
     prices: Arc<dyn SecurityPriceProvider>,
-    keyed_prices: Arc<dyn SecurityPriceProvider>,
 }
 impl MarketServices {
-    pub fn new(
-        fx: Arc<dyn FxRateProvider>,
-        prices: Arc<dyn SecurityPriceProvider>,
-        keyed_prices: Arc<dyn SecurityPriceProvider>,
-    ) -> Self {
-        Self {
-            fx,
-            prices,
-            keyed_prices,
-        }
+    pub fn new(fx: Arc<dyn FxRateProvider>, prices: Arc<dyn SecurityPriceProvider>) -> Self {
+        Self { fx, prices }
     }
     pub fn for_account<'a>(&'a self, db: &'a Database) -> PortfolioService<'a> {
         PortfolioService { db, market: self }
@@ -50,45 +38,23 @@ impl PortfolioService<'_> {
     pub async fn fx_quote(&self, query: &FxRateQuery) -> AppResult<crate::models::FxRateQuote> {
         fx::historical_quote(self.db, self.market.fx.as_ref(), query).await
     }
-    fn security_quote_source(&self) -> (&dyn SecurityPriceProvider, String) {
-        match self.db.secret("security-price") {
-            Ok(key) => (self.market.keyed_prices.as_ref(), key),
-            Err(_) => (self.market.prices.as_ref(), String::new()),
-        }
+    pub fn snapshot(&self) -> AppResult<Snapshot> {
+        prices::apply_cached(self.db, self.market.prices.as_ref())
     }
     pub async fn security_quote(
         &self,
         query: &SecurityPriceQuery,
     ) -> AppResult<SecurityPriceQuote> {
-        let (provider, key) = self.security_quote_source();
-        provider.quote(query, &key).await
+        self.market.prices.quote(query).await
     }
     /// The caller holds one account lock; only the frozen provider query runs unlocked.
     pub async fn preview_security_quote(
         &self,
         query: &SecurityPriceQuery,
     ) -> AppResult<SecurityPriceQuote> {
-        let (provider, key) = self.security_quote_source();
         self.db
-            .without_account_lock(provider.quote(query, &key))
+            .without_account_lock(self.market.prices.quote(query))
             .await?
-    }
-    pub fn security_config(&self) -> SecurityPriceConfig {
-        let has_api_key = self.db.secret("security-price").is_ok();
-        SecurityPriceConfig {
-            provider: if has_api_key { "twelve-data" } else { "public" }.into(),
-            has_api_key,
-        }
-    }
-    pub fn save_security_config(&self, key: Option<&str>) -> AppResult<SecurityPriceConfig> {
-        if let Some(key) = key {
-            self.db.save_secret("security-price", key)?;
-        }
-        Ok(self.security_config())
-    }
-    pub fn delete_security_key(&self) -> AppResult<SecurityPriceConfig> {
-        self.db.remove_secret("security-price")?;
-        Ok(self.security_config())
     }
     pub async fn verify_valuation(
         &self,
@@ -112,23 +78,6 @@ impl PortfolioService<'_> {
             on_date: input.on_date,
         };
         let quote = self.security_quote(&query).await?;
-        if query.action_from.is_some() && quote.provider_code != "yahoo_daily_close" {
-            let actions = self.market.prices.quote(&query, "").await?;
-            if self.db.register_corporate_actions(id, &actions)? {
-                return Err(crate::AppError::Validation(
-                    "存在待确认公司行动，请先核对数量与成本调整".into(),
-                ));
-            }
-            if actions
-                .splits
-                .iter()
-                .any(|s| s.effective_on > quote.observed_on)
-            {
-                return Err(crate::AppError::Validation(
-                    "未复权价格早于公司行动，请等待行动生效后的完整收盘价或人工核对估值".into(),
-                ));
-            }
-        }
         self.db
             .apply_verified_holding_valuation(id, input.quantity, &quote)
     }
@@ -155,7 +104,7 @@ impl PortfolioService<'_> {
         } else {
             self.db.add_holding(&input)?;
         }
-        self.db.snapshot()
+        self.snapshot()
     }
     pub async fn ensure_daily(
         &self,

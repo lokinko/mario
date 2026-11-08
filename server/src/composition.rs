@@ -1,12 +1,9 @@
 //! Process dependency assembly and ownership of public quote refresh tasks.
 use crate::{
     application::portfolio::MarketServices,
-    market_data::{
-        AshareSecurityPriceProvider, EcbFxRateProvider, TwelveDataSecurityPriceProvider,
-    },
+    market_data::{EcbFxRateProvider, PublicMarketSource},
     models::{market::today, FxRateQuery},
     ports::market::FxRateProvider,
-    prices::FreeSecurityPriceProvider,
     AppResult,
 };
 use std::sync::Arc;
@@ -112,12 +109,20 @@ impl MarketRuntime {
             &crate::market_data::watch_archive::initial_histories()?,
         )?);
         let fx = Arc::new(EcbFxRateProvider::new()?);
-        let prices = Arc::new(FreeSecurityPriceProvider::new(Arc::new(
-            AshareSecurityPriceProvider::new()?,
-        ))?);
-        let keyed = Arc::new(TwelveDataSecurityPriceProvider::new()?);
-        let services = Arc::new(MarketServices::new(fx.clone(), prices.clone(), keyed));
-        let price_task = crate::prices::start_refresh(prices);
+        let prices = Arc::new(crate::application::public_prices::PublicPriceService::new(
+            Arc::new(crate::db::PublicPrices::postgres(database_url)?),
+            Arc::new(PublicMarketSource::new()?),
+        ));
+        let services = Arc::new(MarketServices::new(fx.clone(), prices.clone()));
+        let refresh_prices = prices.clone();
+        let price_task = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                refresh_prices.refresh_registered().await;
+            }
+        });
         let fx_task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -137,6 +142,7 @@ impl MarketRuntime {
             Arc::new(crate::application::watch_market::SharedWatchProvider::new(
                 Arc::new(crate::market_data::watch::PublicWatchProvider::new()?),
                 public_dividends,
+                prices,
             ));
         let public_watch = Arc::new(crate::db::PublicWatch::postgres(database_url)?);
         let dividend_calendar = Arc::new(

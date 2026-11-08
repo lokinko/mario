@@ -28,14 +28,11 @@ pub async fn complete_input(
         && input.current_price.is_none()
     {
         let quote = provider
-            .quote(
-                &SecurityPriceQuery {
-                    action_from: None,
-                    symbol: input.symbol.clone(),
-                    on_date: crate::models::market::today(),
-                },
-                "",
-            )
+            .quote(&SecurityPriceQuery {
+                action_from: None,
+                symbol: input.symbol.clone(),
+                on_date: crate::models::market::today(),
+            })
             .await?;
         if !input.currency.trim().eq_ignore_ascii_case(&quote.currency) {
             return Err(AppError::Validation(format!(
@@ -109,21 +106,6 @@ async fn refresh_inner(
                 && h.asset_class != "现金"
                 && !snapshot.option_contracts.contains_key(&h.id)
                 && !h.symbol.trim().is_empty()
-                && automatic.is_none_or(|now| {
-                    let Ok(symbol) = crate::models::market::canonical_symbol(&h.symbol) else {
-                        return true;
-                    };
-                    let end = crate::models::market::close::completed_day(
-                        &symbol,
-                        day.parse().unwrap(),
-                        now,
-                    )
-                    .to_string();
-                    !snapshot
-                        .holding_valuations
-                        .iter()
-                        .any(|v| v.holding_id == h.id && v.observed_on >= end)
-                })
         })
         .collect::<Vec<_>>();
     for chunk in holdings.chunks(4) {
@@ -153,7 +135,7 @@ async fn refresh_inner(
                         let result = if tokio::time::Instant::now() >= deadline {
                             Err(timed_out())
                         } else {
-                            tokio::time::timeout_at(deadline, provider.quote(&query, ""))
+                            tokio::time::timeout_at(deadline, provider.quote(&query))
                                 .await
                                 .unwrap_or_else(|_| Err(timed_out()))
                         };
@@ -167,7 +149,6 @@ async fn refresh_inner(
         let (a, b, c, d) = db.without_account_lock(fetch_chunk).await?;
         let current = db.snapshot()?;
         for (holding, quote) in [a, b, c, d].into_iter().flatten() {
-            let quantity = holding.quantity.unwrap();
             let result = (|| {
                 // A concurrent sale, edit, deletion or refresh invalidates the frozen input.
                 if !current.holding_revisions.contains_key(&holding.id)
@@ -189,51 +170,7 @@ async fn refresh_inner(
                         return Err(AppError::MarketData("来源返回了尚未完成的日收盘价".into()));
                     }
                 }
-                // valuation_date is the request date, not the date of a verified close.
-                let evidence = current
-                    .holding_valuations
-                    .iter()
-                    .find(|v| v.holding_id == holding.id);
-                if evidence.is_some_and(|v| {
-                    v.observed_on > quote.observed_on
-                        || (automatic.is_some() && v.observed_on == quote.observed_on)
-                }) {
-                    return Ok(false);
-                }
-                if automatic.is_some()
-                    && evidence.is_none()
-                    && current
-                        .accounting
-                        .as_ref()
-                        .and_then(|a| a.holdings.get(&holding.id))
-                        .is_some_and(|a| a.amounts.price_status == "manual")
-                    && quote.observed_on < holding.valuation_date
-                {
-                    return Ok(false);
-                }
-                if !holding.currency.eq_ignore_ascii_case(&quote.currency) {
-                    return Err(AppError::MarketData(format!(
-                        "行情币种 {} 与持仓币种 {} 不一致",
-                        quote.currency, holding.currency
-                    )));
-                }
-                if db.register_corporate_actions(&holding.id, &quote)? {
-                    return Err(AppError::MarketData(
-                        "发现待确认拆股或合股，已暂停估值，请按来源核对并确认公司行动".into(),
-                    ));
-                }
-                if snapshot.holding_valuations.iter().any(|v| {
-                    v.holding_id == holding.id
-                        && v.quantity == quantity
-                        && v.unit_price == quote.close
-                        && v.requested_on == quote.requested_on
-                        && v.observed_on == quote.observed_on
-                        && v.provider_code == quote.provider_code
-                }) {
-                    return Ok(false);
-                }
-                db.apply_verified_holding_valuation(&holding.id, quantity, &quote)?;
-                Ok(true)
+                apply_quote(db, &snapshot, holding, &quote)
             })();
             match result {
                 Ok(true) => updated_count += 1,
@@ -251,6 +188,78 @@ async fn refresh_inner(
         updated_count,
         errors,
     })
+}
+
+fn apply_quote(
+    db: &Database,
+    snapshot: &Snapshot,
+    holding: &crate::models::Holding,
+    quote: &crate::models::SecurityPriceQuote,
+) -> AppResult<bool> {
+    let quantity = holding.quantity.unwrap();
+    if snapshot
+        .holding_valuations
+        .iter()
+        .any(|v| v.holding_id == holding.id && v.observed_on > quote.observed_on)
+    {
+        return Ok(false);
+    }
+    if !holding.currency.eq_ignore_ascii_case(&quote.currency) {
+        return Err(AppError::MarketData(format!(
+            "行情币种 {} 与持仓币种 {} 不一致",
+            quote.currency, holding.currency
+        )));
+    }
+    if db.register_corporate_actions(&holding.id, quote)? {
+        return Err(AppError::MarketData(
+            "发现待确认公司行动，已暂停估值，请核对并确认".into(),
+        ));
+    }
+    if snapshot.holding_valuations.iter().any(|v| {
+        v.holding_id == holding.id
+            && v.quantity == quantity
+            && v.unit_price == quote.close
+            && v.observed_on == quote.observed_on
+            && v.provider_code == quote.provider_code
+            && v.price_basis == quote.price_basis
+            && v.source_url == quote.source_url
+    }) {
+        return Ok(false);
+    }
+    db.apply_verified_holding_valuation(&holding.id, quantity, quote)?;
+    Ok(true)
+}
+
+/// Snapshot reads adopt only completed database prices, never call a vendor.
+pub fn apply_cached(db: &Database, provider: &dyn SecurityPriceProvider) -> AppResult<Snapshot> {
+    let before = db.snapshot()?;
+    let mut errors = Vec::new();
+    for holding in &before.holdings {
+        if holding.asset_class == "现金"
+            || holding.symbol.trim().is_empty()
+            || !holding.quantity.is_some_and(|q| q > 0.0)
+            || before.option_contracts.contains_key(&holding.id)
+        {
+            continue;
+        }
+        let result = provider
+            .cached_quote(&SecurityPriceQuery {
+                symbol: holding.symbol.clone(),
+                on_date: crate::models::market::today(),
+                action_from: None,
+            })
+            .and_then(|quote| {
+                quote
+                    .map(|q| apply_quote(db, &before, holding, &q))
+                    .transpose()
+            });
+        if let Err(error) = result {
+            errors.push(format!("{}（{}）：{}", holding.name, holding.symbol, error));
+        }
+    }
+    let mut snapshot = db.snapshot()?;
+    snapshot.price_refresh_errors = errors;
+    Ok(snapshot)
 }
 
 #[cfg(test)]
@@ -273,11 +282,7 @@ mod tests {
     }
     #[async_trait]
     impl SecurityPriceProvider for FixedProvider {
-        async fn quote(
-            &self,
-            query: &SecurityPriceQuery,
-            _: &str,
-        ) -> AppResult<SecurityPriceQuote> {
+        async fn quote(&self, query: &SecurityPriceQuery) -> AppResult<SecurityPriceQuote> {
             if self.failed {
                 return Err(AppError::MarketData("offline".into()));
             }
@@ -509,58 +514,5 @@ mod tests {
             .import_sync_data(&db.export_sync_data().unwrap())
             .unwrap();
         assert_eq!(restored.snapshot().unwrap().holdings[0].market_value, 230.0);
-    }
-    #[tokio::test]
-    #[ignore = "requires live free public API"]
-    async fn live_free_quotes() {
-        let provider = crate::prices::FreeSecurityPriceProvider::new(std::sync::Arc::new(
-            crate::market_data::AshareSecurityPriceProvider::new().unwrap(),
-        ))
-        .unwrap();
-        for (symbol, currency) in [
-            ("AAPL", "USD"),
-            ("0700.HK", "HKD"),
-            ("600519.SS", "CNY"),
-            ("600941.SS", "CNY"),
-        ] {
-            let q = provider
-                .quote(
-                    &SecurityPriceQuery {
-                        action_from: None,
-                        symbol: symbol.into(),
-                        on_date: crate::models::market::today(),
-                    },
-                    "",
-                )
-                .await
-                .unwrap();
-            assert_eq!(q.currency, currency);
-            assert!(q.close > 0.0 && q.staleness_days >= 0);
-            let db = db();
-            let mut input = holding(symbol, "股票", Some(10.0));
-            input.currency = currency.into();
-            if symbol == "600941.SS" {
-                input.current_price = Some(100.49);
-                input.market_value = 1004.9;
-            }
-            db.add_holding(&input).unwrap();
-            let applied = refresh(&db, &provider).await.unwrap();
-            assert!(applied.errors.is_empty(), "{:?}", applied.errors);
-            assert_eq!(applied.updated_count, 1);
-            let expected = rust_decimal::Decimal::from_str_exact(q.exact_close.as_ref().unwrap())
-                .unwrap()
-                * rust_decimal::Decimal::from(10);
-            assert_eq!(
-                applied.snapshot.accounting.as_ref().unwrap().holdings
-                    [&applied.snapshot.holdings[0].id]
-                    .amounts
-                    .market_value,
-                expected.normalize().to_string(),
-            );
-            println!(
-                "{symbol}: {} {} observed {}",
-                q.close, q.currency, q.observed_on
-            );
-        }
     }
 }

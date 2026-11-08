@@ -259,7 +259,7 @@ function TrendChart({
 }
 
 export function WatchTrends({ latest }: { latest: Observation | null }) {
-  const [weeks, setWeeks] = useState(104);
+  const [weeks, setWeeks] = useState(0);
   const trends = latest?.trends;
   const points = trends?.slice(-weeks) ?? [];
   const last = points[points.length - 1];
@@ -301,6 +301,8 @@ export function WatchTrends({ latest }: { latest: Observation | null }) {
               <option value={26}>近半年</option>
               <option value={52}>近一年</option>
               <option value={104}>近两年</option>
+              <option value={156}>近三年</option>
+              <option value={0}>近五年</option>
             </select>
           </label>
         )}
@@ -310,7 +312,11 @@ export function WatchTrends({ latest }: { latest: Observation | null }) {
       ) : (
         <>
           <p className="watch-meta">
-            截至 {latest?.observedOn} · 复权序列统一到该日价格单位 · 按周取点
+            截至 {latest?.observedOn} ·{" "}
+            {latest?.trendWindowYears === 5
+              ? "前复权序列 · 五年数据窗口"
+              : "历史复权快照，待更新五年资料"}{" "}
+            · 按周取点
           </p>
           <TrendChart
             title="趋势图 · 月线中轨与周线 BOLL"
@@ -331,7 +337,7 @@ export function WatchTrends({ latest }: { latest: Observation | null }) {
             {maState}
             {last.provisional ? "（本周暂态）" : ""}
             {latestCross
-              ? ` · 两年内最近${latestCross.provisional ? "暂态" : ""}金叉 ${latestCross.day}`
+              ? ` · 五年内最近${latestCross.provisional ? "暂态" : ""}金叉 ${latestCross.day}`
               : " · 有效相邻周中未见金叉"}
           </p>
           <p className="watch-meta">

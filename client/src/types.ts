@@ -65,11 +65,6 @@ export interface SecurityPriceQuote {
   disclaimer: string;
 }
 
-export interface SecurityPriceConfig {
-  provider: "public" | "twelve-data";
-  hasApiKey: boolean;
-}
-
 export interface HoldingValuationEvidence {
   holdingId: string;
   symbol: string;

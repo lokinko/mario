@@ -263,6 +263,10 @@ export function MyFacts({
             snapshot.holdingValuations?.find((v) => v.holdingId === item.id)
               ?.observedOn
           }
+          priceBasis={
+            snapshot.holdingValuations?.find((v) => v.holdingId === item.id)
+              ?.priceBasis
+          }
           holding={withExactValues(snapshot, item)}
           exact={displayAccounting?.holdings[item.id]}
           confirmedOn={

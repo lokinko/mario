@@ -19,12 +19,6 @@ vi.mock("../../api/settings", () => ({
   deleteModelKey: vi.fn(),
   testModelConnection: vi.fn(),
 }));
-vi.mock("../../api/portfolio", () => ({
-  getSecurityPriceConfig: vi.fn().mockResolvedValue({ hasApiKey: false }),
-  deleteSecurityPriceKey: vi.fn(),
-  getSecurityPrice: vi.fn(),
-  saveSecurityPriceConfig: vi.fn(),
-}));
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();

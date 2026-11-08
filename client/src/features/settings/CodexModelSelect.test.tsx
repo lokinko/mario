@@ -14,9 +14,7 @@ vi.mock("../../api/settings", () => ({
   getCodexBridgeStatus: vi.fn(),
   saveModelConfig: vi.fn(),
 }));
-vi.mock("../../api/portfolio", () => ({
-  getSecurityPriceConfig: vi.fn(async () => null),
-}));
+vi.mock("../../api/portfolio", () => ({}));
 vi.mock("./AnalysisDefaults", () => ({ AnalysisDefaults: () => null }));
 const models = [
   {

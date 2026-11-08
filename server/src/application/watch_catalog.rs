@@ -196,7 +196,15 @@ impl WatchCatalogService {
         if previous.checked_at != before.checked_at {
             return Ok(());
         }
-        if !force && !needs_check(&previous, day) {
+        let price_revision = self.provider.price_revision(symbol);
+        let price_changed = price_revision.as_ref().is_some_and(|revision| {
+            previous
+                .latest
+                .as_ref()
+                .and_then(|o| o.price_revision.as_ref())
+                != Some(revision)
+        });
+        if !force && !price_changed && !needs_check(&previous, day) {
             return Ok(());
         }
         let checked_at = Utc::now().to_rfc3339();
@@ -270,6 +278,9 @@ impl WatchCatalogService {
 
 fn needs_check(snapshot: &CatalogSnapshot, day: NaiveDate) -> bool {
     snapshot.refresh_failed
+        || snapshot.latest.as_ref().is_some_and(|o| {
+            o.trend_window_years != Some(crate::models::market::history::HISTORY_YEARS)
+        })
         || snapshot.checked_for.as_deref() != Some(day.to_string().as_str())
         || snapshot.latest.as_ref().is_none_or(|o| {
             o.status == WatchStatus::Incomplete

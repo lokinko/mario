@@ -48,7 +48,7 @@ flowchart TD
 
 - 启动配置属于进程。行情 Provider 和 AI 执行器属于进程依赖，可以替换；它们不持有账号数据库。
 - 多用户请求先认证，再按服务端用户 ID 选择数据库连接。`RequestContext` 只组合该请求的账号数据库与共享服务依赖；客户端不能提供租户 ID。
-- 公开行情缓存有界、共享并在失败时退避。用户汇率覆盖、持仓、密钥和分析历史归账号数据库，不进入跨账号缓存。
+- 五年价格历史按证券归公共数据库，来源更新和失败退避跨账号及重启共享；用户汇率覆盖、持仓、密钥和分析历史继续归账号。
 - 多用户请求在数据库账户锁内检查 `If-Match`。分析预览、模型连接测试等实际例外只由 `http/policy.rs` 声明，前端 `requestPolicy` 同步对应政策。新增操作默认要求版本，不能因为名字含 `preview` 或 `test` 就自动豁免。
 - 分析执行在锁内冻结上下文、模型配置、密钥目的地和指纹；模型执行期间释放账户锁，执行结束重新取锁后保存。失败不产生分析历史；请求退出会关闭连接并释放残留的数据库会话锁。
 
@@ -86,7 +86,7 @@ flowchart TD
 ### 执行接口与适配器
 
 - `ports/` 是外部执行契约层，只依赖领域契约、冻结上下文和错误类型；流式事件结构归 `models/inference.rs`。
-- `application/portfolio.rs`、`fx.rs`、`prices.rs` 只使用行情端口；`composition.rs` 负责实际供应商装配与生命周期；`market_data.rs`、`prices.rs` 不读写账号数据，也不持有静态可变资源。
+- `application/portfolio.rs`、`fx.rs`、`prices.rs` 只使用行情端口；`composition.rs` 负责实际供应商装配与生命周期；`market_data.rs` 与 `market_data/history` 不读写账号数据，也不持有静态可变资源。
 - 账号凭据读写归 `db/secrets.rs`，`secrets.rs` 不依赖仓储。
 - 功能页不引用 `app/`（包括导航类型），通过回调通知应用壳：参考资料与复盘使用 `onAsk(question)`，问答使用 `onOpenSettings()`。
 - `api/<领域>.ts` 可引用 `api/<同领域>/` 内部实现，禁止跨领域 API 互相引用。财务回执恢复只属于组合 API，`lib/httpClient.ts` 不解释财务回执或组合快照。
@@ -101,11 +101,11 @@ flowchart TD
 
 ### 持仓收盘估值
 
-`models/market/close` 只负责给定证券代码、请求日与 UTC 时间时的已完成收盘截止；不访问交易日历或网络，不把工作日假设当成实际交易日。`prices` 与 `market_data` 负责来源及缓存截止失效；`application/prices` 共用显式刷新与后台估值的筛选、来源核查和仓储写入，HTTP 入口沿用请求锁，后台入口取得一次账号锁，网络期解锁、重取锁及逐持仓版本比较由二者共用，不能移进供应商。`composition` 拥有按账号调度与任务取消，不能把账号持仓放进公共行情缓存。接口、时点与失败语义以[市场数据](market-data.md)为准。
+`models/market/history` 定义五年窗口、精确原价／前复权序列、复权基准及报价，观察投影归 `application/watch_market`；`market_data/history` 只通过公开来源整组取得数据，无账号数据库或价格缓存。`db/public_prices` 拥有每证券完整版本、原子更换、跨进程租约和失败状态；`application/public_prices` 通过历史端口抓取、按证券合并并发、限制来源流程、协调后台更新，禁止依赖账号、HTTP 或具体供应商。四层边界由架构检查强制。
 
-`market_data/ashare` 只负责国内股票未复权日线及送转资料，复用 `market_data/watch` 的供应商分页和确定性解析；由 `composition` 经既有价格端口注入 `prices`，不能让 `prices` 导入具体国内适配器或读取账号。免费 Provider 拥有国内优先、整组回退及日期择新；账号刷新拥有统一截止和部分成功写回。新增来源必须同时更新仓储来源白名单与备份验证，不能用可信域名为错误证券、复权口径或重复参数背书。
+持仓、单独报价及观察都消费同一公共库。`application/prices` 负责账号估值应用，快照读取只采用已入库价格，不联网；显式／后台刷新释放账号锁等待共享资料，重取锁逐持仓校验。账号精确会计、估值证据及当日观测沿用同一事务，不生成交易或现金流。公共价格版本不推进账号版本；账号真正采用新价格后才推进，并返回最终完整快照版本。来源、时点、时限和迁移规则统一见[市场数据](market-data.md#统一公共价格库)。
 
-扩展收盘策略时同步验证盘中与收盘边界、夏令时、周末／来源滞后及缓存失效、日期与价格数组等长和交易日唯一；调整后台写回时验证请求日晚于实际收盘日时的延迟补价、参考价升级与手工日期保护、显式更新不倒退、手动与后台独立数据库会话的并发编辑／删除保护、整轮截止取消未完成网络、部分成功和过期后不再发起新查询、重启幂等、单只失败隔离与日观测回滚。沿用原估值事务，不从后台生成成交或现金流，不改写历史价格。
+验证必须覆盖同证券别名归一、多账号价格相同但数量／成本隔离、重启与原生备份恢复、租约过期和旧令牌、实际行情日期倒退、原价／前复权按日期对齐、精确金额、盘中与收盘／夏令时／周末、缺口保留、来源失败不清空、同日更正及快照幂等。公共数据库表不读账号，个人备份不覆盖公共行情；旧证据来源只为恢复保留校验，旧运行入口和内存缓存已删除。
 
 ### 网站 ChatGPT 身份登录
 
@@ -126,7 +126,7 @@ flowchart TD
 
 `GET /market-data/security-price` 的网络锁边界归 `application/portfolio::preview_security_quote`：HTTP 仍经统一认证和外层账号锁，应用层在锁内选定供应商与 key，仅 `SecurityPriceProvider::quote` 的等待通过既有 `without_account_lock` 释放一层锁。该 Future 不读写账号库，成功或错误返回前重获锁。新增调用方必须确认已有一层账号锁，不能再次套锁导致只释放内层；取消整个 Future 沿用 helper 原有的保持释放语义。
 
-预览可按开始时来源完成，不因并发无关写入新增冲突；不写账号、不推进版本，也不自动重试或切换来源。认证响应头仍取结束时版本，前端报价 GET 不据此接受新的资料基准。原 `security_quote` 被核验估值复用，仍持锁；保存、刷新和汇率路径没有本次解锁。并发回归必须使用同账号的独立 PostgreSQL 连接，在供应商挂起时实测 advisory lock，而不能仅凭快照读取或同连接重入宣称锁已释放。行为定义见[行情规范](market-data.md#只读证券报价与并发)，验证入口见[应用锁回归](../server/src/application/portfolio_quote_tests.rs)、[认证 HTTP](../server/src/hosted_quote_tests.rs)及[客户端版本回归](../client/src/api.hosted.test.ts)。
+预览使用共享价格服务，不因并发无关个人写入新增冲突；不写账号、不推进个人版本。公共资料按统一来源和持久化规则准备。认证响应头仍取结束时版本，前端报价 GET 不据此接受新的资料基准。核验估值和保存普通持仓仍沿用其锁边界；价格刷新已共用解锁及重新校验流程，汇率路径不受影响。并发回归必须使用同账号的独立 PostgreSQL 连接，在供应商挂起时实测 advisory lock，而不能仅凭快照读取或同连接重入宣称锁已释放。行为定义见[行情规范](market-data.md#只读证券报价与并发)，验证入口见[应用锁回归](../server/src/application/portfolio_quote_tests.rs)、[认证 HTTP](../server/src/hosted_quote_tests.rs)及[客户端版本回归](../client/src/api.hosted.test.ts)。
 
 ### 期权
 
@@ -158,7 +158,7 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 
 `features/watch` 拥有名单草稿、观察卡片与周末汇总，`api/watch` 只处理领域请求；导航和进入问答由应用壳组合。`models/watch` 定义股息与 BOLL 规则及问题码，`ports/market` 暴露分别取价格与完整分红事件集的 `WatchMarketProvider`；公开仓储不读租户 schema，共享编排不依赖账号或私有事实，架构检查对这两个文件设独立约束。来源适配归 `market_data/watch`，按账号刷新归 `application/watch`，公开初始化资料适配与 CSV 导出归 `market_data/watch_archive`，离线原件核验和资料包构建归 `scripts/prepare-watch-dividends.py`，共享公开分红仓储归 `db/public_dividends`，跨账号读取、补抓和进程内合并归 `application/watch_market`，账号采用依据、状态事务和账号备份校验归 `db/watch`；后台任务由 `composition` 装配并随进程关闭。不得让观察计算读取账号库或依赖行情网络实现。
 
-国内日线协议归 `market_data/watch/eastmoney`，未复权、后复权和上证日期组成一次完整来源查询；`market_data/watch` 负责优先国内来源及失败后整组回退 Yahoo。新增来源必须校验证券与交易所、按日期而非数组下标对齐，不得跨来源拼接；调整序列和原价的单位归一仍只在 `models/watch` 完成。`market_data/watch/source_tests` 使用本地 HTTP 验证无 Yahoo 时的国内查询、复权缺行保留价格与股息、整组回退及全失败；真实云铝股份查询作为显式忽略的联网检查，通过 `cargo test --manifest-path server/Cargo.toml live_yunlu_prices_and_dividends -- --ignored --nocapture` 手动执行。失败日志归来源适配与账号检查应用层，不修改公开接口或备份格式。
+价格、前复权和交易日参考统一由[公共价格模块](#持仓收盘估值)提供。`application/watch_market` 只装配库内价格与公共分红，`market_data/watch` 保留分配分页及计划解析，不再独立抓价。`priceRevision` 是公共序列内容版本，排除轮询采集时间的无效变化；价格更正时即使观察截止日不变，也重新计算当前观察，历史冻结不改写。五年来源联网检查为 `cargo test --manifest-path server/Cargo.toml live_five_year_history -- --ignored --nocapture`，默认忽略不能当作联网通过。
 
 `Band.reference` 指明所选下轨、中轨或上轨，距离与 `matchesRule` 都由领域计算器按参考轨产生。账号 schema 15 升级与旧备份导入复用 `db/watch::migrate_rules`，事务重算存量观察并清除旧条件提醒；备份 v28，v26/v25/v24 仅经这一迁移入口恢复，失败整次回滚。迁移适配在不再支持旧观察备份时移除。
 

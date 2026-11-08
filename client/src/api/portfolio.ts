@@ -4,7 +4,6 @@ import type {
   FinancialProfile,
   FxBook,
   Holding,
-  SecurityPriceConfig,
   SecurityPriceQuote,
   Snapshot,
 } from "../types";
@@ -113,31 +112,12 @@ export async function getSecurityPrice(
   );
 }
 
-export async function getSecurityPriceConfig(): Promise<SecurityPriceConfig> {
-  return httpRequest<SecurityPriceConfig>("/market-data/security/config");
-}
-
 export function refreshSecurityPrices(): Promise<{
   snapshot: Snapshot;
   updatedCount: number;
   errors: string[];
 }> {
   return httpRequest("/market-data/security/refresh", { method: "POST" });
-}
-
-export async function saveSecurityPriceConfig(
-  apiKey?: string,
-): Promise<SecurityPriceConfig> {
-  return httpRequest<SecurityPriceConfig>("/market-data/security/config", {
-    method: "PUT",
-    body: JSON.stringify({ apiKey }),
-  });
-}
-
-export async function deleteSecurityPriceKey(): Promise<SecurityPriceConfig> {
-  return httpRequest<SecurityPriceConfig>("/market-data/security/key", {
-    method: "DELETE",
-  });
 }
 
 export async function saveProfile(
