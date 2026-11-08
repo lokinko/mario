@@ -109,7 +109,7 @@ export function WatchDetails({
             )}
             <WatchEvidence
               row={row}
-              rules={rules}
+              rules={row.latest?.rules ?? rules}
               loading={detail.loading}
               detailError={detail.error}
               onReadRetry={detail.retry}

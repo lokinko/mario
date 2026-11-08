@@ -110,3 +110,13 @@ it("removes the failure notice and retry after a successful check", () => {
   expect(screen.queryByRole("button", { name: "重新检查数据" })).toBeNull();
   expect(screen.getByText("收盘价 · 2026-11-05")).toBeTruthy();
 });
+
+it("uses the full detail's applied rules when they are newer than the list rules", async () => {
+  const p = props();
+  const updated = failedRow();
+  updated.latest!.rules = { ...defaultRules, minYieldBps: 725 };
+  updated.latest!.yieldMatchesRule = false;
+  vi.mocked(getWatchDetail).mockResolvedValue(updated);
+  render(<WatchDetails {...p} />);
+  expect(await screen.findByText(/7.25/)).toBeTruthy();
+});

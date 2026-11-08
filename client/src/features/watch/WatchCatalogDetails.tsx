@@ -47,7 +47,7 @@ export function WatchCatalogDetails({
         {error && <Callout tone="danger">{error}</Callout>}
         <WatchEvidence
           row={row}
-          rules={rules}
+          rules={row.latest?.rules ?? rules}
           companySources={row.company.sources}
           loading={detail.loading}
           detailError={detail.error}
