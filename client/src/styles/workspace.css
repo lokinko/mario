@@ -1201,8 +1201,7 @@ th,
   color: var(--danger);
   margin-top: var(--space-1);
 }
-.sidebar-sync-state,
-.exchange-access {
+.sidebar-sync-state {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -1216,12 +1215,6 @@ th,
 }
 .sidebar-sync-state {
   line-height: 1.5;
-}
-.exchange-access > span {
-  overflow-wrap: anywhere;
-}
-.exchange-access > svg {
-  flex-shrink: 0;
 }
 .sync-indicator {
   display: inline-block;

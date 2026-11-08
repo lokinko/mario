@@ -2,6 +2,7 @@ import { Button, Tabs } from "antd";
 import { Drawer } from "../../components/Drawer";
 import { AssetAmountRow } from "./AssetAmountRow";
 import { ExchangeRates } from "./ExchangeRates";
+import { ExchangeRateAccess } from "./ExchangeRateAccess";
 import { AssetEditor } from "./AssetEditor";
 import { AssetOverview } from "./AssetOverview";
 import { useAssetHistory } from "./useAssetHistory";
@@ -363,37 +364,40 @@ export function MyFacts({
       <PageHeader
         title="我的情况"
         action={
-          section === "holdings" && (
-            <div className="trade-toolbar facts-heading-actions">
-              {investments.length > 0 && (
+          <div className="trade-toolbar facts-heading-actions">
+            <ExchangeRateAccess snapshot={snapshot} onUpdate={onUpdate} />
+            {section === "holdings" && investments.length > 0 && (
+              <Button
+                icon={<RefreshCw size={15} />}
+                disabled={busy || Boolean(editing)}
+                onClick={refreshPrices}
+              >
+                {busy ? "更新中…" : "更新自动价格"}
+              </Button>
+            )}
+            {section === "holdings" && (
+              <>
                 <Button
-                  icon={<RefreshCw size={15} />}
-                  disabled={busy || Boolean(editing)}
-                  onClick={refreshPrices}
+                  type="primary"
+                  icon={<Plus size={16} />}
+                  disabled={busy || Boolean(editing) || addingTrade}
+                  onClick={() => {
+                    setTradeHolding(undefined);
+                    setAddingTrade(true);
+                  }}
                 >
-                  {busy ? "更新中…" : "更新自动价格"}
+                  记录交易
                 </Button>
-              )}
-              <Button
-                type="primary"
-                icon={<Plus size={16} />}
-                disabled={busy || Boolean(editing) || addingTrade}
-                onClick={() => {
-                  setTradeHolding(undefined);
-                  setAddingTrade(true);
-                }}
-              >
-                记录交易
-              </Button>
-              <Button
-                icon={<Plus size={16} />}
-                disabled={busy || Boolean(editing) || addingTrade}
-                onClick={add}
-              >
-                添加持仓
-              </Button>
-            </div>
-          )
+                <Button
+                  icon={<Plus size={16} />}
+                  disabled={busy || Boolean(editing) || addingTrade}
+                  onClick={add}
+                >
+                  添加持仓
+                </Button>
+              </>
+            )}
+          </div>
         }
       />
       {fxCurrency && (

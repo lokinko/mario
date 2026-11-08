@@ -28,6 +28,9 @@
   align-items: center;
   gap: 8px;
 }
+.dividend-calendar-toolbar select {
+  min-width: 14em;
+}
 .dividend-calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));

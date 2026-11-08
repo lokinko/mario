@@ -87,7 +87,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("keeps exchange rates outside the main page and available across navigation", async () => {
+it("opens exchange rates from my facts instead of the sidebar", async () => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
     emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
@@ -96,13 +96,16 @@ it("keeps exchange rates outside the main page and available across navigation",
     new Error("optional model unavailable"),
   );
   render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "查看汇率" }));
+  fireEvent.click(await screen.findByRole("button", { name: "我的情况" }));
+  await screen.findByRole("heading", { name: "我的情况" });
+  expect(
+    document
+      .querySelector("#main-navigation")
+      ?.querySelector('[aria-label="查看汇率"]'),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "查看汇率" }));
   const rates = await screen.findByRole("region", { name: "汇率设置" });
   expect(rates.closest("main")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
-  fireEvent.click(screen.getByRole("button", { name: "我的情况" }));
-  await screen.findByRole("heading", { name: "我的情况" });
-  expect(screen.getByRole("button", { name: "查看汇率" })).toBeTruthy();
 });
 
 it("switches accounts from the account and data page", async () => {

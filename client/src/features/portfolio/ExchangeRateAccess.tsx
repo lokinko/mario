@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "antd";
 import { ArrowLeftRight } from "lucide-react";
 import { Drawer } from "../../components/Drawer";
 import { ExchangeRates } from "./ExchangeRates";
@@ -16,28 +17,25 @@ export function ExchangeRateAccess({
   const currencies = [
     ...new Set(snapshot.holdings.map((h) => h.currency)),
   ].filter((currency) => currency !== baseCurrency);
+  const rates = currencies
+    .map((currency) => {
+      const rate = snapshot.holdings.find(
+        (h) => h.currency === currency,
+      )?.fxRateToBase;
+      return `${currency}/${baseCurrency} ${rate ? formatNumber(rate, 4, true) : "待补"}`;
+    })
+    .join(" · ");
   return (
     <>
-      <button
-        className="exchange-access"
+      <Button
+        icon={<ArrowLeftRight size={15} />}
         aria-label="查看汇率"
         aria-expanded={open}
+        title={rates || "汇率与原币核对"}
         onClick={() => setOpen(true)}
       >
-        <ArrowLeftRight size={15} />
-        <span>
-          {currencies.length
-            ? currencies
-                .map((currency) => {
-                  const rate = snapshot.holdings.find(
-                    (h) => h.currency === currency,
-                  )?.fxRateToBase;
-                  return `${currency}/${baseCurrency} ${rate ? formatNumber(rate, 4, true) : "待补"}`;
-                })
-                .join(" · ")
-            : "汇率与原币核对"}
-        </span>
-      </button>
+        汇率
+      </Button>
       {open && (
         <Drawer title="汇率" onClose={() => setOpen(false)}>
           <ExchangeRates

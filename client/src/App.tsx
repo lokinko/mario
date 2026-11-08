@@ -31,7 +31,6 @@ import { Advisor } from "./features/research/Advisor";
 import { InvestmentMethodology } from "./features/methodology/InvestmentMethodology";
 import { ModelSettings } from "./features/settings/ModelSettings";
 import { PageHeader } from "./components/PageHeader";
-import { ExchangeRateAccess } from "./features/portfolio/ExchangeRateAccess";
 import { useDisplayPreferences } from "./app/useDisplayPreferences";
 import { DisplayPreferences } from "./components/DisplayPreferences";
 import { ApplicationSkeleton } from "./components/Skeleton";
@@ -317,9 +316,6 @@ function App() {
               ? "同步需要处理 · 打开账号与数据"
               : syncState.message}
           </button>
-          {snapshot.profile && (
-            <ExchangeRateAccess snapshot={snapshot} onUpdate={setSnapshot} />
-          )}
         </div>
       </aside>
 
