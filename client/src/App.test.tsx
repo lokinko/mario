@@ -37,6 +37,7 @@ vi.mock("./api/portfolio", async (original) => ({
   }),
 }));
 vi.mock("./api/watch", () => ({
+  getDividendCalendar: vi.fn(() => new Promise(() => {})),
   getWatchBoard: vi.fn().mockResolvedValue({
     rows: [],
     weekly: [],
@@ -379,6 +380,7 @@ it("opens holdings and savings sections from the mobile tab bar", async () => {
 it.each([
   ["review", "复盘记录"],
   ["evidence", "参考资料"],
+  ["calendar", "分红日历"],
 ])(
   "opens %s directly from primary navigation with its own active state",
   async (view, label) => {

@@ -7,11 +7,13 @@ import {
   ChartNoAxesCombined,
   ChartPie,
   PiggyBank,
+  CalendarDays,
 } from "lucide-react";
 import type { FactsSection } from "../features/portfolio/MyFacts";
 
 export type View =
   | "watch"
+  | "calendar"
   | "facts"
   | "evidence"
   | "review"
@@ -22,6 +24,7 @@ export type View =
 
 export const views: View[] = [
   "watch",
+  "calendar",
   "facts",
   "evidence",
   "review",
@@ -48,6 +51,7 @@ export const navGroups: {
     caption: "决策",
     items: [
       { id: "watch", label: "买点观察", icon: ChartNoAxesCombined },
+      { id: "calendar", label: "分红日历", icon: CalendarDays },
       { id: "advisor", label: "问答", icon: MessageCircle },
     ],
   },
@@ -88,6 +92,7 @@ export const mobileTabs: {
 
 export const viewLabels: Record<View, string> = {
   watch: "买点观察",
+  calendar: "分红日历",
   methodology: "投资方法论",
   advisor: "问答",
   facts: "我的情况",

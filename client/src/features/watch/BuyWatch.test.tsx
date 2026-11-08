@@ -876,14 +876,3 @@ it("applies saved account rules to summaries, reference prices, both periods and
     expect.stringContaining("日线BOLL(20,2)上轨 ±1.25%"),
   );
 });
-
-it("opens the dividend calendar from buy watch without editing personal facts", async () => {
-  const p = props();
-  render(<BuyWatch {...p} />);
-  fireEvent.click(await screen.findByRole("button", { name: "分红日历" }));
-  expect(await screen.findByRole("dialog", { name: "分红日历" })).toBeTruthy();
-  expect(await screen.findByRole("tab", { name: "已定日期 0" })).toBeTruthy();
-  expect(api.getDividendCalendar).toHaveBeenCalledWith("all", "");
-  expect(p.onEdited).not.toHaveBeenCalled();
-  expect(api.refreshDividendCalendar).not.toHaveBeenCalled();
-});

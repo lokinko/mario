@@ -32,7 +32,6 @@ import "./watch.css";
 
 import { WatchRuleStrip } from "./WatchRuleStrip";
 import { rulesSummary } from "./rules";
-import { DividendCalendar } from "./DividendCalendar";
 import { WatchCatalogEditor } from "./WatchCatalogEditor";
 import { WatchList } from "./WatchList";
 import { WatchCatalogDetails } from "./WatchCatalogDetails";
@@ -67,7 +66,6 @@ export function BuyWatch({
 }) {
   const [board, setBoard] = useState<WatchBoard | null>(null);
   const [catalog, setCatalog] = useState<CatalogBoard | null>(null);
-  const [calendarOpen, setCalendarOpen] = useState(false);
   const [catalogEditing, setCatalogEditing] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const [group, setGroup] = useState("favorites");
@@ -286,12 +284,6 @@ export function BuyWatch({
         title="买点观察"
         action={
           <>
-            <Button
-              disabled={busy || open || !!expanded || catalogEditing}
-              onClick={() => setCalendarOpen(true)}
-            >
-              分红日历
-            </Button>
             {catalog?.canEdit && (
               <Button
                 disabled={busy || open || !!expanded}
@@ -320,9 +312,6 @@ export function BuyWatch({
           </>
         }
       />
-      {calendarOpen && (
-        <DividendCalendar onClose={() => setCalendarOpen(false)} />
-      )}
       {catalogEditing && catalog && (
         <WatchCatalogEditor
           board={catalog}

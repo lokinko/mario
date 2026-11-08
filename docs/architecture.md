@@ -245,7 +245,7 @@ sequenceDiagram
 
 `db/public_watch/calendar` 在公共 schema 的 `dividend_plan_snapshots` 按证券保存计划及采集元数据。单次原子 upsert 比较尝试时间，失败保留较新的成功计划与日期，较慢的旧请求不得覆盖新结果。快照不保存账号 ID、私人名称或理由，不修改目录版本、账号版本、TTM 历史或财务事务。启动在公共仓储原初始化事务幂等创建新表；不改账号 schema 和 JSON 备份版本。已有数据不转换，新增缓存可由来源重建；迁移失败回滚公共初始化，旧程序回退前应保留新版整站 PostgreSQL 备份。
 
-HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/dividend-calendar/refresh` 冻结当前允许范围、释放账号锁抓取，重新取得锁后按当前自选返回投影，移除不会复活。后者仅更新公共缓存，因此在 `http/policy` 和前端 `requestPolicy` 显式免账号版本与个人数据变更通知。前端 `features/watch/DividendCalendar` 经 `api/watch` 读取与刷新，筛选属于展示状态，关闭不触发草稿确认。后台缓存可以跨账号复用；返回范围和个人名称始终按当前会话计算，不暴露其他账号名单。详见[分红日历](buy-watch.md#分红日历)。
+HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/dividend-calendar/refresh` 冻结当前允许范围、释放账号锁抓取，重新取得锁后按当前自选返回投影，移除不会复活。后者仅更新公共缓存，因此在 `http/policy` 和前端 `requestPolicy` 显式免账号版本与个人数据变更通知。前端 `features/watch/DividendCalendar` 是应用壳直接装配的独立页面（视图 `calendar`），经 `api/watch` 读取与刷新；筛选属于展示状态（`data-presentation`），不进入草稿保护。后台缓存可以跨账号复用；返回范围和个人名称始终按当前会话计算，不暴露其他账号名单。详见[分红日历](buy-watch.md#分红日历)。
 
 ## 7. 状态与事务归属
 

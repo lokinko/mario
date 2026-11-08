@@ -5,7 +5,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DividendCalendar } from "./DividendCalendar";
@@ -81,7 +80,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 it("shows a 30-day calendar, separates record/ex dates, and leaves payment dates unknown", async () => {
-  render(<DividendCalendar onClose={vi.fn()} />);
+  render(<DividendCalendar />);
   expect(
     await screen.findByRole("button", { name: "2026-11-10，1项安排" }),
   ).toBeTruthy();
@@ -104,7 +103,7 @@ it("shows a 30-day calendar, separates record/ex dates, and leaves payment dates
   expect(screen.getByText("1.25 元")).toBeTruthy();
 });
 it("keeps undated proposals outside the grid and never turns unknown cash into zero", async () => {
-  render(<DividendCalendar onClose={vi.fn()} />);
+  render(<DividendCalendar />);
   fireEvent.click(await screen.findByRole("tab", { name: "待定计划 1" }));
   expect(screen.getByText("未披露")).toBeTruthy();
   expect(
@@ -119,7 +118,7 @@ it("shows a failed company's original date and retries that company within the c
     scope: "favorites",
     coverage: [{ ...board.coverage[0], refreshFailed: true }],
   });
-  render(<DividendCalendar onClose={vi.fn()} />);
+  render(<DividendCalendar />);
   await screen.findByRole("tab", { name: "已定日期 1" });
   fireEvent.change(screen.getByLabelText("分红日历范围"), {
     target: { value: "favorites" },
@@ -136,19 +135,19 @@ it("shows a failed company's original date and retries that company within the c
     ]),
   );
 });
-it("does not ask to discard presentation choices and can close without sending a model request", async () => {
-  const close = vi.fn();
-  vi.spyOn(window, "confirm").mockReturnValue(false);
-  render(<DividendCalendar onClose={close} />);
+it("keeps presentation choices out of the unsaved-draft guard", async () => {
+  render(<DividendCalendar />);
   await screen.findByRole("tab", { name: "已定日期 1" });
+  expect(
+    screen
+      .getByRole("heading", { name: "分红日历" })
+      .closest("[data-presentation]"),
+  ).toBeTruthy();
   fireEvent.change(screen.getByLabelText("分红日历范围"), {
     target: { value: "public" },
   });
-  fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", {
-      name: "关闭详情",
-    }),
+  await waitFor(() =>
+    expect(api.getDividendCalendar).toHaveBeenLastCalledWith("public", ""),
   );
-  expect(close).toHaveBeenCalled();
-  expect(window.confirm).not.toHaveBeenCalled();
+  expect(api.refreshDividendCalendar).not.toHaveBeenCalled();
 });

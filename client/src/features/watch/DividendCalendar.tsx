@@ -9,7 +9,7 @@ import {
   type DividendCalendarScope,
   type DividendPlanStage,
 } from "../../api/watch";
-import { Drawer } from "../../components/Drawer";
+import { PageHeader } from "../../components/PageHeader";
 import { Callout } from "../../components/Callout";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import { formatNumber } from "../../lib/format";
@@ -120,7 +120,7 @@ function PlanCard({
     </article>
   );
 }
-export function DividendCalendar({ onClose }: { onClose: () => void }) {
+export function DividendCalendar() {
   const [board, setBoard] = useState<DividendCalendarBoard | null>(null);
   const [scope, setScope] = useState<DividendCalendarScope>("all");
   const [from, setFrom] = useState("");
@@ -180,13 +180,21 @@ export function DividendCalendar({ onClose }: { onClose: () => void }) {
   const incomplete =
     board?.coverage.filter((row) => !row.fetchedAt || row.refreshFailed) ?? [];
   return (
-    <Drawer
-      title="分红日历"
-      subtitle="公共目录与个人自选 · 已披露的分红安排"
-      size="wide"
-      onClose={onClose}
-    >
-      <div className="dividend-calendar" data-presentation>
+    <div className="page dividend-calendar-page" data-presentation>
+      <PageHeader
+        title="分红日历"
+        action={
+          <Button
+            disabled={busy}
+            loading={busy}
+            icon={<RefreshCw size={15} />}
+            onClick={() => void refresh()}
+          >
+            更新分红计划
+          </Button>
+        }
+      />
+      <div className="dividend-calendar">
         <div className="dividend-calendar-toolbar">
           <label>
             查看范围{" "}
@@ -204,14 +212,6 @@ export function DividendCalendar({ onClose }: { onClose: () => void }) {
               <option value="public">仅公共目录</option>
             </select>
           </label>
-          <Button
-            disabled={busy}
-            loading={busy}
-            icon={<RefreshCw size={15} />}
-            onClick={() => void refresh()}
-          >
-            更新分红计划
-          </Button>
         </div>
         <p className="watch-meta">
           自动定期检查，页面读取已保存资料；也可手动更新。当前来源提供登记日和除息日，未提供的派息日保留未知。预案不计入已实施分红、TTM
@@ -400,6 +400,6 @@ export function DividendCalendar({ onClose }: { onClose: () => void }) {
           </>
         )}
       </div>
-    </Drawer>
+    </div>
   );
 }

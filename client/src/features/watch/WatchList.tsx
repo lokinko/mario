@@ -6,6 +6,7 @@ import {
   MessageCircle,
   Pin,
   PinOff,
+  Star,
 } from "lucide-react";
 import type { WatchRules, WatchRow } from "../../api/watch";
 import { referenceLabels } from "./rules";
@@ -122,16 +123,24 @@ export function WatchList({
       </button>
     );
   };
-  const add = (row: WatchDisplayRow) => (
-    <button
-      className="text-button"
-      disabled={busy || favorites.has(row.company.symbol) || !canAdd}
-      aria-label={`${favorites.has(row.company.symbol) ? "已在自选" : "加入自选"}${row.company.name}`}
-      onClick={() => onAdd(row)}
-    >
-      {favorites.has(row.company.symbol) ? "已在自选" : "加入自选"}
-    </button>
-  );
+  const add = (row: WatchDisplayRow) => {
+    const saved = favorites.has(row.company.symbol);
+    return (
+      <button
+        className={`watch-favorite-toggle ${saved ? "saved" : ""}`}
+        disabled={busy || saved || !canAdd}
+        aria-label={`${saved ? "已在自选" : "加入自选"}${row.company.name}`}
+        title={saved ? "已在自选" : "加入自选"}
+        onClick={() => onAdd(row)}
+      >
+        <Star
+          size={16}
+          fill={saved ? "currentColor" : "none"}
+          aria-hidden="true"
+        />
+      </button>
+    );
+  };
   const sortHeader = (
     label: string,
     first: WatchSort,

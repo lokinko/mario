@@ -24,6 +24,7 @@ import {
   viewLabels,
 } from "./app/navigation";
 import { MyFacts, type FactsSection } from "./features/portfolio/MyFacts";
+import { DividendCalendar } from "./features/watch/DividendCalendar";
 import { EvidenceWorkbench } from "./features/research/EvidenceWorkbench";
 import { ReviewCenter } from "./features/reviews/ReviewCenter";
 import { Advisor } from "./features/research/Advisor";
@@ -428,6 +429,7 @@ function App() {
             flash={flash}
           />
         )}
+        {view === "calendar" && <DividendCalendar key={remoteViewRevision} />}
         {view === "methodology" && (
           <InvestmentMethodology
             key={remoteViewRevision}

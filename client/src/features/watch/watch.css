@@ -391,6 +391,37 @@
     opacity var(--duration-hover) var(--ease),
     color var(--duration-hover) var(--ease);
 }
+.watch-favorite-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition:
+    color var(--duration-hover) var(--ease),
+    background var(--duration-hover) var(--ease),
+    transform var(--duration-enter) var(--ease-spring);
+}
+.watch-favorite-toggle:hover:not(:disabled) {
+  color: var(--warning);
+  background: var(--warning-tint);
+}
+.watch-favorite-toggle:active:not(:disabled) {
+  transform: scale(0.85);
+}
+.watch-favorite-toggle.saved {
+  color: var(--warning);
+  cursor: default;
+}
+.watch-favorite-toggle:disabled:not(.saved) {
+  cursor: default;
+  opacity: 0.4;
+}
 .watch-pin-toggle.pinned,
 .watch-pin-toggle:focus-visible,
 .watch-overview tr:hover .watch-pin-toggle {
