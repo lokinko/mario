@@ -1647,16 +1647,6 @@ input[type="number"] {
   color: var(--brand);
   font-weight: 600;
 }
-.methodology-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-6);
-}
-.methodology-tips {
-  display: none;
-  color: var(--text-3);
-  font-size: var(--fs-body-sm);
-}
 .methodology-editor textarea {
   line-height: 1.8;
 }
@@ -1857,12 +1847,6 @@ input[type="number"] {
   letter-spacing: 0.04em;
 }
 @media (min-width: 1200px) {
-  .methodology-layout {
-    grid-template-columns: minmax(0, 1fr) 240px;
-  }
-  .methodology-tips {
-    display: block;
-  }
   .settings-page {
     position: relative;
     padding-left: 136px;
