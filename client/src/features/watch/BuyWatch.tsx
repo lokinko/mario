@@ -30,8 +30,8 @@ import { Drawer } from "../../components/Drawer";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import "./watch.css";
 
-import { WatchRulesEditor } from "./WatchRulesEditor";
-import { bandRuleLabel, rulesSummary } from "./rules";
+import { WatchRuleStrip } from "./WatchRuleStrip";
+import { rulesSummary } from "./rules";
 import { DividendCalendar } from "./DividendCalendar";
 import { WatchCatalogEditor } from "./WatchCatalogEditor";
 import { WatchList } from "./WatchList";
@@ -69,7 +69,6 @@ export function BuyWatch({
   const [catalog, setCatalog] = useState<CatalogBoard | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [catalogEditing, setCatalogEditing] = useState(false);
-  const [rulesEditing, setRulesEditing] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const [group, setGroup] = useState("favorites");
   const [error, setError] = useState("");
@@ -288,12 +287,6 @@ export function BuyWatch({
         action={
           <>
             <Button
-              disabled={busy || !board || open || !!expanded || catalogEditing}
-              onClick={() => setRulesEditing(true)}
-            >
-              观察规则
-            </Button>
-            <Button
               disabled={busy || open || !!expanded || catalogEditing}
               onClick={() => setCalendarOpen(true)}
             >
@@ -327,45 +320,6 @@ export function BuyWatch({
           </>
         }
       />
-      {rulesEditing && board && (
-        <WatchRulesEditor
-          rules={board.rules}
-          defaults={board.defaultRules}
-          onEdited={onEdited}
-          onClose={() => {
-            setRulesEditing(false);
-            onSaved();
-          }}
-          onReload={(next) => {
-            guard.invalidate();
-            setBoard(next);
-            onSaved();
-            void loadCatalog();
-          }}
-          onSaved={(next) => {
-            guard.invalidate();
-            catalogGuard.invalidate();
-            setBoard(next);
-            setCatalog((previous) =>
-              previous
-                ? {
-                    ...previous,
-                    rules: next.rules,
-                    rows: previous.rows.map((row) => ({
-                      ...row,
-                      latest: null,
-                      dividendPrices: [],
-                    })),
-                  }
-                : previous,
-            );
-            setRulesEditing(false);
-            onSaved();
-            flash("观察规则已保存，自选与行业列表按新规则计算");
-            void loadCatalog();
-          }}
-        />
-      )}
       {calendarOpen && (
         <DividendCalendar onClose={() => setCalendarOpen(false)} />
       )}
@@ -403,13 +357,40 @@ export function BuyWatch({
         ]}
       />
       <section className="panel watch-intro">
-        <div className="watch-rule-strip">
-          <span className="yield">
-            ① TTM 税前股息 ≥{rules.minYieldBps / 100}%
-          </span>
-          <span className="daily">② 日线{bandRuleLabel(rules.daily)}</span>
-          <span className="weekly">③ 周线{bandRuleLabel(rules.weekly)}</span>
-        </div>
+        <WatchRuleStrip
+          rules={board?.rules ?? rules}
+          defaults={board?.defaultRules}
+          disabled={busy || !board || open || !!expanded || catalogEditing}
+          onEdited={onEdited}
+          onClosed={onSaved}
+          onReload={(next) => {
+            guard.invalidate();
+            setBoard(next);
+            onSaved();
+            void loadCatalog();
+          }}
+          onSaved={(next) => {
+            guard.invalidate();
+            catalogGuard.invalidate();
+            setBoard(next);
+            setCatalog((previous) =>
+              previous
+                ? {
+                    ...previous,
+                    rules: next.rules,
+                    rows: previous.rows.map((row) => ({
+                      ...row,
+                      latest: null,
+                      dividendPrices: [],
+                    })),
+                  }
+                : previous,
+            );
+            onSaved();
+            flash("观察规则已保存，自选与行业列表按新规则计算");
+            void loadCatalog();
+          }}
+        />
         <details className="watch-method">
           <summary>计算口径与检查时间</summary>
           <p>

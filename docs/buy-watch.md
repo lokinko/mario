@@ -22,7 +22,7 @@
 - 所选参考轨不为正、历史不足或有缺口时，相关条件保留未知，不将未知视为通过或信号退出。
 - 周线按 ISO 周聚合；本周未结束时，采用截至观察日的最后收盘，页面明确显示这一口径。跨周重新计算，不使用之后的周收盘。
 
-页面顶部“观察规则”可配置最低股息率，以及日线、周线各自的参考轨（上轨／中轨／下轨）、比较方式和偏移；BOLL 的 20 期与两倍总体标准差保持统一。三项条件仍须同时满足，均包含边界。比例最多保留两位小数：最低股息率 0.01%–100%，附近偏离 0%–99%，单向偏移 −99%–100%。具体含义为：
+点击条件栏中的 ①②③ 任一条件，可就地修改该项：最低股息率，或日线、周线各自的参考轨（上轨／中轨／下轨）、比较方式和偏移，保存时其余两项保持不变；列表中股息率与参考价、距日线、距周线三组列以同一编号和颜色标示对应条件；BOLL 的 20 期与两倍总体标准差保持统一。三项条件仍须同时满足，均包含边界。比例最多保留两位小数：最低股息率 0.01%–100%，附近偏离 0%–99%，单向偏移 −99%–100%。具体含义为：
 
 | 比较方式 | 判断公式（参考轨价格为 R，收盘价为 P，配置百分比为 x） |
 | --- | --- |
@@ -212,7 +212,7 @@ BOLL 图同时展示下轨、中轨、上轨与收盘位置，日周阴影分别
 
 | 行为 | 实现与现有验证依据 |
 | --- | --- |
-| 账号规则、边界与精确股息门槛 | [规则计算及单元测试](../server/src/models/watch/rules.rs)、[账号规则与备份回归](../server/src/db/watch/rules.rs)、[规则编辑回归](../client/src/features/watch/WatchRulesEditor.test.tsx) |
+| 账号规则、边界与精确股息门槛 | [规则计算及单元测试](../server/src/models/watch/rules.rs)、[账号规则与备份回归](../server/src/db/watch/rules.rs)、[规则编辑回归](../client/src/features/watch/WatchRuleStrip.test.tsx) |
 | 自选、目录、筛选、讨论与来源失败 | [观察页面回归](../client/src/features/watch/BuyWatch.test.tsx)、[详情回归](../client/src/features/watch/WatchDetails.test.tsx)、[目录查询与检查](../server/src/application/watch_catalog.rs)、[公共仓储](../server/src/db/public_watch.rs)中的测试 |
 | 股数网格、预算差额、卖出不足与余股 | [网格计算及单元测试](../server/src/models/watch/grid.rs)、[网格编辑回归](../client/src/features/watch/WatchGrid.test.tsx)、[生成器回归](../client/src/features/watch/gridDraft.test.ts) |
 | 分红日历到期、重启复用与手动绕过 | [日历用例及单元测试](../server/src/application/dividend_calendar.rs)、[日历交互回归](../client/src/features/watch/DividendCalendar.test.tsx) |

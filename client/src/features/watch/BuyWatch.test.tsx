@@ -844,27 +844,17 @@ it("applies saved account rules to summaries, reference prices, both periods and
     rows: [updated],
   });
   render(<BuyWatch {...p} />);
-  fireEvent.click(await screen.findByRole("button", { name: "观察规则" }));
-  fireEvent.change(screen.getByLabelText("最低税前 TTM 股息率（%）"), {
+  const saved = await screen.findByRole("group", { name: "观察规则" });
+  fireEvent.click(
+    within(saved).getByRole("button", { name: /① TTM 税前股息/ }),
+  );
+  fireEvent.change(await screen.findByLabelText("最低税前 TTM 股息率（%）"), {
     target: { value: "3.33" },
   });
-  fireEvent.change(screen.getByLabelText("日线参考轨"), {
-    target: { value: "upper" },
-  });
-  fireEvent.change(screen.getByLabelText("日线偏移（%）"), {
-    target: { value: "1.25" },
-  });
-  fireEvent.change(screen.getByLabelText("周线参考轨"), {
-    target: { value: "lower" },
-  });
-  fireEvent.change(screen.getByLabelText("周线比较方式"), {
-    target: { value: "at_or_above" },
-  });
-  fireEvent.change(screen.getByLabelText("周线偏移（%）"), {
-    target: { value: "-2.5" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "保存观察规则" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "保存规则" }));
+  await waitFor(() =>
+    expect(screen.queryByLabelText("最低税前 TTM 股息率（%）")).toBeNull(),
+  );
   expect(screen.getByText("① TTM 税前股息 ≥3.33%")).toBeTruthy();
   expect(
     screen.getByRole("columnheader", { name: "3.33% 参考价" }),

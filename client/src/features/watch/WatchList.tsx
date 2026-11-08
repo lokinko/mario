@@ -23,6 +23,18 @@ import {
   type WatchDisplayRow,
 } from "./presentation";
 
+type RuleKey = "yield" | "daily" | "weekly";
+const ruleMarkers: Record<RuleKey, string> = {
+  yield: "①",
+  daily: "②",
+  weekly: "③",
+};
+const ruleMarker = (rule: RuleKey) => (
+  <span className="watch-rule-marker" aria-hidden="true">
+    {ruleMarkers[rule]}
+  </span>
+);
+
 export function WatchList({
   rows,
   view,
@@ -125,6 +137,7 @@ export function WatchList({
     first: WatchSort,
     second: WatchSort,
     firstDirection: "ascending" | "descending",
+    rule?: RuleKey,
     absolute = false,
   ) => {
     const direction =
@@ -143,13 +156,18 @@ export function WatchList({
           : ArrowUpDown;
     const next = sort === first ? second : first;
     return (
-      <th scope="col" aria-sort={direction && absolute ? "other" : direction}>
+      <th
+        scope="col"
+        className={rule && `rule-${rule}`}
+        aria-sort={direction && absolute ? "other" : direction}
+      >
         <button
           className="watch-sort-header"
           onClick={() => onSort(next)}
           aria-label={`${label}：${direction ? `当前${sortOptions[sort]}，` : ""}点击按${sortOptions[next]}`}
           title={sortOptions[next]}
         >
+          {rule && ruleMarker(rule)}
           {label}
           <Icon size={13} aria-hidden="true" />
         </button>
@@ -164,13 +182,23 @@ export function WatchList({
             <tr>
               <th>公司 / 行情日</th>
               {sortHeader("收盘价", "price-asc", "price-desc", "ascending")}
-              {sortHeader("TTM 股息率", "yield", "yield-asc", "descending")}
-              <th>{minYield}% 参考价</th>
+              {sortHeader(
+                "TTM 股息率",
+                "yield",
+                "yield-asc",
+                "descending",
+                "yield",
+              )}
+              <th scope="col" className="rule-yield">
+                {ruleMarker("yield")}
+                {minYield}% 参考价
+              </th>
               {sortHeader(
                 `距日线${referenceLabels[rules.daily.reference]}`,
                 "daily",
                 "daily-far",
                 "ascending",
+                "daily",
                 true,
               )}
               {sortHeader(
@@ -178,6 +206,7 @@ export function WatchList({
                 "weekly",
                 "weekly-far",
                 "ascending",
+                "weekly",
                 true,
               )}
               <th>观察状态</th>
@@ -212,13 +241,13 @@ export function WatchList({
                 </td>
                 <td
                   data-label="TTM 股息率"
-                  className={`watch-numeric ${checks(row)[0] === true ? "watch-met" : ""}`}
+                  className={`watch-numeric rule-yield ${checks(row)[0] === true ? "watch-met" : ""}`}
                 >
                   {number(row.latest?.yieldPct, "%")}
                 </td>
                 <td
                   data-label={`${minYield}% 参考价`}
-                  className="watch-numeric"
+                  className="watch-numeric rule-yield"
                 >
                   {row.dividendPrices.find((p) => p.yieldPct === minYield)
                     ?.price != null
@@ -230,13 +259,13 @@ export function WatchList({
                 </td>
                 <td
                   data-label={`距日线${referenceLabels[rules.daily.reference]}`}
-                  className={`watch-numeric ${row.latest?.daily?.matchesRule ? "watch-met" : ""}`}
+                  className={`watch-numeric rule-daily ${row.latest?.daily?.matchesRule ? "watch-met" : ""}`}
                 >
                   {distance(row.latest?.daily?.distancePct)}
                 </td>
                 <td
                   data-label={`距周线${referenceLabels[rules.weekly.reference]}`}
-                  className={`watch-numeric ${row.latest?.weekly?.matchesRule ? "watch-met" : ""}`}
+                  className={`watch-numeric rule-weekly ${row.latest?.weekly?.matchesRule ? "watch-met" : ""}`}
                 >
                   {distance(row.latest?.weekly?.distancePct)}
                 </td>
