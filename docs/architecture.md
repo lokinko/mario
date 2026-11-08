@@ -135,7 +135,7 @@ flowchart TD
 | `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
-| `features/reviews`、`features/settings`、`features/account` | 复盘；模型设置、问答预设与 Codex 桥接；网页账号与服务端数据备份 |
+| `features/reviews`、`features/settings`、`features/account` | 复盘；模型设置、问答预设与 Codex 桥接；网页账号与服务端数据备份/外部自选 JSON 导入。`ServerData` 管理文件/粘贴草稿、来源账户预览及覆盖前备份，应用壳经 `ModelSettings.dataSettings` 插槽将同一组件装配到设置，不产生跨功能导入依赖 |
 | `api/<领域>.ts` | 领域请求与返回契约；`api/portfolio.ts` 拥有快速编辑队列，`api/portfolio/financialRequest.ts` 负责单次财务请求与回执核对 |
 | `lib/httpClient.ts`、`transport.ts`、`requestPolicy.ts` | 认证、超时与只读重试、版本采纳、账号切换保护、请求类别 |
 | `lib/autoSync.ts`、`syncEvents.ts`、`webSession.ts`、`useRequestGuard.ts` | 版本轮询、数据事件、网页会话与多账号、过期响应抑制 |
@@ -256,6 +256,8 @@ sequenceDiagram
 HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/dividend-calendar/refresh` 冻结当前允许范围、释放账号锁抓取，重新取得锁后按当前自选返回投影，移除不会复活。后者仅更新公共缓存，因此在 `http/policy` 和前端 `requestPolicy` 显式免账号版本与个人数据变更通知。前端 `features/watch/DividendCalendar` 是应用壳直接装配的独立页面（视图 `calendar`），经 `api/watch` 读取与刷新；筛选属于展示状态（`data-presentation`），不进入草稿保护。后台缓存可以跨账号复用；返回范围和个人名称始终按当前会话计算，不暴露其他账号名单。详见[分红日历](buy-watch.md#分红日历)。
 
 ## 7. 状态与事务归属
+
+外部自选 JSON 的格式适配归 `db/watchlist_import`：将所选来源账户转换为当前同步数据集，复用 `db/trades` 的十进制重放及 `db/sync_store` 的唯一恢复事务。HTTP 仍只负责认证、版本和空账号/显式覆盖政策；格式转换不执行网络、逐笔业务写入或历史现金结算，不修改公共数据。无 schema 或备份版本变更，失败保留原数据，覆盖前备份与恢复边界见[账号与同步](cloud-sync.md#外部自选-json-导入)。
 
 | 状态 | 所有者 | 说明 |
 | --- | --- | --- |

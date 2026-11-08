@@ -210,6 +210,19 @@ it("keeps local application accessible when optional model configuration fails",
   );
 });
 
+it("keeps data transfer available in settings when the optional model cannot load", async () => {
+  window.location.hash = "settings";
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
+    new Error("model unavailable"),
+  );
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "设置" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "测试恢复数据" })).toBeTruthy();
+});
+
 it("offers retry when required local data fails to load", async () => {
   vi.mocked(portfolioApi.getSnapshot)
     .mockRejectedValueOnce(new Error("local unavailable"))

@@ -346,3 +346,161 @@ async fn authenticated_watch_detail_reads_stay_account_scoped_and_preserve_store
     );
     assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn external_json_import_preserves_authentication_revision_tenant_and_restore_boundaries() {
+    use axum::routing::{get, post};
+    use serde_json::json;
+    crate::secrets::use_test_master_key();
+    let url = std::env::var("MARIO_TEST_DATABASE_URL").unwrap();
+    let accounts = Arc::new(Accounts::open(url.clone()).unwrap());
+    let register = || {
+        accounts
+            .register(&Credentials {
+                email: format!("{}@example.test", uuid::Uuid::new_v4()),
+                password: "synthetic-import-password-123".into(),
+            })
+            .unwrap()
+    };
+    let a = register();
+    let b = register();
+    let db = Database::postgres(&url, &a.user_id).unwrap();
+    let other = Database::postgres(&url, &b.user_id).unwrap();
+    let before = db.revision().unwrap();
+    let provider = Arc::new(Prices {
+        entered: Notify::new(),
+        gate: tokio::sync::Mutex::new(None),
+        calls: AtomicUsize::new(0),
+    });
+    let host = Arc::new(HostedState {
+        accounts,
+        openai: None,
+        slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
+        auth_slots: tokio::sync::Semaphore::new(AUTH_SLOTS),
+        market: Arc::new(MarketServices::new(provider.clone(), provider.clone())),
+        watch_provider: provider,
+        watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
+        dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),
+        analysis_executor: Arc::new(crate::agent::AgentExecutor),
+    });
+    let app = api_router()
+        .route("/api/data/import", post(super::import))
+        .route("/api/data/export", get(super::export))
+        .route_layer(middleware::from_fn_with_state(host, authenticate));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/api", listener.local_addr().unwrap());
+    let _server = Server(tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    }));
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let data = json!({"version":"1.0","exportedAt":"2026-01-06T01:00:00Z","data":{"accounts":[{
+        "id":"external-user", "name":"导入测试账户", "watchlist":[{
+            "code":"600900","name":"测试证券","price":12,"shares":100,"transactions":[
+                {"type":"buy","qty":100,"price":10,"ts":1767225600000_i64}
+            ]}], "feeConfig":{"enabled":false},"cashTrackingEnabled":false
+    }]}});
+    assert_eq!(
+        client
+            .post(format!("{base}/data/import"))
+            .json(&data)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/data/import"))
+            .bearer_auth(&a.token)
+            .json(&data)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::CONFLICT
+    );
+    assert!(db.watch_entries().unwrap().is_empty());
+    let response = client
+        .post(format!("{base}/data/import"))
+        .bearer_auth(&a.token)
+        .header("If-Match", &before)
+        .json(&data)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let after = response.headers()["x-data-revision"]
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(before, after);
+    assert_eq!(db.snapshot().unwrap().holding_trades.len(), 1);
+    assert!(other.snapshot().unwrap().holdings.is_empty());
+    assert!(other.watch_entries().unwrap().is_empty());
+    assert_eq!(
+        client
+            .post(format!("{base}/data/import"))
+            .bearer_auth(&a.token)
+            .header("If-Match", &after)
+            .json(&data)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let backup = client
+        .get(format!("{base}/data/export"))
+        .bearer_auth(&a.token)
+        .send()
+        .await
+        .unwrap()
+        .json::<crate::db::SyncDataset>()
+        .await
+        .unwrap();
+    let hash = backup.content_hash().unwrap();
+    assert_eq!(
+        client
+            .post(format!("{base}/data/import?replace=true"))
+            .bearer_auth(&a.token)
+            .header("If-Match", &before)
+            .json(&data)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let mut invalid = data.clone();
+    invalid["data"]["accounts"][0]["watchlist"][0]["shares"] = json!(200);
+    assert_eq!(
+        client
+            .post(format!("{base}/data/import?replace=true"))
+            .bearer_auth(&a.token)
+            .header("If-Match", &after)
+            .json(&invalid)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(hash, db.export_sync_data().unwrap().content_hash().unwrap());
+    assert_eq!(
+        client
+            .post(format!("{base}/data/import?replace=true"))
+            .bearer_auth(&a.token)
+            .header("If-Match", &after)
+            .json(&backup)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(hash, db.export_sync_data().unwrap().content_hash().unwrap());
+}

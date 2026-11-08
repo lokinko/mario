@@ -43,6 +43,7 @@ pub(crate) use settings::model_key_binding;
 mod options;
 mod sync_store;
 mod trades;
+mod watchlist_import;
 use std::{
     collections::{HashMap, HashSet},
     sync::Mutex,

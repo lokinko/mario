@@ -457,6 +457,15 @@ function App() {
         {view === "settings" && model && (
           <ModelSettings
             displaySettings={<DisplayPreferences {...display} />}
+            dataSettings={
+              <ServerData
+                transferOnly
+                flash={flash}
+                onRestore={refreshInvestmentData}
+                autoState={syncState}
+                onRetryAuto={retrySync}
+              />
+            }
             key={remoteViewRevision}
             model={model}
             onUpdate={setModel}
@@ -467,6 +476,13 @@ function App() {
           <div className="page narrow settings-page">
             <PageHeader title="设置" />
             <DisplayPreferences {...display} />
+            <ServerData
+              transferOnly
+              flash={flash}
+              onRestore={refreshInvestmentData}
+              autoState={syncState}
+              onRetryAuto={retrySync}
+            />
           </div>
         )}
         {(view === "advisor" || view === "settings") && !model && (

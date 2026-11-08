@@ -318,11 +318,11 @@ struct ImportOptions {
 async fn import(
     Extension(state): Extension<Arc<RequestContext>>,
     Query(options): Query<ImportOptions>,
-    Json(data): Json<db::SyncDataset>,
+    Json(data): Json<serde_json::Value>,
 ) -> AppResult<Json<serde_json::Value>> {
     if !options.replace && !state.db.is_empty_for_import()? {
         return Err(AppError::Conflict("仅允许向空账户导入数据".into()));
     }
-    state.db.import_sync_data(&data)?;
+    state.db.import_account_data(&data)?;
     Ok(Json(serde_json::json!({"ok":true})))
 }

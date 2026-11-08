@@ -47,6 +47,119 @@ function chooseFile(value: string, size = value.length, replace = false) {
   );
 }
 
+function externalJson() {
+  const watchlist = [
+    {
+      code: "600900",
+      name: "测试证券",
+      shares: 100,
+      transactions: [{ type: "buy", qty: 100, price: 10, ts: 1767225600000 }],
+    },
+  ];
+  return {
+    version: "1.0",
+    exportedAt: "2026-01-06T01:00:00Z",
+    data: {
+      watchlist,
+      accounts: [{ id: "default", name: "测试账户", watchlist }],
+    },
+  };
+}
+
+it("previews pasted external JSON without counting the duplicate top-level watchlist", async () => {
+  vi.mocked(accountApi.importData).mockResolvedValueOnce({});
+  const { onRestore } = mount();
+  const data = externalJson();
+  fireEvent.change(screen.getByLabelText("粘贴 JSON 数据"), {
+    target: { value: JSON.stringify(data) },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "预览导入" }));
+  expect(screen.getByText(/将导入 1 只自选股、1 条源交易记录/)).toBeTruthy();
+  expect(accountApi.importData).not.toHaveBeenCalled();
+  await acceptImport();
+  expect(accountApi.importData).toHaveBeenCalledWith({
+    ...data,
+    selectedAccountId: "default",
+  });
+  await waitFor(() => expect(onRestore).toHaveBeenCalledOnce());
+});
+
+it("requires an explicit source account when the file contains several accounts", async () => {
+  mount();
+  const data = externalJson();
+  data.data.accounts.push({ id: "second", name: "第二账户", watchlist: [] });
+  chooseFile(JSON.stringify(data));
+  await screen.findByRole("dialog");
+  const confirm = screen.getByRole("button", {
+    name: "确认导入",
+  }) as HTMLButtonElement;
+  expect(confirm.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("来源账户"), {
+    target: { value: "second" },
+  });
+  expect(screen.getByText(/将导入 0 只自选股、0 条源交易记录/)).toBeTruthy();
+  fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(accountApi.importData).toHaveBeenCalledWith({
+      ...data,
+      selectedAccountId: "second",
+    }),
+  );
+});
+
+it("rejects unsupported or malformed source formats before a write", async () => {
+  mount();
+  for (const data of [
+    { ...externalJson(), version: "2.0" },
+    { version: "1.0", data: { accounts: [] } },
+    { version: "1.0", data: { accounts: [null] } },
+  ]) {
+    fireEvent.change(screen.getByLabelText("粘贴 JSON 数据"), {
+      target: { value: JSON.stringify(data) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "预览导入" }));
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  }
+  expect(accountApi.importData).not.toHaveBeenCalled();
+});
+
+it("preserves pasted input after a rejected import and permits correction", async () => {
+  vi.mocked(accountApi.importData).mockRejectedValueOnce(
+    new Error("源 shares 与逐笔交易重放后的股数不一致"),
+  );
+  mount();
+  const value = JSON.stringify(externalJson());
+  fireEvent.change(screen.getByLabelText("粘贴 JSON 数据"), {
+    target: { value },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "预览导入" }));
+  await acceptImport();
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "股数不一致",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  expect(
+    (screen.getByLabelText("粘贴 JSON 数据") as HTMLTextAreaElement).value,
+  ).toBe(value);
+});
+
+it("renders transfer controls inside settings without duplicating the account page", () => {
+  render(
+    <ServerData
+      transferOnly
+      flash={vi.fn()}
+      onRestore={vi.fn()}
+      autoState={{ phase: "synced", message: "已同步" }}
+      onRetryAuto={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("heading", { name: "导入数据" })).toBeTruthy();
+  expect(screen.getByLabelText("粘贴 JSON 数据")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "账号与数据" })).toBeNull();
+  expect(screen.queryByText("服务器连接")).toBeNull();
+});
+
 it("restores export and import controls after an export failure", async () => {
   vi.mocked(accountApi.exportData).mockRejectedValue(new Error("网络不可用"));
   mount();

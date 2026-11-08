@@ -26,11 +26,13 @@ import type { ReactNode } from "react";
 export function ModelSettings({
   model,
   displaySettings,
+  dataSettings,
   onUpdate,
   flash,
 }: {
   model: ModelConfig;
   displaySettings?: ReactNode;
+  dataSettings?: ReactNode;
   onUpdate: (m: ModelConfig) => void;
   flash: (s: string) => void;
 }) {
@@ -141,6 +143,16 @@ export function ModelSettings({
           }
         >
           显示偏好
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById("data-settings")
+              ?.scrollIntoView({ behavior: "smooth" })
+          }
+        >
+          导入数据
         </button>
       </nav>
       <section className="panel form-panel" id="model-settings">
@@ -318,6 +330,7 @@ export function ModelSettings({
         </p>
       </section>
       {displaySettings}
+      {dataSettings}
     </div>
   );
 }
