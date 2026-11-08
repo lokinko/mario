@@ -359,15 +359,15 @@
   color: var(--text-3);
 }
 .watch-met {
-  color: var(--rule, var(--success));
+  color: var(--danger);
 }
 .watch-overview th:last-child,
 .watch-overview td:last-child {
   text-align: right;
 }
 .watch-row-status {
-  display: flex;
-  align-items: flex-end;
+  display: inline-flex;
+  align-items: center;
   flex-direction: column;
   gap: 8px;
 }
