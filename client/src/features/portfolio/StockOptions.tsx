@@ -110,9 +110,6 @@ export function StockOptions({
   return (
     <section aria-label="股票关联期权">
       <h3>关联期权</h3>
-      <p className="section-intro">
-        认购（Call）和认沽（Put）按合约分别记录，多头买入开仓、卖出平仓，空头卖出开仓、买入平仓。盈亏归入本股票，股数不受期权买卖影响。
-      </p>
       {totals && (
         <dl className="detail-grid">
           <div>

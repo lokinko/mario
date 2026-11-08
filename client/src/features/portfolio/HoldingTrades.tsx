@@ -405,12 +405,7 @@ export function HoldingTrades({
     <div className="holding-trades">
       {quarantined && <p>请在下方预览并修复原始记录；修复前不能新增交易。</p>}
       {holding && (
-        <div className="trade-toolbar">
-          <span>
-            {summary
-              ? `${summary.account} · 按真实成交计算持仓`
-              : "从最早一笔真实买入开始录入"}
-          </span>
+        <div className="trade-toolbar holding-trade-actions">
           {(option
             ? (["buy", "sell", "expire"] as const)
             : (["buy", "sell", "dividend"] as const)
@@ -740,24 +735,6 @@ export function HoldingTrades({
                 {formatSigned(summary.settledProfit, money)}
               </span>
             </strong>
-            <small>
-              卖出盈亏{" "}
-              <span className="num" data-money>
-                {money(summary.realizedProfit)}
-              </span>{" "}
-              · 净现金分红{" "}
-              <span className="num" data-money>
-                {money(summary.dividendIncome)}
-              </span>{" "}
-              · 费用{" "}
-              <span className="num" data-money>
-                {money(summary.totalFees)}
-              </span>{" "}
-              · 税费{" "}
-              <span className="num" data-money>
-                {money(summary.totalTaxes)}
-              </span>
-            </small>
           </p>
         )}
       {ordered.length > 0 && (

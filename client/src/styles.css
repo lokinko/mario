@@ -1343,10 +1343,8 @@ main {
   align-items: center;
   flex-wrap: wrap;
 }
-.trade-toolbar > span {
-  flex: 1;
-  color: var(--text-3);
-  font-size: var(--fs-body-sm);
+.holding-trade-actions {
+  justify-content: flex-end;
 }
 .holding-trades form {
   margin-top: var(--space-3);
@@ -1367,8 +1365,7 @@ main {
   gap: var(--space-2);
   font-size: var(--fs-body-sm);
 }
-.trade-amount small,
-.trade-summary small {
+.trade-amount small {
   color: var(--text-3);
   font-size: var(--fs-body-sm);
 }
@@ -1486,9 +1483,6 @@ main {
   .facts-page .panel-title {
     gap: 10px;
     flex-wrap: wrap;
-  }
-  .trade-toolbar > span {
-    flex-basis: 100%;
   }
 }
 .exchange-rate-editor {
