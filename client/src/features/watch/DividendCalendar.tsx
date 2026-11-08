@@ -58,12 +58,13 @@ function PlanCard({
         <h3>
           {row.name} <small>{row.symbol}</small>
         </h3>
-        {row.personal && <span className="badge">自选</span>}
+        <span className="dividend-plan-badges">
+          {plan.stage !== "scheduled" && (
+            <span className="badge">{stages[plan.stage]}</span>
+          )}
+          {row.personal && <span className="badge">自选</span>}
+        </span>
       </div>
-      <p>
-        {stages[plan.stage]} · 报告期 {plan.reportDate} · 公告日期{" "}
-        {plan.announcedOn}
-      </p>
       <div className="dividend-plan-amount">
         每 10 股税前现金：
         <strong>
@@ -177,8 +178,6 @@ export function DividendCalendar() {
     board?.entries.filter(
       (row) => !selected || dates(row).some((item) => item.date === selected),
     ) ?? [];
-  const incomplete =
-    board?.coverage.filter((row) => !row.fetchedAt || row.refreshFailed) ?? [];
   return (
     <div className="page dividend-calendar-page" data-presentation>
       <PageHeader
@@ -212,18 +211,7 @@ export function DividendCalendar() {
               <option value="public">仅公共目录</option>
             </select>
           </label>
-        </div>
-        {error && (
-          <Callout tone="danger">
-            {error}
-            <Button disabled={busy} onClick={() => void load()}>
-              重新读取日历
-            </Button>
-          </Callout>
-        )}
-        {!board && !error && <p role="status">正在读取分红日历…</p>}
-        {board && (
-          <>
+          {board && (
             <div className="dividend-calendar-navigation">
               <Button
                 disabled={busy}
@@ -247,6 +235,19 @@ export function DividendCalendar() {
                 后30天
               </Button>
             </div>
+          )}
+        </div>
+        {error && (
+          <Callout tone="danger">
+            {error}
+            <Button disabled={busy} onClick={() => void load()}>
+              重新读取日历
+            </Button>
+          </Callout>
+        )}
+        {!board && !error && <p role="status">正在读取分红日历…</p>}
+        {board && (
+          <>
             <Tabs
               activeKey={tab}
               onChange={setTab}
@@ -341,37 +342,6 @@ export function DividendCalendar() {
                 ))}
               </>
             )}
-            <details className="dividend-calendar-coverage">
-              <summary>
-                数据覆盖与更新记录
-                {incomplete.length ? `（${incomplete.length} 家待处理）` : ""}
-              </summary>
-              {board.coverage.map((row) => (
-                <div
-                  key={row.symbol}
-                  className="dividend-calendar-coverage-row"
-                >
-                  <span>
-                    {row.name} · {row.symbol}
-                    <small>
-                      {row.refreshFailed
-                        ? "本次来源读取失败，保留原资料和日期。"
-                        : row.fetchedAt
-                          ? "资料获取于"
-                          : "尚未抓取"}{" "}
-                      {row.fetchedAt ? stamp(row.fetchedAt) : ""}
-                    </small>
-                  </span>
-                  <Button
-                    size="small"
-                    disabled={busy}
-                    onClick={() => void refresh(row.symbol)}
-                  >
-                    重新抓取 {row.name}
-                  </Button>
-                </div>
-              ))}
-            </details>
           </>
         )}
       </div>

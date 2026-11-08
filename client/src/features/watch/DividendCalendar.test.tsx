@@ -106,17 +106,17 @@ it("keeps undated proposals outside the grid and never turns unknown cash into z
   render(<DividendCalendar />);
   fireEvent.click(await screen.findByRole("tab", { name: "待定计划 1" }));
   expect(screen.getByText("未披露")).toBeTruthy();
-  expect(
-    screen.getByText("预披露 · 报告期 2026-06-30 · 公告日期 2026-11-06"),
-  ).toBeTruthy();
+  expect(screen.getByText("预披露")).toBeTruthy();
   expect(screen.queryByLabelText("未来30天分红日期")).toBeNull();
   expect(screen.queryByText("0 元")).toBeNull();
 });
-it("shows a failed company's original date and retries that company within the chosen scope", async () => {
+it("retries only the company whose plan has invalid values, within the chosen scope", async () => {
   vi.mocked(api.getDividendCalendar).mockResolvedValue({
     ...board,
     scope: "favorites",
-    coverage: [{ ...board.coverage[0], refreshFailed: true }],
+    entries: [
+      { ...entry, plan: { ...entry.plan, issues: ["invalid_amount"] } },
+    ],
   });
   render(<DividendCalendar />);
   await screen.findByRole("tab", { name: "已定日期 1" });
@@ -126,8 +126,7 @@ it("shows a failed company's original date and retries that company within the c
   await waitFor(() =>
     expect(api.getDividendCalendar).toHaveBeenLastCalledWith("favorites", ""),
   );
-  fireEvent.click(screen.getByText("数据覆盖与更新记录（1 家待处理）"));
-  expect(screen.getByText(/本次来源读取失败，保留原资料和日期/)).toBeTruthy();
+  expect(screen.getByText(/金额\s*有待核对/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "重新抓取 测试公司" }));
   await waitFor(() =>
     expect(api.refreshDividendCalendar).toHaveBeenCalledWith("favorites", "", [

@@ -12,7 +12,13 @@
   align-items: center;
   gap: 10px;
 }
-.dividend-calendar-toolbar,
+.dividend-calendar-toolbar {
+  gap: 12px 24px;
+}
+.dividend-plan-badges {
+  display: flex;
+  gap: 6px;
+}
 .dividend-calendar-section-heading,
 .dividend-plan-heading {
   justify-content: space-between;
@@ -96,19 +102,6 @@
 }
 .dividend-plan-dates dd {
   margin: 4px 0 0;
-}
-.dividend-calendar-coverage-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
-}
-.dividend-calendar-coverage-row small {
-  display: block;
-  color: var(--text-3);
-  margin-top: 4px;
 }
 @media (max-width: 600px) {
   .dividend-calendar-day {
