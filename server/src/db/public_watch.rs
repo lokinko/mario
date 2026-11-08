@@ -173,6 +173,24 @@ impl PublicWatch {
             .unwrap_or_default())
     }
 
+    /// List facts only; full persisted evidence remains available through `get`.
+    pub fn summaries(&self) -> AppResult<std::collections::BTreeMap<String, CatalogSnapshot>> {
+        let values = self.conn()?.prepare(
+            "SELECT symbol,CASE WHEN payload::jsonb->'latest' <> 'null'::jsonb
+             THEN jsonb_set(payload::jsonb,'{latest}',(payload::jsonb->'latest') - 'trends' - 'dividendHistory')::text
+             ELSE payload END FROM watch_snapshots WHERE symbol IN (
+             SELECT company->>'symbol' FROM watch_catalog c,
+               LATERAL jsonb_array_elements(c.payload::jsonb->'industries') industry,
+               LATERAL jsonb_array_elements(industry->'companies') company
+             )"
+        )?.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?
+        .collect::<Result<Vec<_>,_>>()?;
+        values
+            .into_iter()
+            .map(|(symbol, payload)| Ok((symbol, serde_json::from_str(&payload)?)))
+            .collect()
+    }
+
     pub fn save(&self, symbol: &str, snapshot: &CatalogSnapshot) -> AppResult<()> {
         self.conn()?.execute(
             "INSERT INTO watch_snapshots(symbol,payload) VALUES ($1,$2)

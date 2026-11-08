@@ -8,6 +8,49 @@ use crate::models::watch::{
 use crate::AppError;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 
+/// One query for entry state, the latest observation and unread status. The list
+/// projection discards heavy evidence in PostgreSQL before transfer and JSON parsing.
+fn watch_rows(
+    conn: &crate::storage::Connection,
+    symbol: Option<&str>,
+    rules: &crate::models::watch::rules::WatchRules,
+) -> AppResult<Vec<WatchRow>> {
+    let values = conn.prepare(
+        "SELECT e.payload,e.checked_at,e.checked_for,e.refresh_failed,
+          CASE WHEN $1::text IS NULL THEN (o.payload::jsonb - 'trends' - 'dividendHistory')::text ELSE o.payload END,
+          EXISTS(SELECT 1 FROM watch_observations a WHERE a.symbol=e.symbol AND a.alert=1 AND a.read_at IS NULL)
+         FROM watch_entries e
+         LEFT JOIN LATERAL (SELECT payload FROM watch_observations WHERE symbol=e.symbol ORDER BY day DESC LIMIT 1) o ON TRUE
+         WHERE ($1::text IS NULL OR e.symbol=$1) ORDER BY e.symbol"
+    )?.query_map([symbol], |r| Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,r.get::<_,Option<String>>(2)?,r.get::<_,i64>(3)?!=0,r.get::<_,Option<String>>(4)?,r.get::<_,bool>(5)?)))?
+    .collect::<Result<Vec<_>,_>>()?;
+    values
+        .into_iter()
+        .map(
+            |(entry, checked_at, checked_for, refresh_failed, latest, alert)| {
+                let entry: WatchEntry = serde_json::from_str(&entry)?;
+                let mut latest: Option<Observation> =
+                    latest.as_deref().map(serde_json::from_str).transpose()?;
+                if let Some(observation) = &mut latest {
+                    observation.apply_rules(rules);
+                }
+                let dividend_prices = dividend_prices(latest.as_ref());
+                let grid_projection = entry.grid_plan.as_ref().map(|p| p.project(latest.as_ref()));
+                Ok(WatchRow {
+                    entry,
+                    latest,
+                    dividend_prices,
+                    grid_projection,
+                    alert,
+                    checked_at,
+                    checked_for,
+                    refresh_failed,
+                })
+            },
+        )
+        .collect()
+}
+
 impl Database {
     pub fn watch_dividends(&self, symbol: &str) -> AppResult<Option<DividendHistory>> {
         let payload: Option<String> = self
@@ -141,46 +184,10 @@ impl Database {
         // Weekends show the week just completed; weekdays show the current week so far.
         let start = today - Duration::days(today.weekday().num_days_from_monday() as i64);
         let end = start + Duration::days(6);
-        let entries = self.watch_entries()?;
         let rules = self.watch_rules()?;
         let conn = self.conn()?;
-        let mut rows = Vec::new();
-        for entry in entries {
-            let symbol = &entry.input.symbol;
-            let latest: Option<String> = conn.query_row("SELECT payload FROM watch_observations WHERE symbol=$1 ORDER BY day DESC LIMIT 1",[symbol],|r|r.get(0)).optional()?;
-            let (checked_at, refresh_failed) = conn.query_row(
-                "SELECT checked_at,refresh_failed FROM watch_entries WHERE symbol=$1",
-                [symbol],
-                |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, i64>(1)? != 0)),
-            )?;
-            let checked_for = conn.query_row(
-                "SELECT checked_for FROM watch_entries WHERE symbol=$1",
-                [symbol],
-                |r| r.get::<_, Option<String>>(0),
-            )?;
-            let alert = conn.query_row("SELECT EXISTS(SELECT 1 FROM watch_observations WHERE symbol=$1 AND alert=1 AND read_at IS NULL)",[symbol],|r|r.get(0))?;
-            let mut latest: Option<Observation> =
-                latest.as_deref().map(serde_json::from_str).transpose()?;
-            if let Some(observation) = &mut latest {
-                observation.apply_rules(&rules);
-            }
-            let dividend_prices = dividend_prices(latest.as_ref());
-            let grid_projection = entry
-                .grid_plan
-                .as_ref()
-                .map(|plan| plan.project(latest.as_ref()));
-            rows.push(WatchRow {
-                entry,
-                latest,
-                dividend_prices,
-                grid_projection,
-                alert,
-                checked_at,
-                checked_for,
-                refresh_failed,
-            });
-        }
-        let mut stmt = conn.prepare("SELECT payload FROM watch_observations WHERE day >= $1 AND day <= $2 ORDER BY day,symbol")?;
+        let rows = watch_rows(&conn, None, &rules)?;
+        let mut stmt = conn.prepare("SELECT (payload::jsonb - 'trends' - 'dividendHistory')::text FROM watch_observations WHERE day >= $1 AND day <= $2 ORDER BY day,symbol")?;
         let payloads = stmt
             .query_map(params![start.to_string(), end.to_string()], |r| {
                 r.get::<_, String>(0)
@@ -198,6 +205,15 @@ impl Database {
             week_end: end.to_string(),
             rules,
         })
+    }
+
+    /// Full evidence is fetched for one existing account entry, never for the whole list.
+    pub fn watch_row(&self, symbol: &str) -> AppResult<WatchRow> {
+        let symbol = crate::models::market::canonical_symbol(symbol)?;
+        let rules = self.watch_rules()?;
+        watch_rows(&*self.conn()?, Some(&symbol), &rules)?
+            .pop()
+            .ok_or_else(|| AppError::NotFound("观察公司不存在".into()))
     }
 
     pub fn save_watch_observation(
@@ -463,6 +479,80 @@ mod tests {
         }
     }
     #[test]
+    fn list_and_weekly_reads_remain_small_and_detail_preserves_five_year_evidence() {
+        let db = Database::test();
+        let (mut data, end) = market_fixture();
+        let start = crate::models::market::history::history_start(end);
+        data.calendar = (0..=(end - start).num_days())
+            .map(|n| start + Duration::days(n))
+            .filter(|d| d.weekday().num_days_from_monday() < 5)
+            .collect();
+        data.bars = data
+            .calendar
+            .iter()
+            .map(|day| crate::models::watch::PriceBar {
+                day: *day,
+                close: Some(100.0),
+                adjusted_close: Some(100.0),
+            })
+            .collect();
+        let observation = evaluate(
+            &Default::default(),
+            "600036.SS",
+            &data,
+            end,
+            "2026-07-03T12:00:00Z".into(),
+        );
+        assert!(observation.trends.as_ref().unwrap().len() >= 260);
+        for n in 0..50 {
+            let entry = db
+                .save_watch(WatchInput {
+                    symbol: format!("60{n:04}.SS"),
+                    name: format!("公司{n}"),
+                    thesis: "私有理由".into(),
+                })
+                .unwrap();
+            for offset in (0..5).rev() {
+                let day = end - Duration::days(offset);
+                let mut stored = observation.clone();
+                stored.symbol = entry.input.symbol.clone();
+                stored.observed_on = day.to_string();
+                db.save_watch_observation(&entry, Some(&stored), &stored.checked_at, day, None)
+                    .unwrap();
+            }
+        }
+        let before = db.export_sync_data().unwrap().content_hash().unwrap();
+        let started = std::time::Instant::now();
+        let board = db.watch_board(end).unwrap();
+        let summary_bytes = serde_json::to_vec(&board).unwrap().len();
+        let elapsed = started.elapsed();
+        assert_eq!(board.rows.len(), 50);
+        assert!(board
+            .rows
+            .iter()
+            .all(|r| r.latest.as_ref().unwrap().trends.is_none()));
+        assert!(board
+            .weekly
+            .iter()
+            .all(|r| r.trends.is_none() && r.dividend_history.is_none()));
+        assert_eq!(board.weekly.len(), 250);
+        let full = db.watch_row("600000.SH").unwrap();
+        assert!(full.latest.as_ref().unwrap().trends.as_ref().unwrap().len() >= 260);
+        assert!(full.latest.as_ref().unwrap().dividend_history.is_some());
+        let full_evidence_bytes = serde_json::to_vec(&full.latest).unwrap().len()
+            * (board.rows.len() + board.weekly.len());
+        assert!(summary_bytes * 10 < full_evidence_bytes);
+        println!("watch list: 50 entries / 250 weekly observations, summary {} bytes, full observation bodies {} bytes, read+serialize {:?}",summary_bytes,full_evidence_bytes,elapsed);
+        let stranger = Database::test();
+        assert!(stranger.watch_row("600000.SS").is_err());
+        assert!(db.watch_row("600999.SS").is_err());
+        assert_eq!(
+            db.export_sync_data().unwrap().content_hash().unwrap(),
+            before
+        );
+    }
+
+    #[test]
     fn retired_weekly_lower_payload_migrates_once_and_old_backups_cannot_restore_it() {
         let account = crate::db::TestAccount::new();
         let db = account.open();
@@ -493,8 +583,15 @@ mod tests {
         drop(db);
         let db = account.reopen_from_old_release();
         let board = db.watch_board(day).unwrap();
-        assert_eq!(board.rows[0].latest, Some(observation.clone()));
-        assert_eq!(board.weekly, vec![observation.clone()]);
+        let mut summary = observation.clone();
+        summary.trends = None;
+        summary.dividend_history = None;
+        assert_eq!(board.rows[0].latest, Some(summary.clone()));
+        assert_eq!(board.weekly, vec![summary]);
+        assert_eq!(
+            db.watch_row(&entry.input.symbol).unwrap().latest,
+            Some(observation.clone())
+        );
         assert!(!board.rows[0].alert);
         assert_eq!(board.rows[0].checked_for, None);
         let payload: String = db
@@ -510,7 +607,7 @@ mod tests {
         let target = Database::test();
         target.import_sync_data(&backup).unwrap();
         assert_eq!(
-            target.watch_board(day).unwrap().rows[0].latest,
+            target.watch_row(&entry.input.symbol).unwrap().latest,
             Some(observation)
         );
         assert!(!target.watch_board(day).unwrap().rows[0].alert);
@@ -751,7 +848,11 @@ mod tests {
         other.import_sync_data(&backup).unwrap();
         let restored = other.watch_board(day).unwrap().rows.remove(0);
         assert!(restored.entry.pinned);
-        assert_eq!(restored.latest, Some(observation.clone()));
+        assert!(restored.latest.as_ref().unwrap().trends.is_none());
+        assert_eq!(
+            other.watch_row(&entry.input.symbol).unwrap().latest,
+            Some(observation.clone())
+        );
         assert_eq!(restored.entry.grid_plan, Some(plan));
         let projection = restored.grid_projection.unwrap();
         assert_eq!(projection.rebound_yield_bps, Some(600));
@@ -834,7 +935,11 @@ mod tests {
         let board = db.watch_board(day).unwrap();
         assert!(board.rows[0].refresh_failed);
         assert_eq!(board.rows[0].dividend_prices[1].price, "100.00");
-        assert_eq!(board.rows[0].latest, Some(observation));
+        assert!(board.rows[0].latest.as_ref().unwrap().trends.is_none());
+        assert_eq!(
+            db.watch_row(&entry.input.symbol).unwrap().latest,
+            Some(observation)
+        );
         let mut backup = db.export_sync_data().unwrap();
         let row = &mut backup
             .tables

@@ -169,6 +169,15 @@ export interface WatchBoard {
 }
 
 export const getWatchBoard = () => httpRequest<WatchBoard>("/watch");
+export const getWatchDetail = (symbol: string, signal?: AbortSignal) =>
+  httpRequest<WatchRow>(`/watch/${encodeURIComponent(symbol)}/observation`, {
+    signal,
+  });
+export const getWatchCatalogDetail = (symbol: string, signal?: AbortSignal) =>
+  httpRequest<CatalogRow>(
+    `/watch/catalog/${encodeURIComponent(symbol)}/observation`,
+    { signal },
+  );
 export const getWatchCatalog = () =>
   httpRequest<CatalogBoard>("/watch/catalog");
 export const resolveCatalogCompany = (query: string) =>

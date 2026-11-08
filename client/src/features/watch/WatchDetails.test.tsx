@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { getWatchDetail } from "../../api/watch";
 import type { WatchRow } from "../../api/watch";
 import type { Snapshot } from "../../types";
 import fixture from "../../test/emptySnapshot.json";
 import { defaultRules } from "../../test/watchRules";
 import { WatchDetails } from "./WatchDetails";
 
+vi.mock("../../api/watch", () => ({ getWatchDetail: vi.fn() }));
+beforeEach(() => {
+  vi.mocked(getWatchDetail).mockResolvedValue(failedRow());
+});
 const failedRow = (): WatchRow => ({
   entry: {
     symbol: "600036.SS",

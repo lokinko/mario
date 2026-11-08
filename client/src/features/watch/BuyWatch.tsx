@@ -108,15 +108,15 @@ export function BuyWatch({
     }
   };
   useEffect(() => {
-    void load();
-    void loadCatalog();
+    // Personal rows get the first account read; the compact directory follows.
+    void load().then(loadCatalog);
   }, []);
   useEffect(() => {
     if (busy) return;
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") {
-        void load();
-        if (group !== "favorites") void loadCatalog();
+        if (group === "favorites") void load();
+        else void loadCatalog();
       }
     }, 30000);
     return () => window.clearInterval(timer);

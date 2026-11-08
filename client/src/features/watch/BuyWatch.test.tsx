@@ -17,6 +17,8 @@ import catalogFixture from "../../../../server/data/watch-catalog.json";
 
 vi.mock("../../api/watch", () => ({
   getWatchBoard: vi.fn(),
+  getWatchDetail: vi.fn(),
+  getWatchCatalogDetail: vi.fn(),
   getWatchCatalog: vi.fn(),
   getDividendCalendar: vi.fn(),
   refreshDividendCalendar: vi.fn(),
@@ -113,6 +115,22 @@ const catalog: api.CatalogBoard = {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.getWatchDetail).mockImplementation(async (symbol) => {
+    const values = vi.mocked(api.getWatchBoard).mock.settledResults;
+    const board = values[values.length - 1]?.value as
+      api.WatchBoard | undefined;
+    return structuredClone(
+      board?.rows.find((r) => r.entry.symbol === symbol) ?? row,
+    );
+  });
+  vi.mocked(api.getWatchCatalogDetail).mockImplementation(async (symbol) => {
+    const values = vi.mocked(api.getWatchCatalog).mock.settledResults;
+    const board = values[values.length - 1]?.value as
+      api.CatalogBoard | undefined;
+    return structuredClone(
+      (board ?? catalog).rows.find((r) => r.company.symbol === symbol)!,
+    );
+  });
   vi.mocked(api.getWatchBoard).mockResolvedValue(structuredClone(empty));
   vi.mocked(api.getDividendCalendar).mockResolvedValue({
     start: "2026-11-07",
@@ -431,7 +449,7 @@ it("shows the exact dividend events behind the closing yield", async () => {
       await screen.findByRole("table", { name: "观察公司对比" }),
     ).getByRole("button", { name: /^测试公司/ }),
   );
-  const event = screen.getByText(/除息日 2026-07-01/).closest("tr")!;
+  const event = (await screen.findByText(/除息日 2026-07-01/)).closest("tr")!;
   expect(event.textContent).toContain("12.345");
   expect(event.textContent).toContain("报告期 2025-12-31");
 });
@@ -875,5 +893,31 @@ it("applies saved account rules to summaries, reference prices, both periods and
   );
   expect(p.onAsk).toHaveBeenCalledWith(
     expect.stringContaining("日线BOLL(20,2)上轨 ±1.25%"),
+  );
+});
+
+it("shows personal summaries before the catalogue finishes and reads full evidence only on opening details", async () => {
+  let finishBoard!: (value: api.WatchBoard) => void;
+  vi.mocked(api.getWatchBoard).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishBoard = resolve;
+      }),
+  );
+  vi.mocked(api.getWatchCatalog).mockImplementationOnce(
+    () => new Promise(() => {}),
+  );
+  render(<BuyWatch {...props()} />);
+  expect(api.getWatchCatalog).not.toHaveBeenCalled();
+  finishBoard({ ...empty, rows: [structuredClone(row)] });
+  const table = await screen.findByRole("table", { name: "观察公司对比" });
+  await waitFor(() => expect(api.getWatchCatalog).toHaveBeenCalledOnce());
+  expect(api.getWatchDetail).not.toHaveBeenCalled();
+  expect(api.getWatchCatalogDetail).not.toHaveBeenCalled();
+  fireEvent.click(within(table).getByRole("button", { name: /^测试公司/ }));
+  await waitFor(() => expect(api.getWatchDetail).toHaveBeenCalledOnce());
+  expect(api.getWatchDetail).toHaveBeenCalledWith(
+    row.entry.symbol,
+    expect.any(AbortSignal),
   );
 });

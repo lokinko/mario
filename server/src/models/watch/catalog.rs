@@ -261,6 +261,13 @@ pub struct CatalogRow {
 }
 
 impl CatalogRow {
+    pub fn apply_rules(&mut self, rules: &WatchRules) {
+        if let Some(observation) = &mut self.snapshot.latest {
+            observation.apply_rules(rules);
+        }
+        self.dividend_prices = dividend_prices(self.snapshot.latest.as_ref());
+    }
+
     pub fn new(company: Company, industry_id: String, snapshot: CatalogSnapshot) -> Self {
         let dividend_prices = dividend_prices(snapshot.latest.as_ref());
         Self {
@@ -287,10 +294,7 @@ impl CatalogBoard {
     pub fn apply_rules(&mut self, rules: WatchRules) {
         self.rules = rules;
         for row in &mut self.rows {
-            if let Some(observation) = &mut row.snapshot.latest {
-                observation.apply_rules(&rules);
-            }
-            row.dividend_prices = dividend_prices(row.snapshot.latest.as_ref());
+            row.apply_rules(&rules);
         }
     }
 

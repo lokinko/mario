@@ -14,6 +14,11 @@ pub(super) fn router() -> Router {
     Router::new()
         .route("/api/watch", get(board).put(save))
         .route("/api/watch/catalog", get(catalog).put(save_catalog))
+        .route(
+            "/api/watch/catalog/{symbol}/observation",
+            get(catalog_detail),
+        )
+        .route("/api/watch/{symbol}/observation", get(detail))
         .route("/api/watch/catalog/refresh", post(refresh_catalog))
         .route("/api/watch/catalog/resolve", post(resolve_company))
         .route("/api/watch/dividend-calendar", get(dividend_calendar))
@@ -108,6 +113,20 @@ async fn catalog(
     board.can_edit = state.is_superuser;
     board.apply_rules(state.db.watch_rules()?);
     Ok(Json(board))
+}
+async fn detail(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(symbol): Path<String>,
+) -> AppResult<Json<crate::models::watch::WatchRow>> {
+    Ok(Json(state.db.watch_row(&symbol)?))
+}
+async fn catalog_detail(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(symbol): Path<String>,
+) -> AppResult<Json<crate::models::watch::catalog::CatalogRow>> {
+    let mut row = state.watch_catalog.detail(&symbol)?;
+    row.apply_rules(&state.db.watch_rules()?);
+    Ok(Json(row))
 }
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]

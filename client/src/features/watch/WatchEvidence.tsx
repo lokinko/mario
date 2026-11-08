@@ -1,3 +1,4 @@
+import { Callout } from "../../components/Callout";
 import type { ReactNode } from "react";
 import type { WatchRules, WatchMarketRow } from "../../api/watch";
 import { BandTrack, RuleChecks, YieldGrid } from "./WatchSignals";
@@ -11,11 +12,17 @@ export function WatchEvidence({
   rules,
   companySources,
   children,
+  loading = false,
+  detailError = "",
+  onReadRetry,
 }: {
   row: WatchMarketRow;
   rules: WatchRules;
   companySources?: string[];
   children?: ReactNode;
+  loading?: boolean;
+  detailError?: string;
+  onReadRetry?: () => void;
 }) {
   const minYield = rules.minYieldBps / 100;
   const { latest } = row;
@@ -50,10 +57,25 @@ export function WatchEvidence({
           rule={rules.weekly}
         />
       </div>
-      <WatchTrends key={latest?.symbol} latest={latest} />
+      {loading ? (
+        <p role="status">正在读取完整观察资料…</p>
+      ) : detailError ? (
+        <Callout
+          tone="danger"
+          action={
+            <button type="button" onClick={onReadRetry}>
+              重新读取详情
+            </button>
+          }
+        >
+          {detailError}
+        </Callout>
+      ) : (
+        <WatchTrends key={latest?.symbol} latest={latest} />
+      )}
       <YieldGrid row={row} minYield={minYield} />
       {children}
-      <WatchDividends latest={latest} />
+      {!loading && !detailError && <WatchDividends latest={latest} />}
       <WatchSources company={companySources} observation={latest?.sources} />
     </>
   );

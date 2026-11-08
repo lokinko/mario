@@ -1,3 +1,5 @@
+import { getWatchDetail } from "../../api/watch";
+import { useWatchDetail } from "./useWatchDetail";
 import { useState } from "react";
 import type { WatchRules, WatchGridPlan, WatchRow } from "../../api/watch";
 import type { Snapshot } from "../../types";
@@ -8,7 +10,7 @@ import { WatchGrid, WatchGridEditor } from "./WatchGrid";
 import { canonical, statuses } from "./presentation";
 
 export function WatchDetails({
-  row,
+  row: summary,
   snapshot,
   rules,
   busy,
@@ -36,6 +38,8 @@ export function WatchDetails({
   onRemove: () => void;
   onRetry: () => void;
 }) {
+  const detail = useWatchDetail(summary, summary.entry.symbol, getWatchDetail);
+  const row = detail.row;
   const { entry, latest } = row;
   const [editingGrid, setEditingGrid] = useState(false);
   const closeGrid = () => {
@@ -103,7 +107,13 @@ export function WatchDetails({
                   : "本次来源读取失败，尚无可用的观察结果。"}
               </Callout>
             )}
-            <WatchEvidence row={row} rules={rules}>
+            <WatchEvidence
+              row={row}
+              rules={rules}
+              loading={detail.loading}
+              detailError={detail.error}
+              onReadRetry={detail.retry}
+            >
               <WatchGrid row={row} onEdit={() => setEditingGrid(true)} />
             </WatchEvidence>
             {entry.thesis && (

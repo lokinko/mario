@@ -91,17 +91,33 @@ impl WatchCatalogService {
 
     pub fn board(&self) -> AppResult<CatalogBoard> {
         let (catalog, revision) = self.store.catalog()?;
+        let mut summaries = self.store.summaries()?;
         let mut rows = Vec::new();
         for industry in &catalog.industries {
             for company in &industry.companies {
                 rows.push(CatalogRow::new(
                     company.clone(),
                     industry.id.clone(),
-                    self.store.get(&company.symbol)?,
+                    summaries.remove(&company.symbol).unwrap_or_default(),
                 ));
             }
         }
         Ok(CatalogBoard::new(catalog, rows, revision))
+    }
+
+    pub fn detail(&self, symbol: &str) -> AppResult<CatalogRow> {
+        let symbol = crate::models::market::canonical_symbol(symbol)?;
+        let (catalog, _) = self.store.catalog()?;
+        for industry in catalog.industries {
+            if let Some(company) = industry.companies.into_iter().find(|c| c.symbol == symbol) {
+                return Ok(CatalogRow::new(
+                    company,
+                    industry.id,
+                    self.store.get(&symbol)?,
+                ));
+            }
+        }
+        Err(crate::AppError::NotFound("公共目录中没有这家公司".into()))
     }
 
     pub async fn refresh(
@@ -392,6 +408,45 @@ pub(crate) mod tests {
 
     pub(crate) fn fixture_service() -> Arc<WatchCatalogService> {
         service(Arc::new(Source::new()))
+    }
+
+    #[tokio::test]
+    async fn public_lists_use_summaries_but_details_keep_full_evidence_and_membership() {
+        let source = Arc::new(Source::new());
+        let service = service(source.clone());
+        let board = service.refresh(Some("banks"), true).await.unwrap();
+        let calls = source.prices.load(Ordering::SeqCst);
+        let summary = board
+            .rows
+            .iter()
+            .find(|r| r.snapshot.latest.is_some())
+            .unwrap();
+        assert!(summary.snapshot.latest.as_ref().unwrap().trends.is_none());
+        let full = service.detail(&summary.company.symbol).unwrap();
+        assert!(full.snapshot.latest.as_ref().unwrap().trends.is_some());
+        assert!(full
+            .snapshot
+            .latest
+            .as_ref()
+            .unwrap()
+            .dividend_history
+            .is_some());
+        assert_eq!(
+            full.snapshot.latest.as_ref().unwrap().price,
+            summary.snapshot.latest.as_ref().unwrap().price
+        );
+        assert!(service.detail("609999.SS").is_err());
+        let symbol = full.company.symbol.clone();
+        let mut catalog = board.catalog;
+        for industry in &mut catalog.industries {
+            industry.companies.retain(|c| c.symbol != symbol);
+        }
+        service
+            .save(&catalog, board.revision, "test-superuser")
+            .unwrap();
+        assert!(service.detail(&symbol).is_err());
+        assert!(!service.store.summaries().unwrap().contains_key(&symbol));
+        assert_eq!(source.prices.load(Ordering::SeqCst), calls);
     }
 
     #[tokio::test]
