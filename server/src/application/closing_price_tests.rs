@@ -121,7 +121,7 @@ impl SecurityPriceProvider for Provider {
                     peer.apply_verified_holding_valuation(
                         &h.id,
                         10.0,
-                        &quote(query, "2026-09-08", 30.0),
+                        &quote(query, &query.on_date, 30.0),
                     )
                     .unwrap();
                 }
@@ -132,6 +132,86 @@ impl SecurityPriceProvider for Provider {
                 .unwrap();
         }
         Ok(result)
+    }
+}
+
+#[tokio::test]
+async fn explicit_refresh_releases_the_request_lock_and_rechecks_each_holding_before_writing() {
+    for mutation in [Mutation::Edit, Mutation::Delete, Mutation::NewerQuote] {
+        let account = TestAccount::new();
+        let db = account.open();
+        let peer = account.open();
+        db.add_holding(&holding("600941.SS", Some(10.0))).unwrap();
+        let provider = Provider {
+            peer: Some((peer, mutation)),
+            ..Provider::new()
+        };
+        let _request_lock = db.lock_account().unwrap();
+        let result = super::refresh(&db, &provider).await.unwrap();
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.updated_count, 0);
+        match &provider.peer.as_ref().unwrap().1 {
+            Mutation::Edit => assert_eq!(
+                (
+                    result.snapshot.holdings[0].symbol.as_str(),
+                    result.snapshot.holdings[0].quantity
+                ),
+                ("601988.SS", Some(20.0))
+            ),
+            Mutation::Delete => assert!(result.snapshot.holdings.is_empty()),
+            Mutation::NewerQuote => {
+                assert_eq!(result.snapshot.holdings[0].current_price, Some(30.0))
+            }
+        }
+    }
+}
+
+struct SlowQuotes {
+    calls: AtomicUsize,
+}
+#[async_trait]
+impl SecurityPriceProvider for SlowQuotes {
+    async fn quote(&self, query: &SecurityPriceQuery, _: &str) -> AppResult<SecurityPriceQuote> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if query.symbol != "600941.SS" {
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        }
+        Ok(quote(query, &query.on_date, 12.0))
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_refresh_deadline_retains_successes_reports_unfinished_holdings_and_stops_new_fetches() {
+    let db = Database::test();
+    for symbol in [
+        "600941.SS",
+        "600519.SS",
+        "601988.SS",
+        "600036.SS",
+        "600900.SS",
+        "601398.SS",
+    ] {
+        db.add_holding(&holding(symbol, Some(10.0))).unwrap();
+    }
+    let provider = SlowQuotes {
+        calls: AtomicUsize::new(0),
+    };
+    let started = tokio::time::Instant::now();
+    let result = refresh_after_close(&db, &provider, now()).await.unwrap();
+    assert!(started.elapsed() <= std::time::Duration::from_secs(120));
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
+    assert_eq!(result.updated_count, 1);
+    assert_eq!(result.errors.len(), 5);
+    assert_eq!(result.snapshot.price_refresh_errors, result.errors);
+    for holding in result.snapshot.holdings {
+        assert_eq!(
+            holding.current_price,
+            Some(if holding.symbol == "600941.SS" {
+                12.0
+            } else {
+                10.0
+            })
+        );
     }
 }
 
@@ -211,6 +291,7 @@ async fn provisional_prices_can_use_previous_close_but_newer_manual_values_are_p
 #[tokio::test]
 async fn explicit_refresh_does_not_replace_a_newer_verified_close_with_a_delayed_source() {
     let db = Database::test();
+    let _request_lock = db.lock_account().unwrap();
     let id = db
         .add_holding(&holding("600519.SS", Some(10.0)))
         .unwrap()

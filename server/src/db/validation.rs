@@ -194,11 +194,43 @@ pub(super) fn validate_holding_valuation_evidence(
         && source_url
             .query_pairs()
             .any(|(key, value)| key == "interval" && value == "1d");
-    let supported = (twelve_is_canonical
-        && quote.provider_code == "twelve_data_raw_close"
-        && quote.provider_name == "Twelve Data"
+    let unique_param = |key: &str, expected: &str| {
+        let values = source_url
+            .query_pairs()
+            .filter(|(name, _)| name == key)
+            .map(|(_, value)| value.into_owned())
+            .collect::<Vec<_>>();
+        values == [expected]
+    };
+    let eastmoney_is_canonical = source_url.scheme() == "https"
+        && source_url.host_str() == Some("push2his.eastmoney.com")
+        && source_url.path() == "/api/qt/stock/kline/get"
+        && source_url.username().is_empty()
+        && source_url.password().is_none()
+        && crate::models::market::canonical_symbol(&quote.symbol).is_ok_and(|symbol| {
+            crate::models::market::is_a_share_stock(&symbol)
+                && unique_param(
+                    "secid",
+                    &format!(
+                        "{}.{}",
+                        if symbol.ends_with(".SS") { 1 } else { 0 },
+                        &symbol[..6]
+                    ),
+                )
+        })
+        && unique_param("klt", "101")
+        && unique_param("fqt", "0");
+    let supported = (eastmoney_is_canonical
+        && quote.provider_code == "eastmoney_daily_close"
+        && quote.provider_name == "东方财富"
+        && quote.currency == "CNY"
         && quote.price_basis == "unadjusted_daily_close"
-        && quote.methodology_url == "https://twelvedata.com/docs/market-data/time-series")
+        && quote.methodology_url == crate::models::market::ASHARE_METHODOLOGY_URL)
+        || (twelve_is_canonical
+            && quote.provider_code == "twelve_data_raw_close"
+            && quote.provider_name == "Twelve Data"
+            && quote.price_basis == "unadjusted_daily_close"
+            && quote.methodology_url == "https://twelvedata.com/docs/market-data/time-series")
         || (yahoo_is_canonical
             && quote.provider_code == "yahoo_daily_close"
             && quote.provider_name == "Yahoo Finance"

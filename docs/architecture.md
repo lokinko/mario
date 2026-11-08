@@ -118,7 +118,7 @@ flowchart TD
 | `ai/` | `orchestrator` 按 `workflow`（当前 v9）执行可选搜索与单次报告生成；格式错误只修复一次；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 和 `chatgpt` 只由用户电脑上的桥接 worker 调用，分别使用 Codex 登录和 Mario 自己的官方 OAuth 注册；`structured_output` 负责确定性引用、输出校验；资料检索和连续原文摘录归领域层 `evidence`；`streaming` 解析流式草稿 |
 | `codex_bridge_worker.rs` | 用户电脑上的共用桥接进程，固定注册及授权会话，长轮询 API 领取任务，选择 Codex App Server 或官方 ChatGPT Responses；模型目录及推理取令牌时在凭据锁内核对同一会话，不借用重新登录后的授权；不上传 OpenAI 凭据 |
 | `chatgpt_auth.rs`、`chatgpt_auth/` | 本机官方 OAuth、签名身份和 scopes 校验、多注册选择、跨进程串行刷新、原子凭据保存及退出；仅由本机运行角色与 `ai/chatgpt.rs` 调用，不依赖业务数据库 |
-| `market_data.rs`、`prices.rs` | 行情端口的网络实现与实例内有界缓存；只处理公开行情，不读写账号数据 |
+| `market_data.rs`、`market_data/ashare.rs`、`prices.rs` | 行情端口的网络实现；国内股票原价与送转核验、按端口注入的来源回退及实例内有界缓存；只处理公开行情，不读写账号数据 |
 | `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共公司目录、独立版本、公共行业最新观察及分红计划快照；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
 | `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、买点观察计算、期权合约计价及多空头重放、推理事件与执行时限 |
 | `context.rs` / `context/fact_sheet.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：分析上下文构建与预览、再平衡规划、风险检查、估值状态、本地证据检索 |
@@ -191,7 +191,9 @@ sequenceDiagram
 
 ### 6.3 行情与汇率
 
-`composition::MarketRuntime` 在进程启动时创建供应商，拥有公开缓存刷新及按账号每 5 分钟补查持仓收盘价的任务，退出时统一取消。收盘日期由 `models/market/close` 的确定性时区策略决定，来源必须返回实际交易日；阈值及失败行为统一见[市场数据](market-data.md)。`application/prices.rs`、`fx.rs` 通过端口查询并在账号事务中写入估值与汇率来源。快照、版本与汇率的 GET 不触发账号刷新或写入；当日汇率查询只读复用正确目标币的有效缓存，未命中经端口查询请求币对。后台估值由 `application/prices::refresh_after_close` 持有账号锁冻结输入，行情查询期间释放锁，取回后逐持仓比较版本；在途编辑、交易、删除或较新估值使旧结果失效，不覆盖当前事实。已保存的实际收盘日作为完成及价格新旧比较依据，不能用请求日阻断延迟行情；无来源的参考价可升级为收盘价，明确手工估值保留日期保护。重启可补查，无新增 schema 或调度状态；仅新行情落入原有估值、精确会计和当日资产观测事务，来源失败不清空旧值。行情刷新保留手工持仓的持久精确股数，浮点数量仅用于与既有投影比较；成交管理数量继续由重放结果决定。持仓编辑的外部查询在提交事务前完成，成交保存不依赖外部行情。
+`composition::MarketRuntime` 在进程启动时创建供应商，拥有公开缓存刷新及按账号每 5 分钟补查持仓收盘价的任务，退出时统一取消。收盘日期由 `models/market/close` 的确定性时区策略决定，来源必须返回实际交易日；阈值及失败行为统一见[市场数据](market-data.md)。`application/prices.rs`、`fx.rs` 通过端口查询并在账号事务中写入估值与汇率来源。快照、版本与汇率的 GET 不触发账号刷新或写入；当日汇率查询只读复用正确目标币的有效缓存，未命中经端口查询请求币对。手动刷新沿用 HTTP 账号锁，后台估值由 `application/prices::refresh_after_close` 取得账号锁；二者在 `application/prices` 共用冻结输入、行情期间解锁、取回后逐持仓比较版本的流程；在途编辑、交易、删除或较新估值使旧结果失效，不覆盖当前事实。已保存的实际收盘日作为完成及价格新旧比较依据，不能用请求日阻断延迟行情；无来源的参考价可升级为收盘价，明确手工估值保留日期保护。重启可补查，无新增 schema 或调度状态；仅新行情落入原有估值、精确会计和当日资产观测事务，来源失败不清空旧值。行情刷新保留手工持仓的持久精确股数，浮点数量仅用于与既有投影比较；成交管理数量继续由重放结果决定。持仓编辑的外部查询在提交事务前完成，成交保存不依赖外部行情。价格查询共用整轮截止，保留已成功的持仓并逐项返回未完成原因；时限与客户端等待统一见市场数据规范。
+
+`composition` 将 `market_data/ashare::AshareSecurityPriceProvider` 通过既有 `SecurityPriceProvider` 注入 `prices::FreeSecurityPriceProvider`，国内适配器拥有未复权股票日线及完整送转核验，免费 Provider 拥有来源回退、日期择新、全局缓存与并发预算；两个适配器不相互引用具体实现。国内送转与 `market_data/watch` 共用供应商分页及解析，只共享公开协议，不共享账号状态或观察结果。仓储统一校验来源与证券身份并按原估值事务持久化；不新增运行角色、调度状态或存储格式。
 
 证券报价 GET 的应用入口为 `PortfolioService::preview_security_quote`：在既有账号锁内冻结供应商及 key，仅外部端口的查询 Future 经 `Database::without_account_lock` 执行，成功或错误均先重获锁再返回。预览不写账号事实，允许按开始时配置完成；响应头的结束时 revision 不作为前端读取全量资料的证明。写入估值仍调用原 `security_quote`，没有把含仓储操作的整个用例解锁。详细并发与取消边界见[只读报价](market-data.md#只读证券报价与并发)。
 
@@ -308,7 +310,7 @@ HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/div
 
 已知架构债（架构检查通过不代表它们已消失）：
 
-- **部分行情等待仍持有账号锁**：只读证券报价 GET 已仅在供应商等待期解锁，但汇率查询、价格与汇率刷新、保存持仓及核验估值仍在请求账号锁内等待外部供应商。写路径须先在锁内读取输入，锁外查询后重新加锁核对输入未变，再由仓储事务写入；不能直接复用只读预览的解锁行为。连接池与异步 SQL 需另行设计。
+- **部分行情等待仍持有账号锁**：只读证券报价 GET、手动及后台价格刷新已在供应商等待期解锁，但汇率查询、汇率刷新、保存持仓及核验估值仍在请求账号锁内等待外部供应商。写路径须先在锁内读取输入，锁外查询后重新加锁核对输入未变，再由仓储事务写入；不能直接复用只读预览的解锁行为。连接池与异步 SQL 需另行设计。
 - **模型管理直接依赖具体 AI 实现**：`application/model_settings.rs` 直接构造 `NativeModelProvider` 与 `ai::bridge::BridgeProvider`，`application/codex_bridge.rs` 直接操作 `ai::bridge` 的注册状态。改造方向是为模型检测、目录读取与桥接注册定义窄接口，启动时注入。
 - **前端同步依赖单实例全局状态**：`lib/service.ts` 保存全局 revision，`lib/syncEvents.ts` 保存同步与写入计数，切换账号依靠重建子树保护。改造方向是由账号边界创建拥有 revision、同步屏障和生命周期的会话实例。
 - **跨语言契约手动维护**：前端 `types.ts` 与 Rust `models` 各自维护，写入政策前后端各有一份；架构检查不理解宏展开与间接转发，也不证明运行时事务与租户隔离。

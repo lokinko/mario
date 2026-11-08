@@ -403,7 +403,8 @@ export function ModelSettings({
           </Badge>
         </summary>
         <p className="section-intro">
-          自动价格使用无需密钥的 Yahoo Finance 免费日线。这里可选配置 Twelve
+          A 股股票自动价格优先使用东方财富日线，失败后尝试 Yahoo
+          Finance；其他证券使用 Yahoo Finance。 这里可选配置 Twelve
           Data，供主动查询使用；密钥按账号加密保存，不发送给 AI。
         </p>
         <div className="form-grid single-column">

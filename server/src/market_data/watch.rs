@@ -126,51 +126,69 @@ impl PublicWatchProvider {
             sources: vec![price_source, calendar_source],
         })
     }
-    async fn dividend_page(&self, symbol: &str, page: u64) -> AppResult<(Value, String)> {
-        let filter = format!("(SECURITY_CODE=\"{}\")", &symbol[..6]);
-        let response = self
-            .client
-            .get("https://datacenter-web.eastmoney.com/api/data/v1/get")
-            .header("Referer", "https://data.eastmoney.com/yjfp/")
-            .query(&[
-                ("reportName", "RPT_SHAREBONUS_DET"),
-                ("columns", "ALL"),
-                ("filter", filter.as_str()),
-                ("pageSize", "100"),
-                ("pageNumber", &page.to_string()),
-                ("sortColumns", "REPORT_DATE"),
-                ("sortTypes", "-1"),
-                ("source", "WEB"),
-                ("client", "WEB"),
-            ])
-            .send()
-            .await?
-            .error_for_status()?;
-        let url = response.url().to_string();
-        Ok((response.json::<Value>().await?, url))
-    }
     async fn dividend_payload(&self, symbol: &str) -> AppResult<(Value, Vec<String>)> {
         let _permit = self.slots.acquire().await.map_err(|_| bad())?;
-        let (mut payload, source) = self.dividend_page(symbol, 1).await?;
-        let mut sources = vec![source];
-        if !(payload["code"] == 9201 && payload["result"].is_null()) {
-            let pages = payload["result"]["pages"]
-                .as_u64()
-                .filter(|n| *n > 0 && *n <= 50)
-                .ok_or_else(bad)?;
-            if payload["success"] != true {
-                return Err(bad());
-            }
-            for page in 2..=pages {
-                let (next, source) = self.dividend_page(symbol, page).await?;
-                append_dividend_page(&mut payload, &next)?;
-                sources.push(source);
-            }
-            // Only a fully collected result can certify an empty TTM window.
-            payload["result"]["pages"] = Value::from(1);
-        }
-        Ok((payload, sources))
+        distribution_payload(
+            &self.client,
+            "https://datacenter-web.eastmoney.com/api/data/v1/get",
+            symbol,
+        )
+        .await
     }
+}
+
+async fn dividend_page(
+    client: &Client,
+    base_url: &str,
+    symbol: &str,
+    page: u64,
+) -> AppResult<(Value, String)> {
+    let filter = format!("(SECURITY_CODE=\"{}\")", &symbol[..6]);
+    let response = client
+        .get(base_url)
+        .header("Referer", "https://data.eastmoney.com/yjfp/")
+        .query(&[
+            ("reportName", "RPT_SHAREBONUS_DET"),
+            ("columns", "ALL"),
+            ("filter", filter.as_str()),
+            ("pageSize", "100"),
+            ("pageNumber", &page.to_string()),
+            ("sortColumns", "REPORT_DATE"),
+            ("sortTypes", "-1"),
+            ("source", "WEB"),
+            ("client", "WEB"),
+        ])
+        .send()
+        .await?
+        .error_for_status()?;
+    let url = response.url().to_string();
+    Ok((super::read_public_json(response).await?, url))
+}
+
+pub(super) async fn distribution_payload(
+    client: &Client,
+    base_url: &str,
+    symbol: &str,
+) -> AppResult<(Value, Vec<String>)> {
+    let (mut payload, source) = dividend_page(client, base_url, symbol, 1).await?;
+    let mut sources = vec![source];
+    if !(payload["code"] == 9201 && payload["result"].is_null()) {
+        let pages = payload["result"]["pages"]
+            .as_u64()
+            .filter(|n| *n > 0 && *n <= 50)
+            .ok_or_else(bad)?;
+        if payload["success"] != true {
+            return Err(bad());
+        }
+        for page in 2..=pages {
+            let (next, source) = dividend_page(client, base_url, symbol, page).await?;
+            append_dividend_page(&mut payload, &next)?;
+            sources.push(source);
+        }
+        // Only a fully collected result can certify an empty TTM window.
+        payload["result"]["pages"] = Value::from(1);
+    }
+    Ok((payload, sources))
 }
 
 fn bad() -> AppError {
@@ -205,7 +223,11 @@ fn append_dividend_page(payload: &mut Value, next: &Value) -> AppResult<()> {
     Ok(())
 }
 
-fn parse_dividends(payload: &Value, symbol: &str, day: NaiveDate) -> AppResult<Vec<DividendEvent>> {
+pub(super) fn parse_dividends(
+    payload: &Value,
+    symbol: &str,
+    day: NaiveDate,
+) -> AppResult<Vec<DividendEvent>> {
     // A missing source history does not establish zero dividends. A complete
     // nonempty history can still have an empty implemented/TTM window.
     if payload["code"] == 9201 && payload["result"].is_null() {

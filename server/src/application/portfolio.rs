@@ -76,12 +76,7 @@ impl PortfolioService<'_> {
     pub fn security_config(&self) -> SecurityPriceConfig {
         let has_api_key = self.db.secret("security-price").is_ok();
         SecurityPriceConfig {
-            provider: if has_api_key {
-                "twelve-data"
-            } else {
-                "yahoo-finance"
-            }
-            .into(),
+            provider: if has_api_key { "twelve-data" } else { "public" }.into(),
             has_api_key,
         }
     }

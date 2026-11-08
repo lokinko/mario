@@ -37,9 +37,10 @@ pub struct FreeSecurityPriceProvider {
     hosts: Vec<String>,
     cache: Arc<Cache>,
     slots: Semaphore,
+    ashare: Option<Arc<dyn SecurityPriceProvider>>,
 }
 impl FreeSecurityPriceProvider {
-    pub fn new() -> AppResult<Self> {
+    pub fn new(ashare: Arc<dyn SecurityPriceProvider>) -> AppResult<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(8))
             .user_agent("Mozilla/5.0 (compatible; mario/market-data)")
@@ -52,6 +53,7 @@ impl FreeSecurityPriceProvider {
             ],
             cache: Arc::new(Cache::default()),
             slots: Semaphore::new(4),
+            ashare: Some(ashare),
         })
     }
 
@@ -87,6 +89,43 @@ impl FreeSecurityPriceProvider {
             day - chrono::Duration::days(10)
         };
         let mut last_error = None;
+        let mut domestic_quote = None;
+        if crate::models::market::is_a_share_stock(symbol) {
+            if let Some(provider) = &self.ashare {
+                let query = SecurityPriceQuery {
+                    symbol: symbol.into(),
+                    on_date: end.to_string(),
+                    action_from: action_from.map(str::to_owned),
+                };
+                let result = async {
+                    let mut quote =
+                        tokio::time::timeout(Duration::from_secs(16), provider.quote(&query, ""))
+                            .await
+                            .map_err(|_| {
+                                AppError::MarketData("东方财富价格及送转核验超时".into())
+                            })??;
+                    let observed = quote
+                        .observed_on
+                        .parse::<NaiveDate>()
+                        .map_err(|_| AppError::MarketData("国内行情日期无效".into()))?;
+                    if observed > end || (day - observed).num_days() > 10 {
+                        return Err(AppError::MarketData("国内行情日期超出收盘窗口".into()));
+                    }
+                    quote.requested_on = day.to_string();
+                    quote.staleness_days = (day - observed).num_days();
+                    Ok(quote)
+                }
+                .await;
+                match result {
+                    Ok(quote) if quote.observed_on == end.to_string() => return Ok(quote),
+                    Ok(quote) => domestic_quote = Some(quote),
+                    Err(error) => {
+                        tracing::warn!(symbol, error = ?error, "holding domestic daily source failed; trying Yahoo");
+                        last_error = Some(error);
+                    }
+                }
+            }
+        }
         for host in &self.hosts {
             let mut url =
                 Url::parse(host).map_err(|_| AppError::MarketData("行情地址无效".into()))?;
@@ -135,11 +174,20 @@ impl FreeSecurityPriceProvider {
             }
             .await;
             match result {
-                Ok(quote) => return Ok(quote),
-                Err(error) => last_error = Some(error),
+                Ok(quote) => {
+                    return Ok(domestic_quote
+                        .filter(|q| q.observed_on >= quote.observed_on)
+                        .unwrap_or(quote))
+                }
+                Err(error) => {
+                    tracing::warn!(symbol, host, error = ?error, "holding Yahoo daily source failed; trying remaining hosts");
+                    last_error = Some(error);
+                }
             }
         }
-        Err(last_error.unwrap_or_else(|| AppError::MarketData("行情来源未配置".into())))
+        domestic_quote.ok_or_else(|| {
+            last_error.unwrap_or_else(|| AppError::MarketData("行情来源未配置".into()))
+        })
     }
 }
 
@@ -431,6 +479,106 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+    struct Domestic {
+        observed: &'static str,
+        failed: bool,
+    }
+    #[async_trait]
+    impl SecurityPriceProvider for Domestic {
+        async fn quote(
+            &self,
+            query: &SecurityPriceQuery,
+            _: &str,
+        ) -> AppResult<SecurityPriceQuote> {
+            if self.failed {
+                return Err(AppError::MarketData("国内送转资料失败".into()));
+            }
+            let mut quote = parse_quote(
+                &payload("600941.SS", "CNY", &[(self.observed, Some(103.49))]),
+                "600941.SS",
+                day(&query.on_date),
+                day(self.observed),
+                String::new(),
+            )?;
+            quote.provider_code = "eastmoney_daily_close".into();
+            quote.provider_name = "东方财富".into();
+            quote.price_basis = "unadjusted_daily_close".into();
+            Ok(quote)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_shares_use_domestic_quotes_without_yahoo_and_fall_back_as_whole_quotes() {
+        for (domestic_failed, observed, yahoo_failed, expected) in [
+            (false, "2026-11-06", true, Some("eastmoney_daily_close")),
+            (true, "2026-11-06", false, Some("yahoo_daily_close")),
+            (false, "2026-11-05", false, Some("yahoo_daily_close")),
+            (false, "2026-11-05", true, Some("eastmoney_daily_close")),
+            (true, "2026-11-06", true, None),
+        ] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let counter = calls.clone();
+            let router = axum::Router::new().route(
+                "/v8/finance/chart/{symbol}",
+                axum::routing::get(move || {
+                    let counter = counter.clone();
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        (
+                            if yahoo_failed {
+                                axum::http::StatusCode::BAD_GATEWAY
+                            } else {
+                                axum::http::StatusCode::OK
+                            },
+                            payload("600941.SS", "CNY", &[("2026-11-06", Some(104.0))]),
+                        )
+                    }
+                }),
+            );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let host = format!("http://{}", listener.local_addr().unwrap());
+            let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+            let provider = FreeSecurityPriceProvider {
+                client: Client::new(),
+                hosts: vec![host],
+                cache: Arc::new(Cache::default()),
+                slots: Semaphore::new(4),
+                ashare: Some(Arc::new(Domestic {
+                    observed,
+                    failed: domestic_failed,
+                })),
+            };
+            let query = SecurityPriceQuery {
+                symbol: "600941.SS".into(),
+                on_date: "2026-11-08".into(),
+                action_from: Some("2026-01-01".into()),
+            };
+            let result = provider
+                .quote_at(&query, "2026-11-08T08:00:00Z".parse().unwrap())
+                .await;
+            if let Some(expected) = expected {
+                let quote = result.unwrap();
+                assert_eq!(quote.provider_code, expected);
+                assert_eq!(quote.requested_on, "2026-11-08");
+                assert_eq!(
+                    quote.observed_on,
+                    if observed == "2026-11-05" && yahoo_failed {
+                        "2026-11-05"
+                    } else {
+                        "2026-11-06"
+                    }
+                );
+            } else {
+                assert!(result.is_err());
+            }
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                usize::from(domestic_failed || observed != "2026-11-06")
+            );
+            task.abort();
+        }
+    }
+
     fn day(text: &str) -> NaiveDate {
         NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
     }
@@ -607,6 +755,7 @@ mod tests {
             hosts: vec![url],
             cache: Arc::new(Cache::default()),
             slots: Semaphore::new(4),
+            ashare: None,
         };
         let query = SecurityPriceQuery {
             symbol: "sh600519".into(),
@@ -769,6 +918,7 @@ mod tests {
                 hosts: vec![url.clone(), url],
                 cache: Arc::new(Cache::default()),
                 slots: Semaphore::new(4),
+                ashare: None,
             }),
             calls,
             failed,
@@ -783,6 +933,7 @@ mod tests {
             hosts: first.hosts.clone(),
             cache: Arc::new(Cache::default()),
             slots: Semaphore::new(4),
+            ashare: None,
         };
         let query = SecurityPriceQuery {
             symbol: "AAPL".into(),
@@ -826,6 +977,7 @@ mod tests {
             hosts: vec![url.clone(), url],
             cache: Arc::new(Cache::default()),
             slots: Semaphore::new(4),
+            ashare: None,
         };
         let mut query = SecurityPriceQuery {
             action_from: None,

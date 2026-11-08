@@ -1,7 +1,9 @@
 //! Process dependency assembly and ownership of public quote refresh tasks.
 use crate::{
     application::portfolio::MarketServices,
-    market_data::{EcbFxRateProvider, TwelveDataSecurityPriceProvider},
+    market_data::{
+        AshareSecurityPriceProvider, EcbFxRateProvider, TwelveDataSecurityPriceProvider,
+    },
     models::{market::today, FxRateQuery},
     ports::market::FxRateProvider,
     prices::FreeSecurityPriceProvider,
@@ -21,6 +23,7 @@ impl MarketRuntime {
         let services = self.services.clone();
         let price_accounts = accounts.clone();
         self.tasks.push(tokio::spawn(async move {
+            tracing::info!("holding closing price background checks started; running immediately and every 5 minutes");
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
@@ -39,6 +42,7 @@ impl MarketRuntime {
                     }.await;
                     match result {
                         Ok(result) => {
+                            tracing::info!(%user, updated = result.updated_count, failed = result.errors.len(), "holding closing price refresh completed");
                             for error in result.errors {
                                 tracing::warn!(%user, %error, "holding closing price refresh failed; keeping prior valuation");
                             }
@@ -108,7 +112,9 @@ impl MarketRuntime {
             &crate::market_data::watch_archive::initial_histories()?,
         )?);
         let fx = Arc::new(EcbFxRateProvider::new()?);
-        let prices = Arc::new(FreeSecurityPriceProvider::new()?);
+        let prices = Arc::new(FreeSecurityPriceProvider::new(Arc::new(
+            AshareSecurityPriceProvider::new()?,
+        ))?);
         let keyed = Arc::new(TwelveDataSecurityPriceProvider::new()?);
         let services = Arc::new(MarketServices::new(fx.clone(), prices.clone(), keyed));
         let price_task = crate::prices::start_refresh(prices);

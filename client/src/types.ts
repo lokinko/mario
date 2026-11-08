@@ -66,7 +66,7 @@ export interface SecurityPriceQuote {
 }
 
 export interface SecurityPriceConfig {
-  provider: "twelve-data";
+  provider: "public" | "twelve-data";
   hasApiKey: boolean;
 }
 

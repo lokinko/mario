@@ -6,6 +6,7 @@ use crate::{
     AppError, AppResult,
 };
 use serde::Serialize;
+const REFRESH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshResult {
@@ -68,6 +69,7 @@ pub async fn complete_input(
     Ok(input)
 }
 
+/// The HTTP caller holds one account lock, released only while querying providers.
 pub async fn refresh(
     db: &Database,
     provider: &dyn SecurityPriceProvider,
@@ -90,6 +92,7 @@ async fn refresh_inner(
     provider: &dyn SecurityPriceProvider,
     automatic: Option<chrono::DateTime<chrono::Utc>>,
 ) -> AppResult<RefreshResult> {
+    let deadline = tokio::time::Instant::now() + REFRESH_TIMEOUT;
     let snapshot = db.snapshot()?;
     let day = automatic.map_or_else(crate::models::market::today, |now| {
         now.with_timezone(&chrono_tz::Asia::Shanghai)
@@ -141,32 +144,40 @@ async fn refresh_inner(
                             symbol: holding.symbol.clone(),
                             on_date: day,
                         };
-                        Some((holding, provider.quote(&query, "").await))
+                        let timed_out = || {
+                            AppError::MarketData(format!(
+                                "本轮价格查询达到 {} 秒时限，已保留原价，请稍后重试",
+                                REFRESH_TIMEOUT.as_secs()
+                            ))
+                        };
+                        let result = if tokio::time::Instant::now() >= deadline {
+                            Err(timed_out())
+                        } else {
+                            tokio::time::timeout_at(deadline, provider.quote(&query, ""))
+                                .await
+                                .unwrap_or_else(|_| Err(timed_out()))
+                        };
+                        Some((holding, result))
                     }
                     None => None,
                 }
             }
         };
         let fetch_chunk = async { tokio::join!(fetch(0), fetch(1), fetch(2), fetch(3)) };
-        let (a, b, c, d) = if automatic.is_some() {
-            db.without_account_lock(fetch_chunk).await?
-        } else {
-            fetch_chunk.await
-        };
-        let current = automatic.map(|_| db.snapshot()).transpose()?;
-        let current = current.as_ref().unwrap_or(&snapshot);
+        let (a, b, c, d) = db.without_account_lock(fetch_chunk).await?;
+        let current = db.snapshot()?;
         for (holding, quote) in [a, b, c, d].into_iter().flatten() {
             let quantity = holding.quantity.unwrap();
             let result = (|| {
+                // A concurrent sale, edit, deletion or refresh invalidates the frozen input.
+                if !current.holding_revisions.contains_key(&holding.id)
+                    || current.holding_revisions.get(&holding.id)
+                        != snapshot.holding_revisions.get(&holding.id)
+                {
+                    return Ok(false);
+                }
                 let quote = quote?;
                 if let Some(now) = automatic {
-                    // A concurrent sale, edit, deletion or refresh invalidates the frozen input.
-                    if !current.holding_revisions.contains_key(&holding.id)
-                        || current.holding_revisions.get(&holding.id)
-                            != snapshot.holding_revisions.get(&holding.id)
-                    {
-                        return Ok(false);
-                    }
                     let symbol = crate::models::market::canonical_symbol(&holding.symbol)?;
                     let end = crate::models::market::close::completed_day(
                         &symbol,
@@ -297,6 +308,14 @@ mod tests {
     }
     fn db() -> Database {
         Database::test()
+    }
+    // Match the authenticated HTTP caller's lock ownership.
+    async fn refresh(
+        db: &Database,
+        provider: &dyn SecurityPriceProvider,
+    ) -> AppResult<RefreshResult> {
+        let _lock = db.lock_account()?;
+        super::refresh(db, provider).await
     }
     fn holding(
         symbol: &str,
@@ -494,7 +513,10 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires live free public API"]
     async fn live_free_quotes() {
-        let provider = crate::prices::FreeSecurityPriceProvider::new().unwrap();
+        let provider = crate::prices::FreeSecurityPriceProvider::new(std::sync::Arc::new(
+            crate::market_data::AshareSecurityPriceProvider::new().unwrap(),
+        ))
+        .unwrap();
         for (symbol, currency) in [
             ("AAPL", "USD"),
             ("0700.HK", "HKD"),

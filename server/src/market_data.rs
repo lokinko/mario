@@ -1,6 +1,8 @@
+mod ashare;
 pub(crate) mod watch;
 pub(crate) mod watch_archive;
 pub(crate) mod watch_catalog;
+pub(crate) use ashare::AshareSecurityPriceProvider;
 use std::{collections::BTreeMap, time::Duration};
 
 use async_trait::async_trait;
@@ -18,6 +20,16 @@ const ECB_API_BASE: &str = "https://data-api.ecb.europa.eu/service/data";
 const ECB_METHODOLOGY_URL: &str =
     "https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates";
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+async fn read_public_json(mut response: reqwest::Response) -> AppResult<serde_json::Value> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            return Err(AppError::MarketData("行情响应超过 1 MB".into()));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(serde_json::from_slice(&body)?)
+}
 const LOOKBACK_DAYS: i64 = 7;
 use crate::models::market::SUPPORTED_CURRENCIES;
 const TWELVE_DATA_API_BASE: &str = "https://api.twelvedata.com";

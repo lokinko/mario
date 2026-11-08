@@ -8,6 +8,7 @@ import {
   updateHoldingAmount,
   saveHoldingTrade,
   deleteHolding,
+  refreshSecurityPrices,
 } from "./api/portfolio";
 import { checkServerVersion, prepareDataReplacement } from "./api/account";
 import { previewAnalysis } from "./api/research";
@@ -108,9 +109,30 @@ beforeEach(() => {
   setWebToken("test-session");
 });
 afterEach(() => {
+  vi.useRealTimers();
   sessionStorage.clear();
   localStorage.clear();
   vi.unstubAllGlobals();
+});
+
+it("waits for a slow price refresh beyond 15 seconds and adopts its returned snapshot without resubmitting", async () => {
+  vi.useFakeTimers();
+  const result = { snapshot: { holdings: [] }, updatedCount: 1, errors: [] };
+  const fetcher = vi.fn().mockImplementation(
+    (_url, options) =>
+      new Promise<Response>((resolve, reject) => {
+        options.signal.addEventListener("abort", () =>
+          reject(options.signal.reason),
+        );
+        setTimeout(() => resolve(response(result, "99")), 16000);
+      }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  const pending = expect(refreshSecurityPrices()).resolves.toEqual(result);
+  await vi.advanceTimersByTimeAsync(16000);
+  await pending;
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(dataRevision()).toBe("99");
 });
 
 it("keeps the session after a temporary server failure", async () => {

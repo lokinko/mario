@@ -40,6 +40,21 @@ pub struct FxOverrideInput {
 
 pub(crate) const METHODOLOGY_URL: &str =
     "https://help.yahoo.com/kb/finance/article-exchanges-data-delays-sln2310.html";
+pub(crate) const ASHARE_METHODOLOGY_URL: &str = "https://data.eastmoney.com/yjfp/";
+
+/// Only mainland listed stocks; ETF/index corporate actions use other source protocols.
+pub(crate) fn is_a_share_stock(symbol: &str) -> bool {
+    let Some((code, exchange)) = symbol.split_once('.') else {
+        return false;
+    };
+    code.len() == 6
+        && code.bytes().all(|b| b.is_ascii_digit())
+        && match exchange {
+            "SS" => code.starts_with("60") || code.starts_with("68"),
+            "SZ" => code.starts_with("00") || code.starts_with("30"),
+            _ => false,
+        }
+}
 pub(crate) fn canonical_symbol(value: &str) -> AppResult<String> {
     let mut code = value.trim().to_ascii_uppercase();
     if code.is_empty()

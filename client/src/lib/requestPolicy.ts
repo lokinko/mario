@@ -22,7 +22,8 @@ export function requestPolicy(path: string) {
       ? 30000
       : resource === "/watch/refresh" ||
           resource === "/watch/catalog/refresh" ||
-          resource === "/watch/dividend-calendar/refresh"
+          resource === "/watch/dividend-calendar/refresh" ||
+          resource === "/market-data/security/refresh"
         ? 180000
         : resource === "/model-config/test"
           ? 300000
