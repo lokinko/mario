@@ -150,6 +150,8 @@
   overflow: hidden;
 }
 .facts-page .cash-list-header {
+  position: static;
+  top: auto;
   padding: var(--space-3) var(--space-4);
 }
 .facts-page .cash-list-row {
