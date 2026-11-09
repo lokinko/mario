@@ -573,6 +573,25 @@ it("folds fees into the actual cash flow and lists them only when charged", () =
   expect(container.querySelectorAll("thead th")).toHaveLength(5);
 });
 
+it("keeps data review out of the way until a split is declared", async () => {
+  render(
+    <HoldingTrades
+      snapshot={value}
+      holding={holding}
+      onUpdate={vi.fn()}
+      flash={vi.fn()}
+    />,
+  );
+  await waitFor(() =>
+    expect(portfolioApi.getFinancialHistory).toHaveBeenCalledWith(holding.id),
+  );
+  expect(screen.queryByRole("region", { name: "数据核对" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "登记拆合股" }));
+  expect(screen.getByRole("form", { name: "登记拆合股" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  expect(screen.queryByRole("region", { name: "数据核对" })).toBeNull();
+});
+
 it("omits the position summary where the holding detail already shows it", () => {
   const props = {
     snapshot: value,

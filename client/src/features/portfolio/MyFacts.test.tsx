@@ -1358,10 +1358,7 @@ it.each(["quarantinedTrades", "pendingCorporateAction"] as const)(
       }),
     );
     expect(screen.getByRole("dialog", { name: "待处理证券" })).toBeTruthy();
-    expect(document.querySelector("details.financial-history")).toHaveProperty(
-      "open",
-      true,
-    );
+    expect(screen.getByRole("region", { name: "数据核对" })).toBeTruthy();
     await waitFor(() =>
       expect(portfolioApi.getFinancialHistory).toHaveBeenCalledWith("affected"),
     );
