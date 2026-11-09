@@ -43,9 +43,6 @@ export function DisplayPreferences({
           </select>
         </label>
       </div>
-      <p className="section-intro">
-        偏好仅保存在此浏览器；隐藏金额时，复制和导出仍包含真实数据。
-      </p>
     </section>
   );
 }

@@ -686,25 +686,25 @@ main {
     text-align: center;
   }
 }
-.cloud-page .form-actions {
+.account-data .form-actions {
   gap: var(--space-3);
   flex-wrap: wrap;
 }
-.cloud-page .key-actions {
+.account-data .key-actions {
   flex-wrap: wrap;
 }
-.cloud-page .form-grid small {
+.account-data .form-grid small {
   line-height: 1.6;
   color: var(--text-3);
 }
 
 /* Clear hierarchy: primary content, optional detail, and readable controls. */
-.cloud-page details > summary {
+.account-data details > summary {
   cursor: pointer;
   font-weight: 600;
   font-size: var(--fs-body);
 }
-.cloud-page details[open] > summary {
+.account-data details[open] > summary {
   margin-bottom: var(--space-5);
 }
 [hidden] {

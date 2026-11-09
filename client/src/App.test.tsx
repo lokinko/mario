@@ -58,6 +58,7 @@ vi.mock("./api/watch", () => ({
 vi.mock("./api/settings", async (original) => ({
   ...(await original<typeof import("./api/settings")>()),
   getModelConfig: vi.fn(),
+  getAnalysisSettings: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock("./api/research", async (original) => ({
   ...(await original<typeof import("./api/research")>()),
@@ -80,7 +81,7 @@ vi.mock("./features/account/ServerData", async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-  window.location.hash = "cloud";
+  window.location.hash = "settings";
 });
 afterEach(() => {
   cleanup();
@@ -108,7 +109,7 @@ it("opens exchange rates from my facts instead of the sidebar", async () => {
   expect(rates.closest("main")).toBeNull();
 });
 
-it("switches accounts from the account and data page", async () => {
+it("switches accounts from the settings page", async () => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   const fetcher = vi.fn().mockResolvedValue(new Response('{"ok":true}'));
   vi.stubGlobal("fetch", fetcher);
@@ -129,7 +130,7 @@ it("switches accounts from the account and data page", async () => {
         <App />
       </WebAccess>,
     );
-    fireEvent.click(await screen.findByRole("button", { name: "账号与数据" }));
+    fireEvent.click(await screen.findByRole("button", { name: "设置" }));
     const account = await screen.findByRole("region", { name: "账号" });
     expect(
       within(account).getByRole("button", { name: "退出账号" }),
@@ -264,9 +265,9 @@ it("opens on buy watch and preserves a question draft when returning from suppor
   fireEvent.change(screen.getByRole("textbox"), {
     target: { value: "暂存的问题" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "账号与数据" }));
+  fireEvent.click(screen.getByRole("button", { name: "设置" }));
   await screen.findByRole("button", { name: "测试恢复数据" });
-  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "输入问题" })).toBeNull();
   fireEvent.click(
     within(screen.getByRole("complementary", { name: "主导航" })).getByRole(
       "button",
@@ -492,7 +493,7 @@ it("composes source questions through the shell and consumes them before a data 
       (screen.getByRole("textbox", { name: "输入问题" }) as HTMLTextAreaElement)
         .value,
     ).toBe("继续编辑后的草稿");
-    fireEvent.click(screen.getByRole("button", { name: "账号与数据" }));
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "测试恢复数据" }),
     );
@@ -590,11 +591,11 @@ it.each([false, true])(
   async (accepted) => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(accepted);
     await editMethodologyDraft();
-    window.history.replaceState(null, "", "#cloud");
+    window.history.replaceState(null, "", "#settings");
     fireEvent(window, new PopStateEvent("popstate"));
     fireEvent(window, new HashChangeEvent("hashchange"));
     expect(confirm).toHaveBeenCalledTimes(1);
-    expect(window.location.hash).toBe(accepted ? "#cloud" : "#methodology");
+    expect(window.location.hash).toBe(accepted ? "#settings" : "#methodology");
     if (accepted) await screen.findByRole("button", { name: "测试恢复数据" });
     else expect(screen.getByDisplayValue("尚未保存的方法论草稿")).toBeTruthy();
   },

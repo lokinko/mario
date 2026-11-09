@@ -26,7 +26,7 @@ $env:VITE_BASE_PATH = '/mario/'
 npm run web:build
 ```
 
-Web 资源、logo 和 API 使用同一部署前缀。默认连接当前网站的 API；开发时 `npm run dev` 默认连接本机开发 API（`http://127.0.0.1:4217/api`，使用 `.runtime/dev` 中的 PostgreSQL），`VITE_API_URL` 可替换构建时默认值。登录页和“账号与数据”可修改服务器地址：只接受 http(s) 地址，先请求 `/health` 确认可达后按部署前缀保存到本机 `localStorage` 并重新加载页面，可一键恢复默认；不同标签页同步切换。目标服务器须在 `MARIO_ALLOWED_ORIGINS` 放行当前网页来源；生产 Nginx 的 CSP 为 `connect-src 'self'`，线上页面只能改到同源路径，连接其他服务器需使用开发前端或调整部署。
+Web 资源、logo 和 API 使用同一部署前缀。默认连接当前网站的 API；开发时 `npm run dev` 默认连接本机开发 API（`http://127.0.0.1:4217/api`，使用 `.runtime/dev` 中的 PostgreSQL），`VITE_API_URL` 可替换构建时默认值。登录页和“设置”的服务器连接可修改服务器地址：只接受 http(s) 地址，先请求 `/health` 确认可达后按部署前缀保存到本机 `localStorage` 并重新加载页面，可一键恢复默认；不同标签页同步切换。目标服务器须在 `MARIO_ALLOWED_ORIGINS` 放行当前网页来源；生产 Nginx 的 CSP 为 `connect-src 'self'`，线上页面只能改到同源路径，连接其他服务器需使用开发前端或调整部署。
 
 `npm run web:build` 生成 `client/dist` 并复制到 `outputs/web`。Vite 的构建插件生成 `build-info.json`，记录版本、Git 提交、工作区状态、源码指纹、构建时间和资源路径。指纹按 Git 列出的已跟踪文件与未忽略的新文件计算，范围为 `client/`、`server/`、`scripts/`、根目录 `.gitattributes` 与 package 文件；文档和忽略的配置、密钥、产物不参与指纹。`sourceDirty` 单独来自整个工作区状态，因此仅文档修改也可能将它标记为脏工作区。
 

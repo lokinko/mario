@@ -7,7 +7,6 @@ import { lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
-  Cloud,
   Ellipsis,
   Settings2,
   XCircle,
@@ -247,7 +246,7 @@ function App() {
         <button
           className={`mobile-sync sync-${syncState.phase}`}
           aria-label={syncState.message}
-          onClick={() => navigate("cloud")}
+          onClick={() => navigate("settings")}
         >
           <span className="sync-indicator" />
         </button>
@@ -324,13 +323,6 @@ function App() {
         <div className="sidebar-spacer" />
         <div className="sidebar-footer">
           <button
-            className={`settings-link ${view === "cloud" ? "active" : ""}`}
-            aria-current={view === "cloud" ? "page" : undefined}
-            onClick={() => navigate("cloud")}
-          >
-            <Cloud size={18} /> 账号与数据
-          </button>
-          <button
             className={`settings-link ${view === "settings" ? "active" : ""}`}
             aria-current={view === "settings" ? "page" : undefined}
             onClick={() => navigate("settings")}
@@ -340,11 +332,11 @@ function App() {
           <button
             className={`sidebar-sync-state sync-${syncState.phase}`}
             title={syncState.message}
-            onClick={() => navigate("cloud")}
+            onClick={() => navigate("settings")}
           >
             <span className="sync-indicator" aria-hidden="true" />
             {syncState.phase === "attention"
-              ? "同步需要处理 · 打开账号与数据"
+              ? "同步需要处理 · 打开设置"
               : syncState.message}
           </button>
         </div>
@@ -367,7 +359,7 @@ function App() {
           <Button
             type="text"
             icon={<CircleUserRound size={17} />}
-            onClick={() => navigate("cloud")}
+            onClick={() => navigate("settings")}
           >
             我的账号
           </Button>
@@ -469,20 +461,11 @@ function App() {
                 onEdited={markEdited}
               />
             )}
-            {view === "cloud" && (
-              <ServerData
-                flash={flash}
-                onRestore={refreshInvestmentData}
-                autoState={syncState}
-                onRetryAuto={retrySync}
-              />
-            )}
             {view === "settings" && model && (
               <ModelSettings
                 displaySettings={<DisplayPreferences {...display} />}
-                dataSettings={
+                accountSettings={
                   <ServerData
-                    transferOnly
                     flash={flash}
                     onRestore={refreshInvestmentData}
                     autoState={syncState}
@@ -498,14 +481,13 @@ function App() {
             {view === "settings" && !model && (
               <div className="page narrow settings-page">
                 <PageHeader title="设置" />
-                <DisplayPreferences {...display} />
                 <ServerData
-                  transferOnly
                   flash={flash}
                   onRestore={refreshInvestmentData}
                   autoState={syncState}
                   onRetryAuto={retrySync}
                 />
+                <DisplayPreferences {...display} />
               </div>
             )}
           </DeferredPage>

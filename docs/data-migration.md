@@ -190,11 +190,11 @@ cd ../mario-legacy
 MARIO_DATA_DIR=/path/to/旧资料目录 cargo run --manifest-path server/Cargo.toml -- --export-data ./mario-export.json
 ```
 
-`MARIO_DATA_DIR` 指向包含 `mario.db` 的目录；导出文件以 `0600` 权限新建，已存在时拒绝覆盖。登录当前版本的新账号后，在“账号与数据”导入该文件；服务端会校验并升级旧数据集版本，失败整次回滚。旧账号、会话与模型密钥不随业务数据导入，需重新配置。导出文件含完整财务资料，导入后删除，并用 `git worktree remove ../mario-legacy` 清理旧版本目录。
+`MARIO_DATA_DIR` 指向包含 `mario.db` 的目录；导出文件以 `0600` 权限新建，已存在时拒绝覆盖。登录当前版本的新账号后，在“设置 → 备份与导入”导入该文件；服务端会校验并升级旧数据集版本，失败整次回滚。旧账号、会话与模型密钥不随业务数据导入，需重新配置。导出文件含完整财务资料，导入后删除，并用 `git worktree remove ../mario-legacy` 清理旧版本目录。
 
 ## 备份格式与升级边界
 
-网页“账号与数据”导出的单账号 JSON 当前为 v28，租户 PostgreSQL schema 当前为 15；两者是独立版本，分别由 [`sync_format.rs`](../server/src/db/sync_format.rs) 与 [`schema.rs`](../server/src/db/schema.rs) 定义。单账号 JSON 包含本账号观察规则、名单、采用的分红依据和历史，不替换公共 `mario_market`。旧格式导入的校验与迁移沿用[同步规范](cloud-sync.md)和[观察规范](buy-watch.md#数据升级与验证)。
+网页“设置 → 备份与导入”导出的单账号 JSON 当前为 v28，租户 PostgreSQL schema 当前为 15；两者是独立版本，分别由 [`sync_format.rs`](../server/src/db/sync_format.rs) 与 [`schema.rs`](../server/src/db/schema.rs) 定义。单账号 JSON 包含本账号观察规则、名单、采用的分红依据和历史，不替换公共 `mario_market`。旧格式导入的校验与迁移沿用[同步规范](cloud-sync.md)和[观察规范](buy-watch.md#数据升级与验证)。
 
 本文的 `.mario-backup` 则是加密的整站 `pg_dump` 包，封装标识为 `MARIOBK1`、封装格式版本为 1，不是 v28 JSON。恢复器核对项目 `package.json` 版本及 PostgreSQL 主版本，但不核对 Git 提交；迁移时仍须按前文记录并匹配源码提交，恢复成功后再另行升级。不要手改包内版本来跳过检查。
 

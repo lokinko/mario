@@ -135,7 +135,7 @@ flowchart TD
 | `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
-| `features/reviews`、`features/settings`、`features/account` | 复盘；模型设置、问答预设与 Codex 桥接；网页账号与服务端数据备份/外部自选 JSON 导入。`ServerData` 管理文件/粘贴草稿、来源账户预览及覆盖前备份，应用壳经 `ModelSettings.dataSettings` 插槽将同一组件装配到设置，不产生跨功能导入依赖 |
+| `features/reviews`、`features/settings`、`features/account` | 复盘；模型设置、问答预设与 Codex 桥接；网页账号与服务端数据备份/外部自选 JSON 导入。`ServerData` 管理文件/粘贴草稿、来源账户预览及覆盖前备份，应用壳经 `ModelSettings.accountSettings` 插槽将账号、服务器连接与备份导入装配到唯一的设置页（模型配置加载失败时由应用壳直接渲染），不产生跨功能导入依赖 |
 | `api/<领域>.ts` | 领域请求与返回契约；`api/portfolio.ts` 选择需要串行的快速编辑，排队顺序归账号会话，`api/portfolio/financialRequest.ts` 负责单次财务请求与回执核对 |
 | `lib/httpClient.ts`、`transport.ts`、`requestPolicy.ts` | 认证、超时与只读重试、版本采纳、账号切换保护、请求类别 |
 | `lib/accountSession.ts`、`autoSync.ts`、`syncEvents.ts`、`webSession.ts`、`useRequestGuard.ts` | 每账号会话的版本、同步屏障、写入计数、排队顺序与取消；版本轮询、数据事件、网页会话与多账号、过期响应抑制 |

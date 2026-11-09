@@ -14,7 +14,6 @@ import {
   importData,
   prepareDataReplacement,
 } from "../../api/account";
-import { PageHeader } from "../../components/PageHeader";
 import type { SyncState } from "../../lib/autoSync";
 import { saveTextDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
@@ -26,13 +25,11 @@ export function ServerData({
   onRestore,
   autoState,
   onRetryAuto,
-  transferOnly = false,
 }: {
   flash: (s: string) => void;
   onRestore: () => void | Promise<void>;
   autoState: SyncState;
   onRetryAuto: () => void;
-  transferOnly?: boolean;
 }) {
   const [operation, setOperation] = useState<"export" | "import" | null>(null);
   const busy = operation !== null;
@@ -142,48 +139,37 @@ export function ServerData({
     }
   };
   return (
-    <section
-      className={transferOnly ? undefined : "page narrow cloud-page"}
-      id={transferOnly ? "data-settings" : undefined}
-    >
-      {!transferOnly && (
-        <>
-          <PageHeader title="账号与数据" />
-          <AccountSettings />
-          <section className="panel server-connection">
-            <div className="panel-title">
-              <h2>
-                <Cloud size={18} />
-                服务器连接
-              </h2>
-              <button
-                className="secondary"
-                onClick={onRetryAuto}
-                disabled={busy || autoState.phase === "syncing"}
-              >
-                <RefreshCw
-                  size={15}
-                  className={autoState.phase === "syncing" ? "spin" : undefined}
-                />
-                {autoState.phase === "syncing" ? "检查中…" : "检查最新数据"}
-              </button>
-            </div>
-            <ServerAddress />
-            <p
-              className={`sync-live-status sync-${autoState.phase}`}
-              role="status"
-            >
-              {autoState.message}
-            </p>
-            <details className="inline-help">
-              <summary>同步与离线说明</summary>
-              <p>
-                同一账号跨设备同步；未保存的输入会先保留并提示核对。离线时无法保存。
-              </p>
-            </details>
-          </section>
-        </>
-      )}
+    <div className="account-data" id="account-settings">
+      <AccountSettings />
+      <section className="panel server-connection">
+        <div className="panel-title">
+          <h2>
+            <Cloud size={18} />
+            服务器连接
+          </h2>
+          <button
+            className="secondary"
+            onClick={onRetryAuto}
+            disabled={busy || autoState.phase === "syncing"}
+          >
+            <RefreshCw
+              size={15}
+              className={autoState.phase === "syncing" ? "spin" : undefined}
+            />
+            {autoState.phase === "syncing" ? "检查中…" : "检查最新数据"}
+          </button>
+        </div>
+        <ServerAddress />
+        <p className={`sync-live-status sync-${autoState.phase}`} role="status">
+          {autoState.message}
+        </p>
+        <details className="inline-help">
+          <summary>同步与离线说明</summary>
+          <p>
+            同一账号跨设备同步；未保存的输入会先保留并提示核对。离线时无法保存。
+          </p>
+        </details>
+      </section>
       <section className="panel data-transfer" aria-label="备份与导入">
         <div className="data-transfer-row">
           <h3>
@@ -380,7 +366,7 @@ export function ServerData({
         </Drawer>
       )}
       {error && !pending && <Callout tone="danger">{error}</Callout>}
-    </section>
+    </div>
   );
 }
 

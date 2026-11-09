@@ -45,8 +45,7 @@ export function useApplicationData(view: View) {
     edited.current = false;
   }, []);
   const protectDraft = useCallback(() => {
-    if (!edited.current || ["advisor", "cloud"].includes(currentView.current))
-      return false;
+    if (!edited.current || currentView.current === "advisor") return false;
     session.blockStaleWrites(true);
     setRemotePending(true);
     return true;

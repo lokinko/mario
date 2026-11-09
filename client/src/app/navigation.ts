@@ -19,7 +19,6 @@ export type View =
   | "review"
   | "advisor"
   | "methodology"
-  | "cloud"
   | "settings";
 
 export const views: View[] = [
@@ -30,7 +29,6 @@ export const views: View[] = [
   "review",
   "advisor",
   "methodology",
-  "cloud",
   "settings",
 ];
 
@@ -98,6 +96,5 @@ export const viewLabels: Record<View, string> = {
   facts: "我的情况",
   review: "复盘记录",
   evidence: "参考资料",
-  cloud: "账号与数据",
   settings: "设置",
 };

@@ -152,23 +152,6 @@ it("preserves pasted input after a rejected import and permits correction", asyn
   ).toBe(value);
 });
 
-it("renders transfer controls inside settings without duplicating the account page", () => {
-  render(
-    <ServerData
-      transferOnly
-      flash={vi.fn()}
-      onRestore={vi.fn()}
-      autoState={{ phase: "synced", message: "已同步" }}
-      onRetryAuto={vi.fn()}
-    />,
-  );
-  expect(screen.getByRole("heading", { name: "导入数据" })).toBeTruthy();
-  expect(screen.queryByLabelText("粘贴 JSON 数据")).toBeNull();
-  expect(pasteBox()).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "账号与数据" })).toBeNull();
-  expect(screen.queryByText("服务器连接")).toBeNull();
-});
-
 it("restores export and import controls after an export failure", async () => {
   vi.mocked(accountApi.exportData).mockRejectedValue(new Error("网络不可用"));
   mount();

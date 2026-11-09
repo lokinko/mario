@@ -93,6 +93,6 @@ npm test                   # 完整门禁，含 HTTP 与财务集成验收
 
 登录后在“设置”配置自己的模型、接口地址、API Key 和问答预设。AI 分析前自动按预设冻结上下文，独立 Agent 完成工作流，API 保存可审计结果。Agent 不读取数据库，也不修改资产或执行交易。
 
-早期单机版的 SQLite 数据需用 Git 标签 `legacy-sqlite-export` 导出，再在新账号的“账号与数据”导入；密钥和旧账号会话不会导入，步骤见 [数据迁移](docs/data-migration.md#旧版-sqlite-数据)。PostgreSQL 备份和密码重置详见 [自建部署指南](docs/self-hosting.md)。
+早期单机版的 SQLite 数据需用 Git 标签 `legacy-sqlite-export` 导出，再在新账号的“设置 → 备份与导入”导入；密钥和旧账号会话不会导入，步骤见 [数据迁移](docs/data-migration.md#旧版-sqlite-数据)。PostgreSQL 备份和密码重置详见 [自建部署指南](docs/self-hosting.md)。
 
-已有数据的账号可在“账号与数据”勾选“覆盖当前账号已有数据”，选择导出的 JSON 并确认。覆盖前自动下载原数据备份，随后替换当前账号的业务数据；不合并交易，也不影响其他账号。备份回退及接口说明见 [账号与数据同步](docs/cloud-sync.md)；本机 Codex 见 [Codex 桥接](docs/codex-bridge.md)，问答流式输出见 [问答流式回复](docs/ai-streaming.md)。
+已有数据的账号可在“设置 → 备份与导入”选择“覆盖当前账号”，选择导出的 JSON 并确认。覆盖前自动下载原数据备份，随后替换当前账号的业务数据；不合并交易，也不影响其他账号。备份回退及接口说明见 [账号与数据同步](docs/cloud-sync.md)；本机 Codex 见 [Codex 桥接](docs/codex-bridge.md)，问答流式输出见 [问答流式回复](docs/ai-streaming.md)。

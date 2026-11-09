@@ -26,13 +26,13 @@ import type { ReactNode } from "react";
 export function ModelSettings({
   model,
   displaySettings,
-  dataSettings,
+  accountSettings,
   onUpdate,
   flash,
 }: {
   model: ModelConfig;
   displaySettings?: ReactNode;
-  dataSettings?: ReactNode;
+  accountSettings?: ReactNode;
   onUpdate: (m: ModelConfig) => void;
   flash: (s: string) => void;
 }) {
@@ -108,6 +108,16 @@ export function ModelSettings({
           type="button"
           onClick={() =>
             document
+              .getElementById("account-settings")
+              ?.scrollIntoView({ behavior: "smooth" })
+          }
+        >
+          账号与数据
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            document
               .getElementById("model-settings")
               ?.scrollIntoView({ behavior: "smooth" })
           }
@@ -128,33 +138,14 @@ export function ModelSettings({
           type="button"
           onClick={() =>
             document
-              .getElementById("market-settings")
-              ?.scrollIntoView({ behavior: "smooth" })
-          }
-        >
-          行情数据
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            document
               .getElementById("display-settings")
               ?.scrollIntoView({ behavior: "smooth" })
           }
         >
           显示偏好
         </button>
-        <button
-          type="button"
-          onClick={() =>
-            document
-              .getElementById("data-settings")
-              ?.scrollIntoView({ behavior: "smooth" })
-          }
-        >
-          导入数据
-        </button>
       </nav>
+      {accountSettings}
       <section className="panel form-panel" id="model-settings">
         <div className="panel-title">
           <div>
@@ -323,14 +314,7 @@ export function ModelSettings({
       <div id="analysis-settings">
         <AnalysisDefaults model={model} flash={flash} />
       </div>
-      <section className="panel form-panel" id="market-settings">
-        <h2>行情数据</h2>
-        <p className="section-intro">
-          所有账号共享同一证券的五年前复权日线，后台自动更新。持仓与趋势使用同一份有效收盘数据，并保留真实日期、来源和复权基准；成交和成本按原始记录保存。
-        </p>
-      </section>
       {displaySettings}
-      {dataSettings}
     </div>
   );
 }

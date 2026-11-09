@@ -59,13 +59,9 @@ export function AnalysisDefaults({
       <div className="panel-title">
         <h2>问答预设</h2>
       </div>
-      <p className="section-intro">
-        一次配置并保存，之后每次提问自动将所选资料发送给模型。资料内容使用最新记录，无需逐次确认。
-      </p>
       {!settings && !error && <p role="status">正在读取问答预设…</p>}
       {settings && (
         <fieldset className="holding-fields" disabled={saving}>
-          <h3>自动输入的资料</h3>
           <div className="analysis-default-options">
             {contextOptions.map(([key, label]) => (
               <label key={key}>
@@ -99,17 +95,11 @@ export function AnalysisDefaults({
               联网查找相关资料
             </label>
           </div>
-          <p className="section-intro">
-            问答默认使用单次分析，并按照已保存的资料范围准备上下文。
-          </p>
-          <p className="section-intro">
-            {model.provider === "openai-chat"
-              ? "当前 Chat Completions 接口不支持原生网页搜索，联网选项暂不生效。"
-              : "启用联网后，模型供应商会自动搜索网页，可能产生额外费用。"}
-          </p>
-          <p className="section-intro">
-            左侧“投资方法论”中保存的提示词和当前对话的上一轮问答摘要会自动附上；新对话不携带上一轮摘要。模型密钥不会作为资料发送。
-          </p>
+          {model.provider === "openai-chat" && (
+            <p className="section-intro">
+              当前 Chat Completions 接口不支持原生网页搜索，联网选项暂不生效。
+            </p>
+          )}
         </fieldset>
       )}
       {error && (

@@ -382,11 +382,14 @@
   display: none;
 }
 .settings-page > .panel,
-.cloud-page > .panel {
+.account-data > .panel {
   margin-bottom: var(--space-4);
 }
 .settings-page {
   padding-bottom: var(--space-5);
+}
+#model-settings > .callout {
+  margin-top: var(--space-5);
 }
 @media (max-width: 1200px) {
   .investment-panel {
