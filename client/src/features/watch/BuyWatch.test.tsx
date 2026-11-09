@@ -21,7 +21,6 @@ vi.mock("../../api/watch", () => ({
   getWatchCatalogDetail: vi.fn(),
   getWatchCatalog: vi.fn(),
   getDividendCalendar: vi.fn(),
-  refreshDividendCalendar: vi.fn(),
   saveWatchCatalog: vi.fn(),
   resolveCatalogCompany: vi.fn(),
   refreshWatchCatalog: vi.fn(),
@@ -138,7 +137,6 @@ beforeEach(() => {
     asOf: "2026-11-07",
     scope: "all",
     entries: [],
-    pending: [],
     coverage: [],
   });
   vi.mocked(api.getWatchCatalog).mockResolvedValue(structuredClone(catalog));

@@ -101,7 +101,7 @@ impl MarketRuntime {
                             .into_iter()
                             .map(|entry| entry.input.symbol)
                             .collect::<Vec<_>>();
-                        if let Err(error) = db.without_account_lock(calendar.refresh(&symbols, false)).await? {
+                        if let Err(error) = db.without_account_lock(calendar.refresh(&symbols)).await? {
                             tracing::warn!(%error, "personal calendar refresh failed; price checks continue");
                         }
                         crate::application::watch::refresh(&db, provider.clone(), false).await?;

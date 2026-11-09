@@ -15,6 +15,18 @@
 .dividend-calendar-toolbar {
   gap: 12px 24px;
 }
+.dividend-calendar-toolbar > .ant-segmented {
+  margin-left: auto;
+}
+.dividend-calendar-navigation {
+  gap: 4px;
+}
+.dividend-calendar-navigation h2 {
+  margin: 0 0 0 8px;
+  font-size: var(--fs-title-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 .dividend-plan-badges {
   display: flex;
   gap: 6px;
@@ -22,14 +34,6 @@
 .dividend-calendar-section-heading,
 .dividend-plan-heading {
   justify-content: space-between;
-}
-.dividend-calendar-toolbar label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.dividend-calendar-toolbar select {
-  min-width: 14em;
 }
 .dividend-calendar-grid {
   display: grid;

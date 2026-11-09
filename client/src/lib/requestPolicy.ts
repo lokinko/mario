@@ -9,7 +9,6 @@ export function isDataWrite(path: string, method = "GET") {
       "/model-config/test",
       "/financial-operations/resolve",
       "/watch/catalog/resolve",
-      "/watch/dividend-calendar/refresh",
     ].includes(resource)
   );
 }
@@ -26,7 +25,6 @@ export function requestPolicy(path: string, method = "GET") {
       ? 30000
       : resource === "/watch/refresh" ||
           resource === "/watch/catalog/refresh" ||
-          resource === "/watch/dividend-calendar/refresh" ||
           resource === "/market-data/security/refresh" ||
           preparesPrices
         ? 180000

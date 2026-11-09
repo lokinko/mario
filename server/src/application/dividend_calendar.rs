@@ -60,16 +60,16 @@ impl DividendCalendarService {
             .into_iter()
             .map(|c| c.symbol)
             .collect::<Vec<_>>();
-        self.refresh(&symbols, false).await
+        self.refresh(&symbols).await
     }
-    pub async fn refresh(self: &Arc<Self>, symbols: &[String], force: bool) -> AppResult<()> {
+    pub async fn refresh(self: &Arc<Self>, symbols: &[String]) -> AppResult<()> {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
         let day = today();
         let mut tasks = tokio::task::JoinSet::new();
         for symbol in symbols {
             let service = self.clone();
             let symbol = symbol.clone();
-            tasks.spawn(async move { service.check(&symbol, day, force, deadline).await });
+            tasks.spawn(async move { service.check(&symbol, day, deadline).await });
         }
         while let Some(result) = tasks.join_next().await {
             result.map_err(|error| AppError::MarketData(error.to_string()))??;
@@ -80,7 +80,6 @@ impl DividendCalendarService {
         &self,
         symbol: &str,
         day: NaiveDate,
-        force: bool,
         deadline: tokio::time::Instant,
     ) -> AppResult<()> {
         let before = self.store.calendar_snapshot(symbol)?;
@@ -99,7 +98,7 @@ impl DividendCalendarService {
             return Ok(());
         };
         let previous = self.store.calendar_snapshot(symbol)?;
-        if previous.attempted_at != before.attempted_at || (!force && fresh(&previous)) {
+        if previous.attempted_at != before.attempted_at || fresh(&previous) {
             return Ok(());
         }
         let attempted_at = Some(Utc::now().to_rfc3339());
@@ -125,7 +124,7 @@ impl DividendCalendarService {
     }
 }
 fn fresh(snapshot: &PlanSnapshot) -> bool {
-    // Persisted attempts throttle automatic source requests, including failures and restarts.
+    // Persisted attempts throttle source requests, including failures and restarts.
     let ttl = 24 * 60 * 60;
     snapshot
         .attempted_at
@@ -181,8 +180,7 @@ pub(crate) mod tests {
         ))
     }
     #[tokio::test]
-    async fn automatic_fetches_wait_a_day_after_success_or_failure_and_manual_refresh_bypasses_it()
-    {
+    async fn fetches_wait_a_day_after_success_or_failure_across_restarts() {
         let store = Arc::new(PublicWatch::test());
         let source = Arc::new(Source {
             calls: AtomicUsize::new(0),
@@ -210,26 +208,22 @@ pub(crate) mod tests {
         // A new service must respect the persisted attempt times, without any warm memory cache.
         let service = Arc::new(DividendCalendarService::new(store.clone(), source.clone()));
         let recent = vec!["600000.SS".into(), "600001.SS".into()];
-        service.refresh(&recent, false).await.unwrap();
+        service.refresh(&recent).await.unwrap();
         assert_eq!(source.calls.load(Ordering::SeqCst), 0);
         let expired = vec!["600002.SS".into(), "600003.SS".into()];
-        service.refresh(&expired, false).await.unwrap();
+        service.refresh(&expired).await.unwrap();
         assert_eq!(source.calls.load(Ordering::SeqCst), 2);
-        service.refresh(&expired, false).await.unwrap();
+        service.refresh(&expired).await.unwrap();
         assert_eq!(source.calls.load(Ordering::SeqCst), 2);
-        service.refresh(&recent, true).await.unwrap();
-        assert_eq!(source.calls.load(Ordering::SeqCst), 4);
         let restarted = Arc::new(DividendCalendarService::new(store, source.clone()));
-        restarted.refresh(&recent, false).await.unwrap();
-        assert_eq!(source.calls.load(Ordering::SeqCst), 4);
+        restarted.refresh(&recent).await.unwrap();
+        restarted.refresh(&expired).await.unwrap();
+        assert_eq!(source.calls.load(Ordering::SeqCst), 2);
         let new_company = vec!["600004.SS".into()];
         source.fail.store(true, Ordering::SeqCst);
-        restarted.refresh(&new_company, false).await.unwrap();
-        restarted.refresh(&new_company, false).await.unwrap();
-        assert_eq!(source.calls.load(Ordering::SeqCst), 5);
-        source.fail.store(false, Ordering::SeqCst);
-        restarted.refresh(&new_company, true).await.unwrap();
-        assert_eq!(source.calls.load(Ordering::SeqCst), 6);
+        restarted.refresh(&new_company).await.unwrap();
+        restarted.refresh(&new_company).await.unwrap();
+        assert_eq!(source.calls.load(Ordering::SeqCst), 3);
     }
 
     #[tokio::test]
@@ -260,10 +254,7 @@ pub(crate) mod tests {
             .is_empty());
         assert_eq!(source.calls.load(Ordering::SeqCst), 0);
         let symbols = vec![input.symbol.clone()];
-        let (x, y) = tokio::join!(
-            service.refresh(&symbols, true),
-            service.refresh(&symbols, true)
-        );
+        let (x, y) = tokio::join!(service.refresh(&symbols), service.refresh(&symbols));
         x.unwrap();
         y.unwrap();
         assert_eq!(source.calls.load(Ordering::SeqCst), 1);
@@ -284,10 +275,26 @@ pub(crate) mod tests {
             .unwrap()
             .entries
             .is_empty());
+        let stale_input = WatchInput {
+            symbol: "600001.SS".into(),
+            ..input.clone()
+        };
+        let mut stale = store.calendar_snapshot(&input.symbol).unwrap();
+        stale.attempted_at = Some((Utc::now() - chrono::Duration::hours(25)).to_rfc3339());
+        for plan in &mut stale.plans {
+            plan.symbol = stale_input.symbol.clone();
+        }
+        store
+            .save_calendar_snapshot(&stale_input.symbol, &stale)
+            .unwrap();
         source.fail.store(true, Ordering::SeqCst);
-        service.refresh(&symbols, true).await.unwrap();
+        service
+            .refresh(std::slice::from_ref(&stale_input.symbol))
+            .await
+            .unwrap();
+        assert_eq!(source.calls.load(Ordering::SeqCst), 2);
         let board = service
-            .board(&[input], CalendarScope::Favorites, today())
+            .board(&[stale_input], CalendarScope::Favorites, today())
             .unwrap();
         assert_eq!(board.entries.len(), 1);
         assert!(board.coverage[0].refresh_failed);

@@ -152,9 +152,7 @@ try {
   assert.deepEqual((await api("/watch/dividend-calendar?scope=favorites")).coverage, []);
   await api("/watch/dividend-calendar?scope=unknown", "GET", undefined, 400);
   await api("/watch/dividend-calendar?from=2026-02-30", "GET", undefined, 400);
-  await api("/watch/dividend-calendar/refresh?scope=favorites", "POST", { symbols: ["600000.SS"] }, 400);
-  await api("/watch/dividend-calendar/refresh?scope=favorites", "POST", {});
-  assert.deepEqual(await api("/sync/version"), calendarVersion, "calendar reads and empty public refresh do not change personal revision");
+  assert.deepEqual(await api("/sync/version"), calendarVersion, "calendar reads do not change personal revision");
   assert.equal(catalog.canEdit, false);
   await api("/watch/catalog/resolve", "POST", { query: "国电电力" }, 403);
   await api("/watch/catalog", "PUT", { catalog: catalog.catalog, revision: catalog.revision }, 403);

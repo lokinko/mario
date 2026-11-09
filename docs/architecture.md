@@ -131,7 +131,7 @@ flowchart TD
 | `main.tsx`、`App.tsx` | 挂载、页面组合与导航；跨页动作（如 `onAsk`、`onOpenSettings`）由应用壳接收并转发；离开将卸载的编辑页前确认未保存草稿，取消历史跳转时恢复当前地址 |
 | `app/useApplicationData.ts` | 服务端数据生命周期：启动、快照与模型配置加载、自动同步、请求代次、草稿保护与远程更新提示 |
 | `app/navigation.ts` | 视图、导航分组与标签 |
-| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchTrends` 展示服务端历史曲线与金叉、拥有显示范围和查看日期，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿、公司查询输入和打开时的独立版本，`DividendCalendar` 拥有日历范围、日期选择、读取轮询与手动刷新；通过应用壳进入讨论 |
+| `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchTrends` 展示服务端历史曲线与金叉、拥有显示范围和查看日期，`WatchDetails` 展示依据与原交易，`WatchWeekly` 展示已保存日期矩阵，`WatchCatalogEditor` 持有公共目录草稿、公司查询输入和打开时的独立版本，`DividendCalendar` 拥有日历范围、日期窗口、日期选择与只读轮询；通过应用壳进入讨论 |
 | `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
@@ -253,11 +253,11 @@ sequenceDiagram
 
 `models/watch/calendar` 定义公开分红计划、进度、局部问题码和 30 天只读投影，不依赖数据库或网络。`market_data/watch/plans` 经 `WatchMarketProvider::dividend_plans` 从东方财富结构化数据校验完整分页、证券身份、公告日期、方案状态、金额及日期顺序。历史分红与计划共用一处分页获取和来源并发预算（2），各自独立解析；空值、未来实施安排与预案不反向写入已实施历史。来源缺可靠派息日时保持空值，不以除息日代替。
 
-`application/dividend_calendar` 只依赖领域、公开仓储、端口和错误：按当前公共目录与 HTTP 提供的本账号名单合并范围，读取缓存生成日期事件、日期待定项和逐公司覆盖元数据。它不读取账号仓储、私有事实或 AI。`composition` 在既有半小时公共/个人循环调用到期检查，`application/dividend_calendar` 按持久化的上次尝试时间保证同一证券两次自动抓取至少间隔 24 小时，成功和失败共用该间隔；未到期及重启后只复用缓存，首次缺资料可抓取，手动刷新绕过间隔。按证券合并在途请求，每轮最多 120 秒；个人循环先冻结授权代码，网络期间释放账号锁，计划失败不阻断价格检查。生命周期仍归原后台任务，未新增运行角色或定时服务。
+`application/dividend_calendar` 只依赖领域、公开仓储、端口和错误：按当前公共目录与 HTTP 提供的本账号名单合并范围，读取缓存生成窗口内已公布实施安排的日期事件和逐公司覆盖元数据。它不读取账号仓储、私有事实或 AI。`composition` 在既有半小时公共/个人循环调用到期检查，`application/dividend_calendar` 按持久化的上次尝试时间保证同一证券两次自动抓取至少间隔 24 小时，成功和失败共用该间隔；未到期及重启后只复用缓存，首次缺资料可抓取；没有手动刷新入口。按证券合并在途请求，每轮最多 120 秒；个人循环先冻结授权代码，网络期间释放账号锁，计划失败不阻断价格检查。生命周期仍归原后台任务，未新增运行角色或定时服务。
 
 `db/public_watch/calendar` 在公共 schema 的 `dividend_plan_snapshots` 按证券保存计划及采集元数据。单次原子 upsert 比较尝试时间，失败保留较新的成功计划与日期，较慢的旧请求不得覆盖新结果。快照不保存账号 ID、私人名称或理由，不修改目录版本、账号版本、TTM 历史或财务事务。启动在公共仓储原初始化事务幂等创建新表；不改账号 schema 和 JSON 备份版本。已有数据不转换，新增缓存可由来源重建；迁移失败回滚公共初始化，旧程序回退前应保留新版整站 PostgreSQL 备份。
 
-HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/dividend-calendar/refresh` 冻结当前允许范围、释放账号锁抓取，重新取得锁后按当前自选返回投影，移除不会复活。后者仅更新公共缓存，因此在 `http/policy` 和前端 `requestPolicy` 显式免账号版本与个人数据变更通知。前端 `features/watch/DividendCalendar` 是应用壳直接装配的独立页面（视图 `calendar`），经 `api/watch` 读取与刷新；筛选属于展示状态（`data-presentation`），不进入草稿保护。后台缓存可以跨账号复用；返回范围和个人名称始终按当前会话计算，不暴露其他账号名单。详见[分红日历](buy-watch.md#分红日历)。
+HTTP 只提供已认证的 `GET /watch/dividend-calendar`，只读缓存并按当前自选返回投影。前端 `features/watch/DividendCalendar` 是应用壳直接装配的独立页面（视图 `calendar`），经 `api/watch` 只读获取；筛选属于展示状态（`data-presentation`），不进入草稿保护。后台缓存可以跨账号复用；返回范围和个人名称始终按当前会话计算，不暴露其他账号名单。详见[分红日历](buy-watch.md#分红日历)。
 
 ## 7. 状态与事务归属
 

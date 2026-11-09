@@ -22,10 +22,6 @@ pub(super) fn router() -> Router {
         .route("/api/watch/catalog/refresh", post(refresh_catalog))
         .route("/api/watch/catalog/resolve", post(resolve_company))
         .route("/api/watch/dividend-calendar", get(dividend_calendar))
-        .route(
-            "/api/watch/dividend-calendar/refresh",
-            post(refresh_dividend_calendar),
-        )
         .route("/api/watch/refresh", post(refresh))
         .route("/api/watch/rules", put(save_rules))
         .route("/api/watch/{symbol}", axum::routing::delete(remove))
@@ -52,50 +48,6 @@ async fn dividend_calendar(
     Extension(state): Extension<Arc<RequestContext>>,
     Query(query): Query<CalendarQuery>,
 ) -> AppResult<Json<crate::models::watch::calendar::CalendarBoard>> {
-    Ok(Json(
-        state.dividend_calendar.board(
-            &calendar_inputs(&state)?,
-            query.scope,
-            query
-                .from
-                .unwrap_or_else(crate::application::dividend_calendar::today),
-        )?,
-    ))
-}
-#[derive(serde::Deserialize, Default)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CalendarRefreshInput {
-    symbols: Option<Vec<String>>,
-}
-async fn refresh_dividend_calendar(
-    Extension(state): Extension<Arc<RequestContext>>,
-    Query(query): Query<CalendarQuery>,
-    Json(input): Json<CalendarRefreshInput>,
-) -> AppResult<Json<crate::models::watch::calendar::CalendarBoard>> {
-    let companies = state
-        .dividend_calendar
-        .companies(&calendar_inputs(&state)?, query.scope)?;
-    let permitted = companies
-        .into_iter()
-        .map(|c| c.symbol)
-        .collect::<std::collections::BTreeSet<_>>();
-    let symbols = input
-        .symbols
-        .unwrap_or_else(|| permitted.iter().cloned().collect());
-    if symbols.iter().any(|symbol| !permitted.contains(symbol)) {
-        return Err(crate::AppError::Validation(
-            "只能检查当前公共目录或本账号自选中的公司".into(),
-        ));
-    }
-    let symbols = symbols
-        .into_iter()
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    state
-        .db
-        .without_account_lock(state.dividend_calendar.refresh(&symbols, true))
-        .await??;
     Ok(Json(
         state.dividend_calendar.board(
             &calendar_inputs(&state)?,
@@ -389,25 +341,21 @@ mod tests {
             .unwrap();
         assert!(unread["entries"].as_array().unwrap().is_empty());
         assert_eq!(unread["coverage"][0]["symbol"], "600000.SS");
-        let rejected = client
-            .post(format!(
-                "{base}/api/watch/dividend-calendar/refresh?scope=public"
-            ))
-            .json(&serde_json::json!({"symbols":["600000.SS"]}))
-            .send()
+        state
+            .dividend_calendar
+            .refresh(&["600000.SS".into()])
             .await
             .unwrap();
-        assert_eq!(rejected.status(), reqwest::StatusCode::BAD_REQUEST);
-        let response = client
-            .post(format!(
-                "{base}/api/watch/dividend-calendar/refresh?scope=favorites"
+        let calendar: serde_json::Value = client
+            .get(format!(
+                "{base}/api/watch/dividend-calendar?scope=favorites"
             ))
-            .json(&serde_json::json!({}))
             .send()
             .await
+            .unwrap()
+            .json()
+            .await
             .unwrap();
-        assert!(response.status().is_success());
-        let calendar: serde_json::Value = response.json().await.unwrap();
         assert_eq!(calendar["entries"].as_array().unwrap().len(), 1);
         assert_eq!(calendar["entries"][0]["plan"]["stage"], "scheduled");
         assert!(calendar["entries"][0]["plan"]["paymentDate"].is_null());

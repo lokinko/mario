@@ -124,7 +124,6 @@ pub struct CalendarBoard {
     pub as_of: NaiveDate,
     pub scope: CalendarScope,
     pub entries: Vec<CalendarEntry>,
-    pub pending: Vec<CalendarEntry>,
     pub coverage: Vec<CalendarCoverage>,
 }
 impl CalendarBoard {
@@ -137,14 +136,12 @@ impl CalendarBoard {
         let end = start
             .checked_add_days(Days::new(29))
             .ok_or_else(|| AppError::Validation("日历日期超出范围".into()))?;
-        let pending_since = today.checked_sub_days(Days::new(365)).unwrap_or(today);
         let mut result = Self {
             start,
             end,
             as_of: today,
             scope,
             entries: vec![],
-            pending: vec![],
             coverage: vec![],
         };
         for (company, snapshot) in snapshots {
@@ -160,20 +157,16 @@ impl CalendarBoard {
                 {
                     continue;
                 }
-                let scheduled = plan.stage == PlanStage::Scheduled;
-                let dates = [plan.record_date, plan.ex_date, plan.payment_date];
-                let in_range = dates.iter().flatten().any(|d| *d >= start && *d <= end);
-                let entry = CalendarEntry {
-                    company: company.clone(),
-                    plan,
-                    fetched_at: snapshot.fetched_at.clone(),
-                };
-                if scheduled && in_range {
-                    result.entries.push(entry);
-                } else if entry.plan.announced_on >= pending_since
-                    && (!scheduled || dates.iter().all(Option::is_none))
-                {
-                    result.pending.push(entry);
+                let in_range = [plan.record_date, plan.ex_date, plan.payment_date]
+                    .iter()
+                    .flatten()
+                    .any(|d| *d >= start && *d <= end);
+                if plan.stage == PlanStage::Scheduled && in_range {
+                    result.entries.push(CalendarEntry {
+                        company: company.clone(),
+                        plan,
+                        fetched_at: snapshot.fetched_at.clone(),
+                    });
                 }
             }
         }
@@ -188,13 +181,6 @@ impl CalendarBoard {
                 .flatten()
                 .filter(|d| *d >= start && *d <= end)
                 .min(),
-                row.company.symbol.clone(),
-                row.plan.id.clone(),
-            )
-        });
-        result.pending.sort_by_key(|row| {
-            (
-                std::cmp::Reverse(row.plan.announced_on),
                 row.company.symbol.clone(),
                 row.plan.id.clone(),
             )
@@ -260,7 +246,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn undated_proposals_stay_pending_and_past_cancelled_or_future_notices_do_not_become_events() {
+    fn only_scheduled_dates_in_range_become_events() {
         let today = "2026-11-07".parse().unwrap();
         let mut proposal = plan("600000.SS", PlanStage::Proposed);
         proposal.record_date = None;
@@ -296,8 +282,6 @@ pub(crate) mod tests {
         )
         .unwrap();
         assert_eq!(board.entries.len(), 1);
-        assert_eq!(board.pending.len(), 1);
-        assert!(board.pending[0].plan.cash_per_ten.is_none());
         assert!(board.entries[0].plan.payment_date.is_none());
         assert_eq!(board.end.to_string(), "2026-12-06");
     }

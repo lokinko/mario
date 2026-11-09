@@ -273,7 +273,6 @@ export interface DividendCalendarBoard {
   asOf: string;
   scope: DividendCalendarScope;
   entries: DividendCalendarEntry[];
-  pending: DividendCalendarEntry[];
   coverage: (DividendCalendarCompany & {
     attemptedAt: string | null;
     fetchedAt: string | null;
@@ -289,16 +288,4 @@ export const getDividendCalendar = (
 ) =>
   httpRequest<DividendCalendarBoard>(
     `/watch/dividend-calendar?${dividendCalendarQuery(scope, from)}`,
-  );
-export const refreshDividendCalendar = (
-  scope: DividendCalendarScope,
-  from: string,
-  symbols?: string[],
-) =>
-  httpRequest<DividendCalendarBoard>(
-    `/watch/dividend-calendar/refresh?${dividendCalendarQuery(scope, from)}`,
-    {
-      method: "POST",
-      body: JSON.stringify(symbols ? { symbols } : {}),
-    },
   );
