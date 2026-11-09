@@ -15,6 +15,7 @@ vi.mock("../../api/account", () => ({
   exportData: vi.fn(),
   importData: vi.fn(),
   prepareDataReplacement: vi.fn(),
+  probeService: vi.fn(),
 }));
 vi.mock("../../lib/download", () => ({
   saveTextDownload: vi.fn().mockResolvedValue(undefined),
@@ -39,12 +40,19 @@ function mount() {
   return { onRestore, flash, unmount: view.unmount };
 }
 function chooseFile(value: string, size = value.length, replace = false) {
-  fireEvent.change(
-    screen.getByLabelText(replace ? "选择文件并覆盖导入" : "导入到空账号"),
-    {
-      target: { files: [{ size, text: () => Promise.resolve(value) }] },
-    },
-  );
+  fireEvent.change(screen.getByLabelText("选择 JSON 文件"), {
+    target: { files: [{ size, text: () => Promise.resolve(value) }] },
+  });
+  if (replace)
+    expect(screen.getByRole("radio", { name: "覆盖当前账号" })).toHaveProperty(
+      "checked",
+      true,
+    );
+}
+function pasteBox() {
+  if (!screen.queryByLabelText("粘贴 JSON 数据"))
+    fireEvent.click(screen.getByRole("button", { name: "粘贴 JSON" }));
+  return screen.getByLabelText("粘贴 JSON 数据");
 }
 
 function externalJson() {
@@ -70,7 +78,7 @@ it("previews pasted external JSON without counting the duplicate top-level watch
   vi.mocked(accountApi.importData).mockResolvedValueOnce({});
   const { onRestore } = mount();
   const data = externalJson();
-  fireEvent.change(screen.getByLabelText("粘贴 JSON 数据"), {
+  fireEvent.change(pasteBox(), {
     target: { value: JSON.stringify(data) },
   });
   fireEvent.click(screen.getByRole("button", { name: "预览导入" }));
@@ -114,7 +122,7 @@ it("rejects unsupported or malformed source formats before a write", async () =>
     { version: "1.0", data: { accounts: [] } },
     { version: "1.0", data: { accounts: [null] } },
   ]) {
-    fireEvent.change(screen.getByLabelText("粘贴 JSON 数据"), {
+    fireEvent.change(pasteBox(), {
       target: { value: JSON.stringify(data) },
     });
     fireEvent.click(screen.getByRole("button", { name: "预览导入" }));
@@ -130,7 +138,7 @@ it("preserves pasted input after a rejected import and permits correction", asyn
   );
   mount();
   const value = JSON.stringify(externalJson());
-  fireEvent.change(screen.getByLabelText("粘贴 JSON 数据"), {
+  fireEvent.change(pasteBox(), {
     target: { value },
   });
   fireEvent.click(screen.getByRole("button", { name: "预览导入" }));
@@ -155,7 +163,8 @@ it("renders transfer controls inside settings without duplicating the account pa
     />,
   );
   expect(screen.getByRole("heading", { name: "导入数据" })).toBeTruthy();
-  expect(screen.getByLabelText("粘贴 JSON 数据")).toBeTruthy();
+  expect(screen.queryByLabelText("粘贴 JSON 数据")).toBeNull();
+  expect(pasteBox()).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "账号与数据" })).toBeNull();
   expect(screen.queryByText("服务器连接")).toBeNull();
 });
@@ -165,7 +174,7 @@ it("restores export and import controls after an export failure", async () => {
   mount();
   fireEvent.click(screen.getByRole("button", { name: "导出我的数据" }));
   expect(
-    (screen.getByLabelText("导入到空账号") as HTMLInputElement).disabled,
+    (screen.getByLabelText("选择 JSON 文件") as HTMLInputElement).disabled,
   ).toBe(true);
   expect((await screen.findByRole("alert")).textContent).toContain(
     "网络不可用",
@@ -175,7 +184,7 @@ it("restores export and import controls after an export failure", async () => {
       .disabled,
   ).toBe(false);
   expect(
-    (screen.getByLabelText("导入到空账号") as HTMLInputElement).disabled,
+    (screen.getByLabelText("选择 JSON 文件") as HTMLInputElement).disabled,
   ).toBe(false);
 });
 
@@ -215,7 +224,7 @@ it("cancels an import without writing or refreshing and allows another selection
   fireEvent.click(screen.getByRole("button", { name: "取消" }));
   await waitFor(() =>
     expect(
-      (screen.getByLabelText("导入到空账号") as HTMLInputElement).disabled,
+      (screen.getByLabelText("选择 JSON 文件") as HTMLInputElement).disabled,
     ).toBe(false),
   );
   expect(accountApi.importData).not.toHaveBeenCalled();
@@ -243,9 +252,7 @@ it("downloads the original data before replacing and refreshes after success", a
     replace,
   });
   const { onRestore, flash } = mount();
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
-  );
+  fireEvent.click(screen.getByRole("radio", { name: "覆盖当前账号" }));
   chooseFile('{"tables":["replacement"]}', undefined, true);
   await acceptImport(true);
   await waitFor(() =>
@@ -270,9 +277,7 @@ it("downloads the original data before replacing and refreshes after success", a
 it("does not back up or replace when the overwrite confirmation is cancelled", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(false);
   const { onRestore } = mount();
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
-  );
+  fireEvent.click(screen.getByRole("radio", { name: "覆盖当前账号" }));
   chooseFile("{}", undefined, true);
   await screen.findByRole("dialog");
   fireEvent.click(screen.getByRole("button", { name: "取消" }));
@@ -287,9 +292,7 @@ it("keeps existing data when backup export fails", async () => {
     new Error("备份失败"),
   );
   const { onRestore, flash } = mount();
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
-  );
+  fireEvent.click(screen.getByRole("radio", { name: "覆盖当前账号" }));
   chooseFile("{}", undefined, true);
   await acceptImport(true);
   expect((await screen.findByRole("alert")).textContent).toContain("备份失败");
@@ -298,7 +301,7 @@ it("keeps existing data when backup export fails", async () => {
   expect(onRestore).not.toHaveBeenCalled();
   expect(flash).not.toHaveBeenCalled();
   expect(
-    (screen.getByLabelText("选择文件并覆盖导入") as HTMLInputElement).disabled,
+    (screen.getByLabelText("选择 JSON 文件") as HTMLInputElement).disabled,
   ).toBe(false);
 });
 
@@ -311,9 +314,7 @@ it("does not replace data when downloading the backup fails", async () => {
   });
   vi.mocked(saveTextDownload).mockRejectedValueOnce(new Error("下载失败"));
   mount();
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
-  );
+  fireEvent.click(screen.getByRole("radio", { name: "覆盖当前账号" }));
   chooseFile("{}", undefined, true);
   await acceptImport(true);
   expect((await screen.findByRole("alert")).textContent).toContain("下载失败");
@@ -328,9 +329,7 @@ it("keeps the backup and reports a rejected replacement without refreshing", asy
     replace,
   });
   const { onRestore, flash } = mount();
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
-  );
+  fireEvent.click(screen.getByRole("radio", { name: "覆盖当前账号" }));
   chooseFile("{}", undefined, true);
   await acceptImport(true);
   expect((await screen.findByRole("alert")).textContent).toContain(
@@ -351,9 +350,7 @@ it("abandons replacement when the account page unmounts during backup", async ()
     }),
   );
   const { unmount, onRestore } = mount();
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "覆盖当前账号已有数据" }),
-  );
+  fireEvent.click(screen.getByRole("radio", { name: "覆盖当前账号" }));
   chooseFile("{}", undefined, true);
   await acceptImport(true);
   await waitFor(() =>

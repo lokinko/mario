@@ -14,6 +14,18 @@ export async function checkServerVersion(): Promise<
   };
 }
 
+export async function probeService(baseUrl: string) {
+  const unreachable = new Error(
+    `无法连接 ${baseUrl}：请确认地址正确，且该服务器允许当前网页访问。`,
+  );
+  const result = await requestJson<{ status?: string }>(`${baseUrl}/health`, {
+    timeoutMs: 8000,
+  }).catch(() => {
+    throw unreachable;
+  });
+  if (result?.status !== "ok") throw unreachable;
+}
+
 export function exportData() {
   return httpRequest<unknown>("/data/export");
 }

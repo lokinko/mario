@@ -16,6 +16,7 @@ import {
   BookOpen,
   LoaderCircle,
   LogOut,
+  UserRound,
   UsersRound,
 } from "lucide-react";
 import {
@@ -27,9 +28,10 @@ import {
   type WebAccount,
 } from "../../lib/webSession";
 import { requestJson } from "../../lib/transport";
-import { serviceUrl } from "../../lib/service";
+import { serviceUrl, serviceUrlStorageKey } from "../../lib/service";
 
 import { OpenAiSignIn } from "./OpenAiSignIn";
+import { ServerAddress } from "./ServerAddress";
 import { completeOpenAiSignIn, type OpenAiLoginResult } from "./openaiLogin";
 
 const AccountAccess = createContext<{
@@ -82,15 +84,41 @@ export function AccountSettings() {
   const account = useContext(AccountAccess);
   if (!account) return null;
   return (
-    <section className="panel form-panel" aria-label="账号">
+    <section className="panel form-panel account-panel" aria-label="账号">
       <div className="panel-title">
-        <h2>账号</h2>
+        <h2>
+          <UserRound size={18} />
+          账号
+        </h2>
+        <div className="account-actions">
+          {!account.picking && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={account.busy}
+              onClick={account.openPicker}
+            >
+              <UsersRound size={16} />
+              切换账号
+            </button>
+          )}
+          <button
+            type="button"
+            className="secondary"
+            disabled={account.busy}
+            onClick={account.disconnect}
+          >
+            {account.busy ? (
+              <LoaderCircle size={16} className="spin" />
+            ) : (
+              <LogOut size={16} />
+            )}
+            退出账号
+          </button>
+        </div>
       </div>
-      <p className="section-intro">
-        已登录账号可直接切换，无需重复输入密码。切换时会清除未保存的输入，已保存的资料保留在各自账号中。
-      </p>
       <OpenAiSignIn link disabled={account.busy} />
-      {account.picking ? (
+      {account.picking && (
         <>
           <SavedAccounts
             accounts={account.accounts}
@@ -117,33 +145,7 @@ export function AccountSettings() {
             </button>
           </div>
         </>
-      ) : null}
-      <div className="form-actions">
-        {!account.picking && (
-          <button
-            type="button"
-            className="secondary"
-            disabled={account.busy}
-            onClick={account.openPicker}
-          >
-            <UsersRound size={16} />
-            切换账号
-          </button>
-        )}
-        <button
-          type="button"
-          className="secondary"
-          disabled={account.busy}
-          onClick={account.disconnect}
-        >
-          {account.busy ? (
-            <LoaderCircle size={16} className="spin" />
-          ) : (
-            <LogOut size={16} />
-          )}
-          退出账号
-        </button>
-      </div>
+      )}
     </section>
   );
 }
@@ -277,6 +279,10 @@ export function WebAccess({ children }: { children: ReactNode }) {
   useEffect(() => {
     const restore = (event: StorageEvent) => {
       if (event.storageArea !== localStorage) return;
+      if (event.key === serviceUrlStorageKey()) {
+        window.location.reload();
+        return;
+      }
       const token = webToken();
       setAccounts(savedWebAccounts());
       if (token === connected) return;
@@ -466,6 +472,7 @@ export function WebAccess({ children }: { children: ReactNode }) {
           />
         </label>
         <p>资料存储在你的服务器，同一账号可在不同设备的浏览器访问。</p>
+        <ServerAddress />
         {error && <Callout tone="danger">{error}</Callout>}
         <Button
           type="primary"

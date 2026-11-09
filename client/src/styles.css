@@ -916,10 +916,18 @@ main {
   margin-bottom: var(--space-5);
 }
 .server-connection h2,
-.data-transfer-card h2 {
+.account-panel h2 {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.account-panel > .panel-title:last-child {
+  margin-bottom: 0;
+}
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
 .server-address {
   display: grid;
@@ -929,10 +937,28 @@ main {
   color: var(--text-3);
   font-size: var(--fs-body-sm);
 }
+.server-address-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+}
 .server-address code {
   font-size: var(--fs-body);
   line-height: 1.7;
+  overflow-wrap: anywhere;
   user-select: all;
+}
+.server-address-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.server-address-edit input {
+  flex: 1 1 18rem;
+  min-width: 0;
+  font-family: monospace;
 }
 .sync-live-status {
   color: var(--success);
@@ -944,22 +970,85 @@ main {
 .sync-attention {
   color: var(--danger);
 }
-.data-transfer-grid {
+.data-transfer {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-5);
+  padding-block: var(--space-2);
 }
-.data-transfer-card {
+.data-transfer-row {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  padding-block: var(--space-4);
+}
+.data-transfer-row + .data-transfer-row {
+  border-top: 1px solid var(--line);
+}
+.data-transfer-row h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--fs-body);
+}
+.data-import {
   align-items: flex-start;
 }
-.data-transfer-card .section-intro {
-  margin: 0 0 var(--space-5);
-  line-height: 1.7;
+.data-import-body {
+  display: grid;
+  gap: var(--space-3);
+  flex: 1 1 22rem;
+  max-width: 32rem;
+  justify-items: end;
 }
-.data-transfer-card > .secondary {
-  margin-top: auto;
+.data-import-body > .callout,
+.data-import-paste {
+  justify-self: stretch;
+}
+.data-import-mode {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.data-import-mode label {
+  position: relative;
+  padding: 5px var(--space-3);
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--text-3);
+  font-size: var(--fs-body-sm);
+  cursor: pointer;
+}
+.data-import-mode label.selected {
+  background: var(--surface-raised);
+  color: var(--text-1);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.data-import-mode input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.data-import-mode label:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.data-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.data-import-paste {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: end;
+}
+.data-import-paste textarea {
+  box-sizing: border-box;
+  width: 100%;
+  font-family: monospace;
 }
 .data-replacement-option {
   display: flex;
@@ -1067,7 +1156,6 @@ main {
   }
 }
 @media (max-width: 600px) {
-  .data-transfer-grid,
   .model-fields {
     grid-template-columns: 1fr;
   }

@@ -1,7 +1,14 @@
 import { Drawer } from "../../components/Drawer";
 import { Callout } from "../../components/Callout";
 import { useState } from "react";
-import { Cloud, Download, LoaderCircle, RefreshCw, Upload } from "lucide-react";
+import {
+  ClipboardPaste,
+  Cloud,
+  Download,
+  LoaderCircle,
+  RefreshCw,
+  Upload,
+} from "lucide-react";
 import {
   exportData,
   importData,
@@ -9,11 +16,11 @@ import {
 } from "../../api/account";
 import { PageHeader } from "../../components/PageHeader";
 import type { SyncState } from "../../lib/autoSync";
-import { serviceUrl } from "../../lib/service";
 import { saveTextDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import { AccountSettings } from "./WebAccess";
+import { ServerAddress } from "./ServerAddress";
 export function ServerData({
   flash,
   onRestore,
@@ -37,6 +44,7 @@ export function ServerData({
     replace: boolean;
   } | null>(null);
   const [jsonText, setJsonText] = useState("");
+  const [pasting, setPasting] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState("");
   const [backupConfirmed, setBackupConfirmed] = useState(false);
   const source = pending ? describeImport(pending.data) : null;
@@ -89,6 +97,50 @@ export function ServerData({
       if (isCurrent()) setOperation(null);
     }
   };
+  const chooseFile = async (input: HTMLInputElement) => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const isCurrent = requests.begin();
+    setOperation("import");
+    setError("");
+    try {
+      if (file.size > 64 * 1024 * 1024) throw new Error("文件超过 64 MB");
+      const data = JSON.parse(await file.text());
+      if (!isCurrent()) return;
+      stageImport(data);
+    } catch (error) {
+      if (isCurrent()) setError(String(error));
+    } finally {
+      if (isCurrent()) setOperation(null);
+      input.value = "";
+    }
+  };
+  const previewPasted = () => {
+    setError("");
+    try {
+      if (new Blob([jsonText]).size > 64 * 1024 * 1024)
+        throw new Error("数据超过 64 MB");
+      stageImport(JSON.parse(jsonText));
+    } catch (error) {
+      setError(String(error));
+    }
+  };
+  const exportBackup = async () => {
+    setOperation("export");
+    setError("");
+    try {
+      const data = await exportData();
+      await saveTextDownload(
+        `mario-data-${localDateValue(new Date())}.json`,
+        JSON.stringify(data),
+        "application/json",
+      );
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setOperation(null);
+    }
+  };
   return (
     <section
       className={transferOnly ? undefined : "page narrow cloud-page"}
@@ -116,10 +168,7 @@ export function ServerData({
                 {autoState.phase === "syncing" ? "检查中…" : "检查最新数据"}
               </button>
             </div>
-            <div className="server-address">
-              <span>当前服务器</span>
-              <code>{serviceUrl()}</code>
-            </div>
+            <ServerAddress />
             <p
               className={`sync-live-status sync-${autoState.phase}`}
               role="status"
@@ -135,36 +184,16 @@ export function ServerData({
           </section>
         </>
       )}
-      <div className="data-transfer-grid">
-        <section className="panel data-transfer-card">
-          <div className="panel-title">
-            <h2>
-              <Download size={18} />
-              导出备份
-            </h2>
-          </div>
-          <p className="section-intro">
-            含个人资料，请妥善保管。密钥和账号会话不导出。
-          </p>
+      <section className="panel data-transfer" aria-label="备份与导入">
+        <div className="data-transfer-row">
+          <h3>
+            <Download size={16} />
+            导出备份
+          </h3>
           <button
             className="secondary"
             disabled={busy}
-            onClick={async () => {
-              setOperation("export");
-              setError("");
-              try {
-                const data = await exportData();
-                await saveTextDownload(
-                  `mario-data-${localDateValue(new Date())}.json`,
-                  JSON.stringify(data),
-                  "application/json",
-                );
-              } catch (e) {
-                setError(String(e));
-              } finally {
-                setOperation(null);
-              }
-            }}
+            onClick={() => void exportBackup()}
           >
             {operation === "export" ? (
               <LoaderCircle size={16} className="spin" />
@@ -173,102 +202,94 @@ export function ServerData({
             )}
             {operation === "export" ? "导出中…" : "导出我的数据"}
           </button>
-        </section>
-        <section className="panel data-transfer-card">
-          <div className="panel-title">
-            <h2>
-              <Upload size={18} />
-              导入数据
-            </h2>
-          </div>
-          <p className="section-intro">
-            支持 Mario 备份和 version 1.0 自选 JSON，可选择文件或直接粘贴，最大
-            64 MB。默认仅导入空账号。
-          </p>
-          <label className="data-replacement-option">
-            <input
-              type="checkbox"
-              checked={replace}
-              disabled={busy}
-              onChange={(e) => setReplace(e.target.checked)}
-            />
-            覆盖当前账号已有数据
-          </label>
-          {replace && (
-            <p className="section-intro">
-              将替换当前账号的全部业务数据，包括交易、持仓和历史记录，不做合并。
-              覆盖前会自动下载当前数据的备份，请确认浏览器允许下载并妥善保管。
-            </p>
-          )}
-          <label
-            className={`secondary file-import-button ${busy ? "disabled" : ""}`}
-          >
-            {operation === "import" ? (
-              <LoaderCircle size={16} className="spin" />
-            ) : (
-              <Upload size={16} />
+        </div>
+        <div className="data-transfer-row data-import">
+          <h3>
+            <Upload size={16} />
+            导入数据
+          </h3>
+          <div className="data-import-body">
+            <div
+              className="data-import-mode"
+              role="radiogroup"
+              aria-label="导入方式"
+            >
+              {[
+                { replace: false, label: "导入到空账号" },
+                { replace: true, label: "覆盖当前账号" },
+              ].map((mode) => (
+                <label
+                  key={mode.label}
+                  className={replace === mode.replace ? "selected" : ""}
+                >
+                  <input
+                    type="radio"
+                    name="data-import-mode"
+                    checked={replace === mode.replace}
+                    disabled={busy}
+                    onChange={() => setReplace(mode.replace)}
+                  />
+                  {mode.label}
+                </label>
+              ))}
+            </div>
+            {replace && (
+              <Callout tone="warning">
+                将替换当前账号的全部业务数据，不做合并；覆盖前会自动下载当前数据的备份。
+              </Callout>
             )}
-            {operation === "import"
-              ? "导入中…"
-              : replace
-                ? "选择文件并覆盖导入"
-                : "导入到空账号"}
-            <input
-              type="file"
-              accept="application/json,.json"
-              disabled={busy}
-              onChange={async (e) => {
-                const input = e.currentTarget;
-                const file = input.files?.[0];
-                if (!file) return;
-                const isCurrent = requests.begin();
-                setOperation("import");
-                setError("");
-                try {
-                  if (file.size > 64 * 1024 * 1024)
-                    throw new Error("文件超过 64 MB");
-                  const data = JSON.parse(await file.text());
-                  if (!isCurrent()) return;
-                  stageImport(data);
-                } catch (error) {
-                  if (isCurrent()) setError(String(error));
-                } finally {
-                  if (isCurrent()) setOperation(null);
-                  input.value = "";
-                }
-              }}
-            />
-          </label>
-          <label>
-            <span>粘贴 JSON 数据</span>
-            <textarea
-              aria-label="粘贴 JSON 数据"
-              rows={6}
-              value={jsonText}
-              disabled={busy}
-              onChange={(event) => setJsonText(event.target.value)}
-              placeholder={'{"version":"1.0","exportedAt":"…","data":{…}}'}
-            />
-          </label>
-          <button
-            type="button"
-            className="secondary"
-            disabled={busy || !jsonText.trim()}
-            onClick={() => {
-              setError("");
-              try {
-                if (new Blob([jsonText]).size > 64 * 1024 * 1024)
-                  throw new Error("数据超过 64 MB");
-                stageImport(JSON.parse(jsonText));
-              } catch (error) {
-                setError(String(error));
-              }
-            }}
-          >
-            预览导入
-          </button>
-        </section>
-      </div>
+            <div className="data-import-actions">
+              <label
+                className={`secondary file-import-button ${busy ? "disabled" : ""}`}
+              >
+                {operation === "import" ? (
+                  <LoaderCircle size={16} className="spin" />
+                ) : (
+                  <Upload size={16} />
+                )}
+                {operation === "import" ? "导入中…" : "选择 JSON 文件"}
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  disabled={busy}
+                  onChange={(e) => void chooseFile(e.currentTarget)}
+                />
+              </label>
+              <button
+                type="button"
+                className="secondary"
+                aria-expanded={pasting}
+                disabled={busy}
+                onClick={() => setPasting(!pasting)}
+              >
+                <ClipboardPaste size={16} />
+                粘贴 JSON
+              </button>
+            </div>
+            {pasting && (
+              <div className="data-import-paste">
+                <textarea
+                  aria-label="粘贴 JSON 数据"
+                  rows={6}
+                  value={jsonText}
+                  disabled={busy}
+                  autoFocus
+                  onChange={(event) => setJsonText(event.target.value)}
+                  placeholder={'{"version":"1.0","exportedAt":"…","data":{…}}'}
+                />
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={busy || !jsonText.trim()}
+                  onClick={previewPasted}
+                >
+                  预览导入
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
       {pending && (
         <Drawer
           title={pending.replace ? "确认覆盖当前账号数据" : "确认导入数据"}
