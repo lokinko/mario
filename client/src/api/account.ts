@@ -1,11 +1,12 @@
+import { currentSession } from "../lib/webSession";
 import { httpRequest } from "../lib/httpClient";
-import { dataRevision, serviceUrl } from "../lib/service";
+import { serviceUrl } from "../lib/service";
 import { requestJson } from "../lib/transport";
 import { webToken } from "../lib/webSession";
 export async function checkServerVersion(): Promise<
   import("../types").AutoSyncResult
 > {
-  const baseline = dataRevision();
+  const baseline = currentSession().revision;
   const result = await httpRequest<{ revision: string }>("/sync/version");
   return {
     state: "synced",
@@ -26,6 +27,7 @@ export function importData(data: unknown) {
 
 /** Pin replacement to the account and revision captured by its rollback backup. */
 export async function prepareDataReplacement() {
+  const session = currentSession();
   const account = { token: webToken(), baseUrl: serviceUrl() };
   let revision: string | null = null;
   const data = await httpRequest<unknown>(
@@ -45,8 +47,9 @@ export async function prepareDataReplacement() {
   const backupRevision = revision;
   return {
     data,
-    replace: (replacement: unknown) =>
-      httpRequest(
+    replace: async (replacement: unknown) => {
+      session.assertActive();
+      return httpRequest(
         "/data/import?replace=true",
         {
           method: "POST",
@@ -54,6 +57,7 @@ export async function prepareDataReplacement() {
           body: JSON.stringify(replacement),
         },
         account,
-      ),
+      );
+    },
   };
 }

@@ -1,13 +1,10 @@
+import { currentSession } from "../lib/webSession";
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getSnapshot } from "../api/portfolio";
 import { getModelConfig } from "../api/settings";
-import {
-  beforeDataWrite,
-  blockStaleWrites,
-  SERVER_DATA_UPDATED,
-} from "../lib/syncEvents";
+import { SERVER_DATA_UPDATED } from "../lib/syncEvents";
 import type { ModelConfig, Snapshot } from "../types";
 import fixture from "../test/emptySnapshot.json";
 import { useApplicationData } from "./useApplicationData";
@@ -38,13 +35,13 @@ function deferred<T>() {
 }
 beforeEach(() => {
   vi.resetAllMocks();
-  blockStaleWrites(false);
+  currentSession().blockStaleWrites(false);
   vi.mocked(getSnapshot).mockResolvedValue(original);
   vi.mocked(getModelConfig).mockResolvedValue(configured);
 });
 afterEach(() => {
   cleanup();
-  blockStaleWrites(false);
+  currentSession().blockStaleWrites(false);
 });
 async function start() {
   const hook = renderHook(() => useApplicationData("facts"));
@@ -68,7 +65,7 @@ it("keeps a draft started while the remote snapshot is loading and blocks stale 
   expect(result.current.snapshot).toBe(original);
   expect(result.current.remotePending).toBe(true);
   expect(result.current.remoteViewRevision).toBe(0);
-  await expect(beforeDataWrite()).rejects.toThrow("其他设备");
+  await expect(currentSession().beforeDataWrite()).rejects.toThrow("其他设备");
 });
 it("ignores an older refresh even if it completes after the latest refresh", async () => {
   const { result } = await start();
@@ -166,7 +163,7 @@ it("failed restore retains drafts and does not remove the stale-write guard", as
   expect(result.current.hasDraft()).toBe(true);
   expect(result.current.remotePending).toBe(true);
   expect(result.current.dataRevision).toBe(0);
-  await expect(beforeDataWrite()).rejects.toThrow("其他设备");
+  await expect(currentSession().beforeDataWrite()).rejects.toThrow("其他设备");
 });
 it("explicit refresh accepts data before clearing the draft and permits writes again", async () => {
   const { result } = await start();
@@ -184,7 +181,7 @@ it("explicit refresh accepts data before clearing the draft and permits writes a
   expect(result.current.snapshot).toBe(newer);
   expect(result.current.hasDraft()).toBe(false);
   expect(result.current.remotePending).toBe(false);
-  await expect(beforeDataWrite()).resolves.toBeUndefined();
+  await expect(currentSession().beforeDataWrite()).resolves.toBeUndefined();
 });
 it("unmounted requests cannot publish a data-updated event", async () => {
   const { result, unmount } = await start();

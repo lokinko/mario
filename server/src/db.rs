@@ -157,6 +157,16 @@ impl Database {
             .to_string())
     }
 
+    /// Called under the account lock after external work, before accepting a stale write.
+    pub(crate) fn require_revision(&self, expected: &str) -> AppResult<()> {
+        if self.revision()? != expected {
+            return Err(AppError::Conflict(
+                "查询期间资料已变化，请核对最新资料后重试；当前输入不会自动覆盖。".into(),
+            ));
+        }
+        Ok(())
+    }
+
     pub fn lock_account(&self) -> AppResult<AccountLock<'_>> {
         self.conn()?.execute_batch(LOCK_ACCOUNT_SQL)?;
         Ok(AccountLock { db: self })

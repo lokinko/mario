@@ -41,12 +41,6 @@ impl PortfolioService<'_> {
     pub fn snapshot(&self) -> AppResult<Snapshot> {
         prices::apply_cached(self.db, self.market.prices.as_ref())
     }
-    pub async fn security_quote(
-        &self,
-        query: &SecurityPriceQuery,
-    ) -> AppResult<SecurityPriceQuote> {
-        self.market.prices.quote(query).await
-    }
     /// The caller holds one account lock; only the frozen provider query runs unlocked.
     pub async fn preview_security_quote(
         &self,
@@ -61,6 +55,7 @@ impl PortfolioService<'_> {
         id: &str,
         input: crate::models::VerifiedHoldingValuationInput,
     ) -> AppResult<Snapshot> {
+        let revision = self.db.revision()?;
         let snapshot = self.db.snapshot()?;
         if snapshot.option_contracts.contains_key(id) {
             return Err(crate::AppError::Validation(
@@ -77,7 +72,8 @@ impl PortfolioService<'_> {
             symbol: input.symbol,
             on_date: input.on_date,
         };
-        let quote = self.security_quote(&query).await?;
+        let quote = self.preview_security_quote(&query).await?;
+        self.db.require_revision(&revision)?;
         self.db
             .apply_verified_holding_valuation(id, input.quantity, &quote)
     }
@@ -98,7 +94,12 @@ impl PortfolioService<'_> {
             ));
         }
         self.refresh_fx(false).await?;
-        let input = prices::complete_input(input, self.market.prices.as_ref()).await?;
+        let revision = self.db.revision()?;
+        let input = self
+            .db
+            .without_account_lock(prices::complete_input(input, self.market.prices.as_ref()))
+            .await??;
+        self.db.require_revision(&revision)?;
         if let Some(id) = id {
             self.db.update_holding(id, &input)?;
         } else {
@@ -148,6 +149,7 @@ mod integration_tests {
     #[tokio::test]
     async fn changing_today_rate_preserves_prior_daily_totals_and_balance_confirmation() {
         let db = Database::test();
+        let _lock = db.lock_account().unwrap();
         refresh(&db, &Provider, false).await.unwrap();
         db.add_holding(&holding("USD")).unwrap();
         let yesterday = (Utc::now()

@@ -1,10 +1,10 @@
+import { currentSession } from "../lib/webSession";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkServerVersion } from "../api/account";
 import { getSnapshot } from "../api/portfolio";
 import { getModelConfig } from "../api/settings";
 import { startAutoSync, type SyncState } from "../lib/autoSync";
 import {
-  blockStaleWrites,
   DATA_SAVED,
   SERVER_SESSION_CHANGED,
   SERVER_DATA_UPDATED,
@@ -14,6 +14,7 @@ import type { View } from "./navigation";
 
 /** Owns the server-data lifecycle. Pages own their forms; the shell owns navigation. */
 export function useApplicationData(view: View) {
+  const [session] = useState(currentSession);
   const [snapshot, setSnapshotState] = useState<Snapshot | null>(null);
   const [model, setModel] = useState<ModelConfig | null>(null);
   const [modelError, setModelError] = useState("");
@@ -46,10 +47,10 @@ export function useApplicationData(view: View) {
   const protectDraft = useCallback(() => {
     if (!edited.current || ["advisor", "cloud"].includes(currentView.current))
       return false;
-    blockStaleWrites(true);
+    session.blockStaleWrites(true);
     setRemotePending(true);
     return true;
-  }, []);
+  }, [session]);
 
   const loadRemoteData = useCallback(
     async (protectDrafts = false) => {
@@ -72,11 +73,11 @@ export function useApplicationData(view: View) {
       setSnapshotState(next);
       setRemoteViewRevision((value) => value + 1);
       setRemotePending(false);
-      blockStaleWrites(false);
+      session.blockStaleWrites(false);
       window.dispatchEvent(new Event(SERVER_DATA_UPDATED));
       return true;
     },
-    [protectDraft],
+    [protectDraft, session],
   );
 
   const loadApplication = useCallback(() => {
@@ -109,13 +110,14 @@ export function useApplicationData(view: View) {
     loadApplication();
     return () => {
       generation.current += 1;
-      blockStaleWrites(false);
+      if (!session.signal.aborted) session.blockStaleWrites(false);
     };
-  }, [loadApplication]);
+  }, [loadApplication, session]);
 
   useEffect(() => {
     if (loading || startupError) return;
     const controller = startAutoSync({
+      session,
       sync: checkServerVersion,
       visible: () =>
         document.visibilityState !== "hidden" && document.hasFocus(),
@@ -140,7 +142,7 @@ export function useApplicationData(view: View) {
         window.removeEventListener(event, controller.wake);
       document.removeEventListener("visibilitychange", controller.wake);
     };
-  }, [loading, startupError, loadRemoteData]);
+  }, [loading, startupError, loadRemoteData, session]);
 
   const acceptRemoteData = useCallback(async () => {
     if (await loadRemoteData()) clearDraft();

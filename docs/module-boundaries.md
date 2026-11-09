@@ -56,11 +56,13 @@ flowchart TD
 
 ### 前端
 
+- `webSession` 的账号边界创建并使 `accountSession` 实例失效；该实例唯一拥有传输版本、同步屏障、待更新标记、写入计数、排队顺序和 AbortSignal。HTTP、自动同步与应用数据生命周期固定使用各自捕获的实例，不能让旧响应或清理回调操作新账号状态。`service` 只计算服务地址，`syncEvents` 只定义事件名。
+
 - 功能页面拥有未保存输入和单页请求状态。`useApplicationData` 拥有已显示快照、可选模型配置、远程更新提示、页面刷新版本和同步控制器。
 - 核心快照与模型配置分别加载，模型读取失败不阻止财务功能。刷新时可保留已可用的模型配置，同时记录其读取错误。
 - 每次整体加载或刷新使用递增请求代次，较旧响应与卸载后的响应不得更新 UI 或发布数据更新事件。
 - 自动刷新在请求前和返回后都检查草稿，避免“开始刷新之后才输入”的内容被覆盖。用户接受新资料后再清除草稿与写入保护；刷新失败继续保留输入。
-- `httpClient` 捕获请求的账号与服务地址，发送前、收响应和采纳版本时都校验当前账号。金额快速编辑队列属于组合 API，排队任务保留原账号身份，不会在切换账号后写入新账号。
+- `httpClient` 捕获请求的账号与服务地址，发送前、收响应和采纳版本时都校验当前账号。组合 API 选择金额快速编辑的串行范围，账号会话持有排队顺序，排队任务保留原账号实例，不会在切换账号后写入新账号。
 - 版本轮询、局部汇率读取和长时间分析返回的版本，不直接代替页面已核对的资料版本。普通写入与完整快照按请求策略采纳版本；不能用局部 GET 的版本提前确认尚未加载的远端资产变化。
 - 应用壳在离开会卸载的页面前确认草稿；拒绝浏览器历史或地址跳转时恢复原地址与输入。同页导航保留草稿，常驻问答的离开不要求放弃输入。问答接收新公司问题时使旧历史详情请求失效，避免较晚响应清空新问题。
 - 功能代码与测试直接引用领域 API 模块。财务回执未确认时 `financialRequest` 抛出 `FinancialRequestError`（`kind: "pending"`），页面经类型守卫保留原请求和输入，不匹配错误文案。
@@ -128,7 +130,7 @@ flowchart TD
 
 `GET /market-data/security-price` 的网络锁边界归 `application/portfolio::preview_security_quote`：HTTP 仍经统一认证和外层账号锁，应用层在锁内选定供应商与 key，仅 `SecurityPriceProvider::quote` 的等待通过既有 `without_account_lock` 释放一层锁。该 Future 不读写账号库，成功或错误返回前重获锁。新增调用方必须确认已有一层账号锁，不能再次套锁导致只释放内层；取消整个 Future 沿用 helper 原有的保持释放语义。
 
-预览使用共享价格服务，不因并发无关个人写入新增冲突；不写账号、不推进个人版本。公共资料按统一来源和持久化规则准备。认证响应头仍取结束时版本，前端报价 GET 不据此接受新的资料基准。核验估值和保存普通持仓仍沿用其锁边界；价格刷新已共用解锁及重新校验流程，汇率路径不受影响。并发回归必须使用同账号的独立 PostgreSQL 连接，在供应商挂起时实测 advisory lock，而不能仅凭快照读取或同连接重入宣称锁已释放。行为定义见[行情规范](market-data.md#只读证券报价与并发)，验证入口见[应用锁回归](../server/src/application/portfolio_quote_tests.rs)、[认证 HTTP](../server/src/hosted_quote_tests.rs)及[客户端版本回归](../client/src/api.hosted.test.ts)。
+预览使用共享价格服务，不因并发无关个人写入新增冲突；不写账号、不推进个人版本。公共资料按统一来源和持久化规则准备。认证响应头仍取结束时版本，前端报价 GET 不据此接受新的资料基准。核验估值、保存普通持仓和汇率刷新同样在供应商等待期间解锁，写回前核对冻结的账号版本；汇率只读查询仅核对其汇率表。取消时不提交后续写入，正常成功或失败返回前重获锁。并发回归必须使用同账号的独立 PostgreSQL 连接，在供应商挂起时实测 advisory lock，而不能仅凭快照读取或同连接重入宣称锁已释放。行为定义见[行情规范](market-data.md#只读证券报价与并发)，验证入口见[应用锁回归](../server/src/application/portfolio_quote_tests.rs)、[认证 HTTP](../server/src/hosted_quote_tests.rs)及[客户端版本回归](../client/src/api.hosted.test.ts)。
 
 ### 期权
 
@@ -232,6 +234,6 @@ cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
 cargo build --manifest-path server/Cargo.toml
 ```
 
-跨前后端、数据格式、财务逻辑或公共契约的修改运行完整 `npm test`（[`scripts/test.sh`](../scripts/test.sh)）：上述检查之后，在同一个临时集群中依次运行 Rust 测试、`test-functional-api`、`test-web`、`test-codex-bridge`，再运行独立建集群的 `npm run test:financial`。
+跨前后端、数据格式、财务逻辑或公共契约的修改运行完整 `npm test`（[`scripts/test.sh`](../scripts/test.sh)）：先检查 npm 和完整门禁引用的脚本确实存在；构建后运行 `npm run check:contracts`，以真实 Rust 输出验证精确金额、观察规则的 TypeScript 类型以及从 HTTP 源文件提取路径的版本政策一致性，再在同一个临时集群中依次运行 Rust 测试、`test-functional-api`、`test-web`、`test-codex-bridge`，再运行独立建集群的 `npm run test:financial`。
 
 依赖检查解析 TypeScript 导入/导出，包括类型导入与动态导入；Rust 检查去除字符串、注释与测试专属项后提取显式 crate 依赖。它阻止上层反向引用、跨功能 UI 引用、领域客户端之间的引用以及依赖循环。DB 内部实现仍允许使用父模块门面的共享导入。检查属于静态约束，与编译及行为测试互补，不代表所有宏展开或运行时隔离已经被证明。

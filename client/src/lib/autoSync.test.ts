@@ -1,13 +1,10 @@
+// @vitest-environment jsdom
+import { currentSession } from "./webSession";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { startAutoSync } from "./autoSync";
 import { HttpError } from "./transport";
-import {
-  beforeDataWrite,
-  blockStaleWrites,
-  endSync,
-  isDataWrite,
-  markDataWrite,
-} from "./syncEvents";
+
+import { isDataWrite } from "./requestPolicy";
 import type { AutoSyncResult } from "../types";
 let controllers: ReturnType<typeof startAutoSync>[] = [];
 beforeEach(() => {
@@ -17,8 +14,8 @@ beforeEach(() => {
 afterEach(() => {
   controllers.forEach((c) => c.dispose());
   controllers = [];
-  endSync();
-  blockStaleWrites(false);
+  currentSession().endSync();
+  currentSession().blockStaleWrites(false);
   vi.useRealTimers();
 });
 const synced: AutoSyncResult = {
@@ -98,7 +95,7 @@ it("holds edits until remote updates have been checked and never submits a stale
   let resolve!: (result: AutoSyncResult) => void;
   const { sync } = setup({
     onRemoteUpdate: async () => {
-      blockStaleWrites(true);
+      currentSession().blockStaleWrites(true);
     },
   });
   sync.mockImplementation(
@@ -109,12 +106,14 @@ it("holds edits until remote updates have been checked and never submits a stale
   );
   await vi.advanceTimersByTimeAsync(1000);
   let sent = false;
-  const pending = beforeDataWrite().then(
-    () => {
-      sent = true;
-    },
-    (e) => e.message,
-  );
+  const pending = currentSession()
+    .beforeDataWrite()
+    .then(
+      () => {
+        sent = true;
+      },
+      (e) => e.message,
+    );
   expect(sent).toBe(false);
   resolve({ ...synced, sync: { ...synced.sync!, localUpdated: true } });
   expect(await pending).toContain("查看最新资料");
@@ -178,7 +177,7 @@ it("retains a pending UI refresh if reading the newly merged snapshot fails", as
 
 it("lets local writes finish before beginning a cloud request", async () => {
   const { sync } = setup();
-  const release = markDataWrite();
+  const release = currentSession().markDataWrite();
   await vi.advanceTimersByTimeAsync(1000);
   expect(sync).not.toHaveBeenCalled();
   release();

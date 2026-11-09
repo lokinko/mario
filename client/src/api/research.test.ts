@@ -1,17 +1,25 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { currentSession } from "../lib/webSession";
+import { accountSession, resetAccountSession } from "../lib/accountSession";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { runAnalysis } from "./research";
-import { hasDataWrites } from "../lib/syncEvents";
+
 import { analysisSettings } from "../test/analysisSettings";
 
 const session = vi.hoisted(() => ({ token: "account-a" }));
-vi.mock("../lib/webSession", () => ({ webToken: () => session.token }));
+vi.mock("../lib/webSession", () => ({
+  webToken: () => session.token,
+  currentSession: () => accountSession(session.token, "http://localhost/api"),
+}));
 vi.mock("../lib/service", () => ({
   serviceUrl: () => "http://localhost/api",
-  dataRevision: () => "revision-a",
-  acceptRevision: vi.fn(),
 }));
+beforeEach(() => {
+  resetAccountSession();
+  currentSession().acceptRevision("revision-a");
+});
 afterEach(() => {
+  resetAccountSession();
   vi.unstubAllGlobals();
   session.token = "account-a";
 });
@@ -34,7 +42,7 @@ it("guards every stream update against account changes and releases the write gu
     runAnalysis({ ...analysisSettings, question: "问题" }, updates),
   ).rejects.toThrow("账号已切换");
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalled());
-  expect(hasDataWrites()).toBe(true);
+  expect(currentSession().hasDataWrites()).toBe(true);
   const headers = fetcher.mock.calls[0][1].headers;
   expect(headers.Authorization).toBe("Bearer account-a");
   expect(headers["If-Match"]).toBe("revision-a");
@@ -46,7 +54,7 @@ it("guards every stream update against account changes and releases the write gu
   );
   await pending;
   expect(updates).not.toHaveBeenCalled();
-  expect(hasDataWrites()).toBe(false);
+  expect(currentSession().hasDataWrites()).toBe(false);
 });
 
 it("only completes and publishes the saved event after draft updates", async () => {
@@ -67,5 +75,5 @@ it("only completes and publishes the saved event after draft updates", async () 
     await runAnalysis({ ...analysisSettings, question: "问题" }, updates),
   ).toEqual(result);
   expect(updates).toHaveBeenCalledWith({ type: "draft", answer: "部分回复" });
-  expect(hasDataWrites()).toBe(false);
+  expect(currentSession().hasDataWrites()).toBe(false);
 });

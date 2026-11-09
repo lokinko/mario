@@ -1,3 +1,4 @@
+import { currentSession } from "./lib/webSession";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
@@ -12,10 +13,10 @@ import {
 } from "./api/portfolio";
 import { checkServerVersion, prepareDataReplacement } from "./api/account";
 import { previewAnalysis } from "./api/research";
-import { acceptRevision, dataRevision, serviceUrl } from "./lib/service";
+import { serviceUrl } from "./lib/service";
 import { httpRequest } from "./lib/httpClient";
 import { setWebToken, webToken } from "./lib/webSession";
-import { beginSync, endSync, blockStaleWrites } from "./lib/syncEvents";
+
 import type { FinancialProfile } from "./types";
 import type { AnalysisRequest } from "./types";
 
@@ -56,7 +57,7 @@ it("resolves a lost financial response without resubmitting the mutation", async
     path: "/api/holding-trades",
     input,
   });
-  expect(dataRevision()).toBe("91");
+  expect(currentSession().revision).toBe("91");
 });
 
 it("keeps an unresolved financial write pending instead of declaring failure or retrying it", async () => {
@@ -98,14 +99,14 @@ it("resolves a lost whole-position deletion with its original versioned request"
     path: "/api/holdings/position",
     input: { expectedRevision: "position-v1" },
   });
-  expect(dataRevision()).toBe("92");
+  expect(currentSession().revision).toBe("92");
 });
 vi.mock("./lib/service", async (original) => ({
   ...(await original<typeof import("./lib/service")>()),
 }));
 beforeEach(() => {
-  acceptRevision();
-  blockStaleWrites(false);
+  currentSession().acceptRevision();
+  currentSession().blockStaleWrites(false);
   setWebToken("test-session");
 });
 afterEach(() => {
@@ -132,7 +133,7 @@ it("waits for a slow price refresh beyond 15 seconds and adopts its returned sna
   await vi.advanceTimersByTimeAsync(16000);
   await pending;
   expect(fetcher).toHaveBeenCalledTimes(1);
-  expect(dataRevision()).toBe("99");
+  expect(currentSession().revision).toBe("99");
 });
 
 it("keeps the session after a temporary server failure", async () => {
@@ -212,10 +213,10 @@ const response = (body: unknown, revision: string, status = 200) =>
 it("never sends a queued old-account edit using the new account's session", async () => {
   const fetcher = vi.fn();
   vi.stubGlobal("fetch", fetcher);
-  beginSync();
+  currentSession().beginSync();
   const pending = saveProfile({} as FinancialProfile);
   setWebToken("new-session");
-  endSync();
+  currentSession().endSync();
   await expect(pending).rejects.toThrow("账号已切换");
   expect(fetcher).not.toHaveBeenCalled();
 });
@@ -233,10 +234,10 @@ it("rejects late old-account data without changing the new account's revision", 
   );
   const pending = getSnapshot();
   setWebToken("new-session");
-  acceptRevision("new-account-revision");
+  currentSession().acceptRevision("new-account-revision");
   complete(response({ profile: "old-account-data" }, "old-account-revision"));
   await expect(pending).rejects.toThrow("账号已切换");
-  expect(dataRevision()).toBe("new-account-revision");
+  expect(currentSession().revision).toBe("new-account-revision");
 });
 
 it("discards old-account amount edits waiting in the queue and allows new-account edits", async () => {
@@ -281,13 +282,13 @@ it("discards old-account amount edits waiting in the queue and allows new-accoun
   );
 });
 it("does not acknowledge a newer revision from a read-only AI preview", async () => {
-  acceptRevision("10");
+  currentSession().acceptRevision("10");
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, "12")));
   await previewAnalysis({} as AnalysisRequest);
-  expect(dataRevision()).toBe("10");
+  expect(currentSession().revision).toBe("10");
 });
 it("does not acknowledge a snapshot whose response body failed to decode", async () => {
-  acceptRevision("10");
+  currentSession().acceptRevision("10");
   vi.stubGlobal(
     "fetch",
     vi
@@ -297,7 +298,7 @@ it("does not acknowledge a snapshot whose response body failed to decode", async
       ),
   );
   await expect(getSnapshot()).rejects.toThrow();
-  expect(dataRevision()).toBe("10");
+  expect(currentSession().revision).toBe("10");
 });
 it("pins writes to displayed data and preserves the old revision on a conflict", async () => {
   const fetcher = vi
@@ -307,12 +308,12 @@ it("pins writes to displayed data and preserves the old revision on a conflict",
     .mockResolvedValueOnce(response({ error: "conflict" }, "12", 409));
   vi.stubGlobal("fetch", fetcher);
   await getSnapshot();
-  expect(dataRevision()).toBe("10");
+  expect(currentSession().revision).toBe("10");
   expect((await checkServerVersion()).sync?.localUpdated).toBe(true);
-  expect(dataRevision()).toBe("10");
+  expect(currentSession().revision).toBe("10");
   await expect(saveProfile({} as FinancialProfile)).rejects.toThrow("conflict");
   expect(fetcher.mock.calls[2][1].headers["If-Match"]).toBe("10");
-  expect(dataRevision()).toBe("10");
+  expect(currentSession().revision).toBe("10");
 });
 it("keeps a local FX read from acknowledging unrelated remote portfolio changes", async () => {
   const fetcher = vi
@@ -324,11 +325,11 @@ it("keeps a local FX read from acknowledging unrelated remote portfolio changes"
   vi.stubGlobal("fetch", fetcher);
   await getSnapshot();
   await getFxSettings();
-  expect(dataRevision()).toBe("10");
+  expect(currentSession().revision).toBe("10");
   expect((await checkServerVersion()).sync?.localUpdated).toBe(true);
   await expect(saveProfile({} as FinancialProfile)).rejects.toThrow("conflict");
   expect(fetcher.mock.calls[3][1].headers["If-Match"]).toBe("10");
-  expect(dataRevision()).toBe("10");
+  expect(currentSession().revision).toBe("10");
 });
 
 it.each([
@@ -344,28 +345,28 @@ it.each([
   await getSnapshot();
   await httpRequest(path);
   expect(fetcher.mock.calls[1][0]).toBe(`${serviceUrl()}${path}`);
-  expect(dataRevision()).toBe("10");
+  expect(currentSession().revision).toBe("10");
   await expect(saveProfile({} as FinancialProfile)).rejects.toThrow("conflict");
   expect(fetcher.mock.calls[2][1].headers["If-Match"]).toBe("10");
-  expect(dataRevision()).toBe("10");
+  expect(currentSession().revision).toBe("10");
 });
 
 it("acknowledges an explicit FX save before loading its resulting portfolio snapshot", async () => {
-  acceptRevision("10");
+  currentSession().acceptRevision("10");
   const fetcher = vi.fn().mockResolvedValue(response({}, "11"));
   vi.stubGlobal("fetch", fetcher);
   await setFxOverride("USD", "7.1");
   expect(fetcher.mock.calls[0][1].headers["If-Match"]).toBe("10");
-  expect(dataRevision()).toBe("11");
+  expect(currentSession().revision).toBe("11");
 });
 
 it("advances the revision after an acknowledged save and leaves unsent drafts blocked", async () => {
-  acceptRevision("10");
+  currentSession().acceptRevision("10");
   const fetcher = vi.fn().mockResolvedValue(response({}, "11"));
   vi.stubGlobal("fetch", fetcher);
   await saveProfile({} as FinancialProfile);
-  expect(dataRevision()).toBe("11");
-  blockStaleWrites(true);
+  expect(currentSession().revision).toBe("11");
+  currentSession().blockStaleWrites(true);
   await expect(saveProfile({} as FinancialProfile)).rejects.toThrow(
     "查看最新资料",
   );
@@ -373,7 +374,7 @@ it("advances the revision after an acknowledged save and leaves unsent drafts bl
 });
 
 it("pins replacement to its backup revision even if newer data was loaded", async () => {
-  acceptRevision("10");
+  currentSession().acceptRevision("10");
   const fetcher = vi
     .fn()
     .mockResolvedValueOnce(response({ tables: ["backup"] }, "12"))
@@ -381,8 +382,8 @@ it("pins replacement to its backup revision even if newer data was loaded", asyn
   vi.stubGlobal("fetch", fetcher);
   const backup = await prepareDataReplacement();
   expect(backup.data).toEqual({ tables: ["backup"] });
-  expect(dataRevision()).toBe("10");
-  acceptRevision("13");
+  expect(currentSession().revision).toBe("10");
+  currentSession().acceptRevision("13");
   await expect(backup.replace({ tables: ["replacement"] })).rejects.toThrow(
     "资料已变化",
   );
@@ -393,7 +394,7 @@ it("pins replacement to its backup revision even if newer data was loaded", asyn
   expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({
     tables: ["replacement"],
   });
-  expect(dataRevision()).toBe("13");
+  expect(currentSession().revision).toBe("13");
 });
 
 it("refuses replacement after switching accounts", async () => {

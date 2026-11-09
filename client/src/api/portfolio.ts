@@ -7,10 +7,7 @@ import type {
   SecurityPriceQuote,
   Snapshot,
 } from "../types";
-import { serviceUrl } from "../lib/service";
-import { webToken } from "../lib/webSession";
-// Serialize quick edits so late responses cannot replace a newer portfolio in React.
-let amountQueue: Promise<unknown> = Promise.resolve();
+import { currentSession } from "../lib/webSession";
 export async function getSnapshot(): Promise<Snapshot> {
   return httpRequest<Snapshot>("/snapshot");
 }
@@ -211,21 +208,18 @@ export function updateHoldingAmount(
   expectedRevision: string,
   requestId: string,
 ) {
-  const account = { token: webToken(), baseUrl: serviceUrl() };
-  const result = amountQueue
-    .catch(() => undefined)
-    .then(() =>
-      financialRequest(
-        `/holdings/${encodeURIComponent(id)}/amount`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ amount, expectedRevision, requestId }),
-        },
-        account,
-      ),
-    );
-  amountQueue = result;
-  return result;
+  const session = currentSession();
+  const account = { token: session.token, baseUrl: session.baseUrl };
+  return session.enqueue(() =>
+    financialRequest(
+      `/holdings/${encodeURIComponent(id)}/amount`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ amount, expectedRevision, requestId }),
+      },
+      account,
+    ),
+  );
 }
 
 export function getFxSettings(): Promise<FxBook> {

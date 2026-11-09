@@ -1,7 +1,7 @@
 import { httpRequest } from "../../lib/httpClient";
 import { requestJson, HttpError } from "../../lib/transport";
 import { serviceUrl } from "../../lib/service";
-import { webToken } from "../../lib/webSession";
+import { currentSession, webToken } from "../../lib/webSession";
 import type { Snapshot } from "../../types";
 
 export class FinancialRequestError extends Error {
@@ -27,8 +27,14 @@ export function financialRequest(
   init: RequestInit,
   account = { token: webToken(), baseUrl: serviceUrl() },
 ): Promise<Snapshot> {
+  const session = currentSession();
   const ensureCurrentAccount = () => {
-    if (webToken() !== account.token || serviceUrl() !== account.baseUrl)
+    if (
+      currentSession() !== session ||
+      session.signal.aborted ||
+      webToken() !== account.token ||
+      serviceUrl() !== account.baseUrl
+    )
       throw new Error("账号已切换，请在当前账号中重新操作。");
   };
   return httpRequest<Snapshot>(path, init, account, async (url, options) => {

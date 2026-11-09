@@ -1,4 +1,9 @@
 import { serviceUrl } from "./service";
+import { accountSession, resetAccountSession } from "./accountSession";
+
+export function currentSession() {
+  return accountSession(webToken(), serviceUrl());
+}
 const key = () => `mario.session:${serviceUrl()}`;
 const accountsKey = () => `mario.accounts:${serviceUrl()}`;
 export interface WebAccount {
@@ -65,6 +70,7 @@ export function setWebToken(
   expiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 3600,
   identity?: Pick<WebAccount, "email" | "userId">,
 ) {
+  resetAccountSession();
   if (token) {
     const account: WebAccount = {
       token,

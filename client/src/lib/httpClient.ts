@@ -5,9 +5,9 @@ import {
   type RequestOptions,
 } from "./transport";
 import { isDataWrite, requestPolicy } from "./requestPolicy";
-import { beforeDataWrite, markDataWrite, DATA_SAVED } from "./syncEvents";
-import { serviceUrl, dataRevision, acceptRevision } from "./service";
-import { webToken } from "./webSession";
+import { DATA_SAVED } from "./syncEvents";
+import { serviceUrl } from "./service";
+import { currentSession, webToken } from "./webSession";
 
 export async function httpRequest<T>(
   path: string,
@@ -15,24 +15,33 @@ export async function httpRequest<T>(
   account = { token: webToken(), baseUrl: serviceUrl() },
   transport: (url: string, options: RequestOptions) => Promise<T> = requestJson,
 ): Promise<T> {
+  const session = currentSession();
   const dataWrite = isDataWrite(path, init?.method);
-  const release = dataWrite ? markDataWrite() : () => {};
+  const release = dataWrite ? session.markDataWrite() : () => {};
   const { token: authToken, baseUrl } = account;
   const ensureCurrentAccount = () => {
-    if (webToken() !== authToken || serviceUrl() !== baseUrl)
+    session.assertActive();
+    if (
+      currentSession() !== session ||
+      session.token !== authToken ||
+      session.baseUrl !== baseUrl
+    )
       throw new Error("账号已切换，请在当前账号中重新操作。");
   };
   try {
-    if (dataWrite) await beforeDataWrite();
+    if (dataWrite) await session.beforeDataWrite();
     ensureCurrentAccount();
-    const baseRevision = dataRevision();
+    const baseRevision = session.revision;
     const result = await transport(`${baseUrl}${path}`, {
       ...init,
+      signal: init?.signal
+        ? AbortSignal.any([init.signal, session.signal])
+        : session.signal,
       timeoutMs: requestPolicy(path, init?.method).timeoutMs,
       onResponse: (response) => {
-        if (webToken() !== authToken || serviceUrl() !== baseUrl) return;
+        if (currentSession() !== session || session.signal.aborted) return;
         if (requestPolicy(path).acceptsRevision(dataWrite)) {
-          acceptRevision(
+          session.acceptRevision(
             response.headers.get("x-data-revision") ?? baseRevision,
           );
         }
@@ -50,8 +59,9 @@ export async function httpRequest<T>(
     return result;
   } catch (error) {
     if (error instanceof HttpError && error.status === 401) {
+      const alreadyDisposed = session.signal.aborted;
       const currentToken = webToken();
-      if (!currentToken || currentToken === authToken)
+      if (!currentToken || (!alreadyDisposed && currentToken === authToken))
         window.dispatchEvent(new Event("mario:session-expired"));
     }
     throw error;
@@ -65,10 +75,11 @@ export async function httpStreamRequest<T>(
   init: RequestInit,
   onEvent: (event: unknown) => T | undefined,
 ): Promise<T> {
+  const session = currentSession();
   const account = { token: webToken(), baseUrl: serviceUrl() };
   return httpRequest<T>(path, init, account, (url, options) =>
     requestEvents(url, options, (event) => {
-      if (webToken() !== account.token || serviceUrl() !== account.baseUrl)
+      if (currentSession() !== session || session.signal.aborted)
         throw new Error("账号已切换，请在当前账号中重新操作。");
       return onEvent(event);
     }),

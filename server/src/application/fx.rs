@@ -24,24 +24,30 @@ pub async fn refresh(
     {
         return Ok(book);
     }
-    if force {
-        provider.invalidate().await;
-    }
-    let mut errors = Vec::new();
-    for currency in SUPPORTED_CURRENCIES.iter().filter(|c| **c != base) {
-        let query = FxRateQuery {
-            from_currency: currency.to_string(),
-            to_currency: base.clone(),
-            on_date: day.clone(),
-        };
-        match provider.quote(&query).await {
-            Ok(quote) => {
-                book.quotes.retain(|q| q.from_currency != *currency);
-                book.quotes.push(quote);
-            }
-            Err(error) => errors.push(format!("{currency}：{error}")),
+    let revision = db.revision()?;
+    let fetch = async {
+        if force {
+            provider.invalidate().await;
         }
-    }
+        let mut errors = Vec::new();
+        for currency in SUPPORTED_CURRENCIES.iter().filter(|c| **c != base) {
+            let query = FxRateQuery {
+                from_currency: currency.to_string(),
+                to_currency: base.clone(),
+                on_date: day.clone(),
+            };
+            match provider.quote(&query).await {
+                Ok(quote) => {
+                    book.quotes.retain(|q| q.from_currency != *currency);
+                    book.quotes.push(quote);
+                }
+                Err(error) => errors.push(format!("{currency}：{error}")),
+            }
+        }
+        errors
+    };
+    let errors = db.without_account_lock(fetch).await?;
+    db.require_revision(&revision)?;
     book.requested_on = day;
     book.checked_at = Utc::now().timestamp();
     book.error = errors.join("；");
@@ -115,7 +121,16 @@ pub async fn historical_quote(
     };
     let quote = match quote {
         Some(q) => q,
-        None => provider.quote(query).await?,
+        None => {
+            let before = serde_json::to_value(db.fx_book(&to)?)?;
+            let result = db.without_account_lock(provider.quote(query)).await??;
+            if serde_json::to_value(db.fx_book(&to)?)? != before {
+                return Err(AppError::Conflict(
+                    "查询期间汇率设置已变化，请重新查询".into(),
+                ));
+            }
+            result
+        }
     };
     Ok(quote)
 }
@@ -159,6 +174,22 @@ mod tests {
     }
     fn db() -> Database {
         Database::test()
+    }
+    async fn refresh(
+        db: &Database,
+        provider: &dyn FxRateProvider,
+        force: bool,
+    ) -> AppResult<FxBook> {
+        let _lock = db.lock_account()?;
+        super::refresh(db, provider, force).await
+    }
+    async fn historical_quote(
+        db: &Database,
+        provider: &dyn FxRateProvider,
+        query: &FxRateQuery,
+    ) -> AppResult<FxRateQuote> {
+        let _lock = db.lock_account()?;
+        super::historical_quote(db, provider, query).await
     }
     fn provider(rate: f64) -> Provider {
         Provider {

@@ -1,4 +1,5 @@
-import { beginSync, endSync, hasDataWrites } from "./syncEvents";
+import { currentSession } from "./webSession";
+import type { AccountSession } from "./accountSession";
 import { HttpError } from "./transport";
 import type { AutoSyncResult } from "../types";
 export interface SyncState {
@@ -6,6 +7,7 @@ export interface SyncState {
   message: string;
 }
 export interface AutoSyncOptions {
+  session?: AccountSession;
   sync: () => Promise<AutoSyncResult>;
   visible: () => boolean;
   online: () => boolean;
@@ -14,6 +16,7 @@ export interface AutoSyncOptions {
 }
 /** One foreground timer, one request in flight. The server is authoritative; only fetch data after its revision changes. */
 export function startAutoSync(options: AutoSyncOptions) {
+  const session = options.session ?? currentSession();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false,
     busy = false,
@@ -38,12 +41,19 @@ export function startAutoSync(options: AutoSyncOptions) {
       timer = setTimeout(() => void run(), delay);
   };
   const run = async () => {
-    if (disposed || busy || suspended || !options.visible()) return;
+    if (
+      disposed ||
+      session.signal.aborted ||
+      busy ||
+      suspended ||
+      !options.visible()
+    )
+      return;
     if (!options.online()) {
       status("offline", "离线：无法保存到服务器，当前未提交输入保留在页面");
       return;
     }
-    if (hasDataWrites()) {
+    if (session.hasDataWrites()) {
       status("waiting", "保存完成后检查最新数据");
       schedule(1500);
       return;
@@ -53,16 +63,17 @@ export function startAutoSync(options: AutoSyncOptions) {
     pending = false;
     firstChange = 0;
     lastStart = Date.now();
-    beginSync();
+    const finishSync = session.beginSync();
     status("syncing", "正在同步…");
     try {
       const result = await options.sync();
+      if (disposed || session.signal.aborted) return;
       needsRefresh ||= Boolean(result.sync?.localUpdated);
       if (needsRefresh) {
         await options.onRemoteUpdate();
         needsRefresh = false;
       }
-      if (disposed) return;
+      if (disposed || session.signal.aborted) return;
       serverBusy = result.state === "busy";
       failures = 0;
       if (serverBusy) {
@@ -75,7 +86,7 @@ export function startAutoSync(options: AutoSyncOptions) {
         status("synced", "已同步");
       }
     } catch (error) {
-      if (disposed) return;
+      if (disposed || session.signal.aborted) return;
       if (
         error instanceof HttpError &&
         [400, 401, 409].includes(error.status)
@@ -90,7 +101,7 @@ export function startAutoSync(options: AutoSyncOptions) {
         );
       }
     } finally {
-      endSync();
+      finishSync();
       busy = false;
       if (!disposed)
         schedule(

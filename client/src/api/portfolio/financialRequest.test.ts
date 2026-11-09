@@ -1,14 +1,11 @@
+import { currentSession } from "../../lib/webSession";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { financialRequest } from "./financialRequest";
 import { httpRequest } from "../../lib/httpClient";
-import { acceptRevision, dataRevision } from "../../lib/service";
+
 import { setWebToken } from "../../lib/webSession";
-import {
-  blockStaleWrites,
-  hasDataWrites,
-  DATA_SAVED,
-} from "../../lib/syncEvents";
+import { DATA_SAVED } from "../../lib/syncEvents";
 
 const input = {
   method: "PUT",
@@ -23,12 +20,12 @@ const reply = (body: unknown, status = 200, revision = "9") =>
     },
   });
 beforeEach(() => {
-  blockStaleWrites(false);
+  currentSession().blockStaleWrites(false);
   setWebToken("first");
-  acceptRevision("1");
+  currentSession().acceptRevision("1");
 });
 afterEach(() => {
-  blockStaleWrites(false);
+  currentSession().blockStaleWrites(false);
   sessionStorage.clear();
   localStorage.clear();
   vi.unstubAllGlobals();
@@ -55,13 +52,13 @@ it("holds the write guard through receipt lookup and publishes one committed sav
   try {
     const pending = financialRequest("/holdings/cash/amount", input);
     await resolving;
-    expect(hasDataWrites()).toBe(true);
+    expect(currentSession().hasDataWrites()).toBe(true);
     expect(saved).not.toHaveBeenCalled();
     resolve(reply({ committed: true, snapshot: { holdings: [] } }));
     await expect(pending).resolves.toEqual({ holdings: [] });
-    expect(hasDataWrites()).toBe(false);
+    expect(currentSession().hasDataWrites()).toBe(false);
     expect(saved).toHaveBeenCalledTimes(1);
-    expect(dataRevision()).toBe("9");
+    expect(currentSession().revision).toBe("9");
     expect(fetcher).toHaveBeenCalledTimes(2);
   } finally {
     window.removeEventListener(DATA_SAVED, saved);
@@ -88,25 +85,25 @@ it.each([400, 401, 409, 422])(
       financialRequest("/holdings/cash/amount", input),
     ).rejects.toThrow("rejected");
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(hasDataWrites()).toBe(false);
+    expect(currentSession().hasDataWrites()).toBe(false);
   },
 );
 
 it("rejects a blocked stale form before any mutation or receipt request", async () => {
-  blockStaleWrites(true);
+  currentSession().blockStaleWrites(true);
   const fetcher = vi.fn();
   vi.stubGlobal("fetch", fetcher);
   await expect(
     financialRequest("/holdings/cash/amount", input),
   ).rejects.toThrow("查看最新资料");
   expect(fetcher).not.toHaveBeenCalled();
-  expect(hasDataWrites()).toBe(false);
+  expect(currentSession().hasDataWrites()).toBe(false);
 });
 
 it("does not start receipt recovery after the account changes", async () => {
   const fetcher = vi.fn().mockImplementation(async () => {
     setWebToken("second");
-    acceptRevision("second-version");
+    currentSession().acceptRevision("second-version");
     throw new TypeError("old response lost");
   });
   vi.stubGlobal("fetch", fetcher);
@@ -114,7 +111,7 @@ it("does not start receipt recovery after the account changes", async () => {
     financialRequest("/holdings/cash/amount", input),
   ).rejects.toThrow("账号已切换");
   expect(fetcher).toHaveBeenCalledTimes(1);
-  expect(dataRevision()).toBe("second-version");
+  expect(currentSession().revision).toBe("second-version");
 });
 
 it("ignores a receipt and revision arriving after an account switch", async () => {
@@ -123,14 +120,14 @@ it("ignores a receipt and revision arriving after an account switch", async () =
     .mockRejectedValueOnce(new TypeError("lost"))
     .mockImplementationOnce(async () => {
       setWebToken("second");
-      acceptRevision("second-version");
+      currentSession().acceptRevision("second-version");
       return reply({ committed: true, snapshot: { private: "first" } });
     });
   vi.stubGlobal("fetch", fetcher);
   await expect(
     financialRequest("/holdings/cash/amount", input),
   ).rejects.toThrow("账号已切换");
-  expect(dataRevision()).toBe("second-version");
+  expect(currentSession().revision).toBe("second-version");
 });
 
 it("propagates session expiry during receipt recovery to the shared auth handler", async () => {
@@ -165,5 +162,5 @@ it("reports an unresolved financial write with a typed pending outcome", async (
   expect(error).toMatchObject({ kind: "pending", cause: { cause: lost } });
   expect(isPendingFinancialRequest(new Error("操作结果待确认"))).toBe(false);
   expect(fetcher).toHaveBeenCalledTimes(2);
-  expect(hasDataWrites()).toBe(false);
+  expect(currentSession().hasDataWrites()).toBe(false);
 });

@@ -1,19 +1,22 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 export const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 
-export function clientSource() {
+export function clientSource(directory = projectRoot) {
   const git = (...args) =>
-    execFileSync("git", args, { cwd: projectRoot, encoding: "utf8" }).trim();
+    execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim();
   const files = [
     ...new Set(
-      git("ls-files", "--cached", "--others", "--exclude-standard", "-z").split(
-        "\0",
-      ),
+      // Query tracked and untracked paths separately: combined output may include
+      // directory placeholders on Git for Windows, omitting tracked descendants.
+      [
+        ...git("ls-files", "--cached", "-z").split("\0"),
+        ...git("ls-files", "--others", "--exclude-standard", "-z").split("\0"),
+      ],
     ),
   ]
     .filter((name) =>
@@ -21,11 +24,16 @@ export function clientSource() {
         name,
       ),
     )
+    .filter(
+      (name) =>
+        !existsSync(path.join(directory, name)) ||
+        statSync(path.join(directory, name)).isFile(),
+    )
     .sort();
   const hash = createHash("sha256");
   for (const name of files) {
     hash.update(name).update("\0");
-    const fullPath = path.join(projectRoot, name);
+    const fullPath = path.join(directory, name);
     if (existsSync(fullPath)) hash.update(readFileSync(fullPath));
     else hash.update("<deleted>");
     hash.update("\0");

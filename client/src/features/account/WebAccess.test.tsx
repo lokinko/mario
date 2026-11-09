@@ -1,3 +1,4 @@
+import { currentSession } from "../../lib/webSession";
 // @vitest-environment jsdom
 import {
   cleanup,
@@ -9,7 +10,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { AccountSettings, WebAccess } from "./WebAccess";
 import { savedWebAccounts, setWebToken, webToken } from "../../lib/webSession";
-import { acceptRevision, dataRevision } from "../../lib/service";
+
 import { StrictMode, useState } from "react";
 vi.mock("./OpenAiSignIn", () => ({ OpenAiSignIn: () => null }));
 
@@ -138,7 +139,7 @@ it("switches from settings, clears old account drafts, and mounts the next accou
   vi.stubGlobal("fetch", fetcher);
   setWebToken("account-b", undefined, { email: "b@example.test" });
   setWebToken("account-a", undefined, { email: "a@example.test" });
-  acceptRevision("account-a-revision");
+  currentSession().acceptRevision("account-a-revision");
   render(
     <WebAccess>
       <AccountData />
@@ -156,7 +157,7 @@ it("switches from settings, clears old account drafts, and mounts the next accou
   );
   expect(screen.queryByText("account-a")).toBeNull();
   expect(webToken()).toBe("account-b");
-  expect(dataRevision()).toBeUndefined();
+  expect(currentSession().revision).toBeUndefined();
   await screen.findByText("account-b");
   expect((screen.getByLabelText("账号草稿") as HTMLInputElement).value).toBe(
     "",

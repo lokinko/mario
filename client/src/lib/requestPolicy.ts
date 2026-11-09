@@ -3,12 +3,11 @@ export function isDataWrite(path: string, method = "GET") {
   const resource = path.split("?")[0];
   return (
     method.toUpperCase() !== "GET" &&
+    !(method.toUpperCase() === "PUT" && resource === "/watch/catalog") &&
     ![
       "/analysis/preview",
       "/model-config/test",
       "/financial-operations/resolve",
-      // Shared catalogue writes use their own revision, independent of account data.
-      "/watch/catalog",
       "/watch/catalog/resolve",
       "/watch/dividend-calendar/refresh",
     ].includes(resource)

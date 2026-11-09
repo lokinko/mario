@@ -169,6 +169,7 @@ export interface Snapshot {
 }
 
 export interface HoldingAmounts {
+  priceStatus?: string;
   marketValue: string;
   costBasis: string;
   quantity: string | null;

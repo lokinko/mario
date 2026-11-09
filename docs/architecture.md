@@ -136,9 +136,9 @@ flowchart TD
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
 | `features/reviews`、`features/settings`、`features/account` | 复盘；模型设置、问答预设与 Codex 桥接；网页账号与服务端数据备份/外部自选 JSON 导入。`ServerData` 管理文件/粘贴草稿、来源账户预览及覆盖前备份，应用壳经 `ModelSettings.dataSettings` 插槽将同一组件装配到设置，不产生跨功能导入依赖 |
-| `api/<领域>.ts` | 领域请求与返回契约；`api/portfolio.ts` 拥有快速编辑队列，`api/portfolio/financialRequest.ts` 负责单次财务请求与回执核对 |
+| `api/<领域>.ts` | 领域请求与返回契约；`api/portfolio.ts` 选择需要串行的快速编辑，排队顺序归账号会话，`api/portfolio/financialRequest.ts` 负责单次财务请求与回执核对 |
 | `lib/httpClient.ts`、`transport.ts`、`requestPolicy.ts` | 认证、超时与只读重试、版本采纳、账号切换保护、请求类别 |
-| `lib/autoSync.ts`、`syncEvents.ts`、`webSession.ts`、`useRequestGuard.ts` | 版本轮询、数据事件、网页会话与多账号、过期响应抑制 |
+| `lib/accountSession.ts`、`autoSync.ts`、`syncEvents.ts`、`webSession.ts`、`useRequestGuard.ts` | 每账号会话的版本、同步屏障、写入计数、排队顺序与取消；版本轮询、数据事件、网页会话与多账号、过期响应抑制 |
 | `components/`、其余 `lib/`、`types.ts` | 无功能生命周期的展示组件、格式化与日期工具、共享契约类型 |
 
 ### 界面与显示约定
@@ -275,6 +275,7 @@ HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/div
 | 桥接配对 | `application/codex_bridge` + `ai/bridge` | 只存配对摘要与短期通道，不接触 OpenAI 凭据；沿用 `codex-bridge` 协议，不区分本机登录实现 |
 | ChatGPT 官方注册与令牌 | 用户电脑的 `chatgpt_auth/store` | 系统用户专属配置目录；稳定 host ID、按 subject + issued client ID 分开的注册；锁内轮换和原子替换；不是业务数据库或账号备份 |
 | 已显示快照、同步状态 | `app/useApplicationData` | 请求代次防止旧响应覆盖新数据 |
+| 传输版本、同步屏障与在途请求 | `lib/accountSession`，由 `webSession` 的账号边界创建与失效 | 切换或退出时取消旧请求、释放等待并拒绝旧结果；旧同步与写入只结束自己的会话 |
 | 显示偏好 | `app/useDisplayPreferences` | 当前浏览器 localStorage；不触发同步、账号写入或数据迁移 |
 | 未保存草稿与单页请求状态 | 各功能页 | 应用层只知道是否需要保护 |
 
@@ -318,10 +319,9 @@ HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/div
 
 已知架构债（架构检查通过不代表它们已消失）：
 
-- **部分行情等待仍持有账号锁**：只读证券报价 GET、手动及后台价格刷新已在供应商等待期解锁，但汇率查询、汇率刷新、保存持仓及核验估值仍在请求账号锁内等待外部供应商。写路径须先在锁内读取输入，锁外查询后重新加锁核对输入未变，再由仓储事务写入；不能直接复用只读预览的解锁行为。连接池与异步 SQL 需另行设计。
+- **账号写入仍按全局版本串行**：汇率刷新、保存普通持仓与核验估值在网络等待期间释放账号锁，返回后重获锁并核对冻结的账号版本；并发更新返回 409，不覆盖新数据。只读汇率查询只核对其汇率表，允许无关账号写入。连接池与异步 SQL 需另行设计。
 - **模型管理直接依赖具体 AI 实现**：`application/model_settings.rs` 直接构造 `NativeModelProvider` 与 `ai::bridge::BridgeProvider`，`application/codex_bridge.rs` 直接操作 `ai::bridge` 的注册状态。改造方向是为模型检测、目录读取与桥接注册定义窄接口，启动时注入。
-- **前端同步依赖单实例全局状态**：`lib/service.ts` 保存全局 revision，`lib/syncEvents.ts` 保存同步与写入计数，切换账号依靠重建子树保护。改造方向是由账号边界创建拥有 revision、同步屏障和生命周期的会话实例。
-- **跨语言契约手动维护**：前端 `types.ts` 与 Rust `models` 各自维护，写入政策前后端各有一份；架构检查不理解宏展开与间接转发，也不证明运行时事务与租户隔离。
+- **跨语言契约仍手动维护**：前端类型与 Rust 模型各自维护；`npm run check:contracts` 用真实 Rust 序列化验证精确金额、观察规则及各 HTTP 路径的版本政策与 TypeScript 一致，尚未覆盖全部契约。架构检查不理解宏展开与间接转发，也不证明运行时事务与租户隔离。
 
 ## 11. 修改架构时
 

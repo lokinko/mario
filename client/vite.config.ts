@@ -44,6 +44,8 @@ export default defineConfig(({ mode }) => {
     ],
     test: {
       setupFiles: ["./src/test/setup.ts"],
+      // Bound jsdom/Ant Design workers so UI tests do not compete for all host CPUs.
+      maxWorkers: 4,
     },
     clearScreen: false,
     server: {

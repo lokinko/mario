@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, OnceLock},
-    time::{Duration, Instant},
+    time::Duration,
 };
 use tokio::sync::{mpsc, Mutex as AsyncMutex};
+use tokio::time::Instant;
 
 const PAIR_TTL: Duration = Duration::from_secs(600);
 const SESSION_TTL: Duration = Duration::from_secs(12 * 3600);
@@ -541,27 +542,27 @@ mod tests {
             .is_err());
         assert!(!status(&id).paired);
     }
-    #[test]
-    fn bridge_expiry_and_single_worker_claim_are_enforced() {
+    #[tokio::test(start_paused = true)]
+    async fn bridge_expiry_and_single_worker_claim_are_enforced() {
         let (id, connection, runner) = setup();
         assert!(connection.claim(&runner, "fixture").is_ok());
         assert!(connection
             .claim(&uuid::Uuid::new_v4().to_string(), "fixture")
             .is_err());
         assert!(authenticate(&"a".repeat(64)).is_err());
-        {
-            let mut state = connection.state.lock().unwrap();
-            state.seen = Some(Instant::now() - ONLINE_TTL);
-        }
+        tokio::time::advance(ONLINE_TTL).await;
         assert!(!status(&id).online);
         revoke(&id);
         let mut connection = Arc::try_unwrap(connection).ok().unwrap();
-        connection.created = Instant::now() - SESSION_TTL;
-        let mut state = connection.state.lock().unwrap();
-        state.closed = false;
-        assert!(connection.expired(&state));
-        state.runner = None;
-        connection.created = Instant::now() - PAIR_TTL;
-        assert!(connection.expired(&state));
+        tokio::time::advance(SESSION_TTL).await;
+        {
+            let mut state = connection.state.lock().unwrap();
+            state.closed = false;
+            assert!(connection.expired(&state));
+            state.runner = None;
+        }
+        connection.created = Instant::now();
+        tokio::time::advance(PAIR_TTL + Duration::from_nanos(1)).await;
+        assert!(connection.expired(&connection.state.lock().unwrap()));
     }
 }

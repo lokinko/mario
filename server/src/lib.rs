@@ -25,6 +25,9 @@ mod storage;
 mod streaming;
 mod valuation;
 
+#[cfg(test)]
+mod contract_tests;
+
 pub use error::{AppError, AppResult};
 pub use runtime::run_from_env;
 

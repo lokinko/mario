@@ -2,6 +2,8 @@
 
 本索引连接当前规范、实现边界与验证入口。这里按业务或运行边界划分模块，内部文件职责见[架构地图](architecture.md)；沿用现有领域文档作为 spec，不另维护内容重复的需求目录。
 
+工程验证入口：`npm run check:entrypoints` 校验脚本引用，`npm run check:contracts` 校验高风险前后端传输契约；完整门禁仍为 `npm test`，步骤见[模块边界](module-boundaries.md)。
+
 ## 先确定文档职责
 
 | 文档层级 | 当前来源 | 用途 |

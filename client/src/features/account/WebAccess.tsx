@@ -1,3 +1,4 @@
+import { currentSession } from "../../lib/webSession";
 import { Callout } from "../../components/Callout";
 import { Button, Input } from "antd";
 import {
@@ -26,8 +27,8 @@ import {
   type WebAccount,
 } from "../../lib/webSession";
 import { requestJson } from "../../lib/transport";
-import { acceptRevision, serviceUrl } from "../../lib/service";
-import { blockStaleWrites } from "../../lib/syncEvents";
+import { serviceUrl } from "../../lib/service";
+
 import { OpenAiSignIn } from "./OpenAiSignIn";
 import { completeOpenAiSignIn, type OpenAiLoginResult } from "./openaiLogin";
 
@@ -213,8 +214,8 @@ export function WebAccess({ children }: { children: ReactNode }) {
     };
   }, []);
   const resetAccountState = () => {
-    acceptRevision();
-    blockStaleWrites(false);
+    currentSession().acceptRevision();
+    currentSession().blockStaleWrites(false);
     setEmail("");
     setPassword("");
     setRegister(false);

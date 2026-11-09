@@ -7,8 +7,9 @@ cd "$root_dir"
 unset MARIO_TEST_SERVER_BIN
 CARGO_TARGET_DIR="$(node scripts/server-artifacts.mjs)"
 export CARGO_TARGET_DIR
+npm run check:entrypoints
 (cd "$root_dir" && npm run check:architecture)
-(cd "$root_dir" && node --test scripts/codex-bridge.test.mjs scripts/postgres-cluster.test.mjs scripts/server-artifacts.test.mjs)
+(cd "$root_dir" && node --test scripts/codex-bridge.test.mjs scripts/postgres-cluster.test.mjs scripts/server-artifacts.test.mjs scripts/client-source.test.mjs)
 (cd "$root_dir" && npm run test:qa-eval)
 (cd "$root_dir" && npm run test:watch-data)
 (cd "$root_dir" && npm run test:deploy)
@@ -18,6 +19,7 @@ npm test --prefix "$root_dir/client"
 cargo fmt --manifest-path "$root_dir/server/Cargo.toml" -- --check
 cargo clippy --manifest-path "$root_dir/server/Cargo.toml" --all-targets -- -D warnings
 cargo build --manifest-path "$root_dir/server/Cargo.toml"
+npm run check:contracts
 # Rust tests and HTTP workflows share one disposable PostgreSQL cluster; each test uses its own account.
 (cd "$root_dir" && node scripts/postgres-cluster.mjs bash -c '
   set -euo pipefail
