@@ -1,6 +1,7 @@
 pub(crate) mod bridge;
 pub(crate) mod chatgpt;
 mod codex;
+pub(crate) mod management;
 pub use codex::CodexProvider;
 mod native_provider;
 mod orchestrator;

@@ -36,7 +36,10 @@ pub async fn refresh(
                 to_currency: base.clone(),
                 on_date: day.clone(),
             };
-            match provider.quote(&query).await {
+            let started = std::time::Instant::now();
+            let result = provider.quote(&query).await;
+            tracing::debug!(target: "mario::timing", stage = "supplier", kind = "fx", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
+            match result {
                 Ok(quote) => {
                     book.quotes.retain(|q| q.from_currency != *currency);
                     book.quotes.push(quote);
@@ -123,7 +126,10 @@ pub async fn historical_quote(
         Some(q) => q,
         None => {
             let before = serde_json::to_value(db.fx_book(&to)?)?;
-            let result = db.without_account_lock(provider.quote(query)).await??;
+            let started = std::time::Instant::now();
+            let result = db.without_account_lock(provider.quote(query)).await?;
+            tracing::debug!(target: "mario::timing", stage = "supplier", kind = "fx", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
+            let result = result?;
             if serde_json::to_value(db.fx_book(&to)?)? != before {
                 return Err(AppError::Conflict(
                     "查询期间汇率设置已变化，请重新查询".into(),

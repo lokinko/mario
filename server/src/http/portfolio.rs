@@ -117,8 +117,17 @@ async fn review_corporate_action(
     Ok(Json(state.db.review_corporate_action(&id, &input, &mode)?))
 }
 
-async fn snapshot(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.portfolio().snapshot()?))
+async fn snapshot(
+    Extension(state): Extension<Arc<RequestContext>>,
+) -> AppResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    let started = std::time::Instant::now();
+    let snapshot = state.portfolio().snapshot()?;
+    tracing::debug!(target: "mario::timing", stage = "snapshot", elapsed_us = started.elapsed().as_micros() as u64);
+    let started = std::time::Instant::now();
+    let response = Json(snapshot).into_response();
+    tracing::debug!(target: "mario::timing", stage = "snapshot_serialize", elapsed_us = started.elapsed().as_micros() as u64, status = response.status().as_u16());
+    Ok(response)
 }
 
 #[derive(serde::Deserialize)]

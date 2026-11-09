@@ -212,6 +212,7 @@ mod tests {
         )
         .unwrap();
         let state = Arc::new(RequestContext {
+            model_services: crate::composition::model_services(),
             user_id: "test-user".into(),
             is_superuser: false,
             watch_catalog: market_runtime.watch_catalog.clone(),

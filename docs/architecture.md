@@ -93,7 +93,7 @@ flowchart TD
 | `ai` | 依赖仓储、账号、行情供应商、传输适配器或 `application` |
 | 公共价格与分红模块 | `db/public_prices`／`db/public_dividends` 引用公开契约、`storage`、错误类型以外的模块；`application/public_prices`／`application/watch_market` 引用契约、仓储、端口、错误类型以外的模块 |
 | `db` | 依赖 `application`、`ai`、`agent`、`http`、`hosted`、`runtime` 或行情网络模块 |
-| `application` | 依赖传输/进程适配器或具体行情供应商；`application/analysis.rs` 直接引用 `ai` |
+| `application` | 依赖传输/进程适配器或具体行情供应商；应用层直接引用 `ai` |
 | `agent` | 依赖 `db`、`storage`、`accounts`、`application`、`http`、`hosted`、`runtime` |
 | 本机 OAuth | `chatgpt_auth` 依赖业务、账号或 AI 实现；在线 HTTP/Agent、领域及仓储依赖本机凭据；`ai/chatgpt.rs` 以外的 AI 模块读取本机 OAuth |
 | 网站 OIDC | `openai_login` 依赖账号仓储、模型执行或本机授权；`hosted` 以外的模块依赖网站 OIDC |
@@ -107,19 +107,19 @@ flowchart TD
 | 模块 | 职责 |
 | --- | --- |
 | `main.rs`、`lib.rs`、`runtime.rs` | 进程入口、模块声明、环境与参数解析、模式选择、维护命令、优雅退出 |
-| `composition.rs` | 创建行情供应商，组装 `MarketServices`，拥有后台刷新任务并在服务退出时取消 |
+| `composition.rs` | 装配模型连接器与桥接注册端口，创建行情供应商，组装 `MarketServices`，拥有后台刷新任务并在服务退出时取消 |
 | `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS、静态网页 |
 | `http/` | 按领域注册路由（`watch`、`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
 | `accounts.rs`、`accounts/openai.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速、持久化超级账户权限；可选网站 OpenAI 身份映射、短期 OAuth 事务及显式关联；Agent 令牌的常量时间比较 |
 | `openai_login.rs`、`hosted/openai.rs` | 网站身份登录：前者只做官方 OIDC 配置、授权码交换和签名声明校验，不访问账号或模型；后者转换 HTTP/Cookie、编排账号事务、固定站点重定向与一次性交接；与本机 `chatgpt_auth` 及订阅执行无依赖 |
-| `application/` | 跨仓储与外部端口的用例：`watch`（账号观察检查）、`watch_catalog`（公共目录及来源补齐）、`dividend_calendar`（公开计划刷新与账号范围投影）、`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`public_prices`/`fx`（共享价格、账号估值与汇率编排）、`model_settings`（模型接口切换策略、Provider 构造与连接测试）、`codex_bridge`（账号配对） |
-| `ports/` | `analysis::AnalysisExecutor` 与事件通道；`market::FxRateProvider`、`SecurityPriceProvider`、`SecurityHistoryProvider`、`WatchMarketProvider`、`CatalogSourceProvider` |
+| `application/` | 跨仓储与外部端口的用例：`watch`（账号观察检查）、`watch_catalog`（公共目录及来源补齐）、`dividend_calendar`（公开计划刷新与账号范围投影）、`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`public_prices`/`fx`（共享价格、账号估值与汇率编排）、`model_settings`（模型接口切换、冻结连接测试与注入的管理端口）、`codex_bridge`（账号配对） |
+| `ports/` | `analysis::AnalysisExecutor` 与事件通道，`model::ModelConnector` 与 `BridgeRegistry`（只接收冻结目的地或配对 ID，不访问账号库）；`market::FxRateProvider`、`SecurityPriceProvider`、`SecurityHistoryProvider`、`WatchMarketProvider`、`CatalogSourceProvider` |
 | `agent.rs` | `AgentExecutor`：配置 `MARIO_AGENT_URL` 时把冻结任务发给独立 Agent，否则进程内执行；Codex 桥接任务始终在 API 进程经桥接中继执行。同文件提供 Agent HTTP 服务 |
 | `ai/` | `orchestrator` 按 `workflow`（当前 v9）执行可选搜索与单次报告生成；格式错误只修复一次；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 和 `chatgpt` 只由用户电脑上的桥接 worker 调用，分别使用 Codex 登录和 Mario 自己的官方 OAuth 注册；`structured_output` 负责确定性引用、输出校验；资料检索和连续原文摘录归领域层 `evidence`；`streaming` 解析流式草稿 |
 | `codex_bridge_worker.rs` | 用户电脑上的共用桥接进程，固定注册及授权会话，长轮询 API 领取任务，选择 Codex App Server 或官方 ChatGPT Responses；模型目录及推理取令牌时在凭据锁内核对同一会话，不借用重新登录后的授权；不上传 OpenAI 凭据 |
 | `chatgpt_auth.rs`、`chatgpt_auth/` | 本机官方 OAuth、签名身份和 scopes 校验、多注册选择、跨进程串行刷新、原子凭据保存及退出；仅由本机运行角色与 `ai/chatgpt.rs` 调用，不依赖业务数据库 |
 | `market_data.rs`、`market_data/history.rs`、`market_data/watch.rs` | 汇率、完整五年日线与公司行动、分红及计划来源；价格的前复权／原值及完整来源成组取得，不持有价格缓存、不读写账号数据 |
-| `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共公司目录、独立版本、公共行业最新观察及分红计划快照；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema |
+| `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共公司目录、独立版本、公共行业最新观察及分红计划快照；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema；API 持有有界租户连接复用器，HTTP 与后台账号任务租用连接，归还前回滚并清理会话状态 |
 | `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、买点观察计算、期权合约计价及多空头重放、推理事件与执行时限 |
 | `context.rs` / `context/fact_sheet.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：分析上下文构建与预览、再平衡规划、风险检查、估值状态、本地证据检索 |
 | `attachments.rs`、`secrets.rs`、`streaming.rs`、`error.rs` | 附件解码与文本提取、主密钥加解密（AAD 绑定 schema 与用途）、共享 SSE 响应、统一错误类型 |
@@ -140,6 +140,10 @@ flowchart TD
 | `lib/httpClient.ts`、`transport.ts`、`requestPolicy.ts` | 认证、超时与只读重试、版本采纳、账号切换保护、请求类别 |
 | `lib/accountSession.ts`、`autoSync.ts`、`syncEvents.ts`、`webSession.ts`、`useRequestGuard.ts` | 每账号会话的版本、同步屏障、写入计数、排队顺序与取消；版本轮询、数据事件、网页会话与多账号、过期响应抑制 |
 | `components/`、其余 `lib/`、`types.ts` | 无功能生命周期的展示组件、格式化与日期工具、共享契约类型 |
+
+### 页面加载边界
+
+买点观察与应用壳同步加载；资产、日历、资料、复盘、方法论、问答、账号数据及设置通过模块顶层 `React.lazy` 声明按需加载。`DeferredPage` 提供各页独立的 Suspense 和错误边界，侧栏导航在加载期间可用；失败只有经用户确认才重新加载页面。问答的边界始终挂载在原常驻容器内，切换其他页不卸载对话；页面草稿与原离开确认继续按原生命周期管理。
 
 ### 界面与显示约定
 
@@ -261,7 +265,7 @@ HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/div
 
 | 状态 | 所有者 | 说明 |
 | --- | --- | --- |
-| 启动配置、行情供应商、AI 执行器 | 进程（`runtime`、`composition`） | 可替换，不持有账号数据 |
+| 启动配置、行情供应商、模型管理端口、AI 执行器 | 进程（`runtime`、`composition`） | 可替换，不持有账号数据 |
 | 公共行业目录及最新观察 | 契约归领域层，持久目录、独立版本与快照归 `db/public_watch` | 超级账户维护现有领域内的公司；公共仓储不读账号表、不写个人记录，目录事务比较独立版本；后台任务归 `composition` |
 | 五年公共行情及刷新状态 | `db/public_prices` + `application/public_prices` | 按证券原子版本；持久租约和退避、同进程合并；只有公开事实，不推进账号版本 |
 | 会话与账号 | `accounts` | 会话仅存哈希，可撤销；网站 OpenAI 身份映射、账号创建／关联／会话签发归同一事务；短期 OAuth 事务原子消费后不重放 |
@@ -278,6 +282,12 @@ HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/div
 | 传输版本、同步屏障与在途请求 | `lib/accountSession`，由 `webSession` 的账号边界创建与失效 | 切换或退出时取消旧请求、释放等待并拒绝旧结果；旧同步与写入只结束自己的会话 |
 | 显示偏好 | `app/useDisplayPreferences` | 当前浏览器 localStorage；不触发同步、账号写入或数据迁移 |
 | 未保存草稿与单页请求状态 | 各功能页 | 应用层只知道是否需要保护 |
+
+### 连接复用与阶段观测
+
+`hosted` 拥有绑定当前数据库 URL 的 `storage::ConnectionPool`，并将同一实例交给后台账号任务。连接只在相同租户 schema 内复用，每个请求独占租约；全量版本与权限仍从数据库读取，不缓存账号数据。归还依次执行独立的 `ROLLBACK`、`DISCARD ALL` 和超时／search_path 重新绑定，清理失败则关闭；取用时检测断线。最多保留 8 个空闲连接，归还达到上限时替换最早归还的空闲连接，取用时清退闲置超过 60 秒的记录，进程结束关闭全部空闲连接。认证和公共仓储的长生命周期连接仍独立持有，生产账号仓储只有租约路径；无数据库迁移。
+
+阶段日志使用 `mario::timing` 的 debug 事件，记录连接、schema 绑定、租约、归还清理、SQL、账号锁等待、供应商、快照构建／序列化及 HTTP 状态。新增事件不输出 SQL、参数、数据库地址、模型密钥或请求正文；409／503 可按 HTTP 状态聚合。`npm run measure:storage` 仅在临时 PostgreSQL 上输出工程耗时分位数，不连接部署数据库；一次性结果归审计记录。
 
 ## 8. 关键不变量
 
@@ -315,13 +325,12 @@ HTTP 的已认证 `GET /watch/dividend-calendar` 只读缓存；`POST /watch/div
 
 ## 10. 容量边界与已知架构债
 
-当前实现面向小规模自建：PostgreSQL 连接按请求创建，业务并发有固定上限，快照为全量读取，同步为轮询，分析没有持久作业或跨实例取消。扩大规模时的接入点分别是连接池、分页/增量资源接口和任务队列；在需求出现前不预先引入。
+当前实现面向小规模自建：账号数据库按请求租用连接，API 最多保留 8 个空闲租户连接，业务并发有固定上限，快照为全量读取，同步为轮询，分析没有持久作业或跨实例取消。扩大规模时的接入点是异步 SQL、分页/增量资源接口和任务队列；在需求出现前不预先引入。
 
 已知架构债（架构检查通过不代表它们已消失）：
 
-- **账号写入仍按全局版本串行**：汇率刷新、保存普通持仓与核验估值在网络等待期间释放账号锁，返回后重获锁并核对冻结的账号版本；并发更新返回 409，不覆盖新数据。只读汇率查询只核对其汇率表，允许无关账号写入。连接池与异步 SQL 需另行设计。
-- **模型管理直接依赖具体 AI 实现**：`application/model_settings.rs` 直接构造 `NativeModelProvider` 与 `ai::bridge::BridgeProvider`，`application/codex_bridge.rs` 直接操作 `ai::bridge` 的注册状态。改造方向是为模型检测、目录读取与桥接注册定义窄接口，启动时注入。
-- **跨语言契约仍手动维护**：前端类型与 Rust 模型各自维护；`npm run check:contracts` 用真实 Rust 序列化验证精确金额、观察规则及各 HTTP 路径的版本政策与 TypeScript 一致，尚未覆盖全部契约。架构检查不理解宏展开与间接转发，也不证明运行时事务与租户隔离。
+- **账号写入仍按全局版本串行**：汇率刷新、保存普通持仓与核验估值在网络等待期间释放账号锁，返回后重获锁并核对冻结的账号版本；并发更新返回 409，不覆盖新数据。只读汇率查询只核对其汇率表，允许无关账号写入。异步 SQL 需另行设计。
+- **跨语言契约仍手动维护**：前端类型与 Rust 模型各自维护；`npm run check:contracts` 用真实 Rust 序列化验证精确金额、交易与更正输入、汇率、流式事件、模型配置、桥接目录、观察规则及各 HTTP 路径的版本政策与 TypeScript 一致，尚未覆盖全部契约。架构检查不理解宏展开与间接转发，也不证明运行时事务与租户隔离。
 
 ## 11. 修改架构时
 

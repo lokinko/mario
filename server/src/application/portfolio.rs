@@ -46,9 +46,13 @@ impl PortfolioService<'_> {
         &self,
         query: &SecurityPriceQuery,
     ) -> AppResult<SecurityPriceQuote> {
-        self.db
+        let started = std::time::Instant::now();
+        let result = self
+            .db
             .without_account_lock(self.market.prices.quote(query))
-            .await?
+            .await?;
+        tracing::debug!(target: "mario::timing", stage = "supplier", kind = "security", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
+        result
     }
     pub async fn verify_valuation(
         &self,

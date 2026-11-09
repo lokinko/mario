@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { Button } from "antd";
 import { X } from "lucide-react";
 
 const DrawerControls = createContext({
@@ -160,15 +161,13 @@ export function Drawer({
             <h2 id={heading}>{title}</h2>
             {subtitle && <p>{subtitle}</p>}
           </div>
-          <button
-            type="button"
-            className="icon-button"
+          <Button
+            type="text"
+            icon={<X size={20} />}
             aria-label="关闭详情"
             disabled={busy || nestedBusy}
             onClick={dismiss}
-          >
-            <X size={20} />
-          </button>
+          />
         </header>
         <DrawerControls.Provider value={controls}>
           <div className="drawer-body">{children}</div>

@@ -25,6 +25,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 /// Concurrent authenticated requests; each holds one PostgreSQL connection.
 const REQUEST_SLOTS: usize = 24;
+const IDLE_TENANT_CONNECTIONS: usize = 8;
 /// Concurrent password hashing for login and registration.
 const AUTH_SLOTS: usize = 2;
 
@@ -42,6 +43,8 @@ struct ServerInfo {
 }
 
 struct HostedState {
+    tenant_connections: Arc<crate::storage::ConnectionPool>,
+    model_services: Arc<crate::application::model_settings::ModelServices>,
     accounts: Arc<Accounts>,
     openai: Option<crate::openai_login::OpenAiLogin>,
     slots: tokio::sync::Semaphore,
@@ -65,6 +68,11 @@ where
     crate::secrets::validate_master_key()?;
     let mut market_runtime = MarketRuntime::new(&url)?;
     let state = Arc::new(HostedState {
+        tenant_connections: Arc::new(crate::storage::ConnectionPool::new(
+            url.clone(),
+            IDLE_TENANT_CONNECTIONS,
+        )),
+        model_services: crate::composition::model_services(),
         accounts: Arc::new(Accounts::open(url)?),
         openai: crate::openai_login::OpenAiLogin::from_env()?,
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
@@ -75,7 +83,7 @@ where
         dividend_calendar: market_runtime.dividend_calendar.clone(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
     });
-    market_runtime.start_account_tasks(state.accounts.clone());
+    market_runtime.start_account_tasks(state.accounts.clone(), state.tenant_connections.clone());
     let private = api_router()
         .route("/api/sync/version", get(version))
         .route("/api/data/export", get(export))
@@ -177,6 +185,7 @@ async fn authenticate(
     mut request: Request,
     next: Next,
 ) -> Response {
+    let started = std::time::Instant::now();
     let result = async {
         let _permit = host
             .slots
@@ -184,12 +193,13 @@ async fn authenticate(
             .map_err(|_| AppError::Busy("服务繁忙，请稍后重试".into()))?;
         let user = host.accounts.authenticate(bearer(request.headers())?)?;
         let state = Arc::new(RequestContext {
+            model_services: host.model_services.clone(),
             is_superuser: host.accounts.is_superuser(&user)?,
             user_id: user.clone(),
             watch_provider: host.watch_provider.clone(),
             watch_catalog: host.watch_catalog.clone(),
             dividend_calendar: host.dividend_calendar.clone(),
-            db: Database::postgres(&host.accounts.url, &user)?,
+            db: Database::pooled(&host.tenant_connections, &user)?,
             market: host.market.clone(),
             analysis_executor: host.analysis_executor.clone(),
         });
@@ -258,7 +268,9 @@ async fn authenticate(
         Ok(response)
     }
     .await;
-    result.unwrap_or_else(IntoResponse::into_response)
+    let response = result.unwrap_or_else(IntoResponse::into_response);
+    tracing::debug!(target: "mario::timing", stage = "http", elapsed_us = started.elapsed().as_micros() as u64, status = response.status().as_u16());
+    response
 }
 async fn login(
     State(state): State<Arc<HostedState>>,

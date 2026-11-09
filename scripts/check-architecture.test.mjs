@@ -7,7 +7,7 @@ test('rejects reverse dependencies and cross-feature UI while allowing ports and
   assert(clientViolation('lib/transport.ts', 'api/research.ts'));
   assert.equal(clientViolation('features/research/Report.tsx', 'components/PageHeader.tsx'), undefined);
   for (const [from, to] of [['models','ai'], ['ai','db'], ['db','application'], ['db','market_data'], ['application','agent'], ['agent','db']]) assert(serverViolation(from, to));
-  assert.equal(serverViolation('application', 'ai'), undefined);
+  assert(serverViolation('application', 'ai'));
   assert.equal(serverViolation('db', 'models'), undefined);
 });
 test('detects a real cycle and permits shared acyclic dependencies', () => {

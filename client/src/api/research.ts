@@ -7,13 +7,11 @@ import type {
   ResearchEvidence,
   ResearchEvidenceInput,
   StoredAnalysis,
+  AnalysisUpdate,
 } from "../types";
 export async function runAnalysis(
   request: AnalysisRequest,
-  onUpdate?: (
-    update:
-      { type: "draft"; answer: string } | { type: "status"; message: string },
-  ) => void,
+  onUpdate?: (update: AnalysisUpdate) => void,
   signal?: AbortSignal,
 ): Promise<AnalysisResult> {
   if (onUpdate)

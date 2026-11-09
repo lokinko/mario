@@ -138,6 +138,8 @@ export function serverViolation(source, target) {
     return 'market adapters only implement query ports; account workflows belong in application';
   if (source === 'application' && target === 'market_data')
     return 'application receives market ports; concrete providers belong in composition';
+  if (source === 'application' && target === 'ai')
+    return 'model management and execution implementations belong behind injected ports';
   if (core.has(source) && target === 'ports') return 'domain rules cannot execute external ports';
   if (core.has(source) && (infrastructure.has(target) || transport.has(target) || ['application', 'ai'].includes(target)))
     return 'domain contracts and deterministic rules cannot depend on execution, persistence or transport';

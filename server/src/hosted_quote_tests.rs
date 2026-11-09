@@ -95,6 +95,8 @@ async fn authenticated_security_preview_allows_reads_and_profile_writes_without_
     });
     // These constructors only assemble test services; MarketRuntime::new would start network tasks.
     let host = Arc::new(HostedState {
+        tenant_connections: Arc::new(crate::storage::ConnectionPool::new(accounts.url.clone(), 8)),
+        model_services: crate::composition::model_services(),
         accounts,
         openai: None,
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
@@ -261,6 +263,8 @@ async fn authenticated_watch_detail_reads_stay_account_scoped_and_preserve_store
     let catalog = crate::application::watch_catalog::tests::fixture_service();
     catalog.refresh(Some("banks"), true).await.unwrap();
     let host = Arc::new(HostedState {
+        tenant_connections: Arc::new(crate::storage::ConnectionPool::new(accounts.url.clone(), 8)),
+        model_services: crate::composition::model_services(),
         accounts,
         openai: None,
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
@@ -373,6 +377,8 @@ async fn external_json_import_preserves_authentication_revision_tenant_and_resto
         calls: AtomicUsize::new(0),
     });
     let host = Arc::new(HostedState {
+        tenant_connections: Arc::new(crate::storage::ConnectionPool::new(accounts.url.clone(), 8)),
+        model_services: crate::composition::model_services(),
         accounts,
         openai: None,
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),

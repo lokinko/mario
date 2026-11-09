@@ -27,6 +27,8 @@ mod valuation;
 
 #[cfg(test)]
 mod contract_tests;
+#[cfg(test)]
+mod performance_tests;
 
 pub use error::{AppError, AppResult};
 pub use runtime::run_from_env;

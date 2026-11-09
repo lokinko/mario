@@ -25,22 +25,28 @@ pub(crate) fn worker_router() -> Router {
 }
 async fn status(
     Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<bridge::Status>> {
-    Ok(Json(codex_bridge::status(&state.db)?))
+) -> AppResult<Json<crate::models::CodexBridgeStatus>> {
+    Ok(Json(codex_bridge::status(
+        &state.db,
+        state.model_services.bridges.as_ref(),
+    )?))
 }
 async fn pair(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<Value>> {
     Ok(Json(
-        json!({"pairingCode":codex_bridge::pair(&state.db)?, "expiresInSeconds":600}),
+        json!({"pairingCode":codex_bridge::pair(&state.db, state.model_services.bridges.as_ref())?, "expiresInSeconds":600}),
     ))
 }
 async fn revoke(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<Value>> {
-    codex_bridge::revoke(&state.db)?;
+    codex_bridge::revoke(&state.db, state.model_services.bridges.as_ref())?;
     Ok(Json(json!({"ok":true})))
 }
 async fn enable(
     Extension(state): Extension<Arc<RequestContext>>,
 ) -> AppResult<Json<crate::models::ModelConfig>> {
-    Ok(Json(codex_bridge::enable(&state.db)?))
+    Ok(Json(codex_bridge::enable(
+        &state.db,
+        state.model_services.bridges.as_ref(),
+    )?))
 }
 #[derive(Deserialize)]
 struct Poll {

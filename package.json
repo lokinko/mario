@@ -11,6 +11,7 @@
     "check:architecture": "node scripts/check-architecture.mjs && node --test scripts/check-architecture.test.mjs",
     "check:entrypoints": "node scripts/check-entrypoints.mjs && node --test scripts/check-entrypoints.test.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",
+    "measure:storage": "node scripts/measure-storage.mjs",
     "test:startup": "node scripts/test-startup.mjs",
     "test:postgres-start": "node scripts/test-postgres-start.mjs",
     "data:backup": "node scripts/backup.mjs",

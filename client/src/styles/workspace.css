@@ -1083,75 +1083,16 @@ th,
   background: var(--down-tint);
   color: var(--down);
 }
-.callout {
-  --callout-color: var(--info);
-  --callout-bg: var(--info-tint);
-  display: flex;
-  gap: var(--space-3);
-  align-items: flex-start;
-  padding: var(--space-3) var(--space-4);
+.callout.ant-alert {
   margin-bottom: var(--space-4);
-  border: 1px solid color-mix(in srgb, var(--callout-color) 18%, transparent);
-  background: var(--callout-bg);
-  color: var(--text-2);
-  border-radius: var(--radius-md);
-  font-size: var(--fs-body-sm);
   overflow-wrap: anywhere;
+  font-size: var(--fs-body-sm);
 }
-.callout > svg {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--callout-color);
-}
-.callout > div {
-  flex: 1;
-  min-width: 0;
-}
-.callout > div > strong {
-  display: block;
-  color: var(--callout-color);
-  margin-bottom: var(--space-1);
-}
-.callout > .icon-button {
-  margin: -4px -8px -4px 0;
-}
-.callout-warning {
-  --callout-color: var(--warning);
-  --callout-bg: var(--warning-tint);
-}
-.callout-danger {
-  --callout-color: var(--danger);
-  --callout-bg: var(--danger-tint);
-}
-.callout-success {
-  --callout-color: var(--success);
-  --callout-bg: var(--success-tint);
-}
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: 20px;
-  padding: 0 var(--space-2);
+.badge.ant-tag {
+  margin-inline-end: 0;
   border-radius: 999px;
   font-size: var(--fs-caption);
-  font-weight: 500;
-  line-height: 20px;
-  background: var(--surface-hover);
-  color: var(--text-2);
   white-space: nowrap;
-}
-.badge-warning {
-  background: var(--warning-tint);
-  color: var(--warning);
-}
-.badge-success {
-  background: var(--success-tint);
-  color: var(--success);
-}
-.badge-info {
-  background: var(--info-tint);
-  color: var(--info);
 }
 .data-stamp {
   display: inline-flex;

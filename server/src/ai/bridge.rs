@@ -4,7 +4,7 @@ use super::{
     provider::{ModelCompletion, SearchCompletion},
     ChatMessage, ModelProvider,
 };
-use crate::{AppError, AppResult};
+use crate::{models::CodexBridgeStatus, AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -43,14 +43,6 @@ pub(crate) enum Event {
     Failure {
         reason: crate::models::inference::CodexFailure,
     },
-}
-#[derive(Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Status {
-    pub paired: bool,
-    pub online: bool,
-    pub model: Option<String>,
-    pub models: Vec<crate::models::CodexModel>,
 }
 struct Active {
     id: String,
@@ -241,13 +233,13 @@ pub(crate) fn authenticate(token: &str) -> AppResult<Arc<Connection>> {
         .cloned()
         .ok_or_else(|| AppError::Auth("桥接配对已过期或被撤销，请重新配对".into()))
 }
-pub(crate) fn status(id: &str) -> Status {
+pub(crate) fn status(id: &str) -> CodexBridgeStatus {
     let registry = registry().lock().unwrap();
     let Some(connection) = registry.get(id) else {
-        return Status::default();
+        return CodexBridgeStatus::default();
     };
     let state = connection.state.lock().unwrap();
-    Status {
+    CodexBridgeStatus {
         paired: !connection.expired(&state),
         online: !connection.expired(&state)
             && state.seen.is_some_and(|seen| seen.elapsed() < ONLINE_TTL),

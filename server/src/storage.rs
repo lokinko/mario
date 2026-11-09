@@ -1,6 +1,12 @@
 //! PostgreSQL boundary: repositories share dynamically typed rows over a dedicated client thread.
 //! Each tenant connection pins `search_path` to one account schema.
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex, Weak};
+use std::time::{Duration, Instant};
+
+#[cfg(test)]
+#[path = "storage_pool_tests.rs"]
+mod pool_tests;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -206,6 +212,119 @@ struct Command {
 }
 pub struct Connection {
     commands: mpsc::Sender<Command>,
+    lease: Option<Lease>,
+}
+
+struct Lease {
+    pool: Weak<PoolInner>,
+    schema: String,
+}
+struct IdleConnection {
+    commands: mpsc::Sender<Command>,
+    schema: String,
+    since: Instant,
+}
+struct PoolInner {
+    url: String,
+    max_idle: usize,
+    idle: Mutex<Vec<IdleConnection>>,
+}
+
+/// API-owned bounded idle connections, never shared across database URLs or tenant schemas.
+#[derive(Clone)]
+pub(crate) struct ConnectionPool(Arc<PoolInner>);
+impl ConnectionPool {
+    pub(crate) fn new(url: String, max_idle: usize) -> Self {
+        Self(Arc::new(PoolInner {
+            url,
+            max_idle,
+            idle: Mutex::new(Vec::new()),
+        }))
+    }
+
+    pub(crate) fn acquire(&self, schema: &str) -> Result<Connection> {
+        let started = Instant::now();
+        let idle = {
+            let mut idle = self
+                .0
+                .idle
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            idle.retain(|entry| entry.since.elapsed() < Duration::from_secs(60));
+            idle.iter()
+                .rposition(|entry| entry.schema == schema)
+                .map(|index| idle.swap_remove(index))
+        };
+        let mut reused = false;
+        let mut connection = if let Some(idle) = idle {
+            let connection = Connection {
+                commands: idle.commands,
+                lease: None,
+            };
+            if connection.execute_batch("SELECT 1").is_ok() {
+                reused = true;
+                connection
+            } else {
+                Connection::postgres(&self.0.url, schema)?
+            }
+        } else {
+            Connection::postgres(&self.0.url, schema)?
+        };
+        connection.lease = Some(Lease {
+            pool: Arc::downgrade(&self.0),
+            schema: schema.into(),
+        });
+        tracing::debug!(target: "mario::timing", stage = "db_lease", elapsed_us = started.elapsed().as_micros() as u64, reused);
+        Ok(connection)
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        let Some(lease) = self.lease.take() else {
+            return;
+        };
+        let Some(pool) = lease.pool.upgrade() else {
+            return;
+        };
+        let started = Instant::now();
+        // DISCARD ALL is deliberately a standalone statement, outside any transaction.
+        // It clears advisory locks, temporary objects, prepared statements and session settings.
+        let reset = self
+            .execute_batch("ROLLBACK")
+            .and_then(|_| self.execute_batch("DISCARD ALL"))
+            .and_then(|_| {
+                self.execute_batch(&format!(
+                    "SET statement_timeout TO '30s'; SET search_path TO {}",
+                    lease.schema
+                ))
+            });
+        tracing::debug!(target: "mario::timing", stage = "db_reset", elapsed_us = started.elapsed().as_micros() as u64, success = reset.is_ok());
+        if reset.is_err() {
+            return;
+        }
+        let mut idle = pool
+            .idle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if pool.max_idle == 0 {
+            return;
+        }
+        if idle.len() >= pool.max_idle {
+            let oldest = idle
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, entry)| entry.since)
+                .map(|(index, _)| index)
+                .unwrap();
+            idle.swap_remove(oldest);
+        }
+        idle.push(IdleConnection {
+            commands: self.commands.clone(),
+            schema: lease.schema,
+            since: Instant::now(),
+        });
+    }
 }
 impl Connection {
     pub fn postgres(url: &str, schema: &str) -> Result<Self> {
@@ -220,29 +339,43 @@ impl Connection {
         let (ready_tx, ready_rx) = mpsc::channel();
         let url = url.to_owned();
         let schema = schema.to_owned();
+        let dispatcher = tracing::dispatcher::get_default(Clone::clone);
         std::thread::spawn(move || {
-            let connected = (|| {
-                let mut c = postgres::Client::connect(&url, postgres::NoTls)?;
-                c.batch_execute(&format!("SET statement_timeout TO '30s'; SELECT pg_advisory_lock(hashtextextended('{schema}',0)); CREATE SCHEMA IF NOT EXISTS {schema}; SET search_path TO {schema}; SELECT pg_advisory_unlock(hashtextextended('{schema}',0));"))?;
-                Ok::<_, Error>(c)
-            })();
-            let mut client = match connected {
-                Ok(c) => {
-                    let _ = ready_tx.send(Ok(()));
-                    c
+            tracing::dispatcher::with_default(&dispatcher, || {
+                let connected = (|| {
+                    let started = std::time::Instant::now();
+                    let result = postgres::Client::connect(&url, postgres::NoTls);
+                    tracing::debug!(target: "mario::timing", stage = "db_connect", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
+                    let mut c = result?;
+                    let started = std::time::Instant::now();
+                    let result = c.batch_execute(&format!("SET statement_timeout TO '30s'; SELECT pg_advisory_lock(hashtextextended('{schema}',0)); CREATE SCHEMA IF NOT EXISTS {schema}; SET search_path TO {schema}; SELECT pg_advisory_unlock(hashtextextended('{schema}',0));"));
+                    tracing::debug!(target: "mario::timing", stage = "db_bind", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
+                    result?;
+                    Ok::<_, Error>(c)
+                })();
+                let mut client = match connected {
+                    Ok(c) => {
+                        let _ = ready_tx.send(Ok(()));
+                        c
+                    }
+                    Err(e) => {
+                        let _ = ready_tx.send(Err(e));
+                        return;
+                    }
+                };
+                for cmd in rx {
+                    let started = std::time::Instant::now();
+                    let result = run(&mut client, &cmd.sql, cmd.values, cmd.batch);
+                    tracing::debug!(target: "mario::timing", stage = "sql", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
+                    let _ = cmd.reply.send(result);
                 }
-                Err(e) => {
-                    let _ = ready_tx.send(Err(e));
-                    return;
-                }
-            };
-            for cmd in rx {
-                let result = run(&mut client, &cmd.sql, cmd.values, cmd.batch);
-                let _ = cmd.reply.send(result);
-            }
+            })
         });
         receive(ready_rx)??;
-        Ok(Self { commands: tx })
+        Ok(Self {
+            commands: tx,
+            lease: None,
+        })
     }
     fn run(&self, sql: &str, values: Vec<Value>, batch: bool) -> Result<(usize, Vec<Row>)> {
         let (reply, rx) = mpsc::channel();

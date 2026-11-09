@@ -9,6 +9,7 @@ mod provider;
 pub(crate) mod watch;
 pub(crate) use endpoint::validate_endpoint;
 pub use provider::ModelProviderKind;
+pub(crate) use provider::ModelTarget;
 pub(crate) mod accounting;
 pub(crate) mod daily;
 pub(crate) mod decimal;
@@ -535,6 +536,20 @@ pub struct CodexModel {
     pub description: String,
     #[serde(default)]
     pub is_default: bool,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CodexBridgeStatus {
+    pub paired: bool,
+    pub online: bool,
+    pub model: Option<String>,
+    pub models: Vec<CodexModel>,
+}
+
+pub(crate) struct BridgePairing {
+    pub id: String,
+    pub code: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

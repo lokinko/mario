@@ -97,10 +97,20 @@ impl Database {
         }
         daily::only_initial_entries(&*self.conn()?)
     }
+    #[cfg(test)]
     pub fn postgres(url: &str, user_id: &str) -> AppResult<Self> {
         let id = Uuid::parse_str(user_id).map_err(|_| AppError::Auth("无效账户".into()))?;
+        Self::migrated(Connection::postgres(url, &format!("user_{}", id.simple()))?)
+    }
+
+    pub(crate) fn pooled(pool: &crate::storage::ConnectionPool, user_id: &str) -> AppResult<Self> {
+        let id = Uuid::parse_str(user_id).map_err(|_| AppError::Auth("无效账户".into()))?;
+        Self::migrated(pool.acquire(&format!("user_{}", id.simple()))?)
+    }
+
+    fn migrated(connection: Connection) -> AppResult<Self> {
         let db = Self {
-            connection: Mutex::new(Connection::postgres(url, &format!("user_{}", id.simple()))?),
+            connection: Mutex::new(connection),
         };
         {
             let _lock = db.lock_account()?;
@@ -168,8 +178,16 @@ impl Database {
     }
 
     pub fn lock_account(&self) -> AppResult<AccountLock<'_>> {
-        self.conn()?.execute_batch(LOCK_ACCOUNT_SQL)?;
+        self.acquire_account_lock()?;
         Ok(AccountLock { db: self })
+    }
+
+    fn acquire_account_lock(&self) -> AppResult<()> {
+        let started = std::time::Instant::now();
+        let result = self.conn()?.execute_batch(LOCK_ACCOUNT_SQL);
+        tracing::debug!(target: "mario::timing", stage = "account_lock", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
+        result?;
+        Ok(())
     }
 
     fn unlock_account(&self) -> AppResult<()> {
@@ -184,7 +202,7 @@ impl Database {
     ) -> AppResult<T> {
         self.unlock_account()?;
         let output = work.await;
-        self.conn()?.execute_batch(LOCK_ACCOUNT_SQL)?;
+        self.acquire_account_lock()?;
         Ok(output)
     }
     /// A panic while the guard was held already rolled back any open transaction
@@ -217,6 +235,10 @@ impl TestAccount {
 
     pub(crate) fn open(&self) -> Database {
         Database::postgres(&self.url, &self.user).unwrap()
+    }
+
+    pub(crate) fn pooled(&self, pool: &crate::storage::ConnectionPool) -> Database {
+        Database::pooled(pool, &self.user).unwrap()
     }
 
     /// The account schema without running tenant migrations, for seeding older layouts.

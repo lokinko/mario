@@ -1,5 +1,6 @@
 import { Skeleton } from "./Skeleton";
 import { Callout } from "./Callout";
+import { Button } from "antd";
 export function LoadState({
   loading,
   error,
@@ -14,9 +15,7 @@ export function LoadState({
   return (
     <Callout tone="danger">
       <span>{error}</span>
-      <button className="secondary" onClick={onRetry}>
-        重新加载
-      </button>
+      <Button onClick={onRetry}>重新加载</Button>
     </Callout>
   );
 }

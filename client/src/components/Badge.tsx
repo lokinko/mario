@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Tag } from "antd";
 export function Badge({
   children,
   tone = "neutral",
@@ -9,8 +10,14 @@ export function Badge({
   title?: string;
 }) {
   return (
-    <span className={`badge badge-${tone}`} title={title}>
+    <Tag
+      className={`badge badge-${tone}`}
+      title={title}
+      color={
+        tone === "neutral" ? undefined : tone === "info" ? "processing" : tone
+      }
+    >
       {children}
-    </span>
+    </Tag>
   );
 }

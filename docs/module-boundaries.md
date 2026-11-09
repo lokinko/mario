@@ -50,7 +50,7 @@ flowchart TD
 - 多用户请求先认证，再按服务端用户 ID 选择数据库连接。`RequestContext` 只组合该请求的账号数据库与共享服务依赖；客户端不能提供租户 ID。
 - 五年价格历史按证券归公共数据库，来源更新和失败退避跨账号及重启共享；用户汇率覆盖、持仓、密钥和分析历史继续归账号。
 - 多用户请求在数据库账户锁内检查 `If-Match`。分析预览、模型连接测试等实际例外只由 `http/policy.rs` 声明，前端 `requestPolicy` 同步对应政策。新增操作默认要求版本，不能因为名字含 `preview` 或 `test` 就自动豁免。
-- 分析执行在锁内冻结上下文、模型配置、密钥目的地和指纹；模型执行期间释放账户锁，执行结束重新取锁后保存。失败不产生分析历史；请求退出会关闭连接并释放残留的数据库会话锁。
+- 分析执行在锁内冻结上下文、模型配置、密钥目的地和指纹；模型执行期间释放账户锁，执行结束重新取锁后保存。失败不产生分析历史；请求退出归还租约前清理事务和残留的数据库会话锁，清理失败关闭连接。
 
 - 组合快照先读取 `db/snapshot::SnapshotData`，`amounts::build` 生成精确投影，再调用一次 `build_snapshot`。AI 上下文消费结构化问题及规划范围，`structured_output` 校验结构与来源，不按固定中文动作判定有效性。数据问题只由 `valuation::issues` 判定，问题码、持仓 ID 和币种是公开契约；不得按文案筛选风险项或在仓储中事后清空规划。`planning` 拥有再平衡范围与精确金额计算，未平仓期权及标的只排除自身动作，分母仍用完整组合。
 
@@ -70,7 +70,7 @@ flowchart TD
 - 资产页的 Ant Design 标签页只拥有展示选择；收支草稿由 `MyFacts` 通过受控属性传给 `ProfileForm`，资产与交易草稿归各自编辑器。打开编辑器和保存期间禁止切换分类。`portfolio.css` 只管理本领域的紧凑布局，继续使用统一设计变量。共享 `NumberField` 用 `Input type="number"` 传递原始字符串和单位，不能用显示格式化结果替换金额输入或改变财务保存协议。
 - `app/useDisplayPreferences` 管理本地涨跌色与金额隐藏偏好。功能页通过属性接收值和回调，共享 `DisplayPreferences` 表单不导入应用壳；显示控件标注 `data-presentation`，不将本地偏好视为业务草稿。
 - `features/portfolio/useAssetHistory` 是资产页历史查询的唯一状态来源，只供总览读取最近 30 条记录；不得从持仓投影重算服务端总资产。
-- 共享界面能力放在 `components/`，无领域 API 依赖。新增提示使用 `Callout`，状态使用 `Badge`，时点使用 `DataStamp`；行尾操作使用支持方向键、Esc 和焦点恢复的 `Menu`。抽屉内 Esc 先关闭菜单，再关闭抽屉。
+- 共享界面能力放在 `components/`，无领域 API 依赖。新增提示使用包装 Ant Design Alert 的 `Callout`，状态使用包装 Tag 的 `Badge`，时点使用 `DataStamp`；行尾操作使用支持方向键、Esc 和焦点恢复的 `Menu`。抽屉内 Esc 先关闭菜单，再关闭抽屉。
 - `components/InterfaceProvider` 只负责 Ant Design 中文语言与视觉主题，从 `styles/tokens.css` 读取设计变量并跟随系统明暗切换，不持有账号、路由或领域状态。买点观察主要操作与搜索、登录输入使用 Ant Design；既有共享菜单、抽屉和领域控件保留自身的键盘、焦点与草稿保护契约。顶部位置导航由应用壳组合，不让共享展示层反向引用 `app/`。
 - 新增金额输出使用 `data-money`，输入使用 `data-money-input`，数量与百分比保持可见；金额格式化仅作用于输出，原生数值输入保留源精度。颜色与字号只在 `styles/tokens.css` 定义，新增颜色须同时给出明暗两套取值；品牌色上的文字使用 `--on-brand`，吸顶元素以 `--chrome-height` 计算偏移。
 - 新增页面沿用 1200/900/600px 断点，校验桌面、平板和手机；不得用全局最小宽度掩盖溢出。
@@ -86,6 +86,9 @@ flowchart TD
 ## 领域扩展约束
 
 ### 执行接口与适配器
+
+- 模型连接测试通过 `ports/model::ModelConnector`，配对和目录状态通过 `BridgeRegistry`；`ai/management` 实现，`composition` 注入。应用层不得导入任何具体 AI 实现。`ModelTarget` 只保存冻结配置与凭据，无 Debug 或序列化实现，不能写入事件日志。模型测试等待期释放账号锁，结束后只核对被测模型与凭据，允许无关个人写入。
+- 连接复用由 API 进程拥有，仓储只持有独占租约。必须覆盖真实跨连接锁、未提交／失败事务、临时对象和 search_path 清理、跨租户不可见、断线替换及空闲上限；不能通过关闭版本检查或复用可变账号快照提高速度。维护认证与公共事实仓储独立持有长连接。
 
 - `ports/` 是外部执行契约层，只依赖领域契约、冻结上下文和错误类型；流式事件结构归 `models/inference.rs`。
 - `application/portfolio.rs`、`fx.rs`、`prices.rs` 只使用行情端口；`composition.rs` 负责实际供应商装配与生命周期；`market_data.rs` 与 `market_data/history` 不读写账号数据，也不持有静态可变资源。
@@ -221,6 +224,10 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 
 后端构建与验收产物定位由 [`server-artifacts.mjs`](../scripts/server-artifacts.mjs) 统一维护。`CARGO_TARGET_DIR` 相对路径按仓库根解析；构建入口先将其规范为明确绝对目录或显式传给 Cargo，空值使用该入口的默认目录。完整 `npm test` 固定在仓库根执行，清除继承的 `MARIO_TEST_SERVER_BIN`，构建与后续 HTTP 验收使用同一 target，不能只因磁盘已有可执行文件就验收旧产物。独立 HTTP、备份和启动验收仍允许显式 `MARIO_TEST_SERVER_BIN`，建议使用绝对路径；显式 binary 的相对路径保留调用者当前目录语义，未指定时使用相应 Cargo target 的 debug 程序。财务门禁将迁移测试、构建和 HTTP 的 target 一起绑定：有显式 target 时复用，否则使用独立 `.runtime/financial-build`。本机桥接源码启动器显式构建并启动同一 target，不增加 CLI 参数。路径和真实子进程启动回归归 [`server-artifacts.test.mjs`](../scripts/server-artifacts.test.mjs)。
 
+页面按需加载必须保留 hash 导航、草稿保护、问答常驻和账号切换失效行为，并覆盖等待、失败和取消重新加载；不得通过重新挂载应用壳实现重试。共享提示、标签和普通关闭／重试按钮优先复用 Ant Design；`Drawer` 与 `Menu` 的焦点、忙碌和未保存输入契约继续由已有实现拥有。
+
+本机阶段耗时可用 `RUST_LOG=mario::timing=debug` 查看，事件只含阶段、时长、结果／状态。`npm run measure:storage` 用隔离临时集群测量连接、锁、快照及序列化，不作为有固定耗时阈值的单元测试，也不替代线上容量验证。
+
 提交前执行：
 
 ```bash
@@ -234,6 +241,6 @@ cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
 cargo build --manifest-path server/Cargo.toml
 ```
 
-跨前后端、数据格式、财务逻辑或公共契约的修改运行完整 `npm test`（[`scripts/test.sh`](../scripts/test.sh)）：先检查 npm 和完整门禁引用的脚本确实存在；构建后运行 `npm run check:contracts`，以真实 Rust 输出验证精确金额、观察规则的 TypeScript 类型以及从 HTTP 源文件提取路径的版本政策一致性，再在同一个临时集群中依次运行 Rust 测试、`test-functional-api`、`test-web`、`test-codex-bridge`，再运行独立建集群的 `npm run test:financial`。
+跨前后端、数据格式、财务逻辑或公共契约的修改运行完整 `npm test`（[`scripts/test.sh`](../scripts/test.sh)）：先检查 npm 和完整门禁引用的脚本确实存在；构建后运行 `npm run check:contracts`，以真实 Rust 输出验证精确金额、交易与更正、汇率、流式事件、模型与桥接、观察规则的 TypeScript 类型以及从 HTTP 源文件提取路径的版本政策一致性，再在同一个临时集群中依次运行 Rust 测试、`test-functional-api`、`test-web`、`test-codex-bridge`，再运行独立建集群的 `npm run test:financial`。
 
 依赖检查解析 TypeScript 导入/导出，包括类型导入与动态导入；Rust 检查去除字符串、注释与测试专属项后提取显式 crate 依赖。它阻止上层反向引用、跨功能 UI 引用、领域客户端之间的引用以及依赖循环。DB 内部实现仍允许使用父模块门面的共享导入。检查属于静态约束，与编译及行为测试互补，不代表所有宏展开或运行时隔离已经被证明。

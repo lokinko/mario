@@ -1,44 +1,49 @@
-//! Model credentials and destination binding; independent of HTTP and process startup.
+//! Account-owned configuration and frozen connection checks through execution ports.
 use crate::{
-    ai::{ChatMessage, ModelProvider, NativeModelProvider},
     db::{model_key_binding, Database},
-    models::{ModelConfig, ModelConfigInput, ModelConnectionTest, ModelProviderKind},
+    models::{ModelConfig, ModelConfigInput, ModelConnectionTest, ModelProviderKind, ModelTarget},
+    ports::model::{BridgeRegistry, ModelConnector},
     AppError, AppResult,
 };
-pub(crate) async fn test_connection(db: &Database) -> AppResult<ModelConnectionTest> {
-    let config = db.model_config()?;
-    let provider = configured_model_provider(db, &config)?;
-    let started = std::time::Instant::now();
-    provider
-        .complete(vec![
-            ChatMessage::system("这是连接测试。"),
-            ChatMessage::user("请只回复 OK"),
-        ])
-        .await?;
-    Ok(ModelConnectionTest {
-        ok: true,
-        model: config.model,
-        latency_ms: started.elapsed().as_millis(),
-    })
+pub(crate) struct ModelServices {
+    pub connector: std::sync::Arc<dyn ModelConnector>,
+    pub bridges: std::sync::Arc<dyn BridgeRegistry>,
 }
-
-pub(crate) fn configured_model_provider(
+pub(crate) async fn test_connection(
     db: &Database,
-    config: &ModelConfig,
-) -> AppResult<Box<dyn ModelProvider>> {
-    if config.provider == ModelProviderKind::CodexBridge {
-        return Ok(Box::new(crate::ai::bridge::BridgeProvider::new(
-            super::codex_bridge::id(db)?,
-            config.model.clone(),
-        )));
+    connector: &dyn ModelConnector,
+) -> AppResult<ModelConnectionTest> {
+    let config = db.model_config()?;
+    let target = frozen_target(db, &config)?;
+    let started = std::time::Instant::now();
+    let result = db
+        .without_account_lock(connector.test(target.clone()))
+        .await?;
+    tracing::debug!(target: "mario::timing", stage = "supplier", kind = "model_test", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
+    let result = result?;
+    let current = db.model_config()?;
+    if serde_json::to_value(&current)? != serde_json::to_value(&config)?
+        || frozen_target(db, &current)
+            .ok()
+            .is_none_or(|current| current.credential != target.credential)
+    {
+        return Err(AppError::Conflict(
+            "测试期间模型配置已变化，请测试当前配置".into(),
+        ));
     }
-    crate::models::validate_endpoint(&config.base_url)?;
-    Ok(Box::new(NativeModelProvider::new(
-        config.provider,
-        config.base_url.clone(),
-        config.model.clone(),
-        configured_model_key(db, config)?,
-    )?))
+    Ok(result)
+}
+fn frozen_target(db: &Database, config: &ModelConfig) -> AppResult<ModelTarget> {
+    let credential = if config.provider == ModelProviderKind::CodexBridge {
+        super::codex_bridge::id(db)?
+    } else {
+        crate::models::validate_endpoint(&config.base_url)?;
+        configured_model_key(db, config)?
+    };
+    Ok(ModelTarget {
+        config: config.clone(),
+        credential,
+    })
 }
 
 pub(crate) fn configured_model_key(db: &Database, config: &ModelConfig) -> AppResult<String> {
@@ -53,9 +58,13 @@ pub(crate) fn configured_model_key(db: &Database, config: &ModelConfig) -> AppRe
     db.secret("model")
 }
 
-pub(crate) async fn save(db: &Database, input: ModelConfigInput) -> AppResult<ModelConfig> {
+pub(crate) fn save(
+    db: &Database,
+    input: ModelConfigInput,
+    bridges: &dyn BridgeRegistry,
+) -> AppResult<ModelConfig> {
     if input.provider == ModelProviderKind::CodexBridge {
-        return super::codex_bridge::save(db, &input.model);
+        return super::codex_bridge::save(db, &input.model, bridges);
     }
     let previous = db.model_config()?;
     if previous.has_api_key
@@ -78,6 +87,9 @@ pub(crate) async fn save(db: &Database, input: ModelConfigInput) -> AppResult<Mo
     )?;
     db.model_config()
 }
+#[cfg(test)]
+#[path = "model_settings_tests.rs"]
+mod concurrency_tests;
 #[cfg(test)]
 mod tests {
     use super::*;

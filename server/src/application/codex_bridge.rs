@@ -1,8 +1,8 @@
 //! Pairing belongs to the authenticated account, never to caller-supplied model URLs.
 use crate::{
-    ai::bridge,
     db::Database,
-    models::{ModelConfig, ModelProviderKind},
+    models::{CodexBridgeStatus, ModelConfig, ModelProviderKind},
+    ports::model::BridgeRegistry,
     AppError, AppResult,
 };
 const ID: &str = "model.codex_bridge_id";
@@ -10,33 +10,30 @@ pub(crate) fn id(db: &Database) -> AppResult<String> {
     db.setting(ID)?
         .ok_or_else(|| AppError::Validation("请先配对本机 Codex".into()))
 }
-pub(crate) fn status(db: &Database) -> AppResult<bridge::Status> {
-    Ok(db
-        .setting(ID)?
-        .map(|id| bridge::status(&id))
-        .unwrap_or_default())
+pub(crate) fn status(db: &Database, bridges: &dyn BridgeRegistry) -> AppResult<CodexBridgeStatus> {
+    Ok(bridges.status(db.setting(ID)?.as_deref()))
 }
-pub(crate) fn pair(db: &Database) -> AppResult<String> {
-    let (new_id, token) = bridge::create()?;
+pub(crate) fn pair(db: &Database, bridges: &dyn BridgeRegistry) -> AppResult<String> {
+    let pairing = bridges.create()?;
     if let Err(error) = (|| {
         if let Some(old) = db.setting(ID)? {
-            bridge::revoke(&old);
+            bridges.revoke(&old);
         }
-        db.set_setting(ID, &new_id)
+        db.set_setting(ID, &pairing.id)
     })() {
-        bridge::revoke(&new_id);
+        bridges.revoke(&pairing.id);
         return Err(error);
     }
-    Ok(token)
+    Ok(pairing.code)
 }
-pub(crate) fn revoke(db: &Database) -> AppResult<()> {
+pub(crate) fn revoke(db: &Database, bridges: &dyn BridgeRegistry) -> AppResult<()> {
     if let Some(id) = db.setting(ID)? {
-        bridge::revoke(&id);
+        bridges.revoke(&id);
     }
     db.delete_setting(ID)
 }
-pub(crate) fn enable(db: &Database) -> AppResult<ModelConfig> {
-    let state = status(db)?;
+pub(crate) fn enable(db: &Database, bridges: &dyn BridgeRegistry) -> AppResult<ModelConfig> {
+    let state = status(db, bridges)?;
     if !state.online {
         return Err(AppError::Validation(
             "请先在本机启动桥接，待显示在线后再启用".into(),
@@ -53,10 +50,14 @@ pub(crate) fn enable(db: &Database) -> AppResult<ModelConfig> {
     } else {
         state.model.as_deref().unwrap_or_default()
     };
-    save(db, selected)
+    save(db, selected, bridges)
 }
-pub(crate) fn save(db: &Database, model: &str) -> AppResult<ModelConfig> {
-    let state = status(db)?;
+pub(crate) fn save(
+    db: &Database,
+    model: &str,
+    bridges: &dyn BridgeRegistry,
+) -> AppResult<ModelConfig> {
+    let state = status(db, bridges)?;
     if !state.online {
         return Err(AppError::Validation("本机桥接不在线，请重新连接".into()));
     }
@@ -77,10 +78,12 @@ pub(crate) fn save(db: &Database, model: &str) -> AppResult<ModelConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::{bridge, management::BridgeRegistryAdapter};
+    const REGISTRY: BridgeRegistryAdapter = BridgeRegistryAdapter;
     #[test]
     fn catalog_selection_is_validated_preserved_and_account_scoped() {
         let db = Database::test();
-        let token = pair(&db).unwrap();
+        let token = pair(&db, &REGISTRY).unwrap();
         let connection = bridge::authenticate(&token).unwrap();
         let runner = uuid::Uuid::new_v4().to_string();
         let models = vec![
@@ -98,28 +101,28 @@ mod tests {
             },
         ];
         connection.advertise(&runner, "a", &models).unwrap();
-        assert_eq!(status(&db).unwrap().models, models);
-        assert_eq!(enable(&db).unwrap().model, "a");
-        assert!(save(&db, "unknown").is_err());
-        assert_eq!(save(&db, "b").unwrap().model, "b");
-        assert_eq!(enable(&db).unwrap().model, "b");
+        assert_eq!(status(&db, &REGISTRY).unwrap().models, models);
+        assert_eq!(enable(&db, &REGISTRY).unwrap().model, "a");
+        assert!(save(&db, "unknown", &REGISTRY).is_err());
+        assert_eq!(save(&db, "b", &REGISTRY).unwrap().model, "b");
+        assert_eq!(enable(&db, &REGISTRY).unwrap().model, "b");
         assert!(connection
             .advertise(&uuid::Uuid::new_v4().to_string(), "a", &models)
             .is_err());
-        assert_eq!(status(&db).unwrap().models, models);
-        revoke(&db).unwrap();
-        assert!(status(&db).unwrap().models.is_empty());
+        assert_eq!(status(&db, &REGISTRY).unwrap().models, models);
+        revoke(&db, &REGISTRY).unwrap();
+        assert!(status(&db, &REGISTRY).unwrap().models.is_empty());
         assert_eq!(db.model_config().unwrap().model, "b");
     }
     #[tokio::test]
     async fn bridge_account_selection_cannot_be_redirected_by_a_client_model_url() {
         let a = Database::test();
         let b = Database::test();
-        let token_a = pair(&a).unwrap();
-        let token_b = pair(&b).unwrap();
+        let token_a = pair(&a, &REGISTRY).unwrap();
+        let token_b = pair(&b, &REGISTRY).unwrap();
         assert_ne!(id(&a).unwrap(), id(&b).unwrap());
-        assert!(!status(&a).unwrap().online);
-        assert!(enable(&b).is_err());
+        assert!(!status(&a, &REGISTRY).unwrap().online);
+        assert!(enable(&b, &REGISTRY).is_err());
         let ca = bridge::authenticate(&token_a).unwrap();
         let runner = uuid::Uuid::new_v4().to_string();
         ca.advertise(
@@ -135,21 +138,21 @@ mod tests {
         .unwrap();
         let poll = tokio::spawn(async move { ca.poll(&runner, "fixture").await });
         tokio::task::yield_now().await;
-        assert!(status(&a).unwrap().online);
-        assert!(!status(&b).unwrap().online);
+        assert!(status(&a, &REGISTRY).unwrap().online);
+        assert!(!status(&b, &REGISTRY).unwrap().online);
         // Saving a supplied endpoint cannot borrow another account's connection.
-        assert!(save(&b, "fixture").is_err());
-        let configured = enable(&a).unwrap();
+        assert!(save(&b, "fixture", &REGISTRY).is_err());
+        let configured = enable(&a, &REGISTRY).unwrap();
         assert_eq!(configured.base_url, "codex://bridge");
         let backup = serde_json::to_string(&a.export_sync_data().unwrap()).unwrap();
         assert!(!backup.contains(&id(&a).unwrap()));
         assert!(!backup.contains(&token_a));
-        revoke(&b).unwrap();
+        revoke(&b, &REGISTRY).unwrap();
         assert!(bridge::authenticate(&token_a).is_ok());
         assert!(bridge::authenticate(&token_b).is_err());
-        pair(&a).unwrap();
+        pair(&a, &REGISTRY).unwrap();
         assert!(bridge::authenticate(&token_a).is_err());
-        revoke(&a).unwrap();
+        revoke(&a, &REGISTRY).unwrap();
         assert!(id(&a).is_err());
         assert!(!a.model_config().unwrap().has_api_key);
         poll.abort();

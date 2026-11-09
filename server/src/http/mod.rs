@@ -15,6 +15,7 @@ use axum::{routing::get, Json, Router};
 use std::sync::Arc;
 
 pub(crate) struct RequestContext {
+    pub model_services: Arc<crate::application::model_settings::ModelServices>,
     pub db: Database,
     pub user_id: String,
     pub is_superuser: bool,

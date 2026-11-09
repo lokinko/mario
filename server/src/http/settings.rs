@@ -50,13 +50,19 @@ async fn save_model_config(
     Extension(state): Extension<Arc<RequestContext>>,
     Json(input): Json<ModelConfigInput>,
 ) -> AppResult<Json<ModelConfig>> {
-    Ok(Json(model_settings::save(&state.db, input).await?))
+    Ok(Json(model_settings::save(
+        &state.db,
+        input,
+        state.model_services.bridges.as_ref(),
+    )?))
 }
 
 async fn test_model_config(
     Extension(state): Extension<Arc<RequestContext>>,
 ) -> AppResult<Json<ModelConnectionTest>> {
-    Ok(Json(model_settings::test_connection(&state.db).await?))
+    Ok(Json(
+        model_settings::test_connection(&state.db, state.model_services.connector.as_ref()).await?,
+    ))
 }
 
 async fn delete_model_key(

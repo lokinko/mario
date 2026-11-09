@@ -3,7 +3,7 @@ import { Breadcrumb, Button } from "antd";
 import { Callout } from "./components/Callout";
 import { DailyTracking } from "./features/portfolio/DailyTracking";
 import { useApplicationData } from "./app/useApplicationData";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -15,7 +15,6 @@ import {
   CircleUserRound,
   PanelLeft,
 } from "lucide-react";
-import { ServerData } from "./features/account/ServerData";
 import {
   View,
   initialView,
@@ -23,17 +22,49 @@ import {
   navGroups,
   viewLabels,
 } from "./app/navigation";
-import { MyFacts, type FactsSection } from "./features/portfolio/MyFacts";
-import { DividendCalendar } from "./features/watch/DividendCalendar";
-import { EvidenceWorkbench } from "./features/research/EvidenceWorkbench";
-import { ReviewCenter } from "./features/reviews/ReviewCenter";
-import { Advisor } from "./features/research/Advisor";
-import { InvestmentMethodology } from "./features/methodology/InvestmentMethodology";
-import { ModelSettings } from "./features/settings/ModelSettings";
+import type { FactsSection } from "./features/portfolio/MyFacts";
+import { DeferredPage } from "./components/DeferredPage";
 import { PageHeader } from "./components/PageHeader";
 import { useDisplayPreferences } from "./app/useDisplayPreferences";
 import { DisplayPreferences } from "./components/DisplayPreferences";
 import { ApplicationSkeleton } from "./components/Skeleton";
+
+const MyFacts = lazy(() =>
+  import("./features/portfolio/MyFacts").then((m) => ({ default: m.MyFacts })),
+);
+const DividendCalendar = lazy(() =>
+  import("./features/watch/DividendCalendar").then((m) => ({
+    default: m.DividendCalendar,
+  })),
+);
+const EvidenceWorkbench = lazy(() =>
+  import("./features/research/EvidenceWorkbench").then((m) => ({
+    default: m.EvidenceWorkbench,
+  })),
+);
+const ReviewCenter = lazy(() =>
+  import("./features/reviews/ReviewCenter").then((m) => ({
+    default: m.ReviewCenter,
+  })),
+);
+const Advisor = lazy(() =>
+  import("./features/research/Advisor").then((m) => ({ default: m.Advisor })),
+);
+const InvestmentMethodology = lazy(() =>
+  import("./features/methodology/InvestmentMethodology").then((m) => ({
+    default: m.InvestmentMethodology,
+  })),
+);
+const ModelSettings = lazy(() =>
+  import("./features/settings/ModelSettings").then((m) => ({
+    default: m.ModelSettings,
+  })),
+);
+const ServerData = lazy(() =>
+  import("./features/account/ServerData").then((m) => ({
+    default: m.ServerData,
+  })),
+);
 
 function App() {
   const display = useDisplayPreferences();
@@ -400,89 +431,97 @@ function App() {
             onSaved={clearDraft}
           />
         )}
-        {view === "facts" && (
-          <MyFacts
-            key={remoteViewRevision}
-            snapshot={snapshot}
-            onUpdate={setSnapshot}
-            display={display}
-            flash={flash}
-            section={factsSection}
-            onSectionChange={setFactsSection}
-          />
-        )}
-        {view === "evidence" && (
-          <EvidenceWorkbench
-            key={remoteViewRevision}
-            onAsk={startAnalysis}
-            flash={flash}
-          />
-        )}
-        {view === "review" && (
-          <ReviewCenter
-            key={remoteViewRevision}
-            onAsk={startAnalysis}
-            flash={flash}
-          />
-        )}
-        {view === "calendar" && <DividendCalendar key={remoteViewRevision} />}
-        {view === "methodology" && (
-          <InvestmentMethodology
-            key={remoteViewRevision}
-            flash={flash}
-            onSaved={clearDraft}
-            onEdited={markEdited}
-          />
-        )}
-        {model && advisorVisited && (
-          <div hidden={view !== "advisor"}>
-            <Advisor
-              key={dataRevision}
-              active={view === "advisor"}
-              model={model}
-              onOpenSettings={() => navigate("settings")}
-              pendingQuestion={pendingQuestion}
-              onQuestionAccepted={acceptQuestion}
-            />
-          </div>
-        )}
-        {view === "cloud" && (
-          <ServerData
-            flash={flash}
-            onRestore={refreshInvestmentData}
-            autoState={syncState}
-            onRetryAuto={retrySync}
-          />
-        )}
-        {view === "settings" && model && (
-          <ModelSettings
-            displaySettings={<DisplayPreferences {...display} />}
-            dataSettings={
+        {view !== "watch" && view !== "advisor" && (
+          <DeferredPage key={view}>
+            {view === "facts" && (
+              <MyFacts
+                key={remoteViewRevision}
+                snapshot={snapshot}
+                onUpdate={setSnapshot}
+                display={display}
+                flash={flash}
+                section={factsSection}
+                onSectionChange={setFactsSection}
+              />
+            )}
+            {view === "evidence" && (
+              <EvidenceWorkbench
+                key={remoteViewRevision}
+                onAsk={startAnalysis}
+                flash={flash}
+              />
+            )}
+            {view === "review" && (
+              <ReviewCenter
+                key={remoteViewRevision}
+                onAsk={startAnalysis}
+                flash={flash}
+              />
+            )}
+            {view === "calendar" && (
+              <DividendCalendar key={remoteViewRevision} />
+            )}
+            {view === "methodology" && (
+              <InvestmentMethodology
+                key={remoteViewRevision}
+                flash={flash}
+                onSaved={clearDraft}
+                onEdited={markEdited}
+              />
+            )}
+            {view === "cloud" && (
               <ServerData
-                transferOnly
                 flash={flash}
                 onRestore={refreshInvestmentData}
                 autoState={syncState}
                 onRetryAuto={retrySync}
               />
-            }
-            key={remoteViewRevision}
-            model={model}
-            onUpdate={setModel}
-            flash={flash}
-          />
+            )}
+            {view === "settings" && model && (
+              <ModelSettings
+                displaySettings={<DisplayPreferences {...display} />}
+                dataSettings={
+                  <ServerData
+                    transferOnly
+                    flash={flash}
+                    onRestore={refreshInvestmentData}
+                    autoState={syncState}
+                    onRetryAuto={retrySync}
+                  />
+                }
+                key={remoteViewRevision}
+                model={model}
+                onUpdate={setModel}
+                flash={flash}
+              />
+            )}
+            {view === "settings" && !model && (
+              <div className="page narrow settings-page">
+                <PageHeader title="设置" />
+                <DisplayPreferences {...display} />
+                <ServerData
+                  transferOnly
+                  flash={flash}
+                  onRestore={refreshInvestmentData}
+                  autoState={syncState}
+                  onRetryAuto={retrySync}
+                />
+              </div>
+            )}
+          </DeferredPage>
         )}
-        {view === "settings" && !model && (
-          <div className="page narrow settings-page">
-            <PageHeader title="设置" />
-            <DisplayPreferences {...display} />
-            <ServerData
-              transferOnly
-              flash={flash}
-              onRestore={refreshInvestmentData}
-              autoState={syncState}
-              onRetryAuto={retrySync}
-            />
+        {model && advisorVisited && (
+          <div hidden={view !== "advisor"}>
+            <DeferredPage>
+              <Advisor
+                key={dataRevision}
+                active={view === "advisor"}
+                model={model}
+                onOpenSettings={() => navigate("settings")}
+                pendingQuestion={pendingQuestion}
+                onQuestionAccepted={acceptQuestion}
+              />
+            </DeferredPage>
           </div>
         )}
         {(view === "advisor" || view === "settings") && !model && (

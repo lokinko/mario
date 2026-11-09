@@ -2,6 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{AppError, AppResult};
 
+/// Frozen execution destination. Credentials deliberately have no Debug or serialization.
+#[derive(Clone)]
+pub(crate) struct ModelTarget {
+    pub config: super::ModelConfig,
+    pub credential: String,
+}
+
 /// Model endpoint family. The kebab-case form is the stored setting value and wire format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

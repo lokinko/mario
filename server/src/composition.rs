@@ -8,6 +8,13 @@ use crate::{
 };
 use std::sync::Arc;
 
+pub(crate) fn model_services() -> Arc<crate::application::model_settings::ModelServices> {
+    Arc::new(crate::application::model_settings::ModelServices {
+        connector: Arc::new(crate::ai::management::ModelConnectorAdapter),
+        bridges: Arc::new(crate::ai::management::BridgeRegistryAdapter),
+    })
+}
+
 pub(crate) struct MarketRuntime {
     pub services: Arc<MarketServices>,
     pub watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
@@ -16,9 +23,14 @@ pub(crate) struct MarketRuntime {
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 impl MarketRuntime {
-    pub fn start_account_tasks(&mut self, accounts: Arc<crate::accounts::Accounts>) {
+    pub fn start_account_tasks(
+        &mut self,
+        accounts: Arc<crate::accounts::Accounts>,
+        tenant_connections: Arc<crate::storage::ConnectionPool>,
+    ) {
         let services = self.services.clone();
         let price_accounts = accounts.clone();
+        let price_connections = tenant_connections.clone();
         self.tasks.push(tokio::spawn(async move {
             tracing::info!("holding closing price background checks started; running immediately and every 5 minutes");
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
@@ -34,7 +46,7 @@ impl MarketRuntime {
                 };
                 for user in users {
                     let result = async {
-                        let db = crate::db::Database::postgres(&price_accounts.url, &user)?;
+                        let db = crate::db::Database::pooled(&price_connections, &user)?;
                         services.for_account(&db).refresh_closing_prices().await
                     }.await;
                     match result {
@@ -82,7 +94,7 @@ impl MarketRuntime {
                 };
                 for user in users {
                     let result = async {
-                        let db = crate::db::Database::postgres(&accounts.url, &user)?;
+                        let db = crate::db::Database::pooled(&tenant_connections, &user)?;
                         let _lock = db.lock_account()?;
                         let symbols = db
                             .watch_entries()?

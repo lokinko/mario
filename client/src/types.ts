@@ -34,6 +34,7 @@ export interface Holding {
 }
 
 export interface FxRateQuote {
+  exactRate?: string | null;
   fromCurrency: string;
   toCurrency: string;
   rate: number;
@@ -374,8 +375,8 @@ export interface AnalysisTransparency {
   citationsRequired: boolean;
   modelCalls: number;
   totalLatencyMs: number;
-  inputTokens?: number;
-  outputTokens?: number;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
   structuredOutputValidated: boolean;
   outputRepairs: number;
   externalDataUsed: boolean;
@@ -391,6 +392,13 @@ export interface AnalysisResult {
   createdAt: string;
   disclaimer: string;
 }
+
+export type AnalysisUpdate =
+  { type: "draft"; answer: string } | { type: "status"; message: string };
+export type AnalysisEvent =
+  | AnalysisUpdate
+  | { type: "complete"; result: AnalysisResult }
+  | { type: "error"; message: string };
 
 export interface AnalysisHistoryItem {
   groundingStatus?:
@@ -424,7 +432,13 @@ export interface AdviceGrounding {
   }[];
 }
 export interface AnalysisWorkflowTrace {
-  webSearch?: { status: string; searchCalls: number; warnings: string[] };
+  valuationEvidence?: HoldingValuationEvidence[];
+  informationSelection?: unknown[];
+  webSearch?: {
+    status: string;
+    searchCalls: number;
+    warnings: string[];
+  } | null;
   adviceGrounding?: AdviceGrounding[];
   personalContext?: {
     currentUserMessage?: string; // Read-only historical reference.
@@ -435,14 +449,14 @@ export interface AnalysisWorkflowTrace {
       holdings: Holding[];
       holdingValuations: HoldingValuationEvidence[];
     };
-  };
+  } | null;
   version: string;
-  researchPlan?: string;
+  researchPlan?: string | null;
   alternatives: AnalysisAlternative[];
-  critique?: string;
+  critique?: string | null;
   calls: ModelCallTrace[];
-  structuredReport?: StructuredAnalysis | LegacyStructuredAnalysis;
-  outputValidation?: OutputValidationTrace;
+  structuredReport?: StructuredAnalysis | LegacyStructuredAnalysis | null;
+  outputValidation?: OutputValidationTrace | null;
   evidenceCatalog: AnalysisEvidenceReference[];
 }
 
@@ -665,7 +679,10 @@ export interface FxBook {
   checkedAt: number;
   requestedOn: string;
   quotes: FxRateQuote[];
-  manual: Record<string, { rate: number; observedOn: string }>;
+  manual: Record<
+    string,
+    { exactRate?: string | null; rate: number; observedOn: string }
+  >;
   error: string;
 }
 export type InvestmentMethodology = {
