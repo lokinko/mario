@@ -48,6 +48,85 @@ function observation(trends?: WatchTrendPoint[]): Observation {
 }
 afterEach(cleanup);
 
+it("renders weekly envelopes as separate shaded areas and keeps both middle lines solid", () => {
+  const trends = Array.from({ length: 7 }, (_, i) => point(i));
+  trends[2].weeklyUpper = null;
+  trends[4].weeklyMiddle = null;
+  const { container } = render(<WatchTrends latest={observation(trends)} />);
+  const chart = screen.getByRole("img", { name: /趋势图 · 月线/ });
+  expect(chart.querySelectorAll("path[data-series]")).toHaveLength(3);
+  for (const key of ["weeklyMiddle", "monthlyMiddle"]) {
+    expect(
+      chart
+        .querySelector(`[data-series="${key}"]`)
+        ?.getAttribute("strokeDasharray"),
+    ).toBeNull();
+  }
+  const upper = chart.querySelector('[data-band="weeklyUpper"]')!;
+  const lower = chart.querySelector('[data-band="weeklyLower"]')!;
+  expect(upper.getAttribute("d")?.match(/M/g)).toHaveLength(3);
+  expect(upper.getAttribute("d")?.match(/Z/g)).toHaveLength(3);
+  expect(lower.getAttribute("d")?.match(/M/g)).toHaveLength(2);
+  expect(lower.getAttribute("d")?.match(/Z/g)).toHaveLength(2);
+  expect(upper.getAttribute("stroke")).toBe("none");
+  expect(lower.getAttribute("stroke")).toBe("none");
+  // The shaded outer bounds must also contribute to the shared price scale.
+  for (const area of [upper, lower]) {
+    const coordinates = [
+      ...area.getAttribute("d")!.matchAll(/[ML]([\d.]+),([\d.]+)/g),
+    ];
+    for (const coordinate of coordinates) {
+      expect(Number(coordinate[2])).toBeGreaterThan(20);
+      expect(Number(coordinate[2])).toBeLessThan(226);
+    }
+  }
+  expect(container.innerHTML).not.toMatch(/NaN|Infinity/);
+});
+
+it.each([
+  [45, "月中轨位于周线上轨上方"],
+  [44, "月中轨与周线上轨重合"],
+  [42, "月中轨位于周中轨与上轨之间"],
+  [40, "月中轨与周中轨重合"],
+  [38, "月中轨位于周下轨与中轨之间"],
+  [36, "月中轨与周线下轨重合"],
+  [35, "月中轨位于周线下轨下方"],
+])(
+  "shows the selected month's position (%s) relative to the weekly band",
+  (value, label) => {
+    render(
+      <WatchTrends
+        latest={observation([{ ...point(0), monthlyMiddle: value }, point(1)])}
+      />,
+    );
+    const slider = screen.getByRole("slider", {
+      name: "趋势图 · 月线中轨与周线 BOLL查看日期",
+    });
+    expect(screen.getByText("月中轨位于周下轨与中轨之间")).toBeTruthy();
+    fireEvent.change(slider, { target: { value: "0" } });
+    expect(screen.getByText(label)).toBeTruthy();
+  },
+);
+
+it("omits the monthly position when a required value is missing", () => {
+  render(
+    <WatchTrends
+      latest={observation([
+        { ...point(0), monthlyMiddle: null },
+        { ...point(1), weeklyLower: null },
+      ])}
+    />,
+  );
+  expect(screen.queryByText(/^月中轨/)).toBeNull();
+  fireEvent.change(
+    screen.getByRole("slider", {
+      name: "趋势图 · 月线中轨与周线 BOLL查看日期",
+    }),
+    { target: { value: "0" } },
+  );
+  expect(screen.queryByText(/^月中轨/)).toBeNull();
+});
+
 it("renders both requested charts through shared company evidence with real dates and values", () => {
   const latest = observation([point(0), point(1)]);
   render(

@@ -46,6 +46,18 @@
   stroke: var(--text-4);
   stroke-dasharray: 3 3;
 }
+.watch-trend-band-upper {
+  opacity: 0.09;
+}
+.watch-trend-band-lower {
+  opacity: 0.17;
+}
+.watch-trend-position {
+  margin: var(--space-3) 0 0;
+  color: var(--brand);
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+}
 .watch-trend-cross {
   fill: var(--warning);
   stroke: var(--surface);

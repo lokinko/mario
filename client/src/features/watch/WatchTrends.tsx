@@ -17,18 +17,28 @@ interface Series {
   label: string;
   color: string;
   dash?: string;
+  shade?: "upper" | "lower";
 }
 const bands: Series[] = [
-  { key: "close", label: "周收盘", color: "var(--text-1)" },
+  { key: "close", label: "周收盘", color: "var(--text-4)", dash: "2 4" },
+  {
+    key: "weeklyUpper",
+    label: "周线上轨",
+    color: "var(--info)",
+    shade: "upper",
+  },
+  {
+    key: "weeklyLower",
+    label: "周线下轨",
+    color: "var(--info)",
+    shade: "lower",
+  },
+  { key: "weeklyMiddle", label: "周线中轨", color: "var(--info)" },
   {
     key: "monthlyMiddle",
     label: "月线中轨",
-    color: "var(--warning)",
-    dash: "7 4",
+    color: "var(--brand)",
   },
-  { key: "weeklyUpper", label: "周线上轨", color: "var(--info)" },
-  { key: "weeklyMiddle", label: "周线中轨", color: "var(--brand)" },
-  { key: "weeklyLower", label: "周线下轨", color: "var(--success)" },
 ];
 const averages: Series[] = [
   { key: "close", label: "周收盘", color: "var(--text-1)", dash: "2 4" },
@@ -42,6 +52,24 @@ const left = 58;
 const top = 20;
 const bottom = height - 34;
 const timestamp = (day: string) => Date.parse(`${day}T00:00:00Z`);
+
+function monthlyPosition(point: WatchTrendPoint) {
+  const {
+    monthlyMiddle: month,
+    weeklyLower: lower,
+    weeklyMiddle: middle,
+    weeklyUpper: upper,
+  } = point;
+  if (!finite(month) || !finite(lower) || !finite(middle) || !finite(upper))
+    return null;
+  if (month === middle) return "月中轨与周中轨重合";
+  if (month > upper) return "月中轨位于周线上轨上方";
+  if (month === upper) return "月中轨与周线上轨重合";
+  if (month > middle) return "月中轨位于周中轨与上轨之间";
+  if (month < lower) return "月中轨位于周线下轨下方";
+  if (month === lower) return "月中轨与周线下轨重合";
+  return "月中轨位于周下轨与中轨之间";
+}
 
 function TrendChart({
   title,
@@ -71,6 +99,8 @@ function TrendChart({
   const selectedIndex = points.findIndex((point) => point.day === selected);
   const index = selectedIndex < 0 ? points.length - 1 : selectedIndex;
   const point = points[index];
+  const lines = series.filter((s) => !s.shade);
+  const shades = series.filter((s) => s.shade);
   const values = points.flatMap((p) =>
     series.flatMap((s) => (finite(p[s.key]) ? [p[s.key] as number] : [])),
   );
@@ -99,6 +129,32 @@ function TrendChart({
         const command = connected ? "L" : "M";
         connected = true;
         return `${command}${x(p.day).toFixed(2)},${y(value).toFixed(2)}`;
+      })
+      .join(" ");
+  };
+  const area = (edge: ValueKey) => {
+    const segments: WatchTrendPoint[][] = [];
+    let segment: WatchTrendPoint[] = [];
+    for (const p of points) {
+      if (finite(p[edge]) && finite(p.weeklyMiddle)) {
+        if (!segment.length) segments.push(segment);
+        segment.push(p);
+      } else {
+        segment = [];
+      }
+    }
+    return segments
+      .map((segment) => {
+        const boundary = segment.map(
+          (p) => `${x(p.day).toFixed(2)},${y(p[edge]!).toFixed(2)}`,
+        );
+        const middle = segment
+          .slice()
+          .reverse()
+          .map(
+            (p) => `${x(p.day).toFixed(2)},${y(p.weeklyMiddle!).toFixed(2)}`,
+          );
+        return `M${boundary.join(" L")} L${middle.join(" L")} Z`;
       })
       .join(" ");
   };
@@ -167,14 +223,24 @@ function TrendChart({
               {points[i].day.slice(0, 7)}
             </text>
           ))}
-          {series.map((s) => (
+          {shades.map((s) => (
+            <path
+              key={s.key}
+              data-band={s.key}
+              d={area(s.key)}
+              className={`watch-trend-band watch-trend-band-${s.shade}`}
+              fill={s.color}
+              stroke="none"
+            />
+          ))}
+          {lines.map((s) => (
             <path
               key={s.key}
               data-series={s.key}
               d={path(s.key)}
               fill="none"
               stroke={s.color}
-              strokeWidth={s.key === "close" ? 1.3 : 2}
+              strokeWidth={s.key === "close" ? 1.3 : cross ? 2 : 2.5}
               strokeDasharray={s.dash}
               vectorEffect="non-scaling-stroke"
             />
@@ -204,7 +270,7 @@ function TrendChart({
             y2={bottom}
             className="watch-trend-cursor"
           />
-          {series
+          {lines
             .filter((s) => finite(point[s.key]))
             .map((s) => (
               <circle
@@ -247,13 +313,27 @@ function TrendChart({
             style={{ "--series-color": s.color } as CSSProperties}
           >
             <dt>
-              <i style={{ borderTopStyle: s.dash ? "dashed" : "solid" }} />
+              <i
+                className={
+                  s.shade
+                    ? `watch-trend-band watch-trend-band-${s.shade}`
+                    : undefined
+                }
+                style={
+                  s.shade
+                    ? { border: "none", background: s.color, height: 8 }
+                    : { borderTopStyle: s.dash ? "dashed" : "solid" }
+                }
+              />
               {s.label}
             </dt>
             <dd>{number(point[s.key])}</dd>
           </div>
         ))}
       </dl>
+      {shades.length > 0 && monthlyPosition(point) && (
+        <p className="watch-trend-position">{monthlyPosition(point)}</p>
+      )}
     </section>
   );
 }
