@@ -3,14 +3,12 @@ import type { ReactNode } from "react";
 import type { WatchRules, WatchMarketRow } from "../../api/watch";
 import { BandTrack, RuleChecks, YieldGrid } from "./WatchSignals";
 import { WatchDividends } from "./WatchDividends";
-import { WatchSources } from "./WatchSources";
 import { WatchTrends } from "./WatchTrends";
 import { number } from "./presentation";
 
 export function WatchEvidence({
   row,
   rules,
-  companySources,
   children,
   loading = false,
   detailError = "",
@@ -18,7 +16,6 @@ export function WatchEvidence({
 }: {
   row: WatchMarketRow;
   rules: WatchRules;
-  companySources?: string[];
   children?: ReactNode;
   loading?: boolean;
   detailError?: string;
@@ -76,7 +73,6 @@ export function WatchEvidence({
       <YieldGrid row={row} minYield={minYield} />
       {children}
       {!loading && !detailError && <WatchDividends latest={latest} />}
-      <WatchSources company={companySources} observation={latest?.sources} />
     </>
   );
 }

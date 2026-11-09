@@ -1297,6 +1297,9 @@ th,
 .drawer-wide {
   width: min(760px, calc(100vw - var(--space-4)));
 }
+.drawer-xl {
+  width: min(max(760px, 64vw), calc(100vw - var(--space-4)));
+}
 .drawer-backdrop {
   position: absolute;
   inset: 0;

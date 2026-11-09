@@ -32,7 +32,7 @@ export function Drawer({
 }: {
   title: string;
   subtitle?: string;
-  size?: "default" | "wide";
+  size?: "default" | "wide" | "xl";
   footer?: ReactNode;
   children: ReactNode;
   onClose: () => void;

@@ -109,7 +109,6 @@ export function StockOptions({
   }
   return (
     <section aria-label="股票关联期权">
-      <h3>关联期权</h3>
       {totals && (
         <dl className="detail-grid">
           <div>

@@ -70,7 +70,7 @@ export function WatchDetails({
         onClose();
       }}
       busy={busy}
-      size="wide"
+      size="xl"
     >
       <div className="watch-detail-body">
         {error && <Callout tone="danger">{error}</Callout>}

@@ -1,4 +1,3 @@
-import { DataStamp } from "../../components/DataStamp";
 import { useEffect, useState } from "react";
 import { StockOptions } from "./StockOptions";
 import type { Holding, Snapshot } from "../../types";
@@ -40,10 +39,6 @@ export function HoldingDetail({
   const pendingTrade = editingTrade ? "请先保存或取消当前交易" : undefined;
   return (
     <>
-      <DataStamp
-        date={valuations[0]?.observedOn || holding.valuationDate}
-        source={valuations[0]?.providerName || "手动记录"}
-      />
       <dl className="detail-grid">
         <div>
           <dt>当前市值</dt>

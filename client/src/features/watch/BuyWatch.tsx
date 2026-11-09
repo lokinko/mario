@@ -590,10 +590,6 @@ export function BuyWatch({
       {publicActive && catalog && !open && (
         <WatchCatalogDetails
           row={publicActive}
-          industry={
-            catalog.catalog.industries.find((industry) => industry.id === group)
-              ?.name ?? ""
-          }
           rules={rules}
           busy={busy}
           error={error || catalogError}

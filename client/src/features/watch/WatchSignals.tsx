@@ -97,8 +97,7 @@ export function BandTrack({
       <div className="watch-band-title">
         <strong>{label} BOLL</strong>
         <span>
-          {band.matchesRule ? "在关注范围内" : "未满足"} · 距{referenceLabel}{" "}
-          <b>{distance(band.distancePct)}</b>
+          距{referenceLabel} <b>{distance(band.distancePct)}</b>
         </span>
       </div>
       <div
@@ -133,7 +132,6 @@ export function YieldGrid({
     <section className="watch-yield-grid" aria-label="股息率参考价格">
       <div className="watch-section-title">
         <strong>股息率参考价</strong>
-        <span>TTM 每股分红 ÷ 目标股息率</span>
       </div>
       {row.dividendPrices.length ? (
         <div className="watch-price-cells">
