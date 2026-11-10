@@ -130,25 +130,9 @@ impl PriceHistory {
             }
             let valid = match self.provider_code.as_str() {
                 "eastmoney" => {
-                    self.symbol.split_once('.').is_some_and(|(code, exchange)| {
-                        code.len() == 6
-                            && code.bytes().all(|b| b.is_ascii_digit())
-                            && matches!(exchange, "SS" | "SZ")
-                    }) && url.host_str() == Some("push2his.eastmoney.com")
-                        && url.path() == "/api/qt/stock/kline/get"
-                        && self.currency == "CNY"
-                        && self.raw_price_basis == "unadjusted_daily_close"
-                        && param(
-                            &url,
-                            "secid",
-                            &format!(
-                                "{}.{}",
-                                if self.symbol.ends_with(".SS") { 1 } else { 0 },
-                                &self.symbol[..6]
-                            ),
-                        )
-                        && param(&url, "klt", "101")
-                        && param(&url, "fqt", if adjusted { "1" } else { "0" })
+                    super::eastmoney::security(&self.symbol, &self.exchange).is_some_and(|s| {
+                        s.currency == self.currency && s.matches_url(&url, adjusted)
+                    }) && self.raw_price_basis == "unadjusted_daily_close"
                 }
                 "yahoo" => {
                     matches!(

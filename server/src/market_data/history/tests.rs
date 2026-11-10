@@ -3,17 +3,29 @@ use serde_json::json;
 #[test]
 fn domestic_daily_rows_keep_exact_prices_and_match_by_date() {
     let day = "2026-11-06".parse().unwrap();
+    let parse = |payload: &Value, symbol: &str, day, adjusted| {
+        let security = crate::models::market::eastmoney::security(
+            symbol,
+            if symbol.ends_with(".SS") {
+                "SHH"
+            } else {
+                "SHZ"
+            },
+        )
+        .unwrap();
+        parse_rows(payload, &security, day, adjusted)
+    };
     let value = json!({"rc":0,"data":{"code":"600941","market":1,"klines":["2026-11-05,1,100.24","2026-11-06,1,103.49"]}});
-    let rows = parse_domestic(&value, "600941.SS", day, false).unwrap();
+    let rows = parse(&value, "600941.SS", day, false).unwrap();
     assert_eq!(rows[&day].as_deref(), Some("103.49"));
-    assert!(parse_domestic(&value, "600941.SZ", day, false).is_err());
-    assert!(parse_domestic(&value, "600519.SS", day, false).is_err());
+    assert!(parse(&value, "600941.SZ", day, false).is_err());
+    assert!(parse(&value, "600519.SS", day, false).is_err());
     let mut duplicate = value.clone();
     duplicate["data"]["klines"] = json!(["2026-11-06,1,2", "2026-11-06,1,3"]);
-    assert!(parse_domestic(&duplicate, "600941.SS", day, false).is_err());
+    assert!(parse(&duplicate, "600941.SS", day, false).is_err());
     let mut invalid = value;
     invalid["data"]["klines"] = json!(["2026-11-06,1,NaN"]);
-    assert!(parse_domestic(&invalid, "600941.SS", day, false).is_err());
+    assert!(parse(&invalid, "600941.SS", day, false).is_err());
 }
 #[tokio::test]
 #[ignore = "requires live public history APIs"]
@@ -29,19 +41,68 @@ async fn live_five_year_history() {
         "0700.HK",
         "QQQ",
         "PDD",
+        "AAPL",
+        "NVDA",
+        "VOO",
+        "QQQI",
     ] {
         let end = crate::models::market::close::completed_day(symbol, today, Utc::now());
         let h = source.history(symbol, end).await.unwrap();
         assert_eq!(h.window_start, history_start(end));
         assert!(h.bars.len() > 500);
         println!(
-            "{symbol}: {} daily bars, {} .. {}, anchor {}, provider {}",
+            "{symbol}: {} daily bars, {} .. {}, anchor {}, provider {}, splits {:?}, action sources {:?}",
             h.bars.len(),
             h.bars.first().unwrap().day,
             h.bars.last().unwrap().day,
             h.adjustment_anchor,
-            h.provider_code
+            h.provider_code,
+            h.splits,
+            h.action_source_urls
         );
+    }
+}
+
+#[tokio::test]
+async fn overseas_prices_try_eastmoney_first_and_use_yahoo_only_when_needed() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    async fn reply(calls: &AtomicUsize, value: AppResult<PriceHistory>) -> AppResult<PriceHistory> {
+        calls.fetch_add(1, Ordering::SeqCst);
+        value
+    }
+    let day = "2026-11-06".parse().unwrap();
+    for symbol in ["0700.HK", "QQQ", "PDD"] {
+        for primary_ok in [true, false] {
+            let primary_calls = AtomicUsize::new(0);
+            let fallback_calls = AtomicUsize::new(0);
+            let mut primary = crate::models::market::history::tests::fixture(symbol, day);
+            primary.exchange = "primary".into();
+            let mut fallback = primary.clone();
+            fallback.exchange = "fallback".into();
+            let history = coherent_history(
+                symbol,
+                day,
+                reply(
+                    &primary_calls,
+                    if primary_ok { Ok(primary) } else { Err(bad()) },
+                ),
+                [
+                    reply(&fallback_calls, Ok(fallback)),
+                    reply(&fallback_calls, Err(bad())),
+                ],
+            )
+            .await
+            .unwrap();
+            assert_eq!(primary_calls.load(Ordering::SeqCst), 1);
+            assert_eq!(
+                fallback_calls.load(Ordering::SeqCst),
+                usize::from(!primary_ok)
+            );
+            assert_eq!(
+                history.exchange,
+                if primary_ok { "primary" } else { "fallback" }
+            );
+        }
     }
 }
 

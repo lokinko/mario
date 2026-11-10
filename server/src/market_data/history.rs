@@ -2,9 +2,9 @@
 use crate::{
     models::{
         market::{
-            canonical_symbol,
+            canonical_symbol, eastmoney_methodology_url,
             history::{history_start, DailyPrice, PriceHistory},
-            is_a_share_stock, is_mainland_fund, mainland_methodology_url, METHODOLOGY_URL,
+            is_a_share_stock, is_mainland_fund, METHODOLOGY_URL,
         },
         SplitEvent,
     },
@@ -18,6 +18,7 @@ use serde_json::Value;
 use std::{collections::BTreeMap, time::Duration};
 
 mod fund_actions;
+mod overseas;
 
 pub(crate) struct PublicMarketSource {
     client: Client,
@@ -55,22 +56,18 @@ impl PublicMarketSource {
         }
         unreachable!()
     }
-    async fn domestic_rows(
+    async fn eastmoney_rows(
         &self,
-        symbol: &str,
+        security: &crate::models::market::eastmoney::Security,
         through: NaiveDate,
         adjusted: bool,
     ) -> AppResult<(BTreeMap<NaiveDate, Option<String>>, String)> {
-        let (code, exchange) = symbol.split_once('.').ok_or_else(bad)?;
         let response = self
             .client
             .get("https://push2his.eastmoney.com/api/qt/stock/kline/get")
             .header("Referer", "https://quote.eastmoney.com/")
             .query(&[
-                (
-                    "secid",
-                    format!("{}.{code}", if exchange == "SS" { 1 } else { 0 }),
-                ),
+                ("secid", security.secid()),
                 ("klt", "101".into()),
                 ("fqt", if adjusted { "1" } else { "0" }.into()),
                 ("beg", history_start(through).format("%Y%m%d").to_string()),
@@ -83,11 +80,20 @@ impl PublicMarketSource {
             .error_for_status()?;
         let url = response.url().to_string();
         let payload = super::read_public_json(response).await?;
-        Ok((parse_domestic(&payload, symbol, through, adjusted)?, url))
+        Ok((parse_rows(&payload, security, through, adjusted)?, url))
     }
     async fn domestic(&self, symbol: &str, through: NaiveDate) -> AppResult<PriceHistory> {
-        let (raw, raw_url) = self.domestic_rows(symbol, through, false).await?;
-        let (adjusted, adjusted_url) = self.domestic_rows(symbol, through, true).await?;
+        let security = crate::models::market::eastmoney::security(
+            symbol,
+            if symbol.ends_with(".SS") {
+                "SHH"
+            } else {
+                "SHZ"
+            },
+        )
+        .ok_or_else(bad)?;
+        let (raw, raw_url) = self.eastmoney_rows(&security, through, false).await?;
+        let (adjusted, adjusted_url) = self.eastmoney_rows(&security, through, true).await?;
         let (splits, action_source_urls) = if is_a_share_stock(symbol) {
             let (payload, urls) = super::watch::distribution_payload(
                 &self.client,
@@ -129,7 +135,7 @@ impl PublicMarketSource {
                 urls,
             )
         } else if is_mainland_fund(symbol) {
-            let url = mainland_methodology_url(symbol);
+            let url = eastmoney_methodology_url(symbol);
             let mut response = self.client.get(&url).send().await?.error_for_status()?;
             let body = super::read_public_bytes(&mut response).await?;
             let html = std::str::from_utf8(&body).map_err(|_| bad())?;
@@ -153,7 +159,7 @@ impl PublicMarketSource {
             raw_source_url: raw_url,
             adjusted_source_url: adjusted_url,
             action_source_urls,
-            methodology_url: mainland_methodology_url(symbol),
+            methodology_url: eastmoney_methodology_url(symbol),
             exchange: if symbol.ends_with(".SS") {
                 "SHH"
             } else {
@@ -218,6 +224,11 @@ impl PublicMarketSource {
             .url()
             .clone();
         let (daily, source) = self.json(daily_url).await?;
+        let (actions, action_source) = self.yahoo_actions(host, symbol).await?;
+        parse_yahoo(&daily, &actions, symbol, through, source, action_source)
+    }
+    async fn yahoo_actions(&self, host: &str, symbol: &str) -> AppResult<(Value, String)> {
+        let url = format!("{host}/v8/finance/chart/{symbol}");
         // Monthly sampling keeps the full split history small; these bars never become daily prices.
         let action_url = self
             .client
@@ -236,8 +247,7 @@ impl PublicMarketSource {
             .build()?
             .url()
             .clone();
-        let (actions, action_source) = self.json(action_url).await?;
-        parse_yahoo(&daily, &actions, symbol, through, source, action_source)
+        self.json(action_url).await
     }
 }
 fn bad() -> AppError {
@@ -248,18 +258,14 @@ fn decimal(value: &str) -> AppResult<Decimal> {
         .or_else(|_| Decimal::from_scientific(value))
         .map_err(|_| bad())
 }
-fn parse_domestic(
+fn parse_rows(
     payload: &Value,
-    symbol: &str,
+    security: &crate::models::market::eastmoney::Security,
     through: NaiveDate,
     adjusted: bool,
 ) -> AppResult<BTreeMap<NaiveDate, Option<String>>> {
-    let (code, exchange) = symbol.split_once('.').ok_or_else(bad)?;
     let data = &payload["data"];
-    if payload["rc"] != 0
-        || data["code"] != code
-        || data["market"] != if exchange == "SS" { 1 } else { 0 }
-    {
+    if payload["rc"] != 0 || data["code"] != security.code || data["market"] != security.market {
         return Err(bad());
     }
     let mut rows = BTreeMap::new();
@@ -375,36 +381,7 @@ fn parse_yahoo(
             adjusted_close: price(&adjusted[i])?,
         });
     }
-    let mut splits = Vec::new();
-    if let Some(events) = action["events"]["splits"].as_object() {
-        for event in events.values() {
-            let day = DateTime::from_timestamp(event["date"].as_i64().ok_or_else(bad)?, 0)
-                .ok_or_else(bad)?
-                .with_timezone(&zone)
-                .date_naive();
-            if day > Utc::now().with_timezone(&zone).date_naive() {
-                continue;
-            }
-            let number = |key: &str| -> AppResult<String> {
-                let v = &event[key];
-                let d = decimal(
-                    v.as_str()
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| v.to_string())
-                        .as_str(),
-                )?;
-                if d <= Decimal::ZERO {
-                    return Err(bad());
-                }
-                Ok(d.normalize().to_string())
-            };
-            splits.push(SplitEvent {
-                effective_on: day.to_string(),
-                numerator: number("numerator")?,
-                denominator: number("denominator")?,
-            });
-        }
-    }
+    let splits = yahoo_splits(action, zone)?;
     PriceHistory {
         symbol: symbol.into(),
         currency: if pence {
@@ -438,10 +415,49 @@ fn parse_yahoo(
     .normalize()
 }
 
+fn yahoo_splits(action: &Value, zone: chrono_tz::Tz) -> AppResult<Vec<SplitEvent>> {
+    let mut splits = Vec::new();
+    if (!action["events"].is_null() && !action["events"].is_object())
+        || (!action["events"]["splits"].is_null() && !action["events"]["splits"].is_object())
+    {
+        return Err(bad());
+    }
+    if let Some(events) = action["events"]["splits"].as_object() {
+        for event in events.values() {
+            let day = DateTime::from_timestamp(event["date"].as_i64().ok_or_else(bad)?, 0)
+                .ok_or_else(bad)?
+                .with_timezone(&zone)
+                .date_naive();
+            if day > Utc::now().with_timezone(&zone).date_naive() {
+                continue;
+            }
+            let number = |key: &str| -> AppResult<String> {
+                let v = &event[key];
+                let d = decimal(
+                    v.as_str()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| v.to_string())
+                        .as_str(),
+                )?;
+                if d <= Decimal::ZERO {
+                    return Err(bad());
+                }
+                Ok(d.normalize().to_string())
+            };
+            splits.push(SplitEvent {
+                effective_on: day.to_string(),
+                numerator: number("numerator")?,
+                denominator: number("denominator")?,
+            });
+        }
+    }
+    Ok(splits)
+}
+
 async fn coherent_history<D, Y>(
     symbol: &str,
     through: NaiveDate,
-    domestic: D,
+    eastmoney: D,
     yahoo: [Y; 2],
 ) -> AppResult<PriceHistory>
 where
@@ -450,12 +466,12 @@ where
 {
     let mut candidate = None;
     let mut errors = Vec::new();
-    if is_a_share_stock(symbol) || is_mainland_fund(symbol) || symbol == "000001.SS" {
-        match tokio::time::timeout(Duration::from_secs(24), domestic).await {
+    {
+        match tokio::time::timeout(Duration::from_secs(24), eastmoney).await {
             Ok(Ok(h)) if h.adjustment_anchor == through => return Ok(h),
             Ok(Ok(h)) => candidate = Some(h),
             Ok(Err(error)) => {
-                tracing::warn!(symbol,error=?error,"public domestic history failed; trying Yahoo");
+                tracing::warn!(symbol,error=?error,"public Eastmoney history failed; trying Yahoo");
                 errors.push(format!("东方财富：{}", source_error(&error)));
             }
             Err(_) => {
@@ -516,7 +532,7 @@ impl SecurityHistoryProvider for PublicMarketSource {
         coherent_history(
             &symbol,
             through,
-            self.domestic(&symbol, through),
+            self.eastmoney_primary(&symbol, through),
             [
                 self.yahoo("https://query1.finance.yahoo.com", &symbol, through),
                 self.yahoo("https://query2.finance.yahoo.com", &symbol, through),

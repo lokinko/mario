@@ -1,5 +1,50 @@
 use super::*;
 
+#[test]
+fn overseas_eastmoney_sources_bind_market_currency_and_the_exact_symbol() {
+    let day = "2026-11-06".parse().unwrap();
+    for (symbol, exchange, currency) in [
+        ("0700.HK", "HKG", "HKD"),
+        ("QQQ", "NASDAQ", "USD"),
+        ("PDD", "NASDAQ", "USD"),
+        ("VOO", "AMEX", "USD"),
+        ("KO", "NYSE", "USD"),
+    ] {
+        let security = super::super::eastmoney::security(symbol, exchange).unwrap();
+        let mut history = fixture(symbol, day);
+        history.provider_code = "eastmoney".into();
+        history.provider_name = "东方财富".into();
+        history.exchange = exchange.into();
+        history.currency = currency.into();
+        history.raw_price_basis = "unadjusted_daily_close".into();
+        history.raw_source_url = format!(
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={}&klt=101&fqt=0",
+            security.secid()
+        );
+        history.adjusted_source_url = history.raw_source_url.replace("fqt=0", "fqt=1");
+        history.methodology_url = super::super::eastmoney_methodology_url(symbol);
+        history.validate().unwrap();
+        for case in ["market", "symbol", "currency", "duplicate", "host"] {
+            let mut wrong = history.clone();
+            match case {
+                "market" => {
+                    wrong.raw_source_url =
+                        wrong.raw_source_url.replace(&security.secid(), "106.PDD")
+                }
+                "symbol" => wrong.symbol = "AAPL".into(),
+                "currency" => wrong.currency = "JPY".into(),
+                "duplicate" => wrong.raw_source_url.push_str("&secid=105.QQQ"),
+                _ => {
+                    wrong.raw_source_url = wrong
+                        .raw_source_url
+                        .replace("push2his.eastmoney.com", "attacker.test")
+                }
+            }
+            assert!(wrong.validate().is_err(), "{symbol}: {case}");
+        }
+    }
+}
+
 pub(crate) fn fixture(symbol: &str, through: NaiveDate) -> PriceHistory {
     let (data, end) = crate::models::watch::tests::market_fixture();
     let source = format!("https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d");

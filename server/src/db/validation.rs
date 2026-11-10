@@ -194,53 +194,30 @@ pub(super) fn validate_holding_valuation_evidence(
         && source_url
             .query_pairs()
             .any(|(key, value)| key == "interval" && value == "1d");
-    let unique_param = |key: &str, expected: &str| {
-        let values = source_url
-            .query_pairs()
-            .filter(|(name, _)| name == key)
-            .map(|(_, value)| value.into_owned())
-            .collect::<Vec<_>>();
-        values == [expected]
-    };
-    let eastmoney_is_canonical = source_url.scheme() == "https"
-        && source_url.host_str() == Some("push2his.eastmoney.com")
-        && source_url.path() == "/api/qt/stock/kline/get"
-        && source_url.username().is_empty()
-        && source_url.password().is_none()
-        && crate::models::market::canonical_symbol(&quote.symbol).is_ok_and(|symbol| {
-            (crate::models::market::is_a_share_stock(&symbol)
-                || crate::models::market::is_mainland_fund(&symbol))
-                && unique_param(
-                    "secid",
-                    &format!(
-                        "{}.{}",
-                        if symbol.ends_with(".SS") { 1 } else { 0 },
-                        &symbol[..6]
-                    ),
-                )
-        })
-        && unique_param("klt", "101")
-        && unique_param(
-            "fqt",
-            if quote.price_basis == "forward_adjusted_daily_close" {
-                "1"
-            } else {
-                "0"
-            },
-        );
+    let eastmoney_is_canonical =
+        crate::models::market::canonical_symbol(&quote.symbol).is_ok_and(|symbol| {
+            crate::models::market::eastmoney::security(&symbol, &quote.exchange).is_some_and(
+                |security| {
+                    security.currency == quote.currency
+                        && security.matches_url(
+                            &source_url,
+                            quote.price_basis == "forward_adjusted_daily_close",
+                        )
+                },
+            )
+        });
     let supported = (eastmoney_is_canonical
         && matches!(
             quote.provider_code.as_str(),
             "eastmoney_daily_close" | "eastmoney_forward_close"
         )
         && quote.provider_name == "东方财富"
-        && quote.currency == "CNY"
         && ((quote.provider_code == "eastmoney_daily_close"
             && quote.price_basis == "unadjusted_daily_close")
             || (quote.provider_code == "eastmoney_forward_close"
                 && quote.price_basis == "forward_adjusted_daily_close"))
         && crate::models::market::canonical_symbol(&quote.symbol).is_ok_and(|symbol| {
-            quote.methodology_url == crate::models::market::mainland_methodology_url(&symbol)
+            quote.methodology_url == crate::models::market::eastmoney_methodology_url(&symbol)
         }))
         || (twelve_is_canonical
             && quote.provider_code == "twelve_data_raw_close"

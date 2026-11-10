@@ -1,5 +1,6 @@
 //! Market value contracts and deterministic identity/date policies. No providers or storage.
 pub(crate) mod close;
+pub(crate) mod eastmoney;
 pub(crate) mod history;
 use super::FxRateQuote;
 use crate::{AppError, AppResult};
@@ -69,9 +70,16 @@ pub(crate) fn is_mainland_fund(symbol: &str) -> bool {
             _ => false,
         }
 }
-pub(crate) fn mainland_methodology_url(symbol: &str) -> String {
+pub(crate) fn eastmoney_methodology_url(symbol: &str) -> String {
     if is_mainland_fund(symbol) {
         format!("https://fundf10.eastmoney.com/fhsp_{}.html", &symbol[..6])
+    } else if let Some(code) = symbol.strip_suffix(".HK") {
+        format!(
+            "https://quote.eastmoney.com/hk/{:05}.html",
+            code.parse::<u32>().unwrap_or_default()
+        )
+    } else if !symbol.contains('.') {
+        format!("https://quote.eastmoney.com/us/{symbol}.html")
     } else {
         ASHARE_METHODOLOGY_URL.into()
     }

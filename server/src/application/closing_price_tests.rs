@@ -52,10 +52,20 @@ fn quote(query: &SecurityPriceQuery, observed: &str, price: f64) -> SecurityPric
 }
 
 #[test]
-fn mainland_fund_quotes_update_exact_accounting_and_survive_backup_without_changing_costs() {
-    for symbol in ["518880.SS", "588000.SS", "508077.SS"] {
+fn eastmoney_prices_update_exact_accounting_and_restore_without_changing_costs() {
+    for (symbol, exchange, currency) in [
+        ("518880.SS", "SHH", "CNY"),
+        ("588000.SS", "SHH", "CNY"),
+        ("508077.SS", "SHH", "CNY"),
+        ("0700.HK", "HKG", "HKD"),
+        ("QQQ", "NASDAQ", "USD"),
+        ("PDD", "NASDAQ", "USD"),
+        ("VOO", "AMEX", "USD"),
+    ] {
         let db = Database::test();
-        let before = db.add_holding(&holding(symbol, Some(10.0))).unwrap();
+        let mut input = holding(symbol, Some(10.0));
+        input.currency = currency.into();
+        let before = db.add_holding(&input).unwrap();
         let id = before.holdings[0].id.clone();
         let day = crate::models::market::today();
         let query = SecurityPriceQuery {
@@ -67,12 +77,22 @@ fn mainland_fund_quotes_update_exact_accounting_and_survive_backup_without_chang
         q.provider_code = "eastmoney_forward_close".into();
         q.provider_name = "东方财富".into();
         q.price_basis = "forward_adjusted_daily_close".into();
-        q.instrument_type = "FUND".into();
+        q.instrument_type = if symbol.ends_with(".SS") {
+            "FUND"
+        } else if matches!(symbol, "QQQ" | "VOO") {
+            "ETF"
+        } else {
+            "EQUITY"
+        }
+        .into();
+        q.currency = currency.into();
+        q.exchange = exchange.into();
+        let identity = crate::models::market::eastmoney::security(symbol, exchange).unwrap();
         q.source_url = format!(
-            "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.{}&klt=101&fqt=1",
-            &symbol[..6]
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={}&klt=101&fqt=1",
+            identity.secid()
         );
-        q.methodology_url = crate::models::market::mainland_methodology_url(symbol);
+        q.methodology_url = crate::models::market::eastmoney_methodology_url(symbol);
         let after = db.apply_verified_holding_valuation(&id, 10.0, &q).unwrap();
         let a = &after.accounting.as_ref().unwrap().holdings[&id];
         assert_eq!(a.amounts.market_value, "120");
@@ -87,7 +107,9 @@ fn mainland_fund_quotes_update_exact_accounting_and_survive_backup_without_chang
         for mutation in ["identity", "methodology", "adjustment"] {
             let mut wrong = q.clone();
             match mutation {
-                "identity" => wrong.source_url = wrong.source_url.replace(&symbol[..6], "600941"),
+                "identity" => {
+                    wrong.source_url = wrong.source_url.replace(&identity.secid(), "1.600941")
+                }
                 "methodology" => {
                     wrong.methodology_url = crate::models::market::ASHARE_METHODOLOGY_URL.into()
                 }
