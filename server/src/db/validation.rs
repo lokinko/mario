@@ -208,7 +208,8 @@ pub(super) fn validate_holding_valuation_evidence(
         && source_url.username().is_empty()
         && source_url.password().is_none()
         && crate::models::market::canonical_symbol(&quote.symbol).is_ok_and(|symbol| {
-            crate::models::market::is_a_share_stock(&symbol)
+            (crate::models::market::is_a_share_stock(&symbol)
+                || crate::models::market::is_mainland_fund(&symbol))
                 && unique_param(
                     "secid",
                     &format!(
@@ -238,7 +239,9 @@ pub(super) fn validate_holding_valuation_evidence(
             && quote.price_basis == "unadjusted_daily_close")
             || (quote.provider_code == "eastmoney_forward_close"
                 && quote.price_basis == "forward_adjusted_daily_close"))
-        && quote.methodology_url == crate::models::market::ASHARE_METHODOLOGY_URL)
+        && crate::models::market::canonical_symbol(&quote.symbol).is_ok_and(|symbol| {
+            quote.methodology_url == crate::models::market::mainland_methodology_url(&symbol)
+        }))
         || (twelve_is_canonical
             && quote.provider_code == "twelve_data_raw_close"
             && quote.provider_name == "Twelve Data"

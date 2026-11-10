@@ -50,6 +50,59 @@ fn quote(query: &SecurityPriceQuery, observed: &str, price: f64) -> SecurityPric
         disclaimer: "测试日收盘价".into(),
     }
 }
+
+#[test]
+fn mainland_fund_quotes_update_exact_accounting_and_survive_backup_without_changing_costs() {
+    for symbol in ["518880.SS", "588000.SS", "508077.SS"] {
+        let db = Database::test();
+        let before = db.add_holding(&holding(symbol, Some(10.0))).unwrap();
+        let id = before.holdings[0].id.clone();
+        let day = crate::models::market::today();
+        let query = SecurityPriceQuery {
+            symbol: symbol.into(),
+            on_date: day.clone(),
+            action_from: None,
+        };
+        let mut q = quote(&query, &day, 12.0);
+        q.provider_code = "eastmoney_forward_close".into();
+        q.provider_name = "东方财富".into();
+        q.price_basis = "forward_adjusted_daily_close".into();
+        q.instrument_type = "FUND".into();
+        q.source_url = format!(
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.{}&klt=101&fqt=1",
+            &symbol[..6]
+        );
+        q.methodology_url = crate::models::market::mainland_methodology_url(symbol);
+        let after = db.apply_verified_holding_valuation(&id, 10.0, &q).unwrap();
+        let a = &after.accounting.as_ref().unwrap().holdings[&id];
+        assert_eq!(a.amounts.market_value, "120");
+        assert_eq!(a.amounts.cost_basis, "50");
+        assert_eq!(a.amounts.quantity.as_deref(), Some("10"));
+        assert!(after.holding_trades.is_empty());
+        let copy = Database::test();
+        copy.import_sync_data(&db.export_sync_data().unwrap())
+            .unwrap();
+        assert_eq!(copy.snapshot().unwrap().holdings[0].market_value, 120.0);
+        let stable = db.export_sync_data().unwrap().content_hash().unwrap();
+        for mutation in ["identity", "methodology", "adjustment"] {
+            let mut wrong = q.clone();
+            match mutation {
+                "identity" => wrong.source_url = wrong.source_url.replace(&symbol[..6], "600941"),
+                "methodology" => {
+                    wrong.methodology_url = crate::models::market::ASHARE_METHODOLOGY_URL.into()
+                }
+                _ => wrong.source_url = wrong.source_url.replace("fqt=1", "fqt=0"),
+            }
+            assert!(db
+                .apply_verified_holding_valuation(&id, 10.0, &wrong)
+                .is_err());
+            assert_eq!(
+                db.export_sync_data().unwrap().content_hash().unwrap(),
+                stable
+            );
+        }
+    }
+}
 enum Mutation {
     Edit,
     Delete,

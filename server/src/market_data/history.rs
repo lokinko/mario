@@ -4,7 +4,7 @@ use crate::{
         market::{
             canonical_symbol,
             history::{history_start, DailyPrice, PriceHistory},
-            is_a_share_stock, ASHARE_METHODOLOGY_URL, METHODOLOGY_URL,
+            is_a_share_stock, is_mainland_fund, mainland_methodology_url, METHODOLOGY_URL,
         },
         SplitEvent,
     },
@@ -17,6 +17,8 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 use std::{collections::BTreeMap, time::Duration};
 
+mod fund_actions;
+
 pub(crate) struct PublicMarketSource {
     client: Client,
 }
@@ -24,10 +26,34 @@ impl PublicMarketSource {
     pub fn new() -> AppResult<Self> {
         Ok(Self {
             client: Client::builder()
+                .connect_timeout(Duration::from_secs(5))
                 .timeout(Duration::from_secs(8))
                 .user_agent("Mozilla/5.0 (compatible; mario/public-prices)")
                 .build()?,
         })
+    }
+    async fn json(&self, url: reqwest::Url) -> AppResult<(Value, String)> {
+        for attempt in 0..2 {
+            let result = async {
+                let response = self
+                    .client
+                    .get(url.clone())
+                    .send()
+                    .await?
+                    .error_for_status()?;
+                let source = response.url().to_string();
+                Ok((super::read_public_json(response).await?, source))
+            }
+            .await;
+            let retry = matches!(&result, Err(AppError::Network(error))
+                if error.is_connect() || error.is_timeout()
+                    || error.status().is_some_and(|s| s.is_server_error() || s.as_u16() == 429));
+            if !retry || attempt == 1 {
+                return result;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        unreachable!()
     }
     async fn domestic_rows(
         &self,
@@ -102,6 +128,15 @@ impl PublicMarketSource {
                     .collect::<AppResult<_>>()?,
                 urls,
             )
+        } else if is_mainland_fund(symbol) {
+            let url = mainland_methodology_url(symbol);
+            let mut response = self.client.get(&url).send().await?.error_for_status()?;
+            let body = super::read_public_bytes(&mut response).await?;
+            let html = std::str::from_utf8(&body).map_err(|_| bad())?;
+            let today = Utc::now()
+                .with_timezone(&chrono_tz::Asia::Shanghai)
+                .date_naive();
+            (fund_actions::parse(html, &symbol[..6], today)?, vec![url])
         } else {
             (vec![], vec![])
         };
@@ -118,7 +153,7 @@ impl PublicMarketSource {
             raw_source_url: raw_url,
             adjusted_source_url: adjusted_url,
             action_source_urls,
-            methodology_url: ASHARE_METHODOLOGY_URL.into(),
+            methodology_url: mainland_methodology_url(symbol),
             exchange: if symbol.ends_with(".SS") {
                 "SHH"
             } else {
@@ -131,7 +166,9 @@ impl PublicMarketSource {
                 "XSHE"
             }
             .into(),
-            instrument_type: if is_a_share_stock(symbol) {
+            instrument_type: if is_mainland_fund(symbol) {
+                "FUND"
+            } else if is_a_share_stock(symbol) {
                 "EQUITY"
             } else {
                 "INDEX"
@@ -151,7 +188,7 @@ impl PublicMarketSource {
     }
     async fn yahoo(&self, host: &str, symbol: &str, through: NaiveDate) -> AppResult<PriceHistory> {
         let url = format!("{host}/v8/finance/chart/{symbol}");
-        let response = self
+        let daily_url = self
             .client
             .get(&url)
             .query(&[
@@ -177,13 +214,12 @@ impl PublicMarketSource {
                 ("events", "splits".into()),
                 ("includeAdjustedClose", "true".into()),
             ])
-            .send()
-            .await?
-            .error_for_status()?;
-        let source = response.url().to_string();
-        let daily = super::read_public_json(response).await?;
+            .build()?
+            .url()
+            .clone();
+        let (daily, source) = self.json(daily_url).await?;
         // Monthly sampling keeps the full split history small; these bars never become daily prices.
-        let response = self
+        let action_url = self
             .client
             .get(&url)
             .query(&[
@@ -197,12 +233,11 @@ impl PublicMarketSource {
                 ("interval", "1mo".into()),
                 ("events", "splits".into()),
             ])
-            .send()
-            .await?
-            .error_for_status()?;
-        let action_url = response.url().to_string();
-        let actions = super::read_public_json(response).await?;
-        parse_yahoo(&daily, &actions, symbol, through, source, action_url)
+            .build()?
+            .url()
+            .clone();
+        let (actions, action_source) = self.json(action_url).await?;
+        parse_yahoo(&daily, &actions, symbol, through, source, action_source)
     }
 }
 fn bad() -> AppError {
@@ -414,17 +449,21 @@ where
     Y: std::future::Future<Output = AppResult<PriceHistory>>,
 {
     let mut candidate = None;
-    let mut last = bad();
-    if is_a_share_stock(symbol) || symbol == "000001.SS" {
+    let mut errors = Vec::new();
+    if is_a_share_stock(symbol) || is_mainland_fund(symbol) || symbol == "000001.SS" {
         match tokio::time::timeout(Duration::from_secs(24), domestic).await {
             Ok(Ok(h)) if h.adjustment_anchor == through => return Ok(h),
             Ok(Ok(h)) => candidate = Some(h),
-            result => {
-                tracing::warn!(symbol,error=?result,"public domestic history failed; trying Yahoo")
+            Ok(Err(error)) => {
+                tracing::warn!(symbol,error=?error,"public domestic history failed; trying Yahoo");
+                errors.push(format!("东方财富：{}", source_error(&error)));
+            }
+            Err(_) => {
+                errors.push("东方财富：查询超过 24 秒时限".into());
             }
         }
     }
-    for request in yahoo {
+    for (index, request) in yahoo.into_iter().enumerate() {
         match request.await {
             Ok(h) if h.adjustment_anchor == through => {
                 return Ok(candidate
@@ -441,11 +480,34 @@ where
             }
             Err(error) => {
                 tracing::warn!(symbol,error=?error,"public Yahoo history failed");
-                last = error;
+                errors.push(format!(
+                    "Yahoo query{}：{}",
+                    index + 1,
+                    source_error(&error)
+                ));
             }
         }
     }
-    candidate.ok_or(last)
+    candidate.ok_or_else(|| {
+        AppError::MarketData(format!(
+            "本次价格未更新，保留原参考价。{}",
+            errors.join("；")
+        ))
+    })
+}
+fn source_error(error: &AppError) -> String {
+    match error {
+        AppError::Network(error) if error.is_timeout() => "请求超时".into(),
+        AppError::Network(error) if error.is_connect() => {
+            "服务器连接失败，请检查 DNS、代理及出站网络".into()
+        }
+        AppError::Network(error) => error.status().map_or_else(
+            || "网络传输失败".into(),
+            |status| format!("HTTP {}", status.as_u16()),
+        ),
+        AppError::Json(_) => "来源响应格式无效".into(),
+        _ => error.to_string(),
+    }
 }
 #[async_trait::async_trait]
 impl SecurityHistoryProvider for PublicMarketSource {

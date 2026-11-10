@@ -20,7 +20,16 @@ fn domestic_daily_rows_keep_exact_prices_and_match_by_date() {
 async fn live_five_year_history() {
     let source = PublicMarketSource::new().unwrap();
     let today = crate::models::market::today().parse().unwrap();
-    for symbol in ["600941.SS", "000001.SS", "AAPL"] {
+    for symbol in [
+        "600941.SS",
+        "000001.SS",
+        "518880.SS",
+        "588000.SS",
+        "508077.SS",
+        "0700.HK",
+        "QQQ",
+        "PDD",
+    ] {
         let end = crate::models::market::close::completed_day(symbol, today, Utc::now());
         let h = source.history(symbol, end).await.unwrap();
         assert_eq!(h.window_start, history_start(end));
@@ -34,6 +43,147 @@ async fn live_five_year_history() {
             h.provider_code
         );
     }
+}
+
+#[test]
+fn listed_funds_keep_stock_distribution_rules_separate_and_reject_wrong_exchanges() {
+    for symbol in [
+        "518880.SS",
+        "588000.SS",
+        "508077.SS",
+        "159920.SZ",
+        "180101.SZ",
+    ] {
+        assert!(is_mainland_fund(symbol));
+        assert!(!is_a_share_stock(symbol));
+        assert_eq!(canonical_symbol(symbol).unwrap(), symbol);
+    }
+    for symbol in ["600941.SS", "000001.SS", "0700.HK", "QQQ", "PDD"] {
+        assert!(!is_mainland_fund(symbol));
+    }
+    for (wrong, correct) in [("508077.SZ", "508077.SS"), ("180101.SS", "180101.SZ")] {
+        assert!(canonical_symbol(wrong)
+            .unwrap_err()
+            .to_string()
+            .contains(correct));
+    }
+}
+
+#[tokio::test]
+async fn mainland_fund_history_survives_both_yahoo_hosts_failing() {
+    let day = "2026-11-06".parse().unwrap();
+    for symbol in ["518880.SS", "588000.SS", "508077.SS"] {
+        let history = crate::models::market::history::tests::fixture(symbol, day);
+        let expected = history.revision().unwrap();
+        let got = coherent_history(
+            symbol,
+            day,
+            async { Ok(history) },
+            [
+                std::future::ready(Err(bad())),
+                std::future::ready(Err(bad())),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(got.revision().unwrap(), expected);
+    }
+    let error = coherent_history(
+        "518880.SS",
+        day,
+        async { Err(bad()) },
+        [
+            std::future::ready(Err(bad())),
+            std::future::ready(Err(bad())),
+        ],
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    for source in ["东方财富", "Yahoo query1", "Yahoo query2", "保留原参考价"] {
+        assert!(error.contains(source));
+    }
+}
+
+#[tokio::test]
+async fn public_get_retries_transient_status_once_but_not_missing_symbols() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    let calls = Arc::new(AtomicUsize::new(0));
+    let state = calls.clone();
+    let missing_calls = Arc::new(AtomicUsize::new(0));
+    let missing = missing_calls.clone();
+    let offline_calls = Arc::new(AtomicUsize::new(0));
+    let offline = offline_calls.clone();
+    let invalid_calls = Arc::new(AtomicUsize::new(0));
+    let invalid = invalid_calls.clone();
+    let router = axum::Router::new()
+        .route(
+            "/",
+            axum::routing::get(move || {
+                let calls = state.clone();
+                async move {
+                    if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                        (axum::http::StatusCode::SERVICE_UNAVAILABLE, "busy")
+                    } else {
+                        (axum::http::StatusCode::OK, "{\"ok\":true}")
+                    }
+                }
+            }),
+        )
+        .route(
+            "/missing",
+            axum::routing::get(move || {
+                missing.fetch_add(1, Ordering::SeqCst);
+                async { (axum::http::StatusCode::NOT_FOUND, "missing") }
+            }),
+        )
+        .route(
+            "/offline",
+            axum::routing::get(move || {
+                offline.fetch_add(1, Ordering::SeqCst);
+                async { (axum::http::StatusCode::SERVICE_UNAVAILABLE, "busy") }
+            }),
+        )
+        .route(
+            "/invalid",
+            axum::routing::get(move || {
+                invalid.fetch_add(1, Ordering::SeqCst);
+                async { "not JSON" }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async { axum::serve(listener, router).await.unwrap() });
+    let source = PublicMarketSource::new().unwrap();
+    assert_eq!(
+        source
+            .json(format!("http://{address}/").parse().unwrap())
+            .await
+            .unwrap()
+            .0,
+        json!({"ok":true})
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let error = source
+        .json(format!("http://{address}/missing").parse().unwrap())
+        .await
+        .unwrap_err();
+    assert_eq!(source_error(&error), "HTTP 404");
+    assert_eq!(missing_calls.load(Ordering::SeqCst), 1);
+    assert!(source
+        .json(format!("http://{address}/offline").parse().unwrap())
+        .await
+        .is_err());
+    assert_eq!(offline_calls.load(Ordering::SeqCst), 2);
+    assert!(source
+        .json(format!("http://{address}/invalid").parse().unwrap())
+        .await
+        .is_err());
+    assert_eq!(invalid_calls.load(Ordering::SeqCst), 1);
+    server.abort();
 }
 
 #[test]

@@ -239,7 +239,7 @@ sequenceDiagram
 
 [买点观察助手](buy-watch.md)是当前默认入口。`models/watch/rules` 定义账号观察配置与日周比较，`models/watch` 统一计算 TTM 和关注状态；默认是 5% 股息率、日线 BOLL 下轨 ±2% 及周收盘价 ≤ 周线 BOLL 中轨，`application/watch` 通过 `WatchMarketProvider` 获取输入；`application/watch_market` 从公共价格服务读取日线和交易日期，从公共分红仓储及 `market_data/watch` 读取已实施分红。`composition` 管理按账号后台检查的生命周期，不自动执行 AI。
 
-`market_data/history` 校验证券、交易所、时间戳与日期，国内原价与前复权按日期对齐，失败后整组回退 Yahoo；`models/market/history` 定义精确序列、来源与复权基准一致性及报价；`application/watch_market` 负责观察投影。观察的上证交易日参考也从同一公共价格库读取；不能跨供应商拼接序列。`models/watch` 继续独立完成既有日周条件和趋势计算，公共价格更新不直接制造个人观察或提醒，账号检查仍按原事务保存。
+`market_data/history` 校验证券、交易所、时间戳与日期，国内原价与前复权按日期对齐，失败后整组回退 Yahoo；其中 `history/fund_actions` 只解析基金独立的完整拆分档案，不能以股票分红表或缺失页面推定基金没有拆分。基金代码范围、来源校验、Yahoo 有界重试及失败边界见[市场数据](market-data.md#来源与五年窗口)。`models/market/history` 定义精确序列、来源与复权基准一致性及报价；`application/watch_market` 负责观察投影。观察的上证交易日参考也从同一公共价格库读取；不能跨供应商拼接序列。`models/watch` 继续独立完成既有日周条件和趋势计算，公共价格更新不直接制造个人观察或提醒，账号检查仍按原事务保存。
 
 公开分红主资料由 `db/public_dividends::PublicDividends` 在 PostgreSQL `mario_market.dividend_histories` 保存，按证券一行完整事件集。API 启动时事务初始化并从 `market_data/watch_archive` 提供的版本化原件资料包载入 202 份可用历史；启动种子不能覆盖覆盖日期更新或同日采集时间更新的资料。基础包与明确证券范围的补充包在 `watch_archive` 按证券合并，较新完整历史优先；未复核证券和 CSV 导出均保留各自真实覆盖日。公共库只读写公开分红，不读取账号表或租户 schema，不推进账号数据版本。
 

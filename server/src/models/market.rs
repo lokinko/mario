@@ -56,6 +56,26 @@ pub(crate) fn is_a_share_stock(symbol: &str) -> bool {
             _ => false,
         }
 }
+/// Listed mainland funds have a separate distribution/split archive from stocks.
+pub(crate) fn is_mainland_fund(symbol: &str) -> bool {
+    let Some((code, exchange)) = symbol.split_once('.') else {
+        return false;
+    };
+    code.len() == 6
+        && code.bytes().all(|b| b.is_ascii_digit())
+        && match exchange {
+            "SS" => ["50", "51", "56", "58"].iter().any(|p| code.starts_with(p)),
+            "SZ" => ["15", "16", "18"].iter().any(|p| code.starts_with(p)),
+            _ => false,
+        }
+}
+pub(crate) fn mainland_methodology_url(symbol: &str) -> String {
+    if is_mainland_fund(symbol) {
+        format!("https://fundf10.eastmoney.com/fhsp_{}.html", &symbol[..6])
+    } else {
+        ASHARE_METHODOLOGY_URL.into()
+    }
+}
 pub(crate) fn canonical_symbol(value: &str) -> AppResult<String> {
     let mut code = value.trim().to_ascii_uppercase();
     if code.is_empty()
@@ -80,11 +100,13 @@ pub(crate) fn canonical_symbol(value: &str) -> AppResult<String> {
     // Check known stock/ETF ranges without inferring bare codes or ambiguous indices.
     if let Some((digits, suffix)) = code.rsplit_once('.') {
         if digits.len() == 6 && digits.bytes().all(|b| b.is_ascii_digit()) {
-            let shanghai = ["600", "601", "603", "605", "688", "689", "51", "56", "58"]
-                .iter()
-                .any(|prefix| digits.starts_with(prefix));
+            let shanghai = [
+                "600", "601", "603", "605", "688", "689", "50", "51", "56", "58",
+            ]
+            .iter()
+            .any(|prefix| digits.starts_with(prefix));
             // Do not infer 000xxx: these also identify Shanghai indices.
-            let shenzhen = ["002", "003", "300", "301", "159"]
+            let shenzhen = ["002", "003", "300", "301", "15", "16", "18"]
                 .iter()
                 .any(|prefix| digits.starts_with(prefix));
             let correction = match suffix {

@@ -21,6 +21,11 @@ const ECB_METHODOLOGY_URL: &str =
     "https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates";
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 async fn read_public_json(mut response: reqwest::Response) -> AppResult<serde_json::Value> {
+    Ok(serde_json::from_slice(
+        &read_public_bytes(&mut response).await?,
+    )?)
+}
+async fn read_public_bytes(response: &mut reqwest::Response) -> AppResult<Vec<u8>> {
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await? {
         if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
@@ -28,7 +33,7 @@ async fn read_public_json(mut response: reqwest::Response) -> AppResult<serde_js
         }
         body.extend_from_slice(&chunk);
     }
-    Ok(serde_json::from_slice(&body)?)
+    Ok(body)
 }
 const LOOKBACK_DAYS: i64 = 7;
 use crate::models::market::SUPPORTED_CURRENCIES;
