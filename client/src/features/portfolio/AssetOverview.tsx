@@ -3,8 +3,6 @@ import { Button, Card } from "antd";
 import type { DataIssue, DailyHistory, Snapshot } from "../../types";
 import type { DisplayPreferenceProps } from "../../components/DisplayPreferences";
 import { formatAmount, formatMoney, formatSigned } from "../../lib/format";
-import { DataStamp } from "../../components/DataStamp";
-import { AssetTrend } from "./AssetTrend";
 export function AssetOverview({
   snapshot,
   history,
@@ -21,8 +19,7 @@ export function AssetOverview({
   const latest = snapshot.valuationStatus.comparable
     ? history?.records[0]
     : undefined;
-  const carried =
-    latest?.assets.filter((a) => a.carried && !a.removed).length ?? 0;
+  const change = latest?.sinceLastUpdateChange;
   const currency = latest?.baseCurrency ?? snapshot.profile.baseCurrency;
   const total = !snapshot.valuationStatus.comparable
     ? null
@@ -67,25 +64,20 @@ export function AssetOverview({
             )}
           </div>
           <div className="hero-changes">
-            {[
-              ["较昨日", latest?.previousDayChange],
-              ["较上次实际更新", latest?.sinceLastUpdateChange],
-            ].map(([label, value]) => (
-              <div key={String(label)}>
-                <span className="metric-label">{label}</span>
-                <strong
-                  className={`num ${value == null || value === 0 ? "" : Number(value) > 0 ? "gain" : "loss"}`}
-                  data-money
-                >
-                  {value == null
-                    ? "—"
-                    : formatSigned(value, (v) => formatAmount(v, currency))}
-                </strong>
-                {label === "较上次实际更新" && latest?.lastUpdatedDay && (
-                  <small>{latest.lastUpdatedDay} 起</small>
-                )}
-              </div>
-            ))}
+            <div>
+              <span className="metric-label">较上次实际更新</span>
+              <strong
+                className={`num ${change == null || change === 0 ? "" : change > 0 ? "gain" : "loss"}`}
+                data-money
+              >
+                {change == null
+                  ? "—"
+                  : formatSigned(change, (v) => formatAmount(v, currency))}
+              </strong>
+              {latest?.lastUpdatedDay && (
+                <small>{latest.lastUpdatedDay} 起</small>
+              )}
+            </div>
           </div>
           <Button
             type="text"
@@ -100,19 +92,6 @@ export function AssetOverview({
           >
             {display.maskAmounts ? "显示金额" : "隐藏金额"}
           </Button>
-          {history &&
-            history.records.filter(
-              (r) => r.baseCurrency === currency && r.totalAssets != null,
-            ).length > 1 && (
-              <div className="hero-trend">
-                <AssetTrend
-                  records={history.records.filter(
-                    (r) => r.baseCurrency === currency,
-                  )}
-                />
-                <span>30 日走势</span>
-              </div>
-            )}
           {snapshot.valuationStatus.issues.length > 0 && (
             <details className="hero-issues">
               <summary>
@@ -133,10 +112,6 @@ export function AssetOverview({
               ))}
             </details>
           )}
-          <div className="hero-stamp">
-            <DataStamp date={latest?.day ?? snapshot.updatedAt.slice(0, 10)} />
-            {carried > 0 && <span>{carried} 项资产沿用原值</span>}
-          </div>
         </div>
       </Card>
     </section>

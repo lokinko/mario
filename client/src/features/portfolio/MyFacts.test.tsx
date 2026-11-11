@@ -352,32 +352,24 @@ it("prioritizes holdings without reserving space for exchange rates", () => {
   expect(screen.queryByRole("region", { name: "汇率设置" })).toBeNull();
 });
 
-it("saves a code and quantity without requiring a manual price", async () => {
-  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
+it("adds investments only by recording trades", () => {
   mount();
   fireEvent.click(screen.getByRole("tab", { name: "投资持仓" }));
-  fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
-    target: { value: "贵州茅台" },
-  });
-  fireEvent.change(
-    screen.getByRole("textbox", { name: "证券代码（自动价格，选填）" }),
-    { target: { value: "600519.SS" } },
-  );
-  fireEvent.change(
-    screen.getByRole("spinbutton", { name: "持仓数 份 / 股 / 单位" }),
-    { target: { value: "100" } },
-  );
-  fireEvent.click(screen.getByRole("button", { name: "保存这笔资产" }));
-  await waitFor(() =>
-    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
-      expect.objectContaining({
-        symbol: "600519.SS",
-        quantity: 100,
-        currentPrice: null,
-      }),
+  expect(screen.queryByRole("button", { name: "添加持仓" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "查看汇率" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "记录交易" }));
+  expect(screen.getByRole("dialog", { name: "记录交易" })).toBeTruthy();
+});
+
+it("keeps the exchange rate entry next to the savings base currency", () => {
+  mount();
+  fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
+  expect(
+    within(screen.getByRole("region", { name: "收支与风险设置" })).getByRole(
+      "button",
+      { name: "查看汇率" },
     ),
-  );
+  ).toBeTruthy();
 });
 
 it("refreshes prices and displays the source date and partial failures", async () => {
@@ -425,14 +417,13 @@ it("refreshes prices and displays the source date and partial failures", async (
     errors: value.priceRefreshErrors,
   });
   const { onUpdate } = mount(value);
-  expect(screen.getByText("收盘 2026-10-09")).toBeTruthy();
-  expect(screen.queryByText("收盘 2026-10-12")).toBeNull();
+  expect(screen.queryByText(/收盘 2026-10-09/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /查看 / }));
   expect(screen.queryByText("行情来源")).toBeNull();
   expect(screen.getByText(/收盘日 2026-10-09/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   expect(screen.getByText(/部分价格更新失败，已保留原值/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "更新自动价格" }));
+  fireEvent.click(screen.getByRole("button", { name: "刷新" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(value));
   expect(screen.getByRole("alert").textContent).toContain(
     "另一个标的暂时不可用",
@@ -822,39 +813,6 @@ it("records investment cost in the holding's currency and shows the saved profit
   expect(screen.queryByText("成本待补")).toBeNull();
 });
 
-it("includes cost when adding an investment and keeps it optional", async () => {
-  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
-  mount();
-  fireEvent.click(screen.getByRole("tab", { name: "投资持仓" }));
-  fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
-    target: { value: "新基金" },
-  });
-  fireEvent.change(
-    screen.getByRole("spinbutton", { name: "持仓数 份 / 股 / 单位" }),
-    { target: { value: "100" } },
-  );
-  fireEvent.change(screen.getByRole("spinbutton", { name: "当前价格 CNY" }), {
-    target: { value: "10" },
-  });
-  const save = screen.getByRole("button", { name: "保存这笔资产" });
-  expect((save as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.change(
-    screen.getByRole("spinbutton", { name: "持仓总成本（选填） CNY" }),
-    { target: { value: "1200" } },
-  );
-  fireEvent.click(save);
-  await waitFor(() =>
-    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "新基金",
-        marketValue: 1000,
-        costBasis: 1200,
-      }),
-    ),
-  );
-});
-
 it("blocks negative or excessive costs, then allows clearing an unrecorded cost", async () => {
   vi.mocked(portfolioApi.updateHolding).mockResolvedValue(snapshot);
   mount({ ...snapshot, holdings: [{ ...investment, costBasis: 800 }] });
@@ -1095,50 +1053,6 @@ it("updates a currency balance with the form revision and preserves input on a c
   );
   expect(screen.getByDisplayValue("2000")).toBeTruthy();
   expect(portfolioApi.updateHolding).not.toHaveBeenCalled();
-});
-
-it("saves manually entered unit prices and fractional quantities with calculated totals", async () => {
-  vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
-  mount();
-  fireEvent.click(screen.getByRole("tab", { name: "投资持仓" }));
-  fireEvent.click(screen.getByRole("button", { name: "添加持仓" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "名称" }), {
-    target: { value: "新基金" },
-  });
-  fireEvent.change(
-    screen.getByRole("spinbutton", { name: "成本价（选填） CNY" }),
-    { target: { value: "8" } },
-  );
-  const save = screen.getByRole("button", {
-    name: "保存这笔资产",
-  }) as HTMLButtonElement;
-  expect(save.disabled).toBe(true);
-  fireEvent.change(
-    screen.getByRole("spinbutton", { name: "持仓数 份 / 股 / 单位" }),
-    { target: { value: "100.5" } },
-  );
-  expect(save.disabled).toBe(true);
-  fireEvent.change(screen.getByRole("spinbutton", { name: "当前价格 CNY" }), {
-    target: { value: "10" },
-  });
-  const value = screen.getByRole("spinbutton", {
-    name: "当前市值 CNY",
-  }) as HTMLInputElement;
-  expect(value.value).toBe("1005");
-  expect(value.readOnly).toBe(true);
-  expect(save.disabled).toBe(false);
-  fireEvent.click(save);
-  await waitFor(() =>
-    expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
-      expect.objectContaining({
-        costPrice: 8,
-        quantity: 100.5,
-        currentPrice: 10,
-        costBasis: 804,
-        marketValue: 1005,
-      }),
-    ),
-  );
 });
 
 it("keeps detailed inputs on failure and validates zero values, missing prices and total limits", async () => {

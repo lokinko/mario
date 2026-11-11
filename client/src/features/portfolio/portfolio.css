@@ -31,16 +31,8 @@
 .facts-page .hero-changes strong {
   font-size: var(--fs-title);
 }
-.facts-page .hero-stamp {
-  border-top: 1px solid var(--line);
-  padding-top: var(--space-3);
-  gap: var(--space-2);
-}
 .facts-page .hero-privacy {
   color: var(--text-3);
-}
-.facts-page .hero-trend {
-  min-width: 0;
 }
 .facts-tabs > .ant-tabs-nav {
   margin-bottom: var(--space-4);
@@ -167,6 +159,11 @@
 }
 .profile-panel .panel-title {
   margin-bottom: var(--space-2);
+}
+.profile-title-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 .profile-panel > .section-intro {
   margin: 0 0 var(--space-5);

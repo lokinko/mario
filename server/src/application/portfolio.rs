@@ -97,6 +97,11 @@ impl PortfolioService<'_> {
                 "期权资料请通过股票详情中的期权入口管理".into(),
             ));
         }
+        if id.is_none() && input.asset_class != "现金" {
+            return Err(crate::AppError::Validation(
+                "新增投资持仓请通过记录交易完成".into(),
+            ));
+        }
         self.refresh_fx(false).await?;
         let revision = self.db.revision()?;
         let input = self

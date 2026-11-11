@@ -17,7 +17,7 @@ export function useAssetHistory(snapshot: Snapshot) {
   }, []);
   useEffect(() => {
     const current = ++request.current;
-    getDailyAssets({ limit: 30 })
+    getDailyAssets({ limit: 1 })
       .then((data) => {
         if (current === request.current) setHistory(data);
       })

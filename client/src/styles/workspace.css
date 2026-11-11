@@ -965,11 +965,6 @@ th,
   color: var(--text-3);
   font-size: var(--fs-title-sm);
 }
-.hero-changes {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-5);
-}
 .hero-changes > div {
   display: flex;
   flex-direction: column;
@@ -981,9 +976,7 @@ th,
   overflow-wrap: anywhere;
 }
 .hero-changes small,
-.hero-net,
-.hero-stamp,
-.hero-trend > span {
+.hero-net {
   font-size: var(--fs-caption);
   color: var(--text-3);
 }
@@ -992,27 +985,6 @@ th,
 }
 .hero-privacy {
   align-self: start;
-}
-.hero-trend {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-.asset-sparkline {
-  width: 180px;
-  height: 40px;
-}
-.asset-sparkline svg {
-  width: 100%;
-  height: 100%;
-}
-.hero-stamp {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  grid-column: 1/-1;
 }
 .holdings-list-header {
   min-height: 36px;

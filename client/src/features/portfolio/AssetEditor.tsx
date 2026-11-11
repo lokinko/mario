@@ -18,7 +18,6 @@ const currencies = ["CNY", "USD", "HKD", "EUR", "JPY", "GBP"];
 const assetClasses = ["股票", "基金", "债券", "黄金", "其他"];
 
 function initialAmount(snapshot: Snapshot, holding: Holding) {
-  if (!holding.id && holding.assetClass !== "现金") return "";
   return (
     snapshot.cashBalances?.find((b) => b.holdingId === holding.id)?.amount ??
     String(holding.marketValue)
@@ -157,7 +156,7 @@ export function AssetEditor({
                 />
                 {tradeManaged && (
                   <small id={codeHelpId}>
-                    可补填或纠正同一证券的代码；如需记录另一只证券，请新建持仓。
+                    可补填或纠正同一证券的代码；如需记录另一只证券，请通过“记录交易”添加。
                   </small>
                 )}
               </label>
@@ -314,7 +313,7 @@ export function AssetEditor({
         )}
         {editing.currency !== snapshot.profile.baseCurrency && (
           <p className="section-intro">
-            汇率自动读取；如需调整，可在右侧“汇率”浮窗的“管理汇率”中修改。
+            汇率自动读取；如需调整，可在“存款与收支”的“汇率”浮窗中通过“管理汇率”修改。
           </p>
         )}
         <div className="form-actions">

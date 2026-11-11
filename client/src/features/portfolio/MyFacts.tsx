@@ -197,13 +197,6 @@ export function MyFacts({
       },
       (e) => `价格更新失败：${String(e)}`,
     );
-  const add = () =>
-    openEditor({
-      ...emptyHolding(currency),
-      id: "",
-      name: "",
-      assetClass: "其他",
-    });
   const removeAsset = (item: Holding) =>
     void removal.remove(item, working || editingTrade);
   const errorNotice = error && (
@@ -263,10 +256,6 @@ export function MyFacts({
           observedOn={
             snapshot.holdingValuations?.find((v) => v.holdingId === item.id)
               ?.observedOn
-          }
-          priceBasis={
-            snapshot.holdingValuations?.find((v) => v.holdingId === item.id)
-              ?.priceBasis
           }
           holding={withExactValues(snapshot, item)}
           exact={displayAccounting?.holdings[item.id]}
@@ -348,6 +337,9 @@ export function MyFacts({
       </section>
       {section === "savings" && (
         <ProfileForm
+          exchangeRates={
+            <ExchangeRateAccess snapshot={snapshot} onUpdate={onUpdate} />
+          }
           profile={profile}
           savedBaseCurrency={snapshot.profile.baseCurrency}
           onChange={setProfile}
@@ -365,37 +357,27 @@ export function MyFacts({
         title="我的情况"
         action={
           <div className="trade-toolbar facts-heading-actions">
-            <ExchangeRateAccess snapshot={snapshot} onUpdate={onUpdate} />
             {section === "holdings" && investments.length > 0 && (
               <Button
                 icon={<RefreshCw size={15} />}
                 disabled={busy || Boolean(editing)}
                 onClick={refreshPrices}
               >
-                {busy ? "更新中…" : "更新自动价格"}
+                {busy ? "刷新中…" : "刷新"}
               </Button>
             )}
             {section === "holdings" && (
-              <>
-                <Button
-                  type="primary"
-                  icon={<Plus size={16} />}
-                  disabled={busy || Boolean(editing) || addingTrade}
-                  onClick={() => {
-                    setTradeHolding(undefined);
-                    setAddingTrade(true);
-                  }}
-                >
-                  记录交易
-                </Button>
-                <Button
-                  icon={<Plus size={16} />}
-                  disabled={busy || Boolean(editing) || addingTrade}
-                  onClick={add}
-                >
-                  添加持仓
-                </Button>
-              </>
+              <Button
+                type="primary"
+                icon={<Plus size={16} />}
+                disabled={busy || Boolean(editing) || addingTrade}
+                onClick={() => {
+                  setTradeHolding(undefined);
+                  setAddingTrade(true);
+                }}
+              >
+                记录交易
+              </Button>
             )}
           </div>
         }
@@ -459,9 +441,7 @@ export function MyFacts({
             editing
               ? editing.id
                 ? "编辑 " + editing.name
-                : editing.assetClass === "现金"
-                  ? "添加存款"
-                  : "添加持仓"
+                : "添加存款"
               : selected!.name
           }
           size={editing ? "default" : "wide"}

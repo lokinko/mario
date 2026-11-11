@@ -104,6 +104,7 @@ it("opens exchange rates from my facts instead of the sidebar", async () => {
       .querySelector("#main-navigation")
       ?.querySelector('[aria-label="查看汇率"]'),
   ).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
   fireEvent.click(screen.getByRole("button", { name: "查看汇率" }));
   const rates = await screen.findByRole("region", { name: "汇率设置" });
   expect(rates.closest("main")).toBeNull();

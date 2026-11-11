@@ -29,14 +29,12 @@ export function AssetAmountRow({
   onRepair,
   source,
   observedOn,
-  priceBasis,
 }: {
   holding: Holding;
   issues?: DataIssue[];
   onRepair?: (issue: DataIssue) => void;
   source?: string;
   observedOn?: string;
-  priceBasis?: string;
   realizedPnl?: number | string;
   onOpen?: () => void;
   onEdit: () => void;
@@ -94,13 +92,6 @@ export function AssetAmountRow({
             {holding.symbol}
             {optionTotals ? `${holding.symbol ? " · " : ""}含关联期权` : ""}
             {closed && <Badge>已清仓</Badge>}
-          </small>
-        )}
-        {investment && holding.currentPrice != null && (
-          <small title={source || "手工估值"}>
-            {observedOn
-              ? `${priceBasis === "forward_adjusted_daily_close" ? "前复权收盘" : "收盘"} ${observedOn}`
-              : `参考价 ${holding.valuationDate || "日期未记录"}`}
           </small>
         )}
         {issues.map((issue) => (

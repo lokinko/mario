@@ -1,6 +1,7 @@
 import { Button } from "antd";
 import { Callout } from "../../components/Callout";
 import { Save } from "lucide-react";
+import type { ReactNode } from "react";
 import { saveProfile } from "../../api/portfolio";
 import type { FinancialProfile, Snapshot } from "../../types";
 import { NumberField } from "../../components/NumberField";
@@ -26,6 +27,7 @@ function validProfile(profile: FinancialProfile) {
 }
 
 export function ProfileForm({
+  exchangeRates,
   profile,
   savedBaseCurrency,
   onChange: setProfile,
@@ -34,6 +36,7 @@ export function ProfileForm({
   onUpdate,
   flash,
 }: {
+  exchangeRates?: ReactNode;
   profile: FinancialProfile;
   savedBaseCurrency: string;
   onChange: (profile: FinancialProfile) => void;
@@ -87,18 +90,21 @@ export function ProfileForm({
     >
       <div className="panel-title">
         <h2>收入与支出</h2>
-        <select
-          aria-label="记账币种"
-          value={profile.baseCurrency}
-          disabled={busy}
-          onChange={(event) =>
-            setProfile({ ...profile, baseCurrency: event.target.value })
-          }
-        >
-          {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => (
-            <option key={value}>{value}</option>
-          ))}
-        </select>
+        <div className="profile-title-actions">
+          <select
+            aria-label="记账币种"
+            value={profile.baseCurrency}
+            disabled={busy}
+            onChange={(event) =>
+              setProfile({ ...profile, baseCurrency: event.target.value })
+            }
+          >
+            {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+          {exchangeRates}
+        </div>
       </div>
       <p className="section-intro">
         记录稳定月度现金流，作为风险承受能力的基础。

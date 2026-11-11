@@ -269,17 +269,35 @@ async fn verified_valuation_reacquires_before_success_or_provider_failure() {
     }
 }
 
+#[tokio::test]
+async fn new_investment_holdings_are_rejected_before_querying_prices() {
+    let (db, _peer) = databases();
+    let before = fingerprint(&db);
+    let provider = Quotes::new("public-fixture", None, true);
+    let market = MarketServices::new(provider.clone(), provider.clone());
+    let service = market.for_account(&db);
+    let _lock = db.lock_account().unwrap();
+    let mut input = holding();
+    input.current_price = None;
+    let error = service.save_holding(None, input).await.unwrap_err();
+    assert!(matches!(&error, AppError::Validation(m) if m.contains("记录交易")));
+    assert!(!provider.dropped.load(Ordering::SeqCst));
+    assert_eq!(fingerprint(&db), before);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn saving_a_holding_releases_the_lock_and_never_overwrites_concurrent_input() {
     let (db, peer) = databases();
+    let id = db.add_holding(&holding()).unwrap().holdings[0].id.clone();
     let (release, gate) = oneshot::channel();
     let provider = Quotes::new("public-fixture", Some(gate), false);
     let market = MarketServices::new(provider.clone(), provider.clone());
     let service = market.for_account(&db);
     let mut input = holding();
     input.current_price = None;
+    input.name = "stale edit".into();
     let outer = db.lock_account().unwrap();
-    let mut work = Box::pin(service.save_holding(None, input));
+    let mut work = Box::pin(service.save_holding(Some(&id), input));
     wait_for_provider(work.as_mut(), &provider).await;
     assert!(peer_can_lock(&peer));
     {
@@ -292,7 +310,7 @@ async fn saving_a_holding_releases_the_lock_and_never_overwrites_concurrent_inpu
     release.send(()).unwrap();
     assert!(matches!(work.await, Err(AppError::Conflict(_))));
     assert_eq!(fingerprint(&db), concurrent);
-    assert!(db.snapshot().unwrap().holdings.is_empty());
+    assert_eq!(db.snapshot().unwrap().holdings[0].name, "synthetic holding");
     assert!(!peer_can_lock(&peer));
     drop(outer);
     assert!(peer_can_lock(&peer));

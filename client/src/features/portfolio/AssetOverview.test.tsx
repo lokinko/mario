@@ -46,13 +46,20 @@ beforeEach(() => {
   vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue(history);
 });
 afterEach(cleanup);
-it("reads the last 30 days once for the overview sparkline", async () => {
+it("reads only the latest daily record and shows the change since the last real update", async () => {
+  vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue({
+    ...history,
+    records: [{ ...day, previousDayChange: -5, sinceLastUpdateChange: 20 }],
+  });
   render(<Overview />);
-  await screen.findByRole("img", { name: /最近 30 日资产走势/ });
+  await screen.findByText("2026-09-12 起");
   expect(portfolioApi.getDailyAssets).toHaveBeenCalledOnce();
-  expect(portfolioApi.getDailyAssets).toHaveBeenCalledWith({ limit: 30 });
+  expect(portfolioApi.getDailyAssets).toHaveBeenCalledWith({ limit: 1 });
+  expect(screen.getByText("较上次实际更新")).toBeTruthy();
+  expect(screen.queryByText("较昨日")).toBeNull();
+  expect(screen.queryByText(/沿用原值|日走势/)).toBeNull();
 });
-it("shows an unavailable total without a sparkline", async () => {
+it("shows an unavailable total", async () => {
   vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue({
     ...history,
     records: [
@@ -65,5 +72,4 @@ it("shows an unavailable total without a sparkline", async () => {
       "—",
     ),
   );
-  expect(screen.queryByRole("img", { name: /资产走势/ })).toBeNull();
 });
