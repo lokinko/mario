@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import type {
   WatchGridGenerator,
   WatchGridPlan,
@@ -317,11 +318,6 @@ export function WatchGridEditor({
             </label>
           ))}
         </div>
-        <p className="watch-meta">
-          间距按股息率百分点设置，例如 0.25 表示 5% →
-          5.25%。买入从最低档的上一档向高股息率递增，卖出从最高档的下一档向低股息率递增；负比例表示递减，按首档股数
-          ×（1＋比例）的档次幂四舍五入到整数股。生成后可逐档修改。
-        </p>
         <button className="secondary" type="button" onClick={generate}>
           {confirmGenerate ? "确认替换现有档位" : "生成网格"}
         </button>
@@ -388,14 +384,16 @@ export function WatchGridEditor({
                 <td>
                   <button
                     type="button"
-                    className="text-button danger"
+                    className="icon-button danger-text"
+                    aria-label={`删除第 ${index + 1} 档`}
+                    title="删除"
                     disabled={busy || levels.length === 1}
                     onClick={() => {
                       setLevels(levels.filter((_, i) => i !== index));
                       edited();
                     }}
                   >
-                    删除第 {index + 1} 档
+                    <Trash2 size={15} />
                   </button>
                 </td>
               </tr>
@@ -412,7 +410,8 @@ export function WatchGridEditor({
           edited();
         }}
       >
-        添加档位
+        <Plus size={16} />
+        添加
       </button>
       <div className="form-actions">
         {plan && (

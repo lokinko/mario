@@ -763,7 +763,7 @@ export function HoldingTrades({
             <table className="trade-table">
               <thead>
                 <tr>
-                  <th>日期 / 顺序</th>
+                  <th>日期</th>
                   <th>类型 / 数量</th>
                   <th>实际现金收支</th>
                   <th>操作</th>
@@ -772,10 +772,7 @@ export function HoldingTrades({
               <tbody>
                 {visibleTrades.map((t) => (
                   <tr key={t.id}>
-                    <td data-label="日期 / 顺序">
-                      {t.occurredOn}
-                      <small>第 {t.sequence} 笔</small>
-                    </td>
+                    <td data-label="日期">{t.occurredOn}</td>
                     <td data-label="类型 / 数量">
                       {t.kind === "dividend" ? (
                         names[t.kind]

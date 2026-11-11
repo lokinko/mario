@@ -1434,7 +1434,7 @@ main {
 .trade-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--fs-body-sm);
+  font-size: var(--fs-body);
   text-align: left;
 }
 .trade-table th,
@@ -1445,7 +1445,8 @@ main {
 }
 .trade-table small {
   margin-left: var(--space-2);
-  color: var(--text-3);
+  color: var(--text-2);
+  font-size: var(--fs-body-sm);
 }
 .trade-kind-buy {
   color: var(--danger);

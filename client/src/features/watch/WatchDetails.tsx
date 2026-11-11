@@ -173,14 +173,6 @@ export function WatchDetails({
                 移出观察名单
               </button>
             </div>
-            <p className="watch-meta">
-              最近检查{" "}
-              {row.checkedAt
-                ? new Date(row.checkedAt).toLocaleString("zh-CN", {
-                    timeZone: "Asia/Shanghai",
-                  })
-                : "—"}
-            </p>
           </>
         )}
       </div>

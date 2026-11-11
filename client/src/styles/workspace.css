@@ -1405,6 +1405,7 @@ input[type="number"] {
 }
 .trade-table th {
   color: var(--text-3);
+  font-size: var(--fs-body-sm);
   font-weight: 500;
   white-space: nowrap;
   position: sticky;

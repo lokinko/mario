@@ -387,9 +387,7 @@ export function WatchTrends({ latest }: { latest: Observation | null }) {
           </label>
         )}
       </div>
-      {!points.length ? (
-        <p className="watch-meta">尚无趋势资料，下次成功检查收盘后补齐。</p>
-      ) : (
+      {!points.length ? null : (
         <>
           <p className="watch-meta">
             截至 {latest?.observedOn} ·{" "}

@@ -211,10 +211,9 @@ it("breaks lines at gaps while retaining available series and a single date", ()
 
 it("shows older observations and first checks without inventing history", () => {
   const view = render(<WatchTrends latest={null} />);
-  expect(screen.getByText(/尚无趋势资料/)).toBeTruthy();
   expect(screen.queryByRole("img")).toBeNull();
+  expect(screen.queryByText(/尚无趋势资料/)).toBeNull();
   view.rerender(<WatchTrends latest={observation()} />);
-  expect(screen.getByText(/尚无趋势资料/)).toBeTruthy();
   expect(screen.queryByRole("slider")).toBeNull();
 });
 

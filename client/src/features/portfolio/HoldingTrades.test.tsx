@@ -127,7 +127,10 @@ it("pages five newest executions per holding and can edit older pages without lo
   );
   const rows = () =>
     Array.from(container.querySelectorAll("tbody tr")).map((row) =>
-      row.textContent?.replace(/^2026-(\d\d-\d\d)第 (\d) 笔.*$/, "$1#$2"),
+      row.textContent
+        ?.replace(/^2026-(\d\d-\d\d)(买入|卖出).*$/, "$1$2")
+        .replace("买入", "#1")
+        .replace("卖出", "#2"),
     );
   expect(rows()).toEqual([
     "01-06#2",
