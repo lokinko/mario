@@ -52,33 +52,10 @@
 .watch-trend-band-lower {
   opacity: 0.17;
 }
-.watch-trend-position {
-  margin: var(--space-3) 0 0;
-  color: var(--brand);
-  font-size: var(--fs-body-sm);
-  font-weight: 600;
-}
 .watch-trend-cross {
   fill: var(--warning);
   stroke: var(--surface);
   stroke-width: 2;
-}
-.watch-trend-date {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  font-size: var(--fs-caption);
-  color: var(--text-3);
-}
-.watch-trend-date strong {
-  color: var(--text-2);
-  font-family: var(--font-num);
-  font-weight: 500;
-}
-.watch-trend-date span {
-  color: var(--warning);
 }
 .watch-trend-chart input[type="range"] {
   display: block;

@@ -36,16 +36,13 @@ import { WatchCatalogEditor } from "./WatchCatalogEditor";
 import { WatchList } from "./WatchList";
 import { WatchCatalogDetails } from "./WatchCatalogDetails";
 import { WatchDetails } from "./WatchDetails";
-import { WatchWeekly } from "./WatchWeekly";
 import {
   canonical,
   displayWatch,
   type WatchDisplayRow,
   statuses,
   selectRows,
-  checks,
   sortOptions,
-  type WatchFilter,
   type WatchSort,
 } from "./presentation";
 
@@ -77,7 +74,6 @@ export function BuyWatch({
   const [dirty, setDirty] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<WatchFilter>("all");
   const [sort, setSort] = useState<WatchSort>("default");
   const [ownership, setOwnership] = useState("all");
   const [view, setView] = useState<"compact" | "cards">("compact");
@@ -251,18 +247,12 @@ export function BuyWatch({
       )
       .map((h) => canonical(h.symbol)),
   );
-  const counts = {
-    yield: currentRows.filter((r) => checks(r)[0] === true).length,
-    daily: currentRows.filter((r) => checks(r)[1] === true).length,
-    weekly: currentRows.filter((r) => checks(r)[2] === true).length,
-  };
-  const visible = selectRows(currentRows, query, filter, sort, held, ownership);
+  const visible = selectRows(currentRows, query, sort, held, ownership);
   const active = own
     ? rows.find((r) => r.entry.symbol === expanded)
     : undefined;
   const reset = () => {
     setQuery("");
-    setFilter("all");
     setOwnership("all");
   };
   const changeGroup = (next: string) => {
@@ -290,6 +280,11 @@ export function BuyWatch({
                 onClick={() => setCatalogEditing(true)}
               >
                 维护公共公司
+              </Button>
+            )}
+            {own && rows.length > 0 && (
+              <Button onClick={weeklyAsk}>
+                结合持仓做周末复盘{rows.length > 5 ? "（先讨论前 5 家）" : ""}
               </Button>
             )}
             <Button
@@ -415,25 +410,6 @@ export function BuyWatch({
       {!board && !error && <p role="status">正在读取观察名单…</p>}
       {board && (
         <>
-          <div className="watch-summary" role="group" aria-label="观察名单筛选">
-            {(
-              [
-                ["all", "全部公司", currentRows.length],
-                ["yield", "股息达标", counts.yield],
-                ["daily", "日线达标", counts.daily],
-                ["weekly", "周线达标", counts.weekly],
-              ] as const
-            ).map(([key, label, count]) => (
-              <button
-                key={key}
-                aria-pressed={filter === key}
-                onClick={() => setFilter(key)}
-              >
-                <span>{label}</span>
-                <strong>{count}</strong>
-              </button>
-            ))}
-          </div>
           {currentRows.length > 0 && (
             <div className="watch-toolbar" data-presentation>
               <div className="watch-search">
@@ -500,7 +476,7 @@ export function BuyWatch({
               <span className="sr-only" aria-live="polite">
                 显示 {visible.length} / {currentRows.length} 家
               </span>
-              {(query || filter !== "all" || ownership !== "all") && (
+              {(query || ownership !== "all") && (
                 <button className="text-button" onClick={reset}>
                   清除筛选
                 </button>
@@ -577,13 +553,6 @@ export function BuyWatch({
           )}
           {!own && !canAdd && (
             <p>自选已达 50 家，请先在自选中移除公司后再添加。</p>
-          )}
-          {own && (
-            <WatchWeekly
-              board={board}
-              onAsk={weeklyAsk}
-              onDetails={(row) => setExpanded(row.entry.symbol)}
-            />
           )}
         </>
       )}

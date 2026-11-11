@@ -51,9 +51,8 @@ export function checks(row: WatchMarketRow) {
   ];
 }
 
-export type WatchFilter = "all" | "yield" | "daily" | "weekly";
 export const sortOptions = {
-  default: "变化与关注优先",
+  default: "变化与达标优先",
   yield: "股息率从高到低",
   "yield-asc": "股息率从低到高",
   "price-asc": "收盘价从低到高",
@@ -106,29 +105,22 @@ function compareMetric(
 export function selectRows(
   rows: WatchDisplayRow[],
   query: string,
-  filter: WatchFilter,
   sort: WatchSort,
   held: Set<string>,
   ownership: string,
 ) {
   const term = query.trim().toLocaleLowerCase();
-  const selected = rows.filter((row) => {
-    const values = checks(row);
-    return (
+  const selected = rows.filter(
+    (row) =>
       (!term ||
         `${row.company.name} ${row.company.symbol} ${row.watch?.entry.thesis ?? ""}`
           .toLocaleLowerCase()
           .includes(term)) &&
       (ownership === "all" ||
-        held.has(row.company.symbol) === (ownership === "held")) &&
-      (filter === "all" ||
-        (filter === "yield" && values[0] === true) ||
-        (filter === "daily" && values[1] === true) ||
-        (filter === "weekly" && values[2] === true))
-    );
-  });
+        held.has(row.company.symbol) === (ownership === "held")),
+  );
   const rank = (r: WatchDisplayRow) =>
-    r.watch?.alert ? 0 : r.latest?.status === "attention" ? 1 : 2;
+    r.watch?.alert ? -4 : -checks(r).filter((met) => met === true).length;
   return selected.sort((a, b) => {
     const pinned =
       Number(Boolean(b.watch?.entry.pinned)) -

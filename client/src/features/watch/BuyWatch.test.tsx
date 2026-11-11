@@ -168,15 +168,12 @@ it("defaults to personal watches and switches all industry groups without privat
       industry.companies.length + 1,
     );
     expect(screen.queryByRole("button", { name: /置顶/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: "周末复盘" })).toBeNull();
-    expect(
-      within(screen.getByRole("group", { name: "观察名单筛选" })).getByRole(
-        "button",
-        { name: `全部公司 ${industry.companies.length}` },
-      ),
-    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /周末复盘/ })).toBeNull();
   }
   fireEvent.click(screen.getByRole("tab", { name: "自选 1" }));
+  expect(
+    screen.getByRole("button", { name: "结合持仓做周末复盘" }),
+  ).toBeTruthy();
   expect(screen.getByRole("button", { name: /置顶测试公司/ })).toBeTruthy();
   expect(api.saveWatch).not.toHaveBeenCalled();
   expect(api.refreshWatchCatalog).not.toHaveBeenCalled();
@@ -455,7 +452,7 @@ it("shows the exact dividend events behind the closing yield", async () => {
   expect(event.textContent).toContain("报告期 2025-12-31");
 });
 
-it("combines search, holdings and rule filters without changing the watch list", async () => {
+it("ranks and highlights met conditions while search and holdings filter the list", async () => {
   const missing = structuredClone(row);
   missing.entry = { ...missing.entry, symbol: "600000.SS", name: "资料待查" };
   missing.latest = null;
@@ -474,19 +471,17 @@ it("combines search, holdings and rule filters without changing the watch list",
   });
   render(<BuyWatch {...props()} />);
   const table = await screen.findByRole("table", { name: "观察公司对比" });
-  expect(within(table).getAllByRole("row")).toHaveLength(4);
-  fireEvent.click(screen.getByRole("button", { name: /股息达标/ }));
-  expect(within(table).getAllByRole("row")).toHaveLength(2);
+  const records = within(table).getAllByRole("row").slice(1);
+  expect(
+    records.map((r) => r.querySelector(".watch-company strong")?.textContent),
+  ).toEqual(["测试公司", "另一家公司", "资料待查"]);
+  const yieldCell = (r: HTMLElement) => r.querySelector("td.rule-yield")!;
+  expect(yieldCell(records[0]).classList.contains("watch-met")).toBe(true);
+  expect(yieldCell(records[1]).classList.contains("watch-met")).toBe(false);
   fireEvent.change(screen.getByRole("textbox", { name: "搜索观察公司" }), {
     target: { value: "不存在" },
   });
   expect(screen.queryByRole("table", { name: "观察公司对比" })).toBeNull();
-  // Weekly review retains every company despite filters on the latest-observation list.
-  expect(
-    within(screen.getByRole("table", { name: "本周逐日观察" })).getAllByRole(
-      "row",
-    ),
-  ).toHaveLength(4);
   fireEvent.click(screen.getAllByRole("button", { name: "清除筛选" })[0]);
   fireEvent.change(screen.getByRole("combobox", { name: "持仓筛选" }), {
     target: { value: "held" },
@@ -523,11 +518,6 @@ it("sorts missing metrics last and switches between compact and visual details",
   expect(screen.getByText("¥83.33")).toBeTruthy();
   expect(
     screen.getByText("暂无可用参考价：需要有效且为正的 TTM 每股分红。"),
-  ).toBeTruthy();
-  expect(
-    within(screen.getByRole("table", { name: "本周逐日观察" })).getByText(
-      "关注",
-    ),
   ).toBeTruthy();
   expect(api.refreshWatch).not.toHaveBeenCalled();
 });
@@ -770,12 +760,11 @@ it("uses exact server threshold results instead of rounding the displayed yield 
     rows: [boundary],
   });
   render(<BuyWatch {...props()} />);
-  await screen.findByRole("table", { name: "观察公司对比" });
-  fireEvent.click(screen.getByRole("button", { name: "股息达标 0" }));
-  expect(screen.queryByRole("table", { name: "观察公司对比" })).toBeNull();
+  const table = await screen.findByRole("table", { name: "观察公司对比" });
+  expect(table.querySelector("td.rule-yield.watch-met")).toBeNull();
 });
 
-it("filters by the weekly middle and shades that range even far from the weekly lower", async () => {
+it("ranks by the weekly middle and shades that range even far from the weekly lower", async () => {
   const below = structuredClone(row);
   below.latest!.weekly!.lower = 50;
   const above = structuredClone(row);
@@ -783,6 +772,7 @@ it("filters by the weekly middle and shades that range even far from the weekly 
   above.latest!.weekly!.distancePct = 0.000001;
   above.latest!.weekly!.matchesRule = false;
   above.latest!.status = "waiting";
+  above.alert = false;
   vi.mocked(api.getWatchBoard).mockResolvedValue({
     ...empty,
     rows: [below, above],
@@ -792,9 +782,13 @@ it("filters by the weekly middle and shades that range even far from the weekly 
   expect(
     within(table).getByRole("button", { name: /^距周线中轨：/ }),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "周线达标 1" }));
-  expect(within(table).getAllByRole("row")).toHaveLength(2);
-  expect(within(table).queryByText("周线未达标")).toBeNull();
+  const [first, second] = within(table).getAllByRole("row").slice(1);
+  expect(first.querySelector("td.rule-weekly.watch-met")).toBeTruthy();
+  expect(second.textContent).toContain("周线未达标");
+  expect(second.querySelector("td.rule-weekly.watch-met")).toBeNull();
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索观察公司" }), {
+    target: { value: "测试公司" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
   expect(screen.getByText("周线不高于中轨")).toBeTruthy();
   const track = screen.getByRole("img", { name: /周线下轨.*距中轨/ });

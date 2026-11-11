@@ -132,57 +132,9 @@
 .watch-method p {
   max-width: 900px;
 }
-.watch-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
-  margin: var(--space-6) 0;
-}
-.watch-summary > button {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4) var(--space-5);
-  color: var(--text-3);
-  text-align: left;
-  box-shadow: var(--shadow-card);
-  transition:
-    border-color var(--duration-hover) var(--ease),
-    background var(--duration-hover) var(--ease),
-    box-shadow var(--duration-enter) var(--ease),
-    transform var(--duration-enter) var(--ease-spring);
-}
-.watch-summary > button:hover {
-  border-color: var(--line-strong);
-  box-shadow: var(--shadow-lift);
-  transform: translateY(-2px);
-}
-.watch-summary > button:active {
-  transform: translateY(0) scale(0.98);
-  transition-duration: 80ms;
-}
-.watch-summary strong {
-  font-family: var(--font-num);
-  font-size: 28px;
-  line-height: 1;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  color: var(--text-1);
-}
-.watch-summary > button[aria-pressed="true"] {
-  background: var(--brand-tint);
-  border-color: var(--brand);
-  color: var(--brand);
-}
-.watch-summary > button[aria-pressed="true"] strong {
-  color: var(--brand);
-}
 .watch-toolbar {
   display: flex;
+  margin-top: var(--space-5);
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
@@ -360,6 +312,10 @@
 }
 .watch-met {
   color: var(--danger);
+}
+.watch-overview td.watch-met {
+  background: var(--danger-tint);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 22%, transparent);
 }
 .watch-overview th:last-child,
 .watch-overview td:last-child {
@@ -761,70 +717,6 @@
   padding-left: 20px;
   line-height: 2;
 }
-.watch-weekly {
-  margin-top: 24px;
-}
-.watch-week-legend {
-  display: flex;
-  gap: 12px;
-  color: var(--text-3);
-  font-size: 11px;
-}
-.watch-weekly .watch-section-title {
-  align-items: center;
-}
-.watch-week-legend .attention {
-  color: var(--success);
-}
-.watch-week-legend .incomplete {
-  color: var(--warning);
-}
-.watch-week-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 12px;
-  min-width: 600px;
-}
-.watch-week-table th {
-  font-weight: 500;
-  color: var(--text-3);
-  padding: 10px;
-  text-align: center;
-}
-.watch-week-table th:first-child {
-  text-align: left;
-  min-width: 120px;
-}
-.watch-week-table th small {
-  display: block;
-  font-size: 10px;
-  font-weight: 400;
-  margin-top: 4px;
-}
-.watch-week-table td {
-  text-align: center;
-  padding: 5px;
-}
-.watch-week-cell {
-  display: block;
-  min-width: 48px;
-  padding: 8px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
-  color: var(--text-4);
-}
-.watch-week-cell.attention {
-  color: var(--success);
-  background: var(--success-tint);
-}
-.watch-week-cell.waiting {
-  color: var(--text-3);
-  background: var(--surface-hover);
-}
-.watch-week-cell.incomplete {
-  color: var(--warning);
-  background: var(--warning-tint);
-}
 .watch-no-results {
   text-align: center;
   padding: 32px;
@@ -849,12 +741,6 @@
   .watch-list {
     grid-template-columns: 1fr;
   }
-  .watch-summary > button {
-    padding: 12px;
-  }
-  .watch-summary > button > span {
-    font-size: 11px;
-  }
 }
 @media (max-width: 640px) {
   .watch-rule-strip {
@@ -863,18 +749,6 @@
   }
   .watch-rule-strip > button {
     padding: 4px 8px;
-  }
-  .watch-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-    margin-top: 16px;
-  }
-  .watch-summary > button {
-    padding: 10px;
-    gap: 6px;
-  }
-  .watch-summary strong {
-    font-size: 22px;
   }
   .watch-search {
     flex-basis: 100%;
@@ -995,9 +869,6 @@
   }
   .watch-section-title > button {
     font-size: 12px;
-  }
-  .watch-weekly {
-    padding: 14px !important;
   }
 }
 .watch-grid-editor fieldset {

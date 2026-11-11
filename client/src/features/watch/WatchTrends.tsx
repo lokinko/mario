@@ -5,7 +5,6 @@ import { number } from "./presentation";
 import "./watch-trends.css";
 
 type ValueKey =
-  | "close"
   | "weeklyLower"
   | "weeklyMiddle"
   | "weeklyUpper"
@@ -20,7 +19,6 @@ interface Series {
   shade?: "upper" | "lower";
 }
 const bands: Series[] = [
-  { key: "close", label: "周收盘", color: "var(--text-4)", dash: "2 4" },
   {
     key: "weeklyUpper",
     label: "周线上轨",
@@ -41,7 +39,6 @@ const bands: Series[] = [
   },
 ];
 const averages: Series[] = [
-  { key: "close", label: "周收盘", color: "var(--text-1)", dash: "2 4" },
   { key: "ma20", label: "20 周均线", color: "var(--brand)" },
   { key: "ma60", label: "60 周均线", color: "var(--info)", dash: "7 4" },
 ];
@@ -52,23 +49,30 @@ const left = 58;
 const top = 20;
 const bottom = height - 34;
 const timestamp = (day: string) => Date.parse(`${day}T00:00:00Z`);
+// Catmull-Rom tension; below 1 rounds weekly corners without overshooting the data much.
+const smoothing = 0.5;
+type Point = [number, number];
+const coordinate = ([px, py]: Point) => `${px.toFixed(2)},${py.toFixed(2)}`;
 
-function monthlyPosition(point: WatchTrendPoint) {
-  const {
-    monthlyMiddle: month,
-    weeklyLower: lower,
-    weeklyMiddle: middle,
-    weeklyUpper: upper,
-  } = point;
-  if (!finite(month) || !finite(lower) || !finite(middle) || !finite(upper))
-    return null;
-  if (month === middle) return "月中轨与周中轨重合";
-  if (month > upper) return "月中轨位于周线上轨上方";
-  if (month === upper) return "月中轨与周线上轨重合";
-  if (month > middle) return "月中轨位于周中轨与上轨之间";
-  if (month < lower) return "月中轨位于周线下轨下方";
-  if (month === lower) return "月中轨与周线下轨重合";
-  return "月中轨位于周下轨与中轨之间";
+function curve(points: Point[]) {
+  return points
+    .map((p, i) => {
+      if (!i) return coordinate(p);
+      const before = points[Math.max(i - 2, 0)];
+      const from = points[i - 1];
+      const after = points[Math.min(i + 1, points.length - 1)];
+      const t = smoothing / 6;
+      const c1: Point = [
+        from[0] + (p[0] - before[0]) * t,
+        from[1] + (p[1] - before[1]) * t,
+      ];
+      const c2: Point = [
+        p[0] - (after[0] - from[0]) * t,
+        p[1] - (after[1] - from[1]) * t,
+      ];
+      return `C${coordinate(c1)} ${coordinate(c2)} ${coordinate(p)}`;
+    })
+    .join(" ");
 }
 
 function TrendChart({
@@ -118,19 +122,18 @@ function TrendChart({
   const y = (value: number) =>
     bottom - ((value - low) / (high - low)) * (bottom - top);
   const path = (key: ValueKey) => {
-    let connected = false;
-    return points
-      .map((p) => {
-        const value = p[key];
-        if (!finite(value)) {
-          connected = false;
-          return "";
-        }
-        const command = connected ? "L" : "M";
-        connected = true;
-        return `${command}${x(p.day).toFixed(2)},${y(value).toFixed(2)}`;
-      })
-      .join(" ");
+    const segments: Point[][] = [];
+    let segment: Point[] = [];
+    for (const p of points) {
+      const value = p[key];
+      if (!finite(value)) {
+        segment = [];
+        continue;
+      }
+      if (!segment.length) segments.push(segment);
+      segment.push([x(p.day), y(value)]);
+    }
+    return segments.map((s) => `M${curve(s)}`).join(" ");
   };
   const area = (edge: ValueKey) => {
     const segments: WatchTrendPoint[][] = [];
@@ -145,16 +148,12 @@ function TrendChart({
     }
     return segments
       .map((segment) => {
-        const boundary = segment.map(
-          (p) => `${x(p.day).toFixed(2)},${y(p[edge]!).toFixed(2)}`,
-        );
+        const boundary = segment.map((p): Point => [x(p.day), y(p[edge]!)]);
         const middle = segment
           .slice()
           .reverse()
-          .map(
-            (p) => `${x(p.day).toFixed(2)},${y(p.weeklyMiddle!).toFixed(2)}`,
-          );
-        return `M${boundary.join(" L")} L${middle.join(" L")} Z`;
+          .map((p): Point => [x(p.day), y(p.weeklyMiddle!)]);
+        return `M${curve(boundary)} L${curve(middle)} Z`;
       })
       .join(" ");
   };
@@ -240,7 +239,7 @@ function TrendChart({
               d={path(s.key)}
               fill="none"
               stroke={s.color}
-              strokeWidth={s.key === "close" ? 1.3 : cross ? 2 : 2.5}
+              strokeWidth={cross ? 2 : 2.5}
               strokeDasharray={s.dash}
               vectorEffect="non-scaling-stroke"
             />
@@ -285,18 +284,7 @@ function TrendChart({
       ) : (
         <p className="watch-meta">当前没有可绘制的数据。</p>
       )}
-      <div className="watch-trend-date">
-        <label htmlFor={`${id}-date`}>查看日期</label>
-        <strong>
-          {point.day}
-          {point.provisional ? " · 本周暂态" : ""}
-        </strong>
-        {cross && point.goldenCross && (
-          <span>{point.provisional ? "暂态金叉" : "金叉"}</span>
-        )}
-      </div>
       <input
-        id={`${id}-date`}
         type="range"
         min={0}
         max={points.length - 1}
@@ -331,9 +319,6 @@ function TrendChart({
           </div>
         ))}
       </dl>
-      {shades.length > 0 && monthlyPosition(point) && (
-        <p className="watch-trend-position">{monthlyPosition(point)}</p>
-      )}
     </section>
   );
 }
@@ -343,14 +328,6 @@ export function WatchTrends({ latest }: { latest: Observation | null }) {
   const trends = latest?.trends;
   const points = trends?.slice(-weeks) ?? [];
   const last = points[points.length - 1];
-  const relation =
-    last?.close != null && last.weeklyMiddle != null
-      ? last.close > last.weeklyMiddle
-        ? "周中轨上方 · 相对偏强"
-        : last.close < last.weeklyMiddle
-          ? "周中轨下方 · 相对偏弱"
-          : "收盘位于周中轨"
-      : "周中轨位置待补齐";
   const latestCross = trends
     ?.slice()
     .reverse()
@@ -389,22 +366,11 @@ export function WatchTrends({ latest }: { latest: Observation | null }) {
       </div>
       {!points.length ? null : (
         <>
-          <p className="watch-meta">
-            截至 {latest?.observedOn} ·{" "}
-            {latest?.trendWindowYears === 5
-              ? "前复权序列 · 五年数据窗口"
-              : "历史复权快照，待更新五年资料"}{" "}
-            · 按周取点
-          </p>
           <TrendChart
             title="趋势图 · 月线中轨与周线 BOLL"
             points={points}
             series={bands}
           />
-          <p className="watch-trend-summary">{relation}</p>
-          <p className="watch-meta">
-            周中轨上方可参考中轨向下观察回调档位；下方关注更低支撑。周线走平时，可观察上下轨区间作为网格波段参考；走平由图形观察，不自动判定。
-          </p>
           <TrendChart
             title="金叉图 · 20 周与 60 周均线"
             points={points}

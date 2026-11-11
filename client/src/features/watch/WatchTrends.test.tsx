@@ -54,7 +54,7 @@ it("renders weekly envelopes as separate shaded areas and keeps both middle line
   trends[4].weeklyMiddle = null;
   const { container } = render(<WatchTrends latest={observation(trends)} />);
   const chart = screen.getByRole("img", { name: /趋势图 · 月线/ });
-  expect(chart.querySelectorAll("path[data-series]")).toHaveLength(3);
+  expect(chart.querySelectorAll("path[data-series]")).toHaveLength(2);
   for (const key of ["weeklyMiddle", "monthlyMiddle"]) {
     expect(
       chart
@@ -73,7 +73,7 @@ it("renders weekly envelopes as separate shaded areas and keeps both middle line
   // The shaded outer bounds must also contribute to the shared price scale.
   for (const area of [upper, lower]) {
     const coordinates = [
-      ...area.getAttribute("d")!.matchAll(/[ML]([\d.]+),([\d.]+)/g),
+      ...area.getAttribute("d")!.matchAll(/([\d.]+),([\d.]+)/g),
     ];
     for (const coordinate of coordinates) {
       expect(Number(coordinate[2])).toBeGreaterThan(20);
@@ -83,48 +83,20 @@ it("renders weekly envelopes as separate shaded areas and keeps both middle line
   expect(container.innerHTML).not.toMatch(/NaN|Infinity/);
 });
 
-it.each([
-  [45, "月中轨位于周线上轨上方"],
-  [44, "月中轨与周线上轨重合"],
-  [42, "月中轨位于周中轨与上轨之间"],
-  [40, "月中轨与周中轨重合"],
-  [38, "月中轨位于周下轨与中轨之间"],
-  [36, "月中轨与周线下轨重合"],
-  [35, "月中轨位于周线下轨下方"],
-])(
-  "shows the selected month's position (%s) relative to the weekly band",
-  (value, label) => {
-    render(
-      <WatchTrends
-        latest={observation([{ ...point(0), monthlyMiddle: value }, point(1)])}
-      />,
-    );
-    const slider = screen.getByRole("slider", {
-      name: "趋势图 · 月线中轨与周线 BOLL查看日期",
-    });
-    expect(screen.getByText("月中轨位于周下轨与中轨之间")).toBeTruthy();
-    fireEvent.change(slider, { target: { value: "0" } });
-    expect(screen.getByText(label)).toBeTruthy();
-  },
-);
-
-it("omits the monthly position when a required value is missing", () => {
-  render(
-    <WatchTrends
-      latest={observation([
-        { ...point(0), monthlyMiddle: null },
-        { ...point(1), weeklyLower: null },
-      ])}
-    />,
-  );
-  expect(screen.queryByText(/^月中轨/)).toBeNull();
-  fireEvent.change(
-    screen.getByRole("slider", {
-      name: "趋势图 · 月线中轨与周线 BOLL查看日期",
-    }),
-    { target: { value: "0" } },
-  );
-  expect(screen.queryByText(/^月中轨/)).toBeNull();
+it("draws lightly smoothed curves without a weekly close series or position notes", () => {
+  const trends = Array.from({ length: 4 }, (_, i) => ({
+    ...point(i),
+    weeklyMiddle: 40 + (i % 2),
+  }));
+  const { container } = render(<WatchTrends latest={observation(trends)} />);
+  const middle = container
+    .querySelector('path[data-series="weeklyMiddle"]')!
+    .getAttribute("d")!;
+  expect(middle.match(/C/g)).toHaveLength(3);
+  expect(container.querySelector('[data-series="close"]')).toBeNull();
+  expect(screen.queryByText("周收盘")).toBeNull();
+  expect(screen.queryByText(/^月中轨位于/)).toBeNull();
+  expect(screen.queryByText(/相对偏强|查看日期|按周取点/)).toBeNull();
 });
 
 it("renders both requested charts through shared company evidence with real dates and values", () => {
@@ -149,8 +121,6 @@ it("renders both requested charts through shared company evidence with real date
   expect(screen.getByText("月线中轨")).toBeTruthy();
   expect(screen.getByText("20 周均线")).toBeTruthy();
   expect(screen.getByText("60 周均线")).toBeTruthy();
-  expect(screen.getByText(/周中轨上方 · 相对偏强/)).toBeTruthy();
-  expect(screen.getByText(/截至 2026-11-04/)).toBeTruthy();
 });
 
 it("supports keyboard date inspection, range switching and marks actual cross events", () => {
@@ -165,7 +135,6 @@ it("supports keyboard date inspection, range switching and marks actual cross ev
   });
   fireEvent.change(date, { target: { value: "50" } });
   expect(date.getAttribute("aria-valuetext")).toBe(trends[50].day);
-  expect(screen.getByText("金叉")).toBeTruthy();
   fireEvent.change(screen.getByRole("combobox", { name: "趋势图范围" }), {
     target: { value: "26" },
   });
@@ -191,7 +160,7 @@ it("breaks lines at gaps while retaining available series and a single date", ()
   const { container } = render(<WatchTrends latest={observation(trends)} />);
   const monthly = container.querySelector('path[data-series="monthlyMiddle"]')!;
   expect(monthly.getAttribute("d")?.match(/M/g)).toHaveLength(2);
-  expect(monthly.getAttribute("d")).not.toContain("L");
+  expect(monthly.getAttribute("d")).not.toMatch(/[LC]/);
   const slider = screen.getByRole("slider", {
     name: "趋势图 · 月线中轨与周线 BOLL查看日期",
   });
@@ -229,5 +198,4 @@ it("shows the complete five-year window by default rather than clipping it to tw
       .getByRole("slider", { name: "趋势图 · 月线中轨与周线 BOLL查看日期" })
       .getAttribute("max"),
   ).toBe("260");
-  expect(screen.getByText(/前复权序列 · 五年数据窗口/)).toBeTruthy();
 });
