@@ -9,45 +9,38 @@ export interface WatchEntry extends WatchInput {
   createdAt: string;
   pinned: boolean;
   gridPlan?: WatchGridPlan;
-  previousGridPlan?: {
-    buyBasis: "budget" | "remainingCash";
-    sellBasis: "totalBought" | "remainingShares";
-    levels: { yieldBps: number; buyBps: number; sellBps: number }[];
-  };
 }
-export interface WatchGridGenerator {
-  startYieldBps: number;
-  endYieldBps: number;
-  stepBps: number;
-  initialBuyShares: number;
-  initialSellShares: number;
-  buyGrowthBps: number;
-  sellGrowthBps: number;
-}
+export type GridSizeUnit = "amount" | "budgetPct";
 export interface WatchGridPlan {
   budget: string;
-  generator?: WatchGridGenerator;
-  levels: { yieldBps: number; buyShares: number; sellShares: number }[];
+  basePrice: string;
+  sizeUnit: GridSizeUnit;
+  levels: { price: string; size: string }[];
 }
 export interface WatchGridProjection {
-  reboundYieldBps: number | null;
+  topPrice: string | null;
   levels: {
-    yieldBps: number;
-    price: string | null;
-    buyAmount: string | null;
-    sellAmount: string | null;
+    price: string;
+    side: "buy" | "sell";
+    targetAmount: string;
+    shares: number;
+    amount: string;
+    cumulativeAmount: string | null;
+    budgetPct: string | null;
   }[];
   scenarios: {
-    deepestYieldBps: number;
+    deepestPrice: string;
     investedAmount: string;
-    budgetGap: string;
+    budgetPct: string;
+    boughtShares: number;
+    averageCost: string;
+    baseProfit: string;
+    baseReturnPct: string;
     soldShares: number;
     remainingShares: number;
-    unfilledSellShares: number;
     saleProceeds: string;
-    profit: string;
-    budgetReturnPct: string;
-    investedReturnPct: string;
+    topProfit: string | null;
+    topReturnPct: string | null;
   }[];
 }
 export type BandReference = "lower" | "middle" | "upper";
@@ -216,6 +209,12 @@ export const saveWatchGrid = (symbol: string, plan: WatchGridPlan | null) =>
   httpRequest<WatchBoard>(`/watch/${encodeURIComponent(symbol)}/grid`, {
     method: "PUT",
     body: JSON.stringify(plan),
+  });
+export const previewWatchGrid = (plan: WatchGridPlan, signal?: AbortSignal) =>
+  httpRequest<WatchGridProjection>("/watch/grid-preview", {
+    method: "POST",
+    body: JSON.stringify(plan),
+    signal,
   });
 export const readWatchAlerts = (symbol: string) =>
   httpRequest<{ ok: boolean }>(`/watch/${encodeURIComponent(symbol)}/read`, {

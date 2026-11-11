@@ -71,11 +71,11 @@ mod tests {
             .unwrap();
         let grid = crate::models::watch::grid::GridPlan {
             budget: "1000".into(),
-            generator: None,
+            base_price: "10".into(),
+            size_unit: crate::models::watch::grid::SizeUnit::BudgetPct,
             levels: vec![crate::models::watch::grid::GridLevel {
-                yield_bps: 600,
-                buy_shares: 10,
-                sell_shares: 0,
+                price: "9".into(),
+                size: "50".into(),
             }],
         };
         db.set_watch_grid(&entry.input.symbol, Some(grid.clone()))
@@ -123,7 +123,7 @@ mod tests {
         );
         assert!(!db.watch_board(day).unwrap().rows[0].alert);
         let backup = db.export_sync_data().unwrap();
-        assert_eq!(backup.schema_version, 28);
+        assert_eq!(backup.schema_version, 29);
         other.import_sync_data(&backup).unwrap();
         assert_eq!(other.watch_rules().unwrap(), rules);
         drop(db);

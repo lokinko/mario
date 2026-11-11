@@ -194,9 +194,9 @@ MARIO_DATA_DIR=/path/to/旧资料目录 cargo run --manifest-path server/Cargo.t
 
 ## 备份格式与升级边界
 
-网页“设置 → 备份与导入”导出的单账号 JSON 当前为 v28，租户 PostgreSQL schema 当前为 15；两者是独立版本，分别由 [`sync_format.rs`](../server/src/db/sync_format.rs) 与 [`schema.rs`](../server/src/db/schema.rs) 定义。单账号 JSON 包含本账号观察规则、名单、采用的分红依据和历史，不替换公共 `mario_market`。旧格式导入的校验与迁移沿用[同步规范](cloud-sync.md)和[观察规范](buy-watch.md#数据升级与验证)。
+网页“设置 → 备份与导入”导出的单账号 JSON 当前为 v29，租户 PostgreSQL schema 当前为 16；两者是独立版本，分别由 [`sync_format.rs`](../server/src/db/sync_format.rs) 与 [`schema.rs`](../server/src/db/schema.rs) 定义。单账号 JSON 包含本账号观察规则、名单、采用的分红依据和历史，不替换公共 `mario_market`。旧格式导入的校验与迁移沿用[同步规范](cloud-sync.md)和[观察规范](buy-watch.md#数据升级与验证)。
 
-本文的 `.mario-backup` 则是加密的整站 `pg_dump` 包，封装标识为 `MARIOBK1`、封装格式版本为 1，不是 v28 JSON。恢复器核对项目 `package.json` 版本及 PostgreSQL 主版本，但不核对 Git 提交；迁移时仍须按前文记录并匹配源码提交，恢复成功后再另行升级。不要手改包内版本来跳过检查。
+本文的 `.mario-backup` 则是加密的整站 `pg_dump` 包，封装标识为 `MARIOBK1`、封装格式版本为 1，不是 v29 JSON。恢复器核对项目 `package.json` 版本及 PostgreSQL 主版本，但不核对 Git 提交；迁移时仍须按前文记录并匹配源码提交，恢复成功后再另行升级。不要手改包内版本来跳过检查。
 
 ## 验证
 

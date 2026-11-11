@@ -1,40 +1,16 @@
-//! Retain old percentage plans as historical evidence; never invent a budget or share count.
-//! Remove only when old tenant data and v24-v26 backups are no longer supported.
-use super::params;
-use crate::{models::watch::grid_archive::GridAllocationArchive, storage::Connection, AppResult};
+//! Drop yield-level grids and their percentage archive; the price grid cannot be inferred from them.
+//! Remove only when tenants below schema 16 and backups below v29 are no longer supported.
+use crate::{storage::Connection, AppResult};
 
 // The caller owns the tenant-upgrade or backup-import transaction.
 pub(super) fn migrate(conn: &Connection) -> AppResult<()> {
-    let mut stmt = conn.prepare(
-        "SELECT symbol,payload FROM watch_entries WHERE payload::jsonb->'gridPlan' ? 'buyBasis'",
+    conn.execute(
+        "UPDATE watch_entries
+         SET payload=(payload::jsonb - 'gridPlan' - 'previousGridPlan')::text
+         WHERE payload::jsonb ? 'previousGridPlan'
+            OR (payload::jsonb ? 'gridPlan' AND NOT payload::jsonb->'gridPlan' ? 'basePrice')",
+        [],
     )?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
-        .collect::<Result<Vec<_>, _>>()?;
-    drop(stmt);
-    for (symbol, payload) in rows {
-        let mut entry: serde_json::Value = serde_json::from_str(&payload)?;
-        let old = entry
-            .as_object_mut()
-            .expect("entry with gridPlan is an object")
-            .remove("gridPlan")
-            .unwrap();
-        let archive: GridAllocationArchive = serde_json::from_value(old.clone())?;
-        archive.validate()?;
-        if entry
-            .get("previousGridPlan")
-            .is_some_and(|saved| saved != &old)
-        {
-            return Err(crate::AppError::Validation(
-                "旧网格历史参考冲突，迁移未覆盖任何数据".into(),
-            ));
-        }
-        entry["previousGridPlan"] = old;
-        conn.execute(
-            "UPDATE watch_entries SET payload=$2 WHERE symbol=$1",
-            params![symbol, serde_json::to_string(&entry)?],
-        )?;
-    }
     Ok(())
 }
 
@@ -42,13 +18,21 @@ pub(super) fn migrate(conn: &Connection) -> AppResult<()> {
 mod tests {
     use crate::db::{Database, SyncValue, TestAccount};
     use crate::models::watch::{
-        grid::{GridLevel, GridPlan},
+        grid::{GridLevel, GridPlan, SizeUnit},
         WatchInput,
     };
     use serde_json::json;
 
-    fn old_plan() -> serde_json::Value {
-        json!({"buyBasis":"remainingCash","sellBasis":"remainingShares","levels":[{"yieldBps":550,"buyBps":2500,"sellBps":1000}]})
+    fn price_plan() -> GridPlan {
+        GridPlan {
+            budget: "12345.67".into(),
+            base_price: "10".into(),
+            size_unit: SizeUnit::Amount,
+            levels: vec![GridLevel {
+                price: "9".into(),
+                size: "900".into(),
+            }],
+        }
     }
     fn create(db: &Database) {
         db.save_watch(WatchInput {
@@ -59,75 +43,69 @@ mod tests {
         .unwrap();
         db.set_watch_pinned("600036.SS", true).unwrap();
     }
-    #[test]
-    fn upgrade_and_old_backup_retain_percentages_without_inventing_shares() {
-        let account = TestAccount::new();
-        let db = account.open();
-        create(&db);
+    fn with_old_grids(db: &Database) {
         let mut value = serde_json::to_value(&db.watch_entries().unwrap()[0]).unwrap();
-        value["gridPlan"] = old_plan();
+        value["gridPlan"] =
+            json!({"budget":"10000","levels":[{"yieldBps":500,"buyShares":100,"sellShares":0}]});
+        value["previousGridPlan"] =
+            json!({"buyBasis":"budget","sellBasis":"totalBought","levels":[]});
         db.conn()
             .unwrap()
             .execute("UPDATE watch_entries SET payload=$1", [value.to_string()])
             .unwrap();
+    }
+
+    #[test]
+    fn upgrade_and_old_backups_drop_yield_grids_but_keep_the_entry() {
+        let account = TestAccount::new();
+        let db = account.open();
+        create(&db);
+        with_old_grids(&db);
         let mut backup = db.export_sync_data().unwrap();
-        backup.schema_version = 26;
+        backup.schema_version = 28;
         drop(db);
         let db = account.reopen_from_old_release();
         let migrated = db.watch_entries().unwrap().remove(0);
         assert!(migrated.grid_plan.is_none());
         assert!(migrated.pinned);
         assert_eq!(migrated.input.thesis, "保留理由");
-        assert_eq!(
-            serde_json::to_value(&migrated.previous_grid_plan).unwrap(),
-            old_plan()
-        );
+        let payload: String = db
+            .conn()
+            .unwrap()
+            .query_row("SELECT payload FROM watch_entries", [], |r| r.get(0))
+            .unwrap();
+        assert!(!payload.contains("previousGridPlan"));
+
         let target = Database::test();
         target.import_sync_data(&backup).unwrap();
-        assert_eq!(target.watch_entries().unwrap(), vec![migrated.clone()]);
-        let plan = GridPlan {
-            budget: "12345.67".into(),
-            generator: None,
-            levels: vec![GridLevel {
-                yield_bps: 725,
-                buy_shares: 123,
-                sell_shares: 0,
-            }],
-        };
+        assert_eq!(target.watch_entries().unwrap(), vec![migrated]);
         target
-            .set_watch_grid("600036.SS", Some(plan.clone()))
+            .set_watch_grid("600036.SS", Some(price_plan()))
             .unwrap();
-        assert_eq!(
-            target.watch_entries().unwrap()[0].previous_grid_plan,
-            migrated.previous_grid_plan
-        );
         let latest = target.export_sync_data().unwrap();
         assert_eq!(
             latest.schema_version,
             super::super::SYNC_DATASET_SCHEMA_VERSION
         );
+        drop(db);
+        let db = account.reopen_from_old_release();
         db.import_sync_data(&latest).unwrap();
-        assert_eq!(db.watch_entries().unwrap()[0].grid_plan, Some(plan));
-        target.import_sync_data(&backup).unwrap();
-        assert_eq!(target.watch_entries().unwrap(), vec![migrated]);
+        assert_eq!(db.watch_entries().unwrap()[0].grid_plan, Some(price_plan()));
+        drop(db);
+        let db = account.reopen_from_old_release();
+        assert_eq!(db.watch_entries().unwrap()[0].grid_plan, Some(price_plan()));
     }
+
     #[test]
-    fn malformed_old_or_new_grid_rolls_back_the_entire_import() {
+    fn malformed_current_grid_rolls_back_the_entire_import() {
         let db = Database::test();
         create(&db);
         let original = db.export_sync_data().unwrap();
-        for (version, invalid) in [
-            (
-                26,
-                json!({"buyBasis":"invalid","sellBasis":"remainingShares","levels":[]}),
-            ),
-            (
-                27,
-                json!({"budget":"0","levels":[{"yieldBps":500,"buyShares":1,"sellShares":0}]}),
-            ),
+        for invalid in [
+            json!({"budget":"0","basePrice":"10","sizeUnit":"amount","levels":[{"price":"9","size":"1"}]}),
+            json!({"budget":"1","levels":[{"yieldBps":500,"buyShares":1,"sellShares":0}]}),
         ] {
             let mut backup = original.clone();
-            backup.schema_version = version;
             let table = backup
                 .tables
                 .iter_mut()

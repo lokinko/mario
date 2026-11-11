@@ -35,7 +35,7 @@ fn watch_rows(
                     observation.apply_rules(rules);
                 }
                 let dividend_prices = dividend_prices(latest.as_ref());
-                let grid_projection = entry.grid_plan.as_ref().map(|p| p.project(latest.as_ref()));
+                let grid_projection = entry.grid_plan.as_ref().map(GridPlan::project);
                 Ok(WatchRow {
                     entry,
                     latest,
@@ -121,7 +121,6 @@ impl Database {
                 created_at: Utc::now().to_rfc3339(),
                 pinned: false,
                 grid_plan: None,
-                previous_grid_plan: None,
             },
         };
         tx.execute("INSERT INTO watch_entries(symbol,payload,checked_at,refresh_failed) VALUES ($1,$2,NULL,0) ON CONFLICT(symbol) DO UPDATE SET payload=excluded.payload",params![entry.input.symbol,serde_json::to_string(&entry)?])?;
@@ -375,9 +374,6 @@ pub(super) fn validate(conn: &crate::storage::Connection) -> AppResult<()> {
         }
         if let Some(plan) = entry.grid_plan {
             plan.validate()?;
-        }
-        if let Some(archive) = entry.previous_grid_plan {
-            archive.validate()?;
         }
     }
     let mut stmt =
@@ -803,7 +799,7 @@ mod tests {
     }
     #[test]
     fn watches_are_isolated_restored_and_deleted_without_financial_writes() {
-        use crate::models::watch::grid::GridLevel;
+        use crate::models::watch::grid::{GridLevel, SizeUnit};
 
         let account = crate::db::TestAccount::new();
         let db = account.open();
@@ -812,11 +808,11 @@ mod tests {
         let entry = entry(&db);
         let plan = GridPlan {
             budget: "10000".into(),
-            generator: None,
+            base_price: "10".into(),
+            size_unit: SizeUnit::Amount,
             levels: vec![GridLevel {
-                yield_bps: 600,
-                buy_shares: 20,
-                sell_shares: 0,
+                price: "9".into(),
+                size: "950".into(),
             }],
         };
         db.set_watch_grid(&entry.input.symbol, Some(plan.clone()))
@@ -855,8 +851,8 @@ mod tests {
         );
         assert_eq!(restored.entry.grid_plan, Some(plan));
         let projection = restored.grid_projection.unwrap();
-        assert_eq!(projection.rebound_yield_bps, Some(600));
-        assert_eq!(projection.levels[0].price.as_deref(), Some("83.3333"));
+        assert_eq!(projection.levels[0].shares, 100);
+        assert_eq!(projection.scenarios[0].invested_amount, "900.00");
         drop(db);
         let db = account.reopen_from_old_release();
         assert_eq!(db.watch_entries().unwrap(), vec![pinned]);
@@ -876,7 +872,7 @@ mod tests {
             serde_json::to_value(after.holdings).unwrap()
         );
         assert_eq!(before.holding_trades, after.holding_trades);
-        // Older v26 backups may contain neither a pin preference nor a grid plan.
+        // Older backups may contain neither a pin preference nor a grid plan.
         let mut unpinned = backup.clone();
         let saved = &mut unpinned
             .tables

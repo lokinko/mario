@@ -123,7 +123,7 @@ impl Database {
         }
         super::schema::remove_retired_analysis_metadata(&transaction)?;
         super::watch::migrate_rules(&transaction)?;
-        if dataset.schema_version < 27 {
+        if dataset.schema_version < 29 {
             super::watch_grid_migration::migrate(&transaction)?;
         }
         super::watch::validate(&transaction)?;

@@ -1,6 +1,10 @@
 use super::RequestContext;
 use crate::{
-    models::watch::{grid::GridPlan, rules::WatchRules, WatchBoard, WatchEntry, WatchInput},
+    models::watch::{
+        grid::{GridPlan, GridProjection},
+        rules::WatchRules,
+        WatchBoard, WatchEntry, WatchInput,
+    },
     AppResult,
 };
 use axum::{
@@ -28,6 +32,7 @@ pub(super) fn router() -> Router {
         .route("/api/watch/{symbol}/read", post(read))
         .route("/api/watch/{symbol}/pin", put(pin))
         .route("/api/watch/{symbol}/grid", put(save_grid))
+        .route("/api/watch/grid-preview", post(preview_grid))
 }
 #[derive(serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -171,6 +176,10 @@ async fn save_grid(
 ) -> AppResult<Json<WatchBoard>> {
     state.db.set_watch_grid(&symbol, plan)?;
     current_board(&state)
+}
+async fn preview_grid(Json(plan): Json<GridPlan>) -> AppResult<Json<GridProjection>> {
+    plan.validate()?;
+    Ok(Json(plan.project()))
 }
 async fn save(
     Extension(state): Extension<Arc<RequestContext>>,

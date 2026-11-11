@@ -9,6 +9,7 @@ export function isDataWrite(path: string, method = "GET") {
       "/model-config/test",
       "/financial-operations/resolve",
       "/watch/catalog/resolve",
+      "/watch/grid-preview",
     ].includes(resource)
   );
 }

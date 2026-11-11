@@ -1006,9 +1006,48 @@
   border-radius: 8px;
   padding: 16px;
 }
-.watch-grid-editor legend {
-  padding: 0 6px;
+.watch-grid-generator > summary {
+  cursor: pointer;
   font-size: 14px;
+  margin-bottom: 10px;
+}
+.watch-grid-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.watch-grid-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.watch-events td small {
+  margin-left: 6px;
+  color: var(--text-3);
+}
+.grid-budget {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.grid-budget-bar {
+  width: 56px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.grid-budget-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
+.grid-budget.over {
+  color: var(--danger);
+}
+.grid-budget.over .grid-budget-bar > i {
+  background: var(--danger);
 }
 .watch-grid-inputs input {
   min-width: 68px;

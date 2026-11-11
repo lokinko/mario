@@ -26,6 +26,7 @@ vi.mock("../../api/watch", () => ({
   refreshWatchCatalog: vi.fn(),
   saveWatch: vi.fn(),
   saveWatchGrid: vi.fn(),
+  previewWatchGrid: vi.fn(),
   setWatchPinned: vi.fn(),
   deleteWatch: vi.fn(),
   readWatchAlerts: vi.fn(),
@@ -639,17 +640,14 @@ it("keeps the saved pin state when the write fails and sends only editable field
   );
 });
 
-it("saves budget and share quantities, keeps failed drafts and displays both return bases", async () => {
+it("saves a price grid, keeps failed drafts and shows the budget share", async () => {
   vi.mocked(api.getWatchBoard).mockResolvedValue({ ...empty, rows: [row] });
+  vi.mocked(api.previewWatchGrid).mockReturnValue(new Promise(() => {}));
   const grid: api.WatchGridPlan = {
     budget: "10000",
-    levels: [
-      { yieldBps: 400, buyShares: 0, sellShares: 0 },
-      { yieldBps: 450, buyShares: 0, sellShares: 30 },
-      { yieldBps: 500, buyShares: 0, sellShares: 0 },
-      { yieldBps: 550, buyShares: 100, sellShares: 0 },
-      { yieldBps: 600, buyShares: 0, sellShares: 0 },
-    ],
+    basePrice: "100",
+    sizeUnit: "budgetPct",
+    levels: [{ price: "90", size: "50" }],
   };
   vi.mocked(api.saveWatchGrid)
     .mockRejectedValueOnce(new Error("暂时无法保存网格"))
@@ -660,27 +658,19 @@ it("saves budget and share quantities, keeps failed drafts and displays both ret
           ...row,
           entry: { ...row.entry, gridPlan: grid },
           gridProjection: {
-            reboundYieldBps: 400,
-            levels: grid.levels.map((l) => ({
-              yieldBps: l.yieldBps,
-              price: "90.9091",
-              buyAmount: "9090.91",
-              sellAmount: "0.00",
-            })),
-            scenarios: [
+            topPrice: null,
+            levels: [
               {
-                deepestYieldBps: 550,
-                investedAmount: "9090.91",
-                budgetGap: "909.09",
-                soldShares: 30,
-                remainingShares: 70,
-                unfilledSellShares: 0,
-                saleProceeds: "3333.33",
-                profit: "2992.42",
-                budgetReturnPct: "29.9242",
-                investedReturnPct: "32.9167",
+                price: "90.00",
+                side: "buy",
+                targetAmount: "5000.00",
+                shares: 0,
+                amount: "0.00",
+                cumulativeAmount: "0.00",
+                budgetPct: "0.0000",
               },
             ],
+            scenarios: [],
           },
         },
       ],
@@ -692,31 +682,23 @@ it("saves budget and share quantities, keeps failed drafts and displays both ret
     ).getByRole("button", { name: /^测试公司/ }),
   );
   fireEvent.click(screen.getByRole("button", { name: "设置网格方案" }));
-  fireEvent.change(screen.getByLabelText("标的配置金额（元）"), {
-    target: { value: "10000" },
-  });
-  fireEvent.change(screen.getByLabelText("4.5% 上涨卖出股数"), {
-    target: { value: "30" },
-  });
-  fireEvent.change(screen.getByLabelText("5.5% 下跌买入股数"), {
-    target: { value: "100" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "保存并测算" }));
+  const change = (label: string | RegExp, value: string) =>
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  change("标的配置金额（元）", "10000");
+  change(/^基准价（元）/, "100");
+  fireEvent.click(screen.getByRole("button", { name: /添加/ }));
+  change("第 1 档价格", "90");
+  change("第 1 档规模", "50");
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
   await screen.findByText(/暂时无法保存网格/);
-  expect(
-    (screen.getByLabelText("5.5% 下跌买入股数") as HTMLInputElement).value,
-  ).toBe("100");
-  expect(
-    (screen.getByLabelText("标的配置金额（元）") as HTMLInputElement).value,
-  ).toBe("10000");
-  fireEvent.click(screen.getByRole("button", { name: "保存并测算" }));
-  const result = await screen.findByRole("table", {
-    name: "跌到各档后回到 4% 的价差测算",
-  });
+  expect((screen.getByLabelText("第 1 档规模") as HTMLInputElement).value).toBe(
+    "50",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  const levels = await screen.findByRole("table", { name: "网格档位" });
   expect(api.saveWatchGrid).toHaveBeenLastCalledWith(row.entry.symbol, grid);
-  expect(within(result).getByText("+32.92%")).toBeTruthy();
-  expect(within(result).getByText("+29.92%")).toBeTruthy();
-  expect(within(result).getByText("70 股")).toBeTruthy();
+  expect(within(levels).getByText("不足一手")).toBeTruthy();
+  expect(within(levels).getByText("0%")).toBeTruthy();
 });
 
 it("shows removal failures inside the company drawer and preserves the company", async () => {

@@ -1,51 +1,81 @@
-import type { WatchGridGenerator, WatchGridPlan } from "../../api/watch";
+import type { WatchGridPlan, WatchRow } from "../../api/watch";
 
-export const yieldLabel = (value: number) =>
-  `${Number((value / 100).toFixed(2))}%`;
-export const maxShares = 1_000_000_000;
+export interface PriceGridGenerator {
+  basePrice: string;
+  stepUnit: "pct" | "price";
+  step: string;
+  down: string;
+  up: string;
+  buySize: string;
+  sellSize: string;
+}
 
-// This creates editable instructions only. Money and scenario calculations stay on the server.
-export function generateGridLevels(
-  g: WatchGridGenerator,
-): WatchGridPlan["levels"] {
-  const span = g.endYieldBps - g.startYieldBps;
+const priceInput = /^\d+(\.\d{1,2})?$/;
+export const cents = (text: string) =>
+  priceInput.test(text.trim()) ? Math.round(Number(text) * 100) : NaN;
+export const priceText = (value: number) => (value / 100).toFixed(2);
+
+/** The TTM dividend is usable only when the server published dividend reference prices. */
+export const gridDividend = (row: WatchRow) =>
+  row.dividendPrices.length && row.latest?.dividendPerShare
+    ? Number(row.latest.dividendPerShare)
+    : null;
+
+/** Display aid only: the yield implied by the current TTM dividend per share. */
+export function yieldAtPrice(dividend: number | null, price: string) {
+  const value = cents(price);
+  return dividend && value > 0 ? (dividend / value) * 10_000 : null;
+}
+export const yieldText = (dividend: number | null, price: string) => {
+  const value = yieldAtPrice(dividend, price);
+  return value == null ? "" : String(Number(value.toFixed(2)));
+};
+export function priceAtYield(dividend: number | null, yieldPct: string) {
+  const value = Number(yieldPct);
+  if (!dividend || !yieldPct.trim() || !(value > 0) || value > 100) return "";
+  return priceText(Math.round((dividend / value) * 10_000));
+}
+
+// This creates editable price levels only. Shares, money and returns stay on the server.
+export function generatePriceLevels(g: PriceGridGenerator) {
+  const base = cents(g.basePrice);
+  const step = Number(g.step);
+  const down = Number(g.down);
+  const up = Number(g.up);
+  const stepCents = g.stepUnit === "price" ? cents(g.step) : NaN;
   if (
-    !Object.values(g).every(Number.isInteger) ||
-    g.startYieldBps < 1 ||
-    g.endYieldBps > 10_000 ||
-    span <= 0 ||
-    g.stepBps < 1 ||
-    span % g.stepBps !== 0 ||
-    span / g.stepBps >= 100 ||
-    g.initialBuyShares < 0 ||
-    g.initialSellShares < 0 ||
-    g.initialBuyShares > maxShares ||
-    g.initialSellShares > maxShares ||
-    g.buyGrowthBps < -10_000 ||
-    g.buyGrowthBps > 100_000 ||
-    g.sellGrowthBps < -10_000 ||
-    g.sellGrowthBps > 100_000
+    !(base > 0) ||
+    !Number.isInteger(down) ||
+    !Number.isInteger(up) ||
+    down < 1 ||
+    up < 0 ||
+    down + up > 100 ||
+    (g.stepUnit === "pct" ? !(step > 0 && step < 100) : !(stepCents > 0))
   )
     throw new Error(
-      "请检查范围和间距，间距须整除范围，最多生成 100 档；递增比例为 -100% 至 1000%。",
+      "请填写基准价、大于 0 的档距（比例须小于 100%），向下至少 1 档，上下合计不超过 100 档。",
     );
-  const count = span / g.stepBps + 1;
-  const quantity = (base: number, growth: number, index: number) => {
-    const shares = Math.round(base * (1 + growth / 10_000) ** index);
-    if (!Number.isSafeInteger(shares) || shares > maxShares)
-      throw new Error(
-        "生成后的每档股数不能超过 10 亿，请减少初始股数或递增比例。",
-      );
-    return shares;
-  };
-  return Array.from({ length: count }, (_, i) => ({
-    yieldBps: g.startYieldBps + i * g.stepBps,
-    // The low endpoint is the rebound target; generation starts buying one step above it.
-    buyShares:
-      i === 0 ? 0 : quantity(g.initialBuyShares, g.buyGrowthBps, i - 1),
-    sellShares:
-      i === count - 1
-        ? 0
-        : quantity(g.initialSellShares, g.sellGrowthBps, count - 2 - i),
-  }));
+  const at = (direction: 1 | -1, index: number) =>
+    g.stepUnit === "pct"
+      ? Math.round(base * (1 + (direction * step) / 100) ** index)
+      : base + direction * index * stepCents;
+  const side = (direction: 1 | -1, count: number, size: string) =>
+    Array.from({ length: count }, (_, i) => at(direction, i + 1)).map(
+      (price, i, prices) => {
+        const previous = i ? prices[i - 1] : base;
+        if (
+          price <= 0 ||
+          price > 100_000_000 ||
+          direction * (price - previous) <= 0
+        )
+          throw new Error(
+            "档距过小或档数过多，价格须在 0.01 元至 100 万元之间且互不重复。",
+          );
+        return { price: priceText(price), size };
+      },
+    );
+  return [
+    ...side(1, up, g.sellSize).reverse(),
+    ...side(-1, down, g.buySize),
+  ] satisfies WatchGridPlan["levels"];
 }

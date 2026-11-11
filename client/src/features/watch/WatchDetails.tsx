@@ -7,6 +7,7 @@ import { Drawer } from "../../components/Drawer";
 import { Callout } from "../../components/Callout";
 import { WatchEvidence } from "./WatchEvidence";
 import { WatchGrid, WatchGridEditor } from "./WatchGrid";
+import { gridDividend } from "./gridDraft";
 import { canonical, statuses } from "./presentation";
 
 export function WatchDetails({
@@ -77,6 +78,8 @@ export function WatchDetails({
         {editingGrid ? (
           <WatchGridEditor
             plan={entry.gridPlan}
+            dividend={gridDividend(row)}
+            close={latest?.price ?? null}
             busy={busy}
             onEdited={onGridEdited}
             onCancel={closeGrid}

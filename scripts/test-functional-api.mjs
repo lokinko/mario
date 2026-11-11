@@ -204,18 +204,29 @@ try {
   const gridPath = "/watch/600036.SS/grid";
   const grid = {
     budget: "10000",
-    levels: [{ yieldBps: 375, buyShares: 0, sellShares: 50 }, { yieldBps: 500, buyShares: 100, sellShares: 50 }, { yieldBps: 650, buyShares: 200, sellShares: 0 }],
+    basePrice: "40",
+    sizeUnit: "amount",
+    levels: [{ price: "44", size: "2000" }, { price: "36", size: "3600" }, { price: "32", size: "6400" }],
   };
   await api(gridPath, "PUT", { ...grid, budget: "0" }, 400);
-  await api(gridPath, "PUT", { ...grid, levels: [{ yieldBps: 600, buyShares: 1.5, sellShares: 0 }] }, 422);
+  await api(gridPath, "PUT", { ...grid, levels: [{ price: "40", size: "100" }] }, 400);
+  await api(gridPath, "PUT", { ...grid, sizeUnit: "shares" }, 422);
   assert.equal((await api("/watch")).rows[0].gridProjection, null);
+  const previewVersion = await api("/sync/version");
+  const preview = await fetch(base + "/watch/grid-preview", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "If-Match": "-1" }, body: JSON.stringify(grid) });
+  assert.equal(preview.status, 200, "previews are read-only and skip revision checks");
+  assert.deepEqual((await preview.json()).scenarios.map(s => s.investedAmount), ["3600.00", "10000.00"]);
+  assert.equal((await fetch(base + "/watch/grid-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(grid) })).status, 401);
+  await api("/watch/grid-preview", "POST", { ...grid, budget: "0" }, 400);
+  assert.deepEqual(await api("/sync/version"), previewVersion, "previews never advance the account revision");
+  assert.equal((await api("/watch")).rows[0].entry.gridPlan, undefined);
   const staleGrid = await fetch(base + gridPath, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "If-Match": "-1" }, body: JSON.stringify(grid) });
   assert.equal(staleGrid.status, 409);
   const { entry: gridEntry, gridProjection } = (await api(gridPath, "PUT", grid)).rows[0];
   assert.deepEqual(gridEntry.gridPlan, grid);
-  assert.equal(gridProjection.reboundYieldBps, 375);
-  assert.equal(gridProjection.levels[0].price, null);
-  assert.deepEqual(gridProjection.scenarios, []);
+  assert.equal(gridProjection.topPrice, "44.00");
+  assert.deepEqual(gridProjection.levels.map(l => [l.price, l.side, l.shares]), [["44.00", "sell", 0], ["36.00", "buy", 100], ["32.00", "buy", 200]]);
+  assert.equal(gridProjection.scenarios[1].budgetPct, "100.0000");
   assert.deepEqual((await api("/watch")).rows[0].entry.gridPlan, grid);
   const existingWatch = (await api("/watch")).rows[0].entry;
   const personalCalendar = await api("/watch/dividend-calendar?scope=favorites");
