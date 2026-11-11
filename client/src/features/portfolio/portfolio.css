@@ -160,6 +160,9 @@
 .profile-panel .panel-title {
   margin-bottom: var(--space-2);
 }
+.detail-grid.holding-detail-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .profile-title-actions {
   display: flex;
   align-items: center;

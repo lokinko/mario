@@ -420,7 +420,7 @@ it("refreshes prices and displays the source date and partial failures", async (
   expect(screen.queryByText(/收盘 2026-10-09/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /查看 / }));
   expect(screen.queryByText("行情来源")).toBeNull();
-  expect(screen.getByText(/收盘日 2026-10-09/)).toBeTruthy();
+  expect(screen.queryByText(/收盘日|参考日收盘价/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   expect(screen.getByText(/部分价格更新失败，已保留原值/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "刷新" }));

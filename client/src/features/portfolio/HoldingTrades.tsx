@@ -765,7 +765,6 @@ export function HoldingTrades({
                 <tr>
                   <th>日期 / 顺序</th>
                   <th>类型 / 数量</th>
-                  <th>成交 / 分红金额</th>
                   <th>实际现金收支</th>
                   <th>操作</th>
                 </tr>
@@ -792,28 +791,10 @@ export function HoldingTrades({
                         </small>
                       )}
                     </td>
-                    <td data-label="成交 / 分红金额">
-                      <span className="num" data-money>
-                        {money(t.grossAmount)}
-                      </span>
-                      <small>{t.currency}</small>
-                    </td>
                     <td data-label="实际现金收支">
                       <span className="num" data-money>
                         {money(summary?.cashFlows[t.id] ?? "0")}
                       </span>
-                      {(Number(t.fees) !== 0 || Number(t.taxes) !== 0) && (
-                        <small>
-                          费用{" "}
-                          <span className="num" data-money>
-                            {money(t.fees)}
-                          </span>{" "}
-                          · 税费{" "}
-                          <span className="num" data-money>
-                            {money(t.taxes)}
-                          </span>
-                        </small>
-                      )}
                       {summary?.profits[t.id] !== undefined && (
                         <small>
                           卖出盈亏{" "}

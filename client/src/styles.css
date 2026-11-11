@@ -1441,13 +1441,11 @@ main {
 .trade-table td {
   padding: 10px var(--space-2);
   border-bottom: 1px solid var(--line);
-  vertical-align: top;
+  vertical-align: middle;
 }
 .trade-table small {
-  display: block;
-  margin-top: var(--space-1);
+  margin-left: var(--space-2);
   color: var(--text-3);
-  overflow-wrap: anywhere;
 }
 .trade-kind-buy {
   color: var(--danger);
@@ -1480,15 +1478,23 @@ main {
   container: holding-trades / inline-size;
 }
 .trade-table td {
-  min-width: 100px;
-  max-width: 250px;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+.trade-table th:last-child,
+.trade-table .trade-actions {
+  text-align: right;
+}
+.trade-table .trade-actions button {
+  display: inline-flex;
+}
+.trade-table .trade-actions button + button {
+  margin-left: var(--space-3);
 }
 .trade-table .trade-edit {
   color: var(--brand);
   font-weight: 600;
 }
-@container holding-trades (max-width: 760px) {
+@container holding-trades (max-width: 480px) {
   .trade-table {
     display: block;
   }
@@ -1514,10 +1520,9 @@ main {
     border-radius: var(--radius-sm);
   }
   .trade-table td {
-    min-width: 0;
-    max-width: none;
     padding: 0;
     border: 0;
+    white-space: normal;
   }
   .trade-table td[data-label]::before {
     content: attr(data-label);

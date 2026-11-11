@@ -550,27 +550,25 @@ it("keeps an uncertain edit frozen and retries exactly the original content", as
   expect(portfolioApi.saveHoldingTrade).not.toHaveBeenCalled();
 });
 
-it("folds fees into the actual cash flow and lists them only when charged", () => {
-  const props = { holding, onUpdate: vi.fn(), flash: vi.fn() };
-  const { container, rerender } = render(
-    <HoldingTrades {...props} snapshot={value} />,
-  );
-  const cell = () =>
-    container.querySelector('td[data-label="实际现金收支"]')?.textContent;
-  expect(cell()).toContain("费用");
-  expect(cell()).toContain("税费");
-  expect(screen.queryByText("券商A")).toBeNull();
-  rerender(
+it("shows each trade's actual cash flow once without a separate gross amount or fee line", () => {
+  const { container } = render(
     <HoldingTrades
-      {...props}
-      snapshot={{
-        ...value,
-        holdingTrades: [{ ...buy, fees: "0", taxes: "0.00" }],
-      }}
+      holding={holding}
+      onUpdate={vi.fn()}
+      flash={vi.fn()}
+      snapshot={value}
     />,
   );
-  expect(cell()).not.toContain("费用");
-  expect(container.querySelectorAll("thead th")).toHaveLength(5);
+  const cell = container.querySelector(
+    'td[data-label="实际现金收支"]',
+  )?.textContent;
+  expect(cell).not.toContain("费用");
+  expect(cell).not.toContain("税费");
+  expect(screen.queryByText("券商A")).toBeNull();
+  expect(
+    container.querySelector('td[data-label="成交 / 分红金额"]'),
+  ).toBeNull();
+  expect(container.querySelectorAll("thead th")).toHaveLength(4);
 });
 
 it("keeps data review out of the way until a split is declared", async () => {

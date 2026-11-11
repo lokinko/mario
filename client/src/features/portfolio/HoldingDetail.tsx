@@ -33,13 +33,11 @@ export function HoldingDetail({
     return () => onEditingTradeChange(false);
   }, [stockEditing, optionEditing, onEditingTradeChange]);
   const tradeSummary = snapshot.holdingTradeSummaries?.[holding.id];
-  const valuations =
-    snapshot.holdingValuations?.filter((v) => v.holdingId === holding.id) ?? [];
   const usable = snapshot.accounting?.holdings[holding.id]?.usable !== false;
   const pendingTrade = editingTrade ? "请先保存或取消当前交易" : undefined;
   return (
     <>
-      <dl className="detail-grid">
+      <dl className="detail-grid holding-detail-summary">
         <div>
           <dt>当前市值</dt>
           <dd>
@@ -83,11 +81,6 @@ export function HoldingDetail({
           </dd>
         </div>
       </dl>
-      {valuations.map((v) => (
-        <p className="section-intro" key={v.holdingId}>
-          收盘日 {v.observedOn} · {v.disclaimer}
-        </p>
-      ))}
       {holding.assetClass === "股票" && (
         <StockOptions
           key={holding.id}
