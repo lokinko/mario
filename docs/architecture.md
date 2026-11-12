@@ -40,7 +40,9 @@ PostgreSQL 是唯一的数据存储，没有单机或免登录模式。本地开
 
 生产部署由 [`deploy.sh`](../deploy.sh) 在宿主机以 systemd 启动一个主运行器（[`scripts/host-runtime.mjs`](../scripts/host-runtime.mjs)），依次拉起 PostgreSQL、Agent（仅监听本机端口）和 API；Nginx 反向代理 API 与静态网页。推送代码不等于部署。
 
-部署中的系统依赖安装与 systemd 管理使用 root；用户工具安装、构建和主运行器统一使用非 root 服务账号。`deploy.sh` 在下载工具和停服前准备该账号的 home，自动修复默认专用 home 与 Rust 工具目录的历史归属、所有者写入及遍历权限，不递归接管整个 home 或跟随工具链接修改外部文件。已有数据库继续使用原所有者，数据与事务归属不变。具体范围与异常处理见 [部署权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
+域名接入归独立的 [`scripts/setup-domain.mjs`](../scripts/setup-domain.mjs)：仅当 `deploy` 显式同时收到 `--domain`、`--ip` 时由入口在应用就绪后以 root 调用。它消费运行器生成的 Nginx 片段，管理该服务的系统站点、www/非 www 跳转及证书复用/HTTP 签发；写前备份、检查失败回退，不读写账号数据库或主密钥。普通部署不调用此脚本，`prepare` 仍仅准备应用配置与片段。域名状态归系统 Nginx、Certbot 及 DNS，不新增数据库状态或“首次成功”标记；触发与恢复边界见[域名接入](deploy-madeagents.md#一次性配置域名与证书)。
+
+部署中的系统依赖安装、systemd 与显式触发的域名接入使用 root；用户工具安装、构建和主运行器统一使用非 root 服务账号。`deploy.sh` 在下载工具和停服前准备该账号的 home，自动修复默认专用 home 与 Rust 工具目录的历史归属、所有者写入及遍历权限，不递归接管整个 home 或跟随工具链接修改外部文件。已有数据库继续使用原所有者，数据与事务归属不变。具体范围与异常处理见 [部署权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
 
 ## 2. 设计原则
 

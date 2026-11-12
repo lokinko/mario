@@ -210,7 +210,9 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 
 ### 宿主机部署权限
 
-宿主机部署权限准备归 `deploy.sh`：root 仅管理系统依赖与 systemd，用户工具、配置生成、构建和服务运行归同一个非 root 账号。部署在下载工具和停服前自动创建缺失 home，修复默认专用 home 本身及 `.cargo`、`.rustup`、`.local/bin` 的历史权限；自定义已有 home 须属于服务账号，不递归修改其他个人文件或 `.local` 应用数据，不跟随工具链接写入外部目标。`npm run test:deploy` 覆盖旧权限修复、服务用户实际写入、可执行位/链接保留、重复执行、缺失 home 和修复范围；不要把构建改成 root 来绕过权限准备。既有数据库仍归原运行账号，不迁移数据。部署使用见 [服务用户权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
+域名接入由 `scripts/setup-domain.mjs` 以 root 管理，`deploy.sh` 只在 `deploy` 显式同时传入 `--domain`、`--ip` 时调用，正常更新、`prepare` 与管理命令不调用；只传其中一个参数须在停服前拒绝。脚本只消费运行器生成的片段，不承担构建、账号存储或密钥管理。修改时用 `npm run test:deploy` 验证触发条件、证书双域名覆盖及失效判断、HTTP 验证顺序、手动续期提示、备份/回退、其他站点冲突与重复/并发调用；真实 Nginx 配置检查、Linux systemd 和公网签发验收分开报告。操作及手动接入方式只维护于[部署指南](deploy-madeagents.md#一次性配置域名与证书)。
+
+宿主机部署权限准备归 `deploy.sh`：root 管理系统依赖、systemd 与显式触发的域名接入，用户工具、配置生成、构建和服务运行归同一个非 root 账号。部署在下载工具和停服前自动创建缺失 home，修复默认专用 home 本身及 `.cargo`、`.rustup`、`.local/bin` 的历史权限；自定义已有 home 须属于服务账号，不递归修改其他个人文件或 `.local` 应用数据，不跟随工具链接写入外部目标。`npm run test:deploy` 覆盖旧权限修复、服务用户实际写入、可执行位/链接保留、重复执行、缺失 home 和修复范围；不要把构建改成 root 来绕过权限准备。既有数据库仍归原运行账号，不迁移数据。部署使用见 [服务用户权限](deploy-madeagents.md#服务用户-home-与工具目录权限)。
 
 ## 设置中的 JSON 导入
 

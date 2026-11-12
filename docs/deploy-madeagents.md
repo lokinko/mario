@@ -1,17 +1,17 @@
-# 宿主机部署与 https://www.madeagents.ai/mario
+# 宿主机部署与域名接入
 
 服务器部署只使用项目根目录 **deploy.sh**。它直接构建并运行源码，不使用 Docker。IP、域名和所有日常参数集中在脚本顶部，每项都有中文注释。
 
 ## 首次部署
 
-推荐 Ubuntu 22.04+ / Debian 12+、systemd、x86_64 或 arm64。域名 www 的 A 记录指向 `47.243.99.21`，安全组开放 80/443；数据库、Agent 和内部 API 端口不开放到公网。需要足够内存与磁盘完成 Rust 编译。
+推荐 Ubuntu 22.04+ / Debian 12+、systemd、x86_64 或 arm64。以下以 `lokinko.cn`、IP `47.106.188.95` 为例：主域名与 `www.lokinko.cn` 均须解析到该 IP，安全组开放 80/443；数据库、Agent 和内部 API 端口不开放到公网。需要足够内存与磁盘完成 Rust 编译。大陆服务器须完成网站备案及接入，DNS 生效不等于公网 HTTP 已放行。
 
 代码推送到远端后，在服务器克隆。普通用户建议放在自己的 home；root 登录时放在 `/srv/mario`，不要放进 `/root`：
 
 ```bash
 git clone https://github.com/lokinko/mario.git /srv/mario
 cd /srv/mario
-sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
+sudo bash deploy.sh --ip 47.106.188.95 --domain lokinko.cn
 ```
 
 默认执行以下工作：
@@ -20,7 +20,28 @@ sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
 - 自动选择非 root 运行用户，首次生成数据库密码、主密钥与 Agent 令牌，持久保存在权限受限的 `.env`。
 - 按 `/mario/` 构建 React 网页，编译 Rust 服务，自动初始化或复用 `.runtime/native/postgres`。
 - 创建 `mario.service`，由 systemd 托管 PostgreSQL、API 和独立 Agent。断开 SSH 不停止服务，开机自动启动。
-- 生成 `.runtime/native/nginx.conf`，供现有 HTTPS 站点接入。
+- 生成 `.runtime/native/nginx.conf`。**只有 `deploy` 显式同时收到 `--ip` 和 `--domain` 时**，在应用启动成功后调用独立的 `scripts/setup-domain.mjs`，配置系统 Nginx 与双域名证书。日常不传这两个参数，或使用 `prepare`、管理命令时，不调用域名脚本。`deploy` 只传其中一个参数会提前拒绝，不停服。
+
+## 一次性配置域名与证书
+
+上面的首次部署命令会配置 `/etc/nginx/sites-available/mario` 及对应启用链接。传入 `lokinko.cn` 时，HTTP 和 HTTPS 的 `www` 入口最终统一到 `https://lokinko.cn/mario/`；根路径进入部署前缀，`/mario` 自动补尾斜杠，业务路径和查询参数保留。若显式传入 `www.example.com`，则保持该主机名为正式入口，并将 `example.com` 跳转到它。前缀沿用 `deploy.sh` 的 `BASE_PATH`，服务名沿用 `SERVICE_NAME`。
+
+独立脚本只管理该服务名的站点文件。已有文件先备份到 `/var/backups/<服务名>-nginx/`；其他启用站点显式占用同名域名、站点文件或启用链接异常时拒绝接管。不要通过重复定义同一域名绕过冲突，应先整理原站点。面板或容器 Nginx 继续按下节手工接入，不自动管理。
+
+脚本按需安装 Nginx、OpenSSL、Certbot（`INSTALL_MISSING_TOOLS=false` 时要求预装）。先查找同时覆盖正式域名及其 www/非 www 对应域名、剩余有效期超过一天的证书并复用，不重新签发。没有符合条件的证书时，临时加载 HTTP 验证站点，再运行 Certbot webroot 验证；首次可能提示邮箱、服务条款等，按终端提示操作。成功后校验证书覆盖范围、写入 HTTPS 站点，执行 `nginx -t` 后重载；HTTP 验证目录保留，续期 deploy hook 负责检查和重载 Nginx。
+
+配置检查、证书申请或重载失败会恢复原站点并尝试重载，命令以失败退出；应用服务已启动，不删除数据库、密钥或已申请的证书。新机器没有原站点时仅删除本次新建的站点及启用链接。备份和证书不属于构建缓存；强制终止遗留的 `/var/lock/<服务名>-domain.lock` 须确认没有运行中的域名配置进程后再处理。
+
+DNS、备案接入、公网 80/443 和证书有效性是不同检查项。公网 `403`/备案拦截不会被 Nginx 配置自动修复；可先处理接入问题，或用原手动 DNS 流程申请双域名证书，再重跑带参数的部署。**复用手动 DNS 证书不会自动配置 DNS 续期**，脚本会明确提示，仍需手动续期或另配认证 hook。不要把 `certbot renew --dry-run` 失败静默忽略。
+
+已有应用只需重新配置域名时，可以单独运行，避免重新编译：
+
+```bash
+cd /srv/mario
+sudo /opt/mario-tools/node/bin/node scripts/setup-domain.mjs --domain lokinko.cn --ip 47.106.188.95 --install-tools
+```
+
+若使用系统 Node，换成实际 Node 路径；自定义服务名加 `--service <名称>`。重复显式提供两个参数会再次执行配置，不依赖“首次成功”标记。以后正常更新只执行 `sudo bash deploy.sh`，不会安装域名工具、调用 Certbot、写系统站点或重载 Nginx。
 
 项目专用 Node 位于 `/opt/mario-tools/node`，不替换宿主机已有 Node。PostgreSQL 包由官方 PGDG 源安装；发行版可能同时创建自己的默认数据库服务，本项目使用独立的 55432 端口和数据目录。其他发行版请预装工具，并将脚本中的 `INSTALL_MISSING_TOOLS` 改成 `false`。
 
@@ -49,7 +70,7 @@ sudo bash /srv/mario/deploy.sh
 
 ## 配置只改一个地方
 
-`deploy.sh` 顶部配置区中，通常只需 IP 与域名，也可以像上面那样首次通过参数提供。以后直接运行脚本，空的 IP/域名会复用已有 `.env`。默认路径 `/mario/` 对应你的当前需求。
+`deploy.sh` 顶部配置区管理应用运行参数。首次通过命令行同时提供 IP 与域名才触发系统域名接入；仅修改配置区或复用 `.env` 不触发该步骤。以后直接运行脚本，空的 IP/域名会复用已有 `.env`。默认路径为 `/mario/`。
 
 可选配置说明包括网页前缀、API/Agent/PG 端口、已有数据库 URL、PG 工具路径、跨域来源、服务用户、systemd 名称和依赖安装开关。脚本中的参数会合并到 `.env`，已有密码与密钥保持原值。`.env` 是运行配置和秘密存储，不是第二份需要同时维护的部署参数表。模型 API 地址由用户在“设置”的模型配置中自行配置，无需管理员添加白名单。
 
@@ -83,7 +104,9 @@ sudo env npm_config_registry=https://registry.npmjs.org \
 
 ## 一次性接入已有 Nginx
 
-若 www 会跳转到 `madeagents.ai`，需要让 `/mario` 留在 www。脚本无法仅凭 IP、域名判断现有站点文件、证书路径或面板布局，因此生成配置片段，**不自动覆盖原网站配置**。
+已有其他网站、面板或容器 Nginx 时，可保留手工片段接入方式：用 `prepare --ip ... --domain ...` 准备应用配置（需已有 Node），正常部署时不传这两个参数。独立域名脚本不会把其他站点中的同名域名直接接管。以下以旧的 `www.madeagents.ai` 站点为手工接入示例；域名脚本管理的独立站点无需再添加一次片段。
+
+若 www 会跳转到 `madeagents.ai`，需要让 `/mario` 留在 www。手工接入应保留原网站与证书，只将片段加入所选 HTTPS server。
 
 先备份现有配置。在 `www.madeagents.ai` 的 **443 HTTPS server** 中，保留原证书，加入生成片段，例如：
 
@@ -177,14 +200,14 @@ sudo tail -n 80 .runtime/native/postgres.log
 若出现 `could not create lock file "/var/run/postgresql/.s.PGSQL.55432.lock": Permission denied`，是系统 socket 目录权限问题；当前脚本只用 TCP，更新脚本后重新部署：
 
 ```bash
-sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
+sudo bash deploy.sh
 ```
 
 运行器会把 PostgreSQL 日志末尾最多 16 KiB 输出到服务日志。若仍失败，按其中的 `FATAL`/`PANIC` 排查端口、权限、磁盘空间或数据版本；不要删除 `.runtime/native/postgres` 或 `.env` 来重试。
 
 ## 验收 Web
 
-部署运行器的实现见 [`host-runtime.mjs`](../scripts/host-runtime.mjs)。`npm run test:deploy` 检查配置保留、Nginx 生成、服务用户权限；不连接真实公网服务。启动生命周期另有 `npm run test:startup`，它需要预先构建的前后端产物和隔离 PostgreSQL，未包含在当前 `npm test` 中。以下公网检查与浏览器步骤仍须在实际部署后分别执行，代码或文档更新本身不代表验收完成。
+部署运行器的实现见 [`host-runtime.mjs`](../scripts/host-runtime.mjs)。`npm run test:deploy` 检查配置保留、Nginx 生成、服务用户权限，以及域名脚本的触发、证书覆盖、配置冲突与失败回退；不连接真实公网服务。启动生命周期另有 `npm run test:startup`，它需要预先构建的前后端产物和隔离 PostgreSQL，未包含在当前 `npm test` 中。以下公网检查与浏览器步骤仍须在实际部署后分别执行，代码或文档更新本身不代表验收完成。
 
 公网只读验收使用 `bash deploy.sh check`，检查入口跳转、API 模式、JS/CSS/图标及未登录保护。也可在本机项目中运行：
 

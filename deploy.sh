@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Mario 宿主机部署的唯一入口。Ubuntu/Debian + systemd；不需要 Docker。
-# 首次：sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
+# 首次：sudo bash deploy.sh --ip 47.106.188.95 --domain lokinko.cn
 # 以后：sudo bash deploy.sh；管理：bash deploy.sh start|stop|restart|status|logs|check
 # 首次自动安装缺少的工具、生成密钥、构建网页/API、创建 systemd 开机服务。
-# 已有 HTTPS Nginx 需要一次性加入脚本生成的 location；不会覆盖原网站或证书。
+# 显式同时传 --ip/--domain 时额外配置 Nginx 与双域名证书；日常部署不调用域名配置。
 
 # =================== 用户配置区 ===================
 # 以下空值表示复用 .env 中的已有值；首次 IP/域名可通过命令参数传入。
@@ -39,12 +39,14 @@ PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="$PROJECT_DIR/deploy.sh"
 ORIGINAL_ARGS=("$@")
 ACTION="deploy"
+DOMAIN_PROVIDED=false
+IP_PROVIDED=false
 if [[ $# -gt 0 && "$1" != -* ]]; then ACTION="$1"; shift; fi
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --ip|--domain)
             [[ $# -ge 2 && "$2" != --* ]] || { echo "$1 缺少值" >&2; exit 1; }
-            if [[ "$1" == --ip ]]; then SERVER_IP="$2"; else DOMAIN="$2"; fi
+            if [[ "$1" == --ip ]]; then SERVER_IP="$2"; IP_PROVIDED=true; else DOMAIN="$2"; DOMAIN_PROVIDED=true; fi
             shift 2 ;;
         --help|-h) ACTION="help"; shift ;;
         *) echo "未知参数：$1；使用 bash deploy.sh --help" >&2; exit 1 ;;
@@ -58,16 +60,28 @@ case "$ACTION" in
   prepare  仅生成/更新 .env 和 Nginx 片段，不启动服务、不安装依赖；需已有 Node。
   start / stop / restart / status / logs  管理本项目 systemd 服务。
   check    使用现有 .env 对公网域名和网页路径执行只读验收。
-首次可传 IP、域名；其他配置见脚本顶部中文注释。以后无需重复传参。
+deploy 显式同时传 --ip 和 --domain 时调用 scripts/setup-domain.mjs 配置 Nginx/证书。
+日常不传这两个参数时只部署应用；prepare 不配置系统 Nginx。其他配置见脚本顶部中文注释。
 默认使用 npm/Node/Rust/Cargo 国内源；脚本顶部可修改，或用 sudo env 变量=值 bash deploy.sh 覆盖。
 Ubuntu/Debian 自动安装依赖，其他 Linux 需预先安装 Node 22+、Rust、PostgreSQL。
 Linux 部署请将仓库放在普通用户 home 或 /srv/mario，不放在 /root 内。
-准备完成后按提示将 Nginx 片段加入现有 HTTPS server，再运行 check。
+域名接入需两个域名 DNS 与公网 80/443 可用；复用有效证书，否则通过 Certbot HTTP 验证申请。
 HELP
         exit 0 ;;
     deploy|prepare|start|stop|restart|status|logs|check) ;;
     *) echo "未知操作：$ACTION" >&2; exit 1 ;;
 esac
+configure_domain() {
+    if [[ "$ACTION" == deploy && "$DOMAIN_PROVIDED" == true && "$IP_PROVIDED" == true ]]; then
+        local options=()
+        [[ "$INSTALL_MISSING_TOOLS" != true ]] || options+=(--install-tools)
+        "$NODE" "$PROJECT_DIR/scripts/setup-domain.mjs" --domain "$DOMAIN" --ip "$SERVER_IP" --service "$SERVICE_NAME" ${options[@]+"${options[@]}"}
+    fi
+}
+if [[ "$ACTION" == deploy && "$DOMAIN_PROVIDED" != "$IP_PROVIDED" ]]; then
+    echo '配置域名时请同时提供 --domain 和 --ip；日常部署两个参数都不传。' >&2
+    exit 1
+fi
 [[ "$SERVICE_NAME" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo 'SERVICE_NAME 格式无效' >&2; exit 1; }
 [[ "$INSTALL_MISSING_TOOLS" == true || "$INSTALL_MISSING_TOOLS" == false ]] || { echo 'INSTALL_MISSING_TOOLS 必须为 true 或 false' >&2; exit 1; }
 [[ "$PROJECT_DIR" != *$'\n'* && "$PROJECT_DIR" != *'%'* && "$PROJECT_DIR" != *'"'* && "$PROJECT_DIR" != *'\'* && "$PROJECT_DIR" != *' '* ]] || { echo '部署目录不能包含空格、换行、%、反斜杠或引号' >&2; exit 1; }
@@ -288,6 +302,8 @@ echo '本机 Codex 桥接已部署：网页 设置 → 模型接口 → Codex �
 echo '在个人电脑的同版 Mario 源码目录执行 npm run codex:bridge，粘贴配对码；在线后点击启用本机 Codex。'
 echo '本次包含超时与重试修复：浏览器强制刷新；本机旧桥接请先 Ctrl+C，再更新源码、重新配对并启动。'
 echo '本机桥接主动通过 HTTPS 连接网页，无需开放个人电脑端口；服务重启后需要重新配对。'
-echo "将 $PROJECT_DIR/.runtime/native/nginx.conf 加入域名的 HTTPS server，运行 nginx -t 后重载。"
-echo '若 www 在 server 层跳到根域名，请把该 return 移到兜底 location /，让 /mario 留在 www。'
+configure_domain
+if [[ "$DOMAIN_PROVIDED" != true ]]; then
+    echo '本次未调用域名接入脚本；沿用系统 Nginx 和证书配置。更改路径或端口后需检查 Nginx。'
+fi
 echo '详细步骤：docs/deploy-madeagents.md；公网验收：bash deploy.sh check；日志：sudo bash deploy.sh logs'

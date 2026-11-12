@@ -1,18 +1,18 @@
 # 自建宿主机服务
 
-生产部署统一使用根目录 [deploy.sh](../deploy.sh)，所有日常配置集中在脚本顶部并有中文说明。默认入口为 `https://www.madeagents.ai/mario`，源码直接在宿主机编译和运行，systemd 负责后台常驻和开机自启。
+生产部署统一使用根目录 [deploy.sh](../deploy.sh)，所有日常配置集中在脚本顶部并有中文说明。以下入口为 `https://lokinko.cn/mario/`，源码直接在宿主机编译和运行，systemd 负责后台常驻和开机自启。
 
 ```bash
-sudo bash deploy.sh --ip 47.243.99.21 --domain www.madeagents.ai
+sudo bash deploy.sh --ip 47.106.188.95 --domain lokinko.cn
 ```
 
-完整的依赖安装、非 root 服务账号、Nginx 接入、升级和验收步骤见 [服务器部署指南](deploy-madeagents.md)。`.env` 由部署器自动生成，保存运行参数和持久密钥；日常改 `deploy.sh` 后重新部署，密码和主密钥保持不变。真实 `.env` 不提交 Git。
+只有 `deploy` 显式同时传入 `--domain`、`--ip` 时才调用独立域名脚本，配置 Nginx、主域名与 www 跳转，并复用双域名证书或通过 HTTP 验证申请。日常 `sudo bash deploy.sh` 不调用它。DNS、证书失败回退及已有网站手工接入见 [服务器部署指南](deploy-madeagents.md)。`.env` 由部署器自动生成，保存运行参数和持久密钥；日常改 `deploy.sh` 后重新部署，密码和主密钥保持不变。真实 `.env` 不提交 Git。
 
 Web 通过 Rust API 读写数据，PostgreSQL 保存独立账号、会话及各用户关系数据，AI Agent 是独立无状态进程。三个服务仅监听回环地址，公网访问由已有 Nginx 提供 HTTPS。Agent 不获得数据库 URL 或主密钥，它仅收到本次授权上下文和模型请求所需凭据。
 
 ## 账号与客户端
 
-注册开放，任何用户均可用邮箱和密码直接创建账号，无需邀请码。每个人有独立邮箱、密码与模型密钥；邮箱作为账号名，不做邮件验证/邮件重置。通过浏览器访问 `https://www.madeagents.ai/mario`。
+注册开放，任何用户均可用邮箱和密码直接创建账号，无需邀请码。每个人有独立邮箱、密码与模型密钥；邮箱作为账号名，不做邮件验证/邮件重置。通过浏览器访问配置的域名及 `/mario/` 路径。
 
 登录凭证及过期时间按服务器地址保存在浏览器的 `localStorage`，刷新、关闭后重开仍可恢复登录；服务端会话有效期 7 天，到期需重新登录。退出会撤销当前会话并清除本机凭证，同一浏览器的其他标签页同步更新登录状态。数据库临时错误不会被当作会话失效。网页、API 和资源统一使用构建时的部署前缀，Nginx 转发时剥离前缀。
 

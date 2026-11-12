@@ -29,13 +29,14 @@ systemctl show mario.service --property=User --value
 
 如存在影响部署的未提交修改，先保存并确认实际运行版本；不要直接用新机器的最新 main 代替。迁移与升级分开进行，两端优先使用完全相同的 Git 提交。脚本只校验 `package.json` 版本号，不能替你保证同一版本号下的代码相同。
 
-在新机器克隆并检出上面记录的提交，然后提前安装依赖、构建、停服：
+在新机器克隆并检出上面记录的提交，然后提前安装依赖、构建、停服。为保持 DNS 指向旧机器，首次构建不带域名参数，再用 `prepare` 写入正式域名；不会触发系统域名接入与 HTTP 证书验证：
 
 ```bash
 git clone https://github.com/lokinko/mario.git /srv/mario
 cd /srv/mario
 git checkout <旧机器记录的提交号>
-sudo bash deploy.sh --ip <新IP> --domain <正式域名>
+sudo bash deploy.sh
+sudo bash deploy.sh prepare --ip <新IP> --domain <正式域名>
 sudo bash deploy.sh stop
 RUN_USER=$(systemctl show mario.service --property=User --value)
 test -n "$RUN_USER" && test "$RUN_USER" != root
@@ -155,7 +156,8 @@ npm run data:backup
 
 ```bash
 cd /srv/mario
-sudo bash deploy.sh --ip 目标IP --domain 目标域名
+sudo bash deploy.sh
+sudo bash deploy.sh prepare --ip 目标IP --domain 目标域名
 sudo bash deploy.sh stop
 # 上传迁移包后，作为服务运行用户执行：
 node scripts/restore-backup.mjs --input ./最新包.mario-backup --replace

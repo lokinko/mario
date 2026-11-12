@@ -42,7 +42,7 @@
 
 | 模块 | 当前规范或操作指南 | 实现与验证入口 |
 | --- | --- | --- |
-| 宿主机启动、部署与 Web 发布 | [自建服务](self-hosting.md)、[部署验收](deploy-madeagents.md)、[Web 构建](client-builds.md) | [部署入口](../deploy.sh)、[主运行器](../scripts/host-runtime.mjs)、[Web 构建脚本](../scripts/build-web.mjs)、[部署测试](../scripts/test-deploy.mjs) |
+| 宿主机启动、部署与 Web 发布 | [自建服务](self-hosting.md)、[部署验收](deploy-madeagents.md)、[Web 构建](client-builds.md) | [部署入口](../deploy.sh)、[域名接入](../scripts/setup-domain.mjs)、[主运行器](../scripts/host-runtime.mjs)、[Web 构建脚本](../scripts/build-web.mjs)、[部署测试](../scripts/test-deploy.mjs)、[域名回归](../scripts/setup-domain.test.mjs) |
 | 整站加密备份、下载与恢复 | [数据迁移](data-migration.md)、[信任边界](threat-model.md) | [备份](../scripts/backup.mjs)、[下载](../scripts/download-backup.mjs)、[恢复](../scripts/restore-backup.mjs)、[独立加密备份验收](../scripts/test-backup.mjs)、[财务原生恢复验收](../scripts/test-financial.mjs) |
 
 ## 当前规范与历史记录的边界
