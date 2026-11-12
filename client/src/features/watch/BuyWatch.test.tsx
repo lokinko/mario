@@ -168,12 +168,9 @@ it("defaults to personal watches and switches all industry groups without privat
       industry.companies.length + 1,
     );
     expect(screen.queryByRole("button", { name: /置顶/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /周末复盘/ })).toBeNull();
   }
   fireEvent.click(screen.getByRole("tab", { name: "自选 1" }));
-  expect(
-    screen.getByRole("button", { name: "结合持仓做周末复盘" }),
-  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /周末复盘/ })).toBeNull();
   expect(screen.getByRole("button", { name: /置顶测试公司/ })).toBeTruthy();
   expect(api.saveWatch).not.toHaveBeenCalled();
   expect(api.refreshWatchCatalog).not.toHaveBeenCalled();

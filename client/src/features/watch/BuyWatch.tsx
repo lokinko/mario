@@ -261,13 +261,6 @@ export function BuyWatch({
     setError("");
     reset();
   };
-  const week = board?.weekly ?? [];
-  const weeklyAsk = () => {
-    const selected = rows.slice(0, 5);
-    onAsk(
-      `请为买点观察名单做${board?.weekStart}至${board?.weekEnd}的周末复盘，先讨论${selected.map((r) => `${r.entry.name}（${r.entry.symbol}，关注理由：${r.entry.thesis || "待补充"}）`).join("、")}。本周已保存${week.length}条收盘观察。请按当前${rulesSummary(rules)}的规则；历史观察以各记录当时规则为准，结合授权的观察资料、持仓和最近交易，说明下周应该等待什么，以及分红和经营判断需要核查哪些证据。未提供历史时不要推测周内变化；不预设必须买入，不输出精确买入数量。`,
-    );
-  };
   return (
     <div className="page watch-page">
       <PageHeader
@@ -280,11 +273,6 @@ export function BuyWatch({
                 onClick={() => setCatalogEditing(true)}
               >
                 维护公共公司
-              </Button>
-            )}
-            {own && rows.length > 0 && (
-              <Button onClick={weeklyAsk}>
-                结合持仓做周末复盘{rows.length > 5 ? "（先讨论前 5 家）" : ""}
               </Button>
             )}
             <Button

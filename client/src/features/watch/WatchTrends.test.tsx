@@ -96,7 +96,11 @@ it("draws lightly smoothed curves without a weekly close series or position note
   expect(container.querySelector('[data-series="close"]')).toBeNull();
   expect(screen.queryByText("周收盘")).toBeNull();
   expect(screen.queryByText(/^月中轨位于/)).toBeNull();
-  expect(screen.queryByText(/相对偏强|查看日期|按周取点/)).toBeNull();
+  expect(
+    screen.queryByText(
+      /相对偏强|查看日期|按周取点|最近金叉|BOLL 中轨（SMA）|计算口径/,
+    ),
+  ).toBeNull();
 });
 
 it("renders both requested charts through shared company evidence with real dates and values", () => {
@@ -147,7 +151,6 @@ it("supports keyboard date inspection, range switching and marks actual cross ev
   const updated = trends.map((p) => ({ ...p, goldenCross: false, ma20: 38 }));
   view.rerender(<WatchTrends latest={observation(updated)} />);
   expect(screen.queryByLabelText(`${trends[99].day} 暂态金叉`)).toBeNull();
-  expect(screen.getByText(/20 周均线在 60 周下方/)).toBeTruthy();
 });
 
 it("breaks lines at gaps while retaining available series and a single date", () => {

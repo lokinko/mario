@@ -327,19 +327,6 @@ export function WatchTrends({ latest }: { latest: Observation | null }) {
   const [weeks, setWeeks] = useState(0);
   const trends = latest?.trends;
   const points = trends?.slice(-weeks) ?? [];
-  const last = points[points.length - 1];
-  const latestCross = trends
-    ?.slice()
-    .reverse()
-    .find((p) => p.goldenCross);
-  const maState =
-    last?.ma20 != null && last.ma60 != null
-      ? last.ma20 > last.ma60
-        ? "20 周均线在 60 周上方"
-        : last.ma20 < last.ma60
-          ? "20 周均线在 60 周下方"
-          : "20 周与 60 周均线重合"
-      : "均线历史待补齐";
   return (
     <section
       className="watch-detail-section watch-trends"
@@ -377,31 +364,6 @@ export function WatchTrends({ latest }: { latest: Observation | null }) {
             series={averages}
             cross
           />
-          <p className="watch-trend-summary">
-            {maState}
-            {last.provisional ? "（本周暂态）" : ""}
-            {latestCross
-              ? ` · 五年内最近${latestCross.provisional ? "暂态" : ""}金叉 ${latestCross.day}`
-              : " · 有效相邻周中未见金叉"}
-          </p>
-          <p className="watch-meta">
-            两条线均为对应周期的 BOLL 中轨（SMA）。金叉为上一周 20 周均线不高于
-            60
-            周、本周上穿。金叉前侧重网格波段、金叉后侧重趋势持仓，作为复盘思路，需结合基本面、现金与真实交易判断。
-          </p>
-          <details className="watch-method">
-            <summary>趋势图计算口径</summary>
-            <p>
-              周线 BOLL(20,2) 使用 20 周收盘均值与两倍总体标准差；月线中轨为 20
-              个月收盘均值，20/60
-              周均线为简单移动平均。月线按日历月聚合，每个历史周点只使用当时已知的月内收盘，不使用之后的月末价格。
-            </p>
-            <p>
-              月内、周内尚未结束时使用截至该点的最后收盘；最新周最后交易日在周五前时保守标为暂态。历史不足或有缺口的曲线断开，需分别积累
-              20 月、20 周或 60
-              周有效历史。曲线和金叉只供参考，不参与买点条件或变化提醒。
-            </p>
-          </details>
         </>
       )}
     </section>

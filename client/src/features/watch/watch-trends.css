@@ -87,11 +87,6 @@
   font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
-.watch-trend-summary {
-  margin: var(--space-2) 0;
-  font-size: var(--fs-body-sm);
-  color: var(--text-2);
-}
 @media (max-width: 600px) {
   .watch-trend-chart {
     padding: var(--space-2);

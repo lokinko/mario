@@ -252,7 +252,9 @@ export function WatchList({
                   data-label="TTM 股息率"
                   className={`watch-numeric rule-yield ${checks(row)[0] === true ? "watch-met" : ""}`}
                 >
-                  {number(row.latest?.yieldPct, "%")}
+                  <span className="watch-value">
+                    {number(row.latest?.yieldPct, "%")}
+                  </span>
                 </td>
                 <td
                   data-label={`${minYield}% 参考价`}
@@ -270,13 +272,17 @@ export function WatchList({
                   data-label={`距日线${referenceLabels[rules.daily.reference]}`}
                   className={`watch-numeric rule-daily ${row.latest?.daily?.matchesRule ? "watch-met" : ""}`}
                 >
-                  {distance(row.latest?.daily?.distancePct)}
+                  <span className="watch-value">
+                    {distance(row.latest?.daily?.distancePct)}
+                  </span>
                 </td>
                 <td
                   data-label={`距周线${referenceLabels[rules.weekly.reference]}`}
                   className={`watch-numeric rule-weekly ${row.latest?.weekly?.matchesRule ? "watch-met" : ""}`}
                 >
-                  {distance(row.latest?.weekly?.distancePct)}
+                  <span className="watch-value">
+                    {distance(row.latest?.weekly?.distancePct)}
+                  </span>
                 </td>
                 <td data-label="状态">
                   <div className="watch-row-status">
