@@ -49,6 +49,28 @@ async function start() {
   return hook;
 }
 
+it("protects an open drawer draft from remote updates and accepts them after discard", async () => {
+  const { result } = await start();
+  act(() => result.current.markEdited("trade-drawer"));
+  await act(async () => {
+    expect(await result.current.loadRemoteData(true)).toBe(false);
+  });
+  expect(result.current.remotePending).toBe(true);
+  expect(result.current.snapshot).toBe(original);
+  await expect(currentSession().beforeDataWrite()).rejects.toThrow("其他设备");
+
+  act(() => result.current.clearDraft("trade-drawer"));
+  const newer = { ...original, updatedAt: "after-discard" };
+  vi.mocked(getSnapshot).mockResolvedValueOnce(newer);
+  await act(async () => {
+    expect(await result.current.loadRemoteData(true)).toBe(true);
+  });
+  expect(result.current.snapshot).toBe(newer);
+  expect(result.current.remotePending).toBe(false);
+  expect(result.current.hasDraft()).toBe(false);
+  await expect(currentSession().beforeDataWrite()).resolves.toBeUndefined();
+});
+
 it("keeps a draft started while the remote snapshot is loading and blocks stale writes", async () => {
   const { result } = await start();
   const pending = deferred<Snapshot>();

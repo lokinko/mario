@@ -3,7 +3,8 @@ import { Breadcrumb, Button } from "antd";
 import { Callout } from "./components/Callout";
 import { DailyTracking } from "./features/portfolio/DailyTracking";
 import { useApplicationData } from "./app/useApplicationData";
-import { lazy, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DraftProtection } from "./components/DraftProtection";
 import {
   AlertTriangle,
   Check,
@@ -92,6 +93,10 @@ function App() {
     clearDraft,
     retrySync,
   } = useApplicationData(view);
+  const draftProtection = useMemo(
+    () => ({ markEdited, clearDraft }),
+    [markEdited, clearDraft],
+  );
   const [pendingQuestion, setPendingQuestion] = useState<{
     id: number;
     question: string;
@@ -233,7 +238,7 @@ function App() {
     );
   }
 
-  return (
+  const content = (
     <div className="app-shell">
       <header className="mobile-topbar" inert={mobileNavOpen}>
         <img
@@ -345,7 +350,11 @@ function App() {
       <main
         inert={mobileNavOpen}
         onChangeCapture={(event) => {
-          if (!(event.target as HTMLElement).closest("[data-presentation]"))
+          if (
+            !(event.target as HTMLElement).closest(
+              "[data-presentation], [data-draft-scope]",
+            )
+          )
             markEdited();
         }}
       >
@@ -551,6 +560,11 @@ function App() {
         </button>
       </nav>
     </div>
+  );
+  return (
+    <DraftProtection.Provider value={draftProtection}>
+      {content}
+    </DraftProtection.Provider>
   );
 }
 

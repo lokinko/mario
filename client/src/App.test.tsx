@@ -640,6 +640,103 @@ it("preserves the income draft guard when a mobile tab changes only the facts se
   expect(screen.getByRole("heading", { name: "我的情况" })).toBeTruthy();
 });
 
+async function openTradeDraft() {
+  window.history.replaceState(null, "", "#facts");
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
+    new Error("no model"),
+  );
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "记录交易" }));
+  const input = screen.getByRole("textbox", { name: "证券名称" });
+  fireEvent.change(input, { target: { value: "未保存的证券" } });
+  return input;
+}
+
+function navigateToAdvisor() {
+  window.history.replaceState(null, "", "#advisor");
+  fireEvent(window, new PopStateEvent("popstate"));
+}
+
+it.each(["button", "form", "escape", "backdrop"])(
+  "discards a trade draft through %s without prompting again on navigation",
+  async (method) => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await openTradeDraft();
+    const dismiss = () => {
+      if (method === "button")
+        fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+      else if (method === "form")
+        fireEvent.click(screen.getByRole("button", { name: "关闭交易录入" }));
+      else if (method === "escape")
+        fireEvent.keyDown(window, { key: "Escape" });
+      else fireEvent.click(document.querySelector(".drawer-backdrop")!);
+    };
+    dismiss();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog", { name: "记录交易" })).toBeNull();
+    fireEvent.click(
+      within(screen.getByRole("complementary", { name: "主导航" })).getByRole(
+        "button",
+        { name: "问答" },
+      ),
+    );
+    expect(window.location.hash).toBe("#advisor");
+    expect(confirm).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("protects cancelled trade drafts and fresh input after reopening a discarded draft", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const input = await openTradeDraft();
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect((input as HTMLInputElement).value).toBe("未保存的证券");
+  navigateToAdvisor();
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(window.location.hash).toBe("#facts");
+  expect(screen.getByDisplayValue("未保存的证券")).toBe(input);
+
+  confirm.mockReturnValue(true);
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+  fireEvent.click(screen.getByRole("button", { name: "记录交易" }));
+  const fresh = screen.getByRole("textbox", { name: "证券名称" });
+  expect((fresh as HTMLInputElement).value).toBe("");
+  fireEvent.change(fresh, { target: { value: "重新录入的证券" } });
+  confirm.mockClear().mockReturnValue(false);
+  navigateToAdvisor();
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(window.location.hash).toBe("#facts");
+  expect(screen.getByDisplayValue("重新录入的证券")).toBe(fresh);
+});
+
+it("keeps a separate income draft protected after discarding a trade draft", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  await openTradeDraft();
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+  fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: /月收入/ }), {
+    target: { value: "12345" },
+  });
+  fireEvent.click(screen.getByRole("tab", { name: "投资持仓" }));
+  fireEvent.click(screen.getByRole("button", { name: "记录交易" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "证券名称" }), {
+    target: { value: "另一份交易草稿" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+  confirm.mockClear().mockReturnValue(false);
+  navigateToAdvisor();
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(window.location.hash).toBe("#facts");
+  fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
+  expect(
+    (screen.getByRole("spinbutton", { name: /月收入/ }) as HTMLInputElement)
+      .value,
+  ).toBe("12345");
+});
+
 it("does not treat buy-watch search and sort changes as unsaved input", async () => {
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});

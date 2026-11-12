@@ -33,19 +33,20 @@ export function useApplicationData(view: View) {
     generation.current += 1;
     setSnapshotState(next);
   }, []);
-  const edited = useRef(false);
+  const edited = useRef(new Set<string>());
   const currentView = useRef(view);
   currentView.current = view;
   const syncController = useRef<ReturnType<typeof startAutoSync> | null>(null);
-  const hasDraft = useCallback(() => edited.current, []);
-  const markEdited = useCallback(() => {
-    edited.current = true;
+  const hasDraft = useCallback(() => edited.current.size > 0, []);
+  const markEdited = useCallback((scope = "page") => {
+    edited.current.add(scope);
   }, []);
-  const clearDraft = useCallback(() => {
-    edited.current = false;
+  const clearDraft = useCallback((scope?: string) => {
+    if (scope === undefined) edited.current.clear();
+    else edited.current.delete(scope);
   }, []);
   const protectDraft = useCallback(() => {
-    if (!edited.current || currentView.current === "advisor") return false;
+    if (!edited.current.size || currentView.current === "advisor") return false;
     session.blockStaleWrites(true);
     setRemotePending(true);
     return true;

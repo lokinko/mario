@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { Button } from "antd";
 import { X } from "lucide-react";
+import { DraftProtection } from "./DraftProtection";
 
 const DrawerControls = createContext({
   markClean: () => {},
@@ -42,6 +43,7 @@ export function Drawer({
 }) {
   const [nestedBusy, setNestedBusy] = useState(false);
   const heading = useId();
+  const drafts = useContext(DraftProtection);
   const panel = useRef<HTMLDivElement>(null);
   // Capture before child autoFocus runs during commit.
   const returnFocus = useRef(document.activeElement as HTMLElement | null);
@@ -52,17 +54,20 @@ export function Drawer({
     () => ({
       markClean: () => {
         changed.current = false;
+        drafts.clearDraft(heading);
       },
       setBusy: setNestedBusy,
       confirmDiscard: () =>
         !(changed.current || options.current.dirty) ||
         window.confirm("有未保存的修改，确认放弃？"),
     }),
-    [],
+    [drafts, heading],
   );
   useEffect(() => {
     changed.current = false;
-  }, [resetKey]);
+    drafts.clearDraft(heading);
+    return () => drafts.clearDraft(heading);
+  }, [resetKey, drafts, heading]);
   const dismiss = () => {
     const current = options.current;
     if (current.busy) return;
@@ -150,10 +155,17 @@ export function Drawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby={heading}
+        data-draft-scope={heading}
         tabIndex={-1}
         onChangeCapture={(event) => {
-          if (!(event.target as HTMLElement).closest("[data-presentation]"))
+          if (
+            !(event.target as HTMLElement).closest("[data-presentation]") &&
+            (event.target as HTMLElement).closest("[data-draft-scope]") ===
+              panel.current
+          ) {
             changed.current = true;
+            drafts.markEdited(heading);
+          }
         }}
       >
         <header className="drawer-header">
