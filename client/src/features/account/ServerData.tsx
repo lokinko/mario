@@ -312,7 +312,7 @@ export function ServerData({
               </label>
               {selectedSource && (
                 <p role="status">
-                  将导入 {selectedSource.stocks} 只自选股、
+                  将导入 {selectedSource.stocks} 只自选证券、
                   {selectedSource.transactions}{" "}
                   条源交易记录（红利税合入对应卖出的税费）。
                 </p>
@@ -323,8 +323,10 @@ export function ServerData({
                 不同。原 price 仅作未核验参考价。
               </p>
               <p>
-                只读取所选账户的自选和账本，不重复导入顶层
-                watchlist。现金追踪未启用时不导入占位余额；已启用时保留当前余额、待核对，历史成交不再次扣现金。原手续费估算启用或红利税无法匹配时拒绝整次导入。
+                只读取所选账户的自选和账本，不重复导入顶层 watchlist。沪深 A
+                股进入观察名单，场内 ETF
+                等基金只导入持仓和交易。现金追踪未启用时不导入占位余额；已启用时保留当前余额、待核对，历史成交不再次扣现金。原手续费估算不导入，费用按
+                0 记录并在交易备注中注明；红利税无法匹配时拒绝整次导入。
               </p>
               <p>
                 行业、目标价、旧股息率、行情缓存和发现列表不导入；保留当前账号观察规则。请保留原
@@ -384,8 +386,8 @@ function describeImport(data: unknown): {
     version?: unknown;
     data?: { accounts?: unknown; watchlist?: unknown };
   };
-  if (root.version !== "1.0" || !root.data)
-    throw new Error("仅支持 version 为 1.0 的自选 JSON");
+  if (!/^[12](\.|$)/.test(String(root.version)) || !root.data)
+    throw new Error("仅支持 version 为 1.x 或 2.x 的自选 JSON");
   const hasAccounts = root.data.accounts !== undefined;
   const accounts = hasAccounts
     ? root.data.accounts

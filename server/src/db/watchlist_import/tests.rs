@@ -94,7 +94,7 @@ fn external_import_rejects_bad_financial_data_without_changing_existing_account(
     db.import_account_data(&fixture()).unwrap();
     let before = db.export_sync_data().unwrap().content_hash().unwrap();
     let cases = [
-        ("/version", json!("2.0")),
+        ("/version", json!("3.0")),
         ("/exportedAt", json!("invalid")),
         ("/data/accounts/0/watchlist/0/shares", json!(201)),
         ("/data/accounts/0/watchlist/0/transactions/0/qty", json!(10)),
@@ -113,7 +113,6 @@ fn external_import_rejects_bad_financial_data_without_changing_existing_account(
         ("/data/accounts/0/watchlist/0/code", json!("AAPL")),
         ("/data/accounts/0/watchlist/0/price", json!(0)),
         ("/data/accounts/0/watchlist/0/price", Value::Null),
-        ("/data/accounts/0/feeConfig/enabled", json!(true)),
         (
             "/data/accounts/0/watchlist/0/transactions/0/ts",
             json!(4102444800000_i64),
@@ -167,4 +166,40 @@ fn external_import_accepts_top_level_watchlist_and_manual_holdings() {
             .price_status,
         "unconfirmed"
     );
+}
+
+#[test]
+fn external_v2_import_keeps_fund_ledgers_and_ignores_estimated_fees() {
+    let mut data = fixture();
+    data["version"] = json!("2.2");
+    let account = &mut data["data"]["accounts"][0];
+    account["feeConfig"] = json!({"enabled":true,"commissionRate":0.00025});
+    let watchlist = account["watchlist"].as_array_mut().unwrap();
+    watchlist.push(json!({"code":"588000","name":"测试科创ETF","price":1.375,"shares":7500,"isETF":false,"transactions":[
+        {"type":"buy","qty":7500,"price":1.4,"ts":1767225600000_i64}]}));
+    watchlist.push(
+        json!({"code":"159915","name":"测试创业板ETF","price":2.59,"shares":0,"transactions":[]}),
+    );
+    watchlist.push(json!({"code":"QQQ","name":"未持有境外","shares":0,"transactions":[]}));
+    let db = Database::test();
+    db.import_account_data(&data).unwrap();
+    let s = db.snapshot().unwrap();
+    let symbols: Vec<_> = db
+        .watch_entries()
+        .unwrap()
+        .into_iter()
+        .map(|w| w.input.symbol)
+        .collect();
+    assert_eq!(symbols.len(), 3);
+    assert!(!symbols
+        .iter()
+        .any(|s| s.starts_with("588000") || s.starts_with("159915")));
+    let fund = s.holdings.iter().find(|h| h.symbol == "588000.SS").unwrap();
+    assert_eq!(fund.asset_class, "基金");
+    assert_eq!(s.holding_trade_summaries[&fund.id].quantity, "7500");
+    assert!(s.holdings.iter().all(|h| !h.symbol.starts_with("159915")));
+    assert!(s
+        .holding_trades
+        .iter()
+        .all(|t| t.fees == "0" && t.note.contains("估算费用未导入")));
 }

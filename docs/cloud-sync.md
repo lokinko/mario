@@ -32,13 +32,13 @@ JSON 导出/导入用于备份与迁移，不是同步协议。导出包含个�
 
 ## 外部自选 JSON 导入
 
-此入口解决既有自选和真实交易需逐笔重录的问题，接受 `{ "version": "1.0", "exportedAt": "RFC3339 时间", "data": { ... } }`，与 Mario 的 `schemaVersion` 备份明确区分。格式转换由 `db/watchlist_import` 完成，然后复用 `import_sync_data` 的单一恢复事务、账号隔离及版本校验；不改账号 schema 或 Mario 备份版本，不新增数据库或登录入口。失败保留原账号数据，恢复方式与上文一致。
+此入口解决既有自选和真实交易需逐笔重录的问题，接受 `{ "version": "1.x 或 2.x", "exportedAt": "RFC3339 时间", "data": { ... } }`（2.x 新增的账户期初资金、发现列表等字段按下文忽略），与 Mario 的 `schemaVersion` 备份明确区分。格式转换由 `db/watchlist_import` 完成，然后复用 `import_sync_data` 的单一恢复事务、账号隔离及版本校验；不改账号 schema 或 Mario 备份版本，不新增数据库或登录入口。失败保留原账号数据，恢复方式与上文一致。
 
 - `data.accounts` 存在时只导入所选来源账户，完全忽略顶层 `data.watchlist` 的镜像。多账户必须在预览中明确选择；客户端把 `selectedAccountId` 放在请求顶层，服务端核对其存在及来源账户 ID 唯一性；不创建或切换 Mario 登录账号。没有 `accounts` 时使用顶层列表，交易账户名为“导入账户”。
-- 预览显示所选账户、自选股数和源交易记录数，说明红利税合并及不导入字段。沪深六位代码转为 `.SS` / `.SZ` 后经现有观察契约校验；超出 50 家、重复证券或非沪深 A 股整次拒绝。自选保存为个人名单，源 `confirmed` 不作为基本面证据。
+- 预览显示所选账户、自选股数和源交易记录数，说明红利税合并及不导入字段。六位代码以 5、6、9 开头转为 `.SS`，其余转为 `.SZ`。沪深 A 股经现有观察契约校验后进入观察名单，超出 50 家或重复证券整次拒绝；场内基金（ETF 等）只导入持仓和交易，资产类别为“基金”，不进入观察名单；其他证券无持仓也无交易时跳过，有持仓或交易时整次拒绝。自选保存为个人名单，源 `confirmed` 不作为基本面证据。
 - `transactions` 按 `ts` 的毫秒时间排序，同时间保留原数组顺序；日期取 `Asia/Shanghai`，再分配持仓内唯一序号。`buy` / `sell` 的金额为 `qty × price`；`dividend` 的税前金额为 `qty × (gross ?? price)`，其中 `gross` 和 `price` 均为每股口径，两者差额作为该次分红代扣税。账本分红的数量和价格字段按现有契约置零。
 - `dividendTax.price` 是整笔税费金额，不乘股数；只合入同证券、同时间戳及同股数的唯一卖出记录。缺匹配、多个候选、未知类型、未来交易或非法交易链整次拒绝。各笔原始时间、数量、价格与税前字段保存在对应交易备注中。
-- 所有金额经十进制解析，最多 8 位小数；只消除与 8 位小数结果相差不超过 `0.000000000001` 的 JSON 浮点尾差，不吞掉真实第九位精度。启用来源手续费估算而未提供逐笔实际费用时拒绝导入，不推算历史费用；未启用时费用按零导入。
+- 所有金额经十进制解析，最多 8 位小数；只消除与 8 位小数结果相差不超过 `0.000000000001` 的 JSON 浮点尾差，不吞掉真实第九位精度。来源只有手续费估算而无逐笔实际费用，不推算历史费用：费用一律按零导入；来源启用估算时在每笔交易备注中注明“估算费用未导入”，预览同步提示。
 - 有真实成交时，股数、平均成本及盈亏均按原账本规则重放，`shares` 如存在必须与重放股数相同；保留清仓证券及其交易。`costPrice` 的源算法可能扣除分红或历史盈利，不覆盖真实成交成本。无交易且股数大于零时，按 `shares` 与 `costPrice` 保存手工持仓，不补造期初买入；无持仓也无交易的证券只进自选。
 - `price` 只保存为无行情日期、未核验的参考价，不用 `exportedAt` 冒充行情观察日；非零持仓缺少正参考价时拒绝。`priceCny`、旧价格变化及行情缓存不作为权威报价。
 - `cashTrackingEnabled=false` 或未提供时不导入占位现金。为 `true` 时保存 `cashBalance` 的 CNY、HKD、USD 当前精确余额并标记待核对；不导入期初资金及校准历史，也不重放历史成交扣款。
@@ -59,5 +59,5 @@ JSON 导出/导入用于备份与迁移，不是同步协议。导出包含个�
 
 - [认证与租户中间件](../server/src/hosted.rs)、[版本策略](../server/src/http/policy.rs)和[数据版本触发器](../server/migrations/tenant-revisions.sql)实现租户锁、版本校验及财务回执重放；[HTTP 集成脚本](../scripts/test-hosted.mjs)覆盖跨实例旧版本、回执与账号隔离。
 - [同步格式](../server/src/db/sync_format.rs)、[导出/导入仓储](../server/src/db/sync_store.rs)和[租户 schema](../server/src/db/schema.rs)是版本、表结构及设置白名单的来源；[备份回归](../server/src/db/tests.rs)覆盖当前往返、旧版本跳过退役表、无效结构及私有设置排除，[PostgreSQL 迁移测试](../server/src/db/postgres_tests.rs)覆盖跨实例只迁移一次。
-- [外部自选转换](../server/src/db/watchlist_import.rs)及[隔离数据库回归](../server/src/db/watchlist_import/tests.rs)覆盖镜像去重、账户选择、交易重放、税费尾差、现金不重结算、Mario 备份往返和失败回滚。
+- [外部自选转换](../server/src/db/watchlist_import.rs)及[隔离数据库回归](../server/src/db/watchlist_import/tests.rs)覆盖镜像去重、账户选择、交易重放、税费尾差、现金不重结算、2.x 基金持仓与估算费用、Mario 备份往返和失败回滚。
 - [应用数据生命周期](../client/src/app/useApplicationData.ts)及[测试](../client/src/app/useApplicationData.test.tsx)覆盖远端变化与在途草稿；[账号数据页面](../client/src/features/account/ServerData.tsx)及[测试](../client/src/features/account/ServerData.test.tsx)覆盖覆盖前备份、取消、下载失败与导入失败回滚的界面行为。

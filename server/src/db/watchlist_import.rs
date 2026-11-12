@@ -1,9 +1,14 @@
-//! External v1 watchlist exports are converted once, then use the normal atomic restore.
+//! External v1/v2 watchlist exports are converted once, then use the normal atomic restore.
 use super::{
     AppError, AppResult, Database, SyncDataset, SyncTable, SyncValue, SYNC_DATASET_SCHEMA_VERSION,
     SYNC_TABLES,
 };
-use crate::models::{accounting::HoldingAmounts, watch::WatchInput, HoldingTrade, TradeKind};
+use crate::models::{
+    accounting::HoldingAmounts,
+    market::{is_a_share_stock, is_mainland_fund},
+    watch::WatchInput,
+    HoldingTrade, TradeKind,
+};
 use chrono::{DateTime, Utc};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::Deserialize;
@@ -130,8 +135,8 @@ impl Database {
 fn convert(value: &Value) -> AppResult<SyncDataset> {
     let export: Export = serde_json::from_value(value.clone())
         .map_err(|e| invalid(format!("自选 JSON 格式无效：{e}")))?;
-    if export.version != "1.0" {
-        return Err(invalid("仅支持 version 为 1.0 的自选 JSON"));
+    if !matches!(export.version.split('.').next(), Some("1" | "2")) {
+        return Err(invalid("仅支持 version 为 1.x 或 2.x 的自选 JSON"));
     }
     DateTime::parse_from_rfc3339(&export.exported_at).map_err(|_| invalid("导出时间格式无效"))?;
     let account = if let Some(accounts) = export.data.accounts {
@@ -171,22 +176,14 @@ fn convert(value: &Value) -> AppResult<SyncDataset> {
             cash_balance: None,
         }
     };
-    if account
+    let estimated_fees = account
         .fee_config
         .as_ref()
         .and_then(|f| f.get("enabled"))
-        .is_some_and(|v| v != &Value::Bool(false))
-    {
-        return Err(invalid(
-            "来源启用了手续费估算，缺少逐笔实际费用，不能无损导入；请先核对来源成交单",
-        ));
-    }
+        .is_some_and(|v| v != &Value::Bool(false));
     let name = account.name.trim();
     if name.is_empty() || name.chars().count() > 120 {
         return Err(invalid("导入账户名称须为 1 至 120 字"));
-    }
-    if account.watchlist.len() > crate::models::watch::MAX_WATCHES {
-        return Err(invalid("自选列表超过 50 家上限"));
     }
     let now = Utc::now().to_rfc3339();
     let mut dataset = SyncDataset {
@@ -202,36 +199,62 @@ fn convert(value: &Value) -> AppResult<SyncDataset> {
             .collect(),
     };
     let mut symbols = HashSet::new();
+    let mut watches = 0;
     for stock in account.watchlist {
-        let symbol = if stock.code.len() == 6 {
-            format!(
-                "{}.{}",
-                stock.code,
-                if stock.code.starts_with('6') {
-                    "SS"
-                } else {
-                    "SZ"
-                }
-            )
+        let code = stock.code.trim();
+        let symbol = if code.len() == 6 && code.bytes().all(|b| b.is_ascii_digit()) {
+            let shanghai = matches!(code.as_bytes()[0], b'5' | b'6' | b'9');
+            format!("{code}.{}", if shanghai { "SS" } else { "SZ" })
         } else {
-            stock.code.clone()
+            code.to_uppercase()
         };
-        let input = WatchInput {
-            symbol,
-            name: stock.name.clone(),
-            thesis: String::new(),
+        if !symbols.insert(symbol.clone()) {
+            return Err(invalid(format!("重复证券 {symbol}")));
         }
-        .normalize()?;
-        if !symbols.insert(input.symbol.clone()) {
-            return Err(invalid(format!("重复证券 {}", input.symbol)));
-        }
-        push(
-            &mut dataset,
-            "watch_entries",
-            json!({"symbol":input.symbol,"payload":json!({"symbol":input.symbol,"name":input.name,"thesis":"","createdAt":now,"pinned":false}).to_string(),"refresh_failed":0}),
-        );
-        import_stock(&mut dataset, &stock, &input.symbol, name, &now)
+        // Listed funds keep their ledger, but the watch desk only follows A-share stocks.
+        let class = if is_a_share_stock(&symbol) {
+            let input = WatchInput {
+                symbol: symbol.clone(),
+                name: stock.name.clone(),
+                thesis: String::new(),
+            }
+            .normalize()?;
+            watches += 1;
+            push(
+                &mut dataset,
+                "watch_entries",
+                json!({"symbol":input.symbol,"payload":json!({"symbol":input.symbol,"name":input.name,"thesis":"","createdAt":now,"pinned":false}).to_string(),"refresh_failed":0}),
+            );
+            "股票"
+        } else if is_mainland_fund(&symbol) {
+            "基金"
+        } else if stock.transactions.is_empty()
+            && stock
+                .shares
+                .as_ref()
+                .map(decimal)
+                .transpose()?
+                .unwrap_or_default()
+                .is_zero()
+        {
+            continue;
+        } else {
+            return Err(invalid(format!(
+                "{}（{}）不是沪深 A 股或场内基金，不能导入持仓",
+                stock.name, stock.code
+            )));
+        };
+        let source = ImportSource {
+            account: name,
+            class,
+            estimated_fees,
+            now: &now,
+        };
+        import_stock(&mut dataset, &stock, &symbol, &source)
             .map_err(|e| invalid(format!("{}（{}）：{e}", stock.name, stock.code)))?;
+    }
+    if watches > crate::models::watch::MAX_WATCHES {
+        return Err(invalid("自选 A 股超过 50 家上限"));
     }
     if account.cash_tracking_enabled == Some(true) {
         let balances = account
@@ -269,13 +292,31 @@ fn convert(value: &Value) -> AppResult<SyncDataset> {
     Ok(dataset)
 }
 
+#[derive(Clone, Copy)]
+struct ImportSource<'a> {
+    account: &'a str,
+    class: &'a str,
+    estimated_fees: bool,
+    now: &'a str,
+}
+
 fn import_stock(
     dataset: &mut SyncDataset,
     stock: &Stock,
     symbol: &str,
-    account: &str,
-    now: &str,
+    source: &ImportSource,
 ) -> AppResult<()> {
+    let ImportSource {
+        account,
+        class,
+        estimated_fees,
+        now,
+    } = *source;
+    let fee_note = if estimated_fees {
+        "；来源启用了手续费估算，估算费用未导入"
+    } else {
+        ""
+    };
     let id = Uuid::new_v4().to_string();
     let mut ordered: Vec<_> = stock.transactions.iter().enumerate().collect();
     if ordered.len() > 50_000 {
@@ -316,7 +357,7 @@ fn import_stock(
         let qty = decimal(&t.qty)?;
         let price = decimal(&t.price)?;
         if qty <= Decimal::ZERO || !qty.fract().is_zero() {
-            return Err(invalid("A 股交易及分红股数必须为正整数"));
+            return Err(invalid("交易及分红股数必须为正整数"));
         }
         let mut taxes = Decimal::ZERO;
         let gross = if kind == TradeKind::Dividend {
@@ -346,7 +387,7 @@ fn import_stock(
             sequence: u32::try_from(trades.len() + 1).map_err(|_| invalid("交易数量超限"))?,
             quantity: if kind == TradeKind::Dividend { "0".into() } else { text(qty) },
             price: if kind == TradeKind::Dividend { "0".into() } else { text(price) }, gross_amount: text(gross), fees: "0".into(), taxes: text(taxes), currency: "CNY".into(), account: account.into(), external_id: String::new(),
-            note: format!("自选 JSON 导入；源记录：{}", serde_json::to_string(&sources.iter().map(|s| json!({"type":s.kind,"qty":s.qty,"price":s.price,"ts":s.ts,"gross":s.gross})).collect::<Vec<_>>())?),
+            note: format!("自选 JSON 导入；源记录：{}{fee_note}", serde_json::to_string(&sources.iter().map(|s| json!({"type":s.kind,"qty":s.qty,"price":s.price,"ts":s.ts,"gross":s.gross})).collect::<Vec<_>>())?),
             created_at: timestamp.to_rfc3339(), updated_at: now.into() };
         trades.push(trade);
     }
@@ -389,7 +430,7 @@ fn import_stock(
         &id,
         symbol,
         &stock.name,
-        "股票",
+        class,
         "CNY",
         market,
         basis,
