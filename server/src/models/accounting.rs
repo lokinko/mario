@@ -63,6 +63,27 @@ pub struct ProfileAmounts {
     pub liabilities: String,
 }
 
+impl super::FinancialProfile {
+    pub fn field_provided(&self, field: super::ProfileField) -> bool {
+        use super::ProfileField;
+        if let Some(fields) = &self.provided_fields {
+            return fields.contains(&field);
+        }
+        // Historical profiles have no presence information. Keep their previous
+        // conservative interpretation until the user explicitly edits a field.
+        match field {
+            ProfileField::MonthlyIncome => self.monthly_income > 0.0,
+            ProfileField::MonthlyExpense => self.monthly_expense > 0.0,
+            ProfileField::EmergencyFund => self.emergency_fund > 0.0,
+            ProfileField::Liabilities => self.liabilities > 0.0,
+            ProfileField::HorizonYears => self.horizon_years > 0 && self.horizon_years != 5,
+            ProfileField::MaxDrawdownPct => {
+                self.max_drawdown_pct > 0.0 && self.max_drawdown_pct != 15.0
+            }
+        }
+    }
+}
+
 pub(crate) fn normalize_profile(
     profile: &super::FinancialProfile,
 ) -> crate::AppResult<super::FinancialProfile> {

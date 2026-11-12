@@ -1,5 +1,28 @@
-import type { Holding } from "../../types";
+import type { FinancialProfile, Holding, ProfileField } from "../../types";
 import { localDateValue } from "../../lib/dates";
+
+export const profileFields: ProfileField[] = [
+  "monthlyIncome",
+  "monthlyExpense",
+  "emergencyFund",
+  "liabilities",
+  "horizonYears",
+  "maxDrawdownPct",
+];
+
+export function profileFieldProvided(
+  profile: FinancialProfile,
+  key: ProfileField,
+) {
+  if (profile.providedFields) return profile.providedFields.includes(key);
+  // Old profiles did not record presence. Match the conservative fact-card rule.
+  const value = profile[key];
+  return (
+    value > 0 &&
+    !(key === "horizonYears" && value === 5) &&
+    !(key === "maxDrawdownPct" && value === 15)
+  );
+}
 
 export function emptyHolding(baseCurrency = "CNY"): Omit<Holding, "id"> {
   return {

@@ -147,9 +147,22 @@ pub struct HoldingValuationEvidence {
     pub captured_at: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProfileField {
+    MonthlyIncome,
+    MonthlyExpense,
+    EmergencyFund,
+    Liabilities,
+    HorizonYears,
+    MaxDrawdownPct,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FinancialProfile {
+    #[serde(default)]
+    pub provided_fields: Option<Vec<ProfileField>>,
     #[serde(default)]
     pub exact_amounts: Option<accounting::ProfileAmounts>,
     pub monthly_income: f64,
@@ -165,6 +178,7 @@ pub struct FinancialProfile {
 impl Default for FinancialProfile {
     fn default() -> Self {
         Self {
+            provided_fields: None,
             exact_amounts: None,
             monthly_income: 0.0,
             monthly_expense: 0.0,

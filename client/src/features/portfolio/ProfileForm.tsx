@@ -3,8 +3,9 @@ import { Callout } from "../../components/Callout";
 import { Save } from "lucide-react";
 import type { ReactNode } from "react";
 import { saveProfile } from "../../api/portfolio";
-import type { FinancialProfile, Snapshot } from "../../types";
+import type { FinancialProfile, ProfileField, Snapshot } from "../../types";
 import { NumberField } from "../../components/NumberField";
+import { profileFieldProvided, profileFields } from "./forms";
 
 type ProfileAmount =
   "monthlyIncome" | "monthlyExpense" | "emergencyFund" | "liabilities";
@@ -47,6 +48,10 @@ export function ProfileForm({
 }) {
   const valid = validProfile(profile);
 
+  const providedFields = (key: ProfileField, value: string) =>
+    profileFields.filter((field) =>
+      field === key ? value !== "" : profileFieldProvided(profile, field),
+    );
   const setAmount = (key: ProfileAmount, value: string) => {
     const exact = profile.exactAmounts ?? {
       monthlyIncome: String(profile.monthlyIncome),
@@ -57,13 +62,18 @@ export function ProfileForm({
     setProfile({
       ...profile,
       [key]: Number(value),
+      providedFields: providedFields(key, value),
       exactAmounts: { ...exact, [key]: value || "0" },
     });
   };
   const amountField = (key: ProfileAmount, label: string) => (
     <NumberField
       label={label}
-      value={profile.exactAmounts?.[key] ?? profile[key]}
+      value={
+        profileFieldProvided(profile, key)
+          ? (profile.exactAmounts?.[key] ?? profile[key])
+          : ""
+      }
       onChange={(value) => setAmount(key, value)}
       prefix={profile.baseCurrency}
     />
@@ -78,7 +88,14 @@ export function ProfileForm({
     )
       return;
     void run(async () => {
-      onUpdate(await saveProfile(profile));
+      const snapshot = await saveProfile({
+        ...profile,
+        providedFields: profileFields.filter((key) =>
+          profileFieldProvided(profile, key),
+        ),
+      });
+      setProfile(snapshot.profile);
+      onUpdate(snapshot);
       flash("收支已保存");
     });
   };
@@ -107,7 +124,8 @@ export function ProfileForm({
         </div>
       </div>
       <p className="section-intro">
-        记录稳定月度现金流，作为风险承受能力的基础。
+        记录稳定月度现金流，作为风险承受能力的基础。留空表示未填写，明确无负债请填
+        0；保存后才会用于问答。
       </p>
       {!valid && (
         <Callout tone="warning">
@@ -130,18 +148,34 @@ export function ProfileForm({
             {amountField("emergencyFund", "备用金")}
             <NumberField
               label="投资期限"
-              value={profile.horizonYears}
+              value={
+                profileFieldProvided(profile, "horizonYears")
+                  ? profile.horizonYears
+                  : ""
+              }
               suffix="年"
               onChange={(value) =>
-                setProfile({ ...profile, horizonYears: Number(value) })
+                setProfile({
+                  ...profile,
+                  horizonYears: value === "" ? 5 : Number(value),
+                  providedFields: providedFields("horizonYears", value),
+                })
               }
             />
             <NumberField
               label="可承受最大回撤"
-              value={profile.maxDrawdownPct}
+              value={
+                profileFieldProvided(profile, "maxDrawdownPct")
+                  ? profile.maxDrawdownPct
+                  : ""
+              }
               suffix="%"
               onChange={(value) =>
-                setProfile({ ...profile, maxDrawdownPct: Number(value) })
+                setProfile({
+                  ...profile,
+                  maxDrawdownPct: value === "" ? 15 : Number(value),
+                  providedFields: providedFields("maxDrawdownPct", value),
+                })
               }
             />
           </div>

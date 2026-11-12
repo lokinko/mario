@@ -294,6 +294,27 @@ try {
   const contextPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "quick" });
   assert.equal(contextPreview.payload.investmentMethodology, customMethodology);
   assert(contextPreview.systemPolicy.includes(customMethodology));
+  assert.equal(contextPreview.payload.facts.summary.horizonYears, "未填写");
+  assert.equal(contextPreview.payload.facts.summary.liabilities, "未填写");
+  const explicitProfile = {
+    ...snap.profile,
+    providedFields: ["liabilities", "horizonYears", "maxDrawdownPct"],
+    liabilities: 0,
+    horizonYears: 5,
+    maxDrawdownPct: 15,
+  };
+  const savedProfile = await api("/profile", "PUT", explicitProfile);
+  assert.deepEqual(savedProfile.profile.providedFields, explicitProfile.providedFields);
+  assert.deepEqual((await api("/snapshot")).profile, savedProfile.profile);
+  const savedPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "quick" });
+  assert.equal(savedPreview.payload.facts.summary.horizonYears, 5);
+  assert.equal(savedPreview.payload.facts.summary.liabilities, "0");
+  assert.equal(savedPreview.payload.facts.summary.maxDrawdownPct, "15");
+  assert.notEqual(savedPreview.contextRevision, contextPreview.contextRevision);
+  await api("/profile", "PUT", { ...explicitProfile, providedFields: [] });
+  const clearedPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "quick" });
+  assert.equal(clearedPreview.payload.facts.summary.horizonYears, "未填写");
+  assert.equal(clearedPreview.payload.facts.summary.liabilities, "未填写");
   const defaults = await api("/analysis-settings");
   assert.equal(defaults.workflow, "quick");
   assert.equal(defaults.reflect, undefined);

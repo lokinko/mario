@@ -19,10 +19,10 @@ const fixture = JSON.parse(match[1]);
 // Type-check real Rust JSON in memory, including excess fields and decimal string/null types.
 const filename = resolve(root, 'client/transport-contract.generated.ts');
 const source = `/// <reference types="vite/client" />
-import type { HoldingAmounts, HoldingTradeInput, HoldingTradeUpdateInput, FxBook, AnalysisEvent, ModelConfig } from './src/types';
+import type { HoldingAmounts, HoldingTradeInput, HoldingTradeUpdateInput, FxBook, AnalysisEvent, ModelConfig, FinancialProfile } from './src/types';
 import type { CodexBridgeStatus } from './src/api/settings';
 import type { WatchRules } from './src/api/watch';
-const fixture = ${JSON.stringify({ amounts: fixture.amounts, rules: fixture.rules, trades:fixture.trades, tradeUpdates:fixture.tradeUpdates, fx:fixture.fx, events:fixture.events, configs:fixture.configs, bridges:fixture.bridges })} satisfies { amounts: HoldingAmounts[]; rules: WatchRules[]; trades: HoldingTradeInput[]; tradeUpdates:HoldingTradeUpdateInput[]; fx:FxBook; events:AnalysisEvent[]; configs:ModelConfig[]; bridges:CodexBridgeStatus[] };
+const fixture = ${JSON.stringify({ amounts: fixture.amounts, profiles: fixture.profiles, rules: fixture.rules, trades:fixture.trades, tradeUpdates:fixture.tradeUpdates, fx:fixture.fx, events:fixture.events, configs:fixture.configs, bridges:fixture.bridges })} satisfies { amounts: HoldingAmounts[]; profiles: FinancialProfile[]; rules: WatchRules[]; trades: HoldingTradeInput[]; tradeUpdates:HoldingTradeUpdateInput[]; fx:FxBook; events:AnalysisEvent[]; configs:ModelConfig[]; bridges:CodexBridgeStatus[] };
 void fixture;`;
 const options = { strict: true, noEmit: true, skipLibCheck: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, types: [], lib: ['lib.es2022.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'] };
 const host = ts.createCompilerHost(options);
@@ -39,4 +39,6 @@ for (const { path, method, requiresRevision } of fixture.policies)
   assert.equal(isDataWrite(path.slice(4), method), requiresRevision, `${method} ${path}: request policies disagree`);
 assert.equal(fixture.amounts[0].marketValue, '99999999999999.99');
 assert.equal(fixture.amounts[1].quantity, null);
+assert.equal(fixture.profiles[0].providedFields, null);
+assert(fixture.profiles[1].providedFields.includes('liabilities'));
 console.log(`PASS contracts: Rust amounts, ${fixture.trades.length} trades, ${fixture.tradeUpdates.length} corrections, FX, ${fixture.events.length} stream events, ${fixture.rules.length} observation rules and ${fixture.policies.length} request policies agree with TypeScript`);

@@ -1,4 +1,13 @@
+export type ProfileField =
+  | "monthlyIncome"
+  | "monthlyExpense"
+  | "emergencyFund"
+  | "liabilities"
+  | "horizonYears"
+  | "maxDrawdownPct";
+
 export interface FinancialProfile {
+  providedFields?: ProfileField[] | null;
   exactAmounts?: {
     monthlyIncome: string;
     monthlyExpense: string;

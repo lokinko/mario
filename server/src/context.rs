@@ -366,6 +366,58 @@ mod tests {
     }
 
     #[test]
+    fn saved_profile_presence_survives_reload_restore_and_controls_model_facts() {
+        use crate::models::{FinancialProfile, ProfileField};
+        let db = crate::db::Database::test();
+        let mut profile = FinancialProfile {
+            provided_fields: Some(vec![
+                ProfileField::MonthlyIncome,
+                ProfileField::MonthlyExpense,
+                ProfileField::EmergencyFund,
+                ProfileField::Liabilities,
+                ProfileField::HorizonYears,
+                ProfileField::MaxDrawdownPct,
+            ]),
+            monthly_income: 100.0,
+            ..Default::default()
+        };
+        db.save_profile(&profile).unwrap();
+        let saved = db.snapshot().unwrap();
+        let selection = ContextSelection::default();
+        let facts = fact_sheet(&saved, &selection);
+        assert_eq!(facts["summary"]["liabilities"], "0");
+        assert_eq!(facts["summary"]["horizonYears"], 5);
+        assert_eq!(facts["summary"]["maxDrawdownPct"], "15");
+        assert_eq!(facts["summary"]["monthlySurplus"], "100");
+        // A known zero expense is valid, but cannot be a divisor.
+        assert_eq!(facts["summary"]["emergencyMonths"], "未填写");
+        let restored = crate::db::Database::test();
+        restored
+            .import_sync_data(&db.export_sync_data().unwrap())
+            .unwrap();
+        assert_eq!(fact_sheet(&restored.snapshot().unwrap(), &selection), facts);
+        profile.provided_fields = Some(vec![ProfileField::MonthlyIncome]);
+        let cleared = db.save_profile(&profile).unwrap();
+        let cleared_facts = fact_sheet(&cleared, &selection);
+        for field in [
+            "liabilities",
+            "horizonYears",
+            "maxDrawdownPct",
+            "monthlySurplus",
+        ] {
+            assert_eq!(cleared_facts["summary"][field], "未填写");
+        }
+        let hidden = ContextSelection {
+            include_profile: false,
+            include_holdings: false,
+            ..selection
+        };
+        assert!(fact_sheet(&saved, &hidden)["summary"]
+            .get("liabilities")
+            .is_none());
+    }
+
+    #[test]
     fn valuation_calculation_stays_in_audit_and_option_metadata_requires_holdings_authorization() {
         let mut snapshot = snapshot();
         snapshot.holding_valuations.push(serde_json::from_value(json!({

@@ -2,7 +2,7 @@
 use rust_decimal::Decimal;
 use serde_json::{json, Map, Value};
 
-use crate::models::{ContextSelection, FinancialProfile, IssueCode, Snapshot};
+use crate::models::{ContextSelection, IssueCode, ProfileField, Snapshot};
 
 fn decimal(value: &str) -> Option<Decimal> {
     Decimal::from_str_exact(value).ok()
@@ -12,7 +12,7 @@ fn text(value: Decimal) -> String {
 }
 fn amount(value: Option<&str>) -> Value {
     value
-        .filter(|v| decimal(v).is_some_and(|n| n > Decimal::ZERO))
+        .filter(|v| decimal(v).is_some_and(|n| n >= Decimal::ZERO))
         .map_or(json!("未填写"), |v| json!(v))
 }
 fn metric(value: &crate::models::accounting::AccountingMetric) -> Value {
@@ -40,32 +40,47 @@ pub fn fact_sheet(snapshot: &Snapshot, selection: &ContextSelection) -> Value {
                 liabilities: profile.liabilities.to_string(),
             }
         });
-        let exact = Some(&saved);
+        let provided_amount = |field, value: &str| {
+            profile
+                .field_provided(field)
+                .then(|| decimal(value))
+                .flatten()
+        };
         summary.insert(
             "monthlyIncome".into(),
-            amount(exact.map(|v| v.monthly_income.as_str())),
+            amount(
+                profile
+                    .field_provided(ProfileField::MonthlyIncome)
+                    .then_some(saved.monthly_income.as_str()),
+            ),
         );
         summary.insert(
             "monthlyExpense".into(),
-            amount(exact.map(|v| v.monthly_expense.as_str())),
+            amount(
+                profile
+                    .field_provided(ProfileField::MonthlyExpense)
+                    .then_some(saved.monthly_expense.as_str()),
+            ),
         );
         summary.insert(
             "emergencyFund".into(),
-            amount(exact.map(|v| v.emergency_fund.as_str())),
+            amount(
+                profile
+                    .field_provided(ProfileField::EmergencyFund)
+                    .then_some(saved.emergency_fund.as_str()),
+            ),
         );
         summary.insert(
             "liabilities".into(),
-            amount(exact.map(|v| v.liabilities.as_str())),
+            amount(
+                profile
+                    .field_provided(ProfileField::Liabilities)
+                    .then_some(saved.liabilities.as_str()),
+            ),
         );
-        let income = exact
-            .and_then(|v| decimal(&v.monthly_income))
-            .filter(|v| *v > Decimal::ZERO);
-        let expense = exact
-            .and_then(|v| decimal(&v.monthly_expense))
-            .filter(|v| *v > Decimal::ZERO);
-        let emergency = exact
-            .and_then(|v| decimal(&v.emergency_fund))
-            .filter(|v| *v > Decimal::ZERO);
+        let income = provided_amount(ProfileField::MonthlyIncome, &saved.monthly_income);
+        let expense = provided_amount(ProfileField::MonthlyExpense, &saved.monthly_expense);
+        let emergency = provided_amount(ProfileField::EmergencyFund, &saved.emergency_fund);
         summary.insert(
             "monthlySurplus".into(),
             income
@@ -80,23 +95,20 @@ pub fn fact_sheet(snapshot: &Snapshot, selection: &ContextSelection) -> Value {
                 .and_then(|(f, e)| f.checked_div(e))
                 .map_or(json!("未填写"), |v| json!(text(v))),
         );
-        let initial = FinancialProfile::default();
         summary.insert(
             "horizonYears".into(),
-            if profile.horizon_years == initial.horizon_years || profile.horizon_years == 0 {
-                json!("未填写")
-            } else {
+            if profile.field_provided(ProfileField::HorizonYears) {
                 json!(profile.horizon_years)
+            } else {
+                json!("未填写")
             },
         );
         summary.insert(
             "maxDrawdownPct".into(),
-            if profile.max_drawdown_pct == initial.max_drawdown_pct
-                || profile.max_drawdown_pct == 0.0
-            {
-                json!("未填写")
-            } else {
+            if profile.field_provided(ProfileField::MaxDrawdownPct) {
                 json!(profile.max_drawdown_pct.to_string())
+            } else {
+                json!("未填写")
             },
         );
     }
