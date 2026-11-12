@@ -1,3 +1,4 @@
+import { Money } from "../../components/AmountPrivacy";
 import { Eye, EyeOff } from "lucide-react";
 import { Button, Card } from "antd";
 import type { DataIssue, DailyHistory, Snapshot } from "../../types";
@@ -38,42 +39,42 @@ export function AssetOverview({
             <span className="metric-label">总资产（{currency}）</span>
             <div className="hero-amount">
               <span className="currency-symbol">{symbol}</span>
-              <strong className="num" data-money>
+              <Money as="strong" className="num">
                 {total == null ? "—" : formatAmount(total, currency)}
-              </strong>
+              </Money>
             </div>
             {latest && latest.liabilities > 0 && (
               <p className="hero-net">
                 净资产{" "}
-                <span className="num" data-money>
+                <Money className="num">
                   {latest.netAssets == null
                     ? "—"
                     : formatMoney(
                         latest.exactNetAssets ?? latest.netAssets,
                         currency,
                       )}
-                </span>{" "}
+                </Money>{" "}
                 · 已扣负债{" "}
-                <span className="num" data-money>
+                <Money className="num">
                   {formatMoney(
                     latest.exactLiabilities ?? latest.liabilities,
                     currency,
                   )}
-                </span>
+                </Money>
               </p>
             )}
           </div>
           <div className="hero-changes">
             <div>
               <span className="metric-label">较上次实际更新</span>
-              <strong
+              <Money
+                as="strong"
                 className={`num ${change == null || change === 0 ? "" : change > 0 ? "gain" : "loss"}`}
-                data-money
               >
                 {change == null
                   ? "—"
                   : formatSigned(change, (v) => formatAmount(v, currency))}
-              </strong>
+              </Money>
               {latest?.lastUpdatedDay && (
                 <small>{latest.lastUpdatedDay} 起</small>
               )}
@@ -88,7 +89,7 @@ export function AssetOverview({
             }
             data-presentation="true"
             onClick={() => display.setMaskAmounts(!display.maskAmounts)}
-            title="仅隐藏页面金额，复制和导出仍包含真实数据"
+            title="隐藏页面和读屏中的金额，复制和导出仍包含真实数据"
           >
             {display.maskAmounts ? "显示金额" : "隐藏金额"}
           </Button>

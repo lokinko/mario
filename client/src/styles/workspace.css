@@ -629,16 +629,16 @@ input[type="number"],
 [data-money] {
   position: relative;
 }
-[data-mask-amounts] [data-money] {
+[data-mask-amounts] [data-money-value] {
   font-size: var(--fs-hidden) !important;
 }
-[data-mask-amounts] [data-money]::after {
+[data-mask-amounts] [data-money-value]::after {
   content: "••••••";
   font-size: var(--fs-body);
   color: var(--text-3);
   letter-spacing: 0.12em;
 }
-[data-mask-amounts] .hero-amount [data-money]::after {
+[data-mask-amounts] .hero-amount [data-money-value]::after {
   font-size: var(--fs-hero);
 }
 h1,
@@ -2043,9 +2043,6 @@ input[type="number"] {
     flex: 1 1 auto;
     white-space: nowrap;
   }
-}
-[data-mask-amounts] [data-money-input] {
-  -webkit-text-security: disc;
 }
 @media (max-width: 600px) {
   .asset-list-row [data-label="已结算收益"] {

@@ -1,3 +1,4 @@
+import { PrivateNumberInput } from "../../components/AmountPrivacy";
 import { Button, Input } from "antd";
 import { useId, useRef, useState } from "react";
 import {
@@ -177,7 +178,7 @@ export function AssetEditor({
             <span>{cash ? "当前金额" : "当前市值"}</span>
             <div className="input-affix">
               <i>{editing.currency}</i>
-              <Input
+              <PrivateNumberInput
                 data-money-input="true"
                 type="number"
                 required={manualAssetAmount}
@@ -214,7 +215,7 @@ export function AssetEditor({
                 <span>持仓总成本（选填）</span>
                 <div className="input-affix">
                   <i>{editing.currency}</i>
-                  <Input
+                  <PrivateNumberInput
                     data-money-input="true"
                     type="number"
                     min={0}

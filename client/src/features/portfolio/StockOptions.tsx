@@ -1,3 +1,4 @@
+import { Money } from "../../components/AmountPrivacy";
 import { isPendingFinancialRequest } from "../../api/portfolio/financialRequest";
 import { Callout } from "../../components/Callout";
 import { useEffect, useRef, useState } from "react";
@@ -114,45 +115,45 @@ export function StockOptions({
           <div>
             <dt>股票及期权净市值</dt>
             <dd>
-              <span className="num" data-money>
+              <Money className="num">
                 {totals.usable ? money(totals.marketValue) : "待核对"}
-              </span>
+              </Money>
             </dd>
           </div>
           <div>
             <dt>合计浮动盈亏</dt>
             <dd>
-              <span className="num" data-money>
+              <Money className="num">
                 {totals.usable
                   ? formatSigned(totals.unrealizedProfit!, (value) =>
                       money(String(value)),
                     )
                   : "待核对"}
-              </span>
+              </Money>
             </dd>
           </div>
           <div>
             <dt>合计已结算盈亏</dt>
             <dd>
-              <span className="num" data-money>
+              <Money className="num">
                 {totals.usable
                   ? formatSigned(totals.settledProfit!, (value) =>
                       money(String(value)),
                     )
                   : "待核对"}
-              </span>
+              </Money>
             </dd>
           </div>
           <div>
             <dt>其中期权已结算盈亏</dt>
             <dd>
-              <span className="num" data-money>
+              <Money className="num">
                 {totals.usable
                   ? formatSigned(totals.optionSettledProfit!, (value) =>
                       money(String(value)),
                     )
                   : "待核对"}
-              </span>
+              </Money>
             </dd>
           </div>
         </dl>
@@ -334,27 +335,27 @@ export function StockOptions({
                       {snapshot.holdingTradeSummaries?.[id]?.quantity ?? "0"}
                     </td>
                     <td>
-                      <span className="num" data-money>
+                      <Money className="num">
                         {exact?.usable ? money(exact.marketValue) : "待核对"}
-                      </span>
+                      </Money>
                     </td>
                     <td>
-                      <span className="num" data-money>
+                      <Money className="num">
                         {exact?.usable
                           ? formatSigned(exact.unrealizedProfit!, (value) =>
                               money(String(value)),
                             )
                           : "待核对"}
-                      </span>
+                      </Money>
                     </td>
                     <td>
-                      <span className="num" data-money>
+                      <Money className="num">
                         {exact?.usable
                           ? formatSigned(exact.settledProfit!, (value) =>
                               money(String(value)),
                             )
                           : "待核对"}
-                      </span>
+                      </Money>
                     </td>
                     <td>
                       <button

@@ -1,3 +1,4 @@
+import { Money } from "../../components/AmountPrivacy";
 import type {
   DataIssue,
   Holding,
@@ -133,32 +134,31 @@ export function AssetAmountRow({
                 ? "—"
                 : formatNumber(exact?.quantity ?? holding.quantity, 4)}{" "}
               · 现价{" "}
-              <span data-money>
+              <Money>
                 {exact?.usable === false || holding.currentPrice == null
                   ? "—"
                   : formatNumber(
                       exact?.currentPrice ?? holding.currentPrice,
                       4,
                     )}
-              </span>
+              </Money>
             </span>
           </div>
           <div role="cell" data-label="现价 / 成本价" className="num">
-            <span
-              data-money
+            <Money
               title={`${observedOn || holding.valuationDate || "日期未记录"} · ${source || "手工估值"}`}
             >
               {exact?.usable === false || holding.currentPrice == null
                 ? "—"
                 : formatNumber(exact?.currentPrice ?? holding.currentPrice, 4)}
-            </span>
+            </Money>
             <small>
               成本{" "}
-              <span data-money>
+              <Money>
                 {exact?.usable === false || holding.costPrice == null
                   ? "—"
                   : formatNumber(exact?.costPrice ?? holding.costPrice, 4)}
-              </span>
+              </Money>
             </small>
           </div>
         </>
@@ -168,11 +168,11 @@ export function AssetAmountRow({
         data-label={investment ? "市值" : "余额"}
         className="asset-value"
       >
-        <strong className="num" data-money>
+        <Money as="strong" className="num">
           {exact && !exact.usable
             ? "—"
             : money(exact?.marketValue ?? holding.marketValue)}
-        </strong>
+        </Money>
         {investment &&
           exact?.priceStatus &&
           ["unconfirmed", "provisional", "corporate_pending_price"].includes(
@@ -195,13 +195,13 @@ export function AssetAmountRow({
             data-label="浮动盈亏"
             className={exact?.usable === false ? "" : color(pnl)}
           >
-            <span className="num" data-money>
+            <Money className="num">
               {exact && !exact.usable
                 ? "—"
                 : pnl == null
                   ? "—"
                   : formatSigned(pnl, money)}
-            </span>
+            </Money>
             <small>
               {exact?.usable === false ? null : !optionTotals &&
                 pnl != null &&
@@ -223,13 +223,13 @@ export function AssetAmountRow({
             data-label="已结算收益"
             className={`num ${exact && !exact.usable ? "" : color(settled)}`}
           >
-            <span data-money>
+            <Money>
               {exact && !exact.usable
                 ? "—"
                 : settled == null
                   ? "—"
                   : formatSigned(settled, money)}
-            </span>
+            </Money>
           </div>
         </>
       )}

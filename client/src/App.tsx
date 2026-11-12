@@ -25,6 +25,7 @@ import {
 import type { FactsSection } from "./features/portfolio/MyFacts";
 import { DeferredPage } from "./components/DeferredPage";
 import { PageHeader } from "./components/PageHeader";
+import { AmountPrivacy } from "./components/AmountPrivacy";
 import { useDisplayPreferences } from "./app/useDisplayPreferences";
 import { DisplayPreferences } from "./components/DisplayPreferences";
 import { ApplicationSkeleton } from "./components/Skeleton";
@@ -563,7 +564,9 @@ function App() {
   );
   return (
     <DraftProtection.Provider value={draftProtection}>
-      {content}
+      <AmountPrivacy.Provider value={display.maskAmounts}>
+        {content}
+      </AmountPrivacy.Provider>
     </DraftProtection.Provider>
   );
 }

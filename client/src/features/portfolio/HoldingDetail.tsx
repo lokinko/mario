@@ -1,3 +1,4 @@
+import { Money } from "../../components/AmountPrivacy";
 import { useEffect, useState } from "react";
 import { StockOptions } from "./StockOptions";
 import type { Holding, Snapshot } from "../../types";
@@ -41,20 +42,20 @@ export function HoldingDetail({
         <div>
           <dt>当前市值</dt>
           <dd>
-            <span className="num" data-money>
+            <Money className="num">
               {!usable
                 ? "—"
                 : formatMoney(
                     holding.exactValues?.marketValue ?? holding.marketValue,
                     holding.currency,
                   )}
-            </span>
+            </Money>
           </dd>
         </div>
         <div>
           <dt>持仓总成本</dt>
           <dd>
-            <span className="num" data-money>
+            <Money className="num">
               {usable &&
               (holding.costBasis > 0 ||
                 isClosedHolding(holding, Boolean(tradeSummary)))
@@ -63,13 +64,13 @@ export function HoldingDetail({
                     holding.currency,
                   )
                 : "—"}
-            </span>
+            </Money>
           </dd>
         </div>
         <div>
           <dt>已结算盈亏</dt>
           <dd>
-            <span className="num" data-money>
+            <Money className="num">
               {!usable
                 ? "—"
                 : tradeSummary
@@ -77,7 +78,7 @@ export function HoldingDetail({
                       formatMoney(value, holding.currency),
                     )
                   : "未录入交易"}
-            </span>
+            </Money>
           </dd>
         </div>
       </dl>

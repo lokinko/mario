@@ -1,3 +1,4 @@
+import { Money } from "../../components/AmountPrivacy";
 import { Callout } from "../../components/Callout";
 import { Card } from "antd";
 import { useRef, useState } from "react";
@@ -45,9 +46,9 @@ export function InvestmentOverview({
                 {cash ? "存款与现金" : labels[key]}{" "}
                 <small>{baseCurrency}</small>
               </span>
-              <strong
+              <Money
+                as="strong"
                 className={`num ${key === "unrealized" || key === "realized" ? (Number(totals[key].value) === 0 ? "" : Number(totals[key].value) > 0 ? "gain" : "loss") : ""}`}
-                data-money
               >
                 {totals[key].value == null
                   ? "—"
@@ -56,7 +57,7 @@ export function InvestmentOverview({
                         formatMoney(value, baseCurrency),
                       )
                     : formatMoney(totals[key].value!, baseCurrency)}
-              </strong>
+              </Money>
               {totals[key].missing > 0 && (
                 <button
                   className="metric-missing"
@@ -119,11 +120,11 @@ export function InvestmentOverview({
                         <small>{holding.currency}</small>
                       </th>
                       {metrics.map((key) => (
-                        <td key={key} className="num" data-money>
+                        <Money as="td" key={key} className="num">
                           {amounts[key] == null
                             ? "—"
                             : formatAmount(amounts[key]!, holding.currency)}
-                        </td>
+                        </Money>
                       ))}
                       <td>
                         {rate ?? "待补"}

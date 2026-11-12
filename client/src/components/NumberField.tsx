@@ -1,4 +1,4 @@
-import { Input } from "antd";
+import { PrivateNumberInput } from "./AmountPrivacy";
 
 export function NumberField({
   label,
@@ -17,7 +17,7 @@ export function NumberField({
     <label>
       <span>{label}</span>
       <div className="input-affix">
-        <Input
+        <PrivateNumberInput
           data-money-input={
             (prefix && /^[A-Z]{3}$/.test(prefix)) ||
             (suffix && /^[A-Z]{3}$/.test(suffix))

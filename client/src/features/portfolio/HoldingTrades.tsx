@@ -1,3 +1,4 @@
+import { Money } from "../../components/AmountPrivacy";
 import { isPendingFinancialRequest } from "../../api/portfolio/financialRequest";
 import { Button, Input } from "antd";
 import { Callout } from "../../components/Callout";
@@ -657,27 +658,18 @@ export function HoldingTrades({
             <p className="trade-amount">
               {cash < 0 ? "实际支出" : "实际净收入"}{" "}
               <strong>
-                <span className="num" data-money>
+                <Money className="num">
                   {money(Math.abs(Number.isFinite(cash) ? cash : 0))}
-                </span>
+                </Money>
               </strong>
               <small>
-                成交 / 分红{" "}
-                <span className="num" data-money>
-                  {money(gross)}
-                </span>{" "}
-                · 费用{" "}
-                <span className="num" data-money>
-                  {money(draft.fees)}
-                </span>{" "}
-                · 税费{" "}
-                <span className="num" data-money>
-                  {money(draft.taxes)}
-                </span>
+                成交 / 分红 <Money className="num">{money(gross)}</Money> · 费用{" "}
+                <Money className="num">{money(draft.fees)}</Money> · 税费{" "}
+                <Money className="num">{money(draft.taxes)}</Money>
               </small>
               <small>
                 {currency} 存款余额{" "}
-                <span className="num" data-money>
+                <Money className="num">
                   {money(
                     snapshot.holdings.find(
                       (item) =>
@@ -685,7 +677,7 @@ export function HoldingTrades({
                         item.currency === currency,
                     )?.marketValue ?? 0,
                   )}
-                </span>
+                </Money>
               </small>
             </p>
             {holding && !trades.length && (
@@ -738,10 +730,8 @@ export function HoldingTrades({
           snapshot.accounting?.holdings[holding.id]?.usable !== false) && (
           <p className="trade-summary">
             持仓 {formatNumber(summary.quantity)} 单位 · 剩余成本{" "}
-            <span className="num" data-money>
-              {money(summary.costBasis)}
-            </span>{" "}
-            · 已结算盈亏{" "}
+            <Money className="num">{money(summary.costBasis)}</Money> ·
+            已结算盈亏{" "}
             <strong
               className={
                 Number(summary.settledProfit) === 0
@@ -751,9 +741,9 @@ export function HoldingTrades({
                     : "loss"
               }
             >
-              <span className="num" data-money>
+              <Money className="num">
                 {formatSigned(summary.settledProfit, money)}
-              </span>
+              </Money>
             </strong>
           </p>
         )}
@@ -789,15 +779,15 @@ export function HoldingTrades({
                       )}
                     </td>
                     <td data-label="实际现金收支">
-                      <span className="num" data-money>
+                      <Money className="num">
                         {money(summary?.cashFlows[t.id] ?? "0")}
-                      </span>
+                      </Money>
                       {summary?.profits[t.id] !== undefined && (
                         <small>
                           卖出盈亏{" "}
-                          <span className="num" data-money>
+                          <Money className="num">
                             {money(summary.profits[t.id])}
-                          </span>
+                          </Money>
                         </small>
                       )}
                     </td>
