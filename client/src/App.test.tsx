@@ -17,6 +17,10 @@ import emptySnapshot from "./test/emptySnapshot.json";
 import { WebAccess } from "./features/account/WebAccess";
 import { setWebToken, webToken } from "./lib/webSession";
 
+vi.mock("./api/activity", () => ({
+  recordActivity: vi.fn().mockResolvedValue({ ok: true }),
+}));
+
 vi.mock("./api/portfolio", async (original) => ({
   ...(await original<typeof import("./api/portfolio")>()),
   ensureDailyAssets: vi.fn().mockResolvedValue({

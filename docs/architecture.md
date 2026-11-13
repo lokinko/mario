@@ -113,6 +113,7 @@ flowchart TD
 | `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS、静态网页 |
 | `http/` | 按领域注册路由（`watch`、`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
 | `accounts.rs`、`accounts/openai.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速、持久化超级账户权限；可选网站 OpenAI 身份映射、短期 OAuth 事务及显式关联；Agent 令牌的常量时间比较 |
+| `accounts/activity.rs`、`hosted/activity.rs` | 全站使用分钟元数据与一致快照聚合；独立认证的上报和超级账户统计 HTTP 适配，不访问个人账本 |
 | `openai_login.rs`、`hosted/openai.rs` | 网站身份登录：前者只做官方 OIDC 配置、授权码交换和签名声明校验，不访问账号或模型；后者转换 HTTP/Cookie、编排账号事务、固定站点重定向与一次性交接；与本机 `chatgpt_auth` 及订阅执行无依赖 |
 | `application/` | 跨仓储与外部端口的用例：`watch`（账号观察检查）、`watch_catalog`（公共目录及来源补齐）、`dividend_calendar`（公开计划刷新与账号范围投影）、`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`public_prices`/`fx`（共享价格、账号估值与汇率编排）、`model_settings`（模型接口切换、冻结连接测试与注入的管理端口）、`codex_bridge`（账号配对） |
 | `ports/` | `analysis::AnalysisExecutor` 与事件通道，`model::ModelConnector` 与 `BridgeRegistry`（只接收冻结目的地或配对 ID，不访问账号库）；`market::FxRateProvider`、`SecurityPriceProvider`、`SecurityHistoryProvider`、`WatchMarketProvider`、`CatalogSourceProvider` |
@@ -139,6 +140,7 @@ flowchart TD
 | `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
 | `features/reviews`、`features/settings`、`features/account` | 复盘；模型设置、问答预设与 Codex 桥接；网页账号与服务端数据备份/外部自选 JSON 导入。`ServerData` 管理文件/粘贴草稿、来源账户预览及覆盖前备份，应用壳经 `ModelSettings.accountSettings` 插槽将账号、服务器连接与备份导入装配到唯一的设置页（模型配置加载失败时由应用壳直接渲染），不产生跨功能导入依赖 |
 | `api/<领域>.ts` | 领域请求与返回契约；`api/portfolio.ts` 选择需要串行的快速编辑，排队顺序归账号会话，`api/portfolio/financialRequest.ts` 负责单次财务请求与回执核对 |
+| `app/Website.tsx`、`app/useActivityTracking.ts`、`features/dashboard`、`api/activity.ts` | 直接路径装配、已登录前台活动采集、全站统计表格与筛选、采样及统计 API 契约；看板不启动个人同步 |
 | `lib/httpClient.ts`、`transport.ts`、`requestPolicy.ts` | 认证、超时与只读重试、版本采纳、账号切换保护、请求类别 |
 | `lib/accountSession.ts`、`autoSync.ts`、`syncEvents.ts`、`webSession.ts`、`useRequestGuard.ts` | 每账号会话的版本、同步屏障、写入计数、排队顺序与取消；版本轮询、数据事件、网页会话与多账号、过期响应抑制 |
 | `components/`、其余 `lib/`、`types.ts` | 无功能生命周期的展示组件、格式化与日期工具、共享契约类型 |
@@ -274,6 +276,7 @@ HTTP 只提供已认证的 `GET /watch/dividend-calendar`，只读缓存并按�
 | 公共行业目录及最新观察 | 契约归领域层，持久目录、独立版本与快照归 `db/public_watch` | 超级账户维护现有领域内的公司；公共仓储不读账号表、不写个人记录，目录事务比较独立版本；后台任务归 `composition` |
 | 五年公共行情及刷新状态 | `db/public_prices` + `application/public_prices` | 按证券原子版本；持久租约和退避、同进程合并；只有公开事实，不推进账号版本 |
 | 会话与账号 | `accounts` | 会话仅存哈希，可撤销；网站 OpenAI 身份映射、账号创建／关联／会话签发归同一事务；短期 OAuth 事务原子消费后不重放 |
+| 全站使用活跃度 | `accounts/activity` | 认证库运维元数据；分钟去重与保留期清理同事务，超级账户只读一致快照，不进入账本与个人备份 |
 | 账号业务数据与版本 | `db` 领域仓储 | 业务写入、回执、日志、投影与版本同事务提交 |
 | 模型配置与凭据 | `db/settings.rs` + `db/secrets.rs` + `secrets.rs` | 接口、地址、模型名、密文与目标绑定由 `save_model_configuration` 在同一事务写入，失败保留原配置；主密钥加密，AAD 绑定账号 schema 与用途 |
 | 公开分红计划快照与日历范围 | `db/public_watch/calendar` + `application/dividend_calendar` | 来源事实公共缓存，账号范围仅作实时投影；失败保留成功资料，整站备份保留；不进入已实施历史、账号版本或资产 |
@@ -287,6 +290,12 @@ HTTP 只提供已认证的 `GET /watch/dividend-calendar`，只读缓存并按�
 | 传输版本、同步屏障与在途请求 | `lib/accountSession`，由 `webSession` 的账号边界创建与失效 | 切换或退出时取消旧请求、释放等待并拒绝旧结果；旧同步与写入只结束自己的会话 |
 | 显示偏好 | `app/useDisplayPreferences` | 当前浏览器 localStorage；不触发同步、账号写入或数据迁移 |
 | 未保存草稿与单页请求状态 | 各功能页 | 应用层只保存页面与各抽屉的保护标记集合，不持有输入；抽屉草稿随卸载丢弃，标记只释放自身区域 |
+
+### 全站使用活跃度
+
+沿用第 6.1 节的会话与数据库角色信任边界，`hosted/activity` 对 `/api/activity` 和 `/api/dashboard` 单独执行 Bearer 认证，复用请求并发上限并通过阻塞任务访问认证库；不打开个人仓储或账户锁，不推进账号版本。`accounts/activity` 拥有功能页枚举、统计契约、分钟去重与聚合事务，仅依赖账号权威、`storage` 和错误；架构检查禁止它依赖租户仓储、业务流程和 AI。采样端点是版本策略显式例外，统计查询在数据库角色核对后的同一只读快照中完成。两条接口返回 `no-store`。
+
+`mario_auth.activity_minutes` 和 `activity_metadata` 在认证初始化锁内事务幂等创建。它们属于运维元数据，不进入个人同步或财务事务，整站备份保留；账号外键级联删除，按采样事务清理过期分钟。前端 `app/useActivityTracking` 从应用壳接收当前页，调用 `api/activity`，只采样可见且近期有交互的已登录页面；采样失败独立结束。`app/Website` 在 `${BASE_URL}dashboard` 直接装配 `features/dashboard`，复用 `WebAccess`，不加载账号快照或后台同步。后端仅为 `/dashboard` 和 `/dashboard/` 提供已有 HTML，其他未知路径保持原 404；Nginx 既有前缀转发支持 `/mario/dashboard`。口径、保留期及回退见[账号与同步](cloud-sync.md#全站使用活跃度看板)。
 
 ### 连接复用与阶段观测
 

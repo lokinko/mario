@@ -43,6 +43,7 @@
 
 | 模块 | 当前规范或操作指南 | 实现与验证入口 |
 | --- | --- | --- |
+| 全站使用活跃度 | [账号与同步：活跃度看板](cloud-sync.md#全站使用活跃度看板) | [认证库统计](../server/src/accounts/activity.rs)、[托管接口](../server/src/hosted/activity.rs)、[看板](../client/src/features/dashboard/UsageDashboard.tsx)、[前台采样](../client/src/app/useActivityTracking.ts)、[Web 验收](../scripts/test-web.mjs) |
 | 宿主机启动、部署与 Web 发布 | [自建服务](self-hosting.md)、[部署验收](deploy-madeagents.md)、[Web 构建](client-builds.md) | [部署入口](../deploy.sh)、[域名接入](../scripts/setup-domain.mjs)、[主运行器](../scripts/host-runtime.mjs)、[Web 构建脚本](../scripts/build-web.mjs)、[部署测试](../scripts/test-deploy.mjs)、[域名回归](../scripts/setup-domain.test.mjs) |
 | 整站加密备份、下载与恢复 | [数据迁移](data-migration.md)、[信任边界](threat-model.md) | [备份](../scripts/backup.mjs)、[下载](../scripts/download-backup.mjs)、[恢复](../scripts/restore-backup.mjs)、[独立加密备份验收](../scripts/test-backup.mjs)、[财务原生恢复验收](../scripts/test-financial.mjs) |
 

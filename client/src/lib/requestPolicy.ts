@@ -6,6 +6,7 @@ export function isDataWrite(path: string, method = "GET") {
     !(method.toUpperCase() === "PUT" && resource === "/watch/catalog") &&
     ![
       "/analysis/preview",
+      "/activity",
       "/model-config/test",
       "/financial-operations/resolve",
       "/watch/catalog/resolve",

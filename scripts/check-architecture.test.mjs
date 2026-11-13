@@ -25,6 +25,13 @@ test('Rust scan handles nested imports, prompt strings, characters, comments, an
   assert.deepEqual([...rustDependencies(source)].sort(), ['AppResult', 'db', 'models', 'risk', 'valuation']);
 });
 test('the checked-out project respects its boundaries', () => { checkArchitecture(); });
+
+test('site activity cannot inspect tenant ledgers or private workflows', () => {
+  for (const target of ['db', 'application', 'ai', 'http', 'market_data', 'context'])
+    assert(serverFileViolation('accounts/activity.rs', target));
+  for (const target of ['accounts', 'storage', 'error'])
+    assert.equal(serverFileViolation('accounts/activity.rs', target), undefined);
+});
 test('shared public dividend data stays separate from accounts and private analysis', () => {
   for (const target of ['accounts', 'db', 'application', 'market_data'])
     assert(serverFileViolation('db/public_dividends.rs', target));

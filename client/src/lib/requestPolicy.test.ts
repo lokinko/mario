@@ -5,6 +5,7 @@ it("keeps data updates behind revision checks and defaults unknown operations to
   expect(isDataWrite("/fx-settings/refresh", "POST")).toBe(true);
   expect(isDataWrite("/analysis/preview?source=test", "POST")).toBe(false);
   expect(isDataWrite("/model-config/test", "POST")).toBe(false);
+  expect(isDataWrite("/activity", "POST")).toBe(false);
   expect(isDataWrite("/watch/catalog", "PUT")).toBe(false);
   expect(isDataWrite("/watch/catalog/resolve", "POST")).toBe(false);
   expect(isDataWrite("/watch/grid-preview", "POST")).toBe(false);

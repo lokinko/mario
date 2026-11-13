@@ -29,6 +29,7 @@ import { AmountPrivacy } from "./components/AmountPrivacy";
 import { useDisplayPreferences } from "./app/useDisplayPreferences";
 import { DisplayPreferences } from "./components/DisplayPreferences";
 import { ApplicationSkeleton } from "./components/Skeleton";
+import { useActivityTracking } from "./app/useActivityTracking";
 
 const MyFacts = lazy(() =>
   import("./features/portfolio/MyFacts").then((m) => ({ default: m.MyFacts })),
@@ -70,6 +71,7 @@ const ServerData = lazy(() =>
 function App() {
   const display = useDisplayPreferences();
   const [view, setView] = useState<View>(initialView);
+  useActivityTracking(view);
   const [advisorVisited, setAdvisorVisited] = useState(
     () => initialView() === "advisor",
   );

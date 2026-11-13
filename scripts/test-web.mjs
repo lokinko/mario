@@ -1,6 +1,8 @@
 // Compiled Web assets served beside the authenticated API, against a DISPOSABLE PostgreSQL database.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { testPostgresBin } from './postgres-cluster.mjs';
 import { once } from 'node:events';
 import { join } from 'node:path';
 import { root, serverBinary } from './server-artifacts.mjs';
@@ -34,14 +36,42 @@ try {
   await start();
   const html = await (await fetch(origin)).text();
   assert.match(html, /<div id="root">/);
+  for (const path of ['/dashboard', '/dashboard/']) {
+    const page = await fetch(origin + path);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /<div id="root">/);
+  }
   const asset = html.match(/src="([^\"]+\.js)"/)[1];
   const js = await (await fetch(origin + asset)).text();
   assert(js.length > 1000);
   assert(!js.includes(masterKey));
   const registered = await fetch(origin + '/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `${randomUUID()}@example.test`, password: 'web-password-0123456789' }) });
   assert.equal(registered.status, 200);
-  const { token } = await registered.json();
+  const { token, userId } = await registered.json();
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  assert.equal((await fetch(origin + '/api/dashboard')).status, 401);
+  assert.equal((await fetch(origin + '/api/activity', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"page":"watch"}' })).status, 401);
+  assert.equal((await fetch(origin + '/api/dashboard', { headers })).status, 403);
+  for (const body of [{ page: 'unknown' }, { page: 'watch', userId: 'other' }, { page: 'watch', timestamp: 0 }])
+    assert.equal((await fetch(origin + '/api/activity', { method: 'POST', headers, body: JSON.stringify(body) })).status, 422);
+  const beforeActivity = await fetch(origin + '/api/snapshot', { headers });
+  const revisionBeforeActivity = beforeActivity.headers.get('x-data-revision');
+  for (let i = 0; i < 2; i++) assert.equal((await fetch(origin + '/api/activity', { method: 'POST', headers, body: '{"page":"watch"}' })).status, 200);
+  assert.equal((await fetch(origin + '/api/snapshot', { headers })).headers.get('x-data-revision'), revisionBeforeActivity);
+  const psql = join(testPostgresBin(), 'psql' + (process.platform === 'win32' ? '.exe' : ''));
+  assert.match(userId, /^[a-f0-9-]+$/);
+  const role = (enabled) => execFileSync(psql, ['-X', '--dbname', database, '--set=ON_ERROR_STOP=1', '-c', `UPDATE mario_auth.users SET is_superuser=${enabled} WHERE id='${userId}'`], { stdio: 'pipe', windowsHide: true });
+  role(true);
+  const boardResponse = await fetch(origin + '/api/dashboard?days=7', { headers });
+  assert.equal(boardResponse.status, 200);
+  assert.equal(boardResponse.headers.get('cache-control'), 'no-store');
+  const board = await boardResponse.json();
+  assert.equal(board.days, 7);
+  assert(board.dailyActive >= 1);
+  assert([1, 2].includes(board.users.find(user => user.userId === userId).activeMinutes));
+  assert.equal((await fetch(origin + '/api/dashboard?days=8', { headers })).status, 400);
+  role(false);
+  assert.equal((await fetch(origin + '/api/dashboard', { headers })).status, 403);
   assert.equal((await fetch(origin + '/api/snapshot')).status, 401);
   assert.equal((await fetch(origin + '/api/snapshot', { headers: { Authorization: 'Bearer invalid' } })).status, 401);
   assert.equal((await fetch(origin + '/api/not-a-route', { headers })).status, 404);
@@ -54,5 +84,13 @@ try {
   await stop(); await start();
   const restored = await (await fetch(origin + '/api/snapshot', { headers })).json();
   assert.equal(restored.profile.monthlyIncome, 12345);
+  role(true);
+  const restoredBoard = await (await fetch(origin + '/api/dashboard?days=7', { headers })).json();
+  assert.equal(restoredBoard.users.find(user => user.userId === userId).activeMinutes,
+    board.users.find(user => user.userId === userId).activeMinutes);
+  await fetch(origin + '/api/auth/logout', { method: 'POST', headers });
+  assert.equal((await fetch(origin + '/api/dashboard', { headers })).status, 401);
+  assert.equal((await fetch(origin + '/api/activity', { method: 'POST', headers, body: '{"page":"watch"}' })).status, 401);
+  console.log('PASS dashboard: direct paths, admin authorization/revocation, authenticated sampling, deduplication, unchanged ledger revision and restart persistence');
   console.log('PASS Web: public assets, authenticated API, rejected wrong token, private files inaccessible, restart persistence');
 } finally { await stop(); }

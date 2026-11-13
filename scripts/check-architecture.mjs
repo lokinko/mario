@@ -154,6 +154,8 @@ export function serverViolation(source, target) {
 }
 
 export function serverFileViolation(source, target) {
+  if (source === 'accounts/activity.rs' && !['accounts', 'storage', 'error'].includes(target))
+    return 'usage metadata belongs to account authority and cannot read tenant ledgers or execute workflows';
   if (['db/public_dividends.rs', 'db/public_watch.rs', 'db/public_watch/calendar.rs', 'db/public_prices.rs'].includes(source) && !['models', 'storage', 'error'].includes(target))
     return 'public market storage only depends on public contracts and the database driver boundary';
   if (source === 'application/public_prices.rs' && !['models', 'db', 'ports', 'error'].includes(target))

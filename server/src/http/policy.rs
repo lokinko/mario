@@ -9,6 +9,7 @@ pub(crate) fn requires_revision(method: &Method, path: &str) -> bool {
         && !matches!(
             path,
             "/api/analysis/preview"
+                | "/api/activity"
                 | "/api/model-config/test"
                 | "/api/financial-operations/resolve"
                 | "/api/watch/catalog/resolve"
@@ -25,6 +26,7 @@ mod tests {
         assert!(!requires_revision(&Method::POST, "/api/model-config/test"));
         assert!(requires_revision(&Method::POST, "/api/future/preview"));
         assert!(!requires_revision(&Method::GET, "/api/snapshot"));
+        assert!(!requires_revision(&Method::POST, "/api/activity"));
         assert!(!requires_revision(&Method::PUT, "/api/watch/catalog"));
         assert!(!requires_revision(
             &Method::POST,

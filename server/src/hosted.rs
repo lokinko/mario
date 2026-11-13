@@ -1,3 +1,4 @@
+mod activity;
 mod openai;
 #[cfg(test)]
 #[path = "hosted_quote_tests.rs"]
@@ -98,6 +99,8 @@ where
         .route("/api/auth/login", post(login))
         .route("/api/auth/register", post(register))
         .route("/api/auth/logout", post(logout))
+        .route("/api/activity", post(activity::record))
+        .route("/api/dashboard", get(activity::dashboard))
         .route("/api/server", get(server_info))
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024))
         .with_state(state);
@@ -114,7 +117,15 @@ where
             }),
         );
     let app = if let Some(dir) = web_dir {
-        app.fallback_service(tower_http::services::ServeDir::new(dir))
+        app.route_service(
+            "/dashboard",
+            tower_http::services::ServeFile::new(dir.join("index.html")),
+        )
+        .route_service(
+            "/dashboard/",
+            tower_http::services::ServeFile::new(dir.join("index.html")),
+        )
+        .fallback_service(tower_http::services::ServeDir::new(dir))
     } else {
         app
     };

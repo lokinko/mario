@@ -1,0 +1,120 @@
+.usage-dashboard {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 32px;
+  color: var(--text-1);
+}
+.usage-heading,
+.usage-toolbar,
+.usage-table-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.usage-heading {
+  margin-bottom: 28px;
+}
+.usage-heading a,
+.usage-heading h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.usage-heading a {
+  color: var(--text-2);
+  font-size: var(--fs-body-sm);
+}
+.usage-heading h1 {
+  font-size: var(--fs-figure);
+  margin: 16px 0 8px;
+}
+.usage-heading p,
+.usage-toolbar > span,
+.usage-definition {
+  color: var(--text-3);
+  font-size: var(--fs-body-sm);
+}
+.usage-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.usage-metrics article {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.usage-metrics strong {
+  font-size: var(--fs-hero);
+  font-variant-numeric: tabular-nums;
+}
+.usage-metrics small {
+  color: var(--text-3);
+}
+.usage-toolbar {
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.usage-panel {
+  padding: 20px;
+  margin-bottom: 20px;
+  min-width: 0;
+}
+.usage-panel h2,
+.usage-definition h2 {
+  font-size: var(--fs-title-sm);
+  margin: 0 0 16px;
+}
+.usage-table-heading {
+  margin-bottom: 16px;
+}
+.usage-table-heading h2 {
+  margin: 0;
+}
+.usage-table-heading .ant-input-search {
+  max-width: 280px;
+}
+.usage-definition {
+  line-height: 1.8;
+  margin-top: 28px;
+}
+@media (max-width: 1200px) {
+  .usage-dashboard {
+    padding: 32px 24px;
+  }
+}
+@media (max-width: 900px) {
+  .usage-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .usage-dashboard {
+    padding: 24px 12px;
+  }
+  .usage-heading {
+    align-items: flex-start;
+  }
+  .usage-metrics {
+    gap: 8px;
+  }
+  .usage-metrics article {
+    padding: 14px;
+  }
+  .usage-panel {
+    padding: 12px;
+  }
+  .usage-table-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .usage-table-heading .ant-input-search {
+    max-width: none;
+  }
+}
