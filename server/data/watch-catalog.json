@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "verifiedOn": "2026-11-16",
   "industries": [
     {
@@ -554,6 +554,51 @@
             "https://static.cninfo.com.cn/finalpage/2026-04-30/1225259562.PDF"
           ],
           "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "603288.SS",
+          "name": "海天味业",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=603288",
+            "https://static.cninfo.com.cn/finalpage/2026-03-27/1225038237.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-16"
+        },
+        {
+          "symbol": "603345.SS",
+          "name": "安井食品",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=603345",
+            "https://static.cninfo.com.cn/finalpage/2026-03-31/1225065155.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-16"
+        },
+        {
+          "symbol": "600600.SS",
+          "name": "青岛啤酒",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600600",
+            "https://static.cninfo.com.cn/finalpage/2026-10-29/1225636206.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-16"
+        },
+        {
+          "symbol": "002461.SZ",
+          "name": "珠江啤酒",
+          "sources": [
+            "https://www.szse.cn/certificate/individual/index.html?code=002461",
+            "https://static.cninfo.com.cn/finalpage/2026-03-28/1225043557.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-16"
+        },
+        {
+          "symbol": "603043.SS",
+          "name": "广州酒家",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=603043",
+            "https://static.cninfo.com.cn/finalpage/2026-03-27/1225038504.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-16"
         }
       ]
     },
