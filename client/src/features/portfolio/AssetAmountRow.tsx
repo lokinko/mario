@@ -14,10 +14,8 @@ import {
 import { Badge } from "../../components/Badge";
 import { Menu } from "../../components/Menu";
 import { isClosedHolding, unrealizedProfit } from "./holdingMetrics";
-// Quotes keep 2 decimals, or 3 for instruments such as ETFs that trade in thousandths.
 function priceText(value: number | string) {
-  const decimals = String(value).split(".")[1]?.length ?? 0;
-  return formatNumber(value, Math.min(3, Math.max(2, decimals)), true);
+  return formatNumber(value, 2, true);
 }
 
 export function AssetAmountRow({
@@ -160,11 +158,7 @@ export function AssetAmountRow({
               <Money>
                 {exact?.usable === false || holding.costPrice == null
                   ? "—"
-                  : formatNumber(
-                      exact?.costPrice ?? holding.costPrice,
-                      3,
-                      true,
-                    )}
+                  : priceText(exact?.costPrice ?? holding.costPrice)}
               </Money>
             </small>
           </div>

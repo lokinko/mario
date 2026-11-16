@@ -41,26 +41,26 @@ it("rounds numbers only for display without changing the holding", () => {
   const before = JSON.stringify(detailed);
   render(<AssetAmountRow holding={detailed} {...callbacks()} />);
   expect(screen.getByText("12.3457")).toBeTruthy();
-  expect(screen.getAllByText("2.346")).toHaveLength(2);
-  expect(screen.getByText("1.235")).toBeTruthy();
+  expect(screen.getAllByText("2.35")).toHaveLength(2);
+  expect(screen.getByText("1.23")).toBeTruthy();
   expect(screen.getByText("成本")).toBeTruthy();
   expect(screen.getByText(formatMoney(detailed.marketValue))).toBeTruthy();
   expect(JSON.stringify(detailed)).toBe(before);
 });
-it("pads quotes to two decimals and costs to three so rows align", () => {
+it("shows quotes and costs with two decimals so rows align", () => {
   render(
     <AssetAmountRow
       holding={{
         ...holding,
         quantity: 100,
-        costPrice: 49.1,
+        costPrice: 49.1367,
         currentPrice: 53.8,
       }}
       {...callbacks()}
     />,
   );
   expect(screen.getAllByText("53.80")).toHaveLength(2);
-  expect(screen.getByText("49.100")).toBeTruthy();
+  expect(screen.getByText("49.14")).toBeTruthy();
 });
 it.each([
   [1000, 800, 200, "+25.00%"],
