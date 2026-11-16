@@ -1,10 +1,8 @@
-import { EmptyState } from "../../components/EmptyState";
 import { Badge } from "../../components/Badge";
-import { LedgerEntry } from "../../components/LedgerEntry";
 import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";
 import { useEffect, useRef, useState } from "react";
-import { Search, Paperclip, Save, Sparkles, X } from "lucide-react";
+import { FileText, Paperclip, Save, Sparkles, X } from "lucide-react";
 import {
   getResearchEvidence,
   getResearchAttachment,
@@ -41,6 +39,19 @@ export function evidenceText(item: ResearchEvidence): string {
     .join("\n\n");
 }
 
+function evidenceName(item: ResearchEvidence) {
+  return (
+    item.title ||
+    item.claim
+      ?.split("\n")
+      .find((line) => line.trim())
+      ?.trim()
+      .slice(0, 72) ||
+    item.attachments?.[0]?.name ||
+    "参考资料"
+  );
+}
+
 export function EvidenceWorkbench({
   onAsk,
   flash,
@@ -50,8 +61,6 @@ export function EvidenceWorkbench({
 }) {
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("active");
   const [content, setContent] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -82,13 +91,10 @@ export function EvidenceWorkbench({
     void refresh();
   }, []);
 
-  const visibleItems = items.filter(
-    (item) =>
-      (filter === "all" || item.active === (filter === "active")) &&
-      evidenceText(item)
-        .toLocaleLowerCase()
-        .includes(query.trim().toLocaleLowerCase()),
+  const sorted = [...items].sort((a, b) =>
+    b.capturedAt.localeCompare(a.capturedAt),
   );
+  const selected = items.find((item) => item.id === selectedId);
   const active = items.filter((item) => item.active);
 
   const persist = async () => {
@@ -275,154 +281,86 @@ export function EvidenceWorkbench({
           </section>
         </Drawer>
       )}
-      <section className="panel evidence-library">
-        <div className="panel-title">
-          <h2>已保存的资料</h2>
-          <div className="list-toolbar" data-presentation>
-            <label className="holdings-search">
-              <Search size={16} />
-              <input
-                type="search"
-                aria-label="搜索资料"
-                placeholder="搜索资料"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
-            <div
-              className="section-switcher evidence-tabs"
-              role="group"
-              aria-label="资料状态"
-            >
-              {[
-                ["active", "使用中", active.length],
-                ["archived", "已归档", items.length - active.length],
-                ["all", "全部", items.length],
-              ].map(([value, label, count]) => (
-                <button
-                  key={value}
-                  aria-pressed={filter === value}
-                  onClick={() => setFilter(String(value))}
-                >
-                  {label} {count}
-                </button>
-              ))}
-            </div>
-          </div>
-          <span className="history-count">{items.length} 条</span>
-        </div>
+      <section className="panel evidence-library" aria-label="资料档案">
         <LoadState
           loading={loading}
           error={creating || selectedId ? "" : error}
           onRetry={() => void refresh()}
         />
         {!loading && !error && items.length === 0 && (
-          <EmptyState
-            title="还没有资料"
-            action={
-              <button className="primary" onClick={() => setCreating(true)}>
-                保存第一条资料
-              </button>
-            }
-          >
-            保存一段你获取到的重要信息。
-          </EmptyState>
+          <p className="empty">还没有资料，点击右上角“新增资料”保存。</p>
         )}
-        {!loading &&
-          !error &&
-          items.length > 0 &&
-          visibleItems.length === 0 && (
-            <p className="empty">没有符合当前搜索或状态的资料。</p>
-          )}
-        <div className="evidence-list">
-          {visibleItems.map((item, index) => (
-            <LedgerEntry
-              key={item.id}
-              date={item.capturedAt}
-              inactive={!item.active}
-              showMonth={
-                index === 0 ||
-                localDateValue(
-                  new Date(visibleItems[index - 1].capturedAt),
-                ).slice(0, 7) !==
-                  localDateValue(new Date(item.capturedAt)).slice(0, 7)
-              }
-            >
-              <button
-                className="text-button record-title"
-                onClick={() => setSelectedId(item.id)}
-              >
-                {item.title ||
-                  item.claim?.split("\n")[0]?.slice(0, 72) ||
-                  item.attachments?.[0]?.name ||
-                  "参考资料"}
-              </button>
-              <p className="record-preview">{evidenceText(item)}</p>
-              <small>
-                {item.attachments?.length || 0} 个附件 ·{" "}
-                <Badge>{item.active ? "使用中" : "已归档"}</Badge>
-              </small>
-              {selectedId === item.id && (
-                <Drawer
-                  title={item.title || "参考资料"}
-                  busy={saving || !!downloading}
-                  onClose={() => setSelectedId(null)}
-                >
-                  {error && <Callout tone="danger">{error}</Callout>}
-                  {evidenceText(item) && (
-                    <p className="evidence-content">{evidenceText(item)}</p>
-                  )}
-                  {!!item.attachments?.length && (
-                    <ul
-                      className="research-attachments"
-                      aria-label="已保存的附件"
-                    >
-                      {item.attachments.map((file) => (
-                        <li key={file.id}>
-                          <div>
-                            <button
-                              type="button"
-                              className="text-button"
-                              disabled={!!downloading}
-                              onClick={() => void download(item.id, file.id)}
-                            >
-                              <Paperclip size={14} />
-                              {downloading === file.id ? "下载中…" : file.name}
-                            </button>
-                            <small>
-                              {formatFileSize(file.byteSize)} ·{" "}
-                              {file.extractionNote}
-                            </small>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <button
-                    className="secondary"
-                    disabled={saving}
-                    onClick={() => void toggleStatus(item)}
-                  >
-                    {item.active ? "归档" : "恢复"}
-                  </button>
-                </Drawer>
-              )}
-              <footer>
-                <small>
-                  保存于 {localDateValue(new Date(item.capturedAt))}
-                  {!item.active && " · 已归档"}
-                </small>
+        <ul className="evidence-files">
+          {sorted.map((item) => {
+            const name = evidenceName(item);
+            return (
+              <li key={item.id} className={item.active ? "" : "inactive"}>
                 <button
-                  className="text-button"
-                  disabled={saving}
-                  onClick={() => void toggleStatus(item)}
+                  type="button"
+                  aria-label={name}
+                  onClick={() => setSelectedId(item.id)}
                 >
-                  {item.active ? "归档" : "恢复"}
+                  <FileText size={16} aria-hidden />
+                  <span className="evidence-file-name">{name}</span>
+                  <span>{!item.active && <Badge>已归档</Badge>}</span>
+                  <small>
+                    {item.attachments?.length
+                      ? `${item.attachments.length} 个附件`
+                      : ""}
+                  </small>
+                  <time dateTime={item.capturedAt}>
+                    {localDateValue(new Date(item.capturedAt))}
+                  </time>
                 </button>
-              </footer>
-            </LedgerEntry>
-          ))}
-        </div>
+              </li>
+            );
+          })}
+        </ul>
+        {selected && (
+          <Drawer
+            title={evidenceName(selected)}
+            busy={saving || !!downloading}
+            onClose={() => setSelectedId(null)}
+          >
+            {error && <Callout tone="danger">{error}</Callout>}
+            <small className="evidence-saved-on">
+              保存于 {localDateValue(new Date(selected.capturedAt))}
+              {!selected.active && " · 已归档"}
+            </small>
+            {evidenceText(selected) && (
+              <p className="evidence-content">{evidenceText(selected)}</p>
+            )}
+            {!!selected.attachments?.length && (
+              <ul className="research-attachments" aria-label="已保存的附件">
+                {selected.attachments.map((file) => (
+                  <li key={file.id}>
+                    <div>
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={!!downloading}
+                        onClick={() => void download(selected.id, file.id)}
+                      >
+                        <Paperclip size={14} />
+                        {downloading === file.id ? "下载中…" : file.name}
+                      </button>
+                      <small>
+                        {formatFileSize(file.byteSize)} · {file.extractionNote}
+                      </small>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              className="secondary"
+              disabled={saving}
+              onClick={() => void toggleStatus(selected)}
+            >
+              {selected.active ? "归档" : "恢复"}
+            </button>
+          </Drawer>
+        )}
       </section>
     </div>
   );

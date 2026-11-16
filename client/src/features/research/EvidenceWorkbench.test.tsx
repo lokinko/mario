@@ -121,8 +121,8 @@ it("shows original text and all legacy information, with reversible archiving", 
     active: false,
   });
   render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
-  await screen.findAllByText("保存于 2026-10-11");
-  fireEvent.click(screen.getByRole("button", { name: "原始资料" }));
+  fireEvent.click(await screen.findByRole("button", { name: "原始资料" }));
+  expect(screen.getByText("保存于 2026-10-11")).toBeTruthy();
   expect(document.querySelector(".evidence-content")?.textContent).toBe(
     saved.claim,
   );
@@ -145,14 +145,18 @@ it("shows original text and all legacy information, with reversible archiving", 
     );
   }
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
-  fireEvent.click(screen.getAllByRole("button", { name: "归档" })[0]);
+  fireEvent.click(screen.getByRole("button", { name: "原始资料" }));
+  fireEvent.click(screen.getByRole("button", { name: "归档" }));
   await waitFor(() =>
     expect(researchApi.setResearchEvidenceStatus).toHaveBeenCalledWith(
       "text",
       false,
     ),
   );
-  fireEvent.click(screen.getByRole("button", { name: /^已归档/ }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  const row = screen.getByRole("button", { name: "原始资料" });
+  expect(within(row).getByText("已归档")).toBeTruthy();
+  fireEvent.click(row);
   expect(await screen.findByRole("button", { name: "恢复" })).toBeTruthy();
 });
 
@@ -163,7 +167,7 @@ it("carries source topics into the question so saved text can be retrieved", asy
   ]);
   const onAsk = vi.fn();
   render(<EvidenceWorkbench flash={vi.fn()} onAsk={onAsk} />);
-  await screen.findAllByText(/保存于/);
+  await screen.findByRole("button", { name: "黄金储备变化" });
   fireEvent.click(screen.getByRole("button", { name: "用资料提问" }));
   const question = onAsk.mock.calls[0][0];
   expect(question).toContain("黄金储备变化");
@@ -280,4 +284,38 @@ it("downloads the original file through the authenticated API", async () => {
   );
   await waitFor(() => expect(downloaded).toBe("报告.txt"));
   expect(createObjectURL).toHaveBeenCalledOnce();
+});
+
+it("lists every saved item as one file row, newest first, with archived ones marked", async () => {
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([
+    {
+      ...saved,
+      id: "old",
+      title: "旧资料",
+      capturedAt: "2026-09-01T01:00:00Z",
+    },
+    {
+      ...saved,
+      id: "archived",
+      title: "归档资料",
+      active: false,
+      capturedAt: "2026-10-01T01:00:00Z",
+    },
+    {
+      ...saved,
+      id: "new",
+      title: "新资料",
+      capturedAt: "2026-11-01T01:00:00Z",
+    },
+  ]);
+  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
+  await screen.findByRole("button", { name: "新资料" });
+  const rows = within(screen.getByRole("region", { name: "资料档案" }))
+    .getAllByRole("button")
+    .map((row) => row.getAttribute("aria-label"));
+  expect(rows).toEqual(["新资料", "归档资料", "旧资料"]);
+  expect(screen.queryByRole("searchbox")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "归档资料" }).closest("li")?.className,
+  ).toBe("inactive");
 });
