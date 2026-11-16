@@ -29,7 +29,7 @@ fn domestic_daily_rows_keep_exact_prices_and_match_by_date() {
 }
 #[tokio::test]
 #[ignore = "requires live public history APIs"]
-async fn live_five_year_history() {
+async fn live_ten_year_history() {
     let source = PublicMarketSource::new().unwrap();
     let today = crate::models::market::today().parse().unwrap();
     for symbol in [
@@ -348,6 +348,32 @@ async fn fallback_keeps_complete_source_revisions_and_tries_a_second_lagging_yah
         assert_eq!(
             yahoo_calls.load(Ordering::SeqCst),
             if mode == "domestic" { 0 } else { 2 }
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires live public history APIs"]
+async fn live_csi300_ten_year_prices() {
+    let source = PublicMarketSource::new().unwrap();
+    let today = crate::models::market::today().parse().unwrap();
+    for symbol in ["600036.SS", "000001.SZ"] {
+        let end = crate::models::market::close::completed_day(symbol, today, Utc::now());
+        let h = source.history(symbol, end).await.unwrap();
+        assert_eq!(h.currency, "CNY");
+        assert_eq!(h.window_start, history_start(end));
+        assert!(
+            h.bars.len() > 2200,
+            "long-listed stock must provide ten years, got {} bars",
+            h.bars.len()
+        );
+        assert!(h.bars.first().unwrap().day <= history_start(end) + chrono::Duration::days(14));
+        println!(
+            "{symbol}: {} .. {}, {} daily prices, source {}",
+            h.bars.first().unwrap().day,
+            h.adjustment_anchor,
+            h.bars.len(),
+            h.provider_name
         );
     }
 }

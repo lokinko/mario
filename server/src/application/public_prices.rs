@@ -42,6 +42,9 @@ impl PublicPriceService {
         lock
     }
     pub async fn refresh_registered(&self) {
+        if let Err(error) = self.save_collection_day() {
+            tracing::warn!(%error,"price collection daily snapshot failed");
+        }
         let symbols = match self.store.symbols() {
             Ok(v) => v,
             Err(error) => {
@@ -70,6 +73,9 @@ impl PublicPriceService {
                 break;
             }
         }
+        if let Err(error) = self.save_collection_day() {
+            tracing::warn!(%error,"price collection daily snapshot failed");
+        }
     }
     async fn load(&self, symbol: &str, touch: bool) -> AppResult<PriceHistory> {
         let symbol = canonical_symbol(symbol)?;
@@ -95,7 +101,10 @@ impl PublicPriceService {
             } else {
                 60_000
             };
-            if h.completed_through == end && (0..ttl).contains(&age) {
+            if h.window_start == crate::models::market::history::history_start(end)
+                && h.completed_through == end
+                && (0..ttl).contains(&age)
+            {
                 return Ok(h.clone());
             }
         }
@@ -136,11 +145,14 @@ impl PublicPriceService {
         let result =
             tokio::time::timeout(Duration::from_secs(90), self.source.history(&symbol, end))
                 .await
-                .map_err(|_| AppError::MarketData("公共五年行情更新达到 90 秒时限".into()))
+                .map_err(|_| AppError::MarketData("公共十年行情更新达到 90 秒时限".into()))
                 .and_then(|r| r)
                 .and_then(|h| {
                     h.validate()?;
-                    if h.symbol != symbol || h.completed_through != end {
+                    if h.symbol != symbol
+                        || h.completed_through != end
+                        || h.window_start != crate::models::market::history::history_start(end)
+                    {
                         return Err(AppError::MarketData(
                             "行情来源返回了不同证券或收盘截止日".into(),
                         ));
@@ -149,7 +161,7 @@ impl PublicPriceService {
                 });
         self.store.finish(&symbol, &token, &result)?;
         if let Err(error) = &result {
-            tracing::warn!(%symbol,error=?error,"public five-year price source failed");
+            tracing::warn!(%symbol,error=?error,"public ten-year price source failed");
         }
         result?;
         self.store
@@ -218,5 +230,6 @@ impl SecurityPriceProvider for PublicPriceService {
     }
 }
 
+mod monitor;
 #[cfg(test)]
 mod tests;

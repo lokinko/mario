@@ -9,7 +9,45 @@ export type ActivityPage =
   | "advisor"
   | "methodology"
   | "settings";
+export interface PriceCollectionDay {
+  date: string;
+  expected: number;
+  successful: number;
+  failed: number;
+  pending: number;
+  lagging: number;
+  updatedAt: number;
+}
+export interface PriceCollectionDashboard {
+  generatedAt: number;
+  years: number;
+  targetThrough: string;
+  universe: {
+    asOf: string;
+    fetchedAt: number;
+    sourceUrl: string;
+    members: { symbol: string; name: string }[];
+  } | null;
+  universeAttemptedAt: number | null;
+  universeError: string;
+  summary: PriceCollectionDay;
+  rows: {
+    symbol: string;
+    name: string;
+    status: string;
+    issueCodes: string[];
+    error: string;
+    attemptedAt: number | null;
+    succeededAt: number | null;
+    firstOn: string | null;
+    latestOn: string | null;
+    bars: number;
+    provider: string;
+  }[];
+  daily: PriceCollectionDay[];
+}
 export interface UsageDashboard {
+  marketPrices: PriceCollectionDashboard;
   generatedAt: number;
   trackingSince: number;
   days: number;

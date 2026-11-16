@@ -62,11 +62,19 @@ try {
   assert.match(userId, /^[a-f0-9-]+$/);
   const role = (enabled) => execFileSync(psql, ['-X', '--dbname', database, '--set=ON_ERROR_STOP=1', '-c', `UPDATE mario_auth.users SET is_superuser=${enabled} WHERE id='${userId}'`], { stdio: 'pipe', windowsHide: true });
   role(true);
+  // Synthetic public scope in this disposable database; fence any in-flight public workbook read.
+  const scope = { asOf: '2026-11-11', fetchedAt: Math.floor(Date.now()/1000), sourceUrl: 'https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/000300cons.xls', members: Array.from({length:300},(_,i)=>({symbol:String(i+1).padStart(6,'0')+'.SZ',name:'监控样本'+(i+1)})) };
+  execFileSync(psql, ['-X', '--dbname', database, '--set=ON_ERROR_STOP=1', '-c', `UPDATE mario_market.price_universe SET payload=$scope$${JSON.stringify(scope)}$scope$,attempted_at=${Date.now()},lease_until=0,lease_token='',last_error=''; INSERT INTO mario_market.price_histories(symbol,last_error) VALUES('000001.SZ','合成来源故障') ON CONFLICT(symbol) DO UPDATE SET last_error=excluded.last_error,lease_until=0,lease_token='';`], {stdio:'pipe',windowsHide:true});
   const boardResponse = await fetch(origin + '/api/dashboard?days=7', { headers });
   assert.equal(boardResponse.status, 200);
   assert.equal(boardResponse.headers.get('cache-control'), 'no-store');
   const board = await boardResponse.json();
   assert.equal(board.days, 7);
+  assert.equal(board.marketPrices.years,10);
+  assert.equal(board.marketPrices.summary.expected,300);
+  assert.equal(board.marketPrices.rows.length,300);
+  assert.equal(board.marketPrices.rows.find(row=>row.symbol==='000001.SZ').error,'合成来源故障');
+  assert(board.marketPrices.summary.failed>=1);
   assert(board.dailyActive >= 1);
   assert([1, 2].includes(board.users.find(user => user.userId === userId).activeMinutes));
   assert.equal((await fetch(origin + '/api/dashboard?days=8', { headers })).status, 400);
@@ -86,6 +94,7 @@ try {
   assert.equal(restored.profile.monthlyIncome, 12345);
   role(true);
   const restoredBoard = await (await fetch(origin + '/api/dashboard?days=7', { headers })).json();
+  assert.equal(restoredBoard.marketPrices.universe.members.length,300);
   assert.equal(restoredBoard.users.find(user => user.userId === userId).activeMinutes,
     board.users.find(user => user.userId === userId).activeMinutes);
   await fetch(origin + '/api/auth/logout', { method: 'POST', headers });

@@ -156,9 +156,9 @@ export function serverViolation(source, target) {
 export function serverFileViolation(source, target) {
   if (source === 'accounts/activity.rs' && !['accounts', 'storage', 'error'].includes(target))
     return 'usage metadata belongs to account authority and cannot read tenant ledgers or execute workflows';
-  if (['db/public_dividends.rs', 'db/public_watch.rs', 'db/public_watch/calendar.rs', 'db/public_prices.rs'].includes(source) && !['models', 'storage', 'error'].includes(target))
+  if (['db/public_dividends.rs', 'db/public_watch.rs', 'db/public_watch/calendar.rs', 'db/public_prices.rs', 'db/public_prices/monitor.rs'].includes(source) && !['models', 'storage', 'error'].includes(target))
     return 'public market storage only depends on public contracts and the database driver boundary';
-  if (source === 'application/public_prices.rs' && !['models', 'db', 'ports', 'error'].includes(target))
+  if ((source === 'application/public_prices.rs' || source.startsWith('application/public_prices/')) && !['models', 'db', 'ports', 'error'].includes(target))
     return 'public price orchestration cannot depend on accounts, HTTP or concrete sources';
   if (source === 'application/dividend_calendar.rs' && !['models', 'db', 'ports', 'error'].includes(target))
     return 'public dividend calendars cannot depend on accounts, private context or model execution';

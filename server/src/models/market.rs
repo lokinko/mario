@@ -2,6 +2,7 @@
 pub(crate) mod close;
 pub(crate) mod eastmoney;
 pub(crate) mod history;
+pub(crate) mod monitor;
 use super::FxRateQuote;
 use crate::{AppError, AppResult};
 use chrono::Utc;

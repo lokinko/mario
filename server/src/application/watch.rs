@@ -50,7 +50,7 @@ pub async fn refresh(
             || row.refresh_failed
             || row.checked_for.as_deref() != Some(day.to_string().as_str())
             || row.latest.as_ref().is_some_and(|o| {
-                o.trend_window_years != Some(crate::models::market::history::HISTORY_YEARS)
+                o.trend_window_years != Some(crate::models::watch::trends::WINDOW_YEARS)
                     || o.dividend_basis.is_none()
                     || o.status == crate::models::watch::WatchStatus::Incomplete
                     || (day.weekday().num_days_from_monday() < 5

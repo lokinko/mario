@@ -50,7 +50,7 @@ flowchart TD
 
 - 启动配置属于进程。行情 Provider 和 AI 执行器属于进程依赖，可以替换；它们不持有账号数据库。
 - 多用户请求先认证，再按服务端用户 ID 选择数据库连接。`RequestContext` 只组合该请求的账号数据库与共享服务依赖；客户端不能提供租户 ID。
-- 五年价格历史按证券归公共数据库，来源更新和失败退避跨账号及重启共享；用户汇率覆盖、持仓、密钥和分析历史继续归账号。
+- 十年价格历史按证券归公共数据库，来源更新和失败退避跨账号及重启共享；用户汇率覆盖、持仓、密钥和分析历史继续归账号。
 - 多用户请求在数据库账户锁内检查 `If-Match`。分析预览、模型连接测试等实际例外只由 `http/policy.rs` 声明，前端 `requestPolicy` 同步对应政策。新增操作默认要求版本，不能因为名字含 `preview` 或 `test` 就自动豁免。
 - 分析执行在锁内冻结上下文、模型配置、密钥目的地和指纹；模型执行期间释放账户锁，执行结束重新取锁后保存。失败不产生分析历史；请求退出归还租约前清理事务和残留的数据库会话锁，清理失败关闭连接。
 
@@ -112,13 +112,13 @@ flowchart TD
 
 ### 持仓收盘估值
 
-`models/market/history` 定义五年窗口、精确原价／前复权序列、复权基准及报价，观察投影归 `application/watch_market`；`market_data/history` 只通过公开来源整组取得数据，无账号数据库或价格缓存。`db/public_prices` 拥有每证券完整版本、原子更换、跨进程租约和失败状态；`application/public_prices` 通过历史端口抓取、按证券合并并发、限制来源流程、协调后台更新，禁止依赖账号、HTTP 或具体供应商。四层边界由架构检查强制。
+`models/market/history` 定义十年窗口、精确原价／前复权序列、复权基准及报价，观察投影归 `application/watch_market`；`market_data/history` 只通过公开来源整组取得数据，无账号数据库或价格缓存。`db/public_prices` 拥有每证券完整版本、原子更换、跨进程租约和失败状态；`application/public_prices` 通过历史端口抓取、按证券合并并发、限制来源流程、协调后台更新，禁止依赖账号、HTTP 或具体供应商。四层边界由架构检查强制。
 
-基金分类与证券后缀校验归 `models/market`，基金拆分档案的格式适配归 `market_data/history/fund_actions`，不依赖账号、仓储或股票分红解析。原价、前复权及拆分依据全部有效后才能形成完整公共版本；不拼接供应商价格序列、不猜测空拆分、不改变个人股数、成本或现金。来源、基金范围与重试规则见[市场数据](market-data.md#来源与五年窗口)。公共状态、事务和备份结构不变，无数据迁移；错误后缀由用户明确更正，历史原文保留。
+基金分类与证券后缀校验归 `models/market`，基金拆分档案的格式适配归 `market_data/history/fund_actions`，不依赖账号、仓储或股票分红解析。原价、前复权及拆分依据全部有效后才能形成完整公共版本；不拼接供应商价格序列、不猜测空拆分、不改变个人股数、成本或现金。来源、基金范围与重试规则见[市场数据](market-data.md#来源与十年窗口)。公共状态、事务和备份结构不变，无数据迁移；错误后缀由用户明确更正，历史原文保留。
 
 港美股的确定性市场、币种及 URL 约束归 `models/market/eastmoney`，来源和仓储校验共用；精确证券搜索、日线及拆合股报告读取归 `market_data/history/overseas`，不引入账号、应用编排或缓存依赖。所有价格主源均为东方财富；Yahoo 可补充单独的行动证据，或在主源无法形成有效完整版本时整组降级，不能拼接价格。修改须覆盖精确与模糊／重复候选、105／106／107／116 市场和币种错配、特殊代码降级、完整分页及总量改变、空行动报告需要补证、历史／未来／取消行动、比例方向、补证身份及币种／时区／品种错误，以及海外行情的精确会计和备份往返。
 
-修改此路径须覆盖 ETF／REIT 国内路由、Yahoo 双源失败下的国内成功、基金拆分方向与五年前事件、明确空表与缺页／占位／错证券／错日期／重复事件的区别、错误交易所提示、瞬时失败的有界重试与 404 不重试，以及全源失败的来源原因和旧公共版本保留。联网验收入口仍为 `live_five_year_history`，只查询公开资料；本机联网成功不代表部署服务器网络已恢复。
+修改此路径须覆盖 ETF／REIT 国内路由、Yahoo 双源失败下的国内成功、基金拆分方向与五年前事件、明确空表与缺页／占位／错证券／错日期／重复事件的区别、错误交易所提示、瞬时失败的有界重试与 404 不重试，以及全源失败的来源原因和旧公共版本保留。联网验收入口仍为 `live_ten_year_history`，只查询公开资料；本机联网成功不代表部署服务器网络已恢复。
 
 持仓、单独报价及观察都消费同一公共库。`application/prices` 负责账号估值应用，快照读取只采用已入库价格，不联网；显式／后台刷新释放账号锁等待共享资料，重取锁逐持仓校验。账号精确会计、估值证据及当日观测沿用同一事务，不生成交易或现金流。公共价格版本不推进账号版本；账号真正采用新价格后才推进，并返回最终完整快照版本。来源、时点、时限和迁移规则统一见[市场数据](market-data.md#统一公共价格库)。
 
@@ -175,7 +175,7 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 
 `features/watch` 拥有名单草稿、观察卡片与周末汇总，`api/watch` 只处理领域请求；导航和进入问答由应用壳组合。`models/watch` 定义股息与 BOLL 规则及问题码，`ports/market` 暴露分别取价格与完整分红事件集的 `WatchMarketProvider`；公开仓储不读租户 schema，共享编排不依赖账号或私有事实，架构检查对这两个文件设独立约束。来源适配归 `market_data/watch`，按账号刷新归 `application/watch`，公开初始化资料适配与 CSV 导出归 `market_data/watch_archive`，离线原件核验和资料包构建归 `scripts/prepare-watch-dividends.py`，共享公开分红仓储归 `db/public_dividends`，跨账号读取、补抓和进程内合并归 `application/watch_market`，账号采用依据、状态事务和账号备份校验归 `db/watch`；后台任务由 `composition` 装配并随进程关闭。不得让观察计算读取账号库或依赖行情网络实现。
 
-价格、前复权和交易日参考统一由[公共价格模块](#持仓收盘估值)提供。`application/watch_market` 只装配库内价格与公共分红，`market_data/watch` 保留分配分页及计划解析，不再独立抓价。`priceRevision` 是公共序列内容版本，排除轮询采集时间的无效变化；价格更正时即使观察截止日不变，也重新计算当前观察，历史冻结不改写。五年来源联网检查为 `cargo test --manifest-path server/Cargo.toml live_five_year_history -- --ignored --nocapture`，默认忽略不能当作联网通过。
+价格、前复权和交易日参考统一由[公共价格模块](#持仓收盘估值)提供。`application/watch_market` 只装配库内价格与公共分红，`market_data/watch` 保留分配分页及计划解析，不再独立抓价。`priceRevision` 是公共序列内容版本，排除轮询采集时间的无效变化；价格更正时即使观察截止日不变，也重新计算当前观察，历史冻结不改写。十年来源联网检查为 `cargo test --manifest-path server/Cargo.toml live_ten_year_history -- --ignored --nocapture`，默认忽略不能当作联网通过。
 
 `Band.reference` 指明所选下轨、中轨或上轨，距离与 `matchesRule` 都由领域计算器按参考轨产生。账号 schema 升级与旧备份导入复用 `db/watch::migrate_rules`，事务重算存量观察并清除旧条件提醒；当前备份 v29，v26/v25/v24 仅经这一迁移入口恢复，失败整次回滚。迁移适配在不再支持旧观察备份时移除。
 
@@ -257,3 +257,11 @@ cargo build --manifest-path server/Cargo.toml
 跨前后端、数据格式、财务逻辑或公共契约的修改运行完整 `npm test`（[`scripts/test.sh`](../scripts/test.sh)）：先检查 npm 和完整门禁引用的脚本确实存在；构建后运行 `npm run check:contracts`，以真实 Rust 输出验证精确金额、交易与更正、汇率、流式事件、模型与桥接、观察规则的 TypeScript 类型以及从 HTTP 源文件提取路径的版本政策一致性，再在同一个临时集群中依次运行 Rust 测试、`test-functional-api`、`test-web`、`test-codex-bridge`，再运行独立建集群的 `npm run test:financial`。
 
 依赖检查解析 TypeScript 导入/导出，包括类型导入与动态导入；Rust 检查去除字符串、注释与测试专属项后提取显式 crate 依赖。它阻止上层反向引用、跨功能 UI 引用、领域客户端之间的引用以及依赖循环。DB 内部实现仍允许使用父模块门面的共享导入。检查属于静态约束，与编译及行为测试互补，不代表所有宏展开或运行时隔离已经被证明。
+
+### 沪深300公共价格监控
+
+本增量沿用[持仓收盘估值](#持仓收盘估值)与[架构6.3节](architecture.md#63-行情与汇率)：领域 `models/market/monitor` 拥有公共范围和投影契约；`PriceUniverseProvider` 仅提供已校验的完整范围；官方工作簿解析归 `market_data/price_universe`。应用 `public_prices/monitor` 拥有范围刷新与每日投影，仓储 `public_prices/monitor` 拥有成分表租约、逐日尝试与成功、每日历史；架构检查覆盖两者子文件，禁止账号或执行适配器依赖。`models/watch/trends::WINDOW_YEARS` 独立保持五年图表投影，公共价格 `HISTORY_YEARS` 为十年，不能再用存储窗口隐式改变图表契约。
+
+接口仍为超级账户 `GET /api/dashboard`，`hosted/activity` 完成授权后装配 `marketPrices`；前端同领域 `PriceCollection` 只读显示和筛选，不导入观察页面或触发来源请求。详细行为、存储迁移和旧五年适配移除条件以[市场数据](market-data.md#沪深300采集范围与每日看板)为准。
+
+改动需覆盖完整300只校验、错误交易所/重复/错指数/错日期/缺行拒绝、每日范围刷新退避与旧范围保留、无人使用的成分持续抓取、离开范围的记录保留、来源失败保留、租约过期及旧写入者隔离、旧五年缓存可读与十年回补、实际交易日参考、自然日切换不复用昨日成功、每日记录重启保留及权限撤销。前端验证逐股错误、实际覆盖、异常筛选和成分表未就绪；真实HTTP验证仍用 `scripts/test-web.mjs`，完整跨端门禁 `npm test`。联网入口补充 `live_csi300_constituents` 与 `live_csi300_ten_year_prices`，默认忽略不能宣称通过。

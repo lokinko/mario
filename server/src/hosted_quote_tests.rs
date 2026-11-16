@@ -102,6 +102,10 @@ async fn authenticated_security_preview_allows_reads_and_profile_writes_without_
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
         auth_slots: tokio::sync::Semaphore::new(AUTH_SLOTS),
         market: Arc::new(MarketServices::new(provider.clone(), provider.clone())),
+        public_prices: Arc::new(crate::application::public_prices::PublicPriceService::new(
+            Arc::new(crate::db::PublicPrices::test()),
+            Arc::new(crate::market_data::PublicMarketSource::new().unwrap()),
+        )),
         watch_provider: provider.clone(),
         watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
         dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),
@@ -270,6 +274,10 @@ async fn authenticated_watch_detail_reads_stay_account_scoped_and_preserve_store
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
         auth_slots: tokio::sync::Semaphore::new(AUTH_SLOTS),
         market: Arc::new(MarketServices::new(provider.clone(), provider.clone())),
+        public_prices: Arc::new(crate::application::public_prices::PublicPriceService::new(
+            Arc::new(crate::db::PublicPrices::test()),
+            Arc::new(crate::market_data::PublicMarketSource::new().unwrap()),
+        )),
         watch_provider: provider.clone(),
         watch_catalog: catalog.clone(),
         dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),
@@ -384,6 +392,10 @@ async fn external_json_import_preserves_authentication_revision_tenant_and_resto
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),
         auth_slots: tokio::sync::Semaphore::new(AUTH_SLOTS),
         market: Arc::new(MarketServices::new(provider.clone(), provider.clone())),
+        public_prices: Arc::new(crate::application::public_prices::PublicPriceService::new(
+            Arc::new(crate::db::PublicPrices::test()),
+            Arc::new(crate::market_data::PublicMarketSource::new().unwrap()),
+        )),
         watch_provider: provider,
         watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
         dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),

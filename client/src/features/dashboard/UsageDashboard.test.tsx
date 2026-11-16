@@ -37,6 +37,25 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 const fixture: DashboardData = {
+  marketPrices: {
+    generatedAt: 1794528000,
+    years: 10,
+    targetThrough: "2026-11-13",
+    universe: null,
+    universeAttemptedAt: null,
+    universeError: "",
+    summary: {
+      date: "2026-11-13",
+      expected: 0,
+      successful: 0,
+      failed: 0,
+      pending: 0,
+      lagging: 0,
+      updatedAt: 1794528000,
+    },
+    rows: [],
+    daily: [],
+  },
   generatedAt: 1794528000,
   trackingSince: 1794528000,
   days: 30,

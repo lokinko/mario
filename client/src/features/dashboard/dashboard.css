@@ -118,3 +118,9 @@
     max-width: none;
   }
 }
+
+.price-collection-meta {
+  color: var(--text-3);
+  font-size: var(--fs-body-sm);
+  line-height: 1.8;
+}

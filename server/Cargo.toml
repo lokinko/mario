@@ -25,6 +25,7 @@ chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
 iana-time-zone = "0.1"
 csv = "1"
+calamine = "=0.26.1"
 dirs = "6"
 fs2 = "0.4"
 jsonwebtoken = "9.3"

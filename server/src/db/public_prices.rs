@@ -5,6 +5,7 @@ use crate::{
     AppError, AppResult,
 };
 use std::sync::Mutex;
+mod monitor;
 
 pub(crate) struct PriceState {
     pub history: Option<PriceHistory>,
@@ -28,7 +29,12 @@ impl PublicPrices {
           CREATE TABLE IF NOT EXISTS price_histories (
             symbol TEXT PRIMARY KEY, payload TEXT, attempted_at BIGINT NOT NULL DEFAULT 0,
             lease_until BIGINT NOT NULL DEFAULT 0, lease_token TEXT NOT NULL DEFAULT '', last_error TEXT NOT NULL DEFAULT '', requested_at BIGINT NOT NULL DEFAULT 0
-          );")?;
+          );
+          CREATE TABLE IF NOT EXISTS price_universe(id INTEGER PRIMARY KEY CHECK(id=1),payload TEXT,attempted_at BIGINT NOT NULL DEFAULT 0,lease_until BIGINT NOT NULL DEFAULT 0,lease_token TEXT NOT NULL DEFAULT '',last_error TEXT NOT NULL DEFAULT '');
+          INSERT INTO price_universe(id) VALUES(1) ON CONFLICT DO NOTHING;
+          CREATE TABLE IF NOT EXISTS price_fetch_days(day TEXT NOT NULL,symbol TEXT NOT NULL,attempts BIGINT NOT NULL DEFAULT 0,successes BIGINT NOT NULL DEFAULT 0,PRIMARY KEY(day,symbol));
+          CREATE TABLE IF NOT EXISTS price_monitor_days(day TEXT PRIMARY KEY,payload TEXT NOT NULL);
+          ")?;
         tx.commit()?;
         Ok(Self {
             connection: Mutex::new(c),
@@ -78,9 +84,10 @@ impl PublicPrices {
         Ok(())
     }
     pub fn symbols(&self) -> AppResult<Vec<String>> {
+        self.conn()?.execute("INSERT INTO price_histories(symbol) SELECT value->>'symbol' FROM price_universe,jsonb_array_elements(payload::jsonb->'members') UNION SELECT '000001.SS' WHERE EXISTS(SELECT 1 FROM price_universe WHERE payload IS NOT NULL) ON CONFLICT DO NOTHING", [])?;
         Ok(self
             .conn()?
-            .prepare("SELECT symbol FROM price_histories WHERE requested_at >= $1 ORDER BY attempted_at,symbol")?
+            .prepare("SELECT symbol FROM price_histories WHERE requested_at >= $1 OR (symbol='000001.SS' AND EXISTS(SELECT 1 FROM price_universe WHERE payload IS NOT NULL)) OR symbol IN (SELECT value->>'symbol' FROM price_universe,jsonb_array_elements(payload::jsonb->'members')) ORDER BY attempted_at,symbol")?
             .query_map([chrono::Utc::now().timestamp_millis()-172_800_000], |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?)
     }
@@ -89,11 +96,18 @@ impl PublicPrices {
         if canonical_symbol(symbol)? != symbol {
             return Err(AppError::Validation("公共行情需要规范证券代码".into()));
         }
-        self.conn()?.execute(
+        let mut c = self.conn()?;
+        let tx = c.transaction()?;
+        tx.execute(
             "INSERT INTO price_histories(symbol) VALUES($1) ON CONFLICT(symbol) DO NOTHING",
             [symbol],
         )?;
-        Ok(self.conn()?.execute("UPDATE price_histories SET attempted_at=$2,lease_until=$2+120000,lease_token=$3 WHERE symbol=$1 AND lease_until<=$2 AND attempted_at<=$2-60000",params![symbol,now,token])?>0)
+        let claimed = tx.execute("UPDATE price_histories SET attempted_at=$2,lease_until=$2+120000,lease_token=$3 WHERE symbol=$1 AND lease_until<=$2 AND attempted_at<=$2-60000",params![symbol,now,token])? > 0;
+        if claimed {
+            Self::record_attempt(&tx, symbol, now)?;
+        }
+        tx.commit()?;
+        Ok(claimed)
     }
     pub fn finish(
         &self,
@@ -101,18 +115,29 @@ impl PublicPrices {
         token: &str,
         result: &AppResult<PriceHistory>,
     ) -> AppResult<()> {
+        let mut c = self.conn()?;
+        let tx = c.transaction()?;
+        let Some(attempted_at) = Self::owned_attempt(&tx, symbol, token)? else {
+            return Ok(());
+        };
         match result {
             Ok(h) => {
                 h.validate()?;
                 if h.symbol != symbol {
                     return Err(AppError::Validation("公共行情写入证券不一致".into()));
                 }
-                self.conn()?.execute("UPDATE price_histories SET payload=CASE WHEN payload IS NULL OR ((payload::jsonb->>'completedThrough') <= $4 AND (payload::jsonb->>'adjustmentAnchor') <= $5) THEN $3 ELSE payload END,lease_until=0,lease_token='',last_error='' WHERE symbol=$1 AND lease_token=$2",params![symbol,token,serde_json::to_string(h)?,h.completed_through.to_string(), h.adjustment_anchor.to_string()])?;
+                let accepted = tx.execute("UPDATE price_histories SET payload=$3,lease_until=0,lease_token='',last_error='' WHERE symbol=$1 AND lease_token=$2 AND (payload IS NULL OR ((payload::jsonb->>'completedThrough') <= $4 AND (payload::jsonb->>'adjustmentAnchor') <= $5))",params![symbol,token,serde_json::to_string(h)?,h.completed_through.to_string(), h.adjustment_anchor.to_string()])?;
+                if accepted > 0 {
+                    Self::record_success(&tx, symbol, attempted_at)?;
+                } else {
+                    tx.execute("UPDATE price_histories SET lease_until=0,lease_token='',last_error='来源日期倒退，保留较新价格' WHERE symbol=$1 AND lease_token=$2",params![symbol,token])?;
+                }
             }
             Err(error) => {
-                self.conn()?.execute("UPDATE price_histories SET lease_until=0,lease_token='',last_error=$3 WHERE symbol=$1 AND lease_token=$2",params![symbol,token,error.to_string()])?;
+                tx.execute("UPDATE price_histories SET lease_until=0,lease_token='',last_error=$3 WHERE symbol=$1 AND lease_token=$2",params![symbol,token,error.to_string()])?;
             }
         }
+        tx.commit()?;
         Ok(())
     }
     #[cfg(test)]

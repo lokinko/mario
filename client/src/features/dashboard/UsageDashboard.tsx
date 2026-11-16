@@ -1,3 +1,4 @@
+import { PriceCollection } from "./PriceCollection";
 import { useCallback, useEffect, useState } from "react";
 import { Button, Input, Segmented, Table } from "antd";
 import { Activity, ArrowLeft, RefreshCw } from "lucide-react";
@@ -83,7 +84,7 @@ export function UsageDashboard() {
           </a>
           <h1>
             <Activity aria-hidden="true" />
-            使用活跃度
+            运行看板
           </h1>
           <p>全站使用概况 · 仅超级账户可见</p>
         </div>
@@ -139,6 +140,7 @@ export function UsageDashboard() {
                 : "等待统计数据"}
             </span>
           </div>
+          <PriceCollection data={display?.marketPrices} loading={loading} />
           <section className="panel usage-panel">
             <h2>每日活跃</h2>
             <Table

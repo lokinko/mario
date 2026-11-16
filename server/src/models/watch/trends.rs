@@ -3,6 +3,9 @@ use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Chart projection is independent of the longer public storage window.
+pub const WINDOW_YEARS: u32 = 5;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrendPoint {
@@ -45,7 +48,9 @@ fn average(values: &[Option<f64>], length: usize) -> Option<f64> {
 pub fn calculate(sessions: &[(NaiveDate, Option<f64>)]) -> Vec<TrendPoint> {
     let mut sessions: BTreeMap<_, _> = sessions.iter().copied().collect();
     if let Some((&end, _)) = sessions.last_key_value() {
-        let start = crate::models::market::history::history_start(end);
+        let start = end
+            .checked_sub_months(chrono::Months::new(WINDOW_YEARS * 12))
+            .unwrap();
         sessions.retain(|day, _| *day >= start);
     }
     let mut weeks = BTreeMap::<_, Period>::new();

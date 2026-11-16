@@ -309,7 +309,7 @@ impl WatchCatalogService {
 fn needs_check(snapshot: &CatalogSnapshot, day: NaiveDate) -> bool {
     snapshot.refresh_failed
         || snapshot.latest.as_ref().is_some_and(|o| {
-            o.trend_window_years != Some(crate::models::market::history::HISTORY_YEARS)
+            o.trend_window_years != Some(crate::models::watch::trends::WINDOW_YEARS)
         })
         || snapshot.checked_for.as_deref() != Some(day.to_string().as_str())
         || snapshot.latest.as_ref().is_none_or(|o| {

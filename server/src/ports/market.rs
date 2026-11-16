@@ -17,6 +17,11 @@ pub(crate) trait SecurityHistoryProvider: Send + Sync {
 }
 
 #[async_trait]
+pub(crate) trait PriceUniverseProvider: Send + Sync {
+    async fn constituents(&self) -> AppResult<crate::models::market::monitor::PriceUniverse>;
+}
+
+#[async_trait]
 pub(crate) trait FxRateProvider: Send + Sync {
     async fn quote(&self, query: &FxRateQuery) -> AppResult<FxRateQuote>;
     /// Invalidate only this provider's public cache before an explicit refresh.

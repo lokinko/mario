@@ -1,4 +1,4 @@
-//! Public five-year history sources; no account data or caches.
+//! Public ten-year history sources; no account data or caches.
 use crate::{
     models::{
         market::{
@@ -69,6 +69,7 @@ impl PublicMarketSource {
             .query(&[
                 ("secid", security.secid()),
                 ("klt", "101".into()),
+                ("lmt", "4000".into()),
                 ("fqt", if adjusted { "1" } else { "0" }.into()),
                 ("beg", history_start(through).format("%Y%m%d").to_string()),
                 ("end", through.format("%Y%m%d").to_string()),
@@ -251,7 +252,7 @@ impl PublicMarketSource {
     }
 }
 fn bad() -> AppError {
-    AppError::MarketData("五年行情的证券、日期、复权序列或公司行动资料不完整".into())
+    AppError::MarketData("十年行情的证券、日期、复权序列或公司行动资料不完整".into())
 }
 fn decimal(value: &str) -> AppResult<Decimal> {
     Decimal::from_str_exact(value)

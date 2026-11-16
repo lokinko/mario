@@ -8,7 +8,7 @@ use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const HISTORY_YEARS: u32 = 5;
+pub const HISTORY_YEARS: u32 = 10;
 pub fn history_start(through: NaiveDate) -> NaiveDate {
     through
         .checked_sub_months(Months::new(HISTORY_YEARS * 12))
@@ -101,9 +101,11 @@ impl PriceHistory {
         if super::canonical_symbol(&self.symbol)? != self.symbol
             || self.currency.len() != 3
             || !self.currency.bytes().all(|b| b.is_ascii_uppercase())
-            || self.window_start != history_start(self.completed_through)
+            // Five-year persisted revisions remain readable only until background backfill replaces them.
+            || (self.window_start != history_start(self.completed_through)
+                && Some(self.window_start) != self.completed_through.checked_sub_months(Months::new(60)))
             || self.bars.is_empty()
-            || self.bars.len() > 2000
+            || self.bars.len() > 4000
             || !["eastmoney", "yahoo"].contains(&self.provider_code.as_str())
             || self.provider_name.is_empty()
             || self.raw_source_url.is_empty()
@@ -208,14 +210,14 @@ impl PriceHistory {
             .iter()
             .rev()
             .find(|b| b.day <= cutoff && b.raw_close.is_some() && b.adjusted_close.is_some())
-            .ok_or_else(|| AppError::MarketData("五年公共行情中没有该日期的有效收盘价".into()))?;
+            .ok_or_else(|| AppError::MarketData("公共行情中没有该日期的有效收盘价".into()))?;
         let exact = bar.adjusted_close.clone().unwrap();
         Ok(SecurityPriceQuote {
             symbol:original_symbol.trim().into(),currency:self.currency.clone(),close:price(&exact)?.to_f64().ok_or_else(invalid)?,exact_close:Some(exact),
             requested_on:requested.to_string(),observed_on:bar.day.to_string(),staleness_days:(requested-bar.day).num_days(),
             provider_code:format!("{}_forward_close",self.provider_code),provider_name:self.provider_name.clone(),exchange:self.exchange.clone(),mic_code:self.mic_code.clone(),instrument_type:self.instrument_type.clone(),
             price_basis:"forward_adjusted_daily_close".into(),source_url:self.adjusted_source_url.clone(),methodology_url:self.methodology_url.clone(),splits:self.splits.clone(),
-            disclaimer:format!("公共数据库五年前复权收盘序列；复权基准 {}，行情采集 {}。历史复权价格不等于当时实际成交价；成交和成本保留原值，公司行动须人工核对。",self.adjustment_anchor,self.fetched_at),
+            disclaimer:format!("公共数据库前复权收盘序列（窗口起点 {}）；复权基准 {}，行情采集 {}。历史复权价格不等于当时实际成交价；成交和成本保留原值，公司行动须人工核对。",self.window_start,self.adjustment_anchor,self.fetched_at),
         })
     }
 }

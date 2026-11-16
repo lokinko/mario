@@ -17,6 +17,7 @@ pub(crate) fn model_services() -> Arc<crate::application::model_settings::ModelS
 
 pub(crate) struct MarketRuntime {
     pub services: Arc<MarketServices>,
+    pub public_prices: Arc<crate::application::public_prices::PublicPriceService>,
     pub watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
     pub watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
     pub dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
@@ -127,11 +128,15 @@ impl MarketRuntime {
         ));
         let services = Arc::new(MarketServices::new(fx.clone(), prices.clone()));
         let refresh_prices = prices.clone();
+        let universe_source = crate::market_data::price_universe::Csi300Source::new()?;
         let price_task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 interval.tick().await;
+                if let Err(error) = refresh_prices.refresh_universe(&universe_source).await {
+                    tracing::warn!(%error,"CSI300 universe refresh failed; retaining prior scope");
+                }
                 refresh_prices.refresh_registered().await;
             }
         });
@@ -154,7 +159,7 @@ impl MarketRuntime {
             Arc::new(crate::application::watch_market::SharedWatchProvider::new(
                 Arc::new(crate::market_data::watch::PublicWatchProvider::new()?),
                 public_dividends,
-                prices,
+                prices.clone(),
             ));
         let public_watch = Arc::new(crate::db::PublicWatch::postgres(database_url)?);
         let dividend_calendar = Arc::new(
@@ -170,6 +175,7 @@ impl MarketRuntime {
         ));
         Ok(Self {
             services,
+            public_prices: prices,
             watch_provider,
             watch_catalog,
             dividend_calendar,

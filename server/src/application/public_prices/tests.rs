@@ -151,3 +151,44 @@ async fn a_corrected_shared_revision_is_adopted_on_reads_even_for_the_same_close
     assert_ne!(account.revision().unwrap(), version);
     assert_eq!(source.calls.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn fresh_five_year_cache_is_backfilled_and_failed_backfills_keep_the_original_revision() {
+    for fail in [false, true] {
+        let store = Arc::new(PublicPrices::test());
+        let source = Arc::new(Source {
+            calls: AtomicUsize::new(0),
+            fail: AtomicBool::new(fail),
+        });
+        let now = Utc::now();
+        let today = now.with_timezone(&chrono_tz::Asia::Shanghai).date_naive();
+        let end = close::completed_day("600941.SS", today, now);
+        let mut old = fixture("600941.SS", end);
+        old.window_start = end.checked_sub_months(chrono::Months::new(60)).unwrap();
+        old.bars.retain(|b| b.day >= old.window_start);
+        old = old.normalize().unwrap();
+        assert!(store
+            .claim("600941.SS", now.timestamp_millis() - 121000, "old")
+            .unwrap());
+        store.finish("600941.SS", "old", &Ok(old.clone())).unwrap();
+        let service = PublicPriceService::new(store.clone(), source.clone());
+        let result = service.history("600941.SS", end).await;
+        assert_eq!(
+            source.calls.load(Ordering::SeqCst),
+            1,
+            "fresh five-year timestamps cannot bypass backfill"
+        );
+        let state = store.state("600941.SS").unwrap().unwrap();
+        if fail {
+            assert!(result.is_err());
+            assert_eq!(state.history, Some(old));
+            assert!(state.last_error.contains("offline"));
+        } else {
+            assert_eq!(
+                result.unwrap().window_start,
+                crate::models::market::history::history_start(end)
+            );
+            assert!(state.last_error.is_empty());
+        }
+    }
+}

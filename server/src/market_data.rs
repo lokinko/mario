@@ -1,4 +1,5 @@
 mod history;
+pub(crate) mod price_universe;
 pub(crate) mod watch;
 pub(crate) mod watch_archive;
 pub(crate) mod watch_catalog;

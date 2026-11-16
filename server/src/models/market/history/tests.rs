@@ -115,10 +115,10 @@ fn revision_keeps_forward_prices_raw_values_dates_and_sources_together() {
     assert!(invalid.validate().is_err());
 }
 #[test]
-fn five_year_window_uses_calendar_years_and_no_price_is_filled_for_missing_adjustments() {
+fn ten_year_window_uses_calendar_years_and_no_price_is_filled_for_missing_adjustments() {
     assert_eq!(
         history_start("2024-02-29".parse().unwrap()).to_string(),
-        "2019-02-28"
+        "2014-02-28"
     );
     let day = "2026-11-06".parse().unwrap();
     let mut h = fixture("600941.SS", day);
@@ -138,4 +138,30 @@ fn content_revision_tracks_price_corrections_without_poll_timestamp_churn() {
     assert_eq!(h.revision().unwrap(), original);
     h.bars[0].adjusted_close = Some("12.34".into());
     assert_ne!(h.revision().unwrap(), original);
+}
+
+#[test]
+fn ten_year_histories_accept_more_than_the_retired_two_thousand_row_limit() {
+    let end = "2026-11-13".parse().unwrap();
+    let mut h = fixture("000001.SZ", end);
+    h.bars.clear();
+    let mut day = h.window_start;
+    while day <= end {
+        h.bars.push(DailyPrice {
+            day,
+            raw_close: Some("100".into()),
+            adjusted_close: Some("100".into()),
+        });
+        day += chrono::Duration::days(1);
+    }
+    assert!(h.bars.len() > 2000);
+    h = h.normalize().unwrap();
+    assert_eq!(
+        h.quote(h.window_start, h.window_start, "000001.SZ")
+            .unwrap()
+            .exact_close
+            .as_deref(),
+        Some("100")
+    );
+    assert_eq!(h.window_start.to_string(), "2016-11-13");
 }

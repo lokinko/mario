@@ -121,7 +121,7 @@ flowchart TD
 | `ai/` | `orchestrator` 按 `workflow`（当前 v10）执行可选搜索与单次报告生成；格式错误只修复一次；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 和 `chatgpt` 只由用户电脑上的桥接 worker 调用，分别使用 Codex 登录和 Mario 自己的官方 OAuth 注册；`structured_output` 负责确定性引用、输出校验；资料检索和连续原文摘录归领域层 `evidence`；`streaming` 解析流式草稿 |
 | `codex_bridge_worker.rs` | 用户电脑上的共用桥接进程，固定注册及授权会话，长轮询 API 领取任务，选择 Codex App Server 或官方 ChatGPT Responses；模型目录及推理取令牌时在凭据锁内核对同一会话，不借用重新登录后的授权；不上传 OpenAI 凭据 |
 | `chatgpt_auth.rs`、`chatgpt_auth/` | 本机官方 OAuth、签名身份和 scopes 校验、多注册选择、跨进程串行刷新、原子凭据保存及退出；仅由本机运行角色与 `ai/chatgpt.rs` 调用，不依赖业务数据库 |
-| `market_data.rs`、`market_data/history.rs`、`market_data/watch.rs` | 汇率、完整五年日线与公司行动、分红及计划来源；价格的前复权／原值及完整来源成组取得，不持有价格缓存、不读写账号数据 |
+| `market_data.rs`、`market_data/history.rs`、`market_data/watch.rs` | 汇率、完整十年日线与公司行动、分红及计划来源；价格的前复权／原值及完整来源成组取得，不持有价格缓存、不读写账号数据 |
 | `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共公司目录、独立版本、公共行业最新观察及分红计划快照；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema；API 持有有界租户连接复用器，HTTP 与后台账号任务租用连接，归还前回滚并清理会话状态 |
 | `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、买点观察计算、期权合约计价及多空头重放、推理事件与执行时限 |
 | `context.rs` / `context/fact_sheet.rs` / `context/discussion.rs` / `context/observation.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：授权上下文构建与预览、有限对话主题与红利核查组合、完整观察的模型投影、再平衡规划、风险检查、估值状态、本地证据检索 |
@@ -200,9 +200,11 @@ sequenceDiagram
 
 ### 6.3 行情与汇率
 
-`composition::MarketRuntime` 装配 `market_data/history::PublicMarketSource`、`db/public_prices::PublicPrices` 和 `application/public_prices::PublicPriceService`。公共仓储在 `mario_market.price_histories` 每证券一行原子保存完整五年日线、前复权基准、原价、来源和采集时间；不包含账号、数量或密钥。`PublicPriceService` 实现价格与历史端口，持仓和 `SharedWatchProvider` 都消费它，只有一个公共事实来源。`market_data/watch` 继续负责分红与计划，不再独立请求或缓存价格。
+`composition::MarketRuntime` 装配 `market_data/history::PublicMarketSource`、`db/public_prices::PublicPrices` 和 `application/public_prices::PublicPriceService`。公共仓储在 `mario_market.price_histories` 每证券一行原子保存完整十年日线、前复权基准、原价、来源和采集时间；不包含账号、数量或密钥。`PublicPriceService` 实现价格与历史端口，持仓和 `SharedWatchProvider` 都消费它，只有一个公共事实来源。`market_data/watch` 继续负责分红与计划，不再独立请求或缓存价格。
 
-公共编排拥有按证券并发合并、来源并发预算及更新截止；仓储拥有跨进程刷新租约、令牌校验、失败退避与整组版本写入，网络不占用仓储事务。进程启动及既有五分钟循环刷新消费者仍在使用的证券，过期无人使用的记录仅保留不继续抓取；来源日期倒退和较慢旧请求不能覆盖新版本。窗口、时限、价格口径及恢复行为统一见[市场数据](market-data.md)。只处理持仓、观察及明确查询涉及的公开证券，不扩展为全市场扫描。
+公共编排拥有按证券并发合并、来源并发预算及更新截止；仓储拥有跨进程刷新租约、令牌校验、失败退避与整组版本写入，网络不占用仓储事务。进程启动及既有五分钟循环刷新沪深300与消费者仍在使用的证券，过期无人使用的记录仅保留不继续抓取；来源日期倒退和较慢旧请求不能覆盖新版本。窗口、时限、价格口径及恢复行为统一见[市场数据](market-data.md)。固定覆盖当前沪深300成分股及上证交易日参考，其他证券按持仓、观察及明确查询的活跃范围处理。
+
+`market_data/price_universe::Csi300Source` 经 `PriceUniverseProvider` 提供官方300只完整范围，`application/public_prices/monitor` 协调范围更新和只读采集投影；不依赖账号、HTTP或具体供应商。`db/public_prices/monitor` 拥有 `price_universe` 成分表租约、`price_fetch_days` 逐日尝试/成功及 `price_monitor_days` 历史汇总；价格领取/完成与逐日计数分别同事务，网络不占事务。看板仅查询仓储抽取的日期、条数、缺值与来源摘要，不向应用进程读取全部十年日线。范围检查及价格仍归同一五分钟后台任务；每日保存和来源失败规则见[市场数据](market-data.md#沪深300采集范围与每日看板)。旧五年价格仅保留存量读取适配，后台完整补抓十年后替换；新来源不得写入五年版本。
 
 证券价格统一东方财富优先、Yahoo 降级。`models/market/eastmoney` 维护公开市场标识、币种与来源 URL 的确定性约束，来源解析与仓储证据校验共用；`market_data/history/overseas` 只负责港美股证券精确解析、同源日线及完整拆合股资料，不读账号或持有私有缓存。东方财富行动资料缺失时可用 Yahoo 补充同一证券的行动证据，价格序列不混源；无法核验时沿用整组降级。仍使用原公共版本、账号估值事务和备份格式，无存储迁移；旧来源证据继续按其真实来源读取。
 
@@ -218,7 +220,7 @@ sequenceDiagram
 
 ### 6.4 同步、备份与恢复
 
-前端按版本轮询，版本变化后才拉取快照，没有离线写入队列或实时推送。投资方法论随账号备份的 settings 行导出，恢复前校验非空及 4000 字符上限；缺少该项的旧备份恢复为初始范本。沿用现有备份结构，不新增 schema 迁移；恢复失败整体回滚。账号导出/导入使用版本化的同步数据集（`db/sync_format.rs`），导入在单一事务内校验表关联、精确金额与财务一致性后整体替换，失败整次回滚。宿主机级加密备份包含 `mario_auth`、`mario_market` 和全部 `user_<uuid>` schema；单账号 JSON 备份只包含该账号观察、估值证据及最后使用的分红依据，不携带或替换公共五年行情。宿主机级加密备份与迁移见 [服务器间打包、下载与恢复](data-migration.md)。
+前端按版本轮询，版本变化后才拉取快照，没有离线写入队列或实时推送。投资方法论随账号备份的 settings 行导出，恢复前校验非空及 4000 字符上限；缺少该项的旧备份恢复为初始范本。沿用现有备份结构，不新增 schema 迁移；恢复失败整体回滚。账号导出/导入使用版本化的同步数据集（`db/sync_format.rs`），导入在单一事务内校验表关联、精确金额与财务一致性后整体替换，失败整次回滚。宿主机级加密备份包含 `mario_auth`、`mario_market` 和全部 `user_<uuid>` schema；单账号 JSON 备份只包含该账号观察、估值证据及最后使用的分红依据，不携带或替换公共十年行情。宿主机级加密备份与迁移见 [服务器间打包、下载与恢复](data-migration.md)。
 
 ### 6.5 买点观察
 
@@ -246,7 +248,7 @@ sequenceDiagram
 
 [买点观察助手](buy-watch.md)是当前默认入口。`models/watch/rules` 定义账号观察配置与日周比较，`models/watch` 统一计算 TTM 和关注状态；默认是 5% 股息率、日线 BOLL 下轨 ±2% 及周收盘价 ≤ 周线 BOLL 中轨，`application/watch` 通过 `WatchMarketProvider` 获取输入；`application/watch_market` 从公共价格服务读取日线和交易日期，从公共分红仓储及 `market_data/watch` 读取已实施分红。`composition` 管理按账号后台检查的生命周期，不自动执行 AI。
 
-`market_data/history` 校验证券、交易所、时间戳与日期，国内原价与前复权按日期对齐，失败后整组回退 Yahoo；其中 `history/fund_actions` 只解析基金独立的完整拆分档案，不能以股票分红表或缺失页面推定基金没有拆分。基金代码范围、来源校验、Yahoo 有界重试及失败边界见[市场数据](market-data.md#来源与五年窗口)。`models/market/history` 定义精确序列、来源与复权基准一致性及报价；`application/watch_market` 负责观察投影。观察的上证交易日参考也从同一公共价格库读取；不能跨供应商拼接序列。`models/watch` 继续独立完成既有日周条件和趋势计算，公共价格更新不直接制造个人观察或提醒，账号检查仍按原事务保存。
+`market_data/history` 校验证券、交易所、时间戳与日期，国内原价与前复权按日期对齐，失败后整组回退 Yahoo；其中 `history/fund_actions` 只解析基金独立的完整拆分档案，不能以股票分红表或缺失页面推定基金没有拆分。基金代码范围、来源校验、Yahoo 有界重试及失败边界见[市场数据](market-data.md#来源与十年窗口)。`models/market/history` 定义精确序列、来源与复权基准一致性及报价；`application/watch_market` 负责观察投影。观察的上证交易日参考也从同一公共价格库读取；不能跨供应商拼接序列。`models/watch` 继续独立完成既有日周条件和趋势计算，公共价格更新不直接制造个人观察或提醒，账号检查仍按原事务保存。
 
 公开分红主资料由 `db/public_dividends::PublicDividends` 在 PostgreSQL `mario_market.dividend_histories` 保存，按证券一行完整事件集。API 启动时事务初始化并从 `market_data/watch_archive` 提供的版本化原件资料包载入 202 份可用历史；启动种子不能覆盖覆盖日期更新或同日采集时间更新的资料。基础包与明确证券范围的补充包在 `watch_archive` 按证券合并，较新完整历史优先；未复核证券和 CSV 导出均保留各自真实覆盖日。公共库只读写公开分红，不读取账号表或租户 schema，不推进账号数据版本。
 
@@ -274,7 +276,7 @@ HTTP 只提供已认证的 `GET /watch/dividend-calendar`，只读缓存并按�
 | --- | --- | --- |
 | 启动配置、行情供应商、模型管理端口、AI 执行器 | 进程（`runtime`、`composition`） | 可替换，不持有账号数据 |
 | 公共行业目录及最新观察 | 契约归领域层，持久目录、独立版本与快照归 `db/public_watch` | 超级账户维护现有领域内的公司；公共仓储不读账号表、不写个人记录，目录事务比较独立版本；后台任务归 `composition` |
-| 五年公共行情及刷新状态 | `db/public_prices` + `application/public_prices` | 按证券原子版本；持久租约和退避、同进程合并；只有公开事实，不推进账号版本 |
+| 十年公共行情、沪深300范围与每日采集状态 | `db/public_prices` + `application/public_prices`（含 `monitor` 子模块） | 按证券原子版本；范围和价格各自租约，逐日计数及汇总公共持久化；只有公开事实，不推进账号版本 |
 | 会话与账号 | `accounts` | 会话仅存哈希，可撤销；网站 OpenAI 身份映射、账号创建／关联／会话签发归同一事务；短期 OAuth 事务原子消费后不重放 |
 | 全站使用活跃度 | `accounts/activity` | 认证库运维元数据；分钟去重与保留期清理同事务，超级账户只读一致快照，不进入账本与个人备份 |
 | 账号业务数据与版本 | `db` 领域仓储 | 业务写入、回执、日志、投影与版本同事务提交 |
@@ -295,7 +297,7 @@ HTTP 只提供已认证的 `GET /watch/dividend-calendar`，只读缓存并按�
 
 沿用第 6.1 节的会话与数据库角色信任边界，`hosted/activity` 对 `/api/activity` 和 `/api/dashboard` 单独执行 Bearer 认证，复用请求并发上限并通过阻塞任务访问认证库；不打开个人仓储或账户锁，不推进账号版本。`accounts/activity` 拥有功能页枚举、统计契约、分钟去重与聚合事务，仅依赖账号权威、`storage` 和错误；架构检查禁止它依赖租户仓储、业务流程和 AI。采样端点是版本策略显式例外，统计查询在数据库角色核对后的同一只读快照中完成。两条接口返回 `no-store`。
 
-`mario_auth.activity_minutes` 和 `activity_metadata` 在认证初始化锁内事务幂等创建。它们属于运维元数据，不进入个人同步或财务事务，整站备份保留；账号外键级联删除，按采样事务清理过期分钟。前端 `app/useActivityTracking` 从应用壳接收当前页，调用 `api/activity`，只采样可见且近期有交互的已登录页面；采样失败独立结束。`app/Website` 在 `${BASE_URL}dashboard` 直接装配 `features/dashboard`，复用 `WebAccess`，不加载账号快照或后台同步。后端仅为 `/dashboard` 和 `/dashboard/` 提供已有 HTML，其他未知路径保持原 404；Nginx 既有前缀转发支持 `/mario/dashboard`。口径、保留期及回退见[账号与同步](cloud-sync.md#全站使用活跃度看板)。
+`mario_auth.activity_minutes` 和 `activity_metadata` 在认证初始化锁内事务幂等创建。它们属于运维元数据，不进入个人同步或财务事务，整站备份保留；账号外键级联删除，按采样事务清理过期分钟。前端 `app/useActivityTracking` 从应用壳接收当前页，调用 `api/activity`，只采样可见且近期有交互的已登录页面；采样失败独立结束。`hosted/activity` 在认证库校验超级账户后，由适配器组合活跃度与 `PublicPriceService` 的公共价格监控投影；两个存储域各读自己的只读快照，不访问个人仓储或执行网络抓取。`app/Website` 在 `${BASE_URL}dashboard` 直接装配 `features/dashboard`，复用 `WebAccess`，不加载账号快照或后台同步。后端仅为 `/dashboard` 和 `/dashboard/` 提供已有 HTML，其他未知路径保持原 404；Nginx 既有前缀转发支持 `/mario/dashboard`。口径、保留期及回退见[账号与同步](cloud-sync.md#全站使用活跃度看板)。
 
 ### 连接复用与阶段观测
 

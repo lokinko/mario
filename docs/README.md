@@ -27,7 +27,7 @@
 | 收支、投资期限与财务事实填写状态 | [财务事实边界](ai-data-boundary.md) | [收支表单](../client/src/features/portfolio/ProfileForm.tsx)、[财务契约](../server/src/models.rs)、[事实卡](../server/src/context/fact_sheet.rs) | [表单回归](../client/src/features/portfolio/ProfileForm.test.tsx)、[保存与恢复事实回归](../server/src/context.rs)、`npm run check:contracts` |
 | 持仓、现金、真实成交、期权与财务审计 | [持仓与交易](holding-trades.md) | [资产页面](../client/src/features/portfolio/)、[财务仓储](../server/src/db/financial.rs)、[成交](../server/src/db/trades.rs)、[期权](../server/src/db/options.rs)、[精确会计](../server/src/db/amounts.rs) | [财务回归](../server/src/db/financial_tests.rs)、[期权交互](../client/src/features/portfolio/StockOptions.test.tsx)、[真实托管 HTTP](../scripts/test-hosted.mjs)、`npm run test:financial` |
 | 每日资产与趋势 | [每日资产](daily-assets.md) | [每日仓储](../server/src/db/daily.rs)、[追踪组件](../client/src/features/portfolio/DailyTracking.tsx)、[历史状态](../client/src/features/portfolio/useAssetHistory.ts) | [追踪](../client/src/features/portfolio/DailyTracking.test.tsx)、[资产总览](../client/src/features/portfolio/AssetOverview.test.tsx)、[财务验收](../scripts/test-financial.mjs) |
-| 行情、汇率、估值与确定性风险规划 | [市场数据](market-data.md)、[规划模型](planning-model.md) | [市场端口](../server/src/ports/market.rs)、[行情用例](../server/src/application/portfolio.rs)、[收盘策略](../server/src/models/market/close.rs)、[后台持仓估值](../server/src/application/prices.rs)、[五年公共价格](../server/src/application/public_prices.rs)、[公共仓储](../server/src/db/public_prices.rs)、[汇率用例](../server/src/application/fx.rs)、[估值](../server/src/valuation.rs)、[风险](../server/src/risk.rs)、[规划](../server/src/planning.rs) | [汇率组件](../client/src/features/portfolio/ExchangeRates.test.tsx)、[证券预览锁回归](../server/src/application/portfolio_quote_tests.rs)、[收盘估值回归](../server/src/application/closing_price_tests.rs)、[公共价格回归](../server/src/application/public_prices/tests.rs)、[五年来源](../server/src/market_data/history/tests.rs)、[报价认证 HTTP](../server/src/hosted_quote_tests.rs)、[财务回归](../server/src/db/financial_tests.rs)、各 Rust 模块内测试与[功能 API](../scripts/test-functional-api.mjs) |
+| 行情、汇率、估值与确定性风险规划 | [市场数据](market-data.md)、[规划模型](planning-model.md) | [市场端口](../server/src/ports/market.rs)、[行情用例](../server/src/application/portfolio.rs)、[收盘策略](../server/src/models/market/close.rs)、[后台持仓估值](../server/src/application/prices.rs)、[十年公共价格](../server/src/application/public_prices.rs)、[公共仓储](../server/src/db/public_prices.rs)、[汇率用例](../server/src/application/fx.rs)、[估值](../server/src/valuation.rs)、[风险](../server/src/risk.rs)、[规划](../server/src/planning.rs) | [汇率组件](../client/src/features/portfolio/ExchangeRates.test.tsx)、[证券预览锁回归](../server/src/application/portfolio_quote_tests.rs)、[收盘估值回归](../server/src/application/closing_price_tests.rs)、[公共价格回归](../server/src/application/public_prices/tests.rs)、[十年来源](../server/src/market_data/history/tests.rs)、[报价认证 HTTP](../server/src/hosted_quote_tests.rs)、[财务回归](../server/src/db/financial_tests.rs)、各 Rust 模块内测试与[功能 API](../scripts/test-functional-api.mjs) |
 | 账号、同步、草稿保护与个人 JSON 备份/外部自选导入 | [账号与同步](cloud-sync.md)、[信任边界](threat-model.md) | [账号](../server/src/accounts.rs)、[认证适配](../server/src/hosted.rs)、[同步仓储](../server/src/db/sync_store.rs)、[外部格式转换](../server/src/db/watchlist_import.rs)、[导入界面](../client/src/features/account/ServerData.tsx)、[传输](../client/src/lib/httpClient.ts)、[应用数据生命周期](../client/src/app/useApplicationData.ts) | [传输回归](../client/src/api.hosted.test.ts)、[应用导航](../client/src/App.test.tsx)、[账号交互](../client/src/features/account/WebAccess.test.tsx)、[导入交互](../client/src/features/account/ServerData.test.tsx)、[导入回归](../server/src/db/watchlist_import/tests.rs)、[托管隔离](../scripts/test-hosted.mjs) |
 | 模型连接与桥接管理 | [账号与同步](cloud-sync.md)、[本机桥接](codex-bridge.md) | [管理端口](../server/src/ports/model.rs)、[管理用例](../server/src/application/model_settings.rs)、[执行适配](../server/src/ai/management.rs) | [连接并发](../server/src/application/model_settings_tests.rs)、[模型设置](../client/src/features/settings/ModelSettings.test.tsx)、`npm run check:contracts` |
 | 投资方法论与问答预设 | [方法论](methodology.md)、[授权边界](ai-data-boundary.md) | [方法论编辑](../client/src/features/methodology/InvestmentMethodology.tsx)、[设置页面](../client/src/features/settings/)、[设置仓储](../server/src/db/settings.rs)、[方法论契约](../server/src/models/methodology.rs) | [方法论](../client/src/features/methodology/InvestmentMethodology.test.tsx)、[问答预设](../client/src/features/settings/AnalysisDefaults.test.tsx)、[模型设置](../client/src/features/settings/ModelSettings.test.tsx) |
@@ -43,7 +43,7 @@
 
 | 模块 | 当前规范或操作指南 | 实现与验证入口 |
 | --- | --- | --- |
-| 全站使用活跃度 | [账号与同步：活跃度看板](cloud-sync.md#全站使用活跃度看板) | [认证库统计](../server/src/accounts/activity.rs)、[托管接口](../server/src/hosted/activity.rs)、[看板](../client/src/features/dashboard/UsageDashboard.tsx)、[前台采样](../client/src/app/useActivityTracking.ts)、[Web 验收](../scripts/test-web.mjs) |
+| 全站使用活跃度及公共价格采集 | [账号与同步：活跃度看板](cloud-sync.md#全站使用活跃度看板)、[沪深300采集](market-data.md#沪深300采集范围与每日看板) | [认证库统计](../server/src/accounts/activity.rs)、[托管接口](../server/src/hosted/activity.rs)、[看板](../client/src/features/dashboard/UsageDashboard.tsx)、[采集投影](../server/src/application/public_prices/monitor.rs)、[每日仓储](../server/src/db/public_prices/monitor.rs)、[前台采样](../client/src/app/useActivityTracking.ts)、[Web 验收](../scripts/test-web.mjs) |
 | 宿主机启动、部署与 Web 发布 | [自建服务](self-hosting.md)、[部署验收](deploy-madeagents.md)、[Web 构建](client-builds.md) | [部署入口](../deploy.sh)、[域名接入](../scripts/setup-domain.mjs)、[主运行器](../scripts/host-runtime.mjs)、[Web 构建脚本](../scripts/build-web.mjs)、[部署测试](../scripts/test-deploy.mjs)、[域名回归](../scripts/setup-domain.test.mjs) |
 | 整站加密备份、下载与恢复 | [数据迁移](data-migration.md)、[信任边界](threat-model.md) | [备份](../scripts/backup.mjs)、[下载](../scripts/download-backup.mjs)、[恢复](../scripts/restore-backup.mjs)、[独立加密备份验收](../scripts/test-backup.mjs)、[财务原生恢复验收](../scripts/test-financial.mjs) |
 
@@ -55,7 +55,7 @@
 
 买点观察首屏摘要与单公司详情的容量证据见[2026-11-08 加载验收](audits/watch-loading-20261108.md)。
 
-五年公共价格库的本次实现、迁移和验收证据见[2026-11-08 验收记录](audits/shared-market-prices-20261108.md)，该记录不替代市场数据规范。
+原五年公共价格库的历史实现、迁移和验收证据见[2026-11-08 验收记录](audits/shared-market-prices-20261108.md)，该记录不替代市场数据规范。
 
 技术栈简化与后续优化的范围、测量、验证和平台边界见[首轮验收](audits/stack-simplification-20261109.md)及[后续验收](audits/stack-followup-20261109.md)，一次性性能数字不作为产品要求。
 
@@ -70,3 +70,5 @@
 仓库 `main` 与远端同步不代表运行中的网站已部署该版本；本机其他 worktree 也可能是历史开发分支，不能当作当前规范来源。最新状态以交付提交及对应验证记录为准。
 
 公共目录本轮长期观察补充的经营、分红依据与风险见[2026-11-16 核查记录](audits/watch-catalog-quality-20261116.md)，入池不代表满足当前买点。
+
+沪深300十年价格库与每日采集看板的本机验收、联网失败及未部署边界见[2026-11-16记录](audits/csi300-price-monitor-20261116.md)。

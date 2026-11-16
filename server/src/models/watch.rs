@@ -537,7 +537,7 @@ pub fn evaluate(
         dividend_basis: data.dividend_basis.clone(),
         trends: Some(trends::calculate(&sessions)),
         price_revision: data.price_revision.clone(),
-        trend_window_years: Some(crate::models::market::history::HISTORY_YEARS),
+        trend_window_years: Some(crate::models::watch::trends::WINDOW_YEARS),
         dividend_history: data.dividends.as_ref().map(|events| {
             let start = day.checked_sub_months(chrono::Months::new(36)).unwrap();
             DividendWindow {

@@ -110,3 +110,10 @@ test('shared price work does not relax UI isolation or cycle detection',()=>{
   assert.ok(clientViolation('lib/service.ts','api/portfolio.ts'));
   assert.equal(cycles(new Map([['a',new Set(['b'])],['b',new Set(['a'])]])).length,1);
 });
+
+test('public collection monitoring preserves public orchestration boundaries', () => {
+  for (const source of ['application/public_prices/monitor.rs', 'db/public_prices/monitor.rs'])
+    for (const target of ['accounts', 'http', 'ai', 'market_data']) assert(serverFileViolation(source, target));
+  assert.equal(serverFileViolation('application/public_prices/monitor.rs', 'ports'), undefined);
+  assert.equal(serverFileViolation('db/public_prices/monitor.rs', 'storage'), undefined);
+});
