@@ -22,6 +22,11 @@ export async function getModelConfig(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-config");
 }
 
+export type ServerModelCatalog = { models: string[]; defaultModel: string };
+export function getServerModels(): Promise<ServerModelCatalog> {
+  return httpRequest<ServerModelCatalog>("/model-config/models");
+}
+
 export async function saveModelConfig(
   config: Omit<ModelConfig, "hasApiKey" | "serverModel"> & { apiKey?: string },
 ): Promise<ModelConfig> {

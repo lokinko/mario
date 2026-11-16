@@ -553,6 +553,13 @@ pub enum ModelConfigSource {
     Server,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerModelCatalog {
+    pub models: Vec<String>,
+    pub default_model: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexModel {

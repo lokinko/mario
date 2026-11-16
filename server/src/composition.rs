@@ -12,6 +12,7 @@ pub(crate) fn model_services() -> Arc<crate::application::model_settings::ModelS
     Arc::new(crate::application::model_settings::ModelServices {
         connector: Arc::new(crate::ai::management::ModelConnectorAdapter),
         bridges: Arc::new(crate::ai::management::BridgeRegistryAdapter),
+        catalog: Arc::new(crate::ai::model_catalog::OpenAiModelCatalog::default()),
         server: None,
     })
 }

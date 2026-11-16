@@ -21,6 +21,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { AnalysisDefaults } from "./AnalysisDefaults";
 import { CodexBridge } from "./CodexBridge";
 import { CodexModelSelect } from "./CodexModelSelect";
+import { ServerModelSelect } from "./ServerModelSelect";
 import type { ReactNode } from "react";
 
 export function ModelSettings({
@@ -36,8 +37,13 @@ export function ModelSettings({
   onUpdate: (m: ModelConfig) => void;
   flash: (s: string) => void;
 }) {
-  const [source, setSource] = useState(model.source ?? "account");
+  const [source, setSource] = useState(
+    model.source ?? (model.serverModel ? "server" : "account"),
+  );
   const usingServer = source === "server";
+  const [serverModelName, setServerModelName] = useState(
+    model.source === "server" ? model.model : (model.serverModel ?? ""),
+  );
   const [provider, setProvider] = useState<ModelConfig["provider"]>(
     model.provider,
   );
@@ -61,7 +67,7 @@ export function ModelSettings({
         source,
         provider: usingServer ? "openai-responses" : provider,
         baseUrl: usingServer ? "https://api.openai.com/v1" : baseUrl,
-        model: usingServer ? (model.serverModel ?? "") : modelName,
+        model: usingServer ? serverModelName : modelName,
         apiKey: usingServer ? undefined : apiKey || undefined,
       });
       onUpdate(next);
@@ -171,18 +177,23 @@ export function ModelSettings({
                 }}
               >
                 <option value="server" disabled={!model.serverModel}>
-                  站点提供的 OpenAI
+                  站点提供的 OpenAI（默认）
                 </option>
                 <option value="account">个人模型或本机桥接</option>
               </select>
             </label>
           )}
           {usingServer ? (
-            <p>
-              {model.serverModel
-                ? `站点模型：${model.serverModel}，无需填写个人 API Key。调用费用由站点承担。`
-                : "站点 OpenAI 暂未启用，请联系管理员或切换个人模型。"}
-            </p>
+            model.serverModel ? (
+              <ServerModelSelect
+                value={serverModelName}
+                onChange={setServerModelName}
+                defaultModel={model.serverModel}
+                disabled={saving || testing}
+              />
+            ) : (
+              <p>站点 OpenAI 暂未启用，请联系管理员或切换个人模型。</p>
+            )
           ) : (
             <div className="form-grid model-fields">
               <label>
@@ -341,7 +352,7 @@ export function ModelSettings({
               saving ||
               testing ||
               (usingServer
-                ? !model.serverModel
+                ? !model.serverModel || !serverModelName.trim()
                 : !baseUrl.trim() || !modelName.trim())
             }
           >

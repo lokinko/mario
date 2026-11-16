@@ -117,3 +117,8 @@ test('public collection monitoring preserves public orchestration boundaries', (
   assert.equal(serverFileViolation('application/public_prices/monitor.rs', 'ports'), undefined);
   assert.equal(serverFileViolation('db/public_prices/monitor.rs', 'storage'), undefined);
 });
+
+test('site model catalogs only depend on execution ports and errors', () => {
+  for (const target of ['ports', 'error']) assert.equal(serverFileViolation('ai/model_catalog.rs', target), undefined);
+  for (const target of ['db', 'accounts', 'context', 'application', 'http', 'ai', 'models']) assert(serverFileViolation('ai/model_catalog.rs', target));
+});

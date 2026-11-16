@@ -20,6 +20,7 @@ pub(super) fn router() -> Router {
             get(model_config).put(save_model_config),
         )
         .route("/api/model-config/test", post(test_model_config))
+        .route("/api/model-config/models", get(server_models))
         .route("/api/model-key", axum::routing::delete(delete_model_key))
         .route(
             "/api/analysis-settings",
@@ -53,12 +54,17 @@ async fn save_model_config(
     Extension(state): Extension<Arc<RequestContext>>,
     Json(input): Json<ModelConfigInput>,
 ) -> AppResult<Json<ModelConfig>> {
-    Ok(Json(model_settings::save(
-        &state.db,
-        input,
-        state.model_services.bridges.as_ref(),
-        state.model_services.server.as_ref(),
-    )?))
+    Ok(Json(
+        model_settings::save(&state.db, input, &state.model_services).await?,
+    ))
+}
+
+async fn server_models(
+    Extension(state): Extension<Arc<RequestContext>>,
+) -> AppResult<Json<crate::models::ServerModelCatalog>> {
+    Ok(Json(
+        model_settings::server_models(&state.db, &state.model_services).await?,
+    ))
 }
 
 async fn test_model_config(

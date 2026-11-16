@@ -137,6 +137,7 @@ async function sharedOpenAi() {
     const a=await register(shared),b=await register(shared);
     const selected={source:'server',provider:'openai-responses',baseUrl:'https://api.openai.com/v1',model:'site-model'};
     await request(shared,'/model-config',null,'GET',undefined,401);
+    await request(shared,'/model-config/models',null,'GET',undefined,401);
     await request(shared,'/analysis',null,'POST',{},401);
     const question={question:'shared smoke',workflow:'quick',webSearch:false,contextSelection:{includeProfile:false,includeHoldings:false,includeEvidence:false}};
     for(const user of [a,b]) {
@@ -157,7 +158,7 @@ async function sharedOpenAi() {
       assert.equal(job.api_key,siteKey);assert.equal(job.config.baseUrl,selected.baseUrl);assert.equal(job.config.provider,'openai-responses');assert.equal(job.config.model,'site-model');
       assert(!JSON.stringify(job.context).includes(siteKey));
     }
-    for(const override of [{baseUrl:modelUrl},{model:'unapproved-model'},{provider:'openai-chat'},{apiKey:'caller-key'}])
+    for(const override of [{baseUrl:modelUrl},{model:''},{provider:'openai-chat'},{apiKey:'caller-key'}])
       await request(shared,'/model-config',a,'PUT',{...selected,...override},400);
     await request(shared,'/model-key',a,'DELETE',undefined,400);
     const own={source:'account',provider:'openai-chat',baseUrl:modelUrl,model:'personal-model',apiKey:'personal-http-key'};
@@ -181,6 +182,7 @@ async function sharedOpenAi() {
     const unavailable=await request(disabled,'/model-config',b);
     assert.equal(unavailable.source,'server');assert.equal(unavailable.hasApiKey,false);
     await request(disabled,'/model-config/test',b,'POST',undefined,400);
+    await request(disabled,'/model-config/models',b,'GET',undefined,400);
     await request(disabled,'/model-config',b,'PUT',selected,400);
     console.log('PASS shared OpenAI: two authenticated tenants, frozen official destination, account override, disabled service, no credential export or silent fallback');
   } finally {sharedAgent.closeAllConnections();await new Promise(resolve=>sharedAgent.close(resolve));}

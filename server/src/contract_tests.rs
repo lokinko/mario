@@ -111,6 +111,10 @@ fn transport_contract_fixture() {
     let bridges = [crate::models::CodexBridgeStatus::default(), serde_json::from_value(json!({
         "paired":true,"online":true,"model":"fixture","models":[{"model":"fixture","displayName":"Fixture","description":"catalog fixture","isDefault":true}]
     })).unwrap()];
+    let catalogs = [crate::models::ServerModelCatalog {
+        models: vec!["gpt-5.4".into(), "gpt-5.4-mini".into()],
+        default_model: "gpt-5.4".into(),
+    }];
     let profiles = [
         crate::models::FinancialProfile::default(),
         crate::models::FinancialProfile {
@@ -127,6 +131,6 @@ fn transport_contract_fixture() {
     ];
     println!(
         "MARIO_CONTRACT:{}",
-        json!({ "amounts": amounts, "profiles": profiles, "rules": rules, "policies": policies, "trades":trades, "tradeUpdates":trade_updates, "fx":fx, "events":events, "configs":configs, "bridges":bridges })
+        json!({ "amounts": amounts, "profiles": profiles, "rules": rules, "policies": policies, "trades":trades, "tradeUpdates":trade_updates, "fx":fx, "events":events, "configs":configs, "bridges":bridges, "catalogs":catalogs })
     );
 }
