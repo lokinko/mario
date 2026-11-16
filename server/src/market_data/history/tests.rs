@@ -221,7 +221,7 @@ async fn public_get_retries_transient_status_once_but_not_missing_symbols() {
     let source = PublicMarketSource::new().unwrap();
     assert_eq!(
         source
-            .json(format!("http://{address}/").parse().unwrap())
+            .json(format!("http://{address}/").parse().unwrap(), None)
             .await
             .unwrap()
             .0,
@@ -229,18 +229,18 @@ async fn public_get_retries_transient_status_once_but_not_missing_symbols() {
     );
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     let error = source
-        .json(format!("http://{address}/missing").parse().unwrap())
+        .json(format!("http://{address}/missing").parse().unwrap(), None)
         .await
         .unwrap_err();
     assert_eq!(source_error(&error), "HTTP 404");
     assert_eq!(missing_calls.load(Ordering::SeqCst), 1);
     assert!(source
-        .json(format!("http://{address}/offline").parse().unwrap())
+        .json(format!("http://{address}/offline").parse().unwrap(), None)
         .await
         .is_err());
     assert_eq!(offline_calls.load(Ordering::SeqCst), 2);
     assert!(source
-        .json(format!("http://{address}/invalid").parse().unwrap())
+        .json(format!("http://{address}/invalid").parse().unwrap(), None)
         .await
         .is_err());
     assert_eq!(invalid_calls.load(Ordering::SeqCst), 1);
@@ -376,4 +376,99 @@ async fn live_csi300_ten_year_prices() {
             h.provider_name
         );
     }
+}
+
+#[tokio::test]
+async fn public_get_recovers_a_closed_connection_or_truncated_body_but_stops_after_two_attempts() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    for mode in ["closed", "truncated", "persistent"] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let received = calls.clone();
+        let server = tokio::spawn(async move {
+            for attempt in 0..2 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 1024];
+                while !request.windows(4).any(|v| v == b"\r\n\r\n") {
+                    let count = stream.read(&mut buffer).await.unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                assert!(String::from_utf8_lossy(&request)
+                    .to_ascii_lowercase()
+                    .contains("referer: https://quote.eastmoney.com/"));
+                received.fetch_add(1, Ordering::SeqCst);
+                if attempt == 0 || mode == "persistent" {
+                    if mode == "truncated" {
+                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{").await.unwrap();
+                    }
+                    // Close without a complete HTTP message, as with an upstream EOF.
+                    continue;
+                }
+                let body = b"{\"ok\":true}";
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                stream.write_all(header.as_bytes()).await.unwrap();
+                stream.write_all(body).await.unwrap();
+            }
+        });
+        let source = PublicMarketSource::new().unwrap();
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            source.json(
+                format!("http://{address}/api/qt/stock/kline/get?fqt=0")
+                    .parse()
+                    .unwrap(),
+                Some("https://quote.eastmoney.com/"),
+            ),
+        )
+        .await;
+        server.abort();
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "{mode}");
+        let result = result.unwrap();
+        if mode == "persistent" {
+            let error = result.unwrap_err();
+            assert!(source_error(&error).contains("原价日线"));
+            assert!(matches!(error, AppError::Network(_)));
+        } else {
+            assert_eq!(result.unwrap().0, json!({"ok":true}));
+        }
+    }
+}
+
+#[test]
+fn network_error_stages_distinguish_price_adjustment_and_action_requests() {
+    for (url, expected) in [
+        (
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get?fqt=0",
+            "原价日线",
+        ),
+        (
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get?fqt=1",
+            "前复权日线",
+        ),
+        (
+            "https://datacenter-web.eastmoney.com/api/data/v1/get",
+            "公司行动资料",
+        ),
+        (
+            "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d",
+            "日线历史",
+        ),
+        (
+            "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?interval=1mo",
+            "公司行动历史",
+        ),
+    ] {
+        assert_eq!(history_request_stage(&url.parse().unwrap()), Some(expected));
+    }
+    assert!(history_request_stage(&"https://example.test/unknown".parse().unwrap()).is_none());
 }
