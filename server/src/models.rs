@@ -553,6 +553,13 @@ pub enum ModelConfigSource {
     Server,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerModelCatalog {
+    pub models: Vec<String>,
+    pub default_model: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexModel {
@@ -1008,6 +1015,15 @@ pub struct SystemReviewRecord {
 pub struct ResearchEvidenceInput {
     pub content: String,
     pub attachments: Vec<ResearchAttachmentInput>,
+    pub asset_name: String,
+    pub category: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+pub struct ResearchEvidenceTagsInput {
+    pub asset_name: String,
+    pub category: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1017,6 +1033,8 @@ pub struct ResearchEvidence {
     pub attachments: Vec<ResearchAttachment>,
     pub id: String,
     pub asset_name: String,
+    #[serde(default)]
+    pub category: String,
     pub title: String,
     pub publisher: String,
     pub source_url: String,

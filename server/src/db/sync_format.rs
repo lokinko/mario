@@ -45,6 +45,22 @@ const LEGACY_HOLDING_COLUMNS: &[&str] = &[
     "updated_at",
 ];
 
+const V29_RESEARCH_EVIDENCE_COLUMNS: &[&str] = &[
+    "id",
+    "asset_name",
+    "title",
+    "publisher",
+    "source_url",
+    "source_tier",
+    "evidence_type",
+    "stance",
+    "as_of_date",
+    "claim",
+    "notes",
+    "active",
+    "captured_at",
+];
+
 const V3_HOLDING_COLUMNS: &[&str] = &[
     "id",
     "symbol",
@@ -243,6 +259,7 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
             "notes",
             "active",
             "captured_at",
+            "category",
         ],
         order_by: "id",
     },
@@ -385,13 +402,18 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 29;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 30;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
 
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
+    if version < 30 {
+        for spec in specs.iter_mut().filter(|s| s.name == "research_evidence") {
+            spec.columns = V29_RESEARCH_EVIDENCE_COLUMNS;
+        }
+    }
     if (25..=SYNC_DATASET_SCHEMA_VERSION).contains(&version) {
         return Ok(specs);
     }

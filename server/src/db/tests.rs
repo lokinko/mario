@@ -74,7 +74,7 @@ fn upgrade_and_legacy_restore_remove_memory_metadata_and_preserve_reports() {
             .any(|table| table.name == "memory_preferences"));
     };
     let mut legacy = db.export_sync_data().unwrap();
-    legacy.schema_version = 21;
+    set_legacy_version(&mut legacy, 21);
     add_legacy_table_shapes(&mut legacy);
     legacy
         .tables
@@ -320,7 +320,7 @@ fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data()
             | "memory_preferences"
     )));
     let mut legacy = exported;
-    legacy.schema_version = 15;
+    set_legacy_version(&mut legacy, 15);
     add_retired_tables(&mut legacy);
     legacy
         .tables
@@ -645,7 +645,7 @@ fn v16_backups_skip_retired_portfolio_snapshots_and_keep_active_data() {
     })
     .unwrap();
     let mut legacy = db.export_sync_data().unwrap();
-    legacy.schema_version = 16;
+    set_legacy_version(&mut legacy, 16);
     add_retired_tables(&mut legacy);
     legacy.tables.retain(|table| {
         !matches!(
@@ -1195,6 +1195,67 @@ fn stores_immutable_research_evidence_and_allows_archiving() {
 }
 
 #[test]
+fn research_evidence_tags_are_editable_without_changing_content_and_survive_backups() {
+    let db = Database::test();
+    let created = db
+        .add_research_evidence(&ResearchEvidenceInput {
+            content: "年报：分红率维持".into(),
+            asset_name: " 招商银行 600036.SS ".into(),
+            category: "年报".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(
+        (created.asset_name.as_str(), created.category.as_str()),
+        ("招商银行 600036.SS", "年报")
+    );
+    let retagged = db
+        .set_research_evidence_tags(
+            &created.id,
+            &crate::models::ResearchEvidenceTagsInput {
+                asset_name: String::new(),
+                category: "公告".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(retagged.asset_name, "");
+    assert_eq!(retagged.category, "公告");
+    assert_eq!(retagged.claim, created.claim);
+    for (asset_name, category) in [
+        ("甲\n乙", ""),
+        ("", "超过二十个字符的信息类型名称超过二十个字符"),
+    ] {
+        assert!(db
+            .set_research_evidence_tags(
+                &created.id,
+                &crate::models::ResearchEvidenceTagsInput {
+                    asset_name: asset_name.into(),
+                    category: category.into(),
+                },
+            )
+            .is_err());
+    }
+    assert!(db
+        .set_research_evidence_tags("missing", &Default::default())
+        .is_err());
+
+    let export = db.export_sync_data().unwrap();
+    let copy = Database::test();
+    copy.import_sync_data(&export).unwrap();
+    assert_eq!(copy.research_evidence().unwrap()[0].category, "公告");
+
+    let mut legacy = export.clone();
+    set_legacy_version(&mut legacy, 29);
+    let restored = Database::test();
+    restored.import_sync_data(&legacy).unwrap();
+    let item = restored.research_evidence().unwrap().remove(0);
+    assert_eq!(
+        (item.category.as_str(), item.claim.as_str()),
+        ("", "年报：分红率维持")
+    );
+}
+
+#[test]
 fn reads_frozen_structured_reviews_after_retiring_the_old_write_format() {
     let db = Database::test();
     db.conn().unwrap().execute(
@@ -1324,7 +1385,7 @@ fn manual_holding_details_survive_restart_history_and_sync() {
     let mut old_export = export.clone();
     add_retired_tables(&mut old_export);
     old_export.tables.retain(|t| t.name != "holding_trades");
-    old_export.schema_version = 13;
+    set_legacy_version(&mut old_export, 13);
     let table = old_export
         .tables
         .iter_mut()
@@ -1368,6 +1429,27 @@ fn manual_holding_details_reject_invalid_values_and_inconsistent_sync() {
     table.rows[0][16] = SyncValue::Real(-1.0);
     assert!(db.import_sync_data(&dataset).is_err());
     assert_eq!(db.snapshot().unwrap().holdings[0].current_price, Some(0.0));
+}
+
+/// Exports before v30 have no research evidence category column.
+pub(super) fn set_legacy_version(dataset: &mut SyncDataset, version: u32) {
+    dataset.schema_version = version;
+    if version >= 30 {
+        return;
+    }
+    let Some(table) = dataset
+        .tables
+        .iter_mut()
+        .find(|t| t.name == "research_evidence")
+    else {
+        return;
+    };
+    if let Some(index) = table.columns.iter().position(|c| c == "category") {
+        table.columns.remove(index);
+        for row in &mut table.rows {
+            row.remove(index);
+        }
+    }
 }
 
 pub(super) fn strip_holding_details_for_legacy(dataset: &mut SyncDataset) {

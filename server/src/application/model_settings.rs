@@ -3,14 +3,15 @@ use crate::{
     db::{model_key_binding, Database},
     models::{
         ModelConfig, ModelConfigInput, ModelConfigSource, ModelConnectionTest, ModelProviderKind,
-        ModelTarget,
+        ModelTarget, ServerModelCatalog,
     },
-    ports::model::{BridgeRegistry, ModelConnector},
+    ports::model::{BridgeRegistry, ModelCatalog, ModelConnector},
     AppError, AppResult,
 };
 pub(crate) struct ModelServices {
     pub connector: std::sync::Arc<dyn ModelConnector>,
     pub bridges: std::sync::Arc<dyn BridgeRegistry>,
+    pub catalog: std::sync::Arc<dyn ModelCatalog>,
     pub server: Option<ServerOpenAi>,
 }
 
@@ -43,19 +44,36 @@ pub(crate) fn configuration(
 ) -> AppResult<ModelConfig> {
     let mut config = db.model_config()?;
     if config.source == ModelConfigSource::Server
-        || (server.is_some()
-            && !config.has_api_key
-            && db.setting("model.provider")?.is_none()
-            && db.setting("model.source")?.is_none())
+        || (server.is_some() && db.setting("model.source")?.is_none())
     {
         config.source = ModelConfigSource::Server;
         config.provider = ModelProviderKind::OpenaiResponses;
         config.base_url = OPENAI_URL.into();
-        config.model = server.map(|s| s.model.clone()).unwrap_or_default();
+        config.model = db
+            .setting("model.server_name")?
+            .or_else(|| server.map(|s| s.model.clone()))
+            .unwrap_or_default();
         config.has_api_key = server.is_some();
     }
     config.server_model = server.map(|s| s.model.clone());
     Ok(config)
+}
+
+pub(crate) async fn server_models(
+    db: &Database,
+    services: &ModelServices,
+) -> AppResult<ServerModelCatalog> {
+    let server = services
+        .server
+        .as_ref()
+        .ok_or_else(|| AppError::Validation("站点尚未启用 OpenAI 服务".into()))?;
+    let models = db
+        .without_account_lock(services.catalog.list(&server.credential))
+        .await??;
+    Ok(ServerModelCatalog {
+        models,
+        default_model: server.model.clone(),
+    })
 }
 pub(crate) async fn test_connection(
     db: &Database,
@@ -110,7 +128,7 @@ pub(crate) fn configured_model_key(
         })?;
         if config.provider != ModelProviderKind::OpenaiResponses
             || config.base_url != OPENAI_URL
-            || config.model != server.model
+            || config.model != configuration(db, Some(server))?.model
         {
             return Err(AppError::Validation(
                 "站点 OpenAI 配置已变化，请重新加载".into(),
@@ -129,25 +147,43 @@ pub(crate) fn configured_model_key(
     db.secret("model")
 }
 
-pub(crate) fn save(
+pub(crate) async fn save(
     db: &Database,
     input: ModelConfigInput,
-    bridges: &dyn BridgeRegistry,
-    server: Option<&ServerOpenAi>,
+    services: &ModelServices,
 ) -> AppResult<ModelConfig> {
+    let server = services.server.as_ref();
+    let bridges = services.bridges.as_ref();
     if input.source == ModelConfigSource::Server {
         let server =
             server.ok_or_else(|| AppError::Validation("站点尚未启用 OpenAI 服务".into()))?;
         if input.provider != ModelProviderKind::OpenaiResponses
             || input.base_url != OPENAI_URL
-            || input.model != server.model
             || input.api_key.is_some()
+            || input.model.trim().is_empty()
         {
             return Err(AppError::Validation(
-                "站点 OpenAI 的地址、模型和密钥由管理员配置".into(),
+                "请选择站点模型，地址和密钥由管理员配置".into(),
             ));
         }
-        db.set_setting("model.source", "server")?;
+        let current = configuration(db, Some(server))?;
+        if input.model != server.model
+            && !(current.source == ModelConfigSource::Server && input.model == current.model)
+        {
+            let revision = db.revision()?;
+            let catalog = server_models(db, services).await?;
+            if db.revision()? != revision {
+                return Err(AppError::Conflict(
+                    "读取模型目录期间账号资料已变化，请刷新后重试".into(),
+                ));
+            }
+            if !catalog.models.contains(&input.model) {
+                return Err(AppError::Validation(
+                    "此模型不在站点返回的文本模型目录中，请重新选择".into(),
+                ));
+            }
+        }
+        db.save_server_model(&input.model)?;
         return configuration(db, Some(server));
     }
     if input.provider == ModelProviderKind::CodexBridge {
@@ -223,6 +259,15 @@ mod tests {
             configured_model_key(&a, &personal, Some(&server)).unwrap(),
             "personal-secret"
         );
+        // Older settings without an explicit source now use the site default,
+        // while the personal credential remains available for an explicit opt-out.
+        a.delete_setting("model.source").unwrap();
+        assert_eq!(
+            configuration(&a, Some(&server)).unwrap().source,
+            ModelConfigSource::Server
+        );
+        assert_eq!(a.secret("model").unwrap(), "personal-secret");
+        a.set_setting("model.source", "account").unwrap();
         // Losing a personal key never silently switches its billing to the site.
         a.remove_secret("model").unwrap();
         assert!(!configuration(&a, Some(&server)).unwrap().has_api_key);
@@ -233,11 +278,12 @@ mod tests {
         assert!(!configuration(&b, None).unwrap().has_api_key);
     }
 
-    #[test]
-    fn shared_selection_rejects_redirection_and_disabled_service_without_writes() {
+    #[tokio::test]
+    async fn shared_selection_rejects_redirection_and_disabled_service_without_writes() {
         let db = Database::test();
         let server = server();
-        let registry = crate::ai::management::BridgeRegistryAdapter;
+        let model_services = services(Some(self::server()));
+        let _lock = db.lock_account().unwrap();
         let input = || ModelConfigInput {
             source: ModelConfigSource::Server,
             provider: ModelProviderKind::OpenaiResponses,
@@ -246,7 +292,7 @@ mod tests {
             api_key: None,
         };
         let revision = db.revision().unwrap();
-        assert!(save(&db, input(), &registry, None).is_err());
+        assert!(save(&db, input(), &services(None)).await.is_err());
         for change in 0..4 {
             let mut request = input();
             match change {
@@ -255,10 +301,10 @@ mod tests {
                 2 => request.provider = ModelProviderKind::OpenaiChat,
                 _ => request.api_key = Some("supplied-key".into()),
             }
-            assert!(save(&db, request, &registry, Some(&server)).is_err());
+            assert!(save(&db, request, &model_services).await.is_err());
         }
         assert_eq!(db.revision().unwrap(), revision);
-        let selected = save(&db, input(), &registry, Some(&server)).unwrap();
+        let selected = save(&db, input(), &model_services).await.unwrap();
         let mut redirected = selected.clone();
         redirected.base_url = "https://untrusted.example.test/v1".into();
         assert!(configured_model_key(&db, &redirected, Some(&server)).is_err());
@@ -275,6 +321,133 @@ mod tests {
         assert!(!serde_json::to_string(&db.export_sync_data().unwrap())
             .unwrap()
             .contains("model.source"));
+    }
+
+    #[tokio::test]
+    async fn catalog_choices_are_account_scoped_persistent_and_atomic() {
+        crate::secrets::use_test_master_key();
+        let account = crate::db::TestAccount::new();
+        let db = account.open();
+        let other = Database::test();
+        let services = services(Some(server()));
+        let input = |name: &str| ModelConfigInput {
+            source: ModelConfigSource::Server,
+            provider: ModelProviderKind::OpenaiResponses,
+            base_url: OPENAI_URL.into(),
+            model: name.into(),
+            api_key: None,
+        };
+        {
+            let _lock = db.lock_account().unwrap();
+            let revision = db.revision().unwrap();
+            let catalog = server_models(&db, &services).await.unwrap();
+            assert_eq!(catalog.models, ["catalog-fixture", "catalog-second"]);
+            assert_eq!(db.revision().unwrap(), revision);
+            let selected = save(&db, input("catalog-fixture"), &services)
+                .await
+                .unwrap();
+            assert_eq!(selected.model, "catalog-fixture");
+            assert_eq!(
+                configured_model_key(&db, &selected, services.server.as_ref()).unwrap(),
+                "site-secret-never-export"
+            );
+            assert_eq!(
+                configuration(&other, services.server.as_ref())
+                    .unwrap()
+                    .model,
+                "shared-fixture"
+            );
+        }
+        drop(db);
+        let db = account.open();
+        assert_eq!(
+            configuration(&db, services.server.as_ref()).unwrap().model,
+            "catalog-fixture"
+        );
+        assert!(!serde_json::to_string(&db.export_sync_data().unwrap())
+            .unwrap()
+            .contains("model.server_name"));
+        db.save_model_configuration(
+            ModelProviderKind::OpenaiChat,
+            "https://personal.example.test/v1",
+            "personal",
+            Some("personal-secret"),
+        )
+        .unwrap();
+        crate::db::fail_inserts_when(
+            &account.connection(),
+            "settings",
+            "NEW.key = 'model.server_name'",
+            "site selection write failed",
+        );
+        let _lock = db.lock_account().unwrap();
+        assert!(save(&db, input("shared-fixture"), &services).await.is_err());
+        let unchanged = configuration(&db, services.server.as_ref()).unwrap();
+        assert_eq!(unchanged.source, ModelConfigSource::Account);
+        assert_eq!(unchanged.model, "personal");
+        assert_eq!(
+            db.setting("model.server_name").unwrap().as_deref(),
+            Some("catalog-fixture")
+        );
+        assert_eq!(db.secret("model").unwrap(), "personal-secret");
+    }
+
+    struct UnavailableCatalog;
+    #[async_trait::async_trait]
+    impl ModelCatalog for UnavailableCatalog {
+        async fn list(&self, _: &str) -> AppResult<Vec<String>> {
+            Err(AppError::Model("catalog unavailable".into()))
+        }
+    }
+    #[tokio::test]
+    async fn unavailable_catalog_preserves_current_choice_and_allows_the_site_default() {
+        let db = Database::test();
+        let mut services = services(Some(server()));
+        db.save_server_model("saved-choice").unwrap();
+        services.catalog = std::sync::Arc::new(UnavailableCatalog);
+        let input = |name: &str| ModelConfigInput {
+            source: ModelConfigSource::Server,
+            provider: ModelProviderKind::OpenaiResponses,
+            base_url: OPENAI_URL.into(),
+            model: name.into(),
+            api_key: None,
+        };
+        let _lock = db.lock_account().unwrap();
+        let before = db.revision().unwrap();
+        assert!(server_models(&db, &services).await.is_err());
+        assert!(save(&db, input("new-choice"), &services).await.is_err());
+        assert_eq!(db.revision().unwrap(), before);
+        assert_eq!(
+            save(&db, input("saved-choice"), &services)
+                .await
+                .unwrap()
+                .model,
+            "saved-choice"
+        );
+        assert_eq!(
+            save(&db, input("shared-fixture"), &services)
+                .await
+                .unwrap()
+                .model,
+            "shared-fixture"
+        );
+    }
+
+    struct TestCatalog;
+    #[async_trait::async_trait]
+    impl ModelCatalog for TestCatalog {
+        async fn list(&self, key: &str) -> AppResult<Vec<String>> {
+            assert_eq!(key, "site-secret-never-export");
+            Ok(vec!["catalog-fixture".into(), "catalog-second".into()])
+        }
+    }
+    fn services(server: Option<ServerOpenAi>) -> ModelServices {
+        ModelServices {
+            server,
+            connector: std::sync::Arc::new(SharedConnector),
+            bridges: std::sync::Arc::new(crate::ai::management::BridgeRegistryAdapter),
+            catalog: std::sync::Arc::new(TestCatalog),
+        }
     }
 
     struct SharedConnector;

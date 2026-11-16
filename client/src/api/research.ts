@@ -6,6 +6,7 @@ import type {
   AnalysisHistoryItem,
   ResearchEvidence,
   ResearchEvidenceInput,
+  ResearchEvidenceTags,
   StoredAnalysis,
   AnalysisUpdate,
 } from "../types";
@@ -100,5 +101,15 @@ export async function setResearchEvidenceStatus(
   return httpRequest<ResearchEvidence>(
     `/research-evidence/${encodeURIComponent(id)}/status`,
     { method: "PUT", body: JSON.stringify({ active }) },
+  );
+}
+
+export async function setResearchEvidenceTags(
+  id: string,
+  tags: ResearchEvidenceTags,
+): Promise<ResearchEvidence> {
+  return httpRequest<ResearchEvidence>(
+    `/research-evidence/${encodeURIComponent(id)}/tags`,
+    { method: "PUT", body: JSON.stringify(tags) },
   );
 }

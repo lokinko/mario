@@ -1,6 +1,7 @@
 use super::{
-    params, validate_research_evidence, AnalysisHistoryItem, AnalysisResult, AppError, AppResult,
-    Database, OptionalRow, ResearchEvidence, ResearchEvidenceInput, StoredAnalysis, Utc, Uuid,
+    params, research_evidence_tags, validate_research_evidence, AnalysisHistoryItem,
+    AnalysisResult, AppError, AppResult, Database, OptionalRow, ResearchEvidence,
+    ResearchEvidenceInput, StoredAnalysis, Utc, Uuid,
 };
 
 impl Database {
@@ -42,6 +43,7 @@ impl Database {
                 evidence.push(ResearchEvidence {
                     id: source.id,
                     asset_name: source.asset_name,
+                    category: String::new(),
                     title: source.title,
                     publisher: source.publisher,
                     source_url: source.source_url,
@@ -70,7 +72,7 @@ impl Database {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
             "SELECT id, asset_name, title, publisher, source_url, source_tier, evidence_type,
-                    stance, as_of_date, claim, notes, active, captured_at
+                    stance, as_of_date, claim, notes, active, captured_at, category
              FROM research_evidence
              ORDER BY active DESC, captured_at DESC, id ASC",
         )?;
@@ -90,6 +92,7 @@ impl Database {
                     notes: row.get(10)?,
                     active: row.get::<_, i64>(11)? != 0,
                     captured_at: row.get(12)?,
+                    category: row.get(13)?,
                     attachments: Vec::new(),
                 })
             })?
@@ -126,6 +129,7 @@ impl Database {
         input: &ResearchEvidenceInput,
     ) -> AppResult<ResearchEvidence> {
         validate_research_evidence(input)?;
+        let tags = research_evidence_tags(&input.asset_name, &input.category)?;
         let attachments = input
             .attachments
             .iter()
@@ -154,7 +158,8 @@ impl Database {
         let evidence = ResearchEvidence {
             attachments,
             id: Uuid::new_v4().to_string(),
-            asset_name: String::new(),
+            asset_name: tags.asset_name,
+            category: tags.category,
             title,
             publisher: "用户保存的原始资料".into(),
             source_url: String::new(),
@@ -172,8 +177,8 @@ impl Database {
         transaction.execute(
             "INSERT INTO research_evidence
              (id, asset_name, title, publisher, source_url, source_tier, evidence_type, stance,
-              as_of_date, claim, notes, active, captured_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1,$12)",
+              as_of_date, claim, notes, active, captured_at, category)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1,$12,$13)",
             params![
                 evidence.id,
                 evidence.asset_name,
@@ -186,7 +191,8 @@ impl Database {
                 evidence.as_of_date,
                 evidence.claim,
                 evidence.notes,
-                evidence.captured_at
+                evidence.captured_at,
+                evidence.category
             ],
         )?;
         for (metadata, file) in evidence.attachments.iter().zip(&input.attachments) {
@@ -245,6 +251,26 @@ impl Database {
             .into_iter()
             .find(|item| item.id == id)
             .ok_or_else(|| AppError::Validation("找不到要更新的研究证据".into()))
+    }
+
+    pub fn set_research_evidence_tags(
+        &self,
+        id: &str,
+        input: &crate::models::ResearchEvidenceTagsInput,
+    ) -> AppResult<ResearchEvidence> {
+        let tags = research_evidence_tags(&input.asset_name, &input.category)?;
+        let affected = self.conn()?.execute(
+            "UPDATE research_evidence SET asset_name=$2, category=$3
+             WHERE id=$1 AND evidence_type='user_source_text'",
+            params![id, tags.asset_name, tags.category],
+        )?;
+        if affected == 0 {
+            return Err(AppError::Validation("找不到要更新的参考资料".into()));
+        }
+        self.research_evidence()?
+            .into_iter()
+            .find(|item| item.id == id)
+            .ok_or_else(|| AppError::Validation("找不到要更新的参考资料".into()))
     }
 
     pub fn save_analysis(&self, result: &AnalysisResult, question: &str) -> AppResult<()> {
@@ -552,7 +578,7 @@ mod attachment_tests {
         let mut legacy = dataset.clone();
         super::super::tests::add_retired_tables(&mut legacy);
         super::super::tests::strip_holding_details_for_legacy(&mut legacy);
-        legacy.schema_version = 12;
+        crate::db::tests::set_legacy_version(&mut legacy, 12);
         legacy.tables.retain(|t| t.name != "research_attachments");
         restored.import_sync_data(&legacy).unwrap();
         assert!(restored.research_evidence().unwrap()[0]

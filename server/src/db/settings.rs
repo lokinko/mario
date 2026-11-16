@@ -143,6 +143,20 @@ impl Database {
         tx.commit()?;
         Ok(())
     }
+
+    /// The site selection is independent from the saved personal connection and secret.
+    pub fn save_server_model(&self, model: &str) -> AppResult<()> {
+        if model.trim().is_empty() {
+            return Err(AppError::Validation("请选择站点模型".into()));
+        }
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        for (key, value) in [("model.source", "server"), ("model.server_name", model)] {
+            tx.execute("INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key, value])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
 }
 
 /// The destination a stored model credential may be sent to.

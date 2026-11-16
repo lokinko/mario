@@ -299,7 +299,7 @@ fn relevant_evidence(
         });
         watch.push(ResearchEvidence {
             id: format!("watch-{}-{}",observation.symbol,observation.observed_on),
-            asset_name: row.entry.input.name.clone(), title: format!("{} 收盘买点观察",row.entry.input.name),
+            asset_name: row.entry.input.name.clone(), category: String::new(), title: format!("{} 收盘买点观察",row.entry.input.name),
             publisher: "Yahoo Finance / 东方财富；Mario 确定性计算".into(), source_url: source_url.clone(),
             source_tier: "二手来源".into(), evidence_type: "watch_observation".into(), stance: "neutral".into(),
             as_of_date: observation.observed_on.clone(),
@@ -485,13 +485,13 @@ mod tests {
         let target = db
             .add_research_evidence(&crate::models::ResearchEvidenceInput {
                 content: "观察甲公司600036 年报：分红持续性取决于现金流。".into(),
-                attachments: Vec::new(),
+                ..Default::default()
             })
             .unwrap();
         for index in 0..8 {
             db.add_research_evidence(&crate::models::ResearchEvidenceInput {
                 content: format!("虚构成长基金 FUND-A 虚构债券基金 BOND-B 虚构海外基金 USD-C 分红持续性 资料{index}"),
-                attachments: Vec::new(),
+                ..Default::default()
             }).unwrap();
         }
         let snapshot =

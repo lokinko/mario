@@ -1,7 +1,6 @@
 import {
   MessageCircle,
   Database,
-  History,
   WalletCards,
   BookOpen,
   ChartNoAxesCombined,
@@ -15,8 +14,7 @@ export type View =
   | "watch"
   | "calendar"
   | "facts"
-  | "evidence"
-  | "review"
+  | "reference"
   | "advisor"
   | "methodology"
   | "settings";
@@ -25,8 +23,7 @@ export const views: View[] = [
   "watch",
   "calendar",
   "facts",
-  "evidence",
-  "review",
+  "reference",
   "advisor",
   "methodology",
   "settings",
@@ -56,8 +53,7 @@ export const navGroups: {
   {
     caption: "研究",
     items: [
-      { id: "evidence", label: "参考资料", icon: Database },
-      { id: "review", label: "复盘记录", icon: History },
+      { id: "reference", label: "参考信息", icon: Database },
       { id: "methodology", label: "投资方法论", icon: BookOpen },
     ],
   },
@@ -94,7 +90,6 @@ export const viewLabels: Record<View, string> = {
   methodology: "投资方法论",
   advisor: "问答",
   facts: "我的情况",
-  review: "复盘记录",
-  evidence: "参考资料",
+  reference: "参考信息",
   settings: "设置",
 };

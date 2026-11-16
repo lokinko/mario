@@ -387,9 +387,18 @@ try {
     valuationDate: today,
   });
 
-  const evidence = { content: "利率资料\n来源：https://example.com/rate\n用于功能测试的资料，不构成真实行情" };
+  const evidence = { content: "利率资料\n来源：https://example.com/rate\n用于功能测试的资料，不构成真实行情", category: "研报" };
   const source = await api("/research-evidence", "POST", evidence);
-  await api("/research-evidence", "POST", { assetName: "旧结构化表单" }, 422);
+  assert.equal(source.category, "研报");
+  await api("/research-evidence", "POST", { claim: "旧结构化表单" }, 422);
+  const retagged = await api(`/research-evidence/${source.id}/tags`, "PUT", {
+    assetName: "测试银行 600036.SS",
+    category: "公告",
+  });
+  assert.deepEqual(
+    [retagged.assetName, retagged.category, retagged.claim],
+    ["测试银行 600036.SS", "公告", source.claim],
+  );
   await api(`/research-evidence/${source.id}/status`, "PUT", { active: false });
   assert.equal(
     (await api("/research-evidence")).find((e) => e.id === source.id).active,

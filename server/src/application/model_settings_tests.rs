@@ -132,4 +132,71 @@ mod tests {
             assert!(peer_can_lock(&peer));
         }
     }
+    struct WaitingCatalog {
+        entered: Notify,
+        gate: Mutex<Option<oneshot::Receiver<()>>>,
+    }
+    #[async_trait::async_trait]
+    impl ModelCatalog for WaitingCatalog {
+        async fn list(&self, key: &str) -> AppResult<Vec<String>> {
+            assert_eq!(key, "site-catalog-key");
+            self.entered.notify_one();
+            if let Some(gate) = self.gate.lock().await.take() {
+                let _ = gate.await;
+            }
+            Ok(vec!["catalog-fixture".into()])
+        }
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn catalog_selection_unlocks_and_rejects_a_stale_write_after_network_wait() {
+        for changed in [false, true] {
+            let account = crate::db::TestAccount::new();
+            let db = account.open();
+            let peer = account.open();
+            let (release, gate) = oneshot::channel();
+            let catalog = Arc::new(WaitingCatalog {
+                entered: Notify::new(),
+                gate: Mutex::new(Some(gate)),
+            });
+            let services = ModelServices {
+                connector: Arc::new(crate::ai::management::ModelConnectorAdapter),
+                bridges: Arc::new(crate::ai::management::BridgeRegistryAdapter),
+                catalog: catalog.clone(),
+                server: Some(
+                    ServerOpenAi::new("default-model".into(), "site-catalog-key".into()).unwrap(),
+                ),
+            };
+            let outer = db.lock_account().unwrap();
+            let mut pending = Box::pin(save(
+                &db,
+                ModelConfigInput {
+                    source: ModelConfigSource::Server,
+                    provider: ModelProviderKind::OpenaiResponses,
+                    base_url: OPENAI_URL.into(),
+                    model: "catalog-fixture".into(),
+                    api_key: None,
+                },
+                &services,
+            ));
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                tokio::select! { _ = catalog.entered.notified() => {}, result = pending.as_mut() => panic!("catalog did not wait: {result:?}") }
+            }).await.unwrap();
+            assert!(peer_can_lock(&peer));
+            if changed {
+                let _lock = peer.lock_account().unwrap();
+                peer.set_setting("unrelated.pending", "changed").unwrap();
+            }
+            release.send(()).unwrap();
+            let result = pending.await;
+            if changed {
+                assert!(matches!(result, Err(AppError::Conflict(_))));
+                assert!(db.setting("model.server_name").unwrap().is_none());
+            } else {
+                assert_eq!(result.unwrap().model, "catalog-fixture");
+            }
+            assert!(!peer_can_lock(&peer));
+            drop(outer);
+            assert!(peer_can_lock(&peer));
+        }
+    }
 }

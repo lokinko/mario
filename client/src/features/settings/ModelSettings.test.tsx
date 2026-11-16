@@ -11,6 +11,10 @@ import { ModelSettings } from "./ModelSettings";
 import * as settingsApi from "../../api/settings";
 
 vi.mock("../../api/settings", () => ({
+  getServerModels: vi.fn().mockResolvedValue({
+    models: ["site-model", "site-alt"],
+    defaultModel: "site-model",
+  }),
   getAnalysisSettings: vi.fn().mockResolvedValue(null),
   saveAnalysisSettings: vi.fn(),
   saveModelConfig: vi
@@ -153,7 +157,7 @@ it("locks configuration and key writes during a connection test and releases the
   expect(settingsApi.deleteModelKey).not.toHaveBeenCalled();
 });
 
-it("uses the site model without a key form and saves only its canonical configuration", async () => {
+it("loads site models without a key form and saves the chosen model at the official destination", async () => {
   render(
     <ModelSettings
       model={{
@@ -169,14 +173,20 @@ it("uses the site model without a key form and saves only its canonical configur
   expect(screen.queryByLabelText("API Key")).toBeNull();
   expect(screen.queryByLabelText("API Base URL")).toBeNull();
   expect(screen.queryByRole("button", { name: "移除密钥" })).toBeNull();
-  expect(screen.getByText(/站点模型：site-model/)).toBeTruthy();
+  expect((screen.getByLabelText("站点模型") as HTMLSelectElement).value).toBe(
+    "site-model",
+  );
+  await screen.findByRole("option", { name: "site-alt" });
+  fireEvent.change(screen.getByLabelText("站点模型"), {
+    target: { value: "site-alt" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
   await waitFor(() =>
     expect(settingsApi.saveModelConfig).toHaveBeenCalledWith({
       source: "server",
       provider: "openai-responses",
       baseUrl: "https://api.openai.com/v1",
-      model: "site-model",
+      model: "site-alt",
       apiKey: undefined,
     }),
   );
@@ -185,7 +195,7 @@ it("uses the site model without a key form and saves only its canonical configur
 it("switches between a personal model and the site model without sending a personal key to the site", async () => {
   render(
     <ModelSettings
-      model={{ ...existingModel, serverModel: "site-model" }}
+      model={{ ...existingModel, source: "account", serverModel: "site-model" }}
       onUpdate={vi.fn()}
       flash={vi.fn()}
     />,

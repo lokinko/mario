@@ -9,9 +9,10 @@ mod snapshot;
 use snapshot::build_snapshot;
 mod validation;
 use validation::{
-    normalized_fx_provenance, normalized_holding_fx_provenance, validate_currency,
-    validate_holding, validate_holding_valuation_evidence, validate_investment_rule,
-    validate_non_negative, validate_research_evidence, validate_system_review,
+    normalized_fx_provenance, normalized_holding_fx_provenance, research_evidence_tags,
+    validate_currency, validate_holding, validate_holding_valuation_evidence,
+    validate_investment_rule, validate_non_negative, validate_research_evidence,
+    validate_system_review,
 };
 mod rule_values;
 use rule_values::store_rule_revision;

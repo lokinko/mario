@@ -293,3 +293,24 @@ pub(super) fn validate_research_evidence(input: &ResearchEvidenceInput) -> AppRe
     }
     Ok(())
 }
+
+pub(super) fn research_evidence_tags(
+    asset_name: &str,
+    category: &str,
+) -> AppResult<crate::models::ResearchEvidenceTagsInput> {
+    let tags = crate::models::ResearchEvidenceTagsInput {
+        asset_name: asset_name.trim().to_owned(),
+        category: category.trim().to_owned(),
+    };
+    if tags.asset_name.chars().count() > 80 || tags.asset_name.contains(char::is_control) {
+        return Err(AppError::Validation(
+            "关联股票需在 80 个字符以内且为单行".into(),
+        ));
+    }
+    if tags.category.chars().count() > 20 || tags.category.contains(char::is_control) {
+        return Err(AppError::Validation(
+            "信息类型需在 20 个字符以内且为单行".into(),
+        ));
+    }
+    Ok(tags)
+}

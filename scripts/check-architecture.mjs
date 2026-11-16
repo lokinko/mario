@@ -154,6 +154,8 @@ export function serverViolation(source, target) {
 }
 
 export function serverFileViolation(source, target) {
+  if (source === 'ai/model_catalog.rs' && !['ports', 'error'].includes(target))
+    return 'site model catalog only lists provider metadata, without account data or analysis context';
   if (source === 'accounts/activity.rs' && !['accounts', 'storage', 'error'].includes(target))
     return 'usage metadata belongs to account authority and cannot read tenant ledgers or execute workflows';
   if (['db/public_dividends.rs', 'db/public_watch.rs', 'db/public_watch/calendar.rs', 'db/public_prices.rs', 'db/public_prices/monitor.rs'].includes(source) && !['models', 'storage', 'error'].includes(target))

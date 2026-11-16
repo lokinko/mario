@@ -575,7 +575,7 @@ mod tests {
         }
         db.conn().unwrap().execute("INSERT INTO watch_observations(symbol,day,payload,alert,read_at) VALUES ($1,$2,$3,1,NULL)", params![entry.input.symbol,day.to_string(),old.to_string()]).unwrap();
         let mut backup = db.export_sync_data().unwrap();
-        backup.schema_version = 25;
+        crate::db::tests::set_legacy_version(&mut backup, 25);
         drop(db);
         let db = account.reopen_from_old_release();
         let board = db.watch_board(day).unwrap();
@@ -692,7 +692,7 @@ mod tests {
         );
         // v24 observations cannot prove a complete raw event history: fetch it again, never infer zero.
         let mut old = backup.clone();
-        old.schema_version = 24;
+        crate::db::tests::set_legacy_version(&mut old, 24);
         old.tables.retain(|t| t.name != "watch_dividends");
         target.import_sync_data(&old).unwrap();
         assert!(target
@@ -895,7 +895,7 @@ mod tests {
             .is_none());
         // v23 backups have no watch tables; restoring them deliberately restores an empty list.
         let mut old = backup;
-        old.schema_version = 23;
+        crate::db::tests::set_legacy_version(&mut old, 23);
         old.tables.retain(|t| !t.name.starts_with("watch_"));
         other.import_sync_data(&old).unwrap();
         assert!(other.watch_entries().unwrap().is_empty());

@@ -5,7 +5,7 @@ use crate::error::AppResult;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 16;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 17;
 
 // Keep migration order intact: re-running on an existing tenant schema is idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -104,7 +104,8 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            claim TEXT NOT NULL,
            notes TEXT NOT NULL,
            active INTEGER NOT NULL,
-           captured_at TEXT NOT NULL
+           captured_at TEXT NOT NULL,
+           category TEXT NOT NULL DEFAULT ''
          );
          CREATE TABLE IF NOT EXISTS research_attachments (
            id TEXT PRIMARY KEY,
@@ -153,7 +154,8 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
          ALTER TABLE holdings ADD COLUMN IF NOT EXISTS current_price DOUBLE PRECISION;
          ALTER TABLE holdings ADD COLUMN IF NOT EXISTS valuation_date TEXT NOT NULL DEFAULT '';
          ALTER TABLE holdings ADD COLUMN IF NOT EXISTS fx_rate_source TEXT NOT NULL DEFAULT '';
-         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS fx_rate_observed_on TEXT NOT NULL DEFAULT '';",
+         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS fx_rate_observed_on TEXT NOT NULL DEFAULT '';
+         ALTER TABLE research_evidence ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '';",
     )?;
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS holding_trades (

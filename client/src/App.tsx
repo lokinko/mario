@@ -30,6 +30,7 @@ import { useDisplayPreferences } from "./app/useDisplayPreferences";
 import { DisplayPreferences } from "./components/DisplayPreferences";
 import { ApplicationSkeleton } from "./components/Skeleton";
 import { useActivityTracking } from "./app/useActivityTracking";
+import { ReferenceInfo, type ReferenceTab } from "./app/ReferenceInfo";
 
 const MyFacts = lazy(() =>
   import("./features/portfolio/MyFacts").then((m) => ({ default: m.MyFacts })),
@@ -37,16 +38,6 @@ const MyFacts = lazy(() =>
 const DividendCalendar = lazy(() =>
   import("./features/watch/DividendCalendar").then((m) => ({
     default: m.DividendCalendar,
-  })),
-);
-const EvidenceWorkbench = lazy(() =>
-  import("./features/research/EvidenceWorkbench").then((m) => ({
-    default: m.EvidenceWorkbench,
-  })),
-);
-const ReviewCenter = lazy(() =>
-  import("./features/reviews/ReviewCenter").then((m) => ({
-    default: m.ReviewCenter,
   })),
 );
 const Advisor = lazy(() =>
@@ -71,7 +62,14 @@ const ServerData = lazy(() =>
 function App() {
   const display = useDisplayPreferences();
   const [view, setView] = useState<View>(initialView);
-  useActivityTracking(view);
+  const [referenceTab, setReferenceTab] = useState<ReferenceTab>("evidence");
+  useActivityTracking(
+    view !== "reference"
+      ? view
+      : referenceTab === "evidence"
+        ? "evidence"
+        : "review",
+  );
   const [advisorVisited, setAdvisorVisited] = useState(
     () => initialView() === "advisor",
   );
@@ -448,16 +446,12 @@ function App() {
                 onSectionChange={setFactsSection}
               />
             )}
-            {view === "evidence" && (
-              <EvidenceWorkbench
+            {view === "reference" && (
+              <ReferenceInfo
                 key={remoteViewRevision}
-                onAsk={startAnalysis}
-                flash={flash}
-              />
-            )}
-            {view === "review" && (
-              <ReviewCenter
-                key={remoteViewRevision}
+                tab={referenceTab}
+                onTabChange={setReferenceTab}
+                snapshot={snapshot}
                 onAsk={startAnalysis}
                 flash={flash}
               />
