@@ -23,8 +23,9 @@ pub fn search_evidence(
                 ));
             }
             let identity = format!(
-                "{} {} {} {}",
+                "{} {} {} {} {}",
                 item.asset_name,
+                item.category,
                 item.title,
                 item.publisher,
                 item.attachments
@@ -121,6 +122,7 @@ mod tests {
             attachments: Vec::new(),
             id: id.into(),
             asset_name: asset.into(),
+            category: String::new(),
             title: format!("{asset} 年报"),
             publisher: "公司官网".into(),
             source_url: "https://example.com/report".into(),

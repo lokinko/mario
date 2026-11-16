@@ -62,7 +62,7 @@ mod tests {
         create(&db);
         with_old_grids(&db);
         let mut backup = db.export_sync_data().unwrap();
-        backup.schema_version = 28;
+        crate::db::tests::set_legacy_version(&mut backup, 28);
         drop(db);
         let db = account.reopen_from_old_release();
         let migrated = db.watch_entries().unwrap().remove(0);

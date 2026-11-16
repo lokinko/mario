@@ -17,6 +17,7 @@ vi.mock("../../api/research", () => ({
   getResearchAttachment: vi.fn(),
   saveResearchEvidence: vi.fn(),
   setResearchEvidenceStatus: vi.fn(),
+  setResearchEvidenceTags: vi.fn(),
 }));
 afterEach(() => {
   cleanup();
@@ -24,6 +25,11 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+const stocks = [
+  { name: "招商银行", symbol: "600036.SS" },
+  { name: "长江电力", symbol: "600900.SS" },
+];
 
 const saved: ResearchEvidence = {
   id: "text",
@@ -41,19 +47,37 @@ const saved: ResearchEvidence = {
   capturedAt: "2026-10-11T01:00:00Z",
 };
 
-it("saves complete source text with one field and clears it after success", async () => {
-  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([]);
+it("saves complete source text with optional stock and type tags and clears it after success", async () => {
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([
+    { ...saved, id: "typed", category: "年报" },
+  ]);
   vi.mocked(researchApi.saveResearchEvidence).mockResolvedValue(saved);
-  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={vi.fn()} />);
+  await screen.findByRole("button", { name: "原始资料" });
   fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const input = screen.getByRole("textbox", { name: "原始资料与资讯" });
-  expect(screen.getAllByRole("textbox")).toHaveLength(1);
-  expect(within(screen.getByRole("dialog")).queryByRole("combobox")).toBeNull();
+  const stock = screen.getByLabelText("关联股票") as HTMLSelectElement;
+  expect(Array.from(stock.options).map((option) => option.text)).toEqual([
+    "不关联",
+    "招商银行（600036.SS）",
+    "长江电力（600900.SS）",
+  ]);
+  expect(
+    Array.from(document.querySelectorAll("#evidence-categories option")).map(
+      (option) => option.getAttribute("value"),
+    ),
+  ).toEqual(["年报"]);
   fireEvent.change(input, { target: { value: saved.claim } });
+  fireEvent.change(stock, { target: { value: "长江电力 600900.SS" } });
+  fireEvent.change(screen.getByLabelText("信息类型"), {
+    target: { value: "公告" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "保存资料" }));
   await waitFor(() =>
     expect(researchApi.saveResearchEvidence).toHaveBeenCalledWith({
       content: saved.claim,
+      assetName: "长江电力 600900.SS",
+      category: "公告",
     }),
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -72,7 +96,7 @@ it("blocks blank content and keeps the draft when saving fails", async () => {
   vi.mocked(researchApi.saveResearchEvidence)
     .mockRejectedValueOnce(new Error("保存失败"))
     .mockResolvedValue(saved);
-  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const input = screen.getByRole("textbox", { name: "原始资料与资讯" });
   fireEvent.change(input, { target: { value: " \n " } });
@@ -120,7 +144,7 @@ it("shows original text and all legacy information, with reversible archiving", 
     ...saved,
     active: false,
   });
-  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "原始资料" }));
   expect(screen.getByText("保存于 2026-10-11")).toBeTruthy();
   expect(document.querySelector(".evidence-content")?.textContent).toBe(
@@ -166,7 +190,7 @@ it("carries source topics into the question so saved text can be retrieved", asy
     { ...saved, id: "archived", title: "旧资料", active: false },
   ]);
   const onAsk = vi.fn();
-  render(<EvidenceWorkbench flash={vi.fn()} onAsk={onAsk} />);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={onAsk} />);
   await screen.findByRole("button", { name: "黄金储备变化" });
   fireEvent.click(screen.getByRole("button", { name: "用资料提问" }));
   const question = onAsk.mock.calls[0][0];
@@ -180,7 +204,7 @@ it("saves attachments without requiring text and preserves them for retry", asyn
   vi.mocked(researchApi.saveResearchEvidence)
     .mockRejectedValueOnce(new Error("上传失败"))
     .mockResolvedValue(saved);
-  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const file = new File(["原文\n第二段"], "报告.txt", { type: "text/plain" });
   fireEvent.change(screen.getByLabelText("选择附件"), {
@@ -210,7 +234,7 @@ it("saves attachments without requiring text and preserves them for retry", asyn
 
 it("can remove a selected file and rejects too many or oversized attachments", async () => {
   vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([]);
-  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "新增资料" }));
   const picker = screen.getByLabelText("选择附件");
   fireEvent.change(picker, {
@@ -273,7 +297,7 @@ it("downloads the original file through the authenticated API", async () => {
   ) {
     downloaded = this.download;
   });
-  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "原始资料" }));
   fireEvent.click(await screen.findByRole("button", { name: "报告.txt" }));
   await waitFor(() =>
@@ -308,7 +332,7 @@ it("lists every saved item as one file row, newest first, with archived ones mar
       capturedAt: "2026-11-01T01:00:00Z",
     },
   ]);
-  render(<EvidenceWorkbench flash={vi.fn()} onAsk={vi.fn()} />);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={vi.fn()} />);
   await screen.findByRole("button", { name: "新资料" });
   const rows = within(screen.getByRole("region", { name: "资料档案" }))
     .getAllByRole("button")
@@ -318,4 +342,58 @@ it("lists every saved item as one file row, newest first, with archived ones mar
   expect(
     screen.getByRole("button", { name: "归档资料" }).closest("li")?.className,
   ).toBe("inactive");
+});
+
+it("edits tags after saving without touching the original text", async () => {
+  const tagged = {
+    ...saved,
+    assetName: "招商银行 600036.SS",
+    category: "年报",
+  };
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([tagged]);
+  vi.mocked(researchApi.setResearchEvidenceTags).mockResolvedValue({
+    ...tagged,
+    assetName: "",
+    category: "公告",
+  });
+  const flash = vi.fn();
+  render(<EvidenceWorkbench stocks={stocks} flash={flash} onAsk={vi.fn()} />);
+  const row = await screen.findByRole("button", { name: "原始资料" });
+  expect(within(row).getByText("招商银行")).toBeTruthy();
+  expect(within(row).getByText("年报")).toBeTruthy();
+  fireEvent.click(row);
+  const save = screen.getByRole("button", {
+    name: "保存标签",
+  }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("关联股票"), {
+    target: { value: "" },
+  });
+  fireEvent.change(screen.getByLabelText("信息类型"), {
+    target: { value: "公告" },
+  });
+  fireEvent.click(save);
+  await waitFor(() =>
+    expect(researchApi.setResearchEvidenceTags).toHaveBeenCalledWith("text", {
+      assetName: "",
+      category: "公告",
+    }),
+  );
+  await waitFor(() => expect(flash).toHaveBeenCalledWith("标签已更新"));
+  expect(document.querySelector(".evidence-content")?.textContent).toBe(
+    saved.claim,
+  );
+  expect(within(row).getByText("公告")).toBeTruthy();
+  expect(within(row).queryByText("招商银行")).toBeNull();
+});
+
+it("keeps a stock tag that is no longer held or watched selectable", async () => {
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([
+    { ...saved, assetName: "已卖出公司 000001.SZ" },
+  ]);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "原始资料" }));
+  expect((screen.getByLabelText("关联股票") as HTMLSelectElement).value).toBe(
+    "已卖出公司 000001.SZ",
+  );
 });

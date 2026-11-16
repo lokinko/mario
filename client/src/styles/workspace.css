@@ -297,6 +297,38 @@
 .evidence-files .inactive {
   opacity: 0.6;
 }
+.evidence-file-tags {
+  display: flex;
+  gap: var(--space-1);
+}
+.evidence-file-tags .badge {
+  margin: 0;
+}
+.reference-actions {
+  margin-bottom: var(--space-4);
+}
+.evidence-tag-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.evidence-tag-fields label {
+  display: grid;
+  gap: var(--space-1);
+}
+.evidence-tag-fields span {
+  color: var(--text-2);
+  font-size: var(--fs-caption);
+}
+.evidence-tag-editor {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+.evidence-tag-editor .evidence-tag-fields {
+  width: 100%;
+}
 .rule-layout {
   display: block;
 }

@@ -123,7 +123,10 @@ mod tests {
         );
         assert!(!db.watch_board(day).unwrap().rows[0].alert);
         let backup = db.export_sync_data().unwrap();
-        assert_eq!(backup.schema_version, 29);
+        assert_eq!(
+            backup.schema_version,
+            crate::db::SYNC_DATASET_SCHEMA_VERSION
+        );
         other.import_sync_data(&backup).unwrap();
         assert_eq!(other.watch_rules().unwrap(), rules);
         drop(db);
@@ -131,7 +134,7 @@ mod tests {
         assert_eq!(reopened.watch_rules().unwrap(), rules);
         // Old-format backups without preferences restore the original defaults.
         let mut old = backup.clone();
-        old.schema_version = 27;
+        crate::db::tests::set_legacy_version(&mut old, 27);
         old.tables
             .iter_mut()
             .find(|t| t.name == "settings")

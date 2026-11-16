@@ -22,7 +22,6 @@ import type {
   InvestmentRuleRevision,
   SystemReviewRecord,
 } from "../../types";
-import { PageHeader } from "../../components/PageHeader";
 import { localDateValue } from "../../lib/dates";
 import { systemReviewText } from "../../lib/reviewText";
 
@@ -46,13 +45,14 @@ export function ruleInput(rule: InvestmentRule): InvestmentRuleInput {
 }
 
 export function ReviewCenter({
+  tab,
   onAsk,
   flash,
 }: {
+  tab: "reviews" | "rules";
   onAsk: (question: string) => void;
   flash: (s: string) => void;
 }) {
-  const [tab, setTab] = useState("reviews");
   const [creating, setCreating] = useState(false);
   const [ruleOpen, setRuleOpen] = useState(false);
   const [selectedReview, setSelectedReview] =
@@ -211,32 +211,26 @@ export function ReviewCenter({
 
   if (!loaded && (loading || error))
     return (
-      <div className="page narrow">
-        <PageHeader title="复盘记录" />
-        <LoadState
-          loading={loading}
-          error={creating || ruleOpen ? "" : error}
-          onRetry={() => void refresh()}
-        />
-      </div>
+      <LoadState
+        loading={loading}
+        error={creating || ruleOpen ? "" : error}
+        onRetry={() => void refresh()}
+      />
     );
 
   return (
-    <div className="page narrow">
-      <PageHeader
-        title="复盘记录"
-        action={
-          <>
-            <button className="primary" onClick={() => setCreating(true)}>
-              新建复盘
-            </button>
-            <button className="secondary" onClick={startAiReview}>
-              <Sparkles size={16} />
-              AI 辅助系统复盘
-            </button>
-          </>
-        }
-      />
+    <>
+      {tab === "reviews" && (
+        <div className="page-actions reference-actions">
+          <button className="primary" onClick={() => setCreating(true)}>
+            新建复盘
+          </button>
+          <button className="secondary" onClick={startAiReview}>
+            <Sparkles size={16} />
+            AI 辅助系统复盘
+          </button>
+        </div>
+      )}
       <section className="review-metrics">
         <article>
           <span>复盘记录</span>
@@ -264,17 +258,6 @@ export function ReviewCenter({
         onRetry={() => void refresh()}
       />
 
-      <div className="section-switcher" role="group" aria-label="复盘分类">
-        <button
-          aria-pressed={tab === "reviews"}
-          onClick={() => setTab("reviews")}
-        >
-          复盘记录
-        </button>
-        <button aria-pressed={tab === "rules"} onClick={() => setTab("rules")}>
-          投资规则
-        </button>
-      </div>
       {creating && (
         <Drawer
           title="新建复盘"
@@ -557,6 +540,6 @@ export function ReviewCenter({
           </fieldset>
         </Drawer>
       )}
-    </div>
+    </>
   );
 }

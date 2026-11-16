@@ -1080,7 +1080,7 @@ mod tests {
         let buy = first();
         db.save_holding_trade(&buy).unwrap();
         let mut backup = db.export_sync_data().unwrap();
-        backup.schema_version = 19;
+        crate::db::tests::set_legacy_version(&mut backup, 19);
         super::super::tests::add_legacy_table_shapes(&mut backup);
         backup.tables.retain(|t| {
             ![
@@ -1300,7 +1300,7 @@ mod tests {
             s.holding_trade_summaries
         );
         let mut old = export;
-        old.schema_version = 17;
+        crate::db::tests::set_legacy_version(&mut old, 17);
         super::super::tests::add_retired_tables(&mut old);
         old.tables.retain(|table| {
             !matches!(

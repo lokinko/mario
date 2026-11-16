@@ -2,7 +2,7 @@ use super::RequestContext;
 use crate::application::analysis::AnalysisService;
 use crate::models::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, ResearchEvidence,
-    ResearchEvidenceInput, ResearchEvidenceStatusInput, StoredAnalysis,
+    ResearchEvidenceInput, ResearchEvidenceStatusInput, ResearchEvidenceTagsInput, StoredAnalysis,
 };
 use crate::{models, AppResult};
 use axum::{
@@ -27,6 +27,10 @@ pub(super) fn router() -> Router {
         .route(
             "/api/research-evidence/{id}/status",
             put(set_research_evidence_status),
+        )
+        .route(
+            "/api/research-evidence/{id}/tags",
+            put(set_research_evidence_tags),
         )
         .route("/api/analysis/preview", post(preview_analysis))
         .route("/api/analysis", post(run_analysis))
@@ -56,6 +60,14 @@ async fn set_research_evidence_status(
     Ok(Json(
         state.db.set_research_evidence_status(&id, input.active)?,
     ))
+}
+
+async fn set_research_evidence_tags(
+    Extension(state): Extension<Arc<RequestContext>>,
+    Path(id): Path<String>,
+    Json(input): Json<ResearchEvidenceTagsInput>,
+) -> AppResult<Json<ResearchEvidence>> {
+    Ok(Json(state.db.set_research_evidence_tags(&id, &input)?))
 }
 
 async fn research_attachment(

@@ -611,7 +611,12 @@ export interface SystemReviewRecord extends SystemReviewFields {
   createdAt: string;
 }
 
-export type ResearchEvidenceInput = {
+export type ResearchEvidenceTags = {
+  assetName: string;
+  category: string;
+};
+
+export type ResearchEvidenceInput = Partial<ResearchEvidenceTags> & {
   content: string;
   attachments?: { name: string; dataBase64: string }[];
 };
@@ -645,6 +650,7 @@ export interface ResearchEvidenceFields {
 
 export interface ResearchEvidence extends ResearchEvidenceFields {
   attachments?: ResearchAttachment[];
+  category?: string;
   id: string;
   active: boolean;
   capturedAt: string;

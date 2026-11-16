@@ -8,9 +8,9 @@ import {
   getResearchAttachment,
   saveResearchEvidence,
   setResearchEvidenceStatus,
+  setResearchEvidenceTags,
 } from "../../api/research";
-import type { ResearchEvidence } from "../../types";
-import { PageHeader } from "../../components/PageHeader";
+import type { ResearchEvidence, ResearchEvidenceTags } from "../../types";
 import { LoadState } from "../../components/LoadState";
 import { saveAttachmentDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
@@ -52,15 +52,81 @@ function evidenceName(item: ResearchEvidence) {
   );
 }
 
+export interface EvidenceStock {
+  name: string;
+  symbol: string;
+}
+
+const noTags: ResearchEvidenceTags = { assetName: "", category: "" };
+
+function stockTag(stock: EvidenceStock) {
+  return `${stock.name} ${stock.symbol}`;
+}
+
+function TagFields({
+  value,
+  stocks,
+  disabled,
+  onChange,
+}: {
+  value: ResearchEvidenceTags;
+  stocks: EvidenceStock[];
+  disabled: boolean;
+  onChange: (value: ResearchEvidenceTags) => void;
+}) {
+  const known = stocks.some((stock) => stockTag(stock) === value.assetName);
+  return (
+    <div className="evidence-tag-fields">
+      <label>
+        <span>关联股票</span>
+        <select
+          value={value.assetName}
+          disabled={disabled}
+          onChange={(event) =>
+            onChange({ ...value, assetName: event.target.value })
+          }
+        >
+          <option value="">不关联</option>
+          {!known && value.assetName && (
+            <option value={value.assetName}>{value.assetName}</option>
+          )}
+          {stocks.map((stock) => (
+            <option key={stock.symbol} value={stockTag(stock)}>
+              {stock.name}（{stock.symbol}）
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span>信息类型</span>
+        <input
+          list="evidence-categories"
+          value={value.category}
+          maxLength={20}
+          disabled={disabled}
+          placeholder="如 公告、研报、新闻"
+          onChange={(event) =>
+            onChange({ ...value, category: event.target.value })
+          }
+        />
+      </label>
+    </div>
+  );
+}
+
 export function EvidenceWorkbench({
+  stocks,
   onAsk,
   flash,
 }: {
+  stocks: EvidenceStock[];
   onAsk: (question: string) => void;
   flash: (s: string) => void;
 }) {
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newTags, setNewTags] = useState(noTags);
+  const [tagDraft, setTagDraft] = useState(noTags);
   const [content, setContent] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -96,6 +162,20 @@ export function EvidenceWorkbench({
   );
   const selected = items.find((item) => item.id === selectedId);
   const active = items.filter((item) => item.active);
+  const categories = [
+    ...new Set(items.map((item) => item.category ?? "").filter(Boolean)),
+  ];
+  const stockName = (assetName: string) =>
+    stocks.find((stock) => stockTag(stock) === assetName)?.name ?? assetName;
+  const tagsChanged =
+    !!selected &&
+    (tagDraft.assetName !== selected.assetName ||
+      tagDraft.category.trim() !== (selected.category ?? ""));
+
+  const open = (item: ResearchEvidence) => {
+    setSelectedId(item.id);
+    setTagDraft({ assetName: item.assetName, category: item.category ?? "" });
+  };
 
   const persist = async () => {
     if (saving || (!content.trim() && !files.length)) return;
@@ -105,9 +185,11 @@ export function EvidenceWorkbench({
       const attachments = await encodeResearchFiles(files);
       await saveResearchEvidence({
         content,
+        ...newTags,
         ...(attachments.length ? { attachments } : {}),
       });
       setCreating(false);
+      setNewTags(noTags);
       setContent("");
       setFiles([]);
       setFileError("");
@@ -157,6 +239,27 @@ export function EvidenceWorkbench({
     }
   };
 
+  const saveTags = async (item: ResearchEvidence) => {
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const updated = await setResearchEvidenceTags(item.id, tagDraft);
+      setItems((current) =>
+        current.map((entry) => (entry.id === updated.id ? updated : entry)),
+      );
+      setTagDraft({
+        assetName: updated.assetName,
+        category: updated.category ?? "",
+      });
+      flash("标签已更新");
+    } catch (nextError) {
+      setError(String(nextError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const startEvidenceAnalysis = () => {
     const topics = active
       .slice(0, 12)
@@ -169,25 +272,25 @@ export function EvidenceWorkbench({
   };
 
   return (
-    <div className="page narrow">
-      <PageHeader
-        title="参考资料"
-        action={
-          <>
-            <button className="primary" onClick={() => setCreating(true)}>
-              新增资料
-            </button>
-            <button
-              className="secondary"
-              onClick={startEvidenceAnalysis}
-              disabled={!active.length}
-            >
-              <Sparkles size={16} />
-              用资料提问
-            </button>
-          </>
-        }
-      />
+    <>
+      <div className="page-actions reference-actions">
+        <button className="primary" onClick={() => setCreating(true)}>
+          新增资料
+        </button>
+        <button
+          className="secondary"
+          onClick={startEvidenceAnalysis}
+          disabled={!active.length}
+        >
+          <Sparkles size={16} />
+          用资料提问
+        </button>
+      </div>
+      <datalist id="evidence-categories">
+        {categories.map((category) => (
+          <option key={category} value={category} />
+        ))}
+      </datalist>
       {creating && (
         <Drawer
           title="新增资料"
@@ -195,6 +298,7 @@ export function EvidenceWorkbench({
           dirty={files.length > 0}
           onClose={() => {
             setCreating(false);
+            setNewTags(noTags);
             setContent("");
             setFiles([]);
             setFileError("");
@@ -221,6 +325,12 @@ export function EvidenceWorkbench({
                   placeholder="直接粘贴或写下你获取到的重要原始信息。来源、链接和日期也可以一起放在这段文字里。"
                 />
               </label>
+              <TagFields
+                value={newTags}
+                stocks={stocks}
+                disabled={saving}
+                onChange={setNewTags}
+              />
               <input
                 ref={fileInput}
                 type="file"
@@ -288,7 +398,7 @@ export function EvidenceWorkbench({
           onRetry={() => void refresh()}
         />
         {!loading && !error && items.length === 0 && (
-          <p className="empty">还没有资料，点击右上角“新增资料”保存。</p>
+          <p className="empty">还没有资料，点击“新增资料”保存。</p>
         )}
         <ul className="evidence-files">
           {sorted.map((item) => {
@@ -298,11 +408,17 @@ export function EvidenceWorkbench({
                 <button
                   type="button"
                   aria-label={name}
-                  onClick={() => setSelectedId(item.id)}
+                  onClick={() => open(item)}
                 >
                   <FileText size={16} aria-hidden />
                   <span className="evidence-file-name">{name}</span>
-                  <span>{!item.active && <Badge>已归档</Badge>}</span>
+                  <span className="evidence-file-tags">
+                    {item.assetName && (
+                      <Badge tone="info">{stockName(item.assetName)}</Badge>
+                    )}
+                    {item.category && <Badge>{item.category}</Badge>}
+                    {!item.active && <Badge>已归档</Badge>}
+                  </span>
                   <small>
                     {item.attachments?.length
                       ? `${item.attachments.length} 个附件`
@@ -327,6 +443,23 @@ export function EvidenceWorkbench({
               保存于 {localDateValue(new Date(selected.capturedAt))}
               {!selected.active && " · 已归档"}
             </small>
+            {selected.evidenceType === "user_source_text" && (
+              <div className="evidence-tag-editor">
+                <TagFields
+                  value={tagDraft}
+                  stocks={stocks}
+                  disabled={saving}
+                  onChange={setTagDraft}
+                />
+                <button
+                  className="secondary"
+                  disabled={saving || !tagsChanged}
+                  onClick={() => void saveTags(selected)}
+                >
+                  保存标签
+                </button>
+              </div>
+            )}
             {evidenceText(selected) && (
               <p className="evidence-content">{evidenceText(selected)}</p>
             )}
@@ -362,6 +495,6 @@ export function EvidenceWorkbench({
           </Drawer>
         )}
       </section>
-    </div>
+    </>
   );
 }

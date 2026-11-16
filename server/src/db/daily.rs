@@ -1153,7 +1153,7 @@ mod tests {
         let mut legacy = data.clone();
         super::super::tests::add_retired_tables(&mut legacy);
         super::super::tests::strip_holding_details_for_legacy(&mut legacy);
-        legacy.schema_version = 9;
+        crate::db::tests::set_legacy_version(&mut legacy, 9);
         let legacy_reviews = legacy
             .tables
             .iter_mut()

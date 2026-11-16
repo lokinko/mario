@@ -13,6 +13,8 @@ import * as portfolioApi from "./api/portfolio";
 import * as settingsApi from "./api/settings";
 import * as researchApi from "./api/research";
 import * as watchApi from "./api/watch";
+import * as reviewsApi from "./api/reviews";
+import * as activityApi from "./api/activity";
 import emptySnapshot from "./test/emptySnapshot.json";
 import { WebAccess } from "./features/account/WebAccess";
 import { setWebToken, webToken } from "./lib/webSession";
@@ -296,7 +298,7 @@ it("shows frequently used records in primary navigation", async () => {
   render(<App />);
   await screen.findAllByRole("button", { name: "问答" });
   expect(screen.getByRole("button", { name: "我的情况" })).toBeTruthy();
-  for (const name of ["复盘记录", "参考资料"]) {
+  for (const name of ["参考信息"]) {
     const entry = screen.getByRole("button", { name });
     expect(entry.closest("aside")).toBeTruthy();
     expect(entry.closest("details")).toBeNull();
@@ -399,9 +401,50 @@ it("opens holdings and savings sections from the mobile tab bar", async () => {
   ).toBe(false);
 });
 
+it("combines reference materials, reviews and rules under one page with tab-level activity", async () => {
+  window.location.hash = "reference";
+  vi.spyOn(researchApi, "getResearchEvidence").mockResolvedValue([]);
+  vi.spyOn(reviewsApi, "getInvestmentRules").mockResolvedValue([]);
+  vi.spyOn(reviewsApi, "getSystemReviews").mockResolvedValue([]);
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
+    provider: "openai-responses",
+    model: "test",
+    baseUrl: "",
+    hasApiKey: false,
+  });
+  render(<App />);
+  await screen.findByRole("heading", { name: "参考信息" });
+  const tabs = screen.getByRole("group", { name: "参考信息分类" });
+  expect(
+    within(tabs)
+      .getAllByRole("button")
+      .map((tab) => tab.textContent),
+  ).toEqual(["参考资料", "复盘记录", "投资规则"]);
+  expect(await screen.findByRole("button", { name: "新增资料" })).toBeTruthy();
+  await waitFor(() =>
+    expect(activityApi.recordActivity).toHaveBeenLastCalledWith(
+      "evidence",
+      expect.anything(),
+    ),
+  );
+  fireEvent.click(within(tabs).getByRole("button", { name: "投资规则" }));
+  expect(await screen.findByRole("button", { name: "新建规则" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "新增资料" })).toBeNull();
+  await waitFor(() =>
+    expect(activityApi.recordActivity).toHaveBeenLastCalledWith(
+      "review",
+      expect.anything(),
+    ),
+  );
+  fireEvent.click(within(tabs).getByRole("button", { name: "复盘记录" }));
+  expect(await screen.findByRole("button", { name: "新建复盘" })).toBeTruthy();
+});
+
 it.each([
-  ["review", "复盘记录"],
-  ["evidence", "参考资料"],
+  ["reference", "参考信息"],
   ["calendar", "分红日历"],
 ])(
   "opens %s directly from primary navigation with its own active state",
@@ -474,7 +517,7 @@ it("composes source questions through the shell and consumes them before a data 
     model: "fixture",
     hasApiKey: false,
   });
-  window.location.hash = "evidence";
+  window.location.hash = "reference";
   try {
     render(<App />);
     const ask = await screen.findByRole("button", { name: "用资料提问" });
@@ -487,7 +530,7 @@ it("composes source questions through the shell and consumes them before a data 
       expect((question as HTMLTextAreaElement).value).toContain("黄金储备变化"),
     );
     fireEvent.change(question, { target: { value: "继续编辑后的草稿" } });
-    fireEvent.click(screen.getByRole("button", { name: "参考资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "参考信息" }));
     fireEvent.click(
       within(screen.getByRole("complementary", { name: "主导航" })).getByRole(
         "button",
