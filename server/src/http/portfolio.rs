@@ -26,6 +26,7 @@ pub(super) fn router() -> Router {
         .route("/api/daily-assets/ensure", post(ensure_daily_assets))
         .route("/api/daily-assets", get(daily_assets))
         .route("/api/portfolio/allocation", get(allocation))
+        .route("/api/portfolio/dividends", get(dividend_income))
         .route("/api/daily-assets/compare", get(compare_daily_assets))
         .route("/api/holdings/{id}/amount", put(update_holding_amount))
         .route("/api/holdings/{id}/option-price", put(update_option_price))
@@ -252,6 +253,15 @@ async fn daily_assets(
     Query(query): Query<models::daily::HistoryQuery>,
 ) -> AppResult<Json<models::daily::DailyHistory>> {
     Ok(Json(state.db.daily_history(&query)?))
+}
+
+async fn dividend_income(
+    Extension(state): Extension<Arc<RequestContext>>,
+) -> AppResult<Json<models::accounting::DividendIncome>> {
+    Ok(Json(
+        crate::application::portfolio::dividend_income(&state.db, state.watch_provider.clone())
+            .await?,
+    ))
 }
 
 async fn allocation(

@@ -26,6 +26,16 @@ export interface Allocation {
 export function getAllocation(): Promise<Allocation> {
   return httpRequest<Allocation>("/portfolio/allocation");
 }
+export interface DividendIncome {
+  baseCurrency: string;
+  since: string;
+  value: string;
+  assetsPct: string | null;
+  missing: string[];
+}
+export function getDividendIncome(): Promise<DividendIncome> {
+  return httpRequest<DividendIncome>("/portfolio/dividends");
+}
 
 export function updateOptionPrice(
   id: string,

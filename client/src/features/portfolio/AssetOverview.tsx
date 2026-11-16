@@ -1,6 +1,8 @@
 import { Money } from "../../components/AmountPrivacy";
 import { Eye, EyeOff } from "lucide-react";
 import { Button, Card } from "antd";
+import { useEffect, useState } from "react";
+import { getDividendIncome, type DividendIncome } from "../../api/portfolio";
 import type { DataIssue, DailyHistory, Snapshot } from "../../types";
 import type { DisplayPreferenceProps } from "../../components/DisplayPreferences";
 import { formatAmount, formatMoney } from "../../lib/format";
@@ -20,7 +22,16 @@ export function AssetOverview({
   const latest = snapshot.valuationStatus.comparable
     ? history?.records[0]
     : undefined;
-  const dividends = snapshot.accounting?.dividends;
+  const [dividends, setDividends] = useState<DividendIncome | null>(null);
+  useEffect(() => {
+    let active = true;
+    getDividendIncome()
+      .then((next) => active && setDividends(next))
+      .catch(() => active && setDividends(null));
+    return () => {
+      active = false;
+    };
+  }, [snapshot]);
   const currency = latest?.baseCurrency ?? snapshot.profile.baseCurrency;
   const total = !snapshot.valuationStatus.comparable
     ? null
@@ -66,19 +77,19 @@ export function AssetOverview({
           </div>
           <div className="hero-changes">
             <div>
-              <span className="metric-label">近 12 个月实收分红</span>
+              <span className="metric-label">近 12 个月分红（税前）</span>
               <Money as="strong" className="num">
-                {dividends?.received.value == null
+                {dividends == null
                   ? "—"
-                  : formatAmount(dividends.received.value, currency)}
+                  : formatAmount(dividends.value, dividends.baseCurrency)}
               </Money>
               {dividends && (
                 <small>
-                  {dividends.heldYieldPct != null &&
-                    `持仓成本回报 ${dividends.heldYieldPct}% · `}
-                  {dividends.since} 之后到账
-                  {dividends.received.missing > 0 &&
-                    ` · ${dividends.received.missing} 项缺汇率未计入`}
+                  {dividends.assetsPct != null &&
+                    `占总资产 ${dividends.assetsPct}% · `}
+                  按买卖记录与 {dividends.since} 后的除权日推算
+                  {dividends.missing.length > 0 &&
+                    ` · ${dividends.missing.join("、")}未计入`}
                 </small>
               )}
             </div>

@@ -16,6 +16,13 @@ import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 import { formatMoney } from "../../lib/format";
 vi.mock("../../api/portfolio", () => ({
+  getDividendIncome: vi.fn().mockResolvedValue({
+    baseCurrency: "CNY",
+    since: "2025-09-13",
+    value: "0",
+    assetsPct: null,
+    missing: [],
+  }),
   getAllocation: vi.fn().mockResolvedValue({
     baseCurrency: "CNY",
     byClass: [],
@@ -69,6 +76,13 @@ beforeEach(() => {
     byClass: [],
     byIndustry: [],
     missing: 0,
+  });
+  vi.mocked(portfolioApi.getDividendIncome).mockResolvedValue({
+    baseCurrency: "CNY",
+    since: "2025-09-13",
+    value: "0",
+    assetsPct: null,
+    missing: [],
   });
 });
 afterEach(() => {

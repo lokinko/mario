@@ -32,7 +32,7 @@ pub struct AccountingHolding {
     pub usable: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountingMetric {
     pub value: Option<String>,
     pub missing: usize,
@@ -51,17 +51,26 @@ pub struct AccountingSnapshot {
     pub holdings: BTreeMap<String, AccountingHolding>,
     pub investments: AccountingTotals,
     pub cash: AccountingTotals,
-    #[serde(default)]
-    pub dividends: DividendTotals,
 }
-/// Net dividends received in the trailing 365 days, converted at current rates.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+
+/// Pre-tax cash dividends with an ex-date in the trailing 365 days, at current rates.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DividendTotals {
+pub struct DividendIncome {
+    pub base_currency: String,
+    /// Exclusive start; ex-dates after this day and up to today count.
     pub since: String,
-    pub received: AccountingMetric,
-    /// Percent of held cost basis returned by dividends of positions still held.
-    pub held_yield_pct: Option<String>,
+    /// Excludes `missing`; the other holdings still count.
+    pub value: String,
+    /// Share of current total assets.
+    pub assets_pct: Option<String>,
+    /// Holdings whose entitlement could not be derived, by name.
+    pub missing: Vec<String>,
+}
+
+/// A-share stocks whose entitlement is derived from public ex-dividend history.
+pub fn has_public_dividends(holding: &super::Holding) -> bool {
+    holding.asset_class == "股票" && [".SS", ".SZ"].iter().any(|s| holding.symbol.ends_with(s))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

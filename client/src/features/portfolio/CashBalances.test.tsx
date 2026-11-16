@@ -15,6 +15,13 @@ import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 
 vi.mock("../../api/portfolio", () => ({
+  getDividendIncome: vi.fn().mockResolvedValue({
+    baseCurrency: "CNY",
+    since: "2025-09-13",
+    value: "0",
+    assetsPct: null,
+    missing: [],
+  }),
   getAllocation: vi.fn().mockResolvedValue({
     baseCurrency: "CNY",
     byClass: [],
@@ -40,6 +47,13 @@ beforeEach(() => {
   };
   vi.mocked(portfolioApi.ensureDailyAssets).mockResolvedValue(history);
   vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue(history);
+  vi.mocked(portfolioApi.getDividendIncome).mockResolvedValue({
+    baseCurrency: "CNY",
+    since: "2025-09-13",
+    value: "0",
+    assetsPct: null,
+    missing: [],
+  });
 });
 afterEach(() => {
   cleanup();

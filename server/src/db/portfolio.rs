@@ -11,6 +11,14 @@ impl Database {
         Self::snapshot_on(&conn)
     }
 
+    pub fn trailing_dividends(
+        &self,
+        histories: &std::collections::BTreeMap<String, crate::models::watch::DividendHistory>,
+        today: chrono::NaiveDate,
+    ) -> AppResult<crate::models::accounting::DividendIncome> {
+        super::amounts::trailing_dividends(&self.snapshot()?, histories, today)
+    }
+
     pub(super) fn snapshot_on(conn: &super::Connection) -> AppResult<Snapshot> {
         let profile = conn
             .query_row("SELECT payload FROM profile WHERE id = 1", [], |row| {

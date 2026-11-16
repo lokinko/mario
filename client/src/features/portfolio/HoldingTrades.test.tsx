@@ -16,6 +16,13 @@ import type { HoldingTrade, HoldingTradeSummary, Snapshot } from "../../types";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 vi.mock("../../api/portfolio", () => ({
+  getDividendIncome: vi.fn().mockResolvedValue({
+    baseCurrency: "CNY",
+    since: "2025-09-13",
+    value: "0",
+    assetsPct: null,
+    missing: [],
+  }),
   getAllocation: vi.fn().mockResolvedValue({
     baseCurrency: "CNY",
     byClass: [],

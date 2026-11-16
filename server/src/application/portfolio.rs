@@ -195,8 +195,117 @@ mod integration_tests {
 }
 
 #[cfg(test)]
+mod dividend_income_tests {
+    use super::*;
+    use crate::models::watch::{DividendBasis, DividendEvent, DividendHistory};
+    use chrono::NaiveDate;
+
+    struct Offline(Option<DividendHistory>);
+    #[async_trait::async_trait]
+    impl crate::ports::market::WatchMarketProvider for Offline {
+        fn dividend_seed(&self, _: &str, _: NaiveDate) -> Option<DividendHistory> {
+            self.0.clone()
+        }
+        async fn dividends(&self, _: &str, _: NaiveDate) -> AppResult<DividendHistory> {
+            Err(crate::AppError::MarketData("offline".into()))
+        }
+    }
+    fn account() -> Database {
+        let db = Database::test();
+        let stock = serde_json::json!([{"code":"600900","name":"测试电力","price":12,"shares":100,"costPrice":"10",
+            "transactions":[{"type":"buy","qty":100,"price":10,"ts":1735689600000_i64}]}]);
+        db.import_account_data(
+            &serde_json::json!({"version":"1.0","exportedAt":"2026-01-06T01:00:00Z","data":{
+            "watchlist":stock,"accounts":[{"id":"default","name":"测试账户","watchlist":stock,
+            "feeConfig":{"enabled":false},"cashTrackingEnabled":false,"cashBalance":{"CNY":0}}]}}),
+        )
+        .unwrap();
+        db
+    }
+
+    #[tokio::test]
+    async fn failed_refresh_uses_the_stored_history_or_names_the_holding() {
+        let db = account();
+        let yesterday = super::super::dividend_calendar::today() - chrono::Duration::days(1);
+        let stored = DividendHistory {
+            basis: DividendBasis {
+                as_of: yesterday,
+                fetched_at: "2026-01-01T00:00:00Z".into(),
+            },
+            sources: vec![],
+            events: vec![DividendEvent {
+                report_date: None,
+                ex_date: yesterday - chrono::Duration::days(10),
+                cash_per_ten: "8".into(),
+                bonus_per_ten: "0".into(),
+                transfer_per_ten: "0".into(),
+            }],
+        };
+        let income = dividend_income(&db, Arc::new(Offline(Some(stored))))
+            .await
+            .unwrap();
+        assert_eq!(income.value, "80");
+        assert!(income.missing.is_empty());
+        let unknown = dividend_income(&db, Arc::new(Offline(None))).await.unwrap();
+        assert_eq!(unknown.value, "0");
+        assert_eq!(unknown.missing, vec!["测试电力".to_string()]);
+    }
+}
+
+#[cfg(test)]
 #[path = "portfolio_quote_tests.rs"]
 mod quote_preview_tests;
+
+/// Today's public ex-dividend history per A-share holding; a failed refresh
+/// keeps the last stored history, whose past ex-dates remain valid.
+pub(crate) async fn dividend_income(
+    db: &Database,
+    provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
+) -> AppResult<models::accounting::DividendIncome> {
+    let today = super::dividend_calendar::today();
+    let symbols = db
+        .snapshot()?
+        .holdings
+        .iter()
+        .filter(|h| models::accounting::has_public_dividends(h))
+        .map(|h| h.symbol.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut tasks = tokio::task::JoinSet::new();
+    for symbol in symbols {
+        let provider = provider.clone();
+        tasks.spawn(async move {
+            let seed = provider.dividend_seed(&symbol, today);
+            let history = match seed {
+                Some(seed) if seed.basis.as_of == today => Some(seed),
+                seed => match tokio::time::timeout(
+                    std::time::Duration::from_secs(15),
+                    provider.dividends(&symbol, today),
+                )
+                .await
+                {
+                    Ok(Ok(history)) => Some(history),
+                    Ok(Err(error)) => {
+                        tracing::warn!(symbol, %error, "holding dividend history refresh failed");
+                        seed
+                    }
+                    Err(_) => {
+                        tracing::warn!(symbol, "holding dividend history refresh timed out");
+                        seed
+                    }
+                },
+            };
+            (symbol, history)
+        });
+    }
+    let mut histories = std::collections::BTreeMap::new();
+    while let Some(joined) = tasks.join_next().await {
+        let (symbol, history) = joined.map_err(|e| crate::AppError::MarketData(e.to_string()))?;
+        if let Some(history) = history {
+            histories.insert(symbol, history);
+        }
+    }
+    db.trailing_dividends(&histories, today)
+}
 
 /// Allocation joins account holdings with the public catalogue's industries.
 pub(crate) fn allocation(

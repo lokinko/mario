@@ -8,6 +8,7 @@ import fixture from "../../test/emptySnapshot.json";
 import type { DailyHistory, DailyRecord, Snapshot } from "../../types";
 vi.mock("../../api/portfolio", () => ({
   getDailyAssets: vi.fn(),
+  getDividendIncome: vi.fn(),
 }));
 const day: DailyRecord = {
   day: "2026-09-13",
@@ -42,29 +43,34 @@ function Overview({ snapshot = fixture as Snapshot }: { snapshot?: Snapshot }) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue(history);
+  vi.mocked(portfolioApi.getDividendIncome).mockResolvedValue({
+    baseCurrency: "CNY",
+    since: "2025-11-16",
+    value: "0",
+    assetsPct: null,
+    missing: [],
+  });
 });
 afterEach(cleanup);
-it("reads only the latest daily record and shows trailing dividends instead of update changes", async () => {
+it("reads only the latest daily record and shows server-derived trailing dividends", async () => {
   vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue({
     ...history,
     records: [{ ...day, previousDayChange: -5 }],
   });
-  const snapshot = structuredClone(fixture) as Snapshot;
-  snapshot.accounting = {
-    ...snapshot.accounting!,
-    dividends: {
-      since: "2025-11-16",
-      received: { value: "1234.5", missing: 1 },
-      heldYieldPct: "3.21",
-    },
-  };
-  render(<Overview snapshot={snapshot} />);
+  vi.mocked(portfolioApi.getDividendIncome).mockResolvedValue({
+    baseCurrency: "CNY",
+    since: "2025-11-16",
+    value: "1234.5",
+    assetsPct: "1.03",
+    missing: ["腾讯控股"],
+  });
+  render(<Overview />);
   await screen.findByText(
-    "持仓成本回报 3.21% · 2025-11-16 之后到账 · 1 项缺汇率未计入",
+    "占总资产 1.03% · 按买卖记录与 2025-11-16 后的除权日推算 · 腾讯控股未计入",
   );
   expect(portfolioApi.getDailyAssets).toHaveBeenCalledOnce();
   expect(portfolioApi.getDailyAssets).toHaveBeenCalledWith({ limit: 1 });
-  expect(screen.getByText("近 12 个月实收分红")).toBeTruthy();
+  expect(screen.getByText("近 12 个月分红（税前）")).toBeTruthy();
   expect(screen.getByText(/1,234\.5/)).toBeTruthy();
   expect(screen.queryByText("较上次实际更新")).toBeNull();
   expect(screen.queryByText("较昨日")).toBeNull();

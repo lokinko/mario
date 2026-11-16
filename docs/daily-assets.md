@@ -2,7 +2,7 @@
 
 “我的情况”首屏展示资产总览，读取服务端最新一条每日记录的精确总资产、净资产与负债。记录尚未返回时只展示已有精确会计快照，不从列表相加。总览不显示走势图、记录日期、沿用资产计数或与上次更新的差额。
 
-总览右侧显示近 12 个月实收分红，来自会计快照的 `accounting.dividends`：统计 `since` 之后（不含当天）至今天、发生日期在 365 天内的分红交易，按税前金额减税费和费用、以当前估值汇率折成基准币，包含已清仓证券。`heldYieldPct` 为当前仍持有证券的实收分红除以这些证券的持仓成本；缺汇率或交易被隔离的证券计入 `received.missing`，此时不给出回报率。
+总览右侧显示近 12 个月税前分红，由 `GET /api/portfolio/dividends` 在服务端推算：沪深 A 股按公共已实施分红历史，对 `since` 之后（不含当天）至今天的每个除权日，以除权日前一天收盘时的持股数（买卖记录重放并计入已确认拆分）乘每股税前派现，包含其后已卖出或清仓的持仓，账本中记录的分红流水不再重复计入；港股、基金等无公共分红来源的持仓沿用同期记录的税前分红。金额按当前估值汇率折成基准币，`assetsPct` 为其占当前总资产的比例。当日公共分红历史刷新失败时沿用已保存的历史；无来源、缺少买卖记录、缺汇率或待处理公司行动的持仓按名称列入 `missing`，其余持仓照常计入。不扣红利税，也不判断到账日。
 
 “投资持仓”标签下方显示资产配置环形图，可在资产类别与行业之间切换，包含现金。占比由 `GET /api/portfolio/allocation` 在服务端按当前市值乘估值汇率精确计算，最多七块，超出部分合并为“其余”；行业取买点观察公共目录，目录外股票归入“其他股票”，基金、现金等仍按资产类别显示。缺汇率或待处理的持仓不计入并给出数量。前端只展示，不重算金额或占比。
 
@@ -35,6 +35,7 @@
 - `POST /api/daily-assets/ensure`，`{timezone}`：首次初始化并补齐日期；已设置时区不被覆盖。
 - `GET /api/daily-assets?from=&to=&before=&limit=`：按日期倒序查询，默认 30 条、每页最多 400 条，返回 `nextBefore` 游标。GET 不写库。
 - `GET /api/daily-assets/compare?from=YYYY-MM-DD&to=YYYY-MM-DD`：指定两天的总额、逐项及类别占比变化。
+- `GET /api/portfolio/dividends`：近 12 个月税前分红，返回 `{baseCurrency, since, value, assetsPct, missing}`；会读取或刷新公共分红历史，不写账号数据。
 - `GET /api/portfolio/allocation`：当前资产配置，返回 `{baseCurrency, byClass, byIndustry, missing}`，每块含 `label`、`value`（基准币，2 位小数）和 `pct`（1 位小数）。GET 不写库。
 - `PUT /api/holdings/{id}/amount`，`{amount,expectedRevision,requestId}`：金额快捷保存；版本来自 `Snapshot.holdingRevisions`。
 
