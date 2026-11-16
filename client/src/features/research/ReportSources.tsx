@@ -10,6 +10,10 @@ import type {
 const labels: Record<string, string> = {
   facts: "本次事实卡",
   question: "本轮原始消息",
+  previousTurn: "历史用户原话",
+  currentQuantity: "当前股数",
+  referencePrice: "参考价",
+  priceBasis: "参考价口径",
   monthlySurplus: "月结余",
   portfolioValue: "资产总额",
   investmentValue: "投资资产",
@@ -80,6 +84,13 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
   const localByFact = new Map<number, string[]>();
   const localByInference = new Map<number, string[]>();
   const addLocal = (path: string, quote?: string) => {
+    const userHistory = path.startsWith("/previousTurn/");
+    if (
+      userHistory &&
+      path !== "/previousTurn/question" &&
+      !/^\/previousTurn\/earlierQuestions\/(0|[1-9]\d*)$/.test(path)
+    )
+      return undefined;
     const value = pointer(trace?.personalContext, path);
     if (
       value === undefined ||
@@ -116,20 +127,27 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
       parent && typeof parent === "object" && "occurredOn" in parent
         ? String(parent.occurredOn)
         : "";
-    const title = [
-      labels[parts[0]],
-      name,
-      tradeDate,
-      parts.length > 1 ? labels[parts.at(-1)!] : undefined,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    const title = userHistory
+      ? parts[1] === "question"
+        ? "上一轮用户原话"
+        : `早期用户原话 · 摘录 ${Number(parts[2]) + 1}`
+      : [
+          labels[parts[0]],
+          name,
+          tradeDate,
+          parts.length > 1 ? labels[parts.at(-1)!] : undefined,
+        ]
+          .filter(Boolean)
+          .join(" · ");
     catalog.set(id, {
       id,
       title,
-      publisher: "本次问答使用的个人资料",
+      publisher: userHistory
+        ? "本次对话中的用户原话"
+        : "本次问答使用的个人资料",
       sourceUrl: "",
-      sourceTier: "用户记录",
+      sourceTier: userHistory ? "用户声明（未改写档案）" : "用户记录",
+      notes: userHistory ? "用户声明（未改写档案）。" : undefined,
       asOfDate: "",
       evidenceType: "personal_snapshot",
       claim: quote ?? String(value),

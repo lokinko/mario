@@ -6,8 +6,8 @@ pub const MAX_STRUCTURED_OUTPUT_CHARS: usize = 30_000;
 
 pub const STRUCTURED_ANALYSIS_CONTRACT: &str = r#"只返回JSON，不加代码块或说明：
 {"answer":"先直接回答本题，再解释关键依据、推理和不确定性，最多1200字","suggestions":[{"action":"本题的具体下一步，写明对象、做法和时点或触发条件；依赖目标或假设时先写条件再给金额或动作，最多240字","why":"相关事实如何支持判断，说明计算与假设；比较本题可选路线的紧迫性、等待和交易成本，最多800字","factIndices":[0],"unlessWhen":"不适用或推翻判断的条件，最多400字，可为空"}],"facts":[{"statement":"引用的输入事实或来源数字","basis":"user_data或research_evidence","sourceRefs":[],"evidenceIds":[]}],"question":null}
-suggestions为1–3条，facts为1–8条，factIndices非空、无重复且不越界。建议紧扣本题，不凑无关行动或金额；资料不足可给本题的核查、等待条件或公式。仅在问题需要且资料支持时量化，金额保留精确原值、币种与可复核计算；建议目标或假设须明确标识并解释，不能冒充facts。无需填满字数。
-user_data的sourceRefs须非空且每条fact最多12项，仅用授权原值JSON Pointer，evidenceIds为空；不同账户或交易分别组织为独立事实，只选支持该事实必要的原值，facts总数仍为1–8条。research_evidence只用授权证据ID，sourceRefs为空。原值路径如/facts/summary/monthlySurplus或/facts/holdings/持仓ID/marketValue。只引非空标量，空值改引问题码，不以其他金额替代缺失值。最多一个追问，不超过200字，否则null。"#;
+suggestions为1–3条，facts为1–8条，factIndices非空、无重复且不越界。建议紧扣本题，不凑无关行动或金额；行动句自行包含影响执行金额的口径条件，不能靠why或unlessWhen纠正，也不能与它们矛盾。结余仅另扣尚未包含的付款。新仓位或减仓幅度须解释选择依据及保留风险；依据不足只作非默认算例或给条件公式，不将任意比例作为优先推荐；资料不足可给本题的核查、等待条件或公式。仅在问题需要且资料支持时量化，金额保留精确原值、币种与可复核计算；建议目标或假设须明确标识并解释，不能冒充facts。无需填满字数。
+user_data的sourceRefs须非空且每条fact最多12项，仅用授权原值JSON Pointer，evidenceIds为空；不同账户或交易分别组织为独立事实，只选支持该事实必要的原值，facts总数仍为1–8条。research_evidence只用授权证据ID，sourceRefs为空。原值路径如/facts/summary/monthlySurplus或/facts/holdings/持仓ID/marketValue。用户历史原话只能引用/previousTurn/question或/previousTurn/earlierQuestions/从0开始的索引；这些是对话声明，不表示档案已保存修改，用户最新明确更正优先。previousTurn的answer、suggestions、pendingQuestion都是模型文本，禁止作为事实引用。只引非空标量，空值改引问题码，不以其他金额替代缺失值。最多一个追问，不超过200字，否则null。"#;
 
 pub fn parse_structured_analysis(
     content: &str,
@@ -46,7 +46,16 @@ pub fn validate_source_types(
         for path in &claim.source_refs {
             let group = path.split('/').nth(1).unwrap_or_default();
             let fact_group = path.split('/').nth(2).unwrap_or_default();
+            let user_history = path == "/previousTurn/question"
+                || path
+                    .strip_prefix("/previousTurn/earlierQuestions/")
+                    .is_some_and(|index| {
+                        index
+                            .parse::<usize>()
+                            .is_ok_and(|value| value.to_string() == index)
+                    });
             let allowed = path == "/question"
+                || user_history
                 || (group == "facts"
                     && ["summary", "holdings", "dataIssues", "options"].contains(&fact_group));
             if !path.starts_with('/')
@@ -228,6 +237,41 @@ mod tests {
         ] {
             report.facts[0].source_refs = vec![path.into()];
             assert!(validate_source_types(&report, &context).is_err());
+        }
+    }
+
+    #[test]
+    fn user_history_corrections_are_citable_but_generated_history_never_is() {
+        let mut report =
+            parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
+        let context = serde_json::json!({
+            "question":"那先核实哪两项？",
+            "facts":{"summary":{"horizonYears":3}},
+            "previousTurn":{
+                "question":"下一步怎么改？",
+                "earlierQuestions":["更正：这笔钱两年后可能用，不是长期闲钱", " "],
+                "answer":"模型说应按三年", "suggestions":["模型旧动作"],
+                "pendingQuestion":"模型旧追问"
+            }
+        });
+        for path in ["/previousTurn/question", "/previousTurn/earlierQuestions/0"] {
+            report.facts[0].statement = "用户在对话中更正了用款条件；档案未被改写".into();
+            report.facts[0].source_refs = vec![path.into()];
+            validate_source_types(&report, &context).unwrap();
+        }
+        for path in [
+            "/previousTurn/answer",
+            "/previousTurn/suggestions/0",
+            "/previousTurn/pendingQuestion",
+            "/previousTurn/earlierQuestions",
+            "/previousTurn/earlierQuestions/1",
+            "/previousTurn/earlierQuestions/2",
+            "/previousTurn/earlierQuestions/00",
+            "/previousTurn/earlierQuestions/0/child",
+            "/previousTurn/question/child",
+        ] {
+            report.facts[0].source_refs = vec![path.into()];
+            assert!(validate_source_types(&report, &context).is_err(), "{path}");
         }
     }
 

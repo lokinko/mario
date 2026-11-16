@@ -59,8 +59,9 @@ impl NativeModelProvider {
         self
     }
 
-    // Retry only explicit HTTP rejections before accepting a response. Network
-    // failures and errors after streaming begins never replay the model call.
+    // Retry only connection-establishment failures identified by reqwest and
+    // explicit transient HTTP rejections. Other send/body/stream failures never
+    // replay a model call: a request may already have reached the provider.
     async fn send_request(&self, body: &Value) -> AppResult<(reqwest::Response, usize)> {
         let url = format!(
             "{}/{}",
@@ -82,21 +83,54 @@ impl NativeModelProvider {
                 request.bearer_auth(&self.api_key)
             };
             let response = if attempt == 0 {
-                request.send().await?
+                request.send().await
             } else {
                 tokio::time::timeout(
                     std::time::Duration::from_secs(45).saturating_sub(started.elapsed()),
                     request.send(),
                 )
                 .await
-                .map_err(|_| {
-                    AppError::Model("模型服务重试等待超时（45 秒），请稍后重试".into())
-                })??
+                .map_err(|_| AppError::Model("模型服务重试等待超时（45 秒），请稍后重试".into()))?
+            };
+            let response = match response {
+                Ok(response) => response,
+                Err(error) if error.is_connect() => {
+                    let failure = || {
+                        AppError::Model(format!(
+                            "{} 模型服务连接无法建立（已尝试 {} 次），请检查网络或稍后重试。",
+                            self.protocol.as_str(),
+                            attempt + 1
+                        ))
+                    };
+                    if attempt == 2 {
+                        return Err(failure());
+                    }
+                    let delay = std::time::Duration::from_secs(2_u64 << attempt).saturating_add(
+                        std::time::Duration::from_millis(rand::random::<u64>() % 251),
+                    );
+                    if started.elapsed().saturating_add(delay) > std::time::Duration::from_secs(45)
+                    {
+                        return Err(failure());
+                    }
+                    super::streaming::status(
+                        &self.events,
+                        format!(
+                            "模型服务连接暂时失败，等待约 {} 秒后自动重试（{}/2），可停止生成…",
+                            delay.as_secs().saturating_add(1),
+                            attempt + 1
+                        ),
+                    );
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
             };
             if response.status().is_success() {
                 if attempt > 0 {
                     super::streaming::status(&self.events, "模型服务已恢复，正在继续处理…");
                 }
+                // Count transport attempts, including failures before HTTP was
+                // established. This is not a count of billed model generations.
                 return Ok((response, attempt + 1));
             }
             let failure = UpstreamFailure::read(response).await;
@@ -759,6 +793,199 @@ mod tests {
         (200, None, openai_reply().to_string(), "application/json")
     }
 
+    fn disconnected_provider() -> (NativeModelProvider, std::net::SocketAddr) {
+        let reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = reservation.local_addr().unwrap();
+        let mut provider = NativeModelProvider::new(
+            ModelProviderKind::OpenaiResponses,
+            format!("http://{address}/v1"),
+            "fixture-model".into(),
+            "fixture-private-key".into(),
+        )
+        .unwrap();
+        provider.client = Client::builder()
+            .no_proxy()
+            .connect_timeout(std::time::Duration::from_millis(100))
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .unwrap();
+        drop(reservation);
+        (provider, address)
+    }
+
+    #[tokio::test]
+    async fn connection_refusal_recovers_after_progress_without_replaying_output() {
+        let (provider, address) = disconnected_provider();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(32);
+        let provider = provider.with_events(Some(sender));
+        let deltas = Arc::new(Mutex::new(Vec::new()));
+        let captured = deltas.clone();
+        let pending = tokio::spawn(async move {
+            provider
+                .complete_stream(
+                    messages(),
+                    Box::new(move |delta| captured.lock().unwrap().push(delta.to_owned())),
+                )
+                .await
+        });
+        let event = tokio::time::timeout(std::time::Duration::from_secs(5), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(event, crate::models::inference::AnalysisEvent::Status { message }
+            if message.contains("连接暂时失败") && message.contains("1/2")
+                && message.contains("可停止生成") && !message.contains("fixture-private-key"))
+        );
+        // Only open the listener after a real refusal produced its retry event.
+        let listener = tokio::net::TcpListener::bind(address).await.unwrap();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = requests.clone();
+        let body = format!(
+            "data: {}\n\ndata: {}\n\n",
+            json!({"type":"response.output_text.delta","delta":"恢复后的唯一草稿"}),
+            json!({"type":"response.completed","response":{"status":"completed"}})
+        );
+        let app = Router::new().route(
+            "/v1/responses",
+            post(move |Json(request): Json<Value>| {
+                captured.lock().unwrap().push(request);
+                let body = body.clone();
+                async move { ([("content-type", "text/event-stream")], body) }
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.content, "恢复后的唯一草稿");
+        // Two connection attempts, but only one HTTP request reached the fixture.
+        assert_eq!(result.request_count, 2);
+        assert_eq!(requests.lock().unwrap().len(), 1);
+        assert_eq!(*deltas.lock().unwrap(), vec!["恢复后的唯一草稿"]);
+        assert!(
+            matches!(receiver.try_recv().unwrap(), crate::models::inference::AnalysisEvent::Status { message }
+            if message.contains("已恢复"))
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn repeated_connection_refusal_stops_after_two_retries_without_echoing_endpoint() {
+        let (provider, address) = disconnected_provider();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(32);
+        let provider = provider.with_events(Some(sender));
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            provider.complete(messages()),
+        )
+        .await
+        .expect("connection retries must be bounded")
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("连接无法建立") && error.contains("已尝试 3 次"));
+        assert!(!error.contains("fixture-private-key"));
+        assert!(!error.contains(&address.to_string()));
+        let mut retries = Vec::new();
+        while let Ok(crate::models::inference::AnalysisEvent::Status { message }) =
+            receiver.try_recv()
+        {
+            retries.push(message);
+        }
+        assert_eq!(retries.len(), 2);
+        assert!(retries[0].contains("1/2"));
+        assert!(retries[1].contains("2/2"));
+    }
+
+    #[tokio::test]
+    async fn dropping_connection_backoff_prevents_a_later_request() {
+        let (provider, address) = disconnected_provider();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(32);
+        let provider = provider.with_events(Some(sender));
+        let pending = tokio::spawn(async move { provider.complete(messages()).await });
+        let event = tokio::time::timeout(std::time::Duration::from_secs(5), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(event, crate::models::inference::AnalysisEvent::Status { message }
+            if message.contains("连接暂时失败"))
+        );
+        pending.abort();
+        assert!(pending.await.unwrap_err().is_cancelled());
+        let listener = tokio::net::TcpListener::bind(address).await.unwrap();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(3), listener.accept())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn response_timeout_after_the_request_body_never_replays_generation() {
+        let (mut provider, address) = disconnected_provider();
+        provider.client = Client::builder()
+            .no_proxy()
+            .timeout(std::time::Duration::from_millis(500))
+            .build()
+            .unwrap();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let captured = requests.clone();
+        let app = Router::new().route(
+            "/v1/responses",
+            post(move |Json(body): Json<Value>| {
+                captured.lock().unwrap().push(body);
+                async { std::future::pending::<Json<Value>>().await }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind(address).await.unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(32);
+        let provider = provider.with_events(Some(sender));
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            provider.complete(messages()),
+        )
+        .await
+        .expect("a response timeout must not enter connection backoff")
+        .unwrap_err();
+        assert!(
+            matches!(error, AppError::Network(ref error) if error.is_timeout() && !error.is_connect())
+        );
+        assert_eq!(requests.lock().unwrap().len(), 1);
+        assert!(receiver.try_recv().is_err());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn stream_end_after_output_never_replays_the_request() {
+        let body = format!(
+            "data: {}\n\n",
+            json!({"type":"response.output_text.delta","delta":"只显示一次"})
+        );
+        let (provider, requests, server) = rejection_fixture(
+            "openai-responses",
+            vec![(200, None, body, "text/event-stream")],
+        )
+        .await;
+        let deltas = Arc::new(Mutex::new(Vec::new()));
+        let captured = deltas.clone();
+        assert!(provider
+            .complete_stream(
+                messages(),
+                Box::new(move |delta| {
+                    captured.lock().unwrap().push(delta.to_owned());
+                })
+            )
+            .await
+            .is_err());
+        assert_eq!(*deltas.lock().unwrap(), vec!["只显示一次"]);
+        assert_eq!(requests.lock().unwrap().len(), 1);
+        server.abort();
+    }
+
     #[tokio::test]
     async fn temporary_limit_recovers_for_search_and_tracks_every_attempt() {
         let (provider, requests, server) = rejection_fixture(
@@ -824,6 +1051,8 @@ mod tests {
             (429, "project_spend_limit_exceeded"),
             (429, "organization_usage_limit_exceeded"),
             (401, "invalid_api_key"),
+            (403, "certificate_invalid"),
+            (400, "invalid_client_certificate"),
         ] {
             let (provider, requests, server) =
                 rejection_fixture("openai-responses", vec![rejection(status, code, "0")]).await;

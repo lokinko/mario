@@ -34,6 +34,63 @@ it("opens precise fact sheet values from the frozen report context", () => {
   expect(result.sources[0].title).toBe("本次事实卡 · 基金 · 市值");
 });
 
+it("shows original user corrections without promoting historical model text to facts", () => {
+  const trace = {
+    personalContext: {
+      previousTurn: {
+        question: "先核实哪两项？",
+        earlierQuestions: ["这笔钱两年后可能要用"],
+        answer: "MODEL_CONCLUSION",
+        suggestions: ["MODEL_ACTION"],
+        pendingQuestion: "MODEL_QUESTION",
+      },
+    },
+    structuredReport: {
+      facts: [
+        {
+          statement: "用户更正用款期限",
+          basis: "user_data",
+          evidenceIds: [],
+          sourceRefs: [
+            "/previousTurn/question",
+            "/previousTurn/earlierQuestions/0",
+            "/previousTurn/answer",
+            "/previousTurn/suggestions/0",
+            "/previousTurn/pendingQuestion",
+            "/previousTurn/earlierQuestions",
+            "/previousTurn/earlierQuestions/01",
+          ],
+        },
+      ],
+      suggestions: [],
+    },
+  } as unknown as AnalysisWorkflowTrace;
+  const result = reportSources(trace);
+  expect(result.sources.map((source) => source.claim)).toEqual([
+    "先核实哪两项？",
+    "这笔钱两年后可能要用",
+  ]);
+  expect(result.sources.map((source) => source.title)).toEqual([
+    "上一轮用户原话",
+    "早期用户原话 · 摘录 1",
+  ]);
+  expect(result.sources[1].sourceTier).toBe("用户声明（未改写档案）");
+  render(
+    <SourceDetail
+      source={result.sources[1]}
+      regionId="history-source"
+      close={() => {}}
+    />,
+  );
+  expect(screen.getByText("这笔钱两年后可能要用")).toBeTruthy();
+  expect(screen.getByText("用户声明（未改写档案）。")).toBeTruthy();
+  expect(screen.queryByText("MODEL_CONCLUSION")).toBeNull();
+  expect(result.localByFact.get(0)).toEqual([
+    "local:/previousTurn/question",
+    "local:/previousTurn/earlierQuestions/0",
+  ]);
+});
+
 it("identifies the company and transaction date behind an exact trade reference", () => {
   const trace = {
     personalContext: {

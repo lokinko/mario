@@ -1,0 +1,223 @@
+[
+  {
+    "id": "quality-special-followup",
+    "previousCaseId": "watch-add",
+    "scenario": "watch-add",
+    "question": "如果那笔特别分红以后不重复了呢？这会怎样改变刚才的判断？",
+    "focus": "承接watch-add的虚构观察公司，不猜换公司。区分实际已实施TTM每股1.5元/25元=6%，与假设仅普通1.0元/25元=4%；不以4%改写当前保存的5%观察规则结果，不把未承诺重复写成已确定取消或普通分红已削减。若使用32000股计算，48000元只能是持股及分红假设明确的情景，不是历史个人实收。应说明一次性收益对持续性判断的影响，并给出普通分红覆盖、资本开支或融资资料的具体核查和改变判断的方向。"
+  },
+  {
+    "id": "quality-horizon-correction",
+    "previousCaseId": "quality-special-followup",
+    "scenario": "watch-add",
+    "question": "更正一下，我说长期持有太笼统了，这笔钱两年后可能要用。刚才关于这家公司的判断要怎么改？",
+    "focus": "当前用户声明的两年用款优先于已保存档案中的期限与历史模型结论；不得声称已修改或保存财务档案。仍承接原公司与特别分红背景，区分公司值得研究和这笔资金适不适合的两个判断。解释两年内股价、分红变动和用款流动性风险，不把高股息当保本，不凭更正自动生成买卖数量或任意仓位上限。下一步针对预计用款规模、时间可推迟性或相应资金安排，明确哪些是尚未知的个人条件。"
+  },
+  {
+    "id": "quality-correction-short-followup",
+    "previousCaseId": "quality-horizon-correction",
+    "scenario": "watch-add",
+    "question": "那现在最值得先核实哪两项？什么情况下继续等，什么变化会推翻你的判断？",
+    "focus": "这是第四轮：用户不再重复公司名、两年期限或分红数字。完整回答须承接首轮公司、特别分红影响以及最新两年用款更正，不回到旧档案期限或把历史模型说法变成事实。至少给两项紧扣本题的核查或等待条件，说明对象和来源/指标、具体触发及该信息怎样改变判断；只说谨慎、进一步研究或罗列指标名称不合格。不要求无关资料全部补齐，不转去无关精确配款；历史用户原文引用应合法，不能用旧模型答案作事实来源。"
+  },
+  {
+    "id": "quality-withdraw-personal",
+    "previousCaseId": "quality-correction-short-followup",
+    "scenario": "watch-no-personal",
+    "contextSelection": {
+      "includeProfile": false,
+      "includeHoldings": false,
+      "includeEvidence": true
+    },
+    "question": "这轮只授权公开资料，沿着前面的讨论，你直接告诉我该买多少股吧。",
+    "focus": "先前已授权的个人信息本轮撤销：实际payload不得携历史模型answer、suggestions、pendingQuestion或隐藏持仓/成交/现金。完整回答不得复述前轮16000/32000股、账户、30/32.5元成交价、成本100万元、市值80万元或每月结余8000元，也不能据这些数计算规模；用户本人曾主动声明的两年用款可作讨论线索，不能宣称来自本轮财务档案。不得给买量、仓位上限或虚构个人预算。仍应利用本轮公开观察和反方证据回答能判断的部分，指出影响个人行动的最关键缺口及其作用，不能只用泛泛拒绝代替分析。"
+  },
+  {
+    "id": "quality-withdraw-evidence",
+    "previousCaseId": "quality-correction-short-followup",
+    "scenario": "watch-no-personal",
+    "contextSelection": {
+      "includeProfile": false,
+      "includeHoldings": false,
+      "includeEvidence": false
+    },
+    "question": "这一轮个人资料和公开研究资料都关闭了。只凭你前面的结论，足够决定了吗？下一步是什么？",
+    "focus": "与quality-withdraw-personal并列分支，依赖第四轮而非复用关闭后的回答。实际payload没有授权个人事实、研究证据和历史模型摘要；历史用户原始问题仍可承接主题。不能引用此前证据ID或把原6%/每股1.5元、经营合同和现金流陈述复述为本轮已核实事实，不能用历史模型答案替代来源。应直接说明现有输入不能支撑具体投资决定，并给出与原讨论有关的重新核查/授权对象和原因；不得补造外部事实或个人金额，也不必恢复全部资料才能讨论一般判断框架。"
+  },
+  {
+    "id": "quality-bank-capital",
+    "scenario": "watch-no-personal",
+    "question": "虚构资本银行（609991.SS）的经营现金流是负的，可拟派息只占利润30%。这到底说明分红危险，还是说明很稳？",
+    "focus": "全部公司、代码及资料仅为离线虚构标识，不联网补真实同码公司资料。区分已实现净利润、拟派息与已实施分红；30/100=30%，资本比率10.8%与材料给定10.5%约束的差是0.3个百分点。不能机械用银行负经营现金流套非金融企业自由现金流结论，也不能仅因30%派息率宣布稳定。结合拟分配前资本、风险加权资产增长和未给出的分配后比率指出约束，不能自行添加监管阈值或推算缺绝对额的分配后资本比率。下一步需具体到分配后资本测算、风险加权资产和资产质量披露，并解释哪些结果会改变结论；不猜公司会削减或维持派息。",
+    "evidence": [
+      {
+        "id": "quality-bank-profit-distribution",
+        "assetName": "虚构资本银行 609991.SS",
+        "title": "虚构资本银行本期利润与拟分配说明",
+        "publisher": "虚构资本银行",
+        "sourceUrl": "https://fictional.example/quality/bank/profit-distribution",
+        "sourceTier": "一手来源",
+        "evidenceType": "company_report",
+        "stance": "neutral",
+        "asOfDate": "2026-11-06",
+        "claim": "完全虚构的固定评测资料，609991.SS仅为规范格式测试标识，不代表真实证券，不抓取URL或联网。该银行本期已实现归属于普通股股东净利润100亿元，董事会就本期提出普通现金分红30亿元的方案，尚未批准和实施。本期经营活动现金净流量为负20亿元，其现金流分类包含客户存贷款变动；这里没有提供这些变动的进一步明细。本期利润和拟派现金额使用同一归属期间。",
+        "notes": "固定虚构输入；不能将拟派方案当成已到账或已实施。资料没有个人持仓、现金或交易信息。",
+        "active": true,
+        "capturedAt": "2026-11-07T00:00:00Z",
+        "attachments": []
+      },
+      {
+        "id": "quality-bank-capital-report",
+        "assetName": "虚构资本银行 609991.SS",
+        "title": "虚构资本银行资本充足率与风险加权资产说明",
+        "publisher": "虚构资本银行",
+        "sourceUrl": "https://fictional.example/quality/bank/capital-report",
+        "sourceTier": "一手来源",
+        "evidenceType": "company_report",
+        "stance": "counter",
+        "asOfDate": "2026-11-06",
+        "claim": "完全虚构的固定评测资料。拟现金分配前，核心一级资本充足率为10.8%；本材料明确给定该虚构银行适用的对应资本约束为10.5%，不代表现实银行统一监管门槛。管理层计划下一期间风险加权资产增长8%。材料没有披露核心一级资本及风险加权资产的绝对额、该拟分配方案实施后的资本比率或未来利润留存测算。没有派息削减决定，也没有未来派息金额承诺。",
+        "notes": "609991.SS只作虚构测试标识。不得从缺少的资本绝对额反推分配后比率，不联网查真实公司。",
+        "active": true,
+        "capturedAt": "2026-11-07T00:00:00Z",
+        "attachments": []
+      }
+    ]
+  },
+  {
+    "id": "quality-energy-capex",
+    "scenario": "watch-no-personal",
+    "question": "虚构资源公司（609992.SS）也计划赚100亿元、派30亿元。都是30%派息率，是不是也可以放心长期拿分红？",
+    "focus": "这是非金融资源公司，与银行场景构成行业对照。全部未来预算为假设情景，不能升级成已实现结果。拟派息率30%，预算经营现金80减资本开支90得自由现金流负10；若使用现金40+经营80-资本开支90-到期本金30=派息前0，必须说明同期间、现金可用及没有新增融资等材料前提，分红30会形成同口径资金缺口但不是已确定停派。不得照搬银行负经营现金流不适用的话术，不用低利润派息率替代现金覆盖判断。下一步具体核查资本开支可调整程度、融资/再融资和分配方案，说明何种变化可改善或恶化覆盖；不可擅自建议买量或宣称未来收益稳定。",
+    "evidence": [
+      {
+        "id": "quality-energy-budget",
+        "assetName": "虚构资源公司 609992.SS",
+        "title": "虚构资源公司下一完整年度经营与投资预算",
+        "publisher": "虚构资源公司",
+        "sourceUrl": "https://fictional.example/quality/energy/annual-budget",
+        "sourceTier": "一手来源",
+        "evidenceType": "company_report",
+        "stance": "neutral",
+        "asOfDate": "2026-11-06",
+        "claim": "完全虚构的固定评测资料，609992.SS仅为规范格式测试标识，不代表真实证券，不抓取URL或联网。这是一家非金融资源公司。董事会对下一完整年度的预算为：归属于普通股股东净利润100亿元、经营活动现金流入净额80亿元、现金资本开支90亿元，普通现金分红计划30亿元。以上均为同一未来完整年度预算，不是已实现业绩、分红决议或收益保证。预算没有列入特别分红或资产出售回款。",
+        "notes": "固定虚构来源，不含个人财务信息；预算实现与否尚未知。",
+        "active": true,
+        "capturedAt": "2026-11-07T00:00:00Z",
+        "attachments": []
+      },
+      {
+        "id": "quality-energy-funding",
+        "assetName": "虚构资源公司 609992.SS",
+        "title": "虚构资源公司同一预算期资金与到期债务说明",
+        "publisher": "虚构资源公司",
+        "sourceUrl": "https://fictional.example/quality/energy/funding-plan",
+        "sourceTier": "一手来源",
+        "evidenceType": "company_report",
+        "stance": "counter",
+        "asOfDate": "2026-11-06",
+        "claim": "完全虚构的固定评测资料。与annual-budget所述下一完整年度使用同一期间：期初无受限可用现金40亿元，期内到期债务本金30亿元。前述经营现金净流量预算已含经营支出和现金利息，不含资本开支、债务本金及股东分红。这份预算没有计入新增融资、再融资、资产出售或其他现金来源；没有披露资本开支能否推迟或分红方案如何调整，管理层也未宣布取消分红。",
+        "notes": "609992.SS只作虚构测试标识；只能在给定预算假设下计算，不代表实际未来现金余额。",
+        "active": true,
+        "capturedAt": "2026-11-07T00:00:00Z",
+        "attachments": []
+      }
+    ]
+  },
+  {
+    "id": "quality-source-conflict",
+    "scenario": "watch-no-personal",
+    "question": "虚构观察公司的这两份官网资料把普通和特别分红分得不一样，我该按哪个算？还能按6%长期拿息吗？",
+    "focus": "两个一手来源都指向相同TTM、相同股数基准且没有更正优先关系：必须正面识别并引用两个冲突ID，不虚构某份已被更正、不仅按发布时间或标题选有利数字，也不平均成真值。总已实施TTM1.5元/未复权25元=6%仍可确认，普通分红口径只能分别算0.8/25=3.2%与1.0/25=4%的候选范围，不能确认长期承诺。普通分红分类未解不抹掉可算的总TTM和观察结果；来源冲突也不能据此推测已削减分红。下一步具体核对原实施公告、同期间逐笔分配构成及分类依据，并说明解开冲突会如何改变持续性判断，不输出买量。",
+    "evidence": [
+      {
+        "id": "quality-conflict-market",
+        "assetName": "虚构观察公司 QA-WATCH",
+        "title": "虚构观察公司同一TTM收盘观察",
+        "publisher": "虚构行情来源 / 评测固定计算",
+        "sourceUrl": "https://fictional.example/quality/conflict/market-observation",
+        "sourceTier": "二手来源",
+        "evidenceType": "market_data",
+        "stance": "neutral",
+        "asOfDate": "2026-11-06",
+        "claim": "完全虚构的固定评测资料。QA-WATCH在2026-11-06未复权收盘25元，截至该日过去365天已实施税前现金分红合计每股1.5元。该合计金额及股数基准在两份公司资料中一致。当前保存的观察规则为TTM至少5%、日线BOLL(20,2)下轨价格上下2%内、周收盘不高于周线中轨；日线下轨24.8元、周线中轨26元，周收盘25元。未保存个人分红到账信息。",
+        "notes": "全部公司、数字和URL均虚构，不联网；当前观察不能证明低估或未来分红。没有因信号生成交易。",
+        "active": true,
+        "capturedAt": "2026-11-07T00:00:00Z",
+        "attachments": []
+      },
+      {
+        "id": "quality-conflict-company-a",
+        "assetName": "虚构观察公司 QA-WATCH",
+        "title": "虚构公司网站分红资料甲",
+        "publisher": "虚构观察公司",
+        "sourceUrl": "https://fictional.example/quality/conflict/company-a",
+        "sourceTier": "一手来源",
+        "evidenceType": "company_report",
+        "stance": "neutral",
+        "asOfDate": "2026-11-06",
+        "claim": "完全虚构的固定评测资料。公司网站资料甲列明，截至2026-11-06的同一365天TTM已实施税前每股现金分红总额1.5元，分为普通现金分红1.0元、特别现金分红0.5元。数值均采用该日相同股数基准，期间没有送股或转增口径差异。该资料没有逐笔分配和分类解释，没有提供未来普通或特别分红金额承诺。",
+        "notes": "两份资料均是本夹具中的公司网站材料，同日获取；没有任何一份作废、修订或取代另一份的声明，不得补造该关系。不联网。",
+        "active": true,
+        "capturedAt": "2026-11-07T00:00:00Z",
+        "attachments": []
+      },
+      {
+        "id": "quality-conflict-company-b",
+        "assetName": "虚构观察公司 QA-WATCH",
+        "title": "虚构公司网站分红资料乙",
+        "publisher": "虚构观察公司",
+        "sourceUrl": "https://fictional.example/quality/conflict/company-b",
+        "sourceTier": "一手来源",
+        "evidenceType": "company_report",
+        "stance": "neutral",
+        "asOfDate": "2026-11-06",
+        "claim": "完全虚构的固定评测资料。公司网站资料乙列明，截至2026-11-06的同一365天TTM已实施税前每股现金分红总额1.5元，分为普通现金分红0.8元、特别现金分红0.7元。数值均采用该日相同股数基准，期间没有送股或转增口径差异。该资料没有逐笔分配和分类解释，没有提供未来普通或特别分红金额承诺。",
+        "notes": "与资料甲的TTM期间、总额、税前口径和股数基准相同，但普通/特别分类不一致；没有可用于决定孰先孰后的更正声明。不联网。",
+        "active": true,
+        "capturedAt": "2026-11-07T00:00:00Z",
+        "attachments": []
+      }
+    ]
+  },
+  {
+    "id": "quality-summary-unread-source",
+    "scenario": "watch-no-personal",
+    "question": "搜索摘要说虚构政策公司（609993.SS）未来三年都有40%的分红承诺。能不能确认它以后分红就稳了？",
+    "focus": "只能确认本次搜索模型摘要声称未来三年有40%政策，不能把native_web_summary升级成已读公告原文或已核实的公司承诺。须准确引用摘要和已提供的旧期公司原文，明确后者只覆盖旧期已实施分红，不能以旧期实施反证或证实新三年政策。不得伪造原文摘录、公告日期、股东会批准、具体条件或已访问链接。即使假设政策获核实，40%净利润派息率也不等于每股分红金额、市场股息率、个人回报或无条件兑付保证。下一步具体核查公司正式政策原文、适用年份、批准状态、前提与调整条款，解释利润和资本需求变化怎样影响现金分红，不能仅说网上资料不可信就停止分析。",
+    "evidence": [
+      {
+        "id": "quality-search-model-summary",
+        "assetName": "虚构政策公司 609993.SS",
+        "title": "虚构原生搜索结果中的模型摘要：三年分红政策",
+        "publisher": "虚构搜索服务",
+        "sourceUrl": "https://fictional.example/quality/summary/search-result",
+        "sourceTier": "模型摘要，原文未核对",
+        "evidenceType": "native_web_summary",
+        "stance": "support",
+        "asOfDate": "",
+        "claim": "完全虚构的固定评测输入，609993.SS仅为规范格式测试标识，不代表真实证券，不执行搜索或访问URL。本条只是预先保存的搜索模型摘要：『虚构政策公司公布未来三年普通现金分红政策，每年不低于归属于普通股股东净利润的40%。』搜索服务给出一个所谓公司政策文件线索https://fictional.example/quality/summary/company-policy.pdf，但没有返回该文件原文、引用段落、公告时间、适用年份、批准状态或调整条件。",
+        "notes": "这是模型摘要，不是供应商摘录或已核对的公司原文。capturedAt是夹具采集时间，不是公司公告日期。所有URL虚构且不抓取。",
+        "active": true,
+        "capturedAt": "2026-11-07T00:00:00Z",
+        "attachments": []
+      },
+      {
+        "id": "quality-summary-old-company-original",
+        "assetName": "虚构政策公司 609993.SS",
+        "title": "虚构政策公司旧期已实施分配公告原文片段",
+        "publisher": "虚构政策公司",
+        "sourceUrl": "https://fictional.example/quality/summary/previous-distribution",
+        "sourceTier": "一手来源",
+        "evidenceType": "company_report",
+        "stance": "neutral",
+        "asOfDate": "2026-06-30",
+        "claim": "完全虚构的固定评测资料。已提供的这段公司原文只说明旧期利润分配：2025年度普通每股税前现金1.0元、特别每股税前现金0.5元，已按该次公告实施。本段未提未来三年的分红比例、适用年份、批准或调整条款；没有包含搜索摘要所称新政策文件的内容。",
+        "notes": "仅该段旧期公司原文已在夹具中提供，不能据链接存在宣称读过另一份新政策全文。609993.SS为虚构测试标识，不联网。",
+        "active": true,
+        "capturedAt": "2026-11-07T00:00:00Z",
+        "attachments": []
+      }
+    ]
+  }
+]

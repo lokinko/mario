@@ -34,12 +34,19 @@ struct Case {
     focus: String,
     previous_case_id: Option<String>,
     scenario: Option<Scenario>,
+    context_selection: Option<ContextSelection>,
+    evidence: Option<Vec<ResearchEvidence>>,
 }
 
 fn fixtures() -> (Snapshot, Vec<Case>) {
+    let mut cases: Vec<Case> =
+        serde_json::from_str(include_str!("../../tests/fixtures/qa_eval/questions.json")).unwrap();
+    let quality: Vec<Case> =
+        serde_json::from_str(include_str!("../../tests/fixtures/qa_eval/quality.json")).unwrap();
+    cases.extend(quality);
     (
         serde_json::from_str(include_str!("../../tests/fixtures/qa_eval/snapshot.json")).unwrap(),
-        serde_json::from_str(include_str!("../../tests/fixtures/qa_eval/questions.json")).unwrap(),
+        cases,
     )
 }
 
@@ -86,11 +93,11 @@ fn case_context(case: &Case, base: &Snapshot, request: &mut AnalysisRequest) -> 
     let Some(scenario) = case.scenario else {
         return ContextBuilder::build(request, base, &ContextSources::default());
     };
-    request.context_selection = ContextSelection {
+    request.context_selection = case.context_selection.clone().unwrap_or(ContextSelection {
         include_profile: !matches!(scenario, Scenario::NoPersonal),
         include_holdings: !matches!(scenario, Scenario::NoPersonal),
         include_evidence: true,
-    };
+    });
     let fixture = watch_fixture();
     let mut snapshot = base.clone();
     snapshot.holdings.retain(|holding| holding.id != "fund-a");
@@ -115,11 +122,13 @@ fn case_context(case: &Case, base: &Snapshot, request: &mut AnalysisRequest) -> 
             "qa-watch-weekly-history",
         ],
     };
-    let evidence: Vec<_> = fixture
-        .evidence
-        .into_iter()
-        .filter(|item| ids.contains(&item.id.as_str()))
-        .collect();
+    let evidence = case.evidence.clone().unwrap_or_else(|| {
+        fixture
+            .evidence
+            .into_iter()
+            .filter(|item| ids.contains(&item.id.as_str()))
+            .collect()
+    });
     ContextBuilder::build(
         request,
         &snapshot,
@@ -147,7 +156,40 @@ struct CaseResult {
     error: Option<String>,
 }
 
-fn previous_turn(question: &str, result: &AnalysisResult) -> crate::models::PreviousTurn {
+fn previous_turn(
+    question: &str,
+    result: &AnalysisResult,
+    earlier: &[String],
+) -> crate::models::PreviousTurn {
+    let prior_question = question.trim().chars().take(200).collect::<String>();
+    let full_question = question.trim().chars().take(300).collect::<String>();
+    let candidates = earlier
+        .iter()
+        .map(|text| text.trim().chars().take(300).collect::<String>())
+        .filter(|text| !text.is_empty() && text != &prior_question && text != &full_question)
+        .collect::<Vec<_>>();
+    let mut earlier_questions = Vec::new();
+    if let Some(first) = candidates.first() {
+        earlier_questions.push(first.clone());
+        let recent = candidates
+            .iter()
+            .enumerate()
+            .filter(|(index, value)| {
+                *value != first
+                    && candidates.iter().rposition(|item| item == *value) == Some(*index)
+            })
+            .map(|(_, value)| value.clone())
+            .collect::<Vec<_>>();
+        earlier_questions.extend(
+            recent
+                .into_iter()
+                .rev()
+                .take(4)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev(),
+        );
+    }
     let (answer, suggestions) = match result.workflow_trace.structured_report.as_ref().unwrap() {
         crate::models::StoredAnalysisReport::Current(report) => (
             &report.answer,
@@ -155,17 +197,17 @@ fn previous_turn(question: &str, result: &AnalysisResult) -> crate::models::Prev
                 .suggestions
                 .iter()
                 .map(|s| s.action.chars().take(100).collect())
-                .collect(),
+                .collect::<Vec<String>>(),
         ),
         crate::models::StoredAnalysisReport::Legacy(_) => {
             panic!("live evaluation must produce current reports")
         }
     };
     crate::models::PreviousTurn {
-        question: question.chars().take(200).collect(),
+        question: prior_question,
         answer: answer.chars().take(300).collect(),
-        suggestions,
-        earlier_questions: Vec::new(),
+        suggestions: suggestions.into_iter().take(3).collect(),
+        earlier_questions,
         pending_question: result
             .workflow_trace
             .structured_report
@@ -210,7 +252,7 @@ pub(super) async fn run_live() {
         .expect("report path must be new and its parent directory must exist");
     let settings = AnalysisSettings::default();
     let mut results = Vec::<CaseResult>::new();
-    let mut previous = HashMap::<String, (String, AnalysisResult)>::new();
+    let mut previous = HashMap::<String, (String, AnalysisResult, Vec<String>)>::new();
     let generated_at = chrono::Utc::now().to_rfc3339();
     // A checkpoint is written before calls and after every question, including failures.
     let checkpoint = |output: &mut std::fs::File, results: &[CaseResult]| {
@@ -251,9 +293,16 @@ pub(super) async fn run_live() {
             record.status = "skipped";
             record.error = Some("上一轮执行失败，不能伪造追问上下文".into());
         } else {
-            let previous_turn = parent
-                .flatten()
-                .map(|(question, result)| previous_turn(question, result));
+            let parent = parent.flatten();
+            let previous_turn =
+                parent.map(|(question, result, earlier)| previous_turn(question, result, earlier));
+            let earlier = parent
+                .map(|(question, _, earlier)| {
+                    let mut earlier = earlier.clone();
+                    earlier.push(question.clone());
+                    earlier
+                })
+                .unwrap_or_default();
             let mut request = AnalysisRequest {
                 question: case.question.clone(),
                 previous_turn,
@@ -274,7 +323,10 @@ pub(super) async fn run_live() {
             {
                 Ok(result) => {
                     record.status = "completed";
-                    previous.insert(case.id.clone(), (case.question.clone(), result.clone()));
+                    previous.insert(
+                        case.id.clone(),
+                        (case.question.clone(), result.clone(), earlier),
+                    );
                     record.result = Some(result);
                 }
                 Err(error) => {
@@ -299,7 +351,7 @@ pub(super) async fn run_live() {
 fn fixture_preserves_exact_amounts_and_issue_scope() {
     // Ordinary fixture validation never reads the live-run subset environment variable.
     let (snapshot, cases) = fixtures();
-    assert_eq!(cases.len(), 15);
+    assert_eq!(cases.len(), 24);
     assert_eq!(
         cases.iter().filter(|case| case.scenario.is_none()).count(),
         12
@@ -360,7 +412,7 @@ fn subset_preflight_requires_explicit_dependencies_and_never_adds_paid_cases() {
     let one = select_cases(fixtures().1, Some("loss")).unwrap();
     assert_eq!(one.len(), 1);
     assert_eq!(one[0].id, "loss");
-    assert_eq!(select_cases(fixtures().1, None).unwrap().len(), 15);
+    assert_eq!(select_cases(fixtures().1, None).unwrap().len(), 24);
 }
 
 #[test]
@@ -458,7 +510,9 @@ fn watch_fixture_positions_match_original_trades_and_exact_accounting() {
 #[test]
 fn watch_scenarios_freeze_real_evidence_and_original_trade_units_with_authorization() {
     let (snapshot, cases) = fixtures();
-    for case in cases.iter().filter(|case| case.scenario.is_some()) {
+    for case in cases.iter().filter(|case| {
+        ["watch-add", "watch-no-personal", "watch-weekly"].contains(&case.id.as_str())
+    }) {
         let mut request = fixture_request(case);
         let context = case_context(case, &snapshot, &mut request);
         let sources = context.payload["researchEvidence"].as_array().unwrap();
@@ -546,6 +600,74 @@ fn watch_scenarios_freeze_real_evidence_and_original_trade_units_with_authorizat
                     assert!(source("qa-watch-current").contains("TTM至少5%"));
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn live_followups_keep_original_user_history_and_pending_question_with_production_budgets() {
+    let result: AnalysisResult = serde_json::from_value(serde_json::json!({
+        "id":"fixture","answer":"model-only-answer","stages":[],"createdAt":"2026-11-16","disclaimer":"fixture",
+        "transparency":{"provider":"fixture","model":"fixture","contextGroups":[],"payloadBytes":0,"contextRevision":"fixture","externalDataUsed":false,"apiKeySent":false},
+        "workflowTrace":{"structuredReport":{"answer":"🙂".repeat(400),"suggestions":[],"facts":[],"question":"你何时用钱？"}}
+    })).unwrap();
+    let earlier = [
+        "首轮公司",
+        "第二问",
+        "第三问",
+        "第四问",
+        "第五问",
+        "第六问",
+        "第七问",
+        "第三问",
+    ]
+    .map(str::to_owned);
+    let previous = previous_turn("上一轮更正为两年", &result, &earlier);
+    assert_eq!(
+        previous.earlier_questions,
+        ["首轮公司", "第五问", "第六问", "第七问", "第三问"]
+    );
+    assert_eq!(previous.pending_question.as_deref(), Some("你何时用钱？"));
+    assert_eq!(previous.answer.chars().count(), 300);
+    previous.validate().unwrap();
+    assert!(!previous
+        .earlier_questions
+        .iter()
+        .any(|question| question.contains("model-only")));
+}
+
+#[test]
+fn quality_cases_freeze_industry_sources_and_withdrawn_authorization() {
+    let (snapshot, cases) = fixtures();
+    for case in cases.iter().filter(|case| case.id.starts_with("quality-")) {
+        let mut request = fixture_request(case);
+        request.previous_turn = Some(crate::models::PreviousTurn {
+            question: "现在先核实什么？".into(),
+            answer: "PRIVATE_MODEL_HISTORY".into(),
+            suggestions: vec!["PRIVATE_MODEL_ACTION".into()],
+            earlier_questions: vec!["更正：这笔钱两年后可能要用".into()],
+            pending_question: Some("PRIVATE_MODEL_QUESTION".into()),
+        });
+        let context = case_context(case, &snapshot, &mut request);
+        assert!(
+            !request.web_search,
+            "fictional companies must never be sent to live search"
+        );
+        if !request.context_selection.include_holdings || !request.context_selection.include_profile
+        {
+            assert!(!context.payload.to_string().contains("PRIVATE_MODEL"));
+        }
+        if !request.context_selection.include_evidence {
+            assert!(context.evidence_catalog.is_empty());
+            assert!(context.payload.get("researchEvidence").is_none());
+        }
+        if let Some(evidence) = &case.evidence {
+            assert!(evidence.len() <= crate::evidence::ANALYSIS_EVIDENCE_LIMIT);
+            for item in evidence {
+                assert!(item.source_url.starts_with("https://fictional.example/"));
+                assert!(item.claim.chars().count() <= 2_000);
+            }
+            assert_eq!(context.evidence_catalog.len(), evidence.len());
         }
     }
 }
