@@ -112,6 +112,27 @@ it.each([
   },
 );
 
+it("keeps history collapsed until toggled and collapses it after opening an item", async () => {
+  vi.mocked(researchApi.getAnalysisHistory).mockResolvedValue([
+    { id: "old-1", question: "旧问题", createdAt: "2026-11-15T00:00:00Z" },
+  ] as never);
+  vi.mocked(researchApi.getAnalysis).mockResolvedValue({
+    result: completed("old-1"),
+  } as never);
+  render(<Advisor {...props} />);
+  const panel = screen.getByRole("region", { name: "历史对话" });
+  const toggle = screen.getByRole("button", { name: "历史对话" });
+  expect(panel.classList.contains("is-open")).toBe(false);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(panel.classList.contains("is-open")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "收起历史" }));
+  expect(panel.classList.contains("is-open")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "历史对话" }));
+  fireEvent.click(await screen.findByRole("button", { name: /旧问题/ }));
+  expect(panel.classList.contains("is-open")).toBe(false);
+});
+
 it("shows streamed text before completion and replaces it with the saved report", async () => {
   let finish!: (result: AnalysisResult) => void;
   vi.mocked(researchApi.runAnalysis).mockImplementation(

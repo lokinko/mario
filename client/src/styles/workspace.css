@@ -330,21 +330,27 @@
   max-width: 100%;
 }
 .chat-workspace {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: var(--space-4);
+  position: relative;
+  display: flex;
   min-height: calc(100dvh - 130px);
 }
 .chat-history {
-  align-self: start;
-  position: sticky;
-  top: calc(var(--chrome-height) + var(--space-6));
-  max-height: calc(100dvh - var(--chrome-height) - 64px);
+  display: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  width: min(300px, 100%);
+  max-height: calc(100dvh - var(--chrome-height) - 96px);
   overflow-y: auto;
   padding: var(--space-4) var(--space-3);
-  background: var(--surface);
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+.chat-history.is-open {
+  display: block;
 }
 .chat-history h2 {
   font-size: var(--fs-body);
@@ -378,9 +384,6 @@
   padding: var(--space-4);
   background: var(--surface-raised);
 }
-.history-toggle {
-  display: none;
-}
 .settings-page > .panel,
 .account-data > .panel {
   margin-bottom: var(--space-4);
@@ -400,20 +403,6 @@
   .holdings-list-header {
     gap: var(--space-2);
     padding-inline: var(--space-3);
-  }
-  .chat-workspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .chat-history {
-    display: none;
-    position: static;
-    max-height: 300px;
-  }
-  .chat-history.is-open {
-    display: block;
-  }
-  .history-toggle {
-    display: inline-flex;
   }
 }
 @media (max-width: 900px) {
@@ -1416,9 +1405,7 @@ input[type="number"] {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  max-width: 720px;
   width: 100%;
-  justify-self: center;
 }
 .chat-main .conversation-welcome {
   flex: 1;
@@ -2081,14 +2068,6 @@ input[type="number"] {
 }
 .empty-state p {
   margin: 0;
-}
-.history-toggle {
-  display: none;
-}
-@media (max-width: 1200px) {
-  .history-toggle {
-    display: inline-flex;
-  }
 }
 .review-metrics {
   grid-template-columns: repeat(2, minmax(0, 1fr));

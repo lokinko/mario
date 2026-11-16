@@ -310,7 +310,7 @@ export function Advisor({
               aria-expanded={historyOpen}
               onClick={() => setHistoryOpen((v) => !v)}
             >
-              历史对话
+              {historyOpen ? "收起历史" : "历史对话"}
             </button>
             <button
               className="secondary"
