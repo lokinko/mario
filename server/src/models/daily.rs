@@ -38,8 +38,6 @@ pub struct DailyRecord {
     pub assets: Vec<DailyAsset>,
     pub missing_fx: Vec<String>,
     pub previous_day_change: Option<f64>,
-    pub last_updated_day: Option<String>,
-    pub since_last_update_change: Option<f64>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

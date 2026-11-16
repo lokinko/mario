@@ -295,7 +295,6 @@ fn rebuild_at(conn: &Connection, through: &str) -> AppResult<()> {
     let mut state = BTreeMap::<String, (String, Entry)>::new();
     let mut index = 0;
     let mut previous: Option<DailyRecord> = None;
-    let mut last_actual: Option<DailyRecord> = None;
     while day <= end {
         let key = day.to_string();
         let mut actual = false;
@@ -402,8 +401,6 @@ fn rebuild_at(conn: &Connection, through: &str) -> AppResult<()> {
             assets,
             missing_fx,
             previous_day_change: None,
-            last_updated_day: None,
-            since_last_update_change: None,
         };
         if let Some(prev) = &previous {
             record.previous_day_change = delta(prev, &record);
@@ -435,17 +432,10 @@ fn rebuild_at(conn: &Connection, through: &str) -> AppResult<()> {
                 }
             }
         }
-        if let Some(last) = &last_actual {
-            record.last_updated_day = Some(last.day.clone());
-            record.since_last_update_change = delta(last, &record);
-        }
         conn.execute(
             "INSERT INTO daily_totals(day,payload) VALUES ($1,$2)",
             params![key, serde_json::to_string(&record)?],
         )?;
-        if actual || last_actual.is_none() {
-            last_actual = Some(record.clone());
-        }
         previous = Some(record);
         day += Duration::days(1);
     }
@@ -1021,7 +1011,6 @@ mod tests {
         assert_eq!(rows[0].day, "2026-02-03");
         assert_eq!(rows[0].total_assets, Some(350.0));
         assert_eq!(rows[0].previous_day_change, Some(50.0));
-        assert_eq!(rows[0].since_last_update_change, Some(50.0));
         assert!(rows[1..]
             .iter()
             .all(|r| r.total_assets == Some(300.0) && r.carried));

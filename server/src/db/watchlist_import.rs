@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

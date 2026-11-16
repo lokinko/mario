@@ -16,6 +16,12 @@ import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 import { formatMoney } from "../../lib/format";
 vi.mock("../../api/portfolio", () => ({
+  getAllocation: vi.fn().mockResolvedValue({
+    baseCurrency: "CNY",
+    byClass: [],
+    byIndustry: [],
+    missing: 0,
+  }),
   getFinancialHistory: vi
     .fn()
     .mockResolvedValue({ records: [], quarantine: null }),
@@ -57,6 +63,12 @@ beforeEach(() => {
     today: "2026-09-13",
     records: [],
     nextBefore: null,
+  });
+  vi.mocked(portfolioApi.getAllocation).mockResolvedValue({
+    baseCurrency: "CNY",
+    byClass: [],
+    byIndustry: [],
+    missing: 0,
   });
 });
 afterEach(() => {

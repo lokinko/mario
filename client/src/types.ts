@@ -141,6 +141,7 @@ export interface Snapshot {
     holdings: Record<string, AccountingHolding>;
     investments: AccountingTotals;
     cash: AccountingTotals;
+    dividends?: DividendTotals;
   } | null;
   corporateActions?: {
     id: string;
@@ -192,6 +193,11 @@ export interface AccountingHolding extends HoldingAmounts {
   unrealizedProfit: string | null;
   settledProfit: string | null;
   usable: boolean;
+}
+export interface DividendTotals {
+  since: string;
+  received: { value: string | null; missing: number };
+  heldYieldPct: string | null;
 }
 export type AccountingTotals = Record<
   "value" | "cost" | "unrealized" | "realized",
@@ -674,8 +680,6 @@ export interface DailyRecord {
   assets: DailyAsset[];
   missingFx: string[];
   previousDayChange: number | null;
-  lastUpdatedDay: string | null;
-  sinceLastUpdateChange: number | null;
 }
 export interface DailyHistory {
   timezone: string;

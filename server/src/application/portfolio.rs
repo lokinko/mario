@@ -197,3 +197,21 @@ mod integration_tests {
 #[cfg(test)]
 #[path = "portfolio_quote_tests.rs"]
 mod quote_preview_tests;
+
+/// Allocation joins account holdings with the public catalogue's industries.
+pub(crate) fn allocation(
+    db: &Database,
+    catalog: &super::watch_catalog::WatchCatalogService,
+) -> AppResult<models::accounting::Allocation> {
+    let snapshot = db.snapshot()?;
+    let accounting = snapshot
+        .accounting
+        .as_ref()
+        .ok_or_else(|| crate::AppError::Validation("缺少精确会计数据".into()))?;
+    models::accounting::allocation(
+        &snapshot.holdings,
+        accounting,
+        &snapshot.profile.base_currency,
+        &catalog.industries()?,
+    )
+}

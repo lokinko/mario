@@ -4,6 +4,7 @@ import { AssetAmountRow } from "./AssetAmountRow";
 import { ExchangeRates } from "./ExchangeRates";
 import { ExchangeRateAccess } from "./ExchangeRateAccess";
 import { AssetEditor } from "./AssetEditor";
+import { AllocationChart } from "./AllocationChart";
 import { AssetOverview } from "./AssetOverview";
 import { useAssetHistory } from "./useAssetHistory";
 import { Callout } from "../../components/Callout";
@@ -335,6 +336,7 @@ export function MyFacts({
           </div>
         )}
       </section>
+      {section === "holdings" && <AllocationChart snapshot={snapshot} />}
       {section === "savings" && (
         <ProfileForm
           exchangeRates={

@@ -386,11 +386,79 @@ pub(super) fn build(
     } else {
         None
     };
+    let dividends = dividend_totals(
+        &snapshot.holding_trades,
+        &holdings,
+        &crate::models::market::today(),
+    )?;
     Ok(AccountingSnapshot {
         total_value,
         holdings,
         investments,
         cash,
+        dividends,
+    })
+}
+
+fn dividend_totals(
+    trades: &[crate::models::HoldingTrade],
+    holdings: &std::collections::BTreeMap<String, AccountingHolding>,
+    today: &str,
+) -> AppResult<DividendTotals> {
+    let end = chrono::NaiveDate::parse_from_str(today, "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("会计日期无效".into()))?;
+    let since = (end - chrono::Duration::days(365)).to_string();
+    let overflow = || AppError::Validation("分红合计超出范围".into());
+    let mut received = Decimal::ZERO;
+    let mut held = Decimal::ZERO;
+    let mut known = 0;
+    let mut missing = std::collections::BTreeSet::new();
+    for trade in trades.iter().filter(|t| {
+        t.kind == crate::models::TradeKind::Dividend
+            && t.occurred_on.as_str() > since.as_str()
+            && t.occurred_on.as_str() <= today
+    }) {
+        let Some(holding) = holdings.get(&trade.holding_id) else {
+            continue;
+        };
+        let net = dec(&trade.gross_amount)? - dec(&trade.fees)? - dec(&trade.taxes)?;
+        let Some(rate) = holding.fx_rate.as_deref().filter(|_| holding.usable) else {
+            missing.insert(&trade.holding_id);
+            continue;
+        };
+        let base = product(net, dec(rate)?)?;
+        received = received.checked_add(base).ok_or_else(overflow)?;
+        known += 1;
+        let still_held = holding
+            .amounts
+            .quantity
+            .as_deref()
+            .map(dec)
+            .transpose()?
+            .is_some_and(|q| q > Decimal::ZERO);
+        if still_held {
+            held = held.checked_add(base).ok_or_else(overflow)?;
+        }
+    }
+    let mut held_cost = Decimal::ZERO;
+    for holding in holdings.values().filter(|h| h.usable) {
+        let quantity = holding.amounts.quantity.as_deref().map(dec).transpose()?;
+        if let (Some(q), Some(rate)) = (quantity, holding.fx_rate.as_deref()) {
+            if q > Decimal::ZERO {
+                held_cost = held_cost
+                    .checked_add(product(dec(&holding.amounts.cost_basis)?, dec(rate)?)?)
+                    .ok_or_else(overflow)?;
+            }
+        }
+    }
+    Ok(DividendTotals {
+        since,
+        received: AccountingMetric {
+            value: (known > 0 || missing.is_empty()).then(|| text(received.round_dp(2))),
+            missing: missing.len(),
+        },
+        held_yield_pct: (held_cost > Decimal::ZERO && missing.is_empty())
+            .then(|| text((held * Decimal::ONE_HUNDRED / held_cost).round_dp(2))),
     })
 }
 
@@ -460,4 +528,33 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trailing_dividends_are_net_converted_and_limited_to_365_days() {
+        let db = Database::test();
+        db.import_account_data(&super::super::watchlist_import::tests::fixture())
+            .unwrap();
+        let s = db.snapshot().unwrap();
+        let holdings = &s.accounting.as_ref().unwrap().holdings;
+        let within = dividend_totals(&s.holding_trades, holdings, "2026-06-30").unwrap();
+        assert_eq!(within.since, "2025-06-30");
+        assert_eq!(within.received.value.as_deref(), Some("294"));
+        assert_eq!(within.received.missing, 0);
+        let held = s.holdings.iter().find(|h| h.symbol == "600900.SS").unwrap();
+        let cost = dec(&holdings[&held.id].amounts.cost_basis).unwrap();
+        assert_eq!(
+            within.held_yield_pct,
+            Some(text((Decimal::from(29400) / cost).round_dp(2)))
+        );
+        let expired = dividend_totals(&s.holding_trades, holdings, "2027-01-02").unwrap();
+        assert_eq!(expired.received.value.as_deref(), Some("0"));
+        assert_eq!(expired.held_yield_pct.as_deref(), Some("0"));
+        let before = dividend_totals(&s.holding_trades, holdings, "2026-01-01").unwrap();
+        assert_eq!(before.received.value.as_deref(), Some("0"));
+    }
 }
