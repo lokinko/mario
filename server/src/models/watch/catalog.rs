@@ -46,7 +46,7 @@ impl Catalog {
         let catalog = self;
         let mut industries = BTreeSet::new();
         let mut symbols = BTreeSet::new();
-        if !matches!(catalog.version, 1..=4)
+        if !matches!(catalog.version, 1..=5)
             || chrono::NaiveDate::parse_from_str(&catalog.verified_on, "%Y-%m-%d").is_err()
             || catalog.industries.is_empty()
         {
@@ -128,7 +128,7 @@ impl Catalog {
             }
             self.version = 3;
         }
-        if self.version == 3 && seed.version == 4 {
+        if self.version == 3 && seed.version >= 4 {
             let requested: BTreeSet<String> = serde_json::from_str(include_str!(
                 "../../../data/watch-catalog-broker-additions-20261107.json"
             ))?;
@@ -157,6 +157,34 @@ impl Catalog {
                 }
             }
             self.version = 4;
+        }
+        if self.version == 4 && seed.version >= 5 {
+            let requested: BTreeSet<String> = serde_json::from_str(include_str!(
+                "../../../data/watch-catalog-quality-additions-20261116.json"
+            ))?;
+            let mut existing: BTreeSet<String> = self
+                .industries
+                .iter()
+                .flat_map(|i| &i.companies)
+                .map(|c| c.symbol.clone())
+                .collect();
+            for template in &seed.industries {
+                for company in &template.companies {
+                    if requested.contains(&company.symbol)
+                        && existing.insert(company.symbol.clone())
+                    {
+                        let target = self
+                            .industries
+                            .iter_mut()
+                            .find(|i| i.id == template.id)
+                            .ok_or_else(|| {
+                                AppError::Validation("旧目录领域不完整，请保留原数据核对".into())
+                            })?;
+                        target.companies.push(company.clone());
+                    }
+                }
+            }
+            self.version = 5;
         }
         if self.version != seed.version {
             return Err(AppError::Validation("目录升级版本不受支持".into()));
@@ -441,7 +469,7 @@ mod tests {
                 .iter()
                 .map(|i| i.companies.len())
                 .sum::<usize>(),
-            61
+            65
         );
         assert!(catalog.industry("unknown").is_err());
         let mut value = serde_json::to_value(&catalog).unwrap();

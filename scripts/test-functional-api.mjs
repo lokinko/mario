@@ -142,7 +142,7 @@ try {
   assert.equal((await fetch(base + "/watch/catalog")).status, 401);
   const catalog = await api("/watch/catalog");
   assert.deepEqual(catalog.catalog.industries.map(i => i.name), ["银行", "能源", "电力", "通信运营", "运输", "白酒", "白色家电", "保险", "中药", "消费", "券商"]);
-  assert.equal(catalog.rows.length, 61);
+  assert.equal(catalog.rows.length, 65);
   assert.equal((await fetch(base + "/watch/dividend-calendar")).status, 401);
   const calendarVersion = await api("/sync/version");
   const calendar = await api("/watch/dividend-calendar");

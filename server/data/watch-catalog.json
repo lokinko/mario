@@ -1,6 +1,6 @@
 {
-  "version": 4,
-  "verifiedOn": "2026-11-07",
+  "version": 5,
+  "verifiedOn": "2026-11-16",
   "industries": [
     {
       "id": "banks",
@@ -104,6 +104,33 @@
             "https://static.cninfo.com.cn/finalpage/2026-04-23/1225150337.PDF"
           ],
           "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "601998.SS",
+          "name": "中信银行",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601998",
+            "https://static.cninfo.com.cn/finalpage/2026-03-21/1225022321.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-16"
+        },
+        {
+          "symbol": "600926.SS",
+          "name": "杭州银行",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600926",
+            "https://static.cninfo.com.cn/finalpage/2026-10-28/1225631284.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-16"
+        },
+        {
+          "symbol": "002966.SZ",
+          "name": "苏州银行",
+          "sources": [
+            "https://www.szse.cn/certificate/individual/index.html?code=002966",
+            "https://www.suzhoubank.com/suzhoubank/attachDir/2026/04/2026042821555083512.pdf"
+          ],
+          "sourcesCheckedOn": "2026-11-16"
         }
       ]
     },
@@ -362,6 +389,15 @@
             "https://static.cninfo.com.cn/finalpage/2026-03-28/1225040947.PDF"
           ],
           "sourcesCheckedOn": "2026-11-07"
+        },
+        {
+          "symbol": "600012.SS",
+          "name": "皖通高速",
+          "sources": [
+            "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600012",
+            "https://static.cninfo.com.cn/finalpage/2026-08-28/1225520364.PDF"
+          ],
+          "sourcesCheckedOn": "2026-11-16"
         }
       ]
     },

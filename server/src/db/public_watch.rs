@@ -296,7 +296,7 @@ mod tests {
             .unwrap();
         let upgraded = PublicWatch::open(&store.url, &store.schema).unwrap();
         let (mut current, revision) = upgraded.catalog().unwrap();
-        assert_eq!(current.version, 4);
+        assert_eq!(current.version, 5);
         assert!(current.industry("coal").is_err());
         assert!(current
             .industries
@@ -419,7 +419,7 @@ mod tests {
             .unwrap();
         let migrated = PublicWatch::open(&store.url, &store.schema).unwrap();
         let (mut current, next) = migrated.catalog().unwrap();
-        assert_eq!(current.version, 4);
+        assert_eq!(current.version, 5);
         assert_eq!(next, revision + 1);
         assert_eq!(current.industries[0].companies, old.industries[0].companies);
         let added = current.industry("brokers").unwrap();
@@ -439,6 +439,98 @@ mod tests {
         assert_eq!(final_revision, next + 1);
         assert!(saved.industry("brokers").unwrap().companies.is_empty());
         assert_eq!(saved.industries[0].companies, old.industries[0].companies);
+    }
+
+    #[test]
+    fn quality_release_preserves_edits_and_removals_and_does_not_replay_after_restart() {
+        let store = PublicWatch::test();
+        let (mut old, revision) = store.catalog().unwrap();
+        let selected: std::collections::BTreeSet<String> = serde_json::from_str(include_str!(
+            "../../data/watch-catalog-quality-additions-20261116.json"
+        ))
+        .unwrap();
+        let mut retained = old
+            .industry("banks")
+            .unwrap()
+            .companies
+            .iter()
+            .find(|c| c.symbol == "601998.SS")
+            .unwrap()
+            .clone();
+        retained.name = "人工维护名称".into();
+        retained.sources.clear();
+        retained.sources_checked_on = None;
+        old.version = 4;
+        for industry in &mut old.industries {
+            industry
+                .companies
+                .retain(|c| !selected.contains(&c.symbol) && c.symbol != "600036.SS");
+        }
+        old.industries
+            .iter_mut()
+            .find(|i| i.id == "consumer")
+            .unwrap()
+            .companies
+            .push(retained.clone());
+        store
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE watch_catalog SET payload=$1",
+                [serde_json::to_string(&old).unwrap()],
+            )
+            .unwrap();
+        let migrated = PublicWatch::open(&store.url, &store.schema).unwrap();
+        let (mut current, next) = migrated.catalog().unwrap();
+        assert_eq!(current.version, 5);
+        assert_eq!(next, revision + 1);
+        let companies: Vec<_> = current
+            .industries
+            .iter()
+            .flat_map(|i| &i.companies)
+            .collect();
+        for symbol in &selected {
+            assert_eq!(companies.iter().filter(|c| &c.symbol == symbol).count(), 1);
+        }
+        assert!(!companies.iter().any(|c| c.symbol == "600036.SS"));
+        assert!(current
+            .industry("consumer")
+            .unwrap()
+            .companies
+            .contains(&retained));
+        for industry in &mut current.industries {
+            industry.companies.retain(|c| !selected.contains(&c.symbol));
+        }
+        migrated.save_catalog(&current, next, "owner").unwrap();
+        let reopened = PublicWatch::open(&store.url, &store.schema).unwrap();
+        let (saved, final_revision) = reopened.catalog().unwrap();
+        assert_eq!(final_revision, next + 1);
+        assert!(saved
+            .industries
+            .iter()
+            .flat_map(|i| &i.companies)
+            .all(|c| !selected.contains(&c.symbol)));
+    }
+
+    #[test]
+    fn quality_release_failure_rolls_back_catalog_and_revision() {
+        let store = PublicWatch::test();
+        let (mut old, revision) = store.catalog().unwrap();
+        old.version = 4;
+        old.industries.retain(|i| i.id != "transport");
+        for industry in &mut old.industries {
+            industry.companies.retain(|c| c.symbol != "600926.SS");
+        }
+        let payload = serde_json::to_string(&old).unwrap();
+        store
+            .conn()
+            .unwrap()
+            .execute("UPDATE watch_catalog SET payload=$1", [payload.clone()])
+            .unwrap();
+        assert!(PublicWatch::open(&store.url, &store.schema).is_err());
+        let (saved, unchanged_revision) = store.catalog().unwrap();
+        assert_eq!(serde_json::to_string(&saved).unwrap(), payload);
+        assert_eq!(unchanged_revision, revision);
     }
 
     #[test]
