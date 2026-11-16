@@ -35,6 +35,20 @@ impl PublicPrices {
           CREATE TABLE IF NOT EXISTS price_fetch_days(day TEXT NOT NULL,symbol TEXT NOT NULL,attempts BIGINT NOT NULL DEFAULT 0,successes BIGINT NOT NULL DEFAULT 0,PRIMARY KEY(day,symbol));
           CREATE TABLE IF NOT EXISTS price_monitor_days(day TEXT PRIMARY KEY,payload TEXT NOT NULL);
           ")?;
+        tx.execute_batch(r#"ALTER TABLE price_histories ADD COLUMN IF NOT EXISTS coverage TEXT;
+            UPDATE price_histories AS p SET coverage=jsonb_build_object(
+                'windowStart',h."windowStart",'completedThrough',h."completedThrough",
+                'adjustmentAnchor',h."adjustmentAnchor",'fetchedAt',h."fetchedAt",
+                'providerName',h."providerName",'firstOn',h.bars->0->>'day',
+                'bars',jsonb_array_length(h.bars),'missingCloseValues',EXISTS(
+                    SELECT 1 FROM jsonb_array_elements(h.bars) AS b WHERE b->>'rawClose' IS NULL OR b->>'adjustedClose' IS NULL
+                ))::text
+            FROM (SELECT symbol,payload FROM price_histories WHERE payload IS NOT NULL AND
+                (coverage IS NULL OR coverage::jsonb->>'fetchedAt' IS DISTINCT FROM payload::jsonb->>'fetchedAt')) AS old
+            CROSS JOIN LATERAL jsonb_to_record(old.payload::jsonb) AS h(
+                "windowStart" TEXT,"completedThrough" TEXT,"adjustmentAnchor" TEXT,"fetchedAt" TEXT,"providerName" TEXT,bars JSONB
+            ) WHERE p.symbol=old.symbol;
+        "#)?;
         tx.commit()?;
         Ok(Self {
             connection: Mutex::new(c),
@@ -117,7 +131,7 @@ impl PublicPrices {
     ) -> AppResult<()> {
         let mut c = self.conn()?;
         let tx = c.transaction()?;
-        let Some(attempted_at) = Self::owned_attempt(&tx, symbol, token)? else {
+        let Some(_) = Self::owned_attempt(&tx, symbol, token)? else {
             return Ok(());
         };
         match result {
@@ -126,9 +140,9 @@ impl PublicPrices {
                 if h.symbol != symbol {
                     return Err(AppError::Validation("公共行情写入证券不一致".into()));
                 }
-                let accepted = tx.execute("UPDATE price_histories SET payload=$3,lease_until=0,lease_token='',last_error='' WHERE symbol=$1 AND lease_token=$2 AND (payload IS NULL OR ((payload::jsonb->>'completedThrough') <= $4 AND (payload::jsonb->>'adjustmentAnchor') <= $5))",params![symbol,token,serde_json::to_string(h)?,h.completed_through.to_string(), h.adjustment_anchor.to_string()])?;
+                let accepted = tx.execute("UPDATE price_histories SET payload=$3,coverage=$6,lease_until=0,lease_token='',last_error='' WHERE symbol=$1 AND lease_token=$2 AND (payload IS NULL OR ((payload::jsonb->>'completedThrough') <= $4 AND (payload::jsonb->>'adjustmentAnchor') <= $5))",params![symbol,token,serde_json::to_string(h)?,h.completed_through.to_string(), h.adjustment_anchor.to_string(),serde_json::to_string(&monitor::PriceCoverage::from(h))?])?;
                 if accepted > 0 {
-                    Self::record_success(&tx, symbol, attempted_at)?;
+                    Self::record_success(&tx, symbol, chrono::Utc::now().timestamp_millis())?;
                 } else {
                     tx.execute("UPDATE price_histories SET lease_until=0,lease_token='',last_error='来源日期倒退，保留较新价格' WHERE symbol=$1 AND lease_token=$2",params![symbol,token])?;
                 }

@@ -4,6 +4,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 pub const UNIVERSE_URL: &str = "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/cons/000300cons.xls";
+pub const EASTMONEY_UNIVERSE_URL: &str = "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_INDEX_TS_COMPONENT&columns=SECUCODE,SECURITY_CODE,TYPE,SECURITY_NAME_ABBR,MAXTRADEDATE&filter=(TYPE%3D%221%22)&pageSize=500&pageNumber=1";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceMember {
@@ -22,7 +23,7 @@ impl PriceUniverse {
     pub fn validate(&self) -> AppResult<()> {
         let mut seen = std::collections::BTreeSet::new();
         if self.members.len() != 300
-            || self.source_url != UNIVERSE_URL
+            || ![UNIVERSE_URL, EASTMONEY_UNIVERSE_URL].contains(&self.source_url.as_str())
             || self.as_of > super::today().parse::<NaiveDate>().unwrap()
             || self.members.iter().any(|m| {
                 !super::is_a_share_stock(&m.symbol)

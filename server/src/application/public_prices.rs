@@ -52,38 +52,52 @@ impl PublicPriceService {
                 return;
             }
         };
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
-        for chunk in symbols.chunks(4) {
-            if tokio::time::Instant::now() >= deadline {
-                break;
-            }
-            let fetch = |index: usize| async move {
-                if let Some(symbol) = chunk.get(index) {
-                    if let Err(error) = self.load(symbol, false).await {
-                        tracing::warn!(symbol,%error,"public price refresh failed; retaining database revision");
-                    }
-                }
-            };
-            if tokio::time::timeout_at(deadline, async {
-                tokio::join!(fetch(0), fetch(1), fetch(2), fetch(3))
-            })
-            .await
-            .is_err()
-            {
-                break;
-            }
-        }
+        self.refresh_symbols(&symbols, Duration::from_secs(120))
+            .await;
         if let Err(error) = self.save_collection_day() {
             tracing::warn!(%error,"price collection daily snapshot failed");
         }
     }
+    async fn refresh_symbols(&self, symbols: &[String], budget: Duration) {
+        let deadline = tokio::time::Instant::now() + budget;
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let worker = || async {
+            while tokio::time::Instant::now() < deadline {
+                let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(symbol) = symbols.get(index) else {
+                    break;
+                };
+                if let Err(error) = self.load_before(symbol, false, deadline).await {
+                    tracing::warn!(symbol,%error,"public price refresh failed; retaining database revision");
+                }
+            }
+        };
+        tokio::join!(worker(), worker(), worker(), worker());
+    }
     async fn load(&self, symbol: &str, touch: bool) -> AppResult<PriceHistory> {
+        self.load_before(
+            symbol,
+            touch,
+            tokio::time::Instant::now() + Duration::from_secs(90),
+        )
+        .await
+    }
+    async fn load_before(
+        &self,
+        symbol: &str,
+        touch: bool,
+        deadline: tokio::time::Instant,
+    ) -> AppResult<PriceHistory> {
         let symbol = canonical_symbol(symbol)?;
         if touch {
             self.store.register(&symbol)?;
         }
         let lock = self.symbol_lock(&symbol).await;
-        let _guard = lock.lock().await;
+        let timeout_error =
+            || AppError::MarketData("公共十年行情更新达到本轮时限，等待自动重试".into());
+        let _guard = tokio::time::timeout_at(deadline, lock.lock())
+            .await
+            .map_err(|_| timeout_error())?;
         let now = Utc::now();
         let today = now.with_timezone(&chrono_tz::Asia::Shanghai).date_naive();
         let end = close::completed_day(&symbol, today, now);
@@ -126,11 +140,13 @@ impl PublicPriceService {
                 existing.last_error
             }));
         }
-        let _slot = self
-            .slots
-            .acquire()
+        let _slot = tokio::time::timeout_at(deadline, self.slots.acquire())
             .await
+            .map_err(|_| timeout_error())?
             .map_err(|_| AppError::MarketData("公共行情服务已停止".into()))?;
+        if tokio::time::Instant::now() >= deadline {
+            return Err(timeout_error());
+        }
         let token = uuid::Uuid::new_v4().to_string();
         if !self
             .store
@@ -142,24 +158,29 @@ impl PublicPriceService {
                 .and_then(|s| s.history)
                 .ok_or_else(|| AppError::MarketData("该证券公共行情正在更新，请稍后重试".into()));
         }
-        let result =
-            tokio::time::timeout(Duration::from_secs(90), self.source.history(&symbol, end))
-                .await
-                .map_err(|_| AppError::MarketData("公共十年行情更新达到 90 秒时限".into()))
-                .and_then(|r| r)
-                .and_then(|h| {
-                    h.validate()?;
-                    if h.symbol != symbol
-                        || h.completed_through != end
-                        || h.window_start != crate::models::market::history::history_start(end)
-                    {
-                        return Err(AppError::MarketData(
-                            "行情来源返回了不同证券或收盘截止日".into(),
-                        ));
-                    }
-                    Ok(h)
-                });
+        let result = tokio::time::timeout_at(
+            deadline.min(tokio::time::Instant::now() + Duration::from_secs(90)),
+            self.source.history(&symbol, end),
+        )
+        .await
+        .map_err(|_| timeout_error())
+        .and_then(|r| r)
+        .and_then(|h| {
+            h.validate()?;
+            if h.symbol != symbol
+                || h.completed_through != end
+                || h.window_start != crate::models::market::history::history_start(end)
+            {
+                return Err(AppError::MarketData(
+                    "行情来源返回了不同证券或收盘截止日".into(),
+                ));
+            }
+            Ok(h)
+        });
         self.store.finish(&symbol, &token, &result)?;
+        if let Err(error) = self.save_collection_day() {
+            tracing::warn!(%error,"price collection progress snapshot failed");
+        }
         if let Err(error) = &result {
             tracing::warn!(%symbol,error=?error,"public ten-year price source failed");
         }

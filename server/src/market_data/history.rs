@@ -90,8 +90,10 @@ impl PublicMarketSource {
             },
         )
         .ok_or_else(bad)?;
-        let (raw, raw_url) = self.eastmoney_rows(&security, through, false).await?;
-        let (adjusted, adjusted_url) = self.eastmoney_rows(&security, through, true).await?;
+        let ((raw, raw_url), (adjusted, adjusted_url)) = tokio::try_join!(
+            self.eastmoney_rows(&security, through, false),
+            self.eastmoney_rows(&security, through, true)
+        )?;
         let (splits, action_source_urls) = if is_a_share_stock(symbol) {
             let (payload, urls) = super::watch::distribution_payload(
                 &self.client,
@@ -477,29 +479,40 @@ where
             }
         }
     }
+    // A usable primary revision must survive an unreachable fallback, including holidays.
+    let fallback_deadline =
+        tokio::time::Instant::now() + Duration::from_secs(if candidate.is_some() { 8 } else { 16 });
     for (index, request) in yahoo.into_iter().enumerate() {
-        match request.await {
-            Ok(h) if h.adjustment_anchor == through => {
-                return Ok(candidate
-                    .filter(|c: &PriceHistory| c.adjustment_anchor >= h.adjustment_anchor)
-                    .unwrap_or(h))
-            }
-            Ok(h) => {
-                if candidate
-                    .as_ref()
-                    .is_none_or(|c: &PriceHistory| c.adjustment_anchor < h.adjustment_anchor)
-                {
-                    candidate = Some(h)
+        match tokio::time::timeout_at(
+            fallback_deadline.min(tokio::time::Instant::now() + Duration::from_secs(8)),
+            request,
+        )
+        .await
+        {
+            Err(_) => errors.push(format!("Yahoo query{}：查询超时", index + 1)),
+            Ok(result) => match result {
+                Ok(h) if h.adjustment_anchor == through => {
+                    return Ok(candidate
+                        .filter(|c: &PriceHistory| c.adjustment_anchor >= h.adjustment_anchor)
+                        .unwrap_or(h))
                 }
-            }
-            Err(error) => {
-                tracing::warn!(symbol,error=?error,"public Yahoo history failed");
-                errors.push(format!(
-                    "Yahoo query{}：{}",
-                    index + 1,
-                    source_error(&error)
-                ));
-            }
+                Ok(h) => {
+                    if candidate
+                        .as_ref()
+                        .is_none_or(|c: &PriceHistory| c.adjustment_anchor < h.adjustment_anchor)
+                    {
+                        candidate = Some(h)
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(symbol,error=?error,"public Yahoo history failed");
+                    errors.push(format!(
+                        "Yahoo query{}：{}",
+                        index + 1,
+                        source_error(&error)
+                    ));
+                }
+            },
         }
     }
     candidate.ok_or_else(|| {

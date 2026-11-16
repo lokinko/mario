@@ -1,8 +1,8 @@
-//! Official CSI 300 constituent workbook; never accesses storage or private watch lists.
+//! Complete CSI 300 scope from Eastmoney, with the official workbook as fallback.
 use crate::{
     models::market::{
         canonical_symbol,
-        monitor::{PriceMember, PriceUniverse, UNIVERSE_URL},
+        monitor::{PriceMember, PriceUniverse, EASTMONEY_UNIVERSE_URL, UNIVERSE_URL},
     },
     ports::market::PriceUniverseProvider,
     AppError, AppResult,
@@ -18,14 +18,63 @@ impl Csi300Source {
         Ok(Self {
             client: reqwest::Client::builder()
                 .connect_timeout(Duration::from_secs(5))
-                .timeout(Duration::from_secs(20))
+                .timeout(Duration::from_secs(8))
                 .user_agent("mario/public-prices")
                 .build()?,
         })
     }
 }
+fn parse_eastmoney(payload: &serde_json::Value) -> AppResult<PriceUniverse> {
+    let result = &payload["result"];
+    let rows = result["data"].as_array().ok_or_else(bad)?;
+    if payload["success"] != true
+        || payload["code"] != 0
+        || result["pages"] != 1
+        || result["count"] != 300
+        || rows.len() != 300
+    {
+        return Err(bad());
+    }
+    let mut as_of = None;
+    let mut members = Vec::new();
+    for row in rows {
+        let date = row["MAXTRADEDATE"].as_str().ok_or_else(bad)?;
+        let day = chrono::NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S")
+            .map_err(|_| bad())?
+            .date();
+        if row["TYPE"] != "1" || as_of.is_some_and(|old| old != day) {
+            return Err(bad());
+        }
+        as_of = Some(day);
+        let code = row["SECURITY_CODE"].as_str().ok_or_else(bad)?;
+        let secucode = row["SECUCODE"].as_str().ok_or_else(bad)?;
+        if code.len() != 6
+            || !code.bytes().all(|b| b.is_ascii_digit())
+            || ![format!("{code}.SH"), format!("{code}.SZ")].contains(&secucode.to_owned())
+        {
+            return Err(bad());
+        }
+        members.push(PriceMember {
+            symbol: canonical_symbol(secucode)?,
+            name: row["SECURITY_NAME_ABBR"]
+                .as_str()
+                .ok_or_else(bad)?
+                .trim()
+                .into(),
+        });
+    }
+    members.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+    let scope = PriceUniverse {
+        as_of: as_of.ok_or_else(bad)?,
+        fetched_at: chrono::Utc::now().timestamp(),
+        source_url: EASTMONEY_UNIVERSE_URL.into(),
+        members,
+    };
+    scope.validate()?;
+    Ok(scope)
+}
 fn bad() -> AppError {
-    AppError::MarketData("中证沪深300成分表格式、日期或证券身份不完整".into())
+    AppError::MarketData("沪深300成分表格式、日期或证券身份不完整".into())
 }
 fn parse_rows(rows: &[Vec<String>]) -> AppResult<PriceUniverse> {
     let header = rows.first().ok_or_else(bad)?;
@@ -93,18 +142,75 @@ fn parse(bytes: Vec<u8>) -> AppResult<PriceUniverse> {
 #[async_trait::async_trait]
 impl PriceUniverseProvider for Csi300Source {
     async fn constituents(&self) -> AppResult<PriceUniverse> {
-        let mut response = self
-            .client
-            .get(UNIVERSE_URL)
-            .send()
-            .await?
-            .error_for_status()?;
-        parse(super::read_public_bytes(&mut response).await?)
+        let primary = async {
+            let response = self
+                .client
+                .get(EASTMONEY_UNIVERSE_URL)
+                .header("Referer", "https://data.eastmoney.com/other/index/")
+                .send()
+                .await?
+                .error_for_status()?;
+            parse_eastmoney(&super::read_public_json(response).await?)
+        }
+        .await;
+        let error = match primary {
+            Ok(scope) => return Ok(scope),
+            Err(error) => {
+                tracing::warn!(error=?error, "Eastmoney CSI300 scope failed; trying official workbook");
+                error
+            }
+        };
+        let fallback = async {
+            let mut response = self
+                .client
+                .get(UNIVERSE_URL)
+                .send()
+                .await?
+                .error_for_status()?;
+            parse(super::read_public_bytes(&mut response).await?)
+        }
+        .await;
+        fallback.map_err(|fallback| {
+            AppError::MarketData(format!("东方财富成分表：{error}；中证成分表：{fallback}"))
+        })
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn eastmoney_scope_requires_one_complete_consistent_index_snapshot() {
+        let rows = (1..=300).map(|i| serde_json::json!({
+            "SECUCODE":format!("{i:06}.SZ"), "SECURITY_CODE":format!("{i:06}"),
+            "SECURITY_NAME_ABBR":format!("公司{i}"), "TYPE":"1", "MAXTRADEDATE":"2026-11-11 00:00:00"
+        })).collect::<Vec<_>>();
+        let payload = serde_json::json!({"success":true,"code":0,"result":{"pages":1,"count":300,"data":rows}});
+        let scope = parse_eastmoney(&payload).unwrap();
+        assert_eq!(scope.members.len(), 300);
+        assert_eq!(scope.source_url, EASTMONEY_UNIVERSE_URL);
+        for (path, value) in [
+            ("TYPE", serde_json::json!("2")),
+            ("SECUCODE", serde_json::json!("000002.SH")),
+            ("SECURITY_CODE", serde_json::json!("000003")),
+            ("MAXTRADEDATE", serde_json::json!("2026-11-10 00:00:00")),
+            ("SECURITY_NAME_ABBR", serde_json::json!("")),
+        ] {
+            let mut invalid = payload.clone();
+            invalid["result"]["data"][1][path] = value;
+            assert!(parse_eastmoney(&invalid).is_err(), "{path}");
+        }
+        let mut invalid = payload.clone();
+        invalid["result"]["data"][1] = invalid["result"]["data"][0].clone();
+        assert!(parse_eastmoney(&invalid).is_err());
+        for field in ["pages", "count"] {
+            let mut invalid = payload.clone();
+            invalid["result"][field] = serde_json::json!(2);
+            assert!(parse_eastmoney(&invalid).is_err());
+        }
+        let mut invalid = payload;
+        invalid["result"]["data"].as_array_mut().unwrap().pop();
+        assert!(parse_eastmoney(&invalid).is_err());
+    }
     #[test]
     fn validates_entire_scope_before_adopting_it() {
         let mut rows = vec![vec![
@@ -150,9 +256,10 @@ mod tests {
     async fn live_csi300_constituents() {
         let scope = Csi300Source::new().unwrap().constituents().await.unwrap();
         println!(
-            "CSI300 as of {}: {} securities",
+            "CSI300 as of {}: {} securities; source {}",
             scope.as_of,
-            scope.members.len()
+            scope.members.len(),
+            scope.source_url
         );
     }
 }

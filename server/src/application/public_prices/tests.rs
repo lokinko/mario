@@ -5,6 +5,50 @@ struct Source {
     calls: AtomicUsize,
     fail: AtomicBool,
 }
+
+struct UnevenSource;
+#[async_trait::async_trait]
+impl SecurityHistoryProvider for UnevenSource {
+    async fn history(&self, symbol: &str, through: NaiveDate) -> AppResult<PriceHistory> {
+        if symbol == "000001.SZ" {
+            std::future::pending::<()>().await;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        Ok(fixture(symbol, through))
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn slow_security_does_not_block_queue_and_round_timeout_persists_failure_without_a_dangling_lease(
+) {
+    let store = Arc::new(PublicPrices::test());
+    let symbols = (1..=8).map(|i| format!("{i:06}.SZ")).collect::<Vec<_>>();
+    for symbol in &symbols {
+        store.register(symbol).unwrap();
+    }
+    let service = PublicPriceService::new(store.clone(), Arc::new(UnevenSource));
+    service
+        .refresh_symbols(&symbols, Duration::from_secs(5))
+        .await;
+    for symbol in &symbols {
+        let state = store.state(symbol).unwrap().unwrap();
+        assert_eq!(
+            state.lease_until, 0,
+            "{symbol} must be completed rather than cancelled"
+        );
+        if symbol == "000001.SZ" {
+            assert!(state.last_error.contains("时限"));
+        } else {
+            assert!(
+                state.history.is_some(),
+                "{symbol} must not wait for the slow first security"
+            );
+        }
+    }
+    let restarted = PublicPriceService::new(store.clone(), Arc::new(UnevenSource));
+    assert!(restarted.load("000001.SZ", false).await.is_err());
+    assert!(store.state("000008.SZ").unwrap().unwrap().history.is_some());
+}
 #[async_trait::async_trait]
 impl SecurityHistoryProvider for Source {
     async fn history(&self, symbol: &str, through: NaiveDate) -> AppResult<PriceHistory> {

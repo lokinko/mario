@@ -1,6 +1,6 @@
 import { PriceCollection, PriceSummary } from "./PriceCollection";
 import { FeatureUsage, UserGrowth } from "./UsageCharts";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Input, Segmented, Table } from "antd";
 import {
   Activity,
@@ -16,6 +16,7 @@ import {
 } from "../../api/activity";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import { HttpError } from "../../lib/transport";
+import { currentSession } from "../../lib/webSession";
 import { Callout } from "../../components/Callout";
 import "./dashboard.css";
 
@@ -57,20 +58,28 @@ export function UsageDashboard() {
     setView(next);
   };
   const guard = useRequestGuard();
+  const activeSession = useRef(currentSession());
   const load = useCallback(async () => {
     const current = guard.begin();
+    const session = currentSession();
+    if (activeSession.current !== session) setData(undefined);
+    activeSession.current = session;
     setLoading(true);
     setError("");
     try {
       const result = await getUsageDashboard(days);
-      if (current()) {
+      if (current() && currentSession() === session) {
         setData(result);
         setForbidden(false);
       }
     } catch (cause) {
       if (current()) {
-        setData(undefined);
-        setForbidden(cause instanceof HttpError && cause.status === 403);
+        const denied =
+          currentSession() !== session ||
+          (cause instanceof HttpError &&
+            (cause.status === 401 || cause.status === 403));
+        if (denied) setData(undefined);
+        setForbidden(denied);
         setError(
           cause instanceof Error ? cause.message : "统计加载失败，请重试",
         );
@@ -79,6 +88,29 @@ export function UsageDashboard() {
       if (current()) setLoading(false);
     }
   }, [days, guard]);
+  useEffect(() => {
+    const expire = () => {
+      guard.invalidate();
+      setData(undefined);
+      setLoading(false);
+      setForbidden(true);
+      setError("登录状态已失效，请返回 Mario 重新登录。");
+    };
+    const syncSession = () => {
+      if (currentSession() !== activeSession.current) {
+        setData(undefined);
+        void load();
+      }
+    };
+    window.addEventListener("storage", syncSession);
+    window.addEventListener("focus", syncSession);
+    window.addEventListener("mario:session-expired", expire);
+    return () => {
+      window.removeEventListener("storage", syncSession);
+      window.removeEventListener("focus", syncSession);
+      window.removeEventListener("mario:session-expired", expire);
+    };
+  }, [load, guard]);
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => {
@@ -140,7 +172,7 @@ export function UsageDashboard() {
       {error && (
         <Callout
           tone="danger"
-          title={forbidden ? "无权查看全站统计" : "无法加载活跃度"}
+          title={forbidden ? "无权查看全站统计" : "看板刷新失败"}
         >
           {error}
           {forbidden && (

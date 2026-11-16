@@ -71,10 +71,11 @@ impl PublicPriceService {
                 let lease = state.map_or(0, |s| s.lease_until);
                 let mut error = state.map_or(String::new(), |s| s.last_error.clone());
                 let mut codes = Vec::new();
-                let status = if lease > now.timestamp_millis() {
+                let fetching = lease > now.timestamp_millis();
+                if fetching {
                     codes.push("fetch_in_progress".into());
-                    "pending"
-                } else if lease > 0 {
+                }
+                let status = if lease > 0 && !fetching {
                     codes.push("fetch_interrupted".into());
                     error = "上次采集中断，租约已到期，等待自动重试".into();
                     "failed"
@@ -256,6 +257,29 @@ mod tests {
             .issue_codes
             .contains(&"fetch_interrupted".into()));
         assert!(row("000006.SZ").succeeded_at.is_some());
+        assert!(store
+            .claim("000006.SZ", now.timestamp_millis(), "rechecking")
+            .unwrap());
+        let during = service.collection_dashboard_at(7, now).unwrap();
+        let during_row = during
+            .rows
+            .iter()
+            .find(|r| r.symbol == "000006.SZ")
+            .unwrap();
+        assert_eq!(
+            during_row.status, "success",
+            "rechecking must not erase today's result"
+        );
+        assert!(during_row.issue_codes.contains(&"fetch_in_progress".into()));
+        let restarted = PublicPriceService::new(
+            store.clone(),
+            Arc::new(crate::market_data::PublicMarketSource::new().unwrap()),
+        );
+        let after_restart = restarted.collection_dashboard_at(7, now).unwrap();
+        assert_eq!(
+            serde_json::to_value(&during).unwrap(),
+            serde_json::to_value(&after_restart).unwrap()
+        );
         store.save_monitor_day(&result.summary).unwrap();
         let next = service
             .collection_dashboard_at(7, now + chrono::Duration::days(1))

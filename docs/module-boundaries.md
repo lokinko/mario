@@ -271,8 +271,8 @@ cargo build --manifest-path server/Cargo.toml
 
 ### 沪深300公共价格监控
 
-本增量沿用[持仓收盘估值](#持仓收盘估值)与[架构6.3节](architecture.md#63-行情与汇率)：领域 `models/market/monitor` 拥有公共范围和投影契约；`PriceUniverseProvider` 仅提供已校验的完整范围；官方工作簿解析归 `market_data/price_universe`。应用 `public_prices/monitor` 拥有范围刷新与每日投影，仓储 `public_prices/monitor` 拥有成分表租约、逐日尝试与成功、每日历史；架构检查覆盖两者子文件，禁止账号或执行适配器依赖。`models/watch/trends::WINDOW_YEARS` 独立保持五年图表投影，公共价格 `HISTORY_YEARS` 为十年，不能再用存储窗口隐式改变图表契约。
+本增量沿用[持仓收盘估值](#持仓收盘估值)与[架构6.3节](architecture.md#63-行情与汇率)：领域 `models/market/monitor` 拥有公共范围和投影契约；`PriceUniverseProvider` 仅提供已校验的完整范围；东方财富完整成分快照及中证工作簿回退解析归 `market_data/price_universe`。应用 `public_prices/monitor` 拥有范围刷新与每日投影，仓储 `public_prices/monitor` 拥有成分表租约、逐日尝试与成功、每日历史；架构检查覆盖两者子文件，禁止账号或执行适配器依赖。`models/watch/trends::WINDOW_YEARS` 独立保持五年图表投影，公共价格 `HISTORY_YEARS` 为十年，不能再用存储窗口隐式改变图表契约。
 
 接口仍为超级账户 `GET /api/dashboard`，`hosted/activity` 完成授权后装配 `marketPrices`；前端同领域 `PriceSummary`（总览概况）与 `PriceCollection`（明细视图）只读显示和筛选，不导入观察页面或触发来源请求。详细行为、存储迁移和旧五年适配移除条件以[市场数据](market-data.md#沪深300采集范围与每日看板)为准。
 
-改动需覆盖完整300只校验、错误交易所/重复/错指数/错日期/缺行拒绝、每日范围刷新退避与旧范围保留、无人使用的成分持续抓取、离开范围的记录保留、来源失败保留、租约过期及旧写入者隔离、旧五年缓存可读与十年回补、实际交易日参考、自然日切换不复用昨日成功、每日记录重启保留及权限撤销。前端验证逐股错误、实际覆盖、异常筛选和成分表未就绪；真实HTTP验证仍用 `scripts/test-web.mjs`，完整跨端门禁 `npm test`。联网入口补充 `live_csi300_constituents` 与 `live_csi300_ten_year_prices`，默认忽略不能宣称通过。
+看板读取持久化 `coverage`，其旧数据补齐归公共仓储初始化事务，摘要与完整行情同事务替换。采集使用四个连续消费的流程，单只等待与来源超时服从本轮截止，失败也须完成租约。重查不清除已有成功，临时读取失败保留最后快照，权限失效清除。改动需覆盖慢证券不阻塞队列、轮次截止不遗留租约、备用源不可达保留主源版本、跨午夜完成日计数、摘要迁移与重启幂等，以及完整300只校验、错误交易所/重复/错指数/错日期/缺行拒绝、每日范围刷新退避与旧范围保留、无人使用的成分持续抓取、离开范围的记录保留、来源失败保留、租约过期及旧写入者隔离、旧五年缓存可读与十年回补、实际交易日参考、自然日切换不复用昨日成功、每日记录重启保留及权限撤销。前端验证逐股错误、实际覆盖、异常筛选和成分表未就绪；真实HTTP验证仍用 `scripts/test-web.mjs`，完整跨端门禁 `npm test`。联网入口补充 `live_csi300_constituents` 与 `live_csi300_ten_year_prices`，默认忽略不能宣称通过。

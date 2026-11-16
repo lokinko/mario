@@ -1,4 +1,27 @@
 use super::*;
+
+#[tokio::test(start_paused = true)]
+async fn unreachable_fallback_cannot_discard_a_valid_eastmoney_revision() {
+    let day = "2026-11-06".parse().unwrap();
+    let mut history = crate::models::market::history::tests::fixture("600941.SS", day);
+    history.bars.pop();
+    let history = history.normalize().unwrap();
+    let expected = history.revision().unwrap();
+    let started = tokio::time::Instant::now();
+    let result = coherent_history(
+        "600941.SS",
+        day,
+        async { Ok(history) },
+        [
+            std::future::pending::<AppResult<PriceHistory>>(),
+            std::future::pending::<AppResult<PriceHistory>>(),
+        ],
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.revision().unwrap(), expected);
+    assert!(started.elapsed() <= Duration::from_secs(8));
+}
 use serde_json::json;
 #[test]
 fn domestic_daily_rows_keep_exact_prices_and_match_by_date() {
@@ -376,6 +399,19 @@ async fn live_csi300_ten_year_prices() {
             h.provider_name
         );
     }
+}
+
+#[tokio::test]
+#[ignore = "requires Eastmoney public history APIs, without Yahoo fallback"]
+async fn live_eastmoney_csi300_history() {
+    let source = PublicMarketSource::new().unwrap();
+    let today = Utc::now()
+        .with_timezone(&chrono_tz::Asia::Shanghai)
+        .date_naive();
+    let through = crate::models::market::close::completed_day("600036.SS", today, Utc::now());
+    let history = source.domestic("600036.SS", through).await.unwrap();
+    assert_eq!(history.provider_code, "eastmoney");
+    assert!(history.bars.len() > 2200);
 }
 
 #[tokio::test]

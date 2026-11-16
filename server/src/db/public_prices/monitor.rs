@@ -11,7 +11,7 @@ pub(crate) struct UniverseState {
     pub attempted_at: i64,
     pub last_error: String,
 }
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PriceCoverage {
     pub window_start: chrono::NaiveDate,
@@ -22,6 +22,23 @@ pub(crate) struct PriceCoverage {
     pub first_on: Option<chrono::NaiveDate>,
     pub bars: usize,
     pub missing_close_values: bool,
+}
+impl From<&crate::models::market::history::PriceHistory> for PriceCoverage {
+    fn from(h: &crate::models::market::history::PriceHistory) -> Self {
+        Self {
+            window_start: h.window_start,
+            completed_through: h.completed_through,
+            adjustment_anchor: h.adjustment_anchor,
+            fetched_at: h.fetched_at.clone(),
+            provider_name: h.provider_name.clone(),
+            first_on: h.bars.first().map(|b| b.day),
+            bars: h.bars.len(),
+            missing_close_values: h
+                .bars
+                .iter()
+                .any(|b| b.raw_close.is_none() || b.adjusted_close.is_none()),
+        }
+    }
 }
 pub(crate) struct MonitorPrice {
     pub history: Option<PriceCoverage>,
@@ -71,18 +88,9 @@ impl PublicPrices {
             attempted_at,
             last_error,
         };
-        // Extract a small projection in PostgreSQL; never load 300 complete ten-year histories into the dashboard process.
-        let prices = tx.prepare(r#"SELECT p.symbol,
-            CASE WHEN p.payload IS NULL THEN NULL ELSE jsonb_build_object(
-                'windowStart',h."windowStart",'completedThrough',h."completedThrough",
-                'adjustmentAnchor',h."adjustmentAnchor",'fetchedAt',h."fetchedAt",
-                'providerName',h."providerName",'firstOn',h.bars->0->>'day',
-                'bars',jsonb_array_length(h.bars),'missingCloseValues',EXISTS(
-                    SELECT 1 FROM jsonb_array_elements(h.bars) AS b WHERE b->>'rawClose' IS NULL OR b->>'adjustedClose' IS NULL
-                ))::text END,p.attempted_at,p.lease_until,p.last_error
-            FROM price_histories AS p LEFT JOIN LATERAL jsonb_to_record(p.payload::jsonb) AS h(
-                "windowStart" TEXT,"completedThrough" TEXT,"adjustmentAnchor" TEXT,"fetchedAt" TEXT,"providerName" TEXT,bars JSONB
-            ) ON TRUE
+        // Coverage is persisted with the revision; a dashboard read never scans ten-year bars.
+        let prices = tx.prepare(r#"SELECT p.symbol,p.coverage,p.attempted_at,p.lease_until,p.last_error
+            FROM price_histories AS p
             WHERE p.symbol='000001.SS' OR p.symbol IN (
                 SELECT value->>'symbol' FROM price_universe,jsonb_array_elements(payload::jsonb->'members')
             ) ORDER BY p.symbol"#)?
@@ -128,9 +136,9 @@ impl PublicPrices {
     pub(super) fn record_success(
         tx: &crate::storage::Transaction<'_>,
         symbol: &str,
-        attempted_at: i64,
+        finished_at: i64,
     ) -> AppResult<()> {
-        tx.execute("UPDATE price_fetch_days SET successes=successes+1 WHERE symbol=$1 AND day=(to_timestamp($2::double precision/1000) AT TIME ZONE 'Asia/Shanghai')::date::text",params![symbol,attempted_at])?;
+        tx.execute("INSERT INTO price_fetch_days(day,symbol,successes) VALUES((to_timestamp($2::double precision/1000) AT TIME ZONE 'Asia/Shanghai')::date::text,$1,1) ON CONFLICT(day,symbol) DO UPDATE SET successes=price_fetch_days.successes+1",params![symbol,finished_at])?;
         Ok(())
     }
     pub(super) fn owned_attempt(
@@ -146,6 +154,37 @@ impl PublicPrices {
 mod tests {
     use super::*;
     use crate::models::market::monitor::{PriceMember, UNIVERSE_URL};
+    #[test]
+    fn a_fetch_crossing_midnight_records_success_on_the_completion_day() {
+        let store = PublicPrices::test();
+        let mut c = store.conn().unwrap();
+        let tx = c.transaction().unwrap();
+        let before = "2026-11-15T15:59:59Z"
+            .parse::<chrono::DateTime<chrono::Utc>>()
+            .unwrap()
+            .timestamp_millis();
+        PublicPrices::record_attempt(&tx, "600941.SS", before).unwrap();
+        PublicPrices::record_success(&tx, "600941.SS", before + 2000).unwrap();
+        assert_eq!(
+            tx.query_row(
+                "SELECT successes FROM price_fetch_days WHERE day='2026-11-15'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            tx.query_row(
+                "SELECT successes FROM price_fetch_days WHERE day='2026-11-16'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            1
+        );
+        tx.commit().unwrap();
+    }
     #[test]
     fn scope_replacement_is_atomic_failed_updates_keep_prior_scope_and_members_never_expire() {
         let store = PublicPrices::test();
@@ -219,12 +258,12 @@ mod tests {
         store
             .conn()
             .unwrap()
-            .execute_batch("DROP TABLE price_universe,price_fetch_days,price_monitor_days")
+            .execute_batch("DROP TABLE price_universe,price_fetch_days,price_monitor_days; ALTER TABLE price_histories DROP COLUMN coverage")
             .unwrap();
         let reopened = PublicPrices::open(&store.url, &store.schema).unwrap();
         assert_eq!(
             reopened.state("600941.SS").unwrap().unwrap().history,
-            Some(h)
+            Some(h.clone())
         );
         assert!(reopened
             .monitor_snapshot(7, &day.to_string())
@@ -234,5 +273,46 @@ mod tests {
             .is_none());
         let again = PublicPrices::open(&store.url, &store.schema).unwrap();
         assert!(again.state("600941.SS").unwrap().unwrap().history.is_some());
+        let projection = again
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT coverage FROM price_histories WHERE symbol='600941.SS'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap();
+        let coverage: PriceCoverage = serde_json::from_str(&projection).unwrap();
+        assert_eq!(coverage.bars, h.bars.len());
+        assert_eq!(coverage.first_on, h.bars.first().map(|b| b.day));
+        assert_eq!(coverage.window_start, h.window_start);
+        // A rolled-back release writes payload without knowing the new summary column.
+        let mut changed = h;
+        changed.fetched_at = (chrono::DateTime::parse_from_rfc3339(&changed.fetched_at).unwrap()
+            + chrono::Duration::seconds(1))
+        .to_rfc3339();
+        changed.bars.pop();
+        changed = changed.normalize().unwrap();
+        again
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE price_histories SET payload=$1 WHERE symbol='600941.SS'",
+                [serde_json::to_string(&changed).unwrap()],
+            )
+            .unwrap();
+        let upgraded = PublicPrices::open(&store.url, &store.schema).unwrap();
+        let projection = upgraded
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT coverage FROM price_histories WHERE symbol='600941.SS'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap();
+        let coverage: PriceCoverage = serde_json::from_str(&projection).unwrap();
+        assert_eq!(coverage.bars, changed.bars.len());
+        assert_eq!(coverage.adjustment_anchor, changed.adjustment_anchor);
     }
 }

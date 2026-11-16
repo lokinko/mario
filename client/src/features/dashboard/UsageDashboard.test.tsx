@@ -12,6 +12,7 @@ import {
   type UsageDashboard as DashboardData,
 } from "../../api/activity";
 import { HttpError } from "../../lib/transport";
+import { setWebToken } from "../../lib/webSession";
 import { UsageDashboard } from "./UsageDashboard";
 
 vi.mock("../../api/activity", () => ({ getUsageDashboard: vi.fn() }));
@@ -33,9 +34,30 @@ beforeEach(() => {
 const originalStyle = window.getComputedStyle.bind(window);
 afterEach(() => {
   cleanup();
+  setWebToken();
   window.history.replaceState(null, "", "/");
   vi.restoreAllMocks();
   vi.resetAllMocks();
+});
+
+it("clears cached statistics immediately on session expiry", async () => {
+  window.history.replaceState(null, "", "/#users");
+  vi.mocked(getUsageDashboard).mockResolvedValue(fixture);
+  render(<UsageDashboard />);
+  expect(await screen.findByText("one@example.test")).toBeTruthy();
+  fireEvent(window, new Event("mario:session-expired"));
+  expect(screen.queryByText("one@example.test")).toBeNull();
+});
+
+it("clears cached statistics while the changed account is being checked", async () => {
+  window.history.replaceState(null, "", "/#users");
+  vi.mocked(getUsageDashboard).mockResolvedValue(fixture);
+  render(<UsageDashboard />);
+  expect(await screen.findByText("one@example.test")).toBeTruthy();
+  vi.mocked(getUsageDashboard).mockImplementation(() => new Promise(() => {}));
+  setWebToken("changed-account");
+  fireEvent(window, new Event("storage"));
+  expect(screen.queryByText("one@example.test")).toBeNull();
 });
 const fixture: DashboardData = {
   marketPrices: {
@@ -126,6 +148,36 @@ it("shows permission denial without account tables", async () => {
   render(<UsageDashboard />);
   expect(await screen.findByText("无权查看全站统计")).toBeTruthy();
   expect(screen.queryByText("用户活跃明细")).toBeNull();
+});
+
+it("retains the last dashboard on a transient refresh failure and clears it when permission is revoked", async () => {
+  window.history.replaceState(null, "", "/#users");
+  vi.mocked(getUsageDashboard)
+    .mockResolvedValueOnce(fixture)
+    .mockRejectedValueOnce(new Error("网络暂时不可用"))
+    .mockRejectedValueOnce(new HttpError("权限已撤销", 403));
+  render(<UsageDashboard />);
+  expect(await screen.findByText("one@example.test")).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("button", { name: /刷新数据/ })
+        .classList.contains("ant-btn-loading"),
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /刷新数据/ }));
+  expect(await screen.findByText("看板刷新失败")).toBeTruthy();
+  expect(screen.getByText("one@example.test")).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("button", { name: /刷新数据/ })
+        .classList.contains("ant-btn-loading"),
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /刷新数据/ }));
+  expect(await screen.findByText("无权查看全站统计")).toBeTruthy();
+  expect(screen.queryByText("one@example.test")).toBeNull();
 });
 
 it("ignores a stale response when a newer range has been selected", async () => {
