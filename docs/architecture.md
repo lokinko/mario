@@ -158,7 +158,7 @@ flowchart TD
 - `Callout`、`Badge`、`DataStamp`、`Menu`、`Skeleton`、`EmptyState` 和 `Drawer` 只提供共享展示与可访问交互。菜单支持键盘与关闭后焦点恢复；抽屉保留草稿保护、忙碌锁定、背景隔离和焦点约束。共享 `DraftProtection` 上下文只传递应用层的标记回调，`Drawer` 以独立区域登记输入变更、在标为已保存或卸载时释放自身标记；应用壳的页面输入捕获不重复登记抽屉事件，也不清除其他区域的标记。
 - 同步入口集中在侧栏状态块，移动端顶部显示同一状态。汇率由“我的情况”页头入口打开抽屉。页面内容上限 1440px，阅读和表单页上限 960px。
 - 数据问题只在相关持仓行显示一次，按 `IssueCode` 提供汇率、拆合股、交易链或存款核对入口；总览显示问题数量并定位到该行。日期、来源和参考价使用中性元数据，其他币种存款与常用币种共用列表。缺汇率或持仓金额不可用时不以旧历史总值替代当前总值。
-- `features/portfolio/useAssetHistory` 持有最新一条每日记录的请求，供 `AssetOverview` 的总额与变化使用。资产总览读取服务端每日精确总额或会计快照；前端不新增会计合计、持仓占比或汇兑计算。新增投资持仓只经记录交易（`POST /api/holding-trades` 的 `newHolding`），`POST /api/holdings` 仅新建存款。“我的情况”分为“投资持仓”和“存款与收支”两类，后者在同一页组合存款列表与月度收支设置。
+- `features/portfolio/useAssetHistory` 持有最新一条每日记录的请求，供 `AssetOverview` 的总额使用；近 12 个月实收分红读取会计快照的 `dividends`。资产配置图读取 `GET /api/portfolio/allocation`，由 `application/portfolio` 组合账号会计快照与公共目录行业，`models/accounting::allocation` 做精确分组。资产总览读取服务端每日精确总额或会计快照；前端不新增会计合计、持仓占比或汇兑计算。新增投资持仓只经记录交易（`POST /api/holding-trades` 的 `newHolding`），`POST /api/holdings` 仅新建存款。“我的情况”分为“投资持仓”和“存款与收支”两类，后者在同一页组合存款列表与月度收支设置。
 - “我的情况”使用 Ant Design 的总览与指标卡、分类标签页、操作按钮和输入框，密度与响应式布局由 `features/portfolio/portfolio.css` 管理。分类内容放在对应标签面板中，编辑或保存期间锁定分类切换；持仓表保留币种分组、排序、行内问题定位与共享菜单。金额通过包装 Ant Design `Input` 的 `PrivateNumberInput` 保留原始十进制字符串（普通模式为原生数值输入，隐藏模式为密码输入），不通过数值组件重新舍入；资产编辑、交易和收支继续沿用原有领域校验与财务 API。
 - 财务档案的 `providedFields` 随账号档案保存，`features/portfolio/ProfileForm` 拥有输入与填写状态草稿，保存成功后采用返回档案；`models::FinancialProfile` 解释历史缺失状态，`context/fact_sheet` 据此生成事实。未填写、明确零值与初始数值的规则统一见[财务事实边界](ai-data-boundary.md)，预览与执行仍共用服务端上下文构建。
 - 问答提供实际资料预览，已完成报告的引用在抽屉查看；流式阶段只映射服务端状态，未知阶段保留原文。来源、方法论版本等元信息仅显示契约中实际存在的字段。

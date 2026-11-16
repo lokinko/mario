@@ -89,6 +89,20 @@ impl WatchCatalogService {
         self.board()
     }
 
+    pub fn industries(&self) -> AppResult<std::collections::HashMap<String, String>> {
+        let (catalog, _) = self.store.catalog()?;
+        Ok(catalog
+            .industries
+            .into_iter()
+            .flat_map(|industry| {
+                industry
+                    .companies
+                    .into_iter()
+                    .map(move |c| (c.symbol, industry.name.clone()))
+            })
+            .collect())
+    }
+
     pub fn board(&self) -> AppResult<CatalogBoard> {
         let (catalog, revision) = self.store.catalog()?;
         let mut summaries = self.store.summaries()?;

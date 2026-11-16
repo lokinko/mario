@@ -3,7 +3,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { Button, Card } from "antd";
 import type { DataIssue, DailyHistory, Snapshot } from "../../types";
 import type { DisplayPreferenceProps } from "../../components/DisplayPreferences";
-import { formatAmount, formatMoney, formatSigned } from "../../lib/format";
+import { formatAmount, formatMoney } from "../../lib/format";
 export function AssetOverview({
   snapshot,
   history,
@@ -20,7 +20,7 @@ export function AssetOverview({
   const latest = snapshot.valuationStatus.comparable
     ? history?.records[0]
     : undefined;
-  const change = latest?.sinceLastUpdateChange;
+  const dividends = snapshot.accounting?.dividends;
   const currency = latest?.baseCurrency ?? snapshot.profile.baseCurrency;
   const total = !snapshot.valuationStatus.comparable
     ? null
@@ -66,17 +66,20 @@ export function AssetOverview({
           </div>
           <div className="hero-changes">
             <div>
-              <span className="metric-label">较上次实际更新</span>
-              <Money
-                as="strong"
-                className={`num ${change == null || change === 0 ? "" : change > 0 ? "gain" : "loss"}`}
-              >
-                {change == null
+              <span className="metric-label">近 12 个月实收分红</span>
+              <Money as="strong" className="num">
+                {dividends?.received.value == null
                   ? "—"
-                  : formatSigned(change, (v) => formatAmount(v, currency))}
+                  : formatAmount(dividends.received.value, currency)}
               </Money>
-              {latest?.lastUpdatedDay && (
-                <small>{latest.lastUpdatedDay} 起</small>
+              {dividends && (
+                <small>
+                  {dividends.heldYieldPct != null &&
+                    `持仓成本回报 ${dividends.heldYieldPct}% · `}
+                  {dividends.since} 之后到账
+                  {dividends.received.missing > 0 &&
+                    ` · ${dividends.received.missing} 项缺汇率未计入`}
+                </small>
               )}
             </div>
           </div>

@@ -19,8 +19,6 @@ const day: DailyRecord = {
   assets: [],
   missingFx: [],
   previousDayChange: 0,
-  lastUpdatedDay: "2026-09-12",
-  sinceLastUpdateChange: 0,
 };
 const history: DailyHistory = {
   timezone: "Asia/Shanghai",
@@ -31,11 +29,11 @@ const history: DailyHistory = {
   ],
   nextBefore: null,
 };
-function Overview() {
-  const state = useAssetHistory(fixture as Snapshot);
+function Overview({ snapshot = fixture as Snapshot }: { snapshot?: Snapshot }) {
+  const state = useAssetHistory(snapshot);
   return (
     <AssetOverview
-      snapshot={fixture as Snapshot}
+      snapshot={snapshot}
       history={state}
       display={{ maskAmounts: false, setMaskAmounts: vi.fn() }}
     />
@@ -46,16 +44,29 @@ beforeEach(() => {
   vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue(history);
 });
 afterEach(cleanup);
-it("reads only the latest daily record and shows the change since the last real update", async () => {
+it("reads only the latest daily record and shows trailing dividends instead of update changes", async () => {
   vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue({
     ...history,
-    records: [{ ...day, previousDayChange: -5, sinceLastUpdateChange: 20 }],
+    records: [{ ...day, previousDayChange: -5 }],
   });
-  render(<Overview />);
-  await screen.findByText("2026-09-12 起");
+  const snapshot = structuredClone(fixture) as Snapshot;
+  snapshot.accounting = {
+    ...snapshot.accounting!,
+    dividends: {
+      since: "2025-11-16",
+      received: { value: "1234.5", missing: 1 },
+      heldYieldPct: "3.21",
+    },
+  };
+  render(<Overview snapshot={snapshot} />);
+  await screen.findByText(
+    "持仓成本回报 3.21% · 2025-11-16 之后到账 · 1 项缺汇率未计入",
+  );
   expect(portfolioApi.getDailyAssets).toHaveBeenCalledOnce();
   expect(portfolioApi.getDailyAssets).toHaveBeenCalledWith({ limit: 1 });
-  expect(screen.getByText("较上次实际更新")).toBeTruthy();
+  expect(screen.getByText("近 12 个月实收分红")).toBeTruthy();
+  expect(screen.getByText(/1,234\.5/)).toBeTruthy();
+  expect(screen.queryByText("较上次实际更新")).toBeNull();
   expect(screen.queryByText("较昨日")).toBeNull();
   expect(screen.queryByText(/沿用原值|日走势/)).toBeNull();
 });

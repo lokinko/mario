@@ -12,6 +12,21 @@ export async function getSnapshot(): Promise<Snapshot> {
   return httpRequest<Snapshot>("/snapshot");
 }
 
+export interface AllocationSlice {
+  label: string;
+  value: string;
+  pct: string;
+}
+export interface Allocation {
+  baseCurrency: string;
+  byClass: AllocationSlice[];
+  byIndustry: AllocationSlice[];
+  missing: number;
+}
+export function getAllocation(): Promise<Allocation> {
+  return httpRequest<Allocation>("/portfolio/allocation");
+}
+
 export function updateOptionPrice(
   id: string,
   input: {

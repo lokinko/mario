@@ -14,6 +14,10 @@ import {
 import { Badge } from "../../components/Badge";
 import { Menu } from "../../components/Menu";
 import { isClosedHolding, unrealizedProfit } from "./holdingMetrics";
+function priceText(value: number | string) {
+  return formatNumber(value, 2, true);
+}
+
 export function AssetAmountRow({
   holding,
   realizedPnl,
@@ -137,10 +141,7 @@ export function AssetAmountRow({
               <Money>
                 {exact?.usable === false || holding.currentPrice == null
                   ? "—"
-                  : formatNumber(
-                      exact?.currentPrice ?? holding.currentPrice,
-                      4,
-                    )}
+                  : priceText(exact?.currentPrice ?? holding.currentPrice)}
               </Money>
             </span>
           </div>
@@ -150,14 +151,14 @@ export function AssetAmountRow({
             >
               {exact?.usable === false || holding.currentPrice == null
                 ? "—"
-                : formatNumber(exact?.currentPrice ?? holding.currentPrice, 4)}
+                : priceText(exact?.currentPrice ?? holding.currentPrice)}
             </Money>
             <small>
               成本{" "}
               <Money>
                 {exact?.usable === false || holding.costPrice == null
                   ? "—"
-                  : formatNumber(exact?.costPrice ?? holding.costPrice, 4)}
+                  : priceText(exact?.costPrice ?? holding.costPrice)}
               </Money>
             </small>
           </div>

@@ -16,6 +16,12 @@ import type { HoldingTrade, HoldingTradeSummary, Snapshot } from "../../types";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 vi.mock("../../api/portfolio", () => ({
+  getAllocation: vi.fn().mockResolvedValue({
+    baseCurrency: "CNY",
+    byClass: [],
+    byIndustry: [],
+    missing: 0,
+  }),
   getFinancialHistory: vi
     .fn()
     .mockResolvedValue({ records: [], quarantine: null }),
