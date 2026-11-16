@@ -1,0 +1,75 @@
+# 用户域 spec
+
+用户域保存用户确认的事实、资料和判断，并使用市场数据进行确定性计算。本文按本次讨论确认的范围重建；全局归属与现有代码映射见[架构](../architecture.md)。
+
+本文定义业务行为与不变量。具体 HTTP 字段、状态码和流式协议留在后续单独讨论的 API 文档中，不在这里维护另一套接口定义。
+
+## 1. 账号与个人数据
+
+账号能力负责身份登录、会话、账号隔离、多设备数据版本及导入导出。
+
+- 旧版本提交发生冲突时，要求用户核对，不能自动覆盖新数据。
+- 切换账号后，旧请求不能更新新账号页面。
+- 原生备份支持导入空账号或明确覆盖当前账号，不合并账本。
+- 网页覆盖流程先下载原数据备份；导入失败整体回滚。备份失败时不能继续覆盖。
+- 个人备份可以包含 AI 分析历史与记忆，但不改变这些数据的业务归属。登录凭据、模型密钥不属于个人业务备份；当前模型配置和问答预设也不在原生业务备份范围内。
+
+实现依据：[账号上下文与导入接口](../../server/src/hosted.rs)、[同步仓储](../../server/src/db/sync_store.rs)、[前端传输与会话检查](../../client/src/lib/httpClient.ts)、[备份导入页面](../../client/src/features/account/ServerData.tsx)。
+
+## 2. 个人事实、财务账本与估值
+
+管理收支、负债、期限、持仓、现金、真实成交、期权和每日资产。区分“未填写”与“明确填写为零”，默认值不能冒充用户已确认的事实。
+
+- 成交、费用、税款、现金与持仓变化保持会计一致。
+- 更正、删除和重试不能重复记账或留下部分更新；相关存储失败时，整个财务操作回滚。
+- 市场价格用于个人估值，不能改写真实成交。
+- 行情或汇率缺失时，明确标记不可计算或不可比较，不能把未知当作零。
+
+实现依据：[财务事实契约](../../server/src/models.rs)、[个人资产用例](../../server/src/application/portfolio.rs)、[成交仓储](../../server/src/db/trades.rs)、[财务仓储](../../server/src/db/financial.rs)、[每日资产](../../server/src/db/daily.rs)。
+
+## 3. 买点观察
+
+管理个人自选、人工维护的共享候选目录、观察规则、历史结果、提醒、分红日历和网格测算。共享目录由有权限的账号维护，个人规则按账号隔离。
+
+当前默认条件为：
+
+- 已实施税前现金分红的 TTM 股息率至少 5%。
+- 日收盘价在日线 BOLL(20,2) 下轨上下 2% 内，距离以所选轨道价格为基准。
+- 周收盘价不高于周线 BOLL(20,2) 中轨。
+
+三个条件同时满足。用户可以调整规则；信号只用于观察，不等于已经作出投资决定。
+
+修改规则建立新的观察基准，不改写历史结果，也不能伪装成市场变化提醒。分红计划与已实施分红分别处理。信号和网格测算不自动产生真实成交。
+
+实现依据：[规则与比较](../../server/src/models/watch/rules.rs)、[账号规则保存](../../server/src/db/watch/rules.rs)、[观察用例](../../server/src/application/watch.rs)、[共享候选目录](../../server/src/application/watch_catalog.rs)、[网格测算](../../server/src/models/watch/grid.rs)。
+
+## 4. 研究资料
+
+研究资料是独立子模块，管理原文、附件、关联标的、分类、检索和归档。
+
+- 保存资料不等于核实其真实性。
+- 修改标签不改变原文，归档不删除原始内容。
+- 资料与附件保存保持一致；失败时保留可重试的输入。
+- AI 只能按授权使用资料。历史问答中的网页摘录复用归 AI 域，不自动成为用户资料库中的正式记录。
+
+实现依据：[研究仓储](../../server/src/db/research.rs)、[附件处理](../../server/src/attachments.rs)、[资料检索](../../server/src/evidence.rs)、[资料工作台](../../client/src/features/research/EvidenceWorkbench.tsx)。当前研究仓储仍混合 AI 历史方法，属于架构记录的现状，不改变上述归属。
+
+## 5. 方法论与复盘
+
+管理用户填写的方法论、文字复盘、手工投资规则及规则修订历史。
+
+手工投资规则与买点观察的计算规则分别管理。AI 可以引用和讨论这些内容，但不能自动修改用户原则，也不能将模型建议当成用户已经作出的决定。
+
+实现依据：[方法论契约](../../server/src/models/methodology.rs)、[复盘仓储](../../server/src/db/reviews.rs)、[复盘页面](../../client/src/features/reviews/ReviewCenter.tsx)。
+
+## 6. 验收场景
+
+| 范围 | 必须核对的场景 | 现有验证入口 |
+| --- | --- | --- |
+| 账号与数据管理 | 账号隔离、账号切换后迟到响应、并发版本冲突、覆盖前备份失败、导入失败回滚 | [传输回归](../../client/src/api.hosted.test.ts)、[导入交互](../../client/src/features/account/ServerData.test.tsx)、[托管验收](../../scripts/test-hosted.mjs) |
+| 财务账本 | 真实成交与现金一致、更正删除的整体性、重复请求不重复记账、资料或汇率缺失 | [财务回归](../../server/src/db/financial_tests.rs)、[成交模块内测试](../../server/src/db/trades.rs)、[财务验收](../../scripts/test-financial.mjs) |
+| 买点观察 | 规则变更建立新基准、历史保留、个人规则隔离、数据缺失不误判、网格不记账 | [规则保存回归](../../server/src/db/watch/rules.rs)、[规则计算回归](../../server/src/models/watch/rules.rs)、[网格交互](../../client/src/features/watch/WatchGrid.test.tsx) |
+| 研究资料 | 原文与附件完整、保存失败可重试、标签不修改原文、归档可恢复 | [资料交互](../../client/src/features/research/EvidenceWorkbench.test.tsx)、[资料仓储内测试](../../server/src/db/research.rs) |
+| 方法论与复盘 | 文字保存、手工规则修订与历史可追溯 | [方法论交互](../../client/src/features/methodology/InvestmentMethodology.test.tsx)、[复盘交互](../../client/src/features/reviews/ReviewCenter.test.tsx)、[功能 API 验收](../../scripts/test-functional-api.mjs) |
+
+以上列出验收场景与已有测试依据，不代表文档重建时重新执行了全部测试。
