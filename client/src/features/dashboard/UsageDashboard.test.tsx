@@ -33,6 +33,7 @@ beforeEach(() => {
 const originalStyle = window.getComputedStyle.bind(window);
 afterEach(() => {
   cleanup();
+  window.history.replaceState(null, "", "/");
   vi.restoreAllMocks();
   vi.resetAllMocks();
 });
@@ -57,13 +58,17 @@ const fixture: DashboardData = {
     daily: [],
   },
   generatedAt: 1794528000,
-  trackingSince: 1794528000,
   days: 30,
   totalUsers: 2,
   dailyActive: 1,
   weeklyActive: 1,
   monthlyActive: 1,
   daily: [{ date: "2026-11-13", activeUsers: 1, activeMinutes: 3 }],
+  registrations: [
+    { date: "2026-11-13", newUsers: 1, totalUsers: 2 },
+    { date: "2026-11-12", newUsers: 0, totalUsers: 1 },
+  ],
+  registeredBeforeTracking: 1,
   users: [
     {
       userId: "1",
@@ -83,14 +88,28 @@ const fixture: DashboardData = {
   pages: [{ page: "watch", activeUsers: 1, activeMinutes: 3 }],
 };
 
-it("renders real aggregates, filters accounts and reloads the selected date range", async () => {
+it("keeps account details off the overview and opens them from the header", async () => {
   vi.mocked(getUsageDashboard).mockImplementation(async (days) => ({
     ...fixture,
     days,
   }));
   render(<UsageDashboard />);
-  expect(await screen.findByText("one@example.test")).toBeTruthy();
+  expect(
+    await screen.findByRole("img", {
+      name: "2026-11-12 至 2026-11-13，新注册 1 个，累计账号 2 个，其中上线前已有 1 个",
+    }),
+  ).toBeTruthy();
   expect(screen.getByText("买点观察")).toBeTruthy();
+  expect(screen.getByText("3 分钟 · 1 人")).toBeTruthy();
+  expect(screen.queryByText("one@example.test")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /查看明细/ }));
+  expect(window.location.hash).toBe("#prices");
+  expect(screen.getByLabelText("价格状态筛选")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /返回总览/ }));
+  expect(window.location.hash).toBe("");
+  fireEvent.click(screen.getByRole("button", { name: /用户活跃明细/ }));
+  expect(window.location.hash).toBe("#users");
+  expect(screen.getByText("one@example.test")).toBeTruthy();
   fireEvent.change(screen.getByLabelText("搜索用户邮箱"), {
     target: { value: "two@" },
   });
@@ -119,6 +138,7 @@ it("ignores a stale response when a newer range has been selected", async () => 
         }),
     )
     .mockResolvedValue({ ...fixture, days: 7 });
+  window.history.replaceState(null, "", "/#users");
   render(<UsageDashboard />);
   fireEvent.click(screen.getByText("近 7 天"));
   expect(await screen.findByText("one@example.test")).toBeTruthy();

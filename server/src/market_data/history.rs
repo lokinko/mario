@@ -33,21 +33,20 @@ impl PublicMarketSource {
                 .build()?,
         })
     }
-    async fn json(&self, url: reqwest::Url) -> AppResult<(Value, String)> {
+    async fn json(&self, url: reqwest::Url, referer: Option<&str>) -> AppResult<(Value, String)> {
         for attempt in 0..2 {
             let result = async {
-                let response = self
-                    .client
-                    .get(url.clone())
-                    .send()
-                    .await?
-                    .error_for_status()?;
+                let mut request = self.client.get(url.clone());
+                if let Some(referer) = referer {
+                    request = request.header("Referer", referer);
+                }
+                let response = request.send().await?.error_for_status()?;
                 let source = response.url().to_string();
                 Ok((super::read_public_json(response).await?, source))
             }
             .await;
             let retry = matches!(&result, Err(AppError::Network(error))
-                if error.is_connect() || error.is_timeout()
+                if error.is_connect() || error.is_timeout() || error.is_request() || error.is_body() || error.is_decode()
                     || error.status().is_some_and(|s| s.is_server_error() || s.as_u16() == 429));
             if !retry || attempt == 1 {
                 return result;
@@ -62,10 +61,9 @@ impl PublicMarketSource {
         through: NaiveDate,
         adjusted: bool,
     ) -> AppResult<(BTreeMap<NaiveDate, Option<String>>, String)> {
-        let response = self
+        let url = self
             .client
             .get("https://push2his.eastmoney.com/api/qt/stock/kline/get")
-            .header("Referer", "https://quote.eastmoney.com/")
             .query(&[
                 ("secid", security.secid()),
                 ("klt", "101".into()),
@@ -76,11 +74,10 @@ impl PublicMarketSource {
                 ("fields1", "f1,f2,f3,f4,f5,f6".into()),
                 ("fields2", "f51,f52,f53".into()),
             ])
-            .send()
-            .await?
-            .error_for_status()?;
-        let url = response.url().to_string();
-        let payload = super::read_public_json(response).await?;
+            .build()?
+            .url()
+            .clone();
+        let (payload, url) = self.json(url, Some("https://quote.eastmoney.com/")).await?;
         Ok((parse_rows(&payload, security, through, adjusted)?, url))
     }
     async fn domestic(&self, symbol: &str, through: NaiveDate) -> AppResult<PriceHistory> {
@@ -224,7 +221,7 @@ impl PublicMarketSource {
             .build()?
             .url()
             .clone();
-        let (daily, source) = self.json(daily_url).await?;
+        let (daily, source) = self.json(daily_url, None).await?;
         let (actions, action_source) = self.yahoo_actions(host, symbol).await?;
         parse_yahoo(&daily, &actions, symbol, through, source, action_source)
     }
@@ -248,7 +245,7 @@ impl PublicMarketSource {
             .build()?
             .url()
             .clone();
-        self.json(action_url).await
+        self.json(action_url, None).await
     }
 }
 fn bad() -> AppError {
@@ -513,17 +510,46 @@ where
     })
 }
 fn source_error(error: &AppError) -> String {
-    match error {
+    let message = match error {
         AppError::Network(error) if error.is_timeout() => "请求超时".into(),
         AppError::Network(error) if error.is_connect() => {
             "服务器连接失败，请检查 DNS、代理及出站网络".into()
         }
         AppError::Network(error) => error.status().map_or_else(
-            || "网络传输失败".into(),
+            || "网络传输中断（来源可能提前关闭连接）".into(),
             |status| format!("HTTP {}", status.as_u16()),
         ),
         AppError::Json(_) => "来源响应格式无效".into(),
         _ => error.to_string(),
+    };
+    let stage = match error {
+        AppError::Network(error) => error.url().and_then(history_request_stage),
+        _ => None,
+    };
+    stage.map_or(message.clone(), |stage| format!("{stage}：{message}"))
+}
+
+fn history_request_stage(url: &reqwest::Url) -> Option<&'static str> {
+    match url.path() {
+        "/api/qt/stock/kline/get" => {
+            match url.query_pairs().find(|(key, _)| key == "fqt")?.1.as_ref() {
+                "0" => Some("原价日线"),
+                "1" => Some("前复权日线"),
+                _ => None,
+            }
+        }
+        "/api/data/v1/get" => Some("公司行动资料"),
+        path if path.starts_with("/v8/finance/chart/") => {
+            if url
+                .query_pairs()
+                .any(|(key, value)| key == "interval" && value == "1mo")
+            {
+                Some("公司行动历史")
+            } else {
+                Some("日线历史")
+            }
+        }
+        _ => None,
     }
 }
 #[async_trait::async_trait]

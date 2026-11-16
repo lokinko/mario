@@ -1,12 +1,17 @@
 import { useState } from "react";
-import { Input, Segmented, Table, Tag } from "antd";
-import type { PriceCollectionDashboard } from "../../api/activity";
+import { Button, Input, Segmented, Table } from "antd";
+import type {
+  PriceCollectionDashboard,
+  PriceCollectionDay,
+} from "../../api/activity";
 
-const statuses: Record<string, { label: string; color: string }> = {
-  success: { label: "今日成功", color: "success" },
-  failed: { label: "获取失败", color: "error" },
-  pending: { label: "等待更新", color: "default" },
-  lagging: { label: "价格滞后", color: "warning" },
+const statusOrder = ["success", "failed", "pending", "lagging"] as const;
+type Status = (typeof statusOrder)[number];
+const statuses: Record<Status, string> = {
+  success: "今日成功",
+  failed: "获取失败",
+  pending: "等待更新",
+  lagging: "价格滞后",
 };
 const issues: Record<string, string> = {
   fetch_in_progress: "正在获取",
@@ -28,6 +33,92 @@ const stamp = (value: number | null) =>
         timeZone: "Asia/Shanghai",
         hour12: false,
       });
+const counts = (day: PriceCollectionDay): Record<Status, number> => ({
+  success: day.successful,
+  failed: day.failed,
+  pending: day.pending,
+  lagging: day.lagging,
+});
+
+function StatusBar({ day, label }: { day: PriceCollectionDay; label: string }) {
+  const values = counts(day);
+  return (
+    <div
+      className="price-status-bar"
+      role="img"
+      aria-label={`${label}：${statusOrder
+        .map((status) => `${statuses[status]} ${values[status]}`)
+        .join("，")}`}
+    >
+      {statusOrder.map(
+        (status) =>
+          values[status] > 0 && (
+            <span
+              key={status}
+              className={`price-status-${status}`}
+              style={{ flexGrow: values[status] }}
+            />
+          ),
+      )}
+    </div>
+  );
+}
+
+function StatusLabel({ status }: { status: string }) {
+  return (
+    <span className={`price-status-label price-status-${status}`}>
+      {statuses[status as Status] ?? status}
+    </span>
+  );
+}
+
+function UniverseAlerts({ data }: { data: PriceCollectionDashboard }) {
+  return (
+    <>
+      {!data.universe && (
+        <p className="price-collection-alert">
+          尚未取得有效的300只成分表，等待后台获取
+        </p>
+      )}
+      {data.universeError && (
+        <p className="price-collection-alert" role="status">
+          成分表获取异常：{data.universeError}。保留上次范围；最近尝试{" "}
+          {stamp(data.universeAttemptedAt)}。
+        </p>
+      )}
+    </>
+  );
+}
+
+export function PriceSummary({
+  data,
+  onOpenDetail,
+}: {
+  data?: PriceCollectionDashboard;
+  onOpenDetail: () => void;
+}) {
+  const summary = data && counts(data.summary);
+  return (
+    <section className="panel usage-panel" aria-label="沪深300价格采集概况">
+      <div className="usage-table-heading">
+        <h2>沪深300 · 十年价格采集</h2>
+        <Button onClick={onOpenDetail}>查看明细</Button>
+      </div>
+      {data && <UniverseAlerts data={data} />}
+      <div className="price-status-overview">
+        {data && <StatusBar day={data.summary} label="今日价格状态分布" />}
+        <div className="price-status-legend" aria-label="价格状态图例">
+          {statusOrder.map((key) => (
+            <div key={key}>
+              <StatusLabel status={key} />
+              <strong>{summary?.[key] ?? "—"}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export function PriceCollection({
   data,
@@ -37,57 +128,42 @@ export function PriceCollection({
   loading: boolean;
 }) {
   const [filter, setFilter] = useState("all");
+  const [status, setStatus] = useState<Status | null>(null);
   const [search, setSearch] = useState("");
+  const summary = data && counts(data.summary);
   const rows = data?.rows.filter((row) => {
     const needle = search.trim().toLowerCase();
     return (
       (filter === "all" ||
         row.status !== "success" ||
         row.issueCodes.includes("missing_close_values")) &&
+      (!status || row.status === status) &&
       `${row.symbol} ${row.name}`.toLowerCase().includes(needle)
     );
   });
   return (
     <section className="panel usage-panel" aria-label="沪深300价格采集">
       <h2>沪深300 · 十年价格采集</h2>
-      <p className="price-collection-meta">
-        当前成分股各自过去十年的日收盘价和前复权价；成分表每日检查，价格每五分钟检查，分批回补。
-        上市不足十年的只保留实际历史，不补造价格。
-      </p>
-      <p className="price-collection-meta">
-        {data?.universe ? (
-          <>
-            成分表日期 {data.universe.asOf} · {data.universe.members.length} 只
-            ·{" "}
-            <a href={data.universe.sourceUrl} target="_blank" rel="noreferrer">
-              中证官方成分表
-            </a>
-            {" · "}最近获取 {stamp(data.universe.fetchedAt)}
-          </>
-        ) : (
-          "尚未取得有效的300只成分表，等待后台获取"
-        )}
-        {data && `；价格收盘截止 ${data.targetThrough}`}
-      </p>
-      {data?.universeError && (
-        <p role="status">
-          成分表获取异常：{data.universeError}。保留上次范围；最近尝试{" "}
-          {stamp(data.universeAttemptedAt)}。
-        </p>
-      )}
-      <div className="usage-metrics" aria-label="价格获取概览">
-        {[
-          ["今日成功", data?.summary.successful, "完成获取；价格覆盖见明细"],
-          ["获取失败", data?.summary.failed, "失败或上次采集中断"],
-          ["等待更新", data?.summary.pending, "首次回补、十年扩展或今日待获取"],
-          ["价格滞后", data?.summary.lagging, "落后于来源实际交易日参考"],
-        ].map(([label, count, hint]) => (
-          <article key={label}>
-            <span>{label}</span>
-            <strong>{count ?? "—"}</strong>
-            <small>{hint}</small>
-          </article>
-        ))}
+      {data && <UniverseAlerts data={data} />}
+      <div className="price-status-overview">
+        {data && <StatusBar day={data.summary} label="今日价格状态分布" />}
+        <div
+          className="price-status-legend"
+          role="group"
+          aria-label="价格状态图例"
+        >
+          {statusOrder.map((key) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={status === key}
+              onClick={() => setStatus(status === key ? null : key)}
+            >
+              <StatusLabel status={key} />
+              <strong>{summary?.[key] ?? "—"}</strong>
+            </button>
+          ))}
+        </div>
       </div>
       <div className="usage-table-heading">
         <Segmented
@@ -131,11 +207,7 @@ export function PriceCollection({
           {
             title: "当前状态",
             dataIndex: "status",
-            render: (status: string) => (
-              <Tag color={statuses[status]?.color}>
-                {statuses[status]?.label ?? status}
-              </Tag>
-            ),
+            render: (value: string) => <StatusLabel status={value} />,
           },
           {
             title: "实际价格区间",
@@ -184,10 +256,18 @@ export function PriceCollection({
         rowKey="date"
         dataSource={data?.daily ?? []}
         pagination={{ pageSize: 7, showSizeChanger: false }}
-        scroll={{ x: 650 }}
+        scroll={{ x: 820 }}
         locale={{ emptyText: "启用后开始记录，不追溯补造过去的成功状态" }}
         columns={[
           { title: "日期（北京时间）", dataIndex: "date" },
+          {
+            title: "状态分布",
+            key: "distribution",
+            width: 220,
+            render: (_, day: PriceCollectionDay) => (
+              <StatusBar day={day} label={`${day.date} 价格状态分布`} />
+            ),
+          },
           { title: "监控股票", dataIndex: "expected", align: "right" },
           { title: "成功", dataIndex: "successful", align: "right" },
           { title: "失败", dataIndex: "failed", align: "right" },
@@ -195,9 +275,6 @@ export function PriceCollection({
           { title: "滞后", dataIndex: "lagging", align: "right" },
         ]}
       />
-      <p className="price-collection-meta">
-        每日结果为该日最后保存的采集状态，今天显示实时状态；保留最近90天，停机日期不补报成功。失败不会清空旧价格。刷新数据只重读看板，后台自动重试；页面每分钟更新。
-      </p>
     </section>
   );
 }

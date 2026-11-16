@@ -49,13 +49,14 @@ export interface PriceCollectionDashboard {
 export interface UsageDashboard {
   marketPrices: PriceCollectionDashboard;
   generatedAt: number;
-  trackingSince: number;
   days: number;
   totalUsers: number;
   dailyActive: number;
   weeklyActive: number;
   monthlyActive: number;
   daily: { date: string; activeUsers: number; activeMinutes: number }[];
+  registrations: { date: string; newUsers: number; totalUsers: number }[];
+  registeredBeforeTracking: number;
   users: {
     userId: string;
     email: string;
