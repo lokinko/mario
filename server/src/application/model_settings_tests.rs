@@ -87,6 +87,7 @@ mod tests {
             let mut work = Box::pin(test_connection(
                 &db,
                 &crate::ai::management::ModelConnectorAdapter,
+                None,
             ));
             tokio::time::timeout(std::time::Duration::from_secs(5), async {
             tokio::select! { _ = model.entered.notified() => {}, result = work.as_mut() => panic!("model did not wait: {result:?}") }

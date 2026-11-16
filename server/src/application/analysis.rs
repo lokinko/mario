@@ -1,5 +1,5 @@
 //! Freeze authorized sources, validate the preview, execute, and persist the result.
-use super::model_settings::configured_model_key;
+use super::model_settings::{configuration, configured_model_key, ServerOpenAi};
 use crate::{
     context,
     db::Database,
@@ -14,6 +14,7 @@ use crate::{
 use std::collections::HashSet;
 pub(crate) struct AnalysisService<'a> {
     db: &'a Database,
+    server: Option<&'a ServerOpenAi>,
 }
 struct PreparedAnalysis {
     config: ModelConfig,
@@ -21,12 +22,12 @@ struct PreparedAnalysis {
     evidence_candidates: Vec<ResearchEvidence>,
 }
 impl<'a> AnalysisService<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
+    pub fn new(db: &'a Database, server: Option<&'a ServerOpenAi>) -> Self {
+        Self { db, server }
     }
     fn prepare(&self, request: &AnalysisRequest) -> AppResult<PreparedAnalysis> {
         request.validate()?;
-        let config = self.db.model_config()?;
+        let config = configuration(self.db, self.server)?;
         let methodology = self.db.investment_methodology()?;
         let snapshot = self.db.snapshot()?;
         let evidence_candidates = relevant_evidence(self.db, request, &snapshot)?;
@@ -94,7 +95,7 @@ impl<'a> AnalysisService<'a> {
         }
         let api_key = match config.provider {
             ModelProviderKind::CodexBridge => Some(super::codex_bridge::id(self.db)?),
-            _ => Some(configured_model_key(self.db, &config)?),
+            _ => Some(configured_model_key(self.db, &config, self.server)?),
         };
         let execution = async {
             if let Some(events) = events {
@@ -353,7 +354,7 @@ mod tests {
         .unwrap();
         let mut request = request();
         request.question = "观察公司 600036.SS 本周复盘".into();
-        let service = AnalysisService::new(&db);
+        let service = AnalysisService::new(&db, None);
         let preview = service.prepare(&request).unwrap();
         assert_eq!(preview.evidence_candidates.len(), 1);
         let evidence = &preview.evidence_candidates[0];
@@ -429,7 +430,7 @@ mod tests {
         let db = database();
         save_watch_fixture(&db, "600036.SS", "观察甲公司", false);
         save_watch_fixture(&db, "600519.SS", "观察乙公司", false);
-        let service = AnalysisService::new(&db);
+        let service = AnalysisService::new(&db, None);
         let mut request = request();
         request.question = "分红能持续吗？".into();
         request.previous_turn = Some(crate::models::PreviousTurn {
@@ -510,7 +511,7 @@ mod tests {
     fn long_dividend_sources_keep_complete_audit_and_latest_boll_and_week_in_payload() {
         let db = database();
         save_watch_fixture(&db, "600036.SS", "观察甲公司", true);
-        let service = AnalysisService::new(&db);
+        let service = AnalysisService::new(&db, None);
         let mut request = request();
         request.question = "600036本周复盘与分红持续性".into();
         let prepared = service.prepare(&request).unwrap();
@@ -588,7 +589,7 @@ mod tests {
     async fn methodology_is_frozen_and_changes_invalidate_the_preview() {
         use crate::models::methodology::InvestmentMethodologyInput;
         let db = database();
-        let service = AnalysisService::new(&db);
+        let service = AnalysisService::new(&db, None);
         let mut request = request();
         let before = service.preview(&request).unwrap();
         db.save_investment_methodology(InvestmentMethodologyInput {
@@ -666,7 +667,7 @@ mod tests {
     async fn long_workflow_survives_five_minutes_but_deadline_cancels_without_saving() {
         for (seconds, success) in [(360, true), (26 * 60, false)] {
             let db = database();
-            let service = AnalysisService::new(&db);
+            let service = AnalysisService::new(&db, None);
             let dropped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let executor = DelayedExecutor {
                 delay: std::time::Duration::from_secs(seconds),
@@ -687,7 +688,7 @@ mod tests {
     #[tokio::test]
     async fn stored_answers_never_enter_a_new_analysis_context() {
         let db = database();
-        let service = AnalysisService::new(&db);
+        let service = AnalysisService::new(&db, None);
         let request = request();
         let before = service.preview(&request).unwrap();
         db.conn().unwrap().execute_batch("INSERT INTO analyses(id,question,answer,created_at) VALUES ('previous','复盘指数集中风险','private-history-marker','2026-10-17T00:00:00Z');").unwrap();
@@ -707,7 +708,7 @@ mod tests {
     #[tokio::test]
     async fn execution_uses_the_preview_payload_and_persists_only_the_current_question() {
         let db = database();
-        let service = AnalysisService::new(&db);
+        let service = AnalysisService::new(&db, None);
         let executor = Executor {
             captured: Default::default(),
             fail: false,
@@ -731,7 +732,7 @@ mod tests {
     #[tokio::test]
     async fn data_or_authorization_changes_reject_execution_before_contacting_the_executor() {
         let db = database();
-        let service = AnalysisService::new(&db);
+        let service = AnalysisService::new(&db, None);
         let executor = Executor {
             captured: Default::default(),
             fail: false,
@@ -751,7 +752,7 @@ mod tests {
     #[tokio::test]
     async fn failed_executor_creates_no_history_and_leaves_the_repository_usable() {
         let db = database();
-        let service = AnalysisService::new(&db);
+        let service = AnalysisService::new(&db, None);
         let executor = Executor {
             captured: Default::default(),
             fail: true,

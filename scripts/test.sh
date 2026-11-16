@@ -5,6 +5,7 @@ root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root_dir"
 # The full gate must exercise the binary it builds, never a caller's older override.
 unset MARIO_TEST_SERVER_BIN
+unset OPENAI_API_KEY OPENAI_MODEL
 CARGO_TARGET_DIR="$(node scripts/server-artifacts.mjs)"
 export CARGO_TARGET_DIR
 npm run check:entrypoints

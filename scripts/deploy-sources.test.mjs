@@ -69,10 +69,10 @@ test('deployment build passes npm/Rustup sources and applies Cargo replacement o
       copyFileSync(join(root, 'scripts', name), join(fixture, 'scripts', name));
     createConfig(join(fixture, '.env'), defaults());
     const stub = join(fixture, 'stub.mjs');
-    writeFileSync(stub, `console.log(JSON.stringify({ command: process.argv[2].split('/').pop(), argv: process.argv.slice(3), env: Object.fromEntries(Object.entries(process.env).filter(([key]) => ['npm_config_registry', 'RUSTUP_DIST_SERVER', 'RUSTUP_UPDATE_ROOT'].includes(key))) }));\nif (process.env.DEPLOY_TEST_FAIL) process.exit(7);\n`);
+    writeFileSync(stub, `console.log(JSON.stringify({ command: process.argv[2].split('/').pop(), argv: process.argv.slice(3), env: Object.fromEntries(Object.entries(process.env).filter(([key]) => ['npm_config_registry', 'RUSTUP_DIST_SERVER', 'RUSTUP_UPDATE_ROOT', 'OPENAI_API_KEY'].includes(key))) }));\nif (process.env.DEPLOY_TEST_FAIL) process.exit(7);\n`);
     for (const name of ['npm', 'cargo']) writeFileSync(join(fixture, 'bin', name), '#!/bin/sh\nexec "$DEPLOY_TEST_NODE" "$DEPLOY_TEST_STUB" "$0" "$@"\n', { mode: 0o755 });
     function build(overrides = {}, expected = 0) {
-      const env = configured(overrides);
+      const env = configured({ OPENAI_API_KEY: 'parent-synthetic-key-must-not-reach-build', ...overrides });
       const result = spawnSync(process.execPath, [join(fixture, 'scripts/host-runtime.mjs'), '--build'], {
         env: { ...env, PATH: `${join(fixture, 'bin')}:${env.PATH}`, DEPLOY_TEST_NODE: process.execPath, DEPLOY_TEST_STUB: stub },
         encoding: 'utf8', timeout: 15000,
@@ -85,6 +85,7 @@ test('deployment build passes npm/Rustup sources and applies Cargo replacement o
       assert.deepEqual(calls.map(call => call.command), ['npm', 'npm', 'cargo']);
       assert.deepEqual(calls[0].argv, ['ci', '--prefix', 'client']);
       for (const call of calls) {
+        assert.equal(call.env.OPENAI_API_KEY, undefined, 'model credentials must not enter frontend or Rust build processes');
         for (const key of ['npm_config_registry', 'RUSTUP_DIST_SERVER', 'RUSTUP_UPDATE_ROOT']) assert.equal(call.env[key], sources[key]);
       }
       const argv = calls[2].argv;

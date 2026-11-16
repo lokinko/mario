@@ -55,7 +55,7 @@ try {
   cpSync(join(root, 'client/dist'), join(fixture, 'client/dist'), { recursive: true });
   const apiPort = await freePort(), agentPort = await freePort(), pgPort = await freePort();
   const configPath = join(fixture, '.env');
-  createConfig(configPath, { ...defaults(), DATABASE_URL: '', PG_BIN: env.PG_BIN ?? '', MARIO_PORT: String(apiPort), MARIO_AGENT_PORT: String(agentPort), MARIO_PG_PORT: String(pgPort) });
+  createConfig(configPath, { ...defaults(), OPENAI_API_KEY: 'site-startup-synthetic-key', OPENAI_MODEL: 'site-startup-model', DATABASE_URL: '', PG_BIN: env.PG_BIN ?? '', MARIO_PORT: String(apiPort), MARIO_AGENT_PORT: String(agentPort), MARIO_PG_PORT: String(pgPort) });
   const pgBinFromEnvironment = env.PG_BIN;
   delete env.PG_BIN; // Verify the launcher can read the tool path entirely from the file.
   const original = readFileSync(configPath, 'utf8');
@@ -65,13 +65,22 @@ try {
   await start();
   assert(!current.log.includes(config.MARIO_MASTER_KEY));
   assert(!current.log.includes(config.POSTGRES_PASSWORD));
+  assert(!current.log.includes(config.OPENAI_API_KEY));
   const base = `http://127.0.0.1:${apiPort}`;
   assert.match(await (await fetch(base)).text(), /id="root"/);
   assert.equal((await fetch(`${base}/api/snapshot`)).status, 401);
   assert.equal((await fetch(`http://127.0.0.1:${agentPort}/health`)).status, 401);
   const email = 'launcher@example.test', password = 'launcher-password-123456';
   const registered = await fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
-  assert.equal(registered.status, 200, await registered.text());
+  assert.equal(registered.status, 200, await registered.clone().text());
+  const session = await registered.json();
+  const modelResponse = await fetch(`${base}/api/model-config`, { headers: { Authorization: `Bearer ${session.token}` } });
+  assert.equal(modelResponse.status, 200);
+  const siteModel = await modelResponse.json();
+  assert.equal(siteModel.source, 'server');
+  assert.equal(siteModel.model, 'site-startup-model');
+  assert.equal(siteModel.hasApiKey, true);
+  assert(!JSON.stringify(siteModel).includes(config.OPENAI_API_KEY));
   const duplicate = spawnSync(process.execPath, [join(fixture, 'scripts/host-runtime.mjs'), '--skip-build'], { env, encoding: 'utf8', timeout: 10000 });
   assert.equal(duplicate.status, 1);
   assert.match(duplicate.stderr, /已有启动进程/);

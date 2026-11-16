@@ -82,6 +82,12 @@ impl Database {
         )?
         .parse()?;
         Ok(ModelConfig {
+            source: if value("model.source", "account")? == "server" {
+                crate::models::ModelConfigSource::Server
+            } else {
+                crate::models::ModelConfigSource::Account
+            },
+            server_model: None,
             provider,
             base_url: value("model.base_url", "https://api.openai.com/v1")?,
             model: value("model.name", "gpt-4.1-mini")?,
@@ -120,6 +126,7 @@ impl Database {
             None => None,
         };
         let mut writes = vec![
+            ("model.source", "account".to_string()),
             ("model.provider", provider.as_str().to_string()),
             ("model.base_url", base_url.to_string()),
             ("model.name", model.to_string()),

@@ -74,7 +74,7 @@ where
             url.clone(),
             IDLE_TENANT_CONNECTIONS,
         )),
-        model_services: crate::composition::model_services(),
+        model_services: crate::composition::model_services_from_env()?,
         accounts: Arc::new(Accounts::open(url)?),
         openai: crate::openai_login::OpenAiLogin::from_env()?,
         slots: tokio::sync::Semaphore::new(REQUEST_SLOTS),

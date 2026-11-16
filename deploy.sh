@@ -29,6 +29,7 @@ export RUSTUP_UPDATE_ROOT="${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}" # R
 export MARIO_DEPLOY_CARGO_REGISTRY="${MARIO_DEPLOY_CARGO_REGISTRY-sparse+https://rsproxy.cn/index/}" # Cargo 依赖；显式空值沿用已有源配置。
 # 不要手写数据库密码或密钥：首次自动生成并保存 .env，重启不会更换。
 # 用户自己的模型/API Key 在网页登录后的“设置”里配置。
+# 站点共享 OpenAI 在 .env 填写 OPENAI_API_KEY、OPENAI_MODEL，供所有已登录用户选择。
 # .env 是自动生成的运行配置和秘密存储；迁移时必须一并备份，不提交 Git。
 # 数据目录继续使用 .runtime/native/postgres，兼容此前宿主机部署和加密备份。
 # =================== 配置区结束 ===================

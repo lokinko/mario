@@ -177,6 +177,10 @@ flowchart TD
 
 ### 6.2 AI 分析
 
+站点 OpenAI 配置由 `composition::model_services_from_env` 在 API 启动时读取 `OPENAI_API_KEY`、`OPENAI_MODEL`，构造无 Debug／序列化实现的 `application/model_settings::ServerOpenAi` 并注入 `ModelServices`。应用层统一解析有效配置和冻结凭据；仓储仍只处理个人模型与 `model.source` 选择，不读取进程环境。站点配置限定官方 Responses 地址与管理员模型，无个人配置的账号默认采用；已有个人配置与桥接优先保持原选择，失败不自动切换。`GET /model-config` 返回来源和可用站点模型等非敏感元数据，保存站点选择只写账号偏好，拒绝改地址、模型或提供密钥；个人配置保存将来源与原配置、密钥绑定在同一事务切回账号。运行、停用及备份行为见[站点 OpenAI](self-hosting.md#站点提供的-openai)。
+
+站点与个人模型共用原连接测试、冻结执行和历史保存链路，`AnalysisService` 接收只读站点依赖，Agent 仍只消费单次授权作业。部署器只将站点环境传给 API，不传给前端／Rust 构建或 Agent 启动环境；独立 Agent 可在原认证作业中收到所需凭据。没有新模型适配器、数据表、schema 或备份版本，账号资料授权与锁边界保持原归属。
+
 ```mermaid
 sequenceDiagram
     participant H as http/research
@@ -280,7 +284,8 @@ HTTP 只提供已认证的 `GET /watch/dividend-calendar`，只读缓存并按�
 | 会话与账号 | `accounts` | 会话仅存哈希，可撤销；网站 OpenAI 身份映射、账号创建／关联／会话签发归同一事务；短期 OAuth 事务原子消费后不重放 |
 | 全站使用活跃度 | `accounts/activity` | 认证库运维元数据；分钟去重与保留期清理同事务，超级账户只读一致快照，不进入账本与个人备份 |
 | 账号业务数据与版本 | `db` 领域仓储 | 业务写入、回执、日志、投影与版本同事务提交 |
-| 模型配置与凭据 | `db/settings.rs` + `db/secrets.rs` + `secrets.rs` | 接口、地址、模型名、密文与目标绑定由 `save_model_configuration` 在同一事务写入，失败保留原配置；主密钥加密，AAD 绑定账号 schema 与用途 |
+| 个人模型配置、来源选择与凭据 | `db/settings.rs` + `db/secrets.rs` + `secrets.rs` | 接口、地址、模型名、密文与目标绑定由 `save_model_configuration` 在同一事务写入，失败保留原配置；主密钥加密，AAD 绑定账号 schema 与用途 |
+| 站点 OpenAI 配置与凭据 | API 进程的 `ModelServices`／`ServerOpenAi` | 启动从 `.env` 注入，只冻结到授权模型作业，不写账号或个人备份，官方目标固定 |
 | 公开分红计划快照与日历范围 | `db/public_watch/calendar` + `application/dividend_calendar` | 来源事实公共缓存，账号范围仅作实时投影；失败保留成功资料，整站备份保留；不进入已实施历史、账号版本或资产 |
 | 公开分红主资料 | `db/public_dividends` + `application/watch_market` | 所有账号复用；只有公开来源和内置原件可写入，整站备份保留；没有账号 ID 或个人记录 |
 | 账号观察规则 | `db/watch/rules` 的账号 settings | 规则及旧提醒清除同事务保存；随个人备份（v28 起）导出，旧备份缺项恢复默认值，校验失败整次回滚 |
@@ -307,7 +312,7 @@ HTTP 只提供已认证的 `GET /watch/dividend-calendar`，只读缓存并按�
 
 ## 8. 关键不变量
 
-- 账号之间不共享连接、缓存中的业务数据或密钥；客户端无法选择租户。
+- 账号之间不共享连接、缓存中的业务数据或个人密钥；客户端无法选择租户。管理员配置的站点 OpenAI 凭据是进程级执行能力，使用范围见第 6.2 节，不向任何账号返回原值。
 - 数据库模块不联网，AI 模块不访问数据库，Agent 不需要数据库连接或账号服务。
 - 多步财务写入是单一领域事务，不能为拆分文件而拆开。
 - 只停用无法正确计算的部分。缺汇率、待确认拆合股、隔离交易使组合总值与再平衡不可用；其他持仓仍显示原币金额。存款待核对不阻止计算，日期、参考价和手工来源只作元数据。

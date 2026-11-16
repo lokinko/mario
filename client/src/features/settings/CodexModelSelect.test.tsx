@@ -120,6 +120,7 @@ it("saves the selected bridge model rather than the computer default", async () 
   fireEvent.click(screen.getByText("保存配置"));
   await waitFor(() =>
     expect(api.saveModelConfig).toHaveBeenCalledWith({
+      source: "account",
       provider: "codex-bridge",
       baseUrl: "codex://bridge",
       model: "model-b",

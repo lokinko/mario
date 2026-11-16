@@ -321,6 +321,8 @@ mod tests {
                 evidence_catalog: Vec::new(),
             },
             config: ModelConfig {
+                source: Default::default(),
+                server_model: None,
                 provider: ModelProviderKind::OpenaiChat,
                 base_url: format!("http://{address}/gateway/v1/"),
                 model: "third-party-model".into(),

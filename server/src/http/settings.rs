@@ -43,7 +43,10 @@ async fn save_investment_methodology(
 async fn model_config(
     Extension(state): Extension<Arc<RequestContext>>,
 ) -> AppResult<Json<ModelConfig>> {
-    Ok(Json(state.db.model_config()?))
+    Ok(Json(model_settings::configuration(
+        &state.db,
+        state.model_services.server.as_ref(),
+    )?))
 }
 
 async fn save_model_config(
@@ -54,6 +57,7 @@ async fn save_model_config(
         &state.db,
         input,
         state.model_services.bridges.as_ref(),
+        state.model_services.server.as_ref(),
     )?))
 }
 
@@ -61,15 +65,30 @@ async fn test_model_config(
     Extension(state): Extension<Arc<RequestContext>>,
 ) -> AppResult<Json<ModelConnectionTest>> {
     Ok(Json(
-        model_settings::test_connection(&state.db, state.model_services.connector.as_ref()).await?,
+        model_settings::test_connection(
+            &state.db,
+            state.model_services.connector.as_ref(),
+            state.model_services.server.as_ref(),
+        )
+        .await?,
     ))
 }
 
 async fn delete_model_key(
     Extension(state): Extension<Arc<RequestContext>>,
 ) -> AppResult<Json<ModelConfig>> {
+    if model_settings::configuration(&state.db, state.model_services.server.as_ref())?.source
+        == crate::models::ModelConfigSource::Server
+    {
+        return Err(crate::AppError::Validation(
+            "站点密钥由管理员管理，无法从个人账号移除".into(),
+        ));
+    }
     state.db.remove_secret("model")?;
-    Ok(Json(state.db.model_config()?))
+    Ok(Json(model_settings::configuration(
+        &state.db,
+        state.model_services.server.as_ref(),
+    )?))
 }
 
 async fn analysis_settings(

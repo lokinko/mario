@@ -36,6 +36,8 @@ export function ModelSettings({
   onUpdate: (m: ModelConfig) => void;
   flash: (s: string) => void;
 }) {
+  const [source, setSource] = useState(model.source ?? "account");
+  const usingServer = source === "server";
   const [provider, setProvider] = useState<ModelConfig["provider"]>(
     model.provider,
   );
@@ -56,10 +58,11 @@ export function ModelSettings({
     setConnectionResult("");
     try {
       const next = await saveModelConfig({
-        provider,
-        baseUrl,
-        model: modelName,
-        apiKey: apiKey || undefined,
+        source,
+        provider: usingServer ? "openai-responses" : provider,
+        baseUrl: usingServer ? "https://api.openai.com/v1" : baseUrl,
+        model: usingServer ? (model.serverModel ?? "") : modelName,
+        apiKey: usingServer ? undefined : apiKey || undefined,
       });
       onUpdate(next);
       setApiKey("");
@@ -156,92 +159,118 @@ export function ModelSettings({
           </Badge>
         </div>
         <fieldset className="holding-fields" disabled={saving || testing}>
-          <div className="form-grid model-fields">
+          {(model.serverModel || model.source === "server") && (
             <label>
-              <span>模型接口</span>
+              <span>调用方式</span>
               <select
-                value={provider}
+                value={source}
                 onChange={(event) => {
-                  const next = event.target.value as ModelConfig["provider"];
-                  setProvider(next);
-                  setBaseUrl(
-                    next === "codex-bridge"
-                      ? "codex://bridge"
-                      : next === "anthropic"
-                        ? "https://api.anthropic.com/v1"
-                        : "https://api.openai.com/v1",
-                  );
-                  setModelName("");
+                  setSource(event.target.value as "account" | "server");
                   setApiKey("");
                   setConnectionResult("");
                 }}
               >
-                <option value="openai-chat">
-                  OpenAI 兼容 · Chat Completions
+                <option value="server" disabled={!model.serverModel}>
+                  站点提供的 OpenAI
                 </option>
-                <option value="openai-responses">OpenAI Responses</option>
-                <option value="anthropic">Anthropic Messages</option>
-                <option value="codex-bridge">
-                  本机桥接（ChatGPT 登录 / Codex）
-                </option>
+                <option value="account">个人模型或本机桥接</option>
               </select>
             </label>
-            {provider !== "codex-bridge" && (
+          )}
+          {usingServer ? (
+            <p>
+              {model.serverModel
+                ? `站点模型：${model.serverModel}，无需填写个人 API Key。调用费用由站点承担。`
+                : "站点 OpenAI 暂未启用，请联系管理员或切换个人模型。"}
+            </p>
+          ) : (
+            <div className="form-grid model-fields">
               <label>
-                <span>API Base URL</span>
-                <input
-                  aria-label="API Base URL"
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder="https://api.openai.com/v1"
-                />
+                <span>模型接口</span>
+                <select
+                  value={provider}
+                  onChange={(event) => {
+                    const next = event.target.value as ModelConfig["provider"];
+                    setProvider(next);
+                    setBaseUrl(
+                      next === "codex-bridge"
+                        ? "codex://bridge"
+                        : next === "anthropic"
+                          ? "https://api.anthropic.com/v1"
+                          : "https://api.openai.com/v1",
+                    );
+                    setModelName("");
+                    setApiKey("");
+                    setConnectionResult("");
+                  }}
+                >
+                  <option value="openai-chat">
+                    OpenAI 兼容 · Chat Completions
+                  </option>
+                  <option value="openai-responses">OpenAI Responses</option>
+                  <option value="anthropic">Anthropic Messages</option>
+                  <option value="codex-bridge">
+                    本机桥接（ChatGPT 登录 / Codex）
+                  </option>
+                </select>
               </label>
-            )}
-            {provider === "codex-bridge" ? (
-              <CodexModelSelect
-                value={modelName}
-                onChange={setModelName}
-                bridgeStatus={bridgeStatus}
-              />
-            ) : (
-              <label>
-                <span>模型名称</span>
-                <input
-                  value={modelName}
-                  onChange={(e) => setModelName(e.target.value)}
-                  placeholder="填写供应商提供的模型 ID"
-                />
-              </label>
-            )}
-            {provider !== "codex-bridge" && (
-              <label>
-                <span>API Key</span>
-                <div className="secure-input">
-                  <KeyRound size={16} />
+              {provider !== "codex-bridge" && (
+                <label>
+                  <span>API Base URL</span>
                   <input
-                    type={showKey ? "text" : "password"}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder={
-                      model.hasApiKey
-                        ? "已保存在账户密钥存储；留空则不修改"
-                        : "输入模型供应商密钥"
-                    }
+                    aria-label="API Base URL"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="https://api.openai.com/v1"
                   />
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={showKey ? "隐藏模型密钥" : "显示模型密钥"}
-                    onClick={() => setShowKey(!showKey)}
-                  >
-                    {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </label>
-            )}
-          </div>
+                </label>
+              )}
+              {provider === "codex-bridge" ? (
+                <CodexModelSelect
+                  value={modelName}
+                  onChange={setModelName}
+                  bridgeStatus={bridgeStatus}
+                />
+              ) : (
+                <label>
+                  <span>模型名称</span>
+                  <input
+                    value={modelName}
+                    onChange={(e) => setModelName(e.target.value)}
+                    placeholder="填写供应商提供的模型 ID"
+                  />
+                </label>
+              )}
+              {provider !== "codex-bridge" && (
+                <label>
+                  <span>API Key</span>
+                  <div className="secure-input">
+                    <KeyRound size={16} />
+                    <input
+                      type={showKey ? "text" : "password"}
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder={
+                        model.source !== "server" && model.hasApiKey
+                          ? "已保存在账户密钥存储；留空则不修改"
+                          : "输入模型供应商密钥"
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={showKey ? "隐藏模型密钥" : "显示模型密钥"}
+                      onClick={() => setShowKey(!showKey)}
+                    >
+                      {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </label>
+              )}
+            </div>
+          )}
         </fieldset>
-        {provider === "codex-bridge" && (
+        {!usingServer && provider === "codex-bridge" && (
           <CodexBridge
             onStatus={setBridgeStatus}
             disabled={saving || testing}
@@ -259,11 +288,13 @@ export function ModelSettings({
           <div>
             <strong>密钥与业务数据分离</strong>
             <p>
-              {provider === "codex-bridge"
-                ? "模型请求由配对电脑通过 ChatGPT 官方授权或本机 Codex 执行；只发送你确认的问答资料，登录与刷新凭据保留在本机。关闭桥接后问答会提示连接不可用，订阅额度不足不会自动切换到 API Key 计费。"
-                : provider === "openai-chat"
-                  ? "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥。第三方服务可选择 OpenAI 兼容接口；Chat Completions 问答仅使用已选资料，不启用原生网页搜索。"
-                  : "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥；联网查找需模型支持原生网页搜索，连接测试仅验证普通调用。"}
+              {usingServer
+                ? "使用站点提供的 OpenAI 服务；只发送你确认的问答资料。密钥由管理员保存在服务器，不进入个人数据导出。联网查找需模型支持，连接测试仅验证普通调用。"
+                : provider === "codex-bridge"
+                  ? "模型请求由配对电脑通过 ChatGPT 官方授权或本机 Codex 执行；只发送你确认的问答资料，登录与刷新凭据保留在本机。关闭桥接后问答会提示连接不可用，订阅额度不足不会自动切换到 API Key 计费。"
+                  : provider === "openai-chat"
+                    ? "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥。第三方服务可选择 OpenAI 兼容接口；Chat Completions 问答仅使用已选资料，不启用原生网页搜索。"
+                    : "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥；联网查找需模型支持原生网页搜索，连接测试仅验证普通调用。"}
             </p>
           </div>
         </Callout>
@@ -278,16 +309,18 @@ export function ModelSettings({
         )}
         <div className="form-actions">
           <div className="key-actions">
-            {model.hasApiKey && model.provider !== "codex-bridge" && (
-              <button
-                className="danger-text"
-                onClick={clearKey}
-                disabled={saving || testing}
-              >
-                <Trash2 size={14} />
-                移除密钥
-              </button>
-            )}
+            {model.source !== "server" &&
+              model.hasApiKey &&
+              model.provider !== "codex-bridge" && (
+                <button
+                  className="danger-text"
+                  onClick={clearKey}
+                  disabled={saving || testing}
+                >
+                  <Trash2 size={14} />
+                  移除密钥
+                </button>
+              )}
             <button
               className="secondary"
               onClick={testConnection}
@@ -304,7 +337,13 @@ export function ModelSettings({
           <button
             className="primary"
             onClick={persist}
-            disabled={saving || testing || !baseUrl.trim() || !modelName.trim()}
+            disabled={
+              saving ||
+              testing ||
+              (usingServer
+                ? !model.serverModel
+                : !baseUrl.trim() || !modelName.trim())
+            }
           >
             <Save size={16} />
             {saving ? "保存中…" : "保存配置"}

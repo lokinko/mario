@@ -104,9 +104,10 @@ fn transport_contract_fixture() {
             message: "fixture failure".into(),
         },
     ];
-    let configs = ["openai-chat", "openai-responses", "anthropic", "codex-bridge"].map(|provider| {
+    let mut configs = ["openai-chat", "openai-responses", "anthropic", "codex-bridge"].map(|provider| {
         serde_json::from_value::<crate::models::ModelConfig>(json!({"provider":provider,"baseUrl":"https://example.test","model":"fixture","hasApiKey":false})).unwrap()
-    });
+    }).to_vec();
+    configs.push(serde_json::from_value(json!({"provider":"openai-responses","baseUrl":"https://api.openai.com/v1","model":"site-model","hasApiKey":true,"source":"server","serverModel":"site-model"})).unwrap());
     let bridges = [crate::models::CodexBridgeStatus::default(), serde_json::from_value(json!({
         "paired":true,"online":true,"model":"fixture","models":[{"model":"fixture","displayName":"Fixture","description":"catalog fixture","isDefault":true}]
     })).unwrap()];

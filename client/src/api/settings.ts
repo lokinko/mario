@@ -23,7 +23,7 @@ export async function getModelConfig(): Promise<ModelConfig> {
 }
 
 export async function saveModelConfig(
-  config: Omit<ModelConfig, "hasApiKey"> & { apiKey?: string },
+  config: Omit<ModelConfig, "hasApiKey" | "serverModel"> & { apiKey?: string },
 ): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-config", {
     method: "PUT",

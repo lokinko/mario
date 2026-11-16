@@ -43,9 +43,10 @@ async fn revoke(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<J
 async fn enable(
     Extension(state): Extension<Arc<RequestContext>>,
 ) -> AppResult<Json<crate::models::ModelConfig>> {
-    Ok(Json(codex_bridge::enable(
+    codex_bridge::enable(&state.db, state.model_services.bridges.as_ref())?;
+    Ok(Json(crate::application::model_settings::configuration(
         &state.db,
-        state.model_services.bridges.as_ref(),
+        state.model_services.server.as_ref(),
     )?))
 }
 #[derive(Deserialize)]

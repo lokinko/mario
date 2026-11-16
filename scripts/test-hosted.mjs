@@ -39,7 +39,7 @@ const agentUrl=`http://127.0.0.1:${mockAgent.address().port}`;
 
 async function start(extra={}){
   const socket=createServer().listen(0,'127.0.0.1');await once(socket,'listening');const port=socket.address().port;await new Promise(r=>socket.close(r));
-  const child=spawn(binary,['--port',String(port)],{env:{...process.env,DATABASE_URL:database,MARIO_MASTER_KEY:master,MARIO_HOST:'127.0.0.1',MARIO_WEB_DIR:join(root,'client/dist'),MARIO_AGENT_URL:agentUrl,MARIO_AGENT_TOKEN:agentToken,...extra},stdio:['ignore','pipe','pipe']});
+  const child=spawn(binary,['--port',String(port)],{env:{...process.env,OPENAI_API_KEY:'',OPENAI_MODEL:'',DATABASE_URL:database,MARIO_MASTER_KEY:master,MARIO_HOST:'127.0.0.1',MARIO_WEB_DIR:join(root,'client/dist'),MARIO_AGENT_URL:agentUrl,MARIO_AGENT_TOKEN:agentToken,...extra},stdio:['ignore','pipe','pipe']});
   children.push(child);child.stdout.on('data',b=>logs+=b);child.stderr.on('data',b=>logs+=b);
   const base=`http://127.0.0.1:${port}/api`;
   for(let i=0;i<150;i++){try {if((await fetch(base+'/server')).ok)return base;}catch{} if(child.exitCode!==null)throw Error(logs);await sleep(100);}
@@ -121,7 +121,74 @@ async function optionPriceReceipts(base, replica) {
   assert.equal(owner.revision, committedRevision);
   console.log('PASS option quote HTTP receipts: stale replay across replicas, one journal entry, content conflicts and tenant isolation');
 }
+async function sharedOpenAi() {
+  const siteKey='shared-http-synthetic-key';
+  const jobs=[];
+  const sharedAgent=httpServer(async(req,res)=>{
+    assert.equal(req.headers.authorization,`Bearer ${agentToken}`);
+    let body='';for await(const chunk of req)body+=chunk;
+    const job=JSON.parse(body);jobs.push(job);
+    res.setHeader('Content-Type','application/json');
+    res.end(JSON.stringify({id:randomUUID(),answer:'shared authorized analysis',stages:[],createdAt:new Date().toISOString(),disclaimer:'test',transparency:{provider:job.config.provider,model:job.config.model,contextGroups:[],payloadBytes:job.context.payload_bytes,contextRevision:job.context.revision,externalDataUsed:false,apiKeySent:true}}));
+  }).listen(0,'127.0.0.1');
+  await once(sharedAgent,'listening');
+  try {
+    const shared=await start({OPENAI_API_KEY:siteKey,OPENAI_MODEL:'site-model',MARIO_AGENT_URL:`http://127.0.0.1:${sharedAgent.address().port}`});
+    const a=await register(shared),b=await register(shared);
+    const selected={source:'server',provider:'openai-responses',baseUrl:'https://api.openai.com/v1',model:'site-model'};
+    await request(shared,'/model-config',null,'GET',undefined,401);
+    await request(shared,'/analysis',null,'POST',{},401);
+    const question={question:'shared smoke',workflow:'quick',webSearch:false,contextSelection:{includeProfile:false,includeHoldings:false,includeEvidence:false}};
+    for(const user of [a,b]) {
+      await request(shared,'/snapshot',user);
+      const config=await request(shared,'/model-config',user);
+      assert.equal(config.source,'server');assert.equal(config.hasApiKey,true);assert.equal(config.model,'site-model');
+      assert(!JSON.stringify(config).includes(siteKey));
+      const preview=await request(shared,'/analysis/preview',user,'POST',question);
+      assert(!JSON.stringify(preview).includes(siteKey));
+      const result=await request(shared,'/analysis',user,'POST',{...question,previewRevision:preview.contextRevision});
+      assert(!JSON.stringify(result).includes(siteKey));
+      const exported=await request(shared,'/data/export',user);
+      assert(!JSON.stringify(exported).includes(siteKey));
+      assert.equal((await request(shared,'/analyses',user)).length,1);
+    }
+    assert.equal(jobs.length,2);
+    for(const job of jobs) {
+      assert.equal(job.api_key,siteKey);assert.equal(job.config.baseUrl,selected.baseUrl);assert.equal(job.config.provider,'openai-responses');assert.equal(job.config.model,'site-model');
+      assert(!JSON.stringify(job.context).includes(siteKey));
+    }
+    for(const override of [{baseUrl:modelUrl},{model:'unapproved-model'},{provider:'openai-chat'},{apiKey:'caller-key'}])
+      await request(shared,'/model-config',a,'PUT',{...selected,...override},400);
+    await request(shared,'/model-key',a,'DELETE',undefined,400);
+    const own={source:'account',provider:'openai-chat',baseUrl:modelUrl,model:'personal-model',apiKey:'personal-http-key'};
+    await request(shared,'/model-config',a,'PUT',own);
+    assert.equal((await request(shared,'/model-config',a)).source,'account');
+    assert.equal((await request(shared,'/model-config',b)).source,'server');
+    await request(shared,'/model-config',a,'PUT',selected);
+    assert.equal((await request(shared,'/model-config',a)).source,'server');
+    await request(shared,'/model-config',a,'PUT',{...own,apiKey:undefined});
+    assert.equal((await request(shared,'/model-config/test',a,'POST')).ok,true);
+    assert.equal(modelRequests.at(-1).auth,'Bearer personal-http-key');
+    await request(shared,'/model-key',a,'DELETE');
+    assert.equal((await request(shared,'/model-config',a)).hasApiKey,false);
+    const personalPreview=await request(shared,'/analysis/preview',a,'POST',question);
+    await request(shared,'/analysis',a,'POST',{...question,previewRevision:personalPreview.contextRevision},400);
+    assert.equal(jobs.length,2,'missing personal credentials must not borrow the shared key');
+    const disabled=await start();
+    assert.equal((await request(disabled,'/model-config',b)).hasApiKey,false);
+    // Persist the server choice before disabling to distinguish unavailable from an unconfigured account.
+    await request(shared,'/model-config',b,'PUT',selected);
+    const unavailable=await request(disabled,'/model-config',b);
+    assert.equal(unavailable.source,'server');assert.equal(unavailable.hasApiKey,false);
+    await request(disabled,'/model-config/test',b,'POST',undefined,400);
+    await request(disabled,'/model-config',b,'PUT',selected,400);
+    console.log('PASS shared OpenAI: two authenticated tenants, frozen official destination, account override, disabled service, no credential export or silent fallback');
+  } finally {sharedAgent.closeAllConnections();await new Promise(resolve=>sharedAgent.close(resolve));}
+}
+
 try{
+  await sharedOpenAi();
+  modelRequests.length=0;
   const base=await start(), replica=await start();
   assert.deepEqual(await request(base,'/auth/openai/config'),{enabled:false});
   await request(base,'/auth/openai/start',null,'POST',{link:false},404);
@@ -248,7 +315,7 @@ try{
   await request(base,'/auth/logout',auth,'POST',{});
   await request(base,'/snapshot',auth,'GET',undefined,401);
   const resetPassword='replacement-password-12345';
-  const reset=spawn(binary,['--reset-password',b.email],{env:{...process.env,DATABASE_URL:database,MARIO_RESET_PASSWORD:resetPassword},stdio:['ignore','pipe','pipe']});
+  const reset=spawn(binary,['--reset-password',b.email],{env:{...process.env,OPENAI_API_KEY:'',OPENAI_MODEL:'',DATABASE_URL:database,MARIO_RESET_PASSWORD:resetPassword},stdio:['ignore','pipe','pipe']});
   reset.stdout.on('data',chunk=>logs+=chunk);reset.stderr.on('data',chunk=>logs+=chunk);
   assert.equal((await once(reset,'exit'))[0],0,'administrator password reset');
   await request(base,'/snapshot',b,'GET',undefined,401);

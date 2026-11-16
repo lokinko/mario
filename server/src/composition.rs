@@ -12,7 +12,24 @@ pub(crate) fn model_services() -> Arc<crate::application::model_settings::ModelS
     Arc::new(crate::application::model_settings::ModelServices {
         connector: Arc::new(crate::ai::management::ModelConnectorAdapter),
         bridges: Arc::new(crate::ai::management::BridgeRegistryAdapter),
+        server: None,
     })
+}
+
+pub(crate) fn model_services_from_env(
+) -> AppResult<Arc<crate::application::model_settings::ModelServices>> {
+    let mut services = model_services();
+    if let Some(key) = std::env::var("OPENAI_API_KEY")
+        .ok()
+        .filter(|key| !key.trim().is_empty())
+    {
+        Arc::get_mut(&mut services).unwrap().server =
+            Some(crate::application::model_settings::ServerOpenAi::new(
+                std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-5.4".into()),
+                key,
+            )?);
+    }
+    Ok(services)
 }
 
 pub(crate) struct MarketRuntime {

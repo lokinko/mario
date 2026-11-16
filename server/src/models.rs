@@ -539,6 +539,18 @@ pub struct ModelConfig {
     pub base_url: String,
     pub model: String,
     pub has_api_key: bool,
+    #[serde(default)]
+    pub source: ModelConfigSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_model: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ModelConfigSource {
+    #[default]
+    Account,
+    Server,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -573,6 +585,8 @@ pub struct ModelConfigInput {
     pub base_url: String,
     pub model: String,
     pub api_key: Option<String>,
+    #[serde(default)]
+    pub source: ModelConfigSource,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

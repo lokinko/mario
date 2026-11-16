@@ -16,7 +16,7 @@ const stopRequested = new Promise(resolveStop => { notifyStop = resolveStop; });
 function requestStop() { stopping = true; notifyStop(); }
 function ensureRunning() { if (stopping) throw Error('启动已取消'); }
 function cleanEnvironment() {
-  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(MARIO_|DATABASE_URL$|POSTGRES_|PGPASSWORD$|PGSERVICE|PGOPTIONS$|PGPASSFILE$|VITE_)/i.test(key)));
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(MARIO_|OPENAI_|DATABASE_URL$|POSTGRES_|PGPASSWORD$|PGSERVICE|PGOPTIONS$|PGPASSFILE$|VITE_)/i.test(key)));
 }
 function buildServer(env) {
   const registry = process.env.MARIO_DEPLOY_CARGO_REGISTRY;
@@ -184,6 +184,7 @@ try {
     launch('API', binary, ['--port', String(apiPort)], {
       ...baseEnv, ...shared, DATABASE_URL: databaseUrl, MARIO_MASTER_KEY: config.MARIO_MASTER_KEY,
       MARIO_ALLOWED_ORIGINS: config.MARIO_ALLOWED_ORIGINS ?? '',
+      OPENAI_API_KEY: config.OPENAI_API_KEY ?? '', OPENAI_MODEL: config.OPENAI_MODEL ?? 'gpt-5.4',
       ...Object.fromEntries(['MARIO_OPENAI_CLIENT_ID', 'MARIO_OPENAI_REDIRECT_URI', 'MARIO_OPENAI_TOKEN_AUTH_METHOD', 'MARIO_OPENAI_CLIENT_SECRET'].map(key => [key, config[key] ?? ''])),
       MARIO_HOST: '127.0.0.1', MARIO_AGENT_URL: `http://127.0.0.1:${agentPort}`, MARIO_WEB_DIR: resolve(root, 'client/dist'),
     });

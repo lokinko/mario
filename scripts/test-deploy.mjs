@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { tmpdir, userInfo } from 'node:os';
-import { createConfig, defaults, readConfig, root, validateSecrets } from './start-common.mjs';
+import { createConfig, defaults, readConfig, root, updateConfig, validateSecrets } from './start-common.mjs';
 
 const fixture = mkdtempSync(join(tmpdir(), 'mario-deploy-'));
 const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(MARIO_|DATABASE_URL$|PG_BIN$)/i.test(key)));
@@ -24,6 +24,7 @@ try {
   copyFileSync(join(root, '.env.example'), join(fixture, '.env.example'));
   copyFileSync(join(root, 'deploy.sh'), join(fixture, 'deploy.sh'));
   createConfig(envPath, defaults('old.example.test'));
+  updateConfig(envPath, { OPENAI_API_KEY: 'site-deploy-synthetic-key', OPENAI_MODEL: 'site-deploy-model' });
   const before = readConfig(envPath);
   assert.equal(Object.hasOwn(before, 'MARIO_REGISTRATION_KEY'), false);
   assert.doesNotThrow(() => validateSecrets(before));
@@ -31,7 +32,7 @@ try {
   const options = { MARIO_SETUP_DOMAIN: 'www.madeagents.ai', MARIO_SETUP_IP: '47.243.99.21', MARIO_SETUP_BASE_PATH: '/mario/', MARIO_SETUP_API_PORT: '4321' };
   const result = prepare(options);
   const after = readConfig(envPath);
-  for (const key of ['MARIO_MASTER_KEY', 'POSTGRES_PASSWORD', 'MARIO_AGENT_TOKEN']) {
+  for (const key of ['MARIO_MASTER_KEY', 'POSTGRES_PASSWORD', 'MARIO_AGENT_TOKEN', 'OPENAI_API_KEY', 'OPENAI_MODEL']) {
     assert.equal(after[key], before[key]);
     assert(!(result.stdout + result.stderr).includes(after[key]));
   }

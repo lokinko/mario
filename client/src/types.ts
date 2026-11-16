@@ -316,6 +316,8 @@ export interface ModelConfig {
   baseUrl: string;
   model: string;
   hasApiKey: boolean;
+  source?: "account" | "server";
+  serverModel?: string;
 }
 
 export interface ModelConnectionTest {

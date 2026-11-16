@@ -70,7 +70,7 @@ async fn run_analysis(
     Json(request): Json<AnalysisRequest>,
 ) -> AppResult<Json<AnalysisResult>> {
     Ok(Json(
-        AnalysisService::new(&state.db)
+        AnalysisService::new(&state.db, state.model_services.server.as_ref())
             .execute(request, state.analysis_executor.as_ref())
             .await?,
     ))
@@ -80,7 +80,9 @@ async fn preview_analysis(
     Extension(state): Extension<Arc<RequestContext>>,
     Json(request): Json<AnalysisRequest>,
 ) -> AppResult<Json<AnalysisPreview>> {
-    Ok(Json(AnalysisService::new(&state.db).preview(&request)?))
+    Ok(Json(
+        AnalysisService::new(&state.db, state.model_services.server.as_ref()).preview(&request)?,
+    ))
 }
 
 async fn stream_analysis(
@@ -98,7 +100,7 @@ async fn stream_analysis(
     let (sender, receiver) = tokio::sync::mpsc::channel(32);
     let future = Box::pin(async move {
         let _permit = permit;
-        AnalysisService::new(&state.db)
+        AnalysisService::new(&state.db, state.model_services.server.as_ref())
             .execute_stream(request, state.analysis_executor.as_ref(), sender)
             .await
     });
@@ -230,7 +232,7 @@ mod tests {
         });
         let mut request: AnalysisRequest = serde_json::from_value(serde_json::json!({"question":"流式问题","workflow":"quick","reflect":false,"exploreAlternatives":false,"webSearch":false})).unwrap();
         request.preview_revision = Some(
-            AnalysisService::new(&state.db)
+            AnalysisService::new(&state.db, state.model_services.server.as_ref())
                 .preview(&request)
                 .unwrap()
                 .context_revision,

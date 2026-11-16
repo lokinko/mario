@@ -59,6 +59,7 @@ it("saves Anthropic with its endpoint and replacement key", async () => {
   fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalled());
   expect(settingsApi.saveModelConfig).toHaveBeenCalledWith({
+    source: "account",
     provider: "anthropic",
     baseUrl: "https://api.anthropic.com/v1",
     model: "claude-fixture",
@@ -94,6 +95,7 @@ it("saves a third-party Chat Completions connection with a custom URL, port and 
   fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalled());
   expect(settingsApi.saveModelConfig).toHaveBeenCalledWith({
+    source: "account",
     provider: "openai-chat",
     baseUrl: "http://gateway.example.test:8080/custom/v1",
     model: "third-party-model",
@@ -149,4 +151,97 @@ it("locks configuration and key writes during a connection test and releases the
   ).toBe(false);
   expect(settingsApi.saveModelConfig).not.toHaveBeenCalled();
   expect(settingsApi.deleteModelKey).not.toHaveBeenCalled();
+});
+
+it("uses the site model without a key form and saves only its canonical configuration", async () => {
+  render(
+    <ModelSettings
+      model={{
+        ...existingModel,
+        source: "server",
+        model: "site-model",
+        serverModel: "site-model",
+      }}
+      onUpdate={vi.fn()}
+      flash={vi.fn()}
+    />,
+  );
+  expect(screen.queryByLabelText("API Key")).toBeNull();
+  expect(screen.queryByLabelText("API Base URL")).toBeNull();
+  expect(screen.queryByRole("button", { name: "移除密钥" })).toBeNull();
+  expect(screen.getByText(/站点模型：site-model/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+  await waitFor(() =>
+    expect(settingsApi.saveModelConfig).toHaveBeenCalledWith({
+      source: "server",
+      provider: "openai-responses",
+      baseUrl: "https://api.openai.com/v1",
+      model: "site-model",
+      apiKey: undefined,
+    }),
+  );
+});
+
+it("switches between a personal model and the site model without sending a personal key to the site", async () => {
+  render(
+    <ModelSettings
+      model={{ ...existingModel, serverModel: "site-model" }}
+      onUpdate={vi.fn()}
+      flash={vi.fn()}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("API Key"), {
+    target: { value: "draft-personal-key" },
+  });
+  fireEvent.change(screen.getByLabelText("调用方式"), {
+    target: { value: "server" },
+  });
+  expect(screen.queryByLabelText("API Key")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
+  await waitFor(() =>
+    expect(settingsApi.saveModelConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "server", apiKey: undefined }),
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "保存配置" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  fireEvent.change(screen.getByLabelText("调用方式"), {
+    target: { value: "account" },
+  });
+  expect((screen.getByLabelText("API Key") as HTMLInputElement).value).toBe("");
+});
+
+it("keeps a disabled site service visible and offers a personal model", () => {
+  render(
+    <ModelSettings
+      model={{
+        ...existingModel,
+        source: "server",
+        model: "",
+        hasApiKey: false,
+      }}
+      onUpdate={vi.fn()}
+      flash={vi.fn()}
+    />,
+  );
+  expect(screen.getByText(/站点 OpenAI 暂未启用/)).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "测试已保存连接",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: "保存配置" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  fireEvent.change(screen.getByLabelText("调用方式"), {
+    target: { value: "account" },
+  });
+  expect(screen.getByLabelText("API Key")).toBeTruthy();
 });
