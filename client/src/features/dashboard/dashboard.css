@@ -77,6 +77,12 @@
 .usage-table-heading .ant-input-search {
   max-width: 280px;
 }
+.usage-table-heading .ant-input-search .ant-input {
+  min-height: 0;
+}
+.price-coverage {
+  white-space: nowrap;
+}
 .usage-heading-actions {
   display: flex;
   flex-wrap: wrap;

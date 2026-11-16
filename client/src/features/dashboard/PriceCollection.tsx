@@ -212,13 +212,15 @@ export function PriceCollection({
           {
             title: "实际价格区间",
             key: "coverage",
+            width: 210,
             render: (_, row) =>
               row.firstOn ? (
-                <>
+                <span
+                  className="price-coverage"
+                  title={`${row.bars} 条日线 · ${row.provider}`}
+                >
                   {row.firstOn} 至 {row.latestOn}
-                  <br />
-                  {row.bars} 条日线 · {row.provider}
-                </>
+                </span>
               ) : (
                 "尚无价格"
               ),
