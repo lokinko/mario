@@ -97,6 +97,7 @@ fn case_context(case: &Case, base: &Snapshot, request: &mut AnalysisRequest) -> 
         include_profile: !matches!(scenario, Scenario::NoPersonal),
         include_holdings: !matches!(scenario, Scenario::NoPersonal),
         include_evidence: true,
+        include_memory: true,
     });
     let fixture = watch_fixture();
     let mut snapshot = base.clone();
@@ -248,7 +249,7 @@ pub(super) async fn run_live() {
     let mut output = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(path)
+        .open(&path)
         .expect("report path must be new and its parent directory must exist");
     let settings = AnalysisSettings::default();
     let mut results = Vec::<CaseResult>::new();
@@ -341,10 +342,72 @@ pub(super) async fn run_live() {
         results.push(record);
         checkpoint(&mut output, &results);
     }
+    if std::env::var("MARIO_EVAL_DREAM").as_deref() == Ok("1") {
+        live_dream(&provider, &path, &results, &generated_at, &api_key).await;
+    }
     assert!(
         results.iter().all(|item| item.status == "completed"),
         "evaluation has failed/skipped cases; inspect the saved report"
     );
+}
+
+/// Consolidate the completed fictional answers into memory proposals for manual review.
+/// Writes `<report>.dream.json`; nothing is stored.
+async fn live_dream(
+    provider: &NativeModelProvider,
+    report_path: &str,
+    results: &[CaseResult],
+    generated_at: &str,
+    api_key: &str,
+) {
+    use crate::models::memory::{screen_operations, DreamInput, DreamSourceAnalysis};
+    let input = DreamInput {
+        analyses: results
+            .iter()
+            .filter_map(|case| {
+                case.result.as_ref().map(|result| DreamSourceAnalysis {
+                    id: case.id.clone(),
+                    created_at: generated_at.to_owned(),
+                    question: case.question.clone(),
+                    answer: result
+                        .answer
+                        .chars()
+                        .take(crate::models::memory::DREAM_ANSWER_CHARS)
+                        .collect(),
+                })
+            })
+            .take(crate::models::memory::DREAM_BATCH)
+            .collect(),
+        memories: Vec::new(),
+    };
+    let report = match super::dreaming::dream(provider, &input).await {
+        Ok(outcome) => {
+            let (accepted, rejected) = screen_operations(&input, &outcome.proposal);
+            serde_json::json!({
+                "status": "completed",
+                "input": input,
+                "proposal": outcome.proposal,
+                "validation": outcome.validation,
+                "calls": outcome.calls,
+                "acceptedCount": accepted.len(),
+                "rejected": rejected,
+            })
+        }
+        Err(error) => serde_json::json!({
+            "status": "failed",
+            "input": input,
+            "error": error.to_string().replace(api_key, "[REDACTED]"),
+        }),
+    };
+    eprintln!("qa_eval dreaming: {}", report["status"]);
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(format!("{report_path}.dream.json"))
+        .expect("dream report path must be new");
+    output
+        .write_all(&serde_json::to_vec_pretty(&report).unwrap())
+        .unwrap();
 }
 
 #[test]

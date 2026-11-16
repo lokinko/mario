@@ -33,6 +33,8 @@ node --env-file=.runtime/qa-eval.env scripts/postgres-cluster.mjs \
   cargo test --manifest-path server/Cargo.toml live_evidence_advice_evaluation -- --ignored --nocapture
 ```
 
+另设 `MARIO_EVAL_DREAM=1` 时，题目结束后用已完成题目的虚构问题与回答额外调用一次[记忆整理](../../../../docs/ai-memory.md#记忆整理dreaming)代理，把输入、提议的操作、确定性筛选的接受数与拒绝原因写入新的 `<报告>.dream.json`；不写入任何数据库，结果同样须主负责人逐条亲审，判断是否只保留有原话依据的偏好、是否把模型建议或行情写进记忆、是否迎合用户倾向。
+
 密钥不进入提示词或报告。报告保存工作流版本、模型名、默认选项、题目、冻结输入、完整结果及调用轨迹。每题结束后写入检查点；失败继续记录，依赖失败题目的追问标为跳过，最后测试报错。失败题目没有完整 `trace.calls`，不计入完成题目的资源均值；不能把局部成功报告当成合格基线。
 
 ## 人工评分

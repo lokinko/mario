@@ -33,7 +33,7 @@ impl Database {
         &self,
         settings: AnalysisSettings,
     ) -> AppResult<AnalysisSettings> {
-        if settings.workflow != "quick" {
+        if settings.workflow != crate::models::ANALYSIS_WORKFLOW {
             return Err(AppError::Validation("分析方式无效".into()));
         }
         let settings = normalize_analysis_settings(settings);
@@ -166,7 +166,7 @@ pub(crate) fn model_key_binding(provider: ModelProviderKind, base_url: &str) -> 
 
 // Keep legacy presets compatible while excluding data no longer offered in settings.
 fn normalize_analysis_settings(mut settings: AnalysisSettings) -> AnalysisSettings {
-    settings.workflow = "quick".into();
+    settings.workflow = crate::models::ANALYSIS_WORKFLOW.into();
     settings
 }
 
@@ -220,8 +220,9 @@ mod tests {
     }
 
     #[test]
-    fn legacy_presets_only_keep_supported_data_and_use_quick_analysis() {
-        let db = Database::test();
+    fn upgrade_strips_retired_preset_options_and_moves_to_the_council_workflow() {
+        let account = crate::db::TestAccount::new();
+        let db = account.open();
         let mut legacy = AnalysisSettings {
             workflow: "deep".into(),
 
@@ -232,21 +233,31 @@ mod tests {
         let mut stored = serde_json::to_value(&legacy).unwrap();
         stored["reflect"] = true.into();
         stored["exploreAlternatives"] = true.into();
+        stored["useMemory"] = true.into();
+        stored["contextSelection"]["includeRules"] = true.into();
+        stored["contextSelection"]
+            .as_object_mut()
+            .unwrap()
+            .remove("includeMemory");
         db.set_setting(
             "analysis.settings",
             &serde_json::to_string(&stored).unwrap(),
         )
         .unwrap();
+        drop(db);
+        let db = account.reopen_from_old_release();
 
         let restored = db.analysis_settings().unwrap();
-        assert_eq!(restored.workflow, "quick");
+        assert_eq!(restored.workflow, crate::models::ANALYSIS_WORKFLOW);
         assert!(restored.context_selection.include_profile);
         assert!(!restored.context_selection.include_holdings);
         assert!(restored.context_selection.include_evidence);
+        assert!(restored.context_selection.include_memory);
         assert!(restored.web_search);
 
         // Older clients must not re-enable removed options when saving.
         assert!(db.save_analysis_settings(legacy).is_err());
+        assert!(serde_json::from_value::<AnalysisSettings>(stored).is_err());
         let saved = db.save_analysis_settings(restored.clone()).unwrap();
         let expected = serde_json::to_value(restored).unwrap();
         assert_eq!(serde_json::to_value(saved).unwrap(), expected);
@@ -262,7 +273,7 @@ mod tests {
         let account = crate::db::TestAccount::new();
         let db = account.open();
         let mut settings = db.analysis_settings().unwrap();
-        assert_eq!(settings.workflow, "quick");
+        assert_eq!(settings.workflow, crate::models::ANALYSIS_WORKFLOW);
         assert!(settings.context_selection.include_profile);
         settings.web_search = false;
         settings.context_selection.include_profile = false;
@@ -276,7 +287,10 @@ mod tests {
         assert!(!restored.context_selection.include_evidence);
         restored.workflow = "invalid".into();
         assert!(db.save_analysis_settings(restored).is_err());
-        assert_eq!(db.analysis_settings().unwrap().workflow, "quick");
+        assert_eq!(
+            db.analysis_settings().unwrap().workflow,
+            crate::models::ANALYSIS_WORKFLOW
+        );
     }
 
     #[test]

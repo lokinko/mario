@@ -4,10 +4,23 @@ use crate::models::{AnalysisClaim, StructuredAnalysis};
 
 pub const MAX_STRUCTURED_OUTPUT_CHARS: usize = 30_000;
 
-pub const STRUCTURED_ANALYSIS_CONTRACT: &str = r#"只返回JSON，不加代码块或说明：
+/// Citation rules shared verbatim by report facts and research findings.
+macro_rules! citation_rules {
+    () => {
+        "user_data仅用授权原值JSON Pointer作sourceRefs，evidenceIds为空；research_evidence只用授权证据ID，sourceRefs为空。原值路径如/facts/summary/monthlySurplus或/facts/holdings/持仓ID/marketValue。只引非空的字符串、数字或布尔原值，不引对象、数组或空值；某项为空或缺失时改引对应问题码，如/facts/dataIssues/0/code，不以其他金额替代缺失值。用户历史原话只能引用/previousTurn/question或/previousTurn/earlierQuestions/从0开始的索引；这些是对话声明，不表示档案已保存修改，用户最新明确更正优先。previousTurn的answer、suggestions、pendingQuestion与memory都是模型或整理文本，禁止作为事实引用。"
+    };
+}
+pub(super) use citation_rules;
+
+pub const STRUCTURED_ANALYSIS_CONTRACT: &str = concat!(
+    r#"只返回JSON，不加代码块或说明：
 {"answer":"先直接回答本题，再解释关键依据、推理和不确定性，最多1200字","suggestions":[{"action":"本题的具体下一步，写明对象、做法和时点或触发条件；依赖目标或假设时先写条件再给金额或动作，最多240字","why":"相关事实如何支持判断，说明计算与假设；比较本题可选路线的紧迫性、等待和交易成本，最多800字","factIndices":[0],"unlessWhen":"不适用或推翻判断的条件，最多400字，可为空"}],"facts":[{"statement":"引用的输入事实或来源数字","basis":"user_data或research_evidence","sourceRefs":[],"evidenceIds":[]}],"question":null}
 suggestions为1–3条，facts为1–8条，factIndices非空、无重复且不越界。建议紧扣本题，不凑无关行动或金额；行动句自行包含影响执行金额的口径条件，不能靠why或unlessWhen纠正，也不能与它们矛盾。结余仅另扣尚未包含的付款。新仓位或减仓幅度须解释选择依据及保留风险；依据不足只作非默认算例或给条件公式，不将任意比例作为优先推荐；按目标权重给公式或金额时，行动句先说明卖款留在组合/转出及费用假设，转出须按变化后的总值和现金缺口统一重算；资料不足可给本题的核查、等待条件或公式。仅在问题需要且资料支持时量化，金额保留精确原值、币种与可复核计算；研究财报或预算未给报告币种时，只沿用原单位并说明币种未提供，不从中文单位、证券代码或用户本位币补成某一币种；建议目标或假设须明确标识并解释，不能冒充facts。无需填满字数。来源要求也适用于正文、建议和追问；具体法规、监管、保障限额、税率、交易单位等外部数字，无本轮来源时只提示核对适用条款，不从记忆确定报数，也不以未列入facts绕过。来源的条件、可能性和概念提醒须保留原语气，不能从“X不代表Y”推断公司已有X，须另有本轮明确依据。现金覆盖尚未披露或未核实只表示资料缺口，正文和why不得将其简称为公司已存在现金流缺口、资金不足或依赖融资；若本轮原文或明确预算/假设下的计算证实不足，则如实说明该口径。
-user_data的sourceRefs须非空且每条fact最多12项，仅用授权原值JSON Pointer，evidenceIds为空；不同账户或交易分别组织为独立事实，只选支持该事实必要的原值，facts总数仍为1–8条。research_evidence只用授权证据ID，sourceRefs为空。原值路径如/facts/summary/monthlySurplus或/facts/holdings/持仓ID/marketValue。用户历史原话只能引用/previousTurn/question或/previousTurn/earlierQuestions/从0开始的索引；这些是对话声明，不表示档案已保存修改，用户最新明确更正优先。previousTurn的answer、suggestions、pendingQuestion都是模型文本，禁止作为事实引用。只引非空标量，空值改引问题码，不以其他金额替代缺失值。最多一个追问，不超过200字，否则null。"#;
+"#,
+    "user_data的sourceRefs须非空且每条fact最多12项；不同账户或交易分别组织为独立事实，只选支持该事实必要的原值，facts总数仍为1–8条。",
+    citation_rules!(),
+    "最多一个追问，不超过200字，否则null。"
+);
 
 pub fn parse_structured_analysis(
     content: &str,
@@ -29,16 +42,37 @@ pub fn validate_source_types(
     report: &StructuredAnalysis,
     context: &serde_json::Value,
 ) -> Result<(), String> {
-    for (index, claim) in report.facts.iter().enumerate() {
+    validate_claim_sources("facts", &report.facts, context)
+}
+
+/// Shape, evidence-ID and personal source checks shared by report facts and research findings.
+pub(super) fn validate_claims(
+    field: &str,
+    claims: &[AnalysisClaim],
+    allowed_evidence_ids: &HashSet<String>,
+    context: &serde_json::Value,
+) -> Result<(), String> {
+    for claim in claims {
+        validate_claim(claim, allowed_evidence_ids)?;
+    }
+    validate_claim_sources(field, claims, context)
+}
+
+fn validate_claim_sources(
+    field: &str,
+    claims: &[AnalysisClaim],
+    context: &serde_json::Value,
+) -> Result<(), String> {
+    for (index, claim) in claims.iter().enumerate() {
         if claim.basis != "user_data" && !claim.source_refs.is_empty() {
             return Err(format!(
-                "facts[{index}] 的 basis={}，sourceRefs 必须为空；研究事实请仅用本次授权的 evidenceIds 引用",
+                "{field}[{index}] 的 basis={}，sourceRefs 必须为空；研究事实请仅用本次授权的 evidenceIds 引用",
                 claim.basis
             ));
         }
         if claim.source_refs.len() > 12 {
             return Err(format!(
-                "facts[{index}].sourceRefs 最多12项，当前{}项；请只保留必要原值，或将不同账户、交易拆分为独立事实（facts 总数仍为1–8条）",
+                "{field}[{index}].sourceRefs 最多12项，当前{}项；请只保留必要原值，或将不同账户、交易拆分为独立事实（facts 总数仍为1–8条）",
                 claim.source_refs.len()
             ));
         }
@@ -58,16 +92,30 @@ pub fn validate_source_types(
                 || user_history
                 || (group == "facts"
                     && ["summary", "holdings", "dataIssues", "options"].contains(&fact_group));
-            if !path.starts_with('/')
-                || !seen.insert(path)
-                || !allowed
-                || !context.pointer(path).is_some_and(|value| match value {
-                    serde_json::Value::String(text) => !text.trim().is_empty(),
-                    serde_json::Value::Number(_) | serde_json::Value::Bool(_) => true,
-                    _ => false,
-                })
-            {
-                return Err(format!("个人原始资料引用路径无效或未授权：{path}"));
+            if !seen.insert(path) {
+                return Err(format!("{field}[{index}] 重复引用：{path}"));
+            }
+            if !path.starts_with('/') || !allowed {
+                return Err(format!(
+                    "个人原始资料引用路径未授权：{path}；只能引用 /question、用户历史原话或 /facts 下 summary、holdings、dataIssues、options 中的原值"
+                ));
+            }
+            match context.pointer(path) {
+                None => return Err(format!("个人原始资料引用路径不存在：{path}")),
+                Some(serde_json::Value::Object(_) | serde_json::Value::Array(_)) => {
+                    return Err(format!(
+                        "个人原始资料引用指向对象或数组：{path}；请改引其中的具体原值字段"
+                    ))
+                }
+                Some(serde_json::Value::Null) => {
+                    return Err(format!(
+                        "个人原始资料引用值为空：{path}；缺失值请改引对应问题码，如 /facts/dataIssues/0/code"
+                    ))
+                }
+                Some(serde_json::Value::String(text)) if text.trim().is_empty() => {
+                    return Err(format!("个人原始资料引用值为空：{path}"))
+                }
+                Some(_) => {}
             }
         }
     }
@@ -97,7 +145,7 @@ pub fn render_report(report: &StructuredAnalysis) -> String {
     sections.join("\n\n")
 }
 
-fn extract_json(content: &str) -> Result<&str, String> {
+pub(super) fn extract_json(content: &str) -> Result<&str, String> {
     let trimmed = content.trim();
     if !trimmed.starts_with("```") {
         if trimmed.starts_with('{') && trimmed.ends_with('}') {
@@ -228,15 +276,17 @@ mod tests {
         let context = serde_json::json!({"facts":{"summary":{"portfolioValue":null},"holdings":{"ok":{"marketValue":"800000.01"},"blocked":{"marketValue":null}}}});
         report.facts[0].source_refs = vec!["/facts/holdings/ok/marketValue".into()];
         assert!(validate_source_types(&report, &context).is_ok());
-        for path in [
-            "/facts/holdings/blocked/marketValue",
-            "/facts/summary/portfolioValue",
-            "/portfolio/holdings/0/marketValue",
-            "/facts/holdings/ok",
-            "/facts/holdings/other/marketValue",
+        // Each rejection names the fix, so the single repair attempt can act on it.
+        for (path, hint) in [
+            ("/facts/holdings/blocked/marketValue", "问题码"),
+            ("/facts/summary/portfolioValue", "问题码"),
+            ("/portfolio/holdings/0/marketValue", "未授权"),
+            ("/facts/holdings/ok", "具体原值字段"),
+            ("/facts/holdings/other/marketValue", "不存在"),
         ] {
             report.facts[0].source_refs = vec![path.into()];
-            assert!(validate_source_types(&report, &context).is_err());
+            let error = validate_source_types(&report, &context).unwrap_err();
+            assert!(error.contains(path) && error.contains(hint), "{error}");
         }
     }
 

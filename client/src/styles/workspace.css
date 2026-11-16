@@ -1543,6 +1543,34 @@ input[type="number"] {
   border-radius: var(--radius-md);
   background: var(--surface-sunken);
 }
+.council-process {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.proposal-draft + .proposal-draft {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+.proposal-draft h3 {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--text-3);
+}
+.memory-panel ul {
+  padding-left: var(--space-4);
+}
+.memory-panel li + li {
+  margin-top: var(--space-3);
+}
+.memory-panel blockquote {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--line);
+  color: var(--text-2);
+}
 .conversation-composer .question-box textarea {
   line-height: 1.8;
   resize: none;

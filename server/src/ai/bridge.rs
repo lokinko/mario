@@ -393,6 +393,9 @@ impl ModelProvider for BridgeProvider {
     fn model_name(&self) -> &str {
         &self.model
     }
+    fn accepts_concurrent_calls(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

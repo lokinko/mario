@@ -4,7 +4,12 @@ pub(crate) const AGENT_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::
 pub(crate) const MODEL_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
 /// Codex turns are retried only before any assistant output was emitted.
 pub(crate) const CODEX_MAX_ATTEMPTS: usize = 3;
-pub(crate) const ANALYSIS_TIMEOUT_MESSAGE: &str = "问答达到 25 分钟执行上限，已停止模型调用；本次未保存完整结果。可缩小问题或关闭部分分析步骤后重试";
+pub(crate) const ANALYSIS_TIMEOUT_MESSAGE: &str =
+    "问答达到 25 分钟执行上限，已停止模型调用；本次未保存完整结果。可缩小问题或关闭网页搜索后重试";
+/// Dreaming is one call plus at most one repair.
+pub(crate) const DREAM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2 * 180 + 30);
+pub(crate) const DREAM_TIMEOUT_MESSAGE: &str =
+    "记忆整理超过执行上限，已停止；记忆和整理进度均未改变";
 
 /// Shared local-model failure categories keep their historical wire names.
 /// Upstream bodies and account details never cross the bridge.
@@ -46,7 +51,9 @@ pub(crate) enum AnalysisEvent {
     Status {
         message: String,
     },
+    /// Unvalidated live text of one proposal agent; replaced by the voted report on completion.
     Draft {
+        proposal: String,
         answer: String,
     },
     Complete {

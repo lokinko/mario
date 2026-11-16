@@ -51,7 +51,6 @@ it("shows the complete report with sources and limitations, without process or a
       warnings: ["搜索未返回原文"],
       searchCalls: 0,
     },
-    researchPlan: "内部研究计划",
     evidenceCatalog: [
       {
         id: "e1",
@@ -128,7 +127,6 @@ it("shows the complete report with sources and limitations, without process or a
       .getByRole("link", { name: "打开来源网页：原始来源" })
       .getAttribute("href"),
   ).toBe("https://example.com/source");
-  expect(screen.queryByText("内部研究计划")).toBeNull();
   expect(screen.queryByText("旧摘要")).toBeNull();
   fireEvent.keyDown(screen.getByRole("region", { name: "引用原始信息" }), {
     key: "Escape",
@@ -141,4 +139,126 @@ it("shows the original answer for older records without a structured report", ()
   expect(screen.getByText(/旧版完整回答/).textContent).toBe(
     "旧版完整回答\n第二段",
   );
+});
+
+it("shows objections to the adopted proposal and keeps web leads out of the cited sources", () => {
+  const report = {
+    answer: "继续等待日线回到下轨附近。",
+    suggestions: [],
+    facts: [],
+    question: null,
+  };
+  const scores = {
+    facts: 2,
+    citations: 2,
+    reasoning: 2,
+    counterpoints: 1,
+    actionability: 1,
+  };
+  const trace = {
+    evidenceCatalog: [],
+    structuredReport: report,
+    webSearch: {
+      status: "completed",
+      searchCalls: 1,
+      warnings: [],
+      leads: [
+        {
+          title: "分红新闻",
+          url: "https://example.com/lead",
+          summary: "供应商对分红的概括",
+        },
+      ],
+    },
+    research: {
+      brief: {
+        findings: [],
+        counterpoints: [],
+        unknowns: ["2025 年派息方案未公告"],
+        checks: [
+          { index: 0, status: "missing_source", note: "缺少近三年现金流" },
+        ],
+      },
+    },
+    proposals: [
+      { id: "P1", lens: "steady", label: "稳健等待", report },
+      { id: "P2", lens: "conditional", label: "条件执行", report },
+      { id: "P3", lens: "skeptic", label: "反方证伪", failure: "格式无效" },
+    ],
+    vote: {
+      status: "voted",
+      winner: "P1",
+      tally: [
+        {
+          proposal: "P1",
+          voters: 1,
+          preferences: 1,
+          vetoes: 0,
+          scoreTotal: 8,
+          eliminated: false,
+          rank: 1,
+        },
+        {
+          proposal: "P2",
+          voters: 1,
+          preferences: 0,
+          vetoes: 1,
+          scoreTotal: 4,
+          eliminated: true,
+          rank: 2,
+        },
+      ],
+      ballots: [
+        {
+          voter: "P2",
+          lens: "conditional",
+          ballot: {
+            preferred: "P1",
+            assessments: [
+              {
+                proposal: "P1",
+                scores,
+                veto: null,
+                objection: "未说明等待期间的机会成本",
+              },
+            ],
+          },
+        },
+      ],
+    },
+  } as unknown as AnalysisWorkflowTrace;
+  render(<ModelReport answer="" trace={trace} />);
+  const objections = screen.getByRole("region", {
+    name: "其他方案代理的质疑",
+  });
+  expect(objections.textContent).toContain("未说明等待期间的机会成本");
+  expect(objections.textContent).toContain("来自 条件执行");
+  const process =
+    screen.getByText(/评议过程：交叉评审后采纳 稳健等待/).parentElement!;
+  expect(process.textContent).toContain(
+    "稳健等待（采纳）：1/1 票首选，平均 8.0 / 10 分",
+  );
+  expect(process.textContent).toContain("1 票否决，已淘汰");
+  expect(process.textContent).toContain("反方证伪：未通过结构化校验");
+  expect(process.textContent).toContain("2025 年派息方案未公告");
+  expect(process.textContent).toContain("缺少近三年现金流");
+  expect(process.textContent).toContain("未作为回答依据");
+  expect(
+    screen.getByRole("link", { name: "分红新闻" }).getAttribute("href"),
+  ).toBe("https://example.com/lead");
+  expect(screen.getByText("本次回答未提供可核对的引用来源。")).toBeTruthy();
+
+  cleanup();
+  render(
+    <ModelReport
+      answer=""
+      trace={{ ...trace, vote: { ...trace.vote!, status: "tied" } }}
+    />,
+  );
+  // A tie decided by lens order must not read as a preference for the adopted proposal.
+  expect(
+    screen.getByText(
+      /评议过程：评审首选与评分持平，未分出高下，按方案顺序采纳 稳健等待/,
+    ),
+  ).toBeTruthy();
 });

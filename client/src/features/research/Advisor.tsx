@@ -15,6 +15,8 @@ import {
   runAnalysis,
 } from "../../api/research";
 import { getAnalysisSettings } from "../../api/settings";
+import { dreamMemory, getMemory } from "../../api/memory";
+import { MemoryPanel } from "./MemoryPanel";
 import type {
   AnalysisRequest,
   AnalysisSettings,
@@ -69,8 +71,12 @@ export function Advisor({
   const streamRef = useRef<AbortController | null>(null);
   const [draft, setDraft] = useState<{
     question: string;
-    answer: string;
+    proposals: Record<string, string>;
   } | null>(null);
+  const dreamRef = useRef<Promise<void> | null>(null);
+  const [dreaming, setDreaming] = useState(false);
+  const [dreamError, setDreamError] = useState("");
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [stage, setStage] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [running, setRunning] = useState(false);
@@ -81,6 +87,23 @@ export function Advisor({
   const [historyError, setHistoryError] = useState("");
 
   useEffect(() => () => streamRef.current?.abort(), []);
+
+  // One consolidation at a time; it changes the data revision, so a new
+  // analysis waits for it rather than racing it.
+  const dream = () => {
+    if (dreamRef.current) return dreamRef.current;
+    setDreaming(true);
+    setDreamError("");
+    const run = dreamMemory()
+      .then(() => undefined)
+      .catch((nextError) => setDreamError(String(nextError)))
+      .finally(() => {
+        dreamRef.current = null;
+        setDreaming(false);
+      });
+    dreamRef.current = run;
+    return run;
+  };
 
   useEffect(() => {
     if (!active || running || !pendingQuestion) return;
@@ -138,11 +161,16 @@ export function Advisor({
     setRunning(true);
     setStopped(false);
     setError("");
-    setDraft({ question: message, answer: "" });
-    setStage("正在准备资料…");
+    setDraft({ question: message, proposals: {} });
     const controller = new AbortController();
     streamRef.current = controller;
     try {
+      if (dreamRef.current) {
+        setStage("正在整理长期记忆…");
+        await dreamRef.current;
+        if (!isCurrent()) return;
+      }
+      setStage("正在准备资料…");
       // Read the account's saved defaults for every turn, including after a
       // settings change on this device or another device.
       const settings = await getAnalysisSettings();
@@ -159,7 +187,13 @@ export function Advisor({
         (update) => {
           if (!isCurrent()) return;
           if (update.type === "draft")
-            setDraft({ question: message, answer: update.answer });
+            setDraft((current) => ({
+              question: message,
+              proposals: {
+                ...current?.proposals,
+                [update.proposal]: update.answer,
+              },
+            }));
           else setStage(update.message);
         },
         controller.signal,
@@ -178,6 +212,11 @@ export function Advisor({
         .catch((nextError) => {
           if (isCurrent()) setHistoryError(String(nextError));
         });
+      void getMemory()
+        .then((overview) => {
+          if (overview.dreamDue) void dream();
+        })
+        .catch((nextError) => setDreamError(String(nextError)));
     } catch (nextError) {
       if (isCurrent()) setError(String(nextError));
     } finally {
@@ -311,6 +350,10 @@ export function Advisor({
               onClick={() => setHistoryOpen((v) => !v)}
             >
               {historyOpen ? "收起历史" : "历史对话"}
+            </button>
+            <button className="secondary" onClick={() => setMemoryOpen(true)}>
+              {dreaming && <LoaderCircle size={14} className="spin" />}
+              长期记忆
             </button>
             <button
               className="secondary"
@@ -448,16 +491,30 @@ export function Advisor({
                     <Badge tone="warning">未校验</Badge>
                   </span>
                   {running && <GenerationSteps stage={stage} />}
-                  <ModelReport
-                    answer={
-                      draft.answer ||
-                      (running
-                        ? stage
-                        : stopped
-                          ? "已停止生成。"
-                          : "未收到完整回复，请重试。")
-                    }
-                  />
+                  {Object.keys(draft.proposals).length ? (
+                    Object.entries(draft.proposals)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([proposal, answer]) => (
+                        <section
+                          key={proposal}
+                          className="proposal-draft"
+                          aria-label={`方案 ${proposal} 草稿`}
+                        >
+                          <h3>方案 {proposal} · 草稿</h3>
+                          <ModelReport answer={answer} />
+                        </section>
+                      ))
+                  ) : (
+                    <ModelReport
+                      answer={
+                        running
+                          ? stage
+                          : stopped
+                            ? "已停止生成。"
+                            : "未收到完整回复，请重试。"
+                      }
+                    />
+                  )}
                 </div>
               </article>
             )}
@@ -544,6 +601,20 @@ export function Advisor({
           {historyError && <Callout tone="danger">{historyError}</Callout>}
         </div>
       </div>
+      {memoryOpen && (
+        <Drawer title="长期记忆" onClose={() => setMemoryOpen(false)}>
+          <MemoryPanel
+            dreaming={dreaming}
+            dreamError={dreamError}
+            onDream={() => void dream()}
+            onOpenAnalysis={(id) => {
+              if (sendingRef.current) return;
+              setMemoryOpen(false);
+              void openStoredAnalysis(id);
+            }}
+          />
+        </Drawer>
+      )}
       {previewOpen && (
         <Drawer
           title="将发送的数据"

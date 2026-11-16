@@ -95,6 +95,7 @@ fn transport_contract_fixture() {
             message: "生成中".into(),
         },
         crate::models::inference::AnalysisEvent::Draft {
+            proposal: "P1".into(),
             answer: "部分回复".into(),
         },
         crate::models::inference::AnalysisEvent::Complete {

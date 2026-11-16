@@ -49,7 +49,7 @@ it("guards every stream update against account changes and releases the write gu
   session.token = "account-b";
   stream.enqueue(
     new TextEncoder().encode(
-      'data: {"type":"draft","answer":"旧账号回复"}\n\n',
+      'data: {"type":"draft","proposal":"P1","answer":"旧账号回复"}\n\n',
     ),
   );
   await pending;
@@ -65,7 +65,7 @@ it("only completes and publishes the saved event after draft updates", async () 
       .fn()
       .mockResolvedValue(
         new Response(
-          `data: ${JSON.stringify({ type: "draft", answer: "部分回复" })}\n\ndata: ${JSON.stringify({ type: "complete", result })}\n\n`,
+          `data: ${JSON.stringify({ type: "draft", proposal: "P2", answer: "部分回复" })}\n\ndata: ${JSON.stringify({ type: "complete", result })}\n\n`,
           { headers: { "content-type": "text/event-stream" } },
         ),
       ),
@@ -74,6 +74,10 @@ it("only completes and publishes the saved event after draft updates", async () 
   expect(
     await runAnalysis({ ...analysisSettings, question: "问题" }, updates),
   ).toEqual(result);
-  expect(updates).toHaveBeenCalledWith({ type: "draft", answer: "部分回复" });
+  expect(updates).toHaveBeenCalledWith({
+    type: "draft",
+    proposal: "P2",
+    answer: "部分回复",
+  });
   expect(currentSession().hasDataWrites()).toBe(false);
 });

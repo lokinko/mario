@@ -1,6 +1,7 @@
 import { Drawer } from "../../components/Drawer";
 import { useId, useRef, useState } from "react";
 import type { AnalysisClaim, AnalysisWorkflowTrace } from "../../types";
+import { CouncilSummary } from "./CouncilSummary";
 import { reportSources, SourceDetail } from "./ReportSources";
 
 export function ModelReport({
@@ -91,6 +92,7 @@ export function ModelReport({
             ))}
           </ol>
           {report.question && <p>追问：{report.question}</p>}
+          {trace && <CouncilSummary trace={trace} />}
         </>
       ) : (
         <>

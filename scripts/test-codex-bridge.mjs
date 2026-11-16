@@ -137,7 +137,7 @@ try {
     await writeFile(environment.MARIO_TEST_CODEX_SCENARIO,'transient');
     await writeFile(environment.MARIO_TEST_CODEX_COUNTER,'0');
   }
-  const input = { question:'这是连通性验收。当前没有提供任何投资资料，请简短说明还需要哪些资料；不要提供交易建议。', workflow:'quick', webSearch };
+  const input = { question:'这是连通性验收。当前没有提供任何投资资料，请简短说明还需要哪些资料；不要提供交易建议。', workflow:'council', webSearch };
   const preview = await request('/analysis/preview', 'POST', input);
   const response = await fetch(`${site}/api/analysis/stream`, { method:'POST', headers:{Authorization:`Bearer ${auth}`,'Content-Type':'application/json',...(revisions.has(auth)?{'If-Match':revisions.get(auth)}:{})}, body:JSON.stringify({...input,previewRevision:preview.contextRevision}), signal:AbortSignal.timeout(280000) });
   assert.equal(response.status, 200);
@@ -149,9 +149,11 @@ try {
   assert.equal((await request('/analyses')).length, 1);
   if (protocolFixture) {
     assert(events.some(event=>event.type==='status' && event.message.includes('自动重试')),'重试进度必须经过桥接到达网页');
-    assert.equal(completed.result.workflowTrace.calls.length,2,'必须执行搜索和单次分析');
-    assert.equal(completed.result.workflowTrace.calls[0].requestCount,2);
-    console.log('PASS Codex App Server 503 自动恢复 → 桥接重试状态 → 单次分析+联网 → 单次保存');
+    const calls=completed.result.workflowTrace.calls;
+    assert.equal(calls[0].stage,'native_web_search','评议前必须先执行联网搜索');
+    assert.equal(calls[0].requestCount,2,'503 只能在同一次搜索内恢复');
+    assert.equal(calls.filter(call=>call.stage==='proposal_agent').length,3,`单槽桥接必须依次执行三个方案代理：${JSON.stringify(completed.result.stages)}`);
+    console.log('PASS Codex App Server 503 自动恢复 → 桥接重试状态 → 联网+多代理评议 → 单次保存');
     for (const [scenario,expected] of [['quota','用量限制'],['partial','暂时不可用'],['native-retry',null]]) {
       await writeFile(environment.MARIO_TEST_CODEX_SCENARIO,scenario);
       await writeFile(environment.MARIO_TEST_CODEX_COUNTER,'0');

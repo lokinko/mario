@@ -139,7 +139,7 @@ async function sharedOpenAi() {
     await request(shared,'/model-config',null,'GET',undefined,401);
     await request(shared,'/model-config/models',null,'GET',undefined,401);
     await request(shared,'/analysis',null,'POST',{},401);
-    const question={question:'shared smoke',workflow:'quick',webSearch:false,contextSelection:{includeProfile:false,includeHoldings:false,includeEvidence:false}};
+    const question={question:'shared smoke',workflow:'council',webSearch:false,contextSelection:{includeProfile:false,includeHoldings:false,includeEvidence:false}};
     for(const user of [a,b]) {
       await request(shared,'/snapshot',user);
       const config=await request(shared,'/model-config',user);
@@ -238,7 +238,7 @@ try{
   assert.equal(modelRequests[0].body.messages[0].role,'system');
   assert.equal(modelRequests[0].body.stream,false);
   assert(!('input' in modelRequests[0].body));
-  const analysisRequest={question:'test authorized context',workflow:'quick',contextSelection:{includeProfile:false}};
+  const analysisRequest={question:'test authorized context',workflow:'council',contextSelection:{includeProfile:false}};
   const preview=await request(base,'/analysis/preview',a,'POST',analysisRequest);
   const running=request(base,'/analysis',a,'POST',{...analysisRequest,previewRevision:preview.contextRevision});
   await Promise.race([received,new Promise((_,reject)=>{const t=setTimeout(()=>reject(Error('Agent never received job')),10000);t.unref();})]);

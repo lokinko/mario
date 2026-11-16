@@ -208,12 +208,19 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 
 ### 问答报告、事实卡与追问
 
-- `models::StructuredAnalysis` 是生成契约；唯一生产工作流为 v16，沿用单次生成与至多一次格式修复，不新增语义评判模型阶段。结论、理由与前提可按问题展开，字符预算以[输出规范](ai-workflow.md#结构化输出契约)为准；不强制每个动作带金额，依赖目标的动作先写明假设。`models/analysis_history` 的独立类型只读历史报告，仓储以 `headline()` 获取两类报告的列表摘要，不转换历史正文。
-- `ai/structured_output` 校验字段、数量、字数、事实索引和引用，拒绝缺少原值引用的个人事实；路径校验保证存在与授权，不替代语义核对。`ai/streaming` 只投影报告的用户可见字段。`features/research/ModelReport` 共享来源抽屉，按报告形状读取历史或显示新回答。
+- `models::StructuredAnalysis` 是每个方案代理的生成契约；唯一生产工作流为 v17 `council`，步骤与降级规则见[多代理评议](ai-workflow.md#多代理评议)。结论、理由与前提可按问题展开，字符预算以[输出规范](ai-workflow.md#结构化输出契约)为准；不强制每个动作带金额，依赖目标的动作先写明假设。`models/analysis_history` 的独立类型只读历史报告，仓储以 `headline()` 获取两类报告的列表摘要，不转换历史正文。
+- `ai/structured_output` 校验字段、数量、字数、事实索引和引用，拒绝缺少原值引用的个人事实；路径校验保证存在与授权，不替代语义核对。`ai/streaming` 只投影报告的用户可见字段，草稿按方案 ID 区分。`features/research/ModelReport` 共享来源抽屉，按报告形状读取历史或显示新回答，并由 `CouncilSummary` 只读展示轨迹中的质疑、计票、研究缺口与网页线索。
+
+### 多代理评议与长期记忆
+
+- 评议契约与计票归 `models/council`（纯函数，不依赖 `ai` 或仓储）；研究简报与选票的提示契约、解析和引用校验归 `ai/council`，视角定义与提示归 `ai/workflow`，执行顺序、降级与轨迹归 `ai/orchestrator`。新增或调整视角只改 `LENSES` 与对应提示，计票规则变化须同步 `models/council` 测试和[工作流 spec](ai-workflow.md#多代理评议)。
+- 记忆条目、整理操作与 `screen_operations` 归 `models/memory`；选取归 `context/memory`；仓储与单事务应用归 `db/memory`；整理用例、冻结与冲突检测归 `application/memory`；整理代理提示归 `ai/dreaming`；HTTP 只在 `http/memory` 做协议转换，写入不设版本检查例外。执行端口 `AnalysisExecutor::dream` 由 `agent` 与 Codex 桥接实现，`application` 不直接引用 `ai`。
+- 前端 `features/research/MemoryPanel` 只经 `api/memory` 读写；自动整理的发起、单飞与下一问等待归 `Advisor`；`lib/requestPolicy` 为 `/memory/dream` 设置较长超时。
+- 修改时覆盖：授权缩小只保留用户原话偏好、关闭开关不选取不整理、逐字摘录与来源归属、模型推断偏好被拒、单项拒绝不影响其他项、整理期间编辑返回冲突、写入失败整体回滚、备份往返与旧备份为空记忆，以及研究简报降级、方案部分失败、选票作废、首选票优先于均分、评分饱和与首选分散时标为持平、否决淘汰、引用错误逐类提示与修复保留首次输出。跨前后端执行完整 `npm test`；提示词变化须按[实际回复质量验收](ai-workflow.md#实际回复质量验收)真实生成并亲审。
 - `context/fact_sheet` 是领域层确定性投影：精确金额只输出一次，结余、占比、偏差和浮盈使用 Decimal；组合合计缺失时保留空值与结构化影响范围，其他持仓及现金继续计算。不重算或写入财务事实。`application/analysis` 不查询个人规则、复盘和每日资产。
 - `BuiltContext` 区分模型 payload 与授权估值审计，二者共同冻结指纹；模型只消费紧凑 payload，估值链进入轨迹。预览的事实卡与模型使用的卡一致。
 - `features/research/previousTurn` 负责有边界的对话压缩与历史用户问题恢复；服务端 `models::PreviousTurn` 校验 Unicode 字符预算，`ContextBuilder` 按本次授权裁剪历史模型字段并冻结。具体预算和来源规则统一见[对话上下文](ai-workflow.md#对话上下文)。应用层保存当前 question，不把历史模型内容拼进问题；输出引用允许当前问题、严格白名单下的历史用户原话和已授权事实卡，禁止模型历史字段；前端 `ReportSources` 用同一历史原话边界展示引用，明确用户声明未改写档案，新对话清空摘要。
-- `context/discussion` 提供当前问题优先、用户历史回退的检索线索与纯函数能力组合，`application/analysis` 用于观察与手工资料选择；`ContextBuilder` 冻结公开研究包和核查指引，`ai/orchestrator` 只把公开公司身份及固定主题发送给原生搜索。固定指引不是事实或用户投资规则，不新增模型阶段、仓储或财务写入。
+- `context/discussion` 提供当前问题优先、用户历史回退的检索线索与纯函数能力组合，`application/analysis` 用于观察与手工资料选择；`ContextBuilder` 冻结公开研究包和核查指引，`ai/orchestrator` 只把公开公司身份及固定主题发送给原生搜索。固定指引不是事实或用户投资规则，不新增仓储或财务写入；研究代理对每项指引给出核查状态。
 - `application/analysis` 优先组装讨论公司的最新及本周观察证据，`evidence::search_evidence` 补齐剩余额度，共最多5条。普通 `relevant_excerpt` 返回最多2000字连续原文，生产观察通过 `context/observation` 生成最多4000字的完整字段投影，省略按完整记录计数；完整原文与模型投影共同冻结指纹。AI 不读仓储、不额外筛选，网页搜索按原开关授权、默认关闭。修改时覆盖代词追问、明确换公司、资料关闭、长分红记录不挤掉日周及本周依据，以及搜索公开字段和事实卡精确股数。
 - [真实质量评测](../server/tests/fixtures/qa_eval/README.md)的场景输入、模型调用与人工评阅分别留证。子集先检查依赖，不隐式补题增加付费调用；默认／场景授权在实际请求中记录。它只使用虚构资料，不把当前模型参数复用声称为读取用户账号数据。质量判断由主负责人亲审完整回复，按[实际质量门槛](ai-workflow.md#实际回复质量验收)逐题核对，格式、引用门禁或其他模型评分不代替语义检查。`ai/qa_eval` 按生产字符预算保留真实用户历史，逐题授权和固定来源显式冻结；五轮更正/撤权、银行与资源公司差异、冲突及摘要来源纳入固定验收，失败依赖不伪造。Provider只对建连失败新增原有预算内重试，修改时必须验证请求发出后超时和草稿后断流不重放，以及退避取消。
 
@@ -258,7 +265,7 @@ cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
 cargo build --manifest-path server/Cargo.toml
 ```
 
-跨前后端、数据格式、财务逻辑或公共契约的修改运行完整 `npm test`（[`scripts/test.sh`](../scripts/test.sh)）：先检查 npm 和完整门禁引用的脚本确实存在；构建后运行 `npm run check:contracts`，以真实 Rust 输出验证精确金额、交易与更正、汇率、流式事件、模型与桥接、观察规则的 TypeScript 类型以及从 HTTP 源文件提取路径的版本政策一致性，再在同一个临时集群中依次运行 Rust 测试、`test-functional-api`、`test-web`、`test-codex-bridge`，再运行独立建集群的 `npm run test:financial`。
+跨前后端、数据格式、财务逻辑或公共契约的修改运行完整 `npm test`（[`scripts/test.sh`](../scripts/test.sh)）：先检查 npm 和完整门禁引用的脚本确实存在；构建后运行 `npm run check:contracts`，以真实 Rust 输出验证精确金额、交易与更正、汇率、流式事件、模型与桥接、观察规则的 TypeScript 类型以及从 HTTP 源文件提取路径的版本政策一致性，再在同一个临时集群中依次运行 Rust 测试、`test-functional-api`、`test-web`、`test-codex-bridge` 及其 `--protocol-fixture`（Codex App Server 协议夹具，覆盖单槽桥接下的完整评议），再运行独立建集群的 `npm run test:financial`。
 
 依赖检查解析 TypeScript 导入/导出，包括类型导入与动态导入；Rust 检查去除字符串、注释与测试专属项后提取显式 crate 依赖。它阻止上层反向引用、跨功能 UI 引用、领域客户端之间的引用以及依赖循环。DB 内部实现仍允许使用父模块门面的共享导入。检查属于静态约束，与编译及行为测试互补，不代表所有宏展开或运行时隔离已经被证明。
 

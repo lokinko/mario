@@ -185,6 +185,7 @@ mod tests {
             let _guard = ExecutionGuard(self.dropped.clone());
             events
                 .send(AnalysisEvent::Draft {
+                    proposal: "P1".into(),
                     answer: "正在逐步回复".into(),
                 })
                 .await
@@ -242,7 +243,10 @@ mod tests {
                 fail,
             }),
         });
-        let mut request: AnalysisRequest = serde_json::from_value(serde_json::json!({"question":"流式问题","workflow":"quick","reflect":false,"exploreAlternatives":false,"webSearch":false})).unwrap();
+        let mut request: AnalysisRequest = serde_json::from_value(
+            serde_json::json!({"question":"流式问题","workflow":"council","webSearch":false}),
+        )
+        .unwrap();
         request.preview_revision = Some(
             AnalysisService::new(&state.db, state.model_services.server.as_ref())
                 .preview(&request)

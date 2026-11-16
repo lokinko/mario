@@ -28,7 +28,7 @@
 
 分析应用层优先为当前讨论公司装配已保存的最新和本周观察证据，包括本账号的观察规则、原值、日期、问题码及来源；当前明确对象优先，没有明确对象时从用户历史问题承接，不使用历史模型结论检索。再通过 `search_evidence` 检索未归档手工资料和历史搜索资料，补足剩余额度，本地候选合计最多5条。明确公司时优先相关资料；没有公司线索时才使用已授权持仓背景。身份字段（资产、信息类型、标题、发布方、附件名）的匹配权重高于正文与备注。普通资料由 `relevant_excerpt` 截取最多2000字连续原文；生产观察经专用结构投影保留最新规则、日周指标和本周记录，最多4000字，按完整事件或记录裁剪并标明省略数量。原始完整观察与模型片段一同冻结，详见[证据投影](ai-workflow.md#证据投影与冻结)。观察规则不等于个人投资规则或复盘正文，后两者不自动进入问答。
 
-历史搜索资料只从最近 30 天、最近 50 条分析的轨迹提取合格的原生网页来源，按 URL 和原文去重，上限 200 条后再参与上述检索；保留原采集日期，不因复用刷新时效，也不提取历史答案作为已核实事实。当前执行中新取得的原生搜索来源另限最多5条，不占发送前的本地候选名额。
+历史搜索资料只从最近 30 天、最近 50 条分析的轨迹提取合格的原生网页原文片段（`native_web_excerpt`），早期分析中的供应商摘要（`native_web_summary`）不再复用为证据；按 URL 和原文去重，上限 200 条后再参与上述检索；保留原采集日期，不因复用刷新时效，也不提取历史答案作为已核实事实。当前执行中新取得的原生搜索来源另限最多5条，不占发送前的本地候选名额。
 
 候选证据直接显示在发送前预览，并参与上下文一致性指纹：
 
@@ -54,9 +54,9 @@
 
 搜索模型只收到冻结讨论包 `discussionGuide.publicResearch` 中选定公司的规范证券代码与固定公开研究主题，不再发送问题全文、自由填写的公司名称、全部持仓名单或历史模型回答。公司匹配与核查指引在领域层构建，与主生成共用同一冻结包；关闭持仓后不从其事实卡取得主题身份，研究证据授权按独立开关控制。尚无规范公司身份时，固定主题保留研究方向，不猜公司名称。该公开包不包含个人金额、账户和现金字段；主生成仍按当前授权消费个人事实。
 
-只接收供应商原生引用对象中的 URL/标题，不把模型自行写出的链接转成证据。OpenAI `url_citation` 对应文字标为 `native_web_summary`（模型摘要，待核对原文）；Anthropic `web_search_result_location.cited_text` 标为 `native_web_excerpt`（供应商引用片段）。来源层级默认待核实；未提供的资料日期留空，不把采集时间冒充发布日期。引用对象被分配本次分析的证据 ID，再进入最终报告。
+只接收供应商原生引用对象中的 URL/标题，不把模型自行写出的链接转成证据。Anthropic `web_search_result_location.cited_text` 是供应商返回的网页原文片段，标为 `native_web_excerpt`，分配本次分析的证据 ID 后可被事实引用。OpenAI `url_citation` 对应的文字是模型生成的摘要，不是网页原文：它只作为待核实线索保存在 `webSearch.leads`（标题、URL、最多 600 字摘要），以 `webLeads` 提供给代理，不分配证据 ID、不能作为事实来源，界面标为“未作为回答依据”。早期分析中已保存的 `native_web_summary` 来源按原样只读展示，并标注需打开网页核对原文。来源层级默认待核实；未提供的资料日期留空，不把采集时间冒充发布日期。分级规则见[工作流的网页证据分级](ai-workflow.md#网页搜索的证据分级)。
 
-Anthropic `pause_turn` 最多续接两次，原样回传包括加密字段在内的内容块；HTTP 200 内的搜索错误也会记录。API 请求失败终止分析并提示配置/权限检查；无引用或工具部分失败时保留缺口状态，不能宣称已取得充分证据。来源、搜索状态、调用耗时和 token 使用随分析保存。
+Anthropic `pause_turn` 最多续接两次，原样回传包括加密字段在内的内容块；HTTP 200 内的搜索错误也会记录。搜索请求失败时记录 `failed` 状态与警告，分析改用本地资料继续，并告知模型外部信息未核实；无可引用原文或工具部分失败时状态为 `incomplete`，不能宣称已取得充分证据。来源、搜索状态、调用耗时和 token 使用随分析保存。
 
 ## 建议与事实关联
 
@@ -66,6 +66,6 @@ Anthropic `pause_turn` 最多续接两次，原样回传包括加密字段在内
 
 ## 实现与验证依据
 
-[research 仓储及测试](../server/src/db/research.rs) 与[数据库测试](../server/src/db/tests.rs)覆盖正文原样保存、标签保存与修改校验、归档、附件原子写入与认证下载、备份恢复和历史搜索来源去重；[附件模块](../server/src/attachments.rs) 用真实 PDF/DOCX 夹具检查提取、截断及大小限制。[检索计算](../server/src/evidence.rs)、[分析准备](../server/src/application/analysis.rs) 和 [ContextBuilder](../server/src/context.rs) 负责候选排序、观察授权及片段冻结。网页引用解析由[普通 Provider](../server/src/ai/native_provider.rs)、[Codex](../server/src/ai/codex.rs) 与[本机 ChatGPT](../server/src/ai/chatgpt.rs) 的协议测试核对，不能把解析通过视为真实来源已核实。前端[资料工作台](../client/src/features/research/EvidenceWorkbench.test.tsx)、[参考信息分页](../client/src/App.test.tsx)及[引用抽屉](../client/src/features/research/ReportSources.test.tsx)有对应交互回归；这些非忽略用例纳入完整 `npm test`。
+[research 仓储及测试](../server/src/db/research.rs) 与[数据库测试](../server/src/db/tests.rs)覆盖正文原样保存、标签保存与修改校验、归档、附件原子写入与认证下载、备份恢复，以及历史搜索来源去重且不复用供应商摘要；[附件模块](../server/src/attachments.rs) 用真实 PDF/DOCX 夹具检查提取、截断及大小限制。[检索计算](../server/src/evidence.rs)、[分析准备](../server/src/application/analysis.rs) 和 [ContextBuilder](../server/src/context.rs) 负责候选排序、观察授权及片段冻结。网页引用解析由[普通 Provider](../server/src/ai/native_provider.rs)、[Codex](../server/src/ai/codex.rs) 与[本机 ChatGPT](../server/src/ai/chatgpt.rs) 的协议测试核对，不能把解析通过视为真实来源已核实。前端[资料工作台](../client/src/features/research/EvidenceWorkbench.test.tsx)、[参考信息分页](../client/src/App.test.tsx)及[引用抽屉](../client/src/features/research/ReportSources.test.tsx)有对应交互回归；这些非忽略用例纳入完整 `npm test`。
 
 协议参考：[OpenAI Web search](https://developers.openai.com/api/docs/guides/tools-web-search)、[Anthropic Web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool)。当前行为以仓库实现和本节测试为准，上游文档不代表任意供应商或账号已获搜索权限。

@@ -23,11 +23,9 @@ impl Database {
                 continue;
             };
             for source in trace.evidence_catalog {
+                // Provider-written summaries from older runs are leads, never evidence.
                 if !source.id.starts_with("web-")
-                    || !matches!(
-                        source.evidence_type.as_str(),
-                        "native_web_excerpt" | "native_web_summary"
-                    )
+                    || source.evidence_type != "native_web_excerpt"
                     || source.claim.trim().is_empty()
                     || !chrono::DateTime::parse_from_rfc3339(&source.captured_at)
                         .is_ok_and(|date| date >= Utc::now() - chrono::Duration::days(30))
@@ -311,25 +309,14 @@ impl Database {
             let grounding_status = parsed_trace
                 .as_ref()
                 .map(|trace| {
-                    if trace.advice_grounding.is_empty() {
+                    let grounding = &trace.legacy.advice_grounding;
+                    if grounding.is_empty() {
                         "unavailable"
-                    } else if trace
-                        .advice_grounding
-                        .iter()
-                        .any(|item| item.status == "contradicted")
-                    {
+                    } else if grounding.iter().any(|item| item.status == "contradicted") {
                         "contradicted"
-                    } else if trace
-                        .advice_grounding
-                        .iter()
-                        .any(|item| item.status == "insufficient")
-                    {
+                    } else if grounding.iter().any(|item| item.status == "insufficient") {
                         "insufficient"
-                    } else if trace
-                        .advice_grounding
-                        .iter()
-                        .any(|item| item.status != "supported")
-                    {
+                    } else if grounding.iter().any(|item| item.status != "supported") {
                         "unavailable"
                     } else {
                         "supported"
@@ -401,12 +388,16 @@ mod automatic_tests {
     use serde_json::json;
 
     #[test]
-    fn automatic_library_deduplicates_sources_without_promoting_answers_or_refreshing_old_captures()
+    fn automatic_library_deduplicates_sources_without_promoting_answers_summaries_or_old_captures()
     {
         let db = Database::test();
         let now = Utc::now().to_rfc3339();
         let old = (Utc::now() - chrono::Duration::days(40)).to_rfc3339();
-        let source = json!({"id":"web-original","assetName":"","evidenceType":"native_web_summary","claim":"Search summary, not verified original text","notes":"Original qualification","stance":"背景","capturedAt":now,"title":"Documentation","publisher":"example.com","sourceUrl":"https://example.com/docs","sourceTier":"网页来源（待核实）","asOfDate":""});
+        let source = json!({"id":"web-original","assetName":"","evidenceType":"native_web_excerpt","claim":"Provider-returned original excerpt","notes":"Original qualification","stance":"背景","capturedAt":now,"title":"Documentation","publisher":"example.com","sourceUrl":"https://example.com/docs","sourceTier":"网页来源（待核实）","asOfDate":""});
+        let mut summary = source.clone();
+        summary["id"] = json!("web-summary");
+        summary["evidenceType"] = json!("native_web_summary");
+        summary["claim"] = json!("Search summary, not verified original text");
         let mut stale = source.clone();
         stale["id"] = json!("web-old");
         stale["capturedAt"] = json!(old);
@@ -420,6 +411,7 @@ mod automatic_tests {
             evidence_catalog: serde_json::from_value(json!([
                 source.clone(),
                 source,
+                summary,
                 stale,
                 manual,
                 unsafe_url
@@ -431,7 +423,7 @@ mod automatic_tests {
         let before = db.snapshot().unwrap().holdings;
         let results = db.automatic_research_evidence().unwrap();
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].evidence_type, "native_web_summary");
+        assert_eq!(results[0].evidence_type, "native_web_excerpt");
         assert_eq!(results[0].captured_at, now);
         assert!(results[0].as_of_date.is_empty());
         assert!(results[0].notes.contains("不是当前行情"));

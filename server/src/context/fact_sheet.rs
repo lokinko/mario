@@ -275,7 +275,7 @@ mod tests {
             serde_json::from_str(include_str!("../../tests/fixtures/qa_eval/snapshot.json"))
                 .unwrap();
         let request =
-            serde_json::from_value(json!({"question":"当前持有多少？", "workflow":"quick"}))
+            serde_json::from_value(json!({"question":"当前持有多少？", "workflow":"council"}))
                 .unwrap();
         let build = |snapshot: &Snapshot| {
             super::super::ContextBuilder::build(

@@ -111,20 +111,20 @@ flowchart TD
 | `main.rs`、`lib.rs`、`runtime.rs` | 进程入口、模块声明、环境与参数解析、模式选择、维护命令、优雅退出 |
 | `composition.rs` | 装配模型连接器与桥接注册端口，创建行情供应商，组装 `MarketServices`，拥有后台刷新任务并在服务退出时取消 |
 | `hosted.rs` | 多用户模式：公开注册/登录路由、认证中间件、并发槽位、账号锁、`If-Match` 版本检查、财务回执重放、导出/导入、CORS、静态网页 |
-| `http/` | 按领域注册路由（`watch`、`portfolio`、`research`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
+| `http/` | 按领域注册路由（`watch`、`portfolio`、`research`、`memory`、`reviews`、`settings`、`codex_bridge`）并转换输入输出；`policy.rs` 定义免版本检查的显式例外；`error.rs` 把领域错误映射为 HTTP 状态 |
 | `accounts.rs`、`accounts/openai.rs`、`authentication.rs` | 自建账号、Argon2 密码、随机会话（库内只存哈希）、撤销与登录限速、持久化超级账户权限；可选网站 OpenAI 身份映射、短期 OAuth 事务及显式关联；Agent 令牌的常量时间比较 |
 | `accounts/activity.rs`、`hosted/activity.rs` | 全站使用分钟元数据与一致快照聚合；独立认证的上报和超级账户统计 HTTP 适配，不访问个人账本 |
 | `openai_login.rs`、`hosted/openai.rs` | 网站身份登录：前者只做官方 OIDC 配置、授权码交换和签名声明校验，不访问账号或模型；后者转换 HTTP/Cookie、编排账号事务、固定站点重定向与一次性交接；与本机 `chatgpt_auth` 及订阅执行无依赖 |
-| `application/` | 跨仓储与外部端口的用例：`watch`（账号观察检查）、`watch_catalog`（公共目录及来源补齐）、`dividend_calendar`（公开计划刷新与账号范围投影）、`analysis`（冻结、预览、执行、保存）、`portfolio`/`prices`/`public_prices`/`fx`（共享价格、账号估值与汇率编排）、`model_settings`（模型接口切换、冻结连接测试与注入的管理端口）、`codex_bridge`（账号配对） |
-| `ports/` | `analysis::AnalysisExecutor` 与事件通道，`model::ModelConnector` 与 `BridgeRegistry`（只接收冻结目的地或配对 ID，不访问账号库）；`market::FxRateProvider`、`SecurityPriceProvider`、`SecurityHistoryProvider`、`WatchMarketProvider`、`CatalogSourceProvider` |
-| `agent.rs` | `AgentExecutor`：配置 `MARIO_AGENT_URL` 时把冻结任务发给独立 Agent，否则进程内执行；Codex 桥接任务始终在 API 进程经桥接中继执行。同文件提供 Agent HTTP 服务 |
-| `ai/` | `orchestrator` 按 `workflow`（当前 v16）执行可选搜索与单次报告生成；格式错误只修复一次；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 和 `chatgpt` 只由用户电脑上的桥接 worker 调用，分别使用 Codex 登录和 Mario 自己的官方 OAuth 注册；`structured_output` 负责确定性引用、输出校验；资料检索和连续原文摘录归领域层 `evidence`；`streaming` 解析流式草稿 |
+| `application/` | 跨仓储与外部端口的用例：`watch`（账号观察检查）、`watch_catalog`（公共目录及来源补齐）、`dividend_calendar`（公开计划刷新与账号范围投影）、`analysis`（冻结、预览、执行、保存）、`memory`（记忆概览、归档删除与记忆整理编排，含整理期间的冲突检测）、`portfolio`/`prices`/`public_prices`/`fx`（共享价格、账号估值与汇率编排）、`model_settings`（模型接口切换、冻结连接测试与注入的管理端口）、`codex_bridge`（账号配对） |
+| `ports/` | `analysis::AnalysisExecutor`（执行分析与记忆整理）与事件通道，`model::ModelConnector` 与 `BridgeRegistry`（只接收冻结目的地或配对 ID，不访问账号库）；`market::FxRateProvider`、`SecurityPriceProvider`、`SecurityHistoryProvider`、`WatchMarketProvider`、`CatalogSourceProvider` |
+| `agent.rs` | `AgentExecutor`：配置 `MARIO_AGENT_URL` 时把冻结任务发给独立 Agent，否则进程内执行；Codex 桥接任务始终在 API 进程经桥接中继执行。同文件提供 Agent HTTP 服务（`/execute`、`/execute/stream`、`/dream`） |
+| `ai/` | `orchestrator` 按 `workflow`（当前 v17 `council`）执行可选搜索、研究代理、三个并行方案代理与交叉投票，采纳确定性计票的胜出方案；每个结构化输出格式错误只修复一次并保留首次输出；`council` 负责研究简报与选票的机器契约和解析；`dreaming` 调用记忆整理代理，只提出操作、不写入；`provider` 定义模型接口，API 侧实现为 `native_provider`（供应商 HTTP 接口）与 `bridge`（经配对桥接中继），`codex` 和 `chatgpt` 只由用户电脑上的桥接 worker 调用，分别使用 Codex 登录和 Mario 自己的官方 OAuth 注册；`structured_output` 负责确定性引用、输出校验；资料检索和连续原文摘录归领域层 `evidence`；`streaming` 解析流式草稿 |
 | `codex_bridge_worker.rs` | 用户电脑上的共用桥接进程，固定注册及授权会话，长轮询 API 领取任务，选择 Codex App Server 或官方 ChatGPT Responses；模型目录及推理取令牌时在凭据锁内核对同一会话，不借用重新登录后的授权；不上传 OpenAI 凭据 |
 | `chatgpt_auth.rs`、`chatgpt_auth/` | 本机官方 OAuth、签名身份和 scopes 校验、多注册选择、跨进程串行刷新、原子凭据保存及退出；仅由本机运行角色与 `ai/chatgpt.rs` 调用，不依赖业务数据库 |
 | `market_data.rs`、`market_data/history.rs`、`market_data/watch.rs` | 汇率、完整十年日线与公司行动、分红及计划来源；价格的前复权／原值及完整来源成组取得，不持有价格缓存、不读写账号数据 |
-| `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共公司目录、独立版本、公共行业最新观察及分红计划快照；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema；API 持有有界租户连接复用器，HTTP 与后台账号任务租用连接，归还前回滚并清理会话状态 |
-| `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、买点观察计算、期权合约计价及多空头重放、推理事件与执行时限 |
-| `context.rs` / `context/fact_sheet.rs` / `context/discussion.rs` / `context/observation.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：授权上下文构建与预览、有限对话主题与红利核查组合、完整观察的模型投影、再平衡规划、风险检查、估值状态、本地证据检索 |
+| `db/`、`storage.rs` | `PublicDividends` 拥有公开分红资料库，`PublicWatch` 拥有公共公司目录、独立版本、公共行业最新观察及分红计划快照；`Database` 门面下的账号领域仓储（观察名单与历史、持仓、成交、期权关联与报价、现金、公司行动、金额、每日资产、汇率、研究、复盘、设置、凭据）、长期记忆与整理水位（`db/memory`）、财务回执与日志、快照构建、同步/备份格式与校验、schema 迁移；`storage.rs` 是唯一的 PostgreSQL 驱动适配：专用客户端线程、动态类型行、事务与 `search_path` 绑定的账号 schema；API 持有有界租户连接复用器，HTTP 与后台账号任务租用连接，归还前回滚并清理会话状态 |
+| `models.rs`、`models/` | 序列化契约、值校验、精度与日期规则、买点观察计算、期权合约计价及多空头重放、推理事件与执行时限；`council` 定义评议轨迹与确定性计票，`memory` 定义记忆条目与整理操作的确定性筛选 |
+| `context.rs` / `context/fact_sheet.rs` / `context/discussion.rs` / `context/observation.rs` / `context/memory.rs`、`planning.rs`、`risk.rs`、`valuation.rs`、`evidence.rs` | 确定性计算：授权上下文构建与预览、有限对话主题与红利核查组合、完整观察的模型投影、按授权范围选取长期记忆、再平衡规划、风险检查、估值状态、本地证据检索 |
 | `attachments.rs`、`secrets.rs`、`streaming.rs`、`error.rs` | 附件解码与文本提取、主密钥加解密（AAD 绑定 schema 与用途）、共享 SSE 响应、统一错误类型 |
 
 ## 5. 前端模块地图
@@ -138,7 +138,7 @@ flowchart TD
 | `features/watch` | 默认买点观察页：`BuyWatch` 拥有草稿、请求与筛选状态，`WatchList` 展示列表/卡片，`WatchSignals` 绘制轨道和参考价格，`WatchTrends` 展示服务端历史曲线与金叉、拥有显示范围和查看日期，`WatchDetails` 展示依据与原交易，`WatchCatalogEditor` 持有公共目录草稿、公司查询输入和打开时的独立版本，`DividendCalendar` 拥有日历范围、日期窗口、日期选择与只读轮询；通过应用壳进入讨论 |
 | `features/portfolio` | 我的情况：持仓、成交、股票关联期权与报价、现金、汇率、每日资产、资产历史与财务日志 |
 | `features/methodology` | 左侧独立入口“投资方法论”：编辑账号专属提示词、保存及填入初始范本；页面持有草稿，应用壳负责同步保护 |
-| `features/research` | 问答（流式回复、报告、引用来源）与研究证据工作台 |
+| `features/research` | 问答（按方案分列的流式草稿、报告、评议过程与质疑、引用来源）、长期记忆抽屉（`MemoryPanel`，查看、归档、删除与手动整理；自动整理的发起与等待归 `Advisor`）与研究证据工作台 |
 | `features/reviews`、`features/settings`、`features/account` | 复盘；模型设置、问答预设与 Codex 桥接；网页账号与服务端数据备份/外部自选 JSON 导入。`ServerData` 管理文件/粘贴草稿、来源账户预览及覆盖前备份，应用壳经 `ModelSettings.accountSettings` 插槽将账号、服务器连接与备份导入装配到唯一的设置页（模型配置加载失败时由应用壳直接渲染），不产生跨功能导入依赖 |
 | `api/<领域>.ts` | 领域请求与返回契约；`api/portfolio.ts` 选择需要串行的快速编辑，排队顺序归账号会话，`api/portfolio/financialRequest.ts` 负责单次财务请求与回执核对 |
 | `app/Website.tsx`、`app/useActivityTracking.ts`、`features/dashboard`、`api/activity.ts` | 直接路径装配、已登录前台活动采集、全站统计表格与筛选、采样及统计 API 契约；看板不启动个人同步 |
@@ -162,7 +162,7 @@ flowchart TD
 - `features/portfolio/useAssetHistory` 持有最新一条每日记录的请求，供 `AssetOverview` 的总额使用；近 12 个月分红读取 `GET /api/portfolio/dividends`：`application/portfolio` 经 `WatchMarketProvider` 取当日公共分红历史（失败沿用已存历史），`db/amounts::trailing_dividends` 按除权日前持仓重放推算并换算基准币。资产配置图读取 `GET /api/portfolio/allocation`，由 `application/portfolio` 组合账号会计快照与公共目录行业，`models/accounting::allocation` 做精确分组。资产总览读取服务端每日精确总额或会计快照；前端不新增会计合计、持仓占比或汇兑计算。新增投资持仓只经记录交易（`POST /api/holding-trades` 的 `newHolding`），`POST /api/holdings` 仅新建存款。“我的情况”分为“投资持仓”和“存款与收支”两类，后者在同一页组合存款列表与月度收支设置。
 - “我的情况”使用 Ant Design 的总览与指标卡、分类标签页、操作按钮和输入框，密度与响应式布局由 `features/portfolio/portfolio.css` 管理。分类内容放在对应标签面板中，编辑或保存期间锁定分类切换；持仓表保留币种分组、排序、行内问题定位与共享菜单。金额通过包装 Ant Design `Input` 的 `PrivateNumberInput` 保留原始十进制字符串（普通模式为原生数值输入，隐藏模式为密码输入），不通过数值组件重新舍入；资产编辑、交易和收支继续沿用原有领域校验与财务 API。
 - 财务档案的 `providedFields` 随账号档案保存，`features/portfolio/ProfileForm` 拥有输入与填写状态草稿，保存成功后采用返回档案；`models::FinancialProfile` 解释历史缺失状态，`context/fact_sheet` 据此生成事实。未填写、明确零值与初始数值的规则统一见[财务事实边界](ai-data-boundary.md)，预览与执行仍共用服务端上下文构建。
-- 问答提供实际资料预览，已完成报告的引用在抽屉查看；流式阶段只映射服务端状态，未知阶段保留原文。来源、方法论版本等元信息仅显示契约中实际存在的字段。
+- 问答提供实际资料预览，已完成报告的引用在抽屉查看；流式阶段只映射服务端状态，未知阶段保留原文。评议结果只展示服务端轨迹中的计票、选票质疑与研究缺口，前端不重新计票。来源、方法论版本等元信息仅显示契约中实际存在的字段。
 
 ## 6. 关键数据流
 
@@ -201,11 +201,15 @@ sequenceDiagram
     S->>D: 重新取锁，保存基于冻结输入的分析历史
 ```
 
-预览与执行共享 `AnalysisService::prepare`，避免授权与指纹出现两套实现。执行失败不写历史；外部模型运行期间不持有账号锁。AI 上下文统一使用 `facts` 事实卡，精确金额去重、比例在领域层计算，`facts.dataIssues` 合并问题码、影响持仓、计算范围与期权再平衡排除信息；每项持仓带可用的精确当前股数、参考价、最近 20 笔交易原值与已录入总笔数，现金按币种提供余额及核对状态；原始档案、会计双份投影、规则、复盘与每日资产不进入上下文。估值计算链和研究原文分别冻结在 `BuiltContext.valuationEvidence`、`evidenceCatalog` 并写入轨迹审计；模型输入使用紧凑 JSON，`context/discussion` 按本轮明确公司优先、近期用户问题回退的规则提供统一检索线索，`application/analysis` 优先提供相应最新及本周观察证据，剩余额度由关键词检索补齐，共最多5条。普通片段最多2000字连续原文；生产观察由 `context/observation` 生成最多4000字的结构化投影，原始完整观察与模型投影共同冻结，事件或记录按完整单位省略并标明数量，不任意截断JSON。输出校验保留结构、证据 ID 与原值引用规则，不强制动作逐字匹配固定文案。追问单独冻结 previousTurn，有限保留上一轮摘要、早期用户问题和模型追问，具体预算见[工作流对话上下文](ai-workflow.md#对话上下文)；任一资料组关闭时移除历史模型字段，用户问题保留，当前 question 不拼接历史。模型历史摘要不可作为事实引用；用户历史原话只允许通过 `/previousTurn/question` 和规范数组索引的 `/previousTurn/earlierQuestions/` 路径回查，`ReportSources` 同步展示声明来源。最新用户更正与已保存档案保持不同来源，不自动改写存储。`discussionGuide` 组合相关红利与个人适用性核查指引，同次冻结指纹并记入轨迹；原生搜索只消费其公开公司身份与固定主题，AI 不从个人正文生成搜索载荷。领域投影不读仓储，不新增持久状态或模型阶段。历史分析冻结上下文不改写。新报告使用回答、建议、事实和可选追问的契约；唯一生产工作流 v16 仍是单次生成与至多一次格式修复，按问题需要展开依据、推理和条件，不强制所有行动带金额或比例。字符预算与详实建议要求见[工作流规范](ai-workflow.md#结构化输出契约)，结构／授权校验不替代语义质量评阅。`models/analysis_history` 隔离历史报告的读取类型，生成只接受当前契约；v8–v10 同形记录保留原文，本次没有数据迁移或新增财务写入。
+预览与执行共享 `AnalysisService::prepare`，避免授权与指纹出现两套实现。执行失败不写历史；外部模型运行期间不持有账号锁。AI 上下文统一使用 `facts` 事实卡，精确金额去重、比例在领域层计算，`facts.dataIssues` 合并问题码、影响持仓、计算范围与期权再平衡排除信息；每项持仓带可用的精确当前股数、参考价、最近 20 笔交易原值与已录入总笔数，现金按币种提供余额及核对状态；原始档案、会计双份投影、规则、复盘与每日资产不进入上下文。估值计算链和研究原文分别冻结在 `BuiltContext.valuationEvidence`、`evidenceCatalog` 并写入轨迹审计；模型输入使用紧凑 JSON，`context/discussion` 按本轮明确公司优先、近期用户问题回退的规则提供统一检索线索，`application/analysis` 优先提供相应最新及本周观察证据，剩余额度由关键词检索补齐，共最多5条。普通片段最多2000字连续原文；生产观察由 `context/observation` 生成最多4000字的结构化投影，原始完整观察与模型投影共同冻结，事件或记录按完整单位省略并标明数量，不任意截断JSON。输出校验保留结构、证据 ID 与原值引用规则，不强制动作逐字匹配固定文案。追问单独冻结 previousTurn，有限保留上一轮摘要、早期用户问题和模型追问，具体预算见[工作流对话上下文](ai-workflow.md#对话上下文)；任一资料组关闭时移除历史模型字段，用户问题保留，当前 question 不拼接历史。模型历史摘要不可作为事实引用；用户历史原话只允许通过 `/previousTurn/question` 和规范数组索引的 `/previousTurn/earlierQuestions/` 路径回查，`ReportSources` 同步展示声明来源。最新用户更正与已保存档案保持不同来源，不自动改写存储。`discussionGuide` 组合相关红利与个人适用性核查指引，同次冻结指纹并记入轨迹；原生搜索只消费其公开公司身份与固定主题，AI 不从个人正文生成搜索载荷。领域投影不读仓储。历史分析冻结上下文不改写。新报告使用回答、建议、事实和可选追问的契约；唯一生产工作流 v17 `council` 由研究代理、三个方案代理与交叉投票组成，计票在 `models::council` 中确定性完成，胜出方案原样采纳，按问题需要展开依据、推理和条件，不强制所有行动带金额或比例。字符预算与详实建议要求见[工作流规范](ai-workflow.md#结构化输出契约)，结构／授权校验不替代语义质量评阅。`models/analysis_history` 隔离历史报告的读取类型（含旧 `adviceGrounding`），生成只接受当前契约；v8–v10 同形记录保留原文。
+
+评议的步骤、失败降级与轨迹见[工作流多代理评议](ai-workflow.md#多代理评议)。所有代理共享同一份冻结输入和执行端口，由编排器在一次执行内串联：研究失败（非供应商错误）降级继续，方案部分失败只缩小候选，选票作废不阻止采纳；只有供应商错误或三个方案全部失败才使整次执行失败。网页搜索失败同样降级为只用本地资料。原生搜索中的供应商摘要只作为不可引用线索进入轨迹与提示，原文片段才进入证据目录。
+
+长期记忆的选取在 `context/memory` 中按本次授权完成并进入冻结 payload 与指纹；记忆整理由 `application/memory` 编排：持锁读取水位之后的分析与有效条目并冻结，释放锁调用 `AnalysisExecutor::dream`（进程内、独立 Agent `/dream` 或 Codex 桥接，与问答相同的配置与凭据冻结），重新取锁后比较条目修订与水位，一致才经 `models::memory::screen_operations` 逐项筛选，并由 `db/memory::apply_dream` 在单一事务中写入条目、推进水位与保存摘要。整理由网页在问答完成后按到期标记发起或由用户手动触发，没有后台定时任务。行为契约见[长期记忆](ai-memory.md)。
 
 投资方法论通过 `GET/PUT /api/investment-methodology` 管理，正文与初始范本契约归 `models/methodology.rs`，使用账号 schema 内的 `settings[investment.methodology]` 保存。没有存量值时返回初始范本，不执行隐式写入。准备时服务端读取已保存正文并纳入冻结 payload、预览指纹和历史轨迹；生成流程消费冻结的方法论正文，数据解释、来源校验与输出格式仍由系统约束。更改方法论使旧预览失效，已启动分析继续使用冻结版本。
 
-普通供应商的连接恢复归 `ai/native_provider`，仅对明确可重试HTTP拒绝和未建立连接的 `is_connect` 错误复用原有轮次、总预算与取消机制；响应超时、已输出内容和流中断不重放。传输尝试数进入轨迹，不等同已计费生成数。重试与真实回复质量门槛以[工作流规范](ai-workflow.md)为准，不引入持久任务或生产语义裁判阶段。
+普通供应商的连接恢复归 `ai/native_provider`，仅对明确可重试HTTP拒绝和未建立连接的 `is_connect` 错误复用原有轮次、总预算与取消机制；响应超时、已输出内容和流中断不重放。传输尝试数进入轨迹，不等同已计费生成数。重试与真实回复质量门槛以[工作流规范](ai-workflow.md)为准；评议投票由方案代理完成、计票在 Rust 中确定性执行，不引入持久任务或独立的语义裁判服务。
 
 ### 6.3 行情与汇率
 
@@ -295,7 +299,8 @@ HTTP 只提供已认证的 `GET /watch/dividend-calendar`，只读缓存并按�
 | 公开分红主资料 | `db/public_dividends` + `application/watch_market` | 所有账号复用；只有公开来源和内置原件可写入，整站备份保留；没有账号 ID 或个人记录 |
 | 账号观察规则 | `db/watch/rules` 的账号 settings | 规则及旧提醒清除同事务保存；随个人备份（v28 起）导出，旧备份缺项恢复默认值，校验失败整次回滚 |
 | 观察名单、置顶和网格方案、最后采用的分红依据、收盘历史与未读状态 | `db/watch` | 独立于财务账本；按账号事务保存，后台网络不持有账号锁，来源失败保留上次观测日期 |
-| 冻结分析输入 | 单次分析请求 | 执行期间不可变，结果记录输入版本与轨迹 |
+| 冻结分析输入 | 单次分析请求 | 执行期间不可变，结果记录输入版本与轨迹；评议各代理共享同一份输入 |
+| 长期记忆条目与整理水位 | `db/memory` + `application/memory` | 条目、水位与整理摘要同事务写入并推进账号版本；模型运行期间不持锁，返回后比较条目修订与水位，冲突不写入；随个人备份 v31 导出 |
 | 桥接配对 | `application/codex_bridge` + `ai/bridge` | 只存配对摘要与短期通道，不接触 OpenAI 凭据；沿用 `codex-bridge` 协议，不区分本机登录实现 |
 | ChatGPT 官方注册与令牌 | 用户电脑的 `chatgpt_auth/store` | 系统用户专属配置目录；稳定 host ID、按 subject + issued client ID 分开的注册；锁内轮换和原子替换；不是业务数据库或账号备份 |
 | 已显示快照、同步状态 | `app/useApplicationData` | 请求代次防止旧响应覆盖新数据 |
@@ -344,14 +349,14 @@ HTTP 只提供已认证的 `GET /watch/dividend-calendar`，只读缓存并按�
 
 - 旧 JSON 备份结构（同步数据集 v1 起）、旧租户 schema 补列与一次性数据迁移（`db/schema.rs`、按 `POSTGRES_SCHEMA_VERSION` 只执行一次）。
 - 旧收支缺少 exactAmounts 时，将已保存数值转换为事实卡十进制字符串；不推测此前已丢失精度，待存量收支均以精确值重存后可移除。
-- 历史报告与引用的读取适配，保留历史原文；v7 的研究计划、候选、风险审查及模型证据核对字段仅供读取，当前 v16 不产生这些内容；v8–v10 同形报告保留原文。
+- 历史报告与引用的读取适配，保留历史原文；v7 的研究计划、候选与风险审查只留在存储原文，模型证据核对 `adviceGrounding` 经 `models/analysis_history::LegacyTraceArtifacts` 只读返回，当前 v17 不产生这些内容；v8–v10 同形报告保留原文。
 
 - 旧 SQLite 数据：运行时只有 PostgreSQL，唯一迁移路径是用 Git 标签 `legacy-sqlite-export` 中的 `--export-data` 导出同步数据集，再由当前版本导入（见 [数据迁移](data-migration.md#旧版-sqlite-数据)）；该标签不再接收修复。
-- 长期记忆退役后的升级与恢复：仓储升级时删除旧偏好表、清理预设开关和分析中的记忆元数据，历史问答正文及冻结引用保留；旧备份只校验退役表形状并跳过，导入在同一事务内清理元数据并执行财务一致性校验。待停止支持 v1–v21 备份时移除。
+- 旧记忆偏好退役后的升级与恢复（与 v31 起的 `analysis_memories` 无关，旧数据不迁入）：仓储升级时删除旧 `memory_preferences` 表、清理旧 `useMemory` 开关和分析中的旧记忆元数据，历史问答正文及冻结引用保留；旧备份只校验退役表形状并跳过，导入在同一事务内清理元数据并执行财务一致性校验。待停止支持 v1–v21 备份时移除。
 
 ## 10. 容量边界与已知架构债
 
-当前实现面向小规模自建：账号数据库按请求租用连接，API 最多保留 8 个空闲租户连接，业务并发有固定上限，快照为全量读取，同步为轮询，分析没有持久作业或跨实例取消。扩大规模时的接入点是异步 SQL、分页/增量资源接口和任务队列；在需求出现前不预先引入。
+当前实现面向小规模自建：账号数据库按请求租用连接，API 最多保留 8 个空闲租户连接，业务并发有固定上限，快照为全量读取，同步为轮询，分析和记忆整理没有持久作业或跨实例取消。一次评议最多约 7 次生成调用（另加修复），费用与耗时约为单次生成的数倍；记忆整理只在网页打开时由客户端发起，长期不打开网页则不会整理。扩大规模时的接入点是异步 SQL、分页/增量资源接口和任务队列；在需求出现前不预先引入。
 
 已知架构债（架构检查通过不代表它们已消失）：
 
@@ -370,5 +375,5 @@ HTTP 只提供已认证的 `GET /watch/dividend-calendar`，只读缓存并按�
 - 产品与方法：[买点观察助手](buy-watch.md)、[产品目标与当前主线](product-vision.md)、[投资方法论](methodology.md)、[确定性风险与再平衡模型](planning-model.md)
 - 安全与数据：[自建服务信任边界](threat-model.md)、[账号与数据同步](cloud-sync.md)、[AI 数据边界](ai-data-boundary.md)、[可追溯市场数据](market-data.md)
 - 领域行为：[真实成交与持仓](holding-trades.md)、[每日资产](daily-assets.md)、[研究证据](research-evidence.md)、[复盘与规则](review-and-rules.md)
-- AI：[AI 分析工作流契约](ai-workflow.md)、[问答流式回复](ai-streaming.md)、[可审计的 AI 分析档案](analysis-history.md)、[Codex 桥接](codex-bridge.md)
+- AI：[AI 分析工作流契约与流式回复](ai-workflow.md)、[长期记忆与记忆整理](ai-memory.md)、[可审计的 AI 分析档案](analysis-history.md)、[Codex 桥接](codex-bridge.md)
 - 运维：[自建宿主机服务](self-hosting.md)、[宿主机部署](deploy-madeagents.md)、[数据迁移](data-migration.md)、[Web 构建](client-builds.md)

@@ -55,7 +55,7 @@ it("loads saved permissions and saves one preset for future questions", async ()
   });
 });
 
-it("offers only the three supported data groups and uses single-call analysis", async () => {
+it("offers only the supported data groups, including long-term memory, without retired workflow options", async () => {
   vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(
     analysisSettings,
   );
@@ -70,6 +70,7 @@ it("offers only the three supported data groups and uses single-call analysis", 
     "财务档案",
     "持仓与交易明细",
     "研究证据与历史搜索资料",
+    "长期记忆（偏好与已核对观点）",
   ]) {
     expect((screen.getByLabelText(label) as HTMLInputElement).checked).toBe(
       true,

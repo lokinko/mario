@@ -1,11 +1,12 @@
 import type { AnalysisSettings } from "../types";
 
 export const analysisSettings: AnalysisSettings = {
-  workflow: "quick",
+  workflow: "council",
   webSearch: false,
   contextSelection: {
     includeProfile: true,
     includeHoldings: true,
     includeEvidence: true,
+    includeMemory: true,
   },
 };

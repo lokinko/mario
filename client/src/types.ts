@@ -338,7 +338,7 @@ export interface AnalysisRequest {
   webSearch?: boolean;
   previousTurn?: PreviousTurn;
   question: string;
-  workflow: "quick";
+  workflow: "council";
   contextSelection: ContextSelection;
   previewRevision?: string;
 }
@@ -347,10 +347,11 @@ export interface ContextSelection {
   includeProfile: boolean;
   includeHoldings: boolean;
   includeEvidence: boolean;
+  includeMemory: boolean;
 }
 
 export interface AnalysisSettings {
-  workflow: "quick";
+  workflow: "council";
   webSearch: boolean;
   contextSelection: ContextSelection;
 }
@@ -367,7 +368,7 @@ export interface ContextGroup {
 export interface AnalysisPreview {
   provider: ModelProviderKind;
   model: string;
-  workflow: "quick";
+  workflow: "council";
   groups: ContextGroup[];
   evidenceCandidates: ResearchEvidence[];
   payload: Record<string, unknown>;
@@ -392,6 +393,7 @@ export interface AnalysisTransparency {
   outputTokens?: number | null;
   structuredOutputValidated: boolean;
   outputRepairs: number;
+  memoryNotesUsed?: number;
   externalDataUsed: boolean;
   apiKeySent: boolean;
 }
@@ -406,8 +408,10 @@ export interface AnalysisResult {
   disclaimer: string;
 }
 
+/** Drafts are unvalidated live text of one proposal agent, keyed by its ID. */
 export type AnalysisUpdate =
-  { type: "draft"; answer: string } | { type: "status"; message: string };
+  | { type: "draft"; proposal: string; answer: string }
+  | { type: "status"; message: string };
 export type AnalysisEvent =
   | AnalysisUpdate
   | { type: "complete"; result: AnalysisResult }
@@ -444,14 +448,21 @@ export interface AdviceGrounding {
     quote: string;
   }[];
 }
+export interface WebLead {
+  title: string;
+  url: string;
+  summary: string;
+}
+
 export interface AnalysisWorkflowTrace {
   valuationEvidence?: HoldingValuationEvidence[];
-  informationSelection?: unknown[];
   webSearch?: {
-    status: string;
+    status: "completed" | "incomplete" | "failed" | string;
     searchCalls: number;
     warnings: string[];
+    leads?: WebLead[];
   } | null;
+  /** Only present on historical analyses produced before the council workflow. */
   adviceGrounding?: AdviceGrounding[];
   personalContext?: {
     currentUserMessage?: string; // Read-only historical reference.
@@ -466,13 +477,109 @@ export interface AnalysisWorkflowTrace {
     };
   } | null;
   version: string;
-  researchPlan?: string | null;
-  alternatives: AnalysisAlternative[];
-  critique?: string | null;
   calls: ModelCallTrace[];
   structuredReport?: StructuredAnalysis | LegacyStructuredAnalysis | null;
   outputValidation?: OutputValidationTrace | null;
   evidenceCatalog: AnalysisEvidenceReference[];
+  research?: ResearchTrace | null;
+  proposals?: ProposalTrace[];
+  vote?: VoteTrace | null;
+}
+
+export interface ResearchTrace {
+  brief?: {
+    findings: AnalysisClaim[];
+    counterpoints: string[];
+    unknowns: string[];
+    checks: {
+      index: number;
+      status: "covered" | "not_applicable" | "missing_source";
+      note: string;
+    }[];
+  } | null;
+  validation?: OutputValidationTrace | null;
+  failure?: string | null;
+}
+
+export interface ProposalTrace {
+  id: string;
+  lens: string;
+  label: string;
+  report?: StructuredAnalysis | null;
+  validation?: OutputValidationTrace | null;
+  failure?: string | null;
+}
+
+export interface BallotAssessment {
+  proposal: string;
+  scores: {
+    facts: number;
+    citations: number;
+    reasoning: number;
+    counterpoints: number;
+    actionability: number;
+  };
+  veto: string | null;
+  objection: string;
+}
+
+export interface BallotTrace {
+  voter: string;
+  lens: string;
+  ballot?: { preferred: string | null; assessments: BallotAssessment[] } | null;
+  validation?: OutputValidationTrace | null;
+  failure?: string | null;
+}
+
+export interface VoteTrace {
+  status: "voted" | "tied" | "contested" | "single" | "unvoted";
+  winner: string;
+  tally: {
+    proposal: string;
+    voters: number;
+    preferences: number;
+    vetoes: number;
+    scoreTotal: number;
+    eliminated: boolean;
+    rank: number;
+  }[];
+  ballots: BallotTrace[];
+}
+
+export type MemoryKind = "preference" | "viewpoint" | "context";
+export type MemoryOrigin = "userStated" | "modelInferred";
+
+export interface MemoryNote {
+  id: string;
+  kind: MemoryKind;
+  origin: MemoryOrigin;
+  statement: string;
+  rationale: string;
+  sourceAnalysisIds: string[];
+  quote: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DreamSummary {
+  analyses: number;
+  added: number;
+  updated: number;
+  archived: number;
+  rejected: string[];
+}
+
+export interface MemoryOverview {
+  items: MemoryNote[];
+  dream: {
+    dreamedThrough?: string | null;
+    lastRunAt?: string | null;
+    lastResult?: DreamSummary | null;
+  };
+  pendingAnalyses: number;
+  dreamDue: boolean;
+  enabled: boolean;
 }
 
 export interface StructuredAnalysis {
@@ -523,9 +630,11 @@ export interface AnalysisAction {
 }
 
 export interface OutputValidationTrace {
-  status: "valid" | "repaired";
+  status: "valid" | "repaired" | "failed";
   attempts: number;
   errors: string[];
+  /** The first output a repair replaced, kept for audit. */
+  rejectedOutput?: string | null;
 }
 
 export interface AnalysisEvidenceReference {
@@ -542,13 +651,6 @@ export interface AnalysisEvidenceReference {
   sourceUrl: string;
   sourceTier: string;
   asOfDate: string;
-}
-
-export interface AnalysisAlternative {
-  id: string;
-  label: string;
-  lens: string;
-  content: string;
 }
 
 export interface ModelCallTrace {

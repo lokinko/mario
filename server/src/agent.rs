@@ -5,7 +5,10 @@ use crate::{
     ai::{InvestmentOrchestrator, ModelProvider, NativeModelProvider},
     authentication::token_matches,
     context,
-    models::{AnalysisRequest, AnalysisResult, ModelConfig, ModelProviderKind},
+    models::{
+        memory::{DreamInput, DreamOutcome},
+        AnalysisRequest, AnalysisResult, ModelConfig, ModelProviderKind,
+    },
     AppError, AppResult,
 };
 use axum::{
@@ -23,6 +26,13 @@ use std::sync::Arc;
 struct Job {
     request: AnalysisRequest,
     context: context::BuiltContext,
+    config: ModelConfig,
+    api_key: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DreamJob {
+    input: DreamInput,
     config: ModelConfig,
     api_key: String,
 }
@@ -52,7 +62,83 @@ impl crate::ports::analysis::AnalysisExecutor for AgentExecutor {
         self.execute_with_events(config, api_key, request, context, Some(events))
             .await
     }
+    async fn dream(
+        &self,
+        config: ModelConfig,
+        api_key: Option<String>,
+        input: DreamInput,
+    ) -> AppResult<DreamOutcome> {
+        if let Some((endpoint, token)) = remote_agent(&config)? {
+            let job = DreamJob {
+                api_key: api_key
+                    .ok_or_else(|| AppError::Validation("独立 Agent 需要模型 API Key".into()))?,
+                config,
+                input,
+            };
+            let response = agent_client()?
+                .post(format!("{endpoint}/dream"))
+                .bearer_auth(token)
+                .json(&job)
+                .send()
+                .await?;
+            if !response.status().is_success() {
+                return Err(AppError::Model(
+                    "AI Agent 记忆整理失败，请检查 Agent 服务日志及模型配置".into(),
+                ));
+            }
+            return Ok(response.json().await?);
+        }
+        let provider = local_provider(config, api_key, None)?;
+        crate::ai::dream(provider.as_ref(), &input).await
+    }
 }
+
+/// The remote Agent endpoint, unless the model runs through the user's Codex bridge.
+fn remote_agent(config: &ModelConfig) -> AppResult<Option<(String, String)>> {
+    let Some(endpoint) = std::env::var("MARIO_AGENT_URL")
+        .ok()
+        .filter(|_| config.provider != ModelProviderKind::CodexBridge)
+    else {
+        return Ok(None);
+    };
+    let token = std::env::var("MARIO_AGENT_TOKEN")
+        .map_err(|_| AppError::Validation("缺少 Agent 服务令牌".into()))?;
+    Ok(Some((endpoint.trim_end_matches('/').to_string(), token)))
+}
+
+fn agent_client() -> AppResult<reqwest::Client> {
+    Ok(reqwest::Client::builder()
+        .timeout(crate::models::inference::AGENT_HTTP_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?)
+}
+
+fn local_provider(
+    config: ModelConfig,
+    api_key: Option<String>,
+    events: Option<crate::ports::analysis::EventSender>,
+) -> AppResult<Box<dyn ModelProvider>> {
+    Ok(if config.provider == ModelProviderKind::CodexBridge {
+        Box::new(
+            crate::ai::bridge::BridgeProvider::new(
+                api_key.ok_or_else(|| AppError::Validation("请先配对本机 Codex".into()))?,
+                config.model,
+            )
+            .with_events(events),
+        )
+    } else {
+        Box::new(
+            NativeModelProvider::new(
+                config.provider,
+                config.base_url,
+                config.model,
+                api_key.ok_or_else(|| AppError::Validation("请配置 API Key".into()))?,
+            )?
+            .with_events(events),
+        )
+    })
+}
+
 impl AgentExecutor {
     async fn execute_with_events(
         &self,
@@ -62,12 +148,7 @@ impl AgentExecutor {
         context: context::BuiltContext,
         events: Option<crate::ports::analysis::EventSender>,
     ) -> AppResult<AnalysisResult> {
-        if let Some(endpoint) = std::env::var("MARIO_AGENT_URL")
-            .ok()
-            .filter(|_| config.provider != ModelProviderKind::CodexBridge)
-        {
-            let token = std::env::var("MARIO_AGENT_TOKEN")
-                .map_err(|_| AppError::Validation("缺少 Agent 服务令牌".into()))?;
+        if let Some((endpoint, token)) = remote_agent(&config)? {
             let job = Job {
                 api_key: api_key
                     .ok_or_else(|| AppError::Validation("独立 Agent 需要模型 API Key".into()))?,
@@ -75,13 +156,9 @@ impl AgentExecutor {
                 request,
                 context,
             };
-            let mut response = reqwest::Client::builder()
-                .timeout(crate::models::inference::AGENT_HTTP_TIMEOUT)
-                .redirect(reqwest::redirect::Policy::none())
-                .build()?
+            let mut response = agent_client()?
                 .post(format!(
-                    "{}/execute{}",
-                    endpoint.trim_end_matches('/'),
+                    "{endpoint}/execute{}",
                     if events.is_some() { "/stream" } else { "" }
                 ))
                 .bearer_auth(token)
@@ -117,26 +194,7 @@ impl AgentExecutor {
             }
             return Ok(response.json().await?);
         }
-        let provider: Box<dyn ModelProvider> = if config.provider == ModelProviderKind::CodexBridge
-        {
-            Box::new(
-                crate::ai::bridge::BridgeProvider::new(
-                    api_key.ok_or_else(|| AppError::Validation("请先配对本机 Codex".into()))?,
-                    config.model,
-                )
-                .with_events(events.clone()),
-            )
-        } else {
-            Box::new(
-                NativeModelProvider::new(
-                    config.provider,
-                    config.base_url,
-                    config.model,
-                    api_key.ok_or_else(|| AppError::Validation("请配置 API Key".into()))?,
-                )?
-                .with_events(events.clone()),
-            )
-        };
+        let provider = local_provider(config, api_key, events.clone())?;
         let mut orchestrator = InvestmentOrchestrator::new(provider.as_ref());
         if let Some(events) = events {
             orchestrator = orchestrator.with_events(events);
@@ -159,6 +217,7 @@ pub async fn serve() -> AppResult<()> {
         )
         .route("/execute", post(run))
         .route("/execute/stream", post(run_stream))
+        .route("/dream", post(run_dream))
         .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024))
         .layer(middleware::from_fn(
             move |mut request: Request, next: Next| {
@@ -174,8 +233,10 @@ pub async fn serve() -> AppResult<()> {
                     {
                         return AppError::Auth("Agent 认证失败".into()).into_response();
                     }
-                    let _permit = if matches!(request.uri().path(), "/execute" | "/execute/stream")
-                    {
+                    let _permit = if matches!(
+                        request.uri().path(),
+                        "/execute" | "/execute/stream" | "/dream"
+                    ) {
                         match slots.try_acquire_owned() {
                             Ok(permit) => Some(Arc::new(permit)),
                             Err(_) => {
@@ -222,6 +283,24 @@ async fn run(Json(job): Json<Job>) -> AppResult<Json<AnalysisResult>> {
         .map_err(|_| {
             AppError::Model(crate::models::inference::ANALYSIS_TIMEOUT_MESSAGE.into())
         })??,
+    ))
+}
+
+async fn run_dream(Json(job): Json<DreamJob>) -> AppResult<Json<DreamOutcome>> {
+    validate_endpoint(&job.config.base_url)?;
+    let provider = NativeModelProvider::new(
+        job.config.provider,
+        job.config.base_url,
+        job.config.model,
+        job.api_key,
+    )?;
+    Ok(Json(
+        tokio::time::timeout(
+            crate::models::inference::DREAM_TIMEOUT,
+            crate::ai::dream(&provider, &job.input),
+        )
+        .await
+        .map_err(|_| AppError::Model(crate::models::inference::DREAM_TIMEOUT_MESSAGE.into()))??,
     ))
 }
 
@@ -278,15 +357,19 @@ mod tests {
                 let captured = captured.clone();
                 async move {
                     let streaming = body["stream"] == true;
+                    let messages = body["messages"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|message| crate::ai::ChatMessage {
+                            role: message["role"].as_str().unwrap().into(),
+                            content: message["content"].as_str().unwrap().into(),
+                        })
+                        .collect::<Vec<_>>();
                     captured.lock().unwrap().push((headers, body));
-                    let report = serde_json::json!({
-                        "answer":"先核对集中风险",
-                        "facts":[{"statement":"组合集中度为100%","basis":"user_data","sourceRefs":["/facts/holdings/fund/weightPct"],"evidenceIds":[]}],
-                        "suggestions":[{"factIndices":[0],"action":"先保持现有仓位","why":"集中度100%，暂不加仓","unlessWhen":"资金期限明确后重评"}],
-                        "question":"资金什么时候要用？"
-                    });
+                    let report = crate::ai::council_fixture_reply(&messages);
                     if streaming {
-                        let content = report.to_string();
+                        let content = report.clone();
                         let stream = async_stream::stream! {
                             yield Ok::<_, std::convert::Infallible>(bytes::Bytes::from(format!("data: {}\n\n", serde_json::json!({"choices":[{"index":0,"delta":{"content":content},"finish_reason":null}]}))));
                             tokio::task::yield_now().await;
@@ -295,7 +378,7 @@ mod tests {
                         return axum::response::Response::builder().header("content-type", "text/event-stream").body(axum::body::Body::from_stream(stream)).unwrap();
                     }
                     Json(serde_json::json!({
-                        "choices":[{"message":{"role":"assistant","content":report.to_string()},"finish_reason":"stop"}],
+                        "choices":[{"message":{"role":"assistant","content":report},"finish_reason":"stop"}],
                         "usage":{"prompt_tokens":10,"completion_tokens":5}
                     })).into_response()
                 }
@@ -305,14 +388,17 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let request: AnalysisRequest = serde_json::from_value(serde_json::json!({
-            "question":"如何检查集中风险？","workflow":"quick","webSearch":false,
-            "reflect":false,"exploreAlternatives":false
+            "question":"如何检查集中风险？","workflow":"council","webSearch":false
         }))
         .unwrap();
         let make_job = || Job {
             request: request.clone(),
             context: context::BuiltContext {
-                payload: serde_json::json!({"facts":{"holdings":{"fund":{"weightPct":"100"}}}}),
+                payload: serde_json::json!({
+                    "question":"如何检查集中风险？",
+                    "facts":{"holdings":{"fund":{"weightPct":"100"}}},
+                    "discussionGuide":{"researchChecks":["直接回答当前问题"]}
+                }),
                 groups: Vec::new(),
                 payload_bytes: 40,
                 revision: "custom-model-test".into(),
@@ -331,7 +417,8 @@ mod tests {
             api_key: "custom-model-test-key".into(),
         };
         let Json(result) = run(Json(make_job())).await.unwrap();
-        assert!(result.answer.contains("先核对集中风险"));
+        assert!(result.answer.starts_with("P1 先处理集中风险"));
+        assert_eq!(result.transparency.model_calls, 7);
         assert_eq!(result.transparency.provider, "openai-chat");
         assert_eq!(result.transparency.model, "third-party-model");
         let slots = Arc::new(tokio::sync::Semaphore::new(1));
@@ -346,12 +433,14 @@ mod tests {
         let events = crate::ai::streaming::SseDecoder::default()
             .feed(&body)
             .unwrap();
-        assert!(events
-            .iter()
-            .any(|data| data.contains("\"type\":\"draft\"") && data.contains("先核对集中风险")));
+        for proposal in ["P1", "P2", "P3"] {
+            assert!(events.iter().any(|data| data.contains("\"type\":\"draft\"")
+                && data.contains(&format!("\"proposal\":\"{proposal}\""))
+                && data.contains(&format!("{proposal} 先处理集中风险"))));
+        }
         let completed = events.last().unwrap();
         assert!(completed.contains("\"type\":\"complete\""));
-        assert!(completed.contains("先核对集中风险"));
+        assert!(completed.contains("P1 先处理集中风险"));
         assert_eq!(slots.available_permits(), 1);
         server.abort();
         let requests = requests.lock().unwrap();
@@ -362,5 +451,45 @@ mod tests {
             assert!(body["messages"].is_array());
             assert!(body.get("tools").is_none());
         }
+    }
+
+    #[tokio::test]
+    async fn agent_dream_route_returns_proposals_without_touching_storage() {
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(|Json(body): Json<serde_json::Value>| async move {
+                assert!(body["messages"][0]["content"]
+                    .as_str()
+                    .unwrap()
+                    .contains("你是记忆整理代理"));
+                Json(serde_json::json!({
+                    "choices":[{"message":{"role":"assistant","content":"{\"operations\":[]}"},"finish_reason":"stop"}],
+                    "usage":{"prompt_tokens":10,"completion_tokens":5}
+                }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let job = DreamJob {
+            input: DreamInput {
+                analyses: Vec::new(),
+                memories: Vec::new(),
+            },
+            config: ModelConfig {
+                source: Default::default(),
+                server_model: None,
+                provider: ModelProviderKind::OpenaiChat,
+                base_url: format!("http://{address}/v1/"),
+                model: "third-party-model".into(),
+                has_api_key: true,
+            },
+            api_key: "dream-test-key".into(),
+        };
+        let Json(outcome) = run_dream(Json(job)).await.unwrap();
+        server.abort();
+        assert!(outcome.proposal.operations.is_empty());
+        assert_eq!(outcome.validation.status, "valid");
+        assert_eq!(outcome.calls.len(), 1);
     }
 }

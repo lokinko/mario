@@ -1194,6 +1194,7 @@ dependencies = [
  "encoding_rs",
  "fs2",
  "futures-core",
+ "futures-util",
  "httpdate",
  "iana-time-zone",
  "icu_collections",

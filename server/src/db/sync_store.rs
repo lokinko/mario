@@ -4,6 +4,9 @@ use super::{
     SyncValue, Utc, Value, SYNC_DATASET_SCHEMA_VERSION, SYNC_TABLES,
 };
 
+/// Settings that belong to the account backup; model configuration, presets and keys do not.
+const BACKUP_SETTINGS: &str = "key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%' OR key='investment.methodology' OR key='watch.rules' OR key='memory.dream_state'";
+
 impl Database {
     pub fn export_sync_data(&self) -> AppResult<SyncDataset> {
         let conn = self.conn()?;
@@ -19,9 +22,9 @@ impl Database {
                 columns.join(","),
                 quote_identifier(spec.name),
                 if spec.name == "settings" {
-                    "WHERE key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%' OR key='investment.methodology' OR key='watch.rules'"
+                    format!("WHERE {BACKUP_SETTINGS}")
                 } else {
-                    ""
+                    String::new()
                 },
                 spec.order_by
             );
@@ -75,9 +78,9 @@ impl Database {
 
         for spec in SYNC_TABLES.iter().rev() {
             let filter = if spec.name == "settings" {
-                " WHERE key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%' OR key='investment.methodology' OR key='watch.rules'"
+                format!(" WHERE {BACKUP_SETTINGS}")
             } else {
-                ""
+                String::new()
             };
             transaction.execute(
                 &format!("DELETE FROM {}{filter}", quote_identifier(spec.name)),
@@ -136,6 +139,7 @@ impl Database {
         super::amounts::validate(&transaction)?;
         super::cash::validate(&transaction)?;
         super::corporate::validate(&transaction)?;
+        super::memory::validate(&transaction)?;
         transaction.commit()?;
         Ok(())
     }

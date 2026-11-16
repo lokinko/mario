@@ -26,6 +26,7 @@ mod financial_tests;
 pub(crate) use cash::fund as fund_cash;
 mod daily;
 mod fx;
+mod memory;
 mod portfolio;
 mod public_dividends;
 mod public_prices;

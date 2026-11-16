@@ -291,7 +291,7 @@ try {
   await api("/investment-methodology", "PUT", { prompt: " " }, 400);
   await api("/investment-methodology", "PUT", { prompt: "中".repeat(4001) }, 400);
   assert.equal((await api("/investment-methodology")).prompt, customMethodology);
-  const contextPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "quick" });
+  const contextPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "council" });
   assert.equal(contextPreview.payload.investmentMethodology, customMethodology);
   assert(contextPreview.systemPolicy.includes(customMethodology));
   assert.equal(contextPreview.payload.facts.summary.horizonYears, "未填写");
@@ -306,20 +306,22 @@ try {
   const savedProfile = await api("/profile", "PUT", explicitProfile);
   assert.deepEqual(savedProfile.profile.providedFields, explicitProfile.providedFields);
   assert.deepEqual((await api("/snapshot")).profile, savedProfile.profile);
-  const savedPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "quick" });
+  const savedPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "council" });
   assert.equal(savedPreview.payload.facts.summary.horizonYears, 5);
   assert.equal(savedPreview.payload.facts.summary.liabilities, "0");
   assert.equal(savedPreview.payload.facts.summary.maxDrawdownPct, "15");
   assert.notEqual(savedPreview.contextRevision, contextPreview.contextRevision);
   await api("/profile", "PUT", { ...explicitProfile, providedFields: [] });
-  const clearedPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "quick" });
+  const clearedPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "council" });
   assert.equal(clearedPreview.payload.facts.summary.horizonYears, "未填写");
   assert.equal(clearedPreview.payload.facts.summary.liabilities, "未填写");
   const defaults = await api("/analysis-settings");
-  assert.equal(defaults.workflow, "quick");
+  assert.equal(defaults.workflow, "council");
   assert.equal(defaults.reflect, undefined);
   assert.equal(defaults.exploreAlternatives, undefined);
-  await api("/analysis/preview", "POST", { question: "退役流程", workflow: "deep" }, 400);
+  for (const retired of ["quick", "deep"]) {
+    await api("/analysis/preview", "POST", { question: "退役流程", workflow: retired }, 400);
+  }
   await api("/analysis-settings", "PUT", { ...defaults, workflow: "deep" }, 400);
   assert.equal(defaults.useMemory, undefined);
   assert.equal(defaults.contextSelection.includeProfile, true);
@@ -421,7 +423,7 @@ try {
   assert.deepEqual(Buffer.from(download.dataBase64, "base64"), originalFile);
   await api(`/research-evidence/${source.id}/attachments/${attachment.id}`, "GET", undefined, 404);
   const filePreview = await api("/analysis/preview", "POST", {
-    question: "黄金储备", workflow: "quick", webSearch: false,
+    question: "黄金储备", workflow: "council", webSearch: false,
   });
   assert(filePreview.evidenceCandidates.some(item => item.id === fileSource.id && item.claim.includes("原始重要信息")));
   assert(!JSON.stringify(filePreview).includes(originalFile.toString("base64")));
@@ -472,7 +474,7 @@ try {
 
   const request = {
     question: "分析我的现金资产变化",
-    workflow: "quick",
+    workflow: "council",
     webSearch: false,
   };
   const analysis = await api("/analysis/preview", "POST", request);
@@ -486,9 +488,10 @@ try {
   await api("/analysis/preview", "POST", { ...request, previousTurn: { ...previousTurn, answer: "字".repeat(801) } }, 400);
   const redacted = await api("/analysis/preview", "POST", { ...request, contextSelection: { includeProfile: false } });
   assert.equal(redacted.payload.facts.summary.liabilities, undefined);
-  const omitted = await api("/analysis/preview", "POST", { ...request, contextSelection: { includeHoldings: false, includeDailyAssets: true } });
+  const omitted = await api("/analysis/preview", "POST", { ...request, contextSelection: { includeHoldings: false } });
   assert.equal(omitted.payload.facts.holdings, undefined);
   assert.equal(omitted.payload.dailyAssetHistory, undefined);
+  await api("/analysis/preview", "POST", { ...request, contextSelection: { includeHoldings: false, includeDailyAssets: true } }, 422);
   await api(`/holdings/${cash}`, "PUT", {
     ...holding("现金", 102200),
     valuationDate: today,

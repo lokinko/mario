@@ -56,6 +56,11 @@ pub trait ModelProvider: Send + Sync {
     }
     fn provider_name(&self) -> &str;
     fn model_name(&self) -> &str;
+    /// False when the provider serves one request at a time and rejects overlapping ones,
+    /// so callers must issue independent calls sequentially.
+    fn accepts_concurrent_calls(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

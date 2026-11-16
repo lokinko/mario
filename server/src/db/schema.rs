@@ -5,7 +5,7 @@ use crate::error::AppResult;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 17;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 18;
 
 // Keep migration order intact: re-running on an existing tenant schema is idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -141,6 +141,18 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
          CREATE TABLE IF NOT EXISTS settings (
            key TEXT PRIMARY KEY,
            value TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS analysis_memories (
+           id TEXT PRIMARY KEY,
+           kind TEXT NOT NULL CHECK (kind IN ('preference','viewpoint','context')),
+           origin TEXT NOT NULL CHECK (origin IN ('userStated','modelInferred')),
+           statement TEXT NOT NULL,
+           rationale TEXT NOT NULL,
+           source_analysis_ids TEXT NOT NULL,
+           quote TEXT NOT NULL,
+           active INTEGER NOT NULL CHECK (active IN (0,1)),
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL
          );",
     )?;
     connection.execute_batch(
@@ -206,10 +218,8 @@ pub(super) fn remove_retired_analysis_metadata(connection: &Connection) -> AppRe
         .optional()?;
     if let Some(preset) = preset {
         if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&preset) {
-            if value
-                .as_object_mut()
-                .is_some_and(|object| object.remove("useMemory").is_some())
-            {
+            let canonical = canonical_analysis_preset(&mut value);
+            if canonical {
                 connection.execute(
                     "UPDATE settings SET value=$1 WHERE key='analysis.settings'",
                     [serde_json::to_string(&value)?],
@@ -266,4 +276,31 @@ pub(super) fn remove_retired_analysis_metadata(connection: &Connection) -> AppRe
         }
     }
     Ok(())
+}
+
+/// Remove retired preset options and move every stored workflow to the single current one,
+/// so strict request and preset parsing never meets old keys. Returns whether it changed.
+fn canonical_analysis_preset(value: &mut serde_json::Value) -> bool {
+    let Some(object) = value.as_object_mut() else {
+        return false;
+    };
+    let mut changed = false;
+    for key in crate::models::RETIRED_ANALYSIS_OPTIONS {
+        changed |= object.remove(key).is_some();
+    }
+    if let Some(selection) = object
+        .get_mut("contextSelection")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        for key in crate::models::RETIRED_CONTEXT_OPTIONS {
+            changed |= selection.remove(key).is_some();
+        }
+    }
+    if object.get("workflow").and_then(serde_json::Value::as_str)
+        != Some(crate::models::ANALYSIS_WORKFLOW)
+    {
+        object.insert("workflow".into(), crate::models::ANALYSIS_WORKFLOW.into());
+        changed = true;
+    }
+    changed
 }

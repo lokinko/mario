@@ -11,6 +11,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Advisor } from "./Advisor";
 import * as researchApi from "../../api/research";
 import * as settingsApi from "../../api/settings";
+import * as memoryApi from "../../api/memory";
 import type {
   AnalysisPreview,
   AnalysisResult,
@@ -27,6 +28,12 @@ vi.mock("../../api/research", () => ({
 vi.mock("../../api/settings", () => ({
   getAnalysisSettings: vi.fn(),
 }));
+vi.mock("../../api/memory", () => ({
+  getMemory: vi.fn(),
+  dreamMemory: vi.fn(),
+  setMemoryStatus: vi.fn(),
+  deleteMemory: vi.fn(),
+}));
 
 const preview = {
   contextRevision: "revision-1",
@@ -41,6 +48,13 @@ const result = {
   answer: "先明确你的资金使用时间。",
   workflowTrace: { evidenceCatalog: [] },
 } as unknown as AnalysisResult;
+const memoryOverview = (dreamDue: boolean) => ({
+  items: [],
+  dream: {},
+  pendingAnalyses: dreamDue ? 3 : 0,
+  dreamDue,
+  enabled: true,
+});
 const props = {
   model: {
     provider: "openai-responses" as const,
@@ -58,6 +72,8 @@ beforeEach(() => {
   vi.mocked(researchApi.previewAnalysis).mockResolvedValue(preview);
   vi.mocked(researchApi.runAnalysis).mockResolvedValue(result);
   vi.mocked(researchApi.getAnalysisHistory).mockResolvedValue([]);
+  vi.mocked(memoryApi.getMemory).mockResolvedValue(memoryOverview(false));
+  vi.mocked(memoryApi.dreamMemory).mockResolvedValue(memoryOverview(false));
 });
 afterEach(() => {
   cleanup();
@@ -138,7 +154,11 @@ it("shows streamed text before completion and replaces it with the saved report"
   vi.mocked(researchApi.runAnalysis).mockImplementation(
     (_request, onUpdate) => {
       onUpdate?.({ type: "status", message: "正在核对证据…" });
-      onUpdate?.({ type: "draft", answer: "逐步显示的中文回复" });
+      onUpdate?.({
+        type: "draft",
+        proposal: "P1",
+        answer: "逐步显示的中文回复",
+      });
       return new Promise((resolve) => {
         finish = resolve;
       });
@@ -162,7 +182,7 @@ it("shows streamed text before completion and replaces it with the saved report"
 it("preserves an interrupted draft and original question for retry", async () => {
   vi.mocked(researchApi.runAnalysis).mockImplementation(
     async (_request, onUpdate) => {
-      onUpdate?.({ type: "draft", answer: "中断前的部分回复" });
+      onUpdate?.({ type: "draft", proposal: "P1", answer: "中断前的部分回复" });
       throw new Error("回复连接中断");
     },
   );
@@ -199,7 +219,7 @@ it("stops the stream, retains the draft and ignores late updates or completion",
     (_request, onUpdate, nextSignal) => {
       update = onUpdate!;
       signal = nextSignal!;
-      update({ type: "draft", answer: "停止前的部分回复" });
+      update({ type: "draft", proposal: "P1", answer: "停止前的部分回复" });
       return new Promise((resolve) => {
         finish = resolve;
       });
@@ -216,7 +236,7 @@ it("stops the stream, retains the draft and ignores late updates or completion",
   expect(input.value).toBe("待中止的问题");
   expect(input.disabled).toBe(false);
   await act(async () => {
-    update({ type: "draft", answer: "停止后到达的回复" });
+    update({ type: "draft", proposal: "P1", answer: "停止后到达的回复" });
     finish(result);
   });
   expect(screen.getByText("停止前的部分回复")).toBeTruthy();
@@ -255,7 +275,7 @@ it("does not let a stopped request unlock or overwrite a new generation", async 
         }),
     )
     .mockImplementationOnce((_request, onUpdate) => {
-      onUpdate?.({ type: "draft", answer: "新请求的回复" });
+      onUpdate?.({ type: "draft", proposal: "P1", answer: "新请求的回复" });
       return new Promise((resolve) => {
         secondFinish = resolve;
       });
@@ -725,6 +745,7 @@ it.each(["stop", "failure", "preparation failure"])(
         async (_request, update) => {
           update?.({
             type: "draft",
+            proposal: "P1",
             answer: "未完成内容，包含 AI 自行提出的问题？",
           });
           if (outcome === "failure") throw new Error("模型中断");
@@ -795,4 +816,52 @@ it("previews the actual selected payload without sending an analysis", async () 
   expect(researchApi.runAnalysis).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("shows each proposal agent's draft separately and keeps only its latest text", async () => {
+  vi.mocked(researchApi.runAnalysis).mockImplementation(
+    (_request, onUpdate) => {
+      onUpdate?.({ type: "draft", proposal: "P2", answer: "条件执行旧稿" });
+      onUpdate?.({ type: "draft", proposal: "P1", answer: "稳健等待草稿" });
+      onUpdate?.({ type: "draft", proposal: "P2", answer: "条件执行新稿" });
+      return new Promise(() => {});
+    },
+  );
+  render(<Advisor {...props} />);
+  ask("并行方案问题");
+  const drafts = await screen.findAllByRole("region", {
+    name: /方案 P\d 草稿/,
+  });
+  expect(drafts.map((draft) => draft.getAttribute("aria-label"))).toEqual([
+    "方案 P1 草稿",
+    "方案 P2 草稿",
+  ]);
+  expect(drafts[1].textContent).toContain("条件执行新稿");
+  expect(screen.queryByText("条件执行旧稿")).toBeNull();
+});
+
+it("consolidates memory once due and holds the next question until it finishes", async () => {
+  vi.mocked(memoryApi.getMemory).mockResolvedValue(memoryOverview(true));
+  let finishDream!: () => void;
+  vi.mocked(memoryApi.dreamMemory).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finishDream = () => resolve(memoryOverview(false));
+      }),
+  );
+  render(<Advisor {...props} />);
+  ask("第一轮问题");
+  await screen.findByText(result.answer);
+  await waitFor(() => expect(memoryApi.dreamMemory).toHaveBeenCalledTimes(1));
+  vi.mocked(memoryApi.getMemory).mockResolvedValue(memoryOverview(false));
+  ask("第二轮问题");
+  expect(
+    (await screen.findAllByText("正在整理长期记忆…")).length,
+  ).toBeGreaterThan(0);
+  expect(researchApi.previewAnalysis).toHaveBeenCalledTimes(1);
+  await act(async () => finishDream());
+  await waitFor(() =>
+    expect(researchApi.previewAnalysis).toHaveBeenCalledTimes(2),
+  );
+  expect(memoryApi.dreamMemory).toHaveBeenCalledTimes(1);
 });

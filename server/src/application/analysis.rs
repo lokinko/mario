@@ -31,12 +31,18 @@ impl<'a> AnalysisService<'a> {
         let methodology = self.db.investment_methodology()?;
         let snapshot = self.db.snapshot()?;
         let evidence_candidates = relevant_evidence(self.db, request, &snapshot)?;
+        let memory_notes = if request.context_selection.include_memory {
+            self.db.active_memory_notes()?
+        } else {
+            Vec::new()
+        };
         let built_context = context::ContextBuilder::build(
             request,
             &snapshot,
             &context::ContextSources {
                 methodology: Some(&methodology.prompt),
                 evidence_candidates: &evidence_candidates,
+                memory_notes: &memory_notes,
             },
         );
         Ok(PreparedAnalysis {
@@ -88,15 +94,7 @@ impl<'a> AnalysisService<'a> {
                 "本地数据或上下文选择已变化，请重新预览后再确认分析".into(),
             ));
         }
-        // Freeze credentials and their destination under the same account lock;
-        // another device may change its model settings while this analysis runs.
-        if config.provider != ModelProviderKind::CodexBridge {
-            crate::models::validate_endpoint(&config.base_url)?;
-        }
-        let api_key = match config.provider {
-            ModelProviderKind::CodexBridge => Some(super::codex_bridge::id(self.db)?),
-            _ => Some(configured_model_key(self.db, &config, self.server)?),
-        };
+        let api_key = frozen_credentials(self.db, self.server, &config)?;
         let execution = async {
             if let Some(events) = events {
                 executor
@@ -125,6 +123,22 @@ impl<'a> AnalysisService<'a> {
         self.db.save_analysis(&result, &request.question)?;
         Ok(result)
     }
+}
+
+/// Freeze credentials and their destination under the account lock; another device
+/// may change its model settings while the model runs without the lock.
+pub(super) fn frozen_credentials(
+    db: &Database,
+    server: Option<&ServerOpenAi>,
+    config: &ModelConfig,
+) -> AppResult<Option<String>> {
+    if config.provider != ModelProviderKind::CodexBridge {
+        crate::models::validate_endpoint(&config.base_url)?;
+    }
+    Ok(Some(match config.provider {
+        ModelProviderKind::CodexBridge => super::codex_bridge::id(db)?,
+        _ => configured_model_key(db, config, server)?,
+    }))
 }
 fn relevant_evidence(
     db: &Database,
@@ -547,7 +561,7 @@ mod tests {
             web_search: false,
             previous_turn: None,
             question: "复盘指数集中风险".into(),
-            workflow: "quick".into(),
+            workflow: crate::models::ANALYSIS_WORKFLOW.into(),
 
             context_selection: ContextSelection::default(),
             preview_revision: None,

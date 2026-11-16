@@ -1,6 +1,7 @@
 //! HTTP adapters. Business workflows live in application; authentication selects a context.
 pub(crate) mod codex_bridge;
 mod error;
+mod memory;
 pub(crate) mod policy;
 mod portfolio;
 mod research;
@@ -39,6 +40,7 @@ pub(crate) fn api_router() -> Router {
         )
         .merge(portfolio::router())
         .merge(research::router())
+        .merge(memory::router())
         .merge(reviews::router())
         .merge(settings::router())
         .merge(watch::router())

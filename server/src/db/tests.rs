@@ -261,6 +261,7 @@ pub(super) fn add_retired_tables(dataset: &mut SyncDataset) {
             "watch_entries",
             "watch_observations",
             "watch_dividends",
+            "analysis_memories",
         ]
         .contains(&t.name.as_str())
     });
@@ -905,6 +906,7 @@ fn stores_analysis_transparency_audit() {
             output_tokens: Some(100),
             structured_output_validated: true,
             output_repairs: 0,
+            memory_notes_used: 0,
             external_data_used: false,
             api_key_sent: false,
         },
@@ -942,6 +944,7 @@ fn stores_analysis_transparency_audit() {
                 status: "valid".into(),
                 attempts: 1,
                 errors: Vec::new(),
+                rejected_output: None,
             }),
             ..crate::models::AnalysisWorkflowTrace::default()
         },
@@ -972,8 +975,8 @@ fn stores_analysis_transparency_audit() {
     );
     let mut reviewed_result = result.clone();
     reviewed_result.id = "analysis-checked".into();
-    reviewed_result.workflow_trace.advice_grounding =
-        vec![crate::models::information::AdviceGrounding {
+    reviewed_result.workflow_trace.legacy.advice_grounding =
+        vec![crate::models::analysis_history::AdviceGrounding {
             action_index: 0,
             status: "contradicted".into(),
             reason: "与原始资料相反".into(),
@@ -995,6 +998,7 @@ fn stores_analysis_transparency_audit() {
             .unwrap()
             .workflow_trace
             .unwrap()
+            .legacy
             .advice_grounding[0]
             .reason,
         "与原始资料相反"
@@ -1434,6 +1438,9 @@ fn manual_holding_details_reject_invalid_values_and_inconsistent_sync() {
 /// Exports before v30 have no research evidence category column.
 pub(super) fn set_legacy_version(dataset: &mut SyncDataset, version: u32) {
     dataset.schema_version = version;
+    if version < 31 {
+        dataset.tables.retain(|t| t.name != "analysis_memories");
+    }
     if version >= 30 {
         return;
     }

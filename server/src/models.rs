@@ -1,9 +1,10 @@
 pub(crate) mod analysis_history;
 pub use analysis_history::StoredAnalysisReport;
+pub(crate) mod council;
 mod endpoint;
 pub(crate) mod inference;
-pub(crate) mod information;
 pub(crate) mod market;
+pub(crate) mod memory;
 pub(crate) mod methodology;
 mod provider;
 pub(crate) mod watch;
@@ -655,8 +656,28 @@ impl PreviousTurn {
     }
 }
 
+/// The only production workflow identifier: research agent, proposal agents and a vote.
+pub const ANALYSIS_WORKFLOW: &str = "council";
+
+/// Retired request and preset options. Storage strips them once; requests that still
+/// send them are rejected instead of silently running a different workflow.
+pub const RETIRED_ANALYSIS_OPTIONS: [&str; 4] = [
+    "reflect",
+    "exploreAlternatives",
+    "useMemory",
+    "dailyAssetRange",
+];
+pub const RETIRED_CONTEXT_OPTIONS: [&str; 6] = [
+    "includePlanning",
+    "includeRiskFindings",
+    "includeRules",
+    "includeSystemReviews",
+    "includeDailyAssets",
+    "includePortfolioCheckins",
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisRequest {
     #[serde(default)]
     pub web_search: bool,
@@ -672,7 +693,7 @@ pub struct AnalysisRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct AnalysisSettings {
     pub workflow: String,
 
@@ -683,7 +704,7 @@ pub struct AnalysisSettings {
 impl Default for AnalysisSettings {
     fn default() -> Self {
         Self {
-            workflow: "quick".into(),
+            workflow: ANALYSIS_WORKFLOW.into(),
 
             web_search: false,
             context_selection: ContextSelection::default(),
@@ -692,7 +713,7 @@ impl Default for AnalysisSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContextSelection {
     #[serde(default = "enabled")]
     pub include_profile: bool,
@@ -700,6 +721,16 @@ pub struct ContextSelection {
     pub include_holdings: bool,
     #[serde(default = "enabled")]
     pub include_evidence: bool,
+    /// Send relevant long-term memory and allow automatic dreaming after answers.
+    #[serde(default = "enabled")]
+    pub include_memory: bool,
+}
+
+impl ContextSelection {
+    /// Every financial data group is authorized; model-derived history may be carried.
+    pub fn all_financial_groups(&self) -> bool {
+        self.include_profile && self.include_holdings && self.include_evidence
+    }
 }
 
 impl Default for ContextSelection {
@@ -708,6 +739,7 @@ impl Default for ContextSelection {
             include_profile: true,
             include_holdings: true,
             include_evidence: true,
+            include_memory: true,
         }
     }
 }
@@ -767,6 +799,8 @@ pub struct AnalysisTransparency {
     pub structured_output_validated: bool,
     #[serde(default)]
     pub output_repairs: usize,
+    #[serde(default)]
+    pub memory_notes_used: usize,
     pub external_data_used: bool,
     pub api_key_sent: bool,
 }
@@ -799,12 +833,16 @@ pub struct AnalysisClaim {
     pub source_refs: Vec<String>,
 }
 
+/// `repaired` means only that a second, format-only attempt passed structural checks;
+/// the rejected first output is kept so a reviewer can compare what changed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputValidationTrace {
     pub status: String,
     pub attempts: usize,
     pub errors: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejected_output: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -838,39 +876,29 @@ pub struct AnalysisWorkflowTrace {
     #[serde(default)]
     pub valuation_evidence: Vec<HoldingValuationEvidence>,
     #[serde(default)]
-    pub information_selection: Vec<information::SelectedInformation>,
-    #[serde(default)]
     pub web_search: Option<WebSearchTrace>,
-    #[serde(default)]
-    // Read-only historical v7 artifacts; current workflow never produces these.
-    pub advice_grounding: Vec<information::AdviceGrounding>,
     #[serde(default)]
     pub personal_context: Option<serde_json::Value>,
     #[serde(default)]
     pub version: String,
     #[serde(default)]
-    pub research_plan: Option<String>,
-    #[serde(default)]
-    pub alternatives: Vec<AnalysisAlternative>,
-    #[serde(default)]
-    pub critique: Option<String>,
-    #[serde(default)]
     pub calls: Vec<ModelCallTrace>,
+    /// The adopted report: the winning proposal, unchanged.
     #[serde(default)]
     pub structured_report: Option<StoredAnalysisReport>,
     #[serde(default)]
     pub output_validation: Option<OutputValidationTrace>,
     #[serde(default)]
     pub evidence_catalog: Vec<AnalysisEvidenceReference>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnalysisAlternative {
-    pub id: String,
-    pub label: String,
-    pub lens: String,
-    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research: Option<council::ResearchTrace>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proposals: Vec<council::ProposalTrace>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vote: Option<council::VoteTrace>,
+    /// Fields only reports frozen by retired workflows carry; never written now.
+    #[serde(flatten)]
+    pub legacy: analysis_history::LegacyTraceArtifacts,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1082,9 +1110,21 @@ pub struct ResearchAttachmentDownload {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSearchTrace {
+    /// `completed`, `incomplete` (no citable original text) or `failed` (run continued locally).
     pub status: String,
     pub search_calls: usize,
     pub warnings: Vec<String>,
+    /// Provider-written summaries: shown as leads to verify, never authorized as evidence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub leads: Vec<WebLead>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WebLead {
+    pub title: String,
+    pub url: String,
+    pub summary: String,
 }
 
 impl AnalysisRequest {
@@ -1095,7 +1135,7 @@ impl AnalysisRequest {
         if let Some(previous) = &self.previous_turn {
             previous.validate()?;
         }
-        if self.workflow != "quick" {
+        if self.workflow != ANALYSIS_WORKFLOW {
             return Err(crate::AppError::Validation("未知的分析工作流".into()));
         }
         Ok(())

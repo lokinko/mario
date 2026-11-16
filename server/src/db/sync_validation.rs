@@ -266,6 +266,8 @@ pub(super) fn validate_synced_settings(dataset: &SyncDataset) -> AppResult<()> {
             .validate()?;
         } else if key == "watch.rules" {
             serde_json::from_str::<crate::models::watch::rules::WatchRules>(value)?.validate()?;
+        } else if key == "memory.dream_state" {
+            serde_json::from_str::<crate::models::memory::DreamState>(value)?.validate()?;
         } else if !key.starts_with("fx.book.") && !key.starts_with("fx.quote.") {
             return Err(AppError::Validation("数据快照包含不支持的设置项".into()));
         }

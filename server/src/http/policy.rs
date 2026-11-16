@@ -39,5 +39,9 @@ mod tests {
         assert!(requires_revision(&Method::DELETE, "/api/watch/catalog"));
         assert!(!requires_revision(&Method::POST, "/api/watch/grid-preview"));
         assert!(requires_revision(&Method::PUT, "/api/watch/600036.SS/grid"));
+        assert!(!requires_revision(&Method::GET, "/api/memory"));
+        assert!(requires_revision(&Method::POST, "/api/memory/dream"));
+        assert!(requires_revision(&Method::PUT, "/api/memory/mem-1/status"));
+        assert!(requires_revision(&Method::DELETE, "/api/memory/mem-1"));
     }
 }

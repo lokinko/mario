@@ -158,7 +158,7 @@ fn companies(
 }
 
 fn has_dividend_topic(question: &str) -> bool {
-    ["股息", "分红", "红利", "派息", "买点", "BOLL", "长期持有"]
+    ["股息", "分红", "红利", "派息", "买点", "BOLL"]
         .iter()
         .any(|term| question.to_uppercase().contains(term))
 }
@@ -295,7 +295,7 @@ mod tests {
     use super::*;
 
     fn request(question: &str) -> AnalysisRequest {
-        serde_json::from_value(json!({"question":question,"workflow":"quick"})).unwrap()
+        serde_json::from_value(json!({"question":question,"workflow":"council"})).unwrap()
     }
 
     fn facts() -> Value {
@@ -303,6 +303,19 @@ mod tests {
             "one":{"name":"虚构红利甲","symbol":"600036.SS","marketValue":"PRIVATE_AMOUNT"},
             "two":{"name":"虚构红利乙","symbol":"000001.SZ","account":"PRIVATE_ACCOUNT"}
         }})
+    }
+
+    #[test]
+    fn holding_horizon_alone_is_not_a_dividend_question() {
+        let guide = build_discussion(
+            &request("指数基金准备长期持有，要不要设止损？"),
+            &[],
+            &facts(),
+        );
+        assert_eq!(guide["kind"], "general_finance");
+        assert_eq!(guide["researchChecks"].as_array().unwrap().len(), 1);
+        let guide = build_discussion(&request("准备长期持有，分红能持续吗？"), &[], &facts());
+        assert_eq!(guide["kind"], "dividend_discussion");
     }
 
     #[test]

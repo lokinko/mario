@@ -27,8 +27,16 @@ export async function runAnalysis(
         if (!event || typeof event !== "object")
           throw new Error("流式回复格式无效");
         const update = event as Record<string, unknown>;
-        if (update.type === "draft" && typeof update.answer === "string")
-          onUpdate({ type: "draft", answer: update.answer });
+        if (
+          update.type === "draft" &&
+          typeof update.proposal === "string" &&
+          typeof update.answer === "string"
+        )
+          onUpdate({
+            type: "draft",
+            proposal: update.proposal,
+            answer: update.answer,
+          });
         else if (update.type === "status" && typeof update.message === "string")
           onUpdate({ type: "status", message: update.message });
         else if (update.type === "error" && typeof update.message === "string")
