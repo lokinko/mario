@@ -787,14 +787,6 @@ main {
 .conversation-welcome {
   padding: 40px 0 var(--space-7);
 }
-.conversation-welcome h2 {
-  margin: 10px 0;
-  color: var(--text-1);
-  font-family: var(--font-serif);
-  font-size: 32px;
-  font-weight: 400;
-  letter-spacing: -0.01em;
-}
 .conversation-welcome > .text-button {
   margin-bottom: var(--space-4);
 }

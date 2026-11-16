@@ -1416,37 +1416,22 @@ input[type="number"] {
   padding: var(--space-8) 0;
 }
 .conversation-starters {
-  flex-wrap: wrap;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-.conversation-starters button {
-  font-size: var(--fs-body-sm);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-2);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  border-radius: var(--radius-lg);
+}
+.conversation-starters button {
+  border: 0;
+  background: none;
+  padding: 0;
   text-align: left;
-  padding: var(--space-4);
+  font-size: var(--fs-body-sm);
   color: var(--text-2);
-  box-shadow: var(--shadow-card);
-  transition:
-    border-color var(--duration-hover) var(--ease),
-    box-shadow var(--duration-enter) var(--ease),
-    transform var(--duration-enter) var(--ease-spring);
+  transition: color var(--duration-hover) var(--ease);
 }
 .conversation-starters button:hover {
   color: var(--text-1);
-  border-color: var(--line-strong);
-  box-shadow: var(--shadow-lift);
-  transform: translateY(-2px);
-}
-.conversation-starters button strong {
-  font-weight: 500;
 }
 .user-question {
   margin: 0 0 var(--space-4) auto;
@@ -1877,9 +1862,6 @@ input[type="number"] {
   }
   .holdings-list-header {
     display: none;
-  }
-  .conversation-starters {
-    grid-template-columns: 1fr;
   }
   .composer-footer {
     flex-wrap: wrap;

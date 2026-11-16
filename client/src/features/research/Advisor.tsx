@@ -374,16 +374,12 @@ export function Advisor({
         <div className="chat-main">
           {turns.length === 0 && !draft && !running && (
             <section className="conversation-welcome" aria-label="开始问答">
-              <h2>从一个问题开始</h2>
               <div className="conversation-starters">
                 {[
-                  ["分红", "如何核查我关注公司的分红持续性？"],
-                  ["交易", "请结合我的真实交易讨论最近一次红利投资决策。"],
-                  [
-                    "等待",
-                    "对我认可的红利公司，还需要等待哪些条件再考虑买入？",
-                  ],
-                ].map(([category, prompt]) => (
+                  "如何核查我关注公司的分红持续性？",
+                  "请结合我的真实交易讨论最近一次红利投资决策。",
+                  "对我认可的红利公司，还需要等待哪些条件再考虑买入？",
+                ].map((prompt) => (
                   <button
                     key={prompt}
                     aria-label={prompt}
@@ -394,8 +390,7 @@ export function Advisor({
                       inputRef.current?.focus();
                     }}
                   >
-                    <Badge>{category}</Badge>
-                    <strong>{prompt}</strong>
+                    {prompt}
                   </button>
                 ))}
               </div>
