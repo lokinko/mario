@@ -49,7 +49,6 @@ export interface PriceCollectionDashboard {
 export interface UsageDashboard {
   marketPrices: PriceCollectionDashboard;
   generatedAt: number;
-  trackingSince: number;
   days: number;
   totalUsers: number;
   dailyActive: number;

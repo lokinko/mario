@@ -47,7 +47,6 @@ impl Page {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UsageDashboard {
     generated_at: i64,
-    tracking_since: i64,
     days: i64,
     total_users: i64,
     daily_active: i64,
@@ -122,11 +121,6 @@ impl Accounts {
         let today = day_start(now) / 60;
         let start = today - (days - 1) * 1440;
         let summary = tx.query_row("SELECT COUNT(DISTINCT user_id) FILTER(WHERE minute >= $1), COUNT(DISTINCT user_id) FILTER(WHERE minute >= $2), COUNT(DISTINCT user_id) FILTER(WHERE minute >= $3) FROM activity_minutes WHERE minute <= $4",params![today,today-6*1440,today-29*1440,now/60],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
-        let tracking_since = tx.query_row(
-            "SELECT started_at FROM activity_metadata WHERE id=1",
-            [],
-            |r| r.get(0),
-        )?;
         let mut statement=tx.prepare("SELECT ((minute+480)/1440)*1440-480 AS day, COUNT(DISTINCT user_id), COUNT(DISTINCT (user_id,minute)) FROM activity_minutes WHERE minute >= $1 AND minute <= $2 GROUP BY day ORDER BY day DESC")?;
         let rows = statement
             .query_map(params![start, now / 60], |r| {
@@ -181,7 +175,6 @@ impl Accounts {
         tx.commit()?;
         Ok(UsageDashboard {
             generated_at: now,
-            tracking_since,
             days,
             total_users,
             daily_active: summary.0,

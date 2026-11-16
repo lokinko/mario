@@ -86,7 +86,6 @@ export function UsageDashboard() {
             <Activity aria-hidden="true" />
             运行看板
           </h1>
-          <p>全站使用概况 · 仅超级账户可见</p>
         </div>
         <Button
           icon={<RefreshCw size={15} />}
@@ -227,22 +226,6 @@ export function UsageDashboard() {
               ]}
             />
           </section>
-          <footer className="usage-definition">
-            <h2>统计口径</h2>
-            <p>
-              活跃用户指登录后在可见页面中有活动采样的去重账号。每 30
-              秒检查一次，连续 5
-              分钟无点击、键盘、滚动或触摸后停止采样；后台同步不计入。
-            </p>
-            <p>
-              活跃分钟是有采样的账号分钟数，并非精确在线时长或访问次数。同一账号多标签页去重；跨功能页的分钟可分别计入各页，因此功能行不能直接相加。看板自身不计入。
-            </p>
-            <p>
-              按北京时间自然日统计，保留最近 90 天。
-              {display && `采集启用于 ${stamp(display.trackingSince)}；`}
-              启用前未采集，空白日期不代表过去无人使用。仅保存功能页标识和活动分钟，不采集财务与问答正文。页面每分钟自动刷新。
-            </p>
-          </footer>
         </>
       )}
     </main>

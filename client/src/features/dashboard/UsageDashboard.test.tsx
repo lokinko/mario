@@ -57,7 +57,6 @@ const fixture: DashboardData = {
     daily: [],
   },
   generatedAt: 1794528000,
-  trackingSince: 1794528000,
   days: 30,
   totalUsers: 2,
   dailyActive: 1,

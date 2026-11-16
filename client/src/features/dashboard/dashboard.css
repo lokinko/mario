@@ -29,9 +29,7 @@
   font-size: var(--fs-figure);
   margin: 16px 0 8px;
 }
-.usage-heading p,
-.usage-toolbar > span,
-.usage-definition {
+.usage-toolbar > span {
   color: var(--text-3);
   font-size: var(--fs-body-sm);
 }
@@ -66,8 +64,7 @@
   margin-bottom: 20px;
   min-width: 0;
 }
-.usage-panel h2,
-.usage-definition h2 {
+.usage-panel h2 {
   font-size: var(--fs-title-sm);
   margin: 0 0 16px;
 }
@@ -79,10 +76,6 @@
 }
 .usage-table-heading .ant-input-search {
   max-width: 280px;
-}
-.usage-definition {
-  line-height: 1.8;
-  margin-top: 28px;
 }
 @media (max-width: 1200px) {
   .usage-dashboard {
@@ -119,8 +112,90 @@
   }
 }
 
-.price-collection-meta {
-  color: var(--text-3);
+.price-collection-alert {
+  color: var(--warning);
   font-size: var(--fs-body-sm);
-  line-height: 1.8;
+}
+.price-status-overview {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.price-status-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+}
+.price-status-overview .price-status-bar {
+  height: 14px;
+}
+.price-status-bar span {
+  flex-basis: 0;
+  min-width: 3px;
+}
+.price-status-bar .price-status-success,
+.price-status-label.price-status-success::before {
+  background: var(--success);
+}
+.price-status-bar .price-status-failed,
+.price-status-label.price-status-failed::before {
+  background: var(--danger);
+}
+.price-status-bar .price-status-pending,
+.price-status-label.price-status-pending::before {
+  background: var(--line-strong);
+}
+.price-status-bar .price-status-lagging,
+.price-status-label.price-status-lagging::before {
+  background: var(--warning);
+}
+.price-status-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.price-status-label::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.price-status-legend {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.price-status-legend button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--fs-body-sm);
+  cursor: pointer;
+}
+.price-status-legend button:hover {
+  background: var(--surface-hover);
+}
+.price-status-legend button[aria-pressed="true"] {
+  border-color: var(--brand);
+  color: var(--text-1);
+}
+.price-status-legend strong {
+  color: var(--text-1);
+  font-size: var(--fs-title-sm);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 900px) {
+  .price-status-legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
