@@ -449,7 +449,7 @@ it("shows the exact dividend events behind the closing yield", async () => {
   expect(event.textContent).toContain("报告期 2025-12-31");
 });
 
-it("ranks and highlights met conditions while search and holdings filter the list", async () => {
+it("sorts by yield by default and highlights met conditions while search and holdings filter the list", async () => {
   const missing = structuredClone(row);
   missing.entry = { ...missing.entry, symbol: "600000.SS", name: "资料待查" };
   missing.latest = null;
@@ -468,6 +468,10 @@ it("ranks and highlights met conditions while search and holdings filter the lis
   });
   render(<BuyWatch {...props()} />);
   const table = await screen.findByRole("table", { name: "观察公司对比" });
+  expect(screen.getByRole("combobox", { name: "观察排序" })).toHaveProperty(
+    "value",
+    "yield",
+  );
   const records = within(table).getAllByRole("row").slice(1);
   expect(
     records.map((r) => r.querySelector(".watch-company strong")?.textContent),
@@ -776,6 +780,9 @@ it("ranks by the weekly middle and shades that range even far from the weekly lo
   });
   render(<BuyWatch {...props()} />);
   const table = await screen.findByRole("table", { name: "观察公司对比" });
+  fireEvent.change(screen.getByRole("combobox", { name: "观察排序" }), {
+    target: { value: "default" },
+  });
   expect(
     within(table).getByRole("button", { name: /^距周线中轨：/ }),
   ).toBeTruthy();

@@ -74,7 +74,7 @@ export function BuyWatch({
   const [dirty, setDirty] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<WatchSort>("default");
+  const [sort, setSort] = useState<WatchSort>("yield");
   const [ownership, setOwnership] = useState("all");
   const [view, setView] = useState<"compact" | "cards">("compact");
   const guard = useRequestGuard();
