@@ -208,7 +208,7 @@ v1 → v2 只合并 `watch-catalog-additions-20261107.json` 明确指定的公�
 
 ### 问答报告、事实卡与追问
 
-- `models::StructuredAnalysis` 是生成契约；唯一生产工作流为 v12，沿用单次生成与至多一次格式修复，不新增语义评判模型阶段。结论、理由与前提可按问题展开，字符预算以[输出规范](ai-workflow.md#结构化输出契约)为准；不强制每个动作带金额，依赖目标的动作先写明假设。`models/analysis_history` 的独立类型只读历史报告，仓储以 `headline()` 获取两类报告的列表摘要，不转换历史正文。
+- `models::StructuredAnalysis` 是生成契约；唯一生产工作流为 v16，沿用单次生成与至多一次格式修复，不新增语义评判模型阶段。结论、理由与前提可按问题展开，字符预算以[输出规范](ai-workflow.md#结构化输出契约)为准；不强制每个动作带金额，依赖目标的动作先写明假设。`models/analysis_history` 的独立类型只读历史报告，仓储以 `headline()` 获取两类报告的列表摘要，不转换历史正文。
 - `ai/structured_output` 校验字段、数量、字数、事实索引和引用，拒绝缺少原值引用的个人事实；路径校验保证存在与授权，不替代语义核对。`ai/streaming` 只投影报告的用户可见字段。`features/research/ModelReport` 共享来源抽屉，按报告形状读取历史或显示新回答。
 - `context/fact_sheet` 是领域层确定性投影：精确金额只输出一次，结余、占比、偏差和浮盈使用 Decimal；组合合计缺失时保留空值与结构化影响范围，其他持仓及现金继续计算。不重算或写入财务事实。`application/analysis` 不查询个人规则、复盘和每日资产。
 - `BuiltContext` 区分模型 payload 与授权估值审计，二者共同冻结指纹；模型只消费紧凑 payload，估值链进入轨迹。预览的事实卡与模型使用的卡一致。

@@ -4,7 +4,7 @@ use super::structured_output::{MAX_STRUCTURED_OUTPUT_CHARS, STRUCTURED_ANALYSIS_
 use super::ChatMessage;
 use crate::context::INVESTMENT_SYSTEM_POLICY;
 
-pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v12";
+pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v16";
 
 pub struct StagePrompt {
     pub key: &'static str,
@@ -42,9 +42,9 @@ pub trait AnalysisWorkflow: Send + Sync {
     ) -> StagePrompt;
 }
 
-pub struct InvestmentWorkflowV12;
+pub struct InvestmentWorkflowV16;
 
-impl AnalysisWorkflow for InvestmentWorkflowV12 {
+impl AnalysisWorkflow for InvestmentWorkflowV16 {
     fn version(&self) -> &'static str {
         INVESTMENT_WORKFLOW_VERSION
     }
@@ -96,10 +96,10 @@ mod tests {
 
     #[test]
     fn generation_keeps_untrusted_data_boundary_and_machine_contract() {
-        let prompt = InvestmentWorkflowV12.quick("上下文");
+        let prompt = InvestmentWorkflowV16.quick("上下文");
         assert!(prompt.messages[0].content.contains("不可信数据"));
         assert!(prompt.messages[1].content.contains("evidenceIds"));
-        let repair = InvestmentWorkflowV12.repair_output("生成", "无效输出", "字段缺失", &[]);
+        let repair = InvestmentWorkflowV16.repair_output("生成", "无效输出", "字段缺失", &[]);
         assert_eq!(repair.messages[0].content, "只修复格式，不添加新事实。");
     }
 
@@ -112,7 +112,7 @@ mod tests {
         .to_string();
         assert!(invalid.chars().count() > 12_000);
         assert!(invalid.chars().count() < MAX_STRUCTURED_OUTPUT_CHARS);
-        let prompt = InvestmentWorkflowV12.repair_output("生成", &invalid, "字段无效", &[]);
+        let prompt = InvestmentWorkflowV16.repair_output("生成", &invalid, "字段无效", &[]);
         assert!(prompt.messages[1].content.contains(&invalid));
     }
 
@@ -120,7 +120,7 @@ mod tests {
     fn repair_bounds_oversized_originals_by_unicode_characters() {
         let retained = "🙂".repeat(MAX_STRUCTURED_OUTPUT_CHARS);
         let oversized = format!("{retained}BEYOND_ORIGINAL_BUDGET");
-        let prompt = InvestmentWorkflowV12.repair_output("生成", &oversized, "输出过大", &[]);
+        let prompt = InvestmentWorkflowV16.repair_output("生成", &oversized, "输出过大", &[]);
         assert!(prompt.messages[1].content.contains(&retained));
         assert!(!prompt.messages[1]
             .content
