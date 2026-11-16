@@ -77,6 +77,100 @@
 .usage-table-heading .ant-input-search {
   max-width: 280px;
 }
+.usage-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.usage-empty {
+  color: var(--text-3);
+}
+.growth-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-bottom: 12px;
+  color: var(--text-2);
+  font-size: var(--fs-body-sm);
+}
+.growth-legend strong {
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.growth-key::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.growth-key-new::before {
+  height: 10px;
+  border-radius: 2px;
+  background: var(--brand);
+  opacity: 0.45;
+}
+.growth-key-total::before {
+  height: 0;
+  border-top: 2px solid var(--brand);
+}
+.growth-chart {
+  display: block;
+  width: 100%;
+  height: 160px;
+  overflow: visible;
+}
+.growth-dates {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: var(--fs-body-sm);
+}
+.growth-axis {
+  stroke: var(--line);
+}
+.growth-bar {
+  fill: var(--brand);
+  opacity: 0.45;
+}
+.growth-line {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.feature-usage {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.feature-usage li {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 128px;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--fs-body-sm);
+}
+.feature-usage li > span:last-child {
+  color: var(--text-2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.feature-usage-track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surface-hover);
+  overflow: hidden;
+}
+.feature-usage-track > span {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
 @media (max-width: 1200px) {
   .usage-dashboard {
     padding: 32px 24px;
@@ -170,7 +264,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
-.price-status-legend button {
+.price-status-legend > * {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -180,6 +274,8 @@
   background: var(--surface);
   color: var(--text-2);
   font-size: var(--fs-body-sm);
+}
+.price-status-legend button {
   cursor: pointer;
 }
 .price-status-legend button:hover {

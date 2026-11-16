@@ -70,6 +70,8 @@ impl Accounts {
                 UPDATE users SET is_superuser=TRUE WHERE email='lokinko.cs@gmail.com';
             END IF;
         END $$;")?;
+        // Accounts that existed before this column keep NULL: their registration date is unknown.
+        connection.execute_batch("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at BIGINT; ALTER TABLE users ALTER COLUMN created_at SET DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT;")?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS login_limits(email TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at BIGINT NOT NULL);")?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS external_identities(issuer TEXT NOT NULL,client_id TEXT NOT NULL,subject TEXT NOT NULL,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(issuer,client_id,subject)); CREATE INDEX IF NOT EXISTS external_identity_user ON external_identities(user_id); CREATE TABLE IF NOT EXISTS openai_login_attempts(state_hash TEXT PRIMARY KEY,browser_hash TEXT NOT NULL,verifier TEXT NOT NULL,nonce TEXT NOT NULL,client_id TEXT NOT NULL,redirect_uri TEXT NOT NULL,link_session TEXT,expires_at BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS openai_attempt_expiry ON openai_login_attempts(expires_at);")?;
         connection.execute_batch("CREATE TABLE IF NOT EXISTS openai_login_results(result_hash TEXT PRIMARY KEY,browser_hash TEXT NOT NULL,session_hash TEXT,expires_at BIGINT NOT NULL); CREATE INDEX IF NOT EXISTS openai_result_expiry ON openai_login_results(expires_at);")?;
@@ -244,6 +246,43 @@ mod tests {
         let url = std::env::var("MARIO_TEST_DATABASE_URL")
             .expect("set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database");
         Accounts::open_schema(url, format!("auth_{}", uuid::Uuid::new_v4().simple())).unwrap()
+    }
+
+    #[test]
+    fn registration_time_is_recorded_for_new_accounts_only() {
+        let original = accounts();
+        let existing = original
+            .register(&Credentials {
+                email: "existing@example.test".into(),
+                password: "long-password-1234".into(),
+            })
+            .unwrap();
+        original
+            .conn()
+            .unwrap()
+            .execute_batch("ALTER TABLE users DROP COLUMN created_at")
+            .unwrap();
+        let (url, schema) = (original.url.clone(), original.schema.clone());
+        drop(original);
+        let upgraded = Accounts::open_schema(url, schema).unwrap();
+        let joined = upgraded
+            .register(&Credentials {
+                email: "joined@example.test".into(),
+                password: "long-password-1234".into(),
+            })
+            .unwrap();
+        let created = |id: &str| -> Option<i64> {
+            upgraded
+                .conn()
+                .unwrap()
+                .query_row("SELECT created_at FROM users WHERE id=$1", [id], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        assert_eq!(created(&existing.user_id), None);
+        assert!(created(&joined.user_id)
+            .is_some_and(|at| (chrono::Utc::now().timestamp() - at).abs() < 60));
     }
 
     #[test]

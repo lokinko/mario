@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Input, Segmented, Table } from "antd";
+import { Button, Input, Segmented, Table } from "antd";
 import type {
   PriceCollectionDashboard,
   PriceCollectionDay,
@@ -72,6 +72,54 @@ function StatusLabel({ status }: { status: string }) {
   );
 }
 
+function UniverseAlerts({ data }: { data: PriceCollectionDashboard }) {
+  return (
+    <>
+      {!data.universe && (
+        <p className="price-collection-alert">
+          尚未取得有效的300只成分表，等待后台获取
+        </p>
+      )}
+      {data.universeError && (
+        <p className="price-collection-alert" role="status">
+          成分表获取异常：{data.universeError}。保留上次范围；最近尝试{" "}
+          {stamp(data.universeAttemptedAt)}。
+        </p>
+      )}
+    </>
+  );
+}
+
+export function PriceSummary({
+  data,
+  onOpenDetail,
+}: {
+  data?: PriceCollectionDashboard;
+  onOpenDetail: () => void;
+}) {
+  const summary = data && counts(data.summary);
+  return (
+    <section className="panel usage-panel" aria-label="沪深300价格采集概况">
+      <div className="usage-table-heading">
+        <h2>沪深300 · 十年价格采集</h2>
+        <Button onClick={onOpenDetail}>查看明细</Button>
+      </div>
+      {data && <UniverseAlerts data={data} />}
+      <div className="price-status-overview">
+        {data && <StatusBar day={data.summary} label="今日价格状态分布" />}
+        <div className="price-status-legend" aria-label="价格状态图例">
+          {statusOrder.map((key) => (
+            <div key={key}>
+              <StatusLabel status={key} />
+              <strong>{summary?.[key] ?? "—"}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function PriceCollection({
   data,
   loading,
@@ -96,17 +144,7 @@ export function PriceCollection({
   return (
     <section className="panel usage-panel" aria-label="沪深300价格采集">
       <h2>沪深300 · 十年价格采集</h2>
-      {data && !data.universe && (
-        <p className="price-collection-alert">
-          尚未取得有效的300只成分表，等待后台获取
-        </p>
-      )}
-      {data?.universeError && (
-        <p className="price-collection-alert" role="status">
-          成分表获取异常：{data.universeError}。保留上次范围；最近尝试{" "}
-          {stamp(data.universeAttemptedAt)}。
-        </p>
-      )}
+      {data && <UniverseAlerts data={data} />}
       <div className="price-status-overview">
         {data && <StatusBar day={data.summary} label="今日价格状态分布" />}
         <div

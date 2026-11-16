@@ -53,8 +53,17 @@ pub(crate) struct UsageDashboard {
     weekly_active: i64,
     monthly_active: i64,
     daily: Vec<DailyUsage>,
+    registrations: Vec<DailyRegistration>,
+    registered_before_tracking: i64,
     users: Vec<UserUsage>,
     pages: Vec<PageUsage>,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DailyRegistration {
+    date: String,
+    new_users: i64,
+    total_users: i64,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,6 +92,12 @@ struct PageUsage {
 // Fixed UTC+8 calendar boundaries, independent of the host/DB timezone.
 fn day_start(now: i64) -> i64 {
     (now + 8 * 3600).div_euclid(86400) * 86400 - 8 * 3600
+}
+fn shanghai_date(day_start_minute: i64) -> String {
+    chrono::DateTime::from_timestamp(day_start_minute * 60 + 8 * 3600, 0)
+        .unwrap()
+        .format("%Y-%m-%d")
+        .to_string()
 }
 
 impl Accounts {
@@ -140,15 +155,43 @@ impl Accounts {
                     .copied()
                     .unwrap_or((minute, 0, 0));
                 DailyUsage {
-                    date: chrono::DateTime::from_timestamp(minute * 60 + 8 * 3600, 0)
-                        .unwrap()
-                        .format("%Y-%m-%d")
-                        .to_string(),
+                    date: shanghai_date(minute),
                     active_users,
                     active_minutes,
                 }
             })
             .collect();
+        let registered_before_tracking: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM users WHERE created_at IS NULL",
+            [],
+            |r| r.get(0),
+        )?;
+        let registered_before_range: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM users WHERE created_at < $1",
+            [start * 60],
+            |r| r.get(0),
+        )?;
+        let mut statement = tx.prepare("SELECT ((created_at/60+480)/1440)*1440-480 AS day, COUNT(*) FROM users WHERE created_at >= $1 AND created_at <= $2 GROUP BY day")?;
+        let joined = statement
+            .query_map(params![start * 60, now], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut total = registered_before_tracking + registered_before_range;
+        let mut registrations = (0..days)
+            .rev()
+            .map(|offset| {
+                let minute = today - offset * 1440;
+                let new_users = joined.iter().find(|r| r.0 == minute).map_or(0, |r| r.1);
+                total += new_users;
+                DailyRegistration {
+                    date: shanghai_date(minute),
+                    new_users,
+                    total_users: total,
+                }
+            })
+            .collect::<Vec<_>>();
+        registrations.reverse();
         let mut statement=tx.prepare("SELECT u.id,u.email,MAX(a.minute)*60,COUNT(DISTINCT ((a.minute+480)/1440)),COUNT(DISTINCT a.minute) FROM users u LEFT JOIN activity_minutes a ON a.user_id=u.id AND a.minute >= $1 AND a.minute <= $2 GROUP BY u.id,u.email ORDER BY MAX(a.minute) DESC NULLS LAST,u.email")?;
         let users = statement
             .query_map(params![start, now / 60], |r| {
@@ -181,6 +224,8 @@ impl Accounts {
             weekly_active: summary.1,
             monthly_active: summary.2,
             daily,
+            registrations,
+            registered_before_tracking,
             users,
             pages,
         })
@@ -190,6 +235,36 @@ impl Accounts {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn registrations_count_new_accounts_per_shanghai_day_and_keep_unknown_dates_as_existing() {
+        let accounts = super::super::tests::accounts();
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-13T00:00:10+08:00")
+            .unwrap()
+            .timestamp();
+        let conn = accounts.conn().unwrap();
+        conn.execute(
+            "INSERT INTO users(id,email,password_hash,is_superuser,created_at) VALUES
+             ('admin','admin@example.test','unused',TRUE,NULL),
+             ('old','old@example.test','unused',FALSE,$1),
+             ('late','late@example.test','unused',FALSE,$2),
+             ('today','today@example.test','unused',FALSE,$3)",
+            params![now - 30 * 86400, now - 11, now - 5],
+        )
+        .unwrap();
+        drop(conn);
+        let result = accounts.usage_dashboard_at("admin", 7, now).unwrap();
+        assert_eq!(result.registered_before_tracking, 1);
+        let days = result
+            .registrations
+            .iter()
+            .map(|d| (d.date.as_str(), d.new_users, d.total_users))
+            .collect::<Vec<_>>();
+        assert_eq!(days.len(), 7);
+        assert_eq!(days[0], ("2026-11-13", 1, 4));
+        assert_eq!(days[1], ("2026-11-12", 1, 3));
+        assert_eq!(days[6], ("2026-11-07", 0, 2));
+    }
+
     #[test]
     fn samples_deduplicate_across_tabs_and_pages_and_respect_shanghai_days() {
         let accounts = super::super::tests::accounts();

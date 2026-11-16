@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PriceCollectionDashboard } from "../../api/activity";
-import { PriceCollection } from "./PriceCollection";
+import { PriceCollection, PriceSummary } from "./PriceCollection";
 const originalStyle = window.getComputedStyle.bind(window);
 beforeEach(() => {
   vi.spyOn(window, "getComputedStyle").mockImplementation((element) =>
@@ -147,4 +147,17 @@ it("visualizes status counts with a legend that filters the table by status", ()
   expect(screen.getByText("中国移动")).toBeTruthy();
   fireEvent.click(failed);
   expect(screen.getByText("招商银行")).toBeTruthy();
+});
+
+it("summarizes status counts on the overview and leaves per-stock rows to the detail view", () => {
+  const onOpenDetail = vi.fn();
+  render(<PriceSummary data={fixture} onOpenDetail={onOpenDetail} />);
+  expect(
+    screen.getByRole("img", {
+      name: "今日价格状态分布：今日成功 298，获取失败 1，等待更新 0，价格滞后 1",
+    }),
+  ).toBeTruthy();
+  expect(screen.queryByText("招商银行")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "查看明细" }));
+  expect(onOpenDetail).toHaveBeenCalledOnce();
 });

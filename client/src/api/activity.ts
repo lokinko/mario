@@ -55,6 +55,8 @@ export interface UsageDashboard {
   weeklyActive: number;
   monthlyActive: number;
   daily: { date: string; activeUsers: number; activeMinutes: number }[];
+  registrations: { date: string; newUsers: number; totalUsers: number }[];
+  registeredBeforeTracking: number;
   users: {
     userId: string;
     email: string;
