@@ -105,7 +105,7 @@ it("shows actual coverage and source errors, and filters failures without hiding
   fireEvent.click(screen.getByText("异常与待获取"));
   expect(screen.queryByText("招商银行")).toBeNull();
   expect(screen.getByText("中国移动")).toBeTruthy();
-  expect(screen.getByText(/1100 条日线/)).toBeTruthy();
+  expect(screen.getByTitle(/1100 条日线/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText("搜索价格证券"), {
     target: { value: "000001" },
   });
