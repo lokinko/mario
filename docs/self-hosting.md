@@ -40,6 +40,8 @@ Web 通过 Rust API 读写数据，PostgreSQL 保存独立账号、会话及各�
 
 用户模型 API Key 在服务端按账号加密，浏览器不能读取原值。用户在“设置”的模型配置中选择接口并填写 HTTP/HTTPS Base URL、模型名称和密钥，无需配置 `MARIO_MODEL_HOSTS`。Base URL 包含供应商要求的路径（如 `/v1`），不包含 `/chat/completions`、`/responses` 或 `/messages` 端点。自建网关可使用自定义端口和 HTTP；请求从服务器发出，本机地址指服务器本机。公网模型连接建议使用 HTTPS。内置登录每账号每分钟最多 10 次，每个 API 进程最多同时执行 2 次密码运算。
 
+接入 OpenAI 官方 API 时，在“设置 → 模型连接”选择 `OpenAI Responses`，Base URL 填 `https://api.openai.com/v1`，模型名称填写该 API 项目可用的模型 ID，API Key 填该项目的密钥。保存后执行连接测试，再到问答页预览授权资料并发送问题。连接测试只验证普通生成；完整问答还须通过结构与引用校验，联网查找权限也需单独验证。一次真实调用结果见 [OpenAI API 接入验证记录](audits/openai-api-smoke-20261116.md)，其中的模型和耗时仅代表当次测试。
+
 ```bash
 npm ci --prefix client
 VITE_BASE_PATH=/mario/ npm run web:build
