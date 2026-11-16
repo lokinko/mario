@@ -165,6 +165,16 @@ fn previous_turn(question: &str, result: &AnalysisResult) -> crate::models::Prev
         question: question.chars().take(200).collect(),
         answer: answer.chars().take(300).collect(),
         suggestions,
+        earlier_questions: Vec::new(),
+        pending_question: result
+            .workflow_trace
+            .structured_report
+            .as_ref()
+            .and_then(|report| match report {
+                crate::models::StoredAnalysisReport::Current(report) => report.question.as_ref(),
+                crate::models::StoredAnalysisReport::Legacy(_) => None,
+            })
+            .map(|question| question.chars().take(200).collect()),
     }
 }
 
@@ -546,6 +556,8 @@ fn prior_summary_is_bounded_and_is_not_a_factual_source() {
         question: "问题".into(),
         answer: "😀".repeat(798),
         suggestions: vec![],
+        earlier_questions: Vec::new(),
+        pending_question: None,
     };
     previous.validate().unwrap();
     let mut invalid = previous;

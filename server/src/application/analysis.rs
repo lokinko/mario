@@ -133,14 +133,6 @@ fn relevant_evidence(
     if !request.context_selection.include_evidence {
         return Ok(Vec::new());
     }
-    let holdings = snapshot
-        .holdings
-        .iter()
-        .filter(|_| request.context_selection.include_holdings)
-        .map(|holding| format!("{} {}", holding.name, holding.symbol))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let query = format!("{} {}", request.question, holdings);
     let mut items = db.research_evidence()?;
     let existing = items
         .iter()
@@ -156,11 +148,87 @@ fn relevant_evidence(
             .with_timezone(&chrono_tz::Asia::Shanghai)
             .date_naive(),
     )?;
+    // Resolve the subject from user questions only. A newly named company wins
+    // over older subjects, and unrelated holdings cannot consume its evidence slots.
+    let mut companies = board
+        .rows
+        .iter()
+        .map(|row| (row.entry.input.name.clone(), row.entry.input.symbol.clone()))
+        .collect::<Vec<_>>();
+    if request.context_selection.include_holdings {
+        companies.extend(
+            snapshot
+                .holdings
+                .iter()
+                .map(|h| (h.name.clone(), h.symbol.clone())),
+        );
+    }
+    companies.extend(
+        items
+            .iter()
+            .filter(|item| !item.asset_name.trim().is_empty())
+            .map(|item| (item.asset_name.clone(), String::new())),
+    );
+    let mut questions = context::discussion::retrieval_questions(request);
+    if context::discussion::is_general_finance_question(&request.question) {
+        questions.truncate(1);
+    }
+    let subject_question = questions.iter().find(|question| {
+        !context::discussion::explicit_ashare_symbols(question).is_empty()
+            || companies
+                .iter()
+                .any(|(name, symbol)| context::discussion::mentions_company(question, name, symbol))
+    });
+    if let Some(question) = subject_question {
+        companies.extend(
+            context::discussion::explicit_ashare_symbols(question)
+                .into_iter()
+                .map(|symbol| (String::new(), symbol)),
+        );
+    }
+    let subjects = companies
+        .into_iter()
+        .filter(|(name, symbol)| {
+            subject_question.is_some_and(|question| {
+                context::discussion::mentions_company(question, name, symbol)
+            })
+        })
+        .collect::<Vec<_>>();
+    let query = if let Some(subject) = subject_question {
+        format!("{} {}", request.question, subject)
+    } else {
+        let holdings = snapshot
+            .holdings
+            .iter()
+            .filter(|_| request.context_selection.include_holdings)
+            .map(|h| format!("{} {}", h.name, h.symbol))
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("{} {}", request.question, holdings)
+    };
+    if !subjects.is_empty() {
+        items.retain(|item| {
+            let attachments = item
+                .attachments
+                .iter()
+                .map(|file| format!("{} {}", file.name, file.extracted_text))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let identity = format!(
+                "{} {} {} {} {}",
+                item.asset_name, item.title, item.claim, item.notes, attachments
+            );
+            subjects.iter().any(|(name, symbol)| {
+                context::discussion::mentions_company(&identity, name, symbol)
+            })
+        });
+    }
     let mut watch = Vec::new();
     for row in board.rows {
-        if !(request.question.contains(&row.entry.input.symbol)
-            || request.question.contains(&row.entry.input.name))
-        {
+        if !subjects.iter().any(|(name, symbol)| {
+            (!symbol.is_empty() && *symbol == row.entry.input.symbol)
+                || *name == row.entry.input.name
+        }) {
             continue;
         }
         let Some(observation) = row.latest else {
@@ -169,22 +237,73 @@ fn relevant_evidence(
         let Some(source_url) = observation.sources.first() else {
             continue;
         };
-        let week: Vec<_> = board.weekly.iter().filter(|v| v.symbol == observation.symbol).map(|v| serde_json::json!({
-            "date":v.observed_on,"status":v.status,"price":v.price,"yieldPct":v.yield_pct,
-            "dailyDistancePct":v.daily.as_ref().and_then(|b|b.distance_pct),"weeklyDistancePct":v.weekly.as_ref().and_then(|b|b.distance_pct),"rules":v.rules,"weeklyReference":v.weekly.as_ref().map(|b|b.reference)
-        })).collect();
-        let facts = serde_json::json!({"rules":observation.rules,"yieldMatchesRule":observation.yield_matches_rule,"symbol":observation.symbol,"observedOn":observation.observed_on,
-            "price":observation.price,"dividendPerShare":observation.dividend_per_share,"yieldPct":observation.yield_pct,
+        let week = board
+            .weekly
+            .iter()
+            .filter(|v| v.symbol == observation.symbol)
+            .collect::<Vec<_>>();
+        let mut saved_rules = Vec::new();
+        let week_rows = week
+            .iter()
+            .map(|v| {
+                let index = saved_rules
+                    .iter()
+                    .position(|rules| *rules == v.rules)
+                    .unwrap_or_else(|| {
+                        saved_rules.push(v.rules);
+                        saved_rules.len() - 1
+                    });
+                serde_json::json!([
+                    v.observed_on,
+                    v.status,
+                    v.price,
+                    v.yield_pct,
+                    v.daily.as_ref().and_then(|b| b.distance_pct),
+                    v.weekly.as_ref().and_then(|b| b.distance_pct),
+                    index
+                ])
+            })
+            .collect::<Vec<_>>();
+        let rule_rows = saved_rules
+            .iter()
+            .map(|r| {
+                serde_json::json!([
+                    r.min_yield_bps,
+                    r.daily.reference,
+                    r.daily.mode,
+                    r.daily.offset_bps,
+                    r.weekly.reference,
+                    r.weekly.mode,
+                    r.weekly.offset_bps
+                ])
+            })
+            .collect::<Vec<_>>();
+        let model_facts = serde_json::json!({
+            "symbol":observation.symbol,"observedOn":observation.observed_on,"rules":observation.rules,
+            "yieldMatchesRule":observation.yield_matches_rule,"price":observation.price,
+            "dividendPerShare":observation.dividend_per_share,"yieldPct":observation.yield_pct,
             "dividendBasis":observation.dividend_basis,"dividendEvents":observation.dividend_events,
-            "daily":observation.daily,"weekly":observation.weekly,"status":observation.status,"issues":observation.issues,"thisWeek":week});
+            "daily":observation.daily,"weekly":observation.weekly,"status":observation.status,"issues":observation.issues,
+            "thisWeek":{
+                "columns":["date","status","price","yieldPct","dailyDistancePct","weeklyDistancePct","ruleIndex"],
+                "rows":week_rows,
+                "ruleColumns":["minYieldBps","dailyReference","dailyMode","dailyOffsetBps","weeklyReference","weeklyMode","weeklyOffsetBps"],
+                "rules":rule_rows
+            }
+        });
+        let facts = serde_json::json!({
+            "kind":"mario_watch_observation_v1",
+            "modelFacts":model_facts,
+            "originalFacts":{"latest":observation,"thisWeek":week}
+        });
         watch.push(ResearchEvidence {
             id: format!("watch-{}-{}",observation.symbol,observation.observed_on),
             asset_name: row.entry.input.name.clone(), title: format!("{} 收盘买点观察",row.entry.input.name),
             publisher: "Yahoo Finance / 东方财富；Mario 确定性计算".into(), source_url: source_url.clone(),
-            source_tier: "二手来源".into(), evidence_type: "market_data".into(), stance: "neutral".into(),
+            source_tier: "二手来源".into(), evidence_type: "watch_observation".into(), stance: "neutral".into(),
             as_of_date: observation.observed_on.clone(),
-            claim: format!("当前规则：{}。历史记录按各自保存的规则解释。技术价格为供应商调整收盘归一至当前价格，周线含截至当日的未结束周。该信号只表明进入关注区间，不证明低估或基本面稳定。观察原值：{}",observation.rules.description(),serde_json::to_string(&facts)?),
-            notes: format!("仅覆盖已获得的数据；基本面和分红持续性需要另行核查。原始来源：{}",observation.sources.join("\n")), active: true, captured_at: observation.checked_at, attachments: Vec::new(),
+            claim: serde_json::to_string(&facts)?,
+            notes: format!("当前规则：{}。历史记录按各自保存的规则解释。技术价格为供应商调整收盘归一至当前价格，周线含未结束周。信号不证明低估、基本面稳定或分红持续性；公司分红不等于个人到账。原始来源：{}",observation.rules.description(),observation.sources.join("\n")), active: true, captured_at: observation.checked_at, attachments: Vec::new(),
         });
     }
     watch.truncate(crate::evidence::ANALYSIS_EVIDENCE_LIMIT);
@@ -240,11 +359,15 @@ mod tests {
         let evidence = &preview.evidence_candidates[0];
         assert!(evidence.claim.contains("thisWeek"));
         assert!(evidence
-            .claim
+            .notes
             .contains(&crate::models::watch::rules::WatchRules::default().description()));
-        assert!(evidence.claim.contains("\"weeklyReference\":\"middle\""));
+        let facts: serde_json::Value = serde_json::from_str(&evidence.claim).unwrap();
+        assert_eq!(facts["modelFacts"]["weekly"]["reference"], "middle");
         assert!(evidence.claim.contains(&today.to_string()));
-        assert!(evidence.claim.chars().count() < 2000);
+        let excerpt = observation_excerpt(evidence);
+        assert!(excerpt.chars().count() <= 2_000);
+        let excerpt: serde_json::Value = serde_json::from_str(&excerpt).unwrap();
+        assert_eq!(excerpt["thisWeek"]["rows"][0][0], today.to_string());
         request.context_selection.include_evidence = false;
         assert!(service
             .prepare(&request)
@@ -252,6 +375,172 @@ mod tests {
             .evidence_candidates
             .is_empty());
     }
+    fn observation_excerpt(evidence: &ResearchEvidence) -> String {
+        let reference = serde_json::from_value(serde_json::to_value(evidence).unwrap()).unwrap();
+        context::observation_excerpt(&reference).unwrap()
+    }
+
+    fn save_watch_fixture(db: &Database, symbol: &str, name: &str, many_dividends: bool) {
+        use crate::models::watch::{evaluate, tests::market_fixture, DividendEvent, WatchInput};
+        let entry = db
+            .save_watch(WatchInput {
+                symbol: symbol.into(),
+                name: name.into(),
+                thesis: String::new(),
+            })
+            .unwrap();
+        let today = chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Shanghai)
+            .date_naive();
+        let (mut data, day) = market_fixture();
+        if many_dividends {
+            data.dividends = Some(
+                (0..50)
+                    .map(|index| DividendEvent {
+                        report_date: Some(day - chrono::Duration::days(index * 3 + 1)),
+                        ex_date: day - chrono::Duration::days(index * 3),
+                        cash_per_ten: "0.123456789".into(),
+                        bonus_per_ten: "0".into(),
+                        transfer_per_ten: "0".into(),
+                    })
+                    .collect(),
+            );
+        }
+        let mut observation = evaluate(
+            &Default::default(),
+            symbol,
+            &data,
+            day,
+            chrono::Utc::now().to_rfc3339(),
+        );
+        observation.observed_on = today.to_string();
+        db.save_watch_observation(
+            &entry,
+            Some(&observation),
+            &observation.checked_at,
+            today,
+            None,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn follow_ups_retrieve_the_latest_user_subject_and_ignore_model_subjects() {
+        let db = database();
+        save_watch_fixture(&db, "600036.SS", "观察甲公司", false);
+        save_watch_fixture(&db, "600519.SS", "观察乙公司", false);
+        let service = AnalysisService::new(&db);
+        let mut request = request();
+        request.question = "分红能持续吗？".into();
+        request.previous_turn = Some(crate::models::PreviousTurn {
+            question: "再说下风险".into(),
+            answer: "观察乙公司值得考虑".into(),
+            suggestions: Vec::new(),
+            earlier_questions: vec!["请讨论观察甲公司600036".into()],
+            pending_question: None,
+        });
+        let preview = service.preview(&request).unwrap();
+        assert_eq!(preview.evidence_candidates.len(), 1);
+        assert_eq!(preview.evidence_candidates[0].asset_name, "观察甲公司");
+        assert!(preview.payload["researchEvidence"][0]["claim"]
+            .as_str()
+            .unwrap()
+            .contains("600036.SS"));
+        request
+            .previous_turn
+            .as_mut()
+            .unwrap()
+            .earlier_questions
+            .push("换成观察乙公司".into());
+        assert_eq!(
+            service.preview(&request).unwrap().evidence_candidates[0].asset_name,
+            "观察乙公司"
+        );
+        request.question = "观察甲公司600036.SH现在如何？".into();
+        assert_eq!(
+            service.preview(&request).unwrap().evidence_candidates[0].asset_name,
+            "观察甲公司"
+        );
+        request.question = "改看000001分红".into();
+        let unknown_company = service.preview(&request).unwrap();
+        assert!(unknown_company.evidence_candidates.is_empty());
+        assert_eq!(unknown_company.payload["researchEvidence"], json!([]));
+        request.question = "应急金怎么补？".into();
+        assert!(service
+            .preview(&request)
+            .unwrap()
+            .evidence_candidates
+            .is_empty());
+        request.context_selection.include_evidence = false;
+        let hidden = service.preview(&request).unwrap();
+        assert!(hidden.evidence_candidates.is_empty());
+        assert!(hidden.payload.get("researchEvidence").is_none());
+    }
+
+    #[test]
+    fn explicit_company_evidence_is_not_displaced_by_holdings_background() {
+        let db = database();
+        save_watch_fixture(&db, "600036.SS", "观察甲公司", false);
+        let target = db
+            .add_research_evidence(&crate::models::ResearchEvidenceInput {
+                content: "观察甲公司600036 年报：分红持续性取决于现金流。".into(),
+                attachments: Vec::new(),
+            })
+            .unwrap();
+        for index in 0..8 {
+            db.add_research_evidence(&crate::models::ResearchEvidenceInput {
+                content: format!("虚构成长基金 FUND-A 虚构债券基金 BOND-B 虚构海外基金 USD-C 分红持续性 资料{index}"),
+                attachments: Vec::new(),
+            }).unwrap();
+        }
+        let snapshot =
+            serde_json::from_str(include_str!("../../tests/fixtures/qa_eval/snapshot.json"))
+                .unwrap();
+        let mut request = request();
+        request.question = "观察甲公司600036分红持续性如何？".into();
+        let selected = relevant_evidence(&db, &request, &snapshot).unwrap();
+        assert_eq!(selected.len(), 2);
+        assert!(selected.iter().any(|item| item.id == target.id));
+        assert!(!selected
+            .iter()
+            .any(|item| item.claim.contains("虚构成长基金")));
+    }
+
+    #[test]
+    fn long_dividend_sources_keep_complete_audit_and_latest_boll_and_week_in_payload() {
+        let db = database();
+        save_watch_fixture(&db, "600036.SS", "观察甲公司", true);
+        let service = AnalysisService::new(&db);
+        let mut request = request();
+        request.question = "600036本周复盘与分红持续性".into();
+        let prepared = service.prepare(&request).unwrap();
+        let full = &prepared.context.evidence_catalog[0].claim;
+        let audit: serde_json::Value = serde_json::from_str(full).unwrap();
+        assert_eq!(
+            audit["originalFacts"]["latest"]["dividendEvents"]
+                .as_array()
+                .unwrap()
+                .len(),
+            50
+        );
+        assert!(full.chars().count() > 4_000);
+        let excerpt = prepared.context.payload["researchEvidence"][0]["claim"]
+            .as_str()
+            .unwrap();
+        assert!(excerpt.chars().count() <= 2_000);
+        let compact: serde_json::Value = serde_json::from_str(excerpt).unwrap();
+        assert_eq!(compact["daily"], audit["originalFacts"]["latest"]["daily"]);
+        assert_eq!(
+            compact["weekly"],
+            audit["originalFacts"]["latest"]["weekly"]
+        );
+        assert_eq!(compact["rules"], audit["originalFacts"]["latest"]["rules"]);
+        assert_eq!(compact["thisWeek"]["rows"].as_array().unwrap().len(), 1);
+        assert!(compact["dividendEventsOmitted"].as_u64().unwrap() > 0);
+        assert_eq!(compact["dividendEventCount"], 50);
+        assert!(full.contains("cashPerTen"));
+    }
+
     fn request() -> AnalysisRequest {
         AnalysisRequest {
             web_search: false,
@@ -429,6 +718,8 @@ mod tests {
             question: "上一轮问题".into(),
             answer: "上一轮结论".into(),
             suggestions: vec!["上一轮动作".into()],
+            earlier_questions: Vec::new(),
+            pending_question: None,
         });
         let preview = service.preview(&request).unwrap();
         request.preview_revision = Some(preview.context_revision);

@@ -4,7 +4,7 @@ use super::structured_output::{MAX_STRUCTURED_OUTPUT_CHARS, STRUCTURED_ANALYSIS_
 use super::ChatMessage;
 use crate::context::INVESTMENT_SYSTEM_POLICY;
 
-pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v9";
+pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v10";
 
 pub struct StagePrompt {
     pub key: &'static str,
@@ -42,9 +42,9 @@ pub trait AnalysisWorkflow: Send + Sync {
     ) -> StagePrompt;
 }
 
-pub struct InvestmentWorkflowV9;
+pub struct InvestmentWorkflowV10;
 
-impl AnalysisWorkflow for InvestmentWorkflowV9 {
+impl AnalysisWorkflow for InvestmentWorkflowV10 {
     fn version(&self) -> &'static str {
         INVESTMENT_WORKFLOW_VERSION
     }
@@ -54,7 +54,9 @@ impl AnalysisWorkflow for InvestmentWorkflowV9 {
             key: "quick_analysis",
             label: "快速分析",
             messages: vec![
-                ChatMessage::system(INVESTMENT_SYSTEM_POLICY),
+                ChatMessage::system(format!(
+                    "{INVESTMENT_SYSTEM_POLICY}\n\ndiscussionGuide 是冻结输入推导的研究路径，不是新的事实或来源。仅执行与本轮问题有关的核查项；不能把核查清单当作公司已经通过核查的结论，不强制每题展开全部主题。"
+                )),
                 ChatMessage::user(format!(
                     "我的资料与本轮问题：{local_context}\n\n直接回答并按以下契约输出。\n\n{STRUCTURED_ANALYSIS_CONTRACT}"
                 )),
@@ -94,10 +96,10 @@ mod tests {
 
     #[test]
     fn generation_keeps_untrusted_data_boundary_and_machine_contract() {
-        let prompt = InvestmentWorkflowV9.quick("上下文");
+        let prompt = InvestmentWorkflowV10.quick("上下文");
         assert!(prompt.messages[0].content.contains("不可信数据"));
         assert!(prompt.messages[1].content.contains("evidenceIds"));
-        let repair = InvestmentWorkflowV9.repair_output("生成", "无效输出", "字段缺失", &[]);
+        let repair = InvestmentWorkflowV10.repair_output("生成", "无效输出", "字段缺失", &[]);
         assert_eq!(repair.messages[0].content, "只修复格式，不添加新事实。");
     }
 
@@ -110,7 +112,7 @@ mod tests {
         .to_string();
         assert!(invalid.chars().count() > 12_000);
         assert!(invalid.chars().count() < MAX_STRUCTURED_OUTPUT_CHARS);
-        let prompt = InvestmentWorkflowV9.repair_output("生成", &invalid, "字段无效", &[]);
+        let prompt = InvestmentWorkflowV10.repair_output("生成", &invalid, "字段无效", &[]);
         assert!(prompt.messages[1].content.contains(&invalid));
     }
 
@@ -118,7 +120,7 @@ mod tests {
     fn repair_bounds_oversized_originals_by_unicode_characters() {
         let retained = "🙂".repeat(MAX_STRUCTURED_OUTPUT_CHARS);
         let oversized = format!("{retained}BEYOND_ORIGINAL_BUDGET");
-        let prompt = InvestmentWorkflowV9.repair_output("生成", &oversized, "输出过大", &[]);
+        let prompt = InvestmentWorkflowV10.repair_output("生成", &oversized, "输出过大", &[]);
         assert!(prompt.messages[1].content.contains(&retained));
         assert!(!prompt.messages[1]
             .content

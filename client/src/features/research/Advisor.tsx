@@ -17,6 +17,7 @@ import {
 import { getAnalysisSettings } from "../../api/settings";
 import type {
   AnalysisRequest,
+  AnalysisSettings,
   AnalysisPreview,
   AnalysisResult,
   AnalysisHistoryItem,
@@ -28,6 +29,20 @@ import { previousTurn } from "./previousTurn";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 
 type Turn = { question: string; result: AnalysisResult | StoredAnalysis };
+
+function buildRequest(
+  settings: AnalysisSettings,
+  model: ModelConfig,
+  question: string,
+  turns: readonly Turn[],
+): AnalysisRequest {
+  return {
+    ...settings,
+    webSearch: settings.webSearch && model.provider !== "openai-chat",
+    question,
+    previousTurn: previousTurn(turns),
+  };
+}
 
 export function Advisor({
   model,
@@ -120,7 +135,6 @@ export function Advisor({
     sendingRef.current = true;
     const isCurrent = analysisRequest.begin();
     const message = question.trim();
-    const previous = turns.at(-1);
     setRunning(true);
     setStopped(false);
     setError("");
@@ -133,12 +147,7 @@ export function Advisor({
       // settings change on this device or another device.
       const settings = await getAnalysisSettings();
       if (!isCurrent()) return;
-      const request: AnalysisRequest = {
-        ...settings,
-        webSearch: settings.webSearch && model.provider !== "openai-chat",
-        question: message,
-        previousTurn: previousTurn(previous),
-      };
+      const request = buildRequest(settings, model, message, turns);
       // Keep the server's immutable context check without an extra UI step.
       const preview = await previewAnalysis(request);
       if (!isCurrent()) return;
@@ -231,6 +240,7 @@ export function Advisor({
   const [preview, setPreview] = useState<AnalysisPreview>();
   const [previewError, setPreviewError] = useState("");
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewQuestionCount, setPreviewQuestionCount] = useState(0);
   const previewRequest = useRequestGuard();
   const inspectContext = async () => {
     const current = previewRequest.begin();
@@ -241,12 +251,18 @@ export function Advisor({
     try {
       const settings = await getAnalysisSettings();
       if (!current()) return;
-      const next = await previewAnalysis({
-        ...settings,
-        webSearch: settings.webSearch && model.provider !== "openai-chat",
-        question: question.trim() || "查看将使用的资料",
-        previousTurn: previousTurn(turns.at(-1)),
-      });
+      const request = buildRequest(
+        settings,
+        model,
+        question.trim() || "查看将使用的资料",
+        turns,
+      );
+      setPreviewQuestionCount(
+        request.previousTurn
+          ? 1 + (request.previousTurn.earlierQuestions?.length ?? 0)
+          : 0,
+      );
+      const next = await previewAnalysis(request);
       if (current()) setPreview(next);
     } catch (error) {
       if (current()) setPreviewError(String(error));
@@ -359,17 +375,14 @@ export function Advisor({
           {turns.length === 0 && !draft && !running && (
             <section className="conversation-welcome" aria-label="开始问答">
               <h2>从一个问题开始</h2>
-              <button
-                className="text-button"
-                onClick={() => void inspectContext()}
-              >
-                查看将发送的数据
-              </button>
               <div className="conversation-starters">
                 {[
-                  ["风险", "帮我梳理当前持仓的主要风险"],
-                  ["配置", "我的现金和投资配置是否合理？"],
-                  ["复盘", "如何复盘最近的一次投资决策？"],
+                  ["分红", "如何核查我关注公司的分红持续性？"],
+                  ["交易", "请结合我的真实交易讨论最近一次红利投资决策。"],
+                  [
+                    "等待",
+                    "对我认可的红利公司，还需要等待哪些条件再考虑买入？",
+                  ],
                 ].map(([category, prompt]) => (
                   <button
                     key={prompt}
@@ -501,6 +514,14 @@ export function Advisor({
                     ? "已停止，已显示的内容尚未完成"
                     : "Ctrl / ⌘ + Enter 发送"}
               </span>
+              <button
+                type="button"
+                className="text-button"
+                disabled={running || Boolean(historyBusy)}
+                onClick={() => void inspectContext()}
+              >
+                查看将发送的数据
+              </button>
               {running ? (
                 <button
                   type="button"
@@ -544,6 +565,11 @@ export function Advisor({
               <DataStamp date={preview.generatedAt} source={preview.model} />
               <p className="section-intro">
                 仅使用问答预设中选择的资料。以下为当前预览；发送前会重新核对并冻结输入。
+              </p>
+              <p>
+                {previewQuestionCount
+                  ? `承接 ${previewQuestionCount} 条用户问题，并附上轮回答摘要与结构化追问（如有）。`
+                  : "新对话，不承接历史问题或上轮追问。"}
               </p>
               <ul>
                 {preview.groups.map((group) => (

@@ -28,7 +28,14 @@ vi.mock("../../api/settings", () => ({
   getAnalysisSettings: vi.fn(),
 }));
 
-const preview = { contextRevision: "revision-1" } as AnalysisPreview;
+const preview = {
+  contextRevision: "revision-1",
+  model: "test-model",
+  generatedAt: "2026-11-16T00:00:00Z",
+  groups: [],
+  payload: {},
+  localOnly: [],
+} as unknown as AnalysisPreview;
 const result = {
   id: "answer-1",
   answer: "先明确你的资金使用时间。",
@@ -57,6 +64,25 @@ afterEach(() => {
   vi.clearAllMocks();
   window.sessionStorage.clear();
 });
+const completed = (
+  id: string,
+  pendingQuestion: string | null = null,
+): AnalysisResult => ({
+  ...result,
+  id,
+  createdAt: "2026-11-16T00:00:00Z",
+  answer: `${id} 的完整回答`,
+  workflowTrace: {
+    ...result.workflowTrace,
+    structuredReport: {
+      answer: `${id} 的完整回答`,
+      suggestions: [],
+      facts: [],
+      question: pendingQuestion,
+    },
+  },
+});
+
 const ask = (question: string) => {
   fireEvent.change(screen.getByRole("textbox", { name: "输入问题" }), {
     target: { value: question },
@@ -64,21 +90,27 @@ const ask = (question: string) => {
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 };
 
-it("fills a starter question and focuses the composer without sending an analysis", async () => {
-  render(<Advisor {...props} />);
-  const prompt = "帮我梳理当前持仓的主要风险";
-  fireEvent.click(screen.getByRole("button", { name: prompt }));
-  const input = screen.getByRole("textbox", {
-    name: "输入问题",
-  }) as HTMLTextAreaElement;
-  expect(input.value).toBe(prompt);
-  expect(document.activeElement).toBe(input);
-  expect(researchApi.previewAnalysis).not.toHaveBeenCalled();
-  expect(researchApi.runAnalysis).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "发送" }));
-  await screen.findByText(result.answer);
-  expect(screen.queryByLabelText("开始问答")).toBeNull();
-});
+it.each([
+  "如何核查我关注公司的分红持续性？",
+  "请结合我的真实交易讨论最近一次红利投资决策。",
+  "对我认可的红利公司，还需要等待哪些条件再考虑买入？",
+])(
+  "fills the starter %s and focuses the composer without sending an analysis",
+  async (prompt) => {
+    render(<Advisor {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: prompt }));
+    const input = screen.getByRole("textbox", {
+      name: "输入问题",
+    }) as HTMLTextAreaElement;
+    expect(input.value).toBe(prompt);
+    expect(document.activeElement).toBe(input);
+    expect(researchApi.previewAnalysis).not.toHaveBeenCalled();
+    expect(researchApi.runAnalysis).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await screen.findByText(result.answer);
+    expect(screen.queryByLabelText("开始问答")).toBeNull();
+  },
+);
 
 it("shows streamed text before completion and replaces it with the saved report", async () => {
   let finish!: (result: AnalysisResult) => void;
@@ -361,6 +393,9 @@ it("automatically carries previous context and rereads saved defaults, then clea
   expect(
     vi.mocked(researchApi.previewAnalysis).mock.lastCall?.[0].question,
   ).toBe("一个新问题");
+  expect(
+    vi.mocked(researchApi.previewAnalysis).mock.lastCall?.[0].previousTurn,
+  ).toBeUndefined();
 });
 
 it("reopens a historical answer in the same report view and allows continuing that conversation", async () => {
@@ -524,6 +559,193 @@ it.each(["success", "error"] as const)(
       expect.any(AbortSignal),
     );
     expect(researchApi.runAnalysis).toHaveBeenCalledOnce();
+  },
+);
+
+it("keeps the first and latest user questions with the last structured follow-up, and previews exactly the next request", async () => {
+  render(<Advisor {...props} />);
+  const questions = Array.from(
+    { length: 8 },
+    (_, index) => `第${index + 1}轮用户原始问题`,
+  );
+  for (let index = 0; index < 7; index += 1) {
+    const next = completed(`round-${index + 1}`, `模型第${index + 1}轮追问`);
+    vi.mocked(researchApi.runAnalysis).mockResolvedValueOnce(next);
+    ask(questions[index]);
+    await screen.findByText(next.answer);
+  }
+  const input = screen.getByRole("textbox", { name: "输入问题" });
+  fireEvent.change(input, { target: { value: questions[7] } });
+  fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
+  await screen.findByRole("heading", { name: "实际资料正文" });
+  expect(screen.getByText(/承接 6 条用户问题/)).toBeTruthy();
+  const inspected = vi.mocked(researchApi.previewAnalysis).mock.lastCall![0];
+  expect(inspected.previousTurn).toEqual({
+    question: questions[6],
+    answer: "round-7 的完整回答",
+    suggestions: [],
+    earlierQuestions: [questions[0], ...questions.slice(2, 6)],
+    pendingQuestion: "模型第7轮追问",
+  });
+  expect(researchApi.runAnalysis).toHaveBeenCalledTimes(7);
+  fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+  vi.mocked(researchApi.runAnalysis).mockResolvedValueOnce(
+    completed("round-8"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+  await screen.findByText("round-8 的完整回答");
+  expect(vi.mocked(researchApi.previewAnalysis).mock.lastCall![0]).toEqual(
+    inspected,
+  );
+  expect(vi.mocked(researchApi.runAnalysis).mock.lastCall![0]).toEqual({
+    ...inspected,
+    previewRevision: preview.contextRevision,
+  });
+});
+
+it("restores user questions from a historical frozen context and uses the reopened report's own pending question", async () => {
+  const saved = completed("saved", "当前报告的追问");
+  saved.workflowTrace.personalContext = {
+    previousTurn: {
+      question: "历史上一轮用户问题",
+      answer: "历史模型摘要不可当成用户问题",
+      suggestions: [],
+      earlierQuestions: ["最初的红利投资问题", "历史第二轮用户问题"],
+      pendingQuestion: "更早的模型追问",
+    },
+  };
+  vi.mocked(researchApi.getAnalysisHistory).mockResolvedValue([
+    { id: saved.id, question: "历史当前问题", createdAt: saved.createdAt },
+  ]);
+  vi.mocked(researchApi.getAnalysis).mockResolvedValue({
+    ...saved,
+    question: "历史当前问题",
+  });
+  render(<Advisor {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: /历史当前问题/ }));
+  await screen.findByText(saved.answer);
+  ask("继续历史讨论");
+  await screen.findByText(result.answer);
+  expect(
+    vi.mocked(researchApi.runAnalysis).mock.lastCall![0].previousTurn,
+  ).toEqual({
+    question: "历史当前问题",
+    answer: saved.answer,
+    suggestions: [],
+    earlierQuestions: [
+      "最初的红利投资问题",
+      "历史第二轮用户问题",
+      "历史上一轮用户问题",
+    ],
+    pendingQuestion: "当前报告的追问",
+  });
+});
+
+it.each(["new conversation", "new company"])(
+  "clears all carried questions and pending follow-ups for a %s",
+  async (reset) => {
+    const previous = completed("old-company", "旧公司的模型追问");
+    vi.mocked(researchApi.runAnalysis).mockResolvedValueOnce(previous);
+    const onQuestionAccepted = vi.fn();
+    const view = render(
+      <Advisor {...props} onQuestionAccepted={onQuestionAccepted} />,
+    );
+    ask("旧公司用户问题");
+    await screen.findByText(previous.answer);
+    if (reset === "new conversation") {
+      fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+      fireEvent.change(screen.getByRole("textbox"), {
+        target: { value: "新问题" },
+      });
+    } else {
+      view.rerender(
+        <Advisor
+          {...props}
+          pendingQuestion={{ id: 9, question: "新公司用户问题" }}
+          onQuestionAccepted={onQuestionAccepted}
+        />,
+      );
+      await screen.findByDisplayValue("新公司用户问题");
+      expect(onQuestionAccepted).toHaveBeenCalledWith(9);
+      view.rerender(
+        <Advisor {...props} onQuestionAccepted={onQuestionAccepted} />,
+      );
+    }
+    expect(researchApi.runAnalysis).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
+    await screen.findByText("新对话，不承接历史问题或上轮追问。");
+    expect(
+      vi.mocked(researchApi.previewAnalysis).mock.lastCall![0].previousTurn,
+    ).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await screen.findByText(result.answer);
+    expect(
+      vi.mocked(researchApi.runAnalysis).mock.lastCall![0].previousTurn,
+    ).toBeUndefined();
+  },
+);
+
+it.each(["stop", "failure", "preparation failure"])(
+  "excludes an incomplete turn after %s from subsequent context",
+  async (outcome) => {
+    const first = completed("successful-first", "已完成轮次的追问");
+    vi.mocked(researchApi.runAnalysis).mockResolvedValueOnce(first);
+    render(<Advisor {...props} />);
+    ask("已完成的首轮用户问题");
+    await screen.findByText(first.answer);
+    let finish: ((result: AnalysisResult) => void) | undefined;
+    if (outcome === "preparation failure") {
+      vi.mocked(researchApi.previewAnalysis).mockRejectedValueOnce(
+        new Error("准备失败"),
+      );
+    } else {
+      vi.mocked(researchApi.runAnalysis).mockImplementationOnce(
+        async (_request, update) => {
+          update?.({
+            type: "draft",
+            answer: "未完成内容，包含 AI 自行提出的问题？",
+          });
+          if (outcome === "failure") throw new Error("模型中断");
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        },
+      );
+    }
+    ask("不应进入上下文的用户问题");
+    if (outcome === "stop") {
+      await screen.findByText("未完成内容，包含 AI 自行提出的问题？");
+      fireEvent.click(screen.getByRole("button", { name: "停止生成" }));
+      await act(async () => {
+        finish!(completed("late", "迟到追问"));
+      });
+    } else {
+      await screen.findByRole("alert");
+    }
+    const third = completed("successful-third", "新的完整追问");
+    vi.mocked(researchApi.runAnalysis).mockResolvedValueOnce(third);
+    ask("后续用户问题");
+    await screen.findByText(third.answer);
+    expect(
+      vi.mocked(researchApi.runAnalysis).mock.lastCall![0].previousTurn,
+    ).toEqual({
+      question: "已完成的首轮用户问题",
+      answer: first.answer,
+      suggestions: [],
+      pendingQuestion: "已完成轮次的追问",
+    });
+    ask("再继续讨论");
+    await screen.findByText(result.answer);
+    expect(
+      vi.mocked(researchApi.runAnalysis).mock.lastCall![0].previousTurn,
+    ).toEqual({
+      question: "后续用户问题",
+      answer: third.answer,
+      suggestions: [],
+      earlierQuestions: ["已完成的首轮用户问题"],
+      pendingQuestion: "新的完整追问",
+    });
   },
 );
 

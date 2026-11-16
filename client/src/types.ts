@@ -328,6 +328,8 @@ export interface PreviousTurn {
   question: string;
   answer: string;
   suggestions: string[];
+  earlierQuestions?: string[];
+  pendingQuestion?: string;
 }
 
 export interface AnalysisRequest {
@@ -452,7 +454,9 @@ export interface AnalysisWorkflowTrace {
   personalContext?: {
     currentUserMessage?: string; // Read-only historical reference.
     question?: string;
-    previousTurn?: PreviousTurn;
+    previousTurn?: Pick<PreviousTurn, "question" | "earlierQuestions"> &
+      Partial<Omit<PreviousTurn, "question" | "earlierQuestions">>;
+    discussionGuide?: unknown;
     financialProfile?: { profile: FinancialProfile; emergencyMonths: number };
     portfolio?: {
       holdings: Holding[];

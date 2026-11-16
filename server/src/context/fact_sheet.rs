@@ -172,7 +172,10 @@ pub fn fact_sheet(snapshot: &Snapshot, selection: &ContextSelection) -> Value {
             }))).collect::<Map<_,_>>();
             (holding.id.clone(), json!({
                 "id":holding.id,"name":holding.name,"symbol":holding.symbol,"assetClass":holding.asset_class,"currency":holding.currency,
-                "marketValue":market,"weightPct":weight.map(text),"targetPct":target.map(text),
+                "marketValue":market,
+                "currentQuantity":source.filter(|_| usable).and_then(|a| a.amounts.quantity.as_deref()),
+                "referencePrice":source.filter(|_| usable).and_then(|a| a.amounts.current_price.as_deref()),
+                "weightPct":weight.map(text),"targetPct":target.map(text),
                 "deviationPct":weight.zip(target).and_then(|(w,t)| w.checked_sub(t)).map(text),
                 "costBasis":cost,"profitPct":profit.map(text),
                 "recordedTradeCount":trade_count,"recentTrades":recent_trades,
@@ -216,4 +219,86 @@ pub fn fact_sheet(snapshot: &Snapshot, selection: &ContextSelection) -> Value {
     }
     sheet.insert("summary".into(), Value::Object(summary));
     Value::Object(sheet)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn current_quantity_and_reference_price_use_exact_usable_accounting_and_authorization() {
+        let mut snapshot: Snapshot =
+            serde_json::from_str(include_str!("../../tests/fixtures/qa_eval/snapshot.json"))
+                .unwrap();
+        let exact = snapshot
+            .accounting
+            .as_mut()
+            .unwrap()
+            .holdings
+            .get_mut("fund-a")
+            .unwrap();
+        exact.amounts.quantity = Some("900719925474099.12345678".into());
+        exact.amounts.current_price = Some("12.34567890".into());
+        let selection = ContextSelection::default();
+        let facts = fact_sheet(&snapshot, &selection);
+        assert_eq!(
+            facts["holdings"]["fund-a"]["currentQuantity"],
+            "900719925474099.12345678"
+        );
+        assert_eq!(facts["holdings"]["fund-a"]["referencePrice"], "12.34567890");
+        assert_eq!(facts["holdings"]["fund-a"]["priceDate"], "2026-10-20");
+        snapshot
+            .accounting
+            .as_mut()
+            .unwrap()
+            .holdings
+            .get_mut("fund-a")
+            .unwrap()
+            .usable = false;
+        let blocked = fact_sheet(&snapshot, &selection);
+        assert!(blocked["holdings"]["fund-a"]["currentQuantity"].is_null());
+        assert!(blocked["holdings"]["fund-a"]["referencePrice"].is_null());
+        let hidden = fact_sheet(
+            &snapshot,
+            &ContextSelection {
+                include_holdings: false,
+                ..selection
+            },
+        );
+        assert!(hidden.get("holdings").is_none());
+        assert!(!hidden.to_string().contains("900719925474099.12345678"));
+    }
+
+    #[test]
+    fn current_quantity_changes_the_actual_frozen_preview() {
+        let mut snapshot: Snapshot =
+            serde_json::from_str(include_str!("../../tests/fixtures/qa_eval/snapshot.json"))
+                .unwrap();
+        let request =
+            serde_json::from_value(json!({"question":"当前持有多少？", "workflow":"quick"}))
+                .unwrap();
+        let build = |snapshot: &Snapshot| {
+            super::super::ContextBuilder::build(
+                &request,
+                snapshot,
+                &super::super::ContextSources::default(),
+            )
+        };
+        let before = build(&snapshot);
+        snapshot
+            .accounting
+            .as_mut()
+            .unwrap()
+            .holdings
+            .get_mut("fund-a")
+            .unwrap()
+            .amounts
+            .quantity = Some("16000".into());
+        let after = build(&snapshot);
+        assert_ne!(before.revision, after.revision);
+        assert_eq!(
+            after.payload["facts"]["holdings"]["fund-a"]["currentQuantity"],
+            "16000"
+        );
+    }
 }

@@ -591,6 +591,10 @@ pub struct PreviousTurn {
     pub question: String,
     pub answer: String,
     pub suggestions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub earlier_questions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_question: Option<String>,
 }
 
 impl PreviousTurn {
@@ -602,6 +606,20 @@ impl PreviousTurn {
                 .iter()
                 .map(|s| s.chars().count())
                 .sum::<usize>();
+        if self.earlier_questions.len() > 5
+            || self
+                .earlier_questions
+                .iter()
+                .any(|question| question.trim().is_empty() || question.chars().count() > 300)
+            || self.pending_question.as_ref().is_some_and(|question| {
+                question.trim().is_empty() || question.chars().count() > 200
+            })
+        {
+            return Err(crate::AppError::Validation(
+                "早期用户问题最多5条、每条不超过300字符；上一轮追问不超过200字符，正文须非空"
+                    .into(),
+            ));
+        }
         if length > PREVIOUS_TURN_LIMIT
             || self.question.trim().is_empty()
             || self.answer.trim().is_empty()
