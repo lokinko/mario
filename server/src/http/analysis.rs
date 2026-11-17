@@ -1,6 +1,6 @@
 //! AI analysis execution, streaming and history.
 use super::RequestContext;
-use crate::models::{
+use crate::models::analysis::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, StoredAnalysis,
 };
 use crate::{application::analysis::AnalysisService, AppResult};
@@ -88,7 +88,7 @@ async fn analysis(
 mod tests {
     use super::*;
     use crate::{
-        context::BuiltContext, db::Database, models, models::inference::AnalysisEvent,
+        context::BuiltContext, db::Database, models::inference::AnalysisEvent,
         ports::analysis::AnalysisExecutor,
     };
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -108,7 +108,7 @@ mod tests {
     impl AnalysisExecutor for Executor {
         async fn execute(
             &self,
-            _: models::ModelConfig,
+            _: crate::models::connection::ModelConfig,
             _: Option<String>,
             _: AnalysisRequest,
             _: BuiltContext,
@@ -117,7 +117,7 @@ mod tests {
         }
         async fn execute_stream(
             &self,
-            config: models::ModelConfig,
+            config: crate::models::connection::ModelConfig,
             _: Option<String>,
             _: AnalysisRequest,
             context: BuiltContext,
@@ -155,7 +155,7 @@ mod tests {
         let dropped = Arc::new(AtomicBool::new(false));
         let db = Database::test();
         db.save_model_configuration(
-            crate::models::ModelProviderKind::CodexBridge,
+            crate::models::provider::ModelProviderKind::CodexBridge,
             "codex://bridge",
             "fixture",
             None,

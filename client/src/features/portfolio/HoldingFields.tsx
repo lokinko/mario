@@ -1,5 +1,5 @@
 import { PrivateNumberInput } from "../../components/AmountPrivacy";
-import type { Holding } from "../../types";
+import type { Holding } from "../../types/user";
 
 export function hasHoldingDetails(holding: Omit<Holding, "id">) {
   return [holding.costPrice, holding.quantity, holding.currentPrice].some(

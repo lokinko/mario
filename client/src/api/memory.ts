@@ -1,5 +1,5 @@
 import { httpRequest } from "../lib/httpClient";
-import type { MemoryNote, MemoryOverview } from "../types";
+import type { MemoryNote, MemoryOverview } from "../types/ai";
 
 export async function getMemory(): Promise<MemoryOverview> {
   return httpRequest<MemoryOverview>("/memory");

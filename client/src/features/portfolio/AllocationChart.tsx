@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Money } from "../../components/AmountPrivacy";
 import { getAllocation, type Allocation } from "../../api/portfolio";
 import { formatAmount } from "../../lib/format";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 
 const colors = [
   "var(--info)",

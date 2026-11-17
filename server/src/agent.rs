@@ -1,13 +1,15 @@
 //! Stateless AI service. Receives only the backend's frozen, authorized context.
 //! It has no database connection, session store, or mutation API.
-use crate::models::validate_endpoint;
+use crate::models::endpoint::validate_endpoint;
 use crate::{
     ai::{InvestmentOrchestrator, ModelProvider, NativeModelProvider},
     authentication::token_matches,
     context,
     models::{
+        analysis::{AnalysisRequest, AnalysisResult},
+        connection::ModelConfig,
         memory::{DreamInput, DreamOutcome},
-        AnalysisRequest, AnalysisResult, ModelConfig, ModelProviderKind,
+        provider::ModelProviderKind,
     },
     AppError, AppResult,
 };

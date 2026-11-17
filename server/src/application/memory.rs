@@ -104,8 +104,10 @@ impl<'a, A: MemoryAccount> MemoryService<'a, A> {
 mod tests {
     use super::*;
     use crate::models::{
+        analysis::OutputValidationTrace,
+        connection::ModelConfig,
         memory::{DreamOperation, DreamOutcome, DreamProposal, MemoryKind, MemoryOrigin},
-        ModelConfig, ModelProviderKind, OutputValidationTrace,
+        provider::ModelProviderKind,
     };
 
     struct Dreamer {
@@ -118,9 +120,9 @@ mod tests {
             &self,
             _: ModelConfig,
             _: Option<String>,
-            _: crate::models::AnalysisRequest,
+            _: crate::models::analysis::AnalysisRequest,
             _: crate::context::BuiltContext,
-        ) -> AppResult<crate::models::AnalysisResult> {
+        ) -> AppResult<crate::models::analysis::AnalysisResult> {
             unreachable!("dreaming never runs an analysis")
         }
         async fn dream(

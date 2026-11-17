@@ -1,5 +1,5 @@
 //! User-owned, authorized current-state projection. Ledger records never cross this boundary.
-use crate::models::{ContextSelection, Holding, ProfileField, Snapshot};
+use crate::models::portfolio::{Holding, ProfileField, Snapshot};
 use rust_decimal::Decimal;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
@@ -8,7 +8,7 @@ pub(crate) struct AuthorizedFinancialContext {
     pub facts: Value,
     pub companies: Vec<(String, String)>,
     pub holding_count: usize,
-    pub valuation_evidence: Vec<crate::models::HoldingValuationEvidence>,
+    pub valuation_evidence: Vec<crate::models::portfolio::HoldingValuationEvidence>,
 }
 fn decimal(value: &str) -> Option<Decimal> {
     Decimal::from_str_exact(value).ok()
@@ -23,12 +23,16 @@ fn insert(map: &mut Map<String, Value>, key: &str, value: Option<String>) {
 }
 
 impl AuthorizedFinancialContext {
-    pub fn from_snapshot(snapshot: &Snapshot, selection: &ContextSelection) -> Self {
+    pub fn from_snapshot(
+        snapshot: &Snapshot,
+        include_profile: bool,
+        include_holdings: bool,
+    ) -> Self {
         let mut summary = Map::new();
-        if selection.include_profile || selection.include_holdings {
+        if include_profile || include_holdings {
             summary.insert("baseCurrency".into(), json!(snapshot.profile.base_currency));
         }
-        if selection.include_profile {
+        if include_profile {
             let p = &snapshot.profile;
             let exact = p
                 .exact_amounts
@@ -83,7 +87,7 @@ impl AuthorizedFinancialContext {
         }
         let mut facts = Map::new();
         let mut companies = Vec::new();
-        if selection.include_holdings {
+        if include_holdings {
             if let Some(a) = &snapshot.accounting {
                 insert(&mut summary, "portfolioValue", a.total_value.clone());
                 for (key, metric) in [
@@ -207,7 +211,7 @@ impl AuthorizedFinancialContext {
             facts: Value::Object(facts),
             holding_count: companies.len(),
             companies,
-            valuation_evidence: if selection.include_holdings {
+            valuation_evidence: if include_holdings {
                 snapshot.holding_valuations.clone()
             } else {
                 Vec::new()
@@ -263,7 +267,7 @@ mod tests {
             .holdings
             .insert(h.id.clone(), source);
         s.price_refresh_errors.push("PRIVATE_DIAGNOSTIC".into());
-        let f = AuthorizedFinancialContext::from_snapshot(&s, &ContextSelection::default());
+        let f = AuthorizedFinancialContext::from_snapshot(&s, true, true);
         assert_eq!(
             f.facts["holdings"]["fund-a"]["currentQuantity"],
             "300.00000001"
@@ -283,14 +287,7 @@ mod tests {
         ] {
             assert!(!f.facts.to_string().contains(forbidden));
         }
-        let hidden = AuthorizedFinancialContext::from_snapshot(
-            &s,
-            &ContextSelection {
-                include_holdings: false,
-                include_profile: false,
-                ..Default::default()
-            },
-        );
+        let hidden = AuthorizedFinancialContext::from_snapshot(&s, false, false);
         assert_eq!(hidden.facts, serde_json::json!({"summary":{}}));
         assert!(hidden.companies.is_empty());
         assert!(hidden.valuation_evidence.is_empty());
@@ -309,7 +306,7 @@ mod tests {
         source.usable = false;
         s.holdings.push(h.clone());
         s.accounting.as_mut().unwrap().holdings.insert(h.id, source);
-        let f = AuthorizedFinancialContext::from_snapshot(&s, &ContextSelection::default());
+        let f = AuthorizedFinancialContext::from_snapshot(&s, true, true);
         assert!(f.facts["holdings"]["fund-a"].get("marketValue").is_none());
         assert!(f.facts["holdings"]["fund-a"].get("costBasis").is_none());
         assert_eq!(f.facts["summary"]["cashValue"], "10090");

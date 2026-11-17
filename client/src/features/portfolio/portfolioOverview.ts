@@ -1,4 +1,4 @@
-import type { Holding, Snapshot } from "../../types";
+import type { Holding, Snapshot } from "../../types/user";
 export const overviewMetrics = [
   "value",
   "cost",

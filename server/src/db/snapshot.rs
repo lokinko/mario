@@ -2,8 +2,9 @@ use super::{
     planning, risk, valuation, FinancialProfile, Holding, HoldingValuationEvidence, Snapshot,
 };
 use crate::models::{
-    accounting::AccountingSnapshot, options::OptionContract, CashBalanceState,
-    CorporateActionRecord, HoldingTrade, HoldingTradeSummary,
+    accounting::AccountingSnapshot,
+    options::OptionContract,
+    portfolio::{CashBalanceState, CorporateActionRecord, HoldingTrade, HoldingTradeSummary},
 };
 use std::collections::BTreeMap;
 

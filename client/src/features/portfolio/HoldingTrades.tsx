@@ -18,7 +18,7 @@ import type {
   HoldingTradeKind,
   Snapshot,
   OptionContract,
-} from "../../types";
+} from "../../types/user";
 import { formatMoney, formatNumber, formatSigned } from "../../lib/format";
 import { localDateValue } from "../../lib/dates";
 

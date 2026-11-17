@@ -1,6 +1,9 @@
 //! AI model destinations, bound credentials and analysis presets.
 use super::{params, AppError, AppResult, Database, ModelConfig, OptionalRow};
-use crate::models::{model_key_binding, AnalysisSettings, ModelProviderKind};
+use crate::models::{
+    analysis::AnalysisSettings,
+    provider::{model_key_binding, ModelProviderKind},
+};
 
 impl Database {
     pub fn analysis_settings(&self) -> AppResult<AnalysisSettings> {
@@ -15,7 +18,7 @@ impl Database {
         &self,
         settings: AnalysisSettings,
     ) -> AppResult<AnalysisSettings> {
-        if settings.workflow != crate::models::ANALYSIS_WORKFLOW {
+        if settings.workflow != crate::models::analysis::ANALYSIS_WORKFLOW {
             return Err(AppError::Validation("分析方式无效".into()));
         }
         let settings = normalize_analysis_settings(settings);
@@ -41,9 +44,9 @@ impl Database {
         .parse()?;
         Ok(ModelConfig {
             source: if value("model.source", "account")? == "server" {
-                crate::models::ModelConfigSource::Server
+                crate::models::connection::ModelConfigSource::Server
             } else {
-                crate::models::ModelConfigSource::Account
+                crate::models::connection::ModelConfigSource::Account
             },
             server_model: None,
             provider,
@@ -70,7 +73,7 @@ impl Database {
                 return Err(AppError::Validation("桥接地址无效".into()));
             }
             ModelProviderKind::CodexBridge => {}
-            _ => crate::models::validate_endpoint(base_url)?,
+            _ => crate::models::endpoint::validate_endpoint(base_url)?,
         }
         if model.trim().is_empty() {
             return Err(AppError::Validation("请填写模型名称".into()));
@@ -119,7 +122,7 @@ impl Database {
 
 // Keep legacy presets compatible while excluding data no longer offered in settings.
 fn normalize_analysis_settings(mut settings: AnalysisSettings) -> AnalysisSettings {
-    settings.workflow = crate::models::ANALYSIS_WORKFLOW.into();
+    settings.workflow = crate::models::analysis::ANALYSIS_WORKFLOW.into();
     settings
 }
 
@@ -130,12 +133,12 @@ mod tests {
     #[test]
     fn web_search_defaults_on_but_saved_false_is_preserved() {
         assert!(AnalysisSettings::default().web_search);
-        let request: crate::models::AnalysisRequest = serde_json::from_value(
+        let request: crate::models::analysis::AnalysisRequest = serde_json::from_value(
             serde_json::json!({"question":"当前状态", "workflow":"council"}),
         )
         .unwrap();
         assert!(request.web_search);
-        let request: crate::models::AnalysisRequest = serde_json::from_value(
+        let request: crate::models::analysis::AnalysisRequest = serde_json::from_value(
             serde_json::json!({"question":"当前状态", "workflow":"council", "webSearch":false}),
         )
         .unwrap();
@@ -160,7 +163,7 @@ mod tests {
             workflow: "deep".into(),
 
             web_search: true,
-            context_selection: crate::models::ContextSelection::default(),
+            context_selection: crate::models::analysis::ContextSelection::default(),
         };
         legacy.context_selection.include_holdings = false;
         let mut stored = serde_json::to_value(&legacy).unwrap();
@@ -181,7 +184,10 @@ mod tests {
         let db = account.reopen_from_old_release();
 
         let restored = db.analysis_settings().unwrap();
-        assert_eq!(restored.workflow, crate::models::ANALYSIS_WORKFLOW);
+        assert_eq!(
+            restored.workflow,
+            crate::models::analysis::ANALYSIS_WORKFLOW
+        );
         assert!(restored.context_selection.include_profile);
         assert!(!restored.context_selection.include_holdings);
         assert!(restored.context_selection.include_evidence);
@@ -206,7 +212,10 @@ mod tests {
         let account = crate::db::TestAccount::new();
         let db = account.open();
         let mut settings = db.analysis_settings().unwrap();
-        assert_eq!(settings.workflow, crate::models::ANALYSIS_WORKFLOW);
+        assert_eq!(
+            settings.workflow,
+            crate::models::analysis::ANALYSIS_WORKFLOW
+        );
         assert!(settings.context_selection.include_profile);
         settings.web_search = false;
         settings.context_selection.include_profile = false;
@@ -222,7 +231,7 @@ mod tests {
         assert!(db.save_analysis_settings(restored).is_err());
         assert_eq!(
             db.analysis_settings().unwrap().workflow,
-            crate::models::ANALYSIS_WORKFLOW
+            crate::models::analysis::ANALYSIS_WORKFLOW
         );
     }
 
@@ -337,7 +346,7 @@ mod tests {
             ModelProviderKind::Anthropic
         );
         for retired in ["openai-compatible", "other"] {
-            assert!(serde_json::from_value::<crate::models::ModelConfigInput>(
+            assert!(serde_json::from_value::<crate::models::connection::ModelConfigInput>(
                 serde_json::json!({"provider": retired, "baseUrl": "https://api.openai.com/v1", "model": "test"})
             )
             .is_err());

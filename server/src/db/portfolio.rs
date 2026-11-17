@@ -489,7 +489,7 @@ impl Database {
     pub fn delete_holding(
         &self,
         id: &str,
-        input: &crate::models::HoldingDeleteInput,
+        input: &crate::models::portfolio::HoldingDeleteInput,
     ) -> AppResult<Snapshot> {
         let mut conn = self.conn()?;
         let transaction = conn.transaction()?;

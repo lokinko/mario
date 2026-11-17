@@ -579,7 +579,7 @@ fn trade_managed_codes_can_be_corrected_cleared_and_filled_without_changing_trad
         ..Default::default()
     })
     .unwrap();
-    let trade: crate::models::HoldingTradeInput = serde_json::from_value(serde_json::json!({
+    let trade: crate::models::portfolio::HoldingTradeInput = serde_json::from_value(serde_json::json!({
         "expectedCashBaseline":"00000000-0000-0000-0000-000000000001","requestId": Uuid::new_v4().to_string(),
         "newHolding": {
             "symbol": "AAPL", "name": "Apple", "assetClass": "股票",
@@ -892,7 +892,7 @@ fn stores_analysis_transparency_audit() {
         id: "analysis-1".into(),
         answer: "先控制风险".into(),
         stages: vec!["本地风险检查".into()],
-        transparency: crate::models::AnalysisTransparency {
+        transparency: crate::models::analysis::AnalysisTransparency {
             provider: "mock".into(),
             model: "mock-model".into(),
             context_groups: vec!["本次问题".into(), "规则型风险检查".into()],
@@ -910,43 +910,45 @@ fn stores_analysis_transparency_audit() {
             external_data_used: false,
             api_key_sent: false,
         },
-        workflow_trace: crate::models::AnalysisWorkflowTrace {
+        workflow_trace: crate::models::analysis::AnalysisWorkflowTrace {
             version: "investment-workflow-v4".into(),
-            structured_report: Some(crate::models::StoredAnalysisReport::Legacy(
-                crate::models::analysis_history::LegacyStructuredAnalysis {
-                    verdict: "先控制风险".into(),
-                    facts: vec![crate::models::AnalysisClaim {
-                        statement: "风险预算已超出".into(),
-                        basis: "user_data".into(),
-                        evidence_ids: Vec::new(),
-                        source_refs: Vec::new(),
-                    }],
-                    inferences: Vec::new(),
-                    unknowns: vec!["未来现金流".into()],
-                    options: vec![crate::models::analysis_history::AnalysisOption {
-                        name: "分批调整".into(),
-                        suitable_when: "风险超限".into(),
-                        tradeoffs: vec!["可能错过上涨".into()],
-                        risks: vec!["执行偏差".into()],
-                    }],
-                    actions: vec![crate::models::analysis_history::AnalysisAction {
-                        supporting_fact_indices: vec![0],
-                        evidence_limits: vec!["旧记录的限制".into()],
-                        action: "核对目标权重".into(),
-                        rationale: "避免错误交易".into(),
-                        reversible: true,
-                        review_trigger: "一周后".into(),
-                    }],
-                    review_triggers: vec!["风险回到预算内".into()],
-                },
-            )),
-            output_validation: Some(crate::models::OutputValidationTrace {
+            structured_report: Some(
+                crate::models::analysis_history::StoredAnalysisReport::Legacy(
+                    crate::models::analysis_history::LegacyStructuredAnalysis {
+                        verdict: "先控制风险".into(),
+                        facts: vec![crate::models::analysis::AnalysisClaim {
+                            statement: "风险预算已超出".into(),
+                            basis: "user_data".into(),
+                            evidence_ids: Vec::new(),
+                            source_refs: Vec::new(),
+                        }],
+                        inferences: Vec::new(),
+                        unknowns: vec!["未来现金流".into()],
+                        options: vec![crate::models::analysis_history::AnalysisOption {
+                            name: "分批调整".into(),
+                            suitable_when: "风险超限".into(),
+                            tradeoffs: vec!["可能错过上涨".into()],
+                            risks: vec!["执行偏差".into()],
+                        }],
+                        actions: vec![crate::models::analysis_history::AnalysisAction {
+                            supporting_fact_indices: vec![0],
+                            evidence_limits: vec!["旧记录的限制".into()],
+                            action: "核对目标权重".into(),
+                            rationale: "避免错误交易".into(),
+                            reversible: true,
+                            review_trigger: "一周后".into(),
+                        }],
+                        review_triggers: vec!["风险回到预算内".into()],
+                    },
+                ),
+            ),
+            output_validation: Some(crate::models::analysis::OutputValidationTrace {
                 status: "valid".into(),
                 attempts: 1,
                 errors: Vec::new(),
                 rejected_output: None,
             }),
-            ..crate::models::AnalysisWorkflowTrace::default()
+            ..crate::models::analysis::AnalysisWorkflowTrace::default()
         },
         created_at: "2026-01-01T00:00:00Z".into(),
         disclaimer: "测试".into(),
@@ -1216,7 +1218,7 @@ fn research_evidence_tags_are_editable_without_changing_content_and_survive_back
     let retagged = db
         .set_research_evidence_tags(
             &created.id,
-            &crate::models::ResearchEvidenceTagsInput {
+            &crate::models::research::ResearchEvidenceTagsInput {
                 asset_name: String::new(),
                 category: "公告".into(),
             },
@@ -1232,7 +1234,7 @@ fn research_evidence_tags_are_editable_without_changing_content_and_survive_back
         assert!(db
             .set_research_evidence_tags(
                 &created.id,
-                &crate::models::ResearchEvidenceTagsInput {
+                &crate::models::research::ResearchEvidenceTagsInput {
                     asset_name: asset_name.into(),
                     category: category.into(),
                 },
@@ -1539,7 +1541,7 @@ fn incomplete_target_weights_only_block_rebalancing() {
     assert_eq!(s.plan.target_total_pct, 99.0);
     assert_eq!(
         s.plan.rebalancing_blocked_by,
-        vec![crate::models::IssueCode::InvalidTargetWeights]
+        vec![crate::models::portfolio::IssueCode::InvalidTargetWeights]
     );
     assert!(s.plan.rebalancing.is_empty());
 }

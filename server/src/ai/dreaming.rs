@@ -7,8 +7,8 @@ use super::{
 };
 use crate::{
     models::{
+        analysis::{ModelCallTrace, OutputValidationTrace},
         memory::{DreamInput, DreamOutcome, DreamProposal, DREAM_OPERATIONS_MAX},
-        ModelCallTrace, OutputValidationTrace,
     },
     AppError, AppResult,
 };

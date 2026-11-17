@@ -1,5 +1,5 @@
 //! Field-preserving observation excerpts; full source JSON remains in the audit catalog.
-use crate::models::AnalysisEvidenceReference;
+use crate::models::analysis::AnalysisEvidenceReference;
 use serde_json::{json, Value};
 
 pub fn observation_excerpt(source: &AnalysisEvidenceReference) -> Option<String> {

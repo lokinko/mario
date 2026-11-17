@@ -1,7 +1,7 @@
 use super::MarketServices;
 use crate::{
     db::{Database, TestAccount},
-    models::{FxRateQuery, FxRateQuote, SecurityPriceQuery, SecurityPriceQuote},
+    models::market::quotes::{FxRateQuery, FxRateQuote, SecurityPriceQuery, SecurityPriceQuote},
     ports::market::{FxRateProvider, SecurityPriceProvider},
     AppError, AppResult,
 };
@@ -192,7 +192,7 @@ async fn verified_valuation_rejects_a_concurrent_edit_or_deletion_after_unlocked
         let outer = db.lock_account().unwrap();
         let mut work = Box::pin(service.verify_valuation(
             &id,
-            crate::models::VerifiedHoldingValuationInput {
+            crate::models::portfolio::VerifiedHoldingValuationInput {
                 symbol: "AAPL".into(),
                 quantity: 1.0,
                 on_date: "2026-01-02".into(),
@@ -204,8 +204,11 @@ async fn verified_valuation_rejects_a_concurrent_edit_or_deletion_after_unlocked
             let _peer_lock = peer.lock_account().unwrap();
             if delete {
                 // Remove an unused manual holding through its repository path.
-                peer.delete_holding(&id, &crate::models::HoldingDeleteInput::default())
-                    .unwrap();
+                peer.delete_holding(
+                    &id,
+                    &crate::models::portfolio::HoldingDeleteInput::default(),
+                )
+                .unwrap();
             } else {
                 let mut changed = input.clone();
                 changed.name = "concurrent edit".into();
@@ -222,7 +225,7 @@ async fn verified_valuation_rejects_a_concurrent_edit_or_deletion_after_unlocked
     }
 }
 
-fn holding() -> crate::models::HoldingInput {
+fn holding() -> crate::models::portfolio::HoldingInput {
     serde_json::from_value(serde_json::json!({
         "name":"synthetic holding", "symbol":"AAPL", "assetClass":"股票",
         "marketValue":100, "costBasis":100, "quantity":1, "currentPrice":100,
@@ -244,7 +247,7 @@ async fn verified_valuation_reacquires_before_success_or_provider_failure() {
         let outer = db.lock_account().unwrap();
         let mut work = Box::pin(service.verify_valuation(
             &id,
-            crate::models::VerifiedHoldingValuationInput {
+            crate::models::portfolio::VerifiedHoldingValuationInput {
                 symbol: "AAPL".into(),
                 quantity: 1.0,
                 on_date: "2026-01-02".into(),
@@ -360,7 +363,7 @@ async fn readonly_fx_quote_allows_unrelated_writes_but_rejects_changed_rate_sett
         {
             let _lock = peer.lock_account().unwrap();
             if change_rate {
-                peer.set_fx_override(&crate::models::market::FxOverrideInput {
+                peer.set_fx_override(&crate::models::fx::FxOverrideInput {
                     exact_rate: None,
                     currency: "USD".into(),
                     rate: Some(8.0),
@@ -400,7 +403,7 @@ async fn fx_refresh_does_not_overwrite_a_manual_rate_set_while_waiting() {
     assert!(peer_can_lock(&peer));
     {
         let _peer_lock = peer.lock_account().unwrap();
-        peer.set_fx_override(&crate::models::market::FxOverrideInput {
+        peer.set_fx_override(&crate::models::fx::FxOverrideInput {
             exact_rate: Some("8.0100".into()),
             currency: "USD".into(),
             rate: Some(8.01),

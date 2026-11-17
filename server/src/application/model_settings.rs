@@ -3,11 +3,16 @@
 use crate::db::Database;
 use crate::{
     models::{
-        model_key_binding, ModelConfig, ModelConfigInput, ModelConfigSource, ModelConnectionTest,
-        ModelProviderKind, ModelTarget, ServerModelCatalog,
+        connection::{
+            ModelConfig, ModelConfigInput, ModelConfigSource, ModelConnectionTest,
+            ServerModelCatalog,
+        },
+        provider::{model_key_binding, ModelProviderKind, ModelTarget},
     },
-    ports::ai_account::{AccountSession, ModelConfiguration, ModelSettingsStore},
-    ports::model::{BridgeRegistry, ModelCatalog, ModelConnector},
+    ports::{
+        ai_account::{AccountSession, ModelConfiguration, ModelSettingsStore},
+        model::{BridgeRegistry, ModelCatalog, ModelConnector},
+    },
     AppError, AppResult,
 };
 pub(crate) struct ModelServices {
@@ -123,7 +128,7 @@ fn frozen_target(
     let credential = if config.provider == ModelProviderKind::CodexBridge {
         super::codex_bridge::id(db)?
     } else {
-        crate::models::validate_endpoint(&config.base_url)?;
+        crate::models::endpoint::validate_endpoint(&config.base_url)?;
         configured_model_key(db, config, server)?
     };
     Ok(ModelTarget {

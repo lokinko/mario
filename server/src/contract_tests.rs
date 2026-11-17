@@ -54,14 +54,15 @@ fn transport_contract_fixture() {
     let mut trade_updates = Vec::new();
     for mode in ["history", "settle"] {
         for kind in ["buy", "sell", "dividend", "expire"] {
-            let input: crate::models::HoldingTradeInput = serde_json::from_value(json!({
-                "requestId":"contract-request", "holdingId":"contract-holding",
-                "expectedRevision":null, "newHolding":null, "kind":kind,
-                "occurredOn":"2026-01-02", "sequence":1, "quantity":"0.00000001",
-                "price":"99999999999999.99", "grossAmount":"0.01", "fees":"0", "taxes":"0",
-                "account":"isolated", "settlementMode":mode
-            }))
-            .unwrap();
+            let input: crate::models::portfolio::HoldingTradeInput =
+                serde_json::from_value(json!({
+                    "requestId":"contract-request", "holdingId":"contract-holding",
+                    "expectedRevision":null, "newHolding":null, "kind":kind,
+                    "occurredOn":"2026-01-02", "sequence":1, "quantity":"0.00000001",
+                    "price":"99999999999999.99", "grossAmount":"0.01", "fees":"0", "taxes":"0",
+                    "account":"isolated", "settlementMode":mode
+                }))
+                .unwrap();
             let mut update = serde_json::to_value(&input).unwrap();
             for key in [
                 "requestId",
@@ -73,19 +74,20 @@ fn transport_contract_fixture() {
             }
             update["expectedRevision"] = json!("revision");
             trade_updates.push(
-                serde_json::from_value::<crate::models::HoldingTradeUpdateInput>(update).unwrap(),
+                serde_json::from_value::<crate::models::portfolio::HoldingTradeUpdateInput>(update)
+                    .unwrap(),
             );
             trades.push(input);
         }
     }
-    let fx: crate::models::market::FxBook = serde_json::from_value(json!({
+    let fx: crate::models::fx::FxBook = serde_json::from_value(json!({
         "baseCurrency":"CNY", "checkedAt":1, "requestedOn":"2026-01-02", "error":"",
         "manual":{"USD":{"exactRate":"7.0100", "rate":7.01, "observedOn":"2026-01-02"}},
         "quotes":[{"exactRate":null, "rate":7.0, "fromCurrency":"USD", "toCurrency":"CNY",
             "requestedOn":"2026-01-02", "observedOn":"2026-01-02", "stalenessDays":0,
             "providerCode":"contract", "providerName":"Contract", "sourceUrl":"", "methodologyUrl":"", "disclaimer":""}]
     })).unwrap();
-    let result: crate::models::AnalysisResult = serde_json::from_value(json!({
+    let result: crate::models::analysis::AnalysisResult = serde_json::from_value(json!({
         "id":"contract-result", "answer":"完整回复", "stages":[], "createdAt":"2026-01-02T00:00:00Z", "disclaimer":"fixture",
         "transparency":{"provider":"fixture", "model":"fixture", "contextGroups":[], "payloadBytes":0,
             "contextRevision":"fixture", "externalDataUsed":false, "apiKeySent":false}
@@ -106,26 +108,26 @@ fn transport_contract_fixture() {
         },
     ];
     let mut configs = ["openai-chat", "openai-responses", "anthropic", "codex-bridge"].map(|provider| {
-        serde_json::from_value::<crate::models::ModelConfig>(json!({"provider":provider,"baseUrl":"https://example.test","model":"fixture","hasApiKey":false})).unwrap()
+        serde_json::from_value::<crate::models::connection::ModelConfig>(json!({"provider":provider,"baseUrl":"https://example.test","model":"fixture","hasApiKey":false})).unwrap()
     }).to_vec();
     configs.push(serde_json::from_value(json!({"provider":"openai-responses","baseUrl":"https://api.openai.com/v1","model":"site-model","hasApiKey":true,"source":"server","serverModel":"site-model"})).unwrap());
-    let bridges = [crate::models::CodexBridgeStatus::default(), serde_json::from_value(json!({
+    let bridges = [crate::models::connection::CodexBridgeStatus::default(), serde_json::from_value(json!({
         "paired":true,"online":true,"model":"fixture","models":[{"model":"fixture","displayName":"Fixture","description":"catalog fixture","isDefault":true}]
     })).unwrap()];
-    let catalogs = [crate::models::ServerModelCatalog {
+    let catalogs = [crate::models::connection::ServerModelCatalog {
         models: vec!["gpt-5.4".into(), "gpt-5.4-mini".into()],
         default_model: "gpt-5.4".into(),
     }];
     let profiles = [
-        crate::models::FinancialProfile::default(),
-        crate::models::FinancialProfile {
+        crate::models::portfolio::FinancialProfile::default(),
+        crate::models::portfolio::FinancialProfile {
             provided_fields: Some(vec![
-                crate::models::ProfileField::MonthlyIncome,
-                crate::models::ProfileField::MonthlyExpense,
-                crate::models::ProfileField::EmergencyFund,
-                crate::models::ProfileField::Liabilities,
-                crate::models::ProfileField::HorizonYears,
-                crate::models::ProfileField::MaxDrawdownPct,
+                crate::models::portfolio::ProfileField::MonthlyIncome,
+                crate::models::portfolio::ProfileField::MonthlyExpense,
+                crate::models::portfolio::ProfileField::EmergencyFund,
+                crate::models::portfolio::ProfileField::Liabilities,
+                crate::models::portfolio::ProfileField::HorizonYears,
+                crate::models::portfolio::ProfileField::MaxDrawdownPct,
             ]),
             ..Default::default()
         },

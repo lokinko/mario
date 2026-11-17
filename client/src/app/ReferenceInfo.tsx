@@ -2,7 +2,7 @@ import { lazy, useEffect, useState } from "react";
 import { getWatchBoard } from "../api/watch";
 import { DeferredPage } from "../components/DeferredPage";
 import { PageHeader } from "../components/PageHeader";
-import type { Snapshot } from "../types";
+import type { Snapshot } from "../types/user";
 
 const EvidenceWorkbench = lazy(() =>
   import("../features/evidence/EvidenceWorkbench").then((m) => ({

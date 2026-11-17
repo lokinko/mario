@@ -5,7 +5,7 @@ import { AssetOverview } from "./AssetOverview";
 import { useAssetHistory } from "./useAssetHistory";
 import * as portfolioApi from "../../api/portfolio";
 import fixture from "../../test/emptySnapshot.json";
-import type { DailyHistory, DailyRecord, Snapshot } from "../../types";
+import type { DailyHistory, DailyRecord, Snapshot } from "../../types/user";
 vi.mock("../../api/portfolio", () => ({
   getDailyAssets: vi.fn(),
   getDividendIncome: vi.fn(),

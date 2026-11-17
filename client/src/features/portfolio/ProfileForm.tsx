@@ -3,7 +3,11 @@ import { Callout } from "../../components/Callout";
 import { Save } from "lucide-react";
 import type { ReactNode } from "react";
 import { saveProfile } from "../../api/portfolio";
-import type { FinancialProfile, ProfileField, Snapshot } from "../../types";
+import type {
+  FinancialProfile,
+  ProfileField,
+  Snapshot,
+} from "../../types/user";
 import { NumberField } from "../../components/NumberField";
 import { profileFieldProvided, profileFields } from "./forms";
 

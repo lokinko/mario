@@ -11,7 +11,7 @@ import {
   refreshFxSettings,
   setFxOverride,
 } from "../../api/portfolio";
-import type { FxBook, Snapshot } from "../../types";
+import type { FxBook, Snapshot } from "../../types/user";
 
 const currencies = ["CNY", "USD", "HKD", "EUR", "JPY", "GBP"];
 const visibilityKey = "mario.exchange.visible-currencies";

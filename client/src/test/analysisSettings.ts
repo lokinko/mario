@@ -1,4 +1,4 @@
-import type { AnalysisSettings } from "../types";
+import type { AnalysisSettings } from "../types/ai";
 
 export const analysisSettings: AnalysisSettings = {
   workflow: "council",

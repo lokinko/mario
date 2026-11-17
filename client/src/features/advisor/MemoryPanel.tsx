@@ -4,7 +4,7 @@ import { Badge } from "../../components/Badge";
 import { Callout } from "../../components/Callout";
 import { DataStamp } from "../../components/DataStamp";
 import { deleteMemory, getMemory, setMemoryStatus } from "../../api/memory";
-import type { MemoryKind, MemoryNote, MemoryOverview } from "../../types";
+import type { MemoryKind, MemoryNote, MemoryOverview } from "../../types/ai";
 
 const kinds: [MemoryKind, string, string][] = [
   ["preference", "偏好", "你希望分析如何组织与表达，来自你的原话。"],

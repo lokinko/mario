@@ -11,7 +11,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ExchangeRates } from "./ExchangeRates";
 import * as portfolioApi from "../../api/portfolio";
 import fixture from "../../test/emptySnapshot.json";
-import type { FxBook, Snapshot } from "../../types";
+import type { FxBook, Snapshot } from "../../types/user";
 vi.mock("../../api/portfolio", () => ({
   getFxSettings: vi.fn(),
   getSnapshot: vi.fn(),

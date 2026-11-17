@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { serverLayers, boundaryOf, clientBoundaryViolation, clientBusinessViolation, httpRouteViolation } from './architecture-boundaries.mjs';
+import { serverLayers, serverModelOwners, serverModelViolation, boundaryOf, clientBoundaryViolation, clientBusinessViolation, httpRouteViolation } from './architecture-boundaries.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ts = createRequire(resolve(root, 'client/package.json'))('typescript');
@@ -26,7 +26,8 @@ export function clientViolation(source, target) {
     return 'features receive application callbacks, not application implementations';
   if (from === 'features' && to === 'features' && source.split('/')[1] !== target.split('/')[1])
     return 'features must compose through app or shared components';
-  if (['lib', 'components', 'api', 'types.ts'].includes(from) && ['features', 'app', 'App.tsx', 'main.tsx'].includes(to))
+  if (from === 'types' && to !== 'types') return 'contracts may only import other owned contracts';
+  if (['lib', 'components', 'api', 'types'].includes(from) && ['features', 'app', 'App.tsx', 'main.tsx'].includes(to))
     return 'shared modules cannot depend on application pages';
   if (from === 'lib' && to === 'api') return 'transport and sync primitives cannot import domain API clients';
   if (from === 'api' && to === 'api' && source.split('/')[1].replace(/\.tsx?$/, '') !== target.split('/')[1].replace(/\.tsx?$/, '')) return 'domain clients cannot import another domain client';
@@ -161,8 +162,11 @@ export function rustPaths(source, modulePath = []) {
   return paths;
 }
 export function serverSymbolViolation(source, target) {
+  const contractViolation = serverModelViolation(source, target);
+  if (contractViolation) return contractViolation;
   if (['application/analysis.rs', 'ports/ai_account.rs', 'context.rs'].includes(source)
-      && ['models::Snapshot', 'models::HoldingTrade', 'models::*', 'models'].includes(target))
+      && (['models::portfolio', 'models::portfolio::self'].includes(target)
+        || ['models::portfolio::Snapshot', 'models::portfolio::HoldingTrade'].some(path => target === path || target.startsWith(path + '::'))))
     return 'AI inputs use the authorized current-state projection, never the full ledger snapshot';
   const capabilities = {
     'application/analysis.rs': ['AnalysisAccount', 'ModelConfiguration'],
@@ -276,6 +280,10 @@ export function checkArchitecture() {
     if (boundaryViolation) violations.push(`${name}: ${boundaryViolation}`);
     const source = readFileSync(path, 'utf8');
     const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+    if (name.startsWith('types/') && ast.statements.some(statement =>
+      !ts.isInterfaceDeclaration(statement) && !ts.isTypeAliasDeclaration(statement)
+      && !(ts.isImportDeclaration(statement) && statement.importClause?.isTypeOnly)))
+      violations.push(`${name}: contracts contain only type declarations and explicit type imports`);
     const dependencies = new Set();
     const inspect = node => {
       let specifier;
@@ -313,6 +321,16 @@ export function checkArchitecture() {
     if (!reachable.has(name)) violations.push(`${name}: unused module, not reachable from main.tsx`);
   }
   const serverRoot = resolve(root, 'server/src');
+  const modelSource = readFileSync(resolve(serverRoot, 'models.rs'), 'utf8');
+  const modelModules = rustModules(modelSource);
+  if (productionRust(modelSource).replace(/pub\(crate\)\s+mod\s+\w+\s*;/g, '').trim())
+    violations.push('models.rs: contracts belong in explicitly owned modules; no shared definitions or reexports');
+  for (const name of modelModules) {
+    if (!serverModelOwners[name]) violations.push(`models/${name}: unassigned contract owner`);
+  }
+  for (const name of Object.keys(serverModelOwners)) {
+    if (!modelModules.has(name)) violations.push(`models/${name}: stale contract owner registration`);
+  }
   const known = rustModules(readFileSync(resolve(serverRoot, 'lib.rs'), 'utf8'));
   const registrations = Object.values(serverLayers).flat();
   if (new Set(registrations).size !== registrations.length) violations.push('duplicate server boundary registration');

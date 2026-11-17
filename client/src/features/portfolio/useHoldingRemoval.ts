@@ -1,7 +1,7 @@
 import { isPendingFinancialRequest } from "../../api/portfolio/financialRequest";
 import { useRef, useState } from "react";
 import { deleteHolding } from "../../api/portfolio";
-import type { Holding, Snapshot } from "../../types";
+import type { Holding, Snapshot } from "../../types/user";
 
 type RemovalRequest = { id: string; expectedRevision: string };
 

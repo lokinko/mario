@@ -3,7 +3,7 @@ import type {
   ResearchEvidence,
   ResearchEvidenceInput,
   ResearchEvidenceTags,
-} from "../types";
+} from "../types/user";
 export async function getResearchEvidence(): Promise<ResearchEvidence[]> {
   return httpRequest<ResearchEvidence[]>("/research-evidence");
 }

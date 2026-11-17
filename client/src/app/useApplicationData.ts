@@ -9,7 +9,8 @@ import {
   SERVER_SESSION_CHANGED,
   SERVER_DATA_UPDATED,
 } from "../lib/syncEvents";
-import type { ModelConfig, Snapshot } from "../types";
+import type { ModelConfig } from "../types/ai";
+import type { Snapshot } from "../types/user";
 import type { View } from "./navigation";
 
 /** Owns the server-data lifecycle. Pages own their forms; the shell owns navigation. */

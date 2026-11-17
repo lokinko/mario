@@ -4,7 +4,7 @@ use crate::{
     application::portfolio::MarketServices,
     db::Database,
     http::api_router,
-    models::{FxRateQuery, FxRateQuote, SecurityPriceQuery, SecurityPriceQuote},
+    models::market::quotes::{FxRateQuery, FxRateQuote, SecurityPriceQuery, SecurityPriceQuote},
     ports::market::{FxRateProvider, SecurityPriceProvider, WatchMarketProvider},
     AppError, AppResult,
 };

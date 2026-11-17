@@ -1,7 +1,10 @@
 //! AI model connections and analysis presets.
 use super::RequestContext;
 use crate::application::model_settings;
-use crate::models::{AnalysisSettings, ModelConfig, ModelConfigInput, ModelConnectionTest};
+use crate::models::{
+    analysis::AnalysisSettings,
+    connection::{ModelConfig, ModelConfigInput, ModelConnectionTest},
+};
 use crate::AppResult;
 use axum::{
     routing::{get, post},
@@ -44,7 +47,7 @@ async fn save_model_config(
 
 async fn server_models(
     Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<crate::models::ServerModelCatalog>> {
+) -> AppResult<Json<crate::models::connection::ServerModelCatalog>> {
     Ok(Json(
         model_settings::server_models(&state.db, &state.model_services).await?,
     ))

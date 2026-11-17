@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import fixture from "../../test/emptySnapshot.json";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 import { ExchangeRateAccess } from "./ExchangeRateAccess";
 
 vi.mock("./ExchangeRates", () => ({

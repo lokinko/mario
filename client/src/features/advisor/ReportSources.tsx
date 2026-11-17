@@ -5,7 +5,7 @@ import { getResearchAttachment } from "../../api/evidence";
 import type {
   AnalysisEvidenceReference,
   AnalysisWorkflowTrace,
-} from "../../types";
+} from "../../types/ai";
 
 const labels: Record<string, string> = {
   facts: "本次事实卡",

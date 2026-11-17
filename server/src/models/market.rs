@@ -4,44 +4,15 @@ pub(crate) mod dividend_plans;
 pub(crate) mod eastmoney;
 pub(crate) mod history;
 pub(crate) mod monitor;
-use super::FxRateQuote;
+pub(crate) mod quotes;
 use crate::{AppError, AppResult};
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 pub fn today() -> String {
     Utc::now()
         .with_timezone(&chrono_tz::Asia::Shanghai)
         .date_naive()
         .to_string()
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ManualRate {
-    #[serde(default)]
-    pub exact_rate: Option<String>,
-    pub rate: f64,
-    pub observed_on: String,
-}
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FxBook {
-    pub base_currency: String,
-    pub checked_at: i64,
-    pub requested_on: String,
-    pub quotes: Vec<FxRateQuote>,
-    pub manual: BTreeMap<String, ManualRate>,
-    pub error: String,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct FxOverrideInput {
-    #[serde(default)]
-    pub exact_rate: Option<String>,
-    pub currency: String,
-    pub rate: Option<f64>,
-}
-
 pub(crate) const METHODOLOGY_URL: &str =
     "https://help.yahoo.com/kb/finance/article-exchanges-data-delays-sln2310.html";
 pub(crate) const ASHARE_METHODOLOGY_URL: &str = "https://data.eastmoney.com/yjfp/";

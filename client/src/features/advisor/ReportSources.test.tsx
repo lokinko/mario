@@ -4,7 +4,7 @@ import { afterEach, expect, it } from "vitest";
 import type {
   AnalysisEvidenceReference,
   AnalysisWorkflowTrace,
-} from "../../types";
+} from "../../types/ai";
 import { reportSources, SourceDetail } from "./ReportSources";
 
 afterEach(cleanup);

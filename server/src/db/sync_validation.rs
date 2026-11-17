@@ -198,7 +198,7 @@ fn sync_real(row: &[SyncValue], index: usize, label: &str) -> AppResult<f64> {
 pub(super) fn validate_synced_attachments(dataset: &SyncDataset) -> AppResult<()> {
     use crate::{
         attachments::{decode, MAX_BYTES, MAX_FILES, MAX_TEXT_CHARS},
-        models::ResearchAttachmentInput,
+        models::research::ResearchAttachmentInput,
     };
     let Some(table) = dataset
         .tables

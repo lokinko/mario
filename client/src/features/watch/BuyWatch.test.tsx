@@ -11,7 +11,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BuyWatch } from "./BuyWatch";
 import * as api from "../../api/watch";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 import fixture from "../../test/emptySnapshot.json";
 import catalogFixture from "../../../../server/data/watch-catalog.json";
 

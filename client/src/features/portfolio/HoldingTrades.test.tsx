@@ -12,7 +12,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { HoldingTrades } from "./HoldingTrades";
 import { MyFacts } from "./MyFacts";
 import * as portfolioApi from "../../api/portfolio";
-import type { HoldingTrade, HoldingTradeSummary, Snapshot } from "../../types";
+import type {
+  HoldingTrade,
+  HoldingTradeSummary,
+  Snapshot,
+} from "../../types/user";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 vi.mock("../../api/portfolio", () => ({

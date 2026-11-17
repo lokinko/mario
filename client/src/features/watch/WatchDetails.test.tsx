@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getWatchDetail } from "../../api/watch";
 import type { WatchRow } from "../../api/watch";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 import fixture from "../../test/emptySnapshot.json";
 import { defaultRules } from "../../test/watchRules";
 import { WatchDetails } from "./WatchDetails";

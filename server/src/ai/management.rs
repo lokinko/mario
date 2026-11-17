@@ -1,7 +1,8 @@
 use super::{bridge, ChatMessage, ModelProvider, NativeModelProvider};
 use crate::{
     models::{
-        BridgePairing, CodexBridgeStatus, ModelConnectionTest, ModelProviderKind, ModelTarget,
+        connection::{BridgePairing, CodexBridgeStatus, ModelConnectionTest},
+        provider::{ModelProviderKind, ModelTarget},
     },
     ports::model::{BridgeRegistry, ModelConnector},
     AppResult,

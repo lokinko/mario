@@ -2,7 +2,7 @@ import { Money } from "../../components/AmountPrivacy";
 import { isPendingFinancialRequest } from "../../api/portfolio/financialRequest";
 import { Callout } from "../../components/Callout";
 import { useEffect, useRef, useState } from "react";
-import type { Holding, OptionContract, Snapshot } from "../../types";
+import type { Holding, OptionContract, Snapshot } from "../../types/user";
 import { HoldingTrades } from "./HoldingTrades";
 import { updateOptionPrice } from "../../api/portfolio";
 import { formatMoney, formatSigned } from "../../lib/format";

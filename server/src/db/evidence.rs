@@ -41,7 +41,7 @@ impl Database {
         let attachments = attachment_stmt.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
-                crate::models::ResearchAttachment {
+                crate::models::research::ResearchAttachment {
                     id: row.get(1)?,
                     name: row.get(2)?,
                     byte_size: row.get::<_, i64>(3)? as usize,
@@ -156,13 +156,13 @@ impl Database {
         &self,
         evidence_id: &str,
         attachment_id: &str,
-    ) -> AppResult<crate::models::ResearchAttachmentDownload> {
+    ) -> AppResult<crate::models::research::ResearchAttachmentDownload> {
         self.conn()?
             .query_row(
                 "SELECT name,data_base64 FROM research_attachments WHERE evidence_id=$1 AND id=$2",
                 params![evidence_id, attachment_id],
                 |row| {
-                    Ok(crate::models::ResearchAttachmentDownload {
+                    Ok(crate::models::research::ResearchAttachmentDownload {
                         name: row.get(0)?,
                         data_base64: row.get(1)?,
                     })
@@ -193,7 +193,7 @@ impl Database {
     pub fn set_research_evidence_tags(
         &self,
         id: &str,
-        input: &crate::models::ResearchEvidenceTagsInput,
+        input: &crate::models::research::ResearchEvidenceTagsInput,
     ) -> AppResult<ResearchEvidence> {
         let tags = research_evidence_tags(&input.asset_name, &input.category)?;
         let affected = self.conn()?.execute(

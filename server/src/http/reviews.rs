@@ -1,5 +1,5 @@
 use super::RequestContext;
-use crate::models::{
+use crate::models::reviews::{
     InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, ReviewReminderSummary,
     SystemReviewInput, SystemReviewRecord,
 };

@@ -1,5 +1,5 @@
 //! Read-only decoding of reports frozen before the concise report contract.
-use super::{AnalysisClaim, StructuredAnalysis};
+use crate::models::analysis::{AnalysisClaim, StructuredAnalysis};
 use serde::{Deserialize, Serialize};
 
 /// Trace fields only workflows before the concise report carried. Current runs never

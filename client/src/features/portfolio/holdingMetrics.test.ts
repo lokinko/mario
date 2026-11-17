@@ -2,7 +2,11 @@ import { expect, it } from "vitest";
 import { sortInvestmentHoldings } from "./holdingMetrics";
 import { emptyHolding } from "./forms";
 import fixture from "../../test/emptySnapshot.json";
-import type { HoldingTrade, HoldingTradeSummary, Snapshot } from "../../types";
+import type {
+  HoldingTrade,
+  HoldingTradeSummary,
+  Snapshot,
+} from "../../types/user";
 
 const snapshot = fixture as Snapshot;
 

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::models::ResearchEvidence;
+use crate::models::research::ResearchEvidence;
 
 pub const ANALYSIS_EVIDENCE_LIMIT: usize = 5;
 

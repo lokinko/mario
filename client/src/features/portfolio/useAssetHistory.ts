@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getDailyAssets } from "../../api/portfolio";
-import type { DailyHistory, Snapshot } from "../../types";
+import type { DailyHistory, Snapshot } from "../../types/user";
 import { SERVER_DATA_UPDATED, DATA_SAVED } from "../../lib/syncEvents";
 export function useAssetHistory(snapshot: Snapshot) {
   const [history, setHistory] = useState<DailyHistory>();

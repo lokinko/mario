@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::models::{AnalysisClaim, StructuredAnalysis};
+use crate::models::analysis::{AnalysisClaim, StructuredAnalysis};
 
 pub const MAX_STRUCTURED_OUTPUT_CHARS: usize = 30_000;
 

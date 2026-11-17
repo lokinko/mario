@@ -1,4 +1,4 @@
-import type { Holding, HoldingTrade, Snapshot } from "../../types";
+import type { Holding, HoldingTrade, Snapshot } from "../../types/user";
 
 export function isClosedHolding(holding: Holding, hasTrades: boolean) {
   return hasTrades && holding.quantity === 0;

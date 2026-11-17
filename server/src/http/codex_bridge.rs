@@ -25,7 +25,7 @@ pub(crate) fn worker_router() -> Router {
 }
 async fn status(
     Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<crate::models::CodexBridgeStatus>> {
+) -> AppResult<Json<crate::models::connection::CodexBridgeStatus>> {
     Ok(Json(codex_bridge::status(
         &state.db,
         state.model_services.bridges.as_ref(),
@@ -42,7 +42,7 @@ async fn revoke(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<J
 }
 async fn enable(
     Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<crate::models::ModelConfig>> {
+) -> AppResult<Json<crate::models::connection::ModelConfig>> {
     codex_bridge::enable(&state.db, state.model_services.bridges.as_ref())?;
     Ok(Json(crate::application::model_settings::configuration(
         &state.db,
@@ -54,7 +54,7 @@ struct Poll {
     runner: String,
     model: String,
     #[serde(default)]
-    models: Vec<crate::models::CodexModel>,
+    models: Vec<crate::models::connection::CodexModel>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -9,7 +9,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ReviewCenter } from "./ReviewCenter";
 import * as reviewsApi from "../../api/reviews";
-import type { SystemReviewRecord } from "../../types";
+import type { SystemReviewRecord } from "../../types/user";
 
 vi.mock("../../api/reviews", () => ({
   getInvestmentRules: vi.fn(),

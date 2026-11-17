@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { AllocationChart } from "./AllocationChart";
 import * as portfolioApi from "../../api/portfolio";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 
 vi.mock("../../api/portfolio", () => ({ getAllocation: vi.fn() }));
 afterEach(cleanup);

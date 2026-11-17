@@ -1,6 +1,6 @@
 //! Multi-agent council contracts and deterministic vote counting.
 //! Model agents produce briefs, proposals and ballots; only this module decides the winner.
-use super::{AnalysisClaim, OutputValidationTrace, StructuredAnalysis};
+use crate::models::analysis::{AnalysisClaim, OutputValidationTrace, StructuredAnalysis};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 

@@ -70,7 +70,7 @@ pub struct DividendIncome {
 }
 
 /// A-share stocks whose entitlement is derived from public ex-dividend history.
-pub fn has_public_dividends(holding: &super::Holding) -> bool {
+pub fn has_public_dividends(holding: &crate::models::portfolio::Holding) -> bool {
     holding.asset_class == "股票" && [".SS", ".SZ"].iter().any(|s| holding.symbol.ends_with(s))
 }
 
@@ -96,7 +96,7 @@ pub const OTHER_STOCKS: &str = "其他股票";
 
 /// Current base-currency weights; stocks outside `industries` share one bucket.
 pub fn allocation(
-    holdings: &[super::Holding],
+    holdings: &[crate::models::portfolio::Holding],
     accounting: &AccountingSnapshot,
     base_currency: &str,
     industries: &HashMap<String, String>,
@@ -180,9 +180,9 @@ pub struct ProfileAmounts {
     pub liabilities: String,
 }
 
-impl super::FinancialProfile {
-    pub fn field_provided(&self, field: super::ProfileField) -> bool {
-        use super::ProfileField;
+impl crate::models::portfolio::FinancialProfile {
+    pub fn field_provided(&self, field: crate::models::portfolio::ProfileField) -> bool {
+        use crate::models::portfolio::ProfileField;
         if let Some(fields) = &self.provided_fields {
             return fields.contains(&field);
         }
@@ -202,8 +202,8 @@ impl super::FinancialProfile {
 }
 
 pub(crate) fn normalize_profile(
-    profile: &super::FinancialProfile,
-) -> crate::AppResult<super::FinancialProfile> {
+    profile: &crate::models::portfolio::FinancialProfile,
+) -> crate::AppResult<crate::models::portfolio::FinancialProfile> {
     use rust_decimal::prelude::ToPrimitive;
     let mut normalized = profile.clone();
     if let Some(exact) = &profile.exact_amounts {
@@ -240,7 +240,7 @@ pub(crate) fn normalize_profile(
 mod tests {
     #[test]
     fn allocation_groups_by_class_and_industry_and_skips_unpriced_holdings() {
-        let holding = |id: &str, symbol: &str, class: &str| -> super::super::Holding {
+        let holding = |id: &str, symbol: &str, class: &str| -> crate::models::portfolio::Holding {
             serde_json::from_value(serde_json::json!({
                 "id": id, "symbol": symbol, "name": id, "assetClass": class,
                 "marketValue": 0, "costBasis": 0, "targetPct": 0, "currency": "CNY",
@@ -318,16 +318,17 @@ mod tests {
 
     #[test]
     fn profiles_saved_with_retired_fields_still_load_and_drop_them() {
-        let profile: super::super::FinancialProfile = serde_json::from_value(serde_json::json!({
-            "monthlyIncome": 1, "monthlyExpense": 0, "emergencyFund": 0, "liabilities": 0,
-            "investableAssets": 5, "horizonYears": 5, "maxDrawdownPct": 15,
-            "riskLevel": "进取", "baseCurrency": "CNY",
-            "exactAmounts": {
-                "monthlyIncome": "1", "monthlyExpense": "0", "emergencyFund": "0",
-                "liabilities": "0", "investableAssets": "5"
-            }
-        }))
-        .unwrap();
+        let profile: crate::models::portfolio::FinancialProfile =
+            serde_json::from_value(serde_json::json!({
+                "monthlyIncome": 1, "monthlyExpense": 0, "emergencyFund": 0, "liabilities": 0,
+                "investableAssets": 5, "horizonYears": 5, "maxDrawdownPct": 15,
+                "riskLevel": "进取", "baseCurrency": "CNY",
+                "exactAmounts": {
+                    "monthlyIncome": "1", "monthlyExpense": "0", "emergencyFund": "0",
+                    "liabilities": "0", "investableAssets": "5"
+                }
+            }))
+            .unwrap();
         assert_eq!(
             super::normalize_profile(&profile).unwrap().monthly_income,
             1.0

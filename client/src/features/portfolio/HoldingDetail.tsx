@@ -1,7 +1,7 @@
 import { Money } from "../../components/AmountPrivacy";
 import { useEffect, useState } from "react";
 import { StockOptions } from "./StockOptions";
-import type { Holding, Snapshot } from "../../types";
+import type { Holding, Snapshot } from "../../types/user";
 import { formatMoney, formatSigned } from "../../lib/format";
 import { HoldingTrades } from "./HoldingTrades";
 import { isClosedHolding } from "./holdingMetrics";

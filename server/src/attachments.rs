@@ -4,7 +4,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use quick_xml::{events::Event, Reader};
 
 use crate::{
-    models::{ResearchAttachment, ResearchAttachmentInput},
+    models::research::{ResearchAttachment, ResearchAttachmentInput},
     AppError, AppResult,
 };
 

@@ -207,8 +207,42 @@ test('AI use cases cannot regain concrete account state or widen their declared 
 test('production AI inputs cannot regain the financial snapshot or ledger records', async () => {
   const { serverSymbolViolation } = await import('./check-architecture.mjs');
   for (const source of ['application/analysis.rs', 'ports/ai_account.rs', 'context.rs']) {
-    for (const target of ['models::Snapshot', 'models::HoldingTrade', 'models::*', 'models'])
+    for (const target of ['models::portfolio::Snapshot', 'models::portfolio::Snapshot::default', 'models::portfolio::HoldingTrade', 'models::portfolio', 'models::portfolio::self', 'models::portfolio::*', 'models::*', 'models'])
       assert(serverSymbolViolation(source, target));
     assert.equal(serverSymbolViolation(source, 'models::accounting::analysis::AuthorizedFinancialContext'), undefined);
   }
+});
+
+test('owned contracts preserve user to market and AI to authorized user directions', async () => {
+  const { serverSymbolViolation, rustPaths } = await import('./check-architecture.mjs');
+  const { clientBoundaryViolation } = await import('./architecture-boundaries.mjs');
+  for (const [source, target] of [
+    ['models/market/quotes.rs', 'models::portfolio::Holding'],
+    ['models/market.rs', 'models::connection::ModelConfig'],
+    ['models/fx.rs', 'models::analysis::ContextSelection'],
+    ['models/accounting/analysis.rs', 'models::analysis::ContextSelection'],
+    ['models/decimal.rs', 'models::portfolio::Holding'],
+    ['application/portfolio.rs', 'models'],
+    ['http/evidence.rs', 'models::*'],
+    ['http/evidence.rs', 'models::research::*'],
+    ['http/evidence.rs', 'models::self'],
+  ]) assert(serverSymbolViolation(source, target), `${source} -> ${target}`);
+  for (const [source, target] of [
+    ['models/fx.rs', 'models::market::quotes::FxRateQuote'],
+    ['models/analysis.rs', 'models::portfolio::HoldingValuationEvidence'],
+    ['models/portfolio.rs', 'models::decimal'],
+    ['models/market/history.rs', 'models::market::quotes::SecurityPriceQuote'],
+  ]) assert.equal(serverSymbolViolation(source, target), undefined, `${source} -> ${target}`);
+  const nested = rustPaths('use super::super::analysis::ContextSelection as Permission;', ['models', 'accounting', 'analysis']);
+  assert.deepEqual([...nested], ['models::analysis::ContextSelection']);
+  for (const target of nested) assert(serverSymbolViolation('models/accounting/analysis.rs', target));
+  for (const [source, target] of [
+    ['types/user.ts', 'types/ai.ts'], ['types/market.ts', 'types/user.ts'],
+    ['types/market.ts', 'types/ai.ts'], ['types/user.ts', 'api/portfolio.ts'],
+    ['features/portfolio/MyFacts.tsx', 'types/ai.ts'], ['api/portfolio.ts', 'types/ai.ts'],
+  ]) assert(clientViolation(source, target), `${source} -> ${target}`);
+  for (const [source, target] of [['types/user.ts', 'types/market.ts'], ['types/ai.ts', 'types/user.ts']])
+    assert.equal(clientViolation(source, target), undefined);
+  assert(clientBoundaryViolation('types/unowned.ts'));
+  assert.equal(clientBoundaryViolation('types/market.ts'), undefined);
 });

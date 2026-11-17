@@ -13,7 +13,7 @@ import { StockOptions } from "./StockOptions";
 import { HoldingTrades } from "./HoldingTrades";
 import { MyFacts } from "./MyFacts";
 import * as api from "../../api/portfolio";
-import type { Holding, OptionContract, Snapshot } from "../../types";
+import type { Holding, OptionContract, Snapshot } from "../../types/user";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 vi.mock("../../api/portfolio", () => ({

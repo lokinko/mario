@@ -11,8 +11,10 @@ use super::{InvestmentOrchestrator, NativeModelProvider};
 use crate::{
     context::{BuiltContext, ContextBuilder, ContextSources},
     models::{
-        accounting::AccountingHolding, AnalysisRequest, AnalysisResult, AnalysisSettings,
-        ContextSelection, Holding, HoldingTrade, ResearchEvidence, Snapshot,
+        accounting::AccountingHolding,
+        analysis::{AnalysisRequest, AnalysisResult, AnalysisSettings, ContextSelection},
+        portfolio::{Holding, HoldingTrade, Snapshot},
+        research::ResearchEvidence,
     },
 };
 
@@ -161,7 +163,7 @@ fn previous_turn(
     question: &str,
     result: &AnalysisResult,
     earlier: &[String],
-) -> crate::models::PreviousTurn {
+) -> crate::models::analysis::PreviousTurn {
     let prior_question = question.trim().chars().take(200).collect::<String>();
     let full_question = question.trim().chars().take(300).collect::<String>();
     let candidates = earlier
@@ -192,7 +194,7 @@ fn previous_turn(
         );
     }
     let (answer, suggestions) = match result.workflow_trace.structured_report.as_ref().unwrap() {
-        crate::models::StoredAnalysisReport::Current(report) => (
+        crate::models::analysis_history::StoredAnalysisReport::Current(report) => (
             &report.answer,
             report
                 .suggestions
@@ -200,11 +202,11 @@ fn previous_turn(
                 .map(|s| s.action.chars().take(100).collect())
                 .collect::<Vec<String>>(),
         ),
-        crate::models::StoredAnalysisReport::Legacy(_) => {
+        crate::models::analysis_history::StoredAnalysisReport::Legacy(_) => {
             panic!("live evaluation must produce current reports")
         }
     };
-    crate::models::PreviousTurn {
+    crate::models::analysis::PreviousTurn {
         question: prior_question,
         answer: answer.chars().take(300).collect(),
         suggestions: suggestions.into_iter().take(3).collect(),
@@ -214,8 +216,10 @@ fn previous_turn(
             .structured_report
             .as_ref()
             .and_then(|report| match report {
-                crate::models::StoredAnalysisReport::Current(report) => report.question.as_ref(),
-                crate::models::StoredAnalysisReport::Legacy(_) => None,
+                crate::models::analysis_history::StoredAnalysisReport::Current(report) => {
+                    report.question.as_ref()
+                }
+                crate::models::analysis_history::StoredAnalysisReport::Legacy(_) => None,
             })
             .map(|question| question.chars().take(200).collect()),
     }
@@ -513,7 +517,7 @@ fn watch_fixture_positions_match_original_trades_and_exact_accounting() {
         let quantity = number(&trade.quantity);
         let cost = number(&trade.gross_amount);
         let value = quantity * number(exact.amounts.current_price.as_deref().unwrap());
-        assert_eq!(trade.kind, crate::models::TradeKind::Buy);
+        assert_eq!(trade.kind, crate::models::portfolio::TradeKind::Buy);
         assert_eq!(number(&trade.fees) + number(&trade.taxes), Decimal::ZERO);
         assert_eq!(quantity * number(&trade.price), cost);
         assert_eq!(number(&exact.amounts.cost_basis), cost);
@@ -703,7 +707,7 @@ fn quality_cases_freeze_industry_sources_and_withdrawn_authorization() {
     let (snapshot, cases) = fixtures();
     for case in cases.iter().filter(|case| case.id.starts_with("quality-")) {
         let mut request = fixture_request(case);
-        request.previous_turn = Some(crate::models::PreviousTurn {
+        request.previous_turn = Some(crate::models::analysis::PreviousTurn {
             question: "现在先核实什么？".into(),
             answer: "PRIVATE_MODEL_HISTORY".into(),
             suggestions: vec!["PRIVATE_MODEL_ACTION".into()],
@@ -736,7 +740,7 @@ fn quality_cases_freeze_industry_sources_and_withdrawn_authorization() {
 
 #[test]
 fn prior_summary_is_bounded_and_is_not_a_factual_source() {
-    let previous = crate::models::PreviousTurn {
+    let previous = crate::models::analysis::PreviousTurn {
         question: "问题".into(),
         answer: "😀".repeat(798),
         suggestions: vec![],

@@ -4,7 +4,7 @@ import { ArrowLeftRight } from "lucide-react";
 import { Drawer } from "../../components/Drawer";
 import { ExchangeRates } from "./ExchangeRates";
 import { formatNumber } from "../../lib/format";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 export function ExchangeRateAccess({
   snapshot,
   onUpdate,

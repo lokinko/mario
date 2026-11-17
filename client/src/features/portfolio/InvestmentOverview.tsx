@@ -3,7 +3,7 @@ import { Callout } from "../../components/Callout";
 import { Card } from "antd";
 import { useRef, useState } from "react";
 import { Badge } from "../../components/Badge";
-import type { Holding, Snapshot } from "../../types";
+import type { Holding, Snapshot } from "../../types/user";
 import { formatMoney, formatAmount, formatSigned } from "../../lib/format";
 import { portfolioOverview, overviewMetrics } from "./portfolioOverview";
 const labels = {

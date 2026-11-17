@@ -4,7 +4,7 @@ import { serviceUrl } from "../lib/service";
 import { requestJson } from "../lib/transport";
 import { webToken } from "../lib/webSession";
 export async function checkServerVersion(): Promise<
-  import("../types").AutoSyncResult
+  import("../types/user").AutoSyncResult
 > {
   const baseline = currentSession().revision;
   const result = await httpRequest<{ revision: string }>("/sync/version");

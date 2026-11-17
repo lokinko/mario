@@ -2,7 +2,7 @@
 use crate::{
     application::portfolio::MarketServices,
     market_data::{EcbFxRateProvider, PublicMarketSource},
-    models::{market::today, FxRateQuery},
+    models::market::{quotes::FxRateQuery, today},
     ports::market::FxRateProvider,
     AppResult,
 };

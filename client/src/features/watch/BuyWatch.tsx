@@ -23,7 +23,7 @@ import {
   type WatchInput,
   type WatchRow,
 } from "../../api/watch";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 import { PageHeader } from "../../components/PageHeader";
 import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";

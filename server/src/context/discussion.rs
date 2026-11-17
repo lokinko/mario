@@ -2,7 +2,7 @@
 //! It is a research path, never a company assessment or a new fact source.
 use serde_json::{json, Value};
 
-use crate::models::{AnalysisRequest, ResearchEvidence};
+use crate::models::{analysis::AnalysisRequest, research::ResearchEvidence};
 
 /// Most recent user input wins. Model answers and suggested actions are never queries.
 pub fn retrieval_questions(request: &AnalysisRequest) -> Vec<&str> {

@@ -2,8 +2,12 @@ use super::refresh_after_close;
 use crate::{
     db::{Database, TestAccount},
     models::{
-        market::{canonical_symbol, close, METHODOLOGY_URL},
-        HoldingInput, SecurityPriceQuery, SecurityPriceQuote,
+        market::{
+            canonical_symbol, close,
+            quotes::{SecurityPriceQuery, SecurityPriceQuote},
+            METHODOLOGY_URL,
+        },
+        portfolio::HoldingInput,
     },
     ports::market::SecurityPriceProvider,
     AppError, AppResult,
@@ -186,7 +190,7 @@ impl SecurityPriceProvider for Provider {
                 Mutation::Delete => {
                     peer.delete_holding(
                         &h.id,
-                        &crate::models::HoldingDeleteInput {
+                        &crate::models::portfolio::HoldingDeleteInput {
                             expected_revision: snapshot.holding_revisions[&h.id].clone(),
                         },
                     )

@@ -4,7 +4,7 @@ use super::{
     provider::{ModelCompletion, SearchCompletion},
     ChatMessage, ModelProvider,
 };
-use crate::{models::CodexBridgeStatus, AppError, AppResult};
+use crate::{models::connection::CodexBridgeStatus, AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -53,7 +53,7 @@ struct State {
     runner: Option<String>,
     seen: Option<Instant>,
     model: Option<String>,
-    models: Vec<crate::models::CodexModel>,
+    models: Vec<crate::models::connection::CodexModel>,
     active: Option<Active>,
 }
 pub(crate) struct Connection {
@@ -137,7 +137,7 @@ impl Connection {
         &self,
         runner: &str,
         model: &str,
-        models: &[crate::models::CodexModel],
+        models: &[crate::models::connection::CodexModel],
     ) -> AppResult<()> {
         if models.is_empty()
             || models.len() > 100

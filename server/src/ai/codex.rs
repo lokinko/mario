@@ -68,11 +68,11 @@ impl CodexProvider {
         self.status = Some(status);
         self
     }
-    pub async fn models() -> AppResult<Vec<crate::models::CodexModel>> {
+    pub async fn models() -> AppResult<Vec<crate::models::connection::CodexModel>> {
         tokio::time::timeout(Duration::from_secs(25), async {
             let mut rpc = Rpc::start().await?;
             rpc.account().await?;
-            let mut catalog = Vec::<crate::models::CodexModel>::new();
+            let mut catalog = Vec::<crate::models::connection::CodexModel>::new();
             let mut cursor = Value::Null;
             for _ in 0..10 {
                 let page = rpc
@@ -278,7 +278,7 @@ fn classify_failure(error: &Value) -> CodexFailure {
     }
 }
 
-fn parse_models(page: &Value) -> AppResult<Vec<crate::models::CodexModel>> {
+fn parse_models(page: &Value) -> AppResult<Vec<crate::models::connection::CodexModel>> {
     let items = page["data"]
         .as_array()
         .ok_or_else(|| AppError::Model("Codex 模型列表格式无效".into()))?;
@@ -290,7 +290,7 @@ fn parse_models(page: &Value) -> AppResult<Vec<crate::models::CodexModel>> {
                 .as_str()
                 .filter(|value| !value.is_empty() && value.len() <= 200)
                 .ok_or_else(|| AppError::Model("Codex 模型 ID 无效".into()))?;
-            Ok(crate::models::CodexModel {
+            Ok(crate::models::connection::CodexModel {
                 model: model.into(),
                 display_name: item["displayName"]
                     .as_str()

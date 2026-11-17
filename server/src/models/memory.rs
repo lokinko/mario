@@ -198,8 +198,8 @@ pub enum DreamOperation {
 #[serde(rename_all = "camelCase")]
 pub struct DreamOutcome {
     pub proposal: DreamProposal,
-    pub calls: Vec<super::ModelCallTrace>,
-    pub validation: super::OutputValidationTrace,
+    pub calls: Vec<crate::models::analysis::ModelCallTrace>,
+    pub validation: crate::models::analysis::OutputValidationTrace,
 }
 
 /// Operations accepted for storage after deterministic checks.

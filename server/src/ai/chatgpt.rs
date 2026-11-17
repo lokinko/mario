@@ -3,7 +3,10 @@
 use super::provider::{ChatMessage, SearchCompletion, SearchSource};
 use crate::{
     error::{AppError, AppResult},
-    models::{inference::CodexFailure, inference::MODEL_CALL_TIMEOUT, CodexModel},
+    models::{
+        connection::CodexModel,
+        inference::{CodexFailure, MODEL_CALL_TIMEOUT},
+    },
 };
 use reqwest::{Client, Response};
 use serde_json::{json, Value};

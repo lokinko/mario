@@ -2,7 +2,7 @@ import { httpRequest } from "../../lib/httpClient";
 import { requestJson, HttpError } from "../../lib/transport";
 import { serviceUrl } from "../../lib/service";
 import { currentSession, webToken } from "../../lib/webSession";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 
 export class FinancialRequestError extends Error {
   readonly kind = "pending";

@@ -1,5 +1,5 @@
 //! Option contracts belong to one account's underlying stock; premiums are per underlying unit.
-use super::{HoldingTrade, HoldingTradeSummary, TradeKind};
+use crate::models::portfolio::{HoldingTrade, HoldingTradeSummary, TradeKind};
 use crate::{AppError, AppResult};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

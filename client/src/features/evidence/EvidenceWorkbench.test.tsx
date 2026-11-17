@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import * as researchApi from "../../api/evidence";
-import type { ResearchEvidence } from "../../types";
+import type { ResearchEvidence } from "../../types/user";
 import { EvidenceWorkbench } from "./EvidenceWorkbench";
 
 vi.mock("../../api/evidence", () => ({

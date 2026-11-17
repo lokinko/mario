@@ -1,14 +1,16 @@
 //! Central account FX book; current balances use today's book, ledger events use dated quotes.
 use crate::{
     db::Database,
-    models::market::SUPPORTED_CURRENCIES,
-    models::{FxRateQuery, FxRateQuote},
+    models::market::{
+        quotes::{FxRateQuery, FxRateQuote},
+        SUPPORTED_CURRENCIES,
+    },
     ports::market::FxRateProvider,
     AppError, AppResult,
 };
 use chrono::Utc;
 
-use crate::models::market::{today, FxBook};
+use crate::models::{fx::FxBook, market::today};
 
 pub async fn refresh(
     db: &Database,
@@ -144,7 +146,7 @@ pub async fn historical_quote(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::market::FxOverrideInput;
+    use crate::models::fx::FxOverrideInput;
     use std::sync::atomic::{AtomicUsize, Ordering};
     struct Provider {
         calls: AtomicUsize,
@@ -205,7 +207,7 @@ mod tests {
             rate,
         }
     }
-    fn input(currency: &str) -> crate::models::HoldingInput {
+    fn input(currency: &str) -> crate::models::portfolio::HoldingInput {
         serde_json::from_value(serde_json::json!({"symbol":"","name":"账户","assetClass":"其他", "marketValue":100,"costBasis":0,"targetPct":0,"currency":currency,"valuationDate":"2026-01-01","fxRateToBase":999})).unwrap()
     }
     #[tokio::test]

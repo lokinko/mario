@@ -19,7 +19,7 @@ import { useHoldingRemoval } from "./useHoldingRemoval";
 import { useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw } from "lucide-react";
 import { refreshSecurityPrices } from "../../api/portfolio";
-import type { DataIssue, Holding, Snapshot } from "../../types";
+import type { DataIssue, Holding, Snapshot } from "../../types/user";
 import { PageHeader } from "../../components/PageHeader";
 import { emptyHolding } from "./forms";
 import "./portfolio.css";

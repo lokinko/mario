@@ -6,7 +6,7 @@ import type {
   AnalysisHistoryItem,
   StoredAnalysis,
   AnalysisUpdate,
-} from "../types";
+} from "../types/ai";
 export async function runAnalysis(
   request: AnalysisRequest,
   onUpdate?: (update: AnalysisUpdate) => void,

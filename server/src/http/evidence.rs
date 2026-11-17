@@ -1,9 +1,9 @@
 //! User-owned research originals, tags and attachments.
 use super::RequestContext;
-use crate::models::{
+use crate::models::research::{
     ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput, ResearchEvidenceTagsInput,
 };
-use crate::{models, AppResult};
+use crate::AppResult;
 use axum::{
     extract::Path,
     routing::{get, put},
@@ -65,6 +65,6 @@ async fn set_research_evidence_tags(
 async fn research_attachment(
     Extension(state): Extension<Arc<RequestContext>>,
     Path((id, attachment_id)): Path<(String, String)>,
-) -> AppResult<Json<models::ResearchAttachmentDownload>> {
+) -> AppResult<Json<crate::models::research::ResearchAttachmentDownload>> {
     Ok(Json(state.db.research_attachment(&id, &attachment_id)?))
 }

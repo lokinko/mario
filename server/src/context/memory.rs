@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use serde_json::{json, Value};
 
 use crate::models::{
+    analysis::AnalysisRequest,
     memory::{MemoryKind, MemoryNote, MemoryOrigin},
-    AnalysisRequest,
 };
 
 /// User-stated preferences always fit; the rest of the budget goes to relevant notes.

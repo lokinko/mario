@@ -1,7 +1,10 @@
 use super::*;
 use crate::models::{
-    ConfirmCorporateActionInput, HoldingTradeDeleteInput, HoldingTradeInput,
-    HoldingTradeUpdateInput, SecurityPriceQuote,
+    market::quotes::SecurityPriceQuote,
+    portfolio::{
+        ConfirmCorporateActionInput, HoldingTradeDeleteInput, HoldingTradeInput,
+        HoldingTradeUpdateInput,
+    },
 };
 
 fn buy(symbol: &str, mode: &str, date: &str) -> HoldingTradeInput {
@@ -32,7 +35,7 @@ fn sell_all(db: &Database, snapshot: &Snapshot, id: &str, price: &str) -> Snapsh
     input.holding_id = id.into();
     input.expected_revision = Some(snapshot.holding_revisions[id].clone());
     input.expected_cash_baseline = snapshot.cash_balances[0].baseline_id.clone();
-    input.kind = crate::models::TradeKind::Sell;
+    input.kind = crate::models::portfolio::TradeKind::Sell;
     input.price = price.into();
     input.gross_amount = (crate::models::decimal::parse(price).unwrap()
         * rust_decimal::Decimal::from(10))
@@ -50,13 +53,13 @@ fn deleting_whole_position_nets_cash_preserves_evidence_and_replays_after_restor
     let s = db.save_holding_trade(&input).unwrap();
     let id = s.holding_trades[0].holding_id.clone();
     let s = sell_all(&db, &s, &id, "10");
-    let declaration: crate::models::ManualCorporateActionInput = serde_json::from_value(
+    let declaration: crate::models::portfolio::ManualCorporateActionInput = serde_json::from_value(
         serde_json::json!({"requestId":Uuid::new_v4().to_string(),"expectedRevision":s.holding_revisions[&id],"split":{"effectiveOn":"2026-02-01","numerator":"2","denominator":"1"},"reason":"券商通知"}),
     ).unwrap();
     let s = db.declare_corporate_action(&id, &declaration).unwrap();
     let original_actions = s.corporate_actions.clone();
     let original_trades = s.holding_trades.clone();
-    let request = crate::models::HoldingDeleteInput {
+    let request = crate::models::portfolio::HoldingDeleteInput {
         expected_revision: s.holding_revisions[&id].clone(),
     };
     let s = db.delete_holding(&id, &request).unwrap();
@@ -132,7 +135,7 @@ fn deleting_mixed_history_and_live_position_reverses_only_current_cash() {
     let s = db
         .delete_holding(
             &id,
-            &crate::models::HoldingDeleteInput {
+            &crate::models::portfolio::HoldingDeleteInput {
                 expected_revision: s.holding_revisions[&id].clone(),
             },
         )
@@ -141,13 +144,13 @@ fn deleting_mixed_history_and_live_position_reverses_only_current_cash() {
     assert!(s.cash_balances[0].needs_reconciliation);
     assert_eq!(
         s.valuation_status.issues[0].code,
-        crate::models::IssueCode::CashNeedsReconciliation
+        crate::models::portfolio::IssueCode::CashNeedsReconciliation
     );
     assert!(s.valuation_status.comparable);
     assert!(!s
         .plan
         .rebalancing_blocked_by
-        .contains(&crate::models::IssueCode::CashNeedsReconciliation));
+        .contains(&crate::models::portfolio::IssueCode::CashNeedsReconciliation));
     assert!(s.holding_trades.is_empty());
 
     // A later cash confirmation covers all earlier executions.
@@ -160,7 +163,7 @@ fn deleting_mixed_history_and_live_position_reverses_only_current_cash() {
     let s = db
         .delete_holding(
             &id,
-            &crate::models::HoldingDeleteInput {
+            &crate::models::portfolio::HoldingDeleteInput {
                 expected_revision: s.holding_revisions[&id].clone(),
             },
         )
@@ -177,11 +180,11 @@ fn deleting_position_rejects_stale_revision_and_insufficient_net_cash_atomically
     input.expected_cash_baseline = s.cash_balances[0].baseline_id.clone();
     let s = db.save_holding_trade(&input).unwrap();
     let id = s.holding_trades[0].holding_id.clone();
-    let stale = crate::models::HoldingDeleteInput {
+    let stale = crate::models::portfolio::HoldingDeleteInput {
         expected_revision: s.holding_revisions[&id].clone(),
     };
     let s = sell_all(&db, &s, &id, "20");
-    let current = crate::models::HoldingDeleteInput {
+    let current = crate::models::portfolio::HoldingDeleteInput {
         expected_revision: s.holding_revisions[&id].clone(),
     };
     let mut spend = buy("OTHER", "settle", "2026-01-03");
@@ -226,7 +229,7 @@ fn deleting_position_rolls_back_cash_and_trades_when_journal_fails() {
     let id = s.holding_trades[0].holding_id.clone();
     let before = db.export_sync_data().unwrap().content_hash().unwrap();
     crate::db::fail_inserts(&db.conn().unwrap(), "financial_journal", "audit failure");
-    let request = crate::models::HoldingDeleteInput {
+    let request = crate::models::portfolio::HoldingDeleteInput {
         expected_revision: s.holding_revisions[&id].clone(),
     };
     assert!(db.delete_holding(&id, &request).is_err());
@@ -375,7 +378,7 @@ fn split_review_rebuilds_quantity_and_cost_without_changing_original_executions_
     let pending = db.snapshot().unwrap();
     assert_eq!(
         pending.valuation_status.issues[0].code,
-        crate::models::IssueCode::PendingCorporateAction
+        crate::models::portfolio::IssueCode::PendingCorporateAction
     );
     assert_eq!(
         pending.valuation_status.issues[0].holding_ids,
@@ -446,13 +449,13 @@ fn manual_reverse_split_and_retraction_preserve_cash_and_reject_fractional_round
         .save_holding_trade(&buy("PRIVATE", "history", "2026-01-01"))
         .unwrap();
     let id = s.holding_trades[0].holding_id.clone();
-    let manual:crate::models::ManualCorporateActionInput=serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"expectedRevision":s.holding_revisions[&id],"split":{"effectiveOn":"2026-02-01","numerator":"1","denominator":"2"},"reason":"按未上市证券通知核对"})).unwrap();
+    let manual:crate::models::portfolio::ManualCorporateActionInput=serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"expectedRevision":s.holding_revisions[&id],"split":{"effectiveOn":"2026-02-01","numerator":"1","denominator":"2"},"reason":"按未上市证券通知核对"})).unwrap();
     let s = db.declare_corporate_action(&id, &manual).unwrap();
     assert!(s
         .valuation_status
         .issues
         .iter()
-        .any(|i| i.code == crate::models::IssueCode::PendingCorporateAction));
+        .any(|i| i.code == crate::models::portfolio::IssueCode::PendingCorporateAction));
     let confirm = ConfirmCorporateActionInput {
         expected_revision: s.holding_revisions[&id].clone(),
         reason: "核对券商通知".into(),
@@ -655,5 +658,5 @@ fn old_price_observation_is_metadata_not_a_rebalancing_gate() {
     assert!(!s
         .plan
         .rebalancing_blocked_by
-        .contains(&crate::models::IssueCode::PendingCorporateAction));
+        .contains(&crate::models::portfolio::IssueCode::PendingCorporateAction));
 }

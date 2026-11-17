@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { ModelReport } from "./ModelReport";
-import type { AnalysisWorkflowTrace } from "../../types";
+import type { AnalysisWorkflowTrace } from "../../types/ai";
 
 afterEach(cleanup);
 it("shows a concise answer, linked suggestions and one question with folded evidence", () => {

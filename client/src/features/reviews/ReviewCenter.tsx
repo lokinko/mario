@@ -21,7 +21,7 @@ import type {
   InvestmentRuleInput,
   InvestmentRuleRevision,
   SystemReviewRecord,
-} from "../../types";
+} from "../../types/user";
 import { localDateValue } from "../../lib/dates";
 import { systemReviewText } from "../../lib/reviewText";
 

@@ -3,7 +3,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { Button, Card } from "antd";
 import { useEffect, useState } from "react";
 import { getDividendIncome, type DividendIncome } from "../../api/portfolio";
-import type { DataIssue, DailyHistory, Snapshot } from "../../types";
+import type { DataIssue, DailyHistory, Snapshot } from "../../types/user";
 import type { DisplayPreferenceProps } from "../../components/DisplayPreferences";
 import { formatAmount, formatMoney } from "../../lib/format";
 export function AssetOverview({

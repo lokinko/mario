@@ -1,6 +1,9 @@
 //! Company actions are reviewed facts, separate from immutable broker executions.
 use super::*;
-use crate::models::{ConfirmCorporateActionInput, CorporateActionRecord, SecurityPriceQuote};
+use crate::models::{
+    market::quotes::SecurityPriceQuote,
+    portfolio::{ConfirmCorporateActionInput, CorporateActionRecord},
+};
 use rust_decimal::prelude::ToPrimitive;
 use sha2::{Digest, Sha256};
 
@@ -15,8 +18,8 @@ pub(super) fn load(conn: &Connection) -> AppResult<Vec<CorporateActionRecord>> {
 pub(super) fn position(
     conn: &Connection,
     id: &str,
-    trades: &[crate::models::HoldingTrade],
-) -> AppResult<crate::models::HoldingTradeSummary> {
+    trades: &[crate::models::portfolio::HoldingTrade],
+) -> AppResult<crate::models::portfolio::HoldingTradeSummary> {
     if let Some(contract) = super::options::get(conn, id)? {
         for trade in trades {
             super::trades::validate(trade, Some(&contract))?;
@@ -89,7 +92,7 @@ impl Database {
     pub fn declare_corporate_action(
         &self,
         id: &str,
-        input: &crate::models::ManualCorporateActionInput,
+        input: &crate::models::portfolio::ManualCorporateActionInput,
     ) -> AppResult<Snapshot> {
         Uuid::parse_str(&input.request_id)
             .map_err(|_| AppError::Validation("公司行动请求编号无效".into()))?;
@@ -321,7 +324,7 @@ impl Database {
             .unwrap()
             .clone();
         let adjusted_split = if mode == "revert" {
-            crate::models::SplitEvent {
+            crate::models::market::quotes::SplitEvent {
                 numerator: action.split.denominator.clone(),
                 denominator: action.split.numerator.clone(),
                 effective_on: action.split.effective_on.clone(),

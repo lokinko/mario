@@ -57,7 +57,7 @@ pub(crate) enum AnalysisEvent {
         answer: String,
     },
     Complete {
-        result: Box<crate::models::AnalysisResult>,
+        result: Box<crate::models::analysis::AnalysisResult>,
     },
     Error {
         message: String,

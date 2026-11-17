@@ -105,7 +105,7 @@ async fn work(
     token: &str,
     runner: &str,
     model: &str,
-    models: &[crate::models::CodexModel],
+    models: &[crate::models::connection::CodexModel],
     backend: &Backend,
 ) -> AppResult<()> {
     let mut connected = false;

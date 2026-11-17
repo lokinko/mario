@@ -264,11 +264,11 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 
 ## 6. 共用字段与类型查询
 
-以下记录输入字段及响应导航，避免每个接口复制同一结构。大型嵌套响应通过具名类型和源码链接继续查询，字段存在性、序列化规则以相应类型及契约测试核对；并非所有 Rust 内部结构都是可发送的请求。前端公共类型另见 [types.ts](../client/src/types.ts)，调用模块见 [api](../client/src/api/)。
+以下记录输入字段及响应导航，避免每个接口复制同一结构。大型嵌套响应通过具名类型和源码链接继续查询，字段存在性、序列化规则以相应类型及契约测试核对；并非所有 Rust 内部结构都是可发送的请求。前端类型按 [用户](../client/src/types/user.ts)、[市场](../client/src/types/market.ts)、[AI](../client/src/types/ai.ts)归属查询，调用模块见 [api](../client/src/api/)。
 
 ### 6.1 账号与财务输入
 
-主要定义：[核心模型](../server/src/models.rs)、[精确会计类型](../server/src/models/accounting.rs)、[每日资产类型](../server/src/models/daily.rs)、[期权类型](../server/src/models/options.rs)。
+主要定义：[财务契约](../server/src/models/portfolio.rs)、[精确会计类型](../server/src/models/accounting.rs)、[每日资产类型](../server/src/models/daily.rs)、[期权类型](../server/src/models/options.rs)。
 
 | 类型 | 字段与传输语义 |
 | --- | --- |
@@ -302,7 +302,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 
 ### 6.3 AI 输入与共用输出
 
-定义：[核心模型](../server/src/models.rs)、[供应商枚举](../server/src/models/provider.rs)、[记忆类型](../server/src/models/memory.rs)。
+定义：[分析契约](../server/src/models/analysis.rs)、[模型连接](../server/src/models/connection.rs)、[供应商枚举](../server/src/models/provider.rs)、[记忆类型](../server/src/models/memory.rs)。
 
 | 类型 | 字段与语义 |
 | --- | --- |
@@ -325,16 +325,16 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 
 | 响应 | 主要内容 | 完整字段来源 |
 | --- | --- | --- |
-| Snapshot | profile、holdings、accounting、cashBalances、holdingTrades、holdingTradeSummaries、holdingRevisions、corporateActions、optionContracts、stockOptionTotals、holdingValuations、findings、valuationStatus、plan、汇总与时间 | [核心模型](../server/src/models.rs)、[精确会计](../server/src/models/accounting.rs)、[期权](../server/src/models/options.rs) |
-| FinancialHistory / HoldingTradeSummary | records 中的更正前后值、cashDelta、operationId、reason、时间和可空 quarantine；成交汇总中的数量、成本、已实现收益、分红、费用、税、现金流 | [客户端返回类型](../client/src/api/portfolio.ts)、[财务仓储](../server/src/db/financial.rs)、[核心模型](../server/src/models.rs) |
+| Snapshot | profile、holdings、accounting、cashBalances、holdingTrades、holdingTradeSummaries、holdingRevisions、corporateActions、optionContracts、stockOptionTotals、holdingValuations、findings、valuationStatus、plan、汇总与时间 | [财务契约](../server/src/models/portfolio.rs)、[精确会计](../server/src/models/accounting.rs)、[期权](../server/src/models/options.rs) |
+| FinancialHistory / HoldingTradeSummary | records 中的更正前后值、cashDelta、operationId、reason、时间和可空 quarantine；成交汇总中的数量、成本、已实现收益、分红、费用、税、现金流 | [客户端返回类型](../client/src/api/portfolio.ts)、[财务仓储](../server/src/db/financial.rs)、[财务契约](../server/src/models/portfolio.rs) |
 | DailyHistory / DailyComparison | timezone、today、records、nextBefore；比较结果 from/to、amountChange、assets、allocationChanges | [每日资产类型](../server/src/models/daily.rs) |
 | Allocation / DividendIncome | baseCurrency、byClass/byIndustry、missing；分红 since/value/assetsPct/missing，精确金额与比例为字符串 | [会计类型](../server/src/models/accounting.rs) |
-| FxBook / FxRateQuote | FxBook 含 baseCurrency、checkedAt、requestedOn、quotes、manual、error；报价含 fromCurrency/toCurrency、rate/exactRate、requestedOn/observedOn、stalenessDays、来源与说明 | [汇率类型](../server/src/models/market.rs)、[核心模型](../server/src/models.rs) |
-| SecurityPriceQuote | symbol、currency、close/exactClose、splits、requestedOn/observedOn、stalenessDays、providerCode/providerName、exchange/micCode/instrumentType、priceBasis、来源与说明 | [核心模型](../server/src/models.rs) |
+| FxBook / FxRateQuote | FxBook 含 baseCurrency、checkedAt、requestedOn、quotes、manual、error；报价含 fromCurrency/toCurrency、rate/exactRate、requestedOn/observedOn、stalenessDays、来源与说明 | [个人汇率簿](../server/src/models/fx.rs)、[公共报价](../server/src/models/market/quotes.rs) |
+| SecurityPriceQuote | symbol、currency、close/exactClose、splits、requestedOn/observedOn、stalenessDays、providerCode/providerName、exchange/micCode/instrumentType、priceBasis、来源与说明 | [公共报价](../server/src/models/market/quotes.rs) |
 | WatchEntry / WatchRow / WatchBoard | 个人条目、最新观察、历史、提醒及账号规则；日期与行情缺失状态保留其业务含义 | [观察类型](../server/src/models/watch.rs) |
 | CatalogBoard / CatalogRow / CalendarBoard | 目录版本、编辑权限、行业/公司观察；分红计划日历及覆盖状态 | [目录](../server/src/models/watch/catalog.rs)、[日历](../server/src/models/watch/calendar.rs)、[公共计划](../server/src/models/market/dividend_plans.rs) |
 | GridProjection | 网格档位与预算、买卖情景计算，不是成交记录 | [网格类型](../server/src/models/watch/grid.rs) |
-| ResearchEvidence / InvestmentRule / InvestmentRuleRevision / SystemReviewRecord | 原文和附件元数据、标签与归档；手工规则及修订；文字复盘、当时快照及兼容字段 | [核心模型](../server/src/models.rs) |
+| ResearchEvidence / InvestmentRule / InvestmentRuleRevision / SystemReviewRecord | 原文和附件元数据、标签与归档；手工规则及修订；文字复盘、当时快照及兼容字段 | [研究资料](../server/src/models/research.rs)、[规则与复盘](../server/src/models/reviews.rs) |
 | InvestmentMethodology | prompt、defaultPrompt、maxLength | [方法论类型](../server/src/models/methodology.rs) |
 | ServerInfo / Dashboard | mode/database/protocol/codexBridge/analysisTimeoutSeconds/codexMaxAttempts/publicDividendData；活跃统计与 marketPrices | [托管类型](../server/src/hosted.rs)、[看板](../server/src/hosted/activity.rs)、[价格监控](../server/src/models/market/monitor.rs) |
 

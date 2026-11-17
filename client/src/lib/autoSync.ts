@@ -1,7 +1,7 @@
 import { currentSession } from "./webSession";
 import type { AccountSession } from "./accountSession";
 import { HttpError } from "./transport";
-import type { AutoSyncResult } from "../types";
+import type { AutoSyncResult } from "../types/user";
 export interface SyncState {
   phase: "waiting" | "syncing" | "synced" | "offline" | "paused" | "attention";
   message: string;

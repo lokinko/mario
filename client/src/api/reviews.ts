@@ -5,7 +5,7 @@ import type {
   InvestmentRuleRevision,
   SystemReviewDraft,
   SystemReviewRecord,
-} from "../types";
+} from "../types/user";
 export async function getInvestmentRules(): Promise<InvestmentRule[]> {
   return httpRequest<InvestmentRule[]>("/investment-rules");
 }

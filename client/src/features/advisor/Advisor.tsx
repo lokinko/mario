@@ -25,7 +25,7 @@ import type {
   AnalysisHistoryItem,
   ModelConfig,
   StoredAnalysis,
-} from "../../types";
+} from "../../types/ai";
 import { ModelReport } from "./ModelReport";
 import { previousTurn } from "./previousTurn";
 import { useRequestGuard } from "../../lib/useRequestGuard";

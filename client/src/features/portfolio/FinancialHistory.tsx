@@ -11,7 +11,7 @@ import type {
   HoldingTrade,
   HoldingTradeSummary,
   Snapshot,
-} from "../../types";
+} from "../../types/user";
 
 export function FinancialHistory({
   holding,

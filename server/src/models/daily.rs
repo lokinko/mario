@@ -1,5 +1,5 @@
 //! Daily asset contracts shared by use cases, HTTP and persistence.
-use super::Holding;
+use crate::models::portfolio::Holding;
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,5 +91,5 @@ pub struct DailyComparison {
     pub to: DailyRecord,
     pub amount_change: Option<f64>,
     pub assets: Vec<AssetChange>,
-    pub allocation_changes: Vec<crate::models::PortfolioAllocationChange>,
+    pub allocation_changes: Vec<crate::models::portfolio::PortfolioAllocationChange>,
 }

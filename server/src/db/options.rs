@@ -307,7 +307,7 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{
+    use crate::models::portfolio::{
         HoldingDeleteInput, HoldingTradeInput, HoldingTradeUpdateInput, TradeKind,
     };
     fn setup(db: &Database) -> (Snapshot, String) {

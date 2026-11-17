@@ -10,7 +10,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MyFacts } from "./MyFacts";
 import * as portfolioApi from "../../api/portfolio";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 import fixture from "../../test/emptySnapshot.json";
 import { emptyHolding } from "./forms";
 

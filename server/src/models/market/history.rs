@@ -1,6 +1,6 @@
 //! A single public, dated price revision. No account state or I/O.
 use crate::{
-    models::{SecurityPriceQuote, SplitEvent},
+    models::market::quotes::{SecurityPriceQuote, SplitEvent},
     AppError, AppResult,
 };
 use chrono::{DateTime, Months, NaiveDate};

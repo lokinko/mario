@@ -6,7 +6,7 @@ import {
   updateHolding,
   updateHoldingAmount,
 } from "../../api/portfolio";
-import type { Holding, Snapshot } from "../../types";
+import type { Holding, Snapshot } from "../../types/user";
 import { localDateValue } from "../../lib/dates";
 import {
   HoldingFields,

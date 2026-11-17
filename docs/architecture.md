@@ -35,7 +35,7 @@
 
 AI 用例负责授权、冻结输入及保存分析结果；模型执行器负责执行冻结任务。模型配置与执行能力不决定资料的业务授权。网站身份登录属于用户域，本机模型授权属于 AI 域。
 
-这些是已认可的职责边界。研究资料、分析历史与方法论已按职责拆分入口，集中契约与统一 Database 仍待继续修复，不能将原则描述为已完全强制执行。
+这些是已认可的职责边界。研究资料、分析历史与方法论已按职责拆分入口，契约按业务归属显式导入，统一 Database 仍待继续修复，不能将原则描述为已完全强制执行。
 
 ## 3. 运行角色与支撑部分
 
@@ -74,11 +74,12 @@ AI 用例负责授权、冻结输入及保存分析结果；模型执行器负�
 - **AI 账号访问能力**：[账号端口](../server/src/ports/ai_account.rs)区分只读模型配置、可写模型设置、用户只读分析来源、分析历史保存、记忆管理和账号锁协调；[存储适配](../server/src/db/ai_access.rs)复用现有事务与账号隔离。分析、记忆、模型配置与桥接用例按泛型端口编译，不能取得具体 Database、连接、任意配置键或用户账本写入方法。模型密钥绑定是[模型规则](../server/src/models/provider.rs)，移除密钥的业务校验由模型设置用例负责。用户资料通过[授权投影](../server/src/models/accounting/analysis.rs)提供，AI 接口只取得当前可用状态和授权组信息，不再接收完整 Snapshot。
 - **市场分红计划与用户日历**：[计划类型](../server/src/models/market/dividend_plans.rs)、[公共计划仓储](../server/src/db/public_dividend_plans.rs)与[采集服务](../server/src/application/dividend_plans.rs)属于市场域，只处理证券代码和公共计划。仓储继续使用既有 `mario_market.dividend_plan_snapshots` 表，不初始化用户候选目录。用户 [日历用例](../server/src/application/dividend_calendar.rs)按账号自选和共享候选目录确定展示范围，仅持有 `DividendPlanReader` 缓存读端口。后台装配协调刷新范围，采集服务不读取账号或用户目录。
 - **精简模型输入**：用户授权当前状态在 `models/accounting/analysis.rs` 生成，交易明细、缺口码和审计材料不进入模型资料；`context/render.rs` 将业务输入渲染为 Markdown，内部引用结构与历史审计独立保存。新工作流版本与搜索默认值见 [AI spec](specs/ai.md#8-现有实现差异)。
+- **契约归属**：后端 [models](../server/src/models.rs)只声明模块，不再提供跨域类型总入口；用户财务、资料、复盘和个人汇率分别在 `portfolio`、`research`、`reviews`、`fx`，公共查询与报价在 [market/quotes](../server/src/models/market/quotes.rs)，AI 请求和模型连接分别在 [analysis](../server/src/models/analysis.rs)、[connection](../server/src/models/connection.rs)。前端通过 [用户类型](../client/src/types/user.ts)、[市场类型](../client/src/types/market.ts)、[AI 类型](../client/src/types/ai.ts)显式导入。用户授权投影只接收用户资料筛选参数，AI 授权类型由适配层转换，用户契约不依赖 AI。
 - **依赖检查**：前端页面和 API 客户端显式登记业务归属；用户页面不能直接导入 AI API，跨页分析通过应用回调组合。后端对计划采集、仓储和用户日历检查导入的具体符号，禁止以模块别名绕开窄接口。技术模块、循环与隔离检查继续执行，见 [lint 文档](lint.md)。
 
 ## 6. 待继续修复的架构差异
 
-1. **类型和仓储集中。** [后端契约](../server/src/models.rs)、[前端类型](../client/src/types.ts)及统一 [Database](../server/src/db.rs)汇集多个域。已拆分文件中的仓储方法仍挂在统一 Database 上；AI 用例已通过窄端口和专用用户输入限制可用方法与数据，但契约文件及部分存储实现还需按业务归属组织。
+1. **仓储能力仍集中。** 已拆分文件中的仓储方法仍挂在统一 [Database](../server/src/db.rs)上；AI 用例已通过窄端口和专用用户输入限制可用方法与数据，但其他用例与部分存储实现还需按业务归属限制访问能力。
 2. **业务域检查未全覆盖。** 现有登记和检查强制了部分技术层与前端业务方向，未覆盖后端全部业务调用和读写权限；检查通过不能证明三个功能域已完全隔离。
 
 后续修复继续以三域 spec 和上述边界为依据，同步调整依赖约束和受影响的测试；已拆分文件不代表跨域授权与存储能力已全部收窄。

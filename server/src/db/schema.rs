@@ -285,21 +285,24 @@ fn canonical_analysis_preset(value: &mut serde_json::Value) -> bool {
         return false;
     };
     let mut changed = false;
-    for key in crate::models::RETIRED_ANALYSIS_OPTIONS {
+    for key in crate::models::analysis::RETIRED_ANALYSIS_OPTIONS {
         changed |= object.remove(key).is_some();
     }
     if let Some(selection) = object
         .get_mut("contextSelection")
         .and_then(serde_json::Value::as_object_mut)
     {
-        for key in crate::models::RETIRED_CONTEXT_OPTIONS {
+        for key in crate::models::analysis::RETIRED_CONTEXT_OPTIONS {
             changed |= selection.remove(key).is_some();
         }
     }
     if object.get("workflow").and_then(serde_json::Value::as_str)
-        != Some(crate::models::ANALYSIS_WORKFLOW)
+        != Some(crate::models::analysis::ANALYSIS_WORKFLOW)
     {
-        object.insert("workflow".into(), crate::models::ANALYSIS_WORKFLOW.into());
+        object.insert(
+            "workflow".into(),
+            crate::models::analysis::ANALYSIS_WORKFLOW.into(),
+        );
         changed = true;
     }
     changed

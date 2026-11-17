@@ -3,7 +3,7 @@ import type {
   AnalysisSettings,
   ModelConfig,
   ModelConnectionTest,
-} from "../types";
+} from "../types/ai";
 export async function getModelConfig(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-config");
 }

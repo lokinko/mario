@@ -10,7 +10,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { ProfileForm } from "./ProfileForm";
 import { saveProfile } from "../../api/portfolio";
-import type { FinancialProfile, Snapshot } from "../../types";
+import type { FinancialProfile, Snapshot } from "../../types/user";
 import fixture from "../../test/emptySnapshot.json";
 
 vi.mock("../../api/portfolio", () => ({ saveProfile: vi.fn() }));

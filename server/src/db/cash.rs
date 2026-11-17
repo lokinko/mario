@@ -28,11 +28,13 @@ fn decimal(value: f64) -> AppResult<Decimal> {
         .map_err(|_| AppError::Validation("存款余额无效".into()))
 }
 
-pub(super) fn states(conn: &Connection) -> AppResult<Vec<crate::models::CashBalanceState>> {
+pub(super) fn states(
+    conn: &Connection,
+) -> AppResult<Vec<crate::models::portfolio::CashBalanceState>> {
     let mut statement=conn.prepare("SELECT currency,holding_id,amount,baseline_id,confirmed_on,confirmed_at,needs_reconciliation FROM cash_state ORDER BY currency")?;
     Ok(statement
         .query_map([], |r| {
-            Ok(crate::models::CashBalanceState {
+            Ok(crate::models::portfolio::CashBalanceState {
                 currency: r.get(0)?,
                 holding_id: r.get(1)?,
                 amount: r.get(2)?,
@@ -139,7 +141,7 @@ pub(super) fn settle_trade(
     currency: &str,
     id: &str,
     flow: Option<Decimal>,
-    mode: crate::models::SettlementMode,
+    mode: crate::models::portfolio::SettlementMode,
     expected_baseline: &str,
 ) -> AppResult<Decimal> {
     initialize_balances(conn)?;
@@ -189,7 +191,7 @@ pub(super) fn settle_trade(
                 .map_err(|_| AppError::Validation("原成交费用无效".into()))?;
             let taxes = Decimal::from_str_exact(&t.taxes)
                 .map_err(|_| AppError::Validation("原成交税款无效".into()))?;
-            Ok(if t.kind == crate::models::TradeKind::Buy {
+            Ok(if t.kind == crate::models::portfolio::TradeKind::Buy {
                 -(gross + fees + taxes)
             } else {
                 gross - fees - taxes
@@ -206,8 +208,8 @@ pub(super) fn settle_trade(
         }
     } else {
         match mode {
-            crate::models::SettlementMode::History => Decimal::ZERO,
-            crate::models::SettlementMode::Settle => cash_flow,
+            crate::models::portfolio::SettlementMode::History => Decimal::ZERO,
+            crate::models::portfolio::SettlementMode::Settle => cash_flow,
         }
     };
     if (covered || (previous.is_some() && !included)) && original_flow != flow {
@@ -218,7 +220,7 @@ pub(super) fn settle_trade(
     }
     let delta = new - old;
     if previous.is_none()
-        && mode == crate::models::SettlementMode::Settle
+        && mode == crate::models::portfolio::SettlementMode::Settle
         && (state.is_some() || new >= Decimal::ZERO)
         && state.as_ref().map_or("", |s| s.baseline_id.as_str()) != expected_baseline
     {
@@ -244,7 +246,7 @@ pub(super) fn settle_trade(
         && if previous.is_some() {
             included
         } else {
-            mode == crate::models::SettlementMode::Settle
+            mode == crate::models::portfolio::SettlementMode::Settle
         };
     conn.execute("INSERT INTO trade_settlements(trade_id,currency,amount,baseline_id,included) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(trade_id) DO UPDATE SET amount=excluded.amount,baseline_id=excluded.baseline_id,included=excluded.included",params![id,currency,new.normalize().to_string(),baseline,i64::from(included)])?;
     Ok(delta)
@@ -255,7 +257,7 @@ pub(super) fn settle_trade(
 pub(super) fn remove_holding_trades(
     conn: &Connection,
     currency: &str,
-    trades: &[&crate::models::HoldingTrade],
+    trades: &[&crate::models::portfolio::HoldingTrade],
 ) -> AppResult<Decimal> {
     initialize_balances(conn)?;
     let state = states(conn)?.into_iter().find(|s| s.currency == currency);

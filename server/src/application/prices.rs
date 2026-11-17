@@ -1,7 +1,7 @@
 //! Account price workflows; all network access is supplied through a port.
 use crate::{
     db::Database,
-    models::{SecurityPriceQuery, Snapshot},
+    models::{market::quotes::SecurityPriceQuery, portfolio::Snapshot},
     ports::market::SecurityPriceProvider,
     AppError, AppResult,
 };
@@ -17,9 +17,9 @@ pub struct RefreshResult {
 
 /// A new position can supply a code and quantity without entering a placeholder price.
 pub async fn complete_input(
-    mut input: crate::models::HoldingInput,
+    mut input: crate::models::portfolio::HoldingInput,
     provider: &dyn SecurityPriceProvider,
-) -> AppResult<crate::models::HoldingInput> {
+) -> AppResult<crate::models::portfolio::HoldingInput> {
     if input.asset_class != "现金"
         && !input.symbol.trim().is_empty()
         && input
@@ -193,8 +193,8 @@ async fn refresh_inner(
 fn apply_quote(
     db: &Database,
     snapshot: &Snapshot,
-    holding: &crate::models::Holding,
-    quote: &crate::models::SecurityPriceQuote,
+    holding: &crate::models::portfolio::Holding,
+    quote: &crate::models::market::quotes::SecurityPriceQuote,
 ) -> AppResult<bool> {
     let quantity = holding.quantity.unwrap();
     if snapshot
@@ -269,7 +269,7 @@ mod closing_price_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::SecurityPriceQuote;
+    use crate::models::market::quotes::SecurityPriceQuote;
     use async_trait::async_trait;
     use chrono::NaiveDate;
     fn day(text: &str) -> NaiveDate {
@@ -326,7 +326,7 @@ mod tests {
         symbol: &str,
         asset_class: &str,
         quantity: Option<f64>,
-    ) -> crate::models::HoldingInput {
+    ) -> crate::models::portfolio::HoldingInput {
         serde_json::from_value(serde_json::json!({"symbol":symbol,"name":"测试资产","assetClass":asset_class,"marketValue":100,"costBasis":50,"targetPct":0,"currency":"USD","valuationDate":crate::models::market::today(),"quantity":quantity,"currentPrice":quantity.map(|_|10.0)})).unwrap()
     }
     #[tokio::test]
@@ -423,7 +423,7 @@ mod tests {
             100.0
         );
         let evidence = &db.snapshot().unwrap().holding_valuations[0];
-        let mut forged: crate::models::HoldingValuationEvidence = evidence.clone();
+        let mut forged: crate::models::portfolio::HoldingValuationEvidence = evidence.clone();
         forged.source_url = forged
             .source_url
             .replace("query1.finance.yahoo.com", "attacker.test");
@@ -469,20 +469,20 @@ mod tests {
     #[tokio::test]
     async fn price_refresh_keeps_trade_quantities_costs_and_execution_records() {
         let db = db();
-        let trade = crate::models::HoldingTradeInput {
+        let trade = crate::models::portfolio::HoldingTradeInput {
             expected_cash_baseline: "00000000-0000-0000-0000-000000000001".into(),
-            settlement_mode: crate::models::SettlementMode::Settle,
+            settlement_mode: crate::models::portfolio::SettlementMode::Settle,
             request_id: uuid::Uuid::new_v4().to_string(),
             holding_id: String::new(),
             expected_revision: None,
-            new_holding: Some(crate::models::TradeSecurityInput {
+            new_holding: Some(crate::models::portfolio::TradeSecurityInput {
                 option: None,
                 symbol: "AAPL".into(),
                 name: "Apple".into(),
                 asset_class: "股票".into(),
                 currency: "USD".into(),
             }),
-            kind: crate::models::TradeKind::Buy,
+            kind: crate::models::portfolio::TradeKind::Buy,
             occurred_on: crate::models::market::today(),
             sequence: 1,
             quantity: "10".into(),

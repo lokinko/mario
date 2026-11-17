@@ -1,6 +1,9 @@
 //! Model management capabilities; implementations have no access to account storage.
 use crate::{
-    models::{BridgePairing, CodexBridgeStatus, ModelConnectionTest, ModelTarget},
+    models::{
+        connection::{BridgePairing, CodexBridgeStatus, ModelConnectionTest},
+        provider::ModelTarget,
+    },
     AppResult,
 };
 

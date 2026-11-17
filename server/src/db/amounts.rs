@@ -1,6 +1,9 @@
 //! Exact persisted accounting and server-owned portfolio totals; floats are projections only.
 use super::*;
-use crate::models::accounting::*;
+use crate::models::accounting::{
+    has_public_dividends, AccountingHolding, AccountingMetric, AccountingSnapshot,
+    AccountingTotals, DividendIncome, HoldingAmounts,
+};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use std::collections::BTreeMap;
 
@@ -110,7 +113,7 @@ pub(super) fn record_input(
 pub(super) fn rebuild(
     conn: &Connection,
     h: &Holding,
-    summary: &crate::models::HoldingTradeSummary,
+    summary: &crate::models::portfolio::HoldingTradeSummary,
 ) -> AppResult<HoldingAmounts> {
     let old = read(conn, &h.id)?;
     let price_status = old
@@ -151,7 +154,7 @@ pub(super) fn apply_quote(
     conn: &Connection,
     id: &str,
     quantity: f64,
-    quote: &crate::models::SecurityPriceQuote,
+    quote: &crate::models::market::quotes::SecurityPriceQuote,
 ) -> AppResult<()> {
     let snapshot = Database::snapshot_on(conn)?;
     let h = snapshot
@@ -228,7 +231,7 @@ pub(super) fn initialize(conn: &Connection) -> AppResult<()> {
 pub(super) fn split_reference(
     conn: &Connection,
     id: &str,
-    split: &crate::models::SplitEvent,
+    split: &crate::models::market::quotes::SplitEvent,
 ) -> AppResult<()> {
     if let Some(mut values) = read(conn, id)? {
         values.price_status = "corporate_pending_price".into();
@@ -470,7 +473,7 @@ pub(super) fn trailing_dividends(
         } else {
             let (start, end) = (since.to_string(), today.to_string());
             for trade in trades.iter().filter(|t| {
-                t.kind == crate::models::TradeKind::Dividend
+                t.kind == crate::models::portfolio::TradeKind::Dividend
                     && t.occurred_on > start
                     && t.occurred_on <= end
             }) {

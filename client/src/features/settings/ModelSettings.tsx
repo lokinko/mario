@@ -16,7 +16,7 @@ import {
   testModelConnection,
   type CodexBridgeStatus,
 } from "../../api/settings";
-import type { ModelConfig } from "../../types";
+import type { ModelConfig } from "../../types/ai";
 import { PageHeader } from "../../components/PageHeader";
 import { AnalysisDefaults } from "./AnalysisDefaults";
 import { CodexBridge } from "./CodexBridge";

@@ -1,5 +1,5 @@
 import { ExternalLink } from "../../components/ExternalLink";
-import type { AnalysisWorkflowTrace, VoteTrace } from "../../types";
+import type { AnalysisWorkflowTrace, VoteTrace } from "../../types/ai";
 
 const outcome: Record<VoteTrace["status"], string> = {
   voted: "交叉评审后采纳",

@@ -2,8 +2,9 @@
 use crate::{
     context::BuiltContext,
     models::{
+        analysis::{AnalysisRequest, AnalysisResult},
+        connection::ModelConfig,
         memory::{DreamInput, DreamOutcome},
-        AnalysisRequest, AnalysisResult, ModelConfig,
     },
     AppError, AppResult,
 };

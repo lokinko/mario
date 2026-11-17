@@ -2,7 +2,7 @@ import { getWatchDetail } from "../../api/watch";
 import { useWatchDetail } from "./useWatchDetail";
 import { useState } from "react";
 import type { WatchRules, WatchGridPlan, WatchRow } from "../../api/watch";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 import { Drawer } from "../../components/Drawer";
 import { Callout } from "../../components/Callout";
 import { WatchEvidence } from "./WatchEvidence";

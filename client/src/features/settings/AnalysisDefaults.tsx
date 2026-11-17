@@ -6,7 +6,7 @@ import type {
   AnalysisSettings,
   ContextSelection,
   ModelConfig,
-} from "../../types";
+} from "../../types/ai";
 
 const contextOptions: [keyof ContextSelection, string][] = [
   ["includeProfile", "财务档案"],

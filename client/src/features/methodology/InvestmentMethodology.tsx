@@ -7,7 +7,7 @@ import {
 } from "../../api/methodology";
 import { PageHeader } from "../../components/PageHeader";
 import { useRequestGuard } from "../../lib/useRequestGuard";
-import type { InvestmentMethodology as Methodology } from "../../types";
+import type { InvestmentMethodology as Methodology } from "../../types/user";
 
 export function InvestmentMethodology({
   flash,

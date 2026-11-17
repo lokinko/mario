@@ -5,7 +5,9 @@ use std::{future::Future, pin::Pin};
 // Own the execution future in the response body: dropping the connection cancels
 // provider IO and Codex subprocesses, without leaving detached analysis jobs.
 pub(crate) fn response_stream(
-    future: Pin<Box<dyn Future<Output = AppResult<crate::models::AnalysisResult>> + Send>>,
+    future: Pin<
+        Box<dyn Future<Output = AppResult<crate::models::analysis::AnalysisResult>> + Send>,
+    >,
     mut receiver: tokio::sync::mpsc::Receiver<AnalysisEvent>,
 ) -> impl futures_core::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + Send
 {

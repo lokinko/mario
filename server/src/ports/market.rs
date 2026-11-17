@@ -1,5 +1,5 @@
 use crate::{
-    models::{FxRateQuery, FxRateQuote, SecurityPriceQuery, SecurityPriceQuote},
+    models::market::quotes::{FxRateQuery, FxRateQuote, SecurityPriceQuery, SecurityPriceQuote},
     AppResult,
 };
 use async_trait::async_trait;

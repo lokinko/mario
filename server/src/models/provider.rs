@@ -5,7 +5,7 @@ use crate::{AppError, AppResult};
 /// Frozen execution destination. Credentials deliberately have no Debug or serialization.
 #[derive(Clone)]
 pub(crate) struct ModelTarget {
-    pub config: super::ModelConfig,
+    pub config: crate::models::connection::ModelConfig,
     pub credential: String,
 }
 
@@ -71,7 +71,7 @@ pub(crate) fn model_key_binding(provider: ModelProviderKind, base_url: &str) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::ModelProviderKind;
+    use crate::models::provider::ModelProviderKind;
 
     #[test]
     fn stored_and_wire_names_round_trip() {

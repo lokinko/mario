@@ -1,6 +1,6 @@
 import { Drawer } from "../../components/Drawer";
 import { useId, useRef, useState } from "react";
-import type { AnalysisClaim, AnalysisWorkflowTrace } from "../../types";
+import type { AnalysisClaim, AnalysisWorkflowTrace } from "../../types/ai";
 import { CouncilSummary } from "./CouncilSummary";
 import { reportSources, SourceDetail } from "./ReportSources";
 

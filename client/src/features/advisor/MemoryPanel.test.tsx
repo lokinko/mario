@@ -9,7 +9,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryPanel } from "./MemoryPanel";
 import * as memoryApi from "../../api/memory";
-import type { MemoryNote, MemoryOverview } from "../../types";
+import type { MemoryNote, MemoryOverview } from "../../types/ai";
 
 vi.mock("../../api/memory", () => ({
   getMemory: vi.fn(),

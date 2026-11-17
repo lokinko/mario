@@ -2,9 +2,14 @@
 #[cfg(test)]
 use crate::db::Database;
 use crate::{
-    models::{CodexBridgeStatus, ModelConfig, ModelProviderKind},
-    ports::ai_account::{ModelConfiguration, ModelSettingsStore},
-    ports::model::BridgeRegistry,
+    models::{
+        connection::{CodexBridgeStatus, ModelConfig},
+        provider::ModelProviderKind,
+    },
+    ports::{
+        ai_account::{ModelConfiguration, ModelSettingsStore},
+        model::BridgeRegistry,
+    },
     AppError, AppResult,
 };
 pub(crate) fn id(db: &impl ModelConfiguration) -> AppResult<String> {
@@ -97,13 +102,13 @@ mod tests {
         let connection = bridge::authenticate(&token).unwrap();
         let runner = uuid::Uuid::new_v4().to_string();
         let models = vec![
-            crate::models::CodexModel {
+            crate::models::connection::CodexModel {
                 model: "a".into(),
                 display_name: "Model A".into(),
                 description: String::new(),
                 is_default: true,
             },
-            crate::models::CodexModel {
+            crate::models::connection::CodexModel {
                 model: "b".into(),
                 display_name: "Model B".into(),
                 description: String::new(),
@@ -138,7 +143,7 @@ mod tests {
         ca.advertise(
             &runner,
             "fixture",
-            &[crate::models::CodexModel {
+            &[crate::models::connection::CodexModel {
                 model: "fixture".into(),
                 display_name: "Fixture".into(),
                 description: String::new(),

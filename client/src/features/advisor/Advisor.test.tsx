@@ -16,7 +16,7 @@ import type {
   AnalysisPreview,
   AnalysisResult,
   StoredAnalysis,
-} from "../../types";
+} from "../../types/ai";
 import { analysisSettings } from "../../test/analysisSettings";
 
 vi.mock("../../api/analysis", () => ({

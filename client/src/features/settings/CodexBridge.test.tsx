@@ -9,7 +9,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { CodexBridge } from "./CodexBridge";
 import * as api from "../../api/settings";
-import type { ModelConfig } from "../../types";
+import type { ModelConfig } from "../../types/ai";
 vi.mock("../../api/settings", () => ({
   getCodexBridgeStatus: vi.fn(),
   pairCodexBridge: vi.fn(),

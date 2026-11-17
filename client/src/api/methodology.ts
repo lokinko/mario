@@ -1,5 +1,5 @@
 import { httpRequest } from "../lib/httpClient";
-import type { InvestmentMethodology } from "../types";
+import type { InvestmentMethodology } from "../types/user";
 export function getInvestmentMethodology(): Promise<InvestmentMethodology> {
   return httpRequest<InvestmentMethodology>("/investment-methodology");
 }

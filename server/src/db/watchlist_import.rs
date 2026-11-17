@@ -6,8 +6,8 @@ use super::{
 use crate::models::{
     accounting::HoldingAmounts,
     market::{is_a_share_stock, is_mainland_fund},
+    portfolio::{HoldingTrade, TradeKind},
     watch::WatchInput,
-    HoldingTrade, TradeKind,
 };
 use chrono::{DateTime, Utc};
 use rust_decimal::{prelude::ToPrimitive, Decimal};

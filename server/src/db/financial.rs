@@ -113,8 +113,8 @@ impl Database {
     pub fn preview_trade_repair(
         &self,
         id: &str,
-        input: &crate::models::TradeRepairInput,
-    ) -> AppResult<crate::models::HoldingTradeSummary> {
+        input: &crate::models::portfolio::TradeRepairInput,
+    ) -> AppResult<crate::models::portfolio::HoldingTradeSummary> {
         let conn = self.conn()?;
         validate_repair(&conn, id, input)
     }
@@ -122,7 +122,7 @@ impl Database {
     pub fn repair_trades(
         &self,
         id: &str,
-        input: &crate::models::TradeRepairInput,
+        input: &crate::models::portfolio::TradeRepairInput,
     ) -> AppResult<Snapshot> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
@@ -183,7 +183,7 @@ impl Database {
     ) -> AppResult<Option<Snapshot>> {
         let operation = match (method, path.strip_prefix("/api/")) {
             ("POST", Some("holding-trades")) => {
-                let input: crate::models::HoldingTradeInput =
+                let input: crate::models::portfolio::HoldingTradeInput =
                     serde_json::from_value(input.clone())?;
                 operation("create", &input.request_id, &input)?
             }
@@ -193,14 +193,14 @@ impl Database {
                     "PUT" => operation(
                         "edit",
                         id,
-                        &serde_json::from_value::<crate::models::HoldingTradeUpdateInput>(
+                        &serde_json::from_value::<crate::models::portfolio::HoldingTradeUpdateInput>(
                             input.clone(),
                         )?,
                     )?,
                     "DELETE" => operation(
                         "delete",
                         id,
-                        &serde_json::from_value::<crate::models::HoldingTradeDeleteInput>(
+                        &serde_json::from_value::<crate::models::portfolio::HoldingTradeDeleteInput>(
                             input.clone(),
                         )?,
                     )?,
@@ -226,7 +226,9 @@ impl Database {
                 operation(
                     "holding.delete",
                     &path[9..],
-                    &serde_json::from_value::<crate::models::HoldingDeleteInput>(input.clone())?,
+                    &serde_json::from_value::<crate::models::portfolio::HoldingDeleteInput>(
+                        input.clone(),
+                    )?,
                 )?
             }
             ("POST", Some(path))
@@ -238,7 +240,9 @@ impl Database {
                 operation(
                     "repair",
                     id,
-                    &serde_json::from_value::<crate::models::TradeRepairInput>(input.clone())?,
+                    &serde_json::from_value::<crate::models::portfolio::TradeRepairInput>(
+                        input.clone(),
+                    )?,
                 )?
             }
             ("POST", Some(path))
@@ -247,7 +251,7 @@ impl Database {
                 let id = path
                     .trim_start_matches("holdings/")
                     .trim_end_matches("/corporate-actions");
-                let input: crate::models::ManualCorporateActionInput =
+                let input: crate::models::portfolio::ManualCorporateActionInput =
                     serde_json::from_value(input.clone())?;
                 operation("corporate.declare", &input.request_id, &(id, &input))?
             }
@@ -269,7 +273,7 @@ impl Database {
                 operation(
                     &kind,
                     id,
-                    &serde_json::from_value::<crate::models::ConfirmCorporateActionInput>(
+                    &serde_json::from_value::<crate::models::portfolio::ConfirmCorporateActionInput>(
                         input.clone(),
                     )?,
                 )?
@@ -296,8 +300,8 @@ impl Database {
 fn validate_repair(
     conn: &Connection,
     id: &str,
-    input: &crate::models::TradeRepairInput,
-) -> AppResult<crate::models::HoldingTradeSummary> {
+    input: &crate::models::portfolio::TradeRepairInput,
+) -> AppResult<crate::models::portfolio::HoldingTradeSummary> {
     let snapshot = Database::snapshot_on(conn)?;
     if !snapshot.cleared_trade_holdings.iter().any(|h| h == id) {
         return Err(AppError::Validation("该持仓没有隔离记录".into()));

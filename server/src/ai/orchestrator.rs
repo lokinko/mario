@@ -20,13 +20,15 @@ use crate::{
     context::BuiltContext,
     error::{AppError, AppResult},
     models::{
+        analysis::{
+            AnalysisEvidenceReference, AnalysisRequest, AnalysisResult, AnalysisTransparency,
+            AnalysisWorkflowTrace, ModelCallTrace, OutputValidationTrace, StructuredAnalysis,
+            WebLead, WebSearchTrace,
+        },
         council::{
             tally, Ballot, BallotTrace, Candidate, ProposalTrace, ResearchTrace, VoteStatus,
             VoteTrace,
         },
-        AnalysisEvidenceReference, AnalysisRequest, AnalysisResult, AnalysisTransparency,
-        AnalysisWorkflowTrace, ModelCallTrace, OutputValidationTrace, StructuredAnalysis, WebLead,
-        WebSearchTrace,
     },
 };
 
@@ -184,7 +186,8 @@ impl<'a> InvestmentOrchestrator<'a> {
             .map(|(_, report, validation)| ((*report).clone(), validation.clone()))
             .expect("the tally only ranks valid proposals");
         let answer = render_report(&report);
-        state.trace.structured_report = Some(crate::models::StoredAnalysisReport::Current(report));
+        state.trace.structured_report =
+            Some(crate::models::analysis_history::StoredAnalysisReport::Current(report));
         state.trace.output_validation = Some(validation);
         Ok(result(
             self.provider,
@@ -815,11 +818,16 @@ pub(crate) mod tests {
 
     use super::*;
     use crate::{
-        ai::{provider::SearchCompletion, provider::SearchSource, ChatMessage, ModelCompletion},
+        ai::{
+            provider::{SearchCompletion, SearchSource},
+            ChatMessage, ModelCompletion,
+        },
         context::{ContextBuilder, ContextSources},
         models::{
-            council::VoteStatus, inference::AnalysisEvent, FinancialProfile, Holding,
-            PortfolioPlan, ResearchEvidence, RiskFinding, Snapshot,
+            council::VoteStatus,
+            inference::AnalysisEvent,
+            portfolio::{FinancialProfile, Holding, PortfolioPlan, RiskFinding, Snapshot},
+            research::ResearchEvidence,
         },
     };
 
@@ -1059,7 +1067,7 @@ pub(crate) mod tests {
 
     fn report(result: &AnalysisResult) -> StructuredAnalysis {
         match result.workflow_trace.structured_report.clone().unwrap() {
-            crate::models::StoredAnalysisReport::Current(report) => report,
+            crate::models::analysis_history::StoredAnalysisReport::Current(report) => report,
             _ => panic!("new analyses store the current report"),
         }
     }
@@ -1714,7 +1722,7 @@ pub(crate) mod tests {
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
         let provider = crate::ai::NativeModelProvider::new(
-            crate::models::ModelProviderKind::OpenaiResponses,
+            crate::models::provider::ModelProviderKind::OpenaiResponses,
             format!("http://{address}"),
             "protocol-mock".into(),
             "test-only-key".into(),
@@ -1789,7 +1797,7 @@ pub(crate) mod tests {
             total_value: 100.0,
             emergency_months: 6.0,
             concentration_pct: 100.0,
-            valuation_status: crate::models::PortfolioValuationStatus {
+            valuation_status: crate::models::portfolio::PortfolioValuationStatus {
                 base_currency: "CNY".into(),
                 comparable: true,
                 missing_fx_holdings: Vec::new(),

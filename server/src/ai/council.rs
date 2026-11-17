@@ -5,11 +5,11 @@ use super::structured_output::{
     citation_rules, extract_json, validate_claims, MAX_STRUCTURED_OUTPUT_CHARS,
 };
 use crate::models::{
+    analysis::StructuredAnalysis,
     council::{
         validate_ballot, Ballot, ResearchBrief, RESEARCH_FINDINGS_MAX, RESEARCH_NOTES_MAX,
         RESEARCH_NOTE_CHARS,
     },
-    StructuredAnalysis,
 };
 
 pub const RESEARCH_BRIEF_CONTRACT: &str = concat!(

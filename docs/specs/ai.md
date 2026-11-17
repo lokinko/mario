@@ -20,7 +20,7 @@ AI 域基于授权资料提供可追溯的分析，管理模型执行与讨论�
 
 多轮讨论保留必要上下文；用户最新更正优先于旧回答，授权缩小时同步裁减历史模型内容和相关记忆。对话中的更正不能被描述为已经改写用户账本。
 
-分析与记忆用例分别依赖[账号能力端口](../../server/src/ports/ai_account.rs)，不接收完整 Database。用户资料是只读来源，AI 历史和记忆只暴露所属写入操作；模型配置仅有明确的配置、密钥和桥接方法，不能按任意键读取账号设置。账号锁协调由[存储适配](../../server/src/db/ai_access.rs)实现，冻结后释放、保存前重取的行为保持一致。用户域的授权投影只返回所选组的当前可用事实，AI 用例与上下文构建不再接收完整 Snapshot；授权选择本身参与冻结指纹。
+分析与记忆用例分别依赖[账号能力端口](../../server/src/ports/ai_account.rs)，不接收完整 Database。用户资料是只读来源，AI 历史和记忆只暴露所属写入操作；模型配置仅有明确的配置、密钥和桥接方法，不能按任意键读取账号设置。账号锁协调由[存储适配](../../server/src/db/ai_access.rs)实现，冻结后释放、保存前重取的行为保持一致。AI 授权选择由适配层转换为用户来源的筛选参数，用户契约不依赖 AI 类型。用户域的授权投影只返回所选组的当前可用事实，AI 用例与上下文构建不再接收完整 Snapshot；授权选择本身参与冻结指纹。
 
 实现依据：[分析用例](../../server/src/application/analysis.rs)、[上下文构建](../../server/src/context.rs)、[多轮上下文](../../client/src/features/advisor/previousTurn.ts)、[记忆选取](../../server/src/context/memory.rs)。
 
@@ -57,7 +57,7 @@ CSV 可以作为同一摘要的替代表达；如使用 CSV 文件，其内容�
 
 区分原始证据、网页线索和模型推断。搜索失败可以继续使用已有资料，但必须明确说明失败。历史问答中的网页摘录复用属于 AI 历史资料复用，不自动成为用户研究资料库中的正式记录。
 
-实现依据：[问答预设](../../server/src/models.rs)、[公开研究主题](../../server/src/context/discussion.rs)、[搜索编排](../../server/src/ai/orchestrator.rs)、[供应商适配](../../server/src/ai/native_provider.rs)、[前端预设](../../client/src/features/settings/AnalysisDefaults.tsx)。
+实现依据：[问答预设](../../server/src/models/analysis.rs)、[公开研究主题](../../server/src/context/discussion.rs)、[搜索编排](../../server/src/ai/orchestrator.rs)、[供应商适配](../../server/src/ai/native_provider.rs)、[前端预设](../../client/src/features/settings/AnalysisDefaults.tsx)。
 
 ## 5. 问答与多代理评议
 

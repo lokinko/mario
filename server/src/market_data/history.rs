@@ -1,12 +1,11 @@
 //! Public ten-year history sources; no account data or caches.
 use crate::{
-    models::{
-        market::{
-            canonical_symbol, eastmoney_methodology_url,
-            history::{history_start, DailyPrice, PriceHistory},
-            is_a_share_stock, is_mainland_fund, METHODOLOGY_URL,
-        },
-        SplitEvent,
+    models::market::{
+        canonical_symbol, eastmoney_methodology_url,
+        history::{history_start, DailyPrice, PriceHistory},
+        is_a_share_stock, is_mainland_fund,
+        quotes::SplitEvent,
+        METHODOLOGY_URL,
     },
     ports::market::SecurityHistoryProvider,
     AppError, AppResult,

@@ -1,6 +1,6 @@
 use crate::models::{
-    accounting::AccountingSnapshot, DataIssue, FinancialProfile, Holding, IssueCode, PortfolioPlan,
-    RebalanceAction,
+    accounting::AccountingSnapshot,
+    portfolio::{DataIssue, FinancialProfile, Holding, IssueCode, PortfolioPlan, RebalanceAction},
 };
 
 pub fn analyze(

@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 use crate::{
     error::{AppError, AppResult},
-    models::{FxRateQuery, FxRateQuote},
+    models::market::quotes::{FxRateQuery, FxRateQuote},
     ports::market::FxRateProvider,
 };
 

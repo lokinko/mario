@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { InvestmentOverview } from "./InvestmentOverview";
 import { emptyHolding } from "./forms";
-import type { Snapshot } from "../../types";
+import type { Snapshot } from "../../types/user";
 afterEach(cleanup);
 const holding = {
   ...emptyHolding("USD"),

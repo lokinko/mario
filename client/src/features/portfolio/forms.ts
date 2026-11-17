@@ -1,4 +1,4 @@
-import type { FinancialProfile, Holding, ProfileField } from "../../types";
+import type { FinancialProfile, Holding, ProfileField } from "../../types/user";
 import { localDateValue } from "../../lib/dates";
 
 export const profileFields: ProfileField[] = [

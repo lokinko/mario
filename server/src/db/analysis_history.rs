@@ -15,7 +15,7 @@ impl Database {
         let mut evidence = Vec::new();
         for trace in traces {
             let Some(trace) = trace?.and_then(|text| {
-                serde_json::from_str::<crate::models::AnalysisWorkflowTrace>(&text).ok()
+                serde_json::from_str::<crate::models::analysis::AnalysisWorkflowTrace>(&text).ok()
             }) else {
                 continue;
             };
@@ -96,7 +96,7 @@ impl Database {
         for row in rows {
             let (id, question, created_at, audit, trace) = row?;
             let parsed_trace = trace.as_deref().and_then(|value| {
-                serde_json::from_str::<crate::models::AnalysisWorkflowTrace>(value).ok()
+                serde_json::from_str::<crate::models::analysis::AnalysisWorkflowTrace>(value).ok()
             });
             let grounding_status = parsed_trace
                 .as_ref()
@@ -199,7 +199,7 @@ mod automatic_tests {
         manual["claim"] = json!("Manual source is not automatically reactivated");
         let mut unsafe_url = source.clone();
         unsafe_url["sourceUrl"] = json!("file:///private");
-        let trace = crate::models::AnalysisWorkflowTrace {
+        let trace = crate::models::analysis::AnalysisWorkflowTrace {
             evidence_catalog: serde_json::from_value(json!([
                 source.clone(),
                 source,

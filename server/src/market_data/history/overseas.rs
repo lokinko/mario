@@ -4,12 +4,10 @@ use super::{
     is_mainland_fund, source_error, yahoo_splits, PublicMarketSource,
 };
 use crate::{
-    models::{
-        market::{
-            eastmoney::{security, Security},
-            history::{DailyPrice, PriceHistory},
-        },
-        SplitEvent,
+    models::market::{
+        eastmoney::{security, Security},
+        history::{DailyPrice, PriceHistory},
+        quotes::SplitEvent,
     },
     AppError, AppResult,
 };

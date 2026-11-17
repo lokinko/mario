@@ -63,11 +63,15 @@ use uuid::Uuid;
 use crate::{
     error::{AppError, AppResult},
     models::{
-        AnalysisHistoryItem, AnalysisResult, FinancialProfile, Holding, HoldingInput,
-        HoldingValuationEvidence, InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision,
-        ModelConfig, ResearchEvidence, ResearchEvidenceInput, ReviewReminderSummary,
-        SecurityPriceQuote, Snapshot, StoredAnalysis, SystemReviewInput, SystemReviewRecord,
-        SystemReviewSnapshot,
+        analysis::{AnalysisHistoryItem, AnalysisResult, StoredAnalysis},
+        connection::ModelConfig,
+        market::quotes::SecurityPriceQuote,
+        portfolio::{FinancialProfile, Holding, HoldingInput, HoldingValuationEvidence, Snapshot},
+        research::{ResearchEvidence, ResearchEvidenceInput},
+        reviews::{
+            InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, ReviewReminderSummary,
+            SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
+        },
     },
     planning, risk, valuation,
 };

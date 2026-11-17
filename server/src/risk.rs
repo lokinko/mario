@@ -1,4 +1,4 @@
-use crate::models::{FinancialProfile, Holding, RiskFinding};
+use crate::models::portfolio::{FinancialProfile, Holding, RiskFinding};
 
 pub fn analyze(
     profile: &FinancialProfile,
@@ -97,7 +97,7 @@ pub fn analyze(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::FinancialProfile;
+    use crate::models::portfolio::FinancialProfile;
 
     #[test]
     fn detects_thin_emergency_fund() {

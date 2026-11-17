@@ -1,12 +1,11 @@
 use super::RequestContext;
 use crate::models::{
-    FinancialProfile, FxRateQuery, FxRateQuote, HoldingInput, SecurityPriceQuery,
-    SecurityPriceQuote, Snapshot, VerifiedHoldingValuationInput,
+    market::quotes::{FxRateQuery, FxRateQuote, SecurityPriceQuery, SecurityPriceQuote},
+    portfolio::{FinancialProfile, HoldingInput, Snapshot, VerifiedHoldingValuationInput},
 };
 use crate::{
     application::prices,
-    models,
-    models::market::{FxBook, FxOverrideInput},
+    models::fx::{FxBook, FxOverrideInput},
     AppResult,
 };
 use axum::{
@@ -75,7 +74,7 @@ pub(super) fn router() -> Router {
 async fn update_option_price(
     Extension(state): Extension<Arc<RequestContext>>,
     Path(id): Path<String>,
-    Json(input): Json<models::options::OptionPriceInput>,
+    Json(input): Json<crate::models::options::OptionPriceInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.update_option_price(&id, &input)?))
 }
@@ -90,15 +89,15 @@ async fn financial_history(
 async fn preview_trade_repair(
     Extension(state): Extension<Arc<RequestContext>>,
     Path(id): Path<String>,
-    Json(input): Json<models::TradeRepairInput>,
-) -> AppResult<Json<models::HoldingTradeSummary>> {
+    Json(input): Json<crate::models::portfolio::TradeRepairInput>,
+) -> AppResult<Json<crate::models::portfolio::HoldingTradeSummary>> {
     Ok(Json(state.db.preview_trade_repair(&id, &input)?))
 }
 
 async fn repair_trades(
     Extension(state): Extension<Arc<RequestContext>>,
     Path(id): Path<String>,
-    Json(input): Json<models::TradeRepairInput>,
+    Json(input): Json<crate::models::portfolio::TradeRepairInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.repair_trades(&id, &input)?))
 }
@@ -106,7 +105,7 @@ async fn repair_trades(
 async fn declare_corporate_action(
     Extension(state): Extension<Arc<RequestContext>>,
     Path(id): Path<String>,
-    Json(input): Json<models::ManualCorporateActionInput>,
+    Json(input): Json<crate::models::portfolio::ManualCorporateActionInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.declare_corporate_action(&id, &input)?))
 }
@@ -114,7 +113,7 @@ async fn declare_corporate_action(
 async fn review_corporate_action(
     Extension(state): Extension<Arc<RequestContext>>,
     Path((id, mode)): Path<(String, String)>,
-    Json(input): Json<models::ConfirmCorporateActionInput>,
+    Json(input): Json<crate::models::portfolio::ConfirmCorporateActionInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.review_corporate_action(&id, &input, &mode)?))
 }
@@ -210,7 +209,7 @@ async fn delete_holding(
     body: axum::body::Bytes,
 ) -> AppResult<Json<Snapshot>> {
     let input = if body.is_empty() {
-        models::HoldingDeleteInput::default()
+        crate::models::portfolio::HoldingDeleteInput::default()
     } else {
         serde_json::from_slice(&body)
             .map_err(|_| crate::AppError::Validation("删除持仓请求格式无效".into()))?
@@ -220,7 +219,7 @@ async fn delete_holding(
 
 async fn save_holding_trade(
     Extension(state): Extension<Arc<RequestContext>>,
-    Json(input): Json<models::HoldingTradeInput>,
+    Json(input): Json<crate::models::portfolio::HoldingTradeInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.save_holding_trade(&input)?))
 }
@@ -228,7 +227,7 @@ async fn save_holding_trade(
 async fn update_holding_trade(
     Extension(state): Extension<Arc<RequestContext>>,
     Path(id): Path<String>,
-    Json(input): Json<models::HoldingTradeUpdateInput>,
+    Json(input): Json<crate::models::portfolio::HoldingTradeUpdateInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.update_holding_trade(&id, &input)?))
 }
@@ -236,28 +235,28 @@ async fn update_holding_trade(
 async fn delete_holding_trade(
     Extension(state): Extension<Arc<RequestContext>>,
     Path(id): Path<String>,
-    Json(input): Json<models::HoldingTradeDeleteInput>,
+    Json(input): Json<crate::models::portfolio::HoldingTradeDeleteInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.delete_holding_trade(&id, &input)?))
 }
 
 async fn ensure_daily_assets(
     Extension(state): Extension<Arc<RequestContext>>,
-    Json(input): Json<models::daily::EnsureInput>,
-) -> AppResult<Json<models::daily::DailyHistory>> {
+    Json(input): Json<crate::models::daily::EnsureInput>,
+) -> AppResult<Json<crate::models::daily::DailyHistory>> {
     Ok(Json(state.portfolio().ensure_daily(&input).await?))
 }
 
 async fn daily_assets(
     Extension(state): Extension<Arc<RequestContext>>,
-    Query(query): Query<models::daily::HistoryQuery>,
-) -> AppResult<Json<models::daily::DailyHistory>> {
+    Query(query): Query<crate::models::daily::HistoryQuery>,
+) -> AppResult<Json<crate::models::daily::DailyHistory>> {
     Ok(Json(state.db.daily_history(&query)?))
 }
 
 async fn dividend_income(
     Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<models::accounting::DividendIncome>> {
+) -> AppResult<Json<crate::models::accounting::DividendIncome>> {
     Ok(Json(
         crate::application::portfolio::dividend_income(&state.db, state.watch_provider.clone())
             .await?,
@@ -266,7 +265,7 @@ async fn dividend_income(
 
 async fn allocation(
     Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<models::accounting::Allocation>> {
+) -> AppResult<Json<crate::models::accounting::Allocation>> {
     Ok(Json(crate::application::portfolio::allocation(
         &state.db,
         &state.watch_catalog,
@@ -275,15 +274,15 @@ async fn allocation(
 
 async fn compare_daily_assets(
     Extension(state): Extension<Arc<RequestContext>>,
-    Query(query): Query<models::daily::CompareQuery>,
-) -> AppResult<Json<models::daily::DailyComparison>> {
+    Query(query): Query<crate::models::daily::CompareQuery>,
+) -> AppResult<Json<crate::models::daily::DailyComparison>> {
     Ok(Json(state.db.daily_compare(&query)?))
 }
 
 async fn update_holding_amount(
     Extension(state): Extension<Arc<RequestContext>>,
     Path(id): Path<String>,
-    Json(input): Json<models::daily::AmountInput>,
+    Json(input): Json<crate::models::daily::AmountInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.db.update_holding_amount(&id, &input)?))
 }

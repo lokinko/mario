@@ -17,8 +17,8 @@ import { serviceUrl } from "./lib/service";
 import { httpRequest } from "./lib/httpClient";
 import { setWebToken, webToken } from "./lib/webSession";
 
-import type { FinancialProfile } from "./types";
-import type { AnalysisRequest } from "./types";
+import type { FinancialProfile } from "./types/user";
+import type { AnalysisRequest } from "./types/ai";
 
 it("resolves a lost financial response without resubmitting the mutation", async () => {
   const current = { holdings: [], cashBalances: [{ amount: "900.01" }] };

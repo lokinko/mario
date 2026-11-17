@@ -5,7 +5,7 @@ import { startAutoSync } from "./autoSync";
 import { HttpError } from "./transport";
 
 import { isDataWrite } from "./requestPolicy";
-import type { AutoSyncResult } from "../types";
+import type { AutoSyncResult } from "../types/user";
 let controllers: ReturnType<typeof startAutoSync>[] = [];
 beforeEach(() => {
   vi.useFakeTimers();

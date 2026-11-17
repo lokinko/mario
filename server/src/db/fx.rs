@@ -1,5 +1,5 @@
 use super::*;
-use crate::models::market::{FxBook, FxOverrideInput, ManualRate};
+use crate::models::fx::{FxBook, FxOverrideInput, ManualRate};
 
 fn key(base: &str) -> String {
     format!("fx.book.{base}")
@@ -203,7 +203,7 @@ pub(super) fn validate_sync(dataset: &SyncDataset) -> AppResult<()> {
         NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
             && s <= crate::models::market::today().as_str()
     };
-    let valid_quote = |q: &crate::models::FxRateQuote| {
+    let valid_quote = |q: &crate::models::market::quotes::FxRateQuote| {
         supported(&q.from_currency)
             && supported(&q.to_currency)
             && valid_rate(q.rate)
@@ -245,7 +245,7 @@ pub(super) fn validate_sync(dataset: &SyncDataset) -> AppResult<()> {
                 return Err(invalid());
             }
         } else if key.starts_with("fx.quote.") {
-            let q: crate::models::FxRateQuote =
+            let q: crate::models::market::quotes::FxRateQuote =
                 serde_json::from_str(value).map_err(|_| invalid())?;
             if !valid_quote(&q)
                 || key

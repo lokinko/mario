@@ -4,9 +4,9 @@ import type {
   FinancialProfile,
   FxBook,
   Holding,
-  SecurityPriceQuote,
   Snapshot,
-} from "../types";
+} from "../types/user";
+import type { SecurityPriceQuote } from "../types/market";
 import { currentSession } from "../lib/webSession";
 export async function getSnapshot(): Promise<Snapshot> {
   return httpRequest<Snapshot>("/snapshot");
@@ -69,13 +69,13 @@ export function getFinancialHistory(id: string): Promise<{
 }
 type RepairInput = {
   expectedRevision: string;
-  trades: import("../types").HoldingTrade[];
+  trades: import("../types/user").HoldingTrade[];
   reason: string;
 };
 export function previewTradeRepair(
   id: string,
   input: RepairInput,
-): Promise<import("../types").HoldingTradeSummary> {
+): Promise<import("../types/user").HoldingTradeSummary> {
   return httpRequest(
     `/holdings/${encodeURIComponent(id)}/trade-repair/preview`,
     { method: "POST", body: JSON.stringify(input) },
@@ -181,7 +181,7 @@ export async function deleteHolding(
 }
 
 export function saveHoldingTrade(
-  input: import("../types").HoldingTradeInput,
+  input: import("../types/user").HoldingTradeInput,
 ): Promise<Snapshot> {
   return financialRequest("/holding-trades", {
     method: "POST",
@@ -191,7 +191,7 @@ export function saveHoldingTrade(
 
 export function updateHoldingTrade(
   id: string,
-  input: import("../types").HoldingTradeUpdateInput,
+  input: import("../types/user").HoldingTradeUpdateInput,
 ): Promise<Snapshot> {
   return financialRequest(`/holding-trades/${encodeURIComponent(id)}`, {
     method: "PUT",
@@ -201,7 +201,7 @@ export function updateHoldingTrade(
 
 export function deleteHoldingTrade(
   id: string,
-  input: import("../types").HoldingTradeDeleteInput,
+  input: import("../types/user").HoldingTradeDeleteInput,
 ): Promise<Snapshot> {
   return financialRequest(`/holding-trades/${encodeURIComponent(id)}`, {
     method: "DELETE",
@@ -210,10 +210,13 @@ export function deleteHoldingTrade(
 }
 
 export function ensureDailyAssets(timezone: string) {
-  return httpRequest<import("../types").DailyHistory>("/daily-assets/ensure", {
-    method: "POST",
-    body: JSON.stringify({ timezone }),
-  });
+  return httpRequest<import("../types/user").DailyHistory>(
+    "/daily-assets/ensure",
+    {
+      method: "POST",
+      body: JSON.stringify({ timezone }),
+    },
+  );
 }
 
 export function getDailyAssets(
@@ -222,7 +225,7 @@ export function getDailyAssets(
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query))
     if (value != null) params.set(key, String(value));
-  return httpRequest<import("../types").DailyHistory>(
+  return httpRequest<import("../types/user").DailyHistory>(
     `/daily-assets?${params}`,
   );
 }

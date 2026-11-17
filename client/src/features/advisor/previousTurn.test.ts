@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { AnalysisResult, PreviousTurn } from "../../types";
+import type { AnalysisResult, PreviousTurn } from "../../types/ai";
 import { previousTurn } from "./previousTurn";
 
 const turn = (question: string, frozen?: PreviousTurn) => ({

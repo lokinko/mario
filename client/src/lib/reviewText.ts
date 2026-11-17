@@ -1,4 +1,4 @@
-import type { SystemReviewRecord } from "../types";
+import type { SystemReviewRecord } from "../types/user";
 
 export function systemReviewText(review: SystemReviewRecord): string {
   if (review.content != null) return review.content;

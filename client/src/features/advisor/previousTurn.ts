@@ -1,4 +1,8 @@
-import type { AnalysisResult, PreviousTurn, StoredAnalysis } from "../../types";
+import type {
+  AnalysisResult,
+  PreviousTurn,
+  StoredAnalysis,
+} from "../../types/ai";
 
 const clip = (text: string, limit: number) =>
   [...text].slice(0, limit).join("");

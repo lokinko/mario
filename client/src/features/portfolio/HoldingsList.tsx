@@ -2,7 +2,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { Button, Input, Tag } from "antd";
 import { Search } from "lucide-react";
 import type { ReactNode } from "react";
-import type { Holding, Snapshot } from "../../types";
+import type { Holding, Snapshot } from "../../types/user";
 import { isClosedHolding } from "./holdingMetrics";
 
 export type HoldingSort =

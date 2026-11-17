@@ -1,9 +1,10 @@
 //! One public database price revision per security; never reads account data.
 use crate::{
     db::PublicPrices,
-    models::{
-        market::{canonical_symbol, close, history::PriceHistory},
-        SecurityPriceQuery, SecurityPriceQuote,
+    models::market::{
+        canonical_symbol, close,
+        history::PriceHistory,
+        quotes::{SecurityPriceQuery, SecurityPriceQuote},
     },
     ports::market::{SecurityHistoryProvider, SecurityPriceProvider},
     AppError, AppResult,

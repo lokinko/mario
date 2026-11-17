@@ -4,7 +4,7 @@ import type {
   Holding,
   AccountingHolding,
   StockOptionTotals,
-} from "../../types";
+} from "../../types/user";
 import {
   formatAmount,
   formatNumber,

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::models::{
+use crate::models::portfolio::{
     CashBalanceState, CorporateActionRecord, DataIssue, Holding, IssueCode,
     PortfolioAllocationChange, PortfolioValuationStatus,
 };

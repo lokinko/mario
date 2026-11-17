@@ -1,10 +1,12 @@
 //! Portfolio workflows coordinate repositories and replaceable market providers.
 use super::{fx, prices};
-use crate::models::market::{FxBook, FxOverrideInput};
+use crate::models::fx::{FxBook, FxOverrideInput};
 use crate::{
     db::Database,
-    models,
-    models::{FxRateQuery, HoldingInput, SecurityPriceQuery, SecurityPriceQuote, Snapshot},
+    models::{
+        market::quotes::{FxRateQuery, SecurityPriceQuery, SecurityPriceQuote},
+        portfolio::{HoldingInput, Snapshot},
+    },
     ports::market::{FxRateProvider, SecurityPriceProvider},
     AppResult,
 };
@@ -35,7 +37,10 @@ impl PortfolioService<'_> {
     pub async fn refresh_closing_prices(&self) -> AppResult<prices::RefreshResult> {
         prices::refresh_after_close(self.db, self.market.prices.as_ref(), chrono::Utc::now()).await
     }
-    pub async fn fx_quote(&self, query: &FxRateQuery) -> AppResult<crate::models::FxRateQuote> {
+    pub async fn fx_quote(
+        &self,
+        query: &FxRateQuery,
+    ) -> AppResult<crate::models::market::quotes::FxRateQuote> {
         fx::historical_quote(self.db, self.market.fx.as_ref(), query).await
     }
     pub fn snapshot(&self) -> AppResult<Snapshot> {
@@ -57,7 +62,7 @@ impl PortfolioService<'_> {
     pub async fn verify_valuation(
         &self,
         id: &str,
-        input: crate::models::VerifiedHoldingValuationInput,
+        input: crate::models::portfolio::VerifiedHoldingValuationInput,
     ) -> AppResult<Snapshot> {
         let revision = self.db.revision()?;
         let snapshot = self.db.snapshot()?;
@@ -118,19 +123,22 @@ impl PortfolioService<'_> {
     }
     pub async fn ensure_daily(
         &self,
-        input: &models::daily::EnsureInput,
-    ) -> AppResult<models::daily::DailyHistory> {
+        input: &crate::models::daily::EnsureInput,
+    ) -> AppResult<crate::models::daily::DailyHistory> {
         self.db.ensure_daily(input)?;
         self.db
-            .daily_history(&models::daily::HistoryQuery::default())
+            .daily_history(&crate::models::daily::HistoryQuery::default())
     }
 }
 
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use crate::models::HoldingInput;
-    use crate::{application::fx::refresh, models::market::FxOverrideInput, models::FxRateQuote};
+    use crate::models::portfolio::HoldingInput;
+    use crate::{
+        application::fx::refresh,
+        models::{fx::FxOverrideInput, market::quotes::FxRateQuote},
+    };
     use chrono::Utc;
     struct Provider;
     #[async_trait::async_trait]
@@ -261,13 +269,13 @@ mod quote_preview_tests;
 pub(crate) async fn dividend_income(
     db: &Database,
     provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
-) -> AppResult<models::accounting::DividendIncome> {
+) -> AppResult<crate::models::accounting::DividendIncome> {
     let today = super::dividend_calendar::today();
     let symbols = db
         .snapshot()?
         .holdings
         .iter()
-        .filter(|h| models::accounting::has_public_dividends(h))
+        .filter(|h| crate::models::accounting::has_public_dividends(h))
         .map(|h| h.symbol.clone())
         .collect::<std::collections::BTreeSet<_>>();
     let mut tasks = tokio::task::JoinSet::new();
@@ -311,13 +319,13 @@ pub(crate) async fn dividend_income(
 pub(crate) fn allocation(
     db: &Database,
     catalog: &super::watch_catalog::WatchCatalogService,
-) -> AppResult<models::accounting::Allocation> {
+) -> AppResult<crate::models::accounting::Allocation> {
     let snapshot = db.snapshot()?;
     let accounting = snapshot
         .accounting
         .as_ref()
         .ok_or_else(|| crate::AppError::Validation("缺少精确会计数据".into()))?;
-    models::accounting::allocation(
+    crate::models::accounting::allocation(
         &snapshot.holdings,
         accounting,
         &snapshot.profile.base_currency,

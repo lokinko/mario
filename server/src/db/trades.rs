@@ -1,5 +1,5 @@
 use super::{params, AppError, AppResult, Connection, Database, HoldingInput, Snapshot, Utc, Uuid};
-use crate::models::{
+use crate::models::portfolio::{
     Holding, HoldingTrade, HoldingTradeDeleteInput, HoldingTradeInput, HoldingTradeSummary,
     HoldingTradeUpdateInput, TradeKind,
 };
@@ -103,13 +103,13 @@ pub(super) fn load(conn: &Connection) -> AppResult<Vec<HoldingTrade>> {
 }
 
 // The server alone replays dated executions; decimal quantities never depend on float tolerances.
-pub(super) fn split_ratio(split: &crate::models::SplitEvent) -> AppResult<Decimal> {
+pub(super) fn split_ratio(split: &crate::models::market::quotes::SplitEvent) -> AppResult<Decimal> {
     split_value(Decimal::ONE, split)
 }
 
 pub(super) fn split_value(
     quantity: Decimal,
-    split: &crate::models::SplitEvent,
+    split: &crate::models::market::quotes::SplitEvent,
 ) -> AppResult<Decimal> {
     let numerator = number(&split.numerator)?;
     let denominator = number(&split.denominator)?;
@@ -130,7 +130,7 @@ pub(super) fn split_value(
 
 pub(super) fn split_quantity(
     quantity: Decimal,
-    split: &crate::models::SplitEvent,
+    split: &crate::models::market::quotes::SplitEvent,
 ) -> AppResult<Decimal> {
     let result = split_value(quantity, split)?;
     if result.normalize().scale() > 8 {
@@ -143,7 +143,7 @@ pub(super) fn split_quantity(
 
 pub(super) fn position_with_splits(
     trades: &[HoldingTrade],
-    splits: &[crate::models::SplitEvent],
+    splits: &[crate::models::market::quotes::SplitEvent],
 ) -> AppResult<HoldingTradeSummary> {
     let mut ordered: Vec<_> = trades.iter().collect();
     ordered.sort_by(|a, b| (&a.occurred_on, a.sequence).cmp(&(&b.occurred_on, b.sequence)));
@@ -405,7 +405,7 @@ impl Database {
             &h.currency,
             id,
             None,
-            crate::models::SettlementMode::History,
+            crate::models::portfolio::SettlementMode::History,
             "",
         )?;
         super::financial::journal(
@@ -881,7 +881,7 @@ mod tests {
     fn trades_settle_each_currency_and_keep_total_assets_correct() {
         for currency in ["CNY", "HKD", "USD"] {
             let db = Database::test();
-            db.save_profile(&crate::models::FinancialProfile {
+            db.save_profile(&crate::models::portfolio::FinancialProfile {
                 base_currency: currency.into(),
                 ..Default::default()
             })
@@ -1242,7 +1242,7 @@ mod tests {
             account: "券商A".into(),
             external_id: String::new(),
             note: String::new(),
-            settlement_mode: crate::models::SettlementMode::Settle,
+            settlement_mode: crate::models::portfolio::SettlementMode::Settle,
         }
     }
     fn edit(s: &Snapshot, id: &str) -> HoldingTradeUpdateInput {
@@ -1694,7 +1694,7 @@ mod tests {
         let issues = copy.snapshot().unwrap().valuation_status.issues;
         let quarantine = issues
             .iter()
-            .find(|i| i.code == crate::models::IssueCode::QuarantinedTrades)
+            .find(|i| i.code == crate::models::portfolio::IssueCode::QuarantinedTrades)
             .unwrap();
         assert_eq!(quarantine.holding_ids, vec![bad_id.clone()]);
         let mut repaired: HoldingTrade=serde_json::from_str(&serde_json::to_string(&serde_json::json!({
@@ -1702,7 +1702,7 @@ mod tests {
             "quantity":"10","price":"10","grossAmount":"100","fees":"2","taxes":"0","currency":"CNY","account":"券商A","externalId":"","note":"","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"
         })).unwrap()).unwrap();
         repaired.id = reenter.request_id.clone();
-        let repair = crate::models::TradeRepairInput {
+        let repair = crate::models::portfolio::TradeRepairInput {
             expected_revision: s.holding_revisions[&bad_id].clone(),
             trades: vec![repaired],
             reason: "按券商成交单核对恢复".into(),

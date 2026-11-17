@@ -6,11 +6,16 @@ use crate::{
     context,
     evidence::search_evidence,
     models::{
-        accounting::analysis::AuthorizedFinancialContext, AnalysisPreview, AnalysisRequest,
-        AnalysisResult, ModelConfig, ModelProviderKind, ResearchEvidence,
+        accounting::analysis::AuthorizedFinancialContext,
+        analysis::{AnalysisPreview, AnalysisRequest, AnalysisResult},
+        connection::ModelConfig,
+        provider::ModelProviderKind,
+        research::ResearchEvidence,
     },
-    ports::ai_account::{AnalysisAccount, ModelConfiguration},
-    ports::analysis::AnalysisExecutor,
+    ports::{
+        ai_account::{AnalysisAccount, ModelConfiguration},
+        analysis::AnalysisExecutor,
+    },
     AppError, AppResult,
 };
 use std::collections::HashSet;
@@ -135,7 +140,7 @@ pub(super) fn frozen_credentials(
     config: &ModelConfig,
 ) -> AppResult<Option<String>> {
     if config.provider != ModelProviderKind::CodexBridge {
-        crate::models::validate_endpoint(&config.base_url)?;
+        crate::models::endpoint::validate_endpoint(&config.base_url)?;
     }
     Ok(Some(match config.provider {
         ModelProviderKind::CodexBridge => super::codex_bridge::id(db)?,
@@ -329,7 +334,7 @@ fn relevant_evidence(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::ContextSelection;
+    use crate::models::analysis::ContextSelection;
     use serde_json::json;
     #[test]
     fn watch_evidence_freezes_the_week_and_respects_research_authorization() {
@@ -443,7 +448,7 @@ mod tests {
         let service = AnalysisService::new(&db, None);
         let mut request = request();
         request.question = "分红能持续吗？".into();
-        request.previous_turn = Some(crate::models::PreviousTurn {
+        request.previous_turn = Some(crate::models::analysis::PreviousTurn {
             question: "再说下风险".into(),
             answer: "观察乙公司值得考虑".into(),
             suggestions: Vec::new(),
@@ -493,13 +498,13 @@ mod tests {
         let db = database();
         save_watch_fixture(&db, "600036.SS", "观察甲公司", false);
         let target = db
-            .add_research_evidence(&crate::models::ResearchEvidenceInput {
+            .add_research_evidence(&crate::models::research::ResearchEvidenceInput {
                 content: "观察甲公司600036 年报：分红持续性取决于现金流。".into(),
                 ..Default::default()
             })
             .unwrap();
         for index in 0..8 {
-            db.add_research_evidence(&crate::models::ResearchEvidenceInput {
+            db.add_research_evidence(&crate::models::research::ResearchEvidenceInput {
                 content: format!("虚构成长基金 FUND-A 虚构债券基金 BOND-B 虚构海外基金 USD-C 分红持续性 资料{index}"),
                 ..Default::default()
             }).unwrap();
@@ -512,7 +517,11 @@ mod tests {
         let selected = relevant_evidence(
             &db,
             &request,
-            &AuthorizedFinancialContext::from_snapshot(&snapshot, &request.context_selection),
+            &AuthorizedFinancialContext::from_snapshot(
+                &snapshot,
+                request.context_selection.include_profile,
+                request.context_selection.include_holdings,
+            ),
         )
         .unwrap();
         assert_eq!(selected.len(), 2);
@@ -562,7 +571,7 @@ mod tests {
             web_search: false,
             previous_turn: None,
             question: "复盘指数集中风险".into(),
-            workflow: crate::models::ANALYSIS_WORKFLOW.into(),
+            workflow: crate::models::analysis::ANALYSIS_WORKFLOW.into(),
 
             context_selection: ContextSelection::default(),
             preview_revision: None,
@@ -730,7 +739,7 @@ mod tests {
         };
         let mut request = request();
         request.question = "本轮原始问题".into();
-        request.previous_turn = Some(crate::models::PreviousTurn {
+        request.previous_turn = Some(crate::models::analysis::PreviousTurn {
             question: "上一轮问题".into(),
             answer: "上一轮结论".into(),
             suggestions: vec!["上一轮动作".into()],
@@ -759,7 +768,7 @@ mod tests {
         assert!(service.execute(changed, &executor).await.is_err());
         let mut profile = db.snapshot().unwrap().profile;
         profile.monthly_income += 100.0;
-        profile.provided_fields = Some(vec![crate::models::ProfileField::MonthlyIncome]);
+        profile.provided_fields = Some(vec![crate::models::portfolio::ProfileField::MonthlyIncome]);
         profile.exact_amounts = None;
         db.save_profile(&profile).unwrap();
         assert!(service.execute(request, &executor).await.is_err());

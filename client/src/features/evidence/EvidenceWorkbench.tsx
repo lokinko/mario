@@ -10,7 +10,7 @@ import {
   setResearchEvidenceStatus,
   setResearchEvidenceTags,
 } from "../../api/evidence";
-import type { ResearchEvidence, ResearchEvidenceTags } from "../../types";
+import type { ResearchEvidence, ResearchEvidenceTags } from "../../types/user";
 import { LoadState } from "../../components/LoadState";
 import { saveAttachmentDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";

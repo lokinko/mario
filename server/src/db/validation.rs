@@ -297,8 +297,8 @@ pub(super) fn validate_research_evidence(input: &ResearchEvidenceInput) -> AppRe
 pub(super) fn research_evidence_tags(
     asset_name: &str,
     category: &str,
-) -> AppResult<crate::models::ResearchEvidenceTagsInput> {
-    let tags = crate::models::ResearchEvidenceTagsInput {
+) -> AppResult<crate::models::research::ResearchEvidenceTagsInput> {
+    let tags = crate::models::research::ResearchEvidenceTagsInput {
         asset_name: asset_name.trim().to_owned(),
         category: category.trim().to_owned(),
     };

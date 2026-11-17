@@ -4,17 +4,23 @@ mod observation;
 mod render;
 pub use render::render_for_model;
 #[cfg(test)]
-pub fn fact_sheet(snapshot: &crate::models::Snapshot, selection: &ContextSelection) -> Value {
+pub fn fact_sheet(
+    snapshot: &crate::models::portfolio::Snapshot,
+    selection: &ContextSelection,
+) -> Value {
     crate::models::accounting::analysis::AuthorizedFinancialContext::from_snapshot(
-        snapshot, selection,
+        snapshot,
+        selection.include_profile,
+        selection.include_holdings,
     )
     .facts
 }
 pub use observation::observation_excerpt;
 
 use crate::models::{
-    accounting::analysis::AuthorizedFinancialContext, AnalysisPreview, AnalysisRequest,
-    ContextGroup, ContextSelection, ResearchEvidence,
+    accounting::analysis::AuthorizedFinancialContext,
+    analysis::{AnalysisPreview, AnalysisRequest, ContextGroup, ContextSelection},
+    research::ResearchEvidence,
 };
 use serde_json::{json, Map, Value};
 
@@ -41,9 +47,9 @@ pub struct BuiltContext {
     pub revision: String,
     pub evidence_items: usize,
     #[serde(default)]
-    pub valuation_evidence: Vec<crate::models::HoldingValuationEvidence>,
+    pub valuation_evidence: Vec<crate::models::portfolio::HoldingValuationEvidence>,
     #[serde(default)]
-    pub evidence_catalog: Vec<crate::models::AnalysisEvidenceReference>,
+    pub evidence_catalog: Vec<crate::models::analysis::AnalysisEvidenceReference>,
 }
 
 #[derive(Default)]
@@ -58,12 +64,16 @@ impl ContextBuilder {
     #[cfg(test)]
     pub fn build(
         request: &AnalysisRequest,
-        snapshot: &crate::models::Snapshot,
+        snapshot: &crate::models::portfolio::Snapshot,
         sources: &ContextSources<'_>,
     ) -> BuiltContext {
         Self::from_financial(
             request,
-            &AuthorizedFinancialContext::from_snapshot(snapshot, &request.context_selection),
+            &AuthorizedFinancialContext::from_snapshot(
+                snapshot,
+                request.context_selection.include_profile,
+                request.context_selection.include_holdings,
+            ),
             sources,
         )
     }
@@ -104,7 +114,7 @@ impl ContextBuilder {
                 .evidence_candidates
                 .iter()
                 .take(crate::evidence::ANALYSIS_EVIDENCE_LIMIT)
-                .map(|item| crate::models::AnalysisEvidenceReference {
+                .map(|item| crate::models::analysis::AnalysisEvidenceReference {
                     attachments: item.attachments.clone(),
                     asset_name: item.asset_name.clone(),
                     evidence_type: item.evidence_type.clone(),
@@ -182,7 +192,7 @@ impl ContextBuilder {
     pub fn preview(
         request: &AnalysisRequest,
         context: BuiltContext,
-        provider: crate::models::ModelProviderKind,
+        provider: crate::models::provider::ModelProviderKind,
         model: String,
         evidence_candidates: Vec<ResearchEvidence>,
     ) -> AnalysisPreview {
@@ -302,7 +312,7 @@ fn context_revision(serialized: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::Snapshot;
+    use crate::models::portfolio::Snapshot;
     fn snapshot() -> Snapshot {
         serde_json::from_str(include_str!("../tests/fixtures/qa_eval/snapshot.json")).unwrap()
     }
@@ -320,7 +330,7 @@ mod tests {
         let preview = ContextBuilder::preview(
             &request,
             built,
-            crate::models::ModelProviderKind::OpenaiResponses,
+            crate::models::provider::ModelProviderKind::OpenaiResponses,
             "test".into(),
             vec![],
         );
@@ -416,7 +426,7 @@ mod tests {
     #[test]
     fn missing_or_initial_profile_values_are_unknown_instead_of_confirmed_zeroes() {
         let mut snapshot = snapshot();
-        snapshot.profile = crate::models::FinancialProfile::default();
+        snapshot.profile = crate::models::portfolio::FinancialProfile::default();
         let facts = fact_sheet(&snapshot, &ContextSelection::default());
         for field in [
             "monthlyIncome",
@@ -432,7 +442,7 @@ mod tests {
 
     #[test]
     fn saved_profile_presence_survives_reload_restore_and_controls_model_facts() {
-        use crate::models::{FinancialProfile, ProfileField};
+        use crate::models::portfolio::{FinancialProfile, ProfileField};
         let db = crate::db::Database::test();
         let mut profile = FinancialProfile {
             provided_fields: Some(vec![
@@ -585,7 +595,7 @@ mod tests {
 
     #[test]
     fn retired_flags_are_rejected_and_inputs_change_the_revision() {
-        for retired in crate::models::RETIRED_ANALYSIS_OPTIONS {
+        for retired in crate::models::analysis::RETIRED_ANALYSIS_OPTIONS {
             let mut value = json!({"question":"问题","workflow":"council"});
             value[retired] = json!(false);
             assert!(
@@ -593,7 +603,7 @@ mod tests {
                 "{retired}"
             );
         }
-        for retired in crate::models::RETIRED_CONTEXT_OPTIONS {
+        for retired in crate::models::analysis::RETIRED_CONTEXT_OPTIONS {
             let value =
                 json!({"question":"问题","workflow":"council","contextSelection":{retired:true}});
             assert!(

@@ -7,7 +7,7 @@ import {
   getModelConfig,
   type CodexBridgeStatus,
 } from "../../api/settings";
-import type { ModelConfig } from "../../types";
+import type { ModelConfig } from "../../types/ai";
 
 export function CodexBridge({
   onUpdate,
