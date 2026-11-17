@@ -59,7 +59,7 @@ test('shared public dividend data stays separate from accounts and private analy
   assert.equal(serverFileViolation('application/watch_catalog.rs', 'ports'), undefined);
   for (const target of ['accounts', 'context', 'ai', 'http', 'application'])
     assert(serverFileViolation('application/dividend_calendar.rs', target));
-  assert(serverFileViolation('db/public_watch/calendar.rs', 'accounts'));
+  assert(serverFileViolation('db/public_dividend_plans.rs', 'accounts'));
   assert.equal(serverFileViolation('application/dividend_calendar.rs', 'ports'), undefined);
   for (const target of ['accounts', 'db', 'storage', 'application', 'ai', 'http'])
     assert(serverFileViolation('market_data/watch_catalog.rs', target));
@@ -170,4 +170,22 @@ test('user evidence and methodology routes cannot be mixed back into AI adapters
   assert(httpRouteViolation('http/other.rs', 'GET /api/analysis/preview'));
   assert.equal(httpRouteViolation('http/evidence.rs', 'PUT /api/research-evidence/{id}/tags'), undefined);
   assert.equal(httpRouteViolation('http/analysis.rs', 'GET /api/analyses/{id}'), undefined);
+});
+
+test('public dividend plan capabilities exclude user catalogs and user projection cannot fetch', async () => {
+  const { rustPaths, serverSymbolViolation } = await import('./check-architecture.mjs');
+  const source = `use crate::{db::{PublicWatch as Store, PublicDividendPlans}, models::{watch::WatchInput, market::dividend_plans::PlanSnapshot}};
+    use super::super::db as persistence;
+    fn f() { crate::db::Database::test(); }
+    #[cfg(test)] mod tests { use crate::accounts; }`;
+  const paths = [...rustPaths(source, ['application', 'dividend_plans'])];
+  for (const expected of ['db::PublicWatch', 'db::PublicDividendPlans', 'models::watch::WatchInput', 'models::market::dividend_plans::PlanSnapshot', 'db', 'db::Database::test']) assert(paths.includes(expected), expected);
+  assert(!paths.includes('accounts'));
+  for (const path of ['db::PublicWatch', 'db', 'models::watch::WatchInput', 'application::dividend_calendar'])
+    assert(serverSymbolViolation('application/dividend_plans.rs', path));
+  for (const path of ['db::PublicDividendPlans', 'models::market::dividend_plans::PlanSnapshot', 'ports::market::DividendPlanProvider'])
+    assert.equal(serverSymbolViolation('application/dividend_plans.rs', path), undefined);
+  for (const path of ['ports::market::DividendPlanProvider', 'application::dividend_plans::PublicDividendPlanService'])
+    assert(serverSymbolViolation('application/dividend_calendar.rs', path));
+  assert.equal(serverSymbolViolation('application/dividend_calendar.rs', 'ports::market::DividendPlanReader'), undefined);
 });

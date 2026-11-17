@@ -1,25 +1,18 @@
-//! Public plan fetching and account-scoped calendar projection; no model execution or ledger writes.
+//! User-owned company selection and calendar projection using cached public plans only.
 use crate::{
     db::PublicWatch,
     models::watch::{
-        calendar::{companies, CalendarBoard, CalendarCompany, CalendarScope, PlanSnapshot},
+        calendar::{companies, CalendarBoard, CalendarCompany, CalendarScope},
         WatchInput,
     },
-    ports::market::WatchMarketProvider,
-    AppError, AppResult,
+    ports::market::DividendPlanReader,
+    AppResult,
 };
 use chrono::{NaiveDate, Utc};
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, Weak},
-    time::Duration,
-};
-use tokio::sync::Mutex;
-
+use std::sync::Arc;
 pub(crate) struct DividendCalendarService {
     store: Arc<PublicWatch>,
-    provider: Arc<dyn WatchMarketProvider>,
-    locks: Mutex<BTreeMap<String, Weak<Mutex<()>>>>,
+    plans: Arc<dyn DividendPlanReader>,
 }
 pub(crate) fn today() -> NaiveDate {
     Utc::now()
@@ -27,12 +20,8 @@ pub(crate) fn today() -> NaiveDate {
         .date_naive()
 }
 impl DividendCalendarService {
-    pub fn new(store: Arc<PublicWatch>, provider: Arc<dyn WatchMarketProvider>) -> Self {
-        Self {
-            store,
-            provider,
-            locks: Mutex::new(BTreeMap::new()),
-        }
+    pub fn new(store: Arc<PublicWatch>, plans: Arc<dyn DividendPlanReader>) -> Self {
+        Self { store, plans }
     }
     pub fn companies(
         &self,
@@ -49,191 +38,55 @@ impl DividendCalendarService {
     ) -> AppResult<CalendarBoard> {
         let mut snapshots = Vec::new();
         for company in self.companies(personal, scope)? {
-            let snapshot = self.store.calendar_snapshot(&company.symbol)?;
+            let snapshot = self.plans.snapshot(&company.symbol)?;
             snapshots.push((company, snapshot));
         }
         CalendarBoard::build(start, today(), scope, snapshots)
     }
-    pub async fn refresh_public(self: &Arc<Self>) -> AppResult<()> {
-        let symbols = self
-            .companies(&[], CalendarScope::Public)?
-            .into_iter()
-            .map(|c| c.symbol)
-            .collect::<Vec<_>>();
-        self.refresh(&symbols).await
-    }
-    pub async fn refresh(self: &Arc<Self>, symbols: &[String]) -> AppResult<()> {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
-        let day = today();
-        let mut tasks = tokio::task::JoinSet::new();
-        for symbol in symbols {
-            let service = self.clone();
-            let symbol = symbol.clone();
-            tasks.spawn(async move { service.check(&symbol, day, deadline).await });
-        }
-        while let Some(result) = tasks.join_next().await {
-            result.map_err(|error| AppError::MarketData(error.to_string()))??;
-        }
-        Ok(())
-    }
-    async fn check(
-        &self,
-        symbol: &str,
-        day: NaiveDate,
-        deadline: tokio::time::Instant,
-    ) -> AppResult<()> {
-        let before = self.store.calendar_snapshot(symbol)?;
-        let lock = {
-            let mut locks = self.locks.lock().await;
-            locks.retain(|_, lock| lock.strong_count() > 0);
-            if let Some(lock) = locks.get(symbol).and_then(Weak::upgrade) {
-                lock
-            } else {
-                let lock = Arc::new(Mutex::new(()));
-                locks.insert(symbol.into(), Arc::downgrade(&lock));
-                lock
-            }
-        };
-        let Ok(_guard) = tokio::time::timeout_at(deadline, lock.lock()).await else {
-            return Ok(());
-        };
-        let previous = self.store.calendar_snapshot(symbol)?;
-        if previous.attempted_at != before.attempted_at || fresh(&previous) {
-            return Ok(());
-        }
-        let attempted_at = Some(Utc::now().to_rfc3339());
-        let result =
-            tokio::time::timeout_at(deadline, self.provider.dividend_plans(symbol, day)).await;
-        let snapshot = match result {
-            Ok(Ok(plans)) if plans.iter().all(|plan| plan.symbol == symbol) => PlanSnapshot {
-                plans,
-                attempted_at,
-                fetched_at: Some(Utc::now().to_rfc3339()),
-                refresh_failed: false,
-            },
-            other => {
-                tracing::warn!(symbol, result=?other, "dividend calendar source failed; retaining last successful plans");
-                PlanSnapshot {
-                    attempted_at,
-                    refresh_failed: true,
-                    ..previous
-                }
-            }
-        };
-        self.store.save_calendar_snapshot(symbol, &snapshot)
-    }
-}
-fn fresh(snapshot: &PlanSnapshot) -> bool {
-    // Persisted attempts throttle source requests, including failures and restarts.
-    let ttl = 24 * 60 * 60;
-    snapshot
-        .attempted_at
-        .as_ref()
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .is_some_and(|date| (Utc::now() - date.with_timezone(&Utc)).num_seconds() < ttl)
 }
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::models::watch::calendar::{tests::plan, DividendPlan, PlanStage};
+    use crate::{
+        application::dividend_plans::{tests::Source, PublicDividendPlanService},
+        db::PublicDividendPlans,
+    };
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    struct Source {
-        calls: AtomicUsize,
-        fail: AtomicBool,
-    }
-    #[async_trait::async_trait]
-    impl WatchMarketProvider for Source {
-        async fn dividend_plans(&self, symbol: &str, _: NaiveDate) -> AppResult<Vec<DividendPlan>> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            if self.fail.load(Ordering::SeqCst) {
-                return Err(AppError::MarketData("测试来源失败".into()));
-            }
-            let mut p = plan(symbol, PlanStage::Scheduled);
-            p.announced_on = today();
-            p.record_date = Some(today() + chrono::Duration::days(2));
-            p.ex_date = Some(today() + chrono::Duration::days(3));
-            Ok(vec![p])
-        }
-        async fn dividends(
-            &self,
-            _: &str,
-            _: NaiveDate,
-        ) -> AppResult<crate::models::watch::DividendHistory> {
-            unreachable!()
-        }
-        async fn observation(
-            &self,
-            _: &str,
-            _: NaiveDate,
-        ) -> AppResult<crate::models::watch::WatchMarketData> {
-            unreachable!()
-        }
-    }
-    pub(crate) fn fixture_service() -> Arc<DividendCalendarService> {
-        Arc::new(DividendCalendarService::new(
-            Arc::new(PublicWatch::test()),
+    pub(crate) fn fixture_services(
+    ) -> (Arc<DividendCalendarService>, Arc<PublicDividendPlanService>) {
+        let plans = Arc::new(PublicDividendPlanService::new(
+            Arc::new(PublicDividendPlans::test()),
             Arc::new(Source {
                 calls: AtomicUsize::new(0),
                 fail: AtomicBool::new(false),
             }),
-        ))
+        ));
+        (
+            Arc::new(DividendCalendarService::new(
+                Arc::new(PublicWatch::test()),
+                plans.clone(),
+            )),
+            plans,
+        )
     }
-    #[tokio::test]
-    async fn fetches_wait_a_day_after_success_or_failure_across_restarts() {
-        let store = Arc::new(PublicWatch::test());
-        let source = Arc::new(Source {
-            calls: AtomicUsize::new(0),
-            fail: AtomicBool::new(false),
-        });
-        for (symbol, hours, failed) in [
-            ("600000.SS", 23, false),
-            ("600001.SS", 23, true),
-            ("600002.SS", 25, false),
-            ("600003.SS", 25, true),
-        ] {
-            let attempted = (Utc::now() - chrono::Duration::hours(hours)).to_rfc3339();
-            store
-                .save_calendar_snapshot(
-                    symbol,
-                    &PlanSnapshot {
-                        plans: vec![plan(symbol, PlanStage::Scheduled)],
-                        attempted_at: Some(attempted.clone()),
-                        fetched_at: (!failed).then_some(attempted),
-                        refresh_failed: failed,
-                    },
-                )
-                .unwrap();
-        }
-        // A new service must respect the persisted attempt times, without any warm memory cache.
-        let service = Arc::new(DividendCalendarService::new(store.clone(), source.clone()));
-        let recent = vec!["600000.SS".into(), "600001.SS".into()];
-        service.refresh(&recent).await.unwrap();
-        assert_eq!(source.calls.load(Ordering::SeqCst), 0);
-        let expired = vec!["600002.SS".into(), "600003.SS".into()];
-        service.refresh(&expired).await.unwrap();
-        assert_eq!(source.calls.load(Ordering::SeqCst), 2);
-        service.refresh(&expired).await.unwrap();
-        assert_eq!(source.calls.load(Ordering::SeqCst), 2);
-        let restarted = Arc::new(DividendCalendarService::new(store, source.clone()));
-        restarted.refresh(&recent).await.unwrap();
-        restarted.refresh(&expired).await.unwrap();
-        assert_eq!(source.calls.load(Ordering::SeqCst), 2);
-        let new_company = vec!["600004.SS".into()];
-        source.fail.store(true, Ordering::SeqCst);
-        restarted.refresh(&new_company).await.unwrap();
-        restarted.refresh(&new_company).await.unwrap();
-        assert_eq!(source.calls.load(Ordering::SeqCst), 3);
+    pub(crate) fn fixture_service() -> Arc<DividendCalendarService> {
+        fixture_services().0
     }
-
     #[tokio::test]
     async fn scoped_reads_do_no_network_and_failures_keep_prior_plans_without_advancing_accounts() {
-        let store = Arc::new(PublicWatch::test());
+        let store = Arc::new(PublicDividendPlans::test());
         let source = Arc::new(Source {
             calls: AtomicUsize::new(0),
             fail: AtomicBool::new(false),
         });
-        let service = Arc::new(DividendCalendarService::new(store.clone(), source.clone()));
+        let plans = Arc::new(PublicDividendPlanService::new(
+            store.clone(),
+            source.clone(),
+        ));
+        let service = Arc::new(DividendCalendarService::new(
+            Arc::new(PublicWatch::test()),
+            plans.clone(),
+        ));
         let a = crate::db::Database::test();
         let b = crate::db::Database::test();
         let input = WatchInput {
@@ -254,7 +107,7 @@ pub(crate) mod tests {
             .is_empty());
         assert_eq!(source.calls.load(Ordering::SeqCst), 0);
         let symbols = vec![input.symbol.clone()];
-        let (x, y) = tokio::join!(service.refresh(&symbols), service.refresh(&symbols));
+        let (x, y) = tokio::join!(plans.refresh(&symbols), plans.refresh(&symbols));
         x.unwrap();
         y.unwrap();
         assert_eq!(source.calls.load(Ordering::SeqCst), 1);
@@ -288,7 +141,7 @@ pub(crate) mod tests {
             .save_calendar_snapshot(&stale_input.symbol, &stale)
             .unwrap();
         source.fail.store(true, Ordering::SeqCst);
-        service
+        plans
             .refresh(std::slice::from_ref(&stale_input.symbol))
             .await
             .unwrap();

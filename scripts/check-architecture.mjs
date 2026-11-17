@@ -121,6 +121,56 @@ export function rustDependencies(source, modulePath = []) {
   }
   return names;
 }
+// Resolve imported leaf symbols, including grouped trees, so a narrow boundary
+// cannot be bypassed by importing its parent module under an alias.
+export function rustPaths(source, modulePath = []) {
+  let code = productionRust(source).replace(/\b(?:(?:super|self)::)+/g, value => {
+    const owner = [...modulePath];
+    for (const part of value.split('::')) if (part === 'super') owner.pop();
+    return 'crate::' + (owner.length ? owner.join('::') + '::' : '');
+  });
+  const paths = new Set();
+  code = code.replace(/\buse\s+([^;]+);/g, (statement, tree) => {
+    const tokens = tree.match(/[A-Za-z_]\w*|::|[{},*]/g) ?? [];
+    let index = 0;
+    function branch(prefix = []) {
+      const path = [...prefix];
+      while (index < tokens.length) {
+        const token = tokens[index++];
+        if (token === '{') {
+          while (index < tokens.length && tokens[index] !== '}') {
+            if (tokens[index] === ',') { index++; continue; }
+            branch(path);
+          }
+          index++;
+          break;
+        }
+        if (token === '::') continue;
+        if (token === ',' || token === '}') { index--; break; }
+        if (token === 'as') { index++; break; }
+        path.push(token);
+        if (tokens[index] !== '::') break;
+      }
+      if (path[0] === 'crate' && tokens[index - 1] !== '}') paths.add(path.slice(1).join('::'));
+      if (tokens[index] === 'as') index += 2;
+    }
+    branch();
+    return statement.replace(/[^\n]/g, ' ');
+  });
+  for (const match of code.matchAll(/\bcrate::(\w+(?:::\w+)*)/g)) paths.add(match[1]);
+  return paths;
+}
+export function serverSymbolViolation(source, target) {
+  const narrow = {
+    'application/dividend_plans.rs': ['db::PublicDividendPlans', 'models::market', 'ports::market::DividendPlanProvider', 'ports::market::DividendPlanReader', 'AppError', 'AppResult'],
+    'application/dividend_calendar.rs': ['db::PublicWatch', 'models::watch::calendar', 'models::watch::WatchInput', 'ports::market::DividendPlanReader', 'AppResult'],
+    'db/public_dividend_plans.rs': ['models::market', 'storage', 'AppError', 'AppResult'],
+    'market_data/watch/plans.rs': ['models::market', 'market_data::watch::bad', 'AppError', 'AppResult'],
+    'models/market/dividend_plans.rs': [],
+  }[source];
+  if (narrow && !narrow.some(prefix => target === prefix || target.startsWith(prefix + '::')))
+    return 'dependency exceeds this module capability; public plan acquisition and user projection stay separate';
+}
 export function rustRoutes(source) {
   const code = productionRust(source), routes = [];
   for (const match of code.matchAll(/\.route\s*\(/g)) {
@@ -183,11 +233,11 @@ export function serverFileViolation(source, target) {
     return 'site model catalog only lists provider metadata, without account data or analysis context';
   if (source === 'accounts/activity.rs' && !['accounts', 'storage', 'error'].includes(target))
     return 'usage metadata belongs to account authority and cannot read tenant ledgers or execute workflows';
-  if (['db/public_dividends.rs', 'db/public_watch.rs', 'db/public_watch/calendar.rs', 'db/public_prices.rs', 'db/public_prices/monitor.rs'].includes(source) && !['models', 'storage', 'error'].includes(target))
+  if (['db/public_dividends.rs', 'db/public_watch.rs', 'db/public_dividend_plans.rs', 'db/public_prices.rs', 'db/public_prices/monitor.rs'].includes(source) && !['models', 'storage', 'error'].includes(target))
     return 'public market storage only depends on public contracts and the database driver boundary';
   if ((source === 'application/public_prices.rs' || source.startsWith('application/public_prices/')) && !['models', 'db', 'ports', 'error'].includes(target))
     return 'public price orchestration cannot depend on accounts, HTTP or concrete sources';
-  if (source === 'application/dividend_calendar.rs' && !['models', 'db', 'ports', 'error'].includes(target))
+  if (['application/dividend_calendar.rs', 'application/dividend_plans.rs'].includes(source) && !['models', 'db', 'ports', 'error'].includes(target))
     return 'public dividend calendars cannot depend on accounts, private context or model execution';
   if (source === 'application/watch_catalog.rs' && !['models', 'db', 'ports', 'error', 'application'].includes(target))
     return 'public catalogue checks cannot depend on private context or execution adapters';
@@ -261,6 +311,10 @@ export function checkArchitecture() {
     const name = posix(relative(serverRoot, path)), owner = name.split('/')[0].replace(/\.rs$/, '');
     if (!known.has(owner)) continue;
     const source = readFileSync(path, 'utf8'), code = productionRust(source);
+    for (const target of rustPaths(source, name.replace(/\.rs$/, '').replace(/\/mod$/, '').split('/'))) {
+      const violation = serverSymbolViolation(name, target);
+      if (violation) violations.push(`${name} -> ${target}: ${violation}`);
+    }
     if (owner === 'http') {
       for (const route of rustRoutes(source)) {
         const violation = httpRouteViolation(name, route);

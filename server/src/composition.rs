@@ -39,6 +39,7 @@ pub(crate) struct MarketRuntime {
     pub watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
     pub watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
     pub dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
+    dividend_plans: Arc<crate::application::dividend_plans::PublicDividendPlanService>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 impl MarketRuntime {
@@ -82,13 +83,20 @@ impl MarketRuntime {
         }));
         let catalog = self.watch_catalog.clone();
         let calendar = self.dividend_calendar.clone();
+        let plans = self.dividend_plans.clone();
         self.tasks.push(tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 interval.tick().await;
-                let (market, plans) =
-                    tokio::join!(catalog.refresh(None, false), calendar.refresh_public());
+                let (market, plans) = tokio::join!(catalog.refresh(None, false), async {
+                    let symbols = calendar
+                        .companies(&[], crate::models::watch::calendar::CalendarScope::Public)?
+                        .into_iter()
+                        .map(|company| company.symbol)
+                        .collect::<Vec<_>>();
+                    plans.refresh(&symbols).await
+                });
                 if let Err(error) = market {
                     tracing::warn!(%error, "public catalogue refresh failed");
                 }
@@ -98,7 +106,7 @@ impl MarketRuntime {
             }
         }));
         let provider = self.watch_provider.clone();
-        let calendar = self.dividend_calendar.clone();
+        let plans = self.dividend_plans.clone();
         self.tasks.push(tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -120,7 +128,7 @@ impl MarketRuntime {
                             .into_iter()
                             .map(|entry| entry.input.symbol)
                             .collect::<Vec<_>>();
-                        if let Err(error) = db.without_account_lock(calendar.refresh(&symbols)).await? {
+                        if let Err(error) = db.without_account_lock(plans.refresh(&symbols)).await? {
                             tracing::warn!(%error, "personal calendar refresh failed; price checks continue");
                         }
                         crate::application::watch::refresh(&db, provider.clone(), false).await?;
@@ -173,17 +181,24 @@ impl MarketRuntime {
                 }
             }
         });
+        let public_source = Arc::new(crate::market_data::watch::PublicWatchProvider::new()?);
         let watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider> =
             Arc::new(crate::application::watch_market::SharedWatchProvider::new(
-                Arc::new(crate::market_data::watch::PublicWatchProvider::new()?),
+                public_source.clone(),
                 public_dividends,
                 prices.clone(),
             ));
         let public_watch = Arc::new(crate::db::PublicWatch::postgres(database_url)?);
+        let dividend_plans = Arc::new(
+            crate::application::dividend_plans::PublicDividendPlanService::new(
+                Arc::new(crate::db::PublicDividendPlans::postgres(database_url)?),
+                public_source,
+            ),
+        );
         let dividend_calendar = Arc::new(
             crate::application::dividend_calendar::DividendCalendarService::new(
                 public_watch.clone(),
-                watch_provider.clone(),
+                dividend_plans.clone(),
             ),
         );
         let watch_catalog = Arc::new(crate::application::watch_catalog::WatchCatalogService::new(
@@ -197,6 +212,7 @@ impl MarketRuntime {
             watch_provider,
             watch_catalog,
             dividend_calendar,
+            dividend_plans,
             tasks: vec![price_task, fx_task],
         })
     }

@@ -42,7 +42,7 @@
 
 市场域提供公司事实，用户域决定如何用于观察、日历和个人账本；公司分红不等于个人已经到账。
 
-实现依据：[分红来源](../../server/src/market_data/watch.rs)、[已披露计划解析](../../server/src/market_data/watch/plans.rs)、[公共分红仓储](../../server/src/db/public_dividends.rs)、[分红计划缓存](../../server/src/db/public_watch/calendar.rs)、[海外公司行动解析](../../server/src/market_data/history/overseas.rs)。这些实现目前有部分位于观察相关目录，职责仍按本文划分。
+实现依据：[分红来源](../../server/src/market_data/watch.rs)、[已披露计划解析](../../server/src/market_data/watch/plans.rs)、[公共分红仓储](../../server/src/db/public_dividends.rs)、[分红计划缓存](../../server/src/db/public_dividend_plans.rs)、[海外公司行动解析](../../server/src/market_data/history/overseas.rs)。已披露计划的类型、缓存和采集分别由市场域的[计划类型](../../server/src/models/market/dividend_plans.rs)、[计划仓储](../../server/src/db/public_dividend_plans.rs)、[计划服务](../../server/src/application/dividend_plans.rs)管理；用户日历只通过缓存读端口消费。计划仓储独立打开原有表，不初始化或升级候选目录。
 
 ## 5. 共享缓存、更新与失败处理
 

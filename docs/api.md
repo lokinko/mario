@@ -124,7 +124,7 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 | GET | `/api/watch/catalog/{symbol}/observation` | — | — → `CatalogRow` | 公共公司详情，按账号规则展示 |
 | POST | `/api/watch/catalog/refresh` | R | B `{industryId:string}` → `CatalogBoard` | 刷新指定行业公共数据，不复制成个人历史 |
 | POST | `/api/watch/catalog/resolve` | —；管理 | B `{query:string}` → `Company` | 解析公司信息，不自动加入目录 |
-| GET | `/api/watch/dividend-calendar` | — | Q `scope?:all/favorites/public=all; from?:date` → `CalendarBoard` | 默认从服务的当前日期查看，读取已有计划与覆盖情况 |
+| GET | `/api/watch/dividend-calendar` | — | Q `scope?:all/favorites/public=all; from?:date` → `CalendarBoard` | 默认从服务的当前日期查看，从市场计划缓存只读生成账号日历与覆盖情况，不触发采集 |
 
 ### 2.4 研究资料、方法论、规则与复盘
 
@@ -332,7 +332,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | FxBook / FxRateQuote | FxBook 含 baseCurrency、checkedAt、requestedOn、quotes、manual、error；报价含 fromCurrency/toCurrency、rate/exactRate、requestedOn/observedOn、stalenessDays、来源与说明 | [汇率类型](../server/src/models/market.rs)、[核心模型](../server/src/models.rs) |
 | SecurityPriceQuote | symbol、currency、close/exactClose、splits、requestedOn/observedOn、stalenessDays、providerCode/providerName、exchange/micCode/instrumentType、priceBasis、来源与说明 | [核心模型](../server/src/models.rs) |
 | WatchEntry / WatchRow / WatchBoard | 个人条目、最新观察、历史、提醒及账号规则；日期与行情缺失状态保留其业务含义 | [观察类型](../server/src/models/watch.rs) |
-| CatalogBoard / CatalogRow / CalendarBoard | 目录版本、编辑权限、行业/公司观察；分红计划日历及覆盖状态 | [目录](../server/src/models/watch/catalog.rs)、[日历](../server/src/models/watch/calendar.rs) |
+| CatalogBoard / CatalogRow / CalendarBoard | 目录版本、编辑权限、行业/公司观察；分红计划日历及覆盖状态 | [目录](../server/src/models/watch/catalog.rs)、[日历](../server/src/models/watch/calendar.rs)、[公共计划](../server/src/models/market/dividend_plans.rs) |
 | GridProjection | 网格档位与预算、买卖情景计算，不是成交记录 | [网格类型](../server/src/models/watch/grid.rs) |
 | ResearchEvidence / InvestmentRule / InvestmentRuleRevision / SystemReviewRecord | 原文和附件元数据、标签与归档；手工规则及修订；文字复盘、当时快照及兼容字段 | [核心模型](../server/src/models.rs) |
 | InvestmentMethodology | prompt、defaultPrompt、maxLength | [方法论类型](../server/src/models/methodology.rs) |

@@ -242,6 +242,8 @@ mod tests {
             &std::env::var("MARIO_TEST_DATABASE_URL").unwrap(),
         )
         .unwrap();
+        let (calendar, plan_service) =
+            crate::application::dividend_calendar::tests::fixture_services();
         let state = Arc::new(RequestContext {
             model_services: crate::composition::model_services(),
             user_id: "test-user".into(),
@@ -249,7 +251,7 @@ mod tests {
             db: crate::db::Database::test(),
             watch_provider: runtime.watch_provider.clone(),
             watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
-            dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),
+            dividend_calendar: calendar,
             market: runtime.services.clone(),
             analysis_executor: Arc::new(crate::agent::AgentExecutor),
         });
@@ -350,11 +352,7 @@ mod tests {
             .unwrap();
         assert!(unread["entries"].as_array().unwrap().is_empty());
         assert_eq!(unread["coverage"][0]["symbol"], "600000.SS");
-        state
-            .dividend_calendar
-            .refresh(&["600000.SS".into()])
-            .await
-            .unwrap();
+        plan_service.refresh(&["600000.SS".into()]).await.unwrap();
         let calendar: serde_json::Value = client
             .get(format!(
                 "{base}/api/watch/dividend-calendar?scope=favorites"

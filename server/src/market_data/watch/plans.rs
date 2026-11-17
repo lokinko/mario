@@ -1,10 +1,11 @@
 //! Parse disclosed plans without feeding proposals or future dates into implemented TTM history.
 use crate::{
-    models::watch::{
-        calendar::{DividendPlan, PlanIssue, PlanStage},
-        WatchInput,
+    models::market::{
+        canonical_symbol,
+        dividend_plans::{DividendPlan, PlanIssue, PlanStage},
+        is_a_share_stock,
     },
-    AppResult,
+    AppError, AppResult,
 };
 use chrono::{Days, NaiveDate};
 use rust_decimal::Decimal;
@@ -56,12 +57,11 @@ pub(super) fn parse(
     today: NaiveDate,
     sources: &[String],
 ) -> AppResult<Vec<DividendPlan>> {
-    WatchInput {
-        symbol: symbol.into(),
-        name: "分红日历".into(),
-        thesis: String::new(),
+    let normalized = canonical_symbol(symbol)?;
+    if !is_a_share_stock(&normalized) {
+        return Err(AppError::Validation("分红计划仅支持沪深 A 股".into()));
     }
-    .normalize()?;
+
     let rows = payload["result"]["data"]
         .as_array()
         .ok_or_else(super::bad)?;

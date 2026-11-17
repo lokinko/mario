@@ -5,7 +5,6 @@ use crate::{
     AppError, AppResult,
 };
 use std::sync::Mutex;
-mod calendar;
 
 pub(crate) struct PublicWatch {
     connection: Mutex<Connection>,
@@ -33,7 +32,6 @@ impl PublicWatch {
             revision BIGINT NOT NULL, updated_by TEXT, updated_at TEXT
         );",
         )?;
-        tx.execute_batch("CREATE TABLE IF NOT EXISTS dividend_plan_snapshots (symbol TEXT PRIMARY KEY, payload TEXT NOT NULL);")?;
         let seed = Catalog::bundled()?;
         tx.execute("INSERT INTO watch_catalog(id,payload,revision) VALUES (1,$1,1) ON CONFLICT(id) DO NOTHING",
             [serde_json::to_string(&seed)?])?;

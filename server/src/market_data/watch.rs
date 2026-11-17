@@ -2,7 +2,7 @@
 mod plans;
 use crate::{
     models::watch::{DividendBasis, DividendEvent, DividendHistory},
-    ports::market::WatchMarketProvider,
+    ports::market::{DividendPlanProvider, WatchMarketProvider},
     AppError, AppResult,
 };
 use async_trait::async_trait;
@@ -180,16 +180,18 @@ pub(super) fn parse_dividends(
     Ok(events)
 }
 #[async_trait]
-impl WatchMarketProvider for PublicWatchProvider {
+impl DividendPlanProvider for PublicWatchProvider {
     async fn dividend_plans(
         &self,
         symbol: &str,
         day: NaiveDate,
-    ) -> AppResult<Vec<crate::models::watch::calendar::DividendPlan>> {
+    ) -> AppResult<Vec<crate::models::market::dividend_plans::DividendPlan>> {
         let (payload, sources) = self.dividend_payload(symbol).await?;
         plans::parse(&payload, symbol, day, &sources)
     }
-
+}
+#[async_trait]
+impl WatchMarketProvider for PublicWatchProvider {
     async fn dividends(&self, symbol: &str, day: NaiveDate) -> AppResult<DividendHistory> {
         let (payload, sources) = self.dividend_payload(symbol).await?;
         let history = DividendHistory {
@@ -265,7 +267,7 @@ mod tests {
 
 #[cfg(test)]
 mod live_calendar_check {
-    use crate::ports::market::WatchMarketProvider;
+    use crate::ports::market::DividendPlanProvider;
     #[tokio::test]
     #[ignore = "manual public-source connectivity check; no account data"]
     async fn live_dividend_calendar_structured_plans() {

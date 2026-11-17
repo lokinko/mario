@@ -1,5 +1,6 @@
 //! Market value contracts and deterministic identity/date policies. No providers or storage.
 pub(crate) mod close;
+pub(crate) mod dividend_plans;
 pub(crate) mod eastmoney;
 pub(crate) mod history;
 pub(crate) mod monitor;

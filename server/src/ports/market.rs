@@ -42,14 +42,6 @@ pub(crate) trait WatchMarketProvider: Send + Sync {
     fn price_revision(&self, _symbol: &str) -> Option<String> {
         None
     }
-    async fn dividend_plans(
-        &self,
-        _symbol: &str,
-        _day: chrono::NaiveDate,
-    ) -> AppResult<Vec<crate::models::watch::calendar::DividendPlan>> {
-        Err(crate::AppError::MarketData("分红计划来源暂不可用".into()))
-    }
-
     /// The latest dated public history, reusable across accounts without network I/O.
     fn dividend_seed(
         &self,
@@ -80,4 +72,20 @@ pub(crate) trait CatalogSourceProvider: Send + Sync {
     /// Resolve an exact A-share name or code and collect official public sources.
     /// A verified identity can be returned while its report source is still pending.
     async fn resolve(&self, query: &str) -> AppResult<crate::models::watch::catalog::Company>;
+}
+
+/// Cached plan reads never trigger source I/O or expose refresh/storage capabilities.
+pub(crate) trait DividendPlanReader: Send + Sync {
+    fn snapshot(
+        &self,
+        symbol: &str,
+    ) -> AppResult<crate::models::market::dividend_plans::PlanSnapshot>;
+}
+#[async_trait]
+pub(crate) trait DividendPlanProvider: Send + Sync {
+    async fn dividend_plans(
+        &self,
+        symbol: &str,
+        day: chrono::NaiveDate,
+    ) -> AppResult<Vec<crate::models::market::dividend_plans::DividendPlan>>;
 }
