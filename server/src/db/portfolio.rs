@@ -13,7 +13,10 @@ impl Database {
 
     pub fn trailing_dividends(
         &self,
-        histories: &std::collections::BTreeMap<String, crate::models::watch::DividendHistory>,
+        histories: &std::collections::BTreeMap<
+            String,
+            crate::models::market::dividends::DividendHistory,
+        >,
         today: chrono::NaiveDate,
     ) -> AppResult<crate::models::accounting::DividendIncome> {
         super::amounts::trailing_dividends(&self.snapshot()?, histories, today)

@@ -52,7 +52,7 @@ struct HostedState {
     auth_slots: tokio::sync::Semaphore,
     market: Arc<MarketServices>,
     public_prices: Arc<crate::application::public_prices::PublicPriceService>,
-    watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
+    watch_provider: Arc<dyn crate::ports::market::SecurityMarketProvider>,
     watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
     dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
     analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,

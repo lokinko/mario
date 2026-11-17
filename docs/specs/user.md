@@ -45,6 +45,8 @@
 
 分红日历按当前账号范围从市场域的缓存读端口生成，读取日历不触发采集；计划刷新由后台装配协调。
 
+候选目录的人工范围和 Company 归用户域；市场来源返回的证券资料通过显式转换采用，不自动加入目录。内置分红 CSV 中的默认股息率参考价属于[用户导出用例](../../server/src/application/watch_export.rs)，公共资料加载与文件写入由运行入口装配，保留空缺值并拒绝覆盖已有文件。
+
 修改规则建立新的观察基准，不改写历史结果，也不能伪装成市场变化提醒。分红计划与已实施分红分别处理。信号和网格测算不自动产生真实成交。
 
 实现依据：[规则与比较](../../server/src/models/watch/rules.rs)、[账号规则保存](../../server/src/db/watch/rules.rs)、[观察用例](../../server/src/application/watch.rs)、[共享候选目录](../../server/src/application/watch_catalog.rs)、[网格测算](../../server/src/models/watch/grid.rs)。

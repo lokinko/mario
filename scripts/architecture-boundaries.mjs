@@ -47,6 +47,25 @@ export const serverModelOwners = {
   endpoint: 'ai', inference: 'ai', memory: 'ai', provider: 'ai',
   decimal: 'support',
 };
+export const serverApplicationOwners = {
+  analysis: 'ai', codex_bridge: 'ai', memory: 'ai', model_settings: 'ai',
+  fx: 'user', portfolio: 'user', prices: 'user', watch: 'user',
+  watch_catalog: 'user', dividend_calendar: 'user', watch_export: 'user',
+  public_prices: 'market', watch_market: 'market', dividend_plans: 'market',
+};
+export const serverPortOwners = {
+  account: 'support', ai_account: 'ai', analysis: 'ai', model: 'ai', market: 'market', user_account: 'user',
+};
+export function serverBusinessOwner(source) {
+  const [layer, module] = source.replace(/\.rs$/, '').split('/');
+  if (layer === 'models') return serverModelOwners[module];
+  if (layer === 'application') return serverApplicationOwners[module];
+  if (layer === 'ports') return serverPortOwners[module];
+  if (layer === 'market_data') return 'market';
+  if (['db/public_prices', 'db/public_dividends', 'db/public_dividend_plans'].some(path => source === path + '.rs' || source.startsWith(path + '/'))) return 'market';
+  if (source === 'db/user_access.rs') return 'user';
+  if (source === 'db/account_access.rs') return 'support';
+}
 export const userAccountCapabilities = {
   'application/fx.rs': ['FxAccount'],
   'application/prices.rs': ['ValuationAccount'],
@@ -66,14 +85,25 @@ export function serverModelViolation(source, target) {
   if (target.endsWith('::*')) return 'contract imports must name their module or symbols explicitly';
   const targetOwner = serverModelOwners[target.split('::')[1]];
   if (!targetOwner) return 'import contracts through an explicitly owned module';
-  if (source.startsWith('models/')) {
-    const sourceOwner = serverModelOwners[source.split('/')[1].replace(/\.rs$/, '')];
-    return contractOwnerViolation(sourceOwner, targetOwner);
+  return contractOwnerViolation(serverBusinessOwner(source), targetOwner);
+}
+export function serverBusinessViolation(source, target) {
+  const owner = serverBusinessOwner(source);
+  if (!owner) return;
+  const [layer, module] = target.split('::');
+  if (['application', 'ports'].includes(layer)) {
+    const targetOwner = (layer === 'application' ? serverApplicationOwners : serverPortOwners)[module];
+    if (!targetOwner) return 'cross-module imports must name an explicitly owned application or port';
+    if (owner === 'market' && layer === 'ports' && module === 'account')
+      return 'public market services do not coordinate account sessions';
+    if (owner === 'ai' && targetOwner === 'user')
+      return 'AI accesses user data through its authorized read capability, not user workflows or write ports';
+    return contractOwnerViolation(owner, targetOwner);
   }
-  if (userAccountCapabilities[source] || ['ports/user_account.rs', 'db/user_access.rs'].includes(source))
-    return contractOwnerViolation('user', targetOwner);
-  if (source === 'ports/account.rs' || source === 'db/account_access.rs')
-    return contractOwnerViolation('support', targetOwner);
+  const ownRepository = ['public_prices', 'public_dividends', 'public_dividend_plans']
+    .some(name => (source === `db/${name}.rs` || source.startsWith(`db/${name}/`)) && module === name);
+  if (owner === 'market' && layer === 'db' && !ownRepository && !['PublicPrices', 'PublicDividends', 'PublicDividendPlans'].includes(module))
+    return 'market services may only obtain public market repositories';
 }
 export function clientBusinessViolation(source, target) {
   const [layer, name] = source.split('/');

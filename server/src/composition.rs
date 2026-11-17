@@ -36,7 +36,7 @@ pub(crate) fn model_services_from_env(
 pub(crate) struct MarketRuntime {
     pub services: Arc<MarketServices>,
     pub public_prices: Arc<crate::application::public_prices::PublicPriceService>,
-    pub watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
+    pub watch_provider: Arc<dyn crate::ports::market::SecurityMarketProvider>,
     pub watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
     pub dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
     dividend_plans: Arc<crate::application::dividend_plans::PublicDividendPlanService>,
@@ -182,7 +182,7 @@ impl MarketRuntime {
             }
         });
         let public_source = Arc::new(crate::market_data::watch::PublicWatchProvider::new()?);
-        let watch_provider: Arc<dyn crate::ports::market::WatchMarketProvider> =
+        let watch_provider: Arc<dyn crate::ports::market::SecurityMarketProvider> =
             Arc::new(crate::application::watch_market::SharedWatchProvider::new(
                 public_source.clone(),
                 public_dividends,

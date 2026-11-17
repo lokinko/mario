@@ -4,6 +4,10 @@ pub(crate) mod catalog;
 pub(crate) mod grid;
 pub(crate) mod rules;
 pub(crate) mod trends;
+use crate::models::market::{
+    dividends::{trailing_dividends, DividendBasis, DividendEvent},
+    series::SecurityMarketData,
+};
 use rules::WatchRules;
 
 use crate::{AppError, AppResult};
@@ -26,25 +30,19 @@ pub struct WatchInput {
 }
 impl WatchInput {
     pub fn normalize(mut self) -> AppResult<Self> {
-        self.symbol = self.symbol.trim().to_uppercase().replace(".SH", ".SS");
-        self.name = self.name.trim().into();
-        self.thesis = self.thesis.trim().into();
-        let valid_symbol = self.symbol.len() == 9
-            && self.symbol.as_bytes()[..6]
-                .iter()
-                .all(|c| c.is_ascii_digit())
-            && ((self.symbol.ends_with(".SS")
-                && (self.symbol.starts_with("60") || self.symbol.starts_with("68")))
-                || (self.symbol.ends_with(".SZ")
-                    && (self.symbol.starts_with("00") || self.symbol.starts_with("30"))));
-        if !valid_symbol
-            || self.name.is_empty()
-            || self.name.chars().count() > 80
-            || self.thesis.chars().count() > 2000
-        {
-            return Err(AppError::Validation(
+        let invalid = || {
+            AppError::Validation(
                 "请填写沪深 A 股代码（如 600036.SS）、公司名称和不超过 2000 字的关注理由".into(),
-            ));
+            )
+        };
+        let (symbol, name) =
+            crate::models::market::securities::normalize_a_share_identity(&self.symbol, &self.name)
+                .map_err(|_| invalid())?;
+        self.symbol = symbol;
+        self.name = name;
+        self.thesis = self.thesis.trim().into();
+        if self.thesis.chars().count() > 2000 {
+            return Err(invalid());
         }
         Ok(self)
     }
@@ -60,91 +58,6 @@ pub struct WatchEntry {
     pub pinned: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grid_plan: Option<grid::GridPlan>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PriceBar {
-    pub day: NaiveDate,
-    pub close: Option<f64>,
-    pub adjusted_close: Option<f64>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DividendEvent {
-    // Absent only in observations saved before independent dividend storage.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub report_date: Option<NaiveDate>,
-    pub ex_date: NaiveDate,
-    pub cash_per_ten: String,
-    pub bonus_per_ten: String,
-    pub transfer_per_ten: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DividendBasis {
-    pub as_of: NaiveDate,
-    pub fetched_at: String,
-}
-
-/// One complete, replaceable source snapshot per security, including known-empty results.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DividendHistory {
-    #[serde(flatten)]
-    pub basis: DividendBasis,
-    pub sources: Vec<String>,
-    pub events: Vec<DividendEvent>,
-}
-
-impl DividendHistory {
-    /// Coverage wins over collection time; a delayed older cutoff cannot downgrade facts.
-    pub fn is_newer_than(&self, other: &Self) -> bool {
-        self.basis
-            .as_of
-            .cmp(&other.basis.as_of)
-            .then_with(|| {
-                chrono::DateTime::parse_from_rfc3339(&self.basis.fetched_at)
-                    .ok()
-                    .cmp(&chrono::DateTime::parse_from_rfc3339(&other.basis.fetched_at).ok())
-            })
-            .is_gt()
-    }
-    pub fn validate(&self) -> AppResult<()> {
-        let fetched = chrono::DateTime::parse_from_rfc3339(&self.basis.fetched_at)
-            .map_err(|_| AppError::Validation("分红采集时间无效".into()))?;
-        let mut seen = std::collections::BTreeSet::new();
-        if self.basis.as_of
-            > fetched
-                .with_timezone(&chrono_tz::Asia::Shanghai)
-                .date_naive()
-            || self.sources.is_empty()
-            || self.sources.iter().any(|s| !s.starts_with("https://"))
-            || self.events.iter().any(|e| {
-                e.ex_date > self.basis.as_of
-                    || e.report_date.is_none()
-                    || !seen.insert((e.ex_date, e.report_date))
-                    || [&e.cash_per_ten, &e.bonus_per_ten, &e.transfer_per_ten]
-                        .iter()
-                        .any(|v| Decimal::from_str_exact(v).map_or(true, |v| v < Decimal::ZERO))
-            })
-        {
-            return Err(AppError::Validation("分红事件或来源覆盖无效".into()));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct WatchMarketData {
-    pub price_revision: Option<String>,
-    pub bars: Vec<PriceBar>,
-    pub calendar: Vec<NaiveDate>,
-    pub dividends: Option<Vec<DividendEvent>>,
-    pub dividend_basis: Option<DividendBasis>,
-    pub sources: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -399,40 +312,10 @@ impl Observation {
     }
 }
 
-pub fn trailing_dividends(events: &[DividendEvent], day: NaiveDate) -> Option<Decimal> {
-    let start = day - chrono::Duration::days(365);
-    let mut total = Decimal::ZERO;
-    for event in events
-        .iter()
-        .filter(|e| e.ex_date > start && e.ex_date <= day)
-    {
-        let mut cash = Decimal::from_str_exact(&event.cash_per_ten).ok()? / Decimal::TEN;
-        if cash < Decimal::ZERO {
-            return None;
-        }
-        // Normalize every past cash distribution to the current share unit, including
-        // simultaneous bonus shares. The provider supplies per-ten original shares.
-        for action in events
-            .iter()
-            .filter(|a| a.ex_date >= event.ex_date && a.ex_date <= day)
-        {
-            let bonus = Decimal::from_str_exact(&action.bonus_per_ten).ok()?;
-            let transfer = Decimal::from_str_exact(&action.transfer_per_ten).ok()?;
-            if bonus < Decimal::ZERO || transfer < Decimal::ZERO {
-                return None;
-            }
-            let factor = Decimal::ONE.checked_add(bonus.checked_add(transfer)? / Decimal::TEN)?;
-            cash = cash.checked_div(factor)?;
-        }
-        total = total.checked_add(cash)?;
-    }
-    Some(total)
-}
-
 pub fn evaluate(
     rules: &WatchRules,
     symbol: &str,
-    data: &WatchMarketData,
+    data: &SecurityMarketData,
     cutoff: NaiveDate,
     checked_at: String,
 ) -> Observation {
@@ -558,10 +441,11 @@ pub fn evaluate(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::models::market::series::PriceBar;
     fn date(s: &str) -> NaiveDate {
         NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
     }
-    pub fn market_fixture() -> (WatchMarketData, NaiveDate) {
+    pub fn market_fixture() -> (SecurityMarketData, NaiveDate) {
         let first = date("2026-01-05");
         let calendar: Vec<_> = (0..180)
             .map(|i| first + chrono::Duration::days(i))
@@ -577,7 +461,7 @@ pub(crate) mod tests {
             })
             .collect();
         (
-            WatchMarketData {
+            SecurityMarketData {
                 price_revision: None,
                 bars,
                 calendar,

@@ -38,7 +38,7 @@ pub(crate) trait SecurityPriceProvider: Send + Sync {
 }
 
 #[async_trait]
-pub(crate) trait WatchMarketProvider: Send + Sync {
+pub(crate) trait SecurityMarketProvider: Send + Sync {
     fn price_revision(&self, _symbol: &str) -> Option<String> {
         None
     }
@@ -47,20 +47,20 @@ pub(crate) trait WatchMarketProvider: Send + Sync {
         &self,
         _symbol: &str,
         _day: chrono::NaiveDate,
-    ) -> Option<crate::models::watch::DividendHistory> {
+    ) -> Option<crate::models::market::dividends::DividendHistory> {
         None
     }
     async fn dividends(
         &self,
         symbol: &str,
         day: chrono::NaiveDate,
-    ) -> AppResult<crate::models::watch::DividendHistory>;
+    ) -> AppResult<crate::models::market::dividends::DividendHistory>;
     async fn invalidate(&self) {}
     async fn observation(
         &self,
         _symbol: &str,
         _day: chrono::NaiveDate,
-    ) -> AppResult<crate::models::watch::WatchMarketData> {
+    ) -> AppResult<crate::models::market::series::SecurityMarketData> {
         Err(crate::AppError::MarketData(
             "观察行情统一从公共价格仓储读取".into(),
         ))
@@ -68,10 +68,13 @@ pub(crate) trait WatchMarketProvider: Send + Sync {
 }
 
 #[async_trait]
-pub(crate) trait CatalogSourceProvider: Send + Sync {
+pub(crate) trait SecuritySourceProvider: Send + Sync {
     /// Resolve an exact A-share name or code and collect official public sources.
     /// A verified identity can be returned while its report source is still pending.
-    async fn resolve(&self, query: &str) -> AppResult<crate::models::watch::catalog::Company>;
+    async fn resolve(
+        &self,
+        query: &str,
+    ) -> AppResult<crate::models::market::securities::SecuritySources>;
 }
 
 /// Cached plan reads never trigger source I/O or expose refresh/storage capabilities.

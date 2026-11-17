@@ -1,8 +1,8 @@
 //! Public observation data. Never reads accounts, holdings or transactions.
 mod plans;
 use crate::{
-    models::watch::{DividendBasis, DividendEvent, DividendHistory},
-    ports::market::{DividendPlanProvider, WatchMarketProvider},
+    models::market::dividends::{DividendBasis, DividendEvent, DividendHistory},
+    ports::market::{DividendPlanProvider, SecurityMarketProvider},
     AppError, AppResult,
 };
 use async_trait::async_trait;
@@ -191,7 +191,7 @@ impl DividendPlanProvider for PublicWatchProvider {
     }
 }
 #[async_trait]
-impl WatchMarketProvider for PublicWatchProvider {
+impl SecurityMarketProvider for PublicWatchProvider {
     async fn dividends(&self, symbol: &str, day: NaiveDate) -> AppResult<DividendHistory> {
         let (payload, sources) = self.dividend_payload(symbol).await?;
         let history = DividendHistory {

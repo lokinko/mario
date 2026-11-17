@@ -5,9 +5,12 @@ use crate::{
         accounting::DividendIncome,
         daily::{DailyHistory, EnsureInput, HistoryQuery},
         fx::{FxBook, FxOverrideInput},
-        market::quotes::{FxRateQuote, SecurityPriceQuote},
+        market::{
+            dividends::DividendHistory,
+            quotes::{FxRateQuote, SecurityPriceQuote},
+        },
         portfolio::{HoldingInput, Snapshot},
-        watch::{DividendHistory, Observation, WatchBoard, WatchEntry},
+        watch::{Observation, WatchBoard, WatchEntry},
     },
     AppResult,
 };

@@ -1,9 +1,12 @@
 use super::{params, AppResult, Database, OptionalRow};
 mod rules;
 use crate::models::watch::grid::GridPlan;
-use crate::models::watch::{
-    dividend_prices, DividendHistory, Observation, WatchBoard, WatchEntry, WatchInput, WatchRow,
-    WatchStatus, MAX_WATCHES,
+use crate::models::{
+    market::dividends::DividendHistory,
+    watch::{
+        dividend_prices, Observation, WatchBoard, WatchEntry, WatchInput, WatchRow, WatchStatus,
+        MAX_WATCHES,
+    },
 };
 use crate::AppError;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
@@ -466,7 +469,7 @@ mod tests {
             e.report_date = Some(e.ex_date - Duration::days(180));
         }
         DividendHistory {
-            basis: crate::models::watch::DividendBasis {
+            basis: crate::models::market::dividends::DividendBasis {
                 as_of: day,
                 fetched_at: "2026-07-03T12:00:00Z".into(),
             },
@@ -486,7 +489,7 @@ mod tests {
         data.bars = data
             .calendar
             .iter()
-            .map(|day| crate::models::watch::PriceBar {
+            .map(|day| crate::models::market::series::PriceBar {
                 day: *day,
                 close: Some(100.0),
                 adjusted_close: Some(100.0),

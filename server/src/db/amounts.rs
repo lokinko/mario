@@ -402,7 +402,7 @@ pub(super) fn build(
 /// holdings fall back to their recorded gross dividends.
 pub(super) fn trailing_dividends(
     snapshot: &Snapshot,
-    histories: &BTreeMap<String, crate::models::watch::DividendHistory>,
+    histories: &BTreeMap<String, crate::models::market::dividends::DividendHistory>,
     today: chrono::NaiveDate,
 ) -> AppResult<DividendIncome> {
     let accounting = snapshot
@@ -582,22 +582,24 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
 mod tests {
     use super::*;
 
-    fn history(events: &[(&str, &str)]) -> crate::models::watch::DividendHistory {
-        crate::models::watch::DividendHistory {
-            basis: crate::models::watch::DividendBasis {
+    fn history(events: &[(&str, &str)]) -> crate::models::market::dividends::DividendHistory {
+        crate::models::market::dividends::DividendHistory {
+            basis: crate::models::market::dividends::DividendBasis {
                 as_of: day("2026-06-30"),
                 fetched_at: "2026-06-30T08:00:00Z".into(),
             },
             sources: vec![],
             events: events
                 .iter()
-                .map(|(ex, cash)| crate::models::watch::DividendEvent {
-                    report_date: None,
-                    ex_date: day(ex),
-                    cash_per_ten: (*cash).into(),
-                    bonus_per_ten: "0".into(),
-                    transfer_per_ten: "0".into(),
-                })
+                .map(
+                    |(ex, cash)| crate::models::market::dividends::DividendEvent {
+                        report_date: None,
+                        ex_date: day(ex),
+                        cash_per_ten: (*cash).into(),
+                        bonus_per_ten: "0".into(),
+                        transfer_per_ten: "0".into(),
+                    },
+                )
                 .collect(),
         }
     }

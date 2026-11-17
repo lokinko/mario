@@ -397,7 +397,10 @@ mod tests {
     }
 
     fn save_watch_fixture(db: &Database, symbol: &str, name: &str, many_dividends: bool) {
-        use crate::models::watch::{evaluate, tests::market_fixture, DividendEvent, WatchInput};
+        use crate::models::{
+            market::dividends::DividendEvent,
+            watch::{evaluate, tests::market_fixture, WatchInput},
+        };
         let entry = db
             .save_watch(WatchInput {
                 symbol: symbol.into(),

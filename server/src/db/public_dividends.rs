@@ -1,6 +1,6 @@
 //! Shared public market facts. Never reads tenant schemas, holdings or accounts.
 use crate::{
-    models::watch::{DividendHistory, WatchInput},
+    models::market::{dividends::DividendHistory, securities::normalize_a_share_identity},
     storage::{params, Connection, OptionalRow},
     AppError, AppResult,
 };
@@ -88,13 +88,8 @@ impl PublicDividends {
 }
 
 fn save(connection: &Connection, symbol: &str, history: &DividendHistory) -> AppResult<()> {
-    let input = WatchInput {
-        symbol: symbol.into(),
-        name: symbol.into(),
-        thesis: String::new(),
-    }
-    .normalize()?;
-    if input.symbol != symbol {
+    let (canonical, _) = normalize_a_share_identity(symbol, symbol)?;
+    if canonical != symbol {
         return Err(AppError::Validation("公开分红证券代码须为规范形式".into()));
     }
     history.validate()?;
@@ -110,7 +105,7 @@ fn save(connection: &Connection, symbol: &str, history: &DividendHistory) -> App
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::watch::DividendBasis;
+    use crate::models::market::dividends::DividendBasis;
     #[test]
     fn public_history_survives_reopen_and_startup_seeds_never_overwrite_newer_facts() {
         let url = std::env::var("MARIO_TEST_DATABASE_URL").unwrap();

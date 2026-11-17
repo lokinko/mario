@@ -1,7 +1,7 @@
 //! Official CNINFO identity and annual-report lookup; no account or storage access.
 use crate::{
-    models::watch::{catalog::Company, WatchInput},
-    ports::market::CatalogSourceProvider,
+    models::market::securities::{normalize_a_share_identity, SecuritySources},
+    ports::market::SecuritySourceProvider,
     AppError, AppResult,
 };
 use chrono::{Datelike, Utc};
@@ -76,7 +76,7 @@ impl PublicCatalogSources {
     }
 }
 
-fn identity(directory: &Value, query: &str) -> AppResult<(Company, String)> {
+fn identity(directory: &Value, query: &str) -> AppResult<(SecuritySources, String)> {
     let query = query.trim().to_uppercase().replace(".SH", ".SS");
     if query.is_empty() || query.len() > 120 {
         return Err(AppError::Validation("请输入公司简称或沪深 A 股代码".into()));
@@ -97,13 +97,9 @@ fn identity(directory: &Value, query: &str) -> AppResult<(Company, String)> {
     let row = matches[0];
     let code = row["code"].as_str().unwrap_or_default();
     let symbol = format!("{code}.{}", if code.starts_with('6') { "SS" } else { "SZ" });
-    let input = WatchInput {
-        symbol,
-        name: row["zwjc"].as_str().unwrap_or_default().into(),
-        thesis: String::new(),
-    }
-    .normalize()?;
-    if query.contains('.') && query != input.symbol {
+    let (symbol, name) =
+        normalize_a_share_identity(&symbol, row["zwjc"].as_str().unwrap_or_default())?;
+    if query.contains('.') && query != symbol {
         return Err(AppError::Validation("证券代码与交易所不一致".into()));
     }
     let org = row["orgId"]
@@ -116,9 +112,9 @@ fn identity(directory: &Value, query: &str) -> AppResult<(Company, String)> {
         format!("https://www.szse.cn/certificate/individual/index.html?code={code}")
     };
     Ok((
-        Company {
-            symbol: input.symbol,
-            name: input.name,
+        SecuritySources {
+            symbol,
+            name,
             sources: vec![profile],
             sources_checked_on: None,
         },
@@ -157,8 +153,8 @@ fn annual_report(value: &Value, code: &str, org: &str, end: i64) -> Option<Strin
 }
 
 #[async_trait::async_trait]
-impl CatalogSourceProvider for PublicCatalogSources {
-    async fn resolve(&self, query: &str) -> AppResult<Company> {
+impl SecuritySourceProvider for PublicCatalogSources {
+    async fn resolve(&self, query: &str) -> AppResult<SecuritySources> {
         let (mut company, org) = identity(&self.stocks().await?, query)?;
         let _permit = self
             .slots

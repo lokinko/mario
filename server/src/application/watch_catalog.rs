@@ -5,7 +5,7 @@ use crate::{
         catalog::{Catalog, CatalogBoard, CatalogRow, CatalogSnapshot, Company},
         evaluate, WatchStatus,
     },
-    ports::market::{CatalogSourceProvider, WatchMarketProvider},
+    ports::market::{SecurityMarketProvider, SecuritySourceProvider},
     AppResult,
 };
 use chrono::{Datelike, NaiveDate, Utc};
@@ -14,16 +14,16 @@ use tokio::sync::Mutex;
 
 pub(crate) struct WatchCatalogService {
     store: Arc<PublicWatch>,
-    provider: Arc<dyn WatchMarketProvider>,
-    sources: Arc<dyn CatalogSourceProvider>,
+    provider: Arc<dyn SecurityMarketProvider>,
+    sources: Arc<dyn SecuritySourceProvider>,
     locks: Mutex<BTreeMap<String, Arc<Mutex<()>>>>,
 }
 
 impl WatchCatalogService {
     pub fn new(
         store: Arc<PublicWatch>,
-        provider: Arc<dyn WatchMarketProvider>,
-        sources: Arc<dyn CatalogSourceProvider>,
+        provider: Arc<dyn SecurityMarketProvider>,
+        sources: Arc<dyn SecuritySourceProvider>,
     ) -> Self {
         Self {
             store,
@@ -49,7 +49,7 @@ impl WatchCatalogService {
         {
             return Ok(company.clone());
         }
-        self.sources.resolve(query).await
+        self.sources.resolve(query).await.map(Company::from)
     }
 
     async fn repair_sources(self: &Arc<Self>, industry: Option<&str>) -> AppResult<()> {
@@ -67,7 +67,7 @@ impl WatchCatalogService {
             let service = self.clone();
             work.spawn(async move {
                 match tokio::time::timeout_at(deadline, service.sources.resolve(&company.symbol)).await {
-                    Ok(Ok(resolved)) => service.store.complete_sources(&company, &resolved),
+                    Ok(Ok(resolved)) => service.store.complete_sources(&company, &Company::from(resolved)),
                     Ok(Err(error)) => { tracing::warn!(symbol=%company.symbol, %error, "public company sources remain pending"); Ok(()) }
                     Err(_) => Ok(()),
                 }
@@ -323,8 +323,12 @@ pub(crate) mod tests {
     use super::*;
     use crate::{
         db::Database,
-        models::watch::{
-            tests::market_fixture, DividendBasis, DividendHistory, WatchInput, WatchMarketData,
+        models::{
+            market::{
+                dividends::{DividendBasis, DividendHistory},
+                series::SecurityMarketData,
+            },
+            watch::{tests::market_fixture, WatchInput},
         },
         AppError,
     };
@@ -332,8 +336,11 @@ pub(crate) mod tests {
 
     struct TestSources;
     #[async_trait::async_trait]
-    impl CatalogSourceProvider for TestSources {
-        async fn resolve(&self, _: &str) -> AppResult<Company> {
+    impl SecuritySourceProvider for TestSources {
+        async fn resolve(
+            &self,
+            _: &str,
+        ) -> AppResult<crate::models::market::securities::SecuritySources> {
             Err(AppError::MarketData("测试来源暂缺".into()))
         }
     }
@@ -361,8 +368,8 @@ pub(crate) mod tests {
     }
 
     #[async_trait::async_trait]
-    impl WatchMarketProvider for Source {
-        async fn observation(&self, symbol: &str, day: NaiveDate) -> AppResult<WatchMarketData> {
+    impl SecurityMarketProvider for Source {
+        async fn observation(&self, symbol: &str, day: NaiveDate) -> AppResult<SecurityMarketData> {
             self.prices.fetch_add(1, Ordering::SeqCst);
             tokio::time::sleep(self.delay).await;
             if symbol == "600036.SS" && self.fail_price.load(Ordering::SeqCst) {
@@ -470,12 +477,20 @@ pub(crate) mod tests {
             resolved: Company,
         }
         #[async_trait::async_trait]
-        impl CatalogSourceProvider for Sources {
-            async fn resolve(&self, _: &str) -> AppResult<Company> {
+        impl SecuritySourceProvider for Sources {
+            async fn resolve(
+                &self,
+                _: &str,
+            ) -> AppResult<crate::models::market::securities::SecuritySources> {
                 if self.fail.load(Ordering::SeqCst) {
                     return Err(AppError::MarketData("资料来源暂不可用".into()));
                 }
-                Ok(self.resolved.clone())
+                Ok(crate::models::market::securities::SecuritySources {
+                    symbol: self.resolved.symbol.clone(),
+                    name: self.resolved.name.clone(),
+                    sources: self.resolved.sources.clone(),
+                    sources_checked_on: self.resolved.sources_checked_on.clone(),
+                })
             }
         }
         let store = Arc::new(PublicWatch::test());

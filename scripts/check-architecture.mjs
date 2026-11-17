@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { serverLayers, serverModelOwners, serverModelViolation, userAccountCapabilities, boundaryOf, clientBoundaryViolation, clientBusinessViolation, httpRouteViolation } from './architecture-boundaries.mjs';
+import { serverLayers, serverModelOwners, serverApplicationOwners, serverPortOwners, serverModelViolation, serverBusinessViolation, userAccountCapabilities, boundaryOf, clientBoundaryViolation, clientBusinessViolation, httpRouteViolation } from './architecture-boundaries.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ts = createRequire(resolve(root, 'client/package.json'))('typescript');
@@ -164,6 +164,8 @@ export function rustPaths(source, modulePath = []) {
 export function serverSymbolViolation(source, target) {
   const contractViolation = serverModelViolation(source, target);
   if (contractViolation) return contractViolation;
+  const businessViolation = serverBusinessViolation(source, target);
+  if (businessViolation) return businessViolation;
   if (['application/analysis.rs', 'ports/ai_account.rs', 'context.rs'].includes(source)
       && (['models::portfolio', 'models::portfolio::self'].includes(target)
         || ['models::portfolio::Snapshot', 'models::portfolio::HoldingTrade'].some(path => target === path || target.startsWith(path + '::'))))
@@ -346,6 +348,14 @@ export function checkArchitecture() {
   }
   for (const name of Object.keys(serverModelOwners)) {
     if (!modelModules.has(name)) violations.push(`models/${name}: stale contract owner registration`);
+  }
+  for (const [layer, owners] of [['application', serverApplicationOwners], ['ports', serverPortOwners]]) {
+    const source = readFileSync(resolve(serverRoot, layer, 'mod.rs'), 'utf8');
+    const modules = rustModules(source);
+    if (productionRust(source).replace(/pub\(crate\)\s+mod\s+\w+\s*;/g, '').trim())
+      violations.push(`${layer}/mod.rs: business entry points belong in explicitly owned modules`);
+    for (const name of modules) if (!owners[name]) violations.push(`${layer}/${name}: unassigned business owner`);
+    for (const name of Object.keys(owners)) if (!modules.has(name)) violations.push(`${layer}/${name}: stale business owner registration`);
   }
   const known = rustModules(readFileSync(resolve(serverRoot, 'lib.rs'), 'utf8'));
   const registrations = Object.values(serverLayers).flat();

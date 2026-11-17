@@ -5,7 +5,7 @@ use crate::{
     db::Database,
     http::api_router,
     models::market::quotes::{FxRateQuery, FxRateQuote, SecurityPriceQuery, SecurityPriceQuote},
-    ports::market::{FxRateProvider, SecurityPriceProvider, WatchMarketProvider},
+    ports::market::{FxRateProvider, SecurityMarketProvider, SecurityPriceProvider},
     AppError, AppResult,
 };
 use axum::{http::StatusCode, middleware};
@@ -46,19 +46,19 @@ impl FxRateProvider for Prices {
     }
 }
 #[async_trait::async_trait]
-impl WatchMarketProvider for Prices {
+impl SecurityMarketProvider for Prices {
     async fn dividends(
         &self,
         _: &str,
         _: chrono::NaiveDate,
-    ) -> AppResult<crate::models::watch::DividendHistory> {
+    ) -> AppResult<crate::models::market::dividends::DividendHistory> {
         Err(AppError::MarketData("unused watch provider".into()))
     }
     async fn observation(
         &self,
         _: &str,
         _: chrono::NaiveDate,
-    ) -> AppResult<crate::models::watch::WatchMarketData> {
+    ) -> AppResult<crate::models::market::series::SecurityMarketData> {
         Err(AppError::MarketData("unused watch provider".into()))
     }
 }

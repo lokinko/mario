@@ -31,6 +31,17 @@ pub struct Company {
     pub sources_checked_on: Option<String>,
 }
 
+impl From<crate::models::market::securities::SecuritySources> for Company {
+    fn from(source: crate::models::market::securities::SecuritySources) -> Self {
+        Self {
+            symbol: source.symbol,
+            name: source.name,
+            sources: source.sources,
+            sources_checked_on: source.sources_checked_on,
+        }
+    }
+}
+
 impl Catalog {
     pub fn bundled() -> AppResult<Self> {
         Self::parse(include_str!("../../../data/watch-catalog.json"))

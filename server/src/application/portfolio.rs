@@ -209,12 +209,12 @@ mod integration_tests {
 #[cfg(test)]
 mod dividend_income_tests {
     use super::*;
-    use crate::models::watch::{DividendBasis, DividendEvent, DividendHistory};
+    use crate::models::market::dividends::{DividendBasis, DividendEvent, DividendHistory};
     use chrono::NaiveDate;
 
     struct Offline(Option<DividendHistory>);
     #[async_trait::async_trait]
-    impl crate::ports::market::WatchMarketProvider for Offline {
+    impl crate::ports::market::SecurityMarketProvider for Offline {
         fn dividend_seed(&self, _: &str, _: NaiveDate) -> Option<DividendHistory> {
             self.0.clone()
         }
@@ -272,7 +272,7 @@ mod quote_preview_tests;
 /// keeps the last stored history, whose past ex-dates remain valid.
 pub(crate) async fn dividend_income(
     db: &impl PortfolioAccount,
-    provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
+    provider: Arc<dyn crate::ports::market::SecurityMarketProvider>,
 ) -> AppResult<crate::models::accounting::DividendIncome> {
     let today = super::dividend_calendar::today();
     let symbols = db

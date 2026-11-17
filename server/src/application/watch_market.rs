@@ -1,8 +1,8 @@
 //! Public dividend lookup shared by all accounts; source I/O stays behind the market port.
 use crate::{
     db::PublicDividends,
-    models::watch::{DividendHistory, WatchMarketData},
-    ports::market::{SecurityHistoryProvider, WatchMarketProvider},
+    models::market::{dividends::DividendHistory, series::SecurityMarketData},
+    ports::market::{SecurityHistoryProvider, SecurityMarketProvider},
     AppError, AppResult,
 };
 use chrono::NaiveDate;
@@ -16,7 +16,7 @@ use tokio::{sync::Mutex, time::Instant};
 const FAILURE_RETRY: Duration = Duration::from_secs(60);
 
 pub(crate) struct SharedWatchProvider {
-    source: Arc<dyn WatchMarketProvider>,
+    source: Arc<dyn SecurityMarketProvider>,
     store: Arc<PublicDividends>,
     prices: Arc<dyn SecurityHistoryProvider>,
     locks: Mutex<BTreeMap<String, Weak<Mutex<()>>>>,
@@ -25,7 +25,7 @@ pub(crate) struct SharedWatchProvider {
 
 impl SharedWatchProvider {
     pub fn new(
-        source: Arc<dyn WatchMarketProvider>,
+        source: Arc<dyn SecurityMarketProvider>,
         store: Arc<PublicDividends>,
         prices: Arc<dyn SecurityHistoryProvider>,
     ) -> Self {
@@ -51,7 +51,7 @@ impl SharedWatchProvider {
 }
 
 #[async_trait::async_trait]
-impl WatchMarketProvider for SharedWatchProvider {
+impl SecurityMarketProvider for SharedWatchProvider {
     fn price_revision(&self, symbol: &str) -> Option<String> {
         self.prices.cached_revision(symbol).unwrap_or_else(|error| {
             tracing::warn!(symbol,%error,"public price revision read failed");
@@ -100,7 +100,7 @@ impl WatchMarketProvider for SharedWatchProvider {
         }
     }
 
-    async fn observation(&self, symbol: &str, day: NaiveDate) -> AppResult<WatchMarketData> {
+    async fn observation(&self, symbol: &str, day: NaiveDate) -> AppResult<SecurityMarketData> {
         let history = self.prices.history(symbol, day).await?;
         let calendar = self.prices.history("000001.SS", day).await?;
         history_market(&history, &calendar, day)
@@ -116,7 +116,7 @@ fn history_market(
     history: &crate::models::market::history::PriceHistory,
     calendar: &crate::models::market::history::PriceHistory,
     through: NaiveDate,
-) -> AppResult<WatchMarketData> {
+) -> AppResult<SecurityMarketData> {
     use rust_decimal::{prelude::ToPrimitive, Decimal};
     history.validate()?;
     calendar.validate()?;
@@ -136,14 +136,14 @@ fn history_market(
         .iter()
         .filter(|b| b.day <= through)
         .map(|b| {
-            Ok(crate::models::watch::PriceBar {
+            Ok(crate::models::market::series::PriceBar {
                 day: b.day,
                 close: number(&b.raw_close)?,
                 adjusted_close: number(&b.adjusted_close)?,
             })
         })
         .collect::<AppResult<_>>()?;
-    Ok(WatchMarketData {
+    Ok(SecurityMarketData {
         price_revision: Some(history.revision()?),
         bars,
         calendar: calendar
@@ -167,7 +167,10 @@ mod tests {
     use super::*;
     use crate::{
         db::Database,
-        models::watch::{tests::market_fixture, DividendBasis, WatchInput},
+        models::{
+            market::dividends::DividendBasis,
+            watch::{tests::market_fixture, WatchInput},
+        },
     };
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -200,7 +203,7 @@ mod tests {
         }
     }
     #[async_trait::async_trait]
-    impl WatchMarketProvider for Source {
+    impl SecurityMarketProvider for Source {
         async fn dividends(&self, _: &str, day: NaiveDate) -> AppResult<DividendHistory> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -209,7 +212,7 @@ mod tests {
             }
             Ok(history(day))
         }
-        async fn observation(&self, _: &str, day: NaiveDate) -> AppResult<WatchMarketData> {
+        async fn observation(&self, _: &str, day: NaiveDate) -> AppResult<SecurityMarketData> {
             if self.price_fail.load(Ordering::SeqCst) {
                 return Err(AppError::MarketData("测试行情失败".into()));
             }

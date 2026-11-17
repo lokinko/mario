@@ -3,7 +3,7 @@
 use crate::db::Database;
 use crate::{
     models::watch::{evaluate, WatchBoard},
-    ports::market::WatchMarketProvider,
+    ports::market::SecurityMarketProvider,
     ports::user_account::WatchAccount,
     AppResult,
 };
@@ -23,7 +23,7 @@ pub fn cutoff() -> NaiveDate {
 /// each entry before committing so a deleted/edited watch cannot be resurrected.
 pub async fn refresh(
     db: &impl WatchAccount,
-    provider: Arc<dyn WatchMarketProvider>,
+    provider: Arc<dyn SecurityMarketProvider>,
     force: bool,
 ) -> AppResult<WatchBoard> {
     let day = cutoff();
@@ -155,7 +155,10 @@ pub async fn refresh(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::watch::{tests::market_fixture, WatchInput, WatchMarketData};
+    use crate::models::{
+        market::series::SecurityMarketData,
+        watch::{tests::market_fixture, WatchInput},
+    };
     use std::sync::atomic::{AtomicUsize, Ordering};
     struct Provider {
         calls: AtomicUsize,
@@ -166,25 +169,25 @@ mod tests {
     }
     struct SeededProvider {
         live: Provider,
-        history: crate::models::watch::DividendHistory,
+        history: crate::models::market::dividends::DividendHistory,
     }
     #[async_trait::async_trait]
-    impl WatchMarketProvider for SeededProvider {
+    impl SecurityMarketProvider for SeededProvider {
         fn dividend_seed(
             &self,
             symbol: &str,
             day: NaiveDate,
-        ) -> Option<crate::models::watch::DividendHistory> {
+        ) -> Option<crate::models::market::dividends::DividendHistory> {
             (symbol == "600036.SS" && self.history.basis.as_of <= day).then(|| self.history.clone())
         }
         async fn dividends(
             &self,
             symbol: &str,
             day: NaiveDate,
-        ) -> AppResult<crate::models::watch::DividendHistory> {
+        ) -> AppResult<crate::models::market::dividends::DividendHistory> {
             self.live.dividends(symbol, day).await
         }
-        async fn observation(&self, symbol: &str, day: NaiveDate) -> AppResult<WatchMarketData> {
+        async fn observation(&self, symbol: &str, day: NaiveDate) -> AppResult<SecurityMarketData> {
             self.live.observation(symbol, day).await
         }
     }
@@ -249,12 +252,12 @@ mod tests {
         assert_eq!(board.rows[0].latest.as_ref().unwrap().yield_pct, None);
     }
     #[async_trait::async_trait]
-    impl WatchMarketProvider for Provider {
+    impl SecurityMarketProvider for Provider {
         async fn dividends(
             &self,
             _: &str,
             day: NaiveDate,
-        ) -> AppResult<crate::models::watch::DividendHistory> {
+        ) -> AppResult<crate::models::market::dividends::DividendHistory> {
             self.dividend_calls.fetch_add(1, Ordering::SeqCst);
             if self.dividend_fail {
                 return Err(crate::AppError::MarketData("测试故障".into()));
@@ -265,8 +268,8 @@ mod tests {
                 event.ex_date += day - end;
                 event.report_date = Some(event.ex_date - chrono::Duration::days(180));
             }
-            Ok(crate::models::watch::DividendHistory {
-                basis: crate::models::watch::DividendBasis {
+            Ok(crate::models::market::dividends::DividendHistory {
+                basis: crate::models::market::dividends::DividendBasis {
                     as_of: day,
                     fetched_at: Utc::now().to_rfc3339(),
                 },
@@ -274,7 +277,7 @@ mod tests {
                 events,
             })
         }
-        async fn observation(&self, _: &str, day: NaiveDate) -> AppResult<WatchMarketData> {
+        async fn observation(&self, _: &str, day: NaiveDate) -> AppResult<SecurityMarketData> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             if self.fail {
                 return Err(crate::AppError::MarketData("测试故障".into()));

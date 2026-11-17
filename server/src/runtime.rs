@@ -19,7 +19,7 @@ pub async fn run_from_env() -> AppResult<()> {
                 "--export-watch-dividends 需要一个尚不存在的 CSV 文件路径".into(),
             ));
         }
-        return crate::market_data::watch_archive::export(std::path::Path::new(&args[1]));
+        return export_watch_dividends(std::path::Path::new(&args[1]));
     }
     if args.first().map(String::as_str) == Some("--chatgpt-auth") {
         return tokio::select! {
@@ -125,4 +125,36 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
     tokio::select! { _ = ctrl_c => {}, _ = terminate => {} }
+}
+
+fn export_watch_dividends(path: &std::path::Path) -> AppResult<()> {
+    use std::io::Write;
+    let archive = crate::market_data::watch_archive::load()?;
+    let bytes = crate::application::watch_export::render(&archive)?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?
+        .write_all(&bytes)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn export_keeps_unknowns_blank_and_refuses_overwriting() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("watch.csv");
+        export_watch_dividends(&path).unwrap();
+        let data = std::fs::read(&path).unwrap();
+        let mut reader = csv::Reader::from_reader(&data[3..]);
+        let rows: Vec<_> = reader.records().collect::<Result<_, _>>().unwrap();
+        assert_eq!(rows.len(), 210);
+        let unknown = rows.iter().find(|r| &r[0] == "002008.SZ").unwrap();
+        assert_eq!(&unknown[4], "");
+        let bank = rows.iter().find(|r| &r[0] == "600036.SS").unwrap();
+        assert_eq!(&bank[5], "40.32");
+        assert!(export_watch_dividends(&path).is_err());
+    }
 }

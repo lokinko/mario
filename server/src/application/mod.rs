@@ -14,3 +14,5 @@ pub(crate) mod watch_market;
 pub(crate) mod dividend_calendar;
 
 pub(crate) mod dividend_plans;
+
+pub(crate) mod watch_export;

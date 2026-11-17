@@ -1,10 +1,14 @@
 //! Market value contracts and deterministic identity/date policies. No providers or storage.
 pub(crate) mod close;
+pub(crate) mod dividend_archive;
 pub(crate) mod dividend_plans;
+pub(crate) mod dividends;
 pub(crate) mod eastmoney;
 pub(crate) mod history;
 pub(crate) mod monitor;
 pub(crate) mod quotes;
+pub(crate) mod securities;
+pub(crate) mod series;
 use crate::{AppError, AppResult};
 use chrono::Utc;
 pub fn today() -> String {

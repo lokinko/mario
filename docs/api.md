@@ -296,9 +296,11 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | --- | --- |
 | WatchRules | `minYieldBps:integer; daily,weekly:BandRule`；BandRule 为 `reference:lower/middle/upper; mode:near/at_or_below/at_or_above; offsetBps:integer`。默认业务规则引用用户 spec，校验见[规则类型](../server/src/models/watch/rules.rs) |
 | GridPlan | `budget,basePrice:string; sizeUnit:amount/budgetPct; levels:{price:string,size:string}[]`，金额/价格均为十进制字符串，size 按 sizeUnit 解释。投影与合法范围见[网格类型](../server/src/models/watch/grid.rs) |
-| Catalog / Company | Catalog 为 `version:integer; verifiedOn:string; industries:{id:string,name:string,companies:Company[]}[]`；Company 为 `symbol,name:string; sources?:string[]; sourcesCheckedOn?:string/null`，见[公共目录类型](../server/src/models/watch/catalog.rs) |
+| Catalog / Company | Catalog 为 `version:integer; verifiedOn:string; industries:{id:string,name:string,companies:Company[]}[]`；Company 为 `symbol,name:string; sources?:string[]; sourcesCheckedOn?:string/null`，见[用户共享候选目录类型](../server/src/models/watch/catalog.rs) |
 | ResearchEvidenceInput | `content?,assetName?,category?:string=""; attachments?:ResearchAttachmentInput[]=[]`；资料内容与附件还须通过业务校验，空默认不是“空资料一定可保存” |
 | ResearchAttachmentInput | `name:string,dataBase64:string`；传输是 JSON base64，不使用 multipart。响应附件元数据为 `id,name,byteSize,extractionNote`，提取的内部文本不序列化返回 |
+
+官方资料解析内部使用市场 [SecuritySources](../server/src/models/market/securities.rs)，再转换为用户目录 Company；对外响应字段不变。观察响应中的公共分红字段见[市场分红类型](../server/src/models/market/dividends.rs)，观察阈值和结果仍见用户观察类型。
 
 ### 6.3 AI 输入与共用输出
 

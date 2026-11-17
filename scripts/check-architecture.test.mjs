@@ -274,3 +274,28 @@ test('owned contracts preserve user to market and AI to authorized user directio
   assert(clientBoundaryViolation('types/unowned.ts'));
   assert.equal(clientBoundaryViolation('types/market.ts'), undefined);
 });
+
+test('market sources and public repositories never depend on user watch contracts or account ports', async () => {
+  const { serverSymbolViolation, rustPaths } = await import('./check-architecture.mjs');
+  for (const source of ['market_data/watch.rs', 'market_data/watch_catalog.rs', 'market_data/watch_archive.rs',
+    'ports/market.rs', 'application/watch_market.rs', 'application/public_prices/monitor.rs', 'db/public_dividends.rs']) {
+    for (const target of ['models::watch', 'models::watch::WatchInput', 'models::watch::MIN_YIELD_PCT',
+      'models::portfolio::Snapshot', 'models::analysis::ContextSelection', 'ports::user_account',
+      'ports::account::AccountSession', 'application::watch::refresh'])
+      assert(serverSymbolViolation(source, target), `${source} -> ${target}`);
+    for (const target of ['models::market::dividends::DividendHistory', 'models::market::series::SecurityMarketData',
+      'models::market::securities::SecuritySources'])
+      assert.equal(serverSymbolViolation(source, target), undefined, `${source} -> ${target}`);
+    for (const target of ['db', 'db::Database', 'db::PublicWatch'])
+      assert(serverSymbolViolation(source, target), `${source} -> ${target}`);
+  }
+  assert.equal(serverSymbolViolation('application/watch_export.rs', 'models::watch::MIN_YIELD_PCT'), undefined);
+  assert.equal(serverSymbolViolation('application/watch_export.rs', 'models::market::dividend_archive::DividendArchive'), undefined);
+  assert(serverViolation('application', 'market_data'));
+  assert(serverSymbolViolation('application/analysis.rs', 'application::watch'));
+  assert(serverSymbolViolation('application/watch_catalog.rs', 'application::model_settings'));
+  assert.equal(serverSymbolViolation('application/watch_catalog.rs', 'ports::market::SecuritySourceProvider'), undefined);
+  const paths = rustPaths('use super::super::{models::watch as personal, ports::user_account as account};', ['application', 'watch_market']);
+  assert.deepEqual([...paths].sort(), ['models::watch', 'ports::user_account']);
+  for (const path of paths) assert(serverSymbolViolation('application/watch_market.rs', path));
+});
