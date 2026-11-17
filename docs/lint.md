@@ -20,6 +20,8 @@ lint 负责可自动判定的代码质量、模块边界、契约一致性和文
 
 当前[架构检查](../scripts/check-architecture.mjs)覆盖前端跨页面依赖、共享模块反向依赖、循环、不可达前端模块，以及后端领域、用例、端口、数据库驱动、行情适配、AI 执行和认证等技术边界。检查器自身有[回归测试](../scripts/check-architecture.test.mjs)。
 
+[技术模块登记](../scripts/architecture-boundaries.mjs)列出前后端技术层与现有页面、API 客户端模块。新增前端模块和后端顶层生产模块必须显式登记，后端过期或重复登记会报错；仅测试模块不参与生产登记。登记用于避免新模块绕过检查，不将现有页面模块等同于用户、市场、AI 三个业务域。
+
 现有混合职责在架构文档中显式登记。检查通过不能掩盖尚未解决的业务边界，也不要求本轮立即重构全库。新增约束应针对明确的职责和依赖，不通过目录名称推断整个目录只属于一个业务域。
 
 ## 3. 契约一致性
@@ -28,13 +30,17 @@ lint 负责可自动判定的代码质量、模块边界、契约一致性和文
 
 现有[契约检查](../scripts/check-contracts.mjs)将 Rust 序列化夹具交给 TypeScript 检查，并核对部分请求版本策略，覆盖金额、成交、财务档案、观察规则、模型配置和流式事件等契约。它不等于所有接口已经覆盖。
 
-该入口会运行 Rust 契约夹具，并通过一次性 PostgreSQL 启动器执行，需要本机 Rust 与 PostgreSQL 工具；它不是纯文本静态扫描。现有接口清单与调用契约见 [API 文档](api.md)，路由与该文档的持续自动对应检查尚未实现。
+该入口会运行 Rust 契约夹具，并通过一次性 PostgreSQL 启动器执行，需要本机 Rust 与 PostgreSQL 工具；它不是纯文本静态扫描。现有接口清单与调用契约见 [API 文档](api.md)；`npm run check:docs` 核对其方法与路径是否对应实际路由，不验证全部字段或副作用描述。
 
 ## 4. 文档有效性
 
 检查文档引用的文件路径、链接、锚点、脚本入口，以及生成内容是否与来源一致。只检查已经确认保留的文档；历史内容不会因缺失引用而自动恢复。
 
-现有[入口检查](../scripts/check-entrypoints.mjs)验证 npm 脚本与完整门禁引用的脚本路径，其[测试](../scripts/check-entrypoints.test.mjs)验证缺失入口会被发现。它尚未覆盖全部 Markdown 链接、锚点或 API 生成内容。
+现有[入口检查](../scripts/check-entrypoints.mjs)验证 npm 脚本与完整门禁引用的脚本路径，其[测试](../scripts/check-entrypoints.test.mjs)验证缺失入口会被发现。
+
+[文档检查](../scripts/check-docs.mjs)通过 `npm run check:docs` 检查根 README、AGENTS.md 与 `docs/` 内 Markdown 的内联本地链接、标题锚点和冲突标记，并比较 `hosted.rs`、`agent.rs`、`http/` 中的字面量路由方法/路径与 API 表格。忽略注释、字符串示例、仅测试代码和通配 404 兜底；遇到不支持的路由声明会失败，要求同步扩展扫描器。其[回归测试](../scripts/check-docs.test.mjs)验证接口遗漏、过期、重复及链接失效会被发现；该入口已接入 `npm test`。
+
+此检查不访问远程链接，不覆盖其他目录中尚待内容复核的说明文件、全部 Markdown 语法、HTTP 字段语义或全量生成 schema。检查器需要已安装前端 TypeScript 依赖，复用架构检查的 Rust 源码屏蔽逻辑。
 
 已确认保留的文档由[文档索引](README.md)提供查询入口。检查结果须说明实际覆盖的文件，不能将索引所列文档的局部链接检查通过描述为整个仓库文档已经通过检查。
 
@@ -51,6 +57,7 @@ lint 负责可自动判定的代码质量、模块边界、契约一致性和文
 | 技术架构 | `npm run check:architecture` | 现有边界检查及检查器回归 |
 | 前后端契约 | `npm run check:contracts` | Rust 夹具、TypeScript 契约及请求策略的一部分 |
 | 脚本入口 | `npm run check:entrypoints` | 脚本存在性及检查器回归 |
+| 文档与 API 清单 | `npm run check:docs` | 已确认文档的本地引用、冲突标记、路由清单及检查器回归 |
 | 完整门禁 | `npm test` | 见[完整测试脚本](../scripts/test.sh)，包含构建、检查、单元及集成验收，范围大于 lint |
 
 纯文档改动核对事实、链接、锚点、冲突标记并执行 `git diff --check`。代码或检查器发生变化时，补充相应类型检查和有意义的回归；不能把无关业务测试的执行次数当成文档或架构质量。

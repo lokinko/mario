@@ -344,4 +344,4 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 
 现有[契约检查](../scripts/check-contracts.mjs)覆盖部分 Rust/TypeScript 字段与请求策略，[传输回归](../client/src/api.hosted.test.ts)、[托管验收](../scripts/test-hosted.mjs)、[功能 API 验收](../scripts/test-functional-api.mjs)及各 HTTP 模块内测试提供进一步依据。本文建立时核对路由清单、字段来源、链接和差异，不代表这些完整测试已重新执行。
 
-目前没有持续运行的“API 文档与路由自动对应”检查，也没有全量 OpenAPI schema；本次核对不应描述成 lint 已新增门禁。后续检查范围见 [lint 文档](lint.md)，其他已确认文档见[文档索引](README.md)。
+`npm run check:docs` 持续核对本文表格与 `hosted.rs`、`agent.rs`、`http/` 路由的方法和路径，检查遗漏、过期或重复条目，已接入完整门禁。它不校验全部字段、权限与副作用，也不生成全量 OpenAPI schema；这些内容仍须结合类型和契约测试核实。范围与限制见 [lint 文档](lint.md)，其他已确认文档见[文档索引](README.md)。

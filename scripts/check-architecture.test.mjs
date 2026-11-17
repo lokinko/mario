@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { clientViolation, serverViolation, serverFileViolation, cycles, rustDependencies, checkArchitecture } from './check-architecture.mjs';
+import { clientViolation, serverViolation, serverFileViolation, cycles, rustDependencies, rustModules, checkArchitecture } from './check-architecture.mjs';
 
 test('rejects reverse dependencies and cross-feature UI while allowing ports and domain data', () => {
   assert(clientViolation('features/research/Report.tsx', 'features/reviews/List.tsx'));
@@ -25,6 +25,17 @@ test('Rust scan handles nested imports, prompt strings, characters, comments, an
   assert.deepEqual([...rustDependencies(source)].sort(), ['AppResult', 'db', 'models', 'risk', 'valuation']);
 });
 test('the checked-out project respects its boundaries', () => { checkArchitecture(); });
+test('production module registration excludes test-only declarations with attributes', () => {
+  assert.deepEqual([...rustModules(`mod accounts;
+    #[cfg(test)]
+    #[path = "contract_tests.rs"]
+    mod contract_tests;
+    pub(crate) mod application;
+    // mod ghost;
+    const EXAMPLE: &str = "mod ghost;";
+    #[cfg(test)] mod tests { mod nested; }
+  `)], ['accounts', 'application']);
+});
 
 test('site activity cannot inspect tenant ledgers or private workflows', () => {
   for (const target of ['db', 'application', 'ai', 'http', 'market_data', 'context'])
@@ -121,4 +132,19 @@ test('public collection monitoring preserves public orchestration boundaries', (
 test('site model catalogs only depend on execution ports and errors', () => {
   for (const target of ['ports', 'error']) assert.equal(serverFileViolation('ai/model_catalog.rs', target), undefined);
   for (const target of ['db', 'accounts', 'context', 'application', 'http', 'ai', 'models']) assert(serverFileViolation('ai/model_catalog.rs', target));
+});
+
+test('new modules require an explicit boundary instead of silently escaping the rules', async () => {
+  const { serverLayers, clientLayers, boundaryOf, clientBoundaryViolation } = await import('./architecture-boundaries.mjs');
+  for (const layers of [serverLayers, clientLayers]) {
+    const names = Object.values(layers).flat();
+    assert.equal(new Set(names).size, names.length, 'each module has exactly one technical owner');
+  }
+  assert.equal(boundaryOf(serverLayers, 'new_workflow'), undefined);
+  assert.equal(boundaryOf(serverLayers, 'application'), 'application');
+  assert(clientBoundaryViolation('features/new-domain/Page.tsx'));
+  assert(clientBoundaryViolation('api/new-domain.ts'));
+  assert(clientBoundaryViolation('new-shared/file.ts'));
+  assert.equal(clientBoundaryViolation('features/watch/BuyWatch.tsx'), undefined);
+  assert.equal(clientBoundaryViolation('api/portfolio/financialRequest.ts'), undefined);
 });

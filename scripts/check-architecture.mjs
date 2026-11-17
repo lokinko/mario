@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { serverLayers, boundaryOf, clientBoundaryViolation } from './architecture-boundaries.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ts = createRequire(resolve(root, 'client/package.json'))('typescript');
@@ -118,7 +119,10 @@ export function rustDependencies(source, modulePath = []) {
   }
   return names;
 }
-const core = new Set(['models', 'context', 'risk', 'planning', 'valuation', 'evidence', 'event_import']);
+export function rustModules(source) {
+  return new Set([...productionRust(source).matchAll(/^\s*(?:pub(?:\([^)]*\))?\s+)?mod (\w+)\s*;/gm)].map(match => match[1]));
+}
+const core = new Set(serverLayers.domain);
 const infrastructure = new Set(['db', 'storage', 'accounts', 'secrets', 'market_data']);
 const transport = new Set(['http', 'hosted', 'runtime', 'agent', 'streaming', 'composition', 'codex_bridge_worker']);
 export function serverViolation(source, target) {
@@ -182,6 +186,8 @@ export function checkArchitecture() {
   const clientRoot = resolve(root, 'client/src');
   for (const path of files(clientRoot, /\.tsx?$/).filter(path => !/\.test\./.test(path) && !posix(path).includes('/test/'))) {
     const name = posix(relative(clientRoot, path));
+    const boundaryViolation = clientBoundaryViolation(name);
+    if (boundaryViolation) violations.push(`${name}: ${boundaryViolation}`);
     const source = readFileSync(path, 'utf8');
     const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
     const dependencies = new Set();
@@ -221,7 +227,15 @@ export function checkArchitecture() {
     if (!reachable.has(name)) violations.push(`${name}: unused module, not reachable from main.tsx`);
   }
   const serverRoot = resolve(root, 'server/src');
-  const known = new Set([...readFileSync(resolve(serverRoot, 'lib.rs'), 'utf8').matchAll(/^mod (\w+);/gm)].map(m => m[1]));
+  const known = rustModules(readFileSync(resolve(serverRoot, 'lib.rs'), 'utf8'));
+  const registrations = Object.values(serverLayers).flat();
+  if (new Set(registrations).size !== registrations.length) violations.push('duplicate server boundary registration');
+  for (const name of known) {
+    if (!boundaryOf(serverLayers, name)) violations.push(`${name}: unassigned server boundary`);
+  }
+  for (const name of Object.values(serverLayers).flat()) {
+    if (!known.has(name)) violations.push(`${name}: stale server boundary registration`);
+  }
   for (const path of files(serverRoot, /\.rs$/).filter(path => !/(?:^|[\\/])(?:tests|postgres_tests)\.rs$/.test(path))) {
     const name = posix(relative(serverRoot, path)), owner = name.split('/')[0].replace(/\.rs$/, '');
     if (!known.has(owner)) continue;
@@ -232,7 +246,7 @@ export function checkArchitecture() {
       violations.push(`${name}: mutable market resources belong to injected instances`);
     if (owner !== 'db' && /use\s+(?:super|crate)::\*/.test(code)) violations.push(`${name}: production imports must be explicit`);
     if (owner !== 'storage' && /\b(?:postgres|rusqlite)::/.test(code)) violations.push(`${name}: database drivers belong in storage.rs`);
-    if (['application', 'models', 'context', 'risk', 'planning', 'valuation', 'evidence', 'event_import', 'db', 'error'].includes(owner) && /\baxum::/.test(code))
+    if (['application', 'models', 'context', 'risk', 'planning', 'valuation', 'evidence', 'db', 'error'].includes(owner) && /\baxum::/.test(code))
       violations.push(`${name}: HTTP framework belongs in adapters`);
     if (!serverGraph.has(owner)) serverGraph.set(owner, new Set());
     for (const target of rustDependencies(source, name.replace(/\.rs$/, '').replace(/\/mod$/, '').split('/'))) {
