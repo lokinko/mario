@@ -8,9 +8,9 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { InvestmentMethodology } from "./InvestmentMethodology";
-import * as api from "../../api/settings";
+import * as api from "../../api/methodology";
 
-vi.mock("../../api/settings", () => ({
+vi.mock("../../api/methodology", () => ({
   getInvestmentMethodology: vi.fn(),
   saveInvestmentMethodology: vi.fn(),
 }));

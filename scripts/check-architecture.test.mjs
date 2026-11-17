@@ -3,9 +3,9 @@ import { test } from 'node:test';
 import { clientViolation, serverViolation, serverFileViolation, cycles, rustDependencies, rustModules, checkArchitecture } from './check-architecture.mjs';
 
 test('rejects reverse dependencies and cross-feature UI while allowing ports and domain data', () => {
-  assert(clientViolation('features/research/Report.tsx', 'features/reviews/List.tsx'));
-  assert(clientViolation('lib/transport.ts', 'api/research.ts'));
-  assert.equal(clientViolation('features/research/Report.tsx', 'components/PageHeader.tsx'), undefined);
+  assert(clientViolation('features/advisor/Report.tsx', 'features/reviews/List.tsx'));
+  assert(clientViolation('lib/transport.ts', 'api/analysis.ts'));
+  assert.equal(clientViolation('features/advisor/Report.tsx', 'components/PageHeader.tsx'), undefined);
   for (const [from, to] of [['models','ai'], ['ai','db'], ['db','application'], ['db','market_data'], ['application','agent'], ['agent','db']]) assert(serverViolation(from, to));
   assert(serverViolation('application', 'ai'));
   assert.equal(serverViolation('db', 'models'), undefined);
@@ -80,7 +80,7 @@ test('local ChatGPT credentials cannot leak into hosted workflows or domain stat
 
 test('domain clients can split internally without importing another domain', () => {
   assert.equal(clientViolation('api/portfolio.ts', 'api/portfolio/financialRequest.ts'), undefined);
-  assert(clientViolation('api/research.ts', 'api/portfolio/financialRequest.ts'));
+  assert(clientViolation('api/analysis.ts', 'api/portfolio/financialRequest.ts'));
   assert(clientViolation('api/portfolio/financialRequest.ts', 'api/settings.ts'));
   assert(clientViolation('features/reviews/ReviewCenter.tsx', 'app/navigation.ts'));
 });
@@ -147,4 +147,27 @@ test('new modules require an explicit boundary instead of silently escaping the 
   assert(clientBoundaryViolation('new-shared/file.ts'));
   assert.equal(clientBoundaryViolation('features/watch/BuyWatch.tsx'), undefined);
   assert.equal(clientBoundaryViolation('api/portfolio/financialRequest.ts'), undefined);
+});
+
+test('user features stay independent of AI while analysis can read user evidence through its API', async () => {
+  const { featureModules, apiModules, clientFeatureOwners, clientApiOwners } = await import('./architecture-boundaries.mjs');
+  assert.deepEqual(Object.keys(clientFeatureOwners).sort(), [...featureModules].sort());
+  assert.deepEqual(Object.keys(clientApiOwners).sort(), [...apiModules].sort());
+  for (const feature of ['evidence', 'methodology', 'portfolio', 'watch']) {
+    for (const api of ['analysis', 'settings', 'memory'])
+      assert(clientViolation(`features/${feature}/Page.tsx`, `api/${api}.ts`));
+  }
+  assert.equal(clientViolation('features/evidence/Page.tsx', 'api/evidence.ts'), undefined);
+  assert.equal(clientViolation('features/methodology/Page.tsx', 'api/methodology.ts'), undefined);
+  assert.equal(clientViolation('features/advisor/ReportSources.tsx', 'api/evidence.ts'), undefined);
+});
+
+test('user evidence and methodology routes cannot be mixed back into AI adapters', async () => {
+  const { httpRouteViolation } = await import('./architecture-boundaries.mjs');
+  assert(httpRouteViolation('http/analysis.rs', 'POST /api/research-evidence'));
+  assert(httpRouteViolation('http/model_settings.rs', 'PUT /api/investment-methodology'));
+  assert(httpRouteViolation('http/evidence.rs', 'GET /api/analyses'));
+  assert(httpRouteViolation('http/other.rs', 'GET /api/analysis/preview'));
+  assert.equal(httpRouteViolation('http/evidence.rs', 'PUT /api/research-evidence/{id}/tags'), undefined);
+  assert.equal(httpRouteViolation('http/analysis.rs', 'GET /api/analyses/{id}'), undefined);
 });

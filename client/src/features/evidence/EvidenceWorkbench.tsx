@@ -9,7 +9,7 @@ import {
   saveResearchEvidence,
   setResearchEvidenceStatus,
   setResearchEvidenceTags,
-} from "../../api/research";
+} from "../../api/evidence";
 import type { ResearchEvidence, ResearchEvidenceTags } from "../../types";
 import { LoadState } from "../../components/LoadState";
 import { saveAttachmentDownload } from "../../lib/download";

@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { serverLayers, boundaryOf, clientBoundaryViolation } from './architecture-boundaries.mjs';
+import { serverLayers, boundaryOf, clientBoundaryViolation, clientBusinessViolation, httpRouteViolation } from './architecture-boundaries.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ts = createRequire(resolve(root, 'client/package.json'))('typescript');
@@ -19,6 +19,8 @@ function clientLayer(path) {
   return path.split('/')[0];
 }
 export function clientViolation(source, target) {
+  const businessViolation = clientBusinessViolation(source, target);
+  if (businessViolation) return businessViolation;
   const from = clientLayer(source), to = clientLayer(target);
   if (from === 'features' && ['app', 'App.tsx', 'main.tsx'].includes(to))
     return 'features receive application callbacks, not application implementations';
@@ -118,6 +120,25 @@ export function rustDependencies(source, modulePath = []) {
     }
   }
   return names;
+}
+export function rustRoutes(source) {
+  const code = productionRust(source), routes = [];
+  for (const match of code.matchAll(/\.route\s*\(/g)) {
+    const start = match.index + match[0].length;
+    const path = /^\s*"([^"\n]+)"\s*,/.exec(source.slice(start));
+    assert(path, 'route path must be a string literal; extend the inventory scanner for new route syntax');
+    let depth = 1, end = start;
+    for (; end < code.length && depth; end++) {
+      if (code[end] === '(') depth++;
+      if (code[end] === ')') depth--;
+    }
+    assert.equal(depth, 0, `unbalanced route ${path[1]}`);
+    if (path[1].includes('{*')) continue; // Unknown-path fallback is described in prose.
+    const methods = [...code.slice(start, end - 1).matchAll(/\b(get|post|put|delete|patch|head|options)\s*\(/g)].map(item => item[1].toUpperCase());
+    assert(methods.length, `unrecognized route methods: ${path[1]}`);
+    routes.push(...methods.map(method => `${method} ${path[1]}`));
+  }
+  return routes;
 }
 export function rustModules(source) {
   return new Set([...productionRust(source).matchAll(/^\s*(?:pub(?:\([^)]*\))?\s+)?mod (\w+)\s*;/gm)].map(match => match[1]));
@@ -240,6 +261,12 @@ export function checkArchitecture() {
     const name = posix(relative(serverRoot, path)), owner = name.split('/')[0].replace(/\.rs$/, '');
     if (!known.has(owner)) continue;
     const source = readFileSync(path, 'utf8'), code = productionRust(source);
+    if (owner === 'http') {
+      for (const route of rustRoutes(source)) {
+        const violation = httpRouteViolation(name, route);
+        if (violation) violations.push(`${name}: ${route}: ${violation}`);
+      }
+    }
     if (['ports', 'application'].includes(owner) && /\breqwest::/.test(code))
       violations.push(`${name}: network clients belong in execution adapters`);
     if (['prices', 'market_data'].includes(owner) && /\bstatic\s+\w+\s*:/.test(code))

@@ -1,12 +1,14 @@
 //! HTTP adapters. Business workflows live in application; authentication selects a context.
+mod analysis;
 pub(crate) mod codex_bridge;
 mod error;
+mod evidence;
 mod memory;
+mod methodology;
+mod model_settings;
 pub(crate) mod policy;
 mod portfolio;
-mod research;
 mod reviews;
-mod settings;
 mod watch;
 use crate::{
     application::portfolio::{MarketServices, PortfolioService},
@@ -39,10 +41,12 @@ pub(crate) fn api_router() -> Router {
             axum::routing::any(|| async { axum::http::StatusCode::NOT_FOUND }),
         )
         .merge(portfolio::router())
-        .merge(research::router())
+        .merge(analysis::router())
+        .merge(evidence::router())
         .merge(memory::router())
         .merge(reviews::router())
-        .merge(settings::router())
+        .merge(methodology::router())
+        .merge(model_settings::router())
         .merge(watch::router())
         .merge(codex_bridge::router())
 }

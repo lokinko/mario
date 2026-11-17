@@ -2,7 +2,7 @@
 
 用户域保存用户确认的事实、资料和判断，并使用市场数据进行确定性计算。本文按本次讨论确认的范围重建；全局归属与现有代码映射见[架构](../architecture.md)。
 
-本文定义业务行为与不变量。具体 HTTP 字段、状态码和流式协议留在后续单独讨论的 API 文档中，不在这里维护另一套接口定义。
+本文定义业务行为与不变量。具体 HTTP 字段、状态码和流式协议见 [API 文档](../api.md)，不在这里维护另一套接口定义。
 
 ## 1. 账号与个人数据
 
@@ -52,7 +52,7 @@
 - 资料与附件保存保持一致；失败时保留可重试的输入。
 - AI 只能按授权使用资料。历史问答中的网页摘录复用归 AI 域，不自动成为用户资料库中的正式记录。
 
-实现依据：[研究仓储](../../server/src/db/research.rs)、[附件处理](../../server/src/attachments.rs)、[资料检索](../../server/src/evidence.rs)、[资料工作台](../../client/src/features/research/EvidenceWorkbench.tsx)。当前研究仓储仍混合 AI 历史方法，属于架构记录的现状，不改变上述归属。
+实现依据：[研究仓储](../../server/src/db/evidence.rs)、[附件处理](../../server/src/attachments.rs)、[资料检索](../../server/src/evidence.rs)、[资料工作台](../../client/src/features/evidence/EvidenceWorkbench.tsx)。研究资料仓储与 AI 分析历史仓储已拆分，历史网页摘录由后者管理。
 
 ## 5. 方法论与复盘
 
@@ -69,7 +69,7 @@
 | 账号与数据管理 | 账号隔离、账号切换后迟到响应、并发版本冲突、覆盖前备份失败、导入失败回滚 | [传输回归](../../client/src/api.hosted.test.ts)、[导入交互](../../client/src/features/account/ServerData.test.tsx)、[托管验收](../../scripts/test-hosted.mjs) |
 | 财务账本 | 真实成交与现金一致、更正删除的整体性、重复请求不重复记账、资料或汇率缺失 | [财务回归](../../server/src/db/financial_tests.rs)、[成交模块内测试](../../server/src/db/trades.rs)、[财务验收](../../scripts/test-financial.mjs) |
 | 买点观察 | 规则变更建立新基准、历史保留、个人规则隔离、数据缺失不误判、网格不记账 | [规则保存回归](../../server/src/db/watch/rules.rs)、[规则计算回归](../../server/src/models/watch/rules.rs)、[网格交互](../../client/src/features/watch/WatchGrid.test.tsx) |
-| 研究资料 | 原文与附件完整、保存失败可重试、标签不修改原文、归档可恢复 | [资料交互](../../client/src/features/research/EvidenceWorkbench.test.tsx)、[资料仓储内测试](../../server/src/db/research.rs) |
+| 研究资料 | 原文与附件完整、保存失败可重试、标签不修改原文、归档可恢复 | [资料交互](../../client/src/features/evidence/EvidenceWorkbench.test.tsx)、[资料仓储内测试](../../server/src/db/evidence.rs) |
 | 方法论与复盘 | 文字保存、手工规则修订与历史可追溯 | [方法论交互](../../client/src/features/methodology/InvestmentMethodology.test.tsx)、[复盘交互](../../client/src/features/reviews/ReviewCenter.test.tsx)、[功能 API 验收](../../scripts/test-functional-api.mjs) |
 
 以上列出验收场景与已有测试依据，不代表文档重建时重新执行了全部测试。

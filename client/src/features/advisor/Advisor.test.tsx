@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Advisor } from "./Advisor";
-import * as researchApi from "../../api/research";
+import * as researchApi from "../../api/analysis";
 import * as settingsApi from "../../api/settings";
 import * as memoryApi from "../../api/memory";
 import type {
@@ -19,7 +19,7 @@ import type {
 } from "../../types";
 import { analysisSettings } from "../../test/analysisSettings";
 
-vi.mock("../../api/research", () => ({
+vi.mock("../../api/analysis", () => ({
   getAnalysis: vi.fn(),
   getAnalysisHistory: vi.fn().mockResolvedValue([]),
   previewAnalysis: vi.fn(),

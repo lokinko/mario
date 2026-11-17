@@ -5,7 +5,7 @@ import { PageHeader } from "../components/PageHeader";
 import type { Snapshot } from "../types";
 
 const EvidenceWorkbench = lazy(() =>
-  import("../features/research/EvidenceWorkbench").then((m) => ({
+  import("../features/evidence/EvidenceWorkbench").then((m) => ({
     default: m.EvidenceWorkbench,
   })),
 );

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { productionRust } from './check-architecture.mjs';
+import { rustRoutes } from './check-architecture.mjs';
+export { rustRoutes } from './check-architecture.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 function files(directory, suffix) {
@@ -23,25 +24,6 @@ function headings(source) {
     anchors.add(base + (count ? `-${count}` : ''));
   }
   return anchors;
-}
-export function rustRoutes(source) {
-  const code = productionRust(source), routes = [];
-  for (const match of code.matchAll(/\.route\s*\(/g)) {
-    const start = match.index + match[0].length;
-    const path = /^\s*"([^"\n]+)"\s*,/.exec(source.slice(start));
-    assert(path, 'route path must be a string literal; extend the inventory scanner for new route syntax');
-    let depth = 1, end = start;
-    for (; end < code.length && depth; end++) {
-      if (code[end] === '(') depth++;
-      if (code[end] === ')') depth--;
-    }
-    assert.equal(depth, 0, `unbalanced route ${path[1]}`);
-    if (path[1].includes('{*')) continue; // Unknown-path fallback is described in prose.
-    const methods = [...code.slice(start, end - 1).matchAll(/\b(get|post|put|delete|patch|head|options)\s*\(/g)].map(item => item[1].toUpperCase());
-    assert(methods.length, `unrecognized route methods: ${path[1]}`);
-    routes.push(...methods.map(method => `${method} ${path[1]}`));
-  }
-  return routes;
 }
 export function checkApiInventory(sourceFiles, markdown) {
   const actual = sourceFiles.flatMap(path => rustRoutes(readFileSync(path, 'utf8')));

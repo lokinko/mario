@@ -8,11 +8,11 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import * as researchApi from "../../api/research";
+import * as researchApi from "../../api/evidence";
 import type { ResearchEvidence } from "../../types";
 import { EvidenceWorkbench } from "./EvidenceWorkbench";
 
-vi.mock("../../api/research", () => ({
+vi.mock("../../api/evidence", () => ({
   getResearchEvidence: vi.fn(),
   getResearchAttachment: vi.fn(),
   saveResearchEvidence: vi.fn(),

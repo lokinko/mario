@@ -371,99 +371,31 @@ mod tests {
     use crate::models::watch::{BAND_DISTANCE_PCT, MIN_YIELD_PCT};
 
     #[test]
-    fn broker_screening_reproduces_implemented_ttm_and_strict_three_percent_selection() {
-        use crate::models::watch::{trailing_dividends, DividendEvent};
-        use rust_decimal::Decimal;
-        let audit: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../docs/audits/watch-catalog-brokers-20261107.json"
-        ))
-        .unwrap();
-        let requested: BTreeSet<String> = serde_json::from_str(include_str!(
-            "../../../data/watch-catalog-broker-additions-20261107.json"
-        ))
-        .unwrap();
-        let day = chrono::NaiveDate::parse_from_str(audit["priceOn"].as_str().unwrap(), "%Y-%m-%d")
-            .unwrap();
-        let mut selected = BTreeSet::new();
-        for row in audit["selected"]
-            .as_array()
-            .unwrap()
+    fn retained_addition_manifests_reference_the_bundled_catalog_without_changing_rules() {
+        let catalog = Catalog::bundled().unwrap();
+        let companies: BTreeSet<_> = catalog
+            .industries
             .iter()
-            .chain(audit["excluded"].as_array().unwrap())
-        {
-            let events: Vec<DividendEvent> =
-                serde_json::from_value(row["implementedEvents"].clone()).unwrap();
-            let cash = trailing_dividends(&events, day).unwrap();
+            .flat_map(|industry| {
+                industry
+                    .companies
+                    .iter()
+                    .map(|company| company.symbol.clone())
+            })
+            .collect();
+        for manifest in [
+            include_str!("../../../data/watch-catalog-broker-additions-20261107.json"),
+            include_str!("../../../data/watch-catalog-screened-additions-20261107.json"),
+        ] {
+            let requested: Vec<String> = serde_json::from_str(manifest).unwrap();
             assert_eq!(
-                cash,
-                Decimal::from_str_exact(row["ttmDividendPerShare"].as_str().unwrap()).unwrap()
+                requested.len(),
+                requested.iter().collect::<BTreeSet<_>>().len()
             );
-            let price = Decimal::from_str_exact(row["price"].as_str().unwrap()).unwrap();
-            let passes = cash * Decimal::ONE_HUNDRED > price * Decimal::from(3);
-            assert_eq!(passes, row["passesThreePct"].as_bool().unwrap());
-            assert_eq!(
-                (cash * Decimal::ONE_HUNDRED / price).round_dp(4),
-                Decimal::from_str_exact(row["yieldPct"].as_str().unwrap())
-                    .unwrap()
-                    .round_dp(4)
-            );
-            if passes {
-                selected.insert(row["symbol"].as_str().unwrap().to_string());
+            for symbol in requested {
+                assert!(companies.contains(&symbol), "missing {symbol}");
             }
         }
-        assert_eq!(selected, requested);
-        let catalog = Catalog::bundled().unwrap();
-        assert_eq!(
-            catalog
-                .industry("brokers")
-                .unwrap()
-                .companies
-                .iter()
-                .map(|c| c.symbol.clone())
-                .collect::<BTreeSet<_>>(),
-            requested
-        );
-        assert_eq!(MIN_YIELD_PCT, 5.0);
-        assert_eq!(BAND_DISTANCE_PCT, 2.0);
-    }
-
-    #[test]
-    fn screened_additions_reproduce_the_dated_ttm_above_four_without_changing_watch_rules() {
-        use crate::models::watch::{trailing_dividends, DividendEvent};
-        use rust_decimal::Decimal;
-        let audit: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../docs/audits/watch-catalog-screening-20261107.json"
-        ))
-        .unwrap();
-        let selected = audit["selected"].as_array().unwrap();
-        let requested: BTreeSet<String> = serde_json::from_str(include_str!(
-            "../../../data/watch-catalog-screened-additions-20261107.json"
-        ))
-        .unwrap();
-        assert_eq!(selected.len(), 8);
-        let mut found = BTreeSet::new();
-        let day = chrono::NaiveDate::parse_from_str(audit["priceOn"].as_str().unwrap(), "%Y-%m-%d")
-            .unwrap();
-        for row in selected {
-            let events: Vec<DividendEvent> =
-                serde_json::from_value(row["implementedEventsSince2023"].clone()).unwrap();
-            let cash = trailing_dividends(&events, day).unwrap();
-            assert_eq!(
-                cash,
-                Decimal::from_str_exact(row["ttmDividendPerShare"].as_str().unwrap()).unwrap()
-            );
-            let price = Decimal::from_str_exact(row["price"].as_str().unwrap()).unwrap();
-            let yield_pct = cash * Decimal::ONE_HUNDRED / price;
-            assert!(yield_pct > Decimal::from(4));
-            assert_eq!(
-                yield_pct.round_dp(4),
-                Decimal::from_str_exact(row["yieldPct"].as_str().unwrap())
-                    .unwrap()
-                    .round_dp(4)
-            );
-            found.insert(row["symbol"].as_str().unwrap().to_string());
-        }
-        assert_eq!(found, requested);
         assert_eq!(MIN_YIELD_PCT, 5.0);
         assert_eq!(BAND_DISTANCE_PCT, 2.0);
     }

@@ -129,6 +129,15 @@ impl PublicPrices {
         token: &str,
         result: &AppResult<PriceHistory>,
     ) -> AppResult<()> {
+        self.finish_at(symbol, token, result, chrono::Utc::now().timestamp_millis())
+    }
+    pub(crate) fn finish_at(
+        &self,
+        symbol: &str,
+        token: &str,
+        result: &AppResult<PriceHistory>,
+        completed_at: i64,
+    ) -> AppResult<()> {
         let mut c = self.conn()?;
         let tx = c.transaction()?;
         let Some(_) = Self::owned_attempt(&tx, symbol, token)? else {
@@ -142,7 +151,7 @@ impl PublicPrices {
                 }
                 let accepted = tx.execute("UPDATE price_histories SET payload=$3,coverage=$6,lease_until=0,lease_token='',last_error='' WHERE symbol=$1 AND lease_token=$2 AND (payload IS NULL OR ((payload::jsonb->>'completedThrough') <= $4 AND (payload::jsonb->>'adjustmentAnchor') <= $5))",params![symbol,token,serde_json::to_string(h)?,h.completed_through.to_string(), h.adjustment_anchor.to_string(),serde_json::to_string(&monitor::PriceCoverage::from(h))?])?;
                 if accepted > 0 {
-                    Self::record_success(&tx, symbol, chrono::Utc::now().timestamp_millis())?;
+                    Self::record_success(&tx, symbol, completed_at)?;
                 } else {
                     tx.execute("UPDATE price_histories SET lease_until=0,lease_token='',last_error='来源日期倒退，保留较新价格' WHERE symbol=$1 AND lease_token=$2",params![symbol,token])?;
                 }

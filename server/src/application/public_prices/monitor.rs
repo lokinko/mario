@@ -216,7 +216,9 @@ mod tests {
                 h.bars.retain(|b| b.day >= h.window_start);
                 h = h.normalize().unwrap();
             }
-            store.finish(symbol, symbol, &Ok(h)).unwrap();
+            store
+                .finish_at(symbol, symbol, &Ok(h), now.timestamp_millis())
+                .unwrap();
         }
         assert!(store
             .claim("000004.SZ", now.timestamp_millis(), "failed")
@@ -304,7 +306,9 @@ mod tests {
             let mut h = fixture(symbol, "2026-11-16".parse().unwrap());
             h.bars.pop();
             h = h.normalize().unwrap();
-            store.finish(symbol, symbol, &Ok(h)).unwrap();
+            store
+                .finish_at(symbol, symbol, &Ok(h), now.timestamp_millis())
+                .unwrap();
         }
         let service = PublicPriceService::new(
             store.clone(),

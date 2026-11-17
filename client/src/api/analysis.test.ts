@@ -2,7 +2,7 @@
 import { currentSession } from "../lib/webSession";
 import { accountSession, resetAccountSession } from "../lib/accountSession";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { runAnalysis } from "./research";
+import { runAnalysis } from "./analysis";
 
 import { analysisSettings } from "../test/analysisSettings";
 

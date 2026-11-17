@@ -12,7 +12,7 @@ import {
   refreshSecurityPrices,
 } from "./api/portfolio";
 import { checkServerVersion, prepareDataReplacement } from "./api/account";
-import { previewAnalysis } from "./api/research";
+import { previewAnalysis } from "./api/analysis";
 import { serviceUrl } from "./lib/service";
 import { httpRequest } from "./lib/httpClient";
 import { setWebToken, webToken } from "./lib/webSession";

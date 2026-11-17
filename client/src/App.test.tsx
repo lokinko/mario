@@ -11,7 +11,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import * as portfolioApi from "./api/portfolio";
 import * as settingsApi from "./api/settings";
-import * as researchApi from "./api/research";
+import * as methodologyApi from "./api/methodology";
+import * as researchApi from "./api/evidence";
 import * as watchApi from "./api/watch";
 import * as reviewsApi from "./api/reviews";
 import * as activityApi from "./api/activity";
@@ -66,8 +67,8 @@ vi.mock("./api/settings", async (original) => ({
   getModelConfig: vi.fn(),
   getAnalysisSettings: vi.fn(() => new Promise(() => {})),
 }));
-vi.mock("./api/research", async (original) => ({
-  ...(await original<typeof import("./api/research")>()),
+vi.mock("./api/analysis", async (original) => ({
+  ...(await original<typeof import("./api/analysis")>()),
   getAnalysisHistory: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("./api/reviews", async (original) => ({
@@ -577,7 +578,7 @@ it("opens the investment methodology editor directly from the sidebar without a 
     new Error("no model"),
   );
   const load = vi
-    .spyOn(settingsApi, "getInvestmentMethodology")
+    .spyOn(methodologyApi, "getInvestmentMethodology")
     .mockResolvedValue({
       prompt: "我的方法论",
       defaultPrompt: "范本",
@@ -608,7 +609,7 @@ async function editMethodologyDraft() {
     model: "test-model",
     hasApiKey: true,
   });
-  vi.spyOn(settingsApi, "getInvestmentMethodology").mockResolvedValue({
+  vi.spyOn(methodologyApi, "getInvestmentMethodology").mockResolvedValue({
     prompt: "已保存的方法论",
     defaultPrompt: "范本",
     maxLength: 4000,

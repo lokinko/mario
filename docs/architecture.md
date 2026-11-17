@@ -1,6 +1,6 @@
 # 代码边界与架构
 
-本文件按本次讨论重新建立架构边界，描述已认可的职责划分及现有代码映射。一级功能域为用户、市场、AI；应用装配与公共技术能力另列为支撑部分。模块边界不意味着拆成独立服务，也不意味着已经完成目录和依赖重组。
+本文件按本次讨论重新建立架构边界，描述已认可的职责划分及现有代码映射。一级功能域为用户、市场、AI；应用装配与公共技术能力另列为支撑部分。模块边界不意味着拆成独立服务；已完成和待完成的拆分见文末。
 
 业务行为由各域 spec 说明；本文件不重复维护业务阈值或 HTTP 字段。当前已确认[用户域 spec](specs/user.md)、[市场域 spec](specs/market.md)、[AI 域 spec](specs/ai.md)、[lint 范围](lint.md)及 [API 文档](api.md)。
 
@@ -35,7 +35,7 @@
 
 AI 用例负责授权、冻结输入及保存分析结果；模型执行器负责执行冻结任务。模型配置与执行能力不决定资料的业务授权。网站身份登录属于用户域，本机模型授权属于 AI 域。
 
-这些是已认可的职责边界。现有实现仍存在集中仓储和跨域混放，不能将上述原则描述为已经由模块接口完全强制执行。
+这些是已认可的职责边界。研究资料、分析历史与方法论已按职责拆分入口，集中契约、统一 Database 和日历跨域编排仍待继续修复，不能将原则描述为已完全强制执行。
 
 ## 3. 运行角色与支撑部分
 
@@ -60,19 +60,24 @@ AI 用例负责授权、冻结输入及保存分析结果；模型执行器负�
 | 用户账号与数据管理 | [account](../client/src/features/account/) | [accounts](../server/src/accounts.rs)、[hosted](../server/src/hosted.rs)、[同步仓储](../server/src/db/sync_store.rs) |
 | 用户财务账本与估值 | [portfolio](../client/src/features/portfolio/) | [portfolio 用例](../server/src/application/portfolio.rs)、[个人价格更新](../server/src/application/prices.rs)、[个人汇率用例](../server/src/application/fx.rs)、[财务仓储](../server/src/db/financial.rs)、[成交仓储](../server/src/db/trades.rs)、[估值](../server/src/valuation.rs)、[风险](../server/src/risk.rs)、[规划](../server/src/planning.rs) |
 | 用户买点观察 | [watch](../client/src/features/watch/) | [观察用例](../server/src/application/watch.rs)、[候选目录用例](../server/src/application/watch_catalog.rs)、[观察仓储](../server/src/db/watch.rs)、[观察规则与计算](../server/src/models/watch.rs) |
-| 用户研究资料 | [资料工作台](../client/src/features/research/EvidenceWorkbench.tsx) | [研究仓储的资料方法](../server/src/db/research.rs)、[附件处理](../server/src/attachments.rs)、[证据检索](../server/src/evidence.rs) |
-| 用户方法论与复盘 | [methodology](../client/src/features/methodology/)、[reviews](../client/src/features/reviews/) | [设置仓储的方法论方法](../server/src/db/settings.rs)、[复盘仓储](../server/src/db/reviews.rs) |
+| 用户研究资料 | [资料工作台](../client/src/features/evidence/EvidenceWorkbench.tsx) | [研究资料仓储](../server/src/db/evidence.rs)、[附件处理](../server/src/attachments.rs)、[证据检索](../server/src/evidence.rs) |
+| 用户方法论与复盘 | [methodology](../client/src/features/methodology/)、[reviews](../client/src/features/reviews/) | [方法论仓储](../server/src/db/methodology.rs)、[复盘仓储](../server/src/db/reviews.rs) |
 | 市场公共数据 | 由用户页面和运营看板消费 | [数据来源适配](../server/src/market_data.rs)、[公共价格服务](../server/src/application/public_prices.rs)、[共享分红查询](../server/src/application/watch_market.rs)、[公共价格仓储](../server/src/db/public_prices.rs)、[公共分红仓储](../server/src/db/public_dividends.rs) |
-| AI 分析与记忆 | [问答](../client/src/features/research/Advisor.tsx)、[记忆](../client/src/features/research/MemoryPanel.tsx) | [分析用例](../server/src/application/analysis.rs)、[上下文](../server/src/context.rs)、[模型工作流](../server/src/ai/)、[记忆用例](../server/src/application/memory.rs)、[研究仓储的分析历史方法](../server/src/db/research.rs) |
+| AI 分析与记忆 | [问答](../client/src/features/advisor/Advisor.tsx)、[记忆](../client/src/features/advisor/MemoryPanel.tsx) | [分析用例](../server/src/application/analysis.rs)、[上下文](../server/src/context.rs)、[模型工作流](../server/src/ai/)、[记忆用例](../server/src/application/memory.rs)、[分析历史仓储](../server/src/db/analysis_history.rs) |
 | AI 模型连接 | [settings](../client/src/features/settings/)中的模型配置与桥接 | [模型配置用例](../server/src/application/model_settings.rs)、[模型管理端口](../server/src/ports/model.rs)、[本机授权](../server/src/chatgpt_auth.rs)、[worker](../server/src/codex_bridge_worker.rs) |
 
-## 5. 当前混合职责与检查边界
+## 5. 已落实的职责拆分
 
-1. **研究资料和问答混放。** 前端 `features/research`、API 客户端、后端 HTTP 和 `db/research.rs` 同时包含用户资料和 AI 分析历史。历史问答网页摘录的复用属于 AI 历史资料复用，不自动写入用户研究资料表。
-2. **配置混放。** 方法论属于用户域，模型配置和问答预设属于 AI 域，目前共用设置文件。
-3. **分红日历跨域。** [日历用例](../server/src/application/dividend_calendar.rs)同时包含公共分红计划采集缓存和按用户观察范围生成日历的逻辑。前者属于市场域，后者属于用户域；[公共观察仓储](../server/src/db/public_watch.rs)也混合了候选目录和分红计划存储。
-4. **类型和仓储集中。** [后端契约](../server/src/models.rs)、[前端类型](../client/src/types.ts)及统一 [Database](../server/src/db.rs)汇集多个域。物理存储位置和技术层目录不能替代业务归属。
-5. **检查覆盖尚未对应业务域。** 现有架构检查验证[技术模块登记](../scripts/architecture-boundaries.mjs)、技术层依赖、循环和部分隔离规则；新增模块须显式登记，登记不能证明三个功能域已严格隔离。检查入口与覆盖范围见 [lint 文档](lint.md)。
-6. **AI 输入与搜索默认值待调整。** 已采纳默认开启网页搜索、以简洁文本提供可用的当前持仓状态；当前实现仍默认关闭搜索，并将含交易明细与数据缺口的 JSON 事实卡加入模型输入。差异见 [AI 域 spec](specs/ai.md#8-现有实现差异)。
+- **用户研究资料**：前端页面为 `features/evidence`，调用 `api/evidence.ts`；后端适配为 `http/evidence.rs`，原文、标签及附件保存在 `db/evidence.rs`。
+- **AI 问答与历史**：前端为 `features/advisor`，分析调用 `api/analysis.ts`；后端为 `http/analysis.rs` 与 `db/analysis_history.rs`。历史网页摘录复用留在 AI 历史仓储，不写入用户资料表。回答引用用户附件时通过用户资料 API 读取。
+- **用户方法论与 AI 设置**：方法论有独立 `api/methodology.ts`、`http/methodology.rs`、`db/methodology.rs`；模型配置与问答预设由 `http/model_settings.rs`、`db/model_settings.rs` 管理。`db/settings.rs` 仅保留共用键值存取原语。数据库格式和现有 HTTP 路径保持兼容。
+- **依赖检查**：前端页面和 API 客户端显式登记业务归属；用户页面不能直接导入 AI API，跨页分析通过应用回调组合。技术模块、循环与隔离检查继续执行，见 [lint 文档](lint.md)。
 
-本轮确定边界与现状映射，不执行目录搬迁、仓储拆分或接口迁移。后续重组须单独确定方案；现有混合位置不因写入文档就视为已解决。
+## 6. 待继续修复的架构差异
+
+1. **分红日历跨域。** [日历用例](../server/src/application/dividend_calendar.rs)同时包含公共分红计划采集缓存和按用户观察范围生成日历的逻辑。前者属于市场域，后者属于用户域；[公共观察仓储](../server/src/db/public_watch.rs)也混合了候选目录和分红计划存储。
+2. **类型和仓储集中。** [后端契约](../server/src/models.rs)、[前端类型](../client/src/types.ts)及统一 [Database](../server/src/db.rs)汇集多个域。已拆分文件中的仓储方法仍挂在统一 Database 上；AI 用例仍能取得过宽的账号存取能力，尚需收窄到所属职责和授权数据接口。
+3. **业务域检查未全覆盖。** 现有登记和检查强制了部分技术层与前端业务方向，未覆盖后端全部业务调用和读写权限；检查通过不能证明三个功能域已完全隔离。
+4. **AI 输入与搜索默认值待调整。** 已采纳默认开启网页搜索、以简洁文本提供可用的当前持仓状态；当前实现仍默认关闭搜索，并将含交易明细与数据缺口的 JSON 事实卡加入模型输入。差异见 [AI 域 spec](specs/ai.md#8-现有实现差异)。
+
+后续修复继续以三域 spec 和上述边界为依据，同步调整依赖约束和受影响的测试；已拆分文件不代表跨域授权与存储能力已全部收窄。

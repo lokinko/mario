@@ -20,7 +20,7 @@ AI 域基于授权资料提供可追溯的分析，管理模型执行与讨论�
 
 多轮讨论保留必要上下文；用户最新更正优先于旧回答，授权缩小时同步裁减历史模型内容和相关记忆。对话中的更正不能被描述为已经改写用户账本。
 
-实现依据：[分析用例](../../server/src/application/analysis.rs)、[上下文构建](../../server/src/context.rs)、[多轮上下文](../../client/src/features/research/previousTurn.ts)、[记忆选取](../../server/src/context/memory.rs)。
+实现依据：[分析用例](../../server/src/application/analysis.rs)、[上下文构建](../../server/src/context.rs)、[多轮上下文](../../client/src/features/advisor/previousTurn.ts)、[记忆选取](../../server/src/context/memory.rs)。
 
 ## 3. 简洁的当前持仓输入
 
@@ -75,7 +75,7 @@ CSV 可以作为同一摘要的替代表达；如使用 CSV 文件，其内容�
 
 结构校验通过不等于分析质量合格，真实回复质量仍需单独验收。
 
-实现依据：[问答页面](../../client/src/features/research/Advisor.tsx)、[流式适配](../../server/src/streaming.rs)、[执行限额](../../server/src/models/inference.rs)、[分析历史保存](../../server/src/db/research.rs)、[质量评测入口](../../server/tests/fixtures/qa_eval/README.md)。
+实现依据：[问答页面](../../client/src/features/advisor/Advisor.tsx)、[流式适配](../../server/src/streaming.rs)、[执行限额](../../server/src/models/inference.rs)、[分析历史保存](../../server/src/db/analysis_history.rs)、[质量评测入口](../../server/tests/fixtures/qa_eval/README.md)。
 
 ## 7. 长期记忆与整理
 
@@ -85,7 +85,7 @@ CSV 可以作为同一摘要的替代表达；如使用 CSV 文件，其内容�
 
 记忆不能替代账本，不保存行情快照、持仓金额或模型买卖建议作为长期事实。
 
-实现依据：[记忆用例](../../server/src/application/memory.rs)、[记忆整理代理](../../server/src/ai/dreaming.rs)、[筛选规则](../../server/src/models/memory.rs)、[记忆界面](../../client/src/features/research/MemoryPanel.tsx)。
+实现依据：[记忆用例](../../server/src/application/memory.rs)、[记忆整理代理](../../server/src/ai/dreaming.rs)、[筛选规则](../../server/src/models/memory.rs)、[记忆界面](../../client/src/features/advisor/MemoryPanel.tsx)。
 
 ## 8. 现有实现差异
 

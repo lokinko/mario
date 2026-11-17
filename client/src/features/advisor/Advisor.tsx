@@ -13,7 +13,7 @@ import {
   getAnalysisHistory,
   previewAnalysis,
   runAnalysis,
-} from "../../api/research";
+} from "../../api/analysis";
 import { getAnalysisSettings } from "../../api/settings";
 import { dreamMemory, getMemory } from "../../api/memory";
 import { MemoryPanel } from "./MemoryPanel";

@@ -41,7 +41,7 @@ const DividendCalendar = lazy(() =>
   })),
 );
 const Advisor = lazy(() =>
-  import("./features/research/Advisor").then((m) => ({ default: m.Advisor })),
+  import("./features/advisor/Advisor").then((m) => ({ default: m.Advisor })),
 );
 const InvestmentMethodology = lazy(() =>
   import("./features/methodology/InvestmentMethodology").then((m) => ({

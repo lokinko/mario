@@ -13,7 +13,7 @@
 - 金额、股数、价格的精确字段使用十进制字符串；旧展示投影仍有 JSON number，不能笼统把所有金额都当 number 或 string。金额以对象的 `currency` 计价，汇总以 `baseCurrency` 计价；`Pct` 是百分数，`Bps` 是基点。成交数量是证券单位，期权数量是合约数，合约另有 `multiplier`。
 - 日历日期使用 `YYYY-MM-DD`；时间戳按类型区分日期时间字符串和 Unix 秒。`requestedOn` 是请求日期，`observedOn` 是数据实际日期，不保证相同。
 - 普通成功响应为 HTTP 200 JSON；记忆删除为 204 空响应，OAuth 回调为重定向，流式分析为 SSE。JSON 请求须带 `Content-Type: application/json`。
-- 请求体上限：托管接口总体 64 MiB，登录/OAuth/活跃度/看板/服务信息所在路由组 16 KiB，研究资料上传与桥接 Worker 为 8 MiB，独立 Agent 为 8 MiB。上限是传输层限制，不代替附件和字段自身校验。来源：[托管装配](../server/src/hosted.rs)、[研究 HTTP](../server/src/http/research.rs)、[桥接 HTTP](../server/src/http/codex_bridge.rs)、[Agent](../server/src/agent.rs)。
+- 请求体上限：托管接口总体 64 MiB，登录/OAuth/活跃度/看板/服务信息所在路由组 16 KiB，研究资料上传与桥接 Worker 为 8 MiB，独立 Agent 为 8 MiB。上限是传输层限制，不代替附件和字段自身校验。来源：[托管装配](../server/src/hosted.rs)、[研究 HTTP](../server/src/http/evidence.rs)、[桥接 HTTP](../server/src/http/codex_bridge.rs)、[Agent](../server/src/agent.rs)。
 
 ### 1.1 权限与版本记号
 
@@ -128,7 +128,7 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 
 ### 2.4 研究资料、方法论、规则与复盘
 
-下表均需账号。来源：[研究 HTTP](../server/src/http/research.rs)、[方法论 HTTP](../server/src/http/settings.rs)、[复盘 HTTP](../server/src/http/reviews.rs)。
+下表均需账号。来源：[研究 HTTP](../server/src/http/evidence.rs)、[方法论 HTTP](../server/src/http/methodology.rs)、[复盘 HTTP](../server/src/http/reviews.rs)。
 
 | 方法 | 路径 | 版本 | 输入 → 响应 | 作用与限制 |
 | --- | --- | --- | --- | --- |
@@ -163,7 +163,7 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 
 ### 4.1 模型、分析与记忆
 
-以下均需账号 token。来源：[设置 HTTP](../server/src/http/settings.rs)、[分析 HTTP](../server/src/http/research.rs)、[记忆 HTTP](../server/src/http/memory.rs)、[桥接管理 HTTP](../server/src/http/codex_bridge.rs)。
+以下均需账号 token。来源：[设置 HTTP](../server/src/http/model_settings.rs)、[分析 HTTP](../server/src/http/analysis.rs)、[记忆 HTTP](../server/src/http/memory.rs)、[桥接管理 HTTP](../server/src/http/codex_bridge.rs)。
 
 | 方法 | 路径 | 版本 | 输入 → 响应 | 作用与限制 |
 | --- | --- | --- | --- | --- |

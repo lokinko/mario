@@ -4,7 +4,7 @@ import { Save } from "lucide-react";
 import {
   getInvestmentMethodology,
   saveInvestmentMethodology,
-} from "../../api/settings";
+} from "../../api/methodology";
 import { PageHeader } from "../../components/PageHeader";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import type { InvestmentMethodology as Methodology } from "../../types";
