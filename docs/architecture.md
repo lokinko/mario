@@ -2,7 +2,7 @@
 
 本文件按本次讨论重新建立架构边界，描述已认可的职责划分及现有代码映射。一级功能域为用户、市场、AI；应用装配与公共技术能力另列为支撑部分。模块边界不意味着拆成独立服务，也不意味着已经完成目录和依赖重组。
 
-业务行为由各域 spec 说明；本文件不重复维护业务阈值或 HTTP 字段。当前已确认[用户域 spec](specs/user.md)、[市场域 spec](specs/market.md)和[AI 域 spec](specs/ai.md)。lint 细则和 API 文档在分别讨论确认后建立。
+业务行为由各域 spec 说明；本文件不重复维护业务阈值或 HTTP 字段。当前已确认[用户域 spec](specs/user.md)、[市场域 spec](specs/market.md)、[AI 域 spec](specs/ai.md)及 [lint 范围](lint.md)。API 文档在单独讨论确认后建立。
 
 ## 1. 功能域与数据归属
 
