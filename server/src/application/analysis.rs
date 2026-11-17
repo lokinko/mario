@@ -1,19 +1,21 @@
 //! Freeze authorized sources, validate the preview, execute, and persist the result.
 use super::model_settings::{configuration, configured_model_key, ServerOpenAi};
+#[cfg(test)]
+use crate::db::Database;
 use crate::{
     context,
-    db::Database,
     evidence::search_evidence,
     models::{
         AnalysisPreview, AnalysisRequest, AnalysisResult, ModelConfig, ModelProviderKind,
         ResearchEvidence, Snapshot,
     },
+    ports::ai_account::{AnalysisAccount, ModelConfiguration},
     ports::analysis::AnalysisExecutor,
     AppError, AppResult,
 };
 use std::collections::HashSet;
-pub(crate) struct AnalysisService<'a> {
-    db: &'a Database,
+pub(crate) struct AnalysisService<'a, A: AnalysisAccount> {
+    db: &'a A,
     server: Option<&'a ServerOpenAi>,
 }
 struct PreparedAnalysis {
@@ -21,8 +23,8 @@ struct PreparedAnalysis {
     context: context::BuiltContext,
     evidence_candidates: Vec<ResearchEvidence>,
 }
-impl<'a> AnalysisService<'a> {
-    pub fn new(db: &'a Database, server: Option<&'a ServerOpenAi>) -> Self {
+impl<'a, A: AnalysisAccount> AnalysisService<'a, A> {
+    pub fn new(db: &'a A, server: Option<&'a ServerOpenAi>) -> Self {
         Self { db, server }
     }
     fn prepare(&self, request: &AnalysisRequest) -> AppResult<PreparedAnalysis> {
@@ -128,7 +130,7 @@ impl<'a> AnalysisService<'a> {
 /// Freeze credentials and their destination under the account lock; another device
 /// may change its model settings while the model runs without the lock.
 pub(super) fn frozen_credentials(
-    db: &Database,
+    db: &impl ModelConfiguration,
     server: Option<&ServerOpenAi>,
     config: &ModelConfig,
 ) -> AppResult<Option<String>> {
@@ -141,7 +143,7 @@ pub(super) fn frozen_credentials(
     }))
 }
 fn relevant_evidence(
-    db: &Database,
+    db: &impl AnalysisAccount,
     request: &AnalysisRequest,
     snapshot: &Snapshot,
 ) -> AppResult<Vec<ResearchEvidence>> {

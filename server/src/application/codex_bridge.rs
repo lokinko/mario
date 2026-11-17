@@ -1,38 +1,48 @@
 //! Pairing belongs to the authenticated account, never to caller-supplied model URLs.
+#[cfg(test)]
+use crate::db::Database;
 use crate::{
-    db::Database,
     models::{CodexBridgeStatus, ModelConfig, ModelProviderKind},
+    ports::ai_account::{ModelConfiguration, ModelSettingsStore},
     ports::model::BridgeRegistry,
     AppError, AppResult,
 };
-const ID: &str = "model.codex_bridge_id";
-pub(crate) fn id(db: &Database) -> AppResult<String> {
-    db.setting(ID)?
+pub(crate) fn id(db: &impl ModelConfiguration) -> AppResult<String> {
+    db.bridge_id()?
         .ok_or_else(|| AppError::Validation("请先配对本机 Codex".into()))
 }
-pub(crate) fn status(db: &Database, bridges: &dyn BridgeRegistry) -> AppResult<CodexBridgeStatus> {
-    Ok(bridges.status(db.setting(ID)?.as_deref()))
+pub(crate) fn status(
+    db: &impl ModelConfiguration,
+    bridges: &dyn BridgeRegistry,
+) -> AppResult<CodexBridgeStatus> {
+    Ok(bridges.status(db.bridge_id()?.as_deref()))
 }
-pub(crate) fn pair(db: &Database, bridges: &dyn BridgeRegistry) -> AppResult<String> {
+pub(crate) fn pair(
+    db: &impl ModelSettingsStore,
+    bridges: &dyn BridgeRegistry,
+) -> AppResult<String> {
     let pairing = bridges.create()?;
     if let Err(error) = (|| {
-        if let Some(old) = db.setting(ID)? {
+        if let Some(old) = db.bridge_id()? {
             bridges.revoke(&old);
         }
-        db.set_setting(ID, &pairing.id)
+        db.set_bridge_id(&pairing.id)
     })() {
         bridges.revoke(&pairing.id);
         return Err(error);
     }
     Ok(pairing.code)
 }
-pub(crate) fn revoke(db: &Database, bridges: &dyn BridgeRegistry) -> AppResult<()> {
-    if let Some(id) = db.setting(ID)? {
+pub(crate) fn revoke(db: &impl ModelSettingsStore, bridges: &dyn BridgeRegistry) -> AppResult<()> {
+    if let Some(id) = db.bridge_id()? {
         bridges.revoke(&id);
     }
-    db.delete_setting(ID)
+    db.clear_bridge_id()
 }
-pub(crate) fn enable(db: &Database, bridges: &dyn BridgeRegistry) -> AppResult<ModelConfig> {
+pub(crate) fn enable(
+    db: &impl ModelSettingsStore,
+    bridges: &dyn BridgeRegistry,
+) -> AppResult<ModelConfig> {
     let state = status(db, bridges)?;
     if !state.online {
         return Err(AppError::Validation(
@@ -53,7 +63,7 @@ pub(crate) fn enable(db: &Database, bridges: &dyn BridgeRegistry) -> AppResult<M
     save(db, selected, bridges)
 }
 pub(crate) fn save(
-    db: &Database,
+    db: &impl ModelSettingsStore,
     model: &str,
     bridges: &dyn BridgeRegistry,
 ) -> AppResult<ModelConfig> {

@@ -1,6 +1,6 @@
 //! AI model destinations, bound credentials and analysis presets.
 use super::{params, AppError, AppResult, Database, ModelConfig, OptionalRow};
-use crate::models::{AnalysisSettings, ModelProviderKind};
+use crate::models::{model_key_binding, AnalysisSettings, ModelProviderKind};
 
 impl Database {
     pub fn analysis_settings(&self) -> AppResult<AnalysisSettings> {
@@ -115,11 +115,6 @@ impl Database {
         tx.commit()?;
         Ok(())
     }
-}
-
-/// The destination a stored model credential may be sent to.
-pub(crate) fn model_key_binding(provider: ModelProviderKind, base_url: &str) -> String {
-    format!("{} {}", provider, base_url.trim_end_matches('/'))
 }
 
 // Keep legacy presets compatible while excluding data no longer offered in settings.

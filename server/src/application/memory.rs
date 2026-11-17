@@ -3,20 +3,22 @@ use super::{
     analysis::frozen_credentials,
     model_settings::{configuration, ServerOpenAi},
 };
+#[cfg(test)]
+use crate::db::Database;
 use crate::{
-    db::Database,
     models::memory::{screen_operations, DreamInput, MemoryNote, MemoryOverview, DREAM_DUE_AFTER},
+    ports::ai_account::MemoryAccount,
     ports::analysis::AnalysisExecutor,
     AppError, AppResult,
 };
 
-pub(crate) struct MemoryService<'a> {
-    db: &'a Database,
+pub(crate) struct MemoryService<'a, A: MemoryAccount> {
+    db: &'a A,
     server: Option<&'a ServerOpenAi>,
 }
 
-impl<'a> MemoryService<'a> {
-    pub fn new(db: &'a Database, server: Option<&'a ServerOpenAi>) -> Self {
+impl<'a, A: MemoryAccount> MemoryService<'a, A> {
+    pub fn new(db: &'a A, server: Option<&'a ServerOpenAi>) -> Self {
         Self { db, server }
     }
 
@@ -247,7 +249,7 @@ mod tests {
         db.conn().unwrap().execute_batch(
             "INSERT INTO analysis_memories VALUES ('m1','preference','userStated','先讲结论','理由','[\"a0\"]','先看结论',1,'2026-11-15T00:00:00+00:00','2026-11-15T00:00:00+00:00')",
         ).unwrap();
-        let service = MemoryService::new(&db, None);
+        let service = MemoryService::new(db.as_ref(), None);
         let executor = Dreamer {
             operations: operations(),
             edit_during_run: Some(db.clone()),

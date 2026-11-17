@@ -18,7 +18,7 @@ pub(super) fn router() -> Router {
         .route("/api/memory/{id}", delete(remove))
 }
 
-fn service(state: &RequestContext) -> MemoryService<'_> {
+fn service(state: &RequestContext) -> MemoryService<'_, crate::db::Database> {
     MemoryService::new(&state.db, state.model_services.server.as_ref())
 }
 

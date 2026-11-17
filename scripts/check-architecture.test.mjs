@@ -189,3 +189,17 @@ test('public dividend plan capabilities exclude user catalogs and user projectio
     assert(serverSymbolViolation('application/dividend_calendar.rs', path));
   assert.equal(serverSymbolViolation('application/dividend_calendar.rs', 'ports::market::DividendPlanReader'), undefined);
 });
+
+test('AI use cases cannot regain concrete account state or widen their declared capability', async () => {
+  const { serverSymbolViolation } = await import('./check-architecture.mjs');
+  for (const file of ['analysis', 'memory', 'model_settings', 'codex_bridge']) {
+    for (const target of ['db', 'storage', 'accounts'])
+      assert(serverFileViolation(`application/${file}.rs`, target));
+    assert(serverSymbolViolation(`application/${file}.rs`, 'ports::ai_account'));
+  }
+  assert(serverSymbolViolation('application/analysis.rs', 'ports::ai_account::ModelSettingsStore'));
+  assert(serverSymbolViolation('application/memory.rs', 'ports::ai_account::UserAnalysisSources'));
+  assert.equal(serverSymbolViolation('application/analysis.rs', 'ports::ai_account::AnalysisAccount'), undefined);
+  assert.equal(serverSymbolViolation('application/memory.rs', 'ports::ai_account::MemoryAccount'), undefined);
+  assert.equal(serverFileViolation('application/analysis.rs', 'ports'), undefined);
+});

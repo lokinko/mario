@@ -64,6 +64,11 @@ impl std::str::FromStr for ModelProviderKind {
     }
 }
 
+/// The destination a stored model credential may be sent to.
+pub(crate) fn model_key_binding(provider: ModelProviderKind, base_url: &str) -> String {
+    format!("{} {}", provider, base_url.trim_end_matches('/'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::ModelProviderKind;

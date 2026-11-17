@@ -10,7 +10,7 @@ mod provider;
 pub(crate) mod watch;
 pub(crate) use endpoint::validate_endpoint;
 pub use provider::ModelProviderKind;
-pub(crate) use provider::ModelTarget;
+pub(crate) use provider::{model_key_binding, ModelTarget};
 pub(crate) mod accounting;
 pub(crate) mod daily;
 pub(crate) mod decimal;

@@ -1,10 +1,12 @@
 //! Account-owned configuration and frozen connection checks through execution ports.
+#[cfg(test)]
+use crate::db::Database;
 use crate::{
-    db::{model_key_binding, Database},
     models::{
-        ModelConfig, ModelConfigInput, ModelConfigSource, ModelConnectionTest, ModelProviderKind,
-        ModelTarget, ServerModelCatalog,
+        model_key_binding, ModelConfig, ModelConfigInput, ModelConfigSource, ModelConnectionTest,
+        ModelProviderKind, ModelTarget, ServerModelCatalog,
     },
+    ports::ai_account::{AccountSession, ModelConfiguration, ModelSettingsStore},
     ports::model::{BridgeRegistry, ModelCatalog, ModelConnector},
     AppError, AppResult,
 };
@@ -39,18 +41,18 @@ impl ServerOpenAi {
 }
 
 pub(crate) fn configuration(
-    db: &Database,
+    db: &impl ModelConfiguration,
     server: Option<&ServerOpenAi>,
 ) -> AppResult<ModelConfig> {
     let mut config = db.model_config()?;
     if config.source == ModelConfigSource::Server
-        || (server.is_some() && db.setting("model.source")?.is_none())
+        || (server.is_some() && db.model_source()?.is_none())
     {
         config.source = ModelConfigSource::Server;
         config.provider = ModelProviderKind::OpenaiResponses;
         config.base_url = OPENAI_URL.into();
         config.model = db
-            .setting("model.server_name")?
+            .selected_server_model()?
             .or_else(|| server.map(|s| s.model.clone()))
             .unwrap_or_default();
         config.has_api_key = server.is_some();
@@ -59,8 +61,21 @@ pub(crate) fn configuration(
     Ok(config)
 }
 
+pub(crate) fn delete_key(
+    db: &impl ModelSettingsStore,
+    server: Option<&ServerOpenAi>,
+) -> AppResult<ModelConfig> {
+    if configuration(db, server)?.source == ModelConfigSource::Server {
+        return Err(AppError::Validation(
+            "站点密钥由管理员管理，无法从个人账号移除".into(),
+        ));
+    }
+    db.remove_model_credential()?;
+    configuration(db, server)
+}
+
 pub(crate) async fn server_models(
-    db: &Database,
+    db: &(impl ModelConfiguration + AccountSession),
     services: &ModelServices,
 ) -> AppResult<ServerModelCatalog> {
     let server = services
@@ -76,7 +91,7 @@ pub(crate) async fn server_models(
     })
 }
 pub(crate) async fn test_connection(
-    db: &Database,
+    db: &(impl ModelConfiguration + AccountSession),
     connector: &dyn ModelConnector,
     server: Option<&ServerOpenAi>,
 ) -> AppResult<ModelConnectionTest> {
@@ -101,7 +116,7 @@ pub(crate) async fn test_connection(
     Ok(result)
 }
 fn frozen_target(
-    db: &Database,
+    db: &impl ModelConfiguration,
     config: &ModelConfig,
     server: Option<&ServerOpenAi>,
 ) -> AppResult<ModelTarget> {
@@ -118,7 +133,7 @@ fn frozen_target(
 }
 
 pub(crate) fn configured_model_key(
-    db: &Database,
+    db: &impl ModelConfiguration,
     config: &ModelConfig,
     server: Option<&ServerOpenAi>,
 ) -> AppResult<String> {
@@ -137,18 +152,18 @@ pub(crate) fn configured_model_key(
         return Ok(server.credential.clone());
     }
     if db
-        .setting("model.key_binding")?
+        .model_key_binding()?
         .is_none_or(|binding| binding != model_key_binding(config.provider, &config.base_url))
     {
         return Err(AppError::Validation(
             "当前密钥不属于这个模型接口，请重新保存对应 API Key".into(),
         ));
     }
-    db.secret("model")
+    db.model_credential()
 }
 
 pub(crate) async fn save(
-    db: &Database,
+    db: &impl ModelSettingsStore,
     input: ModelConfigInput,
     services: &ModelServices,
 ) -> AppResult<ModelConfig> {
@@ -220,6 +235,69 @@ mod tests {
 
     fn server() -> ServerOpenAi {
         ServerOpenAi::new("shared-fixture".into(), "site-secret-never-export".into()).unwrap()
+    }
+
+    struct ReadOnlyModel;
+    impl ModelConfiguration for ReadOnlyModel {
+        fn model_config(&self) -> AppResult<ModelConfig> {
+            Ok(ModelConfig {
+                provider: ModelProviderKind::OpenaiChat,
+                base_url: "https://example.test/v1".into(),
+                model: "chosen".into(),
+                has_api_key: false,
+                source: ModelConfigSource::Account,
+                server_model: None,
+            })
+        }
+        fn model_source(&self) -> AppResult<Option<String>> {
+            Ok(Some("account".into()))
+        }
+        fn selected_server_model(&self) -> AppResult<Option<String>> {
+            Ok(None)
+        }
+        fn model_key_binding(&self) -> AppResult<Option<String>> {
+            Ok(None)
+        }
+        fn model_credential(&self) -> AppResult<String> {
+            Err(AppError::Validation("no credential".into()))
+        }
+        fn bridge_id(&self) -> AppResult<Option<String>> {
+            Ok(None)
+        }
+    }
+    #[test]
+    fn configuration_uses_a_read_only_port_without_database_or_mutation_capabilities() {
+        let server = ServerOpenAi::new("site-model".into(), "site-key".into()).unwrap();
+        let result = configuration(&ReadOnlyModel, Some(&server)).unwrap();
+        assert_eq!(result.model, "chosen");
+        assert_eq!(result.source, ModelConfigSource::Account);
+        assert_eq!(result.server_model.as_deref(), Some("site-model"));
+        assert!(!result.has_api_key);
+    }
+
+    #[test]
+    fn removing_a_site_key_is_rejected_without_deleting_the_saved_personal_credential() {
+        let db = Database::test();
+        db.save_model_configuration(
+            ModelProviderKind::OpenaiResponses,
+            OPENAI_URL,
+            "personal",
+            Some("personal-key"),
+        )
+        .unwrap();
+        let server = ServerOpenAi::new("site-model".into(), "site-key".into()).unwrap();
+        db.save_server_model("site-model").unwrap();
+        assert!(delete_key(&db, Some(&server)).is_err());
+        assert_eq!(db.secret("model").unwrap(), "personal-key");
+        db.save_model_configuration(
+            ModelProviderKind::OpenaiResponses,
+            OPENAI_URL,
+            "personal",
+            None,
+        )
+        .unwrap();
+        assert!(!delete_key(&db, Some(&server)).unwrap().has_api_key);
+        assert!(db.secret("model").is_err());
     }
 
     #[test]

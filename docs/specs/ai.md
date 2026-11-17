@@ -20,6 +20,8 @@ AI 域基于授权资料提供可追溯的分析，管理模型执行与讨论�
 
 多轮讨论保留必要上下文；用户最新更正优先于旧回答，授权缩小时同步裁减历史模型内容和相关记忆。对话中的更正不能被描述为已经改写用户账本。
 
+分析与记忆用例分别依赖[账号能力端口](../../server/src/ports/ai_account.rs)，不接收完整 Database。用户资料是只读来源，AI 历史和记忆只暴露所属写入操作；模型配置仅有明确的配置、密钥和桥接方法，不能按任意键读取账号设置。账号锁协调由[存储适配](../../server/src/db/ai_access.rs)实现，冻结后释放、保存前重取的行为保持一致。输入的授权筛选仍由上下文层执行，精简模型输入的剩余差异见第 8 节。
+
 实现依据：[分析用例](../../server/src/application/analysis.rs)、[上下文构建](../../server/src/context.rs)、[多轮上下文](../../client/src/features/advisor/previousTurn.ts)、[记忆选取](../../server/src/context/memory.rs)。
 
 ## 3. 简洁的当前持仓输入

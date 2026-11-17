@@ -340,6 +340,8 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 
 ## 7. 维护与验证
 
+AI 账号访问的实现边界见[能力端口](../server/src/ports/ai_account.rs)与[存储适配](../server/src/db/ai_access.rs)。端口拆分保留既有 HTTP 字段、版本校验、凭据冻结与流式行为；这些内部接口不作为新的公开 HTTP API。
+
 新增或变更接口时，同次更新本文的方法、路径、权限、版本、输入输出及副作用；业务规则变更更新所属 spec。现有类型与路由说明当前行为，并不自动授权其所有历史行为继续成为产品要求；已采纳行为与代码差异应明确记录并修复。
 
 现有[契约检查](../scripts/check-contracts.mjs)覆盖部分 Rust/TypeScript 字段与请求策略，[传输回归](../client/src/api.hosted.test.ts)、[托管验收](../scripts/test-hosted.mjs)、[功能 API 验收](../scripts/test-functional-api.mjs)及各 HTTP 模块内测试提供进一步依据。本文建立时核对路由清单、字段来源、链接和差异，不代表这些完整测试已重新执行。

@@ -161,6 +161,15 @@ export function rustPaths(source, modulePath = []) {
   return paths;
 }
 export function serverSymbolViolation(source, target) {
+  const capabilities = {
+    'application/analysis.rs': ['AnalysisAccount', 'ModelConfiguration'],
+    'application/memory.rs': ['MemoryAccount'],
+    'application/model_settings.rs': ['ModelConfiguration', 'ModelSettingsStore', 'AccountSession'],
+    'application/codex_bridge.rs': ['ModelConfiguration', 'ModelSettingsStore'],
+  }[source];
+  if (capabilities && (target === 'ports::ai_account' || target.startsWith('ports::ai_account::'))
+      && !capabilities.some(name => target === `ports::ai_account::${name}`))
+    return 'AI use case may import only its declared account capabilities';
   const narrow = {
     'application/dividend_plans.rs': ['db::PublicDividendPlans', 'models::market', 'ports::market::DividendPlanProvider', 'ports::market::DividendPlanReader', 'AppError', 'AppResult'],
     'application/dividend_calendar.rs': ['db::PublicWatch', 'models::watch::calendar', 'models::watch::WatchInput', 'ports::market::DividendPlanReader', 'AppResult'],
@@ -229,6 +238,9 @@ export function serverViolation(source, target) {
 }
 
 export function serverFileViolation(source, target) {
+  if (['application/analysis.rs', 'application/memory.rs', 'application/model_settings.rs', 'application/codex_bridge.rs'].includes(source)
+      && ['db', 'storage', 'accounts'].includes(target))
+    return 'AI use cases depend on narrow account ports, never the concrete database or ledger';
   if (source === 'ai/model_catalog.rs' && !['ports', 'error'].includes(target))
     return 'site model catalog only lists provider metadata, without account data or analysis context';
   if (source === 'accounts/activity.rs' && !['accounts', 'storage', 'error'].includes(target))
