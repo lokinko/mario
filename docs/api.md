@@ -188,7 +188,7 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 | DELETE | `/api/codex-bridge` | R | — → `{ok:true}` | 撤销桥接 |
 | POST | `/api/codex-bridge/enable` | R | — → `ModelConfig` | 启用配对桥接作为模型配置 |
 
-预览返回 `contextRevision`，执行请求必须用 `previewRevision` 携带匹配指纹；字段在反序列化层可省略，但执行时缺失或不匹配会失败。它表示授权输入与模型目标的准备状态，不替代 `If-Match`。客户端可自动准备再执行，不要求额外弹窗确认。分析执行与校验见[分析用例](../server/src/application/analysis.rs)。当前省略 `webSearch` 的运行默认值仍为 false；“默认开启网页搜索”已采纳但尚未实现，不能根据产品 spec 推断当前省略字段会搜索。当前也未提供通用 CSV 模型附件接口。
+预览返回 `contextRevision`，执行请求必须用 `previewRevision` 携带匹配指纹；字段在反序列化层可省略，但执行时缺失或不匹配会失败。它表示授权输入与模型目标的准备状态，不替代 `If-Match`。客户端可自动准备再执行，不要求额外弹窗确认。分析执行与校验见[分析用例](../server/src/application/analysis.rs)。省略 `webSearch` 时默认开启；已保存的用户关闭选择由客户端显式传入并继续尊重。当前也未提供通用 CSV 模型附件接口。
 
 ### 4.2 流式协议
 
@@ -310,10 +310,10 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | ModelConfig | `provider,baseUrl,model,hasApiKey,source`，可有 `serverModel`；不返回 apiKey |
 | CodexModel / CodexBridgeStatus | CodexModel 为 `model,displayName:string; description?:string=""; isDefault?:boolean=false`；状态为 `paired,online:boolean; model:string/null; models:CodexModel[]` |
 | ContextSelection | `includeProfile?,includeHoldings?,includeEvidence?,includeMemory?:boolean`，当前各字段默认 true |
-| AnalysisRequest | `question:string; workflow:"council"; webSearch?:boolean=false; previousTurn?:PreviousTurn/null; contextSelection?:ContextSelection; previewRevision?:string/null`；拒绝未知字段，不接收持仓账本 JSON 作为独立请求字段 |
+| AnalysisRequest | `question:string; workflow:"council"; webSearch?:boolean=true; previousTurn?:PreviousTurn/null; contextSelection?:ContextSelection; previewRevision?:string/null`；拒绝未知字段，不接收持仓账本 JSON 作为独立请求字段 |
 | PreviousTurn | `question,answer:string; suggestions:string[]; earlierQuestions?:string[]=[]; pendingQuestion?:string/null`；主摘要总长不超过 800 字符，建议最多 3 条；早期问题最多 5 条，每条不超过 300 字符，追问不超过 200 字符 |
-| AnalysisSettings | `workflow?:"council"; webSearch?:boolean=false; contextSelection?:ContextSelection`；按整组设置保存，缺省应用当前默认值 |
-| AnalysisPreview | `provider,model,workflow,groups,evidenceCandidates,payload,payloadBytes,contextRevision,systemPolicy,localOnly,generatedAt`；payload 是当前内部准备数据，不代表模型输入已按新 spec 精简 |
+| AnalysisSettings | `workflow?:"council"; webSearch?:boolean=true; contextSelection?:ContextSelection`；按整组设置保存，缺省应用当前默认值 |
+| AnalysisPreview | `provider,model,workflow,groups,evidenceCandidates,payload,payloadBytes,contextRevision,systemPolicy,localOnly,generatedAt`；payload 是精简后的内部引用结构，实际模型材料渲染为 Markdown；payloadBytes 计初始 Markdown 材料 UTF-8 字节数，不含系统提示词或后续研究结果 |
 | AnalysisResult | `id,answer,stages,transparency,workflowTrace,createdAt,disclaimer`；transparency 含授权组、模型、指纹、调用与 token 统计；workflowTrace 含研究、提案、投票、引用及输出校验记录，嵌套类型见核心模型与[评议类型](../server/src/models/council.rs) |
 | AnalysisHistoryItem / StoredAnalysis | 列表项含 `id,question,createdAt,transparency,groundingStatus,workflowVersion,verdict`；详情含 `id,question,answer,createdAt,transparency,workflowTrace`。兼容字段可空，不据旧档案推断当前工作流 |
 | MemoryNote | `id,kind,origin,statement,rationale,sourceAnalysisIds,quote,active,createdAt,updatedAt`；kind 为 `preference/viewpoint/context`，origin 为 `userStated/modelInferred` |

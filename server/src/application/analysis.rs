@@ -6,8 +6,8 @@ use crate::{
     context,
     evidence::search_evidence,
     models::{
-        AnalysisPreview, AnalysisRequest, AnalysisResult, ModelConfig, ModelProviderKind,
-        ResearchEvidence, Snapshot,
+        accounting::analysis::AuthorizedFinancialContext, AnalysisPreview, AnalysisRequest,
+        AnalysisResult, ModelConfig, ModelProviderKind, ResearchEvidence,
     },
     ports::ai_account::{AnalysisAccount, ModelConfiguration},
     ports::analysis::AnalysisExecutor,
@@ -31,16 +31,16 @@ impl<'a, A: AnalysisAccount> AnalysisService<'a, A> {
         request.validate()?;
         let config = configuration(self.db, self.server)?;
         let methodology = self.db.investment_methodology()?;
-        let snapshot = self.db.snapshot()?;
-        let evidence_candidates = relevant_evidence(self.db, request, &snapshot)?;
+        let financial = self.db.financial_context(&request.context_selection)?;
+        let evidence_candidates = relevant_evidence(self.db, request, &financial)?;
         let memory_notes = if request.context_selection.include_memory {
             self.db.active_memory_notes()?
         } else {
             Vec::new()
         };
-        let built_context = context::ContextBuilder::build(
+        let built_context = context::ContextBuilder::from_financial(
             request,
-            &snapshot,
+            &financial,
             &context::ContextSources {
                 methodology: Some(&methodology.prompt),
                 evidence_candidates: &evidence_candidates,
@@ -145,7 +145,7 @@ pub(super) fn frozen_credentials(
 fn relevant_evidence(
     db: &impl AnalysisAccount,
     request: &AnalysisRequest,
-    snapshot: &Snapshot,
+    financial: &AuthorizedFinancialContext,
 ) -> AppResult<Vec<ResearchEvidence>> {
     if !request.context_selection.include_evidence {
         return Ok(Vec::new());
@@ -173,12 +173,7 @@ fn relevant_evidence(
         .map(|row| (row.entry.input.name.clone(), row.entry.input.symbol.clone()))
         .collect::<Vec<_>>();
     if request.context_selection.include_holdings {
-        companies.extend(
-            snapshot
-                .holdings
-                .iter()
-                .map(|h| (h.name.clone(), h.symbol.clone())),
-        );
+        companies.extend(financial.companies.clone());
     }
     companies.extend(
         items
@@ -214,11 +209,10 @@ fn relevant_evidence(
     let query = if let Some(subject) = subject_question {
         format!("{} {}", request.question, subject)
     } else {
-        let holdings = snapshot
-            .holdings
+        let holdings = financial
+            .companies
             .iter()
-            .filter(|_| request.context_selection.include_holdings)
-            .map(|h| format!("{} {}", h.name, h.symbol))
+            .map(|(name, symbol)| format!("{name} {symbol}"))
             .collect::<Vec<_>>()
             .join(" ");
         format!("{} {}", request.question, holdings)
@@ -515,7 +509,12 @@ mod tests {
                 .unwrap();
         let mut request = request();
         request.question = "观察甲公司600036分红持续性如何？".into();
-        let selected = relevant_evidence(&db, &request, &snapshot).unwrap();
+        let selected = relevant_evidence(
+            &db,
+            &request,
+            &AuthorizedFinancialContext::from_snapshot(&snapshot, &request.context_selection),
+        )
+        .unwrap();
         assert_eq!(selected.len(), 2);
         assert!(selected.iter().any(|item| item.id == target.id));
         assert!(!selected
@@ -760,6 +759,8 @@ mod tests {
         assert!(service.execute(changed, &executor).await.is_err());
         let mut profile = db.snapshot().unwrap().profile;
         profile.monthly_income += 100.0;
+        profile.provided_fields = Some(vec![crate::models::ProfileField::MonthlyIncome]);
+        profile.exact_amounts = None;
         db.save_profile(&profile).unwrap();
         assert!(service.execute(request, &executor).await.is_err());
         assert!(executor.captured.lock().unwrap().is_empty());

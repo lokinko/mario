@@ -128,6 +128,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn web_search_defaults_on_but_saved_false_is_preserved() {
+        assert!(AnalysisSettings::default().web_search);
+        let request: crate::models::AnalysisRequest = serde_json::from_value(
+            serde_json::json!({"question":"当前状态", "workflow":"council"}),
+        )
+        .unwrap();
+        assert!(request.web_search);
+        let request: crate::models::AnalysisRequest = serde_json::from_value(
+            serde_json::json!({"question":"当前状态", "workflow":"council", "webSearch":false}),
+        )
+        .unwrap();
+        assert!(!request.web_search);
+        let account = crate::db::TestAccount::new();
+        let db = account.open();
+        assert!(db.analysis_settings().unwrap().web_search);
+        db.save_analysis_settings(AnalysisSettings {
+            web_search: false,
+            ..Default::default()
+        })
+        .unwrap();
+        drop(db);
+        assert!(!account.open().analysis_settings().unwrap().web_search);
+    }
+
+    #[test]
     fn upgrade_strips_retired_preset_options_and_moves_to_the_council_workflow() {
         let account = crate::db::TestAccount::new();
         let db = account.open();

@@ -310,8 +310,7 @@ pub(super) async fn run_live() {
 
                 workflow: settings.workflow.clone(),
 
-                web_search: settings.web_search
-                    && provider_kind != crate::models::ModelProviderKind::OpenaiChat,
+                web_search: false, // Fictional cases never initiate public searches.
                 context_selection: settings.context_selection.clone(),
                 preview_revision: None,
             };
@@ -451,7 +450,7 @@ fn fixture_request(case: &Case) -> AnalysisRequest {
         question: case.question.clone(),
         previous_turn: None,
         workflow: settings.workflow,
-        web_search: settings.web_search,
+        web_search: false,
         context_selection: settings.context_selection,
         preview_revision: None,
     }
@@ -637,20 +636,20 @@ fn watch_scenarios_freeze_real_evidence_and_original_trade_units_with_authorizat
                 assert!(facts["summary"]["portfolioValue"].is_null());
                 assert!(facts["summary"]["valuationDate"].is_null());
                 assert!(facts["holdings"].get("fund-a").is_none());
-                for (id, trade, price, cost, account) in [
-                    ("watch-a", "qa-buy-a", "30", "480000", "虚构证券账户甲"),
-                    ("watch-b", "qa-buy-b", "32.5", "520000", "虚构证券账户乙"),
+                let holding = &facts["holdings"]["watch-a"];
+                assert_eq!(holding["marketValue"], "800000");
+                assert_eq!(holding["costBasis"], "1000000");
+                assert_eq!(holding["currentQuantity"], "32000");
+                assert!(facts["holdings"].get("watch-b").is_none());
+                let serialized = facts.to_string();
+                for forbidden in [
+                    "recentTrades",
+                    "recordedTradeCount",
+                    "dataIssues",
+                    "qa-buy-a",
+                    "虚构证券账户甲",
                 ] {
-                    let holding = &facts["holdings"][id];
-                    assert_eq!(holding["marketValue"], "400000");
-                    assert_eq!(holding["costBasis"], cost);
-                    assert_eq!(holding["priceDate"], "2026-11-06");
-                    assert_eq!(holding["recordedTradeCount"], 1);
-                    let execution = &holding["recentTrades"][trade];
-                    assert_eq!(execution["originalQuantity"], "16000");
-                    assert_eq!(execution["originalPrice"], price);
-                    assert_eq!(execution["grossAmount"], cost);
-                    assert_eq!(execution["account"], account);
+                    assert!(!serialized.contains(forbidden));
                 }
                 if matches!(case.scenario, Some(Scenario::Weekly)) {
                     assert_eq!(sources.len(), 4);

@@ -5,7 +5,7 @@ use super::structured_output::{MAX_STRUCTURED_OUTPUT_CHARS, STRUCTURED_ANALYSIS_
 use super::ChatMessage;
 use crate::context::INVESTMENT_SYSTEM_POLICY;
 
-pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v17";
+pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v18";
 
 pub struct StagePrompt {
     pub key: &'static str,
@@ -77,9 +77,9 @@ pub trait AnalysisWorkflow: Send + Sync {
     ) -> StagePrompt;
 }
 
-pub struct InvestmentWorkflowV17;
+pub struct InvestmentWorkflowV18;
 
-impl AnalysisWorkflow for InvestmentWorkflowV17 {
+impl AnalysisWorkflow for InvestmentWorkflowV18 {
     fn version(&self) -> &'static str {
         INVESTMENT_WORKFLOW_VERSION
     }
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn every_agent_keeps_the_untrusted_data_boundary_and_its_contract() {
-        let workflow = InvestmentWorkflowV17;
+        let workflow = InvestmentWorkflowV18;
         let research = workflow.research("上下文");
         assert!(research.messages[0].content.contains("不可信数据"));
         assert!(research.messages[1].content.contains("\"checks\""));
@@ -198,7 +198,7 @@ mod tests {
         .to_string();
         assert!(invalid.chars().count() > 12_000);
         assert!(invalid.chars().count() < MAX_STRUCTURED_OUTPUT_CHARS);
-        let prompt = InvestmentWorkflowV17.repair_output(
+        let prompt = InvestmentWorkflowV18.repair_output(
             "生成",
             &invalid,
             "字段无效",
@@ -212,7 +212,7 @@ mod tests {
     fn repair_bounds_oversized_originals_by_unicode_characters() {
         let retained = "🙂".repeat(MAX_STRUCTURED_OUTPUT_CHARS);
         let oversized = format!("{retained}BEYOND_ORIGINAL_BUDGET");
-        let prompt = InvestmentWorkflowV17.repair_output(
+        let prompt = InvestmentWorkflowV18.repair_output(
             "生成",
             &oversized,
             "输出过大",

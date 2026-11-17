@@ -679,7 +679,7 @@ pub const RETIRED_CONTEXT_OPTIONS: [&str; 6] = [
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisRequest {
-    #[serde(default)]
+    #[serde(default = "enabled")]
     pub web_search: bool,
     #[serde(default)]
     pub previous_turn: Option<PreviousTurn>,
@@ -706,7 +706,7 @@ impl Default for AnalysisSettings {
         Self {
             workflow: ANALYSIS_WORKFLOW.into(),
 
-            web_search: false,
+            web_search: true,
             context_selection: ContextSelection::default(),
         }
     }

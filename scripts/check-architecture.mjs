@@ -161,6 +161,9 @@ export function rustPaths(source, modulePath = []) {
   return paths;
 }
 export function serverSymbolViolation(source, target) {
+  if (['application/analysis.rs', 'ports/ai_account.rs', 'context.rs'].includes(source)
+      && ['models::Snapshot', 'models::HoldingTrade', 'models::*', 'models'].includes(target))
+    return 'AI inputs use the authorized current-state projection, never the full ledger snapshot';
   const capabilities = {
     'application/analysis.rs': ['AnalysisAccount', 'ModelConfiguration'],
     'application/memory.rs': ['MemoryAccount'],

@@ -2,14 +2,15 @@
 use super::Database;
 use crate::{
     models::{
+        accounting::analysis::AuthorizedFinancialContext,
         memory::{
             AcceptedOperation, DreamInput, DreamSourceAnalysis, DreamState, DreamSummary,
             MemoryNote,
         },
         methodology::InvestmentMethodology,
         watch::WatchBoard,
-        AnalysisResult, AnalysisSettings, ModelConfig, ModelProviderKind, ResearchEvidence,
-        Snapshot,
+        AnalysisResult, AnalysisSettings, ContextSelection, ModelConfig, ModelProviderKind,
+        ResearchEvidence,
     },
     ports::ai_account::{
         AccountSession, AnalysisAccount, MemoryAccount, ModelConfiguration, ModelSettingsStore,
@@ -80,8 +81,14 @@ impl UserAnalysisSources for Database {
     fn investment_methodology(&self) -> AppResult<InvestmentMethodology> {
         Database::investment_methodology(self)
     }
-    fn snapshot(&self) -> AppResult<Snapshot> {
-        Database::snapshot(self)
+    fn financial_context(
+        &self,
+        selection: &ContextSelection,
+    ) -> AppResult<AuthorizedFinancialContext> {
+        Ok(AuthorizedFinancialContext::from_snapshot(
+            &Database::snapshot(self)?,
+            selection,
+        ))
     }
     fn research_evidence(&self) -> AppResult<Vec<ResearchEvidence>> {
         Database::research_evidence(self)

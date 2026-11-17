@@ -1,14 +1,15 @@
 //! Account capabilities used by AI use cases. No SQL, arbitrary settings or user writes.
 use crate::{
     models::{
+        accounting::analysis::AuthorizedFinancialContext,
         memory::{
             AcceptedOperation, DreamInput, DreamSourceAnalysis, DreamState, DreamSummary,
             MemoryNote,
         },
         methodology::InvestmentMethodology,
         watch::WatchBoard,
-        AnalysisResult, AnalysisSettings, ModelConfig, ModelProviderKind, ResearchEvidence,
-        Snapshot,
+        AnalysisResult, AnalysisSettings, ContextSelection, ModelConfig, ModelProviderKind,
+        ResearchEvidence,
     },
     AppResult,
 };
@@ -50,7 +51,10 @@ pub(crate) trait ModelSettingsStore: ModelConfiguration + AccountSession {
 /// Read-only sources provided by the user domain; never grants ledger mutation.
 pub(crate) trait UserAnalysisSources: Send + Sync {
     fn investment_methodology(&self) -> AppResult<InvestmentMethodology>;
-    fn snapshot(&self) -> AppResult<Snapshot>;
+    fn financial_context(
+        &self,
+        selection: &ContextSelection,
+    ) -> AppResult<AuthorizedFinancialContext>;
     fn research_evidence(&self) -> AppResult<Vec<ResearchEvidence>>;
     fn watch_board(&self, day: chrono::NaiveDate) -> AppResult<WatchBoard>;
 }

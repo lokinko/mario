@@ -294,8 +294,8 @@ try {
   const contextPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "council" });
   assert.equal(contextPreview.payload.investmentMethodology, customMethodology);
   assert(contextPreview.systemPolicy.includes(customMethodology));
-  assert.equal(contextPreview.payload.facts.summary.horizonYears, "未填写");
-  assert.equal(contextPreview.payload.facts.summary.liabilities, "未填写");
+  assert.equal(contextPreview.payload.facts.summary.horizonYears, undefined);
+  assert.equal(contextPreview.payload.facts.summary.liabilities, undefined);
   const explicitProfile = {
     ...snap.profile,
     providedFields: ["liabilities", "horizonYears", "maxDrawdownPct"],
@@ -313,10 +313,11 @@ try {
   assert.notEqual(savedPreview.contextRevision, contextPreview.contextRevision);
   await api("/profile", "PUT", { ...explicitProfile, providedFields: [] });
   const clearedPreview = await api("/analysis/preview", "POST", { question: "如何分析", workflow: "council" });
-  assert.equal(clearedPreview.payload.facts.summary.horizonYears, "未填写");
-  assert.equal(clearedPreview.payload.facts.summary.liabilities, "未填写");
+  assert.equal(clearedPreview.payload.facts.summary.horizonYears, undefined);
+  assert.equal(clearedPreview.payload.facts.summary.liabilities, undefined);
   const defaults = await api("/analysis-settings");
   assert.equal(defaults.workflow, "council");
+  assert.equal(defaults.webSearch, true);
   assert.equal(defaults.reflect, undefined);
   assert.equal(defaults.exploreAlternatives, undefined);
   for (const retired of ["quick", "deep"]) {
@@ -480,6 +481,7 @@ try {
   const analysis = await api("/analysis/preview", "POST", request);
   assert.equal(analysis.payload.dailyAssetHistory, undefined);
   assert.ok(analysis.payload.facts.holdings);
+  for (const key of ["recentTrades", "recordedTradeCount", "tradeBasis", "dataIssues", "needsReconciliation"]) assert(!JSON.stringify(analysis.payload.facts).includes(key), key);
   const previousTurn = { question: "上一问", answer: "上一轮结论", suggestions: ["上一轮动作"] };
   const followup = await api("/analysis/preview", "POST", { ...request, previousTurn });
   assert.deepEqual(followup.payload.previousTurn, previousTurn);

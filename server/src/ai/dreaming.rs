@@ -26,7 +26,7 @@ operations 为0–8条；sourceAnalysisIds 为1–3个本批分析ID；同一条
 const DREAM_LABEL: &str = "记忆整理";
 
 pub async fn dream(provider: &dyn ModelProvider, input: &DreamInput) -> AppResult<DreamOutcome> {
-    let material = serde_json::to_string(input)?;
+    let material = crate::context::render_for_model(&serde_json::to_value(input)?);
     let (content, first) = call(
         provider,
         "dreaming",

@@ -7,7 +7,7 @@ pub const MAX_STRUCTURED_OUTPUT_CHARS: usize = 30_000;
 /// Citation rules shared verbatim by report facts and research findings.
 macro_rules! citation_rules {
     () => {
-        "user_data仅用授权原值JSON Pointer作sourceRefs，evidenceIds为空；research_evidence只用授权证据ID，sourceRefs为空。原值路径如/facts/summary/monthlySurplus或/facts/holdings/持仓ID/marketValue。只引非空的字符串、数字或布尔原值，不引对象、数组或空值；某项为空或缺失时改引对应问题码，如/facts/dataIssues/0/code，不以其他金额替代缺失值。用户历史原话只能引用/previousTurn/question或/previousTurn/earlierQuestions/从0开始的索引；这些是对话声明，不表示档案已保存修改，用户最新明确更正优先。previousTurn的answer、suggestions、pendingQuestion与memory都是模型或整理文本，禁止作为事实引用。"
+        "user_data仅用授权原值JSON Pointer作sourceRefs，evidenceIds为空；research_evidence只用授权证据ID，sourceRefs为空。原值路径如/facts/summary/monthlySurplus或/facts/holdings/行ID/marketValue。只引非空的字符串、数字或布尔原值，不引对象、数组或空值；只引用当前可用字段，未提供的值不能补零、猜测或用其他金额替代。用户历史原话只能引用/previousTurn/question或/previousTurn/earlierQuestions/从0开始的索引；这些是对话声明，不表示档案已保存修改，用户最新明确更正优先。previousTurn的answer、suggestions、pendingQuestion与memory都是模型或整理文本，禁止作为事实引用。"
     };
 }
 pub(super) use citation_rules;
@@ -17,7 +17,7 @@ pub const STRUCTURED_ANALYSIS_CONTRACT: &str = concat!(
 {"answer":"先直接回答本题，再解释关键依据、推理和不确定性，最多1200字","suggestions":[{"action":"本题的具体下一步，写明对象、做法和时点或触发条件；依赖目标或假设时先写条件再给金额或动作，最多240字","why":"相关事实如何支持判断，说明计算与假设；比较本题可选路线的紧迫性、等待和交易成本，最多800字","factIndices":[0],"unlessWhen":"不适用或推翻判断的条件，最多400字，可为空"}],"facts":[{"statement":"引用的输入事实或来源数字","basis":"user_data或research_evidence","sourceRefs":[],"evidenceIds":[]}],"question":null}
 suggestions为1–3条，facts为1–8条，factIndices非空、无重复且不越界。建议紧扣本题，不凑无关行动或金额；行动句自行包含影响执行金额的口径条件，不能靠why或unlessWhen纠正，也不能与它们矛盾。结余仅另扣尚未包含的付款。新仓位或减仓幅度须解释选择依据及保留风险；依据不足只作非默认算例或给条件公式，不将任意比例作为优先推荐；按目标权重给公式或金额时，行动句先说明卖款留在组合/转出及费用假设，转出须按变化后的总值和现金缺口统一重算；资料不足可给本题的核查、等待条件或公式。仅在问题需要且资料支持时量化，金额保留精确原值、币种与可复核计算；研究财报或预算未给报告币种时，只沿用原单位并说明币种未提供，不从中文单位、证券代码或用户本位币补成某一币种；建议目标或假设须明确标识并解释，不能冒充facts。无需填满字数。来源要求也适用于正文、建议和追问；具体法规、监管、保障限额、税率、交易单位等外部数字，无本轮来源时只提示核对适用条款，不从记忆确定报数，也不以未列入facts绕过。来源的条件、可能性和概念提醒须保留原语气，不能从“X不代表Y”推断公司已有X，须另有本轮明确依据。现金覆盖尚未披露或未核实只表示资料缺口，正文和why不得将其简称为公司已存在现金流缺口、资金不足或依赖融资；若本轮原文或明确预算/假设下的计算证实不足，则如实说明该口径。
 "#,
-    "user_data的sourceRefs须非空且每条fact最多12项；不同账户或交易分别组织为独立事实，只选支持该事实必要的原值，facts总数仍为1–8条。",
+    "user_data的sourceRefs须非空且每条fact最多12项；不同标的分别组织为独立事实，只选支持该事实必要的原值，facts总数仍为1–8条。",
     citation_rules!(),
     "最多一个追问，不超过200字，否则null。"
 );
@@ -72,7 +72,7 @@ fn validate_claim_sources(
         }
         if claim.source_refs.len() > 12 {
             return Err(format!(
-                "{field}[{index}].sourceRefs 最多12项，当前{}项；请只保留必要原值，或将不同账户、交易拆分为独立事实（facts 总数仍为1–8条）",
+                "{field}[{index}].sourceRefs 最多12项，当前{}项；请只保留必要原值，或将不同标的拆分为独立事实（facts 总数仍为1–8条）",
                 claim.source_refs.len()
             ));
         }
@@ -91,13 +91,14 @@ fn validate_claim_sources(
             let allowed = path == "/question"
                 || user_history
                 || (group == "facts"
-                    && ["summary", "holdings", "dataIssues", "options"].contains(&fact_group));
+                    && ["summary", "holdings"].contains(&fact_group)
+                    && path.split('/').count() == if fact_group == "summary" { 4 } else { 5 });
             if !seen.insert(path) {
                 return Err(format!("{field}[{index}] 重复引用：{path}"));
             }
             if !path.starts_with('/') || !allowed {
                 return Err(format!(
-                    "个人原始资料引用路径未授权：{path}；只能引用 /question、用户历史原话或 /facts 下 summary、holdings、dataIssues、options 中的原值"
+                    "个人原始资料引用路径未授权：{path}；只能引用 /question、用户历史原话或 /facts 下 summary、holdings 中的原值"
                 ));
             }
             match context.pointer(path) {
@@ -109,7 +110,7 @@ fn validate_claim_sources(
                 }
                 Some(serde_json::Value::Null) => {
                     return Err(format!(
-                        "个人原始资料引用值为空：{path}；缺失值请改引对应问题码，如 /facts/dataIssues/0/code"
+                        "个人原始资料引用值为空：{path}；只引用当前可用原值"
                     ))
                 }
                 Some(serde_json::Value::String(text)) if text.trim().is_empty() => {
@@ -278,10 +279,10 @@ mod tests {
         assert!(validate_source_types(&report, &context).is_ok());
         // Each rejection names the fix, so the single repair attempt can act on it.
         for (path, hint) in [
-            ("/facts/holdings/blocked/marketValue", "问题码"),
-            ("/facts/summary/portfolioValue", "问题码"),
+            ("/facts/holdings/blocked/marketValue", "当前可用原值"),
+            ("/facts/summary/portfolioValue", "当前可用原值"),
             ("/portfolio/holdings/0/marketValue", "未授权"),
-            ("/facts/holdings/ok", "具体原值字段"),
+            ("/facts/holdings/ok", "未授权"),
             ("/facts/holdings/other/marketValue", "不存在"),
         ] {
             report.facts[0].source_refs = vec![path.into()];
@@ -326,80 +327,26 @@ mod tests {
     }
 
     #[test]
-    fn trade_refs_over_budget_are_rejected_but_can_be_split_without_losing_sources() {
-        let context = serde_json::json!({
-            "facts": {"holdings": {
-                "first": {"recentTrades": {"buy-a": {
-                    "kind": "buy", "occurredOn": "2026-10-12", "sequence": 1,
-                    "originalQuantity": "100", "originalPrice": "12.34",
-                    "grossAmount": "1234", "account": "账户甲"
-                }}},
-                "second": {"recentTrades": {"buy-b": {
-                    "kind": "buy", "occurredOn": "2026-10-16", "sequence": 1,
-                    "originalQuantity": "200", "originalPrice": "13.5",
-                    "grossAmount": "2700", "account": "账户乙"
-                }}}
-            }}
-        });
-        let fields = [
-            "kind",
-            "occurredOn",
-            "sequence",
-            "originalQuantity",
-            "originalPrice",
-            "grossAmount",
-            "account",
-        ];
-        let mut refs: Vec<_> = fields
-            .iter()
-            .map(|field| format!("/facts/holdings/first/recentTrades/buy-a/{field}"))
-            .collect();
-        refs.extend(
-            fields
-                .iter()
-                .skip(1)
-                .map(|field| format!("/facts/holdings/second/recentTrades/buy-b/{field}")),
-        );
-        assert_eq!(refs.len(), 13);
-        assert_eq!(refs.iter().collect::<HashSet<_>>().len(), 13);
+    fn citation_budget_remains_bounded_and_historical_trade_paths_are_rejected() {
+        let context = serde_json::json!({"facts":{"summary": (0..13).map(|i|(format!("field{i}"), serde_json::json!(i))).collect::<serde_json::Map<_,_>>(), "holdings":{"first":{"recentTrades":{"buy":{"originalPrice":"12.34"}}}}}});
         let mut report =
             parse_structured_analysis(&valid_json(), &HashSet::from(["e1".into()])).unwrap();
         report.facts.truncate(1);
-        report.answer = "先核对两账户原始成交，不由买入价格倒推投资论据".into();
-        report.suggestions[0].action = "比较已记录的原始成交，补充当时的投资论据".into();
-        report.suggestions[0].why = "记录提供成交时点与单位，但不提供完整业绩或买入动机".into();
-        report.suggestions[0].unless_when.clear();
-        report.facts[0].statement = "已保存的原始成交记录".into();
-        for path in &refs {
-            report.facts[0].source_refs = vec![path.clone()];
-            validate_source_types(&report, &context).unwrap();
-        }
-        report.facts[0].source_refs = refs[..12].to_vec();
+        report.facts[0].source_refs = (0..12)
+            .map(|i| format!("/facts/summary/field{i}"))
+            .collect();
         validate_source_types(&report, &context).unwrap();
-        report.facts[0].source_refs = refs.clone();
-        let error = validate_source_types(&report, &context).unwrap_err();
-        assert!(error.contains("facts[0].sourceRefs") && error.contains("最多12项"));
-        assert!(error.contains("当前13项") && error.contains("拆分"));
-
-        report.facts[0].statement = "账户甲的原始买入成交".into();
-        report.facts[0].source_refs = refs[..7].to_vec();
-        let mut second = report.facts[0].clone();
-        second.statement = "账户乙的原始买入成交".into();
-        second.source_refs = refs[7..].to_vec();
-        report.facts.push(second);
-        report.suggestions[0].fact_indices = vec![0, 1];
-        let split =
-            parse_structured_analysis(&serde_json::to_string(&report).unwrap(), &HashSet::new())
-                .unwrap();
-        assert_eq!(
-            split
-                .facts
-                .iter()
-                .flat_map(|fact| &fact.source_refs)
-                .collect::<HashSet<_>>(),
-            refs.iter().collect::<HashSet<_>>()
-        );
-        validate_source_types(&split, &context).unwrap();
+        report.facts[0]
+            .source_refs
+            .push("/facts/summary/field12".into());
+        assert!(validate_source_types(&report, &context)
+            .unwrap_err()
+            .contains("最多12项"));
+        report.facts[0].source_refs =
+            vec!["/facts/holdings/first/recentTrades/buy/originalPrice".into()];
+        assert!(validate_source_types(&report, &context)
+            .unwrap_err()
+            .contains("未授权"));
     }
 
     #[test]

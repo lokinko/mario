@@ -203,3 +203,12 @@ test('AI use cases cannot regain concrete account state or widen their declared 
   assert.equal(serverSymbolViolation('application/memory.rs', 'ports::ai_account::MemoryAccount'), undefined);
   assert.equal(serverFileViolation('application/analysis.rs', 'ports'), undefined);
 });
+
+test('production AI inputs cannot regain the financial snapshot or ledger records', async () => {
+  const { serverSymbolViolation } = await import('./check-architecture.mjs');
+  for (const source of ['application/analysis.rs', 'ports/ai_account.rs', 'context.rs']) {
+    for (const target of ['models::Snapshot', 'models::HoldingTrade', 'models::*', 'models'])
+      assert(serverSymbolViolation(source, target));
+    assert.equal(serverSymbolViolation(source, 'models::accounting::analysis::AuthorizedFinancialContext'), undefined);
+  }
+});
