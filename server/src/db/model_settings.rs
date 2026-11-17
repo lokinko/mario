@@ -1,14 +1,22 @@
 //! AI model destinations, bound credentials and analysis presets.
-use super::{params, AppError, AppResult, Database, ModelConfig, OptionalRow};
 use crate::models::{
     analysis::AnalysisSettings,
     provider::{model_key_binding, ModelProviderKind},
+};
+use {
+    super::settings::ai::AiSetting,
+    crate::{
+        db::Database,
+        models::connection::ModelConfig,
+        storage::{params, OptionalRow},
+        AppError, AppResult,
+    },
 };
 
 impl Database {
     pub fn analysis_settings(&self) -> AppResult<AnalysisSettings> {
         let settings = self
-            .setting("analysis.settings")?
+            .ai_setting(AiSetting::Presets)?
             .map(|value| serde_json::from_str(&value).map_err(AppError::from))
             .unwrap_or_else(|| Ok(AnalysisSettings::default()))?;
         Ok(normalize_analysis_settings(settings))
@@ -22,38 +30,40 @@ impl Database {
             return Err(AppError::Validation("分析方式无效".into()));
         }
         let settings = normalize_analysis_settings(settings);
-        self.set_setting("analysis.settings", &serde_json::to_string(&settings)?)?;
+        self.set_ai_setting(AiSetting::Presets, &serde_json::to_string(&settings)?)?;
         Ok(settings)
     }
 
     pub fn model_config(&self) -> AppResult<ModelConfig> {
-        let has_key = self.secret("model").is_ok();
+        let has_key = self.model_secret().is_ok();
         let conn = self.conn()?;
-        let value = |key: &str, fallback: &str| -> AppResult<String> {
+        let value = |key: AiSetting, fallback: &str| -> AppResult<String> {
             Ok(conn
-                .query_row("SELECT value FROM settings WHERE key=$1", [key], |row| {
-                    row.get(0)
-                })
+                .query_row(
+                    "SELECT value FROM settings WHERE key=$1",
+                    [key.key()],
+                    |row| row.get(0),
+                )
                 .optional()?
                 .unwrap_or_else(|| fallback.into()))
         };
         let provider: ModelProviderKind = value(
-            "model.provider",
+            AiSetting::Provider,
             ModelProviderKind::OpenaiResponses.as_str(),
         )?
         .parse()?;
         Ok(ModelConfig {
-            source: if value("model.source", "account")? == "server" {
+            source: if value(AiSetting::Source, "account")? == "server" {
                 crate::models::connection::ModelConfigSource::Server
             } else {
                 crate::models::connection::ModelConfigSource::Account
             },
             server_model: None,
             provider,
-            base_url: value("model.base_url", "https://api.openai.com/v1")?,
-            model: value("model.name", "gpt-4.1-mini")?,
+            base_url: value(AiSetting::BaseUrl, "https://api.openai.com/v1")?,
+            model: value(AiSetting::ModelName, "gpt-4.1-mini")?,
             has_api_key: match provider {
-                ModelProviderKind::CodexBridge => !value("model.codex_bridge_id", "")?.is_empty(),
+                ModelProviderKind::CodexBridge => !value(AiSetting::Bridge, "")?.is_empty(),
                 _ => has_key,
             },
         })
@@ -81,25 +91,25 @@ impl Database {
         let base_url = base_url.trim_end_matches('/');
         let credential = match api_key {
             Some(key) => Some((
-                self.encrypted_secret("model", key)?,
+                self.encrypt_model_secret(key)?,
                 model_key_binding(provider, base_url),
             )),
             None => None,
         };
         let mut writes = vec![
-            ("model.source", "account".to_string()),
-            ("model.provider", provider.as_str().to_string()),
-            ("model.base_url", base_url.to_string()),
-            ("model.name", model.to_string()),
+            (AiSetting::Source, "account".to_string()),
+            (AiSetting::Provider, provider.as_str().to_string()),
+            (AiSetting::BaseUrl, base_url.to_string()),
+            (AiSetting::ModelName, model.to_string()),
         ];
         if let Some((secret, binding)) = credential {
-            writes.push(("secret.model", secret));
-            writes.push(("model.key_binding", binding));
+            writes.push((AiSetting::ModelCredential, secret));
+            writes.push((AiSetting::KeyBinding, binding));
         }
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         for (key, value) in &writes {
-            tx.execute("INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![*key, value.as_str()])?;
+            tx.execute("INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key.key(), value.as_str()])?;
         }
         tx.commit()?;
         Ok(())
@@ -112,8 +122,11 @@ impl Database {
         }
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
-        for (key, value) in [("model.source", "server"), ("model.server_name", model)] {
-            tx.execute("INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key, value])?;
+        for (key, value) in [
+            (AiSetting::Source, "server"),
+            (AiSetting::ServerModel, model),
+        ] {
+            tx.execute("INSERT INTO settings (key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key.key(), value])?;
         }
         tx.commit()?;
         Ok(())
@@ -289,7 +302,7 @@ mod tests {
         let saved = db.model_config().unwrap();
         let binding = || db.setting("model.key_binding").unwrap();
         assert_eq!(saved.base_url, "https://api.anthropic.com/v1");
-        assert_eq!(db.secret("model").unwrap(), "key-a");
+        assert_eq!(db.model_secret().unwrap(), "key-a");
         assert_eq!(
             binding().as_deref(),
             Some("anthropic https://api.anthropic.com/v1")
@@ -324,7 +337,7 @@ mod tests {
             (after.provider, after.base_url, after.model),
             (saved.provider, saved.base_url, saved.model)
         );
-        assert_eq!(db.secret("model").unwrap(), "key-a");
+        assert_eq!(db.model_secret().unwrap(), "key-a");
         assert_eq!(
             binding().as_deref(),
             Some("anthropic https://api.anthropic.com/v1")

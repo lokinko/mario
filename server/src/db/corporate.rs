@@ -1,11 +1,17 @@
 //! Company actions are reviewed facts, separate from immutable broker executions.
-use super::*;
 use crate::models::{
     market::quotes::SecurityPriceQuote,
     portfolio::{ConfirmCorporateActionInput, CorporateActionRecord},
 };
+use crate::storage::params;
 use rust_decimal::prelude::ToPrimitive;
 use sha2::{Digest, Sha256};
+use {
+    crate::{db::Database, models::portfolio::Snapshot, storage::Connection, AppError, AppResult},
+    chrono::Utc,
+    std::collections::HashSet,
+    uuid::Uuid,
+};
 
 pub(super) fn load(conn: &Connection) -> AppResult<Vec<CorporateActionRecord>> {
     let mut statement = conn.prepare("SELECT payload FROM corporate_actions ORDER BY id")?;
@@ -189,7 +195,7 @@ impl Database {
             .iter()
             .find(|h| h.id == id)
             .ok_or_else(|| AppError::Validation("持仓不存在".into()))?;
-        super::validate_holding_valuation_evidence(
+        crate::db::validation::validate_holding_valuation_evidence(
             holding.quantity.filter(|q| *q > 0.0).unwrap_or(1.0),
             quote,
         )?;

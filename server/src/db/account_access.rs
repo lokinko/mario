@@ -1,5 +1,5 @@
 //! Account consistency adapter; the concrete lock and connection remain private.
-use super::Database;
+use crate::db::Database;
 use crate::{ports::account::AccountSession, AppResult};
 use std::future::Future;
 

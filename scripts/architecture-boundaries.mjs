@@ -1,5 +1,6 @@
 // Technical registrations; business ownership and data authority: docs/architecture.md.
 // New top-level modules must be assigned deliberately before they enter the graph.
+import { storageOwner, storageImportViolation } from './storage-boundaries.mjs';
 export const serverLayers = {
   domain: ['models', 'context', 'risk', 'planning', 'valuation', 'evidence'],
   ports: ['ports'],
@@ -106,10 +107,7 @@ export function serverBusinessOwner(source) {
   if (layer === 'ports') return serverPortOwners[module];
   if (layer === 'http') return serverHttpOwners[module];
   if (layer === 'market_data') return 'market';
-  if (['db/public_prices', 'db/public_dividends', 'db/public_dividend_plans'].some(path => source === path + '.rs' || source.startsWith(path + '/'))) return 'market';
-  if (['db/user_access.rs', 'db/user_records.rs'].includes(source)) return 'user';
-  if (source === 'db/ai_records.rs') return 'ai';
-  if (source === 'db/account_access.rs') return 'support';
+  return storageOwner(source);
 }
 export const userAccountCapabilities = {
   'application/fx.rs': ['FxAccount'],
@@ -133,6 +131,8 @@ export function serverModelViolation(source, target) {
   return contractOwnerViolation(serverBusinessOwner(source), targetOwner);
 }
 export function serverBusinessViolation(source, target) {
+  const storeViolation = storageImportViolation(source, target);
+  if (storeViolation) return storeViolation;
   const owner = serverBusinessOwner(source);
   if (!owner) return;
   const [layer, module] = target.split('::');

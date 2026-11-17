@@ -1,32 +1,32 @@
 //! Account-bound encrypted credential persistence.
-use super::Database;
 use crate::{
     secrets::{decrypt, encrypt},
     AppError, AppResult,
 };
+use {super::settings::ai::AiSetting, crate::db::Database};
 
 impl Database {
-    fn secret_scope(&self, name: &str) -> AppResult<String> {
+    fn secret_scope(&self) -> AppResult<String> {
         Ok(format!(
-            "{}:{name}",
+            "{}:model",
             self.conn()?
                 .query_row("SELECT current_schema()::text", [], |r| r
                     .get::<_, String>(0))?
         ))
     }
-    pub fn secret(&self, name: &str) -> AppResult<String> {
+    pub(super) fn model_secret(&self) -> AppResult<String> {
         let encrypted = self
-            .setting(&format!("secret.{name}"))?
+            .ai_setting(AiSetting::ModelCredential)?
             .ok_or_else(|| AppError::Validation("请先配置 API Key".into()))?;
-        decrypt(&encrypted, &self.secret_scope(name)?)
+        decrypt(&encrypted, &self.secret_scope()?)
     }
-    pub(super) fn encrypted_secret(&self, name: &str, value: &str) -> AppResult<String> {
+    pub(super) fn encrypt_model_secret(&self, value: &str) -> AppResult<String> {
         if value.trim().is_empty() {
             return Err(AppError::Validation("API Key 不能为空".into()));
         }
-        encrypt(value.trim(), &self.secret_scope(name)?)
+        encrypt(value.trim(), &self.secret_scope()?)
     }
-    pub fn remove_secret(&self, name: &str) -> AppResult<()> {
-        self.delete_setting(&format!("secret.{name}"))
+    pub(super) fn remove_model_secret(&self) -> AppResult<()> {
+        self.delete_ai_setting(AiSetting::ModelCredential)
     }
 }

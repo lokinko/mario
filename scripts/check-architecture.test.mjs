@@ -327,3 +327,66 @@ test('business HTTP adapters only receive their sealed scope and owned record ca
   assert(serverSymbolViolation('application/fx.rs', 'ports::user_records::LedgerAccount'));
   assert(serverSymbolViolation('application/analysis.rs', 'ports::ai_records::AnalysisArchive'));
 });
+
+test('production storage graph follows declarations and excludes tests irrespective of filenames', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { productionModules, rustSource, rustPaths } = await import('./check-architecture.mjs');
+  const directory = mkdtempSync(join(tmpdir(), 'mario-module-graph-'));
+  try {
+    mkdirSync(join(directory, 'db'));
+    writeFileSync(join(directory, 'lib.rs'), 'mod db; #[cfg(test)] #[path="fixture.rs"] mod fixture;');
+    writeFileSync(join(directory, 'db.rs'), 'mod owned; #[cfg(test)] mod financial_tests;');
+    writeFileSync(join(directory, 'db', 'owned.rs'), 'pub(in crate::db) struct Key;');
+    writeFileSync(join(directory, 'db', 'financial_tests.rs'), 'use crate::ai;');
+    assert.deepEqual([...productionModules(directory).values()].map(path => path.join('/')), ['', 'db', 'db/owned']);
+    assert.deepEqual([...rustPaths('pub(in crate::db) struct Key;')], []);
+    assert.deepEqual(rustSource('const SQL: &str = r#"SELECT * FROM holdings"#; // "UPDATE analyses"\n#[cfg(test)] fn fixture(){ let text="DELETE FROM analyses"; }').strings, ['SELECT * FROM holdings']);
+    writeFileSync(join(directory, 'lib.rs'), '#[path="elsewhere.rs"] mod alias;');
+    assert.throws(() => productionModules(directory), /extend production module resolution/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('stored table and settings ownership catches direct SQL bypasses without mistaking comments or JSON for tables', async () => {
+  const { sqlTableAccess, sqlStorageViolations, storageImportViolation } = await import('./storage-boundaries.mjs');
+  assert.deepEqual(sqlTableAccess('Historical data from another source'), []);
+  assert.deepEqual(sqlTableAccess(`SELECT 'DELETE FROM analyses -- literal' FROM holdings h
+    LEFT JOIN LATERAL (SELECT payload FROM watch_observations) o ON TRUE;
+    UPDATE holdings SET name=$1 WHERE id=$2; -- DROP TABLE analyses
+    SELECT * FROM jsonb_array_elements($1) WHERE payload IS DISTINCT FROM old_payload;`), [
+    { operation: 'FROM', table: 'holdings' }, { operation: 'FROM', table: 'watch_observations' }, { operation: 'UPDATE', table: 'holdings' },
+  ]);
+  for (const [source, sql] of [
+    ['db/portfolio.rs', 'DELETE FROM analyses'], ['db/memory.rs', 'UPDATE holdings SET name=$1'],
+    ['db/public_prices.rs', 'SELECT * FROM watch_catalog'], ['db/settings.rs', 'INSERT INTO analyses VALUES ($1)'],
+    ['db/fx.rs', "UPDATE settings SET value=$1 WHERE key='secret.model'"],
+    ['db/evidence.rs', 'SELECT value FROM settings WHERE key=$1'],
+    ['db/portfolio.rs', 'DELETE FROM {table}'], ['db/memory.rs', 'CREATE TABLE unowned (id TEXT)'],
+  ]) assert(sqlStorageViolations(source, sql).length, `${source}: ${sql}`);
+  for (const [source, sql] of [['db/portfolio.rs', 'UPDATE holdings SET name=$1'], ['db/public_watch.rs', 'SELECT * FROM watch_catalog'],
+    ['db/schema.rs', 'CREATE TABLE analyses (id TEXT)'], ['db/sync_store.rs', 'INSERT INTO {table} VALUES ($1)'],
+    ['db/fx.rs', 'SELECT value FROM settings WHERE key=$1']]) assert.deepEqual(sqlStorageViolations(source, sql), [], `${source}: ${sql}`);
+  assert(storageImportViolation('db/fx.rs', 'db::settings::ai::AiSetting'));
+  assert(storageImportViolation('db/memory.rs', 'db::portfolio'));
+  assert(storageImportViolation('db/portfolio.rs', 'db::sync_store'));
+  assert.equal(storageImportViolation('db/fx.rs', 'db::settings::user::UserSetting'), undefined);
+});
+
+test('unified account methods keep domain ownership and only the authorized AI adapter reads user sources', async () => {
+  const { databaseMethodNames, databaseCalls } = await import('./check-architecture.mjs');
+  const { storageMethodViolation } = await import('./storage-boundaries.mjs');
+  const source = `impl Database { pub fn save_profile(&self) { fn nested() {} self.ai_setting(); Database::save_analysis(); }
+    #[cfg(test)] pub fn fixture() { self.secret(); } } impl Other { fn not_account() {} }`;
+  assert.deepEqual([...databaseMethodNames(source)], ['save_profile']);
+  assert.deepEqual([...databaseCalls(source)], ['ai_setting', 'save_analysis']);
+  assert.deepEqual([...databaseCalls('use crate::db::Database as Store; type Raw = Store; fn f() { let write = Raw::save_analysis; <Store>::save_profile; }')], ['save_analysis', 'save_profile']);
+  for (const source of ['db/portfolio.rs', 'db/fx.rs', 'db/user_access.rs'])
+    assert(storageMethodViolation(source, 'save_analysis', 'ai'));
+  assert(storageMethodViolation('db/memory.rs', 'save_profile', 'user'));
+  assert(storageMethodViolation('db/ai_access.rs', 'save_profile', 'user'));
+  assert.equal(storageMethodViolation('db/ai_access.rs', 'snapshot', 'user'), undefined);
+  assert.equal(storageMethodViolation('db/ai_access.rs', 'research_evidence', 'user'), undefined);
+  assert(storageMethodViolation('db/portfolio.rs', 'import_sync_data', 'backup'));
+  assert.equal(storageMethodViolation('db/sync_store.rs', 'import_sync_data', 'backup'), undefined);
+});

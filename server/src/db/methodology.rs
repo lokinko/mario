@@ -1,12 +1,15 @@
 //! User-authored methodology, stored independently from model configuration.
-use super::{AppResult, Database};
+use {
+    super::settings::user::UserSetting,
+    crate::{db::Database, AppResult},
+};
 impl Database {
     pub fn investment_methodology(
         &self,
     ) -> AppResult<crate::models::methodology::InvestmentMethodology> {
         use crate::models::methodology::{InvestmentMethodology, DEFAULT_INVESTMENT_METHODOLOGY};
         Ok(InvestmentMethodology::new(
-            self.setting("investment.methodology")?
+            self.user_setting(UserSetting::Methodology)?
                 .unwrap_or_else(|| DEFAULT_INVESTMENT_METHODOLOGY.into()),
         ))
     }
@@ -16,7 +19,7 @@ impl Database {
         input: crate::models::methodology::InvestmentMethodologyInput,
     ) -> AppResult<crate::models::methodology::InvestmentMethodology> {
         input.validate()?;
-        self.set_setting("investment.methodology", &input.prompt)?;
+        self.set_user_setting(UserSetting::Methodology, &input.prompt)?;
         self.investment_methodology()
     }
 }

@@ -1,10 +1,19 @@
-use super::{params, AppError, AppResult, Connection, Database, HoldingInput, Snapshot, Utc, Uuid};
 use crate::models::portfolio::{
     Holding, HoldingTrade, HoldingTradeDeleteInput, HoldingTradeInput, HoldingTradeSummary,
     HoldingTradeUpdateInput, TradeKind,
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use std::collections::{BTreeMap, HashSet};
+use {
+    crate::{
+        db::Database,
+        models::portfolio::{HoldingInput, Snapshot},
+        storage::{params, Connection},
+        AppError, AppResult,
+    },
+    chrono::Utc,
+    uuid::Uuid,
+};
 
 fn invalid(s: &str) -> AppError {
     AppError::Validation(s.into())
@@ -47,7 +56,7 @@ pub(super) fn validate(
     }
     chrono::DateTime::parse_from_rfc3339(&t.created_at).map_err(|_| invalid("交易创建时间无效"))?;
     chrono::DateTime::parse_from_rfc3339(&t.updated_at).map_err(|_| invalid("交易更新时间无效"))?;
-    super::validate_currency(&t.currency)?;
+    crate::db::validation::validate_currency(&t.currency)?;
     if t.sequence == 0
         || t.sequence > 1_000_000
         || t.account.trim().is_empty()
@@ -516,7 +525,7 @@ impl Database {
                     "新证券须从真实开仓开始；股票和多头期权买入，空头期权卖出",
                 ));
             }
-            super::validate_currency(&h.currency)?;
+            crate::db::validation::validate_currency(&h.currency)?;
             if h.name.trim().is_empty()
                 || h.name.chars().count() > 200
                 || h.symbol.chars().count() > 80

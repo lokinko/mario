@@ -1,5 +1,4 @@
 //! User capability adapters preserve the existing account transactions and revision checks.
-use super::Database;
 use crate::{
     models::{
         accounting::DividendIncome,
@@ -19,6 +18,7 @@ use crate::{
 };
 use chrono::NaiveDate;
 use std::collections::BTreeMap;
+use {super::settings::user::UserSetting, crate::db::Database};
 
 impl PortfolioState for Database {
     fn snapshot(&self) -> AppResult<Snapshot> {
@@ -41,7 +41,7 @@ impl FxAccount for Database {
         to: &str,
         on_date: &str,
     ) -> AppResult<Option<FxRateQuote>> {
-        self.setting(&format!("fx.quote.{from}.{to}.{on_date}"))?
+        self.user_setting(UserSetting::FxQuote { from, to, on_date })?
             .map(|stored| Ok(serde_json::from_str(&stored)?))
             .transpose()
     }

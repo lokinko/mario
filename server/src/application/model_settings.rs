@@ -294,7 +294,7 @@ mod tests {
         let server = ServerOpenAi::new("site-model".into(), "site-key".into()).unwrap();
         db.save_server_model("site-model").unwrap();
         assert!(delete_key(&db, Some(&server)).is_err());
-        assert_eq!(db.secret("model").unwrap(), "personal-key");
+        assert_eq!(db.model_credential().unwrap(), "personal-key");
         db.save_model_configuration(
             ModelProviderKind::OpenaiResponses,
             OPENAI_URL,
@@ -303,7 +303,7 @@ mod tests {
         )
         .unwrap();
         assert!(!delete_key(&db, Some(&server)).unwrap().has_api_key);
-        assert!(db.secret("model").is_err());
+        assert!(db.model_credential().is_err());
     }
 
     #[test]
@@ -350,10 +350,10 @@ mod tests {
             configuration(&a, Some(&server)).unwrap().source,
             ModelConfigSource::Server
         );
-        assert_eq!(a.secret("model").unwrap(), "personal-secret");
+        assert_eq!(a.model_credential().unwrap(), "personal-secret");
         a.set_setting("model.source", "account").unwrap();
         // Losing a personal key never silently switches its billing to the site.
-        a.remove_secret("model").unwrap();
+        a.remove_model_credential().unwrap();
         assert!(!configuration(&a, Some(&server)).unwrap().has_api_key);
         assert_eq!(
             configuration(&b, Some(&server)).unwrap().source,
@@ -473,7 +473,7 @@ mod tests {
             db.setting("model.server_name").unwrap().as_deref(),
             Some("catalog-fixture")
         );
-        assert_eq!(db.secret("model").unwrap(), "personal-secret");
+        assert_eq!(db.model_credential().unwrap(), "personal-secret");
     }
 
     struct UnavailableCatalog;

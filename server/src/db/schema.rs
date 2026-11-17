@@ -1,7 +1,7 @@
 use crate::storage::Connection;
 
-use super::OptionalRow;
 use crate::error::AppResult;
+use crate::storage::OptionalRow;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
@@ -271,7 +271,7 @@ pub(super) fn remove_retired_analysis_metadata(connection: &Connection) -> AppRe
             }
             connection.execute(
                 &format!("UPDATE analyses SET {column}=$1 WHERE id=$2"),
-                super::params![serde_json::to_string(&value)?, id],
+                crate::storage::params![serde_json::to_string(&value)?, id],
             )?;
         }
     }

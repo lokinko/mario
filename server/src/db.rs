@@ -1,27 +1,19 @@
 mod sync_format;
-use sync_format::{sync_specs_for_version, SYNC_TABLES};
-pub use sync_format::{SyncDataset, SyncTable, SyncValue, SYNC_DATASET_SCHEMA_VERSION};
-mod sync_validation;
-use sync_validation::{
-    quote_identifier, validate_synced_fx_provenance, validate_synced_holding_valuations,
-};
-mod snapshot;
-use snapshot::build_snapshot;
-mod validation;
-use validation::{
-    normalized_fx_provenance, normalized_holding_fx_provenance, research_evidence_tags,
-    validate_currency, validate_holding, validate_holding_valuation_evidence,
-    validate_investment_rule, validate_non_negative, validate_research_evidence,
-    validate_system_review,
-};
-mod rule_values;
-use rule_values::store_rule_revision;
+#[cfg(test)]
+use sync_format::sync_specs_for_version;
+pub use sync_format::SyncDataset;
+#[cfg(test)]
+pub use sync_format::{SyncTable, SyncValue, SYNC_DATASET_SCHEMA_VERSION};
 mod amounts;
 mod cash;
 mod corporate;
 mod financial;
 #[cfg(test)]
 mod financial_tests;
+mod rule_values;
+mod snapshot;
+mod sync_validation;
+mod validation;
 #[cfg(test)]
 pub(crate) use cash::fund as fund_cash;
 mod daily;
@@ -55,30 +47,24 @@ mod options;
 mod sync_store;
 mod trades;
 mod watchlist_import;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Mutex,
-};
+use std::sync::Mutex;
 
-use crate::storage::{params, Connection, OptionalRow, Transaction, Value};
-use chrono::{Local, NaiveDate, Utc};
+#[cfg(test)]
+use crate::storage::params;
+use crate::storage::Connection;
+#[cfg(test)]
+use chrono::NaiveDate;
 use uuid::Uuid;
 
-use crate::{
-    error::{AppError, AppResult},
-    models::{
-        analysis::{AnalysisHistoryItem, AnalysisResult, StoredAnalysis},
-        connection::ModelConfig,
-        market::quotes::SecurityPriceQuote,
-        portfolio::{FinancialProfile, Holding, HoldingInput, HoldingValuationEvidence, Snapshot},
-        research::{ResearchEvidence, ResearchEvidenceInput},
-        reviews::{
-            InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, ReviewReminderSummary,
-            SystemReviewInput, SystemReviewRecord, SystemReviewSnapshot,
-        },
-    },
-    planning, risk, valuation,
+#[cfg(test)]
+use crate::models::{
+    analysis::AnalysisResult,
+    market::quotes::SecurityPriceQuote,
+    portfolio::{FinancialProfile, HoldingInput, Snapshot},
+    research::ResearchEvidenceInput,
+    reviews::{InvestmentRuleInput, SystemReviewInput},
 };
+use crate::{AppError, AppResult};
 
 pub struct Database {
     connection: Mutex<Connection>,

@@ -1,4 +1,8 @@
-use super::{params, AppResult, InvestmentRule, Transaction};
+use crate::{
+    models::reviews::InvestmentRule,
+    storage::{params, Transaction},
+    AppResult,
+};
 
 pub(super) fn store_rule_revision(
     transaction: &Transaction<'_>,

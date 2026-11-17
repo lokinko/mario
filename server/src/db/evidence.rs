@@ -1,8 +1,18 @@
 //! User research originals and attachments; never writes analysis history.
-use super::{params, AppError, AppResult, Database, OptionalRow, Utc};
-use super::{
-    research_evidence_tags, validate_research_evidence, ResearchEvidence, ResearchEvidenceInput,
-    Uuid,
+use {
+    crate::{
+        db::validation::{research_evidence_tags, validate_research_evidence},
+        models::research::{ResearchEvidence, ResearchEvidenceInput},
+    },
+    uuid::Uuid,
+};
+use {
+    crate::{
+        db::Database,
+        storage::{params, OptionalRow},
+        AppError, AppResult,
+    },
+    chrono::Utc,
 };
 impl Database {
     pub fn research_evidence(&self) -> AppResult<Vec<ResearchEvidence>> {

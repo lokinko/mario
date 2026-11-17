@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { storageOwners, storageOwner, tableOwners, sqlTableAccess, sqlStorageViolations, settingMethodOwners, storageMethodViolation } from './storage-boundaries.mjs';
 import { serverLayers, serverModelOwners, serverApplicationOwners, serverPortOwners, serverHttpOwners, httpCapabilities, httpCapabilityViolation, httpRegistryViolations, httpOwnedRoutes, serverModelViolation, serverBusinessViolation, userAccountCapabilities, boundaryOf, clientBoundaryViolation, clientBusinessViolation, httpRouteViolation } from './architecture-boundaries.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -49,8 +50,8 @@ export function cycles(graph) {
 
 // Mask strings and comments before looking for Rust paths; raw prompt strings are
 // data and test-only modules are not production dependencies. Preserve offsets.
-export function productionRust(source) {
-  const masked = source.split('');
+export function rustSource(source) {
+  const masked = source.split(''), strings = [], excluded = [];
   let i = 0;
   const hide = end => { for (; i < end; i++) if (masked[i] !== '\n') masked[i] = ' '; };
   while (i < source.length) {
@@ -68,16 +69,20 @@ export function productionRust(source) {
     }
     const raw = /^(?:br|r)(#*)"/.exec(source.slice(i));
     if (raw) {
+      const start = i;
       const close = '"' + raw[1];
       const end = source.indexOf(close, i + raw[0].length);
+      strings.push({ start, value: source.slice(i + raw[0].length, end === -1 ? source.length : end) });
       hide(end === -1 ? source.length : end + close.length); continue;
     }
     if (source[i] === '"') {
+      const start = i;
       let end = i + 1;
       for (; end < source.length; end++) {
         if (source[end] === '\\') end++;
         else if (source[end] === '"') { end++; break; }
       }
+      strings.push({ start, value: source.slice(start + 1, end - 1).replace(/\\(["\\])/g, '$1') });
       hide(end); continue;
     }
     // Character literals, including braces, must not affect item balancing.
@@ -93,9 +98,64 @@ export function productionRust(source) {
       let depth = 1; end++;
       while (end < result.length && depth) { if (result[end] === '{') depth++; if (result[end] === '}') depth--; end++; }
     } else end++;
+    excluded.push([match.index, end]);
     result = result.slice(0, match.index) + result.slice(match.index, end).replace(/[^\n]/g, ' ') + result.slice(end);
   }
-  return result;
+  return { code: result, strings: strings.filter(({ start }) => !excluded.some(([a, b]) => start >= a && start < b)).map(({ value }) => value) };
+}
+export function productionRust(source) { return rustSource(source).code; }
+
+export function databaseMethodNames(source) {
+  const code = productionRust(source), names = new Set();
+  for (const match of code.matchAll(/\bimpl\s+Database\s*\{/g)) {
+    const start = match.index + match[0].length;
+    let depth = 1, end = start;
+    for (; end < code.length && depth; end++) { if (code[end] === '{') depth++; if (code[end] === '}') depth--; }
+    const body = code.slice(start, end - 1);
+    let level = 0, position = 0;
+    for (const method of body.matchAll(/\bfn\s+(\w+)\s*\(/g)) {
+      for (; position < method.index; position++) { if (body[position] === '{') level++; if (body[position] === '}') level--; }
+      if (level === 0) names.add(method[1]);
+    }
+  }
+  return names;
+}
+export function databaseCalls(source) {
+  const code = productionRust(source), aliases = new Set(['Database', 'Self']);
+  for (const match of code.matchAll(/\bDatabase\s+as\s+(\w+)/g)) aliases.add(match[1]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const match of code.matchAll(/\btype\s+(\w+)\s*=\s*(?:crate::db::)?(\w+)\s*;/g)) {
+      if (aliases.has(match[2]) && !aliases.has(match[1])) { aliases.add(match[1]); changed = true; }
+    }
+  }
+  const names = [...aliases].join('|');
+  const associated = new RegExp(`\\b(?:${names})::(\\w+)`, 'g');
+  const qualified = new RegExp(`<(?:crate::db::)?(?:${names})>\\s*::(\\w+)`, 'g');
+  return new Set([
+    ...[...code.matchAll(/\.\s*(\w+)\s*\(/g)].map(match => match[1]),
+    ...[...code.matchAll(associated), ...code.matchAll(qualified)].map(match => match[1]),
+  ]);
+}
+
+// Follow actual non-test module declarations instead of guessing from filenames.
+export function productionModules(directory) {
+  const modules = new Map();
+  function visit(path, owner) {
+    assert(!modules.has(path), `production module included twice: ${path}`);
+    const source = readFileSync(path, 'utf8'), code = productionRust(source);
+    assert(!/#\s*\[\s*path\s*=/.test(code), `extend production module resolution for #[path] in ${path}`);
+    modules.set(path, owner);
+    const base = /(?:^|\/)(?:lib|mod)\.rs$/.test(posix(path)) ? dirname(path) : path.slice(0, -3);
+    for (const name of rustModules(source)) {
+      const candidates = [resolve(base, name + '.rs'), resolve(base, name, 'mod.rs')].filter(existsSync);
+      assert.equal(candidates.length, 1, `${path}: production module ${name} must resolve to exactly one source`);
+      visit(candidates[0], [...owner, name]);
+    }
+  }
+  visit(resolve(directory, 'lib.rs'), []);
+  return modules;
 }
 export function rustDependencies(source, modulePath = []) {
   // Resolve relative paths before inspecting imports, so super::db cannot hide
@@ -129,7 +189,7 @@ export function rustPaths(source, modulePath = []) {
     const owner = [...modulePath];
     for (const part of value.split('::')) if (part === 'super') owner.pop();
     return 'crate::' + (owner.length ? owner.join('::') + '::' : '');
-  });
+  }).replace(/\bpub\s*\(\s*in\s+crate(?:::\w+)*\s*\)/g, value => value.replace(/[^\n]/g, ' '));
   const paths = new Set();
   code = code.replace(/\buse\s+([^;]+);/g, (statement, tree) => {
     const tokens = tree.match(/[A-Za-z_]\w*|::|[{},*]/g) ?? [];
@@ -348,6 +408,24 @@ export function checkArchitecture() {
     if (!reachable.has(name)) violations.push(`${name}: unused module, not reachable from main.tsx`);
   }
   const serverRoot = resolve(root, 'server/src');
+  const production = productionModules(serverRoot);
+  const storeMethods = new Map(Object.entries(settingMethodOwners)), storedTables = new Set();
+  for (const [path] of production) {
+    const name = posix(relative(serverRoot, path));
+    if (name !== 'db.rs' && !name.startsWith('db/')) continue;
+    for (const method of databaseMethodNames(readFileSync(path, 'utf8'))) {
+      if (settingMethodOwners[method]) continue;
+      if (storeMethods.has(method)) violations.push(`duplicate account method ownership: ${method}`);
+      storeMethods.set(method, storageOwner(name));
+    }
+  }
+  for (const { table, operation } of sqlTableAccess(readFileSync(resolve(root, 'server/migrations/tenant-revisions.sql'), 'utf8')))
+    if (operation.startsWith('CREATE')) storedTables.add(table);
+  const storedModules = rustModules(readFileSync(resolve(serverRoot, 'db.rs'), 'utf8'));
+  for (const name of storedModules) if (!storageOwners[name]) violations.push(`db/${name}: unassigned storage owner`);
+  for (const name of Object.keys(storageOwners)) {
+    if (![...production.values()].some(path => path.join('/') === 'db/' + name)) violations.push(`db/${name}: stale storage owner registration`);
+  }
   const modelSource = readFileSync(resolve(serverRoot, 'models.rs'), 'utf8');
   const modelModules = rustModules(modelSource);
   if (productionRust(modelSource).replace(/pub\(crate\)\s+mod\s+\w+\s*;/g, '').trim())
@@ -375,11 +453,21 @@ export function checkArchitecture() {
   for (const name of Object.values(serverLayers).flat()) {
     if (!known.has(name)) violations.push(`${name}: stale server boundary registration`);
   }
-  for (const path of files(serverRoot, /\.rs$/).filter(path => !/(?:^|[\\/])(?:tests|postgres_tests)\.rs$/.test(path))) {
-    const name = posix(relative(serverRoot, path)), owner = name.split('/')[0].replace(/\.rs$/, '');
+  for (const [path, modulePath] of production) {
+    const name = posix(relative(serverRoot, path)), owner = modulePath[0];
     if (!known.has(owner)) continue;
     const source = readFileSync(path, 'utf8'), code = productionRust(source);
-    for (const target of rustPaths(source, name.replace(/\.rs$/, '').replace(/\/mod$/, '').split('/'))) {
+    if (owner === 'db') {
+      for (const sql of rustSource(source).strings) {
+        for (const { table, operation } of sqlTableAccess(sql)) if (operation.startsWith('CREATE')) storedTables.add(table);
+        violations.push(...sqlStorageViolations(name, sql).map(message => `${name}: ${message}`));
+      }
+      for (const method of databaseCalls(source)) {
+        const violation = storageMethodViolation(name, method, storeMethods.get(method));
+        if (violation) violations.push(`${name}: ${violation}`);
+      }
+    }
+    for (const target of rustPaths(source, modulePath)) {
       const violation = serverSymbolViolation(name, target);
       if (violation) violations.push(`${name} -> ${target}: ${violation}`);
     }
@@ -393,23 +481,24 @@ export function checkArchitecture() {
       violations.push(`${name}: network clients belong in execution adapters`);
     if (['prices', 'market_data'].includes(owner) && /\bstatic\s+\w+\s*:/.test(code))
       violations.push(`${name}: mutable market resources belong to injected instances`);
-    if (owner !== 'db' && /use\s+(?:super|crate)::\*/.test(code)) violations.push(`${name}: production imports must be explicit`);
+    if (/use\s+(?:super|crate)::\*/.test(code)) violations.push(`${name}: production imports must be explicit`);
     if (owner !== 'storage' && /\b(?:postgres|rusqlite)::/.test(code)) violations.push(`${name}: database drivers belong in storage.rs`);
     if (['application', 'models', 'context', 'risk', 'planning', 'valuation', 'evidence', 'db', 'error'].includes(owner) && /\baxum::/.test(code))
       violations.push(`${name}: HTTP framework belongs in adapters`);
     if (!serverGraph.has(owner)) serverGraph.set(owner, new Set());
-    for (const target of rustDependencies(source, name.replace(/\.rs$/, '').replace(/\/mod$/, '').split('/'))) {
+    for (const target of rustDependencies(source, modulePath)) {
       if (!known.has(target) || target === owner) continue;
       serverGraph.get(owner).add(target);
       const violation = serverViolation(owner, target) ?? serverFileViolation(name, target);
       if (violation) violations.push(`${name} -> ${target}: ${violation}`);
     }
   }
+  for (const table of Object.keys(tableOwners)) if (!storedTables.has(table)) violations.push(`stale stored table ownership: ${table}`);
   violations.push(...cycles(clientGraph).map(c => `client cycle: ${c}`), ...cycles(serverGraph).map(c => `server cycle: ${c}`));
   assert.deepEqual(violations, [], `Architecture violations:\n${violations.join('\n')}`);
-  return { clientModules: clientGraph.size, serverModules: serverGraph.size };
+  return { clientModules: clientGraph.size, serverModules: serverGraph.size, serverFiles: production.size, storageTables: storedTables.size };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const counts = checkArchitecture();
-  console.log(`PASS architecture: ${counts.clientModules} client files, ${counts.serverModules} server modules; boundaries and cycles checked`);
+  console.log(`PASS architecture: ${counts.clientModules} client files, ${counts.serverFiles} production Rust files (${counts.serverModules} modules), ${counts.storageTables} owned tables; boundaries and cycles checked`);
 }

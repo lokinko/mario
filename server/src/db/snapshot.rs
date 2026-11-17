@@ -1,10 +1,11 @@
-use super::{
-    planning, risk, valuation, FinancialProfile, Holding, HoldingValuationEvidence, Snapshot,
-};
 use crate::models::{
     accounting::AccountingSnapshot,
     options::OptionContract,
     portfolio::{CashBalanceState, CorporateActionRecord, HoldingTrade, HoldingTradeSummary},
+};
+use crate::{
+    models::portfolio::{FinancialProfile, Holding, HoldingValuationEvidence, Snapshot},
+    planning, risk, valuation,
 };
 use std::collections::BTreeMap;
 
@@ -25,13 +26,13 @@ pub(super) struct SnapshotData {
 pub(super) fn build_snapshot(
     mut data: SnapshotData,
     accounting: AccountingSnapshot,
-) -> super::AppResult<Snapshot> {
+) -> crate::AppResult<Snapshot> {
     use rust_decimal::{prelude::ToPrimitive, Decimal};
-    let number = |value: &str| -> super::AppResult<f64> {
+    let number = |value: &str| -> crate::AppResult<f64> {
         Decimal::from_str_exact(value)
             .ok()
             .and_then(|v| v.to_f64())
-            .ok_or_else(|| super::AppError::Validation("会计投影金额无效".into()))
+            .ok_or_else(|| crate::AppError::Validation("会计投影金额无效".into()))
     };
     for holding in &mut data.holdings {
         let exact = &accounting.holdings[&holding.id];

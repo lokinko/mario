@@ -24,6 +24,8 @@ AI 域基于授权资料提供可追溯的分析，管理模型执行与讨论�
 
 分析、记忆、模型设置和桥接 HTTP 接口也分别取得自己的[请求上下文](../../server/src/http/context.rs)，不能取得用户记录写端口。历史查询与问答预设通过[AI 记录能力](../../server/src/ports/ai_records.rs)读写，不向业务路由暴露统一账号仓储。
 
+AI 配置、预设和记忆进度使用[所属设置键](../../server/src/db/settings/ai.rs)，模型密钥只使用原有账号加密的 model 槽位。仓储只能写入所属 AI 表；用户来源由授权适配只读取得。个人备份可保留 AI 历史与记忆进度，模型连接、问答预设和密钥继续由当前接收账号保有。
+
 实现依据：[分析用例](../../server/src/application/analysis.rs)、[上下文构建](../../server/src/context.rs)、[多轮上下文](../../client/src/features/advisor/previousTurn.ts)、[记忆选取](../../server/src/context/memory.rs)。
 
 ## 3. 简洁的当前持仓输入

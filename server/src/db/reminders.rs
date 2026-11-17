@@ -1,4 +1,7 @@
-use super::{AppResult, Database, NaiveDate, ReviewReminderSummary};
+use {
+    crate::{db::Database, models::reviews::ReviewReminderSummary, AppResult},
+    chrono::NaiveDate,
+};
 
 impl Database {
     pub fn review_reminder_summary(&self, today: NaiveDate) -> AppResult<ReviewReminderSummary> {

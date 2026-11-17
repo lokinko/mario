@@ -1,13 +1,20 @@
 //! Long-term memory notes and the dreaming watermark, owned by the account schema.
-use super::{params, AppError, AppResult, Database, OptionalRow};
 use crate::models::memory::{
     AcceptedOperation, DreamInput, DreamSourceAnalysis, DreamState, DreamSummary, MemoryKind,
     MemoryNote, MemoryOrigin, DREAM_ANSWER_CHARS, DREAM_BATCH, MEMORY_ACTIVE_LIMIT,
     MEMORY_QUOTE_CHARS, MEMORY_RATIONALE_CHARS, MEMORY_SOURCES_MAX, MEMORY_STATEMENT_CHARS,
 };
 use crate::storage::{Connection, Row};
+use {
+    super::settings::ai::AiSetting,
+    crate::{
+        db::Database,
+        storage::{params, OptionalRow},
+        AppError, AppResult,
+    },
+};
 
-const DREAM_STATE_KEY: &str = "memory.dream_state";
+const DREAM_STATE_KEY: AiSetting = AiSetting::DreamState;
 const SELECT_NOTES: &str = "SELECT id,kind,origin,statement,rationale,source_analysis_ids,quote,active,created_at,updated_at FROM analysis_memories";
 
 impl Database {
@@ -173,7 +180,7 @@ impl Database {
         state.last_result = Some(summary.clone());
         tx.execute(
             "INSERT INTO settings(key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            params![DREAM_STATE_KEY, serde_json::to_string(&state)?],
+            params![DREAM_STATE_KEY.key(), serde_json::to_string(&state)?],
         )?;
         validate(&tx)?;
         tx.commit()?;
@@ -185,7 +192,7 @@ fn read_dream_state(conn: &Connection) -> AppResult<DreamState> {
     let stored: Option<String> = conn
         .query_row(
             "SELECT value FROM settings WHERE key=$1",
-            [DREAM_STATE_KEY],
+            [DREAM_STATE_KEY.key()],
             |row| row.get(0),
         )
         .optional()?;

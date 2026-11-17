@@ -29,6 +29,8 @@
 
 财务、观察、研究资料、方法论和复盘的 HTTP 路由各自提取独立账号上下文，记录读写能力见[用户记录端口](../../server/src/ports/user_records.rs)。资料路由不能取得财务写入或 AI 密钥能力。认证装配仍在原账号连接上持锁，版本冲突和财务幂等回执继续由相同的账号状态判断；备份导入导出由单独上下文协调。
 
+用户存储仅构造[用户设置键](../../server/src/db/settings/user.rs)，方法论、观察规则和个人汇率不能借共享 settings 表取得 AI 配置或凭据。备份搬运认可的用户资料与 AI 历史/记忆时，由共享事务及各域校验协调；导入保留接收账号的模型连接、问答预设和密钥。
+
 个人汇率手工覆盖及账号汇率簿属于用户域的 [fx 契约](../../server/src/models/fx.rs)，公共汇率查询与报价由市场域提供；共享来源不改变个人配置的归属。
 
 实现依据：[财务事实契约](../../server/src/models/portfolio.rs)、[个人资产用例](../../server/src/application/portfolio.rs)、[成交仓储](../../server/src/db/trades.rs)、[财务仓储](../../server/src/db/financial.rs)、[每日资产](../../server/src/db/daily.rs)。

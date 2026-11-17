@@ -1,8 +1,24 @@
-use super::*;
+use super::settings::user::UserSetting;
 use crate::models::fx::{FxBook, FxOverrideInput, ManualRate};
+use crate::storage::params;
+use crate::storage::OptionalRow;
+use {
+    crate::{
+        db::{
+            daily,
+            sync_format::{SyncDataset, SyncValue},
+            Database,
+        },
+        models::portfolio::{Holding, HoldingInput},
+        storage::Connection,
+        AppError, AppResult,
+    },
+    chrono::{NaiveDate, Utc},
+    std::collections::HashSet,
+};
 
 fn key(base: &str) -> String {
-    format!("fx.book.{base}")
+    UserSetting::FxBook(base).key()
 }
 pub(super) fn book_on(conn: &Connection, base: &str) -> AppResult<Option<FxBook>> {
     conn.query_row(

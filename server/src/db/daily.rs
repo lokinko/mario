@@ -1,13 +1,26 @@
 //! Daily observations are authoritative; filled daily totals are a disposable cache.
 //! All helpers taking a connection also accept a transaction and never re-lock Database.
-use super::*;
 use crate::models::daily::{
     AmountInput, AssetChange, CompareQuery, DailyAsset, DailyComparison, DailyHistory, DailyRecord,
     EnsureInput, HistoryQuery,
 };
+use crate::storage::params;
+use crate::storage::OptionalRow;
 use chrono::{DateTime, Duration};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use {
+    crate::{
+        db::{
+            validation::{validate_currency, validate_non_negative},
+            Database,
+        },
+        models::portfolio::{FinancialProfile, Holding, Snapshot},
+        storage::Connection,
+        valuation, AppError, AppResult,
+    },
+    chrono::{NaiveDate, Utc},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -870,6 +883,8 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{db::SyncValue, models::portfolio::HoldingInput};
+    use uuid::Uuid;
     fn db() -> Database {
         Database::test()
     }

@@ -1,12 +1,13 @@
 //! Observation preferences share the account settings table and its backup transaction.
 use super::{AppResult, Database, OptionalRow};
+use crate::db::settings::user::UserSetting;
 use crate::{models::watch::rules::WatchRules, storage::Connection};
 
 pub(super) fn load(conn: &Connection) -> AppResult<WatchRules> {
     let payload: Option<String> = conn
         .query_row(
-            "SELECT value FROM settings WHERE key='watch.rules'",
-            [],
+            "SELECT value FROM settings WHERE key=$1",
+            [UserSetting::WatchRules.key()],
             |r| r.get(0),
         )
         .optional()?;
@@ -38,7 +39,7 @@ impl Database {
         if current == rules {
             return Ok(());
         }
-        tx.execute("INSERT INTO settings(key,value) VALUES ('watch.rules',$1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [serde_json::to_string(&rules)?])?;
+        tx.execute("INSERT INTO settings(key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [UserSetting::WatchRules.key(), serde_json::to_string(&rules)?])?;
         // Rule edits establish a new baseline; they are not market entry/exit events.
         tx.execute(
             "UPDATE watch_observations SET alert=0,read_at=NULL WHERE alert<>0",

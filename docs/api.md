@@ -264,6 +264,8 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 
 业务路由由认证中间件装配账号后，通过[所属请求上下文](../server/src/http/context.rs)提取各自能力；版本校验、财务回执、账号锁及流式取消仍作用于同一账号请求。实现层的职责划分与协议入口见[架构](architecture.md)。
 
+设置存储内部改用具名的[用户键](../server/src/db/settings/user.rs)与[AI 键](../server/src/db/settings/ai.rs)，沿用既有存储名称和账号加密范围。原生备份的设置子集由[共享设置策略](../server/src/db/settings.rs)筛选和校验，导入保留接收账号的模型连接、预设与凭据。
+
 ## 6. 共用字段与类型查询
 
 以下记录输入字段及响应导航，避免每个接口复制同一结构。大型嵌套响应通过具名类型和源码链接继续查询，字段存在性、序列化规则以相应类型及契约测试核对；并非所有 Rust 内部结构都是可发送的请求。前端类型按 [用户](../client/src/types/user.ts)、[市场](../client/src/types/market.ts)、[AI](../client/src/types/ai.ts)归属查询，调用模块见 [api](../client/src/api/)。

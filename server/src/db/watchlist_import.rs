@@ -1,13 +1,18 @@
 //! External v1/v2 watchlist exports are converted once, then use the normal atomic restore.
-use super::{
-    AppError, AppResult, Database, SyncDataset, SyncTable, SyncValue, SYNC_DATASET_SCHEMA_VERSION,
-    SYNC_TABLES,
-};
 use crate::models::{
     accounting::HoldingAmounts,
     market::{is_a_share_stock, is_mainland_fund},
     portfolio::{HoldingTrade, TradeKind},
     watch::WatchInput,
+};
+use crate::{
+    db::{
+        sync_format::{
+            SyncDataset, SyncTable, SyncValue, SYNC_DATASET_SCHEMA_VERSION, SYNC_TABLES,
+        },
+        Database,
+    },
+    AppError, AppResult,
 };
 use chrono::{DateTime, Utc};
 use rust_decimal::{prelude::ToPrimitive, Decimal};

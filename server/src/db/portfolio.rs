@@ -1,8 +1,24 @@
-use super::{
-    build_snapshot, normalized_holding_fx_provenance, params, validate_currency, validate_holding,
-    validate_holding_valuation_evidence, validate_non_negative, AppError, AppResult, Database,
-    FinancialProfile, Holding, HoldingInput, HoldingValuationEvidence, OptionalRow,
-    SecurityPriceQuote, Snapshot, Utc, Uuid,
+use {
+    crate::{
+        db::{
+            snapshot::build_snapshot,
+            validation::{
+                normalized_holding_fx_provenance, validate_currency, validate_holding,
+                validate_holding_valuation_evidence, validate_non_negative,
+            },
+            Database,
+        },
+        models::{
+            market::quotes::SecurityPriceQuote,
+            portfolio::{
+                FinancialProfile, Holding, HoldingInput, HoldingValuationEvidence, Snapshot,
+            },
+        },
+        storage::{params, OptionalRow},
+        AppError, AppResult,
+    },
+    chrono::Utc,
+    uuid::Uuid,
 };
 
 impl Database {
@@ -22,7 +38,7 @@ impl Database {
         super::amounts::trailing_dividends(&self.snapshot()?, histories, today)
     }
 
-    pub(super) fn snapshot_on(conn: &super::Connection) -> AppResult<Snapshot> {
+    pub(super) fn snapshot_on(conn: &crate::storage::Connection) -> AppResult<Snapshot> {
         let profile = conn
             .query_row("SELECT payload FROM profile WHERE id = 1", [], |row| {
                 row.get::<_, String>(0)

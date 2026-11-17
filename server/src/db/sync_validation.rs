@@ -1,6 +1,13 @@
-use super::{
-    normalized_fx_provenance, validate_holding_valuation_evidence, AppError, AppResult,
-    FinancialProfile, HashMap, HashSet, SecurityPriceQuote, SyncDataset, SyncValue,
+use {
+    crate::{
+        db::{
+            sync_format::{SyncDataset, SyncValue},
+            validation::{normalized_fx_provenance, validate_holding_valuation_evidence},
+        },
+        models::{market::quotes::SecurityPriceQuote, portfolio::FinancialProfile},
+        AppError, AppResult,
+    },
+    std::collections::{HashMap, HashSet},
 };
 
 pub(super) fn quote_identifier(value: &str) -> String {
@@ -253,23 +260,25 @@ pub(super) fn validate_synced_attachments(dataset: &SyncDataset) -> AppResult<()
 }
 
 pub(super) fn validate_synced_settings(dataset: &SyncDataset) -> AppResult<()> {
+    use super::settings::{ai::AiSetting, is_backup_setting, user::UserSetting};
     let Some(table) = dataset.tables.iter().find(|table| table.name == "settings") else {
         return Ok(());
     };
     for row in &table.rows {
         let key = sync_text(row, 0, "设置键")?;
         let value = sync_text(row, 1, "设置值")?;
-        if key == "investment.methodology" {
+        if !is_backup_setting(key) {
+            return Err(AppError::Validation("数据快照包含不支持的设置项".into()));
+        }
+        if key == UserSetting::Methodology.key() {
             crate::models::methodology::InvestmentMethodologyInput {
                 prompt: value.into(),
             }
             .validate()?;
-        } else if key == "watch.rules" {
+        } else if key == UserSetting::WatchRules.key() {
             serde_json::from_str::<crate::models::watch::rules::WatchRules>(value)?.validate()?;
-        } else if key == "memory.dream_state" {
+        } else if key == AiSetting::DreamState.key() {
             serde_json::from_str::<crate::models::memory::DreamState>(value)?.validate()?;
-        } else if !key.starts_with("fx.book.") && !key.starts_with("fx.quote.") {
-            return Err(AppError::Validation("数据快照包含不支持的设置项".into()));
         }
     }
     Ok(())

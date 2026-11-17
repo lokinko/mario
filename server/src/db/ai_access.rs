@@ -1,5 +1,4 @@
 //! Persistence adapters for the narrow capabilities consumed by AI use cases.
-use super::Database;
 use crate::{
     models::{
         accounting::analysis::AuthorizedFinancialContext,
@@ -19,25 +18,26 @@ use crate::{
     },
     AppResult,
 };
+use {super::settings::ai::AiSetting, crate::db::Database};
 
 impl ModelConfiguration for Database {
     fn model_config(&self) -> AppResult<ModelConfig> {
         Database::model_config(self)
     }
     fn model_source(&self) -> AppResult<Option<String>> {
-        self.setting("model.source")
+        self.ai_setting(AiSetting::Source)
     }
     fn selected_server_model(&self) -> AppResult<Option<String>> {
-        self.setting("model.server_name")
+        self.ai_setting(AiSetting::ServerModel)
     }
     fn model_key_binding(&self) -> AppResult<Option<String>> {
-        self.setting("model.key_binding")
+        self.ai_setting(AiSetting::KeyBinding)
     }
     fn model_credential(&self) -> AppResult<String> {
-        self.secret("model")
+        self.model_secret()
     }
     fn bridge_id(&self) -> AppResult<Option<String>> {
-        self.setting("model.codex_bridge_id")
+        self.ai_setting(AiSetting::Bridge)
     }
 }
 impl ModelSettingsStore for Database {
@@ -57,13 +57,13 @@ impl ModelSettingsStore for Database {
         Database::save_server_model(self, model)
     }
     fn set_bridge_id(&self, id: &str) -> AppResult<()> {
-        self.set_setting("model.codex_bridge_id", id)
+        self.set_ai_setting(AiSetting::Bridge, id)
     }
     fn clear_bridge_id(&self) -> AppResult<()> {
-        self.delete_setting("model.codex_bridge_id")
+        self.delete_ai_setting(AiSetting::Bridge)
     }
     fn remove_model_credential(&self) -> AppResult<()> {
-        self.remove_secret("model")
+        self.remove_model_secret()
     }
 }
 impl UserAnalysisSources for Database {

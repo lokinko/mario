@@ -1,11 +1,20 @@
-use super::{
-    quote_identifier, sync_specs_for_version, validate_synced_fx_provenance,
-    validate_synced_holding_valuations, AppError, AppResult, Database, SyncDataset, SyncTable,
-    SyncValue, Utc, Value, SYNC_DATASET_SCHEMA_VERSION, SYNC_TABLES,
+use {
+    crate::{
+        db::{
+            sync_format::{
+                sync_specs_for_version, SyncDataset, SyncTable, SyncValue,
+                SYNC_DATASET_SCHEMA_VERSION, SYNC_TABLES,
+            },
+            sync_validation::{
+                quote_identifier, validate_synced_fx_provenance, validate_synced_holding_valuations,
+            },
+            Database,
+        },
+        storage::Value,
+        AppError, AppResult,
+    },
+    chrono::Utc,
 };
-
-/// Settings that belong to the account backup; model configuration, presets and keys do not.
-const BACKUP_SETTINGS: &str = "key LIKE 'fx.book.%' OR key LIKE 'fx.quote.%' OR key='investment.methodology' OR key='watch.rules' OR key='memory.dream_state'";
 
 impl Database {
     pub fn export_sync_data(&self) -> AppResult<SyncDataset> {
@@ -22,7 +31,7 @@ impl Database {
                 columns.join(","),
                 quote_identifier(spec.name),
                 if spec.name == "settings" {
-                    format!("WHERE {BACKUP_SETTINGS}")
+                    format!("WHERE {}", super::settings::backup_predicate())
                 } else {
                     String::new()
                 },
@@ -78,7 +87,7 @@ impl Database {
 
         for spec in SYNC_TABLES.iter().rev() {
             let filter = if spec.name == "settings" {
-                format!(" WHERE {BACKUP_SETTINGS}")
+                format!(" WHERE {}", super::settings::backup_predicate())
             } else {
                 String::new()
             };

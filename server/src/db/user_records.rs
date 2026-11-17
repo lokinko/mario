@@ -1,5 +1,5 @@
 //! Persistence adapters for owned record capabilities; transactions remain in their repositories.
-use super::Database;
+use crate::db::Database;
 use crate::{
     models::{
         daily::{AmountInput, CompareQuery, DailyComparison},

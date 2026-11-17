@@ -1,6 +1,16 @@
 //! AI history and historical web excerpts; never promotes excerpts into user originals.
-use super::{params, AppError, AppResult, Database, OptionalRow, Utc};
-use super::{AnalysisHistoryItem, AnalysisResult, ResearchEvidence, StoredAnalysis};
+use crate::models::{
+    analysis::{AnalysisHistoryItem, AnalysisResult, StoredAnalysis},
+    research::ResearchEvidence,
+};
+use {
+    crate::{
+        db::Database,
+        storage::{params, OptionalRow},
+        AppError, AppResult,
+    },
+    chrono::Utc,
+};
 impl Database {
     /// Reuse provider search records from saved answers, without promoting an
     /// assistant's verdict or personal-data inference into a verified fact.

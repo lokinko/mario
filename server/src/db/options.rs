@@ -1,8 +1,14 @@
 //! Option associations and quotes share the existing financial transaction boundary.
-use super::*;
 use crate::models::options::{checked, text, OptionContract, OptionPriceInput, StockOptionTotals};
+use crate::storage::params;
+use crate::storage::OptionalRow;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use std::collections::BTreeMap;
+use {
+    crate::{db::Database, models::portfolio::Snapshot, storage::Connection, AppError, AppResult},
+    chrono::Utc,
+    uuid::Uuid,
+};
 
 pub(super) fn load(conn: &Connection) -> AppResult<BTreeMap<String, OptionContract>> {
     let mut stmt =
@@ -309,6 +315,10 @@ mod tests {
     use super::*;
     use crate::models::portfolio::{
         HoldingDeleteInput, HoldingTradeInput, HoldingTradeUpdateInput, TradeKind,
+    };
+    use crate::{
+        db::{SyncValue, TestAccount},
+        models::portfolio::HoldingInput,
     };
     fn setup(db: &Database) -> (Snapshot, String) {
         super::super::cash::fund(db, "CNY");
