@@ -47,6 +47,12 @@ export const serverModelOwners = {
   endpoint: 'ai', inference: 'ai', memory: 'ai', provider: 'ai',
   decimal: 'support',
 };
+export const userAccountCapabilities = {
+  'application/fx.rs': ['FxAccount'],
+  'application/prices.rs': ['ValuationAccount'],
+  'application/portfolio.rs': ['PortfolioAccount', 'PortfolioState'],
+  'application/watch.rs': ['WatchAccount'],
+};
 export function contractOwnerViolation(sourceOwner, targetOwner) {
   if (sourceOwner === 'market' && ['user', 'ai'].includes(targetOwner))
     return 'market contracts cannot depend on user state or AI';
@@ -64,6 +70,10 @@ export function serverModelViolation(source, target) {
     const sourceOwner = serverModelOwners[source.split('/')[1].replace(/\.rs$/, '')];
     return contractOwnerViolation(sourceOwner, targetOwner);
   }
+  if (userAccountCapabilities[source] || ['ports/user_account.rs', 'db/user_access.rs'].includes(source))
+    return contractOwnerViolation('user', targetOwner);
+  if (source === 'ports/account.rs' || source === 'db/account_access.rs')
+    return contractOwnerViolation('support', targetOwner);
 }
 export function clientBusinessViolation(source, target) {
   const [layer, name] = source.split('/');

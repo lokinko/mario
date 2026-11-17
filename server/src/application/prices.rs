@@ -1,8 +1,10 @@
 //! Account price workflows; all network access is supplied through a port.
+#[cfg(test)]
+use crate::db::Database;
 use crate::{
-    db::Database,
     models::{market::quotes::SecurityPriceQuery, portfolio::Snapshot},
     ports::market::SecurityPriceProvider,
+    ports::user_account::ValuationAccount,
     AppError, AppResult,
 };
 use serde::Serialize;
@@ -68,7 +70,7 @@ pub async fn complete_input(
 
 /// The HTTP caller holds one account lock, released only while querying providers.
 pub async fn refresh(
-    db: &Database,
+    db: &impl ValuationAccount,
     provider: &dyn SecurityPriceProvider,
 ) -> AppResult<RefreshResult> {
     refresh_inner(db, provider, None).await
@@ -76,7 +78,7 @@ pub async fn refresh(
 
 /// Background work freezes account input, releases the lock for I/O and checks it again.
 pub async fn refresh_after_close(
-    db: &Database,
+    db: &impl ValuationAccount,
     provider: &dyn SecurityPriceProvider,
     now: chrono::DateTime<chrono::Utc>,
 ) -> AppResult<RefreshResult> {
@@ -85,7 +87,7 @@ pub async fn refresh_after_close(
 }
 
 async fn refresh_inner(
-    db: &Database,
+    db: &impl ValuationAccount,
     provider: &dyn SecurityPriceProvider,
     automatic: Option<chrono::DateTime<chrono::Utc>>,
 ) -> AppResult<RefreshResult> {
@@ -111,7 +113,7 @@ async fn refresh_inner(
     for chunk in holdings.chunks(4) {
         let fetch = |index: usize| {
             let snapshot = &snapshot;
-            let holding = chunk.get(index).copied();
+            let holding = chunk.get(index).copied().cloned();
             let day = day.clone();
             async move {
                 match holding {
@@ -170,7 +172,7 @@ async fn refresh_inner(
                         return Err(AppError::MarketData("来源返回了尚未完成的日收盘价".into()));
                     }
                 }
-                apply_quote(db, &snapshot, holding, &quote)
+                apply_quote(db, &snapshot, &holding, &quote)
             })();
             match result {
                 Ok(true) => updated_count += 1,
@@ -191,7 +193,7 @@ async fn refresh_inner(
 }
 
 fn apply_quote(
-    db: &Database,
+    db: &impl ValuationAccount,
     snapshot: &Snapshot,
     holding: &crate::models::portfolio::Holding,
     quote: &crate::models::market::quotes::SecurityPriceQuote,
@@ -231,7 +233,10 @@ fn apply_quote(
 }
 
 /// Snapshot reads adopt only completed database prices, never call a vendor.
-pub fn apply_cached(db: &Database, provider: &dyn SecurityPriceProvider) -> AppResult<Snapshot> {
+pub fn apply_cached(
+    db: &impl ValuationAccount,
+    provider: &dyn SecurityPriceProvider,
+) -> AppResult<Snapshot> {
     let before = db.snapshot()?;
     let mut errors = Vec::new();
     for holding in &before.holdings {

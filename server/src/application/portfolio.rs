@@ -1,13 +1,17 @@
 //! Portfolio workflows coordinate repositories and replaceable market providers.
 use super::{fx, prices};
+#[cfg(test)]
+use crate::db::Database;
 use crate::models::fx::{FxBook, FxOverrideInput};
 use crate::{
-    db::Database,
     models::{
         market::quotes::{FxRateQuery, SecurityPriceQuery, SecurityPriceQuote},
         portfolio::{HoldingInput, Snapshot},
     },
-    ports::market::{FxRateProvider, SecurityPriceProvider},
+    ports::{
+        market::{FxRateProvider, SecurityPriceProvider},
+        user_account::{PortfolioAccount, PortfolioState},
+    },
     AppResult,
 };
 use std::sync::Arc;
@@ -19,15 +23,15 @@ impl MarketServices {
     pub fn new(fx: Arc<dyn FxRateProvider>, prices: Arc<dyn SecurityPriceProvider>) -> Self {
         Self { fx, prices }
     }
-    pub fn for_account<'a>(&'a self, db: &'a Database) -> PortfolioService<'a> {
+    pub fn for_account<'a, A: PortfolioAccount>(&'a self, db: &'a A) -> PortfolioService<'a, A> {
         PortfolioService { db, market: self }
     }
 }
-pub(crate) struct PortfolioService<'a> {
-    db: &'a Database,
+pub(crate) struct PortfolioService<'a, A: PortfolioAccount> {
+    db: &'a A,
     market: &'a MarketServices,
 }
-impl PortfolioService<'_> {
+impl<A: PortfolioAccount> PortfolioService<'_, A> {
     pub async fn refresh_fx(&self, force: bool) -> AppResult<FxBook> {
         fx::refresh(self.db, self.market.fx.as_ref(), force).await
     }
@@ -267,7 +271,7 @@ mod quote_preview_tests;
 /// Today's public ex-dividend history per A-share holding; a failed refresh
 /// keeps the last stored history, whose past ex-dates remain valid.
 pub(crate) async fn dividend_income(
-    db: &Database,
+    db: &impl PortfolioAccount,
     provider: Arc<dyn crate::ports::market::WatchMarketProvider>,
 ) -> AppResult<crate::models::accounting::DividendIncome> {
     let today = super::dividend_calendar::today();
@@ -317,7 +321,7 @@ pub(crate) async fn dividend_income(
 
 /// Allocation joins account holdings with the public catalogue's industries.
 pub(crate) fn allocation(
-    db: &Database,
+    db: &impl PortfolioState,
     catalog: &super::watch_catalog::WatchCatalogService,
 ) -> AppResult<crate::models::accounting::Allocation> {
     let snapshot = db.snapshot()?;

@@ -202,6 +202,34 @@ test('AI use cases cannot regain concrete account state or widen their declared 
   assert.equal(serverSymbolViolation('application/analysis.rs', 'ports::ai_account::AnalysisAccount'), undefined);
   assert.equal(serverSymbolViolation('application/memory.rs', 'ports::ai_account::MemoryAccount'), undefined);
   assert.equal(serverFileViolation('application/analysis.rs', 'ports'), undefined);
+  assert(serverSymbolViolation('application/model_settings.rs', 'ports::ai_account::AccountSession'));
+  assert.equal(serverSymbolViolation('application/model_settings.rs', 'ports::account::AccountSession'), undefined);
+});
+
+test('user workflows retain only portfolio FX valuation or watch capabilities without AI state', async () => {
+  const { serverSymbolViolation, rustPaths } = await import('./check-architecture.mjs');
+  const { userAccountCapabilities } = await import('./architecture-boundaries.mjs');
+  for (const [source, capabilities] of Object.entries(userAccountCapabilities)) {
+    for (const target of ['db', 'storage', 'accounts']) assert(serverFileViolation(source, target));
+    for (const target of ['ports::user_account', 'ports::user_account::self', 'ports::user_account::*',
+      'ports::ai_account::ModelConfiguration', 'ports::model::ModelConnector',
+      'application::analysis::AnalysisService', 'models::analysis::AnalysisSettings', 'models::connection::ModelConfig'])
+      assert(serverSymbolViolation(source, target), `${source} -> ${target}`);
+    for (const capability of capabilities)
+      assert.equal(serverSymbolViolation(source, `ports::user_account::${capability}`), undefined);
+  }
+  assert(serverSymbolViolation('application/fx.rs', 'ports::user_account::PortfolioAccount'));
+  assert(serverSymbolViolation('application/watch.rs', 'ports::user_account::ValuationAccount'));
+  assert(serverSymbolViolation('application/analysis.rs', 'ports::user_account::PortfolioAccount'));
+  assert(serverSymbolViolation('db/user_access.rs', 'models::provider::ModelProviderKind'));
+  assert(serverSymbolViolation('db/user_access.rs', 'ports::ai_account'));
+  assert(serverSymbolViolation('ports/account.rs', 'models::portfolio::Snapshot'));
+  assert(serverSymbolViolation('db/account_access.rs', 'models::connection::ModelConfig'));
+  assert.equal(serverSymbolViolation('db/account_access.rs', 'db::Database'), undefined);
+  const imports = rustPaths('use super::super::{db as persistence, ports::user_account as all};', ['application', 'fx']);
+  assert.deepEqual([...imports].sort(), ['db', 'ports::user_account']);
+  for (const target of imports)
+    assert(serverFileViolation('application/fx.rs', target) || serverSymbolViolation('application/fx.rs', target));
 });
 
 test('production AI inputs cannot regain the financial snapshot or ledger records', async () => {

@@ -10,7 +10,8 @@ use crate::{
         provider::{model_key_binding, ModelProviderKind, ModelTarget},
     },
     ports::{
-        ai_account::{AccountSession, ModelConfiguration, ModelSettingsStore},
+        account::AccountSession,
+        ai_account::{ModelConfiguration, ModelSettingsStore},
         model::{BridgeRegistry, ModelCatalog, ModelConnector},
     },
     AppError, AppResult,

@@ -1,11 +1,13 @@
 //! Central account FX book; current balances use today's book, ledger events use dated quotes.
+#[cfg(test)]
+use crate::db::Database;
 use crate::{
-    db::Database,
     models::market::{
         quotes::{FxRateQuery, FxRateQuote},
         SUPPORTED_CURRENCIES,
     },
     ports::market::FxRateProvider,
+    ports::user_account::FxAccount,
     AppError, AppResult,
 };
 use chrono::Utc;
@@ -13,7 +15,7 @@ use chrono::Utc;
 use crate::models::{fx::FxBook, market::today};
 
 pub async fn refresh(
-    db: &Database,
+    db: &impl FxAccount,
     provider: &dyn FxRateProvider,
     force: bool,
 ) -> AppResult<FxBook> {
@@ -61,7 +63,7 @@ pub async fn refresh(
 }
 
 pub async fn historical_quote(
-    db: &Database,
+    db: &impl FxAccount,
     provider: &dyn FxRateProvider,
     query: &FxRateQuery,
 ) -> AppResult<FxRateQuote> {
@@ -104,9 +106,7 @@ pub async fn historical_quote(
             });
         }
     }
-    let key = format!("fx.quote.{from}.{to}.{}", query.on_date);
-    if let Some(stored) = db.setting(&key)? {
-        let quote: FxRateQuote = serde_json::from_str(&stored)?;
+    if let Some(quote) = db.cached_fx_quote(&from, &to, &query.on_date)? {
         // Today's table is refreshed hourly; finalized historical quotes stay frozen.
         if query.on_date != today() {
             return Ok(quote);
@@ -303,6 +303,48 @@ mod tests {
                 .is_err());
         }
     }
+    #[tokio::test]
+    async fn persisted_historical_quotes_are_read_through_the_typed_port_after_restart() {
+        let account = crate::db::TestAccount::new();
+        let query = FxRateQuery {
+            from_currency: "USD".into(),
+            to_currency: "CNY".into(),
+            on_date: "2026-01-01".into(),
+        };
+        let mut quote = provider(7.25).quote(&query).await.unwrap();
+        quote.exact_rate = Some("7.250000000000001".into());
+        {
+            let db = account.open();
+            db.set_setting(
+                "fx.quote.USD.CNY.2026-01-01",
+                &serde_json::to_string(&quote).unwrap(),
+            )
+            .unwrap();
+        }
+        let db = account.open();
+        let source = Provider {
+            fail: true,
+            ..provider(1.0)
+        };
+        let revision = db.revision().unwrap();
+        let hash = db.export_sync_data().unwrap().content_hash().unwrap();
+        let mut alias_query = query.clone();
+        alias_query.from_currency = " usd ".into();
+        alias_query.to_currency = " cny ".into();
+        let cached = historical_quote(&db, &source, &alias_query).await.unwrap();
+        assert_eq!(
+            serde_json::to_value(cached).unwrap(),
+            serde_json::to_value(quote).unwrap()
+        );
+        assert_eq!(source.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(db.revision().unwrap(), revision);
+        assert_eq!(db.export_sync_data().unwrap().content_hash().unwrap(), hash);
+        db.set_setting("fx.quote.USD.CNY.2026-01-01", "invalid legacy payload")
+            .unwrap();
+        assert!(historical_quote(&db, &source, &query).await.is_err());
+        assert_eq!(source.calls.load(Ordering::SeqCst), 0);
+    }
+
     #[tokio::test]
     async fn historical_quote_reads_do_not_mutate_data_and_manual_settings_do_not_rewrite_the_past()
     {

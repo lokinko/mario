@@ -25,6 +25,8 @@
 - 市场价格用于个人估值，不能改写真实成交。
 - 行情或汇率缺失时，明确标记不可计算或不可比较，不能把未知当作零。
 
+组合保存、个人估值、汇率更新和观察刷新只接收[所属账号端口](../../server/src/ports/user_account.rs)，不能取得模型密钥或 AI 历史写入能力。端口适配保留原事务与版本校验，行情查询期间释放账号锁，结果落库前仍核对冻结输入；观察刷新仍按原条目校验，避免复活已删除或更正的记录。
+
 个人汇率手工覆盖及账号汇率簿属于用户域的 [fx 契约](../../server/src/models/fx.rs)，公共汇率查询与报价由市场域提供；共享来源不改变个人配置的归属。
 
 实现依据：[财务事实契约](../../server/src/models/portfolio.rs)、[个人资产用例](../../server/src/application/portfolio.rs)、[成交仓储](../../server/src/db/trades.rs)、[财务仓储](../../server/src/db/financial.rs)、[每日资产](../../server/src/db/daily.rs)。

@@ -1,8 +1,10 @@
 //! Account-scoped observation orchestration; financial records remain read-only.
+#[cfg(test)]
+use crate::db::Database;
 use crate::{
-    db::Database,
     models::watch::{evaluate, WatchBoard},
     ports::market::WatchMarketProvider,
+    ports::user_account::WatchAccount,
     AppResult,
 };
 use chrono::{Datelike, NaiveDate, Timelike, Utc};
@@ -20,7 +22,7 @@ pub fn cutoff() -> NaiveDate {
 /// Caller holds one account lock; release it around public network I/O. Recheck
 /// each entry before committing so a deleted/edited watch cannot be resurrected.
 pub async fn refresh(
-    db: &Database,
+    db: &impl WatchAccount,
     provider: Arc<dyn WatchMarketProvider>,
     force: bool,
 ) -> AppResult<WatchBoard> {

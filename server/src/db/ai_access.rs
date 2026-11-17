@@ -15,24 +15,11 @@ use crate::{
         watch::WatchBoard,
     },
     ports::ai_account::{
-        AccountSession, AnalysisAccount, MemoryAccount, ModelConfiguration, ModelSettingsStore,
-        UserAnalysisSources,
+        AnalysisAccount, MemoryAccount, ModelConfiguration, ModelSettingsStore, UserAnalysisSources,
     },
     AppResult,
 };
-use std::future::Future;
 
-impl AccountSession for Database {
-    fn lock_account(&self) -> AppResult<impl Send + '_> {
-        Database::lock_account(self)
-    }
-    fn without_account_lock<T: Send>(
-        &self,
-        work: impl Future<Output = T> + Send,
-    ) -> impl Future<Output = AppResult<T>> + Send {
-        Database::without_account_lock(self, work)
-    }
-}
 impl ModelConfiguration for Database {
     fn model_config(&self) -> AppResult<ModelConfig> {
         Database::model_config(self)

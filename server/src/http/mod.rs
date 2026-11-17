@@ -29,7 +29,9 @@ pub(crate) struct RequestContext {
     pub analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
 }
 impl RequestContext {
-    pub fn portfolio(&self) -> PortfolioService<'_> {
+    pub fn portfolio(
+        &self,
+    ) -> PortfolioService<'_, impl crate::ports::user_account::PortfolioAccount> {
         self.market.for_account(&self.db)
     }
 }

@@ -1,4 +1,5 @@
 //! Account capabilities used by AI use cases. No SQL, arbitrary settings or user writes.
+use super::account::AccountSession;
 use crate::{
     models::{
         accounting::analysis::AuthorizedFinancialContext,
@@ -15,17 +16,6 @@ use crate::{
     },
     AppResult,
 };
-use std::future::Future;
-
-/// Coordinates account consistency while external execution runs without its lock.
-pub(crate) trait AccountSession: Send + Sync {
-    fn lock_account(&self) -> AppResult<impl Send + '_>;
-    fn without_account_lock<T: Send>(
-        &self,
-        work: impl Future<Output = T> + Send,
-    ) -> impl Future<Output = AppResult<T>> + Send;
-}
-
 pub(crate) trait ModelConfiguration: Send + Sync {
     fn model_config(&self) -> AppResult<ModelConfig>;
     fn model_source(&self) -> AppResult<Option<String>>;

@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { serverLayers, serverModelOwners, serverModelViolation, boundaryOf, clientBoundaryViolation, clientBusinessViolation, httpRouteViolation } from './architecture-boundaries.mjs';
+import { serverLayers, serverModelOwners, serverModelViolation, userAccountCapabilities, boundaryOf, clientBoundaryViolation, clientBusinessViolation, httpRouteViolation } from './architecture-boundaries.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ts = createRequire(resolve(root, 'client/package.json'))('typescript');
@@ -171,18 +171,32 @@ export function serverSymbolViolation(source, target) {
   const capabilities = {
     'application/analysis.rs': ['AnalysisAccount', 'ModelConfiguration'],
     'application/memory.rs': ['MemoryAccount'],
-    'application/model_settings.rs': ['ModelConfiguration', 'ModelSettingsStore', 'AccountSession'],
+    'application/model_settings.rs': ['ModelConfiguration', 'ModelSettingsStore'],
     'application/codex_bridge.rs': ['ModelConfiguration', 'ModelSettingsStore'],
   }[source];
   if (capabilities && (target === 'ports::ai_account' || target.startsWith('ports::ai_account::'))
       && !capabilities.some(name => target === `ports::ai_account::${name}`))
     return 'AI use case may import only its declared account capabilities';
+  const userCapabilities = userAccountCapabilities[source];
+  if (userCapabilities && (target === 'ports::user_account' || target.startsWith('ports::user_account::'))
+      && !userCapabilities.some(name => target === `ports::user_account::${name}`))
+    return 'user use case may import only its declared account capabilities';
+  if (userCapabilities || ['ports/user_account.rs', 'db/user_access.rs'].includes(source)) {
+    if (['ai', 'context', 'ports::ai_account', 'ports::analysis', 'ports::model',
+      'application::analysis', 'application::memory', 'application::model_settings', 'application::codex_bridge']
+      .some(path => target === path || target.startsWith(path + '::')))
+      return 'user account workflows and adapters cannot obtain AI execution or account capabilities';
+  }
+  if (capabilities && (target === 'ports::user_account' || target.startsWith('ports::user_account::')))
+    return 'AI use cases read user sources through their authorized input port, without ledger write capabilities';
   const narrow = {
     'application/dividend_plans.rs': ['db::PublicDividendPlans', 'models::market', 'ports::market::DividendPlanProvider', 'ports::market::DividendPlanReader', 'AppError', 'AppResult'],
     'application/dividend_calendar.rs': ['db::PublicWatch', 'models::watch::calendar', 'models::watch::WatchInput', 'ports::market::DividendPlanReader', 'AppResult'],
     'db/public_dividend_plans.rs': ['models::market', 'storage', 'AppError', 'AppResult'],
     'market_data/watch/plans.rs': ['models::market', 'market_data::watch::bad', 'AppError', 'AppResult'],
     'models/market/dividend_plans.rs': [],
+    'ports/account.rs': ['AppResult'],
+    'db/account_access.rs': ['db::Database', 'ports::account::AccountSession', 'AppResult'],
   }[source];
   if (narrow && !narrow.some(prefix => target === prefix || target.startsWith(prefix + '::')))
     return 'dependency exceeds this module capability; public plan acquisition and user projection stay separate';
@@ -248,6 +262,8 @@ export function serverFileViolation(source, target) {
   if (['application/analysis.rs', 'application/memory.rs', 'application/model_settings.rs', 'application/codex_bridge.rs'].includes(source)
       && ['db', 'storage', 'accounts'].includes(target))
     return 'AI use cases depend on narrow account ports, never the concrete database or ledger';
+  if (userAccountCapabilities[source] && ['db', 'storage', 'accounts'].includes(target))
+    return 'user use cases depend on declared account ports, never the unified database or arbitrary settings';
   if (source === 'ai/model_catalog.rs' && !['ports', 'error'].includes(target))
     return 'site model catalog only lists provider metadata, without account data or analysis context';
   if (source === 'accounts/activity.rs' && !['accounts', 'storage', 'error'].includes(target))
