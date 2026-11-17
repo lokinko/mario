@@ -54,16 +54,61 @@ export const serverApplicationOwners = {
   public_prices: 'market', watch_market: 'market', dividend_plans: 'market',
 };
 export const serverPortOwners = {
-  account: 'support', ai_account: 'ai', analysis: 'ai', model: 'ai', market: 'market', user_account: 'user',
+  account: 'support', ai_account: 'ai', ai_records: 'ai', analysis: 'ai', model: 'ai', market: 'market', user_account: 'user', user_records: 'user',
 };
+export const serverHttpOwners = {
+  context: 'assembly', error: 'assembly', policy: 'assembly',
+  portfolio: 'user', watch: 'user', evidence: 'user', methodology: 'user', reviews: 'user',
+  analysis: 'ai', memory: 'ai', model_settings: 'ai', codex_bridge: 'ai',
+};
+export const httpCapabilities = {
+  'http/portfolio.rs': { context: 'PortfolioContext', ports: ['user_records::LedgerAccount', 'user_account::FxAccount', 'user_account::PortfolioAccount', 'user_account::PortfolioState'] },
+  'http/watch.rs': { context: 'WatchContext', ports: ['user_records::WatchManagement', 'user_account::WatchAccount', 'account::AccountSession'] },
+  'http/evidence.rs': { context: 'EvidenceContext', ports: ['user_records::EvidenceAccount'] },
+  'http/methodology.rs': { context: 'MethodologyContext', ports: ['user_records::MethodologyAccount'] },
+  'http/reviews.rs': { context: 'ReviewContext', ports: ['user_records::ReviewAccount'] },
+  'http/analysis.rs': { context: 'AnalysisContext', ports: ['ai_records::AnalysisArchive'] },
+  'http/memory.rs': { context: 'MemoryContext', ports: ['ai_account::MemoryAccount'] },
+  'http/model_settings.rs': { context: 'ModelSettingsContext', ports: ['ai_records::AnalysisPresets'] },
+  'http/codex_bridge.rs': { context: 'BridgeContext', ports: [] },
+};
+export function httpCapabilityViolation(source, target) {
+  const scope = httpCapabilities[source];
+  if (!scope) return;
+  if (target === 'http' || target.startsWith('http::')) {
+    if (target !== `http::context::${scope.context}`)
+      return 'route adapters receive only their declared sealed request context';
+  }
+  if (target === 'ports' || target.startsWith('ports::')) {
+    if (!scope.ports.some(path => target === 'ports::' + path))
+      return 'route adapters may import only their declared record capabilities';
+  }
+}
+export function httpRegistryViolations(owners, capabilities, routes) {
+  const issues = [];
+  for (const [name, owner] of Object.entries(owners)) {
+    const source = `http/${name}.rs`;
+    if (['user', 'ai'].includes(owner) && (!capabilities[source] || !routes[source]))
+      issues.push(`${source}: business routes require an explicit context, capability and route registration`);
+  }
+  const contexts = Object.values(capabilities).map(scope => scope.context);
+  if (new Set(contexts).size !== contexts.length) issues.push('business request contexts must be scoped to one adapter');
+  for (const source of Object.keys(capabilities)) {
+    if (!['user', 'ai'].includes(owners[source.split('/')[1].replace(/\.rs$/, '')]))
+      issues.push(`${source}: stale or non-business request context registration`);
+  }
+  return issues;
+}
 export function serverBusinessOwner(source) {
   const [layer, module] = source.replace(/\.rs$/, '').split('/');
   if (layer === 'models') return serverModelOwners[module];
   if (layer === 'application') return serverApplicationOwners[module];
   if (layer === 'ports') return serverPortOwners[module];
+  if (layer === 'http') return serverHttpOwners[module];
   if (layer === 'market_data') return 'market';
   if (['db/public_prices', 'db/public_dividends', 'db/public_dividend_plans'].some(path => source === path + '.rs' || source.startsWith(path + '/'))) return 'market';
-  if (source === 'db/user_access.rs') return 'user';
+  if (['db/user_access.rs', 'db/user_records.rs'].includes(source)) return 'user';
+  if (source === 'db/ai_records.rs') return 'ai';
   if (source === 'db/account_access.rs') return 'support';
 }
 export const userAccountCapabilities = {
@@ -91,6 +136,7 @@ export function serverBusinessViolation(source, target) {
   const owner = serverBusinessOwner(source);
   if (!owner) return;
   const [layer, module] = target.split('::');
+  if (['ai', 'context'].includes(layer)) return contractOwnerViolation(owner, 'ai');
   if (['application', 'ports'].includes(layer)) {
     const targetOwner = (layer === 'application' ? serverApplicationOwners : serverPortOwners)[module];
     if (!targetOwner) return 'cross-module imports must name an explicitly owned application or port';
@@ -104,6 +150,9 @@ export function serverBusinessViolation(source, target) {
     .some(name => (source === `db/${name}.rs` || source.startsWith(`db/${name}/`)) && module === name);
   if (owner === 'market' && layer === 'db' && !ownRepository && !['PublicPrices', 'PublicDividends', 'PublicDividendPlans'].includes(module))
     return 'market services may only obtain public market repositories';
+  if (source.startsWith('application/') && ['user', 'ai'].includes(owner) && layer === 'db'
+      && [undefined, 'self', '*', 'Database'].includes(module))
+    return 'business use cases may not obtain the unified account database';
 }
 export function clientBusinessViolation(source, target) {
   const [layer, name] = source.split('/');
@@ -125,6 +174,11 @@ export const httpOwnedRoutes = {
   'http/methodology.rs': ['/api/investment-methodology'],
   'http/analysis.rs': ['/api/analysis', '/api/analyses'],
   'http/model_settings.rs': ['/api/model-config', '/api/model-key', '/api/analysis-settings'],
+  'http/memory.rs': ['/api/memory'],
+  'http/codex_bridge.rs': ['/api/codex-bridge'],
+  'http/watch.rs': ['/api/watch'],
+  'http/reviews.rs': ['/api/investment-rules', '/api/system-reviews', '/api/review-reminders'],
+  'http/portfolio.rs': ['/api/snapshot', '/api/profile', '/api/holdings', '/api/holding-trades', '/api/corporate-actions', '/api/financial-operations', '/api/daily-assets', '/api/portfolio', '/api/market-data', '/api/fx-settings'],
 };
 export function httpRouteViolation(source, route) {
   const path = route.slice(route.indexOf(' ') + 1);

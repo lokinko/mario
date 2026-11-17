@@ -1,16 +1,16 @@
 //! AI model connections and analysis presets.
-use super::RequestContext;
+use super::context::ModelSettingsContext;
 use crate::application::model_settings;
 use crate::models::{
     analysis::AnalysisSettings,
     connection::{ModelConfig, ModelConfigInput, ModelConnectionTest},
 };
+use crate::ports::ai_records::AnalysisPresets;
 use crate::AppResult;
 use axum::{
     routing::{get, post},
-    Extension, Json, Router,
+    Json, Router,
 };
-use std::sync::Arc;
 
 pub(super) fn router() -> Router {
     Router::new()
@@ -27,63 +27,55 @@ pub(super) fn router() -> Router {
         )
 }
 
-async fn model_config(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<ModelConfig>> {
+async fn model_config(state: ModelSettingsContext) -> AppResult<Json<ModelConfig>> {
     Ok(Json(model_settings::configuration(
-        &state.db,
-        state.model_services.server.as_ref(),
+        state.account(),
+        state.services().server.as_ref(),
     )?))
 }
 
 async fn save_model_config(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: ModelSettingsContext,
     Json(input): Json<ModelConfigInput>,
 ) -> AppResult<Json<ModelConfig>> {
     Ok(Json(
-        model_settings::save(&state.db, input, &state.model_services).await?,
+        model_settings::save(state.account(), input, state.services()).await?,
     ))
 }
 
 async fn server_models(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: ModelSettingsContext,
 ) -> AppResult<Json<crate::models::connection::ServerModelCatalog>> {
     Ok(Json(
-        model_settings::server_models(&state.db, &state.model_services).await?,
+        model_settings::server_models(state.account(), state.services()).await?,
     ))
 }
 
-async fn test_model_config(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<ModelConnectionTest>> {
+async fn test_model_config(state: ModelSettingsContext) -> AppResult<Json<ModelConnectionTest>> {
     Ok(Json(
         model_settings::test_connection(
-            &state.db,
-            state.model_services.connector.as_ref(),
-            state.model_services.server.as_ref(),
+            state.account(),
+            state.services().connector.as_ref(),
+            state.services().server.as_ref(),
         )
         .await?,
     ))
 }
 
-async fn delete_model_key(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<ModelConfig>> {
+async fn delete_model_key(state: ModelSettingsContext) -> AppResult<Json<ModelConfig>> {
     Ok(Json(model_settings::delete_key(
-        &state.db,
-        state.model_services.server.as_ref(),
+        state.account(),
+        state.services().server.as_ref(),
     )?))
 }
 
-async fn analysis_settings(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<AnalysisSettings>> {
-    Ok(Json(state.db.analysis_settings()?))
+async fn analysis_settings(state: ModelSettingsContext) -> AppResult<Json<AnalysisSettings>> {
+    Ok(Json(state.presets().analysis_settings()?))
 }
 
 async fn save_analysis_settings(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: ModelSettingsContext,
     Json(settings): Json<AnalysisSettings>,
 ) -> AppResult<Json<AnalysisSettings>> {
-    Ok(Json(state.db.save_analysis_settings(settings)?))
+    Ok(Json(state.presets().save_analysis_settings(settings)?))
 }

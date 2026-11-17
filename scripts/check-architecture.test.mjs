@@ -299,3 +299,31 @@ test('market sources and public repositories never depend on user watch contract
   assert.deepEqual([...paths].sort(), ['models::watch', 'ports::user_account']);
   for (const path of paths) assert(serverSymbolViolation('application/watch_market.rs', path));
 });
+
+test('business HTTP adapters only receive their sealed scope and owned record capabilities', async () => {
+  const { serverSymbolViolation, rustPaths } = await import('./check-architecture.mjs');
+  const { httpCapabilities, httpRegistryViolations, serverHttpOwners, httpOwnedRoutes } = await import('./architecture-boundaries.mjs');
+  assert.deepEqual(httpRegistryViolations(serverHttpOwners, httpCapabilities, httpOwnedRoutes), []);
+  assert(httpRegistryViolations({ ...serverHttpOwners, unscoped: 'user' }, httpCapabilities, httpOwnedRoutes).some(issue => issue.includes('unscoped')));
+  const unregistered = { ...httpCapabilities, 'http/new.rs': { context: 'EvidenceContext', ports: [] } };
+  assert(httpRegistryViolations(serverHttpOwners, unregistered, httpOwnedRoutes).some(issue => issue.includes('one adapter')));
+  assert(httpRegistryViolations(serverHttpOwners, unregistered, httpOwnedRoutes).some(issue => issue.includes('stale')));
+  for (const [source, scope] of Object.entries(httpCapabilities)) {
+    assert.equal(serverSymbolViolation(source, `http::context::${scope.context}`), undefined);
+    for (const target of ['http', 'http::RequestContext', 'http::RequestContextParts', 'http::context',
+      'http::context::self', 'http::context::BackupContext', 'http::context::*'])
+      assert(serverSymbolViolation(source, target), `${source} -> ${target}`);
+    for (const other of Object.values(httpCapabilities).filter(other => other.context !== scope.context))
+      assert(serverSymbolViolation(source, `http::context::${other.context}`));
+    for (const target of ['db', 'storage', 'accounts']) assert(serverFileViolation(source, target));
+    for (const port of scope.ports)
+      assert.equal(serverSymbolViolation(source, `ports::${port}`), undefined, `${source} -> ${port}`);
+    for (const target of ['ports', 'ports::user_records', 'ports::ai_records', 'ports::user_account', 'ports::ai_account'])
+      assert(serverSymbolViolation(source, target));
+  }
+  const paths = rustPaths('use super::{context as all, RequestContext}; use super::context::ModelSettingsContext as Model;', ['http', 'evidence']);
+  assert.deepEqual([...paths].sort(), ['http::RequestContext', 'http::context', 'http::context::ModelSettingsContext']);
+  for (const target of paths) assert(serverSymbolViolation('http/evidence.rs', target));
+  assert(serverSymbolViolation('application/fx.rs', 'ports::user_records::LedgerAccount'));
+  assert(serverSymbolViolation('application/analysis.rs', 'ports::ai_records::AnalysisArchive'));
+});

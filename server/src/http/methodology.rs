@@ -1,11 +1,11 @@
 //! User-authored investment methodology.
-use super::RequestContext;
+use super::context::MethodologyContext;
+use crate::ports::user_records::MethodologyAccount;
 use crate::{
     models::methodology::{InvestmentMethodology, InvestmentMethodologyInput},
     AppResult,
 };
-use axum::{routing::get, Extension, Json, Router};
-use std::sync::Arc;
+use axum::{routing::get, Json, Router};
 pub(super) fn router() -> Router {
     Router::new().route(
         "/api/investment-methodology",
@@ -13,14 +13,14 @@ pub(super) fn router() -> Router {
     )
 }
 async fn investment_methodology(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: MethodologyContext,
 ) -> AppResult<Json<InvestmentMethodology>> {
-    Ok(Json(state.db.investment_methodology()?))
+    Ok(Json(state.account().investment_methodology()?))
 }
 
 async fn save_investment_methodology(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: MethodologyContext,
     Json(input): Json<InvestmentMethodologyInput>,
 ) -> AppResult<Json<InvestmentMethodology>> {
-    Ok(Json(state.db.save_investment_methodology(input)?))
+    Ok(Json(state.account().save_investment_methodology(input)?))
 }

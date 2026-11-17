@@ -35,7 +35,7 @@
 
 AI 用例负责授权、冻结输入及保存分析结果；模型执行器负责执行冻结任务。模型配置与执行能力不决定资料的业务授权。网站身份登录属于用户域，本机模型授权属于 AI 域。
 
-这些是已认可的职责边界。研究资料、分析历史与方法论已按职责拆分入口，契约按业务归属显式导入，HTTP 与存储适配仍直接持有统一 Database，后端剩余混合契约也待继续修复，不能将原则描述为已完全强制执行。
+这些是已认可的职责边界。研究资料、分析历史与方法论已按职责拆分入口，契约按业务归属显式导入，请求装配与存储适配仍协调统一账号存储，仓储内部的访问还待继续核对，不能将原则描述为已完全强制执行。
 
 ## 3. 运行角色与支撑部分
 
@@ -74,6 +74,7 @@ AI 用例负责授权、冻结输入及保存分析结果；模型执行器负�
 - **AI 账号访问能力**：[账号端口](../server/src/ports/ai_account.rs)区分只读模型配置、可写模型设置、用户只读分析来源、分析历史保存、记忆管理和账号锁协调；[存储适配](../server/src/db/ai_access.rs)复用现有事务与账号隔离。分析、记忆、模型配置与桥接用例按泛型端口编译，不能取得具体 Database、连接、任意配置键或用户账本写入方法。模型密钥绑定是[模型规则](../server/src/models/provider.rs)，移除密钥的业务校验由模型设置用例负责。用户资料通过[授权投影](../server/src/models/accounting/analysis.rs)提供，AI 接口只取得当前可用状态和授权组信息，不再接收完整 Snapshot。
 - **用户账号访问能力**：[用户端口](../server/src/ports/user_account.rs)分别约束组合、估值、汇率和个人观察用例；它们不再依赖具体 Database，也不能调用模型配置、密钥、AI 历史或任意设置键。汇率旧缓存由存储适配通过具名报价读取。账号锁协调移至公共[账号端口](../server/src/ports/account.rs)和[锁适配](../server/src/db/account_access.rs)，不再属于 AI 专用能力；[用户适配](../server/src/db/user_access.rs)继续调用原仓储方法，沿用事务、版本校验和现金一致性规则。
 - **市场分红计划与用户日历**：[计划类型](../server/src/models/market/dividend_plans.rs)、[公共计划仓储](../server/src/db/public_dividend_plans.rs)与[采集服务](../server/src/application/dividend_plans.rs)属于市场域，只处理证券代码和公共计划。仓储继续使用既有 `mario_market.dividend_plan_snapshots` 表，不初始化用户候选目录。用户 [日历用例](../server/src/application/dividend_calendar.rs)按账号自选和共享候选目录确定展示范围，仅持有 `DividendPlanReader` 缓存读端口。后台装配协调刷新范围，采集服务不读取账号或用户目录。
+- **HTTP 账号能力**：认证层在[请求装配](../server/src/http/context.rs)中选择账号并持有具体存储；财务、观察、资料、方法论、复盘、分析、记忆、模型设置和桥接路由分别提取自己的上下文。上下文内部字段私有，账号访问通过不暴露具体 Database 的能力接口返回。用户记录能力见 [user_records](../server/src/ports/user_records.rs)，AI 历史与预设见 [ai_records](../server/src/ports/ai_records.rs)，分别由所属存储适配委托原事务方法。备份上下文只协调版本、导出和导入；认证中间件仍在同一账号连接上持锁，处理全局版本与财务回执后再执行业务路由。
 - **公共事实与观察规则**：公共分红历史、覆盖日期、每股 TTM 计算在 [市场分红契约](../server/src/models/market/dividends.rs)，价格条目与统一行情输入在 [行情序列](../server/src/models/market/series.rs)。官方证券资料通过 [SecuritySources](../server/src/models/market/securities.rs)返回，用户候选目录显式转换为自有 Company，市场适配不再借用用户 WatchInput 校验。内置资料包只负责公共事实；CSV 的观察参考价由[用户导出用例](../server/src/application/watch_export.rs)生成，运行入口协调加载与不覆盖文件的写入。
 - **精简模型输入**：用户授权当前状态在 `models/accounting/analysis.rs` 生成，交易明细、缺口码和审计材料不进入模型资料；`context/render.rs` 将业务输入渲染为 Markdown，内部引用结构与历史审计独立保存。新工作流版本与搜索默认值见 [AI spec](specs/ai.md#8-现有实现差异)。
 - **契约归属**：后端 [models](../server/src/models.rs)只声明模块，不再提供跨域类型总入口；用户财务、资料、复盘和个人汇率分别在 `portfolio`、`research`、`reviews`、`fx`，公共查询与报价在 [market/quotes](../server/src/models/market/quotes.rs)，AI 请求和模型连接分别在 [analysis](../server/src/models/analysis.rs)、[connection](../server/src/models/connection.rs)。前端通过 [用户类型](../client/src/types/user.ts)、[市场类型](../client/src/types/market.ts)、[AI 类型](../client/src/types/ai.ts)显式导入。用户授权投影只接收用户资料筛选参数，AI 授权类型由适配层转换，用户契约不依赖 AI。
@@ -81,7 +82,7 @@ AI 用例负责授权、冻结输入及保存分析结果；模型执行器负�
 
 ## 6. 待继续修复的架构差异
 
-1. **仓储能力仍集中。** 已拆分文件中的仓储方法仍挂在统一 [Database](../server/src/db.rs)上；AI 和个人组合、价格、汇率、观察用例已通过窄端口限制能力，但 HTTP 适配、备份协调及仓储内部仍直接持有统一账号存储，需要继续核对跨域访问。
-2. **HTTP 与仓储内部的业务检查仍需补齐。** 已登记契约、用例与端口归属，并检查市场来源及公共市场仓储的依赖方向；HTTP 适配及统一账号仓储的内部读写权限尚未完整覆盖。检查通过不能证明三个功能域已完全隔离。
+1. **仓储内部能力仍集中。** 已拆分文件中的仓储方法仍挂在统一 [Database](../server/src/db.rs)上；业务用例和 HTTP 路由已通过窄端口及封装的上下文限制能力，认证装配、备份协调与仓储内部仍共享账号事务，需要继续核对内部跨域访问。
+2. **仓储内部的业务检查仍需补齐。** 已登记契约、用例、端口与 HTTP 适配的归属，业务路由只能取得各自上下文和记录能力，不能导入统一仓储或其他组的上下文。统一账号仓储内部的读写及备份协调仍需核对；现有检查通过不能证明内部跨域操作已全部限制。
 
 后续修复继续以三域 spec 和上述边界为依据，同步调整依赖约束和受影响的测试；已拆分文件不代表跨域授权与存储能力已全部收窄。

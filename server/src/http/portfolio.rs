@@ -1,8 +1,10 @@
-use super::RequestContext;
+use super::context::PortfolioContext;
 use crate::models::{
     market::quotes::{FxRateQuery, FxRateQuote, SecurityPriceQuery, SecurityPriceQuote},
     portfolio::{FinancialProfile, HoldingInput, Snapshot, VerifiedHoldingValuationInput},
 };
+use crate::ports::user_account::{FxAccount, PortfolioAccount, PortfolioState};
+use crate::ports::user_records::LedgerAccount;
 use crate::{
     application::prices,
     models::fx::{FxBook, FxOverrideInput},
@@ -11,9 +13,8 @@ use crate::{
 use axum::{
     extract::{Path, Query},
     routing::{get, post, put},
-    Extension, Json, Router,
+    Json, Router,
 };
-use std::sync::Arc;
 
 pub(super) fn router() -> Router {
     Router::new()
@@ -72,55 +73,57 @@ pub(super) fn router() -> Router {
 }
 
 async fn update_option_price(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
     Json(input): Json<crate::models::options::OptionPriceInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.update_option_price(&id, &input)?))
+    Ok(Json(state.account().update_option_price(&id, &input)?))
 }
 
 async fn financial_history(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
-    Ok(Json(state.db.financial_history(&id)?))
+    Ok(Json(state.account().financial_history(&id)?))
 }
 
 async fn preview_trade_repair(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
     Json(input): Json<crate::models::portfolio::TradeRepairInput>,
 ) -> AppResult<Json<crate::models::portfolio::HoldingTradeSummary>> {
-    Ok(Json(state.db.preview_trade_repair(&id, &input)?))
+    Ok(Json(state.account().preview_trade_repair(&id, &input)?))
 }
 
 async fn repair_trades(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
     Json(input): Json<crate::models::portfolio::TradeRepairInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.repair_trades(&id, &input)?))
+    Ok(Json(state.account().repair_trades(&id, &input)?))
 }
 
 async fn declare_corporate_action(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
     Json(input): Json<crate::models::portfolio::ManualCorporateActionInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.declare_corporate_action(&id, &input)?))
+    Ok(Json(state.account().declare_corporate_action(&id, &input)?))
 }
 
 async fn review_corporate_action(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path((id, mode)): Path<(String, String)>,
     Json(input): Json<crate::models::portfolio::ConfirmCorporateActionInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.review_corporate_action(&id, &input, &mode)?))
+    Ok(Json(
+        state
+            .account()
+            .review_corporate_action(&id, &input, &mode)?,
+    ))
 }
 
-async fn snapshot(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<axum::response::Response> {
+async fn snapshot(state: PortfolioContext) -> AppResult<axum::response::Response> {
     use axum::response::IntoResponse;
     let started = std::time::Instant::now();
     let snapshot = state.portfolio().snapshot()?;
@@ -138,32 +141,33 @@ struct ResolveFinancialOperation {
     input: serde_json::Value,
 }
 async fn resolve_financial_operation(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Json(input): Json<ResolveFinancialOperation>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let snapshot = state
-        .db
-        .replay_financial_request(&input.method, &input.path, &input.input)?;
+    let snapshot =
+        state
+            .account()
+            .replay_financial_request(&input.method, &input.path, &input.input)?;
     Ok(Json(
         serde_json::json!({"committed":snapshot.is_some(),"snapshot":snapshot}),
     ))
 }
 
 async fn refresh_security_prices(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
 ) -> AppResult<Json<prices::RefreshResult>> {
     Ok(Json(state.portfolio().refresh_prices().await?))
 }
 
 async fn fx_rate_quote(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Query(query): Query<FxRateQuery>,
 ) -> AppResult<Json<FxRateQuote>> {
     Ok(Json(state.portfolio().fx_quote(&query).await?))
 }
 
 async fn security_price_quote(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Query(query): Query<SecurityPriceQuery>,
 ) -> AppResult<Json<SecurityPriceQuote>> {
     Ok(Json(
@@ -172,7 +176,7 @@ async fn security_price_quote(
 }
 
 async fn apply_verified_holding_valuation(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
     Json(input): Json<VerifiedHoldingValuationInput>,
 ) -> AppResult<Json<Snapshot>> {
@@ -180,21 +184,21 @@ async fn apply_verified_holding_valuation(
 }
 
 async fn save_profile(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Json(input): Json<FinancialProfile>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.save_profile(&input)?))
+    Ok(Json(state.account().save_profile(&input)?))
 }
 
 async fn add_holding(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Json(input): Json<HoldingInput>,
 ) -> AppResult<Json<Snapshot>> {
     Ok(Json(state.portfolio().save_holding(None, input).await?))
 }
 
 async fn update_holding(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
     Json(input): Json<HoldingInput>,
 ) -> AppResult<Json<Snapshot>> {
@@ -204,7 +208,7 @@ async fn update_holding(
 }
 
 async fn delete_holding(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
     body: axum::body::Bytes,
 ) -> AppResult<Json<Snapshot>> {
@@ -214,95 +218,90 @@ async fn delete_holding(
         serde_json::from_slice(&body)
             .map_err(|_| crate::AppError::Validation("删除持仓请求格式无效".into()))?
     };
-    Ok(Json(state.db.delete_holding(&id, &input)?))
+    Ok(Json(state.account().delete_holding(&id, &input)?))
 }
 
 async fn save_holding_trade(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Json(input): Json<crate::models::portfolio::HoldingTradeInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.save_holding_trade(&input)?))
+    Ok(Json(state.account().save_holding_trade(&input)?))
 }
 
 async fn update_holding_trade(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
     Json(input): Json<crate::models::portfolio::HoldingTradeUpdateInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.update_holding_trade(&id, &input)?))
+    Ok(Json(state.account().update_holding_trade(&id, &input)?))
 }
 
 async fn delete_holding_trade(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
     Json(input): Json<crate::models::portfolio::HoldingTradeDeleteInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.delete_holding_trade(&id, &input)?))
+    Ok(Json(state.account().delete_holding_trade(&id, &input)?))
 }
 
 async fn ensure_daily_assets(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Json(input): Json<crate::models::daily::EnsureInput>,
 ) -> AppResult<Json<crate::models::daily::DailyHistory>> {
     Ok(Json(state.portfolio().ensure_daily(&input).await?))
 }
 
 async fn daily_assets(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Query(query): Query<crate::models::daily::HistoryQuery>,
 ) -> AppResult<Json<crate::models::daily::DailyHistory>> {
-    Ok(Json(state.db.daily_history(&query)?))
+    Ok(Json(state.account().daily_history(&query)?))
 }
 
 async fn dividend_income(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
 ) -> AppResult<Json<crate::models::accounting::DividendIncome>> {
     Ok(Json(
-        crate::application::portfolio::dividend_income(&state.db, state.watch_provider.clone())
-            .await?,
+        crate::application::portfolio::dividend_income(state.account(), state.provider()).await?,
     ))
 }
 
 async fn allocation(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
 ) -> AppResult<Json<crate::models::accounting::Allocation>> {
     Ok(Json(crate::application::portfolio::allocation(
-        &state.db,
-        &state.watch_catalog,
+        state.account(),
+        state.catalog(),
     )?))
 }
 
 async fn compare_daily_assets(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Query(query): Query<crate::models::daily::CompareQuery>,
 ) -> AppResult<Json<crate::models::daily::DailyComparison>> {
-    Ok(Json(state.db.daily_compare(&query)?))
+    Ok(Json(state.account().daily_compare(&query)?))
 }
 
 async fn update_holding_amount(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Path(id): Path<String>,
     Json(input): Json<crate::models::daily::AmountInput>,
 ) -> AppResult<Json<Snapshot>> {
-    Ok(Json(state.db.update_holding_amount(&id, &input)?))
+    Ok(Json(state.account().update_holding_amount(&id, &input)?))
 }
 
-async fn fx_settings(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<FxBook>> {
-    Ok(Json(
-        state
-            .db
-            .fx_book(&state.db.snapshot()?.profile.base_currency)?,
-    ))
+async fn fx_settings(state: PortfolioContext) -> AppResult<Json<FxBook>> {
+    Ok(Json(state.account().fx_book(
+        &state.account().snapshot()?.profile.base_currency,
+    )?))
 }
 
-async fn refresh_fx_settings(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<FxBook>> {
+async fn refresh_fx_settings(state: PortfolioContext) -> AppResult<Json<FxBook>> {
     Ok(Json(state.portfolio().refresh_fx(true).await?))
 }
 
 async fn save_fx_override(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: PortfolioContext,
     Json(input): Json<FxOverrideInput>,
 ) -> AppResult<Json<FxBook>> {
     Ok(Json(state.portfolio().save_fx_override(&input).await?))

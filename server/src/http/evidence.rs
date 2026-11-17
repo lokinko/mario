@@ -1,15 +1,15 @@
 //! User-owned research originals, tags and attachments.
-use super::RequestContext;
+use super::context::EvidenceContext;
 use crate::models::research::{
     ResearchEvidence, ResearchEvidenceInput, ResearchEvidenceStatusInput, ResearchEvidenceTagsInput,
 };
+use crate::ports::user_records::EvidenceAccount;
 use crate::AppResult;
 use axum::{
     extract::Path,
     routing::{get, put},
-    Extension, Json, Router,
+    Json, Router,
 };
-use std::sync::Arc;
 pub(super) fn router() -> Router {
     Router::new()
         .route(
@@ -31,40 +31,44 @@ pub(super) fn router() -> Router {
             put(set_research_evidence_tags),
         )
 }
-async fn research_evidence(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<Vec<ResearchEvidence>>> {
-    Ok(Json(state.db.research_evidence()?))
+async fn research_evidence(state: EvidenceContext) -> AppResult<Json<Vec<ResearchEvidence>>> {
+    Ok(Json(state.account().research_evidence()?))
 }
 
 async fn add_research_evidence(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: EvidenceContext,
     Json(input): Json<ResearchEvidenceInput>,
 ) -> AppResult<Json<ResearchEvidence>> {
-    Ok(Json(state.db.add_research_evidence(&input)?))
+    Ok(Json(state.account().add_research_evidence(&input)?))
 }
 
 async fn set_research_evidence_status(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: EvidenceContext,
     Path(id): Path<String>,
     Json(input): Json<ResearchEvidenceStatusInput>,
 ) -> AppResult<Json<ResearchEvidence>> {
     Ok(Json(
-        state.db.set_research_evidence_status(&id, input.active)?,
+        state
+            .account()
+            .set_research_evidence_status(&id, input.active)?,
     ))
 }
 
 async fn set_research_evidence_tags(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: EvidenceContext,
     Path(id): Path<String>,
     Json(input): Json<ResearchEvidenceTagsInput>,
 ) -> AppResult<Json<ResearchEvidence>> {
-    Ok(Json(state.db.set_research_evidence_tags(&id, &input)?))
+    Ok(Json(
+        state.account().set_research_evidence_tags(&id, &input)?,
+    ))
 }
 
 async fn research_attachment(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: EvidenceContext,
     Path((id, attachment_id)): Path<(String, String)>,
 ) -> AppResult<Json<crate::models::research::ResearchAttachmentDownload>> {
-    Ok(Json(state.db.research_attachment(&id, &attachment_id)?))
+    Ok(Json(
+        state.account().research_attachment(&id, &attachment_id)?,
+    ))
 }

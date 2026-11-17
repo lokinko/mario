@@ -262,6 +262,8 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 
 `AgentJob` 是 `{request:AnalysisRequest,context:BuiltContext,config:ModelConfig,api_key:string}`；`DreamJob` 是 `{input:DreamInput,config:ModelConfig,api_key:string}`。`BuiltContext` 的完整字段为 `payload,groups,payload_bytes,revision,evidence_items,valuation_evidence,evidence_catalog`，见[冻结上下文](../server/src/context.rs)；后两个集合可省略并默认空。`DreamInput` 是 `{analyses:DreamSourceAnalysis[],memories:MemoryNote[]}`，结果见[记忆类型](../server/src/models/memory.rs)。这些请求包含冻结凭据，只用于服务间调用，不作为浏览器公开执行入口。
 
+业务路由由认证中间件装配账号后，通过[所属请求上下文](../server/src/http/context.rs)提取各自能力；版本校验、财务回执、账号锁及流式取消仍作用于同一账号请求。实现层的职责划分与协议入口见[架构](architecture.md)。
+
 ## 6. 共用字段与类型查询
 
 以下记录输入字段及响应导航，避免每个接口复制同一结构。大型嵌套响应通过具名类型和源码链接继续查询，字段存在性、序列化规则以相应类型及契约测试核对；并非所有 Rust 内部结构都是可发送的请求。前端类型按 [用户](../client/src/types/user.ts)、[市场](../client/src/types/market.ts)、[AI](../client/src/types/ai.ts)归属查询，调用模块见 [api](../client/src/api/)。

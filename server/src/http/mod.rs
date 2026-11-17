@@ -1,6 +1,7 @@
 //! HTTP adapters. Business workflows live in application; authentication selects a context.
 mod analysis;
 pub(crate) mod codex_bridge;
+pub(crate) mod context;
 mod error;
 mod evidence;
 mod memory;
@@ -10,31 +11,8 @@ pub(crate) mod policy;
 mod portfolio;
 mod reviews;
 mod watch;
-use crate::{
-    application::portfolio::{MarketServices, PortfolioService},
-    db::Database,
-};
 use axum::{routing::get, Json, Router};
-use std::sync::Arc;
-
-pub(crate) struct RequestContext {
-    pub model_services: Arc<crate::application::model_settings::ModelServices>,
-    pub db: Database,
-    pub user_id: String,
-    pub is_superuser: bool,
-    pub watch_provider: Arc<dyn crate::ports::market::SecurityMarketProvider>,
-    pub watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
-    pub dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
-    pub market: Arc<MarketServices>,
-    pub analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
-}
-impl RequestContext {
-    pub fn portfolio(
-        &self,
-    ) -> PortfolioService<'_, impl crate::ports::user_account::PortfolioAccount> {
-        self.market.for_account(&self.db)
-    }
-}
+pub(crate) use context::{RequestContext, RequestContextParts};
 pub(crate) fn api_router() -> Router {
     Router::new()
         .route("/api/health", get(health))

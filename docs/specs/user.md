@@ -27,6 +27,8 @@
 
 组合保存、个人估值、汇率更新和观察刷新只接收[所属账号端口](../../server/src/ports/user_account.rs)，不能取得模型密钥或 AI 历史写入能力。端口适配保留原事务与版本校验，行情查询期间释放账号锁，结果落库前仍核对冻结输入；观察刷新仍按原条目校验，避免复活已删除或更正的记录。
 
+财务、观察、研究资料、方法论和复盘的 HTTP 路由各自提取独立账号上下文，记录读写能力见[用户记录端口](../../server/src/ports/user_records.rs)。资料路由不能取得财务写入或 AI 密钥能力。认证装配仍在原账号连接上持锁，版本冲突和财务幂等回执继续由相同的账号状态判断；备份导入导出由单独上下文协调。
+
 个人汇率手工覆盖及账号汇率簿属于用户域的 [fx 契约](../../server/src/models/fx.rs)，公共汇率查询与报价由市场域提供；共享来源不改变个人配置的归属。
 
 实现依据：[财务事实契约](../../server/src/models/portfolio.rs)、[个人资产用例](../../server/src/application/portfolio.rs)、[成交仓储](../../server/src/db/trades.rs)、[财务仓储](../../server/src/db/financial.rs)、[每日资产](../../server/src/db/daily.rs)。

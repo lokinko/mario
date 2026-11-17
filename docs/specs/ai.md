@@ -22,6 +22,8 @@ AI 域基于授权资料提供可追溯的分析，管理模型执行与讨论�
 
 分析与记忆用例分别依赖[账号能力端口](../../server/src/ports/ai_account.rs)，不接收完整 Database。用户资料是只读来源，AI 历史和记忆只暴露所属写入操作；模型配置仅有明确的配置、密钥和桥接方法，不能按任意键读取账号设置。账号锁通过公共[账号端口](../../server/src/ports/account.rs)与[锁适配](../../server/src/db/account_access.rs)协调，冻结后释放、保存前重取的行为保持一致。AI 授权选择由适配层转换为用户来源的筛选参数，用户契约不依赖 AI 类型。用户域的授权投影只返回所选组的当前可用事实，AI 用例与上下文构建不再接收完整 Snapshot；授权选择本身参与冻结指纹。
 
+分析、记忆、模型设置和桥接 HTTP 接口也分别取得自己的[请求上下文](../../server/src/http/context.rs)，不能取得用户记录写端口。历史查询与问答预设通过[AI 记录能力](../../server/src/ports/ai_records.rs)读写，不向业务路由暴露统一账号仓储。
+
 实现依据：[分析用例](../../server/src/application/analysis.rs)、[上下文构建](../../server/src/context.rs)、[多轮上下文](../../client/src/features/advisor/previousTurn.ts)、[记忆选取](../../server/src/context/memory.rs)。
 
 ## 3. 简洁的当前持仓输入

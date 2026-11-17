@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { serverLayers, serverModelOwners, serverApplicationOwners, serverPortOwners, serverModelViolation, serverBusinessViolation, userAccountCapabilities, boundaryOf, clientBoundaryViolation, clientBusinessViolation, httpRouteViolation } from './architecture-boundaries.mjs';
+import { serverLayers, serverModelOwners, serverApplicationOwners, serverPortOwners, serverHttpOwners, httpCapabilities, httpCapabilityViolation, httpRegistryViolations, httpOwnedRoutes, serverModelViolation, serverBusinessViolation, userAccountCapabilities, boundaryOf, clientBoundaryViolation, clientBusinessViolation, httpRouteViolation } from './architecture-boundaries.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ts = createRequire(resolve(root, 'client/package.json'))('typescript');
@@ -162,6 +162,8 @@ export function rustPaths(source, modulePath = []) {
   return paths;
 }
 export function serverSymbolViolation(source, target) {
+  const httpViolation = httpCapabilityViolation(source, target);
+  if (httpViolation) return httpViolation;
   const contractViolation = serverModelViolation(source, target);
   if (contractViolation) return contractViolation;
   const businessViolation = serverBusinessViolation(source, target);
@@ -180,6 +182,10 @@ export function serverSymbolViolation(source, target) {
       && !capabilities.some(name => target === `ports::ai_account::${name}`))
     return 'AI use case may import only its declared account capabilities';
   const userCapabilities = userAccountCapabilities[source];
+  if (userCapabilities && (target === 'ports::user_records' || target.startsWith('ports::user_records::')))
+    return 'user use cases cannot widen their declared capability through record-management ports';
+  if (capabilities && (target === 'ports::ai_records' || target.startsWith('ports::ai_records::')))
+    return 'AI use cases cannot widen their declared capability through record-management ports';
   if (userCapabilities && (target === 'ports::user_account' || target.startsWith('ports::user_account::'))
       && !userCapabilities.some(name => target === `ports::user_account::${name}`))
     return 'user use case may import only its declared account capabilities';
@@ -261,6 +267,8 @@ export function serverViolation(source, target) {
 }
 
 export function serverFileViolation(source, target) {
+  if (httpCapabilities[source] && ['db', 'storage', 'accounts'].includes(target))
+    return 'business HTTP routes use sealed request contexts, never the unified account store';
   if (['application/analysis.rs', 'application/memory.rs', 'application/model_settings.rs', 'application/codex_bridge.rs'].includes(source)
       && ['db', 'storage', 'accounts'].includes(target))
     return 'AI use cases depend on narrow account ports, never the concrete database or ledger';
@@ -291,6 +299,7 @@ export function serverFileViolation(source, target) {
 
 export function checkArchitecture() {
   const violations = [], clientGraph = new Map(), serverGraph = new Map();
+  violations.push(...httpRegistryViolations(serverHttpOwners, httpCapabilities, httpOwnedRoutes));
   const clientRoot = resolve(root, 'client/src');
   for (const path of files(clientRoot, /\.tsx?$/).filter(path => !/\.test\./.test(path) && !posix(path).includes('/test/'))) {
     const name = posix(relative(clientRoot, path));
@@ -349,10 +358,10 @@ export function checkArchitecture() {
   for (const name of Object.keys(serverModelOwners)) {
     if (!modelModules.has(name)) violations.push(`models/${name}: stale contract owner registration`);
   }
-  for (const [layer, owners] of [['application', serverApplicationOwners], ['ports', serverPortOwners]]) {
+  for (const [layer, owners] of [['application', serverApplicationOwners], ['ports', serverPortOwners], ['http', serverHttpOwners]]) {
     const source = readFileSync(resolve(serverRoot, layer, 'mod.rs'), 'utf8');
     const modules = rustModules(source);
-    if (productionRust(source).replace(/pub\(crate\)\s+mod\s+\w+\s*;/g, '').trim())
+    if (layer !== 'http' && productionRust(source).replace(/pub\(crate\)\s+mod\s+\w+\s*;/g, '').trim())
       violations.push(`${layer}/mod.rs: business entry points belong in explicitly owned modules`);
     for (const name of modules) if (!owners[name]) violations.push(`${layer}/${name}: unassigned business owner`);
     for (const name of Object.keys(owners)) if (!modules.has(name)) violations.push(`${layer}/${name}: stale business owner registration`);

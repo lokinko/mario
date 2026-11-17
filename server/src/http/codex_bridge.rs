@@ -1,10 +1,10 @@
-use super::RequestContext;
+use super::context::BridgeContext;
 use crate::{ai::bridge, application::codex_bridge, AppError, AppResult};
 use axum::{
     extract::DefaultBodyLimit,
     http::{header, HeaderMap},
     routing::{get, post},
-    Extension, Json, Router,
+    Json, Router,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -24,29 +24,27 @@ pub(crate) fn worker_router() -> Router {
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
 }
 async fn status(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: BridgeContext,
 ) -> AppResult<Json<crate::models::connection::CodexBridgeStatus>> {
     Ok(Json(codex_bridge::status(
-        &state.db,
-        state.model_services.bridges.as_ref(),
+        state.account(),
+        state.services().bridges.as_ref(),
     )?))
 }
-async fn pair(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<Value>> {
+async fn pair(state: BridgeContext) -> AppResult<Json<Value>> {
     Ok(Json(
-        json!({"pairingCode":codex_bridge::pair(&state.db, state.model_services.bridges.as_ref())?, "expiresInSeconds":600}),
+        json!({"pairingCode":codex_bridge::pair(state.account(), state.services().bridges.as_ref())?, "expiresInSeconds":600}),
     ))
 }
-async fn revoke(Extension(state): Extension<Arc<RequestContext>>) -> AppResult<Json<Value>> {
-    codex_bridge::revoke(&state.db, state.model_services.bridges.as_ref())?;
+async fn revoke(state: BridgeContext) -> AppResult<Json<Value>> {
+    codex_bridge::revoke(state.account(), state.services().bridges.as_ref())?;
     Ok(Json(json!({"ok":true})))
 }
-async fn enable(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<crate::models::connection::ModelConfig>> {
-    codex_bridge::enable(&state.db, state.model_services.bridges.as_ref())?;
+async fn enable(state: BridgeContext) -> AppResult<Json<crate::models::connection::ModelConfig>> {
+    codex_bridge::enable(state.account(), state.services().bridges.as_ref())?;
     Ok(Json(crate::application::model_settings::configuration(
-        &state.db,
-        state.model_services.server.as_ref(),
+        state.account(),
+        state.services().server.as_ref(),
     )?))
 }
 #[derive(Deserialize)]

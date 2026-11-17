@@ -1,16 +1,16 @@
-use super::RequestContext;
+use super::context::ReviewContext;
 use crate::models::reviews::{
     InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, ReviewReminderSummary,
     SystemReviewInput, SystemReviewRecord,
 };
+use crate::ports::user_records::ReviewAccount;
 use crate::AppResult;
 use axum::{
     extract::Path,
     routing::{get, put},
-    Extension, Json, Router,
+    Json, Router,
 };
 use chrono::Local;
-use std::sync::Arc;
 
 pub(super) fn router() -> Router {
     Router::new()
@@ -30,53 +30,47 @@ pub(super) fn router() -> Router {
         .route("/api/review-reminders", get(review_reminders))
 }
 
-async fn investment_rules(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<Vec<InvestmentRule>>> {
-    Ok(Json(state.db.investment_rules()?))
+async fn investment_rules(state: ReviewContext) -> AppResult<Json<Vec<InvestmentRule>>> {
+    Ok(Json(state.account().investment_rules()?))
 }
 
 async fn add_investment_rule(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: ReviewContext,
     Json(input): Json<InvestmentRuleInput>,
 ) -> AppResult<Json<InvestmentRule>> {
-    Ok(Json(state.db.add_investment_rule(&input)?))
+    Ok(Json(state.account().add_investment_rule(&input)?))
 }
 
 async fn update_investment_rule(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: ReviewContext,
     Path(id): Path<String>,
     Json(input): Json<InvestmentRuleInput>,
 ) -> AppResult<Json<InvestmentRule>> {
-    Ok(Json(state.db.update_investment_rule(&id, &input)?))
+    Ok(Json(state.account().update_investment_rule(&id, &input)?))
 }
 
 async fn investment_rule_history(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: ReviewContext,
     Path(id): Path<String>,
 ) -> AppResult<Json<Vec<InvestmentRuleRevision>>> {
-    Ok(Json(state.db.investment_rule_history(&id)?))
+    Ok(Json(state.account().investment_rule_history(&id)?))
 }
 
-async fn system_reviews(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<Vec<SystemReviewRecord>>> {
-    Ok(Json(state.db.system_reviews()?))
+async fn system_reviews(state: ReviewContext) -> AppResult<Json<Vec<SystemReviewRecord>>> {
+    Ok(Json(state.account().system_reviews()?))
 }
 
 async fn save_system_review(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: ReviewContext,
     Json(input): Json<SystemReviewInput>,
 ) -> AppResult<Json<SystemReviewRecord>> {
-    Ok(Json(state.db.save_system_review(&input)?))
+    Ok(Json(state.account().save_system_review(&input)?))
 }
 
-async fn review_reminders(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<ReviewReminderSummary>> {
+async fn review_reminders(state: ReviewContext) -> AppResult<Json<ReviewReminderSummary>> {
     Ok(Json(
         state
-            .db
+            .account()
             .review_reminder_summary(Local::now().date_naive())?,
     ))
 }

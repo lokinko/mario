@@ -1,13 +1,14 @@
 //! AI analysis execution, streaming and history.
-use super::RequestContext;
+use super::context::AnalysisContext;
 use crate::models::analysis::{
     AnalysisHistoryItem, AnalysisPreview, AnalysisRequest, AnalysisResult, StoredAnalysis,
 };
+use crate::ports::ai_records::AnalysisArchive;
 use crate::{application::analysis::AnalysisService, AppResult};
 use axum::{
     extract::Path,
     routing::{get, post},
-    Extension, Json, Router,
+    Json, Router,
 };
 use std::sync::Arc;
 pub(super) fn router() -> Router {
@@ -19,27 +20,27 @@ pub(super) fn router() -> Router {
         .route("/api/analyses/{id}", get(analysis))
 }
 async fn run_analysis(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: AnalysisContext,
     Json(request): Json<AnalysisRequest>,
 ) -> AppResult<Json<AnalysisResult>> {
     Ok(Json(
-        AnalysisService::new(&state.db, state.model_services.server.as_ref())
-            .execute(request, state.analysis_executor.as_ref())
+        AnalysisService::new(state.account(), state.server())
+            .execute(request, state.executor())
             .await?,
     ))
 }
 
 async fn preview_analysis(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: AnalysisContext,
     Json(request): Json<AnalysisRequest>,
 ) -> AppResult<Json<AnalysisPreview>> {
     Ok(Json(
-        AnalysisService::new(&state.db, state.model_services.server.as_ref()).preview(&request)?,
+        AnalysisService::new(state.account(), state.server()).preview(&request)?,
     ))
 }
 
 async fn stream_analysis(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: AnalysisContext,
     Json(request): Json<AnalysisRequest>,
 ) -> AppResult<axum::response::Response> {
     use axum::response::{sse::KeepAlive, IntoResponse, Sse};
@@ -53,8 +54,8 @@ async fn stream_analysis(
     let (sender, receiver) = tokio::sync::mpsc::channel(32);
     let future = Box::pin(async move {
         let _permit = permit;
-        AnalysisService::new(&state.db, state.model_services.server.as_ref())
-            .execute_stream(request, state.analysis_executor.as_ref(), sender)
+        AnalysisService::new(state.account(), state.server())
+            .execute_stream(request, state.executor(), sender)
             .await
     });
     let mut response = Sse::new(crate::streaming::response_stream(future, receiver))
@@ -71,27 +72,28 @@ async fn stream_analysis(
     Ok(response)
 }
 
-async fn analyses(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<Vec<AnalysisHistoryItem>>> {
-    Ok(Json(state.db.analysis_history()?))
+async fn analyses(state: AnalysisContext) -> AppResult<Json<Vec<AnalysisHistoryItem>>> {
+    Ok(Json(state.archive().analysis_history()?))
 }
 
 async fn analysis(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: AnalysisContext,
     Path(id): Path<String>,
 ) -> AppResult<Json<StoredAnalysis>> {
-    Ok(Json(state.db.analysis(&id)?))
+    Ok(Json(state.archive().analysis(&id)?))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::http::{RequestContext, RequestContextParts};
     use crate::{
         context::BuiltContext, db::Database, models::inference::AnalysisEvent,
         ports::analysis::AnalysisExecutor,
     };
+    use axum::Extension;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     struct Executor {
         gate: Arc<tokio::sync::Notify>,
@@ -167,7 +169,7 @@ mod tests {
             &std::env::var("MARIO_TEST_DATABASE_URL").unwrap(),
         )
         .unwrap();
-        let state = Arc::new(RequestContext {
+        let state = Arc::new(RequestContext::from(RequestContextParts {
             model_services: crate::composition::model_services(),
             user_id: "test-user".into(),
             is_superuser: false,
@@ -183,16 +185,19 @@ mod tests {
                 dropped: dropped.clone(),
                 fail,
             }),
-        });
+        }));
         let mut request: AnalysisRequest = serde_json::from_value(
             serde_json::json!({"question":"流式问题","workflow":"council","webSearch":false}),
         )
         .unwrap();
         request.preview_revision = Some(
-            AnalysisService::new(&state.db, state.model_services.server.as_ref())
-                .preview(&request)
-                .unwrap()
-                .context_revision,
+            AnalysisService::new(
+                state.database(),
+                state.test_model_services().server.as_ref(),
+            )
+            .preview(&request)
+            .unwrap()
+            .context_revision,
         );
         let app = router().layer(Extension(state.clone()));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -236,16 +241,20 @@ mod tests {
                 .unwrap()
                 .contains("text/event-stream"));
             read_draft(&mut response).await;
-            assert!(state.db.analysis_history().unwrap().is_empty());
+            assert!(state.database().analysis_history().unwrap().is_empty());
             gate.notify_one();
             let tail = response.text().await.unwrap();
             if fail {
                 assert!(tail.contains("fixture interruption"));
-                assert!(state.db.analysis_history().unwrap().is_empty());
+                assert!(state.database().analysis_history().unwrap().is_empty());
             } else {
                 assert!(tail.contains("\"type\":\"complete\""));
                 assert_eq!(
-                    state.db.analysis("streamed-result").unwrap().question,
+                    state
+                        .database()
+                        .analysis("streamed-result")
+                        .unwrap()
+                        .question,
                     "流式问题"
                 );
             }
@@ -264,7 +273,7 @@ mod tests {
         })
         .await
         .unwrap();
-        assert!(state.db.analysis_history().unwrap().is_empty());
+        assert!(state.database().analysis_history().unwrap().is_empty());
         server.abort();
     }
 }

@@ -8,7 +8,7 @@ use crate::{
     application::portfolio::MarketServices,
     composition::MarketRuntime,
     db::{self, Database},
-    http::{api_router, policy, RequestContext},
+    http::{api_router, context::BackupContext, policy, RequestContext, RequestContextParts},
     AppError, AppResult,
 };
 use accounts::{Accounts, Credentials};
@@ -19,7 +19,7 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Extension, Json, Router,
+    Json, Router,
 };
 use std::{future::Future, net::SocketAddr, path::PathBuf, sync::Arc};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -205,7 +205,7 @@ async fn authenticate(
             .try_acquire()
             .map_err(|_| AppError::Busy("服务繁忙，请稍后重试".into()))?;
         let user = host.accounts.authenticate(bearer(request.headers())?)?;
-        let state = Arc::new(RequestContext {
+        let state = Arc::new(RequestContext::from(RequestContextParts {
             model_services: host.model_services.clone(),
             is_superuser: host.accounts.is_superuser(&user)?,
             user_id: user.clone(),
@@ -215,8 +215,8 @@ async fn authenticate(
             db: Database::pooled(&host.tenant_connections, &user)?,
             market: host.market.clone(),
             analysis_executor: host.analysis_executor.clone(),
-        });
-        let db = &state.db;
+        }));
+        let db = state.as_ref();
         let _lock = db.lock_account()?;
         let revision = db.revision()?;
         let is_write = policy::requires_revision(request.method(), request.uri().path());
@@ -325,15 +325,11 @@ async fn logout(
     state.accounts.logout(bearer(&headers)?)?;
     Ok(Json(serde_json::json!({"ok":true})))
 }
-async fn version(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<serde_json::Value>> {
-    Ok(Json(serde_json::json!({"revision":state.db.revision()?})))
+async fn version(state: BackupContext) -> AppResult<Json<serde_json::Value>> {
+    Ok(Json(serde_json::json!({"revision":state.revision()?})))
 }
-async fn export(
-    Extension(state): Extension<Arc<RequestContext>>,
-) -> AppResult<Json<db::SyncDataset>> {
-    Ok(Json(state.db.export_sync_data()?))
+async fn export(state: BackupContext) -> AppResult<Json<db::SyncDataset>> {
+    Ok(Json(state.export()?))
 }
 #[derive(Default, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -341,13 +337,13 @@ struct ImportOptions {
     replace: bool,
 }
 async fn import(
-    Extension(state): Extension<Arc<RequestContext>>,
+    state: BackupContext,
     Query(options): Query<ImportOptions>,
     Json(data): Json<serde_json::Value>,
 ) -> AppResult<Json<serde_json::Value>> {
-    if !options.replace && !state.db.is_empty_for_import()? {
+    if !options.replace && !state.is_empty_for_import()? {
         return Err(AppError::Conflict("仅允许向空账户导入数据".into()));
     }
-    state.db.import_account_data(&data)?;
+    state.import(&data)?;
     Ok(Json(serde_json::json!({"ok":true})))
 }
