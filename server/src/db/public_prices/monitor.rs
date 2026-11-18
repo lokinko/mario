@@ -22,6 +22,10 @@ pub(crate) struct PriceCoverage {
     pub first_on: Option<chrono::NaiveDate>,
     pub bars: usize,
     pub missing_close_values: bool,
+    #[serde(default)]
+    pub currency: String,
+    #[serde(default)]
+    pub instrument_type: String,
 }
 impl From<&crate::models::market::history::PriceHistory> for PriceCoverage {
     fn from(h: &crate::models::market::history::PriceHistory) -> Self {
@@ -37,11 +41,14 @@ impl From<&crate::models::market::history::PriceHistory> for PriceCoverage {
                 .bars
                 .iter()
                 .any(|b| b.raw_close.is_none() || b.adjusted_close.is_none()),
+            currency: h.currency.clone(),
+            instrument_type: h.instrument_type.clone(),
         }
     }
 }
 pub(crate) struct MonitorPrice {
     pub history: Option<PriceCoverage>,
+    pub tracked: bool,
     pub attempted_at: i64,
     pub lease_until: i64,
     pub last_error: String,
@@ -89,13 +96,13 @@ impl PublicPrices {
             last_error,
         };
         // Coverage is persisted with the revision; a dashboard read never scans ten-year bars.
-        let prices = tx.prepare(r#"SELECT p.symbol,p.coverage,p.attempted_at,p.lease_until,p.last_error
-            FROM price_histories AS p
-            WHERE p.symbol='000001.SS' OR p.symbol IN (
-                SELECT value->>'symbol' FROM price_universe,jsonb_array_elements(payload::jsonb->'members')
-            ) ORDER BY p.symbol"#)?
-            .query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?
-            .collect::<Result<Vec<_>,_>>()?.into_iter().map(|(s,p,attempted_at,lease_until,last_error)|Ok((s,MonitorPrice { history:p.map(|v|serde_json::from_str(&v)).transpose()?,attempted_at,lease_until,last_error }))).collect::<AppResult<Vec<_>>>()?;
+        // `tracked` mirrors the collection scope selected by `PublicPrices::symbols`.
+        let prices = tx.prepare(r#"SELECT symbol,coverage,attempted_at,lease_until,last_error,
+                requested_at >= $1 OR (symbol='000001.SS' AND EXISTS(SELECT 1 FROM price_universe WHERE payload IS NOT NULL))
+                OR symbol IN (SELECT value->>'symbol' FROM price_universe,jsonb_array_elements(payload::jsonb->'members'))
+            FROM price_histories ORDER BY symbol"#)?
+            .query_map([chrono::Utc::now().timestamp_millis()-super::REQUEST_TTL_MS],|r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?)))?
+            .collect::<Result<Vec<_>,_>>()?.into_iter().map(|(s,p,attempted_at,lease_until,last_error,tracked)|Ok((s,MonitorPrice { history:p.map(|v|serde_json::from_str(&v)).transpose()?,tracked,attempted_at,lease_until,last_error }))).collect::<AppResult<Vec<_>>>()?;
         let successes = tx
             .prepare("SELECT symbol FROM price_fetch_days WHERE day=$1 AND successes>0")?
             .query_map([date], |r| r.get::<_, String>(0))?
@@ -314,5 +321,27 @@ mod tests {
         let coverage: PriceCoverage = serde_json::from_str(&projection).unwrap();
         assert_eq!(coverage.bars, changed.bars.len());
         assert_eq!(coverage.adjustment_anchor, changed.adjustment_anchor);
+        // Coverage written before currency/type were projected is completed on reopen.
+        upgraded
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE price_histories SET coverage=(coverage::jsonb-'currency'-'instrumentType')::text WHERE symbol='600941.SS'",
+                [],
+            )
+            .unwrap();
+        let completed = PublicPrices::open(&store.url, &store.schema).unwrap();
+        let projection = completed
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT coverage FROM price_histories WHERE symbol='600941.SS'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap();
+        let coverage: PriceCoverage = serde_json::from_str(&projection).unwrap();
+        assert_eq!(coverage.currency, changed.currency);
+        assert_eq!(coverage.instrument_type, changed.instrument_type);
     }
 }

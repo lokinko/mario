@@ -7,6 +7,9 @@ use crate::{
 use std::sync::Mutex;
 mod monitor;
 
+/// A registered symbol stays in the collection scope while it was requested within this window.
+const REQUEST_TTL_MS: i64 = 172_800_000;
+
 pub(crate) struct PriceState {
     pub history: Option<PriceHistory>,
     pub attempted_at: i64,
@@ -42,11 +45,13 @@ impl PublicPrices {
                 'providerName',h."providerName",'firstOn',h.bars->0->>'day',
                 'bars',jsonb_array_length(h.bars),'missingCloseValues',EXISTS(
                     SELECT 1 FROM jsonb_array_elements(h.bars) AS b WHERE b->>'rawClose' IS NULL OR b->>'adjustedClose' IS NULL
-                ))::text
+                ),'currency',coalesce(h.currency,''),'instrumentType',coalesce(h."instrumentType",''))::text
             FROM (SELECT symbol,payload FROM price_histories WHERE payload IS NOT NULL AND
-                (coverage IS NULL OR coverage::jsonb->>'fetchedAt' IS DISTINCT FROM payload::jsonb->>'fetchedAt')) AS old
+                (coverage IS NULL OR coverage::jsonb->>'fetchedAt' IS DISTINCT FROM payload::jsonb->>'fetchedAt'
+                 OR NOT jsonb_exists(coverage::jsonb,'instrumentType'))) AS old
             CROSS JOIN LATERAL jsonb_to_record(old.payload::jsonb) AS h(
-                "windowStart" TEXT,"completedThrough" TEXT,"adjustmentAnchor" TEXT,"fetchedAt" TEXT,"providerName" TEXT,bars JSONB
+                "windowStart" TEXT,"completedThrough" TEXT,"adjustmentAnchor" TEXT,"fetchedAt" TEXT,"providerName" TEXT,bars JSONB,
+                currency TEXT,"instrumentType" TEXT
             ) WHERE p.symbol=old.symbol;
         "#)?;
         tx.commit()?;
@@ -102,7 +107,7 @@ impl PublicPrices {
         Ok(self
             .conn()?
             .prepare("SELECT symbol FROM price_histories WHERE requested_at >= $1 OR (symbol='000001.SS' AND EXISTS(SELECT 1 FROM price_universe WHERE payload IS NOT NULL)) OR symbol IN (SELECT value->>'symbol' FROM price_universe,jsonb_array_elements(payload::jsonb->'members')) ORDER BY attempted_at,symbol")?
-            .query_map([chrono::Utc::now().timestamp_millis()-172_800_000], |r| r.get::<_, String>(0))?
+            .query_map([chrono::Utc::now().timestamp_millis()-REQUEST_TTL_MS], |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?)
     }
     /// A persistent lease coordinates API processes without holding a DB transaction over I/O.

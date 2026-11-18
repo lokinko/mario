@@ -71,8 +71,9 @@ try {
   const board = await boardResponse.json();
   assert.equal(board.days, 7);
   assert.equal(board.marketPrices.years,10);
-  assert.equal(board.marketPrices.summary.expected,300);
-  assert.equal(board.marketPrices.rows.length,300);
+  assert.equal(board.marketPrices.rows.filter(row=>row.scope==='csi300').length,300);
+  assert.equal(board.marketPrices.summary.expected,board.marketPrices.rows.filter(row=>row.tracked).length);
+  assert(board.marketPrices.summary.expected>=300);
   assert.equal(board.marketPrices.rows.find(row=>row.symbol==='000001.SZ').error,'合成来源故障');
   assert(board.marketPrices.summary.failed>=1);
   assert(board.dailyActive >= 1);

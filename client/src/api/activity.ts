@@ -34,6 +34,11 @@ export interface PriceCollectionDashboard {
   rows: {
     symbol: string;
     name: string;
+    scope: "csi300" | "reference" | "other";
+    market: "cn" | "hk" | "us" | "other";
+    instrumentType: string;
+    currency: string;
+    tracked: boolean;
     status: string;
     issueCodes: string[];
     error: string;

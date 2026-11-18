@@ -54,6 +54,14 @@ pub struct PriceCollectionDay {
 pub struct PriceCollectionRow {
     pub symbol: String,
     pub name: String,
+    /// `csi300` member, `reference` trading-calendar index, or `other` registered symbol.
+    pub scope: String,
+    /// `cn`, `hk`, `us`, or `other`, derived from the canonical symbol.
+    pub market: String,
+    pub instrument_type: String,
+    pub currency: String,
+    /// Inactive rows keep their stored prices but are no longer refreshed or counted.
+    pub tracked: bool,
     pub status: String,
     pub issue_codes: Vec<String>,
     pub error: String,

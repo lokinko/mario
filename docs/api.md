@@ -342,7 +342,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | GridProjection | 网格档位与预算、买卖情景计算，不是成交记录 | [网格类型](../server/src/models/watch/grid.rs) |
 | ResearchEvidence / InvestmentRule / InvestmentRuleRevision / SystemReviewRecord | 原文和附件元数据、标签与归档；手工规则及修订；文字复盘、当时快照及兼容字段 | [研究资料](../server/src/models/research.rs)、[规则与复盘](../server/src/models/reviews.rs) |
 | InvestmentMethodology | prompt、defaultPrompt、maxLength | [方法论类型](../server/src/models/methodology.rs) |
-| ServerInfo / Dashboard | mode/database/protocol/codexBridge/analysisTimeoutSeconds/codexMaxAttempts/publicDividendData；活跃统计与 marketPrices | [托管类型](../server/src/hosted.rs)、[看板](../server/src/hosted/activity.rs)、[价格监控](../server/src/models/market/monitor.rs) |
+| ServerInfo / Dashboard | mode/database/protocol/codexBridge/analysisTimeoutSeconds/codexMaxAttempts/publicDividendData；活跃统计与 marketPrices。marketPrices.rows 覆盖全部已存公共价格，逐行含 scope（csi300/reference/other）、market（cn/hk/us/other）、instrumentType、currency、tracked；停止跟踪行 status 为 inactive，不计入 summary 与 daily | [托管类型](../server/src/hosted.rs)、[看板](../server/src/hosted/activity.rs)、[价格监控](../server/src/models/market/monitor.rs) |
 
 ## 7. 维护与验证
 
