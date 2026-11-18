@@ -86,7 +86,7 @@ export function DividendShare({
         <img
           className="dividend-share-image"
           src={poster.href}
-          alt={`${stock.name} 分红卡，含最近一次已实施现金分红和详情二维码`}
+          alt={`${stock.name} 分红卡，含已实施分红、AI 解读摘要和详情二维码`}
         />
       )}
       <div className="dividend-share-options">

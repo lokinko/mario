@@ -73,6 +73,8 @@ CSV 可以作为同一摘要的替代表达；如使用 CSV 文件，其内容�
 
 实现依据：[工作流](../../server/src/ai/workflow.rs)、[编排](../../server/src/ai/orchestrator.rs)、[计票](../../server/src/models/council.rs)、[输出校验](../../server/src/ai/structured_output.rs)。
 
+公开[红利观察](../../client/src/features/watch/dividend-preview/DividendPreview.tsx)为内置样本提供逐股预生成解读，比较同一报告期的已实施派息并提出核查方向。解读使用归档中的公共分红数据并沿用其截止日期，分享图片保留解读摘要和详情二维码。工作台入口带入对应 A 股代码和可编辑的研究问题，由用户确认发送后执行问答流程。
+
 ## 6. 流式交互、失败与分析历史
 
 区分进行状态、方案草稿、完整结果和错误。流式草稿不作为已验证结论；未完成内容不能冒充完整分析归档。

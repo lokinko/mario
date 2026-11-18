@@ -256,6 +256,53 @@
 .dividend-ticket-actions details svg {
   vertical-align: middle;
 }
+.dividend-brief {
+  padding: 20px clamp(20px, 4vw, 38px) 16px;
+  border-top: 1px solid var(--dividend-line);
+  border-radius: 0 0 21px 21px;
+  background: #f6f9fd;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.dividend-brief p {
+  margin: 8px 0;
+}
+.dividend-brief .dividend-brief-label {
+  margin-top: 0;
+  color: var(--dividend-blue);
+  font-size: 13px;
+  font-weight: 700;
+}
+.dividend-brief h3 {
+  margin: 0;
+  font-size: clamp(19px, 4vw, 25px);
+  line-height: 1.3;
+}
+.dividend-brief-follow-up {
+  margin-block: 14px;
+  padding-left: 12px;
+  border-left: 2px solid var(--dividend-line);
+}
+.dividend-brief-follow-up h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.dividend-brief-follow-up p {
+  margin: 3px 0 0;
+}
+.dividend-brief .dividend-brief-note {
+  margin-bottom: 0;
+  color: var(--dividend-muted);
+  font-size: 12px;
+}
+.dividend-brief-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  font-weight: 700;
+  text-decoration: none;
+}
 .dividend-preview-footer {
   padding-block: 10px;
 }

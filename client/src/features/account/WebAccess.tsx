@@ -192,9 +192,14 @@ export function WebAccess({
     openAiCompletion.current ??= completeOpenAiSignIn();
     void openAiCompletion.current
       .then(
-        ({ session }) => {
+        ({ session, returnSearch }) => {
           if (disposed) return;
           if (session) {
+            if (returnSearch) {
+              const url = new URL(window.location.href);
+              url.search = returnSearch;
+              history.replaceState(null, "", url);
+            }
             setWebToken(session.token, session.expiresAt, session);
             resetAccountState();
             setConnected(session.token);

@@ -9,6 +9,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 import type { FactsSection } from "../features/portfolio/MyFacts";
+import { dividendQuestionSymbol } from "../features/watch/dividend-preview/route";
 
 export type View =
   | "watch"
@@ -31,7 +32,8 @@ export const views: View[] = [
 
 export function initialView(): View {
   const candidate = window.location.hash.replace("#", "") as View;
-  return views.includes(candidate) ? candidate : "watch";
+  if (views.includes(candidate)) return candidate;
+  return dividendQuestionSymbol(window.location.search) ? "advisor" : "watch";
 }
 
 export const navGroups: {

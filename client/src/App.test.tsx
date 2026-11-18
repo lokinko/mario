@@ -331,6 +331,32 @@ it("responds to hash navigation without leaving the old page on screen", async (
   expect(screen.queryByRole("button", { name: "测试恢复数据" })).toBeNull();
 });
 
+it("opens the public dividend link as an editable research question", async () => {
+  window.history.replaceState(null, "", "?dividend=600900");
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockResolvedValue({
+    provider: "openai-responses",
+    baseUrl: "https://api.openai.com/v1",
+    model: "test",
+    hasApiKey: false,
+  });
+  try {
+    render(<App />);
+    const question = (await screen.findByRole("textbox", {
+      name: "输入问题",
+    })) as HTMLTextAreaElement;
+    await waitFor(() => expect(question.value).toContain("A 股 600900"));
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("#advisor");
+    fireEvent.change(question, { target: { value: "查最新的分红公告" } });
+    expect(question.value).toBe("查最新的分红公告");
+  } finally {
+    window.history.replaceState(null, "", "/");
+  }
+});
+
 it("closes the more-navigation sheet with Escape and restores focus without changing the page", async () => {
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
     {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,

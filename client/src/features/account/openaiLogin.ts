@@ -11,6 +11,7 @@ export interface MarioLoginSession {
 export interface OpenAiLoginResult {
   session: MarioLoginSession | null;
   linked: boolean;
+  returnSearch?: string;
 }
 function sameOriginApi() {
   const base = serviceUrl();
@@ -47,7 +48,11 @@ export async function openAiSignIn(
     throw new Error("授权地址不属于 OpenAI。");
   sessionStorage.setItem(
     `mario.openai-login:${base}`,
-    JSON.stringify({ token: startingToken, createdAt: Date.now() }),
+    JSON.stringify({
+      token: startingToken,
+      createdAt: Date.now(),
+      returnSearch: window.location.search,
+    }),
   );
   return target.href;
 }
@@ -76,7 +81,16 @@ export async function completeOpenAiSignIn(): Promise<OpenAiLoginResult> {
   if (context.token !== webToken() || base !== serviceUrl())
     throw new Error("Mario 账号已切换，请重新登录。");
   if (result.linked === true && result.session === null) return result;
-  if (result.linked === false && validSession(result.session)) return result;
+  if (result.linked === false && validSession(result.session)) {
+    return {
+      session: result.session,
+      linked: false,
+      returnSearch:
+        typeof context.returnSearch === "string"
+          ? context.returnSearch
+          : undefined,
+    };
+  }
   throw new Error("登录返回结果无效，请重新登录。");
 }
 function validSession(value: unknown): value is MarioLoginSession {

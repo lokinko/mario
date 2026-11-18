@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ArrowUpRight, Search, Share2 } from "lucide-react";
+import { dividendBriefs } from "./briefs";
 import { DividendShare } from "./DividendShare";
-import { dividendPreviewHref } from "./route";
+import { dividendPreviewHref, dividendQuestionHref } from "./route";
 import snapshot from "./snapshot.json";
 import "./dividend-preview.css";
 
@@ -37,6 +38,7 @@ export function DividendPreview() {
 
   const latest = stock?.events[0];
   const previous = stock?.events[1];
+  const brief = stock && dividendBriefs[stock.symbol];
 
   return (
     <div className="dividend-preview">
@@ -64,7 +66,7 @@ export function DividendPreview() {
           aria-labelledby="dividend-preview-title"
         >
           <h1 id="dividend-preview-title">查一查这家公司的分红</h1>
-          <p>看最近两次已实施的现金分红，核对每 10 股派了多少、哪天除息。</p>
+          <p>核对每 10 股派了多少、哪天除息，再看 AI 如何解读历次变化。</p>
           <form className="dividend-preview-search" onSubmit={lookup}>
             <label htmlFor="dividend-stock">公司名称或 A 股代码</label>
             <div>
@@ -172,6 +174,30 @@ export function DividendPreview() {
                   <Share2 size={17} aria-hidden="true" /> 分享卡片
                 </button>
               </div>
+              {brief && (
+                <section
+                  className="dividend-brief"
+                  aria-labelledby="dividend-brief-title"
+                >
+                  <p className="dividend-brief-label">AI 解读</p>
+                  <h3 id="dividend-brief-title">{brief.headline}</h3>
+                  <p>{brief.reading}</p>
+                  <div className="dividend-brief-follow-up">
+                    <h4>接下来查什么</h4>
+                    <p>{brief.followUp}</p>
+                  </div>
+                  <p className="dividend-brief-note">
+                    基于截至 {snapshot.asOf} 的分红样本预生成，供研究参考。
+                  </p>
+                  <a
+                    className="dividend-brief-link"
+                    href={dividendQuestionHref(stock.symbol)}
+                  >
+                    到工作台继续问 AI{" "}
+                    <ArrowUpRight size={15} aria-hidden="true" />
+                  </a>
+                </section>
+              )}
             </article>
           )}
         </section>

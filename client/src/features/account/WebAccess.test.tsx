@@ -14,11 +14,11 @@ import { savedWebAccounts, setWebToken, webToken } from "../../lib/webSession";
 import { StrictMode, useState } from "react";
 vi.mock("./OpenAiSignIn", () => ({ OpenAiSignIn: () => null }));
 
-it("completes the redirect handoff only once under StrictMode before showing account data", async () => {
+it("completes the redirect once and restores the research link under StrictMode", async () => {
   history.replaceState(null, "", "/#openai-login=complete");
   sessionStorage.setItem(
     "mario.openai-login:/api",
-    JSON.stringify({ createdAt: Date.now() }),
+    JSON.stringify({ createdAt: Date.now(), returnSearch: "?dividend=600900" }),
   );
   const session = {
     token: "a".repeat(64),
@@ -44,6 +44,7 @@ it("completes the redirect handoff only once under StrictMode before showing acc
   expect(fetcher.mock.calls[0][0]).toBe("/api/auth/openai/complete");
   expect(webToken()).toBe(session.token);
   expect(location.hash).toBe("");
+  expect(location.search).toBe("?dividend=600900");
 });
 vi.mock("../../lib/service", async (original) => ({
   ...(await original<typeof import("../../lib/service")>()),
@@ -52,6 +53,7 @@ vi.mock("../../lib/service", async (original) => ({
 }));
 afterEach(() => {
   cleanup();
+  history.replaceState(null, "", "/");
   sessionStorage.clear();
   localStorage.clear();
   vi.unstubAllGlobals();

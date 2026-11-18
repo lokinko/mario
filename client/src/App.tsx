@@ -31,6 +31,10 @@ import { DisplayPreferences } from "./components/DisplayPreferences";
 import { ApplicationSkeleton } from "./components/Skeleton";
 import { useActivityTracking } from "./app/useActivityTracking";
 import { ReferenceInfo, type ReferenceTab } from "./app/ReferenceInfo";
+import {
+  dividendQuestionParam,
+  dividendQuestionSymbol,
+} from "./features/watch/dividend-preview/route";
 
 const MyFacts = lazy(() =>
   import("./features/portfolio/MyFacts").then((m) => ({ default: m.MyFacts })),
@@ -98,12 +102,24 @@ function App() {
     () => ({ markEdited, clearDraft }),
     [markEdited, clearDraft],
   );
-  const [pendingQuestion, setPendingQuestion] = useState<{
-    id: number;
-    question: string;
-  }>();
+  const [pendingQuestion, setPendingQuestion] = useState<
+    { id: number; question: string } | undefined
+  >(() => {
+    const symbol = dividendQuestionSymbol(window.location.search);
+    if (!symbol || view !== "advisor") return undefined;
+    return {
+      id: 0,
+      question: `请研究 A 股 ${symbol} 的现金分红。核对最新公司公告，分别列出已实施分红和仍在预案阶段的分红。按同一报告期比较每 10 股税前派息，并结合财报查分红变化的原因、现金来源和可持续性。注明数据日期、出处和尚待核查的问题。`,
+    };
+  });
   const questionId = useRef(0);
   const acceptQuestion = useCallback((id: number) => {
+    if (id === 0) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete(dividendQuestionParam);
+      url.hash = "advisor";
+      window.history.replaceState(null, "", url);
+    }
     setPendingQuestion((current) => (current?.id === id ? undefined : current));
   }, []);
   const [notice, setNotice] = useState("");
