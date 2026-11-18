@@ -32,6 +32,7 @@ export function WatchCatalogDetails({
     getWatchCatalogDetail,
   );
   const row = detail.row;
+  const directoryOnly = row.company.symbol.endsWith(".BJ");
   return (
     <Drawer title={row.company.name} onClose={onClose} busy={busy} size="xl">
       <div className="watch-detail-body">
@@ -43,22 +44,28 @@ export function WatchCatalogDetails({
           detailError={detail.error}
           onReadRetry={detail.retry}
         />
-        <div className="watch-actions">
-          {!joined && (
-            <button
-              className="primary"
-              disabled={busy || !canAdd}
-              onClick={onAdd}
-            >
-              加入自选
-            </button>
-          )}
-          <button className="secondary" disabled={busy} onClick={onRetry}>
-            重新检查数据
-          </button>
-        </div>
-        {!joined && !canAdd && (
-          <p>自选已达 50 家，请先在自选中移除公司后再添加。</p>
+        {directoryOnly ? (
+          <p>北交所股票仅收录在公司目录，暂不支持行情观察和加入自选。</p>
+        ) : (
+          <>
+            <div className="watch-actions">
+              {!joined && (
+                <button
+                  className="primary"
+                  disabled={busy || !canAdd}
+                  onClick={onAdd}
+                >
+                  加入自选
+                </button>
+              )}
+              <button className="secondary" disabled={busy} onClick={onRetry}>
+                重新检查数据
+              </button>
+            </div>
+            {!joined && !canAdd && (
+              <p>自选已达 50 家，请先在自选中移除公司后再添加。</p>
+            )}
+          </>
         )}
       </div>
     </Drawer>

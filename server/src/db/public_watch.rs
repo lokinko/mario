@@ -294,7 +294,7 @@ mod tests {
             .unwrap();
         let upgraded = PublicWatch::open(&store.url, &store.schema).unwrap();
         let (mut current, revision) = upgraded.catalog().unwrap();
-        assert_eq!(current.version, 6);
+        assert_eq!(current.version, 7);
         assert!(current.industry("coal").is_err());
         assert!(current
             .industries
@@ -306,7 +306,7 @@ mod tests {
                 .industries
                 .iter()
                 .flat_map(|i| &i.companies)
-                .any(|c| c.symbol == "600036.SS"),
+                .any(|c| c.symbol == "600050.SS"),
             "unrequested prior removal remains removed"
         );
         for symbol in serde_json::from_str::<Vec<String>>(include_str!(
@@ -348,10 +348,11 @@ mod tests {
         ))
         .unwrap();
         old.version = 2;
+        old.industries.retain(|i| i.id != "dividend-etfs");
         for industry in &mut old.industries {
             industry
                 .companies
-                .retain(|c| !selected.contains(&c.symbol) && c.symbol != "600036.SS");
+                .retain(|c| !selected.contains(&c.symbol) && c.symbol != "600050.SS");
         }
         let mut custom = old.industries[0].companies[0].clone();
         custom.symbol = "600000.SS".into();
@@ -377,7 +378,7 @@ mod tests {
             .all(|s| companies.iter().any(|c| &c.symbol == s)));
         assert!(companies.contains(&&custom));
         assert!(
-            !companies.iter().any(|c| c.symbol == "600036.SS"),
+            !companies.iter().any(|c| c.symbol == "600050.SS"),
             "v2 removals are not replayed as v1 additions"
         );
         current.industries[0]
@@ -397,6 +398,7 @@ mod tests {
         let store = PublicWatch::test();
         let (mut old, revision) = store.catalog().unwrap();
         old.version = 3;
+        old.industries.retain(|i| i.id != "dividend-etfs");
         let brokers = old.industries.pop().unwrap();
         assert_eq!(brokers.id, "brokers");
         let mut existing = brokers.companies[0].clone();
@@ -406,7 +408,7 @@ mod tests {
         old.industries[0].companies.push(existing.clone());
         old.industries[0]
             .companies
-            .retain(|c| c.symbol != "601166.SS" && c.symbol != "600036.SS");
+            .retain(|c| c.symbol != "601166.SS" && c.symbol != "600050.SS");
         store
             .conn()
             .unwrap()
@@ -417,7 +419,7 @@ mod tests {
             .unwrap();
         let migrated = PublicWatch::open(&store.url, &store.schema).unwrap();
         let (mut current, next) = migrated.catalog().unwrap();
-        assert_eq!(current.version, 6);
+        assert_eq!(current.version, 7);
         assert_eq!(next, revision + 1);
         assert_eq!(current.industries[0].companies, old.industries[0].companies);
         let added = current.industry("brokers").unwrap();
@@ -459,10 +461,11 @@ mod tests {
         retained.sources.clear();
         retained.sources_checked_on = None;
         old.version = 4;
+        old.industries.retain(|i| i.id != "dividend-etfs");
         for industry in &mut old.industries {
             industry
                 .companies
-                .retain(|c| !selected.contains(&c.symbol) && c.symbol != "600036.SS");
+                .retain(|c| !selected.contains(&c.symbol) && c.symbol != "600050.SS");
         }
         old.industries
             .iter_mut()
@@ -480,7 +483,7 @@ mod tests {
             .unwrap();
         let migrated = PublicWatch::open(&store.url, &store.schema).unwrap();
         let (mut current, next) = migrated.catalog().unwrap();
-        assert_eq!(current.version, 6);
+        assert_eq!(current.version, 7);
         assert_eq!(next, revision + 1);
         let companies: Vec<_> = current
             .industries
@@ -490,7 +493,7 @@ mod tests {
         for symbol in &selected {
             assert_eq!(companies.iter().filter(|c| &c.symbol == symbol).count(), 1);
         }
-        assert!(!companies.iter().any(|c| c.symbol == "600036.SS"));
+        assert!(!companies.iter().any(|c| c.symbol == "600050.SS"));
         assert!(current
             .industry("consumer")
             .unwrap()
@@ -515,6 +518,7 @@ mod tests {
         let store = PublicWatch::test();
         let (mut old, revision) = store.catalog().unwrap();
         old.version = 4;
+        old.industries.retain(|i| i.id != "dividend-etfs");
         old.industries.retain(|i| i.id != "transport");
         for industry in &mut old.industries {
             industry.companies.retain(|c| c.symbol != "600926.SS");
@@ -551,9 +555,10 @@ mod tests {
         edited.sources.clear();
         edited.sources_checked_on = None;
         old.version = 5;
+        old.industries.retain(|i| i.id != "dividend-etfs");
         for industry in &mut old.industries {
             industry.companies.retain(|c| {
-                !selected.contains(&c.symbol) && c.symbol != "600887.SS" && c.symbol != "601998.SS"
+                !selected.contains(&c.symbol) && c.symbol != "600050.SS" && c.symbol != "600887.SS"
             });
         }
         old.industries[0].companies.push(edited.clone());
@@ -567,7 +572,7 @@ mod tests {
             .unwrap();
         let migrated = PublicWatch::open(&store.url, &store.schema).unwrap();
         let (mut current, next) = migrated.catalog().unwrap();
-        assert_eq!(current.version, 6);
+        assert_eq!(current.version, 7);
         assert_eq!(next, revision + 1);
         assert_eq!(current.industries[0].companies, old.industries[0].companies);
         let companies: Vec<_> = current
@@ -578,9 +583,7 @@ mod tests {
         for symbol in &selected {
             assert_eq!(companies.iter().filter(|c| &c.symbol == symbol).count(), 1);
         }
-        assert!(!companies
-            .iter()
-            .any(|c| c.symbol == "600887.SS" || c.symbol == "601998.SS"));
+        assert!(!companies.iter().any(|c| c.symbol == "600050.SS"));
         assert_eq!(
             current.industry("consumer").unwrap().companies.len(),
             selected.len() - 1
@@ -604,6 +607,7 @@ mod tests {
         let store = PublicWatch::test();
         let (mut old, revision) = store.catalog().unwrap();
         old.version = 5;
+        old.industries.retain(|i| i.id != "dividend-etfs");
         old.industries.retain(|i| i.id != "consumer");
         let payload = serde_json::to_string(&old).unwrap();
         store
@@ -615,6 +619,75 @@ mod tests {
         let (saved, unchanged_revision) = store.catalog().unwrap();
         assert_eq!(serde_json::to_string(&saved).unwrap(), payload);
         assert_eq!(unchanged_revision, revision);
+    }
+
+    #[test]
+    fn dividend_etf_release_fills_missing_members_and_preserves_later_removals() {
+        let store = PublicWatch::test();
+        let (mut old, revision) = store.catalog().unwrap();
+        old.version = 6;
+        old.industries.retain(|i| i.id != "dividend-etfs");
+        let mut edited = old.industries[0].companies.remove(0);
+        edited.name = "已有人工名称".into();
+        old.industries[1].companies.push(edited.clone());
+        for industry in &mut old.industries {
+            industry
+                .companies
+                .retain(|c| c.symbol != "600887.SS" && c.symbol != "600050.SS");
+        }
+        store
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE watch_catalog SET payload=$1",
+                [serde_json::to_string(&old).unwrap()],
+            )
+            .unwrap();
+
+        let migrated = PublicWatch::open(&store.url, &store.schema).unwrap();
+        let (mut current, next) = migrated.catalog().unwrap();
+        assert_eq!(current.version, 7);
+        assert_eq!(next, revision + 1);
+        for (before, after) in old.industries.iter().zip(&current.industries) {
+            assert_eq!(before.id, after.id);
+            assert_eq!(before.companies, after.companies);
+        }
+        assert_eq!(
+            current.industry("dividend-etfs").unwrap().companies.len(),
+            194
+        );
+        assert!(current
+            .industry("dividend-etfs")
+            .unwrap()
+            .companies
+            .iter()
+            .any(|c| c.symbol == "600887.SS"));
+        assert_eq!(
+            PublicWatch::open(&store.url, &store.schema)
+                .unwrap()
+                .catalog()
+                .unwrap()
+                .1,
+            next
+        );
+
+        current
+            .industries
+            .last_mut()
+            .unwrap()
+            .companies
+            .retain(|c| c.symbol != "920599.BJ");
+        migrated.save_catalog(&current, next, "owner").unwrap();
+        let (saved, final_revision) = PublicWatch::open(&store.url, &store.schema)
+            .unwrap()
+            .catalog()
+            .unwrap();
+        assert_eq!(final_revision, next + 1);
+        assert!(!saved
+            .industries
+            .iter()
+            .flat_map(|i| &i.companies)
+            .any(|c| c.symbol == "920599.BJ"));
     }
 
     #[test]

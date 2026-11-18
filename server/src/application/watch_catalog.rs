@@ -1,9 +1,12 @@
 //! Shared public catalogue checks. Personal watch history and alerts stay account-owned.
 use crate::{
     db::PublicWatch,
-    models::watch::{
-        catalog::{Catalog, CatalogBoard, CatalogRow, CatalogSnapshot, Company},
-        evaluate, WatchStatus,
+    models::{
+        market::is_a_share_stock,
+        watch::{
+            catalog::{Catalog, CatalogBoard, CatalogRow, CatalogSnapshot, Company},
+            evaluate, WatchStatus,
+        },
     },
     ports::market::{SecurityMarketProvider, SecuritySourceProvider},
     AppResult,
@@ -61,6 +64,7 @@ impl WatchCatalogService {
             .iter()
             .filter(|i| industry.is_none_or(|id| i.id == id))
             .flat_map(|i| &i.companies)
+            .filter(|c| is_a_share_stock(&c.symbol))
             .filter(|c| c.sources_checked_on.is_none() || c.sources.len() < 2)
         {
             let company = company.clone();
@@ -181,7 +185,10 @@ impl WatchCatalogService {
         }
         let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
         let mut work = tokio::task::JoinSet::new();
-        for company in companies {
+        for company in companies
+            .into_iter()
+            .filter(|c| is_a_share_stock(&c.symbol))
+        {
             let service = self.clone();
             let symbol = company.symbol.clone();
             work.spawn(async move {
@@ -432,6 +439,34 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn beijing_constituent_is_resolvable_but_skipped_by_observation_refresh() {
+        let source = Arc::new(Source::new());
+        let service = service(source.clone());
+        let board = service.board().unwrap();
+        let mut catalog = board.catalog;
+        let etfs = catalog
+            .industries
+            .iter_mut()
+            .find(|i| i.id == "dividend-etfs")
+            .unwrap();
+        etfs.companies.retain(|c| c.symbol == "920599.BJ");
+        service.save(&catalog, board.revision, "owner").unwrap();
+
+        let company = service.resolve("同力股份").await.unwrap();
+        assert_eq!(company.symbol, "920599.BJ");
+        assert_eq!(service.detail("920599.bj").unwrap().company, company);
+        service.refresh(Some("dividend-etfs"), true).await.unwrap();
+        assert_eq!(source.prices.load(Ordering::SeqCst), 0);
+        assert_eq!(source.dividends.load(Ordering::SeqCst), 0);
+        assert!(service
+            .detail(&company.symbol)
+            .unwrap()
+            .snapshot
+            .checked_at
+            .is_none());
+    }
+
+    #[tokio::test]
     async fn public_lists_use_summaries_but_details_keep_full_evidence_and_membership() {
         let source = Arc::new(Source::new());
         let service = service(source.clone());
@@ -528,7 +563,7 @@ pub(crate) mod tests {
         let board = service.board().unwrap();
         let mut catalog = board.catalog;
         let mut company = catalog.industries[0].companies[0].clone();
-        company.symbol = "600000.SS".into();
+        company.symbol = "609998.SS".into();
         company.name = "浦发银行".into();
         catalog.industries[0].companies = vec![company];
         let added = service.save(&catalog, board.revision, "owner").unwrap();
@@ -545,8 +580,8 @@ pub(crate) mod tests {
         assert!(!finished
             .rows
             .iter()
-            .any(|row| row.company.symbol == "600000.SS"));
-        assert!(service.store.get("600000.SS").unwrap().latest.is_some());
+            .any(|row| row.company.symbol == "609998.SS"));
+        assert!(service.store.get("609998.SS").unwrap().latest.is_some());
         service.refresh_on(Some("banks"), true, day).await.unwrap();
         assert_eq!(source.prices.load(Ordering::SeqCst), 1);
     }

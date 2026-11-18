@@ -153,7 +153,7 @@ pub(crate) mod tests {
         let catalog = super::super::catalog::Catalog::bundled().unwrap();
         let personal = vec![
             WatchInput {
-                symbol: "600000.SS".into(),
+                symbol: "601128.SS".into(),
                 name: "仅此账号".into(),
                 thesis: "私有理由".into(),
             },
@@ -170,7 +170,7 @@ pub(crate) mod tests {
             .map(|i| i.companies.len())
             .sum::<usize>();
         assert_eq!(public.len(), public_count);
-        assert!(!public.iter().any(|c| c.symbol == "600000.SS"));
+        assert!(!public.iter().any(|c| c.symbol == "601128.SS"));
         let merged = companies(&catalog, &personal, CalendarScope::All);
         assert_eq!(merged.len(), public_count + 1);
         let shared = merged.iter().find(|c| c.symbol == "600036.SS").unwrap();

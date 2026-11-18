@@ -304,7 +304,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | ResearchEvidenceInput | `content?,assetName?,category?:string=""; attachments?:ResearchAttachmentInput[]=[]`；资料内容与附件还须通过业务校验，空默认不是“空资料一定可保存” |
 | ResearchAttachmentInput | `name:string,dataBase64:string`；传输是 JSON base64，不使用 multipart。响应附件元数据为 `id,name,byteSize,extractionNote`，提取的内部文本不序列化返回 |
 
-官方资料解析内部使用市场 [SecuritySources](../server/src/models/market/securities.rs)，再转换为用户目录 Company；对外响应字段不变。观察响应中的公共分红字段见[市场分红类型](../server/src/models/market/dividends.rs)，观察阈值和结果仍见用户观察类型。
+官方资料解析内部使用市场 [SecuritySources](../server/src/models/market/securities.rs)，再转换为用户目录 Company。目录 v7 的 Company 也可使用北交所 `.BJ` 代码；这类条目可读取目录详情，个人自选仍接受沪深 A 股代码。观察响应中的公共分红字段见[市场分红类型](../server/src/models/market/dividends.rs)，观察阈值和结果仍见用户观察类型。
 
 ### 6.3 AI 输入与共用输出
 

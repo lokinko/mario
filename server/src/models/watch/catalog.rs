@@ -31,6 +31,51 @@ pub struct Company {
     pub sources_checked_on: Option<String>,
 }
 
+const DIVIDEND_ETF_GROUP: &str = "dividend-etfs";
+
+#[derive(Deserialize)]
+struct DividendIndex {
+    members: Vec<String>,
+}
+
+fn dividend_index_members() -> AppResult<BTreeSet<String>> {
+    let indexes: Vec<DividendIndex> = serde_json::from_str(include_str!(
+        "../../../data/watch-catalog-dividend-indexes-20261118.json"
+    ))?;
+    Ok(indexes
+        .into_iter()
+        .flat_map(|index| index.members)
+        .collect())
+}
+
+impl Company {
+    fn validate_identity(&self) -> AppResult<()> {
+        if let Some(code) = self.symbol.strip_suffix(".BJ") {
+            // Beijing listings are directory entries only. Do not widen personal watch support.
+            if code.len() == 6
+                && code.starts_with("920")
+                && code.bytes().all(|b| b.is_ascii_digit())
+                && !self.name.is_empty()
+                && self.name.trim() == self.name
+                && self.name.chars().count() <= 80
+            {
+                return Ok(());
+            }
+        } else {
+            let input = WatchInput {
+                symbol: self.symbol.clone(),
+                name: self.name.clone(),
+                thesis: String::new(),
+            }
+            .normalize()?;
+            if input.symbol == self.symbol && input.name == self.name {
+                return Ok(());
+            }
+        }
+        Err(AppError::Validation("行业目录公司代码或名称无效".into()))
+    }
+}
+
 impl From<crate::models::market::securities::SecuritySources> for Company {
     fn from(source: crate::models::market::securities::SecuritySources) -> Self {
         Self {
@@ -57,7 +102,7 @@ impl Catalog {
         let catalog = self;
         let mut industries = BTreeSet::new();
         let mut symbols = BTreeSet::new();
-        if !matches!(catalog.version, 1..=6)
+        if !matches!(catalog.version, 1..=7)
             || chrono::NaiveDate::parse_from_str(&catalog.verified_on, "%Y-%m-%d").is_err()
             || catalog.industries.is_empty()
         {
@@ -75,15 +120,8 @@ impl Catalog {
                 return Err(AppError::Validation("行业目录分组无效或重复".into()));
             }
             for company in &industry.companies {
-                let input = WatchInput {
-                    symbol: company.symbol.clone(),
-                    name: company.name.clone(),
-                    thesis: String::new(),
-                }
-                .normalize()?;
-                if input.symbol != company.symbol
-                    || input.name != company.name
-                    || !symbols.insert(&company.symbol)
+                company.validate_identity()?;
+                if !symbols.insert(&company.symbol)
                     || (company.sources_checked_on.is_some() && company.sources.len() < 2)
                     || company.sources_checked_on.as_ref().is_some_and(|date| {
                         chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err()
@@ -225,12 +263,50 @@ impl Catalog {
             }
             self.version = 6;
         }
+        if self.version == 6 && seed.version >= 7 {
+            self.upgrade_v7(seed)?;
+        }
         if self.version != seed.version {
             return Err(AppError::Validation("目录升级版本不受支持".into()));
         }
         self.verified_on.clone_from(&seed.verified_on);
         self.validate()?;
         Ok(true)
+    }
+
+    fn upgrade_v7(&mut self, seed: &Catalog) -> AppResult<()> {
+        let template = seed.industry(DIVIDEND_ETF_GROUP)?;
+        let existing: BTreeSet<_> = self
+            .industries
+            .iter()
+            .flat_map(|i| &i.companies)
+            .map(|c| c.symbol.as_str())
+            .collect();
+        let mut additions = Vec::new();
+        for symbol in dividend_index_members()? {
+            if !existing.contains(symbol.as_str()) {
+                let company = seed
+                    .industries
+                    .iter()
+                    .flat_map(|i| &i.companies)
+                    .find(|c| c.symbol == symbol)
+                    .ok_or_else(|| {
+                        AppError::Validation(format!("红利指数成分缺少目录记录：{symbol}"))
+                    })?;
+                additions.push(company.clone());
+            }
+        }
+        if let Some(group) = self.industries.iter_mut().find(|i| i.id == template.id) {
+            group.companies.extend(additions);
+        } else {
+            self.industries.push(Industry {
+                id: template.id.clone(),
+                name: template.name.clone(),
+                companies: additions,
+            });
+        }
+        self.version = 7;
+        Ok(())
     }
 
     /// Minimal adapter for pre-domain-reorganization data and whole-site backups.
@@ -253,7 +329,11 @@ impl Catalog {
                 _ => {}
             }
         }
-        for template in &seed.industries {
+        for template in seed
+            .industries
+            .iter()
+            .filter(|i| i.id != DIVIDEND_ETF_GROUP)
+        {
             let mut companies = Vec::new();
             for group in &mut groups {
                 let mut retained = Vec::new();
@@ -412,6 +492,43 @@ mod tests {
     }
 
     #[test]
+    fn dividend_etf_release_covers_all_six_index_snapshots() {
+        let catalog = Catalog::bundled().unwrap();
+        let indexes: Vec<DividendIndex> = serde_json::from_str(include_str!(
+            "../../../data/watch-catalog-dividend-indexes-20261118.json"
+        ))
+        .unwrap();
+        assert_eq!(indexes.len(), 6);
+        for (index, count) in indexes.iter().zip([50, 100, 50, 100, 50, 40]) {
+            assert_eq!(index.members.len(), count);
+            assert_eq!(index.members.iter().collect::<BTreeSet<_>>().len(), count);
+        }
+        let members = dividend_index_members().unwrap();
+        assert_eq!(members.len(), 240);
+        let companies: BTreeSet<_> = catalog
+            .industries
+            .iter()
+            .flat_map(|i| &i.companies)
+            .map(|c| c.symbol.clone())
+            .collect();
+        assert!(members.is_subset(&companies));
+        let additions = &catalog.industry(DIVIDEND_ETF_GROUP).unwrap().companies;
+        assert_eq!(additions.len(), 193);
+        assert!(additions.iter().all(|c| members.contains(&c.symbol)
+            && !c.sources.is_empty()
+            && c.sources_checked_on.is_none()));
+        let beijing = additions.iter().find(|c| c.symbol == "920599.BJ").unwrap();
+        assert_eq!(beijing.name, "同力股份");
+        assert!(WatchInput {
+            symbol: beijing.symbol.clone(),
+            name: beijing.name.clone(),
+            thesis: String::new(),
+        }
+        .normalize()
+        .is_err());
+    }
+
+    #[test]
     fn bundled_catalog_is_unique_and_contains_the_agreed_industries_and_companies() {
         let catalog = Catalog::bundled().unwrap();
         assert_eq!(
@@ -431,7 +548,8 @@ mod tests {
                 "保险",
                 "中药",
                 "消费",
-                "券商"
+                "券商",
+                "红利 ETF 成分"
             ]
         );
         assert_eq!(
@@ -440,7 +558,7 @@ mod tests {
                 .iter()
                 .map(|i| i.companies.len())
                 .sum::<usize>(),
-            70
+            263
         );
         assert!(catalog.industry("unknown").is_err());
         let mut value = serde_json::to_value(&catalog).unwrap();

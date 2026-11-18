@@ -94,6 +94,7 @@ impl MarketRuntime {
                         .companies(&[], crate::models::watch::calendar::CalendarScope::Public)?
                         .into_iter()
                         .map(|company| company.symbol)
+                        .filter(|symbol| crate::models::market::is_a_share_stock(symbol))
                         .collect::<Vec<_>>();
                     plans.refresh(&symbols).await
                 });

@@ -141,8 +141,12 @@ try {
   const watchVersion = await api("/sync/version");
   assert.equal((await fetch(base + "/watch/catalog")).status, 401);
   const catalog = await api("/watch/catalog");
-  assert.deepEqual(catalog.catalog.industries.map(i => i.name), ["银行", "能源", "电力", "通信运营", "运输", "白酒", "白色家电", "保险", "中药", "消费", "券商"]);
-  assert.equal(catalog.rows.length, 70);
+  assert.equal(catalog.catalog.version, 7);
+  assert.deepEqual(catalog.catalog.industries.map(i => i.name), ["银行", "能源", "电力", "通信运营", "运输", "白酒", "白色家电", "保险", "中药", "消费", "券商", "红利 ETF 成分"]);
+  assert.equal(catalog.rows.length, 263);
+  const beijing = await api("/watch/catalog/920599.BJ/observation");
+  assert.equal(beijing.company.name, "同力股份");
+  assert.equal(beijing.latest, null);
   assert.equal((await fetch(base + "/watch/dividend-calendar")).status, 401);
   const calendarVersion = await api("/sync/version");
   const calendar = await api("/watch/dividend-calendar");
@@ -250,13 +254,32 @@ try {
     assert.equal(identified.symbol, "600795.SS");
     assert(identified.sourcesCheckedOn);
     await api("/watch/catalog/resolve", "POST", { query: "" }, 400);
-    const draft = structuredClone(adminBoard.catalog);
-    draft.industries[0].companies = draft.industries[0].companies.filter(c => c.symbol !== watched.symbol);
-    draft.industries[0].companies.push({ symbol: "600000.SS", name: "浦发银行", sources: [] });
-    const changed = await api("/watch/catalog", "PUT", { catalog: draft, revision: adminBoard.revision });
-    assert.equal(changed.revision, adminBoard.revision + 1);
+    // Source enrichment can advance the shared revision while this test is editing membership.
+    const editCatalog = async (edit) => {
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const before = await api("/watch/catalog");
+        edit(before.catalog.industries[0].companies);
+        const response = await fetch(base + "/watch/catalog", { method: "PUT", headers: {
+          Authorization: `Bearer ${token}`, "Content-Type": "application/json",
+        }, body: JSON.stringify({ catalog: before.catalog, revision: before.revision }) });
+        const result = await response.json();
+        if (response.status === 409) continue;
+        assert.equal(response.status, 200, JSON.stringify(result));
+        assert(result.revision > before.revision);
+        return result;
+      }
+      assert.fail("catalogue enrichment prevented all membership edits");
+    };
+    const bankIndex = adminBoard.catalog.industries[0].companies.findIndex(c => c.symbol === watched.symbol);
+    assert(bankIndex >= 0);
+    const removedBank = adminBoard.catalog.industries[0].companies[bankIndex];
+    const changed = await editCatalog(companies => {
+      companies.splice(bankIndex, 1);
+      companies.push({ symbol: "601128.SS", name: "常熟银行", sources: [] });
+    });
+    const draft = changed.catalog;
     assert.equal(changed.canEdit, true);
-    assert(changed.rows.some(r => r.company.symbol === "600000.SS"));
+    assert(changed.rows.some(r => r.company.symbol === "601128.SS"));
     assert(!changed.rows.some(r => r.company.symbol === watched.symbol));
     assert.deepEqual((await api("/watch")).rows[0].entry, existingWatch, "public removal preserves personal settings");
     assert.deepEqual(await api("/sync/version"), additionVersion, "public maintenance has an independent revision");
@@ -271,8 +294,14 @@ try {
     const shared = await fetch(base + "/watch/catalog", { headers: { Authorization: `Bearer ${readerToken}` } });
     const sharedBoard = await shared.json();
     assert.equal(sharedBoard.canEdit, false);
-    assert.deepEqual(sharedBoard.catalog, changed.catalog, "other accounts read the maintained public directory");
-    await api("/watch/catalog", "PUT", { catalog: adminBoard.catalog, revision: changed.revision });
+    const membership = catalog => catalog.industries.map(i => [i.id, i.companies.map(c => c.symbol)]);
+    assert.deepEqual(membership(sharedBoard.catalog), membership(changed.catalog), "other accounts read the maintained public directory");
+    await editCatalog(companies => {
+      const addedIndex = companies.findIndex(c => c.symbol === "601128.SS");
+      assert(addedIndex >= 0);
+      companies.splice(addedIndex, 1);
+      companies.splice(bankIndex, 0, removedBank);
+    });
     role(false);
     assert.equal((await api("/watch/catalog")).canEdit, false);
     await api("/watch/catalog", "PUT", { catalog: draft, revision: changed.revision + 1 }, 403);

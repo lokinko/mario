@@ -18,8 +18,8 @@ vi.mock("../../api/watch", () => ({
   resolveCatalogCompany: vi.fn(),
 }));
 const company: api.CatalogCompany = {
-  symbol: "600000.SS",
-  name: "浦发银行",
+  symbol: "601128.SS",
+  name: "常熟银行",
   sources: [],
 };
 const board = (): api.CatalogBoard => ({
@@ -44,7 +44,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-async function apply(query = "浦发银行") {
+async function apply(query = "常熟银行") {
   fireEvent.change(screen.getByLabelText("公司名称或证券代码"), {
     target: { value: query },
   });
@@ -66,7 +66,7 @@ it("looks up company identity without asking for public sources and saves pendin
   render(<WatchCatalogEditor {...p} />);
   expect(screen.queryByLabelText(/公开来源/)).toBeNull();
   await apply();
-  expect(api.resolveCatalogCompany).toHaveBeenCalledWith("浦发银行");
+  expect(api.resolveCatalogCompany).toHaveBeenCalledWith("常熟银行");
   expect(api.saveWatchCatalog).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "移除 工商银行" }));
   fireEvent.click(screen.getByRole("button", { name: "保存公共目录" }));
@@ -109,14 +109,14 @@ it("keeps the draft and original revision when background source enrichment adva
     new Error("公共目录已被更新"),
   );
   const view = render(<WatchCatalogEditor {...p} />);
-  await apply("600000");
+  await apply("601128");
   view.rerender(
     <WatchCatalogEditor {...p} board={{ ...board(), revision: 9 }} />,
   );
   fireEvent.click(screen.getByRole("button", { name: "保存公共目录" }));
   await screen.findByText(/公共目录已被更新/);
   expect(vi.mocked(api.saveWatchCatalog).mock.calls[0][1]).toBe(3);
-  expect(screen.getByText("浦发银行 · 600000.SS")).toBeTruthy();
+  expect(screen.getByText("常熟银行 · 601128.SS")).toBeTruthy();
   expect(p.onSaved).not.toHaveBeenCalled();
   vi.spyOn(window, "confirm").mockReturnValue(false);
   fireEvent.click(screen.getByRole("button", { name: "重新读取目录" }));
@@ -125,6 +125,6 @@ it("keeps the draft and original revision when background source enrichment adva
   vi.mocked(api.getWatchCatalog).mockResolvedValue({ ...board(), revision: 9 });
   fireEvent.click(screen.getByRole("button", { name: "重新读取目录" }));
   await waitFor(() =>
-    expect(screen.queryByText("浦发银行 · 600000.SS")).toBeNull(),
+    expect(screen.queryByText("常熟银行 · 601128.SS")).toBeNull(),
   );
 });

@@ -124,6 +124,7 @@ export function WatchList({
     );
   };
   const add = (row: WatchDisplayRow) => {
+    if (row.company.symbol.endsWith(".BJ")) return null;
     const saved = favorites.has(row.company.symbol);
     return (
       <button

@@ -51,6 +51,8 @@
 
 候选目录的人工范围和 Company 归用户域；市场来源返回的证券资料通过显式转换采用，不自动加入目录。内置分红 CSV 中的默认股息率参考价属于[用户导出用例](../../server/src/application/watch_export.rs)，公共资料加载与文件写入由运行入口装配，保留空缺值并拒绝覆盖已有文件。
 
+共享目录 v7 按[六条红利 ETF 跟踪指数的官方成分表](../../server/data/watch-catalog-dividend-indexes-20261118.json)一次性导入全部 240 只成分股。内置目录保留原有 70 只股票及其分组，将其中缺少的 193 只纳入「红利 ETF 成分」，共 263 只。已有数据库按代码补齐本批成分，保留在册公司的资料和分组，以及不在本批范围内的既有删除。升级后人工删减不会因重启恢复。成分日期以清单为准，成分来源与公司资料核查状态分别记录。北交所股票按 `.BJ` 收录在目录中，观察、自选及分红计划采集仍覆盖沪深股票。
+
 修改规则建立新的观察基准，不改写历史结果，也不能伪装成市场变化提醒。分红计划与已实施分红分别处理。信号和网格测算不自动产生真实成交。
 
 实现依据：[规则与比较](../../server/src/models/watch/rules.rs)、[账号规则保存](../../server/src/db/watch/rules.rs)、[观察用例](../../server/src/application/watch.rs)、[共享候选目录](../../server/src/application/watch_catalog.rs)、[网格测算](../../server/src/models/watch/grid.rs)。
