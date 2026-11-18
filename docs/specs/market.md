@@ -42,6 +42,8 @@
 
 市场域提供公司事实，用户域决定如何用于观察、日历和个人账本；公司分红不等于个人已经到账。
 
+公开「红利观察」展示内置历史样本中每只 A 股最近两次已实施的现金分红，标明除息日、每 10 股税前金额、来源和数据截止日。访客可通过公司全名或股票代码查询样本，并下载带二维码的 PNG。二维码指向部署站点下对应标的的公开页面。样本范围以页面显示为准，暂不查询样本外标的、实时行情或分红预案。页面与图片仅使用公共样本数据。实现见[红利观察](../../client/src/features/watch/dividend-preview/DividendPreview.tsx)。
+
 公共事件、日期覆盖和每股 TTM 计算由[市场分红契约](../../server/src/models/market/dividends.rs)维护，公共价格条目与采集输入见[行情序列](../../server/src/models/market/series.rs)。市场来源与公共仓储只使用市场契约，不依赖用户自选、观察阈值或账号锁能力。证券资料查询返回[官方来源元数据](../../server/src/models/market/securities.rs)，由用户域决定是否加入候选目录。内置分红资料包不计算用户观察参考价，CSV 参考价展示由用户域生成。
 
 实现依据：[分红来源](../../server/src/market_data/watch.rs)、[已披露计划解析](../../server/src/market_data/watch/plans.rs)、[公共分红仓储](../../server/src/db/public_dividends.rs)、[分红计划缓存](../../server/src/db/public_dividend_plans.rs)、[海外公司行动解析](../../server/src/market_data/history/overseas.rs)。已披露计划的类型、缓存和采集分别由市场域的[计划类型](../../server/src/models/market/dividend_plans.rs)、[计划仓储](../../server/src/db/public_dividend_plans.rs)、[计划服务](../../server/src/application/dividend_plans.rs)管理；用户日历只通过缓存读端口消费。计划仓储独立打开原有表，不初始化或升级候选目录。

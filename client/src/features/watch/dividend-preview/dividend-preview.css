@@ -1,0 +1,340 @@
+.dividend-preview,
+.dividend-share-dialog {
+  --dividend-ink: #172c47;
+  --dividend-muted: #506581;
+  --dividend-blue: #24468d;
+  --dividend-paper: #fff;
+  --dividend-bg: #edf3fa;
+  --dividend-line: #c5d4e6;
+  color-scheme: light;
+  color: var(--dividend-ink);
+  font-family: var(--font-sans);
+}
+.dividend-preview {
+  min-height: 100dvh;
+  background: var(--dividend-bg);
+  padding: 0 max(16px, env(safe-area-inset-left))
+    max(20px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-right));
+}
+.dividend-preview a,
+.dividend-share-dialog a {
+  color: var(--dividend-blue);
+}
+.dividend-preview :focus-visible,
+.dividend-share-dialog :focus-visible {
+  outline: 3px solid var(--dividend-blue);
+  outline-offset: 3px;
+}
+.dividend-preview-nav,
+.dividend-preview-main,
+.dividend-preview-footer {
+  max-width: 1040px;
+  margin-inline: auto;
+}
+.dividend-preview-nav,
+.dividend-preview-brand,
+.dividend-preview-workspace {
+  display: flex;
+  align-items: center;
+}
+.dividend-preview-nav {
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 65px;
+  border-bottom: 1px solid var(--dividend-line);
+}
+.dividend-preview-brand,
+.dividend-preview-workspace {
+  min-height: 44px;
+  gap: 7px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.dividend-preview-brand strong {
+  color: var(--dividend-ink);
+  font-size: 21px;
+}
+.dividend-preview-brand span {
+  padding-inline-start: 9px;
+  border-inline-start: 1px solid var(--dividend-line);
+  color: var(--dividend-muted);
+  font-size: 13px;
+}
+.dividend-preview-workspace {
+  font-size: 13px;
+  font-weight: 700;
+}
+.dividend-preview-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+  gap: clamp(26px, 6vw, 88px);
+  align-items: start;
+  min-height: 0;
+  padding-block: clamp(42px, 9vh, 100px) 32px;
+}
+.dividend-preview-intro h1 {
+  max-width: 10em;
+  margin: 0;
+  font-size: clamp(32px, 5.5vw, 59px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+.dividend-preview-intro p,
+.dividend-preview-empty p {
+  margin: 14px 0;
+  color: var(--dividend-muted);
+  font-size: 15px;
+  line-height: 1.65;
+}
+.dividend-preview-search {
+  margin-top: 28px;
+}
+.dividend-preview-search label,
+.dividend-share-url {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.dividend-preview-search > div {
+  display: flex;
+  gap: 7px;
+}
+.dividend-preview-search input,
+.dividend-share-url input {
+  min-width: 0;
+  min-height: 46px;
+  border: 1px solid var(--dividend-line);
+  border-radius: 8px;
+  padding: 8px 11px;
+  background: var(--dividend-paper);
+  color: var(--dividend-ink);
+  font-size: 16px;
+}
+.dividend-preview-search input {
+  flex: 1;
+}
+.dividend-preview-search button,
+.dividend-share-open,
+.dividend-share-options :is(a, button) {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 8px 13px;
+  border: 1px solid var(--dividend-blue);
+  border-radius: 8px;
+  color: var(--dividend-blue);
+  background: var(--dividend-paper);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.dividend-preview-search button,
+.dividend-share-options button {
+  color: var(--dividend-paper);
+  background: var(--dividend-blue);
+}
+.dividend-preview-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 6px;
+}
+.dividend-preview-examples a {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  padding-inline: 9px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-decoration: none;
+}
+.dividend-preview-examples a:hover,
+.dividend-preview-examples a[aria-current] {
+  background: #dce8f7;
+}
+.dividend-preview-intro .dividend-preview-coverage,
+.dividend-preview-footer {
+  color: var(--dividend-muted);
+  font-size: 12px;
+}
+.dividend-ticket,
+.dividend-preview-empty {
+  border: 1px solid var(--dividend-line);
+  border-radius: 22px;
+  background: var(--dividend-paper);
+}
+.dividend-ticket-summary,
+.dividend-preview-empty {
+  padding: clamp(20px, 4vw, 38px);
+}
+.dividend-ticket-security {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.dividend-ticket-security h2,
+.dividend-preview-empty h2 {
+  margin: 0;
+  font-size: clamp(23px, 3.5vw, 34px);
+  line-height: 1.25;
+}
+.dividend-ticket-security span,
+.dividend-ticket-caption,
+.dividend-ticket-events dt {
+  color: var(--dividend-muted);
+  font-size: 14px;
+}
+.dividend-ticket-caption {
+  margin: 25px 0 2px;
+}
+.dividend-ticket-amount strong {
+  display: block;
+  color: var(--dividend-blue);
+  font-family: var(--font-num);
+  font-size: clamp(38px, 8.5vw, 75px);
+  font-weight: 750;
+  line-height: 1.08;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.06em;
+  overflow-wrap: anywhere;
+}
+.dividend-ticket-amount span {
+  font-size: 14px;
+  font-weight: 600;
+}
+.dividend-ticket-events {
+  margin: 18px 0 0;
+}
+.dividend-ticket-events > div {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-block: 5px;
+}
+.dividend-ticket-events dt {
+  flex: 0 0 3em;
+}
+.dividend-ticket-events dd {
+  margin: 0;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.dividend-ticket-events dd span {
+  display: inline-block;
+  margin-inline-start: 4px;
+}
+.dividend-ticket-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px clamp(20px, 4vw, 38px);
+  border-top: 1px dashed var(--dividend-line);
+}
+.dividend-ticket-actions details {
+  min-width: 0;
+  color: var(--dividend-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.dividend-ticket-actions summary {
+  min-height: 44px;
+  padding-block: 12px;
+  cursor: pointer;
+}
+.dividend-ticket-actions details p {
+  margin: 0 0 8px;
+}
+.dividend-ticket-actions details svg {
+  vertical-align: middle;
+}
+.dividend-preview-footer {
+  padding-block: 10px;
+}
+.dividend-share-dialog {
+  width: min(420px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  padding: 14px 16px;
+  border: 1px solid var(--dividend-line);
+  border-radius: 18px;
+  background: var(--dividend-paper);
+}
+.dividend-share-dialog::backdrop {
+  background: rgb(23 44 71 / 64%);
+}
+.dividend-share-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dividend-share-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.dividend-share-dialog header button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--dividend-ink);
+  background: transparent;
+}
+.dividend-share-image,
+.dividend-share-qr > div {
+  margin-inline: auto;
+}
+.dividend-share-image {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 57dvh;
+  border-radius: 8px;
+}
+.dividend-share-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 12px;
+}
+.dividend-share-options :is(a, button) {
+  flex: 1;
+}
+.dividend-share-url input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+.dividend-share-dialog p {
+  margin: 8px 0;
+  color: var(--dividend-muted);
+  font-size: 13px;
+}
+@media (max-width: 700px) {
+  .dividend-preview-main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding-block: 23px 12px;
+  }
+  .dividend-preview-intro h1 {
+    max-width: none;
+    font-size: clamp(28px, 7.5vw, 38px);
+    text-wrap: initial;
+  }
+  .dividend-preview-intro p {
+    margin-block: 8px;
+  }
+  .dividend-preview-search {
+    margin-top: 14px;
+  }
+}

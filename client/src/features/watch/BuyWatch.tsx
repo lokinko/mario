@@ -25,6 +25,7 @@ import {
 } from "../../api/watch";
 import type { Snapshot } from "../../types/user";
 import { PageHeader } from "../../components/PageHeader";
+import { dividendPreviewHref } from "./dividend-preview/route";
 import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";
 import { useRequestGuard } from "../../lib/useRequestGuard";
@@ -267,6 +268,9 @@ export function BuyWatch({
         title="买点观察"
         action={
           <>
+            <Button href={dividendPreviewHref()} target="_blank" rel="noopener">
+              公开红利卡
+            </Button>
             {catalog?.canEdit && (
               <Button
                 disabled={busy || open || !!expanded}

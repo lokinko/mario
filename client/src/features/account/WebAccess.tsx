@@ -150,7 +150,13 @@ export function AccountSettings() {
   );
 }
 
-export function WebAccess({ children }: { children: ReactNode }) {
+export function WebAccess({
+  children,
+  publicPreviewHref,
+}: {
+  children: ReactNode;
+  publicPreviewHref?: string;
+}) {
   const [connected, setConnected] = useState(webToken);
   const [accounts, setAccounts] = useState(savedWebAccounts);
   const [picking, setPicking] = useState(false);
@@ -435,6 +441,11 @@ export function WebAccess({ children }: { children: ReactNode }) {
           <span className="login-kicker">欢迎来到你的投资工作台</span>
           <h1>{register ? "创建 mario 账号" : "登录 mario"}</h1>
           <p>从今天的观察，继续长期的积累。</p>
+          {publicPreviewHref && !addingAccount && (
+            <a className="text-button" href={publicPreviewHref}>
+              免登录查看红利观察
+            </a>
+          )}
         </div>
         <OpenAiSignIn disabled={busy} />
         {accounts.length > 0 && (

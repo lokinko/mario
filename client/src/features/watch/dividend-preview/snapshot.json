@@ -1,0 +1,362 @@
+{
+  "asOf": "2026-11-07",
+  "stocks": [
+    {
+      "symbol": "000027",
+      "name": "深圳能源",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000027%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-06-24",
+          "cashPerTen": "1.6"
+        },
+        {
+          "reportDate": "2024-12-31",
+          "exDate": "2025-06-13",
+          "cashPerTen": "1.5"
+        }
+      ]
+    },
+    {
+      "symbol": "000333",
+      "name": "美的集团",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000333%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-06-29",
+          "cashPerTen": "38"
+        },
+        {
+          "reportDate": "2025-06-30",
+          "exDate": "2025-11-18",
+          "cashPerTen": "5"
+        }
+      ]
+    },
+    {
+      "symbol": "000568",
+      "name": "泸州老窖",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000568%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-08-28",
+          "cashPerTen": "44.171215"
+        },
+        {
+          "reportDate": "2025-09-30",
+          "exDate": "2026-01-30",
+          "cashPerTen": "13.58"
+        }
+      ]
+    },
+    {
+      "symbol": "000651",
+      "name": "格力电器",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000651%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-08-27",
+          "cashPerTen": "20"
+        },
+        {
+          "reportDate": "2025-09-30",
+          "exDate": "2026-01-23",
+          "cashPerTen": "10"
+        }
+      ]
+    },
+    {
+      "symbol": "000858",
+      "name": "五粮液",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22000858%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-07-16",
+          "cashPerTen": "25.796852"
+        },
+        {
+          "reportDate": "2025-09-30",
+          "exDate": "2025-12-18",
+          "cashPerTen": "25.78"
+        }
+      ]
+    },
+    {
+      "symbol": "600011",
+      "name": "华能国际",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600011%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-07-03",
+          "cashPerTen": "4"
+        },
+        {
+          "reportDate": "2024-12-31",
+          "exDate": "2025-07-10",
+          "cashPerTen": "2.7"
+        }
+      ]
+    },
+    {
+      "symbol": "600028",
+      "name": "中国石化",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600028%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2026-06-30",
+          "exDate": "2026-09-30",
+          "cashPerTen": "1.05"
+        },
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-06-17",
+          "cashPerTen": "1.12"
+        }
+      ]
+    },
+    {
+      "symbol": "600036",
+      "name": "招商银行",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600036%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-07-10",
+          "cashPerTen": "10.03"
+        },
+        {
+          "reportDate": "2025-06-30",
+          "exDate": "2026-01-16",
+          "cashPerTen": "10.13"
+        }
+      ]
+    },
+    {
+      "symbol": "600050",
+      "name": "中国联通",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600050%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-06-26",
+          "cashPerTen": "0.523"
+        },
+        {
+          "reportDate": "2025-06-30",
+          "exDate": "2025-10-24",
+          "cashPerTen": "1.112"
+        }
+      ]
+    },
+    {
+      "symbol": "600188",
+      "name": "兖矿能源",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600188%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2026-06-30",
+          "exDate": "2026-09-29",
+          "cashPerTen": "2"
+        },
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-07-24",
+          "cashPerTen": "3.2"
+        }
+      ]
+    },
+    {
+      "symbol": "600350",
+      "name": "山东高速",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600350%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-06-18",
+          "cashPerTen": "4.2"
+        },
+        {
+          "reportDate": "2024-12-31",
+          "exDate": "2025-08-05",
+          "cashPerTen": "4.2"
+        }
+      ]
+    },
+    {
+      "symbol": "600377",
+      "name": "宁沪高速",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600377%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-07-13",
+          "cashPerTen": "4.9"
+        },
+        {
+          "reportDate": "2024-12-31",
+          "exDate": "2025-07-30",
+          "cashPerTen": "4.9"
+        }
+      ]
+    },
+    {
+      "symbol": "600519",
+      "name": "贵州茅台",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600519%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-06-26",
+          "cashPerTen": "280.2423"
+        },
+        {
+          "reportDate": "2025-09-30",
+          "exDate": "2025-12-19",
+          "cashPerTen": "239.57"
+        }
+      ]
+    },
+    {
+      "symbol": "600900",
+      "name": "长江电力",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600900%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-07-17",
+          "cashPerTen": "7.9"
+        },
+        {
+          "reportDate": "2025-09-30",
+          "exDate": "2026-02-12",
+          "cashPerTen": "2.1"
+        }
+      ]
+    },
+    {
+      "symbol": "600941",
+      "name": "中国移动",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22600941%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2026-06-30",
+          "exDate": "2026-09-30",
+          "cashPerTen": "25.1"
+        },
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-06-05",
+          "cashPerTen": "22.012"
+        }
+      ]
+    },
+    {
+      "symbol": "601088",
+      "name": "中国神华",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601088%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2026-06-30",
+          "exDate": "2026-10-26",
+          "cashPerTen": "9.8"
+        },
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-07-13",
+          "cashPerTen": "10.3"
+        }
+      ]
+    },
+    {
+      "symbol": "601225",
+      "name": "陕西煤业",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601225%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2026-06-30",
+          "exDate": "2026-10-22",
+          "cashPerTen": "0.58"
+        },
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-06-26",
+          "cashPerTen": "9.09"
+        }
+      ]
+    },
+    {
+      "symbol": "601288",
+      "name": "农业银行",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601288%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2026-06-30",
+          "exDate": "2026-10-21",
+          "cashPerTen": "1.297"
+        },
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-05-13",
+          "cashPerTen": "1.3"
+        }
+      ]
+    },
+    {
+      "symbol": "601398",
+      "name": "工商银行",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601398%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2026-06-30",
+          "exDate": "2026-10-21",
+          "cashPerTen": "1.511"
+        },
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-05-13",
+          "cashPerTen": "1.689"
+        }
+      ]
+    },
+    {
+      "symbol": "601728",
+      "name": "中国电信",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601728%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2026-06-30",
+          "exDate": "2026-09-10",
+          "cashPerTen": "1.606"
+        },
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-06-10",
+          "cashPerTen": "0.908"
+        }
+      ]
+    },
+    {
+      "symbol": "601857",
+      "name": "中国石油",
+      "source": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_SHAREBONUS_DET&columns=ALL&filter=%28SECURITY_CODE%3D%22601857%22%29&pageSize=100&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB",
+      "events": [
+        {
+          "reportDate": "2026-06-30",
+          "exDate": "2026-09-16",
+          "cashPerTen": "2.6"
+        },
+        {
+          "reportDate": "2025-12-31",
+          "exDate": "2026-06-26",
+          "cashPerTen": "2.5"
+        }
+      ]
+    }
+  ]
+}
