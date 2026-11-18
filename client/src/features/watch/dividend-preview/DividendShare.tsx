@@ -83,11 +83,18 @@ export function DividendShare({
         />
       </div>
       {poster && (
-        <img
-          className="dividend-share-image"
-          src={poster.href}
-          alt={`${stock.name} 分红卡，含已实施分红、AI 解读摘要和详情二维码`}
-        />
+        <div
+          className="dividend-share-preview"
+          role="region"
+          aria-label="长图预览"
+          tabIndex={0}
+        >
+          <img
+            className="dividend-share-image"
+            src={poster.href}
+            alt={`${stock.name} 红利长图，含股息率、历史涨跌、完整 AI 解读和详情二维码`}
+          />
+        </div>
       )}
       <div className="dividend-share-options">
         {canShare && (

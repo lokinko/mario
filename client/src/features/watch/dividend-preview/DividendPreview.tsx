@@ -2,6 +2,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ArrowUpRight, Search, Share2 } from "lucide-react";
 import { dividendBriefs } from "./briefs";
 import { DividendShare } from "./DividendShare";
+import {
+  dividendReturns,
+  priceCapturedOn,
+  priceOn,
+  returnMethod,
+  yieldMethod,
+} from "./returns";
 import { dividendPreviewHref, dividendQuestionHref } from "./route";
 import snapshot from "./snapshot.json";
 import "./dividend-preview.css";
@@ -39,6 +46,7 @@ export function DividendPreview() {
   const latest = stock?.events[0];
   const previous = stock?.events[1];
   const brief = stock && dividendBriefs[stock.symbol];
+  const market = stock && dividendReturns(stock.symbol);
 
   return (
     <div className="dividend-preview">
@@ -149,6 +157,43 @@ export function DividendPreview() {
                   )}
                 </dl>
               </div>
+              {market && (
+                <section
+                  className="dividend-performance"
+                  aria-label="股息率与历史涨跌"
+                >
+                  <dl className="dividend-performance-yield">
+                    <div>
+                      <dt>近 365 天税前股息率</dt>
+                      <dd>
+                        <strong>{market.yieldPct}</strong>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>每股派息</dt>
+                      <dd>{market.dividendPerShare} 元</dd>
+                    </div>
+                    <div>
+                      <dt>不复权收盘价</dt>
+                      <dd>{market.close} 元</dd>
+                    </div>
+                  </dl>
+                  <div className="dividend-performance-heading">
+                    <h3>历史涨跌（前复权）</h3>
+                    <span>
+                      截至 <time dateTime={priceOn}>{priceOn}</time>
+                    </span>
+                  </div>
+                  <dl className="dividend-performance-periods">
+                    {market.periods.map(({ label, value }) => (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              )}
               <div className="dividend-ticket-actions">
                 <details>
                   <summary>查看数据来源</summary>
@@ -161,10 +206,55 @@ export function DividendPreview() {
                     </time>
                     。金额为单次税前派息，未计入分红预案。
                   </p>
-                  <a href={stock.source} target="_blank" rel="noreferrer">
-                    东方财富分红数据{" "}
-                    <ArrowUpRight size={14} aria-hidden="true" />
-                  </a>
+                  {market && (
+                    <>
+                      <p>
+                        {yieldMethod}
+                        {returnMethod}
+                      </p>
+                      <p>
+                        行情采集于{" "}
+                        <time dateTime={priceCapturedOn}>
+                          {priceCapturedOn}
+                        </time>
+                        。
+                      </p>
+                      <ul>
+                        {market.periods.map(({ label, from }) => (
+                          <li key={label}>
+                            {label}{" "}
+                            {from ? `${from} 至 ${priceOn}` : "历史不足"}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  <div className="dividend-source-links">
+                    <a href={stock.source} target="_blank" rel="noreferrer">
+                      东方财富分红数据{" "}
+                      <ArrowUpRight size={14} aria-hidden="true" />
+                    </a>
+                    {market && (
+                      <>
+                        <a
+                          href={market.rawSource}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          不复权日线{" "}
+                          <ArrowUpRight size={14} aria-hidden="true" />
+                        </a>
+                        <a
+                          href={market.adjustedSource}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          前复权日线{" "}
+                          <ArrowUpRight size={14} aria-hidden="true" />
+                        </a>
+                      </>
+                    )}
+                  </div>
                 </details>
                 <button
                   type="button"
