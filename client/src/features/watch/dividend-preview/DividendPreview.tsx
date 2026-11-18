@@ -74,7 +74,6 @@ export function DividendPreview() {
           aria-labelledby="dividend-preview-title"
         >
           <h1 id="dividend-preview-title">查一查这家公司的分红</h1>
-          <p>核对每 10 股派了多少、哪天除息，再看 AI 如何解读历次变化。</p>
           <form className="dividend-preview-search" onSubmit={lookup}>
             <label htmlFor="dividend-stock">公司名称或 A 股代码</label>
             <div>

@@ -81,7 +81,7 @@
   letter-spacing: -0.045em;
   text-wrap: balance;
 }
-.dividend-preview-intro p,
+.dividend-preview-coverage,
 .dividend-preview-empty p {
   margin: 14px 0;
   color: var(--dividend-muted);
@@ -158,7 +158,7 @@
 .dividend-preview-examples a[aria-current] {
   background: #dce8f7;
 }
-.dividend-preview-intro .dividend-preview-coverage,
+.dividend-preview-coverage,
 .dividend-preview-footer {
   color: var(--dividend-muted);
   font-size: 12px;
@@ -436,7 +436,7 @@
     font-size: clamp(28px, 7.5vw, 38px);
     text-wrap: initial;
   }
-  .dividend-preview-intro p {
+  .dividend-preview-coverage {
     margin-block: 8px;
   }
   .dividend-preview-search {
