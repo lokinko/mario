@@ -45,9 +45,12 @@ export function createDividendPoster(
   const blockPadding = 32;
   const blockLeft = left - 20;
   const blockWidth = right - left + 40;
-  const companyBaseline = 120;
   const headerTop = 36;
-  const headerBottom = 152;
+  const qrSize = 128;
+  const qrLeft = right - qrSize;
+  const qrTop = headerTop + 20;
+  const qrCaptionBaseline = qrTop + qrSize + 26;
+  const headerBottom = qrCaptionBaseline + 18;
 
   let nextTop = headerBottom + blockGap;
   ctx.font = `400 ${bodySize}px ${font}`;
@@ -72,12 +75,8 @@ export function createDividendPoster(
     nextTop = bottom + blockGap;
     return { ...section, lines, top, bottom, heading, body, metrics };
   });
-  const qrSize = 160;
-  const qrLeft = right - qrSize;
-  const qrTop = nextTop;
-  const qrCaptionBaseline = qrTop + qrSize + 20;
   canvas.width = 960;
-  canvas.height = qrCaptionBaseline + 28;
+  canvas.height = nextTop - blockGap + headerTop;
 
   ctx.textBaseline = "alphabetic";
   const text = (
@@ -106,10 +105,13 @@ export function createDividendPoster(
   );
   ctx.fill();
   const headerText = "#743f2f";
-  text("mario  红利观察", left, 76, 24, headerText, 500);
-  text(name, left, companyBaseline, 32, ink, 600);
-  ctx.textAlign = "right";
-  text(`A 股 ${symbol}`, right, companyBaseline, 24, headerText);
+  text("mario  红利观察", left, headerTop + 58, 24, headerText, 500);
+  text(name, left, headerTop + 118, 36, ink, 600);
+  text(`A 股 ${symbol}`, left, headerTop + 162, 24, headerText);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(qr, qrLeft, qrTop, qrSize, qrSize);
+  ctx.textAlign = "center";
+  text("扫码查看详情", qrLeft + qrSize / 2, qrCaptionBaseline, 18, headerText);
   ctx.textAlign = "left";
 
   for (const section of sectionLayout) {
@@ -150,11 +152,6 @@ export function createDividendPoster(
       }
     }
   }
-
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr, qrLeft, qrTop, qrSize, qrSize);
-  ctx.textAlign = "center";
-  text("扫码查看详情", qrLeft + qrSize / 2, qrCaptionBaseline, 20, muted);
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
