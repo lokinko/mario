@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { dividendCard } from "./card";
 import market from "./market-snapshot.json";
 import { wrapPosterText } from "./poster";
 import { dividendReturns, priceOn } from "./returns";
@@ -21,6 +22,23 @@ it("uses the same dated snapshot for every sample and preserves unavailable peri
     from: undefined,
     value: "历史不足",
   });
+});
+
+it("summarizes the latest payout and archived returns in the performance section", () => {
+  const stock = snapshot.stocks.find(({ symbol }) => symbol === "600900");
+  expect(stock).toBeDefined();
+  const card = stock && dividendCard(stock);
+  const performance = card?.sections.find(
+    (section) => section.kind === "performance",
+  );
+  expect(performance?.kind).toBe("performance");
+  if (performance?.kind !== "performance") return;
+  expect(performance.text).toContain("近一年前复权股价上涨");
+  expect(performance.metrics.map(({ value }) => value)).toEqual([
+    "3.34%",
+    "+8.76%",
+    "7.9 元",
+  ]);
 });
 
 it("preserves Chinese reading text and keeps decimal amounts together across lines", () => {

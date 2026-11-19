@@ -1,26 +1,23 @@
-import { QRCode } from "antd";
-import { Download, Share2, X } from "lucide-react";
+import { Button, Input, QRCode } from "antd";
+import { Download, Share2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { createDividendPoster, type DividendSample } from "./poster";
+import { Callout } from "../../../components/Callout";
+import { Drawer } from "../../../components/Drawer";
+import type { DividendCard } from "./card";
+import { createDividendPoster } from "./poster";
 import { dividendShareUrl } from "./route";
 
 export function DividendShare({
-  stock,
+  card,
   onDismiss,
 }: {
-  stock: DividendSample;
+  card: DividendCard;
   onDismiss: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const qr = useRef<HTMLDivElement>(null);
   const [poster, setPoster] = useState<{ file: File; href: string }>();
   const [message, setMessage] = useState("");
-  const url = dividendShareUrl(stock.symbol);
-
-  useEffect(() => {
-    const modal = dialog.current;
-    if (modal && !modal.open) modal.showModal();
-  }, []);
+  const url = dividendShareUrl(card.symbol);
 
   useEffect(() => {
     let active = true;
@@ -29,9 +26,9 @@ export function DividendShare({
       try {
         const code = qr.current?.querySelector("canvas");
         if (!code) throw new Error("QR unavailable");
-        const blob = await createDividendPoster(stock, code);
+        const blob = await createDividendPoster(card, code);
         if (!active) return;
-        const file = new File([blob], `mario-${stock.symbol}.png`, {
+        const file = new File([blob], `mario-${card.symbol}.png`, {
           type: "image/png",
         });
         href = URL.createObjectURL(file);
@@ -45,7 +42,7 @@ export function DividendShare({
       window.cancelAnimationFrame(frame);
       if (href) URL.revokeObjectURL(href);
     };
-  }, [stock]);
+  }, [card]);
 
   const files = poster ? [poster.file] : [];
   const canShare = !!(
@@ -54,23 +51,10 @@ export function DividendShare({
     navigator.canShare?.({ files })
   );
 
+  const headings = card.sections.map(({ title }) => title).join("、");
+
   return (
-    <dialog
-      className="dividend-share-dialog"
-      ref={dialog}
-      onClose={onDismiss}
-      aria-labelledby="dividend-share-title"
-    >
-      <header>
-        <h2 id="dividend-share-title">分享 {stock.name} 的分红卡</h2>
-        <button
-          type="button"
-          onClick={() => dialog.current?.close()}
-          aria-label="关闭分享卡片"
-        >
-          <X size={22} aria-hidden="true" />
-        </button>
-      </header>
+    <Drawer title={`分享 ${card.name} 的分红卡`} onClose={onDismiss}>
       <div ref={qr} className="dividend-share-qr" hidden={!!poster}>
         <QRCode
           value={url}
@@ -92,19 +76,20 @@ export function DividendShare({
           <img
             className="dividend-share-image"
             src={poster.href}
-            alt={`${stock.name} 红利长图，含股息率、历史涨跌、完整 AI 解读和详情二维码`}
+            alt={`${card.name} 红利长图，含${headings}和详情二维码。`}
           />
         </div>
       )}
       <div className="dividend-share-options">
         {canShare && (
-          <button
-            type="button"
+          <Button
+            type="primary"
+            icon={<Share2 size={16} aria-hidden="true" />}
             onClick={async () => {
               try {
                 await navigator.share({
                   files,
-                  title: `${stock.name}分红观察`,
+                  title: `${card.name}分红观察`,
                 });
               } catch (error) {
                 if (!(error instanceof Error && error.name === "AbortError"))
@@ -112,24 +97,28 @@ export function DividendShare({
               }
             }}
           >
-            <Share2 size={16} aria-hidden="true" /> 分享图片
-          </button>
+            分享图片
+          </Button>
         )}
         {poster && (
-          <a href={poster.href} download={poster.file.name}>
-            <Download size={16} aria-hidden="true" /> 保存图片
-          </a>
+          <Button
+            href={poster.href}
+            download={poster.file.name}
+            icon={<Download size={16} aria-hidden="true" />}
+          >
+            保存图片
+          </Button>
         )}
       </div>
       <label className="dividend-share-url">
         卡片链接
-        <input
+        <Input
           readOnly
           value={url}
           onFocus={(event) => event.currentTarget.select()}
         />
       </label>
-      {message && <p role="status">{message}</p>}
-    </dialog>
+      {message && <Callout tone="warning">{message}</Callout>}
+    </Drawer>
   );
 }

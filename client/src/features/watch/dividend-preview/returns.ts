@@ -1,11 +1,6 @@
 import market from "./market-snapshot.json";
 
 export const priceOn = market.priceOn;
-export const priceCapturedOn = market.capturedOn;
-export const returnMethod =
-  "按前复权收盘价计算区间累计涨跌，金额以人民币计，未计交易费用。";
-export const yieldMethod =
-  "股息率按近 365 天已实施税前每股派息除以不复权收盘价计算。";
 
 const yieldFormat = new Intl.NumberFormat("zh-CN", {
   style: "percent",

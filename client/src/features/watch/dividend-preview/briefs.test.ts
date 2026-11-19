@@ -1,17 +1,24 @@
 import { expect, it } from "vitest";
 import { dividendBriefs } from "./briefs";
+import { dividendCard } from "./card";
 import { dividendQuestionSymbol } from "./route";
 import snapshot from "./snapshot.json";
 
-it("pairs each public sample with a share-card headline and a research question", () => {
+it("presents the same three ordered sections for every public sample", () => {
   expect(Object.keys(dividendBriefs).sort()).toEqual(
     snapshot.stocks.map(({ symbol }) => symbol).sort(),
   );
-  for (const brief of Object.values(dividendBriefs)) {
-    expect(brief?.headline.length).toBeGreaterThan(0);
-    expect(brief?.headline.length).toBeLessThanOrEqual(20);
-    expect(brief?.reading).toBeTruthy();
-    expect(brief?.followUp).toBeTruthy();
+  for (const stock of snapshot.stocks) {
+    const sections = dividendCard(stock)?.sections ?? [];
+    expect(sections.map(({ title }) => title)).toEqual([
+      "未来预期",
+      "影响股息的关键数据",
+      "分红与近一年股价",
+    ]);
+    for (const { kind, text } of sections) {
+      expect(text.trim()).toBeTruthy();
+      if (kind === "outlook") expect(text).not.toMatch(/[0-9０-９]/u);
+    }
   }
 });
 

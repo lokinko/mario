@@ -1,15 +1,14 @@
-import { dividendBriefs } from "./briefs";
-import { dividendReturns, priceOn } from "./returns";
-import snapshot from "./snapshot.json";
+import type { DividendCard } from "./card";
 
-export type DividendSample = (typeof snapshot.stocks)[number];
-
-const font = '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
 const ink = "#172c47";
 const muted = "#506581";
-const blue = "#24468d";
-const left = 84;
-const right = 876;
+const left = 60;
+const right = 900;
+const blocks = {
+  outlook: { fill: "#f5ecd9", edge: "rgba(146, 101, 26, 0.16)" },
+  drivers: { fill: "#e6ecf0", edge: "rgba(61, 95, 120, 0.16)" },
+  performance: { fill: "#e5eee6", edge: "rgba(59, 107, 77, 0.16)" },
+};
 
 export function wrapPosterText(value: string, fits: (line: string) => boolean) {
   const tokens = value.match(/[A-Za-z0-9.+-]+|./gu) ?? [];
@@ -28,141 +27,134 @@ export function wrapPosterText(value: string, fits: (line: string) => boolean) {
 }
 
 export function createDividendPoster(
-  stock: DividendSample,
+  card: DividendCard,
   qr: HTMLCanvasElement,
 ): Promise<Blob> {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) return Promise.reject(new Error("Canvas unavailable"));
-  const [latest, previous] = stock.events;
-  const brief = dividendBriefs[stock.symbol];
-  const market = dividendReturns(stock.symbol);
-  const wrap = (value: string, size: number) => {
-    ctx.font = `500 ${size}px ${font}`;
-    return wrapPosterText(
-      value,
-      (line) => ctx.measureText(line).width <= right - left - size,
-    );
-  };
-  const reading = brief ? wrap(brief.reading, 34) : [];
-  const followUp = brief ? wrap(brief.followUp, 34) : [];
-  const performanceHeight = market ? 416 : 0;
-  const analysisTop = 654 + performanceHeight;
-  const footerTop = brief
-    ? analysisTop + 268 + (reading.length + followUp.length) * 53
-    : analysisTop;
-  canvas.width = 960;
-  canvas.height = footerTop + 350;
+  const font =
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-sans")
+      .trim() || "system-ui, sans-serif";
+  const { name, symbol, sections } = card;
+  const headingSize = 28;
+  const bodySize = 26;
+  const lineHeight = 50;
+  const blockGap = 24;
+  const blockPadding = 32;
+  const blockLeft = left - 20;
+  const blockWidth = right - left + 40;
+  const companyBaseline = 120;
+  const headerTop = 36;
+  const headerBottom = 152;
 
+  let nextTop = headerBottom + blockGap;
+  ctx.font = `400 ${bodySize}px ${font}`;
+  const sectionLayout = sections.map((section) => {
+    const lines = wrapPosterText(
+      section.text,
+      (line) => ctx.measureText(line).width <= right - left - bodySize,
+    );
+    const top = nextTop;
+    const heading = top + blockPadding + headingSize;
+    const body = heading + lineHeight;
+    let last = body + (lines.length - 1) * lineHeight;
+    let metrics;
+    if (section.kind === "performance") {
+      const label = last + 60;
+      const value = label + 40;
+      const note = value + 30;
+      metrics = { items: section.metrics, label, value, note };
+      last = section.metrics.some(({ date }) => date) ? note + 29 : note;
+    }
+    const bottom = last + blockPadding - 4;
+    nextTop = bottom + blockGap;
+    return { ...section, lines, top, bottom, heading, body, metrics };
+  });
+  const qrSize = 160;
+  const qrLeft = right - qrSize;
+  const qrTop = nextTop;
+  const qrCaptionBaseline = qrTop + qrSize + 20;
+  canvas.width = 960;
+  canvas.height = qrCaptionBaseline + 28;
+
+  ctx.textBaseline = "alphabetic";
   const text = (
     value: string,
     x: number,
     y: number,
     size: number,
     color = ink,
-    weight = 500,
+    weight = 400,
   ) => {
     ctx.fillStyle = color;
     ctx.font = `${weight} ${size}px ${font}`;
     ctx.fillText(value, x, y);
   };
-  const rule = (y: number) => {
-    ctx.strokeStyle = "#c5d4e6";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(left, y);
-    ctx.lineTo(right, y);
-    ctx.stroke();
-  };
-  const paragraph = (lines: string[], y: number) => {
-    lines.forEach((line, index) => text(line, left, y + 53 * index, 34));
-  };
 
-  ctx.fillStyle = "#edf3fa";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#f6e7de";
   ctx.beginPath();
-  ctx.roundRect(36, 36, 888, canvas.height - 72, 44);
+  ctx.roundRect(
+    left - 20,
+    headerTop,
+    right - left + 40,
+    headerBottom - headerTop,
+    20,
+  );
   ctx.fill();
-  text("mario  红利观察", left, 114, 33, blue, 700);
-  text(stock.name, left, 210, 66, ink, 700);
-  text(`A 股 ${stock.symbol}`, left, 264, 29, muted);
-  rule(306);
+  const headerText = "#743f2f";
+  text("mario  红利观察", left, 76, 24, headerText, 500);
+  text(name, left, companyBaseline, 32, ink, 600);
+  ctx.textAlign = "right";
+  text(`A 股 ${symbol}`, right, companyBaseline, 24, headerText);
+  ctx.textAlign = "left";
 
-  if (market) {
-    text("近 365 天税前股息率", left, 367, 32, muted, 700);
-    text(market.yieldPct, left, 475, 96, ink, 750);
-    text(`每股派息 ${market.dividendPerShare} 元`, 500, 414, 33, ink, 650);
-    text(`不复权收盘价 ${market.close} 元`, 500, 471, 29, muted);
-    text(`行情基准日 ${priceOn}`, left, 529, 28, muted);
-    rule(565);
-    text("历史涨跌（前复权）", left, 619, 35, ink, 700);
-    for (const [index, period] of market.periods.entries()) {
-      const x = left + index * 267;
-      text(period.label, x, 676, 28, muted);
-      text(period.value, x, 734, period.from ? 42 : 31, ink, 700);
+  for (const section of sectionLayout) {
+    const { fill, edge } = blocks[section.kind];
+    ctx.beginPath();
+    ctx.roundRect(
+      blockLeft,
+      section.top,
+      blockWidth,
+      section.bottom - section.top,
+      20,
+    );
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    text(section.title, left, section.heading, headingSize, ink, 600);
+    section.lines.forEach((line, index) =>
+      text(line, left, section.body + lineHeight * index, bodySize, ink),
+    );
+    if (!section.metrics) continue;
+    const { items, label, value, note } = section.metrics;
+    const metricWidth = (right - left) / items.length;
+    for (const [index, metric] of items.entries()) {
+      const x = left + index * metricWidth;
+      text(metric.label, x, label, 20, muted);
+      text(metric.value, x, value, 30, ink, 600);
+      text(metric.note, x, note, 20, muted);
+      if (metric.date) {
+        text(
+          `${metric.date.label} ${metric.date.value}`,
+          x,
+          note + 29,
+          20,
+          muted,
+        );
+      }
     }
-    rule(306 + performanceHeight + 49);
   }
 
-  const dividendTop = 306 + performanceHeight;
-  const dividendOffset = market ? 49 : 0;
-  text(
-    "最近两次已实施现金分红",
-    left,
-    dividendTop + dividendOffset + 57,
-    36,
-    ink,
-    700,
-  );
-  text("除息日", left, dividendTop + dividendOffset + 111, 27, muted);
-  text(
-    "每 10 股派息（税前）",
-    523,
-    dividendTop + dividendOffset + 111,
-    27,
-    muted,
-  );
-  [latest, previous].forEach((event, index) => {
-    if (!event) return;
-    const y = dividendTop + dividendOffset + 165 + index * 60;
-    text(event.exDate, left, y, 34);
-    text(`${event.cashPerTen} 元`, 523, y, 34, ink, 650);
-  });
-  rule(analysisTop - 33);
-
-  if (brief) {
-    text("AI 解读", left, analysisTop + 19, 30, blue, 700);
-    text(brief.headline, left, analysisTop + 83, 41, ink, 700);
-    paragraph(reading, analysisTop + 148);
-    const followTop = analysisTop + 158 + reading.length * 53;
-    text("接下来查什么", left, followTop, 32, ink, 700);
-    paragraph(followUp, followTop + 54);
-    text(
-      `预生成解读 · 分红样本截至 ${snapshot.asOf}`,
-      left,
-      footerTop - 18,
-      26,
-      muted,
-    );
-  }
-
-  rule(footerTop + 16);
-  text("扫码回到红利观察", left, footerTop + 83, 36, ink, 700);
-  text("行情与分红来源  东方财富", left, footerTop + 134, 27, muted);
-  if (market) {
-    text(
-      "股息率 = 365 天税前每股派息 ÷ 收盘价",
-      left,
-      footerTop + 178,
-      24,
-      muted,
-    );
-    text("前复权累计涨跌，未计交易费用", left, footerTop + 217, 24, muted);
-  }
-  text("历史数据仅供研究参考", left, footerTop + 256, 25, muted);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr, 634, footerTop + 55, 240, 240);
+  ctx.drawImage(qr, qrLeft, qrTop, qrSize, qrSize);
+  ctx.textAlign = "center";
+  text("扫码查看详情", qrLeft + qrSize / 2, qrCaptionBaseline, 20, muted);
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
