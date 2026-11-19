@@ -236,7 +236,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | POST | `/api/activity` | 账号 / — | B `{page:Page}` → `{ok:true}` | 记录页面活跃元数据，不写个人账本 |
 | GET | `/api/dashboard` | 管理 / — | Q `days?:integer=30` → `Dashboard` | 账号活跃度与公共价格采集状态，权限由账号数据库判定 |
 
-`Page` 为 `watch/calendar/facts/evidence/review/advisor/methodology/settings`。看板数据类型见[活跃度类型](../server/src/accounts/activity.rs)及[价格监控类型](../server/src/models/market/monitor.rs)。网站 `/dashboard`、`/dashboard/` 是静态页面入口，不是数据 API。`/api/{*path}` 是未知路径的 404 兜底，也不是通用调用接口。
+`Page` 为 `watch/calendar/facts/evidence/review/advisor/methodology/settings`。看板数据类型见[活跃度类型](../server/src/accounts/activity.rs)及[价格监控类型](../server/src/models/market/monitor.rs)。网站 `/dashboard`、`/dashboard/` 是静态页面入口，不是数据 API。静态资源中 `/assets/` 下带内容指纹的文件成功响应时返回 `public, max-age=31536000, immutable`，未找到时返回 `no-store`；页面入口与其余静态文件返回 `no-cache`，接口响应保持 `no-store`。[本机运行器](../scripts/host-runtime.mjs)生成的 nginx 片段对脚本、样式、JSON、SVG 和纯文本启用 gzip，事件流不压缩。`/api/{*path}` 是未知路径的 404 兜底，也不是通用调用接口。
 
 ### 5.2 桥接 Worker
 

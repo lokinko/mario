@@ -45,6 +45,9 @@ try {
   assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:4321\//);
   assert.match(nginx, /proxy_set_header Host \$host/);
   assert.match(nginx, /Content-Security-Policy/);
+  assert.match(nginx, /gzip_proxied any;/);
+  assert.match(nginx, /gzip_types application\/javascript text\/css application\/json image\/svg\+xml text\/plain;/);
+  assert.doesNotMatch(nginx, /text\/event-stream/);
   const callback = /location = \/mario\/api\/auth\/openai\/callback \{([^}]+)\}/.exec(nginx)?.[1];
   assert(callback, 'OAuth callback must bypass the SPA location');
   assert.match(callback, /access_log off/);

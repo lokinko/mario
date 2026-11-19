@@ -119,15 +119,7 @@ where
             }),
         );
     let app = if let Some(dir) = web_dir {
-        app.route_service(
-            "/dashboard",
-            tower_http::services::ServeFile::new(dir.join("index.html")),
-        )
-        .route_service(
-            "/dashboard/",
-            tower_http::services::ServeFile::new(dir.join("index.html")),
-        )
-        .fallback_service(tower_http::services::ServeDir::new(dir))
+        app.merge(web_router(&dir))
     } else {
         app
     };
@@ -148,6 +140,41 @@ async fn server_info() -> Json<ServerInfo> {
         codex_max_attempts: crate::models::inference::CODEX_MAX_ATTEMPTS,
         public_dividend_data: 1,
     })
+}
+/// Vite fingerprints everything under `assets/`; entry pages must revalidate so a
+/// release is picked up immediately.
+fn web_router(dir: &std::path::Path) -> Router {
+    let index = || tower_http::services::ServeFile::new(dir.join("index.html"));
+    let assets = Router::new()
+        .nest_service(
+            "/assets",
+            tower_http::services::ServeDir::new(dir.join("assets")),
+        )
+        .layer(middleware::map_response(immutable_asset));
+    Router::new()
+        .route_service("/dashboard", index())
+        .route_service("/dashboard/", index())
+        .fallback_service(tower_http::services::ServeDir::new(dir))
+        .layer(middleware::map_response(revalidate))
+        .merge(assets)
+}
+async fn immutable_asset<B>(mut response: axum::http::Response<B>) -> axum::http::Response<B> {
+    let found = response.status().is_success() || response.status() == StatusCode::NOT_MODIFIED;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(if found {
+            "public, max-age=31536000, immutable"
+        } else {
+            "no-store"
+        }),
+    );
+    response
+}
+async fn revalidate<B>(mut response: axum::http::Response<B>) -> axum::http::Response<B> {
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    response
 }
 async fn no_store(mut response: Response) -> Response {
     response
@@ -346,4 +373,40 @@ async fn import(
     }
     state.import(&data)?;
     Ok(Json(serde_json::json!({"ok":true})))
+}
+#[cfg(test)]
+mod web_tests {
+    #[tokio::test]
+    async fn fingerprinted_assets_are_immutable_and_entry_pages_revalidate() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("assets")).unwrap();
+        std::fs::write(dir.path().join("index.html"), "<html></html>").unwrap();
+        std::fs::write(dir.path().join("assets/index-abc.js"), "export {}").unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = super::web_router(dir.path());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let client = reqwest::Client::new();
+        let cache = |path: &'static str| {
+            let request = client.get(format!("{base}{path}"));
+            async move {
+                let response = request.send().await.unwrap();
+                let header = response.headers()["cache-control"]
+                    .to_str()
+                    .unwrap()
+                    .to_owned();
+                (response.status().as_u16(), header)
+            }
+        };
+        assert_eq!(
+            cache("/assets/index-abc.js").await,
+            (200, "public, max-age=31536000, immutable".into())
+        );
+        assert_eq!(
+            cache("/assets/index-old.js").await,
+            (404, "no-store".into())
+        );
+        assert_eq!(cache("/").await, (200, "no-cache".into()));
+        assert_eq!(cache("/dashboard").await, (200, "no-cache".into()));
+    }
 }
