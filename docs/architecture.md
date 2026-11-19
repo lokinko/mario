@@ -45,7 +45,7 @@ AI 用例负责授权、冻结输入及保存分析结果；模型执行器负�
 
 | 支撑部分 | 职责与现有入口 |
 | --- | --- |
-| 前端应用壳 | [app](../client/src/app/)负责导航、跨模块组合、账号切换和数据生命周期；共享展示与传输分别在 [components](../client/src/components/)和 [lib](../client/src/lib/) |
+| 前端应用壳 | [app](../client/src/app/)负责导航、跨模块组合、账号切换和数据生命周期。[工作台](../client/src/App.tsx)在桌面与移动端共用位置和同步状态栏，移动导航通过一个「资产」入口进入持仓与存款页面。共享展示与传输分别在 [components](../client/src/components/)和 [lib](../client/src/lib/) |
 | HTTP 与进程装配 | [hosted](../server/src/hosted.rs)、[http](../server/src/http/)、[composition](../server/src/composition.rs)负责协议、认证上下文和依赖装配；路由中的业务职责仍按所属域识别 |
 | 存储与安全基础 | [storage](../server/src/storage.rs)封装数据库驱动；[secrets](../server/src/secrets.rs)封装凭据加密；公共技术能力不拥有业务规则 |
 | 站点运营 | 汇总使用统计和市场采集状态，权限由账号能力检查；不作为任意跨账号业务访问入口 |

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { Button, Input } from "antd";
 import { ArrowUpRight, Search, Share2 } from "lucide-react";
 import { EmptyState } from "../../../components/EmptyState";
@@ -8,6 +8,10 @@ import { DividendShare } from "./DividendShare";
 import { dividendPreviewHref, dividendQuestionHref } from "./route";
 import snapshot from "./snapshot.json";
 import "./dividend-preview.css";
+
+const examples = ["600900", "601088", "000333"].flatMap((code) =>
+  snapshot.stocks.filter(({ symbol }) => symbol === code),
+);
 
 function findCard(query: string) {
   const term = query.trim();
@@ -31,9 +35,8 @@ export function DividendPreview() {
     };
   }, []);
 
-  function lookup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const result = findCard(query);
+  function lookup(term: string) {
+    const result = findCard(term);
     setCard(result);
     window.history.replaceState(null, "", dividendPreviewHref(result?.symbol));
   }
@@ -64,9 +67,15 @@ export function DividendPreview() {
         </Button>
       </header>
       <main className="page narrow dividend-preview-main">
-        <PageHeader title="查一查这家公司的分红" />
+        <PageHeader title="查公司分红" />
         <div className="panel dividend-preview-query">
-          <form className="dividend-preview-search" onSubmit={lookup}>
+          <form
+            className="dividend-preview-search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              lookup(query);
+            }}
+          >
             <label htmlFor="dividend-stock">公司名称或 A 股代码</label>
             <div>
               <Input
@@ -88,6 +97,26 @@ export function DividendPreview() {
               </Button>
             </div>
           </form>
+          <div
+            className="dividend-preview-examples"
+            role="group"
+            aria-label="示例公司"
+          >
+            <span aria-hidden="true">试查</span>
+            {examples.map(({ symbol, name }) => (
+              <button
+                className="text-button"
+                key={symbol}
+                type="button"
+                onClick={() => {
+                  setQuery(symbol);
+                  lookup(symbol);
+                }}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
         </div>
         <section
           className="dividend-preview-result"

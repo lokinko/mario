@@ -199,7 +199,7 @@ export function BuyWatch({
   const rows = board?.rows ?? [];
   const own = group === "favorites";
   const favorites = new Set(rows.map((row) => row.entry.symbol));
-  const canAdd = rows.length < 50;
+  const canAdd = Boolean(board) && rows.length < 50;
   const currentRows: WatchDisplayRow[] = own
     ? rows.map(displayWatch)
     : (catalog?.rows.filter((row) => row.industryId === group) ?? []);
@@ -259,7 +259,7 @@ export function BuyWatch({
   const changeGroup = (next: string) => {
     setGroup(next);
     setExpanded(null);
-    setError("");
+    if (board) setError("");
     reset();
   };
   return (
@@ -269,7 +269,7 @@ export function BuyWatch({
         action={
           <>
             <Button href={dividendPreviewHref()} target="_blank" rel="noopener">
-              公开红利卡
+              红利观察
             </Button>
             {catalog?.canEdit && (
               <Button
@@ -290,7 +290,7 @@ export function BuyWatch({
             </Button>
             <Button
               type="primary"
-              disabled={busy}
+              disabled={busy || !board}
               onClick={() => edit()}
               icon={<Plus size={16} />}
             >
@@ -325,7 +325,7 @@ export function BuyWatch({
         activeKey={group}
         onChange={changeGroup}
         items={[
-          { key: "favorites", label: `自选 ${rows.length}` },
+          { key: "favorites", label: board ? `自选 ${rows.length}` : "自选" },
           ...(catalog?.catalog.industries.map((industry) => ({
             key: industry.id,
             label: `${industry.name} ${industry.companies.length}`,
@@ -384,7 +384,7 @@ export function BuyWatch({
       </section>
       {error && !open && !active && !publicActive && (
         <Callout tone="danger">
-          <span>{error}</span>
+          <span>{!board ? `自选读取失败：${error}` : error}</span>
           <button disabled={busy} onClick={() => void load()}>
             重新读取
           </button>
@@ -400,7 +400,7 @@ export function BuyWatch({
       )}
       {!catalog && !catalogError && <p role="status">正在读取行业目录…</p>}
       {!board && !error && <p role="status">正在读取观察名单…</p>}
-      {board && (
+      {(own ? board : catalog) && (
         <>
           {currentRows.length > 0 && (
             <div className="watch-toolbar" data-presentation>
@@ -503,7 +503,8 @@ export function BuyWatch({
               rules={rules}
               sort={sort}
               onSort={setSort}
-              onPin={(row) =>
+              onPin={(row) => {
+                if (!board) return;
                 void run(async () => {
                   const entry = await setWatchPinned(
                     row.entry.symbol,
@@ -517,8 +518,8 @@ export function BuyWatch({
                         : item,
                     ),
                   };
-                })
-              }
+                });
+              }}
               favorites={favorites}
               canAdd={canAdd}
               onAdd={add}
@@ -543,7 +544,7 @@ export function BuyWatch({
               </button>
             </section>
           )}
-          {!own && !canAdd && (
+          {!own && board && !canAdd && (
             <p>自选已达 50 家，请先在自选中移除公司后再添加。</p>
           )}
         </>

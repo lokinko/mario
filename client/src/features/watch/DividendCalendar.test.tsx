@@ -106,6 +106,22 @@ it("moves the 30-day window and returns to today", async () => {
     expect(api.getDividendCalendar).toHaveBeenLastCalledWith("all", ""),
   );
 });
+it("does not show the previous scope's entries while loading the new scope", async () => {
+  vi.mocked(api.getDividendCalendar).mockResolvedValueOnce(board);
+  let finish!: (next: api.DividendCalendarBoard) => void;
+  vi.mocked(api.getDividendCalendar).mockImplementationOnce(
+    () => new Promise((resolve) => (finish = resolve)),
+  );
+  render(<DividendCalendar />);
+  await screen.findByText("1.25 元");
+  fireEvent.click(screen.getByRole("radio", { name: "仅我的自选" }));
+  expect(screen.queryByText("1.25 元")).toBeNull();
+  expect(screen.getByRole("status").textContent).toContain("正在读取分红日历");
+  finish({ ...board, scope: "favorites", entries: [] });
+  await screen.findByRole("button", { name: "2026-11-10，0项安排" });
+  expect(screen.queryByText("1.25 元")).toBeNull();
+});
+
 it("marks invalid plan values for review without offering a manual refetch", async () => {
   vi.mocked(api.getDividendCalendar).mockResolvedValue({
     ...board,

@@ -1,5 +1,4 @@
 import { BuyWatch } from "./features/watch/BuyWatch";
-import { Breadcrumb, Button } from "antd";
 import { Callout } from "./components/Callout";
 import { DailyTracking } from "./features/portfolio/DailyTracking";
 import { useApplicationData } from "./app/useApplicationData";
@@ -12,8 +11,7 @@ import {
   Settings2,
   XCircle,
   X,
-  CircleUserRound,
-  PanelLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   View,
@@ -62,6 +60,15 @@ const ServerData = lazy(() =>
     default: m.ServerData,
   })),
 );
+
+const syncLabels = {
+  waiting: "等待同步",
+  syncing: "正在同步",
+  synced: "已同步",
+  offline: "连接中断",
+  paused: "同步暂停",
+  attention: "同步需处理",
+};
 
 function App() {
   const display = useDisplayPreferences();
@@ -132,6 +139,8 @@ function App() {
   const [factsSection, setFactsSection] = useState<FactsSection>("holdings");
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const focusAfterNavigation = useRef(false);
   useEffect(() => {
     if (!mobileNavOpen) return;
     const previousOverflow = document.body.style.overflow;
@@ -201,6 +210,7 @@ function App() {
       clearDraft();
       // History navigation may deliver both popstate and hashchange before render.
       currentView.current = nextView;
+      focusAfterNavigation.current = true;
       setView(nextView);
       if (nextView === "advisor") setAdvisorVisited(true);
       setMobileNavOpen(false);
@@ -210,10 +220,9 @@ function App() {
     [clearDraft, hasDraft],
   );
 
-  const navigate = (nextView: View, section?: FactsSection) => {
+  const navigate = (nextView: View) => {
     const changed = currentView.current !== nextView;
     if (!changeView(nextView)) return false;
-    if (section) setFactsSection(section);
     setMobileNavOpen(false);
     if (changed) window.history.pushState(null, "", `#${nextView}`);
     return true;
@@ -237,6 +246,12 @@ function App() {
     };
   }, [changeView]);
 
+  useEffect(() => {
+    if (!focusAfterNavigation.current || loading || !mainRef.current) return;
+    focusAfterNavigation.current = false;
+    mainRef.current.focus({ preventScroll: true });
+  }, [view, loading]);
+
   if (loading) {
     return <ApplicationSkeleton />;
   }
@@ -257,22 +272,6 @@ function App() {
 
   const content = (
     <div className="app-shell">
-      <header className="mobile-topbar" inert={mobileNavOpen}>
-        <img
-          className="mobile-mark"
-          src={`${import.meta.env.BASE_URL}mario-mark.svg`}
-          alt=""
-        />
-        <strong>mario</strong>
-        <span>{viewLabels[view]}</span>
-        <button
-          className={`mobile-sync sync-${syncState.phase}`}
-          aria-label={syncState.message}
-          onClick={() => navigate("settings")}
-        >
-          <span className="sync-indicator" />
-        </button>
-      </header>
       {mobileNavOpen && (
         <button
           className="nav-backdrop"
@@ -328,7 +327,7 @@ function App() {
                   aria-current={view === item.id ? "page" : undefined}
                   className={[
                     view === item.id ? "active" : "",
-                    mobileTabs.some((tab) => tab.view === item.id)
+                    mobileTabs.some((tab) => tab.id === item.id)
                       ? "in-tabbar"
                       : "",
                   ].join(" ")}
@@ -351,20 +350,13 @@ function App() {
           >
             <Settings2 size={18} /> 设置
           </button>
-          <button
-            className={`sidebar-sync-state sync-${syncState.phase}`}
-            title={syncState.message}
-            onClick={() => navigate("settings")}
-          >
-            <span className="sync-indicator" aria-hidden="true" />
-            {syncState.phase === "attention"
-              ? "同步需要处理 · 打开设置"
-              : syncState.message}
-          </button>
         </div>
       </aside>
 
       <main
+        ref={mainRef}
+        tabIndex={-1}
+        aria-label={viewLabels[view]}
         inert={mobileNavOpen}
         onChangeCapture={(event) => {
           if (
@@ -375,21 +367,30 @@ function App() {
             markEdited();
         }}
       >
-        <div className="workspace-bar">
+        <header className="workspace-bar workspace-context">
           <div className="workspace-location">
-            <PanelLeft size={16} aria-hidden="true" />
-            <Breadcrumb
-              items={[{ title: "个人工作台" }, { title: viewLabels[view] }]}
+            <span className="workspace-home">个人工作台</span>
+            <img
+              className="workspace-mark"
+              src={`${import.meta.env.BASE_URL}mario-mark.svg`}
+              alt=""
+              width="26"
+              height="26"
             />
+            <ChevronRight size={14} aria-hidden="true" />
+            <strong>{viewLabels[view]}</strong>
           </div>
-          <Button
-            type="text"
-            icon={<CircleUserRound size={17} />}
+          <button
+            className={`workspace-sync sync-${syncState.phase}`}
+            type="button"
+            aria-label={`${syncState.message}，打开设置`}
+            title={syncState.message}
             onClick={() => navigate("settings")}
           >
-            我的账号
-          </Button>
-        </div>
+            <span className="sync-indicator" aria-hidden="true" />
+            {syncLabels[syncState.phase]}
+          </button>
+        </header>
         <DailyTracking onNewDay={refreshForNewDay} />
         {remotePending && (
           <div className="remote-update-notice" role="status">
@@ -433,7 +434,7 @@ function App() {
             </button>
           </div>
         )}
-        {modelError && (
+        {modelError && (view === "advisor" || view === "settings") && (
           <Callout tone="danger">
             模型配置暂时不可用，资料与复盘不受影响。
             <button onClick={loadApplication}>重试</button>
@@ -528,13 +529,9 @@ function App() {
             </DeferredPage>
           </div>
         )}
-        {(view === "advisor" || view === "settings") && !model && (
+        {view === "advisor" && !model && !modelError && (
           <div className="center-screen">
-            <p>
-              {modelError
-                ? "请先重试读取模型配置。其他功能仍可使用。"
-                : "正在读取模型配置…"}
-            </p>
+            <p role="status">正在读取模型配置…</p>
           </div>
         )}
       </main>
@@ -544,14 +541,13 @@ function App() {
         inert={mobileNavOpen}
       >
         {mobileTabs.map((tab) => {
-          const active =
-            view === tab.view && (!tab.section || tab.section === factsSection);
+          const active = view === tab.id;
           return (
             <button
               key={tab.id}
               className={active ? "active" : ""}
               aria-current={active ? "page" : undefined}
-              onClick={() => navigate(tab.view, tab.section)}
+              onClick={() => navigate(tab.id)}
             >
               <tab.icon size={22} aria-hidden="true" />
               <span>{tab.label}</span>
@@ -560,9 +556,7 @@ function App() {
         })}
         <button
           ref={menuTrigger}
-          className={
-            mobileTabs.some((tab) => tab.view === view) ? "" : "active"
-          }
+          className={mobileTabs.some((tab) => tab.id === view) ? "" : "active"}
           aria-label="更多"
           aria-expanded={mobileNavOpen}
           aria-controls="main-navigation"

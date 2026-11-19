@@ -4,11 +4,8 @@ import {
   WalletCards,
   BookOpen,
   ChartNoAxesCombined,
-  ChartPie,
-  PiggyBank,
   CalendarDays,
 } from "lucide-react";
-import type { FactsSection } from "../features/portfolio/MyFacts";
 import { dividendQuestionSymbol } from "../features/watch/dividend-preview/route";
 
 export type View =
@@ -61,29 +58,10 @@ export const navGroups: {
   },
 ];
 
-export const mobileTabs: {
-  id: string;
-  view: View;
-  section?: FactsSection;
-  label: string;
-  icon: typeof MessageCircle;
-}[] = [
-  { id: "watch", view: "watch", label: "买点", icon: ChartNoAxesCombined },
-  {
-    id: "holdings",
-    view: "facts",
-    section: "holdings",
-    label: "持仓",
-    icon: ChartPie,
-  },
-  {
-    id: "savings",
-    view: "facts",
-    section: "savings",
-    label: "存款",
-    icon: PiggyBank,
-  },
-  { id: "advisor", view: "advisor", label: "问答", icon: MessageCircle },
+export const mobileTabs: (typeof navGroups)[number]["items"] = [
+  { id: "watch", label: "观察", icon: ChartNoAxesCombined },
+  { id: "facts", label: "资产", icon: WalletCards },
+  { id: "advisor", label: "问答", icon: MessageCircle },
 ];
 
 export const viewLabels: Record<View, string> = {

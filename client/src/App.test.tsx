@@ -388,8 +388,7 @@ it("closes the more-navigation sheet with Escape and restores focus without chan
   expect(screen.getByRole("button", { name: "测试恢复数据" })).toBeTruthy();
 });
 
-it("opens holdings and savings sections from the mobile tab bar", async () => {
-  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+it("uses one mobile asset entry for both holdings and savings", async () => {
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
     emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
@@ -401,31 +400,21 @@ it("opens holdings and savings sections from the mobile tab bar", async () => {
   });
   render(<App />);
   const tabs = await screen.findByRole("navigation", { name: "快捷导航" });
-  fireEvent.click(within(tabs).getByRole("button", { name: "存款" }));
+  const assets = within(tabs).getByRole("button", { name: "资产" });
+  fireEvent.click(assets);
   await screen.findByRole("heading", { name: "我的情况" });
-  expect(
-    screen
-      .getByRole("tab", { name: "存款与收支" })
-      .getAttribute("aria-selected"),
-  ).toBe("true");
-  expect(
-    within(tabs)
-      .getByRole("button", { name: "存款" })
-      .getAttribute("aria-current"),
-  ).toBe("page");
-  fireEvent.click(within(tabs).getByRole("button", { name: "持仓" }));
-  await waitFor(() =>
-    expect(
-      screen
-        .getByRole("tab", { name: "投资持仓" })
-        .getAttribute("aria-selected"),
-    ).toBe("true"),
+  expect(screen.getByRole("main", { name: "我的情况" })).toBe(
+    document.activeElement,
   );
   expect(
-    within(tabs)
-      .getByRole("button", { name: "存款" })
-      .hasAttribute("aria-current"),
-  ).toBe(false);
+    screen.getByRole("tab", { name: "投资持仓", selected: true }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
+  expect(
+    screen.getByRole("tab", { name: "存款与收支", selected: true }),
+  ).toBeTruthy();
+  expect(assets.getAttribute("aria-current")).toBe("page");
+  expect(window.location.hash).toBe("#facts");
 });
 
 it("combines reference materials, reviews and rules under one page with tab-level activity", async () => {
@@ -687,7 +676,7 @@ it("keeps the draft guard when selecting the current page again", async () => {
   expect(screen.getByDisplayValue("尚未保存的方法论草稿")).toBeTruthy();
 });
 
-it("preserves the income draft guard when a mobile tab changes only the facts section", async () => {
+it("preserves the income draft guard when selecting the current mobile asset entry", async () => {
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   window.history.replaceState(null, "", "#facts");
@@ -703,7 +692,7 @@ it("preserves the income draft guard when a mobile tab changes only the facts se
     target: { value: "12345" },
   });
   const mobile = screen.getByRole("navigation", { name: "快捷导航" });
-  fireEvent.click(within(mobile).getByRole("button", { name: "存款" }));
+  fireEvent.click(within(mobile).getByRole("button", { name: "资产" }));
   expect(confirm).not.toHaveBeenCalled();
   expect(
     (screen.getByRole("spinbutton", { name: /月收入/ }) as HTMLInputElement)

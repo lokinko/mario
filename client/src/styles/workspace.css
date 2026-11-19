@@ -791,6 +791,7 @@ strong {
 .settings-link.active {
   color: var(--text-1);
   background: var(--sidebar-active);
+  box-shadow: inset 3px 0 var(--brand);
   font-weight: 600;
 }
 .sidebar nav button.active > svg,
@@ -828,13 +829,6 @@ strong {
   margin: 0 auto;
   max-width: 1440px;
   padding: var(--space-7) var(--space-7) var(--space-8);
-  animation: page-in var(--duration-enter) var(--ease) backwards;
-}
-@keyframes page-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
 }
 .page.narrow {
   max-width: 960px;
@@ -873,12 +867,10 @@ strong {
 }
 .page-header h1 {
   margin: 0;
-  letter-spacing: -0.01em;
   color: var(--text-1);
-  font-family: var(--font-serif);
-  font-size: var(--fs-figure);
-  font-weight: 500;
-  line-height: 1.35;
+  font-size: clamp(24px, 2.6vw, 34px);
+  font-weight: 650;
+  line-height: 1.25;
 }
 .page-header p {
   margin: var(--space-1) 0 0;
@@ -1170,20 +1162,29 @@ th,
   color: var(--danger);
   margin-top: var(--space-1);
 }
-.sidebar-sync-state {
+.workspace-location strong {
+  color: var(--text-1);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+.workspace-mark {
+  display: none;
+  border-radius: var(--radius-sm);
+}
+.workspace-sync {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  border: 0;
-  background: transparent;
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--fs-caption);
-  color: var(--text-3);
-  text-align: left;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--fs-body-sm);
 }
-.sidebar-sync-state {
-  line-height: 1.5;
+.workspace-sync:hover {
+  background: var(--surface-hover);
 }
 .sync-indicator {
   display: inline-block;
@@ -1201,12 +1202,6 @@ th,
 .sync-syncing .sync-indicator {
   background: var(--text-3);
   animation: pulse 1.2s ease-in-out infinite;
-}
-.mobile-sync {
-  background: transparent;
-  border: 0;
-  padding: var(--space-3);
-  margin-left: auto;
 }
 .toast {
   position: fixed;
@@ -1613,152 +1608,87 @@ input[type="number"] {
 .settings-page [id] {
   scroll-margin-top: calc(var(--chrome-height) + var(--space-6));
 }
-.login-brand {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  align-self: stretch;
-  justify-self: stretch;
-  padding: var(--space-8);
-  background:
-    radial-gradient(
-      90% 70% at 15% 100%,
-      color-mix(in srgb, var(--brand) 16%, transparent) 0%,
-      transparent 60%
-    ),
-    radial-gradient(
-      70% 50% at 100% 0%,
-      color-mix(in srgb, var(--accent) 14%, transparent) 0%,
-      transparent 60%
-    ),
-    var(--sidebar-bg);
-  color: var(--text-1);
-  border-right: 1px solid var(--line);
+.web-access {
+  width: min(100% - 2 * var(--space-7), 1088px);
+  min-height: 100dvh;
+  margin-inline: auto;
+  padding-block: var(--space-7) var(--space-8);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 408px);
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  gap: var(--space-6) clamp(32px, 8vw, 112px);
 }
-.login-brand strong {
-  font-family: var(--font-serif);
-  font-size: var(--fs-figure);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-.login-brand p {
-  color: var(--text-3);
-  line-height: 1.9;
-}
-.login-wordmark,
-.login-footnote {
+.login-wordmark {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--text-1);
+  font: 600 var(--fs-figure) / 1 var(--font-serif);
 }
 .login-wordmark img {
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
-.login-story {
-  width: 100%;
-  max-width: 440px;
-  margin-block: var(--space-8);
+.login-intro h2 {
+  margin: 0;
+  color: var(--text-1);
+  font-size: clamp(30px, 4.3vw, 58px);
+  line-height: 1.2;
+  font-weight: 650;
 }
-.login-kicker {
-  color: var(--brand);
-  font-size: var(--fs-caption);
-  letter-spacing: 0.08em;
-}
-.login-story h2 {
-  font-family: var(--font-serif);
-  font-size: 44px;
-  font-weight: 400;
-  line-height: 1.4;
-  letter-spacing: -0.01em;
-  margin: var(--space-4) 0;
+.login-intro p {
+  max-width: 28em;
+  margin: var(--space-3) 0 0;
+  color: var(--text-3);
+  line-height: 1.8;
 }
 .login-preview {
-  margin-top: var(--space-7);
-  padding: var(--space-5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
-  background: var(--material-pop);
-  -webkit-backdrop-filter: var(--material-blur);
-  backdrop-filter: var(--material-blur);
-  box-shadow: var(--shadow-lift);
-}
-.login-preview > div:first-child {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-4);
   align-items: center;
-  gap: var(--space-2);
-  color: var(--brand);
+  margin-top: var(--space-6);
+  padding: var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--feature-bg);
+  color: var(--feature-text);
+  text-decoration: none;
+}
+.login-preview:hover {
+  border-color: var(--feature-muted);
+}
+.login-preview span {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--feature-muted);
   font-size: var(--fs-body-sm);
 }
-.login-preview > div:first-child > span {
-  flex: 1;
+.login-form {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
 }
-.login-preview-chart svg {
-  width: 100%;
-  display: block;
-  margin-block: var(--space-3);
-}
-.login-chart-grid {
-  stroke: var(--line);
-  stroke-dasharray: 4 5;
-}
-.login-chart-line {
-  stroke: var(--brand);
-  stroke-width: 2.5;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  stroke-dasharray: 600;
-  animation: line-draw 1.6s var(--ease) 0.2s backwards;
-}
-@keyframes line-draw {
-  from {
-    stroke-dashoffset: 600;
-  }
-}
-.login-preview > span,
-.login-footnote {
-  color: var(--text-3);
-  font-size: var(--fs-caption);
-}
-.login-heading h1 {
-  font-family: var(--font-serif);
-  font-size: 30px;
-  font-weight: 500;
-  margin: var(--space-2) 0;
-  color: var(--text-1);
-}
-.login-heading p {
+.login-form h1 {
   margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-figure);
+  line-height: 1.3;
 }
-.web-access {
+.login-form :is(.ant-btn-primary, .ant-input) {
+  min-height: 42px;
+}
+.login-status {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  grid-template-columns: 46% minmax(0, 1fr);
-  gap: var(--space-8);
-  padding: 0;
-  background: var(--bg);
-}
-.web-access form {
-  width: min(calc(100% - 48px), 408px);
-  display: grid;
-  gap: var(--space-4);
-  background: transparent;
-  animation: page-in 420ms var(--ease) backwards;
-  padding: var(--space-4);
-  justify-self: center;
-  margin: var(--space-6);
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-.web-access .ant-btn-primary {
-  height: 42px;
-}
-.web-access .ant-input {
-  height: 42px;
-  margin-top: var(--space-2);
-  border-radius: var(--radius-sm);
 }
 .timeline-date {
   display: flex;
@@ -1826,7 +1756,14 @@ input[type="number"] {
 }
 @media (max-width: 900px) {
   .workspace-bar {
+    padding-inline: var(--space-4);
+    padding-top: env(safe-area-inset-top);
+  }
+  .workspace-context :is(.workspace-home, .workspace-location > svg) {
     display: none;
+  }
+  .workspace-mark {
+    display: block;
   }
   .page {
     padding: var(--space-4) var(--space-4) var(--space-8);
@@ -1847,11 +1784,25 @@ input[type="number"] {
     top: var(--chrome-height);
   }
   .web-access {
-    grid-template-columns: 1fr;
-    gap: 0;
+    width: min(100% - 2 * var(--space-4), 480px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    align-content: start;
+    gap: var(--space-5);
+    padding-top: max(var(--space-4), env(safe-area-inset-top));
   }
-  .login-brand {
-    display: none;
+  .login-wordmark {
+    padding-bottom: var(--space-3);
+  }
+  .login-intro h2 {
+    font-size: var(--fs-figure);
+  }
+  .login-preview {
+    margin-top: var(--space-3);
+    padding: var(--space-4);
+  }
+  .login-form {
+    padding: var(--space-4);
   }
   .app-skeleton {
     grid-template-columns: 1fr;

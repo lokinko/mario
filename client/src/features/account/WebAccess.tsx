@@ -11,8 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import {
-  ChartNoAxesCombined,
-  ArrowUpRight,
+  ArrowRight,
   BookOpen,
   LoaderCircle,
   LogOut,
@@ -307,7 +306,7 @@ export function WebAccess({
   }, [connected]);
   if (completingOpenAi)
     return (
-      <div className="web-access">
+      <div className="login-status">
         <p role="status">正在完成 ChatGPT 登录…</p>
       </div>
     );
@@ -340,55 +339,32 @@ export function WebAccess({
     );
   return (
     <div className="web-access">
-      <aside className="login-brand">
-        <div className="login-wordmark">
-          <img
-            src={`${import.meta.env.BASE_URL}mario-mark.svg`}
-            width="36"
-            height="36"
-            alt=""
-          />
-          <strong>mario</strong>
-        </div>
-        <div className="login-story">
-          <span className="login-kicker">你的个人投资工作台</span>
-          <h2>
-            让每一次判断，
-            <br />
-            都有据可依。
-          </h2>
-          <p>
-            照看认可的公司，记录真实的交易。
-            <br />
-            在长期观察中，形成自己的投资判断。
-          </p>
-          <div className="login-preview" aria-hidden="true">
+      <header className="login-wordmark">
+        <img
+          src={`${import.meta.env.BASE_URL}mario-mark.svg`}
+          width="36"
+          height="36"
+          alt=""
+        />
+        <strong>mario</strong>
+      </header>
+      <section className="login-intro" aria-labelledby="login-intro-title">
+        <h2 id="login-intro-title">个人投资工作台</h2>
+        <p>跟踪关注的公司，记录真实交易，带着资料讨论投资判断。</p>
+        {publicPreviewHref && !addingAccount && (
+          <a className="login-preview" href={publicPreviewHref}>
+            <BookOpen size={21} aria-hidden="true" />
             <div>
-              <ChartNoAxesCombined size={20} />
-              <span>观察 · 等待 · 复盘</span>
-              <ArrowUpRight size={18} />
+              <strong>免登录查看红利观察</strong>
+              <span>查 A 股历史分红与近一年股价</span>
             </div>
-            <div className="login-preview-chart">
-              <svg viewBox="0 0 360 120" fill="none">
-                <path
-                  className="login-chart-grid"
-                  d="M0 30H360M0 60H360M0 90H360"
-                />
-                <path
-                  className="login-chart-line"
-                  d="M0 92L30 82L60 88L90 60L120 70L150 45L180 53L210 30L240 46L270 25L300 35L330 16L360 22"
-                />
-              </svg>
-            </div>
-            <span>核对依据，记录判断，先看风险。</span>
-          </div>
-        </div>
-        <div className="login-footnote">
-          <BookOpen size={15} /> 让耐心成为投资的一部分
-        </div>
-      </aside>
+            <ArrowRight size={18} aria-hidden="true" />
+          </a>
+        )}
+      </section>
       <form
-        className="panel"
+        className="login-form"
+        aria-labelledby="login-title"
         onSubmit={async (event) => {
           event.preventDefault();
           if (busy) return;
@@ -436,22 +412,7 @@ export function WebAccess({
           }
         }}
       >
-        <img
-          src={`${import.meta.env.BASE_URL}mario-mark.svg`}
-          width="48"
-          height="48"
-          alt=""
-        />
-        <div className="login-heading">
-          <span className="login-kicker">欢迎来到你的投资工作台</span>
-          <h1>{register ? "创建 mario 账号" : "登录 mario"}</h1>
-          <p>从今天的观察，继续长期的积累。</p>
-          {publicPreviewHref && !addingAccount && (
-            <a className="text-button" href={publicPreviewHref}>
-              免登录查看红利观察
-            </a>
-          )}
-        </div>
+        <h1 id="login-title">{register ? "创建 mario 账号" : "登录 mario"}</h1>
         <OpenAiSignIn disabled={busy} />
         {accounts.length > 0 && (
           <>

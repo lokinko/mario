@@ -115,22 +115,33 @@ function PlanCard({ row }: { row: DividendCalendarEntry }) {
   );
 }
 export function DividendCalendar() {
-  const [board, setBoard] = useState<DividendCalendarBoard | null>(null);
+  const [loaded, setLoaded] = useState<{
+    scope: DividendCalendarScope;
+    from: string;
+    board: DividendCalendarBoard;
+  }>();
   const [scope, setScope] = useState<DividendCalendarScope>("all");
   const [from, setFrom] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [failure, setFailure] = useState<{
+    scope: DividendCalendarScope;
+    from: string;
+    message: string;
+  }>();
+  const board =
+    loaded?.scope === scope && loaded.from === from ? loaded.board : null;
+  const error =
+    failure?.scope === scope && failure.from === from ? failure.message : "";
+  const navigationStart = from || loaded?.board.start;
   const guard = useRequestGuard();
   const load = async () => {
     const current = guard.begin();
+    setFailure(undefined);
     try {
       const next = await getDividendCalendar(scope, from);
-      if (current()) {
-        setBoard(next);
-        setError("");
-      }
+      if (current()) setLoaded({ scope, from, board: next });
     } catch (error) {
-      if (current()) setError(String(error));
+      if (current()) setFailure({ scope, from, message: String(error) });
     }
   };
   useEffect(() => {
@@ -138,7 +149,10 @@ export function DividendCalendar() {
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") void load();
     }, 30000);
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+      guard.invalidate();
+    };
   }, [scope, from]);
   const days = board
     ? Array.from({ length: 30 }, (_, i) => addDays(board.start, i))
@@ -155,7 +169,7 @@ export function DividendCalendar() {
       <PageHeader title="分红日历" />
       <div className="dividend-calendar">
         <div className="dividend-calendar-toolbar">
-          {board && (
+          {navigationStart && (
             <div className="dividend-calendar-navigation">
               <Button
                 autoInsertSpace={false}
@@ -173,7 +187,7 @@ export function DividendCalendar() {
                 title="前30天"
                 icon={<ChevronLeft size={18} />}
                 onClick={() => {
-                  setFrom(addDays(board.start, -30));
+                  setFrom((date) => addDays(date || navigationStart, -30));
                   setSelected(null);
                 }}
               />
@@ -183,11 +197,16 @@ export function DividendCalendar() {
                 title="后30天"
                 icon={<ChevronRight size={18} />}
                 onClick={() => {
-                  setFrom(addDays(board.start, 30));
+                  setFrom((date) => addDays(date || navigationStart, 30));
                   setSelected(null);
                 }}
               />
-              <h2>{rangeTitle(board.start, board.end)}</h2>
+              <h2>
+                {rangeTitle(
+                  navigationStart,
+                  board?.end ?? addDays(navigationStart, 29),
+                )}
+              </h2>
             </div>
           )}
           <Segmented

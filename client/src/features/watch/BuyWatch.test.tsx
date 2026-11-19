@@ -176,6 +176,19 @@ it("defaults to personal watches and switches all industry groups without privat
   expect(api.refreshWatchCatalog).not.toHaveBeenCalled();
 });
 
+it("lets users browse the directory while the personal watchlist is unavailable", async () => {
+  vi.mocked(api.getWatchBoard).mockRejectedValue(new Error("自选暂不可用"));
+  render(<BuyWatch {...props()} />);
+  fireEvent.click(await screen.findByRole("tab", { name: "银行 14" }));
+  expect(screen.getByRole("table", { name: "观察公司对比" })).toBeTruthy();
+  expect(screen.getByText(/自选读取失败/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "加入公司" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(api.saveWatch).not.toHaveBeenCalled();
+});
+
 it("clears search and filters on group changes while keeping sorting and cards", async () => {
   render(<BuyWatch {...props()} />);
   fireEvent.click(await screen.findByRole("tab", { name: "银行 14" }));
