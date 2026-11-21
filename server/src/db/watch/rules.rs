@@ -133,16 +133,15 @@ mod tests {
         drop(db);
         let reopened = account.reopen_from_old_release();
         assert_eq!(reopened.watch_rules().unwrap(), rules);
-        // Old-format backups without preferences restore the original defaults.
-        let mut old = backup.clone();
-        crate::db::tests::set_legacy_version(&mut old, 27);
-        old.tables
+        let mut without_rules = backup.clone();
+        without_rules
+            .tables
             .iter_mut()
             .find(|t| t.name == "settings")
             .unwrap()
             .rows
             .retain(|r| r[0] != SyncValue::Text("watch.rules".into()));
-        other.import_sync_data(&old).unwrap();
+        other.import_sync_data(&without_rules).unwrap();
         assert_eq!(other.watch_rules().unwrap(), WatchRules::default());
         assert_eq!(other.watch_entries().unwrap()[0].grid_plan, Some(grid));
         let mut corrupt = backup;

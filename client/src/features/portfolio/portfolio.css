@@ -35,9 +35,6 @@
 .facts-page .hero-changes strong {
   font-size: var(--fs-title);
 }
-.facts-page .hero-privacy {
-  color: var(--text-3);
-}
 .facts-tabs > .ant-tabs-nav {
   margin-bottom: var(--space-4);
 }
@@ -80,9 +77,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-}
-.facts-page .overview-caption {
-  font-size: var(--fs-caption);
 }
 .facts-page .holdings-toolbar {
   padding: var(--space-3) var(--space-4);

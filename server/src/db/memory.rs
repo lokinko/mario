@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn imports_reject_model_inferred_preferences_and_old_backups_restore_without_memory() {
+    fn imports_reject_model_inferred_preferences_and_outdated_backups() {
         let db = Database::test();
         db.conn().unwrap().execute_batch(
             "INSERT INTO analysis_memories VALUES ('m1','preference','modelInferred','偏好','理由','[\"a1\"]','原文',1,'2026-11-16T00:00:00+00:00','2026-11-16T00:00:00+00:00')",
@@ -389,9 +389,8 @@ mod tests {
         assert!(Database::test().import_sync_data(&exported).is_err());
 
         let mut old = exported;
-        crate::db::tests::set_legacy_version(&mut old, 30);
+        old.schema_version = 30;
         let target = Database::test();
-        target.import_sync_data(&old).unwrap();
-        assert!(target.memory_notes().unwrap().is_empty());
+        assert!(target.import_sync_data(&old).is_err());
     }
 }

@@ -373,16 +373,6 @@ mod attachment_tests {
         table.rows[0][1] = SyncValue::Text("wrong-parent".into());
         assert!(restored.import_sync_data(&corrupt).is_err());
         assert!(restored.research_attachment(&saved.id, &file.id).is_ok());
-        let mut legacy = dataset.clone();
-        super::super::tests::add_retired_tables(&mut legacy);
-        super::super::tests::strip_holding_details_for_legacy(&mut legacy);
-        crate::db::tests::set_legacy_version(&mut legacy, 12);
-        legacy.tables.retain(|t| t.name != "research_attachments");
-        restored.import_sync_data(&legacy).unwrap();
-        assert!(restored.research_evidence().unwrap()[0]
-            .attachments
-            .is_empty());
-        assert_eq!(restored.research_evidence().unwrap()[0].claim, "原文");
     }
 
     #[test]

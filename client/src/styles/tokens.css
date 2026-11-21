@@ -31,10 +31,12 @@
   --success: #3b6b4d;
   --success-tint: #e5eee6;
   --focus-ring: var(--brand);
-  --overlay: rgb(14 29 48 / 36%);
-  --material-bar: rgb(237 241 246 / 88%);
+  --overlay: rgb(14 29 48 / 38%);
+  --material-bar: rgb(237 241 246 / 86%);
   --material-pop: rgb(255 255 255 / 92%);
   --material-blur: blur(20px) saturate(1.5);
+  --scrollbar-thumb: rgb(83 102 123 / 24%);
+  --scrollbar-thumb-hover: rgb(83 102 123 / 44%);
   --font-sans:
     "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
@@ -67,13 +69,13 @@
   --chrome-height: 56px;
   --tabbar-height: 0px;
   --shadow-card:
-    0 1px 2px rgb(54 42 26 / 4%), 0 2px 8px -4px rgb(54 42 26 / 6%);
+    0 1px 2px rgb(18 35 58 / 4%), 0 2px 8px -4px rgb(18 35 58 / 7%);
   --shadow-lift:
-    0 1px 2px rgb(54 42 26 / 5%), 0 10px 24px -12px rgb(54 42 26 / 18%);
+    0 1px 2px rgb(18 35 58 / 5%), 0 10px 24px -12px rgb(18 35 58 / 16%);
   --shadow-pop:
-    0 0 0 1px rgb(54 42 26 / 6%), 0 4px 10px -2px rgb(54 42 26 / 8%),
-    0 18px 40px -12px rgb(54 42 26 / 22%);
-  --shadow-drawer: -24px 0 64px -16px rgb(54 42 26 / 24%);
+    0 0 0 1px rgb(18 35 58 / 6%), 0 4px 10px -2px rgb(18 35 58 / 8%),
+    0 18px 40px -12px rgb(18 35 58 / 20%);
+  --shadow-drawer: -24px 0 64px -16px rgb(18 35 58 / 22%);
   --duration-hover: 140ms;
   --duration-enter: 280ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
@@ -137,10 +139,12 @@
     --danger-tint: #3b2522;
     --success: #7cb48f;
     --success-tint: #213027;
-    --overlay: rgb(8 7 6 / 55%);
+    --overlay: rgb(6 12 20 / 62%);
     --material-bar: rgb(19 30 43 / 88%);
     --material-pop: rgb(33 49 69 / 92%);
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 24%);
+    --scrollbar-thumb: rgb(159 177 200 / 22%);
+    --scrollbar-thumb-hover: rgb(159 177 200 / 40%);
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 26%);
     --shadow-lift:
       0 1px 2px rgb(0 0 0 / 30%), 0 12px 28px -12px rgb(0 0 0 / 50%);
     --shadow-pop:
@@ -178,10 +182,12 @@
   --danger-tint: #3b2522;
   --success: #7cb48f;
   --success-tint: #213027;
-  --overlay: rgb(8 7 6 / 55%);
+  --overlay: rgb(6 12 20 / 62%);
   --material-bar: rgb(19 30 43 / 88%);
   --material-pop: rgb(33 49 69 / 92%);
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 24%);
+  --scrollbar-thumb: rgb(159 177 200 / 22%);
+  --scrollbar-thumb-hover: rgb(159 177 200 / 40%);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 26%);
   --shadow-lift: 0 1px 2px rgb(0 0 0 / 30%), 0 12px 28px -12px rgb(0 0 0 / 50%);
   --shadow-pop:
     0 0 0 1px rgb(255 255 255 / 6%), 0 18px 44px -12px rgb(0 0 0 / 60%);

@@ -1,9 +1,7 @@
 mod sync_format;
-#[cfg(test)]
-use sync_format::sync_specs_for_version;
 pub use sync_format::SyncDataset;
 #[cfg(test)]
-pub use sync_format::{SyncTable, SyncValue, SYNC_DATASET_SCHEMA_VERSION};
+pub use sync_format::{SyncValue, SYNC_DATASET_SCHEMA_VERSION};
 mod amounts;
 mod cash;
 mod corporate;
@@ -40,7 +38,6 @@ mod settings;
 mod user_access;
 mod user_records;
 mod watch;
-mod watch_grid_migration;
 pub(crate) use public_dividends::PublicDividends;
 pub(crate) use public_watch::PublicWatch;
 mod options;

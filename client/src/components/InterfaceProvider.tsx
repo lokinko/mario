@@ -1,8 +1,9 @@
 import { ConfigProvider, theme as antTheme } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 const darkQuery = "(prefers-color-scheme: dark)";
+const buttonConfig = { autoInsertSpace: false };
 
 function resolveDark() {
   const mode = document.documentElement.dataset.theme;
@@ -65,21 +66,26 @@ export function InterfaceProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("mario:theme-change", sync);
     };
   }, []);
-  const { cardHeaderFontSize, ...antTokens } = palette;
-  return (
-    <ConfigProvider
-      locale={zhCN}
-      button={{ autoInsertSpace: false }}
-      theme={{
-        algorithm: dark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
-        token: antTokens,
-        components: {
-          Button: { primaryShadow: "none", defaultShadow: "none" },
-          Card: { headerFontSize: cardHeaderFontSize },
-          Tabs: { inkBarColor: antTokens.colorPrimary },
+
+  const themeConfig = useMemo(() => {
+    const { cardHeaderFontSize, ...antTokens } = palette;
+    return {
+      algorithm: dark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
+      token: antTokens,
+      components: {
+        Button: {
+          primaryShadow: "none",
+          defaultShadow: "none",
+          fontWeight: 500,
         },
-      }}
-    >
+        Card: { headerFontSize: cardHeaderFontSize },
+        Tabs: { inkBarColor: antTokens.colorPrimary },
+      },
+    };
+  }, [dark, palette]);
+
+  return (
+    <ConfigProvider locale={zhCN} button={buttonConfig} theme={themeConfig}>
       {children}
     </ConfigProvider>
   );

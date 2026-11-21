@@ -481,8 +481,6 @@ mod tests {
     async fn price_refresh_keeps_trade_quantities_costs_and_execution_records() {
         let db = db();
         let trade = crate::models::portfolio::HoldingTradeInput {
-            expected_cash_baseline: "00000000-0000-0000-0000-000000000001".into(),
-            settlement_mode: crate::models::portfolio::SettlementMode::Settle,
             request_id: uuid::Uuid::new_v4().to_string(),
             holding_id: String::new(),
             expected_revision: None,

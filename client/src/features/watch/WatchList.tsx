@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -34,7 +35,7 @@ const ruleMarker = (rule: RuleKey) => (
   </span>
 );
 
-export function WatchList({
+export const WatchList = memo(function WatchList({
   rows,
   held,
   busy,
@@ -211,80 +212,79 @@ export function WatchList({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.company.symbol}
-              className={row.watch?.alert ? "watch-unread" : ""}
-            >
-              <td data-label="公司">
-                <div className="watch-company-line">
-                  <button
-                    className="watch-company"
-                    onClick={() => onDetails(row)}
-                  >
-                    <strong>{row.company.name}</strong>
-                    <small>
-                      {row.company.symbol} ·{" "}
-                      {held.has(row.company.symbol) ? "已持有" : "未持有"}
-                    </small>
-                  </button>
-                  {pin(row)}
-                </div>
-                <small className="watch-row-date">
-                  {row.latest?.observedOn ?? "尚无行情"}
-                </small>
-              </td>
-              <td data-label="收盘价" className="watch-numeric">
-                {number(row.latest?.price)}
-              </td>
-              <td
-                data-label="TTM 股息率"
-                className={`watch-numeric rule-yield ${checks(row)[0] === true ? "watch-met" : ""}`}
+          {rows.map((row) => {
+            const refPrice = row.dividendPrices.find(
+              (p) => p.yieldPct === minYield,
+            )?.price;
+            return (
+              <tr
+                key={row.company.symbol}
+                className={row.watch?.alert ? "watch-unread" : ""}
               >
-                <span className="watch-value">
-                  {number(row.latest?.yieldPct, "%")}
-                </span>
-              </td>
-              <td
-                data-label={`${minYield}% 参考价`}
-                className="watch-numeric rule-yield"
-              >
-                {row.dividendPrices.find((p) => p.yieldPct === minYield)
-                  ?.price != null
-                  ? formatAmount(
-                      row.dividendPrices.find((p) => p.yieldPct === minYield)!
-                        .price,
-                    )
-                  : "—"}
-              </td>
-              <td
-                data-label={`距日线${referenceLabels[rules.daily.reference]}`}
-                className={`watch-numeric rule-daily ${row.latest?.daily?.matchesRule ? "watch-met" : ""}`}
-              >
-                <span className="watch-value">
-                  {distance(row.latest?.daily?.distancePct)}
-                </span>
-              </td>
-              <td
-                data-label={`距周线${referenceLabels[rules.weekly.reference]}`}
-                className={`watch-numeric rule-weekly ${row.latest?.weekly?.matchesRule ? "watch-met" : ""}`}
-              >
-                <span className="watch-value">
-                  {distance(row.latest?.weekly?.distancePct)}
-                </span>
-              </td>
-              <td data-label="状态">
-                <div className="watch-row-status">
-                  {state(row)}
-                  {alert(row)}
-                  {!row.watch && add(row)}
-                </div>
-                {issue(row)}
-              </td>
-            </tr>
-          ))}
+                <td data-label="公司">
+                  <div className="watch-company-line">
+                    <button
+                      className="watch-company"
+                      onClick={() => onDetails(row)}
+                    >
+                      <strong>{row.company.name}</strong>
+                      <small>
+                        {row.company.symbol} ·{" "}
+                        {held.has(row.company.symbol) ? "已持有" : "未持有"}
+                      </small>
+                    </button>
+                    {pin(row)}
+                  </div>
+                  <small className="watch-row-date">
+                    {row.latest?.observedOn ?? "尚无行情"}
+                  </small>
+                </td>
+                <td data-label="收盘价" className="watch-numeric">
+                  {number(row.latest?.price)}
+                </td>
+                <td
+                  data-label="TTM 股息率"
+                  className={`watch-numeric rule-yield ${checks(row)[0] === true ? "watch-met" : ""}`}
+                >
+                  <span className="watch-value">
+                    {number(row.latest?.yieldPct, "%")}
+                  </span>
+                </td>
+                <td
+                  data-label={`${minYield}% 参考价`}
+                  className="watch-numeric rule-yield"
+                >
+                  {refPrice != null ? formatAmount(refPrice) : "—"}
+                </td>
+                <td
+                  data-label={`距日线${referenceLabels[rules.daily.reference]}`}
+                  className={`watch-numeric rule-daily ${row.latest?.daily?.matchesRule ? "watch-met" : ""}`}
+                >
+                  <span className="watch-value">
+                    {distance(row.latest?.daily?.distancePct)}
+                  </span>
+                </td>
+                <td
+                  data-label={`距周线${referenceLabels[rules.weekly.reference]}`}
+                  className={`watch-numeric rule-weekly ${row.latest?.weekly?.matchesRule ? "watch-met" : ""}`}
+                >
+                  <span className="watch-value">
+                    {distance(row.latest?.weekly?.distancePct)}
+                  </span>
+                </td>
+                <td data-label="状态">
+                  <div className="watch-row-status">
+                    {state(row)}
+                    {alert(row)}
+                    {!row.watch && add(row)}
+                  </div>
+                  {issue(row)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
-}
+});

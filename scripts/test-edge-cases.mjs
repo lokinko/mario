@@ -187,7 +187,6 @@ suite.add("cross-tenant-idor-matrix", async () => {
     account: "券商A",
     externalId: "idor-trade-1",
     note: "",
-    settlementMode: "history",
   };
   const afterTrade = (
     await owner.expectOk("/holding-trades", { method: "POST", body: tradeReq })
@@ -491,7 +490,6 @@ suite.add("financial-ledger-adversarial-invariants", async () => {
     account: "对抗券商",
     externalId: "adv-buy-1",
     note: "",
-    settlementMode: "history",
   };
   let snap = (await user.expectOk("/holding-trades", { method: "POST", body: buyReq })).json;
   const stockId = snap.holdingTrades[0].holdingId;
@@ -659,7 +657,6 @@ suite.add("financial-ledger-adversarial-invariants", async () => {
         account: "对抗券商",
         externalId: "adv-opt-1",
         note: "",
-        settlementMode: "history",
       },
     })
   ).json;
@@ -1065,50 +1062,24 @@ suite.add("backup-corruption-rollback-and-static-caching", async () => {
   assert.deepEqual((await target.expectOk("/snapshot")).json.holdings, targetBefore.holdings);
   suite.count(4);
 
-  // 8d. Legacy v31 backup (without daily_review_runs / daily_review_items) restores cleanly to fresh account.
-  const legacyReader = await ApiAccount.register(server.base, {
-    tag: "legacy-v31",
+  // 8d. Outdated schemaVersion backup is rejected without mutation; current backup restores cleanly.
+  const freshReader = await ApiAccount.register(server.base, {
+    tag: "backup-restore",
     secrets: forbiddenGlobals,
   });
-  const legacyV31 = structuredClone(validBackup);
-  legacyV31.schemaVersion = 31;
-  legacyV31.tables = [
-    ...legacyV31.tables.filter(
-      (t) => t.name !== "daily_review_runs" && t.name !== "daily_review_items",
-    ),
-    {
-      name: "system_reviews",
-      columns: ["id", "payload", "snapshot", "next_review_date", "created_at"],
-      rows: [],
-    },
-    {
-      name: "investment_rules",
-      columns: [
-        "id",
-        "category",
-        "statement",
-        "trigger",
-        "rationale",
-        "active",
-        "source_review_id",
-        "revision",
-        "created_at",
-        "updated_at",
-      ],
-      rows: [],
-    },
-    {
-      name: "investment_rule_revisions",
-      columns: ["rule_id", "revision", "payload", "changed_at"],
-      rows: [],
-    },
-  ];
-  await legacyReader.expectOk("/data/import", { method: "POST", body: legacyV31 });
-  const restoredSnap = (await legacyReader.expectOk("/snapshot")).json;
+  const retiredBackup = structuredClone(validBackup);
+  retiredBackup.schemaVersion = 31;
+  await freshReader.assertRejectedWithoutMutation(
+    "/data/import",
+    { method: "POST", body: retiredBackup },
+    [400],
+  );
+  await freshReader.expectOk("/data/import", { method: "POST", body: validBackup });
+  const restoredSnap = (await freshReader.expectOk("/snapshot")).json;
   assert.equal(restoredSnap.holdings[0].marketValue, 66666);
-  const restoredReview = (await legacyReader.expectOk("/daily-review")).json;
+  const restoredReview = (await freshReader.expectOk("/daily-review")).json;
   assert.equal(restoredReview.settings.scheduleTime, "08:15");
-  suite.count(2);
+  suite.count(3);
 
   // 8e. Static build split & Cache-Control boundary check when client/dist is present.
   if (existsSync(join(webDir, "assets"))) {

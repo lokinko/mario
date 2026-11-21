@@ -71,7 +71,6 @@
   margin-top: var(--space-4);
 }
 .watch-actions,
-.watch-heading,
 .watch-section-title,
 .watch-result-meta {
   display: flex;
@@ -299,17 +298,6 @@
 .watch-overview th[aria-sort] .watch-sort-header {
   color: var(--brand);
 }
-.watch-pinned,
-.watch-heading > div > .watch-pinned {
-  display: inline-block;
-  margin: 4px 6px 0 0;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: var(--brand-tint);
-  color: var(--brand);
-  font-size: 11px;
-  white-space: nowrap;
-}
 .watch-company {
   display: block;
   text-align: left;
@@ -452,37 +440,6 @@
   white-space: nowrap;
   margin-left: 6px;
   font-size: 12px;
-}
-.watch-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-.watch-card {
-  min-width: 0;
-}
-.watch-heading h3 {
-  margin: 0 0 4px;
-  color: var(--text-1);
-  font-family: var(--font-serif);
-  font-size: 18px;
-  font-weight: 500;
-}
-.watch-heading small {
-  margin-left: 8px;
-  color: var(--text-3);
-  font-size: 12px;
-  font-weight: 400;
-}
-.watch-heading > div > span {
-  font-size: 12px;
-  color: var(--text-3);
-}
-.watch-card-alert:empty {
-  display: none;
-}
-.watch-card-alert {
-  margin-top: 8px;
 }
 .watch-metrics {
   display: grid;
@@ -692,20 +649,6 @@
   overflow-wrap: anywhere;
   line-height: 1.7;
 }
-.watch-card .watch-thesis {
-  font-size: 12px;
-  color: var(--text-2);
-  border-left: 2px solid var(--line-strong);
-  padding-left: 10px;
-}
-.watch-card .watch-actions {
-  padding-top: 12px;
-  margin-top: 14px;
-  border-top: 1px solid var(--line);
-}
-.watch-card .watch-actions button {
-  font-size: 12px;
-}
 .watch-detail-body {
   font-size: 13px;
 }
@@ -768,11 +711,6 @@
     animation: none;
   }
 }
-@media (max-width: 1100px) {
-  .watch-list {
-    grid-template-columns: 1fr;
-  }
-}
 @media (max-width: 960px) and (min-width: 641px) {
   .watch-overview th,
   .watch-overview td {
@@ -816,9 +754,6 @@
     width: 100%;
     min-width: 0;
     font-size: 12px;
-  }
-  .watch-view-toggle {
-    justify-self: end;
   }
   .watch-overview {
     background: transparent !important;
@@ -900,10 +835,6 @@
   }
   .watch-metrics span {
     font-size: 10px;
-  }
-  .watch-heading h3 small {
-    display: block;
-    margin: 5px 0 0;
   }
   .watch-section-title {
     gap: 8px;

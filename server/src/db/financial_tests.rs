@@ -7,8 +7,8 @@ use crate::models::{
     },
 };
 
-fn buy(symbol: &str, mode: &str, date: &str) -> HoldingTradeInput {
-    serde_json::from_value(serde_json::json!({"expectedCashBaseline":"00000000-0000-0000-0000-000000000001","requestId":Uuid::new_v4().to_string(),"newHolding":{"name":symbol,"symbol":symbol,"assetClass":"股票","currency":"CNY"},"kind":"buy","occurredOn":date,"sequence":1,"quantity":"10","price":"10","grossAmount":"100","fees":"0","taxes":"0","account":"测试券商","settlementMode":mode})).unwrap()
+fn buy(symbol: &str, _mode: &str, date: &str) -> HoldingTradeInput {
+    serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"newHolding":{"name":symbol,"symbol":symbol,"assetClass":"股票","currency":"CNY"},"kind":"buy","occurredOn":date,"sequence":1,"quantity":"10","price":"10","grossAmount":"100","fees":"0","taxes":"0","account":"测试券商"})).unwrap()
 }
 fn funded() -> Database {
     let db = Database::test();
@@ -34,7 +34,6 @@ fn sell_all(db: &Database, snapshot: &Snapshot, id: &str, price: &str) -> Snapsh
     input.new_holding = None;
     input.holding_id = id.into();
     input.expected_revision = Some(snapshot.holding_revisions[id].clone());
-    input.expected_cash_baseline = snapshot.cash_balances[0].baseline_id.clone();
     input.kind = crate::models::portfolio::TradeKind::Sell;
     input.price = price.into();
     input.gross_amount = (crate::models::decimal::parse(price).unwrap()
@@ -47,9 +46,8 @@ fn sell_all(db: &Database, snapshot: &Snapshot, id: &str, price: &str) -> Snapsh
 #[test]
 fn deleting_whole_position_nets_cash_preserves_evidence_and_replays_after_restore() {
     let db = funded();
-    let s = confirm(&db, "999999999999999.99");
-    let mut input = buy("REMOVE", "settle", "2026-01-01");
-    input.expected_cash_baseline = s.cash_balances[0].baseline_id.clone();
+    let _ = confirm(&db, "999999999999999.99");
+    let input = buy("REMOVE", "settle", "2026-01-01");
     let s = db.save_holding_trade(&input).unwrap();
     let id = s.holding_trades[0].holding_id.clone();
     let s = sell_all(&db, &s, &id, "10");
@@ -206,7 +204,7 @@ fn trade_lifecycle_stays_decoupled_from_deposit_accounts() {
     let s = db.save_holding_trade(&history).unwrap();
     assert_eq!(s.cash_balances[0].amount, "1000.01");
     let t = s.holding_trades[0].clone();
-    let edit: HoldingTradeUpdateInput = serde_json::from_value(serde_json::json!({"settlementMode":"history","expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":"1","taxes":"0","account":t.account,"note":"按成交单更正"})).unwrap();
+    let edit: HoldingTradeUpdateInput = serde_json::from_value(serde_json::json!({"expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":"1","taxes":"0","account":t.account,"note":"按成交单更正"})).unwrap();
     let s = db.update_holding_trade(&t.id, &edit).unwrap();
     assert_eq!(s.cash_balances[0].amount, "1000.01");
     assert!(!s.cash_balances[0].needs_reconciliation);
@@ -386,7 +384,7 @@ fn cash_confirmation_updates_do_not_block_or_conflict_with_trades() {
     assert_eq!(s.cash_balances[0].amount, "1000.01");
     let s = confirm(&db, "900.01");
     let t = &s.holding_trades[0];
-    let edit: HoldingTradeUpdateInput = serde_json::from_value(serde_json::json!({"settlementMode":"history","expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":t.fees,"taxes":t.taxes,"account":t.account,"note":"仅补充成交说明"})).unwrap();
+    let edit: HoldingTradeUpdateInput = serde_json::from_value(serde_json::json!({"expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":t.fees,"taxes":t.taxes,"account":t.account,"note":"仅补充成交说明"})).unwrap();
     let s = db.update_holding_trade(&t.id, &edit).unwrap();
     assert_eq!(s.cash_balances[0].amount, "900.01");
     assert!(!s.cash_balances[0].needs_reconciliation);

@@ -312,8 +312,9 @@ impl Database {
                 return Ok(());
             }
             // Unknown data is not evidence that a price signal ended.
+            // Strip heavy evidence blobs in PostgreSQL so alert detection never loads 5y series.
             let mut stmt = tx.prepare(
-                "SELECT payload FROM watch_observations WHERE symbol=$1 ORDER BY day DESC",
+                "SELECT (payload::jsonb - 'trends' - 'dividendHistory')::text FROM watch_observations WHERE symbol=$1 ORDER BY day DESC",
             )?;
             let payloads = stmt
                 .query_map([symbol], |r| r.get::<_, String>(0))?
@@ -349,32 +350,6 @@ impl Database {
         tx.commit()?;
         Ok(())
     }
-}
-
-/// Only for tenants/backups with the retired two-lower-band payload. Remove when
-/// those backups are no longer supported. The caller owns the migration/import transaction.
-pub(super) fn migrate_rules(conn: &crate::storage::Connection) -> AppResult<()> {
-    let mut stmt = conn.prepare("SELECT symbol,day,payload FROM watch_observations WHERE (payload::jsonb->'daily' ? 'nearLower') OR (payload::jsonb->'weekly' ? 'nearLower')")?;
-    let rows = stmt
-        .query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    drop(stmt);
-    for (symbol, day, payload) in rows {
-        let mut observation: Observation = serde_json::from_str(&payload)?;
-        observation.apply_rules(&Default::default());
-        conn.execute("UPDATE watch_observations SET payload=$3,alert=0,read_at=NULL WHERE symbol=$1 AND day=$2", params![symbol, day, serde_json::to_string(&observation)?])?;
-        conn.execute(
-            "UPDATE watch_entries SET checked_for=NULL WHERE symbol=$1",
-            [symbol],
-        )?;
-    }
-    Ok(())
 }
 
 pub(super) fn validate(conn: &crate::storage::Connection) -> AppResult<()> {
@@ -571,77 +546,6 @@ mod tests {
     }
 
     #[test]
-    fn retired_weekly_lower_payload_migrates_once_and_old_backups_cannot_restore_it() {
-        let account = crate::db::TestAccount::new();
-        let db = account.open();
-        let entry = entry(&db);
-        let (mut data, day) = market_fixture();
-        for bar in data.bars.iter_mut().take(80) {
-            bar.adjusted_close = Some(200.0);
-        }
-        let observation = evaluate(
-            &Default::default(),
-            &entry.input.symbol,
-            &data,
-            day,
-            "2026-07-03T12:00:00Z".into(),
-        );
-        let mut old = serde_json::to_value(&observation).unwrap();
-        old["status"] = serde_json::json!("waiting");
-        for name in ["daily", "weekly"] {
-            let band = old[name].as_object_mut().unwrap();
-            band.remove("reference");
-            band.remove("matchesRule");
-            band.insert("nearLower".into(), serde_json::json!(name == "daily"));
-            band.insert("distancePct".into(), serde_json::json!(999.0));
-        }
-        db.conn().unwrap().execute("INSERT INTO watch_observations(symbol,day,payload,alert,read_at) VALUES ($1,$2,$3,1,NULL)", params![entry.input.symbol,day.to_string(),old.to_string()]).unwrap();
-        let mut backup = db.export_sync_data().unwrap();
-        crate::db::tests::set_legacy_version(&mut backup, 25);
-        drop(db);
-        let db = account.reopen_from_old_release();
-        let board = db.watch_board(day).unwrap();
-        let mut summary = observation.clone();
-        summary.trends = None;
-        summary.dividend_history = None;
-        assert_eq!(board.rows[0].latest, Some(summary.clone()));
-        assert_eq!(board.weekly, vec![summary]);
-        assert_eq!(
-            db.watch_row(&entry.input.symbol).unwrap().latest,
-            Some(observation.clone())
-        );
-        assert!(!board.rows[0].alert);
-        assert_eq!(board.rows[0].checked_for, None);
-        let payload: String = db
-            .conn()
-            .unwrap()
-            .query_row("SELECT payload FROM watch_observations", [], |r| r.get(0))
-            .unwrap();
-        assert!(!payload.contains("nearLower"));
-        let revision = db.revision().unwrap();
-        drop(db);
-        let db = account.open();
-        assert_eq!(db.revision().unwrap(), revision);
-        let target = Database::test();
-        target.import_sync_data(&backup).unwrap();
-        assert_eq!(
-            target.watch_row(&entry.input.symbol).unwrap().latest,
-            Some(observation)
-        );
-        assert!(!target.watch_board(day).unwrap().rows[0].alert);
-        // A failed migration/import restores the target's existing observations.
-        let before = target.export_sync_data().unwrap();
-        let table = backup
-            .tables
-            .iter_mut()
-            .find(|t| t.name == "watch_observations")
-            .unwrap();
-        old["price"] = serde_json::json!("invalid");
-        table.rows[0][2] = super::super::SyncValue::Text(old.to_string());
-        assert!(target.import_sync_data(&backup).is_err());
-        assert_eq!(target.export_sync_data().unwrap().tables, before.tables);
-    }
-    #[test]
     fn dividend_history_survives_migration_backup_and_corrections_without_duplicates() {
         let account = crate::db::TestAccount::new();
         let db = account.open();
@@ -712,16 +616,6 @@ mod tests {
             db.watch_dividends(&entry.input.symbol).unwrap(),
             Some(history)
         );
-        // v24 observations cannot prove a complete raw event history: fetch it again, never infer zero.
-        let mut old = backup.clone();
-        crate::db::tests::set_legacy_version(&mut old, 24);
-        old.tables.retain(|t| t.name != "watch_dividends");
-        target.import_sync_data(&old).unwrap();
-        assert!(target
-            .watch_dividends(&entry.input.symbol)
-            .unwrap()
-            .is_none());
-        assert_eq!(target.watch_entries().unwrap(), vec![entry.clone()]);
         let mut corrupt = backup;
         let row = &mut corrupt
             .tables
@@ -733,10 +627,10 @@ mod tests {
         invalid.events[0].cash_per_ten = "-1".into();
         row[1] = super::super::SyncValue::Text(serde_json::to_string(&invalid).unwrap());
         assert!(target.import_sync_data(&corrupt).is_err());
-        assert!(target
-            .watch_dividends(&entry.input.symbol)
-            .unwrap()
-            .is_none());
+        assert_eq!(
+            target.watch_dividends(&entry.input.symbol).unwrap(),
+            Some(older.clone())
+        );
         db.delete_watch(&entry.input.symbol).unwrap();
         db.save_watch_observation(&entry, None, &older.basis.fetched_at, day, Some(&older))
             .unwrap();
@@ -915,12 +809,6 @@ mod tests {
         assert!(other.watch_board(day).unwrap().rows[0]
             .grid_projection
             .is_none());
-        // v23 backups have no watch tables; restoring them deliberately restores an empty list.
-        let mut old = backup;
-        crate::db::tests::set_legacy_version(&mut old, 23);
-        old.tables.retain(|t| !t.name.starts_with("watch_"));
-        other.import_sync_data(&old).unwrap();
-        assert!(other.watch_entries().unwrap().is_empty());
     }
     #[test]
     fn corrupt_restore_rolls_back_and_failure_preserves_previous_observation() {

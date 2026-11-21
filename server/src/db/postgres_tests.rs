@@ -8,7 +8,7 @@ struct Tenant {
 }
 
 impl Tenant {
-    fn legacy() -> Self {
+    fn existing() -> Self {
         let url = std::env::var("MARIO_TEST_DATABASE_URL")
             .expect("set MARIO_TEST_DATABASE_URL to a disposable PostgreSQL database");
         let id = Uuid::new_v4();
@@ -35,10 +35,9 @@ impl Tenant {
             )
             .unwrap();
         drop(db);
-        // Old releases already have revision tracking, but not the newer table/column.
         tenant.sql(
             "DROP TABLE research_attachments;
-                    ALTER TABLE data_revision DROP COLUMN schema_version;",
+             ALTER TABLE data_revision DROP COLUMN schema_version;",
         );
         tenant
     }
@@ -63,114 +62,43 @@ impl Drop for Tenant {
 }
 
 #[test]
-fn postgres_canonicalizes_legacy_model_settings_without_rebinding_existing_credentials() {
-    let mut tenant = Tenant::legacy();
-    drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
-    tenant.sql(
-        "INSERT INTO settings(key,value) VALUES
-        ('model.provider','openai-compatible'),
-        ('model.base_url','https://current.example.test/v1'),
-        ('model.key_binding','openai-compatible https://original.example.test/v1'),
-        ('secret.model','encrypted-credential-preserved');
-        UPDATE data_revision SET schema_version=9 WHERE id=1;",
-    );
-    for _ in 0..2 {
-        let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
-        assert_eq!(
-            db.model_config().unwrap().provider,
-            crate::models::provider::ModelProviderKind::OpenaiResponses
-        );
-        assert_eq!(
-            db.setting("model.key_binding").unwrap().as_deref(),
-            Some("openai-responses https://original.example.test/v1")
-        );
-        assert_eq!(
-            db.setting("secret.model").unwrap().as_deref(),
-            Some("encrypted-credential-preserved")
-        );
-    }
-}
-
-#[test]
-fn postgres_upgrades_cash_preserves_accounts_and_migrates_cash_state_pk() {
-    let mut tenant = Tenant::legacy();
-    drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
-    tenant.sql("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,valuation_date,created_at,updated_at) VALUES
-        ('bank-a','','银行A','现金',100,0,0,'CNY','2026-01-01','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z'),
-        ('bank-b','','银行B','现金',23.45,0,0,'CNY','2026-01-01','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z');
-        DROP TABLE cash_state;
-        CREATE TABLE cash_state (currency TEXT PRIMARY KEY, holding_id TEXT NOT NULL, amount TEXT NOT NULL, baseline_id TEXT NOT NULL, confirmed_on TEXT NOT NULL, confirmed_at TEXT NOT NULL, needs_reconciliation INTEGER NOT NULL DEFAULT 0);
-        INSERT INTO cash_state VALUES ('CNY','bank-a','100','base-1','2026-01-01','2026-01-01T00:00:00Z',0);
-        UPDATE data_revision SET schema_version=19 WHERE id=1;");
-    for _ in 0..2 {
-        let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
-        let s = db.snapshot().unwrap();
-        assert_eq!(s.holdings.len(), 2);
-        assert_eq!(s.cash_balances.len(), 2);
-        assert_eq!(s.total_value, 123.45);
-        assert!(s.holdings.iter().any(|h| h.name == "银行A"));
-        assert!(s.holdings.iter().any(|h| h.name == "银行B"));
-    }
-}
-
-#[test]
-fn postgres_upgrades_remove_retired_tables_and_preserve_active_data() {
-    let mut tenant = Tenant::legacy();
-    drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
-    tenant.sql("CREATE TABLE goals (id TEXT PRIMARY KEY);
-        CREATE TABLE portfolio_events (id TEXT PRIMARY KEY, reversal_of_event_id TEXT REFERENCES portfolio_events(id));
-        CREATE TABLE memory_preferences (memory_id TEXT PRIMARY KEY, preference TEXT, note TEXT, updated_at TEXT);
-        INSERT INTO memory_preferences VALUES ('old-analysis','pinned','retired','2026-10-17T00:00:00Z');
-        INSERT INTO settings(key,value) VALUES ('analysis.settings','{\"useMemory\":true,\"webSearch\":false}');
-        INSERT INTO goals VALUES ('old-goal');
-        INSERT INTO portfolio_events VALUES ('original',NULL),('reversal','original');
-        UPDATE data_revision SET schema_version=8 WHERE id=1;");
-    for _ in 0..2 {
-        let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
-        assert_eq!(db.snapshot().unwrap().profile.monthly_income, 12345.0);
-        assert!(tenant.check(
-            "SELECT to_regclass('goals') IS NULL AND to_regclass('portfolio_events') IS NULL AND to_regclass('memory_preferences') IS NULL"
-        ));
-        let preset: serde_json::Value =
-            serde_json::from_str(&db.setting("analysis.settings").unwrap().unwrap()).unwrap();
-        assert!(preset.get("useMemory").is_none());
-        assert_eq!(preset["webSearch"], false);
-        assert!(tenant.check(&format!(
-            "SELECT schema_version={} FROM data_revision WHERE id=1",
-            schema::POSTGRES_SCHEMA_VERSION
-        )));
-        assert!(db
-            .export_sync_data()
-            .unwrap()
-            .tables
-            .iter()
-            .all(|t| !matches!(t.name.as_str(), "goals" | "portfolio_events")));
-    }
-}
-
-#[test]
 fn postgres_migrations_upgrade_existing_tenant_once_across_replicas() {
-    let mut tenant = Tenant::legacy();
+    let mut tenant = Tenant::existing();
     let before: i64 = tenant
         .admin
         .query_one("SELECT revision FROM data_revision WHERE id=1", &[])
         .unwrap()
         .get(0);
-    let handles = (0..2).map(|_| {
-        let url = tenant.url.clone();
-        let user = tenant.user.clone();
-        std::thread::spawn(move || {
-            let db = Database::postgres(&url, &user).unwrap();
-            assert_eq!(db.snapshot().unwrap().profile.monthly_income, 12345.0);
-            assert_eq!(db.revision().unwrap(), before.to_string());
-            assert_eq!(db.conn().unwrap().query_row(
-                "SELECT value FROM settings WHERE key='migration-test'", [], |r| r.get::<_, String>(0)
-            ).unwrap(), "keep-me");
-            // These are the two queries that failed on the deployed server.
-            db.conn().unwrap().prepare("SELECT evidence_id, id, name, byte_size, extracted_text, extraction_note FROM research_attachments ORDER BY id").unwrap()
-                .query_map([], |_| Ok(())).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+    let handles = (0..2)
+        .map(|_| {
+            let url = tenant.url.clone();
+            let user = tenant.user.clone();
+            std::thread::spawn(move || {
+                let db = Database::postgres(&url, &user).unwrap();
+                assert_eq!(db.snapshot().unwrap().profile.monthly_income, 12345.0);
+                assert_eq!(db.revision().unwrap(), before.to_string());
+                assert_eq!(
+                    db.conn()
+                        .unwrap()
+                        .query_row(
+                            "SELECT value FROM settings WHERE key='migration-test'",
+                            [],
+                            |r| r.get::<_, String>(0)
+                        )
+                        .unwrap(),
+                    "keep-me"
+                );
+                db.conn()
+                    .unwrap()
+                    .prepare("SELECT evidence_id, id, name, byte_size, extracted_text, extraction_note FROM research_attachments ORDER BY id")
+                    .unwrap()
+                    .query_map([], |_| Ok(()))
+                    .unwrap()
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap();
+            })
         })
-    }).collect::<Vec<_>>();
+        .collect::<Vec<_>>();
     for handle in handles {
         handle.join().unwrap();
     }
@@ -193,7 +121,7 @@ fn postgres_migrations_upgrade_existing_tenant_once_across_replicas() {
 
 #[test]
 fn postgres_migrations_roll_back_failed_upgrade_and_allow_retry() {
-    let mut tenant = Tenant::legacy();
+    let mut tenant = Tenant::existing();
     tenant.sql(
         "CREATE FUNCTION reject_schema_stamp() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN RAISE EXCEPTION 'test migration failure'; END; $$;
@@ -215,10 +143,8 @@ fn postgres_migrations_roll_back_failed_upgrade_and_allow_retry() {
 }
 
 #[test]
-fn postgres_migrates_version_one_holdings_and_persists_manual_unit_prices() {
-    let mut tenant = Tenant::legacy();
-    drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
-    tenant.sql("ALTER TABLE holdings DROP COLUMN cost_price; ALTER TABLE holdings DROP COLUMN quantity; ALTER TABLE holdings DROP COLUMN current_price; UPDATE data_revision SET schema_version=1 WHERE id=1;");
+fn postgres_persists_manual_unit_prices_across_backup_and_reopen() {
+    let tenant = Tenant::existing();
     let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
     let input: HoldingInput = serde_json::from_value(serde_json::json!({
         "symbol":"IDX", "name":"手动持仓", "assetClass":"基金", "marketValue":0,

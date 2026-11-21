@@ -52,33 +52,25 @@ fn transport_contract_fixture() {
     }
     let mut trades = Vec::new();
     let mut trade_updates = Vec::new();
-    for mode in ["history", "settle"] {
-        for kind in ["buy", "sell", "dividend", "expire"] {
-            let input: crate::models::portfolio::HoldingTradeInput =
-                serde_json::from_value(json!({
-                    "requestId":"contract-request", "holdingId":"contract-holding",
-                    "expectedRevision":null, "newHolding":null, "kind":kind,
-                    "occurredOn":"2026-01-02", "sequence":1, "quantity":"0.00000001",
-                    "price":"99999999999999.99", "grossAmount":"0.01", "fees":"0", "taxes":"0",
-                    "account":"isolated", "settlementMode":mode
-                }))
-                .unwrap();
-            let mut update = serde_json::to_value(&input).unwrap();
-            for key in [
-                "requestId",
-                "holdingId",
-                "newHolding",
-                "expectedCashBaseline",
-            ] {
-                update.as_object_mut().unwrap().remove(key);
-            }
-            update["expectedRevision"] = json!("revision");
-            trade_updates.push(
-                serde_json::from_value::<crate::models::portfolio::HoldingTradeUpdateInput>(update)
-                    .unwrap(),
-            );
-            trades.push(input);
+    for kind in ["buy", "sell", "dividend", "expire"] {
+        let input: crate::models::portfolio::HoldingTradeInput = serde_json::from_value(json!({
+            "requestId":"contract-request", "holdingId":"contract-holding",
+            "expectedRevision":null, "newHolding":null, "kind":kind,
+            "occurredOn":"2026-01-02", "sequence":1, "quantity":"0.00000001",
+            "price":"99999999999999.99", "grossAmount":"0.01", "fees":"0", "taxes":"0",
+            "account":"isolated"
+        }))
+        .unwrap();
+        let mut update = serde_json::to_value(&input).unwrap();
+        for key in ["requestId", "holdingId", "newHolding"] {
+            update.as_object_mut().unwrap().remove(key);
         }
+        update["expectedRevision"] = json!("revision");
+        trade_updates.push(
+            serde_json::from_value::<crate::models::portfolio::HoldingTradeUpdateInput>(update)
+                .unwrap(),
+        );
+        trades.push(input);
     }
     let fx: crate::models::fx::FxBook = serde_json::from_value(json!({
         "baseCurrency":"CNY", "checkedAt":1, "requestedOn":"2026-01-02", "error":"",

@@ -1,7 +1,7 @@
 import { EmptyState } from "../../components/EmptyState";
 import { Button, Input, Tag } from "antd";
 import { Search } from "lucide-react";
-import type { ReactNode } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import type { Holding, Snapshot } from "../../types/user";
 import { isClosedHolding } from "./holdingMetrics";
 
@@ -47,31 +47,55 @@ export function HoldingsList({
   const update = (changes: Partial<HoldingFilters>) =>
     onFiltersChange({ ...filters, ...changes });
   const currency = snapshot.profile.baseCurrency;
-  const closed = (item: Holding) =>
-    isClosedHolding(
-      item,
-      Boolean(
-        snapshot.holdingTradeSummaries?.[item.id] ||
-        snapshot.stockOptionTotals?.[item.id],
-      ),
-    ) && !snapshot.stockOptionTotals?.[item.id]?.openContracts;
-  const closedCount = holdings.filter(closed).length;
-  const query = search.trim().toLocaleLowerCase();
-  const visible = holdings.filter(
-    (item) =>
-      (showClosed || !closed(item)) &&
-      `${item.name} ${item.symbol} ${item.assetClass} ${item.currency}`
-        .toLocaleLowerCase()
-        .includes(query),
+  const closed = useCallback(
+    (item: Holding) =>
+      isClosedHolding(
+        item,
+        Boolean(
+          snapshot.holdingTradeSummaries?.[item.id] ||
+          snapshot.stockOptionTotals?.[item.id],
+        ),
+      ) && !snapshot.stockOptionTotals?.[item.id]?.openContracts,
+    [snapshot.holdingTradeSummaries, snapshot.stockOptionTotals],
   );
-  const groups = Array.from(new Set(visible.map((item) => item.currency)))
-    .sort((a, b) =>
-      a === currency ? -1 : b === currency ? 1 : a.localeCompare(b),
-    )
-    .map((code) => ({
-      currency: code,
-      holdings: visible.filter((item) => item.currency === code),
-    }));
+  const closedCount = useMemo(
+    () => holdings.filter(closed).length,
+    [holdings, closed],
+  );
+  const query = search.trim().toLocaleLowerCase();
+  const visible = useMemo(
+    () =>
+      holdings.filter(
+        (item) =>
+          (showClosed || !closed(item)) &&
+          `${item.name} ${item.symbol} ${item.assetClass} ${item.currency}`
+            .toLocaleLowerCase()
+            .includes(query),
+      ),
+    [holdings, showClosed, closed, query],
+  );
+  const groups = useMemo(
+    () =>
+      Array.from(new Set(visible.map((item) => item.currency)))
+        .sort((a, b) =>
+          a === currency ? -1 : b === currency ? 1 : a.localeCompare(b),
+        )
+        .map((code) => ({
+          currency: code,
+          holdings: visible.filter((item) => item.currency === code),
+        })),
+    [visible, currency],
+  );
+  const hasMissingFx = useMemo(
+    () =>
+      holdings.some(
+        (item) =>
+          !closed(item) &&
+          item.currency !== currency &&
+          !(item.fxRateToBase != null && item.fxRateToBase > 0),
+      ),
+    [holdings, closed, currency],
+  );
   if (holdings.length === 0)
     return (
       <div
@@ -103,12 +127,7 @@ export function HoldingsList({
             ? `按币种分组，组内按原币浮动盈亏${sort === "pnl-asc" ? "从低到高" : "从高到低"}排列 · 已清仓默认收起`
             : `按币种分组，组内按折合 ${currency} 市值${sort === "value-asc" ? "从低到高" : "从高到低"}排列 · 已清仓默认收起，展开后按最近交易排列`}
         {sort !== "name" &&
-          holdings.some(
-            (item) =>
-              !closed(item) &&
-              item.currency !== currency &&
-              !(item.fxRateToBase != null && item.fxRateToBase > 0),
-          ) &&
+          hasMissingFx &&
           " · 缺少汇率的资产排在未清仓资产末尾"}
       </p>
       <div className="holdings-toolbar" data-presentation="true">

@@ -1,13 +1,8 @@
-use crate::storage::Connection;
+use crate::{error::AppResult, storage::Connection};
 
-use crate::error::AppResult;
-use crate::storage::OptionalRow;
+// Bump whenever hosted tables or indexes change so existing tenants receive new SQL objects.
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 23;
 
-// Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
-// export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 22;
-
-// Keep migration order intact: re-running on an existing tenant schema is idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS watch_entries (
@@ -53,7 +48,10 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            fx_rate_source TEXT NOT NULL DEFAULT '',
            fx_rate_observed_on TEXT NOT NULL DEFAULT '',
            created_at TEXT NOT NULL,
-           updated_at TEXT NOT NULL
+           updated_at TEXT NOT NULL DEFAULT '',
+           cost_price DOUBLE PRECISION,
+           quantity DOUBLE PRECISION,
+           current_price DOUBLE PRECISION
          );
          CREATE TABLE IF NOT EXISTS analyses (
            id TEXT PRIMARY KEY,
@@ -147,182 +145,24 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            created_at TEXT NOT NULL
          );
          CREATE INDEX IF NOT EXISTS idx_daily_review_items_day ON daily_review_items(review_day DESC, created_at DESC);
-         CREATE INDEX IF NOT EXISTS idx_daily_review_items_unread ON daily_review_items(review_day DESC) WHERE read_at IS NULL;",
-    )?;
-    connection.execute_batch(
-        "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS audit TEXT;
-         ALTER TABLE analyses ADD COLUMN IF NOT EXISTS trace TEXT;
-         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS target_pct DOUBLE PRECISION NOT NULL DEFAULT 0;
-         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS updated_at TEXT NOT NULL DEFAULT '';
-         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS fx_rate_to_base DOUBLE PRECISION;
-         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS cost_price DOUBLE PRECISION;
-         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS quantity DOUBLE PRECISION;
-         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS current_price DOUBLE PRECISION;
-         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS valuation_date TEXT NOT NULL DEFAULT '';
-         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS fx_rate_source TEXT NOT NULL DEFAULT '';
-         ALTER TABLE holdings ADD COLUMN IF NOT EXISTS fx_rate_observed_on TEXT NOT NULL DEFAULT '';
-         ALTER TABLE research_evidence ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '';",
-    )?;
-    connection.execute_batch(
-        "CREATE TABLE IF NOT EXISTS holding_trades (
+         CREATE INDEX IF NOT EXISTS idx_daily_review_items_unread ON daily_review_items(review_day DESC) WHERE read_at IS NULL;
+         CREATE TABLE IF NOT EXISTS holding_trades (
            id TEXT PRIMARY KEY, holding_id TEXT NOT NULL REFERENCES holdings(id) DEFERRABLE INITIALLY IMMEDIATE,
            payload TEXT NOT NULL, created_at TEXT NOT NULL
          );
-         CREATE INDEX IF NOT EXISTS idx_holding_trades_holding ON holding_trades(holding_id);",
-    )?;
-    connection
-        .execute_batch("DROP TABLE IF EXISTS portfolio_events; DROP TABLE IF EXISTS goals; DROP TABLE IF EXISTS memory_preferences; DROP TABLE IF EXISTS investment_rule_revisions; DROP TABLE IF EXISTS investment_rules; DROP TABLE IF EXISTS system_reviews;")?;
-    // Canonicalize legacy settings once at the storage boundary.
-    connection.execute_batch(
-        "UPDATE settings SET value='openai-responses'
-           WHERE key='model.provider' AND value='openai-compatible';
-         UPDATE settings SET value=replace(value,'openai-compatible ','openai-responses ')
-           WHERE key='model.key_binding' AND value LIKE 'openai-compatible %';
-         INSERT INTO settings(key,value)
-           SELECT 'model.key_binding',
-             coalesce((SELECT value FROM settings WHERE key='model.provider'),'openai-responses') || ' ' ||
-             rtrim(coalesce((SELECT value FROM settings WHERE key='model.base_url'),'https://api.openai.com/v1'),'/')
-           WHERE EXISTS(SELECT 1 FROM settings WHERE key='secret.model')
-             AND coalesce((SELECT value FROM settings WHERE key='model.provider'),'openai-responses')
-                 NOT IN ('codex','codex-bridge')
-           ON CONFLICT(key) DO NOTHING;",
-    )?;
-    remove_retired_analysis_metadata(connection)?;
-    connection.execute("DELETE FROM settings WHERE key LIKE 'trading.reset.%'", [])?;
-    super::financial::initialize(connection)?;
-    // Migrate legacy per-currency cash_state primary key to per-account holding_id.
-    connection.execute_batch(
-        "DO $$
-         DECLARE pk_name text;
-         DECLARE pk_cols text;
-         BEGIN
-           SELECT c.conname, string_agg(a.attname, ',' ORDER BY u.ord)
-           INTO pk_name, pk_cols
-           FROM pg_constraint c
-           CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS u(attnum, ord)
-           JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.attnum
-           WHERE c.conrelid = to_regclass('cash_state') AND c.contype = 'p'
-           GROUP BY c.conname;
-           IF pk_name IS NOT NULL AND pk_cols <> 'holding_id' THEN
-             EXECUTE format('ALTER TABLE cash_state DROP CONSTRAINT %I', pk_name);
-             ALTER TABLE cash_state ADD PRIMARY KEY (holding_id);
-           END IF;
-         END $$;",
-    )?;
-    connection.execute_batch("CREATE TABLE IF NOT EXISTS holding_options (
-        holding_id TEXT PRIMARY KEY REFERENCES holdings(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
-        underlying_id TEXT NOT NULL REFERENCES holdings(id) DEFERRABLE INITIALLY IMMEDIATE,
-        payload TEXT NOT NULL
-    ); CREATE INDEX IF NOT EXISTS holding_options_underlying ON holding_options(underlying_id);")?;
-    connection.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_analyses_created_at ON analyses(created_at DESC, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_holding_trades_holding ON holding_trades(holding_id);
+         CREATE TABLE IF NOT EXISTS holding_options (
+           holding_id TEXT PRIMARY KEY REFERENCES holdings(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
+           underlying_id TEXT NOT NULL REFERENCES holdings(id) DEFERRABLE INITIALLY IMMEDIATE,
+           payload TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS holding_options_underlying ON holding_options(underlying_id);
+         CREATE INDEX IF NOT EXISTS idx_analyses_created_at ON analyses(created_at DESC, id DESC);
          CREATE INDEX IF NOT EXISTS idx_research_evidence_list ON research_evidence(active DESC, captured_at DESC, id ASC);
          CREATE INDEX IF NOT EXISTS idx_watch_observations_unread ON watch_observations(symbol) WHERE alert = 1 AND read_at IS NULL;
-         CREATE INDEX IF NOT EXISTS idx_holdings_created_at ON holdings(created_at);",
+         CREATE INDEX IF NOT EXISTS idx_holdings_created_at ON holdings(created_at);
+         DROP TABLE IF EXISTS trade_settlements;",
     )?;
-    super::watch::migrate_rules(connection)?;
-    super::watch_grid_migration::migrate(connection)?;
+    super::financial::initialize(connection)?;
     Ok(())
-}
-
-// Strip retired fields without rewriting answers or their frozen source catalog.
-// Also run after imports so legacy backups cannot restore removed metadata.
-pub(super) fn remove_retired_analysis_metadata(connection: &Connection) -> AppResult<()> {
-    let preset: Option<String> = connection
-        .query_row(
-            "SELECT value FROM settings WHERE key='analysis.settings'",
-            [],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if let Some(preset) = preset {
-        if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&preset) {
-            let canonical = canonical_analysis_preset(&mut value);
-            if canonical {
-                connection.execute(
-                    "UPDATE settings SET value=$1 WHERE key='analysis.settings'",
-                    [serde_json::to_string(&value)?],
-                )?;
-            }
-        }
-    }
-    for (column, fields) in [
-        (
-            "audit",
-            &[
-                "memoryItemsUsed",
-                "reviewedMemoryItemsUsed",
-                "conflictingMemoryItemsUsed",
-            ][..],
-        ),
-        ("trace", &["memoryItems"][..]),
-    ] {
-        let filter = fields
-            .iter()
-            .map(|field| format!("{column} LIKE '%\"{field}\"%'"))
-            .collect::<Vec<_>>()
-            .join(" OR ");
-        let mut statement =
-            connection.prepare(&format!("SELECT id,{column} FROM analyses WHERE {filter}"))?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        drop(statement);
-        for (id, raw) in rows {
-            let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&raw) else {
-                continue;
-            };
-            let Some(object) = value.as_object_mut() else {
-                continue;
-            };
-            for field in fields {
-                object.remove(*field);
-            }
-            if column == "audit" {
-                if let Some(groups) = object
-                    .get_mut("contextGroups")
-                    .and_then(serde_json::Value::as_array_mut)
-                {
-                    groups.retain(|group| group.as_str() != Some("相关历史记忆"));
-                }
-            }
-            connection.execute(
-                &format!("UPDATE analyses SET {column}=$1 WHERE id=$2"),
-                crate::storage::params![serde_json::to_string(&value)?, id],
-            )?;
-        }
-    }
-    Ok(())
-}
-
-/// Remove retired preset options and move every stored workflow to the single current one,
-/// so strict request and preset parsing never meets old keys. Returns whether it changed.
-fn canonical_analysis_preset(value: &mut serde_json::Value) -> bool {
-    let Some(object) = value.as_object_mut() else {
-        return false;
-    };
-    let mut changed = false;
-    for key in crate::models::analysis::RETIRED_ANALYSIS_OPTIONS {
-        changed |= object.remove(key).is_some();
-    }
-    if let Some(selection) = object
-        .get_mut("contextSelection")
-        .and_then(serde_json::Value::as_object_mut)
-    {
-        for key in crate::models::analysis::RETIRED_CONTEXT_OPTIONS {
-            changed |= selection.remove(key).is_some();
-        }
-    }
-    if object.get("workflow").and_then(serde_json::Value::as_str)
-        != Some(crate::models::analysis::ANALYSIS_WORKFLOW)
-    {
-        object.insert(
-            "workflow".into(),
-            crate::models::analysis::ANALYSIS_WORKFLOW.into(),
-        );
-        changed = true;
-    }
-    changed
 }

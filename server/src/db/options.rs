@@ -322,13 +322,13 @@ mod tests {
     };
     fn setup(db: &Database) -> (Snapshot, String) {
         super::super::cash::fund(db, "CNY");
-        let input: HoldingTradeInput=serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"newHolding":{"name":"标的股票","symbol":"","assetClass":"股票","currency":"CNY"},"kind":"buy","occurredOn":"2026-01-01","sequence":1,"quantity":"10","price":"10","grossAmount":"100","fees":"0","taxes":"0","account":"券商A","settlementMode":"settle","expectedCashBaseline":"00000000-0000-0000-0000-000000000001"})).unwrap();
+        let input: HoldingTradeInput=serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"newHolding":{"name":"标的股票","symbol":"","assetClass":"股票","currency":"CNY"},"kind":"buy","occurredOn":"2026-01-01","sequence":1,"quantity":"10","price":"10","grossAmount":"100","fees":"0","taxes":"0","account":"券商A"})).unwrap();
         let s = db.save_holding_trade(&input).unwrap();
         let id = s.holding_trades[0].holding_id.clone();
         (s, id)
     }
-    fn opening(s: &Snapshot, parent: &str, side: &str, multiplier: &str) -> HoldingTradeInput {
-        serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"newHolding":{"name":"股票期权","symbol":"","assetClass":"期权","currency":"CNY","option":{"underlyingId":parent,"account":"券商A","optionType":"put","side":side,"strike":"10","expiresOn":"2026-02-01","multiplier":multiplier}},"kind":if side=="short" {"sell"} else {"buy"},"occurredOn":"2026-01-02","sequence":1,"quantity":"2","price":"3","grossAmount":text(Decimal::from(6)*Decimal::from_str_exact(multiplier).unwrap()),"fees":"2","taxes":"0","account":"券商A","settlementMode":"settle","expectedCashBaseline":s.cash_balances[0].baseline_id})).unwrap()
+    fn opening(_s: &Snapshot, parent: &str, side: &str, multiplier: &str) -> HoldingTradeInput {
+        serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"newHolding":{"name":"股票期权","symbol":"","assetClass":"期权","currency":"CNY","option":{"underlyingId":parent,"account":"券商A","optionType":"put","side":side,"strike":"10","expiresOn":"2026-02-01","multiplier":multiplier}},"kind":if side=="short" {"sell"} else {"buy"},"occurredOn":"2026-01-02","sequence":1,"quantity":"2","price":"3","grossAmount":text(Decimal::from(6)*Decimal::from_str_exact(multiplier).unwrap()),"fees":"2","taxes":"0","account":"券商A"})).unwrap()
     }
     #[test]
     fn open_options_exclude_only_the_contract_and_its_underlying() {
@@ -373,7 +373,7 @@ mod tests {
         day: &str,
     ) -> HoldingTradeInput {
         let c = &s.option_contracts[id];
-        serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"holdingId":id,"expectedRevision":s.holding_revisions[id],"kind":kind,"occurredOn":day,"sequence":1,"quantity":q,"price":p,"grossAmount":text(Decimal::from_str_exact(q).unwrap()*Decimal::from_str_exact(p).unwrap()*Decimal::from_str_exact(&c.multiplier).unwrap()),"fees":"1","taxes":"0","account":"券商A","settlementMode":"settle","expectedCashBaseline":s.cash_balances[0].baseline_id})).unwrap()
+        serde_json::from_value(serde_json::json!({"requestId":Uuid::new_v4().to_string(),"holdingId":id,"expectedRevision":s.holding_revisions[id],"kind":kind,"occurredOn":day,"sequence":1,"quantity":q,"price":p,"grossAmount":text(Decimal::from_str_exact(q).unwrap()*Decimal::from_str_exact(p).unwrap()*Decimal::from_str_exact(&c.multiplier).unwrap()),"fees":"1","taxes":"0","account":"券商A"})).unwrap()
     }
     fn hash(db: &Database) -> String {
         db.export_sync_data().unwrap().content_hash().unwrap()
@@ -562,7 +562,7 @@ mod tests {
             .iter()
             .find(|t| t.id == input.request_id)
             .unwrap();
-        let update:HoldingTradeUpdateInput=serde_json::from_value(serde_json::json!({"expectedRevision":s.holding_revisions[&id],"kind":"buy","occurredOn":original.occurred_on,"sequence":1,"quantity":"2","price":"4","grossAmount":"800","fees":"2","taxes":"0","account":"券商A","settlementMode":"history"})).unwrap();
+        let update:HoldingTradeUpdateInput=serde_json::from_value(serde_json::json!({"expectedRevision":s.holding_revisions[&id],"kind":"buy","occurredOn":original.occurred_on,"sequence":1,"quantity":"2","price":"4","grossAmount":"800","fees":"2","taxes":"0","account":"券商A"})).unwrap();
         let s = db.update_holding_trade(&input.request_id, &update).unwrap();
         assert_eq!(s.holding_trade_summaries[&id].cost_basis, "802");
         let foreign = Database::test();

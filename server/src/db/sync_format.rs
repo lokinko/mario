@@ -32,67 +32,6 @@ pub(super) struct SyncTableSpec {
     pub(super) order_by: &'static str,
 }
 
-const LEGACY_HOLDING_COLUMNS: &[&str] = &[
-    "id",
-    "symbol",
-    "name",
-    "asset_class",
-    "market_value",
-    "cost_basis",
-    "target_pct",
-    "currency",
-    "created_at",
-    "updated_at",
-];
-
-const V29_RESEARCH_EVIDENCE_COLUMNS: &[&str] = &[
-    "id",
-    "asset_name",
-    "title",
-    "publisher",
-    "source_url",
-    "source_tier",
-    "evidence_type",
-    "stance",
-    "as_of_date",
-    "claim",
-    "notes",
-    "active",
-    "captured_at",
-];
-
-const V3_HOLDING_COLUMNS: &[&str] = &[
-    "id",
-    "symbol",
-    "name",
-    "asset_class",
-    "market_value",
-    "cost_basis",
-    "target_pct",
-    "currency",
-    "fx_rate_to_base",
-    "valuation_date",
-    "created_at",
-    "updated_at",
-];
-
-const V13_HOLDING_COLUMNS: &[&str] = &[
-    "id",
-    "symbol",
-    "name",
-    "asset_class",
-    "market_value",
-    "cost_basis",
-    "target_pct",
-    "currency",
-    "fx_rate_to_base",
-    "valuation_date",
-    "fx_rate_source",
-    "fx_rate_observed_on",
-    "created_at",
-    "updated_at",
-];
-
 const CURRENT_HOLDING_COLUMNS: &[&str] = &[
     "id",
     "symbol",
@@ -111,88 +50,6 @@ const CURRENT_HOLDING_COLUMNS: &[&str] = &[
     "cost_price",
     "quantity",
     "current_price",
-];
-
-const LEGACY_EVENT_COLUMNS: &[&str] = &[
-    "id",
-    "event_type",
-    "asset_name",
-    "amount",
-    "currency",
-    "fx_rate_to_base",
-    "base_currency",
-    "base_amount",
-    "occurred_on",
-    "note",
-    "created_at",
-];
-
-const V5_EVENT_COLUMNS: &[&str] = &[
-    "id",
-    "event_type",
-    "source",
-    "external_id",
-    "fingerprint",
-    "asset_name",
-    "amount",
-    "currency",
-    "fx_rate_to_base",
-    "base_currency",
-    "base_amount",
-    "occurred_on",
-    "note",
-    "created_at",
-];
-
-const V6_EVENT_COLUMNS: &[&str] = &[
-    "id",
-    "event_type",
-    "source",
-    "external_id",
-    "fingerprint",
-    "asset_name",
-    "amount",
-    "currency",
-    "fx_rate_to_base",
-    "fx_rate_source",
-    "fx_rate_observed_on",
-    "base_currency",
-    "base_amount",
-    "occurred_on",
-    "note",
-    "created_at",
-];
-
-const LEGACY_V7_EVENT_COLUMNS: &[&str] = &[
-    "id",
-    "event_type",
-    "source",
-    "external_id",
-    "fingerprint",
-    "asset_name",
-    "amount",
-    "currency",
-    "fx_rate_to_base",
-    "fx_rate_source",
-    "fx_rate_observed_on",
-    "base_currency",
-    "base_amount",
-    "occurred_on",
-    "note",
-    "created_at",
-    "reversal_of_event_id",
-];
-
-const V7_SYNC_TABLE_COUNT: usize = 12;
-
-const LEGACY_DECISION_REVIEW_COLUMNS: &[&str] = &[
-    "decision_id",
-    "outcome_summary",
-    "actual_return_pct",
-    "thesis_status",
-    "process_rating",
-    "lessons",
-    "reviewed_at",
 ];
 
 pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
@@ -328,11 +185,6 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         order_by: "currency, holding_id",
     },
     SyncTableSpec {
-        name: "trade_settlements",
-        columns: &["trade_id", "currency", "amount", "baseline_id", "included"],
-        order_by: "trade_id",
-    },
-    SyncTableSpec {
         name: "corporate_actions",
         columns: &["id", "holding_id", "payload"],
         order_by: "id",
@@ -394,7 +246,7 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
             "payload",
             "created_at",
         ],
-        order_by: "created_at, id",
+        order_by: "review_day, created_at, id",
     },
     SyncTableSpec {
         name: "daily_review_items",
@@ -409,244 +261,11 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
             "read_at",
             "created_at",
         ],
-        order_by: "created_at, id",
+        order_by: "review_day, created_at, id",
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 33;
-const V1_SYNC_TABLE_COUNT: usize = 10;
-const V2_V3_SYNC_TABLE_COUNT: usize = 11;
-const V8_SYNC_TABLE_COUNT: usize = 13;
-
-pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
-    let mut specs = SYNC_TABLES.to_vec();
-    if version < 33 {
-        specs.splice(
-            3..3,
-            [
-                SyncTableSpec {
-                    name: "system_reviews",
-                    columns: &[
-                        "id",
-                        "payload",
-                        "snapshot",
-                        "next_review_date",
-                        "created_at",
-                    ],
-                    order_by: "id",
-                },
-                SyncTableSpec {
-                    name: "investment_rules",
-                    columns: &[
-                        "id",
-                        "category",
-                        "statement",
-                        "trigger",
-                        "rationale",
-                        "active",
-                        "source_review_id",
-                        "revision",
-                        "created_at",
-                        "updated_at",
-                    ],
-                    order_by: "id",
-                },
-                SyncTableSpec {
-                    name: "investment_rule_revisions",
-                    columns: &["rule_id", "revision", "payload", "changed_at"],
-                    order_by: "rule_id, revision",
-                },
-            ],
-        );
-    }
-    if version < 32 {
-        specs.retain(|s| !["daily_review_runs", "daily_review_items"].contains(&s.name));
-    }
-    if version < 31 {
-        specs.retain(|s| s.name != "analysis_memories");
-    }
-    if version < 30 {
-        for spec in specs.iter_mut().filter(|s| s.name == "research_evidence") {
-            spec.columns = V29_RESEARCH_EVIDENCE_COLUMNS;
-        }
-    }
-    if (25..=SYNC_DATASET_SCHEMA_VERSION).contains(&version) {
-        return Ok(specs);
-    }
-    specs.retain(|s| s.name != "watch_dividends");
-    if version == 24 {
-        return Ok(specs);
-    }
-    specs.retain(|s| !["watch_entries", "watch_observations"].contains(&s.name));
-    if version == 23 {
-        return Ok(specs);
-    }
-    specs.retain(|s| s.name != "holding_options");
-    if version == 22 {
-        return Ok(specs);
-    }
-    // Retired v8-v21 table: validate its shape, then skip it on import.
-    specs.insert(
-        7,
-        SyncTableSpec {
-            name: "memory_preferences",
-            columns: &["memory_id", "preference", "note", "updated_at"],
-            order_by: "memory_id",
-        },
-    );
-    if version == 21 {
-        return Ok(specs);
-    }
-    specs.retain(|s| {
-        ![
-            "financial_operations",
-            "financial_journal",
-            "trading_quarantine",
-            "cash_state",
-            "trade_settlements",
-            "corporate_actions",
-            "holding_amounts",
-        ]
-        .contains(&s.name)
-    });
-    if version == 20 || version == 19 {
-        return Ok(specs);
-    }
-    // Retired tables are shape metadata only and never restored.
-    specs.insert(
-        1,
-        SyncTableSpec {
-            name: "goals",
-            columns: &[
-                "id",
-                "name",
-                "target_amount",
-                "current_amount",
-                "monthly_contribution",
-                "target_date",
-                "priority",
-                "created_at",
-                "updated_at",
-            ],
-            order_by: "id",
-        },
-    );
-    specs.insert(
-        8,
-        SyncTableSpec {
-            name: "portfolio_events",
-            columns: LEGACY_V7_EVENT_COLUMNS,
-            order_by: "occurred_on, created_at, id",
-        },
-    );
-    if version == 18 || version == 17 {
-        return Ok(specs);
-    }
-    // Version 1-16 backups carried portfolio snapshots; validate their shape only.
-    specs.insert(
-        8,
-        SyncTableSpec {
-            name: "portfolio_checkins",
-            columns: &["id", "payload", "created_at"],
-            order_by: "created_at, id",
-        },
-    );
-    if version == 16 {
-        return Ok(specs);
-    }
-    // Version 1-15 backups contain retired tables. Validate their structure,
-    // but the importer skips these records instead of restoring the removed feature.
-    specs.splice(
-        3..3,
-        [
-            SyncTableSpec {
-                name: "decisions",
-                columns: &["id", "asset_name", "payload", "review_date", "created_at"],
-                order_by: "id",
-            },
-            SyncTableSpec {
-                name: "decision_reviews",
-                columns: &[
-                    "decision_id",
-                    "outcome_summary",
-                    "actual_return_pct",
-                    "thesis_status",
-                    "process_rating",
-                    "lessons",
-                    "reviewed_at",
-                    "content",
-                ],
-                order_by: "decision_id",
-            },
-        ],
-    );
-    if version <= 14 {
-        specs.pop();
-    }
-    if version <= 13 {
-        specs[2].columns = V13_HOLDING_COLUMNS;
-    }
-    if version <= 12 {
-        specs.pop();
-    }
-    if version <= 11 {
-        specs[4].columns = LEGACY_DECISION_REVIEW_COLUMNS;
-    }
-    match version {
-        1 => {
-            specs.truncate(V1_SYNC_TABLE_COUNT);
-            specs[2].columns = LEGACY_HOLDING_COLUMNS;
-            Ok(specs)
-        }
-        2 => {
-            specs.truncate(V2_V3_SYNC_TABLE_COUNT);
-            specs[2].columns = LEGACY_HOLDING_COLUMNS;
-            Ok(specs)
-        }
-        3 => {
-            specs.truncate(V2_V3_SYNC_TABLE_COUNT);
-            specs[2].columns = V3_HOLDING_COLUMNS;
-            Ok(specs)
-        }
-        4 => {
-            specs.truncate(V7_SYNC_TABLE_COUNT);
-            specs[2].columns = V3_HOLDING_COLUMNS;
-            specs[11].columns = LEGACY_EVENT_COLUMNS;
-            Ok(specs)
-        }
-        5 => {
-            specs.truncate(V7_SYNC_TABLE_COUNT);
-            specs[2].columns = V3_HOLDING_COLUMNS;
-            specs[11].columns = V5_EVENT_COLUMNS;
-            Ok(specs)
-        }
-        6 => {
-            specs.truncate(V7_SYNC_TABLE_COUNT);
-            specs[11].columns = V6_EVENT_COLUMNS;
-            Ok(specs)
-        }
-        7 => {
-            specs.truncate(V7_SYNC_TABLE_COUNT);
-            Ok(specs)
-        }
-        8 => {
-            specs.truncate(V8_SYNC_TABLE_COUNT);
-            Ok(specs)
-        }
-        9 => {
-            specs.truncate(14);
-            Ok(specs)
-        }
-        10 => {
-            specs.truncate(16);
-            Ok(specs)
-        }
-        11..=15 => Ok(specs),
-        _ => Err(AppError::Validation(format!(
-            "不支持的数据快照版本 {version}"
-        ))),
-    }
-}
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 34;
 
 impl SyncDataset {
     #[cfg(test)]
@@ -655,14 +274,19 @@ impl SyncDataset {
     }
 
     pub fn validate(&self) -> AppResult<()> {
-        let specs = sync_specs_for_version(self.schema_version)?;
+        if self.schema_version != SYNC_DATASET_SCHEMA_VERSION {
+            return Err(AppError::Validation(format!(
+                "不支持的数据快照版本 {}，当前仅支持 v{}",
+                self.schema_version, SYNC_DATASET_SCHEMA_VERSION
+            )));
+        }
         chrono::DateTime::parse_from_rfc3339(&self.exported_at)
             .map_err(|_| AppError::Validation("数据快照时间格式无效".into()))?;
-        if self.tables.len() != specs.len() {
+        if self.tables.len() != SYNC_TABLES.len() {
             return Err(AppError::Validation("数据快照缺少必要数据表".into()));
         }
         let mut total_rows = 0_usize;
-        for spec in &specs {
+        for spec in SYNC_TABLES {
             let table = self
                 .tables
                 .iter()

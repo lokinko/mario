@@ -284,13 +284,13 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | OptionPriceInput | `requestId,expectedRevision,price,observedOn:string`；price 是每单位报价，observedOn 是日期 |
 | TradeSecurityInput | `name,symbol,assetClass,currency:string; option?:OptionContract/null` |
 | OptionContract | `underlyingId,account,strike,expiresOn,multiplier:string; optionType:call/put; side:long/short`；strike、multiplier 为十进制字符串 |
-| HoldingTradeInput | `requestId:string; holdingId?:string=""; expectedRevision?:string/null; newHolding?:TradeSecurityInput/null; expectedCashBaseline?:string=""`，加下行成交字段；已有持仓与新证券按业务校验选用 |
-| 成交字段 | `kind:buy/sell/dividend/expire; occurredOn:string; sequence:integer; quantity,price,grossAmount,fees,taxes,account:string; externalId?,note?:string=""; settlementMode?:history/settle=history`；`settlementMode` 与 `expectedCashBaseline` 仅作兼容保留，成交不再自动联动或修改存款余额；金额与数量均为十进制字符串 |
+| HoldingTradeInput | `requestId:string; holdingId?:string=""; expectedRevision?:string/null; newHolding?:TradeSecurityInput/null`，加下行成交字段；已有持仓与新证券按业务校验选用 |
+| 成交字段 | `kind:buy/sell/dividend/expire; occurredOn:string; sequence:integer; quantity,price,grossAmount,fees,taxes,account:string; externalId?,note?:string=""`；成交与存款余额完全解耦，不再接收旧版 `settlementMode` 或 `expectedCashBaseline` 字段；金额与数量均为十进制字符串 |
 | HoldingTradeUpdateInput | `expectedRevision:string` 加成交字段；不接收新增成交的 requestId/newHolding/holdingId |
-| HoldingTrade | 返回记录含 `id,holdingId,kind,occurredOn,sequence,quantity,price,grossAmount,fees,taxes,currency,account,externalId,note,createdAt,updatedAt`；不含 settlementMode |
+| HoldingTrade | 返回记录含 `id,holdingId,kind,occurredOn,sequence,quantity,price,grossAmount,fees,taxes,currency,account,externalId,note,createdAt,updatedAt` |
 | TradeRepairInput | `expectedRevision:string; trades:HoldingTrade[]; reason:string`；提供完整修复集合 |
 | SplitEvent / ManualCorporateActionInput | SplitEvent 为 `effectiveOn,numerator,denominator:string`；手工输入为 `requestId,expectedRevision,reason:string; split:SplitEvent` |
-| SyncDataset | `schemaVersion:integer; exportedAt:string; tables:SyncTable[]`；每表 `{name,columns,rows}`，rows 为单元格二维数组；SyncValue 使用带类型值：`"Null"` 或 `{Integer:number}`、`{Real:number}`、`{Text:string}`，不是普通扁平对象数组 |
+| SyncDataset | `schemaVersion:integer; exportedAt:string; tables:SyncTable[]`；仅接受当前版本 `schemaVersion = 34`（已剥离旧版本前向兼容迁移），每表 `{name,columns,rows}`，rows 为单元格二维数组；SyncValue 使用带类型值：`"Null"` 或 `{Integer:number}`、`{Real:number}`、`{Text:string}`，不是普通扁平对象数组 |
 
 ### 6.2 观察与研究输入
 

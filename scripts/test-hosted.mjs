@@ -63,7 +63,7 @@ async function optionPriceReceipts(base, replica) {
     newHolding: {name: '期权报价回执标的', symbol: '', assetClass: '股票', currency: 'CNY'},
     kind: 'buy', occurredOn: '2026-01-01', sequence: 1,
     quantity: '10', price: '10', grossAmount: '100', fees: '0', taxes: '0',
-    account: '期权回执账户', settlementMode: 'history',
+    account: '期权回执账户',
   };
   const stock = await request(base, '/holding-trades', owner, 'POST', stockRequest);
   const underlyingId = stock.holdingTrades.find(t => t.id === stockRequest.requestId).holdingId;
@@ -267,7 +267,7 @@ try{
   assert.equal(modelRequests.at(-1).path,'/custom/v1/chat/completions');
   assert.equal(modelRequests.at(-1).auth,'Bearer third-party-key');
   console.log('PASS custom model API and Agent isolation: custom hosts/ports/paths, Chat Completions, authentication, no data API, endpoint validation, authorized context and non-blocking analysis');
-  const lostRequest={requestId:randomUUID(),newHolding:{name:'回执恢复测试',symbol:'',assetClass:'股票',currency:'CNY'},kind:'buy',occurredOn:'2026-01-01',sequence:1,quantity:'1',price:'10',grossAmount:'10',fees:'0',taxes:'0',account:'回执账户',settlementMode:'history'};
+  const lostRequest={requestId:randomUUID(),newHolding:{name:'回执恢复测试',symbol:'',assetClass:'股票',currency:'CNY'},kind:'buy',occurredOn:'2026-01-01',sequence:1,quantity:'1',price:'10',grossAmount:'10',fees:'0',taxes:'0',account:'回执账户'};
   const staleRevision=a.revision;
   const lostHeaders={Authorization:`Bearer ${a.token}`,'Content-Type':'application/json','If-Match':staleRevision};
   const lostResponse=await fetch(base+'/holding-trades',{method:'POST',headers:lostHeaders,body:JSON.stringify(lostRequest)});

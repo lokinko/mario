@@ -27,10 +27,6 @@ pub(super) fn initialize(conn: &Connection) -> AppResult<()> {
         baseline_id TEXT NOT NULL, confirmed_on TEXT NOT NULL, confirmed_at TEXT NOT NULL,
         needs_reconciliation INTEGER NOT NULL DEFAULT 0
     );
-    CREATE TABLE IF NOT EXISTS trade_settlements (
-        trade_id TEXT PRIMARY KEY, currency TEXT NOT NULL, amount TEXT NOT NULL, baseline_id TEXT NOT NULL,
-        included INTEGER NOT NULL DEFAULT 0
-    );
     CREATE TABLE IF NOT EXISTS corporate_actions (
         id TEXT PRIMARY KEY, holding_id TEXT NOT NULL, payload TEXT NOT NULL
     );

@@ -50,49 +50,6 @@
   gap: var(--space-2);
 }
 
-.daily-review-composer {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  box-shadow: var(--shadow-card);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.daily-review-composer textarea {
-  width: 100%;
-  min-height: 76px;
-  resize: vertical;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface-sunken);
-  color: var(--text-1);
-  padding: var(--space-3);
-  line-height: 1.55;
-  transition: border-color var(--duration-hover) var(--ease);
-}
-
-.daily-review-composer textarea:focus {
-  outline: none;
-  border-color: var(--brand);
-  background: var(--surface);
-}
-
-.daily-review-composer-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.daily-review-composer-hint {
-  font-size: var(--fs-caption);
-  color: var(--text-4);
-}
-
 .daily-review-filters {
   display: flex;
   flex-direction: column;
@@ -266,11 +223,6 @@
   color: var(--info);
 }
 
-.feed-avatar.kind-manualNote {
-  background: var(--surface-sunken);
-  color: var(--text-2);
-}
-
 .feed-author-meta {
   display: flex;
   flex-direction: column;
@@ -362,6 +314,7 @@
 
 .feed-metric-value {
   font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
   color: var(--text-1);
 }

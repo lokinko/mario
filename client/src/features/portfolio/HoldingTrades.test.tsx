@@ -320,7 +320,6 @@ it("records exact real executions, separated charges and retry identity without 
   const first = vi.mocked(portfolioApi.saveHoldingTrade).mock.calls[0][0];
   expect(first).toMatchObject({
     kind: "buy",
-    settlementMode: "history",
     sequence: 1,
     quantity: "0.1",
     price: "0.2",
@@ -375,7 +374,6 @@ it("edits the original record and freezes its revision across a background refre
   await waitFor(() => expect(onUpdate).toHaveBeenCalled());
   expect(portfolioApi.updateHoldingTrade).toHaveBeenNthCalledWith(2, buy.id, {
     expectedRevision: "initial",
-    settlementMode: "history",
     kind: "buy",
     occurredOn: buy.occurredOn,
     sequence: 1,

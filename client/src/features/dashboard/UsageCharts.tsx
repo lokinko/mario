@@ -1,8 +1,8 @@
+import { useMemo } from "react";
 import type { UsageDashboard } from "../../api/activity";
 
 const pageLabels: Record<string, string> = {
   watch: "买点观察",
-  calendar: "分红日历",
   facts: "我的情况",
   evidence: "研究资料",
   review: "每日复盘",
@@ -17,19 +17,30 @@ const top = 8;
 const bottom = 1;
 
 export function UserGrowth({ data }: { data?: UsageDashboard }) {
-  const days = [...(data?.registrations ?? [])].reverse();
-  const added = days.reduce((sum, day) => sum + day.newUsers, 0);
-  const total = days.at(-1)?.totalUsers ?? 0;
-  const maxNew = Math.max(1, ...days.map((day) => day.newUsers));
-  const maxTotal = Math.max(1, ...days.map((day) => day.totalUsers));
-  const step = width / Math.max(1, days.length);
-  const plot = height - top - bottom;
-  const line = days
-    .map(
-      (day, index) =>
-        `${(index + 0.5) * step},${top + plot * (1 - day.totalUsers / maxTotal)}`,
-    )
-    .join(" ");
+  const { days, added, total, maxNew, step, plot, line } = useMemo(() => {
+    const ordered = [...(data?.registrations ?? [])].reverse();
+    const totalAdded = ordered.reduce((sum, day) => sum + day.newUsers, 0);
+    const totalCount = ordered.at(-1)?.totalUsers ?? 0;
+    const peakNew = Math.max(1, ...ordered.map((day) => day.newUsers));
+    const peakTotal = Math.max(1, ...ordered.map((day) => day.totalUsers));
+    const xStep = width / Math.max(1, ordered.length);
+    const plotHeight = height - top - bottom;
+    const polyline = ordered
+      .map(
+        (day, index) =>
+          `${(index + 0.5) * xStep},${top + plotHeight * (1 - day.totalUsers / peakTotal)}`,
+      )
+      .join(" ");
+    return {
+      days: ordered,
+      added: totalAdded,
+      total: totalCount,
+      maxNew: peakNew,
+      step: xStep,
+      plot: plotHeight,
+      line: polyline,
+    };
+  }, [data?.registrations]);
   return (
     <section className="panel usage-panel" aria-label="用户增长">
       <h2>用户增长</h2>
@@ -89,10 +100,15 @@ export function UserGrowth({ data }: { data?: UsageDashboard }) {
 }
 
 export function FeatureUsage({ data }: { data?: UsageDashboard }) {
-  const pages = [...(data?.pages ?? [])].sort(
-    (a, b) => b.activeMinutes - a.activeMinutes,
-  );
-  const max = Math.max(1, ...pages.map((page) => page.activeMinutes));
+  const { pages, max } = useMemo(() => {
+    const sorted = [...(data?.pages ?? [])].sort(
+      (a, b) => b.activeMinutes - a.activeMinutes,
+    );
+    return {
+      pages: sorted,
+      max: Math.max(1, ...sorted.map((page) => page.activeMinutes)),
+    };
+  }, [data?.pages]);
   return (
     <section className="panel usage-panel" aria-label="功能使用">
       <h2>功能使用</h2>

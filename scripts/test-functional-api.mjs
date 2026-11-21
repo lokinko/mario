@@ -558,11 +558,10 @@ try {
   assert(persistedFeed.items.some((item) => item.id === firstReviewItem.id && item.readAt));
   console.log("PASS daily review: auth, validation, deterministic run, read tracking, filter, and restart persistence");
   const execution = {
-    expectedCashBaseline: snap.cashBalances.find(c=>c.currency==="CNY").baselineId,
     requestId: randomUUID(), holdingId: "", expectedRevision: null,
     newHolding: { name: "交易编辑测试", symbol: "", assetClass: "股票", currency: "CNY" },
     kind: "buy", occurredOn: today, sequence: 1, quantity: "10", price: "10", grossAmount: "100", fees: "2", taxes: "1",
-    account: "测试券商", externalId: "trade-edit-1", note: "", settlementMode: "settle",
+    account: "测试券商", externalId: "trade-edit-1", note: "",
   };
   snap = await api("/holding-trades", "POST", execution);
   const trade = snap.holdingTrades.find(t => t.id === execution.requestId);
@@ -571,7 +570,6 @@ try {
   assert.equal(snap.totalValue, 102300);
   assert.equal(snap.holdings.find(h => h.id === trade.holdingId).currentPrice, 10);
   const correction = {
-    settlementMode: "history",
     expectedRevision: snap.holdingRevisions[trade.holdingId],
     kind: "buy", occurredOn: today, sequence: 1, quantity: "12", price: "11", grossAmount: "132", fees: "3", taxes: "1",
     account: "测试券商", externalId: "trade-edit-corrected", note: "修正录入",
@@ -581,7 +579,7 @@ try {
   assert.equal(snap.holdingTrades.find(t => t.id === trade.id).createdAt, trade.createdAt);
   assert.equal(snap.holdings.find(h => h.id === trade.holdingId).costBasis, 136);
   assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
-  await api("/holding-trades", "POST", { ...execution, requestId: randomUUID(), settlementMode: "auto" }, 422);
+  await api("/holding-trades", "POST", { ...execution, requestId: randomUUID(), settlementMode: "settle" }, 422);
   const correctedRevision = snap.holdingRevisions[trade.holdingId];
   snap = await api(`/holding-trades/${trade.id}`, "PUT", correction);
   assert.equal(snap.holdingRevisions[trade.holdingId], correctedRevision);
@@ -722,7 +720,6 @@ try {
   const underlyingId = trade.holdingId;
   const optionOpen = {
     ...execution, requestId: randomUUID(), externalId: "option-open", taxes: "0",
-    expectedCashBaseline: snap.cashBalances.find(c => c.currency === "CNY").baselineId,
     newHolding: {name:"标的认沽空头",symbol:"",assetClass:"期权",currency:"CNY",option:{underlyingId,account:execution.account,optionType:"put",side:"short",strike:"10",expiresOn:today,multiplier:"100"}},
     kind:"sell",quantity:"2",price:"3",grossAmount:"600",fees:"2",
   };

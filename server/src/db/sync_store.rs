@@ -2,8 +2,7 @@ use {
     crate::{
         db::{
             sync_format::{
-                sync_specs_for_version, SyncDataset, SyncTable, SyncValue,
-                SYNC_DATASET_SCHEMA_VERSION, SYNC_TABLES,
+                SyncDataset, SyncTable, SyncValue, SYNC_DATASET_SCHEMA_VERSION, SYNC_TABLES,
             },
             sync_validation::{
                 quote_identifier, validate_synced_fx_provenance, validate_synced_holding_valuations,
@@ -69,16 +68,6 @@ impl Database {
 
     pub fn import_sync_data(&self, dataset: &SyncDataset) -> AppResult<()> {
         dataset.validate()?;
-        if dataset.schema_version < 18
-            && dataset
-                .tables
-                .iter()
-                .any(|t| t.name == "holding_trades" && !t.rows.is_empty())
-        {
-            return Err(AppError::Validation(
-                "旧交易记录格式已停用，请清空旧交易后按成交单重新录入；本次未覆盖任何数据".into(),
-            ));
-        }
         validate_synced_fx_provenance(dataset)?;
         validate_synced_holding_valuations(dataset)?;
         let mut conn = self.conn()?;
@@ -96,10 +85,7 @@ impl Database {
                 [],
             )?;
         }
-        for spec in sync_specs_for_version(dataset.schema_version)? {
-            if !SYNC_TABLES.iter().any(|current| current.name == spec.name) {
-                continue;
-            }
+        for spec in SYNC_TABLES {
             let table = dataset
                 .tables
                 .iter()
@@ -132,11 +118,6 @@ impl Database {
                     .collect::<Vec<_>>();
                 statement.execute(values)?;
             }
-        }
-        super::schema::remove_retired_analysis_metadata(&transaction)?;
-        super::watch::migrate_rules(&transaction)?;
-        if dataset.schema_version < 29 {
-            super::watch_grid_migration::migrate(&transaction)?;
         }
         super::watch::validate(&transaction)?;
         super::options::validate(&transaction)?;

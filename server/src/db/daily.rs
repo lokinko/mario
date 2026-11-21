@@ -1181,36 +1181,19 @@ mod tests {
         assert_eq!(before, after);
     }
     #[test]
-    fn legacy_v9_and_invalid_daily_payloads_are_handled_atomically() {
+    fn invalid_daily_payloads_and_retired_backups_are_rejected_atomically() {
         let db = db();
         db.add_holding(&input("银行", 100.0)).unwrap();
         let data = db.export_sync_data().unwrap();
-        let mut legacy = data.clone();
-        crate::db::tests::set_legacy_version(&mut legacy, 9);
-        super::super::tests::add_retired_tables(&mut legacy);
-        super::super::tests::strip_holding_details_for_legacy(&mut legacy);
-        let legacy_reviews = legacy
-            .tables
-            .iter_mut()
-            .find(|table| table.name == "decision_reviews")
-            .unwrap();
-        legacy_reviews.columns.pop();
-        for row in &mut legacy_reviews.rows {
-            row.pop();
-        }
-        legacy.tables.truncate(14);
         let restored = super::tests::db();
-        restored.import_sync_data(&legacy).unwrap();
-        assert!(records(&restored).is_empty());
-        restored
-            .ensure_daily(&EnsureInput {
-                timezone: "UTC".into(),
-            })
-            .unwrap();
+        restored.import_sync_data(&data).unwrap();
         assert_eq!(
             records(&restored)[0].assets[0].confirmed_on.as_deref(),
             Some("2026-01-01")
         );
+        let mut legacy = data.clone();
+        legacy.schema_version = 9;
+        assert!(restored.import_sync_data(&legacy).is_err());
         let mut bad = data;
         bad.tables
             .iter_mut()

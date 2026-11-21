@@ -91,28 +91,6 @@ pub(super) fn validate(conn: &Connection) -> AppResult<()> {
         chrono::DateTime::parse_from_rfc3339(&state.confirmed_at)
             .map_err(|_| AppError::Validation("存款核对时间无效".into()))?;
     }
-    let mut statement =
-        conn.prepare("SELECT amount,baseline_id,included FROM trade_settlements")?;
-    let rows = statement
-        .query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, i64>(2)?,
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    for (amount, baseline, included) in rows {
-        let amount = Decimal::from_str_exact(&amount)
-            .map_err(|_| AppError::Validation("交易现金归属金额无效".into()))?;
-        if amount.scale() > 8
-            || amount.abs() > Decimal::from(1_000_000_000_000_000_i64)
-            || ![0, 1].contains(&included)
-            || (!baseline.is_empty() && Uuid::parse_str(&baseline).is_err())
-        {
-            return Err(AppError::Validation("交易现金归属记录无效".into()));
-        }
-    }
     Ok(())
 }
 
@@ -233,54 +211,23 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_and_legacy_import_preserve_multiple_deposit_accounts_without_merging() {
+    fn multiple_deposit_accounts_round_trip_without_merging() {
         let account = crate::db::TestAccount::new();
         let db = account.open();
         fund(&db, "CNY");
-        db.conn()
-            .unwrap()
-            .execute(
-                "INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,valuation_date,created_at,updated_at) VALUES ('legacy-cash','','工资卡','现金',123.45,0,0,'CNY','2026-01-01','9999-01-02T00:00:00Z','2026-01-01T00:00:00Z')",
-                [],
-            )
-            .unwrap();
-        let mut legacy = db.export_sync_data().unwrap();
-        crate::db::tests::set_legacy_version(&mut legacy, 19);
-        super::super::tests::add_legacy_table_shapes(&mut legacy);
-        legacy.tables.retain(|t| {
-            ![
-                "financial_operations",
-                "financial_journal",
-                "trading_quarantine",
-                "cash_state",
-                "trade_settlements",
-                "corporate_actions",
-                "holding_amounts",
-            ]
-            .contains(&t.name.as_str())
-        });
-        drop(db);
-        let db = account.reopen_from_old_release();
+        db.add_holding(&deposit("工资卡", "CNY", "123.45")).unwrap();
+        let exported = db.export_sync_data().unwrap();
         let s = db.snapshot().unwrap();
         assert_eq!(s.holdings.len(), 2);
         assert_eq!(s.cash_balances.len(), 2);
         assert_eq!(s.total_value, 10123.45);
         assert!(s.holdings.iter().any(|h| h.name == "CNY 存款"));
         assert!(s.holdings.iter().any(|h| h.name == "工资卡"));
-        let stable = db.export_sync_data().unwrap().content_hash().unwrap();
-        drop(db);
-        let db = account.reopen_from_old_release();
-        assert_eq!(
-            db.export_sync_data().unwrap().content_hash().unwrap(),
-            stable
-        );
         let copy = Database::test();
-        copy.import_sync_data(&legacy).unwrap();
+        copy.import_sync_data(&exported).unwrap();
         assert_eq!(copy.snapshot().unwrap().total_value, 10123.45);
         assert_eq!(copy.snapshot().unwrap().holdings.len(), 2);
         assert_eq!(copy.snapshot().unwrap().cash_balances.len(), 2);
-        copy.import_sync_data(&legacy).unwrap();
-        assert_eq!(copy.snapshot().unwrap().total_value, 10123.45);
     }
 
     #[test]
@@ -357,28 +304,5 @@ mod tests {
             .unwrap();
         assert_eq!(copy.snapshot().unwrap().holdings.len(), 3);
         assert_eq!(copy.snapshot().unwrap().cash_balances.len(), 3);
-    }
-
-    #[test]
-    fn migrating_legacy_currency_primary_key_allows_multiple_accounts_per_currency() {
-        let account = crate::db::TestAccount::new();
-        let db = account.open();
-        fund(&db, "CNY");
-        {
-            let conn = db.conn().unwrap();
-            conn.execute_batch(
-                "ALTER TABLE cash_state DROP CONSTRAINT cash_state_pkey;
-                 ALTER TABLE cash_state ADD PRIMARY KEY (currency);",
-            )
-            .unwrap();
-        }
-        drop(db);
-        let migrated = account.reopen_from_old_release();
-        let s = migrated
-            .add_holding(&deposit("微信零钱", "CNY", "500"))
-            .unwrap();
-        assert_eq!(s.holdings.len(), 2);
-        assert_eq!(s.cash_balances.len(), 2);
-        assert_eq!(s.total_value, 10500.0);
     }
 }

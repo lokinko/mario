@@ -571,12 +571,6 @@ impl Database {
             ));
         }
         let cash_delta = if !trades.is_empty() {
-            for trade in &trades {
-                transaction.execute(
-                    "DELETE FROM trade_settlements WHERE trade_id=$1",
-                    [&trade.id],
-                )?;
-            }
             "0".into()
         } else {
             before

@@ -174,7 +174,6 @@ export type AccountingTotals = Record<
 export type HoldingTradeKind = "buy" | "sell" | "dividend" | "expire";
 
 export interface HoldingTradeFields {
-  settlementMode?: "history" | "settle";
   kind: HoldingTradeKind;
   occurredOn: string;
   sequence: number;
@@ -205,8 +204,6 @@ export interface TradeSecurityInput {
 }
 
 export interface HoldingTradeInput extends HoldingTradeFields {
-  settlementMode: "history" | "settle";
-  expectedCashBaseline?: string;
   requestId: string;
   holdingId: string;
   expectedRevision: string | null;
@@ -214,7 +211,6 @@ export interface HoldingTradeInput extends HoldingTradeFields {
 }
 
 export interface HoldingTradeUpdateInput extends HoldingTradeFields {
-  settlementMode: "history" | "settle";
   expectedRevision: string;
 }
 

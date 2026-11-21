@@ -415,7 +415,6 @@ impl Database {
             )),
             other => other,
         })?;
-        tx.execute("DELETE FROM trade_settlements WHERE trade_id=$1", [id])?;
         super::financial::journal(
             &tx,
             &h.id,
@@ -443,7 +442,6 @@ impl Database {
         self.write_holding_trade(
             Some(id),
             &HoldingTradeInput {
-                expected_cash_baseline: String::new(),
                 request_id: id.into(),
                 holding_id: String::new(),
                 expected_revision: Some(input.expected_revision.clone()),
@@ -459,7 +457,6 @@ impl Database {
                 account: input.account.clone(),
                 external_id: input.external_id.clone(),
                 note: input.note.clone(),
-                settlement_mode: input.settlement_mode,
             },
         )
     }
@@ -484,7 +481,6 @@ impl Database {
                 account: input.account.clone(),
                 external_id: input.external_id.clone(),
                 note: input.note.clone(),
-                settlement_mode: input.settlement_mode,
             };
             super::financial::operation("edit", id, &update)?
         } else {
@@ -1018,25 +1014,11 @@ mod tests {
     }
 
     #[test]
-    fn legacy_backup_keeps_current_cash_and_later_trade_edits_leave_deposits_untouched() {
+    fn trade_edits_and_backup_round_trip_leave_deposits_untouched() {
         let db = funded(Database::test());
         let buy = first();
         db.save_holding_trade(&buy).unwrap();
-        let mut backup = db.export_sync_data().unwrap();
-        crate::db::tests::set_legacy_version(&mut backup, 19);
-        super::super::tests::add_legacy_table_shapes(&mut backup);
-        backup.tables.retain(|t| {
-            ![
-                "financial_operations",
-                "financial_journal",
-                "trading_quarantine",
-                "cash_state",
-                "trade_settlements",
-                "corporate_actions",
-                "holding_amounts",
-            ]
-            .contains(&t.name.as_str())
-        });
+        let backup = db.export_sync_data().unwrap();
         let copy = Database::test();
         copy.import_sync_data(&backup).unwrap();
         let s = copy.snapshot().unwrap();
@@ -1147,20 +1129,14 @@ mod tests {
     }
     fn first() -> HoldingTradeInput {
         serde_json::from_value(serde_json::json!({
-            "expectedCashBaseline":"00000000-0000-0000-0000-000000000001","requestId":Uuid::new_v4().to_string(),"newHolding":{"name":"交易测试","symbol":"","assetClass":"股票","currency":"CNY"},
-            "kind":"buy","occurredOn":"2026-01-01","sequence":1,"quantity":"10","price":"10","grossAmount":"100","fees":"2","taxes":"0","account":"券商A","settlementMode":"settle"
+            "requestId":Uuid::new_v4().to_string(),"newHolding":{"name":"交易测试","symbol":"","assetClass":"股票","currency":"CNY"},
+            "kind":"buy","occurredOn":"2026-01-01","sequence":1,"quantity":"10","price":"10","grossAmount":"100","fees":"2","taxes":"0","account":"券商A"
         })).unwrap()
     }
     fn next(s: &Snapshot, kind: TradeKind, q: &str, p: &str, date: &str) -> HoldingTradeInput {
         let h = &s.holdings[0];
         let gross = text(number(q).unwrap() * number(p).unwrap());
         HoldingTradeInput {
-            expected_cash_baseline: s
-                .cash_balances
-                .iter()
-                .find(|c| c.currency == h.currency)
-                .map(|c| c.baseline_id.clone())
-                .unwrap_or_default(),
             request_id: Uuid::new_v4().to_string(),
             new_holding: None,
             holding_id: h.id.clone(),
@@ -1183,7 +1159,6 @@ mod tests {
             account: "券商A".into(),
             external_id: String::new(),
             note: String::new(),
-            settlement_mode: crate::models::portfolio::SettlementMode::Settle,
         }
     }
     fn edit(s: &Snapshot, id: &str) -> HoldingTradeUpdateInput {
@@ -1191,7 +1166,7 @@ mod tests {
         serde_json::from_value(serde_json::json!({
             "expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,
             "quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":t.fees,"taxes":t.taxes,
-            "account":t.account,"externalId":t.external_id,"note":t.note,"settlementMode":"history"
+            "account":t.account,"externalId":t.external_id,"note":t.note
         })).unwrap()
     }
     #[test]
@@ -1241,14 +1216,7 @@ mod tests {
             s.holding_trade_summaries
         );
         let mut old = export;
-        crate::db::tests::set_legacy_version(&mut old, 17);
-        super::super::tests::add_retired_tables(&mut old);
-        old.tables.retain(|table| {
-            !matches!(
-                table.name.as_str(),
-                "decisions" | "decision_reviews" | "portfolio_checkins"
-            )
-        });
+        old.schema_version = 17;
         assert!(copy.import_sync_data(&old).is_err());
         assert_eq!(copy.snapshot().unwrap().holding_trades, s.holding_trades);
     }

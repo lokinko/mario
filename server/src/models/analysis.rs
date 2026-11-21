@@ -61,23 +61,6 @@ impl PreviousTurn {
 /// The only production workflow identifier: research agent, proposal agents and a vote.
 pub const ANALYSIS_WORKFLOW: &str = "council";
 
-/// Retired request and preset options. Storage strips them once; requests that still
-/// send them are rejected instead of silently running a different workflow.
-pub const RETIRED_ANALYSIS_OPTIONS: [&str; 4] = [
-    "reflect",
-    "exploreAlternatives",
-    "useMemory",
-    "dailyAssetRange",
-];
-pub const RETIRED_CONTEXT_OPTIONS: [&str; 6] = [
-    "includePlanning",
-    "includeRiskFindings",
-    "includeRules",
-    "includeSystemReviews",
-    "includeDailyAssets",
-    "includePortfolioCheckins",
-];
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisRequest {

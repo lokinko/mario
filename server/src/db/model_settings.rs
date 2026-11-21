@@ -175,12 +175,10 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_strips_retired_preset_options_and_moves_to_the_council_workflow() {
-        let account = crate::db::TestAccount::new();
-        let db = account.open();
+    fn rejects_retired_preset_options_and_legacy_workflows() {
+        let db = Database::test();
         let mut legacy = AnalysisSettings {
             workflow: "deep".into(),
-
             web_search: true,
             context_selection: crate::models::analysis::ContextSelection::default(),
         };
@@ -190,34 +188,21 @@ mod tests {
         stored["exploreAlternatives"] = true.into();
         stored["useMemory"] = true.into();
         stored["contextSelection"]["includeRules"] = true.into();
-        stored["contextSelection"]
-            .as_object_mut()
-            .unwrap()
-            .remove("includeMemory");
-        db.set_setting(
-            "analysis.settings",
-            &serde_json::to_string(&stored).unwrap(),
-        )
-        .unwrap();
-        drop(db);
-        let db = account.reopen_from_old_release();
 
-        let restored = db.analysis_settings().unwrap();
-        assert_eq!(
-            restored.workflow,
-            crate::models::analysis::ANALYSIS_WORKFLOW
-        );
-        assert!(restored.context_selection.include_profile);
-        assert!(!restored.context_selection.include_holdings);
-        assert!(restored.context_selection.include_evidence);
-        assert!(restored.context_selection.include_memory);
-        assert!(restored.web_search);
-
-        // Older clients must not re-enable removed options when saving.
+        // Older clients must not re-enable removed options or legacy workflows when saving.
         assert!(db.save_analysis_settings(legacy).is_err());
         assert!(serde_json::from_value::<AnalysisSettings>(stored).is_err());
-        let saved = db.save_analysis_settings(restored.clone()).unwrap();
-        let expected = serde_json::to_value(restored).unwrap();
+
+        let current = AnalysisSettings {
+            workflow: crate::models::analysis::ANALYSIS_WORKFLOW.into(),
+            web_search: true,
+            context_selection: crate::models::analysis::ContextSelection {
+                include_holdings: false,
+                ..Default::default()
+            },
+        };
+        let saved = db.save_analysis_settings(current.clone()).unwrap();
+        let expected = serde_json::to_value(current).unwrap();
         assert_eq!(serde_json::to_value(saved).unwrap(), expected);
         let persisted = db.setting("analysis.settings").unwrap().unwrap();
         assert_eq!(
@@ -251,45 +236,6 @@ mod tests {
         assert_eq!(
             db.analysis_settings().unwrap().workflow,
             crate::models::analysis::ANALYSIS_WORKFLOW
-        );
-    }
-
-    #[test]
-    fn upgrading_an_old_tenant_canonicalizes_provider_and_binds_credentials_once() {
-        let account = crate::db::TestAccount::new();
-        let db = account.open();
-        db.set_setting("model.provider", "openai-compatible")
-            .unwrap();
-        db.set_setting("model.base_url", "https://models.example.test/v1/")
-            .unwrap();
-        db.set_setting("secret.model", "encrypted-credential-preserved")
-            .unwrap();
-        db.set_setting("trading.reset.old", "true").unwrap();
-        drop(db);
-        let db = account.reopen_from_old_release();
-        assert_eq!(
-            db.model_config().unwrap().provider,
-            ModelProviderKind::OpenaiResponses
-        );
-        assert_eq!(
-            db.setting("model.key_binding").unwrap().as_deref(),
-            Some("openai-responses https://models.example.test/v1")
-        );
-        assert_eq!(
-            db.setting("secret.model").unwrap().as_deref(),
-            Some("encrypted-credential-preserved")
-        );
-        assert!(db.setting("trading.reset.old").unwrap().is_none());
-        db.set_setting(
-            "model.key_binding",
-            "openai-compatible https://original.example.test/v1",
-        )
-        .unwrap();
-        drop(db);
-        let db = account.reopen_from_old_release();
-        assert_eq!(
-            db.setting("model.key_binding").unwrap().as_deref(),
-            Some("openai-responses https://original.example.test/v1")
         );
     }
 

@@ -288,8 +288,6 @@ pub struct HoldingTradeSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HoldingTradeInput {
-    #[serde(default)]
-    pub expected_cash_baseline: String,
     pub request_id: String,
     #[serde(default)]
     pub holding_id: String,
@@ -308,8 +306,6 @@ pub struct HoldingTradeInput {
     pub external_id: String,
     #[serde(default)]
     pub note: String,
-    #[serde(default)]
-    pub settlement_mode: SettlementMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -321,14 +317,6 @@ pub enum TradeKind {
     Dividend,
     /// Explicit broker-confirmed expiry without exercise or assignment.
     Expire,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SettlementMode {
-    #[default]
-    History,
-    Settle,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -369,8 +357,6 @@ pub struct HoldingTradeUpdateInput {
     pub external_id: String,
     #[serde(default)]
     pub note: String,
-    #[serde(default)]
-    pub settlement_mode: SettlementMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

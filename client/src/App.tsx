@@ -34,38 +34,26 @@ import {
   dividendQuestionParam,
   dividendQuestionSymbol,
 } from "./features/watch/dividend-preview/route";
-import { loadBuyWatch, loadMyFacts } from "./app/preload";
+import {
+  loadAdvisor,
+  loadBuyWatch,
+  loadDailyReview,
+  loadEvidenceWorkbench,
+  loadInvestmentMethodology,
+  loadModelSettings,
+  loadMyFacts,
+  loadServerData,
+  preloadView,
+} from "./app/preload";
 
 const BuyWatch = lazy(loadBuyWatch);
-const DailyReviewPage = lazy(() =>
-  import("./features/dailyReview/DailyReviewPage").then((m) => ({
-    default: m.DailyReviewPage,
-  })),
-);
-const EvidenceWorkbench = lazy(() =>
-  import("./features/evidence/EvidenceWorkbench").then((m) => ({
-    default: m.EvidenceWorkbench,
-  })),
-);
+const DailyReviewPage = lazy(loadDailyReview);
+const EvidenceWorkbench = lazy(loadEvidenceWorkbench);
 const MyFacts = lazy(loadMyFacts);
-const Advisor = lazy(() =>
-  import("./features/advisor/Advisor").then((m) => ({ default: m.Advisor })),
-);
-const InvestmentMethodology = lazy(() =>
-  import("./features/methodology/InvestmentMethodology").then((m) => ({
-    default: m.InvestmentMethodology,
-  })),
-);
-const ModelSettings = lazy(() =>
-  import("./features/settings/ModelSettings").then((m) => ({
-    default: m.ModelSettings,
-  })),
-);
-const ServerData = lazy(() =>
-  import("./features/account/ServerData").then((m) => ({
-    default: m.ServerData,
-  })),
-);
+const Advisor = lazy(loadAdvisor);
+const InvestmentMethodology = lazy(loadInvestmentMethodology);
+const ModelSettings = lazy(loadModelSettings);
+const ServerData = lazy(loadServerData);
 
 const syncLabels = {
   waiting: "等待同步",
@@ -336,6 +324,8 @@ function App() {
                       ? "in-tabbar"
                       : "",
                   ].join(" ")}
+                  onMouseEnter={() => preloadView(item.id)}
+                  onFocus={() => preloadView(item.id)}
                   onClick={() => navigate(item.id)}
                 >
                   <item.icon size={18} />
@@ -351,6 +341,8 @@ function App() {
           <button
             className={`settings-link ${view === "settings" ? "active" : ""}`}
             aria-current={view === "settings" ? "page" : undefined}
+            onMouseEnter={() => preloadView("settings")}
+            onFocus={() => preloadView("settings")}
             onClick={() => navigate("settings")}
           >
             <Settings2 size={18} /> 设置
@@ -590,6 +582,8 @@ function App() {
               key={tab.id}
               className={active ? "active" : ""}
               aria-current={active ? "page" : undefined}
+              onMouseEnter={() => preloadView(tab.id)}
+              onFocus={() => preloadView(tab.id)}
               onClick={() => navigate(tab.id)}
             >
               <tab.icon size={22} aria-hidden="true" />

@@ -667,7 +667,12 @@ mod tests {
 
     #[test]
     fn retired_flags_are_rejected_and_inputs_change_the_revision() {
-        for retired in crate::models::analysis::RETIRED_ANALYSIS_OPTIONS {
+        for retired in [
+            "reflect",
+            "exploreAlternatives",
+            "useMemory",
+            "dailyAssetRange",
+        ] {
             let mut value = json!({"question":"问题","workflow":"council"});
             value[retired] = json!(false);
             assert!(
@@ -675,7 +680,14 @@ mod tests {
                 "{retired}"
             );
         }
-        for retired in crate::models::analysis::RETIRED_CONTEXT_OPTIONS {
+        for retired in [
+            "includePlanning",
+            "includeRiskFindings",
+            "includeRules",
+            "includeSystemReviews",
+            "includeDailyAssets",
+            "includePortfolioCheckins",
+        ] {
             let value =
                 json!({"question":"问题","workflow":"council","contextSelection":{retired:true}});
             assert!(

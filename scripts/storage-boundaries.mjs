@@ -6,7 +6,7 @@ export const storageOwners = {
   amounts: 'user', cash: 'user', corporate: 'user', daily: 'user', evidence: 'user', financial: 'user',
   fx: 'user', methodology: 'user', options: 'user', portfolio: 'user', public_watch: 'user',
   snapshot: 'user', trades: 'user',
-  user_access: 'user', user_records: 'user', validation: 'user', watch: 'user', watch_grid_migration: 'user',
+  user_access: 'user', user_records: 'user', validation: 'user', watch: 'user',
   ai_access: 'ai', ai_records: 'ai', analysis_history: 'ai', daily_review: 'ai', memory: 'ai', model_settings: 'ai', secrets: 'ai',
   public_announcements: 'market', public_prices: 'market', public_dividends: 'market', public_dividend_plans: 'market',
 };
@@ -23,7 +23,7 @@ export const tableOwners = Object.fromEntries(Object.entries({
   user: ['cash_state', 'corporate_actions', 'daily_entries', 'daily_settings', 'daily_totals',
     'financial_journal', 'financial_operations', 'holding_amounts', 'holding_options', 'holding_trades',
     'holding_valuations', 'holdings', 'profile',
-    'research_attachments', 'research_evidence', 'trade_settlements', 'trading_quarantine',
+    'research_attachments', 'research_evidence', 'trading_quarantine',
     'watch_catalog', 'watch_dividends', 'watch_entries', 'watch_observations', 'watch_snapshots'],
   ai: ['analyses', 'analysis_memories', 'daily_review_items', 'daily_review_runs'],
   market: ['announcement_snapshots', 'dividend_histories', 'dividend_plan_snapshots', 'price_fetch_days', 'price_histories', 'price_monitor_days', 'price_universe'],
