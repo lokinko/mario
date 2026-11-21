@@ -610,3 +610,76 @@ fn old_price_observation_is_metadata_not_a_rebalancing_gate() {
         .rebalancing_blocked_by
         .contains(&crate::models::portfolio::IssueCode::PendingCorporateAction));
 }
+
+#[test]
+fn check_or_register_corporate_actions_matches_full_registration_semantics() {
+    let db = funded();
+    let input = buy("SPLIT", "settle", "2026-01-01");
+    let snap = db.save_holding_trade(&input).unwrap();
+    let id = snap.holding_trades[0].holding_id.clone();
+
+    let mut plain_quote = split_quote();
+    plain_quote.splits.clear();
+    assert!(!db
+        .check_or_register_corporate_actions(&snap, &id, &plain_quote)
+        .unwrap());
+    assert!(db.snapshot().unwrap().corporate_actions.is_empty());
+
+    let quote = split_quote();
+    assert!(db
+        .check_or_register_corporate_actions(&snap, &id, &quote)
+        .unwrap());
+    let pending = db.snapshot().unwrap();
+    assert_eq!(pending.corporate_actions.len(), 1);
+    assert!(db
+        .check_or_register_corporate_actions(&pending, &id, &quote)
+        .unwrap());
+
+    let action_id = pending.corporate_actions[0].id.clone();
+    let confirmed = db
+        .confirm_corporate_action(
+            &action_id,
+            &ConfirmCorporateActionInput {
+                expected_revision: pending.holding_revisions[&id].clone(),
+                reason: "确认拆股".into(),
+            },
+        )
+        .unwrap();
+    assert!(!db
+        .check_or_register_corporate_actions(&confirmed, &id, &quote)
+        .unwrap());
+
+    let mut second_quote = quote.clone();
+    second_quote
+        .splits
+        .push(crate::models::market::quotes::SplitEvent {
+            effective_on: "2026-03-01".into(),
+            numerator: "3".into(),
+            denominator: "1".into(),
+        });
+    assert!(db
+        .check_or_register_corporate_actions(&confirmed, &id, &second_quote)
+        .unwrap());
+    let with_second = db.snapshot().unwrap();
+    let second_id = with_second
+        .corporate_actions
+        .iter()
+        .find(|a| a.split.effective_on == "2026-03-01")
+        .unwrap()
+        .id
+        .clone();
+    let dismissed = db
+        .review_corporate_action(
+            &second_id,
+            &ConfirmCorporateActionInput {
+                expected_revision: with_second.holding_revisions[&id].clone(),
+                reason: "来源有误，否决".into(),
+            },
+            "reject",
+        )
+        .unwrap();
+    let err = db
+        .check_or_register_corporate_actions(&dismissed, &id, &second_quote)
+        .unwrap_err();
+    assert!(err.to_string().contains("已否决的公司行动"));
+}

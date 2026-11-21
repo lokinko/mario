@@ -56,6 +56,14 @@ impl ValuationAccount for Database {
     fn register_corporate_actions(&self, id: &str, quote: &SecurityPriceQuote) -> AppResult<bool> {
         Database::register_corporate_actions(self, id, quote)
     }
+    fn check_or_register_corporate_actions(
+        &self,
+        snapshot: &Snapshot,
+        id: &str,
+        quote: &SecurityPriceQuote,
+    ) -> AppResult<bool> {
+        Database::check_or_register_corporate_actions(self, snapshot, id, quote)
+    }
     fn apply_verified_holding_valuation(
         &self,
         id: &str,

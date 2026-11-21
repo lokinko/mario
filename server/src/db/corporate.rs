@@ -3,7 +3,7 @@ use crate::models::{
     market::quotes::SecurityPriceQuote,
     portfolio::{ConfirmCorporateActionInput, CorporateActionRecord},
 };
-use crate::storage::params;
+use crate::storage::{params, OptionalRow};
 use rust_decimal::prelude::ToPrimitive;
 use sha2::{Digest, Sha256};
 use {
@@ -19,6 +19,36 @@ pub(super) fn load(conn: &Connection) -> AppResult<Vec<CorporateActionRecord>> {
         .query_map([], |r| r.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     rows.iter().map(|s| Ok(serde_json::from_str(s)?)).collect()
+}
+
+fn load_for_holding(conn: &Connection, holding_id: &str) -> AppResult<Vec<CorporateActionRecord>> {
+    let mut statement =
+        conn.prepare("SELECT payload FROM corporate_actions WHERE holding_id=$1 ORDER BY id")?;
+    let rows = statement
+        .query_map([holding_id], |r| r.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    rows.iter().map(|s| Ok(serde_json::from_str(s)?)).collect()
+}
+
+fn check_dismissed_and_pending(
+    actions: &[CorporateActionRecord],
+    holding_id: &str,
+    quote: &SecurityPriceQuote,
+) -> AppResult<bool> {
+    if actions.iter().any(|a| {
+        a.holding_id == holding_id
+            && a.dismissed
+            && !a.user_declared
+            && (a.symbol.is_empty() || a.symbol == quote.symbol)
+            && quote.splits.contains(&a.split)
+    }) {
+        return Err(AppError::Validation(
+            "当前行情来源包含已否决的公司行动，请更正证券代码或按实际价格人工核对".into(),
+        ));
+    }
+    Ok(actions
+        .iter()
+        .any(|a| a.holding_id == holding_id && !a.applied && !a.dismissed))
 }
 
 pub(super) fn position_with_loaded(
@@ -191,14 +221,14 @@ impl Database {
         Ok(snapshot)
     }
 
-    pub fn register_corporate_actions(
+    /// Fast in-memory check using an already-loaded snapshot; falls back to
+    /// `register_corporate_actions` only when a quote carries an unrecorded split.
+    pub fn check_or_register_corporate_actions(
         &self,
+        snapshot: &Snapshot,
         id: &str,
         quote: &SecurityPriceQuote,
     ) -> AppResult<bool> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction()?;
-        let snapshot = Self::snapshot_on(&tx)?;
         if snapshot.option_contracts.contains_key(id) {
             return Err(AppError::Validation(
                 "期权不能套用股票行情或拆股调整".into(),
@@ -220,20 +250,87 @@ impl Database {
             .map(|t| t.occurred_on.as_str())
             .min();
         let from = first.unwrap_or(&holding.valuation_date);
-        for split in quote.splits.iter().filter(|s| {
-            s.effective_on.as_str() > from && s.effective_on <= crate::models::market::today()
-        }) {
-            let _ = super::trades::split_ratio(split)?;
-            if load(&tx)?.iter().any(|a| {
+        let today = crate::models::market::today();
+        for split in quote
+            .splits
+            .iter()
+            .filter(|s| s.effective_on.as_str() > from && s.effective_on <= today)
+        {
+            let ratio = super::trades::split_ratio(split)?;
+            let exists = snapshot.corporate_actions.iter().any(|a| {
                 a.holding_id == holding.id
                     && !a.dismissed
                     && a.split.effective_on == split.effective_on
-                    && super::trades::split_ratio(&a.split).ok()
-                        == super::trades::split_ratio(split).ok()
+                    && super::trades::split_ratio(&a.split).ok() == Some(ratio)
+            });
+            if !exists {
+                return self.register_corporate_actions(id, quote);
+            }
+        }
+        check_dismissed_and_pending(&snapshot.corporate_actions, &holding.id, quote)
+    }
+
+    pub fn register_corporate_actions(
+        &self,
+        id: &str,
+        quote: &SecurityPriceQuote,
+    ) -> AppResult<bool> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        if super::options::get(&tx, id)?.is_some() {
+            return Err(AppError::Validation(
+                "期权不能套用股票行情或拆股调整".into(),
+            ));
+        }
+        let (quantity, valuation_date): (Option<f64>, String) = tx
+            .query_row(
+                "SELECT quantity, valuation_date FROM holdings WHERE id=$1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| AppError::Validation("持仓不存在".into()))?;
+        crate::db::validation::validate_holding_valuation_evidence(
+            quantity.filter(|q| *q > 0.0).unwrap_or(1.0),
+            quote,
+        )?;
+        let mut trade_stmt = tx.prepare(
+            "SELECT payload FROM holding_trades
+             WHERE holding_id=$1
+               AND holding_id NOT IN (SELECT holding_id FROM trading_quarantine)",
+        )?;
+        let trade_rows = trade_stmt
+            .query_map([id], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(trade_stmt);
+        let mut first: Option<String> = None;
+        for raw in trade_rows {
+            let trade: crate::models::portfolio::HoldingTrade = serde_json::from_str(&raw)?;
+            if first
+                .as_deref()
+                .is_none_or(|current| trade.occurred_on.as_str() < current)
+            {
+                first = Some(trade.occurred_on);
+            }
+        }
+        let from = first.as_deref().unwrap_or(valuation_date.as_str());
+        let today = crate::models::market::today();
+        let mut actions = load_for_holding(&tx, id)?;
+        for split in quote
+            .splits
+            .iter()
+            .filter(|s| s.effective_on.as_str() > from && s.effective_on <= today)
+        {
+            let ratio = super::trades::split_ratio(split)?;
+            if actions.iter().any(|a| {
+                a.holding_id == id
+                    && !a.dismissed
+                    && a.split.effective_on == split.effective_on
+                    && super::trades::split_ratio(&a.split).ok() == Some(ratio)
             }) {
                 continue;
             }
-            let id = format!(
+            let action_id = format!(
                 "{:x}",
                 Sha256::digest(format!(
                     "{id}:{}:{}:{}:{}",
@@ -241,8 +338,8 @@ impl Database {
                 ))
             );
             let action = CorporateActionRecord {
-                id: id.clone(),
-                holding_id: holding.id.clone(),
+                id: action_id.clone(),
+                holding_id: id.to_owned(),
                 split: split.clone(),
                 applied: false,
                 dismissed: false,
@@ -250,25 +347,13 @@ impl Database {
                 symbol: quote.symbol.clone(),
                 source_url: quote.source_url.clone(),
             };
-            if tx.execute("INSERT INTO corporate_actions(id,holding_id,payload) VALUES ($1,$2,$3) ON CONFLICT(id) DO NOTHING",params![id,holding.id,serde_json::to_string(&action)?])? > 0 {
-                super::financial::journal(&tx,&holding.id,"corporate.detected",&Option::<CorporateActionRecord>::None,&action,"0",("行情发现公司行动，等待核对",None))?;
-                tx.execute("UPDATE holdings SET updated_at=$2 WHERE id=$1",params![holding.id,Utc::now().to_rfc3339()])?;
+            if tx.execute("INSERT INTO corporate_actions(id,holding_id,payload) VALUES ($1,$2,$3) ON CONFLICT(id) DO NOTHING",params![action_id,id,serde_json::to_string(&action)?])? > 0 {
+                super::financial::journal(&tx,id,"corporate.detected",&Option::<CorporateActionRecord>::None,&action,"0",("行情发现公司行动，等待核对",None))?;
+                tx.execute("UPDATE holdings SET updated_at=$2 WHERE id=$1",params![id,Utc::now().to_rfc3339()])?;
+                actions.push(action);
             }
         }
-        if load(&tx)?.iter().any(|a| {
-            a.holding_id == holding.id
-                && a.dismissed
-                && !a.user_declared
-                && (a.symbol.is_empty() || a.symbol == quote.symbol)
-                && quote.splits.contains(&a.split)
-        }) {
-            return Err(AppError::Validation(
-                "当前行情来源包含已否决的公司行动，请更正证券代码或按实际价格人工核对".into(),
-            ));
-        }
-        let pending = load(&tx)?
-            .iter()
-            .any(|a| a.holding_id == holding.id && !a.applied && !a.dismissed);
+        let pending = check_dismissed_and_pending(&actions, id, quote)?;
         tx.commit()?;
         Ok(pending)
     }

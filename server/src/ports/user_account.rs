@@ -39,6 +39,14 @@ pub(crate) trait FxAccount: PortfolioState {
 
 pub(crate) trait ValuationAccount: PortfolioState {
     fn register_corporate_actions(&self, id: &str, quote: &SecurityPriceQuote) -> AppResult<bool>;
+    fn check_or_register_corporate_actions(
+        &self,
+        _snapshot: &Snapshot,
+        id: &str,
+        quote: &SecurityPriceQuote,
+    ) -> AppResult<bool> {
+        self.register_corporate_actions(id, quote)
+    }
     fn apply_verified_holding_valuation(
         &self,
         id: &str,

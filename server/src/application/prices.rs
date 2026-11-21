@@ -212,7 +212,7 @@ fn apply_quote(
             quote.currency, holding.currency
         )));
     }
-    if db.register_corporate_actions(&holding.id, quote)? {
+    if db.check_or_register_corporate_actions(snapshot, &holding.id, quote)? {
         return Err(AppError::MarketData(
             "发现待确认公司行动，已暂停估值，请核对并确认".into(),
         ));
