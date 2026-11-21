@@ -70,6 +70,7 @@ export interface AnalysisPreview {
   groups: ContextGroup[];
   evidenceCandidates: ResearchEvidence[];
   payload: Record<string, unknown>;
+  renderedContext?: string;
   payloadBytes: number;
   contextRevision: string;
   systemPolicy: string;

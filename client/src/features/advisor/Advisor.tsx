@@ -677,20 +677,14 @@ export function Advisor({
                   <li key={group.key}>
                     {group.label} ·{" "}
                     {group.included ? `${group.recordCount} 条` : "未选择"}
-                    <p>{group.description}</p>
                   </li>
                 ))}
               </ul>
               <h3>实际资料正文</h3>
               <pre className="context-preview">
-                {JSON.stringify(preview.payload, null, 2)}
+                {preview.renderedContext?.trim() ||
+                  JSON.stringify(preview.payload, null, 2)}
               </pre>
-              <h3>仅本地保留</h3>
-              <ul>
-                {preview.localOnly.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
             </>
           )}
         </Drawer>

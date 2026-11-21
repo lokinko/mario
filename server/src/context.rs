@@ -258,6 +258,7 @@ impl ContextBuilder {
                     .unwrap_or_default()
             )
         );
+        let rendered_context = render_for_model(&context.payload);
         AnalysisPreview {
             provider,
             model,
@@ -265,6 +266,7 @@ impl ContextBuilder {
             groups: context.groups,
             evidence_candidates,
             payload: context.payload,
+            rendered_context,
             payload_bytes: context.payload_bytes,
             context_revision: context.revision,
             system_policy,
@@ -374,8 +376,9 @@ mod tests {
             vec![],
         );
         assert_eq!(preview.payload, payload);
+        assert_eq!(preview.rendered_context, render_for_model(&payload));
         assert_eq!(preview.context_revision, revision);
-        assert_eq!(preview.payload_bytes, render_for_model(&payload).len());
+        assert_eq!(preview.payload_bytes, preview.rendered_context.len());
         assert!(payload.get("portfolio").is_none());
         assert!(payload.get("financialProfile").is_none());
         request.context_selection.include_profile = false;

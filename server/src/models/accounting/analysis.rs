@@ -69,7 +69,7 @@ impl AuthorizedFinancialContext {
                     emergency
                         .zip(expense)
                         .and_then(|(a, b)| a.checked_div(b))
-                        .map(|v| v.round_dp(4)),
+                        .map(|v| v.round_dp(2)),
                 ),
             ] {
                 insert(&mut summary, key, value.map(text));
@@ -134,15 +134,6 @@ impl AuthorizedFinancialContext {
             for mut group in groups.into_values() {
                 group.sort_by(|a, b| a.id.cmp(&b.id));
                 let h = group[0];
-                companies.push((h.name.clone(), h.symbol.clone()));
-                let mut row = Map::new();
-                for (key, value) in [
-                    ("name", &h.name),
-                    ("symbol", &h.symbol),
-                    ("currency", &h.currency),
-                ] {
-                    insert(&mut row, key, Some(value.clone()));
-                }
                 let sources = group
                     .iter()
                     .map(|h| {
@@ -153,16 +144,43 @@ impl AuthorizedFinancialContext {
                             .filter(|a| a.usable)
                     })
                     .collect::<Vec<_>>();
+                let all_usable = sources.iter().all(Option::is_some);
                 let sum = |field: fn(&super::AccountingHolding) -> Option<&str>| {
                     sources.iter().try_fold(Decimal::ZERO, |sum, source| {
                         sum.checked_add(decimal(field(source.as_ref().copied()?)?)?)
                     })
                 };
+                let market_value = sum(|a| Some(&a.amounts.market_value));
+                let cost_basis = sum(|a| Some(&a.amounts.cost_basis));
+                let current_quantity = sum(|a| a.amounts.quantity.as_deref());
+                let unrealized_profit = sum(|a| a.unrealized_profit.as_deref());
+                let is_cash = h.asset_class == "现金";
+                // Omit closed positions and zero-balance accounts from current holdings.
+                let is_closed_or_empty = all_usable
+                    && market_value.is_some_and(|v| v.is_zero())
+                    && (is_cash
+                        || current_quantity.is_some_and(|q| q.is_zero())
+                        || (current_quantity.is_none() && cost_basis.is_some_and(|c| c.is_zero())));
+                if is_closed_or_empty {
+                    continue;
+                }
+                companies.push((h.name.clone(), h.symbol.clone()));
+                let mut row = Map::new();
                 for (key, value) in [
-                    ("marketValue", sum(|a| Some(&a.amounts.market_value))),
-                    ("costBasis", sum(|a| Some(&a.amounts.cost_basis))),
-                    ("currentQuantity", sum(|a| a.amounts.quantity.as_deref())),
-                    ("unrealizedProfit", sum(|a| a.unrealized_profit.as_deref())),
+                    ("name", &h.name),
+                    ("symbol", &h.symbol),
+                    ("currency", &h.currency),
+                ] {
+                    insert(&mut row, key, Some(value.clone()));
+                }
+                for (key, value) in [
+                    ("marketValue", market_value),
+                    (
+                        "costBasis",
+                        cost_basis.filter(|c| !(is_cash && c.is_zero())),
+                    ),
+                    ("currentQuantity", current_quantity),
+                    ("unrealizedProfit", unrealized_profit),
                 ] {
                     insert(&mut row, key, value.map(text));
                 }
@@ -177,7 +195,7 @@ impl AuthorizedFinancialContext {
                     .zip(total)
                     .and_then(|(base, total)| base.checked_div(total))
                     .and_then(|w| w.checked_mul(Decimal::ONE_HUNDRED));
-                insert(&mut row, "weightPct", weight.map(|v| text(v.round_dp(4))));
+                insert(&mut row, "weightPct", weight.map(|v| text(v.round_dp(2))));
                 if row.contains_key("currentQuantity") {
                     insert(
                         &mut row,
@@ -311,5 +329,59 @@ mod tests {
         assert!(f.facts["holdings"]["fund-a"].get("costBasis").is_none());
         assert_eq!(f.facts["summary"]["cashValue"], "10090");
         assert!(f.facts["summary"].get("portfolioValue").is_none());
+    }
+    #[test]
+    fn omits_closed_positions_zero_cash_and_zero_cash_cost_basis() {
+        let mut s = snapshot();
+        let mut closed = s
+            .holdings
+            .iter()
+            .find(|h| h.id == "fund-a")
+            .unwrap()
+            .clone();
+        closed.id = "sold-stock".into();
+        closed.symbol = "600000.SS".into();
+        closed.name = "已清仓公司".into();
+        closed.asset_class = "股票".into();
+        let mut closed_acct = s.accounting.as_ref().unwrap().holdings["fund-a"].clone();
+        closed_acct.amounts.quantity = Some("0".into());
+        closed_acct.amounts.market_value = "0".into();
+        closed_acct.amounts.cost_basis = "0".into();
+        closed_acct.unrealized_profit = Some("0".into());
+        s.holdings.push(closed);
+        s.accounting
+            .as_mut()
+            .unwrap()
+            .holdings
+            .insert("sold-stock".into(), closed_acct);
+
+        let mut empty_cash = s
+            .holdings
+            .iter()
+            .find(|h| h.id == "cash-cny")
+            .unwrap()
+            .clone();
+        empty_cash.id = "cash-usd-empty".into();
+        empty_cash.symbol = "CASH-USD".into();
+        empty_cash.currency = "USD".into();
+        empty_cash.name = "美元存款".into();
+        let mut empty_cash_acct = s.accounting.as_ref().unwrap().holdings["cash-cny"].clone();
+        empty_cash_acct.amounts.market_value = "0".into();
+        empty_cash_acct.amounts.cost_basis = "0".into();
+        s.holdings.push(empty_cash);
+        s.accounting
+            .as_mut()
+            .unwrap()
+            .holdings
+            .insert("cash-usd-empty".into(), empty_cash_acct);
+
+        let f = AuthorizedFinancialContext::from_snapshot(&s, true, true);
+        let holdings = f.facts["holdings"].as_object().unwrap();
+        assert!(!holdings.contains_key("sold-stock"));
+        assert!(!holdings.contains_key("cash-usd-empty"));
+        assert!(holdings.contains_key("cash-cny"));
+        assert!(holdings["cash-cny"].get("costBasis").is_none());
+        assert_eq!(f.holding_count, holdings.len());
+        assert!(!f.companies.iter().any(|(_, sym)| sym == "600000.SS"));
     }
 }

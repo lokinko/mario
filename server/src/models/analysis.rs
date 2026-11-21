@@ -171,6 +171,7 @@ pub struct AnalysisPreview {
     pub groups: Vec<ContextGroup>,
     pub evidence_candidates: Vec<ResearchEvidence>,
     pub payload: serde_json::Value,
+    pub rendered_context: String,
     pub payload_bytes: usize,
     pub context_revision: String,
     pub system_policy: String,

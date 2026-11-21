@@ -807,12 +807,16 @@ it("previews the actual selected payload without sending an analysis", async () 
       },
     ],
     payload: { portfolio: [{ name: "核对样例", marketValue: "1234.56" }] },
+    renderedContext:
+      "## 当前持仓\n| 行ID | name | marketValue |\n| --- | --- | --- |\n| h1 | 核对样例 | 1234.56 |",
     localOnly: ["API Key"],
   });
   render(<Advisor {...props} />);
   fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
   await screen.findByRole("heading", { name: "实际资料正文" });
   expect(screen.getByText(/核对样例/)).toBeTruthy();
+  expect(screen.getByText(/\| h1 \| 核对样例 \| 1234\.56 \|/)).toBeTruthy();
+  expect(screen.queryByText("仅本地保留")).toBeNull();
   expect(researchApi.runAnalysis).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   expect(screen.queryByRole("dialog")).toBeNull();
