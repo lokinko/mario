@@ -115,7 +115,6 @@ export function HoldingsList({
         <div className="position-filters">
           <strong>投资持仓</strong>
           <Tag variant="filled">{visible.length} 项</Tag>
-          <span>按币种分组</span>
         </div>
         <div className="holdings-tools">
           <div className="holdings-search">
@@ -219,11 +218,7 @@ export function HoldingsList({
         {visible.length === 0 && (
           <div className="empty-state" role="row">
             <div role="cell" aria-colspan={7}>
-              <p>
-                {query
-                  ? "没有找到匹配的持仓。"
-                  : "暂无未清仓持仓，可点击下方展开已清仓持仓。"}
-              </p>
+              <p>{query ? "没有找到匹配的持仓。" : "暂无未清仓持仓。"}</p>
               {query && (
                 <button
                   className="text-button"

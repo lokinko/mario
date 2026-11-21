@@ -31,9 +31,7 @@ it("explains both local execution choices without asking the webpage for ChatGPT
   await screen.findByText("尚未配对或配对已过期");
   expect(screen.getByText("npm run chatgpt:bridge")).toBeTruthy();
   expect(screen.getByText("npm run codex:bridge")).toBeTruthy();
-  expect(screen.getByText(/没有已选择账号时会打开浏览器授权/)).toBeTruthy();
-  expect(screen.getByText(/浏览器回调仅监听 127\.0\.0\.1/)).toBeTruthy();
-  expect(screen.getByText(/不代表公开或商业化托管服务已获准使用/)).toBeTruthy();
+  expect(screen.getByText(/127\.0\.0\.1/)).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByLabelText(/密码|令牌|API Key/)).toBeNull();
 });

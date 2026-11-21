@@ -566,7 +566,7 @@ export function Advisor({
                 </button>
               }
             >
-              已暂存来自其他页面的研究问题，避免中断或覆盖当前对话。
+              已暂存来自其他页面的研究问题。
             </Callout>
           )}
           {error && <Callout tone="danger">{error}</Callout>}
@@ -667,13 +667,10 @@ export function Advisor({
           {preview && (
             <>
               <DataStamp date={preview.generatedAt} source={preview.model} />
-              <p className="section-intro">
-                仅使用问答预设中选择的资料。以下为当前预览；发送前会重新核对并冻结输入。
-              </p>
               <p>
                 {previewQuestionCount
-                  ? `承接 ${previewQuestionCount} 条用户问题，并附上轮回答摘要与结构化追问（如有）。`
-                  : "新对话，不承接历史问题或上轮追问。"}
+                  ? `承接 ${previewQuestionCount} 条历史问题与上轮摘要。`
+                  : "新对话"}
               </p>
               <ul>
                 {preview.groups.map((group) => (

@@ -163,12 +163,6 @@ export function ServerData({
         <p className={`sync-live-status sync-${autoState.phase}`} role="status">
           {autoState.message}
         </p>
-        <details className="inline-help">
-          <summary>同步与离线说明</summary>
-          <p>
-            同一账号跨设备同步；未保存的输入会先保留并提示核对。离线时无法保存。
-          </p>
-        </details>
       </section>
       <section className="panel data-transfer" aria-label="备份与导入">
         <div className="data-transfer-row">
@@ -288,8 +282,8 @@ export function ServerData({
         >
           <Callout tone={pending.replace ? "warning" : "info"}>
             {pending.replace
-              ? "将替换当前账号的全部业务数据，包括持仓、成交、现金、方法论、参考资料和历史记录，不做合并。账号登录凭据不变。"
-              : "将此文件导入当前空账号。"}
+              ? "将替换当前账号的全部业务数据（不做合并），覆盖前会自动下载当前备份；失败会整体回滚。"
+              : "将此文件导入当前空账号，失败会整体回滚。"}
           </Callout>
           {source && (
             <>
@@ -314,30 +308,11 @@ export function ServerData({
               {selectedSource && (
                 <p role="status">
                   将导入 {selectedSource.stocks} 只自选证券、
-                  {selectedSource.transactions}{" "}
-                  条源交易记录（红利税合入对应卖出的税费）。
+                  {selectedSource.transactions} 条交易记录（成本按交易重算）。
                 </p>
               )}
-              <p>
-                买卖按上海日期和原时间顺序录入；分红金额按每股金额 ×
-                股数计算。成本按完整交易重算，分红单列收益，可能与源 costPrice
-                不同。原 price 仅作未核验参考价。
-              </p>
-              <p>
-                只读取所选账户的自选和账本，不重复导入顶层 watchlist。沪深 A
-                股进入观察名单，场内 ETF
-                等基金只导入持仓和交易。现金追踪未启用时不导入占位余额；已启用时保留当前余额、待核对，历史成交不再次扣现金。原手续费估算不导入，费用按
-                0 记录并在交易备注中注明；红利税无法匹配时拒绝整次导入。
-              </p>
-              <p>
-                行业、目标价、旧股息率、行情缓存和发现列表不导入；保留当前账号观察规则。请保留原
-                JSON 以核对来源。
-              </p>
             </>
           )}
-          <p>
-            导入失败会整体回滚；覆盖前会额外下载当前数据的备份。如需恢复，须用备份文件重新导入。
-          </p>
           {pending.replace && (
             <label className="data-replacement-option" data-presentation="true">
               <input

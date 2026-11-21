@@ -38,13 +38,13 @@ export function CodexModelSelect({
           ))}
         </select>
         {selected?.description && <small>{selected.description}</small>}
-        <small>
-          {!bridgeStatus?.online
-            ? "本机桥接在线后会显示模型列表，已保存的选择会保留。"
-            : models.length === 0
-              ? "请更新并重启本机桥接以读取模型列表。"
-              : "选择本机桥接返回的模型，点击“保存配置”后用于后续问答。模型范围取决于登录账号、订阅与所选执行方式；连接测试成功才确认可调用。"}
-        </small>
+        {(!bridgeStatus?.online || models.length === 0) && (
+          <small>
+            {!bridgeStatus?.online
+              ? "本机桥接未在线"
+              : "请更新并重启本机桥接以读取模型列表"}
+          </small>
+        )}
       </label>
     </div>
   );

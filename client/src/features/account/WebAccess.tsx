@@ -427,14 +427,11 @@ export function WebAccess({
         <h1 id="login-title">{register ? "创建 mario 账号" : "登录 mario"}</h1>
         <OpenAiSignIn disabled={busy} />
         {accounts.length > 0 && (
-          <>
-            <p>选择已登录账号，或登录其他账号。</p>
-            <SavedAccounts
-              accounts={accounts}
-              busy={busy}
-              onSelect={selectAccount}
-            />
-          </>
+          <SavedAccounts
+            accounts={accounts}
+            busy={busy}
+            onSelect={selectAccount}
+          />
         )}
         <label>
           邮箱
@@ -459,7 +456,6 @@ export function WebAccess({
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
-        <p>资料存储在你的服务器，同一账号可在不同设备的浏览器访问。</p>
         <ServerAddress />
         {error && <Callout tone="danger">{error}</Callout>}
         <Button

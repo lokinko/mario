@@ -1,6 +1,6 @@
 import { PrivateNumberInput } from "../../components/AmountPrivacy";
 import { Button, Input } from "antd";
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   saveHolding,
   updateHolding,
@@ -51,8 +51,6 @@ export function AssetEditor({
     initial.costBasis > 0 ? String(initial.costBasis) : "",
   );
   const cashRevision = useRef(snapshot.holdingRevisions?.[initial.id] ?? "");
-  const costHelpId = useId();
-  const codeHelpId = useId();
   const cash = editing.assetClass === "现金";
   const tradeManaged = Boolean(
     snapshot.holdingTrades?.some((t) => t.holdingId === editing.id),
@@ -124,11 +122,7 @@ export function AssetEditor({
     >
       <fieldset className="holding-fields" disabled={busy}>
         <div className="form-grid">
-          {cash ? (
-            <p>
-              {editing.currency} 存款 · 填写当前余额，之后的交易会自动结算。
-            </p>
-          ) : (
+          {!cash && (
             <>
               <label>
                 <span>名称</span>
@@ -143,23 +137,14 @@ export function AssetEditor({
                 />
               </label>
               <label>
-                <span id={`${codeHelpId}-label`}>
-                  证券代码（自动价格，选填）
-                </span>
+                <span>证券代码（自动价格，选填）</span>
                 <Input
-                  aria-labelledby={`${codeHelpId}-label`}
-                  aria-describedby={tradeManaged ? codeHelpId : undefined}
                   value={editing.symbol}
                   placeholder="AAPL / 0700.HK / 600519.SS / 000001.SZ"
                   onChange={(e) =>
                     setEditing({ ...editing, symbol: e.target.value })
                   }
                 />
-                {tradeManaged && (
-                  <small id={codeHelpId}>
-                    可补填或纠正同一证券的代码；如需记录另一只证券，请通过“记录交易”添加。
-                  </small>
-                )}
               </label>
               <HoldingFields
                 tradeManaged={tradeManaged}
@@ -223,7 +208,6 @@ export function AssetEditor({
                     inputMode="decimal"
                     step="any"
                     placeholder="未填写"
-                    aria-describedby={costHelpId}
                     readOnly={tradeManaged || editing.costPrice != null}
                     value={
                       editing.costPrice != null
@@ -240,11 +224,6 @@ export function AssetEditor({
                   />
                 </div>
               </label>
-              <small id={costHelpId}>
-                {tradeManaged
-                  ? "数量与成本由交易明细计算，请通过录入或编辑交易调整。当前价格可在下方更新。"
-                  : "成本价为当前持仓每单位的平均买入成本（可含买入费用）；填入成本价和数量后自动计算总成本。旧记录也可直接填写总成本。"}
-              </small>
             </div>
           )}
         </div>
@@ -311,11 +290,6 @@ export function AssetEditor({
               </label>
             </div>
           </details>
-        )}
-        {editing.currency !== snapshot.profile.baseCurrency && (
-          <p className="section-intro">
-            汇率自动读取；如需调整，可在“存款与收支”的“汇率”浮窗中通过“管理汇率”修改。
-          </p>
         )}
         <div className="form-actions">
           <Button type="primary" htmlType="submit" disabled={busy || !valid}>

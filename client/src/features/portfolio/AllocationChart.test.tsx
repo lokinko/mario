@@ -31,7 +31,6 @@ it("shows server-computed weights and switches between asset class and industry"
   expect(screen.getByRole("img").getAttribute("aria-label")).toBe(
     "现金 40%，银行 35%，其他股票 25%",
   );
-  expect(screen.getByText(/目录外的归入“其他股票”/)).toBeTruthy();
   expect(portfolioApi.getAllocation).toHaveBeenCalledOnce();
 });
 

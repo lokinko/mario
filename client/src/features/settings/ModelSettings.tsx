@@ -88,7 +88,7 @@ export function ModelSettings({
       onUpdate(next);
       setApiKey("");
       onSaved?.();
-      flash("模型配置已安全保存");
+      flash("模型配置已保存");
     } catch (nextError) {
       setError(formatError(nextError));
     } finally {
@@ -118,7 +118,7 @@ export function ModelSettings({
     try {
       onUpdate(await deleteModelKey());
       onSaved?.();
-      flash("模型密钥已从账户密钥存储移除");
+      flash("模型密钥已移除");
     } catch (nextError) {
       setError(formatError(nextError));
     } finally {
@@ -264,8 +264,8 @@ export function ModelSettings({
                       onChange={(e) => setApiKey(e.target.value)}
                       placeholder={
                         model.source !== "server" && model.hasApiKey
-                          ? "已保存在账户密钥存储；留空则不修改"
-                          : "输入模型供应商密钥"
+                          ? "已保存，留空不修改"
+                          : "输入 API Key"
                       }
                     />
                     <button
@@ -314,20 +314,6 @@ export function ModelSettings({
             }}
           />
         )}
-        <Callout tone="info">
-          <div>
-            <strong>密钥与业务数据分离</strong>
-            <p>
-              {usingServer
-                ? "使用站点提供的 OpenAI 服务；只发送你确认的问答资料。密钥由管理员保存在服务器，不进入个人数据导出。联网查找需模型支持，连接测试仅验证普通调用。"
-                : provider === "codex-bridge"
-                  ? "模型请求由配对电脑通过 ChatGPT 官方授权或本机 Codex 执行；只发送你确认的问答资料，登录与刷新凭据保留在本机。关闭桥接后问答会提示连接不可用，订阅额度不足不会自动切换到 API Key 计费。"
-                  : provider === "openai-chat"
-                    ? "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥。第三方服务可选择 OpenAI 兼容接口；Chat Completions 问答仅使用已选资料，不启用原生网页搜索。"
-                    : "密钥不进入导出或 AI 资料。更换接口或地址需更新密钥；联网查找需模型支持原生网页搜索，连接测试仅验证普通调用。"}
-            </p>
-          </div>
-        </Callout>
         {error && <Callout tone="danger">{error}</Callout>}
         {connectionResult && (
           <Callout tone="success">

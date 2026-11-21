@@ -60,12 +60,9 @@ export function ServerModelSelect({
             </option>
           ))}
         </select>
-        <small>
-          {loading
-            ? "正在获取站点可用模型…"
-            : error ||
-              "目录来自站点 OpenAI 项目；列出的文本候选仍需通过连接测试确认可调用。"}
-        </small>
+        {(loading || error) && (
+          <small>{loading ? "正在获取站点可用模型…" : error}</small>
+        )}
       </label>
       <div>
         <button
@@ -76,7 +73,6 @@ export function ServerModelSelect({
         >
           重新获取模型
         </button>
-        <p>无需填写个人 API Key，调用费用由站点承担。选择后点击“保存配置”。</p>
       </div>
     </div>
   );

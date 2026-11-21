@@ -359,9 +359,7 @@ export function ReviewCenter({
                   记录第一次复盘
                 </button>
               }
-            >
-              写下你的第一段观点、顾虑和思考。
-            </EmptyState>
+            />
           )}
           <div className="system-review-list">
             {reviews.map((item, index) => (
@@ -417,9 +415,7 @@ export function ReviewCenter({
           <div className="rule-layout">
             <div className="rule-list">
               {rules.length === 0 && (
-                <div className="empty">
-                  还没有个人规则。好的规则应说明“何时触发、具体做什么、为什么”。
-                </div>
+                <div className="empty">还没有个人规则</div>
               )}
               {rules.map((item) => (
                 <article
@@ -524,13 +520,9 @@ export function ReviewCenter({
         >
           {error && <Callout tone="danger">{error}</Callout>}{" "}
           <fieldset className="rule-editor holding-fields" disabled={saving}>
-            <strong>
-              {editingRuleId
-                ? "修订规则"
-                : rule.sourceReviewId
-                  ? "从复盘沉淀规则"
-                  : "建立一条规则"}
-            </strong>
+            {!editingRuleId && rule.sourceReviewId && (
+              <strong>从复盘沉淀规则</strong>
+            )}
             <label>
               <span>类别</span>
               <select

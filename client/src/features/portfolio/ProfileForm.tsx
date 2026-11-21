@@ -130,10 +130,6 @@ export function ProfileForm({
           {exchangeRates}
         </div>
       </div>
-      <p className="section-intro">
-        记录稳定月度现金流，作为风险承受能力的基础。留空表示未填写，明确无负债请填
-        0；保存后才会用于问答。
-      </p>
       {!valid && (
         <Callout tone="warning">
           请核对金额和投资偏好：金额不能为负，投资期限为 0—80 年，回撤为

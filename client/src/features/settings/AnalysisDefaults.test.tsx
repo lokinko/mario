@@ -70,7 +70,7 @@ it("offers only the supported data groups, including long-term memory, without r
     "财务档案",
     "当前持仓状态",
     "研究证据与历史搜索资料",
-    "长期记忆（偏好与已核对观点）",
+    "长期记忆",
   ]) {
     expect((screen.getByLabelText(label) as HTMLInputElement).checked).toBe(
       true,

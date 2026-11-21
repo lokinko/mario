@@ -102,13 +102,11 @@ export function AllocationChart({ snapshot }: { snapshot: Snapshot }) {
           ))}
         </ul>
       </div>
-      <p className="allocation-note">
-        按当前市值和估值汇率折算，包含现金。
-        {mode === "byIndustry" &&
-          "股票行业沿用买点观察公共目录，目录外的归入“其他股票”。"}
-        {allocation.missing > 0 &&
-          `${allocation.missing} 项缺少汇率或待处理，未计入。`}
-      </p>
+      {allocation.missing > 0 && (
+        <p className="allocation-note">
+          {allocation.missing} 项缺少汇率或待处理，未计入。
+        </p>
+      )}
     </section>
   );
 }

@@ -82,7 +82,7 @@ it("previews pasted external JSON without counting the duplicate top-level watch
     target: { value: JSON.stringify(data) },
   });
   fireEvent.click(screen.getByRole("button", { name: "预览导入" }));
-  expect(screen.getByText(/将导入 1 只自选证券、1 条源交易记录/)).toBeTruthy();
+  expect(screen.getByText(/将导入 1 只自选证券、1 条交易记录/)).toBeTruthy();
   expect(accountApi.importData).not.toHaveBeenCalled();
   await acceptImport();
   expect(accountApi.importData).toHaveBeenCalledWith({
@@ -105,7 +105,7 @@ it("requires an explicit source account when the file contains several accounts"
   fireEvent.change(screen.getByLabelText("来源账户"), {
     target: { value: "second" },
   });
-  expect(screen.getByText(/将导入 0 只自选证券、0 条源交易记录/)).toBeTruthy();
+  expect(screen.getByText(/将导入 0 只自选证券、0 条交易记录/)).toBeTruthy();
   fireEvent.click(confirm);
   await waitFor(() =>
     expect(accountApi.importData).toHaveBeenCalledWith({

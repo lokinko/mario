@@ -12,7 +12,7 @@ const contextOptions: [keyof ContextSelection, string][] = [
   ["includeProfile", "财务档案"],
   ["includeHoldings", "当前持仓状态"],
   ["includeEvidence", "研究证据与历史搜索资料"],
-  ["includeMemory", "长期记忆（偏好与已核对观点）"],
+  ["includeMemory", "长期记忆"],
 ];
 
 export function AnalysisDefaults({
@@ -50,7 +50,7 @@ export function AnalysisDefaults({
     try {
       setSettings(await saveAnalysisSettings(settings));
       onSaved?.();
-      flash("问答预设已保存，之后每次提问自动使用");
+      flash("问答预设已保存");
     } catch (nextError) {
       setError(String(nextError));
     } finally {

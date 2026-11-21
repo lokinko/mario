@@ -370,7 +370,7 @@ export function EvidenceWorkbench({
                   maxLength={20000}
                   value={content}
                   onChange={(event) => setContent(event.target.value)}
-                  placeholder="直接粘贴或写下你获取到的重要原始信息。来源、链接和日期也可以一起放在这段文字里。"
+                  placeholder="粘贴或输入资料内容"
                 />
               </label>
               <TagFields
@@ -515,7 +515,7 @@ export function EvidenceWorkbench({
           onRetry={() => void refresh()}
         />
         {!loading && !error && items.length === 0 && (
-          <p className="empty">还没有资料，点击“新增资料”保存。</p>
+          <p className="empty">还没有资料</p>
         )}
         {!loading && !error && items.length > 0 && filtered.length === 0 && (
           <div className="empty">

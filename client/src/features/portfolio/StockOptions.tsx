@@ -271,10 +271,6 @@ export function StockOptions({
                 />
               </label>
             </div>
-            <p>
-              币种沿用标的股票 {stock.currency}
-              。乘数请以券商合约为准，每张通常代表多单位标的。
-            </p>
             <button type="submit" className="primary">
               下一步：记录开仓
             </button>{" "}

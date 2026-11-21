@@ -509,10 +509,7 @@ export function BuyWatch({
           )}
           {own && !rows.length && (
             <section className="panel watch-empty-start">
-              <h3>从一家公司开始</h3>
-              <p>
-                加入你愿意长期研究的公司；已有持仓可以直接选择，未持有的公司也能观察。
-              </p>
+              <h3>暂无观察公司</h3>
               <div className="watch-empty-actions">
                 <button className="primary" onClick={() => edit()}>
                   加入第一家公司
@@ -574,7 +571,6 @@ export function BuyWatch({
           {currentRows.length > 0 && visible.length === 0 && (
             <section className="panel watch-no-results">
               <h3>当前条件下没有公司</h3>
-              <p>调整搜索或筛选，可以继续查看已有名单。</p>
               <button className="secondary" onClick={reset}>
                 清除筛选
               </button>
@@ -715,9 +711,6 @@ export function BuyWatch({
                   onChange={(e) => change("thesis", e.target.value)}
                 />
               </label>
-              <p>
-                保存后纳入自动收盘观察。你填写的理由是研究起点，基本面是否稳定需要持续核查。
-              </p>
               <div className="form-actions">
                 <Button disabled={busy} onClick={close}>
                   取消

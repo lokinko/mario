@@ -124,9 +124,6 @@ export function WatchCatalogEditor({
       onClose={onClose}
     >
       <div className="watch-catalog-editor">
-        <p>
-          输入公司名称或证券代码即可添加，公开来源由系统查找，缺失时自动补充。移除公共公司会保留用户已有自选和交易。
-        </p>
         {error && (
           <Callout tone="danger">
             {error}
@@ -199,7 +196,7 @@ export function WatchCatalogEditor({
             </li>
           ))}
         </ul>
-        {!industry.companies.length && <p>此领域暂无公司，可在下方添加。</p>}
+        {!industry.companies.length && <p>此领域暂无公司</p>}
         <form
           onSubmit={(event) => {
             event.preventDefault();

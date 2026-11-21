@@ -103,9 +103,6 @@ export function AccountModelSelect({
   const showUnlistedValue =
     value.length > 0 && !fetchedSet.has(value) && !customSet.has(value);
 
-  const optionCount =
-    (showUnlistedValue ? 1 : 0) + customOnly.length + fetchedModels.length;
-
   const commitCustomModel = () => {
     const candidate = customDraft.trim();
     if (!candidate) {
@@ -136,11 +133,7 @@ export function AccountModelSelect({
           onChange={(event) => onChange(event.target.value)}
         >
           <option value="" disabled>
-            {loading
-              ? "正在获取可用模型…"
-              : optionCount > 0
-                ? "请选择模型"
-                : "请先获取可用模型或添加自定义模型"}
+            {loading ? "正在获取可用模型…" : "请选择模型"}
           </option>
           {showUnlistedValue && (
             <option value={value}>
@@ -160,19 +153,15 @@ export function AccountModelSelect({
           ))}
         </select>
       </label>
-      <small className="account-model-hint">
-        {loading
-          ? "正在从所选接口获取可用模型…"
-          : error
-            ? error
-            : hasFetched
-              ? fetchedModels.length > 0
-                ? `已获取 ${fetchedModels.length} 个可用模型；如需列表外模型，可添加自定义模型名。`
-                : "该接口未返回可用模型，请点击“添加自定义模型”手动添加。"
-              : canFetch
-                ? "点击“获取可用模型”拉取模型列表，或直接添加自定义模型名。"
-                : "请先填写接口地址与密钥以获取可用模型，也可直接添加自定义模型名。"}
-      </small>
+      {(loading || error || (hasFetched && fetchedModels.length === 0)) && (
+        <small className="account-model-hint">
+          {loading
+            ? "正在获取可用模型…"
+            : error
+              ? error
+              : "未返回可用模型，可手动添加自定义模型名。"}
+        </small>
+      )}
       <div className="account-model-actions">
         <button
           type="button"

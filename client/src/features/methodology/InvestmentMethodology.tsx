@@ -60,7 +60,7 @@ export function InvestmentMethodology({
         }),
       );
       onSaved();
-      flash("投资方法论已保存，将用于之后的每轮问答");
+      flash("投资方法论已保存");
     } catch (nextError) {
       if (isCurrent()) setError(String(nextError));
     } finally {

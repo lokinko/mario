@@ -619,7 +619,7 @@ it("keeps the first and latest user questions with the last structured follow-up
   fireEvent.change(input, { target: { value: questions[7] } });
   fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
   await screen.findByRole("heading", { name: "实际资料正文" });
-  expect(screen.getByText(/承接 6 条用户问题/)).toBeTruthy();
+  expect(screen.getByText(/承接 6 条历史问题/)).toBeTruthy();
   const inspected = vi.mocked(researchApi.previewAnalysis).mock.lastCall![0];
   expect(inspected.previousTurn).toEqual({
     question: questions[6],
@@ -714,7 +714,7 @@ it.each(["new conversation", "new company"])(
     }
     expect(researchApi.runAnalysis).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
-    await screen.findByText("新对话，不承接历史问题或上轮追问。");
+    await screen.findByText("新对话", { selector: "p" });
     expect(
       vi.mocked(researchApi.previewAnalysis).mock.lastCall![0].previousTurn,
     ).toBeUndefined();

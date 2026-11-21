@@ -91,9 +91,6 @@ export function InvestmentOverview({
         </div>
         {expanded && (
           <div ref={breakdown}>
-            <p>
-              成本与收益按各持仓估值汇率折算，不代表含历史汇兑损益的收益。缺失数据不计入已知部分。
-            </p>
             <div className="table-scroll">
               <table>
                 <thead>

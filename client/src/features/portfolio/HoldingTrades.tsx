@@ -651,8 +651,7 @@ export function HoldingTrades({
             </details>
             {option && (
               <p className="section-intro">
-                合约乘数 {option.multiplier}；成交额 = 张数 × 每单位权利金 ×
-                乘数。空头市值计为负债。到期作废仅用于已核对未行权、未被指派的合约，交割请先核对券商单据。
+                合约乘数 {option.multiplier}；成交额 = 张数 × 权利金 × 乘数。
               </p>
             )}
             <p className="trade-amount">
@@ -682,7 +681,7 @@ export function HoldingTrades({
             </p>
             {holding && !trades.length && (
               <p className="section-intro">
-                首次录入将按真实成交重建这项持仓，替换目前的手工数量和成本。请从最早的买入开始补齐历史，不会自动补入期初余额。
+                首次录入将按交易重建持仓并替换手工数量与成本。
               </p>
             )}
             {!editing && (
@@ -699,15 +698,6 @@ export function HoldingTrades({
                 </select>
               </label>
             )}
-            <p className="section-intro">
-              同一账户、同一证券使用同一项持仓。当日顺序按实际发生先后填写，可补录历史交易。
-              买入从 {currency}{" "}
-              新增结算会扣加当前存款；历史补录仅重建持仓，不重放已包含在余额中的现金流。余额核对基准之前的交易更正会提示重新核对。成交单价不改变当前行情。
-              {!holding &&
-                "新证券在取得行情前暂以首笔买入价估值，请及时核对当前价格。"}
-              {isDividend &&
-                " 现金分红计入收益，不减少持仓成本；红利再投资请另录一笔真实买入。"}
-            </p>
             <div className="form-actions">
               <Button
                 type="primary"

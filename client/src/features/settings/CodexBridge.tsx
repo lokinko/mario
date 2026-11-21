@@ -93,34 +93,24 @@ export function CodexBridge({
   }
   return (
     <div className="codex-bridge-panel">
-      <strong>连接你电脑上的模型</strong>
-      <p>
-        选择 ChatGPT 官方账号授权或已登录的
-        Codex。电脑需要保持联网，桥接进程需要持续运行。
-      </p>
+      <strong>本机桥接</strong>
       <ol>
         <li>点击“生成配对码”。</li>
         <li>
-          在电脑的 Mario 项目目录选择一种方式启动：
+          在电脑的 Mario 目录运行：
           <ul>
             <li>
-              ChatGPT 官方登录：<code>npm run chatgpt:bridge</code>
-              ，无需安装 Codex；没有已选择账号时会打开浏览器授权。
+              ChatGPT 登录：<code>npm run chatgpt:bridge</code>
             </li>
             <li>
-              已登录的 Codex：<code>npm run codex:bridge</code>。
+              本机 Codex：<code>npm run codex:bridge</code>
             </li>
           </ul>
-          使用其他站点时，在命令后加 <code>-- https://你的站点/mario/</code>
-          。按终端提示粘贴 Mario 配对码，不要粘贴 ChatGPT 密码或令牌。
+          连接其他站点可附加 <code>-- https://你的站点/mario/</code>
+          ，按提示粘贴配对码。
         </li>
-        <li>显示在线后点击“启用本机模型”，再测试已保存连接。</li>
+        <li>显示在线后点击“启用本机模型”。</li>
       </ol>
-      <p>
-        ChatGPT 授权只在本机发起，浏览器回调仅监听
-        127.0.0.1；登录和刷新凭据不上传到 Mario 服务器。
-        官方订阅使用目前面向开源及本地托管应用，不代表公开或商业化托管服务已获准使用。
-      </p>
       <p role="status">
         {statusError
           ? "无法读取连接状态，请确认服务已部署新版并检查网络。"
@@ -189,8 +179,7 @@ export function CodexBridge({
       </div>
       {message && <p role="status">{message}</p>}
       <small>
-        配对最长有效 12 小时；服务器重启后需重新配对。只转发你在 Mario
-        中提交的模型任务，ChatGPT 登录凭据保留在本机。
+        授权仅在本机（127.0.0.1）完成，凭据不上传服务器；配对有效期 12 小时。
       </small>
     </div>
   );

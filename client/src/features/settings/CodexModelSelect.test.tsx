@@ -111,9 +111,6 @@ it("saves the selected bridge model rather than the computer default", async () 
   ).toBe(true);
   expect(screen.queryByLabelText("API Base URL")).toBeNull();
   expect(screen.queryByText("API Key", { selector: "span" })).toBeNull();
-  expect(
-    screen.getByText(/订阅额度不足不会自动切换到 API Key 计费/),
-  ).toBeTruthy();
   fireEvent.change(screen.getByRole("combobox", { name: "模型名称" }), {
     target: { value: "model-b" },
   });

@@ -6,10 +6,10 @@ import { DataStamp } from "../../components/DataStamp";
 import { deleteMemory, getMemory, setMemoryStatus } from "../../api/memory";
 import type { MemoryKind, MemoryNote, MemoryOverview } from "../../types/ai";
 
-const kinds: [MemoryKind, string, string][] = [
-  ["preference", "偏好", "你希望分析如何组织与表达，来自你的原话。"],
-  ["viewpoint", "观点", "以往讨论形成的判断，附带会改变它的条件。"],
-  ["context", "背景", "你在对话中提到的情况，不会改写财务档案。"],
+const kinds: [MemoryKind, string][] = [
+  ["preference", "偏好"],
+  ["viewpoint", "观点"],
+  ["context", "背景"],
 ];
 
 function Note({
@@ -113,15 +113,8 @@ export function MemoryPanel({
   const last = overview?.dream.lastResult;
   return (
     <div className="memory-panel">
-      <p className="section-intro">
-        记忆只帮助理解你的偏好和以往讨论，不作为事实依据；回答仍需引用原始资料。整理时只保留有来源对话支撑的条目。
-      </p>
       {!overview && !error && <p role="status">正在读取长期记忆…</p>}
-      {overview && !overview.enabled && (
-        <p>
-          问答预设中已关闭长期记忆，提问时不会使用这些条目，也不会自动整理。
-        </p>
-      )}
+      {overview && !overview.enabled && <p>问答预设中已关闭长期记忆。</p>}
       {overview && (
         <div className="form-actions">
           <span className="muted">
@@ -163,13 +156,12 @@ export function MemoryPanel({
         </details>
       )}
       {overview?.items.length === 0 && <p className="empty">暂无长期记忆</p>}
-      {kinds.map(([kind, label, description]) => {
+      {kinds.map(([kind, label]) => {
         const items =
           overview?.items.filter((item) => item.kind === kind) ?? [];
         return items.length ? (
           <section key={kind} aria-label={label}>
             <h3>{label}</h3>
-            <p className="muted">{description}</p>
             <ul>
               {items.map((note) => (
                 <Note
