@@ -300,8 +300,10 @@ pub struct AnalysisWorkflowTrace {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vote: Option<council::VoteTrace>,
     /// Fields only reports frozen by retired workflows carry; never written now.
-    #[serde(flatten)]
-    pub legacy: analysis_history::LegacyTraceArtifacts,
+    /// Kept as a direct field rather than `#[serde(flatten)]` so `f64` fields in
+    /// `valuation_evidence` deserialize directly under `serde_json/arbitrary_precision`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub advice_grounding: Vec<analysis_history::AdviceGrounding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

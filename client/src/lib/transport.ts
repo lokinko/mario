@@ -125,6 +125,7 @@ export async function requestEvents<T>(
     clearTimeout(idleTimer);
     signal?.removeEventListener("abort", abort);
     controller.signal.removeEventListener("abort", cancel);
+    if (!controller.signal.aborted) controller.abort();
     await reader?.cancel().catch(() => {});
     reader?.releaseLock();
   }

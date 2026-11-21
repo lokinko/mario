@@ -2,16 +2,6 @@
 use crate::models::analysis::{AnalysisClaim, StructuredAnalysis};
 use serde::{Deserialize, Serialize};
 
-/// Trace fields only workflows before the concise report carried. Current runs never
-/// write them; history keeps the v7 grounding review readable. Plans, alternatives and
-/// critiques of v2–v7 stay in the stored JSON but have no reader.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LegacyTraceArtifacts {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub advice_grounding: Vec<AdviceGrounding>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GroundingCheck {
@@ -21,6 +11,9 @@ pub struct GroundingCheck {
     pub quote: String,
 }
 
+/// Trace field only workflows before the concise report carried. Current runs never
+/// write it; history keeps the v7 grounding review readable. Plans, alternatives and
+/// critiques of v2–v7 stay in the stored JSON but have no reader.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AdviceGrounding {

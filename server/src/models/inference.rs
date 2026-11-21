@@ -45,7 +45,7 @@ impl CodexFailure {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub(crate) enum AnalysisEvent {
     Status {
@@ -62,4 +62,151 @@ pub(crate) enum AnalysisEvent {
     Error {
         message: String,
     },
+}
+
+// Internally tagged derived Deserialize buffers into serde's private Content enum,
+// which turns floats into arbitrary-precision maps under `serde_json/arbitrary_precision`
+// and rejects `f64` fields inside `AnalysisResult`. Dispatching through a JSON map keeps
+// the exact wire contract while decoding numbers directly.
+impl<'de> serde::Deserialize<'de> for AnalysisEvent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut fields = serde_json::Map::<String, serde_json::Value>::deserialize(deserializer)?;
+        let kind = fields
+            .remove("type")
+            .ok_or_else(|| serde::de::Error::missing_field("type"))?;
+        let kind = kind.as_str().ok_or_else(|| {
+            serde::de::Error::invalid_type(
+                serde::de::Unexpected::Other("non-string"),
+                &"event type string",
+            )
+        })?;
+        let take = |fields: &mut serde_json::Map<String, serde_json::Value>,
+                    name: &'static str|
+         -> Result<serde_json::Value, D::Error> {
+            fields
+                .remove(name)
+                .ok_or_else(|| serde::de::Error::missing_field(name))
+        };
+        match kind {
+            "status" => Ok(Self::Status {
+                message: serde_json::from_value(take(&mut fields, "message")?)
+                    .map_err(serde::de::Error::custom)?,
+            }),
+            "draft" => Ok(Self::Draft {
+                proposal: serde_json::from_value(take(&mut fields, "proposal")?)
+                    .map_err(serde::de::Error::custom)?,
+                answer: serde_json::from_value(take(&mut fields, "answer")?)
+                    .map_err(serde::de::Error::custom)?,
+            }),
+            "complete" => Ok(Self::Complete {
+                result: serde_json::from_value(take(&mut fields, "result")?)
+                    .map_err(serde::de::Error::custom)?,
+            }),
+            "error" => Ok(Self::Error {
+                message: serde_json::from_value(take(&mut fields, "message")?)
+                    .map_err(serde::de::Error::custom)?,
+            }),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["status", "draft", "complete", "error"],
+            )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{
+        analysis::{AnalysisResult, AnalysisTransparency, AnalysisWorkflowTrace},
+        portfolio::HoldingValuationEvidence,
+    };
+
+    #[test]
+    fn analysis_event_round_trips_complete_with_floats_and_any_field_order() {
+        let result = AnalysisResult {
+            id: "event-float-test".into(),
+            answer: "结论".into(),
+            stages: vec!["研究代理".into()],
+            transparency: AnalysisTransparency {
+                provider: "openai-chat".into(),
+                model: "test-model".into(),
+                context_groups: vec!["当前持仓".into()],
+                payload_bytes: 256,
+                context_revision: "rev-1".into(),
+                evidence_items_used: 0,
+                citations_required: false,
+                model_calls: 7,
+                total_latency_ms: 1234,
+                input_tokens: Some(100),
+                output_tokens: Some(50),
+                structured_output_validated: true,
+                output_repairs: 0,
+                memory_notes_used: 0,
+                external_data_used: false,
+                api_key_sent: false,
+            },
+            workflow_trace: AnalysisWorkflowTrace {
+                valuation_evidence: vec![HoldingValuationEvidence {
+                    holding_id: "h1".into(),
+                    symbol: "600036.SS".into(),
+                    quantity: 100.5,
+                    unit_price: 38.5,
+                    market_value: 3869.25,
+                    currency: "CNY".into(),
+                    requested_on: "2026-11-20".into(),
+                    observed_on: "2026-11-20".into(),
+                    staleness_days: 0,
+                    provider_code: "test".into(),
+                    provider_name: "Test".into(),
+                    exchange: "SSE".into(),
+                    mic_code: "XSHG".into(),
+                    instrument_type: "equity".into(),
+                    price_basis: "close".into(),
+                    source_url: "https://example.test/quote".into(),
+                    methodology_url: "https://example.test/method".into(),
+                    disclaimer: String::new(),
+                    captured_at: "2026-11-20T08:00:00Z".into(),
+                }],
+                personal_context: Some(serde_json::json!({
+                    "exact": 99999999999999.02,
+                    "ratio": 0.375
+                })),
+                version: "investment-workflow-v18".into(),
+                ..AnalysisWorkflowTrace::default()
+            },
+            created_at: "2026-11-20T08:00:00Z".into(),
+            disclaimer: "test".into(),
+        };
+
+        let encoded = serde_json::to_string(&AnalysisEvent::Complete {
+            result: Box::new(result.clone()),
+        })
+        .unwrap();
+        let decoded: AnalysisEvent = serde_json::from_str(&encoded).unwrap();
+        let AnalysisEvent::Complete { result: decoded } = decoded else {
+            panic!("expected complete event");
+        };
+        assert_eq!(decoded.id, "event-float-test");
+        assert_eq!(decoded.workflow_trace.valuation_evidence[0].quantity, 100.5);
+        assert_eq!(
+            decoded.workflow_trace.valuation_evidence[0].market_value,
+            3869.25
+        );
+
+        let reordered = serde_json::json!({
+            "result": result,
+            "type": "complete"
+        })
+        .to_string();
+        assert!(matches!(
+            serde_json::from_str::<AnalysisEvent>(&reordered).unwrap(),
+            AnalysisEvent::Complete { .. }
+        ));
+        assert!(serde_json::from_str::<AnalysisEvent>(r#"{"type":"unknown"}"#).is_err());
+        assert!(serde_json::from_str::<AnalysisEvent>(r#"{"type":"status"}"#).is_err());
+    }
 }

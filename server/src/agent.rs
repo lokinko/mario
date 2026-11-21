@@ -163,43 +163,7 @@ impl AgentExecutor {
                 request,
                 context,
             };
-            let mut response = agent_client()?
-                .post(format!(
-                    "{endpoint}/execute{}",
-                    if events.is_some() { "/stream" } else { "" }
-                ))
-                .bearer_auth(token)
-                .json(&job)
-                .send()
-                .await?;
-            if !response.status().is_success() {
-                return Err(AppError::Model(
-                    "AI Agent 执行失败，请检查 Agent 服务日志及模型配置".into(),
-                ));
-            }
-            if let Some(events) = events {
-                let mut decoder = crate::ai::streaming::SseDecoder::default();
-                while let Some(bytes) = response.chunk().await? {
-                    for data in decoder.feed(&bytes)? {
-                        let event: crate::models::inference::AnalysisEvent =
-                            serde_json::from_str(&data)
-                                .map_err(|_| AppError::Model("Agent 流式事件无效".into()))?;
-                        match event {
-                            crate::models::inference::AnalysisEvent::Complete { result } => {
-                                return Ok(*result)
-                            }
-                            crate::models::inference::AnalysisEvent::Error { message } => {
-                                return Err(AppError::Model(message))
-                            }
-                            event => {
-                                let _ = events.send(event).await;
-                            }
-                        }
-                    }
-                }
-                return Err(AppError::Model("Agent 流连接中断，回答尚未完成".into()));
-            }
-            return Ok(response.json().await?);
+            return self.execute_remote(&endpoint, &token, job, events).await;
         }
         let provider = local_provider(config, api_key, events.clone())?;
         let mut orchestrator = InvestmentOrchestrator::new(provider.as_ref());
@@ -207,6 +171,54 @@ impl AgentExecutor {
             orchestrator = orchestrator.with_events(events);
         }
         orchestrator.run(&request, &context).await
+    }
+
+    async fn execute_remote(
+        &self,
+        endpoint: &str,
+        token: &str,
+        job: Job,
+        events: Option<crate::ports::analysis::EventSender>,
+    ) -> AppResult<AnalysisResult> {
+        let mut response = agent_client()?
+            .post(format!(
+                "{endpoint}/execute{}",
+                if events.is_some() { "/stream" } else { "" }
+            ))
+            .bearer_auth(token)
+            .json(&job)
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(AppError::Model(
+                "AI Agent 执行失败，请检查 Agent 服务日志及模型配置".into(),
+            ));
+        }
+        if let Some(events) = events {
+            let mut decoder = crate::ai::streaming::SseDecoder::default();
+            while let Some(bytes) = response.chunk().await? {
+                for data in decoder.feed(&bytes)? {
+                    let event: crate::models::inference::AnalysisEvent =
+                        serde_json::from_str(&data).map_err(|error| {
+                            tracing::warn!(%error, "invalid agent stream event");
+                            AppError::Model("Agent 流式事件无效".into())
+                        })?;
+                    match event {
+                        crate::models::inference::AnalysisEvent::Complete { result } => {
+                            return Ok(*result)
+                        }
+                        crate::models::inference::AnalysisEvent::Error { message } => {
+                            return Err(AppError::Model(message))
+                        }
+                        event => {
+                            let _ = events.send(event).await;
+                        }
+                    }
+                }
+            }
+            return Err(AppError::Model("Agent 流连接中断，回答尚未完成".into()));
+        }
+        Ok(response.json().await?)
     }
 }
 pub async fn serve() -> AppResult<()> {
@@ -217,7 +229,20 @@ pub async fn serve() -> AppResult<()> {
         ));
     }
     let slots = Arc::new(tokio::sync::Semaphore::new(4));
-    let app = Router::new()
+    let app = router(token, slots);
+    let address = std::env::var("MARIO_AGENT_BIND").unwrap_or_else(|_| "127.0.0.1:4218".into());
+    let listener = tokio::net::TcpListener::bind(&address).await?;
+    tracing::info!(%address,"stateless AI Agent started");
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await?;
+    Ok(())
+}
+
+fn router(token: String, slots: Arc<tokio::sync::Semaphore>) -> Router {
+    Router::new()
         .route(
             "/health",
             get(|| async { Json(serde_json::json!({"status":"ok"})) }),
@@ -260,16 +285,7 @@ pub async fn serve() -> AppResult<()> {
                     next.run(request).await
                 }
             },
-        ));
-    let address = std::env::var("MARIO_AGENT_BIND").unwrap_or_else(|_| "127.0.0.1:4218".into());
-    let listener = tokio::net::TcpListener::bind(&address).await?;
-    tracing::info!(%address,"stateless AI Agent started");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
-    Ok(())
+        ))
 }
 async fn run(Json(job): Json<Job>) -> AppResult<Json<AnalysisResult>> {
     validate_endpoint(&job.config.base_url)?;
@@ -498,5 +514,141 @@ mod tests {
         assert!(outcome.proposal.operations.is_empty());
         assert_eq!(outcome.validation.status, "valid");
         assert_eq!(outcome.calls.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn remote_agent_executor_round_trips_streamed_and_json_results_with_valuation_floats() {
+        let model_app = Router::new().route(
+            "/gateway/v1/chat/completions",
+            post(|Json(body): Json<serde_json::Value>| async move {
+                let streaming = body["stream"] == true;
+                let messages = body["messages"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|message| crate::ai::ChatMessage {
+                        role: message["role"].as_str().unwrap().into(),
+                        content: message["content"].as_str().unwrap().into(),
+                    })
+                    .collect::<Vec<_>>();
+                let report = crate::ai::council_fixture_reply(&messages);
+                if streaming {
+                    let stream = async_stream::stream! {
+                        yield Ok::<_, std::convert::Infallible>(bytes::Bytes::from(format!(
+                            "data: {}\n\n",
+                            serde_json::json!({"choices":[{"index":0,"delta":{"content":report},"finish_reason":null}]})
+                        )));
+                        yield Ok(bytes::Bytes::from(
+                            "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+                        ));
+                    };
+                    return axum::response::Response::builder()
+                        .header("content-type", "text/event-stream")
+                        .body(axum::body::Body::from_stream(stream))
+                        .unwrap();
+                }
+                Json(serde_json::json!({
+                    "choices":[{"message":{"role":"assistant","content":report},"finish_reason":"stop"}],
+                    "usage":{"prompt_tokens":10,"completion_tokens":5}
+                }))
+                .into_response()
+            }),
+        );
+        let model_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let model_address = model_listener.local_addr().unwrap();
+        let model_server =
+            tokio::spawn(async move { axum::serve(model_listener, model_app).await.unwrap() });
+
+        let token = "test-agent-token-0123456789abcdef";
+        let slots = Arc::new(tokio::sync::Semaphore::new(2));
+        let agent_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let agent_address = agent_listener.local_addr().unwrap();
+        let agent_app = router(token.into(), slots.clone());
+        let agent_server =
+            tokio::spawn(async move { axum::serve(agent_listener, agent_app).await.unwrap() });
+
+        let make_job = || Job {
+            request: serde_json::from_value(serde_json::json!({
+                "question":"如何检查集中风险？","workflow":"council","webSearch":false
+            }))
+            .unwrap(),
+            context: context::BuiltContext {
+                payload: serde_json::json!({
+                    "question":"如何检查集中风险？",
+                    "facts":{"holdings":{"fund":{"weightPct":100.0,"marketValue":3850.5}}},
+                    "discussionGuide":{"researchChecks":["直接回答当前问题"]}
+                }),
+                groups: Vec::new(),
+                payload_bytes: 128,
+                revision: "float-valuation-test".into(),
+                evidence_items: 0,
+                valuation_evidence: vec![crate::models::portfolio::HoldingValuationEvidence {
+                    holding_id: "h1".into(),
+                    symbol: "600036.SS".into(),
+                    quantity: 100.5,
+                    unit_price: 38.5,
+                    market_value: 3869.25,
+                    currency: "CNY".into(),
+                    requested_on: "2026-11-20".into(),
+                    observed_on: "2026-11-20".into(),
+                    staleness_days: 0,
+                    provider_code: "test".into(),
+                    provider_name: "Test".into(),
+                    exchange: "SSE".into(),
+                    mic_code: "XSHG".into(),
+                    instrument_type: "equity".into(),
+                    price_basis: "close".into(),
+                    source_url: "https://example.test/quote".into(),
+                    methodology_url: "https://example.test/method".into(),
+                    disclaimer: String::new(),
+                    captured_at: "2026-11-20T08:00:00Z".into(),
+                }],
+                evidence_catalog: Vec::new(),
+            },
+            config: ModelConfig {
+                source: Default::default(),
+                server_model: None,
+                provider: ModelProviderKind::OpenaiChat,
+                base_url: format!("http://{model_address}/gateway/v1"),
+                model: "third-party-model".into(),
+                has_api_key: true,
+            },
+            api_key: "remote-agent-test-key".into(),
+        };
+
+        let endpoint = format!("http://{agent_address}");
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(64);
+        let streamed = AgentExecutor
+            .execute_remote(&endpoint, token, make_job(), Some(sender))
+            .await
+            .unwrap();
+        assert!(streamed.answer.starts_with("P1 先处理集中风险"));
+        assert_eq!(streamed.workflow_trace.valuation_evidence.len(), 1);
+        assert_eq!(
+            streamed.workflow_trace.valuation_evidence[0].quantity,
+            100.5
+        );
+        assert_eq!(
+            streamed.workflow_trace.valuation_evidence[0].market_value,
+            3869.25
+        );
+        let mut received_draft = false;
+        while let Ok(event) = receiver.try_recv() {
+            if matches!(event, crate::models::inference::AnalysisEvent::Draft { .. }) {
+                received_draft = true;
+            }
+        }
+        assert!(received_draft);
+
+        let direct = AgentExecutor
+            .execute_remote(&endpoint, token, make_job(), None)
+            .await
+            .unwrap();
+        assert!(direct.answer.starts_with("P1 先处理集中风险"));
+        assert_eq!(direct.workflow_trace.valuation_evidence[0].unit_price, 38.5);
+        assert_eq!(slots.available_permits(), 2);
+
+        agent_server.abort();
+        model_server.abort();
     }
 }

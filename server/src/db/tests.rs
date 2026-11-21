@@ -977,12 +977,34 @@ fn stores_analysis_transparency_audit() {
     );
     let mut reviewed_result = result.clone();
     reviewed_result.id = "analysis-checked".into();
-    reviewed_result.workflow_trace.legacy.advice_grounding =
+    reviewed_result.workflow_trace.advice_grounding =
         vec![crate::models::analysis_history::AdviceGrounding {
             action_index: 0,
             status: "contradicted".into(),
             reason: "与原始资料相反".into(),
             checks: vec![],
+        }];
+    reviewed_result.workflow_trace.valuation_evidence =
+        vec![crate::models::portfolio::HoldingValuationEvidence {
+            holding_id: "h1".into(),
+            symbol: "600036.SS".into(),
+            quantity: 100.5,
+            unit_price: 38.5,
+            market_value: 3869.25,
+            currency: "CNY".into(),
+            requested_on: "2026-11-20".into(),
+            observed_on: "2026-11-20".into(),
+            staleness_days: 0,
+            provider_code: "test".into(),
+            provider_name: "Test".into(),
+            exchange: "SSE".into(),
+            mic_code: "XSHG".into(),
+            instrument_type: "equity".into(),
+            price_basis: "close".into(),
+            source_url: "https://example.test/quote".into(),
+            methodology_url: "https://example.test/method".into(),
+            disclaimer: String::new(),
+            captured_at: "2026-11-20T08:00:00Z".into(),
         }];
     db.save_analysis(&reviewed_result, "核对结论").unwrap();
     let checked_history = db
@@ -995,16 +1017,13 @@ fn stores_analysis_transparency_audit() {
         checked_history.grounding_status.as_deref(),
         Some("contradicted")
     );
-    assert_eq!(
-        db.analysis("analysis-checked")
-            .unwrap()
-            .workflow_trace
-            .unwrap()
-            .legacy
-            .advice_grounding[0]
-            .reason,
-        "与原始资料相反"
-    );
+    let checked_trace = db
+        .analysis("analysis-checked")
+        .unwrap()
+        .workflow_trace
+        .unwrap();
+    assert_eq!(checked_trace.advice_grounding[0].reason, "与原始资料相反");
+    assert_eq!(checked_trace.valuation_evidence[0].market_value, 3869.25);
     assert!(matches!(db.analysis("missing"), Err(AppError::NotFound(_))));
 }
 

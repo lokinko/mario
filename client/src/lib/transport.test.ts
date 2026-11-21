@@ -167,6 +167,44 @@ describe("streaming response lifecycle", () => {
     await vi.advanceTimersByTimeAsync(50);
     await pending;
   });
+  it("aborts the underlying fetch immediately when an error event throws before EOF", async () => {
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const cancel = vi.fn();
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url, init) => {
+        requestSignal = init?.signal;
+        return Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                stream = controller;
+              },
+              cancel,
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+        );
+      }),
+    );
+    const pending = expect(
+      requestEvents("/stream", { method: "POST" }, (event) => {
+        if ((event as { type?: string }).type === "error")
+          throw new Error((event as { message: string }).message);
+        return undefined;
+      }),
+    ).rejects.toThrow("Agent 流式事件无效");
+    await vi.waitFor(() => expect(stream).toBeDefined());
+    stream.enqueue(
+      new TextEncoder().encode(
+        'data: {"type":"error","message":"Agent 流式事件无效"}\n\n',
+      ),
+    );
+    await pending;
+    expect(requestSignal?.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
 });
 describe("local request lifecycle", () => {
   it("retries a transient read failure", async () => {
