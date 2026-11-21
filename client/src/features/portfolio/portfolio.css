@@ -374,3 +374,14 @@
     align-self: center;
   }
 }
+@media (max-width: 480px) {
+  .allocation-legend li {
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    gap: var(--space-1) var(--space-2);
+  }
+  .allocation-legend li > :last-child {
+    grid-column: 2 / -1;
+    text-align: left;
+    font-size: var(--fs-caption);
+  }
+}

@@ -137,6 +137,10 @@ function App() {
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [factsSection, setFactsSection] = useState<FactsSection>("holdings");
+  const [watchTarget, setWatchTarget] = useState<
+    { id: number; symbol: string; personal: boolean } | undefined
+  >(undefined);
+  const watchTargetId = useRef(0);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const mainRef = useRef<HTMLElement>(null);
@@ -231,6 +235,11 @@ function App() {
   const startAnalysis = (question: string) => {
     if (!navigate("advisor")) return;
     setPendingQuestion({ id: ++questionId.current, question });
+  };
+
+  const openWatchSymbol = (symbol: string, personal: boolean) => {
+    if (!navigate("watch")) return;
+    setWatchTarget({ id: ++watchTargetId.current, symbol, personal });
   };
 
   useEffect(() => {
@@ -448,6 +457,12 @@ function App() {
             flash={flash}
             onEdited={markEdited}
             onSaved={clearDraft}
+            target={watchTarget}
+            onTargetConsumed={(id) =>
+              setWatchTarget((current) =>
+                current?.id === id ? undefined : current,
+              )
+            }
           />
         )}
         {view !== "watch" && view !== "advisor" && (
@@ -461,6 +476,7 @@ function App() {
                 flash={flash}
                 section={factsSection}
                 onSectionChange={setFactsSection}
+                onSaved={clearDraft}
               />
             )}
             {view === "reference" && (
@@ -474,7 +490,11 @@ function App() {
               />
             )}
             {view === "calendar" && (
-              <DividendCalendar key={remoteViewRevision} />
+              <DividendCalendar
+                key={remoteViewRevision}
+                onAsk={startAnalysis}
+                onInspectWatch={openWatchSymbol}
+              />
             )}
             {view === "methodology" && (
               <InvestmentMethodology
@@ -498,12 +518,35 @@ function App() {
                 key={remoteViewRevision}
                 model={model}
                 onUpdate={setModel}
+                onSaved={clearDraft}
                 flash={flash}
               />
             )}
             {view === "settings" && !model && (
               <div className="page narrow settings-page">
                 <PageHeader title="设置" />
+                <nav className="settings-directory" aria-label="设置分区">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      document
+                        .getElementById("account-settings")
+                        ?.scrollIntoView({ behavior: "smooth" })
+                    }
+                  >
+                    账号与数据
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      document
+                        .getElementById("display-settings")
+                        ?.scrollIntoView({ behavior: "smooth" })
+                    }
+                  >
+                    显示偏好
+                  </button>
+                </nav>
                 <ServerData
                   flash={flash}
                   onRestore={refreshInvestmentData}

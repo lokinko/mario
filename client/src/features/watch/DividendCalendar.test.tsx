@@ -146,3 +146,29 @@ it("keeps presentation choices out of the unsaved-draft guard", async () => {
     expect(api.getDividendCalendar).toHaveBeenLastCalledWith("favorites", ""),
   );
 });
+
+it("updates window heading on paged ranges and links cards to watch and AI", async () => {
+  const onAsk = vi.fn();
+  const onInspectWatch = vi.fn();
+  vi.mocked(api.getDividendCalendar)
+    .mockResolvedValueOnce(structuredClone(board))
+    .mockResolvedValueOnce({
+      ...board,
+      start: "2026-10-08",
+      end: "2026-11-06",
+      entries: [],
+    });
+  render(<DividendCalendar onAsk={onAsk} onInspectWatch={onInspectWatch} />);
+  await screen.findByText("1.25 元");
+  fireEvent.click(screen.getByRole("button", { name: "查看观察" }));
+  expect(onInspectWatch).toHaveBeenCalledWith("600000.SS", true);
+  fireEvent.click(screen.getByRole("button", { name: "问 AI 分红" }));
+  expect(onAsk).toHaveBeenCalledWith(expect.stringContaining("600000.SS"));
+  fireEvent.click(screen.getByRole("button", { name: "前30天" }));
+  expect(
+    await screen.findByText(
+      "当前已获取资料中，该30天内暂无已公布日期的分红安排。",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText("未来30天已公布的安排")).toBeNull();
+});

@@ -51,7 +51,15 @@ const stamp = (time: string | null) =>
   time
     ? new Date(time).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
     : "尚未获取";
-function PlanCard({ row }: { row: DividendCalendarEntry }) {
+function PlanCard({
+  row,
+  onAsk,
+  onInspectWatch,
+}: {
+  row: DividendCalendarEntry;
+  onAsk?: (question: string) => void;
+  onInspectWatch?: (symbol: string, personal: boolean) => void;
+}) {
   const plan = row.plan;
   return (
     <article className="dividend-plan-card">
@@ -105,16 +113,46 @@ function PlanCard({ row }: { row: DividendCalendarEntry }) {
       )}
       <div className="dividend-plan-meta">
         <span>资料获取于 {stamp(row.fetchedAt)}</span>
-        {plan.sources[0] && (
-          <a href={plan.sources[0]} target="_blank" rel="noreferrer">
-            分红计划来源 ↗
-          </a>
-        )}
+        <div className="dividend-plan-links">
+          {onInspectWatch && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => onInspectWatch(row.symbol, row.personal)}
+            >
+              查看观察
+            </button>
+          )}
+          {onAsk && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() =>
+                onAsk(
+                  `请研究${row.name}（${row.symbol}）本次分红计划（${plan.profile || `每 10 股税前 ${plan.cashPerTen ?? "待核实"} 元`}，股权登记日 ${plan.recordDate ?? "待定"}，除权除息日 ${plan.exDate ?? "待定"}）。请核对最新公告、分红可持续性以及对我当前组合与观察计划的影响。`,
+                )
+              }
+            >
+              问 AI 分红
+            </button>
+          )}
+          {plan.sources[0] && (
+            <a href={plan.sources[0]} target="_blank" rel="noreferrer">
+              分红计划来源 ↗
+            </a>
+          )}
+        </div>
       </div>
     </article>
   );
 }
-export function DividendCalendar() {
+export function DividendCalendar({
+  onAsk,
+  onInspectWatch,
+}: {
+  onAsk?: (question: string) => void;
+  onInspectWatch?: (symbol: string, personal: boolean) => void;
+} = {}) {
   const [loaded, setLoaded] = useState<{
     scope: DividendCalendarScope;
     from: string;
@@ -231,7 +269,7 @@ export function DividendCalendar() {
             <section className="panel dividend-calendar-board">
               <div
                 className="dividend-calendar-grid"
-                aria-label="未来30天分红日期"
+                aria-label={from ? "当前30天分红日期" : "未来30天分红日期"}
               >
                 {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
                   <span key={day} className="dividend-calendar-weekday">
@@ -268,7 +306,23 @@ export function DividendCalendar() {
                         </span>
                       ))}
                       {events.length > 2 && (
-                        <small>还有 {events.length - 2} 项</small>
+                        <small className="dividend-calendar-more">
+                          还有 {events.length - 2} 项
+                        </small>
+                      )}
+                      {events.length > 0 && (
+                        <span
+                          className="dividend-calendar-dots"
+                          aria-hidden="true"
+                        >
+                          {events.slice(0, 3).map((event) => (
+                            <i
+                              key={`${event.row.plan.id}:${event.kind}:dot`}
+                              className={`dot-${event.kind}`}
+                            />
+                          ))}
+                          {events.length > 3 && <b>+{events.length - 3}</b>}
+                        </span>
                       )}
                     </button>
                   );
@@ -277,7 +331,11 @@ export function DividendCalendar() {
             </section>
             <div className="dividend-calendar-section-heading">
               <h3>
-                {selected ? `${selected} 的安排` : "未来30天已公布的安排"}
+                {selected
+                  ? `${selected} 的安排`
+                  : from
+                    ? `${rangeTitle(board.start, board.end)} 已公布的安排`
+                    : "未来30天已公布的安排"}
               </h3>
               {selected && (
                 <Button onClick={() => setSelected(null)}>查看全部日期</Button>
@@ -287,12 +345,19 @@ export function DividendCalendar() {
               <p className="panel dividend-calendar-empty">
                 {selected
                   ? "当天暂无已获取的确定安排。"
-                  : "当前已获取资料中，未来30天暂无已公布日期的分红安排。"}
+                  : from
+                    ? "当前已获取资料中，该30天内暂无已公布日期的分红安排。"
+                    : "当前已获取资料中，未来30天暂无已公布日期的分红安排。"}
               </p>
             ) : (
               <div className="dividend-plan-grid">
                 {relevant.map((row) => (
-                  <PlanCard key={row.plan.id} row={row} />
+                  <PlanCard
+                    key={row.plan.id}
+                    row={row}
+                    onAsk={onAsk}
+                    onInspectWatch={onInspectWatch}
+                  />
                 ))}
               </div>
             )}

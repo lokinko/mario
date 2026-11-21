@@ -842,3 +842,28 @@ it("does not treat buy-watch search and sort changes as unsaved input", async ()
   expect(confirm).not.toHaveBeenCalled();
   await screen.findByRole("heading", { name: "投资方法论" });
 });
+
+it("clears the unsaved draft guard after saving financial profile", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  window.history.replaceState(null, "", "#facts");
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.spyOn(portfolioApi, "saveProfile").mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.saveProfile>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
+    new Error("no model"),
+  );
+  render(<App />);
+  fireEvent.click(await screen.findByRole("tab", { name: "存款与收支" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: /月收入/ }), {
+    target: { value: "12345" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存收支" }));
+  await waitFor(() => expect(portfolioApi.saveProfile).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole("button", { name: "投资方法论" }));
+  expect(confirm).not.toHaveBeenCalled();
+  await screen.findByRole("heading", { name: "投资方法论" });
+});

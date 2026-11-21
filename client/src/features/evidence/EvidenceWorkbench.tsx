@@ -2,7 +2,8 @@ import { Badge } from "../../components/Badge";
 import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";
 import { useEffect, useRef, useState } from "react";
-import { FileText, Paperclip, Save, Sparkles, X } from "lucide-react";
+import { Input } from "antd";
+import { FileText, Paperclip, Save, Search, Sparkles, X } from "lucide-react";
 import {
   getResearchEvidence,
   getResearchAttachment,
@@ -133,6 +134,12 @@ export function EvidenceWorkbench({
   const [downloading, setDownloading] = useState<string | null>(null);
   const [fileError, setFileError] = useState("");
   const [items, setItems] = useState<ResearchEvidence[]>([]);
+  const [search, setSearch] = useState("");
+  const [stockFilter, setStockFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "active" | "archived"
+  >("all");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -165,8 +172,39 @@ export function EvidenceWorkbench({
   const categories = [
     ...new Set(items.map((item) => item.category ?? "").filter(Boolean)),
   ];
+  const taggedStocks = [
+    ...new Set(items.map((item) => item.assetName).filter(Boolean)),
+  ];
   const stockName = (assetName: string) =>
     stocks.find((stock) => stockTag(stock) === assetName)?.name ?? assetName;
+  const keyword = search.trim().toLocaleLowerCase();
+  const filtered = sorted.filter((item) => {
+    if (statusFilter === "active" && !item.active) return false;
+    if (statusFilter === "archived" && item.active) return false;
+    if (stockFilter && item.assetName !== stockFilter) return false;
+    if (categoryFilter && (item.category ?? "") !== categoryFilter)
+      return false;
+    if (!keyword) return true;
+    const haystack = [
+      evidenceName(item),
+      evidenceText(item),
+      item.assetName,
+      item.category ?? "",
+      ...(item.attachments?.map((file) => file.name) ?? []),
+    ]
+      .join(" ")
+      .toLocaleLowerCase();
+    return haystack.includes(keyword);
+  });
+  const hasFilters = Boolean(
+    keyword || stockFilter || categoryFilter || statusFilter !== "all",
+  );
+  const resetFilters = () => {
+    setSearch("");
+    setStockFilter("");
+    setCategoryFilter("");
+    setStatusFilter("all");
+  };
   const tagsChanged =
     !!selected &&
     (tagDraft.assetName !== selected.assetName ||
@@ -391,6 +429,75 @@ export function EvidenceWorkbench({
           </section>
         </Drawer>
       )}
+      {items.length > 0 && (
+        <div
+          className="evidence-toolbar"
+          role="group"
+          aria-label="筛选资料"
+          data-presentation="true"
+        >
+          <div className="evidence-search">
+            <Input
+              type="search"
+              prefix={<Search size={15} aria-hidden="true" />}
+              aria-label="搜索参考资料"
+              placeholder="搜索标题、正文、标的或附件"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
+          {taggedStocks.length > 0 && (
+            <select
+              aria-label="按关联股票筛选"
+              value={stockFilter}
+              onChange={(event) => setStockFilter(event.target.value)}
+            >
+              <option value="">全部关联股票</option>
+              {taggedStocks.map((asset) => (
+                <option key={asset} value={asset}>
+                  {stockName(asset)}
+                </option>
+              ))}
+            </select>
+          )}
+          {categories.length > 0 && (
+            <select
+              aria-label="按信息类型筛选"
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value)}
+            >
+              <option value="">全部信息类型</option>
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          )}
+          <select
+            aria-label="按归档状态筛选"
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(
+                event.target.value as "all" | "active" | "archived",
+              )
+            }
+          >
+            <option value="all">全部状态</option>
+            <option value="active">仅有效资料</option>
+            <option value="archived">仅已归档</option>
+          </select>
+          {hasFilters && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={resetFilters}
+            >
+              清除筛选
+            </button>
+          )}
+        </div>
+      )}
       <section className="panel evidence-library" aria-label="资料档案">
         <LoadState
           loading={loading}
@@ -400,8 +507,20 @@ export function EvidenceWorkbench({
         {!loading && !error && items.length === 0 && (
           <p className="empty">还没有资料，点击“新增资料”保存。</p>
         )}
+        {!loading && !error && items.length > 0 && filtered.length === 0 && (
+          <div className="empty">
+            <p>没有符合当前筛选条件的资料。</p>
+            <button
+              type="button"
+              className="text-button"
+              onClick={resetFilters}
+            >
+              清除筛选
+            </button>
+          </div>
+        )}
         <ul className="evidence-files">
-          {sorted.map((item) => {
+          {filtered.map((item) => {
             const name = evidenceName(item);
             return (
               <li key={item.id} className={item.active ? "" : "inactive"}>

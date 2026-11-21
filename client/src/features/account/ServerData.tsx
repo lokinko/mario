@@ -199,6 +199,7 @@ export function ServerData({
               className="data-import-mode"
               role="radiogroup"
               aria-label="导入方式"
+              data-presentation="true"
             >
               {[
                 { replace: false, label: "导入到空账号" },

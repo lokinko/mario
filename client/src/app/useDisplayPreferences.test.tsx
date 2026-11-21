@@ -7,22 +7,28 @@ afterEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("data-mask-amounts");
   delete document.documentElement.dataset.pnl;
+  delete document.documentElement.dataset.theme;
   vi.restoreAllMocks();
 });
-it("defaults to Chinese P/L colors and persists both display choices across mounts", () => {
+it("defaults to Chinese P/L colors and system theme, and persists display choices across mounts", () => {
   const first = renderHook(useDisplayPreferences);
   expect(first.result.current.pnl).toBe("cn");
+  expect(first.result.current.theme).toBe("system");
   expect(document.documentElement.dataset.pnl).toBe("cn");
+  expect(document.documentElement.dataset.theme).toBe("system");
   act(() => {
     first.result.current.setPnl("intl");
     first.result.current.setMaskAmounts(true);
+    first.result.current.setTheme("dark");
   });
   expect(document.documentElement.hasAttribute("data-mask-amounts")).toBe(true);
   expect(document.documentElement.dataset.pnl).toBe("intl");
+  expect(document.documentElement.dataset.theme).toBe("dark");
   first.unmount();
   const next = renderHook(useDisplayPreferences);
   expect(next.result.current.maskAmounts).toBe(true);
   expect(next.result.current.pnl).toBe("intl");
+  expect(next.result.current.theme).toBe("dark");
   act(() => next.result.current.setMaskAmounts(false));
   expect(document.documentElement.hasAttribute("data-mask-amounts")).toBe(
     false,

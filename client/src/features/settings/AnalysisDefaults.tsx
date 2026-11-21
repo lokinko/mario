@@ -17,9 +17,11 @@ const contextOptions: [keyof ContextSelection, string][] = [
 
 export function AnalysisDefaults({
   model,
+  onSaved,
   flash,
 }: {
   model: ModelConfig;
+  onSaved?: () => void;
   flash: (message: string) => void;
 }) {
   const [settings, setSettings] = useState<AnalysisSettings | null>(null);
@@ -47,6 +49,7 @@ export function AnalysisDefaults({
     setError("");
     try {
       setSettings(await saveAnalysisSettings(settings));
+      onSaved?.();
       flash("问答预设已保存，之后每次提问自动使用");
     } catch (nextError) {
       setError(String(nextError));

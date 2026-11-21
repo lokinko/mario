@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { ModelReport } from "./ModelReport";
 import type { AnalysisWorkflowTrace } from "../../types/ai";
 
@@ -261,4 +261,11 @@ it("shows objections to the adopted proposal and keeps web leads out of the cite
       /评议过程：评审首选与评分持平，未分出高下，按方案顺序采纳 稳健等待/,
     ),
   ).toBeTruthy();
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "复制回答" }));
+  expect(writeText).toHaveBeenCalledWith("继续等待日线回到下轨附近。");
 });

@@ -132,3 +132,52 @@ it("shows rules without the review toolbar when the rules tab is selected", asyn
   expect(screen.queryByRole("button", { name: "新建复盘" })).toBeNull();
   expect(screen.queryByText("历史复盘")).toBeNull();
 });
+
+it("blocks whitespace-only investment rules and trims submitted fields", async () => {
+  vi.mocked(reviewsApi.saveInvestmentRule).mockResolvedValue({
+    id: "rule-1",
+    category: "风险",
+    statement: "单票不超10%",
+    trigger: "买入前",
+    rationale: "控制集中风险",
+    active: true,
+    revision: 1,
+    createdAt: "2026-11-20T00:00:00Z",
+    updatedAt: "2026-11-20T00:00:00Z",
+  });
+  render(<ReviewCenter tab="rules" flash={vi.fn()} onAsk={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "新建规则" }));
+  fireEvent.change(screen.getByLabelText("规则内容"), {
+    target: { value: "   " },
+  });
+  fireEvent.change(screen.getByLabelText("触发条件"), {
+    target: { value: "   " },
+  });
+  fireEvent.change(screen.getByLabelText("依据"), {
+    target: { value: "   " },
+  });
+  const submit = screen.getByRole("button", {
+    name: "建立规则",
+  }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("规则内容"), {
+    target: { value: " 单票不超10% " },
+  });
+  fireEvent.change(screen.getByLabelText("触发条件"), {
+    target: { value: " 买入前 " },
+  });
+  fireEvent.change(screen.getByLabelText("依据"), {
+    target: { value: " 控制集中风险 " },
+  });
+  expect(submit.disabled).toBe(false);
+  fireEvent.click(submit);
+  await waitFor(() =>
+    expect(reviewsApi.saveInvestmentRule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statement: "单票不超10%",
+        trigger: "买入前",
+        rationale: "控制集中风险",
+      }),
+    ),
+  );
+});

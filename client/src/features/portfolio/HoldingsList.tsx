@@ -222,7 +222,7 @@ export function HoldingsList({
               <p>
                 {query
                   ? "没有找到匹配的持仓。"
-                  : "暂无未清仓持仓，可点击上方展开已清仓持仓。"}
+                  : "暂无未清仓持仓，可点击下方展开已清仓持仓。"}
               </p>
               {query && (
                 <button

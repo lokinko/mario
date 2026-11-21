@@ -338,10 +338,54 @@ it("lists every saved item as one file row, newest first, with archived ones mar
     .getAllByRole("button")
     .map((row) => row.getAttribute("aria-label"));
   expect(rows).toEqual(["新资料", "归档资料", "旧资料"]);
-  expect(screen.queryByRole("searchbox")).toBeNull();
   expect(
     screen.getByRole("button", { name: "归档资料" }).closest("li")?.className,
   ).toBe("inactive");
+});
+
+it("filters saved evidence by keyword, stock, category, and archive status", async () => {
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([
+    {
+      ...saved,
+      id: "cmb",
+      title: "招行年报摘录",
+      assetName: "招商银行 600036.SS",
+      category: "年报",
+      claim: "分红率提升至 35%",
+      capturedAt: "2026-11-02T01:00:00Z",
+    },
+    {
+      ...saved,
+      id: "cypc",
+      title: "长电公告",
+      assetName: "长江电力 600900.SS",
+      category: "公告",
+      claim: "来水偏丰",
+      active: false,
+      capturedAt: "2026-11-01T01:00:00Z",
+    },
+  ]);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={vi.fn()} />);
+  await screen.findByRole("button", { name: "招行年报摘录" });
+  fireEvent.change(screen.getByRole("searchbox", { name: "搜索参考资料" }), {
+    target: { value: "分红率" },
+  });
+  expect(screen.getByRole("button", { name: "招行年报摘录" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "长电公告" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "按归档状态筛选" }), {
+    target: { value: "archived" },
+  });
+  expect(screen.getByRole("button", { name: "长电公告" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "招行年报摘录" })).toBeNull();
+  fireEvent.change(screen.getByRole("combobox", { name: "按归档状态筛选" }), {
+    target: { value: "all" },
+  });
+  fireEvent.change(screen.getByRole("combobox", { name: "按关联股票筛选" }), {
+    target: { value: "招商银行 600036.SS" },
+  });
+  expect(screen.getByRole("button", { name: "招行年报摘录" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "长电公告" })).toBeNull();
 });
 
 it("edits tags after saving without touching the original text", async () => {

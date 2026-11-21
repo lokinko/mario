@@ -85,6 +85,8 @@ export function Advisor({
   const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
   const [historyBusy, setHistoryBusy] = useState("");
   const [historyError, setHistoryError] = useState("");
+  const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
+  const handledQuestionId = useRef<number | null>(null);
 
   useEffect(() => () => streamRef.current?.abort(), []);
 
@@ -105,16 +107,32 @@ export function Advisor({
     return run;
   };
 
-  useEffect(() => {
-    if (!active || running || !pendingQuestion) return;
+  const loadExplicitQuestion = (text: string) => {
     historyRequest.invalidate();
     setHistoryBusy("");
     setHistoryError("");
-    setQuestion(pendingQuestion.question);
+    setQuestion(text);
     setTurns([]);
     setDraft(null);
     setStopped(false);
     setError("");
+    setQueuedQuestion(null);
+  };
+
+  useEffect(() => {
+    if (
+      !active ||
+      !pendingQuestion ||
+      handledQuestionId.current === pendingQuestion.id
+    )
+      return;
+    handledQuestionId.current = pendingQuestion.id;
+    if (running) {
+      setQueuedQuestion(pendingQuestion.question);
+      onQuestionAccepted?.(pendingQuestion.id);
+      return;
+    }
+    loadExplicitQuestion(pendingQuestion.question);
     onQuestionAccepted?.(pendingQuestion.id);
   }, [active, running, pendingQuestion, onQuestionAccepted, historyRequest]);
 
@@ -252,7 +270,6 @@ export function Advisor({
       setTurns([{ question: item.question, result: item }]);
       setDraft(null);
       setStopped(false);
-      setQuestion("");
       setError("");
     } catch (nextError) {
       if (isCurrent()) setHistoryError(String(nextError));
@@ -531,6 +548,29 @@ export function Advisor({
               连接模型后即可开始问答。
             </Callout>
           )}
+          {queuedQuestion && (
+            <Callout
+              tone="info"
+              onClose={() => setQueuedQuestion(null)}
+              action={
+                <button
+                  type="button"
+                  className="text-button"
+                  disabled={running}
+                  onClick={() => {
+                    loadExplicitQuestion(queuedQuestion);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {running ? "等待当前生成完成…" : "载入新问题"}
+                </button>
+              }
+            >
+              已暂存来自其他页面的研究问题，避免中断或覆盖当前对话。
+            </Callout>
+          )}
+          {error && <Callout tone="danger">{error}</Callout>}
+          {historyError && <Callout tone="danger">{historyError}</Callout>}
           <form
             className="panel conversation-composer"
             onSubmit={(event) => {
@@ -597,8 +637,6 @@ export function Advisor({
               )}
             </div>
           </form>
-          {error && <Callout tone="danger">{error}</Callout>}
-          {historyError && <Callout tone="danger">{historyError}</Callout>}
         </div>
       </div>
       {memoryOpen && (

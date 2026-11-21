@@ -29,12 +29,14 @@ export function ModelSettings({
   displaySettings,
   accountSettings,
   onUpdate,
+  onSaved,
   flash,
 }: {
   model: ModelConfig;
   displaySettings?: ReactNode;
   accountSettings?: ReactNode;
   onUpdate: (m: ModelConfig) => void;
+  onSaved?: () => void;
   flash: (s: string) => void;
 }) {
   const [source, setSource] = useState(
@@ -72,6 +74,7 @@ export function ModelSettings({
       });
       onUpdate(next);
       setApiKey("");
+      onSaved?.();
       flash("模型配置已安全保存");
     } catch (nextError) {
       setError(String(nextError));
@@ -101,6 +104,7 @@ export function ModelSettings({
     setConnectionResult("");
     try {
       onUpdate(await deleteModelKey());
+      onSaved?.();
       flash("模型密钥已从账户密钥存储移除");
     } catch (nextError) {
       setError(String(nextError));
@@ -362,7 +366,7 @@ export function ModelSettings({
         </div>
       </section>
       <div id="analysis-settings">
-        <AnalysisDefaults model={model} flash={flash} />
+        <AnalysisDefaults model={model} onSaved={onSaved} flash={flash} />
       </div>
       {displaySettings}
     </div>

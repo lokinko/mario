@@ -55,12 +55,16 @@ export function BuyWatch({
   flash,
   onEdited,
   onSaved,
+  target,
+  onTargetConsumed,
 }: {
   snapshot: Snapshot;
   onAsk: (question: string) => void;
   flash: (message: string) => void;
   onEdited: () => void;
   onSaved: () => void;
+  target?: { id: number; symbol: string; personal: boolean };
+  onTargetConsumed?: (id: number) => void;
 }) {
   const [board, setBoard] = useState<WatchBoard | null>(null);
   const [catalog, setCatalog] = useState<CatalogBoard | null>(null);
@@ -108,6 +112,34 @@ export function BuyWatch({
     // Personal rows get the first account read; the compact directory follows.
     void load().then(loadCatalog);
   }, []);
+  useEffect(() => {
+    if (!target) return;
+    const normalized = canonical(target.symbol);
+    const inFavorites = board?.rows.some(
+      (row) => canonical(row.entry.symbol) === normalized,
+    );
+    if (inFavorites) {
+      setGroup("favorites");
+      setQuery(normalized);
+      setExpanded(normalized);
+      onTargetConsumed?.(target.id);
+      return;
+    }
+    const catalogMatch = catalog?.rows.find(
+      (row) => canonical(row.company.symbol) === normalized,
+    );
+    if (catalogMatch) {
+      setGroup(catalogMatch.industryId);
+      setQuery(normalized);
+      setExpanded(catalogMatch.company.symbol);
+      onTargetConsumed?.(target.id);
+      return;
+    }
+    if (board && catalog) {
+      setQuery(normalized);
+      onTargetConsumed?.(target.id);
+    }
+  }, [target, board, catalog, onTargetConsumed]);
   useEffect(() => {
     if (busy) return;
     const timer = window.setInterval(() => {
@@ -482,7 +514,7 @@ export function BuyWatch({
                 加入你愿意长期研究的公司；已有持仓可以直接选择，未持有的公司也能观察。
               </p>
               <div className="watch-empty-actions">
-                <button className="secondary" onClick={() => edit()}>
+                <button className="primary" onClick={() => edit()}>
                   加入第一家公司
                 </button>
                 {catalog && (

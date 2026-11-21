@@ -332,8 +332,20 @@ export function WebAccess({
           },
         }}
       >
-        {error && <p role="alert">{error}</p>}
-        {notice && <p role="status">{notice}</p>}
+        {(error || notice) && (
+          <div className="account-banner-stack">
+            {error && (
+              <Callout tone="danger" onClose={() => setError("")}>
+                {error}
+              </Callout>
+            )}
+            {notice && (
+              <Callout tone="success" onClose={() => setNotice("")}>
+                {notice}
+              </Callout>
+            )}
+          </div>
+        )}
         <Fragment key={connected}>{children}</Fragment>
       </AccountAccess.Provider>
     );
@@ -437,8 +449,7 @@ export function WebAccess({
         </label>
         <label>
           密码
-          <Input
-            type="password"
+          <Input.Password
             placeholder="输入密码（至少 12 位）"
             required
             minLength={12}

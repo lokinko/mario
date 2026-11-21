@@ -39,6 +39,7 @@ export function ProfileForm({
   busy,
   run,
   onUpdate,
+  onSaved,
   flash,
 }: {
   exchangeRates?: ReactNode;
@@ -48,6 +49,7 @@ export function ProfileForm({
   busy: boolean;
   run: (task: () => Promise<void>) => Promise<void>;
   onUpdate: (snapshot: Snapshot) => void;
+  onSaved?: () => void;
   flash: (message: string) => void;
 }) {
   const valid = validProfile(profile);
@@ -100,6 +102,7 @@ export function ProfileForm({
       });
       setProfile(snapshot.profile);
       onUpdate(snapshot);
+      onSaved?.();
       flash("收支已保存");
     });
   };

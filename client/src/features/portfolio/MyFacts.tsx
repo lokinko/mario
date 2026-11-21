@@ -50,11 +50,13 @@ export function MyFacts({
   flash,
   section: requestedSection,
   onSectionChange,
+  onSaved,
   display = { maskAmounts: false, setMaskAmounts: () => {} },
 }: {
   display?: Pick<DisplayPreferenceProps, "maskAmounts" | "setMaskAmounts">;
   section?: FactsSection;
   onSectionChange?: (section: FactsSection) => void;
+  onSaved?: () => void;
   snapshot: Snapshot;
   onUpdate: (snapshot: Snapshot) => void;
   flash: (message: string) => void;
@@ -348,6 +350,7 @@ export function MyFacts({
           busy={busy}
           run={run}
           onUpdate={onUpdate}
+          onSaved={onSaved}
           flash={flash}
         />
       )}

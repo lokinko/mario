@@ -13,12 +13,25 @@ const examples = ["600900", "601088", "000333"].flatMap((code) =>
   snapshot.stocks.filter(({ symbol }) => symbol === code),
 );
 
+function normalizeQuery(query: string) {
+  const trimmed = query.trim();
+  const code = trimmed.replace(/\.(ss|sh|sz|bj)$/i, "");
+  return { trimmed, code: code.toUpperCase() };
+}
+
 function findCard(query: string) {
-  const term = query.trim();
-  const stock = snapshot.stocks.find(
-    ({ symbol, name }) => symbol === term || name === term,
+  const { trimmed, code } = normalizeQuery(query);
+  if (!trimmed) return undefined;
+  const exact = snapshot.stocks.find(
+    ({ symbol, name }) => symbol.toUpperCase() === code || name === trimmed,
   );
-  return stock && dividendCard(stock);
+  if (exact) return dividendCard(exact);
+  const partial = snapshot.stocks.filter(
+    ({ symbol, name }) =>
+      name.includes(trimmed) || symbol.toUpperCase().startsWith(code),
+  );
+  if (partial.length === 1) return dividendCard(partial[0]);
+  return undefined;
 }
 
 export function DividendPreview() {
@@ -84,13 +97,21 @@ export function DividendPreview() {
               <Input
                 id="dividend-stock"
                 type="search"
+                list="dividend-preview-stocks"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="例如 600900"
+                placeholder="例如 600900 或 长江电力"
                 autoComplete="off"
                 maxLength={32}
                 required
               />
+              <datalist id="dividend-preview-stocks">
+                {snapshot.stocks.map(({ symbol, name }) => (
+                  <option key={symbol} value={symbol}>
+                    {name}（{symbol}）
+                  </option>
+                ))}
+              </datalist>
               <Button
                 type="primary"
                 htmlType="submit"

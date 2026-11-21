@@ -865,3 +865,57 @@ it("consolidates memory once due and holds the next question until it finishes",
   );
   expect(memoryApi.dreamMemory).toHaveBeenCalledTimes(1);
 });
+
+it("queues an incoming explicit question while streaming instead of wiping the active turn", async () => {
+  let finish!: (res: AnalysisResult) => void;
+  vi.mocked(researchApi.runAnalysis).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const onQuestionAccepted = vi.fn();
+  const view = render(
+    <Advisor {...props} onQuestionAccepted={onQuestionAccepted} />,
+  );
+  ask("正在运行的问题");
+  await waitFor(() => expect(researchApi.runAnalysis).toHaveBeenCalledTimes(1));
+  view.rerender(
+    <Advisor
+      {...props}
+      pendingQuestion={{ id: 5, question: "来自买点观察的新问题" }}
+      onQuestionAccepted={onQuestionAccepted}
+    />,
+  );
+  expect(onQuestionAccepted).toHaveBeenCalledWith(5);
+  expect(screen.getByText(/已暂存来自其他页面的研究问题/)).toBeTruthy();
+  await act(async () => {
+    finish(result);
+  });
+  await screen.findByText(result.answer);
+  fireEvent.click(screen.getByRole("button", { name: "载入新问题" }));
+  expect(
+    (screen.getByRole("textbox", { name: "输入问题" }) as HTMLTextAreaElement)
+      .value,
+  ).toBe("来自买点观察的新问题");
+});
+
+it("keeps an unsent question draft when opening a stored analysis from history", async () => {
+  vi.mocked(researchApi.getAnalysisHistory).mockResolvedValue([
+    { id: "h1", question: "历史问题", createdAt: "2026-10-12T00:00:00Z" },
+  ]);
+  vi.mocked(researchApi.getAnalysis).mockResolvedValue({
+    id: "h1",
+    question: "历史问题",
+    answer: "历史回答内容",
+    createdAt: "2026-10-12T00:00:00Z",
+  });
+  render(<Advisor {...props} />);
+  const input = screen.getByRole("textbox", {
+    name: "输入问题",
+  }) as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "尚未发送的草稿" } });
+  fireEvent.click(await screen.findByRole("button", { name: /历史问题/ }));
+  await screen.findByText("历史回答内容");
+  expect(input.value).toBe("尚未发送的草稿");
+});

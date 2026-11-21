@@ -114,6 +114,30 @@
 .dividend-calendar-event.event-ex {
   border-left: 2px solid var(--success);
 }
+.dividend-calendar-dots {
+  display: none;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: auto;
+}
+.dividend-calendar-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-3);
+}
+.dividend-calendar-dots i.dot-record {
+  background: var(--brand);
+}
+.dividend-calendar-dots i.dot-ex {
+  background: var(--success);
+}
+.dividend-calendar-dots b {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+}
 .dividend-calendar-empty {
   margin: 0;
   color: var(--text-3);
@@ -185,6 +209,17 @@
   padding-top: var(--space-2);
   border-top: 1px solid var(--line);
 }
+.dividend-plan-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.dividend-plan-links .text-button {
+  font-size: var(--fs-caption);
+  padding: 0;
+  min-height: 24px;
+}
 .dividend-plan-meta a {
   color: var(--brand);
   text-decoration: none;
@@ -205,13 +240,16 @@
     gap: 4px;
   }
   .dividend-calendar-day {
-    min-height: 70px;
-    padding: 4px;
+    min-height: 54px;
+    padding: 5px;
     font-size: 11px;
   }
-  .dividend-calendar-event {
-    font-size: 10px;
-    padding: 2px 3px;
+  .dividend-calendar-event,
+  .dividend-calendar-more {
+    display: none;
+  }
+  .dividend-calendar-dots {
+    display: flex;
   }
   .dividend-plan-card {
     padding: var(--space-4);

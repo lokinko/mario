@@ -66,6 +66,10 @@ export function ReviewCenter({
   const [ruleHistories, setRuleHistories] = useState<
     Record<string, InvestmentRuleRevision[]>
   >({});
+  const [loadingHistoryId, setLoadingHistoryId] = useState<string | null>(null);
+  const [historyErrors, setHistoryErrors] = useState<Record<string, string>>(
+    {},
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -122,13 +126,23 @@ export function ReviewCenter({
     }
   };
 
+  const ruleValid = Boolean(
+    rule.statement.trim() && rule.trigger.trim() && rule.rationale.trim(),
+  );
+
   const persistRule = async () => {
-    if (!rule.statement || !rule.trigger || !rule.rationale) return;
+    if (!ruleValid) return;
     setSaving(true);
     setError("");
     try {
-      if (editingRuleId) await updateInvestmentRule(editingRuleId, rule);
-      else await saveInvestmentRule(rule);
+      const cleaned: InvestmentRuleInput = {
+        ...rule,
+        statement: rule.statement.trim(),
+        trigger: rule.trigger.trim(),
+        rationale: rule.rationale.trim(),
+      };
+      if (editingRuleId) await updateInvestmentRule(editingRuleId, cleaned);
+      else await saveInvestmentRule(cleaned);
       if (editingRuleId) {
         setRuleHistories((current) => {
           const next = { ...current };
@@ -174,6 +188,26 @@ export function ReviewCenter({
     }
   };
 
+  const loadRuleHistory = async (item: InvestmentRule) => {
+    setLoadingHistoryId(item.id);
+    setHistoryErrors((current) => {
+      const next = { ...current };
+      delete next[item.id];
+      return next;
+    });
+    try {
+      const history = await getInvestmentRuleHistory(item.id);
+      setRuleHistories((current) => ({ ...current, [item.id]: history }));
+    } catch (nextError) {
+      setHistoryErrors((current) => ({
+        ...current,
+        [item.id]: String(nextError),
+      }));
+    } finally {
+      setLoadingHistoryId((current) => (current === item.id ? null : current));
+    }
+  };
+
   const toggleRuleHistory = async (item: InvestmentRule) => {
     if (expandedRuleId === item.id) {
       setExpandedRuleId(null);
@@ -181,12 +215,7 @@ export function ReviewCenter({
     }
     setExpandedRuleId(item.id);
     if (ruleHistories[item.id]) return;
-    try {
-      const history = await getInvestmentRuleHistory(item.id);
-      setRuleHistories((current) => ({ ...current, [item.id]: history }));
-    } catch (nextError) {
-      setError(String(nextError));
-    }
+    await loadRuleHistory(item);
   };
 
   const convertLessonToRule = (item: SystemReviewRecord) => {
@@ -220,17 +249,30 @@ export function ReviewCenter({
 
   return (
     <>
-      {tab === "reviews" && (
-        <div className="page-actions reference-actions">
-          <button className="primary" onClick={() => setCreating(true)}>
-            新建复盘
+      <div className="page-actions reference-actions">
+        {tab === "reviews" ? (
+          <>
+            <button className="primary" onClick={() => setCreating(true)}>
+              新建复盘
+            </button>
+            <button className="secondary" onClick={startAiReview}>
+              <Sparkles size={16} />
+              AI 辅助系统复盘
+            </button>
+          </>
+        ) : (
+          <button
+            className="primary"
+            onClick={() => {
+              setEditingRuleId(null);
+              setRule(emptyRule);
+              setRuleOpen(true);
+            }}
+          >
+            新建规则
           </button>
-          <button className="secondary" onClick={startAiReview}>
-            <Sparkles size={16} />
-            AI 辅助系统复盘
-          </button>
-        </div>
-      )}
+        )}
+      </div>
       <section className="review-metrics">
         <article>
           <span>复盘记录</span>
@@ -366,21 +408,11 @@ export function ReviewCenter({
       )}
       {tab === "rules" && (
         <section className="panel rule-workbench">
-          <div className="panel-title rule-workbench-title">
-            <div className="rule-workbench-heading">
+          <div className="panel-title">
+            <div>
               <h2>投资规则</h2>
-              <span className="history-count">{activeRules.length} 条有效</span>
             </div>
-            <button
-              className="primary"
-              onClick={() => {
-                setEditingRuleId(null);
-                setRule(emptyRule);
-                setRuleOpen(true);
-              }}
-            >
-              新建规则
-            </button>
+            <span className="history-count">{activeRules.length} 条有效</span>
           </div>
           <div className="rule-layout">
             <div className="rule-list">
@@ -436,6 +468,27 @@ export function ReviewCenter({
                   </div>
                   {expandedRuleId === item.id && (
                     <div className="rule-history">
+                      {loadingHistoryId === item.id && (
+                        <p role="status" className="muted">
+                          正在读取修订历史…
+                        </p>
+                      )}
+                      {historyErrors[item.id] && (
+                        <Callout
+                          tone="danger"
+                          action={
+                            <button
+                              type="button"
+                              className="text-button"
+                              onClick={() => void loadRuleHistory(item)}
+                            >
+                              重试
+                            </button>
+                          }
+                        >
+                          {historyErrors[item.id]}
+                        </Callout>
+                      )}
                       {(ruleHistories[item.id] ?? []).map((revision) => (
                         <div key={revision.revision}>
                           <span>
@@ -526,10 +579,8 @@ export function ReviewCenter({
             </label>
             <div className="rule-editor-actions">
               <button
-                className="secondary"
-                disabled={
-                  saving || !rule.statement || !rule.trigger || !rule.rationale
-                }
+                className="primary"
+                disabled={saving || !ruleValid}
                 onClick={persistRule}
               >
                 {editingRuleId ? "保存新版本" : "建立规则"}

@@ -358,7 +358,7 @@ it("hides closed positions until expanded without changing the full portfolio ov
   );
   expect(screen.queryByRole("button", { name: "查看 中国银行" })).toBeNull();
   expect(
-    screen.getByText("暂无未清仓持仓，可点击上方展开已清仓持仓。"),
+    screen.getByText("暂无未清仓持仓，可点击下方展开已清仓持仓。"),
   ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "已清仓 1 项 ›" }));
   expect(screen.getByRole("button", { name: "查看 中国银行" })).toBeTruthy();

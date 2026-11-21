@@ -107,7 +107,7 @@
   }
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
     --bg: #131e2b;
     --surface: #1a2737;
@@ -148,6 +148,45 @@
     --shadow-drawer: -24px 0 64px -16px rgb(0 0 0 / 60%);
   }
 }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #131e2b;
+  --surface: #1a2737;
+  --surface-raised: #213145;
+  --surface-sunken: #152130;
+  --surface-hover: #273a50;
+  --text-1: #edf3fc;
+  --text-2: #cbd7e8;
+  --text-3: #9fb1c8;
+  --text-4: #879bb5;
+  --line: #2d3f54;
+  --line-strong: #47617c;
+  --brand: #9abafd;
+  --brand-hover: #bdd2ff;
+  --brand-tint: #253c60;
+  --on-brand: #11213b;
+  --accent: #a5bad3;
+  --accent-tint: #273b50;
+  --sidebar-bg: #101a26;
+  --sidebar-active: #23354e;
+  --feature-bg: #223b5b;
+  --info: #8fb0c8;
+  --info-tint: #233039;
+  --warning: #d9aa5c;
+  --warning-tint: #362d1e;
+  --danger: #e07a68;
+  --danger-tint: #3b2522;
+  --success: #7cb48f;
+  --success-tint: #213027;
+  --overlay: rgb(8 7 6 / 55%);
+  --material-bar: rgb(19 30 43 / 88%);
+  --material-pop: rgb(33 49 69 / 92%);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 24%);
+  --shadow-lift: 0 1px 2px rgb(0 0 0 / 30%), 0 12px 28px -12px rgb(0 0 0 / 50%);
+  --shadow-pop:
+    0 0 0 1px rgb(255 255 255 / 6%), 0 18px 44px -12px rgb(0 0 0 / 60%);
+  --shadow-drawer: -24px 0 64px -16px rgb(0 0 0 / 60%);
+}
 :root,
 [data-pnl="cn"] {
   --up: #b4382f;
@@ -162,17 +201,30 @@
   --down-tint: #f6e2dd;
 }
 @media (prefers-color-scheme: dark) {
-  :root,
-  [data-pnl="cn"] {
+  :root:not([data-theme="light"]),
+  :root:not([data-theme="light"])[data-pnl="cn"] {
     --up: #ea7a6a;
     --down: #6fbf8e;
     --up-tint: #3d2522;
     --down-tint: #1f3327;
   }
-  [data-pnl="intl"] {
+  :root:not([data-theme="light"])[data-pnl="intl"] {
     --up: #6fbf8e;
     --down: #ea7a6a;
     --up-tint: #1f3327;
     --down-tint: #3d2522;
   }
+}
+:root[data-theme="dark"],
+:root[data-theme="dark"][data-pnl="cn"] {
+  --up: #ea7a6a;
+  --down: #6fbf8e;
+  --up-tint: #3d2522;
+  --down-tint: #1f3327;
+}
+:root[data-theme="dark"][data-pnl="intl"] {
+  --up: #6fbf8e;
+  --down: #ea7a6a;
+  --up-tint: #1f3327;
+  --down-tint: #3d2522;
 }
