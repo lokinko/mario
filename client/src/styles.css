@@ -272,7 +272,25 @@ main {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding-left: 10px;
+  padding-inline: var(--space-3) var(--space-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-3);
+  transition:
+    border-color var(--duration-hover) var(--ease),
+    box-shadow var(--duration-hover) var(--ease);
+}
+.secure-input:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-tint);
+}
+.secure-input input {
+  flex: 1;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding-inline: 0;
+  background: transparent;
 }
 .key-actions {
   display: flex;
@@ -522,7 +540,7 @@ main {
   margin-top: 14px;
 }
 .section-intro {
-  margin: -var(--space-1) 0 15px;
+  margin: 0 0 var(--space-4);
   color: var(--text-3);
   font-size: var(--fs-body-sm);
   line-height: 1.6;
@@ -783,6 +801,9 @@ main {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
 }
 .composer-footer > span {
   flex: 1;
@@ -880,7 +901,7 @@ main {
 }
 /* Shared spacing and responsive controls for account and supporting pages. */
 .server-connection {
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 .server-connection h2,
 .account-panel h2 {

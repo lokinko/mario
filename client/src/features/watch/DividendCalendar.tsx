@@ -228,49 +228,53 @@ export function DividendCalendar() {
         {!board && !error && <p role="status">正在读取分红日历…</p>}
         {board && (
           <>
-            <div
-              className="dividend-calendar-grid"
-              aria-label="未来30天分红日期"
-            >
-              {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
-                <span key={day} className="dividend-calendar-weekday">
-                  {day}
-                </span>
-              ))}
-              {Array.from({ length: offset }, (_, i) => (
-                <span key={`empty-${i}`} aria-hidden="true" />
-              ))}
-              {days.map((day) => {
-                const events = board.entries.flatMap((row) =>
-                  dates(row)
-                    .filter((item) => item.date === day)
-                    .map((item) => ({ ...item, row })),
-                );
-                return (
-                  <button
-                    type="button"
-                    key={day}
-                    aria-label={`${day}，${events.length}项安排`}
-                    aria-pressed={selected === day}
-                    className={`dividend-calendar-day ${day === board.asOf ? "is-today" : ""}`}
-                    onClick={() => setSelected(selected === day ? null : day)}
-                  >
-                    <span>{day.slice(5).replace("-", "/")}</span>
-                    {events.slice(0, 2).map((event) => (
-                      <span
-                        key={`${event.row.plan.id}:${event.kind}`}
-                        className={`dividend-calendar-event event-${event.kind}`}
-                      >
-                        {event.label} · {event.row.name}
+            <section className="panel dividend-calendar-board">
+              <div
+                className="dividend-calendar-grid"
+                aria-label="未来30天分红日期"
+              >
+                {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
+                  <span key={day} className="dividend-calendar-weekday">
+                    {day}
+                  </span>
+                ))}
+                {Array.from({ length: offset }, (_, i) => (
+                  <span key={`empty-${i}`} aria-hidden="true" />
+                ))}
+                {days.map((day) => {
+                  const events = board.entries.flatMap((row) =>
+                    dates(row)
+                      .filter((item) => item.date === day)
+                      .map((item) => ({ ...item, row })),
+                  );
+                  return (
+                    <button
+                      type="button"
+                      key={day}
+                      aria-label={`${day}，${events.length}项安排`}
+                      aria-pressed={selected === day}
+                      className={`dividend-calendar-day ${day === board.asOf ? "is-today" : ""}`}
+                      onClick={() => setSelected(selected === day ? null : day)}
+                    >
+                      <span className="dividend-calendar-date">
+                        {day.slice(5).replace("-", "/")}
                       </span>
-                    ))}
-                    {events.length > 2 && (
-                      <small>还有 {events.length - 2} 项</small>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+                      {events.slice(0, 2).map((event) => (
+                        <span
+                          key={`${event.row.plan.id}:${event.kind}`}
+                          className={`dividend-calendar-event event-${event.kind}`}
+                        >
+                          {event.label} · {event.row.name}
+                        </span>
+                      ))}
+                      {events.length > 2 && (
+                        <small>还有 {events.length - 2} 项</small>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
             <div className="dividend-calendar-section-heading">
               <h3>
                 {selected ? `${selected} 的安排` : "未来30天已公布的安排"}
@@ -279,16 +283,19 @@ export function DividendCalendar() {
                 <Button onClick={() => setSelected(null)}>查看全部日期</Button>
               )}
             </div>
-            {!relevant.length && (
-              <p>
+            {!relevant.length ? (
+              <p className="panel dividend-calendar-empty">
                 {selected
                   ? "当天暂无已获取的确定安排。"
                   : "当前已获取资料中，未来30天暂无已公布日期的分红安排。"}
               </p>
+            ) : (
+              <div className="dividend-plan-grid">
+                {relevant.map((row) => (
+                  <PlanCard key={row.plan.id} row={row} />
+                ))}
+              </div>
             )}
-            {relevant.map((row) => (
-              <PlanCard key={row.plan.id} row={row} />
-            ))}
           </>
         )}
       </div>

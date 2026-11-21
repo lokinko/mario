@@ -262,11 +262,13 @@
 @media (max-width: 900px) {
   .facts-page .asset-overview {
     grid-template-columns: minmax(0, 1fr) auto;
-    padding: var(--space-4);
+    padding: var(--space-4) var(--space-5);
   }
   .facts-page .hero-changes {
     border-left: 0;
     padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: var(--space-3);
   }
 }
 @media (max-width: 600px) {

@@ -476,22 +476,26 @@ export function BuyWatch({
             </div>
           )}
           {own && !rows.length && (
-            <section className="panel">
+            <section className="panel watch-empty-start">
               <h3>从一家公司开始</h3>
               <p>
                 加入你愿意长期研究的公司；已有持仓可以直接选择，未持有的公司也能观察。
               </p>
-              <button className="secondary" onClick={() => edit()}>
-                加入第一家公司
-              </button>
-              {catalog && (
-                <button
-                  className="text-button"
-                  onClick={() => changeGroup(catalog.catalog.industries[0].id)}
-                >
-                  按行业浏览公司
+              <div className="watch-empty-actions">
+                <button className="secondary" onClick={() => edit()}>
+                  加入第一家公司
                 </button>
-              )}
+                {catalog && (
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      changeGroup(catalog.catalog.industries[0].id)
+                    }
+                  >
+                    按行业浏览公司
+                  </button>
+                )}
+              </div>
             </section>
           )}
           {visible.length > 0 && (

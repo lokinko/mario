@@ -1,5 +1,18 @@
 .workspace-bar.dividend-preview-nav {
-  gap: var(--space-2);
+  padding-inline: 0;
+}
+.dividend-preview-nav-inner {
+  width: 100%;
+  max-width: 960px;
+  margin-inline: auto;
+  padding-inline: var(--space-7);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.dividend-preview-enter {
+  flex-shrink: 0;
 }
 .dividend-preview-brand {
   width: fit-content;
@@ -38,8 +51,9 @@
   font-size: var(--fs-body-sm);
 }
 .dividend-preview-examples button {
-  min-height: 36px;
+  min-height: 32px;
   padding-inline: var(--space-3);
+  border-radius: 999px;
   background: var(--brand-tint);
   font-size: inherit;
 }
@@ -93,6 +107,9 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-3);
   margin: var(--space-4) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid
+    color-mix(in srgb, var(--dividend-block-edge) 20%, transparent);
 }
 .dividend-ticket-metrics dd {
   margin: var(--space-1) 0 0;
@@ -189,8 +206,16 @@
 @media (max-width: 900px) {
   .workspace-bar.dividend-preview-nav {
     display: flex;
-    padding-inline: var(--space-4);
+    padding-inline: 0;
     padding-block-start: env(safe-area-inset-top);
+  }
+  .dividend-preview-nav-inner {
+    padding-inline: var(--space-4);
+  }
+}
+@media (max-width: 600px) {
+  .dividend-preview-nav-inner {
+    padding-inline: var(--space-3);
   }
 }
 @media (max-width: 420px) {

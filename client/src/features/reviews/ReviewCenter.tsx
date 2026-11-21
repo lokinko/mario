@@ -366,96 +366,94 @@ export function ReviewCenter({
       )}
       {tab === "rules" && (
         <section className="panel rule-workbench">
-          <div className="disclosure-content">
-            <div className="panel-title">
-              <div>
-                <h2>投资规则</h2>
-                <button
-                  className="primary"
-                  onClick={() => {
-                    setEditingRuleId(null);
-                    setRule(emptyRule);
-                    setRuleOpen(true);
-                  }}
-                >
-                  新建规则
-                </button>
-              </div>
+          <div className="panel-title rule-workbench-title">
+            <div className="rule-workbench-heading">
+              <h2>投资规则</h2>
               <span className="history-count">{activeRules.length} 条有效</span>
             </div>
-            <div className="rule-layout">
-              <div className="rule-list">
-                {rules.length === 0 && (
-                  <div className="empty">
-                    还没有个人规则。好的规则应说明“何时触发、具体做什么、为什么”。
+            <button
+              className="primary"
+              onClick={() => {
+                setEditingRuleId(null);
+                setRule(emptyRule);
+                setRuleOpen(true);
+              }}
+            >
+              新建规则
+            </button>
+          </div>
+          <div className="rule-layout">
+            <div className="rule-list">
+              {rules.length === 0 && (
+                <div className="empty">
+                  还没有个人规则。好的规则应说明“何时触发、具体做什么、为什么”。
+                </div>
+              )}
+              {rules.map((item) => (
+                <article
+                  key={item.id}
+                  className={item.active ? "" : "inactive"}
+                >
+                  <div>
+                    <span>
+                      <Badge>{item.category}</Badge>{" "}
+                      <Badge>v{item.revision}</Badge>{" "}
+                      {!item.active && <Badge>已停用</Badge>}
+                    </span>
+                    <strong>{item.statement}</strong>
+                    <p>
+                      <b>触发</b>
+                      {item.trigger}
+                    </p>
+                    <p>
+                      <b>依据</b>
+                      {item.rationale}
+                    </p>
                   </div>
-                )}
-                {rules.map((item) => (
-                  <article
-                    key={item.id}
-                    className={item.active ? "" : "inactive"}
-                  >
-                    <div>
-                      <span>
-                        <Badge>{item.category}</Badge>{" "}
-                        <Badge>v{item.revision}</Badge>{" "}
-                        {!item.active && <Badge>已停用</Badge>}
-                      </span>
-                      <strong>{item.statement}</strong>
-                      <p>
-                        <b>触发</b>
-                        {item.trigger}
-                      </p>
-                      <p>
-                        <b>依据</b>
-                        {item.rationale}
-                      </p>
+                  <div className="rule-actions">
+                    <Menu
+                      label={item.statement + "更多操作"}
+                      disabled={saving}
+                      items={[
+                        {
+                          label: "历史",
+                          action: () => void toggleRuleHistory(item),
+                        },
+                        {
+                          label: "修订",
+                          action: () => {
+                            setRuleOpen(true);
+                            setEditingRuleId(item.id);
+                            setRule(ruleInput(item));
+                          },
+                        },
+                        {
+                          label: item.active ? "停用" : "启用",
+                          action: () => void toggleRule(item),
+                        },
+                      ]}
+                    />
+                  </div>
+                  {expandedRuleId === item.id && (
+                    <div className="rule-history">
+                      {(ruleHistories[item.id] ?? []).map((revision) => (
+                        <div key={revision.revision}>
+                          <span>
+                            v{revision.revision} ·{" "}
+                            {new Date(revision.changedAt).toLocaleDateString(
+                              "zh-CN",
+                            )}
+                          </span>
+                          <strong>{revision.statement}</strong>
+                          <small>
+                            {revision.active ? "当时启用" : "当时停用"}
+                          </small>
+                        </div>
+                      ))}
                     </div>
-                    <div className="rule-actions">
-                      <Menu
-                        label={item.statement + "更多操作"}
-                        disabled={saving}
-                        items={[
-                          {
-                            label: "历史",
-                            action: () => void toggleRuleHistory(item),
-                          },
-                          {
-                            label: "修订",
-                            action: () => {
-                              setRuleOpen(true);
-                              setEditingRuleId(item.id);
-                              setRule(ruleInput(item));
-                            },
-                          },
-                          {
-                            label: item.active ? "停用" : "启用",
-                            action: () => void toggleRule(item),
-                          },
-                        ]}
-                      />
-                    </div>
-                    {expandedRuleId === item.id && (
-                      <div className="rule-history">
-                        {(ruleHistories[item.id] ?? []).map((revision) => (
-                          <div key={revision.revision}>
-                            <span>
-                              v{revision.revision} ·{" "}
-                              {new Date(revision.changedAt).toLocaleDateString(
-                                "zh-CN",
-                              )}
-                            </span>
-                            <strong>{revision.statement}</strong>
-                            <small>
-                              {revision.active ? "当时启用" : "当时停用"}
-                            </small>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </article>
-                ))}
-              </div>
+                  )}
+                </article>
+              ))}
             </div>
           </div>
         </section>

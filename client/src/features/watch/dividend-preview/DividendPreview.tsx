@@ -44,27 +44,30 @@ export function DividendPreview() {
   return (
     <div className="dividend-preview">
       <header className="workspace-bar dividend-preview-nav">
-        <a
-          className="workspace-location dividend-preview-brand"
-          href={dividendPreviewHref()}
-        >
-          <img
-            className="brand-mark"
-            src={`${import.meta.env.BASE_URL}mario-mark.svg`}
-            alt=""
-            width="32"
-            height="32"
-          />
-          <strong>mario</strong>
-          <span>红利观察</span>
-        </a>
-        <Button
-          type="text"
-          href={import.meta.env.BASE_URL}
-          icon={<ArrowUpRight size={15} aria-hidden="true" />}
-        >
-          进入工作台
-        </Button>
+        <div className="dividend-preview-nav-inner">
+          <a
+            className="workspace-location dividend-preview-brand"
+            href={dividendPreviewHref()}
+          >
+            <img
+              className="brand-mark"
+              src={`${import.meta.env.BASE_URL}mario-mark.svg`}
+              alt=""
+              width="32"
+              height="32"
+            />
+            <strong>mario</strong>
+            <span>红利观察</span>
+          </a>
+          <Button
+            type="text"
+            className="dividend-preview-enter"
+            href={import.meta.env.BASE_URL}
+            icon={<ArrowUpRight size={15} aria-hidden="true" />}
+          >
+            进入工作台
+          </Button>
+        </div>
       </header>
       <main className="page narrow dividend-preview-main">
         <PageHeader title="查公司分红" />
