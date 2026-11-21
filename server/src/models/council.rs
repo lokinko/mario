@@ -11,6 +11,29 @@ pub const BALLOT_OBJECTION_CHARS: usize = 300;
 pub const BALLOT_VETO_CHARS: usize = 200;
 pub const SCORE_MAX: u8 = 2;
 
+/// Adaptive workflow execution mode selected from the frozen inputs.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionMode {
+    /// Full multi-agent investment committee: research → three proposals → cross ballots → tally.
+    #[default]
+    Council,
+    /// Single direct structured advisor call for lightweight concept, data-status or lookup queries.
+    Fast,
+}
+
+/// Deterministic domain and execution-mode routing recorded in the workflow trace.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteTrace {
+    pub domain: String,
+    pub domain_label: String,
+    pub execution_mode: ExecutionMode,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub companies: Vec<String>,
+}
+
 /// Research agent output: cited findings shared by every proposal agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -274,3 +274,51 @@ it("shows objections to the adopted proposal and keeps web leads out of the cite
   fireEvent.click(screen.getByRole("button", { name: "复制回答" }));
   expect(writeText).toHaveBeenCalledWith("继续等待日线回到下轨附近。");
 });
+
+it("shows the routed domain and fast-mode path without fabricating a vote", () => {
+  const report = {
+    answer: "当前应急金约覆盖 0.8 个月支出。",
+    suggestions: [
+      {
+        action: "先核对最新月支出与现金余额",
+        why: "基于当前授权摘要",
+        factIndices: [0],
+        unlessWhen: "",
+      },
+    ],
+    facts: [
+      {
+        statement: "应急金约 0.8 个月",
+        basis: "user_data" as const,
+        sourceRefs: ["/facts/summary/emergencyMonths"],
+        evidenceIds: [],
+      },
+    ],
+    question: null,
+  };
+  const trace = {
+    version: "investment-workflow-v19",
+    calls: [],
+    evidenceCatalog: [],
+    structuredReport: report,
+    route: {
+      domain: "general_finance",
+      domainLabel: "通用财务与资料核查",
+      executionMode: "fast" as const,
+      reason: "属于资料状态或口径核查类轻量问题，启用精简快速模式",
+    },
+    proposals: [{ id: "DIRECT", lens: "direct", label: "精简直答", report }],
+    vote: null,
+  } as unknown as AnalysisWorkflowTrace;
+
+  render(<ModelReport answer="" trace={trace} />);
+  expect(
+    screen.getByText(/分析路径：通用财务与资料核查 · 精简快速模式/),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("属于资料状态或口径核查类轻量问题，启用精简快速模式"),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("region", { name: "其他方案代理的质疑" }),
+  ).toBeNull();
+});

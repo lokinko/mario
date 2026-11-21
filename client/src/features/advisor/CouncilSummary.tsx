@@ -15,11 +15,47 @@ const checkStatus = {
   missing_source: "缺少来源",
 } as const;
 
-/** How the adopted answer was chosen and what the other agents objected to. */
+/** How the adopted answer was routed, chosen, and what other agents objected to. */
 export function CouncilSummary({ trace }: { trace: AnalysisWorkflowTrace }) {
+  const route = trace.route;
   const vote = trace.vote;
   const proposals = trace.proposals ?? [];
-  if (!vote || proposals.length === 0) return null;
+  const leads = trace.webSearch?.leads ?? [];
+
+  if (!vote || proposals.length === 0) {
+    if (!route) return null;
+    return (
+      <details className="council-process" aria-label="分析路径">
+        <summary>
+          分析路径：{route.domainLabel} ·{" "}
+          {route.executionMode === "fast" ? "精简快速模式" : "完整投委会评议"}
+        </summary>
+        <p>{route.reason}</p>
+        {!!route.companies?.length && (
+          <p>涉及公开标的：{route.companies.join("、")}</p>
+        )}
+        {leads.length > 0 && (
+          <>
+            <h3>待核实网页线索</h3>
+            <p className="source-qualification">
+              供应商生成的摘要，不是网页原文，未作为回答依据。
+            </p>
+            <ul>
+              {leads.map((lead) => (
+                <li key={lead.url}>
+                  <ExternalLink href={lead.url}>
+                    {lead.title || lead.url}
+                  </ExternalLink>
+                  ：{lead.summary}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </details>
+    );
+  }
+
   const label = (id: string) =>
     proposals.find((proposal) => proposal.id === id)?.label ?? id;
   const objections = vote.ballots.flatMap((ballot) =>
@@ -34,7 +70,6 @@ export function CouncilSummary({ trace }: { trace: AnalysisWorkflowTrace }) {
       .filter((check) => check.status === "missing_source")
       .map((check) => check.note),
   ];
-  const leads = trace.webSearch?.leads ?? [];
   return (
     <>
       {objections.length > 0 && (
@@ -54,7 +89,13 @@ export function CouncilSummary({ trace }: { trace: AnalysisWorkflowTrace }) {
       <details className="council-process" aria-label="评议过程">
         <summary>
           评议过程：{outcome[vote.status]} {label(vote.winner)}
+          {route ? ` · ${route.domainLabel}` : ""}
         </summary>
+        {route && (
+          <p>
+            投研场景：{route.domainLabel}（{route.reason}）
+          </p>
+        )}
         <ul>
           {proposals.map((proposal) => {
             const row = vote.tally.find(

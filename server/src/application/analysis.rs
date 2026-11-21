@@ -191,14 +191,14 @@ fn relevant_evidence(
         questions.truncate(1);
     }
     let subject_question = questions.iter().find(|question| {
-        !context::discussion::explicit_ashare_symbols(question).is_empty()
+        !context::discussion::explicit_market_symbols(question).is_empty()
             || companies
                 .iter()
                 .any(|(name, symbol)| context::discussion::mentions_company(question, name, symbol))
     });
     if let Some(question) = subject_question {
         companies.extend(
-            context::discussion::explicit_ashare_symbols(question)
+            context::discussion::explicit_market_symbols(question)
                 .into_iter()
                 .map(|symbol| (String::new(), symbol)),
         );

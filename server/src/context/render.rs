@@ -13,6 +13,7 @@ pub enum RenderStage {
     Research,
     Proposal { has_research_brief: bool },
     Ballot,
+    Direct,
 }
 
 /// Deterministic short aliases (`h1`, `e1`, ...) for long UUID / observation IDs
@@ -212,6 +213,11 @@ pub fn render_for_model(value: &Value) -> String {
 }
 
 pub fn render_public_research(public_research: &Value) -> String {
+    let domain_label = public_research
+        .get("domainLabel")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let companies = public_research
         .get("companies")
         .and_then(Value::as_array)
@@ -226,12 +232,23 @@ pub fn render_public_research(public_research: &Value) -> String {
         .and_then(Value::as_array)
         .map(|arr| arr.iter().filter_map(Value::as_str).collect::<Vec<_>>())
         .unwrap_or_default();
+    let guidance = public_research
+        .get("guidance")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let mut lines = Vec::new();
+    if let Some(label) = domain_label {
+        lines.push(format!("研究领域: {label}"));
+    }
     if !companies.is_empty() {
         lines.push(format!("公司: {}", companies.join(", ")));
     }
     if !topics.is_empty() {
         lines.push(format!("主题: {}", topics.join(", ")));
+    }
+    if let Some(guidance) = guidance {
+        lines.push(format!("检索重点: {guidance}"));
     }
     lines.join("\n")
 }
@@ -354,7 +371,7 @@ pub fn render_for_stage(value: &Value, stage: RenderStage, aliases: &ContextAlia
     }
 
     let include_checks = match stage {
-        RenderStage::Research => true,
+        RenderStage::Research | RenderStage::Direct => true,
         RenderStage::Proposal { has_research_brief } => !has_research_brief,
         RenderStage::Ballot => false,
     };
@@ -366,10 +383,17 @@ pub fn render_for_stage(value: &Value, stage: RenderStage, aliases: &ContextAlia
                         .get("kind")
                         .and_then(Value::as_str)
                         .unwrap_or_default();
-                    if kind.is_empty() {
-                        out.push_str("\n## 核查清单\n");
-                    } else {
-                        out.push_str(&format!("\n## 核查清单（{kind}）\n"));
+                    let label = guide
+                        .get("domainLabel")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    match (label.is_empty(), kind.is_empty()) {
+                        (false, false) => {
+                            out.push_str(&format!("\n## 核查清单（{label}｜{kind}）\n"))
+                        }
+                        (false, true) => out.push_str(&format!("\n## 核查清单（{label}）\n")),
+                        (true, false) => out.push_str(&format!("\n## 核查清单（{kind}）\n")),
+                        (true, true) => out.push_str("\n## 核查清单\n"),
                     }
                     for (idx, check) in checks.iter().enumerate() {
                         if let Some(text) = check.as_str() {

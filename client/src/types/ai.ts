@@ -155,6 +155,16 @@ export interface WebLead {
   summary: string;
 }
 
+export type ExecutionMode = "council" | "fast";
+
+export interface RouteTrace {
+  domain: string;
+  domainLabel: string;
+  executionMode: ExecutionMode;
+  reason: string;
+  companies?: string[];
+}
+
 export interface AnalysisWorkflowTrace {
   valuationEvidence?: HoldingValuationEvidence[];
   webSearch?: {
@@ -182,6 +192,7 @@ export interface AnalysisWorkflowTrace {
   structuredReport?: StructuredAnalysis | LegacyStructuredAnalysis | null;
   outputValidation?: OutputValidationTrace | null;
   evidenceCatalog: AnalysisEvidenceReference[];
+  route?: RouteTrace | null;
   research?: ResearchTrace | null;
   proposals?: ProposalTrace[];
   vote?: VoteTrace | null;

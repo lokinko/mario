@@ -295,6 +295,8 @@ pub struct AnalysisWorkflowTrace {
     #[serde(default)]
     pub evidence_catalog: Vec<AnalysisEvidenceReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<council::RouteTrace>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub research: Option<council::ResearchTrace>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub proposals: Vec<council::ProposalTrace>,

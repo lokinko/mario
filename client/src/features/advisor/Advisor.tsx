@@ -515,9 +515,17 @@ export function Advisor({
                         <section
                           key={proposal}
                           className="proposal-draft"
-                          aria-label={`方案 ${proposal} 草稿`}
+                          aria-label={
+                            proposal === "DIRECT"
+                              ? "回复草稿"
+                              : `方案 ${proposal} 草稿`
+                          }
                         >
-                          <h3>方案 {proposal} · 草稿</h3>
+                          <h3>
+                            {proposal === "DIRECT"
+                              ? "回复草稿"
+                              : `方案 ${proposal} · 草稿`}
+                          </h3>
                           <ModelReport answer={answer} />
                         </section>
                       ))
