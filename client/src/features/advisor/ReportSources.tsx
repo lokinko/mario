@@ -28,14 +28,6 @@ const labels: Record<string, string> = {
   liabilities: "负债",
   priceDate: "价格日期",
   priceSource: "价格来源",
-  financialProfile: "我的收支",
-  portfolio: "我的持仓",
-  currentUserMessage: "本轮原始消息",
-  dailyAssetHistory: "每日资产记录",
-  deterministicPlan: "规划结果",
-  riskFindings: "风险检查",
-  personalInvestmentRules: "投资规则",
-  periodicSystemReviews: "原始复盘",
   marketValue: "市值",
   costBasis: "成本",
   monthlyIncome: "月收入",
@@ -45,23 +37,8 @@ const labels: Record<string, string> = {
   debtBalance: "负债",
   concentrationPct: "集中度",
   totalValue: "资产总额",
-  content: "原始文字",
-  amount: "金额",
-  note: "备注",
   valuationDate: "估值日期",
   currency: "币种",
-  originalPrice: "原始成交价",
-  originalQuantity: "原始成交数量",
-  occurredOn: "交易日期",
-  grossAmount: "成交金额",
-  fees: "费用",
-  taxes: "税费",
-  account: "交易账户",
-  sequence: "同日顺序",
-  kind: "交易类型",
-  recordedTradeCount: "已录入交易笔数",
-  confirmedOn: "余额核对日期",
-  needsReconciliation: "余额待核对状态",
   horizonYears: "投资期限",
   maxDrawdownPct: "最大回撤",
 };
@@ -97,11 +74,6 @@ const moneyFields = new Set([
   "investmentValue",
   "cashValue",
   "totalValue",
-  "amount",
-  "grossAmount",
-  "fees",
-  "taxes",
-  "originalPrice",
   "referencePrice",
 ]);
 
@@ -151,15 +123,14 @@ function formatPersonalValue(
 }
 
 // External/saved sources and prior-turn user statements appear as clickable citations.
-// Individual fields from the user's own holdings or financial profile are grouped into
-// concise inline summaries instead of flooding the report with single-number footnotes.
+// Individual fields from the user's own holdings or financial summary are grouped into
+// concise summaries instead of flooding the report with single-number footnotes.
 export function reportSources(trace?: AnalysisWorkflowTrace) {
   const catalog = new Map(
     (trace?.evidenceCatalog ?? []).map((source) => [source.id, source]),
   );
   const used = new Map<string, AnalysisEvidenceReference>();
   const localByFact = new Map<number, string[]>();
-  const localByInference = new Map<number, string[]>();
   const personalGroups = new Map<
     string,
     { title: string; entries: Map<string, string> }
@@ -190,7 +161,7 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
     personalGroups.set(groupId, existing);
   };
 
-  const processLocal = (path: string, quote?: string): string | undefined => {
+  const processLocal = (path: string): string | undefined => {
     const userHistory = path.startsWith("/previousTurn/");
     if (
       userHistory &&
@@ -206,20 +177,9 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
       !labels[path.split("/")[1]]
     )
       return undefined;
-    // Numeric JSON representations can differ after parsing (100.0 vs 100).
-    if (
-      quote !== undefined &&
-      (typeof value === "string"
-        ? value !== quote
-        : Number(quote) !== value && String(value) !== quote)
-    )
-      return undefined;
 
     const parts = path.split("/").slice(1);
-    // Current-turn question is already visible right above the answer.
-    if (parts[0] === "question" || parts[0] === "currentUserMessage") {
-      return undefined;
-    }
+    if (parts[0] === "question") return undefined;
 
     if (userHistory) {
       const id = `local:${path}`;
@@ -236,7 +196,7 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
         notes: "用户声明（未改写档案）。",
         asOfDate: "",
         evidenceType: "personal_snapshot",
-        claim: quote ?? String(value),
+        claim: String(value),
       });
       return id;
     }
@@ -245,7 +205,7 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
     if (metadataOnlyFields.has(field)) return undefined;
 
     const fieldLabel = labels[field] ?? field;
-    const rawValue = quote ?? String(value);
+    const rawValue = String(value);
     const parent = pointer(
       trace?.personalContext,
       path.slice(0, path.lastIndexOf("/")),
@@ -255,10 +215,7 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
         ? (parent as Record<string, unknown>)
         : undefined;
 
-    // Group holding fields (including legacy /portfolio/holdings/{idx} and trade refs).
-    const isFactsHolding = parts[0] === "facts" && parts[1] === "holdings";
-    const isLegacyHolding = parts[0] === "portfolio" && parts[1] === "holdings";
-    if ((isFactsHolding || isLegacyHolding) && parts.length >= 4) {
+    if (parts[0] === "facts" && parts[1] === "holdings" && parts.length >= 4) {
       const holdingPath = `/${parts.slice(0, 3).join("/")}`;
       const holding = pointer(trace?.personalContext, holdingPath);
       const holdingRecord =
@@ -273,18 +230,12 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
         holdingRecord && typeof holdingRecord.symbol === "string"
           ? holdingRecord.symbol
           : "";
-      const tradeDate =
-        parentRecord && typeof parentRecord.occurredOn === "string"
-          ? parentRecord.occurredOn
-          : "";
-      const groupId = tradeDate ? `${holdingPath}:${parts[4]}` : holdingPath;
-      const title = tradeDate
-        ? `${name} · ${tradeDate}`
-        : symbol && !name.includes(symbol) && !symbol.startsWith("CASH-")
+      const title =
+        symbol && !name.includes(symbol) && !symbol.startsWith("CASH-")
           ? `${name}（${symbol}）`
           : name;
       recordPersonal(
-        groupId,
+        holdingPath,
         title,
         fieldLabel,
         formatPersonalValue(
@@ -297,12 +248,7 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
       return undefined;
     }
 
-    // Group financial summary / profile / portfolio totals.
-    if (
-      (parts[0] === "facts" && parts[1] === "summary") ||
-      parts[0] === "financialProfile" ||
-      parts[0] === "portfolio"
-    ) {
+    if (parts[0] === "facts" && parts[1] === "summary") {
       recordPersonal(
         "personal:summary",
         "个人财务摘要",
@@ -330,31 +276,6 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
       if (refs.length) localByFact.set(index, refs);
     }
   });
-  (report && "inferences" in report ? report.inferences : []).forEach(
-    (claim, index) => {
-      if (claim.basis === "user_data") {
-        const refs = (claim.sourceRefs ?? [])
-          .map((path) => processLocal(path))
-          .filter((id): id is string => !!id);
-        if (refs.length) localByInference.set(index, refs);
-      }
-    },
-  );
-  // Older reports may provide references only through the evidence review.
-  for (const review of trace?.adviceGrounding ?? []) {
-    for (const check of review.checks) {
-      if (
-        check.sourceKind !== "local" ||
-        report?.facts[check.factIndex]?.basis !== "user_data"
-      )
-        continue;
-      const id = processLocal(check.sourceRef, check.quote);
-      if (!id) continue;
-      const refs = localByFact.get(check.factIndex) ?? [];
-      if (!refs.includes(id)) refs.push(id);
-      localByFact.set(check.factIndex, refs);
-    }
-  }
   report?.facts.forEach((claim, index) => {
     for (const id of [
       ...claim.evidenceIds,
@@ -364,17 +285,6 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
       if (source) used.set(id, source);
     }
   });
-  (report && "inferences" in report ? report.inferences : []).forEach(
-    (claim, index) => {
-      for (const id of [
-        ...claim.evidenceIds,
-        ...(localByInference.get(index) ?? []),
-      ]) {
-        const source = catalog.get(id);
-        if (source) used.set(id, source);
-      }
-    },
-  );
 
   const personalFacts: PersonalFactSummary[] = [...personalGroups.entries()]
     .map(([id, group]) => ({
@@ -390,7 +300,6 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
     sources: [...used.values()],
     personalFacts,
     localByFact,
-    localByInference,
   };
 }
 
@@ -405,17 +314,6 @@ function sourceUrl(value: string) {
   } catch {
     return undefined;
   }
-}
-
-function originalBody(source: AnalysisEvidenceReference) {
-  if (!source.evidenceType?.startsWith("historical_")) return source.claim;
-  try {
-    const content = JSON.parse(source.claim ?? "");
-    if (source.evidenceType === "historical_ai") return content.answer;
-  } catch {
-    // Older records may store plain text rather than a serialized answer.
-  }
-  return source.claim;
 }
 
 export function SourceDetail({
@@ -470,21 +368,11 @@ export function SourceDetail({
       {source.capturedAt && (
         <p className="muted">保存或采集时间：{source.capturedAt}</p>
       )}
-      {source.evidenceType === "native_web_summary" && (
-        <p className="source-qualification">
-          供应商生成的带引用摘要，需打开网页核对原文。
-        </p>
-      )}
       {source.evidenceType === "native_web_excerpt" && (
         <p className="source-qualification">供应商返回的网页原文片段。</p>
       )}
-      {source.evidenceType === "historical_ai" && (
-        <p className="source-qualification">
-          历史模型回答，仅作为线索，未经结果验证。
-        </p>
-      )}
       <div className="report-original-text">
-        {originalBody(source) || "这条旧记录未保存原始内容。"}
+        {source.claim || "未保存原始内容。"}
       </div>
       {source.notes && <p className="source-qualification">{source.notes}</p>}
       {url && (

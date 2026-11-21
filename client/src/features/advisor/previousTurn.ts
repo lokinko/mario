@@ -43,20 +43,13 @@ export function previousTurn(
     ? [firstQuestion, ...recentQuestions.slice(-4)]
     : [];
   const report = turn.result.workflowTrace?.structuredReport;
-  const answer = report
-    ? "suggestions" in report
-      ? report.answer
-      : report.verdict
-    : turn.result.answer;
+  const answer = report ? report.answer : turn.result.answer;
   const suggestions = report
-    ? ("suggestions" in report ? report.suggestions : report.actions).map(
-        (item) => item.action,
-      )
+    ? report.suggestions.map((item) => item.action)
     : [];
-  const pendingQuestion =
-    report && "suggestions" in report
-      ? clip(report.question?.trim() ?? "", 200)
-      : "";
+  const pendingQuestion = report
+    ? clip(report.question?.trim() ?? "", 200)
+    : "";
   return {
     question: priorQuestion,
     answer: clip(answer, 300),

@@ -5,7 +5,7 @@ use super::structured_output::{MAX_STRUCTURED_OUTPUT_CHARS, STRUCTURED_ANALYSIS_
 use super::ChatMessage;
 use crate::context::INVESTMENT_SYSTEM_POLICY;
 
-pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v20";
+pub const INVESTMENT_WORKFLOW_VERSION: &str = "investment-workflow-v1";
 
 pub struct StagePrompt {
     pub key: &'static str,
@@ -101,7 +101,7 @@ pub const MODULES: [AnalysisModule; 3] = [
 
 const MODULE_COMMON_ROLE: &str = "你是专业投研团队中的专项分析模块，只深耕自己负责的维度并输出高信息密度的结构化结论，供策略总监汇总裁决。researchBrief 是研究代理整理的事实与核查状态，引用授权事实时仍须核对原始资料；webLeads 可充分用于正文行业与估值分析（注明“据网页线索，待公告复核”），但严禁写入 facts.evidenceIds。禁止复读“浮亏不等于低估”“参考价无时间戳”等官僚套话。";
 
-const SYNTHESIZER_ROLE: &str = "你是首席投资策略总监，负责综合【基本面与估值定价】【组合策略与交易执行】【风险压力与反方证伪】三个专项模块的讨论成果，严格依据上下文中的《投资规则与策略基准》做出最终裁决。你的回答必须信息密度高、条理分明：先一句亮明最终决策结论，随后分模块凝练核心要点与关键分歧裁决，最后落到 1–3 条可直接执行的动作或明确触发条件。严禁把“请你自己查报价、翻财报、核公告”当成核心建议，严禁复读法务免责套话。各模块与网页线索均为分析参考，最终 facts 仍须严格只引用授权原值或授权证据 ID。";
+const SYNTHESIZER_ROLE: &str = "你是首席投资策略总监，负责综合【基本面与估值定价】【组合策略与交易执行】【风险压力与反方证伪】三个专项模块的讨论成果，严格依据上下文中的《投资规则与策略基准》做出最终裁决。前端会独立展示各模块的立场与展开详情，因此你的最终回复必须详略得当、重点突出：answer 第一句直接亮明最终决策结论，随后用精炼篇幅串联三大模块的关键共识与核心分歧裁决，避免机械复述每个模块的所有细节；suggestions 给出 1–3 条可直接落地的行动或明确量化/事件触发条件。严禁把“请你自己查报价、翻财报、核公告”当成核心建议，严禁复读法务免责套话。各模块与网页线索均为分析参考，最终 facts 仍须严格只引用授权原值或授权证据 ID。";
 
 const DIRECT_ROLE: &str = "你是精简快速通道的投资顾问代理。本轮问题属于轻量概念解释、资料状态或口径核查，请直接基于冻结资料和投资规则作答：只写能被授权资料支持的内容，简洁明了，不强行编造无关交易或配置建议。webLeads 仅可作公开线索说明，禁止写入 facts.evidenceIds。";
 
@@ -121,9 +121,9 @@ pub trait AnalysisWorkflow: Send + Sync {
     ) -> StagePrompt;
 }
 
-pub struct InvestmentWorkflowV20;
+pub struct InvestmentWorkflowV1;
 
-impl AnalysisWorkflow for InvestmentWorkflowV20 {
+impl AnalysisWorkflow for InvestmentWorkflowV1 {
     fn version(&self) -> &'static str {
         INVESTMENT_WORKFLOW_VERSION
     }
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn every_agent_keeps_the_untrusted_data_boundary_strategy_and_contract() {
-        let workflow = InvestmentWorkflowV20;
+        let workflow = InvestmentWorkflowV1;
         let payload = serde_json::json!({
             "discussionGuide": {
                 "domainLabel": "个股估值与基本面",
@@ -294,7 +294,7 @@ mod tests {
         .to_string();
         assert!(invalid.chars().count() > 12_000);
         assert!(invalid.chars().count() < MAX_STRUCTURED_OUTPUT_CHARS);
-        let prompt = InvestmentWorkflowV20.repair_output(
+        let prompt = InvestmentWorkflowV1.repair_output(
             "生成",
             &invalid,
             "字段无效",
@@ -308,7 +308,7 @@ mod tests {
     fn repair_bounds_oversized_originals_by_unicode_characters() {
         let retained = "🙂".repeat(MAX_STRUCTURED_OUTPUT_CHARS);
         let oversized = format!("{retained}BEYOND_ORIGINAL_BUDGET");
-        let prompt = InvestmentWorkflowV20.repair_output(
+        let prompt = InvestmentWorkflowV1.repair_output(
             "生成",
             &oversized,
             "输出过大",

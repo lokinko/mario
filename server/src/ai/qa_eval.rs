@@ -193,34 +193,21 @@ fn previous_turn(
                 .rev(),
         );
     }
-    let (answer, suggestions) = match result.workflow_trace.structured_report.as_ref().unwrap() {
-        crate::models::analysis_history::StoredAnalysisReport::Current(report) => (
-            &report.answer,
-            report
-                .suggestions
-                .iter()
-                .map(|s| s.action.chars().take(100).collect())
-                .collect::<Vec<String>>(),
-        ),
-        crate::models::analysis_history::StoredAnalysisReport::Legacy(_) => {
-            panic!("live evaluation must produce current reports")
-        }
-    };
+    let report = result.workflow_trace.structured_report.as_ref().unwrap();
+    let answer = &report.answer;
+    let suggestions = report
+        .suggestions
+        .iter()
+        .map(|s| s.action.chars().take(100).collect())
+        .collect::<Vec<String>>();
     crate::models::analysis::PreviousTurn {
         question: prior_question,
         answer: answer.chars().take(300).collect(),
         suggestions: suggestions.into_iter().take(3).collect(),
         earlier_questions,
-        pending_question: result
-            .workflow_trace
-            .structured_report
+        pending_question: report
+            .question
             .as_ref()
-            .and_then(|report| match report {
-                crate::models::analysis_history::StoredAnalysisReport::Current(report) => {
-                    report.question.as_ref()
-                }
-                crate::models::analysis_history::StoredAnalysisReport::Legacy(_) => None,
-            })
             .map(|question| question.chars().take(200).collect()),
     }
 }

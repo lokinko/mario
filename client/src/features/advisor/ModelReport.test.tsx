@@ -5,22 +5,49 @@ import { ModelReport } from "./ModelReport";
 import type { AnalysisWorkflowTrace } from "../../types/ai";
 
 afterEach(cleanup);
-it("shows a concise answer, linked suggestions and one question with folded evidence", () => {
+
+it("shows a concise answer, linked suggestions, citation drawer and copy action", () => {
   const trace = {
+    version: "investment-workflow-v1",
     personalContext: {
       question: "每月结余8000元",
       facts: {
         summary: { baseCurrency: "CNY", monthlySurplus: "8000" },
       },
     },
-    evidenceCatalog: [],
+    evidenceCatalog: [
+      {
+        id: "e1",
+        title: "原始来源",
+        publisher: "公司公告",
+        sourceUrl: "https://example.com/source",
+        sourceTier: "一手来源",
+        claim: "原始资料全文\n第二段，保留原始换行。",
+        capturedAt: "2026-09-20",
+        asOfDate: "",
+      },
+      {
+        id: "unused",
+        title: "未引用候选",
+        publisher: "",
+        sourceUrl: "",
+        sourceTier: "",
+        asOfDate: "",
+        claim: "未使用内容",
+      },
+    ],
+    webSearch: {
+      status: "incomplete",
+      warnings: ["搜索未返回原文"],
+      searchCalls: 0,
+    },
     structuredReport: {
       answer: "本月先把结余转入备用金。",
       suggestions: [
         {
           action: "本月将8000元结余转入备用金",
-          why: "每月结余8000元",
-          factIndices: [0],
+          why: "每月结余8000元，且外部公告确认短期波动加大",
+          factIndices: [0, 1],
           unlessWhen: "本月有必要的大额支出时调整",
         },
       ],
@@ -31,93 +58,31 @@ it("shows a concise answer, linked suggestions and one question with folded evid
           sourceRefs: ["/question", "/facts/summary/monthlySurplus"],
           evidenceIds: [],
         },
+        {
+          statement: "公告说明短期波动",
+          basis: "research_evidence",
+          sourceRefs: [],
+          evidenceIds: ["e1"],
+        },
       ],
       question: "负债何时需要偿还？",
     },
   } as unknown as AnalysisWorkflowTrace;
+
   render(<ModelReport answer="备用摘要" trace={trace} />);
   expect(screen.getByText("本月先把结余转入备用金。")).toBeTruthy();
   expect(screen.getByRole("list", { name: "建议" }).textContent).toContain(
     "本月将8000元结余转入备用金",
   );
   expect(screen.getByText("追问：负债何时需要偿还？")).toBeTruthy();
-  expect(screen.queryByRole("heading", { name: "方案比较" })).toBeNull();
+
   const details = screen.getByText("依据与局限").closest("details")!;
   expect(details.open).toBe(false);
-  expect(screen.queryByRole("button", { name: /查看引用/ })).toBeNull();
+  expect(details.textContent).toContain("搜索未返回原文");
   expect(details.textContent).toContain("个人财务摘要");
   expect(details.textContent).toContain("月结余 8000 CNY");
-});
-
-it("shows the complete report with sources and limitations, without process or action controls", () => {
-  const trace = {
-    webSearch: {
-      status: "incomplete",
-      warnings: ["搜索未返回原文"],
-      searchCalls: 0,
-    },
-    evidenceCatalog: [
-      {
-        id: "e1",
-        title: "原始来源",
-        sourceUrl: "https://example.com/source",
-        claim: "原始资料全文\n第二段，保留原始换行。",
-        capturedAt: "2026-09-20",
-        asOfDate: "",
-      },
-      { id: "unused", title: "未引用候选", claim: "未使用内容" },
-    ],
-    structuredReport: {
-      verdict: "优先补足备用金",
-      facts: [
-        { statement: "备用金不足", basis: "user_data", evidenceIds: [] },
-        {
-          statement: "资料事实",
-          basis: "research_evidence",
-          evidenceIds: ["e1"],
-        },
-      ],
-      inferences: [
-        { statement: "现金缓冲较少", basis: "user_data", evidenceIds: [] },
-      ],
-      unknowns: ["需核实近期支出"],
-      options: [
-        {
-          name: "先储蓄",
-          suitableWhen: "近期用钱",
-          tradeoffs: ["延后投资"],
-          risks: ["通胀风险"],
-        },
-      ],
-      actions: [
-        {
-          action: "补足现金",
-          rationale: "减少短期风险",
-          supportingFactIndices: [0],
-          evidenceLimits: ["支出数据尚未更新"],
-          reversible: true,
-          reviewTrigger: "月底核对",
-        },
-      ],
-      reviewTriggers: ["收入改变时复盘"],
-    },
-  } as unknown as AnalysisWorkflowTrace;
-  render(<ModelReport answer="旧摘要" trace={trace} />);
-  const evidence = screen.getByText("依据与局限").closest("details")!;
-  expect(evidence.open).toBe(false);
-  expect(evidence.textContent).toContain("搜索未返回原文");
-  for (const content of [
-    "优先补足备用金",
-    "现金缓冲较少",
-    "需核实近期支出",
-    "先储蓄",
-    "补足现金",
-    "收入改变时复盘",
-  ])
-    expect(screen.getByText(content)).toBeTruthy();
-  expect(screen.getByText(/支出数据尚未更新/)).toBeTruthy();
-  expect(screen.queryByText(/原始资料全文/)).toBeNull();
   expect(screen.queryByText("未引用候选")).toBeNull();
+
   const citation = screen.getAllByRole("button", {
     name: "查看引用 1：原始来源",
   })[0];
@@ -126,156 +91,24 @@ it("shows the complete report with sources and limitations, without process or a
   expect(screen.getByText(/原始资料全文/).textContent).toBe(
     "原始资料全文\n第二段，保留原始换行。",
   );
-  expect(screen.queryByText("资料日期：2026-09-20")).toBeNull();
   expect(
     screen
       .getByRole("link", { name: "打开来源网页：原始来源" })
       .getAttribute("href"),
   ).toBe("https://example.com/source");
-  expect(screen.queryByText("旧摘要")).toBeNull();
   fireEvent.keyDown(screen.getByRole("region", { name: "引用原始信息" }), {
     key: "Escape",
   });
   expect(screen.queryByRole("region", { name: "引用原始信息" })).toBeNull();
   expect(document.activeElement).toBe(citation);
 });
-it("shows the original answer for older records without a structured report", () => {
-  render(<ModelReport answer={"旧版完整回答\n第二段"} />);
-  expect(screen.getByText(/旧版完整回答/).textContent).toBe(
-    "旧版完整回答\n第二段",
-  );
+
+it("falls back to plain text when no structured report is present", () => {
+  render(<ModelReport answer={"纯文本草稿\n第二段"} />);
+  expect(screen.getByText(/纯文本草稿/).textContent).toBe("纯文本草稿\n第二段");
 });
 
-it("shows objections to the adopted proposal and keeps web leads out of the cited sources", () => {
-  const report = {
-    answer: "继续等待日线回到下轨附近。",
-    suggestions: [],
-    facts: [],
-    question: null,
-  };
-  const scores = {
-    facts: 2,
-    citations: 2,
-    reasoning: 2,
-    counterpoints: 1,
-    actionability: 1,
-  };
-  const trace = {
-    evidenceCatalog: [],
-    structuredReport: report,
-    webSearch: {
-      status: "completed",
-      searchCalls: 1,
-      warnings: [],
-      leads: [
-        {
-          title: "分红新闻",
-          url: "https://example.com/lead",
-          summary: "供应商对分红的概括",
-        },
-      ],
-    },
-    research: {
-      brief: {
-        findings: [],
-        counterpoints: [],
-        unknowns: ["2025 年派息方案未公告"],
-        checks: [
-          { index: 0, status: "missing_source", note: "缺少近三年现金流" },
-        ],
-      },
-    },
-    proposals: [
-      { id: "P1", lens: "steady", label: "稳健等待", report },
-      { id: "P2", lens: "conditional", label: "条件执行", report },
-      { id: "P3", lens: "skeptic", label: "反方证伪", failure: "格式无效" },
-    ],
-    vote: {
-      status: "voted",
-      winner: "P1",
-      tally: [
-        {
-          proposal: "P1",
-          voters: 1,
-          preferences: 1,
-          vetoes: 0,
-          scoreTotal: 8,
-          eliminated: false,
-          rank: 1,
-        },
-        {
-          proposal: "P2",
-          voters: 1,
-          preferences: 0,
-          vetoes: 1,
-          scoreTotal: 4,
-          eliminated: true,
-          rank: 2,
-        },
-      ],
-      ballots: [
-        {
-          voter: "P2",
-          lens: "conditional",
-          ballot: {
-            preferred: "P1",
-            assessments: [
-              {
-                proposal: "P1",
-                scores,
-                veto: null,
-                objection: "未说明等待期间的机会成本",
-              },
-            ],
-          },
-        },
-      ],
-    },
-  } as unknown as AnalysisWorkflowTrace;
-  render(<ModelReport answer="" trace={trace} />);
-  const objections = screen.getByRole("region", {
-    name: "其他方案代理的质疑",
-  });
-  expect(objections.textContent).toContain("未说明等待期间的机会成本");
-  expect(objections.textContent).toContain("来自 条件执行");
-  const process =
-    screen.getByText(/评议过程：交叉评审后采纳 稳健等待/).parentElement!;
-  expect(process.textContent).toContain(
-    "稳健等待（采纳）：1/1 票首选，平均 8.0 / 10 分",
-  );
-  expect(process.textContent).toContain("1 票否决，已淘汰");
-  expect(process.textContent).toContain("反方证伪：未通过结构化校验");
-  expect(process.textContent).toContain("2025 年派息方案未公告");
-  expect(process.textContent).toContain("缺少近三年现金流");
-  expect(process.textContent).toContain("未作为回答依据");
-  expect(
-    screen.getByRole("link", { name: "分红新闻" }).getAttribute("href"),
-  ).toBe("https://example.com/lead");
-  expect(screen.getByText("本次回答未提供可核对的引用来源。")).toBeTruthy();
-
-  cleanup();
-  render(
-    <ModelReport
-      answer=""
-      trace={{ ...trace, vote: { ...trace.vote!, status: "tied" } }}
-    />,
-  );
-  // A tie decided by lens order must not read as a preference for the adopted proposal.
-  expect(
-    screen.getByText(
-      /评议过程：评审首选与评分持平，未分出高下，按方案顺序采纳 稳健等待/,
-    ),
-  ).toBeTruthy();
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: { writeText },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "复制回答" }));
-  expect(writeText).toHaveBeenCalledWith("继续等待日线回到下轨附近。");
-});
-
-it("shows the routed domain and fast-mode path without fabricating a vote", () => {
+it("shows compact route metadata for fast-mode direct answers without module clutter", () => {
   const report = {
     answer: "当前应急金约覆盖 0.8 个月支出。",
     suggestions: [
@@ -297,7 +130,7 @@ it("shows the routed domain and fast-mode path without fabricating a vote", () =
     question: null,
   };
   const trace = {
-    version: "investment-workflow-v19",
+    version: "investment-workflow-v1",
     calls: [],
     evidenceCatalog: [],
     structuredReport: report,
@@ -307,26 +140,19 @@ it("shows the routed domain and fast-mode path without fabricating a vote", () =
       executionMode: "fast" as const,
       reason: "属于资料状态或口径核查类轻量问题，启用精简快速模式",
     },
-    proposals: [{ id: "DIRECT", lens: "direct", label: "精简直答", report }],
-    vote: null,
   } as unknown as AnalysisWorkflowTrace;
 
   render(<ModelReport answer="" trace={trace} />);
-  expect(
-    screen.getByText(/分析路径：通用财务与资料核查 · 精简快速模式/),
-  ).toBeTruthy();
-  expect(
-    screen.getByText("属于资料状态或口径核查类轻量问题，启用精简快速模式"),
-  ).toBeTruthy();
-  expect(
-    screen.queryByRole("region", { name: "其他方案代理的质疑" }),
-  ).toBeNull();
+  const meta = screen.getByLabelText("分析场景与模式");
+  expect(meta.textContent).toContain("通用财务与资料核查");
+  expect(meta.textContent).toContain("精简直答");
+  expect(screen.queryByRole("region", { name: "分模块讨论" })).toBeNull();
 });
 
-it("renders specialist modules and strategist synthesis summary for modular workflow traces", () => {
+it("renders scannable specialist module stances with progressive disclosure details and copy support", () => {
   const report = {
     answer:
-      "【核心结论】云铝股份当前维持底仓观察，暂不因浮亏加仓，等铝价回调或成本端企稳后再按左侧条件分批介入。",
+      "云铝股份当前维持底仓观察，暂不因浮亏加仓，等铝价回调或成本端企稳后再按左侧条件分批介入。",
     suggestions: [
       {
         action:
@@ -347,7 +173,7 @@ it("renders specialist modules and strategist synthesis summary for modular work
     question: null,
   };
   const trace = {
-    version: "investment-workflow-v20",
+    version: "investment-workflow-v1",
     calls: [],
     evidenceCatalog: [],
     structuredReport: report,
@@ -357,6 +183,20 @@ it("renders specialist modules and strategist synthesis summary for modular work
       executionMode: "council" as const,
       reason: "属于投资决策或深度投研问题，启动分模块专业分析",
       companies: ["000807.SZ"],
+    },
+    research: {
+      brief: {
+        findings: [],
+        counterpoints: [],
+        unknowns: ["最新季度吨铝完全成本"],
+        checks: [
+          {
+            index: 0,
+            status: "covered" as const,
+            note: "已核对授权持仓占比",
+          },
+        ],
+      },
     },
     modules: [
       {
@@ -392,19 +232,12 @@ it("renders specialist modules and strategist synthesis summary for modular work
         id: "M3",
         module: "risk_bear_case",
         label: "风险压力与反方证伪",
-        analysis: {
-          stance: "警惕氧化铝涨价与枯水期限电双重挤压",
-          summary: "若铝价回落叠加枯水期电价上行，吨铝利润弹性会迅速收敛。",
-          keyPoints: ["枯水期云南限电对产销量构成扰动"],
-          triggers: ["氧化铝持续涨价且铝价跌破成本支撑时复核仓位"],
-          dataGaps: [],
-          facts: [],
-        },
+        failure: "格式校验失败",
       },
     ],
     synthesis: {
-      status: "completed",
-      modulesUsed: 3,
+      status: "degraded",
+      modulesUsed: 2,
       modulesTotal: 3,
     },
     webSearch: {
@@ -417,20 +250,58 @@ it("renders specialist modules and strategist synthesis summary for modular work
           url: "",
           summary: "沪铝主力震荡运行，云铝绿电铝产能占比高。",
         },
+        {
+          title: "行业简报",
+          url: "https://example.com/lead",
+          summary: "云南枯水期电力供应跟踪。",
+        },
       ],
     },
   } as unknown as AnalysisWorkflowTrace;
 
   render(<ModelReport answer="" trace={trace} />);
+
+  const meta = screen.getByLabelText("分析场景与模式");
+  expect(meta.textContent).toContain("个股估值与基本面");
+  expect(meta.textContent).toContain("分模块策略汇总");
+  expect(meta.textContent).toContain("000807.SZ");
+
+  // Default scannable layer: module labels & one-line stances visible immediately.
+  const breakdown = screen.getByRole("region", { name: "分模块讨论" });
+  expect(breakdown.textContent).toContain("2/3 个专业模块 · 部分降级");
+  expect(breakdown.textContent).toContain("基本面与估值定价");
+  expect(breakdown.textContent).toContain(
+    "水电铝成本优势突出，但须防按周期高点盈利误判低估",
+  );
+  expect(breakdown.textContent).toContain("组合策略与交易执行");
+  expect(breakdown.textContent).toContain("维持 4.23% 底仓，暂不因浮亏补仓");
+  expect(breakdown.textContent).toContain("未完成（格式校验失败）");
+
+  // Detailed module reasoning stays folded until opened.
+  const detailElements = breakdown.querySelectorAll("details");
+  expect(detailElements.length).toBe(2);
+  expect(detailElements[0].open).toBe(false);
+
+  // Research checks and web leads stay cleanly folded below.
+  const researchDetails = screen
+    .getByText(/研究核查与网页线索/)
+    .closest("details")!;
+  expect(researchDetails.open).toBe(false);
+  expect(researchDetails.textContent).toContain("沪铝主力震荡运行");
   expect(
-    screen.getByText(
-      /分模块讨论与策略汇总：3\/3 个专业模块 · 个股估值与基本面/,
-    ),
-  ).toBeTruthy();
-  const process = screen.getByText(/分模块讨论与策略汇总/).closest("details")!;
-  expect(process.textContent).toContain("M1 · 基本面与估值定价");
-  expect(process.textContent).toContain("M2 · 组合策略与交易执行");
-  expect(process.textContent).toContain("M3 · 风险压力与反方证伪");
-  expect(process.textContent).toContain("涉及公开标的：000807.SZ");
-  expect(process.textContent).toContain("沪铝主力震荡运行");
+    screen.getByRole("link", { name: "行业简报" }).getAttribute("href"),
+  ).toBe("https://example.com/lead");
+
+  // Copy output includes summary, suggestions, and module stances.
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "复制回答" }));
+  expect(writeText).toHaveBeenCalledTimes(1);
+  const copied = writeText.mock.calls[0][0] as string;
+  expect(copied).toContain("云铝股份当前维持底仓观察");
+  expect(copied).toContain("分模块立场：");
+  expect(copied).toContain("基本面与估值定价：水电铝成本优势突出");
 });

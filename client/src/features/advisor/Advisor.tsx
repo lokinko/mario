@@ -72,7 +72,8 @@ export function Advisor({
   const streamRef = useRef<AbortController | null>(null);
   const [draft, setDraft] = useState<{
     question: string;
-    proposals: Record<string, string>;
+    kind?: string;
+    answer: string;
   } | null>(null);
   const dreamRef = useRef<Promise<void> | null>(null);
   const [dreaming, setDreaming] = useState(false);
@@ -180,7 +181,7 @@ export function Advisor({
     setRunning(true);
     setStopped(false);
     setError("");
-    setDraft({ question: message, proposals: {} });
+    setDraft({ question: message, answer: "" });
     const controller = new AbortController();
     streamRef.current = controller;
     try {
@@ -206,13 +207,11 @@ export function Advisor({
         (update) => {
           if (!isCurrent()) return;
           if (update.type === "draft")
-            setDraft((current) => ({
+            setDraft({
               question: message,
-              proposals: {
-                ...current?.proposals,
-                [update.proposal]: update.answer,
-              },
-            }));
+              kind: update.proposal,
+              answer: update.answer,
+            });
           else setStage(update.message);
         },
         controller.signal,
@@ -508,31 +507,20 @@ export function Advisor({
                     <Badge tone="warning">未校验</Badge>
                   </span>
                   {running && <GenerationSteps stage={stage} />}
-                  {Object.keys(draft.proposals).length ? (
-                    Object.entries(draft.proposals)
-                      .sort(([a], [b]) => a.localeCompare(b))
-                      .map(([proposal, answer]) => (
-                        <section
-                          key={proposal}
-                          className="proposal-draft"
-                          aria-label={
-                            proposal === "DIRECT"
-                              ? "回复草稿"
-                              : proposal === "SYNTHESIS"
-                                ? "策略汇总草稿"
-                                : `方案 ${proposal} 草稿`
-                          }
-                        >
-                          <h3>
-                            {proposal === "DIRECT"
-                              ? "回复草稿"
-                              : proposal === "SYNTHESIS"
-                                ? "策略汇总 · 草稿"
-                                : `方案 ${proposal} · 草稿`}
-                          </h3>
-                          <ModelReport answer={answer} />
-                        </section>
-                      ))
+                  {draft.answer ? (
+                    <section
+                      className="stream-draft"
+                      aria-label={
+                        draft.kind === "DIRECT" ? "回复草稿" : "策略汇总草稿"
+                      }
+                    >
+                      <h3>
+                        {draft.kind === "DIRECT"
+                          ? "回复草稿"
+                          : "策略汇总 · 草稿"}
+                      </h3>
+                      <ModelReport answer={draft.answer} />
+                    </section>
                   ) : (
                     <ModelReport
                       answer={

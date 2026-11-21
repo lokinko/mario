@@ -845,26 +845,27 @@ it("previews the actual selected payload without sending an analysis", async () 
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("shows each proposal agent's draft separately and keeps only its latest text", async () => {
+it("streams the latest synthesis draft cleanly without stacking duplicate draft blocks", async () => {
   vi.mocked(researchApi.runAnalysis).mockImplementation(
     (_request, onUpdate) => {
-      onUpdate?.({ type: "draft", proposal: "P2", answer: "条件执行旧稿" });
-      onUpdate?.({ type: "draft", proposal: "P1", answer: "稳健等待草稿" });
-      onUpdate?.({ type: "draft", proposal: "P2", answer: "条件执行新稿" });
+      onUpdate?.({
+        type: "draft",
+        proposal: "SYNTHESIS",
+        answer: "策略汇总旧稿",
+      });
+      onUpdate?.({
+        type: "draft",
+        proposal: "SYNTHESIS",
+        answer: "策略汇总新稿",
+      });
       return new Promise(() => {});
     },
   );
   render(<Advisor {...props} />);
-  ask("并行方案问题");
-  const drafts = await screen.findAllByRole("region", {
-    name: /方案 P\d 草稿/,
-  });
-  expect(drafts.map((draft) => draft.getAttribute("aria-label"))).toEqual([
-    "方案 P1 草稿",
-    "方案 P2 草稿",
-  ]);
-  expect(drafts[1].textContent).toContain("条件执行新稿");
-  expect(screen.queryByText("条件执行旧稿")).toBeNull();
+  ask("分模块策略问题");
+  const draft = await screen.findByRole("region", { name: "策略汇总草稿" });
+  expect(draft.textContent).toContain("策略汇总新稿");
+  expect(screen.queryByText("策略汇总旧稿")).toBeNull();
 });
 
 it("consolidates memory once due and holds the next question until it finishes", async () => {

@@ -175,7 +175,7 @@ mod tests {
                     "exact": 99999999999999.02,
                     "ratio": 0.375
                 })),
-                version: "investment-workflow-v18".into(),
+                version: "investment-workflow-v1".into(),
                 ..AnalysisWorkflowTrace::default()
             },
             created_at: "2026-11-20T08:00:00Z".into(),

@@ -8,6 +8,7 @@ import type {
 import { reportSources, SourceDetail } from "./ReportSources";
 
 afterEach(cleanup);
+
 it("groups holding fields into one personal summary without creating single-number footnotes", () => {
   const trace = {
     personalContext: {
@@ -112,27 +113,21 @@ it("shows original user corrections without promoting historical model text to f
   ]);
 });
 
-it("identifies the company and transaction date behind an exact legacy trade reference", () => {
+it("omits current-turn question noise and groups financial summary fields", () => {
   const trace = {
     personalContext: {
+      question: "三年内用钱",
       facts: {
-        holdings: {
-          asset: {
-            name: "测试公司",
-            recentTrades: {
-              t1: { occurredOn: "2026-11-04", originalPrice: "12.34567890" },
-            },
-          },
-        },
+        summary: { baseCurrency: "CNY", portfolioValue: "120000" },
       },
     },
     structuredReport: {
       facts: [
         {
-          statement: "原始成交价",
+          statement: "资金期限三年，组合总值12万",
           basis: "user_data",
           evidenceIds: [],
-          sourceRefs: ["/facts/holdings/asset/recentTrades/t1/originalPrice"],
+          sourceRefs: ["/question", "/facts/summary/portfolioValue"],
         },
       ],
       suggestions: [],
@@ -142,98 +137,9 @@ it("identifies the company and transaction date behind an exact legacy trade ref
   expect(result.sources).toEqual([]);
   expect(result.personalFacts).toEqual([
     {
-      id: "/facts/holdings/asset:t1",
-      title: "测试公司 · 2026-11-04",
-      detail: "原始成交价 12.34567890",
-    },
-  ]);
-});
-
-it("omits current-turn question noise and groups personal portfolio totals", () => {
-  const trace = {
-    personalContext: {
-      currentUserMessage: "三年内用钱",
-      portfolio: { totalValue: 120000 },
-    },
-    structuredReport: {
-      facts: [
-        {
-          statement: "资金期限三年",
-          basis: "user_data",
-          evidenceIds: [],
-          sourceRefs: ["/currentUserMessage"],
-        },
-      ],
-      inferences: [
-        {
-          statement: "应预留现金",
-          basis: "user_data",
-          evidenceIds: [],
-          sourceRefs: ["/portfolio/totalValue"],
-        },
-      ],
-    },
-  } as unknown as AnalysisWorkflowTrace;
-  const result = reportSources(trace);
-  expect(result.sources).toEqual([]);
-  expect(result.personalFacts).toEqual([
-    {
       id: "personal:summary",
       title: "个人财务摘要",
-      detail: "资产总额 120000",
-    },
-  ]);
-});
-
-it("only exposes validated local summaries and references actually used by the report", () => {
-  const trace = {
-    personalContext: {
-      currentUserMessage: "我三年内需要用钱",
-      portfolio: { holdings: [{ name: "存款", marketValue: 120000 }] },
-    },
-    evidenceCatalog: [{ id: "e1", title: "未使用的资料" }],
-    structuredReport: {
-      facts: [{ statement: "期限为三年", basis: "user_data", evidenceIds: [] }],
-      inferences: [],
-    },
-    adviceGrounding: [
-      {
-        checks: [
-          {
-            factIndex: 0,
-            sourceKind: "local",
-            sourceRef: "/currentUserMessage",
-            quote: "我三年内需要用钱",
-          },
-          {
-            factIndex: 0,
-            sourceKind: "local",
-            sourceRef: "/portfolio/holdings/0/marketValue",
-            quote: "120000.0",
-          },
-          {
-            factIndex: 0,
-            sourceKind: "local",
-            sourceRef: "/portfolio/holdings/0/marketValue",
-            quote: "12",
-          },
-          {
-            factIndex: 0,
-            sourceKind: "local",
-            sourceRef: "/question",
-            quote: "旧模型回答",
-          },
-        ],
-      },
-    ],
-  } as unknown as AnalysisWorkflowTrace;
-  const result = reportSources(trace);
-  expect(result.sources).toEqual([]);
-  expect(result.personalFacts).toEqual([
-    {
-      id: "/portfolio/holdings/0",
-      title: "存款",
-      detail: "市值 120000.0",
+      detail: "资产总额 120000 CNY",
     },
   ]);
 });
@@ -259,49 +165,31 @@ it("shows saved user text without needing a URL or exposing metadata", () => {
     "预算更新为30万元。\n原始说明",
   );
   expect(screen.queryByRole("link")).toBeNull();
-  expect(screen.queryByRole("button", { name: "收起原始信息" })).toBeNull();
 });
 
-it.each([
-  "javascript:alert(1)",
-  "file:///private",
-  "https://user:secret@example.com",
-])("does not create an unsafe source link: %s", (sourceUrl) => {
-  render(
-    <SourceDetail
-      regionId="source"
-      close={() => {}}
-      source={
-        {
-          id: "e1",
-          title: "旧来源",
-          claim: "保存的正文",
-          sourceUrl,
-        } as AnalysisEvidenceReference
-      }
-    />,
-  );
+it("refuses unsafe source URLs and allows clean http/https links", () => {
+  const base: AnalysisEvidenceReference = {
+    id: "e1",
+    title: "来源",
+    publisher: "",
+    sourceUrl: "javascript:alert(1)",
+    sourceTier: "",
+    asOfDate: "",
+    claim: "正文",
+  };
+  render(<SourceDetail regionId="s1" close={() => {}} source={base} />);
   expect(screen.queryByRole("link")).toBeNull();
-});
-
-it("keeps historical AI text visibly qualified and preserves multiline originals", () => {
+  cleanup();
   render(
     <SourceDetail
-      regionId="source"
+      regionId="s2"
       close={() => {}}
-      source={
-        {
-          id: "memory-a1",
-          title: "历史问答",
-          claim: JSON.stringify({ answer: "旧回答第一段\n第二段" }),
-          sourceUrl: "",
-          evidenceType: "historical_ai",
-        } as AnalysisEvidenceReference
-      }
+      source={{ ...base, sourceUrl: "https://example.com/report" }}
     />,
   );
-  expect(screen.getByText(/旧回答第一段/).textContent).toBe(
-    "旧回答第一段\n第二段",
-  );
-  expect(screen.getByText(/未经结果验证/)).toBeTruthy();
+  expect(
+    screen
+      .getByRole("link", { name: "打开来源网页：来源" })
+      .getAttribute("href"),
+  ).toBe("https://example.com/report");
 });

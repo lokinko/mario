@@ -911,37 +911,23 @@ fn stores_analysis_transparency_audit() {
             api_key_sent: false,
         },
         workflow_trace: crate::models::analysis::AnalysisWorkflowTrace {
-            version: "investment-workflow-v4".into(),
-            structured_report: Some(
-                crate::models::analysis_history::StoredAnalysisReport::Legacy(
-                    crate::models::analysis_history::LegacyStructuredAnalysis {
-                        verdict: "先控制风险".into(),
-                        facts: vec![crate::models::analysis::AnalysisClaim {
-                            statement: "风险预算已超出".into(),
-                            basis: "user_data".into(),
-                            evidence_ids: Vec::new(),
-                            source_refs: Vec::new(),
-                        }],
-                        inferences: Vec::new(),
-                        unknowns: vec!["未来现金流".into()],
-                        options: vec![crate::models::analysis_history::AnalysisOption {
-                            name: "分批调整".into(),
-                            suitable_when: "风险超限".into(),
-                            tradeoffs: vec!["可能错过上涨".into()],
-                            risks: vec!["执行偏差".into()],
-                        }],
-                        actions: vec![crate::models::analysis_history::AnalysisAction {
-                            supporting_fact_indices: vec![0],
-                            evidence_limits: vec!["旧记录的限制".into()],
-                            action: "核对目标权重".into(),
-                            rationale: "避免错误交易".into(),
-                            reversible: true,
-                            review_trigger: "一周后".into(),
-                        }],
-                        review_triggers: vec!["风险回到预算内".into()],
-                    },
-                ),
-            ),
+            version: "investment-workflow-v1".into(),
+            structured_report: Some(crate::models::analysis::StructuredAnalysis {
+                answer: "先控制风险".into(),
+                suggestions: vec![crate::models::analysis::AnalysisSuggestion {
+                    action: "核对目标权重".into(),
+                    why: "风险预算已超出".into(),
+                    fact_indices: vec![0],
+                    unless_when: "风险回到预算内".into(),
+                }],
+                facts: vec![crate::models::analysis::AnalysisClaim {
+                    statement: "风险预算已超出".into(),
+                    basis: "user_data".into(),
+                    evidence_ids: Vec::new(),
+                    source_refs: vec!["/question".into()],
+                }],
+                question: None,
+            }),
             output_validation: Some(crate::models::analysis::OutputValidationTrace {
                 status: "valid".into(),
                 attempts: 1,
@@ -960,31 +946,23 @@ fn stores_analysis_transparency_audit() {
     assert!(!audit.api_key_sent);
     assert_eq!(
         history[0].workflow_version.as_deref(),
-        Some("investment-workflow-v4")
+        Some("investment-workflow-v1")
     );
     assert_eq!(history[0].verdict.as_deref(), Some("先控制风险"));
-    assert_eq!(history[0].grounding_status.as_deref(), Some("unavailable"));
     let history_json = serde_json::to_value(&history[0]).unwrap();
     assert!(history_json.get("workflowTrace").is_none());
-    assert_eq!(history_json["workflowVersion"], "investment-workflow-v4");
+    assert_eq!(history_json["workflowVersion"], "investment-workflow-v1");
     assert!(audit.structured_output_validated);
     let stored = db.analysis("analysis-1").unwrap();
     assert_eq!(stored.question, "如何控制风险？");
     assert_eq!(stored.answer, "先控制风险");
     assert_eq!(
         stored.workflow_trace.unwrap().version,
-        "investment-workflow-v4"
+        "investment-workflow-v1"
     );
-    let mut reviewed_result = result.clone();
-    reviewed_result.id = "analysis-checked".into();
-    reviewed_result.workflow_trace.advice_grounding =
-        vec![crate::models::analysis_history::AdviceGrounding {
-            action_index: 0,
-            status: "contradicted".into(),
-            reason: "与原始资料相反".into(),
-            checks: vec![],
-        }];
-    reviewed_result.workflow_trace.valuation_evidence =
+    let mut valued_result = result.clone();
+    valued_result.id = "analysis-valued".into();
+    valued_result.workflow_trace.valuation_evidence =
         vec![crate::models::portfolio::HoldingValuationEvidence {
             holding_id: "h1".into(),
             symbol: "600036.SS".into(),
@@ -1006,24 +984,13 @@ fn stores_analysis_transparency_audit() {
             disclaimer: String::new(),
             captured_at: "2026-11-20T08:00:00Z".into(),
         }];
-    db.save_analysis(&reviewed_result, "核对结论").unwrap();
-    let checked_history = db
-        .analysis_history()
-        .unwrap()
-        .into_iter()
-        .find(|item| item.id == "analysis-checked")
-        .unwrap();
-    assert_eq!(
-        checked_history.grounding_status.as_deref(),
-        Some("contradicted")
-    );
-    let checked_trace = db
-        .analysis("analysis-checked")
+    db.save_analysis(&valued_result, "核对结论").unwrap();
+    let valued_trace = db
+        .analysis("analysis-valued")
         .unwrap()
         .workflow_trace
         .unwrap();
-    assert_eq!(checked_trace.advice_grounding[0].reason, "与原始资料相反");
-    assert_eq!(checked_trace.valuation_evidence[0].market_value, 3869.25);
+    assert_eq!(valued_trace.valuation_evidence[0].market_value, 3869.25);
     assert!(matches!(db.analysis("missing"), Err(AppError::NotFound(_))));
 }
 
@@ -1084,14 +1051,14 @@ fn adds_workflow_trace_column_to_an_existing_analysis_database() {
 }
 
 #[test]
-fn reads_legacy_workflow_trace() {
+fn ignores_unknown_fields_in_stored_workflow_trace() {
     let db = Database::test();
     db.conn()
         .unwrap()
         .execute(
             "INSERT INTO analyses (id,question,answer,audit,trace,created_at)
-             VALUES ('old-trace','旧分析','旧回答',NULL,$1,'2026-01-01')",
-            [r#"{"version":"investment-workflow-v2","researchPlan":"旧计划","alternatives":[],"critique":null,"calls":[]}"#],
+             VALUES ('extra-trace','分析','回答',NULL,$1,'2026-01-01')",
+            [r#"{"version":"investment-workflow-v1","unknownExtra":"ignored","calls":[]}"#],
         )
         .unwrap();
 
@@ -1099,10 +1066,10 @@ fn reads_legacy_workflow_trace() {
         db.analysis_history().unwrap()[0]
             .workflow_version
             .as_deref(),
-        Some("investment-workflow-v2")
+        Some("investment-workflow-v1")
     );
-    let trace = db.analysis("old-trace").unwrap().workflow_trace.unwrap();
-    assert_eq!(trace.version, "investment-workflow-v2");
+    let trace = db.analysis("extra-trace").unwrap().workflow_trace.unwrap();
+    assert_eq!(trace.version, "investment-workflow-v1");
     assert!(trace.structured_report.is_none());
     assert!(trace.output_validation.is_none());
     assert!(trace.evidence_catalog.is_empty());

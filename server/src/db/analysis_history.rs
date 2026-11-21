@@ -97,17 +97,7 @@ impl Database {
                     CASE WHEN trace IS NOT NULL AND left(ltrim(trace), 1) = '{'
                          THEN jsonb_build_object(
                            'version', trace::jsonb->'version',
-                           'verdict', COALESCE(
-                             trace::jsonb->'structuredReport'->>'answer',
-                             trace::jsonb->'structuredReport'->>'verdict'
-                           ),
-                           'groundingStatuses', CASE
-                             WHEN jsonb_typeof(trace::jsonb->'adviceGrounding') = 'array' THEN (
-                               SELECT jsonb_agg(item->>'status')
-                               FROM jsonb_array_elements(trace::jsonb->'adviceGrounding') AS item
-                             )
-                             ELSE NULL
-                           END
+                           'verdict', trace::jsonb->'structuredReport'->>'answer'
                          )::text
                          ELSE NULL
                     END
@@ -129,7 +119,6 @@ impl Database {
         struct TraceSummary {
             version: Option<String>,
             verdict: Option<String>,
-            grounding_statuses: Option<Vec<Option<String>>>,
         }
         let mut history = Vec::new();
         for row in rows {
@@ -137,34 +126,7 @@ impl Database {
             let parsed = summary
                 .as_deref()
                 .and_then(|value| serde_json::from_str::<TraceSummary>(value).ok());
-            let grounding_status = parsed
-                .as_ref()
-                .map(|summary| {
-                    let statuses = summary.grounding_statuses.as_deref().unwrap_or(&[]);
-                    if statuses.is_empty() {
-                        "unavailable"
-                    } else if statuses
-                        .iter()
-                        .any(|item| item.as_deref() == Some("contradicted"))
-                    {
-                        "contradicted"
-                    } else if statuses
-                        .iter()
-                        .any(|item| item.as_deref() == Some("insufficient"))
-                    {
-                        "insufficient"
-                    } else if statuses
-                        .iter()
-                        .any(|item| item.as_deref() != Some("supported"))
-                    {
-                        "unavailable"
-                    } else {
-                        "supported"
-                    }
-                })
-                .map(str::to_string);
             history.push(AnalysisHistoryItem {
-                grounding_status,
                 id,
                 question,
                 created_at,
@@ -270,7 +232,7 @@ mod automatic_tests {
     }
 
     #[test]
-    fn analysis_history_projection_handles_current_legacy_malformed_grounding_and_limit() {
+    fn analysis_history_projection_handles_current_malformed_and_limit() {
         let db = Database::test();
         let conn = db.conn().unwrap();
         let rows: Vec<(&str, &str, Option<String>)> = vec![
@@ -279,69 +241,22 @@ mod automatic_tests {
                 "2026-11-20T10:00:01Z",
                 Some(
                     json!({
-                        "version": "v9",
+                        "version": "investment-workflow-v1",
                         "structuredReport": { "answer": "当前结论标题" },
-                        "adviceGrounding": [
-                            { "status": "supported" },
-                            { "status": "supported" }
-                        ],
                         "evidenceCatalog": [{ "id": "huge", "claim": "x".repeat(4000) }]
                     })
                     .to_string(),
                 ),
             ),
             (
-                "a-legacy",
+                "a-empty-version",
                 "2026-11-20T10:00:02Z",
-                Some(
-                    json!({
-                        "version": "v7",
-                        "structuredReport": { "verdict": "旧版结论标题" },
-                        "adviceGrounding": [
-                            { "status": "supported" },
-                            { "status": "insufficient" }
-                        ]
-                    })
-                    .to_string(),
-                ),
+                Some(json!({ "version": "" }).to_string()),
             ),
-            (
-                "a-contradicted",
-                "2026-11-20T10:00:03Z",
-                Some(
-                    json!({
-                        "version": "v7",
-                        "adviceGrounding": [
-                            { "status": "insufficient" },
-                            { "status": "contradicted" }
-                        ]
-                    })
-                    .to_string(),
-                ),
-            ),
-            (
-                "a-unknown-status",
-                "2026-11-20T10:00:04Z",
-                Some(
-                    json!({
-                        "version": "",
-                        "adviceGrounding": [
-                            { "status": "supported" },
-                            { "status": "custom_unknown" }
-                        ]
-                    })
-                    .to_string(),
-                ),
-            ),
-            (
-                "a-empty-grounding",
-                "2026-11-20T10:00:05Z",
-                Some(json!({ "version": "v8", "adviceGrounding": [] }).to_string()),
-            ),
-            ("a-null-trace", "2026-11-20T10:00:06Z", None),
+            ("a-null-trace", "2026-11-20T10:00:03Z", None),
             (
                 "a-malformed",
-                "2026-11-20T10:00:07Z",
+                "2026-11-20T10:00:04Z",
                 Some("not-json-at-all".into()),
             ),
         ];
@@ -357,32 +272,13 @@ mod automatic_tests {
         let by_id: std::collections::HashMap<_, _> =
             items.iter().map(|item| (item.id.as_str(), item)).collect();
         assert_eq!(by_id["a-current"].verdict.as_deref(), Some("当前结论标题"));
-        assert_eq!(by_id["a-current"].workflow_version.as_deref(), Some("v9"));
         assert_eq!(
-            by_id["a-current"].grounding_status.as_deref(),
-            Some("supported")
+            by_id["a-current"].workflow_version.as_deref(),
+            Some("investment-workflow-v1")
         );
-        assert_eq!(by_id["a-legacy"].verdict.as_deref(), Some("旧版结论标题"));
-        assert_eq!(
-            by_id["a-legacy"].grounding_status.as_deref(),
-            Some("insufficient")
-        );
-        assert_eq!(
-            by_id["a-contradicted"].grounding_status.as_deref(),
-            Some("contradicted")
-        );
-        assert_eq!(by_id["a-contradicted"].verdict, None);
-        assert_eq!(by_id["a-unknown-status"].workflow_version, None);
-        assert_eq!(
-            by_id["a-unknown-status"].grounding_status.as_deref(),
-            Some("unavailable")
-        );
-        assert_eq!(
-            by_id["a-empty-grounding"].grounding_status.as_deref(),
-            Some("unavailable")
-        );
-        assert_eq!(by_id["a-null-trace"].grounding_status, None);
-        assert_eq!(by_id["a-malformed"].grounding_status, None);
+        assert_eq!(by_id["a-empty-version"].workflow_version, None);
+        assert_eq!(by_id["a-empty-version"].verdict, None);
+        assert_eq!(by_id["a-null-trace"].workflow_version, None);
         assert_eq!(by_id["a-malformed"].verdict, None);
 
         // Inserting more than 50 rows must return only the latest 50 ordered by (created_at DESC, id DESC).

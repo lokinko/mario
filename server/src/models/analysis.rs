@@ -1,6 +1,5 @@
 //! AI authorization, execution, frozen reports and analysis history contracts.
 use super::{
-    analysis_history::{self, StoredAnalysisReport},
     council,
     portfolio::HoldingValuationEvidence,
     provider::ModelProviderKind,
@@ -287,9 +286,8 @@ pub struct AnalysisWorkflowTrace {
     pub version: String,
     #[serde(default)]
     pub calls: Vec<ModelCallTrace>,
-    /// The adopted report: the winning proposal, unchanged.
     #[serde(default)]
-    pub structured_report: Option<StoredAnalysisReport>,
+    pub structured_report: Option<StructuredAnalysis>,
     #[serde(default)]
     pub output_validation: Option<OutputValidationTrace>,
     #[serde(default)]
@@ -302,15 +300,6 @@ pub struct AnalysisWorkflowTrace {
     pub modules: Vec<council::ModuleTrace>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub synthesis: Option<council::SynthesisTrace>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub proposals: Vec<council::ProposalTrace>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub vote: Option<council::VoteTrace>,
-    /// Fields only reports frozen by retired workflows carry; never written now.
-    /// Kept as a direct field rather than `#[serde(flatten)]` so `f64` fields in
-    /// `valuation_evidence` deserialize directly under `serde_json/arbitrary_precision`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub advice_grounding: Vec<analysis_history::AdviceGrounding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -341,8 +330,6 @@ pub struct AnalysisResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisHistoryItem {
-    #[serde(default)]
-    pub grounding_status: Option<String>,
     pub id: String,
     pub question: String,
     pub created_at: String,

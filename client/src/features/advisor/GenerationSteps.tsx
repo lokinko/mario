@@ -1,9 +1,9 @@
-const councilSteps = ["准备资料", "研究", "分模块讨论", "策略汇总", "完成"];
+const modularSteps = ["准备资料", "研究", "分模块讨论", "策略汇总", "完成"];
 const fastSteps = ["准备资料", "场景路由", "直接作答", "完成"];
 
 export function GenerationSteps({ stage }: { stage: string }) {
   const isFast = /精简|直接作答/.test(stage);
-  const steps = isFast ? fastSteps : councilSteps;
+  const steps = isFast ? fastSteps : modularSteps;
   const current = isFast
     ? /完成/.test(stage)
       ? 3
@@ -16,11 +16,11 @@ export function GenerationSteps({ stage }: { stage: string }) {
             : -1
     : /完成/.test(stage)
       ? 4
-      : /汇总|策略总监|裁决|评审|投票/.test(stage)
+      : /汇总|策略总监|裁决/.test(stage)
         ? 3
-        : /模块|方案/.test(stage)
+        : /模块/.test(stage)
           ? 2
-          : /研究|检索|搜索|查找|识别|路由|投委会/.test(stage)
+          : /研究|检索|搜索|查找|识别|路由/.test(stage)
             ? 1
             : /准备|读取|资料|整理/.test(stage)
               ? 0

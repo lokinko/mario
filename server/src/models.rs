@@ -1,7 +1,6 @@
 //! Domain-owned contracts; consumers import the owning module explicitly.
 pub(crate) mod accounting;
 pub(crate) mod analysis;
-pub(crate) mod analysis_history;
 pub(crate) mod connection;
 pub(crate) mod council;
 pub(crate) mod daily;

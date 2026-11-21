@@ -14,7 +14,7 @@ pub(super) use citation_rules;
 
 pub const STRUCTURED_ANALYSIS_CONTRACT: &str = concat!(
     r#"只返回JSON，不加代码块或说明：
-{"answer":"先给明确决策结论，再按【核心判断】【分模块要点（基本面与估值／组合与执行／风险与证伪）】【综合裁决】高信息密度展开，最多1800字","suggestions":[{"action":"本题具体可执行动作或带明确量化/事件门槛的条件触发计划；依赖目标或假设时先写条件再给动作，最多240字","why":"结合规则策略、基本面逻辑与持仓成本/仓位说明理由，比较立即行动与等待的胜率、赔率与交易成本，最多800字","factIndices":[0],"unlessWhen":"推翻本判断或改变动作的具体条件，最多400字，可为空"}],"facts":[{"statement":"引用的输入事实或来源数字","basis":"user_data或research_evidence","sourceRefs":[],"evidenceIds":[]}],"question":null}
+{"answer":"详略得当的综合结论：第一句直接亮明最终判断，随后精炼串联基本面估值、仓位执行与核心风险分歧的裁决逻辑（不逐字复述模块全文），最多1400字","suggestions":[{"action":"本题具体可执行动作或带明确量化/事件门槛的条件触发计划；依赖目标或假设时先写条件再给动作，最多240字","why":"结合规则策略、基本面逻辑与持仓成本/仓位说明理由，比较立即行动与等待的胜率、赔率与交易成本，最多800字","factIndices":[0],"unlessWhen":"推翻本判断或改变动作的具体条件，最多400字，可为空"}],"facts":[{"statement":"引用的输入事实或来源数字","basis":"user_data或research_evidence","sourceRefs":[],"evidenceIds":[]}],"question":null}
 suggestions为1–3条，facts为1–8条，factIndices非空、无重复且不越界。严禁把“请你自己查带时间戳报价、翻财报算现金流、核对公告”当成核心建议；严禁反复复读“浮亏不等于低估”“参考价不是实时成交价”“覆盖未知不等于资金缺口”等官僚套话（必要口径提示最多半句带过）。webLeads是网页检索参考线索，禁止写入facts.evidenceIds，但正文分析应充分利用其中查明的公开估值、财报、商品价格与行业背景并注明“据网页线索，待公告复核”。
 建议紧扣本题，不凑无关行动或金额；行动句自行包含影响执行金额的口径条件，不能靠why或unlessWhen纠正，也不能与它们矛盾。结余仅另扣尚未包含的付款。新仓位或减仓幅度须解释选择依据及保留风险；依据不足只作非默认算例或给条件公式，不将任意比例作为优先推荐；按目标权重给公式或金额时，行动句先说明卖款留在组合/转出及费用假设，转出须按变化后的总值和现金缺口统一重算。仅在问题需要且资料支持时量化，金额保留精确原值、币种与可复核计算；研究财报或预算未给报告币种时，只沿用原单位并说明币种未提供，不从中文单位、证券代码或用户本位币补成某一币种；建议目标或假设须明确标识并解释，不能冒充facts。无需填满字数。具体法规、监管、保障限额、税率、交易单位等外部数字无本轮来源时不从记忆确定报数。来源的条件、可能性和概念提醒须保留原语气，未核实的现金覆盖只表示资料缺口，不得简称为公司已存在资金不足。
 "#,
@@ -190,7 +190,7 @@ fn validate_report(
     report: &StructuredAnalysis,
     allowed_evidence_ids: &HashSet<String>,
 ) -> Result<(), String> {
-    check_text("answer", &report.answer, 1_800)?;
+    check_text("answer", &report.answer, 1_400)?;
     check_count("facts", report.facts.len(), 1, 8)?;
     check_count("suggestions", report.suggestions.len(), 1, 3)?;
     for claim in &report.facts {
@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn enforces_detailed_limits_and_rejects_retired_fields() {
         for (field, value) in [
-            ("answer", serde_json::json!("字".repeat(1_801))),
+            ("answer", serde_json::json!("字".repeat(1_401))),
             ("suggestions", serde_json::json!([])),
             ("verdict", serde_json::json!("旧字段")),
         ] {
@@ -512,7 +512,7 @@ mod tests {
     fn detailed_fields_preserve_unicode_at_their_limits_and_reject_overflow() {
         let allowed = HashSet::from(["e1".into()]);
         for (path, limit) in [
-            ("/answer", 1_800),
+            ("/answer", 1_400),
             ("/suggestions/0/action", 240),
             ("/suggestions/0/why", 800),
             ("/suggestions/0/unlessWhen", 400),

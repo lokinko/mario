@@ -323,7 +323,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | AnalysisSettings | `workflow?:"council"; webSearch?:boolean=true; contextSelection?:ContextSelection`；按整组设置保存，缺省应用当前默认值 |
 | AnalysisPreview | `provider,model,workflow,groups,evidenceCandidates,payload,renderedContext,payloadBytes,contextRevision,systemPolicy,localOnly,generatedAt`；payload 是精简后的内部引用结构，renderedContext 是实际发送给模型的紧凑 Markdown 材料；payloadBytes 计 renderedContext 的 UTF-8 字节数，不含系统提示词或后续研究结果 |
 | AnalysisResult | `id,answer,stages,transparency,workflowTrace,createdAt,disclaimer`；transparency 含授权组、模型、指纹、调用与 token 统计；workflowTrace 含研究、提案、投票、引用及输出校验记录，嵌套类型见核心模型与[评议类型](../server/src/models/council.rs) |
-| AnalysisHistoryItem / StoredAnalysis | 列表项含 `id,question,createdAt,transparency,groundingStatus,workflowVersion,verdict`；详情含 `id,question,answer,createdAt,transparency,workflowTrace`。兼容字段可空，不据旧档案推断当前工作流 |
+| AnalysisHistoryItem / StoredAnalysis | 列表项含 `id,question,createdAt,transparency,workflowVersion,verdict`；详情含 `id,question,answer,createdAt,transparency,workflowTrace` |
 | MemoryNote | `id,kind,origin,statement,rationale,sourceAnalysisIds,quote,active,createdAt,updatedAt`；kind 为 `preference/viewpoint/context`，origin 为 `userStated/modelInferred` |
 | MemoryOverview | `items:MemoryNote[]; dream:DreamState; pendingAnalyses:integer; dreamDue,enabled:boolean`；DreamState 含可空 `dreamedThrough,lastRunAt,lastResult`，lastResult 汇总 analyses/added/updated/archived/rejected |
 

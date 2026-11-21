@@ -152,7 +152,7 @@ try {
     const calls=completed.result.workflowTrace.calls;
     assert.equal(calls[0].stage,'native_web_search','评议前必须先执行联网搜索');
     assert.equal(calls[0].requestCount,2,'503 只能在同一次搜索内恢复');
-    assert.equal(calls.filter(call=>call.stage==='proposal_agent').length,3,`单槽桥接必须依次执行三个方案代理：${JSON.stringify(completed.result.stages)}`);
+    assert.equal(calls.filter(call=>call.stage==='module_agent').length,3,`单槽桥接必须依次执行三个专业模块：${JSON.stringify(completed.result.stages)}`);
     console.log('PASS Codex App Server 503 自动恢复 → 桥接重试状态 → 联网+多代理评议 → 单次保存');
     for (const [scenario,expected] of [['quota','用量限制'],['partial','暂时不可用'],['native-retry',null]]) {
       await writeFile(environment.MARIO_TEST_CODEX_SCENARIO,scenario);

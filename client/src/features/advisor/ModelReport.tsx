@@ -8,20 +8,28 @@ import { reportSources, SourceDetail } from "./ReportSources";
 function reportCopyText(answer: string, trace?: AnalysisWorkflowTrace): string {
   const report = trace?.structuredReport;
   if (!report) return answer;
-  if ("suggestions" in report) {
-    const lines = [report.answer];
-    if (report.suggestions.length) {
-      lines.push(
-        ...report.suggestions.map(
+  const lines = [report.answer];
+  if (report.suggestions.length) {
+    lines.push(
+      report.suggestions
+        .map(
           (item, index) =>
             `${index + 1}. ${item.action}\n   ${item.why}${item.unlessWhen ? `（前提：${item.unlessWhen}）` : ""}`,
-        ),
-      );
-    }
-    if (report.question) lines.push(`追问：${report.question}`);
-    return lines.filter(Boolean).join("\n\n");
+        )
+        .join("\n"),
+    );
   }
-  return answer || report.verdict;
+  const modules = (trace?.modules ?? []).filter((item) => item.analysis);
+  if (modules.length > 0) {
+    lines.push(
+      "分模块立场：\n" +
+        modules
+          .map((item) => `- ${item.label}：${item.analysis!.stance}`)
+          .join("\n"),
+    );
+  }
+  if (report.question) lines.push(`追问：${report.question}`);
+  return lines.filter(Boolean).join("\n\n");
 }
 
 export function ModelReport({
@@ -54,8 +62,7 @@ export function ModelReport({
   };
   if (!report) return <div className="answer model-report">{answer}</div>;
 
-  const { sources, personalFacts, localByFact, localByInference } =
-    reportSources(trace);
+  const { sources, personalFacts, localByFact } = reportSources(trace);
   const sourceById = new Map(
     sources.map((source, index) => [source.id, { source, number: index + 1 }]),
   );
@@ -80,7 +87,7 @@ export function ModelReport({
       </button>
     ) : null;
   };
-  const claims = (items: AnalysisClaim[], facts = false) => (
+  const claims = (items: AnalysisClaim[]) => (
     <ul>
       {items.map((claim, index) => (
         <li key={index}>
@@ -88,117 +95,71 @@ export function ModelReport({
           {[
             ...new Set([
               ...claim.evidenceIds,
-              ...((facts ? localByFact : localByInference).get(index) ?? []),
+              ...(localByFact.get(index) ?? []),
             ]),
           ].map(citation)}
         </li>
       ))}
     </ul>
   );
-  const list = (items: string[]) => (
-    <ul>
-      {items.map((item, index) => (
-        <li key={index}>{item}</li>
-      ))}
-    </ul>
-  );
+
+  const route = trace?.route;
 
   return (
     <div className="model-report" aria-label="模型分析报告">
-      {"suggestions" in report ? (
-        <>
-          <p>{report.answer}</p>
-          <ol aria-label="建议">
-            {report.suggestions.map((suggestion, index) => (
-              <li key={index}>
-                <p>{suggestion.action}</p>
-                <p className="muted">
-                  {suggestion.why}
-                  {[
-                    ...new Set(
-                      suggestion.factIndices.flatMap((factIndex) => [
-                        ...(report.facts[factIndex]?.evidenceIds ?? []),
-                        ...(localByFact.get(factIndex) ?? []),
-                      ]),
-                    ),
-                  ].map(citation)}
-                </p>
-                {suggestion.unlessWhen && (
-                  <p className="muted">前提：{suggestion.unlessWhen}</p>
-                )}
-              </li>
-            ))}
-          </ol>
-          {report.question && <p>追问：{report.question}</p>}
-          {trace && <CouncilSummary trace={trace} />}
-        </>
-      ) : (
-        <>
-          <section>
-            <h2>当前判断</h2>
-            <p>{report.verdict}</p>
-          </section>
-          <section>
-            <h2>已知事实</h2>
-            {claims(report.facts, true)}
-          </section>
-          {report.inferences.length > 0 && (
-            <section>
-              <h2>合理推断</h2>
-              {claims(report.inferences)}
-            </section>
+      {route && (
+        <div className="report-meta" aria-label="分析场景与模式">
+          <span className="report-meta-tag">{route.domainLabel}</span>
+          <span className="report-meta-mode">
+            {route.executionMode === "fast" ? "精简直答" : "分模块策略汇总"}
+          </span>
+          {!!route.companies?.length && (
+            <span className="report-meta-companies">
+              {route.companies.join(" · ")}
+            </span>
           )}
-          <section>
-            <h2>仍待核实</h2>
-            {list(report.unknowns)}
-          </section>
-          <section>
-            <h2>方案比较</h2>
-            {report.options.map((option, index) => (
-              <div key={index}>
-                <h3>{option.name}</h3>
-                <p>适用条件：{option.suitableWhen}</p>
-                <p>取舍：{option.tradeoffs.join("；")}</p>
-                <p>风险：{option.risks.join("；")}</p>
-              </div>
-            ))}
-          </section>
-          <section>
-            <h2>下一步行动</h2>
-            {report.actions.map((action, index) => (
-              <div key={index}>
-                <h3>{action.action}</h3>
-                <p>{action.rationale}</p>
-                {!!action.supportingFactIndices?.length && (
-                  <p>
-                    依据：
-                    {action.supportingFactIndices
-                      .map((factIndex) => report.facts[factIndex]?.statement)
-                      .filter(Boolean)
-                      .join("；")}
-                  </p>
-                )}
-                <p>{action.reversible ? "可逆" : "需单独确认"}</p>
-                {!!action.evidenceLimits?.length && (
-                  <p>证据局限：{action.evidenceLimits.join("；")}</p>
-                )}
-                <p>复盘条件：{action.reviewTrigger}</p>
-              </div>
-            ))}
-          </section>
-          <section>
-            <h2>复盘与证伪条件</h2>
-            {list(report.reviewTriggers)}
-          </section>
-        </>
+        </div>
       )}
+
+      <p className="report-answer">{report.answer}</p>
+
+      {report.suggestions.length > 0 && (
+        <ol className="report-suggestions" aria-label="建议">
+          {report.suggestions.map((suggestion, index) => (
+            <li key={index}>
+              <p className="suggestion-action">{suggestion.action}</p>
+              <p className="muted">
+                {suggestion.why}
+                {[
+                  ...new Set(
+                    suggestion.factIndices.flatMap((factIndex) => [
+                      ...(report.facts[factIndex]?.evidenceIds ?? []),
+                      ...(localByFact.get(factIndex) ?? []),
+                    ]),
+                  ),
+                ].map(citation)}
+              </p>
+              {suggestion.unlessWhen && (
+                <p className="muted">前提：{suggestion.unlessWhen}</p>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {trace && <CouncilSummary trace={trace} />}
+
+      {report.question && (
+        <p className="report-followup">追问：{report.question}</p>
+      )}
+
       <div className="report-footer">
         <details className="report-citations" aria-label="本次回答引用">
           <summary>依据与局限</summary>
           {trace?.webSearch?.warnings.map((warning, index) => (
             <p key={index}>{warning}</p>
           ))}
-          {claims(report.facts, true)}
+          {claims(report.facts)}
           {personalFacts.length > 0 && (
             <ul>
               {personalFacts.map((item) => (

@@ -1,4 +1,4 @@
-//! Machine contracts and parsers for the research agent, specialist modules, and ballots.
+//! Machine contracts and parsers for the research agent and specialist modules.
 use std::collections::HashSet;
 
 use super::structured_output::{
@@ -142,20 +142,6 @@ pub fn parse_module_analysis_with_aliases(
     Ok(analysis)
 }
 
-#[cfg(test)]
-pub fn parse_ballot(
-    content: &str,
-    shown: &[&str],
-) -> Result<crate::models::council::Ballot, String> {
-    if content.chars().count() > MAX_STRUCTURED_OUTPUT_CHARS {
-        return Err(format!("投票超过 {MAX_STRUCTURED_OUTPUT_CHARS} 个字符"));
-    }
-    let ballot: crate::models::council::Ballot = serde_json::from_str(extract_json(content)?)
-        .map_err(|error| format!("JSON 结构无效：{error}"))?;
-    crate::models::council::validate_ballot(&ballot, shown)?;
-    Ok(ballot)
-}
-
 fn check_note(field: &str, note: &str) -> Result<(), String> {
     check_text_len(field, note, RESEARCH_NOTE_CHARS)
 }
@@ -232,17 +218,6 @@ mod tests {
         let mut advice = brief();
         advice["actions"] = serde_json::json!(["买入"]);
         assert!(parse_research_brief(&advice.to_string(), &allowed, &context()).is_err());
-    }
-
-    #[test]
-    fn ballots_must_score_exactly_the_shown_proposals() {
-        let ballot = serde_json::json!({"preferred":"P2","assessments":[{"proposal":"P2","scores":{"facts":2,"citations":1,"reasoning":2,"counterpoints":1,"actionability":2},"veto":null,"objection":"未说明等待成本"}]});
-        parse_ballot(&ballot.to_string(), &["P2"]).unwrap();
-        assert!(parse_ballot(&ballot.to_string(), &["P2", "P3"]).is_err());
-        assert!(parse_ballot("我投 P2", &["P2"]).is_err());
-        let mut no_preference = ballot.clone();
-        no_preference.as_object_mut().unwrap().remove("preferred");
-        assert!(parse_ballot(&no_preference.to_string(), &["P2"]).is_err());
     }
 
     #[test]

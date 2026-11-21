@@ -14,7 +14,6 @@ pub enum RenderStage {
     Research,
     Module { has_research_brief: bool },
     Synthesizer { has_research_brief: bool },
-    Ballot,
     Direct,
 }
 
@@ -291,28 +290,26 @@ pub fn render_for_stage(value: &Value, stage: RenderStage, aliases: &ContextAlia
         render_evidence_section("网页原文证据（引用 evidenceIds）", items, aliases, &mut out);
     }
 
-    if stage != RenderStage::Ballot {
-        if let Some(leads) = map.get("webLeads").and_then(Value::as_array) {
-            if !leads.is_empty() {
-                out.push_str("\n## 网页检索线索（公开参考线索：正文分析应充分利用并注明“据网页线索，待公告复核”；非一手原文，禁止写入 facts.evidenceIds）\n");
-                for lead in leads {
-                    let title = lead
-                        .get("title")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .trim();
-                    let summary = lead
-                        .get("summary")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .trim();
-                    if !title.is_empty() && !summary.is_empty() {
-                        out.push_str(&format!("- {title}：{summary}\n"));
-                    } else if !summary.is_empty() {
-                        out.push_str(&format!("- {summary}\n"));
-                    } else if !title.is_empty() {
-                        out.push_str(&format!("- {title}\n"));
-                    }
+    if let Some(leads) = map.get("webLeads").and_then(Value::as_array) {
+        if !leads.is_empty() {
+            out.push_str("\n## 网页检索线索（公开参考线索：正文分析应充分利用并注明“据网页线索，待公告复核”；非一手原文，禁止写入 facts.evidenceIds）\n");
+            for lead in leads {
+                let title = lead
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .trim();
+                let summary = lead
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .trim();
+                if !title.is_empty() && !summary.is_empty() {
+                    out.push_str(&format!("- {title}：{summary}\n"));
+                } else if !summary.is_empty() {
+                    out.push_str(&format!("- {summary}\n"));
+                } else if !title.is_empty() {
+                    out.push_str(&format!("- {title}\n"));
                 }
             }
         }
@@ -376,7 +373,6 @@ pub fn render_for_stage(value: &Value, stage: RenderStage, aliases: &ContextAlia
         RenderStage::Research | RenderStage::Direct => true,
         RenderStage::Module { has_research_brief }
         | RenderStage::Synthesizer { has_research_brief } => !has_research_brief,
-        RenderStage::Ballot => false,
     };
     if include_checks {
         if let Some(guide) = map.get("discussionGuide").and_then(Value::as_object) {
@@ -863,7 +859,7 @@ mod tests {
     }
 
     #[test]
-    fn stage_rendering_omits_resolved_checks_and_ballot_web_leads() {
+    fn stage_rendering_omits_resolved_checks_after_research_brief() {
         let payload = serde_json::json!({
             "question": "分红如何",
             "facts": {"summary": {}},
@@ -897,8 +893,14 @@ mod tests {
         assert!(module_view.contains("## 研究简报"));
         assert!(module_view.contains("新闻线索"));
 
-        let ballot = render_for_stage(&payload, RenderStage::Ballot, &aliases);
-        assert!(!ballot.contains("0. 核查项零"));
-        assert!(!ballot.contains("新闻线索"));
+        let synth_view = render_for_stage(
+            &payload,
+            RenderStage::Synthesizer {
+                has_research_brief: true,
+            },
+            &aliases,
+        );
+        assert!(!synth_view.contains("0. 核查项零"));
+        assert!(synth_view.contains("新闻线索"));
     }
 }

@@ -45,26 +45,20 @@ it("keeps the original 800 Unicode budget and independently clips the structured
   expect(previousTurn([])).toBeUndefined();
 });
 
-it("reads the frozen headline and actions of historical reports without inventing a pending question", () => {
+it("falls back to top-level answer when a stored turn has no structured report", () => {
   const result = previousTurn([
     {
-      question: "旧问题",
+      question: "首轮问题",
       result: {
-        answer: "八个板块，其中有 AI 自行提出的问题？",
-        workflowTrace: {
-          structuredReport: {
-            verdict: "旧结论",
-            actions: [{ action: "旧动作" }],
-            unknowns: ["不是用户问题或模型结构化追问"],
-          },
-        },
+        answer: "纯文本结论摘要",
+        workflowTrace: {},
       } as unknown as AnalysisResult,
     },
   ]);
   expect(result).toEqual({
-    question: "旧问题",
-    answer: "旧结论",
-    suggestions: ["旧动作"],
+    question: "首轮问题",
+    answer: "纯文本结论摘要",
+    suggestions: [],
   });
 });
 

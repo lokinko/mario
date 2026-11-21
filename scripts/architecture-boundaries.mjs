@@ -44,7 +44,7 @@ export const serverModelOwners = {
   accounting: 'user', daily: 'user', fx: 'user', methodology: 'user', options: 'user',
   portfolio: 'user', research: 'user', reviews: 'user', watch: 'user',
   market: 'market',
-  analysis: 'ai', analysis_history: 'ai', connection: 'ai', council: 'ai',
+  analysis: 'ai', connection: 'ai', council: 'ai',
   endpoint: 'ai', inference: 'ai', memory: 'ai', provider: 'ai',
   decimal: 'support',
 };
