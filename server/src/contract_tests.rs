@@ -147,8 +147,75 @@ fn transport_contract_fixture() {
             ..Default::default()
         },
     ];
+    let daily_review_settings = [
+        crate::models::daily_review::DailyReviewSettings::default(),
+        crate::models::daily_review::DailyReviewSettings {
+            enabled: false,
+            schedule_time: "08:45".into(),
+            scope: crate::models::daily_review::DailyReviewScope::HoldingsOnly,
+            web_search: false,
+        },
+    ];
+    let daily_review_run = crate::models::daily_review::DailyReviewRun {
+        id: "run-contract".into(),
+        review_day: "2026-11-20".into(),
+        trigger: crate::models::daily_review::DailyReviewTrigger::Manual,
+        status: crate::models::daily_review::DailyReviewRunStatus::Degraded,
+        ai_status: crate::models::daily_review::DailyReviewAiStatus::SkippedNoModel,
+        ai_model: None,
+        degraded_reason: Some("未配置可用模型".into()),
+        item_count: 1,
+        announcement_count: 0,
+        created_at: "2026-11-21T00:00:00+00:00".into(),
+    };
+    let daily_review_feed = crate::models::daily_review::DailyReviewFeedResponse {
+        settings: daily_review_settings[0].clone(),
+        timezone: "Asia/Shanghai".into(),
+        latest_review_day: Some("2026-11-20".into()),
+        unread_count: 1,
+        runs: vec![daily_review_run.clone()],
+        items: vec![crate::models::daily_review::DailyReviewFeedItem {
+            id: "item-contract".into(),
+            run_id: "run-contract".into(),
+            review_day: "2026-11-20".into(),
+            kind: crate::models::daily_review::DailyReviewItemKind::PortfolioSummary,
+            origin: crate::models::daily_review::DailyReviewItemOrigin::DeterministicFact,
+            importance: crate::models::daily_review::DailyReviewImportance::High,
+            title: "契约测试复盘摘要".into(),
+            summary: "测试摘要".into(),
+            body: "测试正文".into(),
+            symbol: Some("600036.SS".into()),
+            asset_name: Some("招商银行".into()),
+            metrics: vec![crate::models::daily_review::DailyReviewMetric {
+                label: "日变动".into(),
+                value: "+1.20%".into(),
+                tone: crate::models::daily_review::MetricTone::Positive,
+                sensitive: true,
+            }],
+            sources: vec![crate::models::daily_review::DailyReviewSource {
+                label: "巨潮公告".into(),
+                url: "https://static.cninfo.com.cn/finalpage/2026-11-20/test.PDF".into(),
+                publisher: "巨潮资讯网".into(),
+                published_on: "2026-11-20".into(),
+            }],
+            tags: vec!["总览".into()],
+            ask_prompt: "请分析昨日变化".into(),
+            read_at: None,
+            created_at: "2026-11-21T00:00:00+00:00".into(),
+        }],
+        has_more: false,
+        next_before: None,
+    };
+    let daily_review_run_result = crate::models::daily_review::DailyReviewRunResult {
+        run: daily_review_run,
+        feed: daily_review_feed.clone(),
+    };
+    let daily_review_read_result = crate::models::daily_review::DailyReviewReadResult {
+        ok: true,
+        unread_count: 0,
+    };
     println!(
         "MARIO_CONTRACT:{}",
-        json!({ "amounts": amounts, "profiles": profiles, "rules": rules, "policies": policies, "trades":trades, "tradeUpdates":trade_updates, "fx":fx, "events":events, "configs":configs, "bridges":bridges, "catalogs":catalogs, "accountCatalogInputs":account_catalog_inputs, "accountCatalogs":account_catalogs })
+        json!({ "amounts": amounts, "profiles": profiles, "rules": rules, "policies": policies, "trades":trades, "tradeUpdates":trade_updates, "fx":fx, "events":events, "configs":configs, "bridges":bridges, "catalogs":catalogs, "accountCatalogInputs":account_catalog_inputs, "accountCatalogs":account_catalogs, "dailyReviewSettings": daily_review_settings, "dailyReviewFeed": daily_review_feed, "dailyReviewRunResult": daily_review_run_result, "dailyReviewReadResult": daily_review_read_result })
     );
 }

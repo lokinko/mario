@@ -108,6 +108,13 @@ impl<'a, A: DailyReviewAccount> DailyReviewService<'a, A> {
         if self.db.has_daily_review_for_day(&review_day_str)? {
             return Ok(None);
         }
+        let ctx = self
+            .db
+            .daily_review_context(Some(review_day), settings.scope)?;
+        if ctx.portfolio.is_none() && ctx.tracked_assets.is_empty() && ctx.watch_signals.is_empty()
+        {
+            return Ok(None);
+        }
         let outcome = self
             .run(
                 Some(review_day),
@@ -967,5 +974,24 @@ mod tests {
             .items
             .iter()
             .any(|i| i.kind == DailyReviewItemKind::OfficialAnnouncement));
+    }
+
+    #[tokio::test]
+    async fn scheduled_run_skips_brand_new_empty_accounts_without_mutating_revision() {
+        let db = Database::test();
+        let before_rev = db.revision().unwrap();
+        let service = DailyReviewService::new(&db, None);
+        let ann = sample_announcements();
+        let exec = FakeExecutor { fail: false };
+        let after = chrono_tz::Asia::Shanghai
+            .with_ymd_and_hms(2026, 11, 21, 9, 0, 0)
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(service
+            .run_if_due(after, &ann, &EmptyPlans, &exec)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(db.revision().unwrap(), before_rev);
     }
 }

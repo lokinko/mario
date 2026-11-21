@@ -97,7 +97,11 @@ impl<A: PortfolioAccount> PortfolioService<'_, A> {
     }
     pub async fn save_holding(&self, id: Option<&str>, input: HoldingInput) -> AppResult<Snapshot> {
         let option_holding = if let Some(id) = id {
-            self.db.snapshot()?.option_contracts.contains_key(id)
+            let snapshot = self.db.snapshot()?;
+            if !snapshot.holdings.iter().any(|h| h.id == id) {
+                return Err(crate::AppError::Validation("找不到要更新的资产".into()));
+            }
+            snapshot.option_contracts.contains_key(id)
         } else {
             false
         };

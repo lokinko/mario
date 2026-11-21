@@ -2,12 +2,13 @@
 use crate::{
     db::{settings::ai::AiSetting, Database},
     models::daily_review::{
-        DailyReviewFeedItem, DailyReviewFeedQuery, DailyReviewRun, DailyReviewSettings,
+        DailyReviewFeedItem, DailyReviewFeedQuery, DailyReviewItemKind, DailyReviewRun,
+        DailyReviewSettings,
     },
     storage::{params, OptionalRow},
     AppError, AppResult,
 };
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 
 impl Database {
     pub fn daily_review_settings(&self) -> AppResult<DailyReviewSettings> {
@@ -81,11 +82,21 @@ impl Database {
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty());
+        if let Some(value) = day {
+            NaiveDate::parse_from_str(value, "%Y-%m-%d")
+                .map_err(|_| AppError::Validation("复盘日期必须为 YYYY-MM-DD".into()))?;
+        }
         let kind = query
             .kind
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty());
+        if let Some(value) = kind {
+            serde_json::from_value::<DailyReviewItemKind>(serde_json::Value::String(
+                value.to_string(),
+            ))
+            .map_err(|_| AppError::Validation(format!("不支持的复盘动态类型：{value}")))?;
+        }
         let symbol = query
             .symbol
             .as_deref()
@@ -303,5 +314,18 @@ mod tests {
             .unwrap();
         assert_eq!(items.len(), 1);
         assert!(items[0].read_at.is_some());
+
+        assert!(db
+            .daily_review_items(&DailyReviewFeedQuery {
+                day: Some("2026-02-30".into()),
+                ..Default::default()
+            })
+            .is_err());
+        assert!(db
+            .daily_review_items(&DailyReviewFeedQuery {
+                kind: Some("forgedKind".into()),
+                ..Default::default()
+            })
+            .is_err());
     }
 }

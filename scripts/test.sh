@@ -11,7 +11,7 @@ export CARGO_TARGET_DIR
 npm run check:entrypoints
 npm run check:docs
 (cd "$root_dir" && npm run check:architecture)
-(cd "$root_dir" && node --test scripts/codex-bridge.test.mjs scripts/postgres-cluster.test.mjs scripts/server-artifacts.test.mjs scripts/client-source.test.mjs)
+(cd "$root_dir" && node --test scripts/codex-bridge.test.mjs scripts/postgres-cluster.test.mjs scripts/server-artifacts.test.mjs scripts/client-source.test.mjs scripts/test-harness.test.mjs)
 (cd "$root_dir" && npm run test:qa-eval)
 (cd "$root_dir" && npm run test:watch-data)
 (cd "$root_dir" && npm run test:deploy)

@@ -550,6 +550,37 @@ try {
   assert.equal(snap.holdings[0].marketValue, 102200);
   assert.equal((await api("/daily-assets")).records[0].totalAssets, 102200);
   assert.equal((await api("/system-reviews")).find((item) => item.id === textReview.id).content, reviewContent);
+
+  assert.equal((await fetch(base + "/daily-review")).status, 401);
+  const dailyReviewBefore = await api("/daily-review");
+  assert.equal(dailyReviewBefore.settings.scheduleTime, "07:30");
+  await api("/daily-review/settings", "PUT", {
+    enabled: true, scheduleTime: "99:99", scope: "holdingsAndWatch", webSearch: false,
+  }, 400);
+  const savedReviewSettings = await api("/daily-review/settings", "PUT", {
+    enabled: true, scheduleTime: "08:05", scope: "holdingsOnly", webSearch: false,
+  });
+  assert.equal(savedReviewSettings.scheduleTime, "08:05");
+  await api("/daily-review?day=2026-02-30", "GET", undefined, 400);
+  await api("/daily-review?kind=unknownKind", "GET", undefined, 400);
+  const reviewDay = date(-1);
+  const dailyRun = await api("/daily-review/run", "POST", { reviewDay });
+  assert.equal(dailyRun.run.reviewDay, reviewDay);
+  assert(["completed", "degraded"].includes(dailyRun.run.status));
+  assert(dailyRun.feed.items.length >= 1, "daily review run must create at least one feed card");
+  const firstReviewItem = dailyRun.feed.items[0];
+  await api("/daily-review/read", "POST", { id: "missing-review-item-id" }, 404);
+  const afterSingleRead = await api("/daily-review/read", "POST", { id: firstReviewItem.id });
+  assert.equal(afterSingleRead.ok, true);
+  assert.equal(afterSingleRead.unreadCount, Math.max(0, dailyRun.feed.unreadCount - 1));
+  const unreadOnlyFeed = await api(`/daily-review?day=${reviewDay}&unreadOnly=true`);
+  assert(!unreadOnlyFeed.items.some((item) => item.id === firstReviewItem.id));
+  await stopServer();
+  await startServer();
+  const persistedFeed = await api(`/daily-review?day=${reviewDay}`);
+  assert.equal(persistedFeed.settings.scheduleTime, "08:05");
+  assert(persistedFeed.items.some((item) => item.id === firstReviewItem.id && item.readAt));
+  console.log("PASS daily review: auth, validation, deterministic run, read tracking, filter, and restart persistence");
   const execution = {
     expectedCashBaseline: snap.cashBalances.find(c=>c.currency==="CNY").baselineId,
     requestId: randomUUID(), holdingId: "", expectedRevision: null,
