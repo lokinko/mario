@@ -4,12 +4,9 @@ use std::collections::HashSet;
 use super::structured_output::{
     citation_rules, extract_json, validate_claims, MAX_STRUCTURED_OUTPUT_CHARS,
 };
-use crate::models::{
-    analysis::StructuredAnalysis,
-    council::{
-        validate_ballot, Ballot, ResearchBrief, RESEARCH_FINDINGS_MAX, RESEARCH_NOTES_MAX,
-        RESEARCH_NOTE_CHARS,
-    },
+use crate::models::council::{
+    validate_ballot, Ballot, ResearchBrief, RESEARCH_FINDINGS_MAX, RESEARCH_NOTES_MAX,
+    RESEARCH_NOTE_CHARS,
 };
 
 pub const RESEARCH_BRIEF_CONTRACT: &str = concat!(
@@ -26,19 +23,35 @@ pub const BALLOT_CONTRACT: &str = r#"只返回JSON，不加代码块或说明：
 对展示的每个方案恰好评价一次。每项0–2分：facts 事实与冻结资料一致、不编造；citations 引用可追溯，没有把网页线索、记忆或模型旧回答当证据；reasoning 推理和计算可复核，结论与自身事实不矛盾；counterpoints 正视最强反方和不确定性；actionability 下一步紧扣本题、条件清楚可执行。veto只用于严重缺陷：编造或错引事实与来源、结论与自身事实矛盾、迎合用户倾向而回避相反证据、越过账本自行生成交易或仓位规则；有则写明不超过200字的理由，否则为null。2分表示该维度找不到可指出的缺陷；objection指向的维度不给2分。preferred必填，在展示的方案中选一个你会原样采纳给用户的方案，分数相同时也须按哪份更能帮用户做出本题决定选出一个；不能选你否决的方案，只有全部否决时为null。按证据和推理打分与选择，不按立场、语气或是否与你的方案一致。"#;
 
 /// Research findings may cite exactly what reports may cite; checks must cover the frozen list.
+#[cfg(test)]
 pub fn parse_research_brief(
     content: &str,
     allowed_evidence_ids: &HashSet<String>,
     context: &serde_json::Value,
 ) -> Result<ResearchBrief, String> {
+    parse_research_brief_with_aliases(
+        content,
+        allowed_evidence_ids,
+        context,
+        &crate::context::ContextAliases::default(),
+    )
+}
+
+pub fn parse_research_brief_with_aliases(
+    content: &str,
+    allowed_evidence_ids: &HashSet<String>,
+    context: &serde_json::Value,
+    aliases: &crate::context::ContextAliases,
+) -> Result<ResearchBrief, String> {
     if content.chars().count() > MAX_STRUCTURED_OUTPUT_CHARS {
         return Err(format!("研究简报超过 {MAX_STRUCTURED_OUTPUT_CHARS} 个字符"));
     }
-    let brief: ResearchBrief = serde_json::from_str(extract_json(content)?)
+    let mut brief: ResearchBrief = serde_json::from_str(extract_json(content)?)
         .map_err(|error| format!("JSON 结构无效：{error}"))?;
     if brief.findings.len() > RESEARCH_FINDINGS_MAX {
         return Err(format!("findings 最多 {RESEARCH_FINDINGS_MAX} 条"));
     }
+    aliases.canonicalize_claims(&mut brief.findings);
     validate_claims("findings", &brief.findings, allowed_evidence_ids, context)?;
     for (field, notes) in [
         ("counterpoints", &brief.counterpoints),
@@ -79,16 +92,6 @@ pub fn parse_ballot(content: &str, shown: &[&str]) -> Result<Ballot, String> {
         .map_err(|error| format!("JSON 结构无效：{error}"))?;
     validate_ballot(&ballot, shown)?;
     Ok(ballot)
-}
-
-/// Proposals shown to a voter carry only their ID, so lens names cannot sway the score.
-pub fn ballot_material(proposals: &[(&str, &StructuredAnalysis)]) -> serde_json::Value {
-    serde_json::Value::Array(
-        proposals
-            .iter()
-            .map(|(id, report)| serde_json::json!({"id": id, "report": report}))
-            .collect(),
-    )
 }
 
 fn check_note(field: &str, note: &str) -> Result<(), String> {

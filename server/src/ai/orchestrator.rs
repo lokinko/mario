@@ -4,11 +4,10 @@ use futures_util::future::join_all;
 
 use super::{
     council::{
-        ballot_material, parse_ballot, parse_research_brief, BALLOT_CONTRACT,
-        RESEARCH_BRIEF_CONTRACT,
+        parse_ballot, parse_research_brief_with_aliases, BALLOT_CONTRACT, RESEARCH_BRIEF_CONTRACT,
     },
     structured_output::{
-        parse_structured_analysis, render_report, validate_source_types,
+        parse_structured_analysis_with_aliases, render_report, validate_source_types,
         MAX_STRUCTURED_OUTPUT_CHARS, STRUCTURED_ANALYSIS_CONTRACT,
     },
     workflow::{
@@ -17,7 +16,10 @@ use super::{
     ModelProvider,
 };
 use crate::{
-    context::BuiltContext,
+    context::{
+        compact_evidence_item, render_ballot_material, render_for_stage, render_public_research,
+        BuiltContext, ContextAliases, RenderStage,
+    },
     error::{AppError, AppResult},
     models::{
         analysis::{
@@ -57,6 +59,7 @@ const PERSONAL_CONTEXT_KEYS: [&str; 6] = [
 /// Prompt context, stage labels and trace accumulated across one run.
 struct RunState {
     prompt_context: serde_json::Value,
+    aliases: ContextAliases,
     stages: Vec<String>,
     trace: AnalysisWorkflowTrace,
 }
@@ -73,6 +76,7 @@ impl RunState {
             })
             .collect::<serde_json::Map<_, _>>();
         Self {
+            aliases: ContextAliases::from_payload(&built_context.payload),
             prompt_context: built_context.payload.clone(),
             stages: Vec::new(),
             trace: AnalysisWorkflowTrace {
@@ -141,10 +145,16 @@ impl<'a> InvestmentOrchestrator<'a> {
         let allowed = state.allowed_evidence_ids();
         self.research(&allowed, built_context, &mut state).await?;
 
-        let council_context = crate::context::render_for_model(&state.prompt_context);
+        let has_research_brief = state.prompt_context.get("researchBrief").is_some();
+        let proposal_context = render_for_stage(
+            &state.prompt_context,
+            RenderStage::Proposal { has_research_brief },
+            &state.aliases,
+        );
         super::streaming::status(&self.events, "三位方案代理正在独立作答…");
-        let (allowed_ids, allowed_set) =
-            (&allowed, &allowed.iter().cloned().collect::<HashSet<_>>());
+        let display_allowed = state.aliases.display_evidence_ids(&allowed);
+        let allowed_set = allowed.iter().cloned().collect::<HashSet<_>>();
+        let aliases = &state.aliases;
         let runs = self
             .gather(
                 LENSES
@@ -152,18 +162,23 @@ impl<'a> InvestmentOrchestrator<'a> {
                     .map(|lens| {
                         let prompt = self
                             .workflow
-                            .proposal(lens, &council_context)
+                            .proposal(lens, &proposal_context)
                             .with_methodology(&state.prompt_context);
+                        let display_allowed = &display_allowed;
+                        let allowed_set = &allowed_set;
                         async move {
                             let result = self
                                 .structured(
                                     prompt,
                                     STRUCTURED_ANALYSIS_CONTRACT,
-                                    allowed_ids,
+                                    display_allowed,
                                     Some(lens.id),
                                     |content| {
-                                        let report =
-                                            parse_structured_analysis(content, allowed_set)?;
+                                        let report = parse_structured_analysis_with_aliases(
+                                            content,
+                                            allowed_set,
+                                            aliases,
+                                        )?;
                                         validate_source_types(&report, &built_context.payload)?;
                                         Ok(report)
                                     },
@@ -177,8 +192,10 @@ impl<'a> InvestmentOrchestrator<'a> {
             .await;
         let proposals = self.record_proposals(runs, &mut state)?;
 
+        let ballot_context =
+            render_for_stage(&state.prompt_context, RenderStage::Ballot, &state.aliases);
         let winner = self
-            .vote(&proposals, &council_context, &allowed, &mut state)
+            .vote(&proposals, &ballot_context, &display_allowed, &mut state)
             .await;
         let (report, validation) = proposals
             .iter()
@@ -219,9 +236,9 @@ impl<'a> InvestmentOrchestrator<'a> {
             .search(vec![
                 super::ChatMessage::system(WEB_SEARCH_POLICY),
                 super::ChatMessage::user(format!(
-                    "当前日期：{}\n本次公开研究主题包：{}\n只研究给定公司和主题，优先寻找支持与反方的一手披露；无具体公司时只提供该主题适用的一般公开资料，不补猜公司。",
+                    "当前日期：{}\n本次公开研究主题包：\n{}\n只研究给定公司和主题，优先寻找支持与反方的一手披露；无具体公司时只提供该主题适用的一般公开资料，不补猜公司。",
                     chrono::Utc::now().date_naive(),
-                    crate::context::render_for_model(&public_research)
+                    render_public_research(&public_research)
                 )),
             ])
             .await;
@@ -297,21 +314,37 @@ impl<'a> InvestmentOrchestrator<'a> {
         };
         let excerpts = sources
             .iter()
-            .cloned()
-            .map(|mut source| {
-                source.claim =
+            .map(|source| {
+                let claim =
                     crate::evidence::relevant_excerpt(&source.claim, &request.question, 2_000);
-                source
+                compact_evidence_item(source, claim)
             })
             .collect::<Vec<_>>();
-        state.prompt_context["nativeWebEvidence"] = serde_json::to_value(excerpts)?;
-        if !web_search.leads.is_empty() {
-            state.prompt_context["webLeads"] = serde_json::to_value(&web_search.leads)?;
+        if !excerpts.is_empty() {
+            state.prompt_context["nativeWebEvidence"] = serde_json::Value::Array(excerpts);
+            state
+                .aliases
+                .register_evidence_from_payload(&state.prompt_context);
         }
-        state.prompt_context["webSearchStatus"] = serde_json::json!({
-            "status": web_search.status,
-            "warnings": web_search.warnings,
-        });
+        if !web_search.leads.is_empty() {
+            let compact_leads = web_search
+                .leads
+                .iter()
+                .map(|lead| {
+                    serde_json::json!({
+                        "title": lead.title,
+                        "summary": lead.summary,
+                    })
+                })
+                .collect::<Vec<_>>();
+            state.prompt_context["webLeads"] = serde_json::Value::Array(compact_leads);
+        }
+        if web_search.status != "completed" || !web_search.warnings.is_empty() {
+            state.prompt_context["webSearchStatus"] = serde_json::json!({
+                "status": web_search.status,
+                "warnings": web_search.warnings,
+            });
+        }
         state.stages.push(format!(
             "网页检索：{} 条可引用原文，{} 条待核实线索",
             sources.len(),
@@ -329,15 +362,30 @@ impl<'a> InvestmentOrchestrator<'a> {
         state: &mut RunState,
     ) -> AppResult<()> {
         super::streaming::status(&self.events, "研究代理正在核对资料…");
+        let research_context =
+            render_for_stage(&state.prompt_context, RenderStage::Research, &state.aliases);
         let prompt = self
             .workflow
-            .research(&crate::context::render_for_model(&state.prompt_context))
+            .research(&research_context)
             .with_methodology(&state.prompt_context);
+        let display_allowed = state.aliases.display_evidence_ids(allowed);
         let allowed_set = allowed.iter().cloned().collect::<HashSet<_>>();
+        let aliases = &state.aliases;
         match self
-            .structured(prompt, RESEARCH_BRIEF_CONTRACT, allowed, None, |content| {
-                parse_research_brief(content, &allowed_set, &built_context.payload)
-            })
+            .structured(
+                prompt,
+                RESEARCH_BRIEF_CONTRACT,
+                &display_allowed,
+                None,
+                |content| {
+                    parse_research_brief_with_aliases(
+                        content,
+                        &allowed_set,
+                        &built_context.payload,
+                        aliases,
+                    )
+                },
+            )
             .await
         {
             Ok(output) => {
@@ -475,8 +523,7 @@ impl<'a> InvestmentOrchestrator<'a> {
                                 .map(|(lens, report, _)| (lens.id, report))
                                 .collect::<Vec<_>>();
                             let shown = others.iter().map(|(id, _)| *id).collect::<Vec<_>>();
-                            let material =
-                                crate::context::render_for_model(&ballot_material(&others));
+                            let material = render_ballot_material(&others, &state.aliases);
                             let prompt = self
                                 .workflow
                                 .ballot(voter, council_context, &material)
@@ -863,7 +910,7 @@ pub(crate) mod tests {
                 LENSES
                     .iter()
                     .map(|lens| lens.id)
-                    .filter(|id| user.contains(&format!("| id | {id} |")))
+                    .filter(|id| user.contains(&format!("## 方案 {id}")))
                     .collect(),
             )
         } else {
@@ -906,11 +953,11 @@ pub(crate) mod tests {
         let evidence = text
             .lines()
             .find_map(|line| {
-                line.strip_prefix("| id | web-")
-                    .and_then(|v| v.strip_suffix(" |"))
+                line.strip_prefix("### [web-")
+                    .and_then(|rest| rest.split_once(']'))
+                    .map(|(suffix, _)| format!("web-{suffix}"))
             })
-            .map(|id| format!("web-{id}"))
-            .or_else(|| text.contains("| id | e1 |").then(|| "e1".to_string()));
+            .or_else(|| text.contains("### [e1]").then(|| "e1".to_string()));
         proposal_citing(id, evidence)
     }
 
@@ -1219,7 +1266,7 @@ pub(crate) mod tests {
         assert!(trace.research.as_ref().unwrap().brief.is_some());
 
         for messages in provider.prompts_of(|agent| matches!(agent, Agent::Proposal(_))) {
-            assert!(messages[1].content.contains("researchBrief"));
+            assert!(messages[1].content.contains("## 研究简报"));
         }
         let ballots = provider.prompts_of(|agent| matches!(agent, Agent::Ballot(_)));
         assert_eq!(ballots.len(), 3);
@@ -1424,7 +1471,7 @@ pub(crate) mod tests {
         assert_eq!(output.stages[0], "网页检索失败，改用本地资料继续");
         assert!(output.workflow_trace.evidence_catalog.is_empty());
         for messages in provider.prompts_of(|agent| matches!(agent, Agent::Proposal(_))) {
-            assert!(messages[1].content.contains("| status | failed |"));
+            assert!(messages[1].content.contains("## 网页检索状态：failed"));
         }
     }
 
@@ -1446,7 +1493,10 @@ pub(crate) mod tests {
         assert_eq!(web.leads[0].summary, "模型对网页的概括");
         assert_eq!(output.stages[0], "网页检索：2 条可引用原文，2 条待核实线索");
         let proposals = provider.prompts_of(|agent| matches!(agent, Agent::Proposal(_)));
-        assert!(proposals[0][1].content.contains("webLeads"));
+        assert!(proposals[0][1].content.contains("待核实网页线索"));
+        assert!(proposals[0][1].content.contains("模型对网页的概括"));
+        let ballots = provider.prompts_of(|agent| matches!(agent, Agent::Ballot(_)));
+        assert!(!ballots[0][1].content.contains("待核实网页线索"));
 
         let only_summaries = Fixture::honest().with_search(Box::new(|| Ok(sources(0, 1))));
         let output = run(&only_summaries, &request("结合外部信息检查持仓", true))
@@ -1481,7 +1531,8 @@ pub(crate) mod tests {
         assert_eq!(result.transparency.evidence_items_used, 5);
         for (_, messages) in provider.prompts.lock().unwrap().iter() {
             assert!(!messages[1].content.contains("https://example.com/report/7"));
-            assert!(messages[1].content.contains("nativeWebEvidence"));
+            assert!(!messages[1].content.contains("https://example.com/report/0"));
+            assert!(messages[1].content.contains("网页原文证据"));
         }
         assert!(context.payload.get("nativeWebEvidence").is_none());
         assert!(!provider.searches.lock().unwrap()[0][1]
@@ -1509,7 +1560,7 @@ pub(crate) mod tests {
         let searches = provider.searches.lock().unwrap();
         assert!(searches[0][1]
             .content
-            .contains(&crate::context::render_for_model(&public)));
+            .contains(&crate::context::render_public_research(&public)));
         for private in [
             "PRIVATE_CASH_SENTINEL",
             "MODEL_SENTINEL",
@@ -1521,6 +1572,9 @@ pub(crate) mod tests {
         let research = provider.prompts_of(|agent| *agent == Agent::Research);
         assert!(research[0][1].content.contains("PRIVATE_CASH_SENTINEL"));
         assert!(research[0][1]
+            .content
+            .contains("核查清单（dividend_discussion）"));
+        assert!(!research[0][1]
             .content
             .contains("dividend_composition_and_commitment"));
     }
@@ -1559,6 +1613,7 @@ pub(crate) mod tests {
         assert_eq!(prompts.len(), 7);
         for (_, messages) in prompts.iter() {
             assert!(messages[0].content.contains(custom));
+            assert!(!messages[1].content.contains(custom));
             assert!(!messages[0]
                 .content
                 .contains(crate::models::methodology::DEFAULT_INVESTMENT_METHODOLOGY));
@@ -1567,6 +1622,123 @@ pub(crate) mod tests {
         assert_eq!(
             result.workflow_trace.personal_context.unwrap()["investmentMethodology"],
             custom
+        );
+    }
+
+    #[tokio::test]
+    async fn short_aliases_round_trip_long_uuids_and_strip_audit_metadata_from_prompts() {
+        let holding_uuid = "065d8511-1776-4bd4-b7ad-094daec2b1b4";
+        let evidence_uuid = "9a4c8d12-2345-6789-abcd-ef0123456789";
+        let mut snap = snapshot();
+        snap.holdings[0].id = holding_uuid.into();
+        if let Some(accounting) = snap.accounting.as_mut() {
+            if let Some(val) = accounting.holdings.remove("fund-a") {
+                accounting.holdings.insert(holding_uuid.into(), val);
+            }
+        }
+        let evidence = crate::models::research::ResearchEvidence {
+            id: evidence_uuid.into(),
+            asset_name: "核心红利".into(),
+            category: "年报".into(),
+            title: "核心红利2025年报".into(),
+            publisher: "上市公司公告".into(),
+            source_url: "https://example.com/very/long/audit/only/url".into(),
+            source_tier: "一手来源".into(),
+            evidence_type: "annual_report".into(),
+            stance: "neutral".into(),
+            as_of_date: "2026-03-31".into(),
+            claim: "公司年度派息率维持在50%。".into(),
+            notes: "".into(),
+            active: true,
+            captured_at: "2026-04-01T12:34:56.789Z".into(),
+            attachments: Vec::new(),
+        };
+        let req = request("仓位是否偏高？", false);
+        let context = ContextBuilder::build(
+            &req,
+            &snap,
+            &ContextSources {
+                evidence_candidates: std::slice::from_ref(&evidence),
+                ..Default::default()
+            },
+        );
+        // Audit catalog preserves full URL/timestamps; model payload strips them.
+        assert_eq!(
+            context.evidence_catalog[0].source_url,
+            "https://example.com/very/long/audit/only/url"
+        );
+        let payload_ev = &context.payload["researchEvidence"][0];
+        assert!(payload_ev.get("sourceUrl").is_none());
+        assert!(payload_ev.get("capturedAt").is_none());
+        assert!(payload_ev.get("evidenceType").is_none());
+        assert!(payload_ev.get("stance").is_none());
+
+        let provider = Fixture::new(Box::new(|agent, messages| {
+            match agent {
+            Agent::Research => Ok(serde_json::json!({
+                "findings": [
+                    {"statement":"持仓标的为IDX","basis":"user_data","sourceRefs":["/facts/holdings/h1/symbol"],"evidenceIds":[]},
+                    {"statement":"年报派息率50%","basis":"research_evidence","sourceRefs":[],"evidenceIds":["e1"]}
+                ],
+                "counterpoints": ["单一资产集中度偏高"],
+                "unknowns": ["未来现金流变化"],
+                "checks": [{"index":0,"status":"covered","note":"已核对持仓与年报"}]
+            })
+            .to_string()),
+            Agent::Proposal(id) => Ok(serde_json::json!({
+                "answer": format!("{id} 基于短别名完成分析"),
+                "facts": [
+                    {"statement":"持仓标的为IDX","basis":"user_data","sourceRefs":["/facts/holdings/h1/symbol"],"evidenceIds":[]},
+                    {"statement":"年报派息率50%","basis":"research_evidence","sourceRefs":[],"evidenceIds":["e1"]}
+                ],
+                "suggestions": [{"action":"结合流动性评估仓位","why":"依据持仓与派息率","factIndices":[0,1],"unlessWhen":""}],
+                "question": null
+            })
+            .to_string()),
+            Agent::Ballot(shown) => Ok(ballot(shown, None)),
+            Agent::Repair(_) => Ok(default_reply(messages)),
+        }
+        }));
+
+        let result = InvestmentOrchestrator::new(&provider)
+            .run(&req, &context)
+            .await
+            .unwrap();
+
+        // Prompts only expose compact aliases, never raw UUIDs or audit URLs.
+        let prompts = provider.prompts.lock().unwrap();
+        assert_eq!(prompts.len(), 7, "no repair calls expected: {prompts:?}");
+        for (agent, messages) in prompts.iter() {
+            assert!(
+                messages[1].content.contains("| h1 |"),
+                "{agent:?} missing h1:\n{}",
+                messages[1].content
+            );
+            assert!(messages[1].content.contains("### [e1]"));
+            assert!(!messages[1].content.contains(holding_uuid));
+            assert!(!messages[1].content.contains(evidence_uuid));
+            assert!(!messages[1]
+                .content
+                .contains("https://example.com/very/long/audit/only/url"));
+        }
+        // Stored report & research brief canonicalize aliases back to real UUIDs for UI/audit.
+        let stored = report(&result);
+        assert_eq!(
+            stored.facts[0].source_refs,
+            vec![format!("/facts/holdings/{holding_uuid}/symbol")]
+        );
+        assert_eq!(
+            stored.facts[1].evidence_ids,
+            vec![evidence_uuid.to_string()]
+        );
+        let brief = result.workflow_trace.research.unwrap().brief.unwrap();
+        assert_eq!(
+            brief.findings[0].source_refs,
+            vec![format!("/facts/holdings/{holding_uuid}/symbol")]
+        );
+        assert_eq!(
+            brief.findings[1].evidence_ids,
+            vec![evidence_uuid.to_string()]
         );
     }
 

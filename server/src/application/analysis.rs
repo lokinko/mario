@@ -382,8 +382,8 @@ mod tests {
         assert!(evidence.claim.contains(&today.to_string()));
         let excerpt = observation_excerpt(evidence);
         assert!(excerpt.chars().count() <= 2_000);
-        let excerpt: serde_json::Value = serde_json::from_str(&excerpt).unwrap();
-        assert_eq!(excerpt["thisWeek"]["rows"][0][0], today.to_string());
+        assert!(excerpt.contains("标的: 600036.SS"));
+        assert!(excerpt.contains(&format!("| {today} |")));
         request.context_selection.include_evidence = false;
         assert!(service
             .prepare(&request)
@@ -556,17 +556,19 @@ mod tests {
             .as_str()
             .unwrap();
         assert!(excerpt.chars().count() <= 2_000);
-        let compact: serde_json::Value = serde_json::from_str(excerpt).unwrap();
-        assert_eq!(compact["daily"], audit["originalFacts"]["latest"]["daily"]);
-        assert_eq!(
-            compact["weekly"],
-            audit["originalFacts"]["latest"]["weekly"]
-        );
-        assert_eq!(compact["rules"], audit["originalFacts"]["latest"]["rules"]);
-        assert_eq!(compact["thisWeek"]["rows"].as_array().unwrap().len(), 1);
-        assert!(compact["dividendEventsOmitted"].as_u64().unwrap() > 0);
-        assert_eq!(compact["dividendEventCount"], 50);
+        assert!(!excerpt.contains("\"dividendEvents\""));
+        assert!(excerpt.contains("标的: 600036.SS"));
+        assert!(excerpt.contains("日线BOLL("));
+        assert!(excerpt.contains("周线BOLL("));
+        assert!(excerpt.contains("本周观察(1天):"));
+        // Compact Markdown fits far more rows in the same 2,000-char budget (all 50 events fit!).
+        assert!(excerpt.contains("分红记录(50条):"));
         assert!(full.contains("cashPerTen"));
+        let ev = &prepared.context.payload["researchEvidence"][0];
+        assert!(ev.get("sourceUrl").is_none());
+        assert!(ev.get("capturedAt").is_none());
+        assert!(ev.get("notes").is_none());
+        assert!(ev.get("publisher").is_none());
     }
 
     fn request() -> AnalysisRequest {

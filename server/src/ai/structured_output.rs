@@ -22,9 +22,22 @@ suggestions为1–3条，facts为1–8条，factIndices非空、无重复且不�
     "最多一个追问，不超过200字，否则null。"
 );
 
+#[cfg(test)]
 pub fn parse_structured_analysis(
     content: &str,
     allowed_evidence_ids: &HashSet<String>,
+) -> Result<StructuredAnalysis, String> {
+    parse_structured_analysis_with_aliases(
+        content,
+        allowed_evidence_ids,
+        &crate::context::ContextAliases::default(),
+    )
+}
+
+pub fn parse_structured_analysis_with_aliases(
+    content: &str,
+    allowed_evidence_ids: &HashSet<String>,
+    aliases: &crate::context::ContextAliases,
 ) -> Result<StructuredAnalysis, String> {
     if content.chars().count() > MAX_STRUCTURED_OUTPUT_CHARS {
         return Err(format!(
@@ -32,8 +45,9 @@ pub fn parse_structured_analysis(
         ));
     }
     let payload = extract_json(content)?;
-    let report: StructuredAnalysis =
+    let mut report: StructuredAnalysis =
         serde_json::from_str(payload).map_err(|error| format!("JSON 结构无效：{error}"))?;
+    aliases.canonicalize_claims(&mut report.facts);
     validate_report(&report, allowed_evidence_ids)?;
     Ok(report)
 }

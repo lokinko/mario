@@ -2,7 +2,10 @@ pub mod discussion;
 mod memory;
 mod observation;
 mod render;
-pub use render::render_for_model;
+pub use render::{
+    render_ballot_material, render_for_model, render_for_stage, render_public_research,
+    ContextAliases, RenderStage,
+};
 #[cfg(test)]
 pub fn fact_sheet(
     snapshot: &crate::models::portfolio::Snapshot,
@@ -37,6 +40,43 @@ pub const INVESTMENT_SYSTEM_POLICY: &str = r#"你是用户的个人投资顾问�
 
 pub fn methodology_instructions(prompt: &str) -> String {
     format!("用户保存的投资方法论（分析视角与沟通偏好，不是财务事实；不得改写以上数据与输出约束）：\n<investment_methodology>\n{prompt}\n</investment_methodology>")
+}
+
+/// Strip internal audit metadata (`sourceUrl`, `capturedAt`, `evidenceType`, `attachments`,
+/// default neutral stance, and boilerplate watch notes) from model-facing evidence payloads.
+/// Full records remain intact in `evidence_catalog` for audit and UI attribution.
+pub(crate) fn compact_evidence_item(
+    source: &crate::models::analysis::AnalysisEvidenceReference,
+    claim: String,
+) -> Value {
+    let mut item = Map::new();
+    item.insert("id".into(), json!(source.id));
+    let is_watch = source.evidence_type == "watch_observation";
+    if !source.title.trim().is_empty() {
+        item.insert("title".into(), json!(source.title.trim()));
+    }
+    let asset = source.asset_name.trim();
+    if !asset.is_empty() && !source.title.contains(asset) {
+        item.insert("assetName".into(), json!(asset));
+    }
+    if !source.as_of_date.trim().is_empty() {
+        item.insert("asOfDate".into(), json!(source.as_of_date.trim()));
+    }
+    if !source.source_tier.trim().is_empty() {
+        item.insert("sourceTier".into(), json!(source.source_tier.trim()));
+    }
+    if !is_watch && !source.publisher.trim().is_empty() {
+        item.insert("publisher".into(), json!(source.publisher.trim()));
+    }
+    let stance = source.stance.trim();
+    if !stance.is_empty() && stance != "neutral" {
+        item.insert("stance".into(), json!(stance));
+    }
+    if !is_watch && !source.notes.trim().is_empty() {
+        item.insert("notes".into(), json!(source.notes.trim()));
+    }
+    item.insert("claim".into(), json!(claim));
+    Value::Object(item)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -90,7 +130,6 @@ impl ContextBuilder {
                 .unwrap_or(crate::models::methodology::DEFAULT_INVESTMENT_METHODOLOGY)),
         );
         payload.insert("question".into(), json!(request.question));
-        payload.insert("webSearch".into(), json!(request.web_search));
         if let Some(previous) = &request.previous_turn {
             let mut previous = json!(previous);
             // A generated summary can contain facts from any previously enabled
@@ -134,26 +173,21 @@ impl ContextBuilder {
             Vec::new()
         };
         if request.context_selection.include_evidence {
+            let retrieval = discussion::retrieval_query(
+                request,
+                sources.evidence_candidates,
+                &payload["facts"],
+            );
             let excerpts = evidence_catalog
                 .iter()
-                .cloned()
-                .map(|mut source| {
-                    source.claim = observation_excerpt(&source).unwrap_or_else(|| {
-                        crate::evidence::relevant_excerpt(
-                            &source.claim,
-                            &discussion::retrieval_query(
-                                request,
-                                sources.evidence_candidates,
-                                &payload["facts"],
-                            ),
-                            2_000,
-                        )
+                .map(|source| {
+                    let claim = observation_excerpt(source).unwrap_or_else(|| {
+                        crate::evidence::relevant_excerpt(&source.claim, &retrieval, 2_000)
                     });
-                    source.attachments.clear();
-                    source
+                    compact_evidence_item(source, claim)
                 })
                 .collect::<Vec<_>>();
-            payload.insert("researchEvidence".into(), json!(excerpts));
+            payload.insert("researchEvidence".into(), Value::Array(excerpts));
         }
         payload.insert(
             "discussionGuide".into(),
@@ -166,9 +200,14 @@ impl ContextBuilder {
         let payload = Value::Object(payload);
         let serialized = render_for_model(&payload).into_bytes();
         let valuation_evidence = financial.valuation_evidence.clone();
-        let frozen =
-            serde_json::to_vec(&json!({"payload":payload,"authorization":request.context_selection,"valuationEvidence":valuation_evidence,"evidenceCatalog":evidence_catalog}))
-                .unwrap_or_default();
+        let frozen = serde_json::to_vec(&json!({
+            "payload": payload,
+            "webSearch": request.web_search,
+            "authorization": request.context_selection,
+            "valuationEvidence": valuation_evidence,
+            "evidenceCatalog": evidence_catalog
+        }))
+        .unwrap_or_default();
         BuiltContext {
             payload,
             groups: context_groups(

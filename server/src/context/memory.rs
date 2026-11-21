@@ -62,13 +62,16 @@ pub fn select<'a>(request: &AnalysisRequest, notes: &'a [MemoryNote]) -> Vec<&'a
 
 pub fn payload(notes: &[&MemoryNote]) -> Value {
     json!({
-        "notes": notes.iter().map(|note| json!({
-            "id": note.id,
-            "kind": note.kind,
-            "origin": note.origin,
-            "statement": note.statement,
-            "updatedAt": note.updated_at,
-        })).collect::<Vec<_>>()
+        "notes": notes.iter().map(|note| {
+            let mut item = serde_json::Map::new();
+            item.insert("kind".into(), json!(note.kind));
+            item.insert("origin".into(), json!(note.origin));
+            item.insert("statement".into(), json!(note.statement));
+            if let Some(date) = note.updated_at.get(..10).filter(|d| !d.trim().is_empty()) {
+                item.insert("date".into(), json!(date));
+            }
+            Value::Object(item)
+        }).collect::<Vec<_>>()
     })
 }
 
