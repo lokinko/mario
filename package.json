@@ -31,6 +31,7 @@
     "web:build": "node scripts/build-web.mjs",
     "server:check": "cargo check --manifest-path server/Cargo.toml",
     "test:hosted": "node scripts/postgres-cluster.mjs node scripts/test-hosted.mjs",
+    "test:edge-cases": "node scripts/postgres-cluster.mjs node scripts/test-edge-cases.mjs",
     "test:financial": "node scripts/test-financial.mjs",
     "deploy": "bash deploy.sh",
     "test:deploy": "node --test scripts/deploy-sources.test.mjs scripts/setup-domain.test.mjs && node scripts/test-deploy.mjs"

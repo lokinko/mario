@@ -680,3 +680,50 @@ pub(super) fn validate_detail_totals(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+
+    #[test]
+    fn base_currency_defaults_when_profile_missing_and_snapshot_tracks_latest_revision() {
+        let db = Database::test();
+        assert_eq!(db.base_currency().unwrap(), "CNY");
+
+        let profile = FinancialProfile {
+            base_currency: "usd".into(),
+            ..FinancialProfile::default()
+        };
+        db.save_profile(&profile).unwrap();
+        assert_eq!(db.base_currency().unwrap(), "USD");
+
+        let holding: HoldingInput = serde_json::from_value(serde_json::json!({
+            "name": "测试债券",
+            "symbol": "",
+            "assetClass": "债券",
+            "marketValue": 5000,
+            "costBasis": 5000,
+            "targetPct": 0,
+            "currency": "USD",
+            "valuationDate": "2026-01-02"
+        }))
+        .unwrap();
+        let added = db.add_holding(&holding).unwrap();
+        let id = added.holdings[0].id.clone();
+
+        // Simulate a legacy holding row with empty updated_at; snapshot must fall back to created_at.
+        db.conn()
+            .unwrap()
+            .execute(
+                "UPDATE holdings SET created_at = '2099-01-02T03:04:05Z', updated_at = '' WHERE id = $1",
+                [id.as_str()],
+            )
+            .unwrap();
+        let snap = db.snapshot().unwrap();
+        assert_eq!(
+            snap.holding_revisions.get(&id).map(String::as_str),
+            Some("2099-01-02T03:04:05Z")
+        );
+        assert_eq!(snap.updated_at, "2099-01-02T03:04:05Z");
+    }
+}

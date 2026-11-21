@@ -25,7 +25,10 @@ impl Database {
         self.load_research_evidence(false)
     }
 
-    fn load_research_evidence(&self, include_extracted_text: bool) -> AppResult<Vec<ResearchEvidence>> {
+    fn load_research_evidence(
+        &self,
+        include_extracted_text: bool,
+    ) -> AppResult<Vec<ResearchEvidence>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
             "SELECT id, asset_name, title, publisher, source_url, source_tier, evidence_type,
@@ -380,5 +383,28 @@ mod attachment_tests {
             .attachments
             .is_empty());
         assert_eq!(restored.research_evidence().unwrap()[0].claim, "原文");
+    }
+
+    #[test]
+    fn summary_omits_attachment_extracted_text_while_full_read_preserves_it() {
+        let db = Database::test();
+        let bytes = "这是一段很长的附件原文，用于验证摘要列表不会下发全文。".as_bytes();
+        let input: ResearchEvidenceInput = serde_json::from_value(json!({
+            "content": "主体笔记",
+            "attachments": [{"name": "研报.txt", "dataBase64": STANDARD.encode(bytes)}]
+        }))
+        .unwrap();
+        let saved = db.add_research_evidence(&input).unwrap();
+        let summary = db.research_evidence_summary().unwrap();
+        assert_eq!(summary.len(), 1);
+        assert_eq!(summary[0].id, saved.id);
+        assert_eq!(summary[0].claim, "主体笔记");
+        assert_eq!(summary[0].attachments.len(), 1);
+        assert_eq!(summary[0].attachments[0].name, "研报.txt");
+        assert_eq!(summary[0].attachments[0].byte_size, bytes.len());
+        assert!(summary[0].attachments[0].extracted_text.is_empty());
+
+        let full = db.research_evidence().unwrap();
+        assert_eq!(full[0].attachments[0].extracted_text.as_bytes(), bytes);
     }
 }

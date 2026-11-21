@@ -181,3 +181,43 @@ it("blocks whitespace-only investment rules and trims submitted fields", async (
     ),
   );
 });
+
+it("shows per-rule history error with retry and recovers on retry", async () => {
+  vi.mocked(reviewsApi.getInvestmentRules).mockResolvedValue([
+    {
+      id: "rule-err",
+      category: "风险",
+      statement: "回撤超过阈值减仓",
+      trigger: "季度复盘",
+      rationale: "防止大幅亏损",
+      active: true,
+      revision: 2,
+      createdAt: "2026-11-01T00:00:00Z",
+      updatedAt: "2026-11-10T00:00:00Z",
+    },
+  ]);
+  vi.mocked(reviewsApi.getInvestmentRuleHistory)
+    .mockRejectedValueOnce(new Error("网络暂时中断"))
+    .mockResolvedValueOnce([
+      {
+        ruleId: "rule-err",
+        revision: 1,
+        category: "风险",
+        statement: "初始规则内容",
+        trigger: "建仓前",
+        rationale: "控制风险",
+        active: true,
+        changedAt: "2026-11-01T00:00:00Z",
+      },
+    ]);
+
+  render(<ReviewCenter tab="rules" flash={vi.fn()} onAsk={vi.fn()} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "回撤超过阈值减仓更多操作" }),
+  );
+  fireEvent.click(await screen.findByRole("menuitem", { name: "历史" }));
+  expect(await screen.findByText(/网络暂时中断/)).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  expect(await screen.findByText(/初始规则内容/)).toBeTruthy();
+});

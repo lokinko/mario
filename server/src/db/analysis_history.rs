@@ -268,4 +268,138 @@ mod automatic_tests {
         assert!(db.research_evidence().unwrap().is_empty());
         assert_eq!(db.snapshot().unwrap().holdings.len(), before.len());
     }
+
+    #[test]
+    fn analysis_history_projection_handles_current_legacy_malformed_grounding_and_limit() {
+        let db = Database::test();
+        let conn = db.conn().unwrap();
+        let rows: Vec<(&str, &str, Option<String>)> = vec![
+            (
+                "a-current",
+                "2026-11-20T10:00:01Z",
+                Some(
+                    json!({
+                        "version": "v9",
+                        "structuredReport": { "answer": "当前结论标题" },
+                        "adviceGrounding": [
+                            { "status": "supported" },
+                            { "status": "supported" }
+                        ],
+                        "evidenceCatalog": [{ "id": "huge", "claim": "x".repeat(4000) }]
+                    })
+                    .to_string(),
+                ),
+            ),
+            (
+                "a-legacy",
+                "2026-11-20T10:00:02Z",
+                Some(
+                    json!({
+                        "version": "v7",
+                        "structuredReport": { "verdict": "旧版结论标题" },
+                        "adviceGrounding": [
+                            { "status": "supported" },
+                            { "status": "insufficient" }
+                        ]
+                    })
+                    .to_string(),
+                ),
+            ),
+            (
+                "a-contradicted",
+                "2026-11-20T10:00:03Z",
+                Some(
+                    json!({
+                        "version": "v7",
+                        "adviceGrounding": [
+                            { "status": "insufficient" },
+                            { "status": "contradicted" }
+                        ]
+                    })
+                    .to_string(),
+                ),
+            ),
+            (
+                "a-unknown-status",
+                "2026-11-20T10:00:04Z",
+                Some(
+                    json!({
+                        "version": "",
+                        "adviceGrounding": [
+                            { "status": "supported" },
+                            { "status": "custom_unknown" }
+                        ]
+                    })
+                    .to_string(),
+                ),
+            ),
+            (
+                "a-empty-grounding",
+                "2026-11-20T10:00:05Z",
+                Some(json!({ "version": "v8", "adviceGrounding": [] }).to_string()),
+            ),
+            ("a-null-trace", "2026-11-20T10:00:06Z", None),
+            (
+                "a-malformed",
+                "2026-11-20T10:00:07Z",
+                Some("not-json-at-all".into()),
+            ),
+        ];
+        for (id, created_at, trace) in rows {
+            conn.execute(
+                "INSERT INTO analyses (id, question, answer, audit, trace, created_at) VALUES ($1,$2,$3,NULL,$4,$5)",
+                params![id, format!("q-{id}"), "answer", trace, created_at],
+            )
+            .unwrap();
+        }
+        drop(conn);
+        let items = db.analysis_history().unwrap();
+        let by_id: std::collections::HashMap<_, _> =
+            items.iter().map(|item| (item.id.as_str(), item)).collect();
+        assert_eq!(by_id["a-current"].verdict.as_deref(), Some("当前结论标题"));
+        assert_eq!(by_id["a-current"].workflow_version.as_deref(), Some("v9"));
+        assert_eq!(
+            by_id["a-current"].grounding_status.as_deref(),
+            Some("supported")
+        );
+        assert_eq!(by_id["a-legacy"].verdict.as_deref(), Some("旧版结论标题"));
+        assert_eq!(
+            by_id["a-legacy"].grounding_status.as_deref(),
+            Some("insufficient")
+        );
+        assert_eq!(
+            by_id["a-contradicted"].grounding_status.as_deref(),
+            Some("contradicted")
+        );
+        assert_eq!(by_id["a-contradicted"].verdict, None);
+        assert_eq!(by_id["a-unknown-status"].workflow_version, None);
+        assert_eq!(
+            by_id["a-unknown-status"].grounding_status.as_deref(),
+            Some("unavailable")
+        );
+        assert_eq!(
+            by_id["a-empty-grounding"].grounding_status.as_deref(),
+            Some("unavailable")
+        );
+        assert_eq!(by_id["a-null-trace"].grounding_status, None);
+        assert_eq!(by_id["a-malformed"].grounding_status, None);
+        assert_eq!(by_id["a-malformed"].verdict, None);
+
+        // Inserting more than 50 rows must return only the latest 50 ordered by (created_at DESC, id DESC).
+        let conn = db.conn().unwrap();
+        for index in 0..55 {
+            let id = format!("bulk-{index:02}");
+            let ts = format!("2026-11-21T00:00:{:02}Z", index % 60);
+            conn.execute(
+                "INSERT INTO analyses (id, question, answer, created_at) VALUES ($1,$2,'a',$3)",
+                params![id, "bulk", ts],
+            )
+            .unwrap();
+        }
+        drop(conn);
+        let limited = db.analysis_history().unwrap();
+        assert_eq!(limited.len(), 50);
+        assert_eq!(limited[0].id, "bulk-54");
+        assert_eq!(limited[49].id, "bulk-05");
+    }
 }

@@ -969,4 +969,43 @@ mod tests {
         assert!(db.import_sync_data(&backup).is_err());
         assert_eq!(db.watch_entries().unwrap(), vec![entry]);
     }
+
+    #[test]
+    fn watch_dividends_all_matches_per_symbol_reads_and_cascades_on_delete() {
+        let db = Database::test();
+        assert!(db.watch_dividends_all().unwrap().is_empty());
+        let first = entry(&db);
+        let second = db
+            .save_watch(WatchInput {
+                symbol: "601398.SS".into(),
+                name: "工商银行".into(),
+                thesis: String::new(),
+            })
+            .unwrap();
+        let h1 = history();
+        let mut h2 = history();
+        h2.events[0].cash_per_ten = "88".into();
+        let day = h1.basis.as_of;
+        db.save_watch_observation(&first, None, &h1.basis.fetched_at, day, Some(&h1))
+            .unwrap();
+        db.save_watch_observation(&second, None, &h2.basis.fetched_at, day, Some(&h2))
+            .unwrap();
+
+        let all = db.watch_dividends_all().unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(
+            all.get(&first.input.symbol),
+            db.watch_dividends(&first.input.symbol).unwrap().as_ref()
+        );
+        assert_eq!(
+            all.get(&second.input.symbol),
+            db.watch_dividends(&second.input.symbol).unwrap().as_ref()
+        );
+
+        db.delete_watch(&first.input.symbol).unwrap();
+        let remaining = db.watch_dividends_all().unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert!(!remaining.contains_key(&first.input.symbol));
+        assert!(remaining.contains_key(&second.input.symbol));
+    }
 }

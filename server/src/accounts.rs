@@ -12,22 +12,11 @@ use argon2::{
 pub(crate) use openai::{OpenAiAttempt, OpenAiIdentity};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const AUTH_SCHEMA: &str = "mario_auth";
-const SESSION_CACHE_TTL: Duration = Duration::from_secs(15);
-const SESSION_CACHE_MAX: usize = 1024;
 const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(5);
-
-#[derive(Clone)]
-struct CachedAuth {
-    user_id: String,
-    is_superuser: bool,
-    expires_at: i64,
-    cached_at: Instant,
-}
 
 struct PooledConn {
     connection: Connection,
@@ -36,7 +25,6 @@ struct PooledConn {
 
 pub struct Accounts {
     connection: Mutex<PooledConn>,
-    session_cache: Mutex<HashMap<String, CachedAuth>>,
     pub url: String,
     schema: String,
     dummy_hash: String,
@@ -120,7 +108,6 @@ impl Accounts {
                 connection,
                 last_ok: Instant::now(),
             }),
-            session_cache: Mutex::new(HashMap::new()),
             url,
             schema,
             dummy_hash,
@@ -235,62 +222,24 @@ impl Accounts {
     pub(crate) fn authenticate_with_role(&self, token: &str) -> AppResult<(String, bool)> {
         let token_hash = digest(token);
         let now = chrono::Utc::now().timestamp();
-        {
-            let cache = self
-                .session_cache
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let Some(entry) = cache.get(&token_hash) {
-                if entry.cached_at.elapsed() < SESSION_CACHE_TTL && entry.expires_at > now {
-                    return Ok((entry.user_id.clone(), entry.is_superuser));
-                }
+        self.read_with_recovery(|conn| {
+            conn.query_row(
+                "SELECT s.user_id, u.is_superuser
+                 FROM sessions s
+                 JOIN users u ON u.id = s.user_id
+                 WHERE s.token_hash=$1 AND s.expires_at>$2",
+                params![token_hash.as_str(), now],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)),
+            )
+        })
+        .map_err(|error| match error {
+            AppError::Database(crate::storage::Error::QueryReturnedNoRows) => {
+                AppError::Auth("请重新登录".into())
             }
-        }
-        let row = self
-            .read_with_recovery(|conn| {
-                conn.query_row(
-                    "SELECT s.user_id, u.is_superuser, s.expires_at
-                     FROM sessions s
-                     JOIN users u ON u.id = s.user_id
-                     WHERE s.token_hash=$1 AND s.expires_at>$2",
-                    params![token_hash.as_str(), now],
-                    |r| {
-                        Ok((
-                            r.get::<_, String>(0)?,
-                            r.get::<_, bool>(1)?,
-                            r.get::<_, i64>(2)?,
-                        ))
-                    },
-                )
-            })
-            .map_err(|error| match error {
-                AppError::Database(crate::storage::Error::QueryReturnedNoRows) => {
-                    AppError::Auth("请重新登录".into())
-                }
-                error => error,
-            })?;
-        let (user_id, is_superuser, expires_at) = row;
-        let mut cache = self
-            .session_cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if cache.len() >= SESSION_CACHE_MAX {
-            cache.retain(|_, v| v.cached_at.elapsed() < SESSION_CACHE_TTL && v.expires_at > now);
-            if cache.len() >= SESSION_CACHE_MAX {
-                cache.clear();
-            }
-        }
-        cache.insert(
-            token_hash,
-            CachedAuth {
-                user_id: user_id.clone(),
-                is_superuser,
-                expires_at,
-                cached_at: Instant::now(),
-            },
-        );
-        Ok((user_id, is_superuser))
+            error => error,
+        })
     }
+    #[cfg(test)]
     pub(crate) fn is_superuser(&self, user_id: &str) -> AppResult<bool> {
         self.read_with_recovery(|conn| {
             conn.query_row(
@@ -301,13 +250,8 @@ impl Accounts {
         })
     }
     pub fn logout(&self, token: &str) -> AppResult<()> {
-        let token_hash = digest(token);
-        self.session_cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&token_hash);
         self.conn()?
-            .execute("DELETE FROM sessions WHERE token_hash=$1", [token_hash])?;
+            .execute("DELETE FROM sessions WHERE token_hash=$1", [digest(token)])?;
         Ok(())
     }
     pub fn reset_password(&self, email: &str, password: &str) -> AppResult<()> {
@@ -329,11 +273,6 @@ impl Accounts {
         )?;
         tx.execute("DELETE FROM sessions WHERE user_id=$1", [id.as_str()])?;
         tx.commit()?;
-        drop(connection);
-        self.session_cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .retain(|_, entry| entry.user_id != id);
         Ok(())
     }
 }
@@ -597,6 +536,110 @@ mod tests {
         assert_eq!(
             error.into_response().status(),
             StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn authenticate_with_role_reflects_cross_replica_revocation_role_changes_and_disconnect_recovery(
+    ) {
+        let accounts = accounts();
+        let replica = Accounts::open_schema(accounts.url.clone(), accounts.schema.clone()).unwrap();
+        let registered = accounts
+            .register(&Credentials {
+                email: "auth-edge@example.test".into(),
+                password: "long-password-1234".into(),
+            })
+            .unwrap();
+        let second = accounts
+            .login(&Credentials {
+                email: "auth-edge@example.test".into(),
+                password: "long-password-1234".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            replica.authenticate_with_role(&registered.token).unwrap(),
+            (registered.user_id.clone(), false)
+        );
+        // Immediate role promotion/demotion via SQL is reflected across replicas at once.
+        accounts
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE users SET is_superuser=TRUE WHERE id=$1",
+                [registered.user_id.as_str()],
+            )
+            .unwrap();
+        assert_eq!(
+            replica.authenticate_with_role(&registered.token).unwrap(),
+            (registered.user_id.clone(), true)
+        );
+        // Logout on one replica immediately invalidates only that token on another replica.
+        accounts.logout(&registered.token).unwrap();
+        assert!(replica.authenticate_with_role(&registered.token).is_err());
+        assert_eq!(
+            replica.authenticate_with_role(&second.token).unwrap(),
+            (registered.user_id.clone(), true)
+        );
+        // Password reset on one replica/CLI immediately revokes all sessions on another replica.
+        accounts
+            .reset_password("auth-edge@example.test", "new-long-password-5678")
+            .unwrap();
+        assert!(replica.authenticate_with_role(&second.token).is_err());
+
+        // Expired sessions are rejected immediately.
+        let fresh = accounts
+            .login(&Credentials {
+                email: "auth-edge@example.test".into(),
+                password: "new-long-password-5678".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            replica.authenticate_with_role(&fresh.token).unwrap().0,
+            registered.user_id
+        );
+        accounts
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE sessions SET expires_at = 0 WHERE token_hash = $1",
+                [digest(&fresh.token)],
+            )
+            .unwrap();
+        assert!(replica.authenticate_with_role(&fresh.token).is_err());
+
+        // Read-only authentication recovers automatically if PostgreSQL terminates the backend.
+        let active = accounts
+            .login(&Credentials {
+                email: "auth-edge@example.test".into(),
+                password: "new-long-password-5678".into(),
+            })
+            .unwrap();
+        let pid = replica
+            .conn()
+            .unwrap()
+            .query_row("SELECT pg_backend_pid()", [], |r| r.get::<_, i64>(0))
+            .unwrap();
+        let admin = Connection::postgres(&accounts.url, &accounts.schema).unwrap();
+        assert!(admin
+            .query_row("SELECT pg_terminate_backend($1)", [pid], |r| r
+                .get::<_, bool>(0))
+            .unwrap());
+        for _ in 0..100 {
+            if !admin
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=$1)",
+                    [pid],
+                    |r| r.get::<_, bool>(0),
+                )
+                .unwrap()
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(
+            replica.authenticate_with_role(&active.token).unwrap(),
+            (registered.user_id, true)
         );
     }
 }

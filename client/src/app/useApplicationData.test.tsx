@@ -222,3 +222,29 @@ it("unmounted requests cannot publish a data-updated event", async () => {
     window.removeEventListener(SERVER_DATA_UPDATED, updated);
   }
 });
+
+it("dispatches snapshot and model config refreshes concurrently in loadRemoteData", async () => {
+  const { result } = await start();
+  const pendingSnapshot = deferred<Snapshot>();
+  const pendingModel = deferred<ModelConfig>();
+  vi.mocked(getSnapshot).mockReturnValueOnce(pendingSnapshot.promise);
+  vi.mocked(getModelConfig).mockReturnValueOnce(pendingModel.promise);
+
+  let refresh!: Promise<boolean>;
+  act(() => {
+    refresh = result.current.loadRemoteData();
+  });
+  // Model config must already be requested before snapshot resolves (no serial waterfall).
+  expect(getSnapshot).toHaveBeenCalledTimes(2);
+  expect(getModelConfig).toHaveBeenCalledTimes(2);
+
+  const newer = { ...original, updatedAt: "parallel-ok" };
+  await act(async () => {
+    pendingModel.resolve({ ...configured, model: "parallel-model" });
+    pendingSnapshot.resolve(newer);
+    expect(await refresh).toBe(true);
+  });
+  expect(result.current.snapshot).toBe(newer);
+  expect(result.current.model?.model).toBe("parallel-model");
+  expect(result.current.modelError).toBe("");
+});

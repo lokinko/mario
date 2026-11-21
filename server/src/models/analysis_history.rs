@@ -37,15 +37,6 @@ pub enum StoredAnalysisReport {
     Legacy(LegacyStructuredAnalysis),
 }
 
-impl StoredAnalysisReport {
-    pub fn headline(&self) -> &str {
-        match self {
-            Self::Current(report) => &report.answer,
-            Self::Legacy(report) => &report.verdict,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LegacyStructuredAnalysis {

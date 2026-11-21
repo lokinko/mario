@@ -143,4 +143,78 @@ mod tests {
             42
         );
     }
+
+    #[test]
+    fn prepared_statement_cache_handles_ddl_invalidation_errors_and_capacity_eviction() {
+        let (pool, schema, _) = fixture(2);
+        let connection = pool.acquire(&schema).unwrap();
+        connection
+            .execute_batch("CREATE TABLE stmt_edge(id INTEGER PRIMARY KEY, label TEXT NOT NULL)")
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO stmt_edge(id, label) VALUES ($1, $2)",
+                params![1, "first"],
+            )
+            .unwrap();
+        for _ in 0..3 {
+            let label: String = connection
+                .query_row("SELECT label FROM stmt_edge WHERE id = $1", [1], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(label, "first");
+        }
+        // DDL invalidates cached plans so subsequent queries observe the updated schema cleanly.
+        connection
+            .execute_batch("ALTER TABLE stmt_edge ADD COLUMN extra TEXT NOT NULL DEFAULT 'ok'")
+            .unwrap();
+        let (label, extra): (String, String) = connection
+            .query_row(
+                "SELECT label, extra FROM stmt_edge WHERE id = $1",
+                [1],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((label.as_str(), extra.as_str()), ("first", "ok"));
+
+        // Failing queries evict their cached entry without poisoning subsequent valid queries.
+        assert!(connection
+            .query_row(
+                "SELECT label FROM stmt_edge WHERE id = $1",
+                ["not-an-int"],
+                |r| { r.get::<_, String>(0) }
+            )
+            .is_err());
+        assert_eq!(
+            connection
+                .query_row("SELECT label FROM stmt_edge WHERE id = $1", [1], |r| {
+                    r.get::<_, String>(0)
+                })
+                .unwrap(),
+            "first"
+        );
+
+        // Exceeding MAX_PREPARED_STATEMENTS rotates the cache cleanly without leaking or failing.
+        for i in 0..(MAX_PREPARED_STATEMENTS + 16) {
+            let sql = format!("SELECT {i}::BIGINT");
+            assert_eq!(
+                connection
+                    .query_row(&sql, [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                i as i64
+            );
+        }
+    }
+
+    #[test]
+    fn migrated_schema_cache_is_isolated_per_connection_pool() {
+        let (pool_a, schema, url) = fixture(2);
+        let pool_b = ConnectionPool::new(url, 2);
+        assert!(!pool_a.is_migrated(&schema));
+        assert!(!pool_b.is_migrated(&schema));
+        pool_a.mark_migrated(&schema);
+        assert!(pool_a.is_migrated(&schema));
+        assert!(!pool_b.is_migrated(&schema));
+    }
 }

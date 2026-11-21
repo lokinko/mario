@@ -441,3 +441,56 @@ it("keeps a stock tag that is no longer held or watched selectable", async () =>
     "已卖出公司 000001.SZ",
   );
 });
+
+it("matches attachment filenames case-insensitively and resets empty multi-filter states", async () => {
+  vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([
+    {
+      ...saved,
+      id: "att-item",
+      title: "海外财报摘要",
+      assetName: "招商银行 600036.SS",
+      category: "年报",
+      active: true,
+      attachments: [
+        {
+          id: "a1",
+          name: "FY2026_Annual_Report.PDF",
+          byteSize: 1024,
+          extractionNote: "已提取",
+        },
+      ],
+    },
+    {
+      ...saved,
+      id: "arch-item",
+      title: "历史归档纪要",
+      assetName: "",
+      category: "公告",
+      active: false,
+      attachments: [],
+    },
+  ]);
+  render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={vi.fn()} />);
+  expect(
+    await screen.findByRole("button", { name: "海外财报摘要" }),
+  ).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText("搜索参考资料"), {
+    target: { value: "annual_report.pdf" },
+  });
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "海外财报摘要" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "历史归档纪要" })).toBeNull();
+  });
+
+  // Combine with archived status so nothing matches, then clear all filters in one click.
+  fireEvent.change(screen.getByLabelText("按归档状态筛选"), {
+    target: { value: "archived" },
+  });
+  expect(await screen.findByText(/没有符合当前筛选条件的资料/)).toBeTruthy();
+  fireEvent.click(screen.getAllByRole("button", { name: "清除筛选" })[0]);
+  expect(
+    await screen.findByRole("button", { name: "海外财报摘要" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "历史归档纪要" })).toBeTruthy();
+});

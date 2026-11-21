@@ -27,6 +27,7 @@ npm run check:contracts
   set -euo pipefail
   cargo test --manifest-path server/Cargo.toml
   node scripts/test-functional-api.mjs
+  node scripts/test-edge-cases.mjs
   node scripts/test-web.mjs
   node scripts/test-codex-bridge.mjs
   node scripts/test-codex-bridge.mjs --protocol-fixture

@@ -278,7 +278,8 @@ async fn authenticate(
                         .await
                         .map_err(|_| AppError::Validation("操作请求过大".into()))?;
                     if let Ok(input) = serde_json::from_slice(&bytes) {
-                        if let Some(snapshot) = db.replay_financial_request(&method, &path, &input)?
+                        if let Some(snapshot) =
+                            db.replay_financial_request(&method, &path, &input)?
                         {
                             let mut response = Json(snapshot).into_response();
                             response.headers_mut().insert(
