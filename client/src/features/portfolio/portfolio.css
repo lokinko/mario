@@ -12,6 +12,7 @@
   padding: 0;
 }
 .facts-page .asset-overview {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
   padding: var(--space-5) var(--space-6);
   margin: 0;
   border: 0;
@@ -25,6 +26,9 @@
   font-weight: 600;
 }
 .facts-page .hero-changes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
   border-left: 1px solid var(--line);
   padding-left: var(--space-6);
 }
@@ -63,6 +67,11 @@
 .facts-page .investment-overview-metric > strong {
   font-size: var(--fs-title);
   font-weight: 600;
+}
+.facts-page .investment-metric-ratio {
+  font-size: var(--fs-caption);
+  color: var(--text-3);
+  line-height: 1.4;
 }
 .facts-page .cash-overview .investment-overview-grid {
   grid-template-columns: minmax(0, 1fr);
@@ -394,6 +403,10 @@
   }
 }
 @media (max-width: 480px) {
+  .facts-page .hero-changes {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
   .allocation-legend li {
     grid-template-columns: 10px minmax(0, 1fr) auto;
     gap: var(--space-1) var(--space-2);

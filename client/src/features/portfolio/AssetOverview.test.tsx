@@ -52,7 +52,7 @@ beforeEach(() => {
   });
 });
 afterEach(cleanup);
-it("reads only the latest daily record and shows server-derived trailing dividends", async () => {
+it("reads only the latest daily record and shows concise trailing dividends and cash share", async () => {
   vi.mocked(portfolioApi.getDailyAssets).mockResolvedValue({
     ...history,
     records: [{ ...day, previousDayChange: -5 }],
@@ -64,14 +64,36 @@ it("reads only the latest daily record and shows server-derived trailing dividen
     assetsPct: "1.03",
     missing: ["腾讯控股"],
   });
-  render(<Overview />);
-  await screen.findByText(
-    "占总资产 1.03% · 按买卖记录与 2025-11-16 后的除权日推算 · 腾讯控股未计入",
+  const base = fixture as Snapshot;
+  render(
+    <Overview
+      snapshot={{
+        ...base,
+        accounting: {
+          ...base.accounting!,
+          totalValue: "120",
+          cash: {
+            ...base.accounting!.cash,
+            value: { value: "60", missing: 0 },
+          },
+        },
+      }}
+    />,
   );
+  await screen.findByText("占总资产 1.03%");
   expect(portfolioApi.getDailyAssets).toHaveBeenCalledOnce();
   expect(portfolioApi.getDailyAssets).toHaveBeenCalledWith({ limit: 1 });
   expect(screen.getByText("近 12 个月分红（税前）")).toBeTruthy();
-  expect(screen.getByText(/1,234\.5/)).toBeTruthy();
+  expect(screen.getByText("1,234.50")).toBeTruthy();
+  expect(screen.queryByText(/按买卖记录与|未计入/)).toBeNull();
+  expect(
+    screen.getByTitle(
+      "按买卖记录与 2025-11-16 后的除权日推算 · 腾讯控股未计入",
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText("现金价值（CNY）")).toBeTruthy();
+  expect(screen.getByText("60.00")).toBeTruthy();
+  expect(screen.getByText("占总资产 50.00%")).toBeTruthy();
   expect(screen.queryByText("较上次实际更新")).toBeNull();
   expect(screen.queryByText("较昨日")).toBeNull();
   expect(screen.queryByText(/沿用原值|日走势/)).toBeNull();

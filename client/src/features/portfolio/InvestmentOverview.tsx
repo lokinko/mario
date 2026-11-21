@@ -4,7 +4,12 @@ import { Card } from "antd";
 import { useRef, useState } from "react";
 import { Badge } from "../../components/Badge";
 import type { Holding, Snapshot } from "../../types/user";
-import { formatMoney, formatAmount, formatSigned } from "../../lib/format";
+import {
+  formatMoney,
+  formatAmount,
+  formatPercent,
+  formatSigned,
+} from "../../lib/format";
 import { portfolioOverview, overviewMetrics } from "./portfolioOverview";
 const labels = {
   value: "持仓市值",
@@ -33,51 +38,71 @@ export function InvestmentOverview({
     );
   const { totals, rows } = portfolioOverview(holdings, accounting, cash);
   const metrics = cash ? (["value"] as const) : overviewMetrics;
+  const totalAssets =
+    accounting.totalValue != null && Number(accounting.totalValue) > 0
+      ? Number(accounting.totalValue)
+      : null;
   return (
     <section
       className={`investment-overview${cash ? " cash-overview" : ""}`}
       aria-label={cash ? "现金概览" : "投资持仓概览"}
     >
       <div className="investment-overview-grid">
-        {metrics.map((key) => (
-          <Card key={key} size="small" className="portfolio-metric-card">
-            <article className={"investment-overview-metric metric-" + key}>
-              <span>
-                {cash ? "存款与现金" : labels[key]}{" "}
-                <small>{baseCurrency}</small>
-              </span>
-              <Money
-                as="strong"
-                className={`num ${key === "unrealized" || key === "realized" ? (Number(totals[key].value) === 0 ? "" : Number(totals[key].value) > 0 ? "gain" : "loss") : ""}`}
-              >
-                {totals[key].value == null
-                  ? "—"
-                  : key === "unrealized" || key === "realized"
-                    ? formatSigned(totals[key].value!, (value) =>
-                        formatMoney(value, baseCurrency),
-                      )
-                    : formatMoney(totals[key].value!, baseCurrency)}
-              </Money>
-              {totals[key].missing > 0 && (
-                <button
-                  className="metric-missing"
-                  onClick={() => {
-                    setExpanded(true);
-                    requestAnimationFrame(() => {
-                      const row = breakdown.current?.querySelector<HTMLElement>(
-                        '[data-missing="true"]',
-                      );
-                      row?.focus();
-                      row?.scrollIntoView?.({ block: "nearest" });
-                    });
-                  }}
+        {metrics.map((key) => {
+          const ratioPct =
+            !cash &&
+            (key === "unrealized" || key === "realized") &&
+            totals[key].value != null &&
+            totalAssets != null
+              ? (Number(totals[key].value) / totalAssets) * 100
+              : null;
+          return (
+            <Card key={key} size="small" className="portfolio-metric-card">
+              <article className={"investment-overview-metric metric-" + key}>
+                <span>
+                  {cash ? "存款与现金" : labels[key]}{" "}
+                  <small>{baseCurrency}</small>
+                </span>
+                <Money
+                  as="strong"
+                  className={`num ${key === "unrealized" || key === "realized" ? (Number(totals[key].value) === 0 ? "" : Number(totals[key].value) > 0 ? "gain" : "loss") : ""}`}
                 >
-                  <Badge>待补 {totals[key].missing}</Badge>
-                </button>
-              )}
-            </article>
-          </Card>
-        ))}
+                  {totals[key].value == null
+                    ? "—"
+                    : key === "unrealized" || key === "realized"
+                      ? formatSigned(totals[key].value!, (value) =>
+                          formatMoney(value, baseCurrency),
+                        )
+                      : formatMoney(totals[key].value!, baseCurrency)}
+                </Money>
+                {ratioPct != null && (
+                  <small className="investment-metric-ratio">
+                    占总资产{" "}
+                    <span className="num">{formatPercent(ratioPct)}</span>
+                  </small>
+                )}
+                {totals[key].missing > 0 && (
+                  <button
+                    className="metric-missing"
+                    onClick={() => {
+                      setExpanded(true);
+                      requestAnimationFrame(() => {
+                        const row =
+                          breakdown.current?.querySelector<HTMLElement>(
+                            '[data-missing="true"]',
+                          );
+                        row?.focus();
+                        row?.scrollIntoView?.({ block: "nearest" });
+                      });
+                    }}
+                  >
+                    <Badge>待补 {totals[key].missing}</Badge>
+                  </button>
+                )}
+              </article>
+            </Card>
+          );
+        })}
       </div>
       <div className="overview-breakdown">
         <div className="overview-caption">

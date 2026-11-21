@@ -8,7 +8,7 @@ import type { Snapshot } from "../../types/user";
 vi.mock("../../api/portfolio", () => ({ getAllocation: vi.fn() }));
 afterEach(cleanup);
 
-it("shows server-computed weights and switches between asset class and industry", async () => {
+it("defaults to industry weights and switches to asset class", async () => {
   vi.mocked(portfolioApi.getAllocation).mockResolvedValue({
     baseCurrency: "CNY",
     byClass: [
@@ -24,13 +24,16 @@ it("shows server-computed weights and switches between asset class and industry"
   });
   render(<AllocationChart snapshot={{} as Snapshot} />);
   const chart = await screen.findByRole("img");
-  expect(chart.getAttribute("aria-label")).toBe("股票 60%，现金 40%");
-  expect(screen.getByText("600.00")).toBeTruthy();
-  expect(screen.getByText(/1 项缺少汇率或待处理/)).toBeTruthy();
-  fireEvent.click(screen.getByText("行业"));
-  expect(screen.getByRole("img").getAttribute("aria-label")).toBe(
+  expect(chart.getAttribute("aria-label")).toBe(
     "现金 40%，银行 35%，其他股票 25%",
   );
+  expect(screen.getByText("350.00")).toBeTruthy();
+  expect(screen.getByText(/1 项缺少汇率或待处理/)).toBeTruthy();
+  fireEvent.click(screen.getByText("资产类别"));
+  expect(screen.getByRole("img").getAttribute("aria-label")).toBe(
+    "股票 60%，现金 40%",
+  );
+  expect(screen.getByText("600.00")).toBeTruthy();
   expect(portfolioApi.getAllocation).toHaveBeenCalledOnce();
 });
 

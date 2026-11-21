@@ -24,7 +24,7 @@ function arc(start: number, end: number) {
 }
 
 export function AllocationChart({ snapshot }: { snapshot: Snapshot }) {
-  const [mode, setMode] = useState<"byClass" | "byIndustry">("byClass");
+  const [mode, setMode] = useState<"byIndustry" | "byClass">("byIndustry");
   const [allocation, setAllocation] = useState<Allocation | null>(null);
   useEffect(() => {
     let active = true;
@@ -47,8 +47,8 @@ export function AllocationChart({ snapshot }: { snapshot: Snapshot }) {
           size="small"
           value={mode}
           options={[
-            { value: "byClass", label: "资产类别" },
             { value: "byIndustry", label: "行业" },
+            { value: "byClass", label: "资产类别" },
           ]}
           onChange={(value) => setMode(value as typeof mode)}
         />

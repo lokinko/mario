@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { getDividendIncome, type DividendIncome } from "../../api/portfolio";
 import type { DataIssue, DailyHistory, Snapshot } from "../../types/user";
 import type { DisplayPreferenceProps } from "../../components/DisplayPreferences";
-import { formatAmount, formatMoney } from "../../lib/format";
+import { formatAmount, formatMoney, formatNumber } from "../../lib/format";
 export function AssetOverview({
   snapshot,
   history,
@@ -38,6 +38,28 @@ export function AssetOverview({
     : latest
       ? (latest.exactTotalAssets ?? latest.totalAssets)
       : snapshot.accounting?.totalValue;
+  const cashValue = snapshot.accounting?.cash.value.value ?? null;
+  const totalForRatio =
+    snapshot.accounting?.totalValue != null &&
+    Number(snapshot.accounting.totalValue) > 0
+      ? Number(snapshot.accounting.totalValue)
+      : total != null && Number(total) > 0
+        ? Number(total)
+        : null;
+  const cashPct =
+    cashValue != null && totalForRatio != null
+      ? formatNumber((Number(cashValue) / totalForRatio) * 100, 2, true)
+      : null;
+  const dividendNote = dividends
+    ? [
+        `按买卖记录与 ${dividends.since} 后的除权日推算`,
+        dividends.missing.length > 0
+          ? `${dividends.missing.join("、")}未计入`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
   const symbol =
     new Intl.NumberFormat("zh-CN", { style: "currency", currency })
       .formatToParts(0)
@@ -76,22 +98,23 @@ export function AssetOverview({
             )}
           </div>
           <div className="hero-changes">
-            <div>
+            <div title={dividendNote}>
               <span className="metric-label">近 12 个月分红（税前）</span>
               <Money as="strong" className="num">
                 {dividends == null
                   ? "—"
                   : formatAmount(dividends.value, dividends.baseCurrency)}
               </Money>
-              {dividends && (
-                <small>
-                  {dividends.assetsPct != null &&
-                    `占总资产 ${dividends.assetsPct}% · `}
-                  按买卖记录与 {dividends.since} 后的除权日推算
-                  {dividends.missing.length > 0 &&
-                    ` · ${dividends.missing.join("、")}未计入`}
-                </small>
+              {dividends?.assetsPct != null && (
+                <small>占总资产 {dividends.assetsPct}%</small>
               )}
+            </div>
+            <div>
+              <span className="metric-label">现金价值（{currency}）</span>
+              <Money as="strong" className="num">
+                {cashValue == null ? "—" : formatAmount(cashValue, currency)}
+              </Money>
+              {cashPct != null && <small>占总资产 {cashPct}%</small>}
             </div>
           </div>
           <Button
