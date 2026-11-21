@@ -15,6 +15,7 @@ import * as methodologyApi from "./api/methodology";
 import * as researchApi from "./api/evidence";
 import * as watchApi from "./api/watch";
 import * as reviewsApi from "./api/reviews";
+import * as dailyReviewApi from "./api/dailyReview";
 import * as activityApi from "./api/activity";
 import emptySnapshot from "./test/emptySnapshot.json";
 import { WebAccess } from "./features/account/WebAccess";
@@ -73,6 +74,26 @@ vi.mock("./api/analysis", async (original) => ({
 }));
 vi.mock("./api/reviews", async (original) => ({
   ...(await original<typeof import("./api/reviews")>()),
+  getInvestmentRules: vi.fn().mockResolvedValue([]),
+  getSystemReviews: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("./api/dailyReview", async (original) => ({
+  ...(await original<typeof import("./api/dailyReview")>()),
+  getDailyReviewFeed: vi.fn().mockResolvedValue({
+    settings: {
+      enabled: true,
+      scheduleTime: "07:30",
+      scope: "holdingsAndWatch",
+      webSearch: true,
+    },
+    timezone: "Asia/Shanghai",
+    latestReviewDay: null,
+    unreadCount: 0,
+    runs: [],
+    items: [],
+    hasMore: false,
+    nextBefore: null,
+  }),
 }));
 vi.mock("./features/account/ServerData", async () => {
   const { AccountSettings } = await import("./features/account/WebAccess");
@@ -417,11 +438,26 @@ it("uses one mobile asset entry for both holdings and savings", async () => {
   expect(window.location.hash).toBe("#facts");
 });
 
-it("combines reference materials, reviews and rules under one page with tab-level activity", async () => {
+it("combines reference materials and rules under one page and promotes daily review standalone", async () => {
   window.location.hash = "reference";
   vi.spyOn(researchApi, "getResearchEvidence").mockResolvedValue([]);
   vi.spyOn(reviewsApi, "getInvestmentRules").mockResolvedValue([]);
   vi.spyOn(reviewsApi, "getSystemReviews").mockResolvedValue([]);
+  vi.spyOn(dailyReviewApi, "getDailyReviewFeed").mockResolvedValue({
+    settings: {
+      enabled: true,
+      scheduleTime: "07:30",
+      scope: "holdingsAndWatch",
+      webSearch: true,
+    },
+    timezone: "Asia/Shanghai",
+    latestReviewDay: null,
+    unreadCount: 0,
+    runs: [],
+    items: [],
+    hasMore: false,
+    nextBefore: null,
+  });
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
     emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
@@ -438,7 +474,7 @@ it("combines reference materials, reviews and rules under one page with tab-leve
     within(tabs)
       .getAllByRole("button")
       .map((tab) => tab.textContent),
-  ).toEqual(["参考资料", "复盘记录", "投资规则"]);
+  ).toEqual(["参考资料", "投资规则"]);
   expect(await screen.findByRole("button", { name: "新增资料" })).toBeTruthy();
   await waitFor(() =>
     expect(activityApi.recordActivity).toHaveBeenLastCalledWith(
@@ -455,11 +491,14 @@ it("combines reference materials, reviews and rules under one page with tab-leve
       expect.anything(),
     ),
   );
-  fireEvent.click(within(tabs).getByRole("button", { name: "复盘记录" }));
-  expect(await screen.findByRole("button", { name: "新建复盘" })).toBeTruthy();
+
+  const sidebar = screen.getByRole("complementary", { name: "主导航" });
+  fireEvent.click(within(sidebar).getByRole("button", { name: "每日复盘" }));
+  expect(await screen.findByRole("heading", { name: "每日复盘" })).toBeTruthy();
 });
 
 it.each([
+  ["dailyReview", "每日复盘"],
   ["reference", "参考信息"],
   ["calendar", "分红日历"],
 ])(

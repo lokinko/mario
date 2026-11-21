@@ -8,6 +8,7 @@ use crate::{
     models::{
         analysis::{AnalysisRequest, AnalysisResult},
         connection::ModelConfig,
+        daily_review::{AiReviewOutcome, DailyReviewPromptInput},
         memory::{DreamInput, DreamOutcome},
         provider::ModelProviderKind,
     },
@@ -35,6 +36,13 @@ struct Job {
 #[derive(Serialize, Deserialize)]
 struct DreamJob {
     input: DreamInput,
+    config: ModelConfig,
+    api_key: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DailyReviewJob {
+    input: DailyReviewPromptInput,
     config: ModelConfig,
     api_key: String,
 }
@@ -92,6 +100,35 @@ impl crate::ports::analysis::AnalysisExecutor for AgentExecutor {
         }
         let provider = local_provider(config, api_key, None)?;
         crate::ai::dream(provider.as_ref(), &input).await
+    }
+    async fn daily_review(
+        &self,
+        config: ModelConfig,
+        api_key: Option<String>,
+        input: DailyReviewPromptInput,
+    ) -> AppResult<AiReviewOutcome> {
+        if let Some((endpoint, token)) = remote_agent(&config)? {
+            let job = DailyReviewJob {
+                api_key: api_key
+                    .ok_or_else(|| AppError::Validation("独立 Agent 需要模型 API Key".into()))?,
+                config,
+                input,
+            };
+            let response = agent_client()?
+                .post(format!("{endpoint}/daily-review"))
+                .bearer_auth(token)
+                .json(&job)
+                .send()
+                .await?;
+            if !response.status().is_success() {
+                return Err(AppError::Model(
+                    "AI Agent 每日复盘失败，请检查 Agent 服务日志及模型配置".into(),
+                ));
+            }
+            return Ok(response.json().await?);
+        }
+        let provider = local_provider(config, api_key, None)?;
+        crate::ai::generate_daily_review(provider.as_ref(), &input).await
     }
 }
 
@@ -250,6 +287,7 @@ fn router(token: String, slots: Arc<tokio::sync::Semaphore>) -> Router {
         .route("/execute", post(run))
         .route("/execute/stream", post(run_stream))
         .route("/dream", post(run_dream))
+        .route("/daily-review", post(run_daily_review))
         .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024))
         .layer(middleware::from_fn(
             move |mut request: Request, next: Next| {
@@ -267,7 +305,7 @@ fn router(token: String, slots: Arc<tokio::sync::Semaphore>) -> Router {
                     }
                     let _permit = if matches!(
                         request.uri().path(),
-                        "/execute" | "/execute/stream" | "/dream"
+                        "/execute" | "/execute/stream" | "/dream" | "/daily-review"
                     ) {
                         match slots.try_acquire_owned() {
                             Ok(permit) => Some(Arc::new(permit)),
@@ -324,6 +362,26 @@ async fn run_dream(Json(job): Json<DreamJob>) -> AppResult<Json<DreamOutcome>> {
         )
         .await
         .map_err(|_| AppError::Model(crate::models::inference::DREAM_TIMEOUT_MESSAGE.into()))??,
+    ))
+}
+
+async fn run_daily_review(Json(job): Json<DailyReviewJob>) -> AppResult<Json<AiReviewOutcome>> {
+    validate_endpoint(&job.config.base_url)?;
+    let provider = NativeModelProvider::new(
+        job.config.provider,
+        job.config.base_url,
+        job.config.model,
+        job.api_key,
+    )?;
+    Ok(Json(
+        tokio::time::timeout(
+            crate::models::inference::DAILY_REVIEW_TIMEOUT,
+            crate::ai::generate_daily_review(&provider, &job.input),
+        )
+        .await
+        .map_err(|_| {
+            AppError::Model(crate::models::inference::DAILY_REVIEW_TIMEOUT_MESSAGE.into())
+        })??,
     ))
 }
 

@@ -13,8 +13,8 @@
 | 用户 | 买点观察 | 个人自选、人工维护的共享候选目录、观察规则、历史结果、提醒、个人分红日历、网格测算 |
 | 用户 | 研究资料 | 用户保存的原文、附件、标签、归档状态与检索能力 |
 | 用户 | 方法论与复盘 | 用户明确表达的方法论、手工投资规则、规则修订与文字复盘 |
-| 市场 | 公共市场数据 | 证券基础信息、价格、汇率、公司分红事实与已披露计划，以及来源、缓存、采集和质量状态 |
-| AI | 分析与记忆 | 授权上下文、分析预览与冻结、问答与评议、流式输出、分析历史、长期记忆 |
+| 市场 | 公共市场数据 | 证券基础信息、价格、汇率、公司分红事实与已披露计划、A 股法定官方公告，以及来源、缓存、采集和质量状态 |
+| AI | 分析、每日复盘与记忆 | 授权上下文、分析预览与冻结、问答与评议、流式输出、分析历史、每日自动复盘信息流与调度配置、长期记忆 |
 | AI | 模型连接与执行 | 模型配置、供应商适配、模型目录、本机模型授权与桥接 |
 
 业务归属与数据可见范围分别判断。共享观察候选目录属于用户域，不因存储在公共 schema 就成为市场事实；AI 历史按账号隔离，但其行为规则仍属于 AI 域。证券基础目录属于市场域。共享候选目录由用户域的[目录升级逻辑](../server/src/models/watch/catalog.rs)按版本采用经确认的指数成分清单，由[共享目录仓储](../server/src/db/public_watch.rs)在启动事务中写入；成分身份和来源与市场行情、分红及核查状态分别管理。
@@ -62,8 +62,8 @@ AI 用例负责授权、冻结输入及保存分析结果；模型执行器负�
 | 用户买点观察 | [watch](../client/src/features/watch/) | [观察用例](../server/src/application/watch.rs)、[候选目录用例](../server/src/application/watch_catalog.rs)、[观察仓储](../server/src/db/watch.rs)、[观察规则与计算](../server/src/models/watch.rs) |
 | 用户研究资料 | [资料工作台](../client/src/features/evidence/EvidenceWorkbench.tsx) | [研究资料仓储](../server/src/db/evidence.rs)、[附件处理](../server/src/attachments.rs)、[证据检索](../server/src/evidence.rs) |
 | 用户方法论与复盘 | [methodology](../client/src/features/methodology/)、[reviews](../client/src/features/reviews/) | [方法论仓储](../server/src/db/methodology.rs)、[复盘仓储](../server/src/db/reviews.rs) |
-| 市场公共数据 | 由用户页面、[公开红利观察](../client/src/features/watch/dividend-preview/DividendPreview.tsx)和运营看板消费。公开红利观察读取内置历史样本。[分红卡片模型](../client/src/features/watch/dividend-preview/card.ts)将逐股解读和[归档行情指标](../client/src/features/watch/dividend-preview/returns.ts)组装成页面与分享长图共用的内容 | [数据来源适配](../server/src/market_data.rs)、[公共价格服务](../server/src/application/public_prices.rs)、[共享分红查询](../server/src/application/watch_market.rs)、[公共价格仓储](../server/src/db/public_prices.rs)、[公共分红仓储](../server/src/db/public_dividends.rs) |
-| AI 分析与记忆 | [问答](../client/src/features/advisor/Advisor.tsx)、[红利样本解读](../client/src/features/watch/dividend-preview/briefs.ts)、[记忆](../client/src/features/advisor/MemoryPanel.tsx) | [分析用例](../server/src/application/analysis.rs)、[上下文](../server/src/context.rs)、[模型工作流](../server/src/ai/)、[记忆用例](../server/src/application/memory.rs)、[分析历史仓储](../server/src/db/analysis_history.rs) |
+| 市场公共数据 | 由用户页面、[公开红利观察](../client/src/features/watch/dividend-preview/DividendPreview.tsx)、每日复盘和运营看板消费。公开红利观察读取内置历史样本。[分红卡片模型](../client/src/features/watch/dividend-preview/card.ts)将逐股解读和[归档行情指标](../client/src/features/watch/dividend-preview/returns.ts)组装成页面与分享长图共用的内容 | [数据来源适配](../server/src/market_data.rs)、[巨潮公告适配](../server/src/market_data/announcements.rs)、[公共价格服务](../server/src/application/public_prices.rs)、[公共公告服务](../server/src/application/announcements.rs)、[共享分红查询](../server/src/application/watch_market.rs)、[公共价格仓储](../server/src/db/public_prices.rs)、[公共公告仓储](../server/src/db/public_announcements.rs)、[公共分红仓储](../server/src/db/public_dividends.rs) |
+| AI 分析、每日复盘与记忆 | [问答](../client/src/features/advisor/Advisor.tsx)、[每日复盘](../client/src/features/dailyReview/DailyReviewPage.tsx)、[红利样本解读](../client/src/features/watch/dividend-preview/briefs.ts)、[记忆](../client/src/features/advisor/MemoryPanel.tsx) | [分析用例](../server/src/application/analysis.rs)、[每日复盘用例](../server/src/application/daily_review.rs)、[上下文](../server/src/context.rs)、[模型工作流](../server/src/ai/)、[记忆用例](../server/src/application/memory.rs)、[分析历史仓储](../server/src/db/analysis_history.rs)、[每日复盘仓储](../server/src/db/daily_review.rs) |
 | AI 模型连接 | [settings](../client/src/features/settings/)中的模型配置与桥接 | [模型配置用例](../server/src/application/model_settings.rs)、[模型管理端口](../server/src/ports/model.rs)、[本机授权](../server/src/chatgpt_auth.rs)、[worker](../server/src/codex_bridge_worker.rs) |
 
 ## 5. 已落实的职责拆分
@@ -77,7 +77,7 @@ AI 用例负责授权、冻结输入及保存分析结果；模型执行器负�
 - **HTTP 账号能力**：认证层在[请求装配](../server/src/http/context.rs)中选择账号并持有具体存储；财务、观察、资料、方法论、复盘、分析、记忆、模型设置和桥接路由分别提取自己的上下文。上下文内部字段私有，账号访问通过不暴露具体 Database 的能力接口返回。用户记录能力见 [user_records](../server/src/ports/user_records.rs)，AI 历史与预设见 [ai_records](../server/src/ports/ai_records.rs)，分别由所属存储适配委托原事务方法。备份上下文只协调版本、导出和导入；认证中间件仍在同一账号连接上持锁，处理全局版本与财务回执后再执行业务路由。
 - **仓储内部边界**：[仓储归属登记](../scripts/storage-boundaries.mjs)覆盖生产仓储模块、账号方法和当前表；业务仓储禁止跨域调用或直接操作其他域表。AI 授权适配只允许读取明列的用户来源，迁移和备份负责共享事务协调。生产文件显式导入所属类型与辅助方法，db 根模块不再提供混合业务类型总入口。用户设置与 AI 设置分别通过 [UserSetting](../server/src/db/settings/user.rs)、[AiSetting](../server/src/db/settings/ai.rs)构造，原字符串键读写仅供测试夹具；模型凭据固定为原有 model 槽位。备份 SQL 筛选与输入校验共同引用设置类型，沿用原有键名、加密账号范围及导入格式。
 - **公共事实与观察规则**：公共分红历史、覆盖日期、每股 TTM 计算在 [市场分红契约](../server/src/models/market/dividends.rs)，价格条目与统一行情输入在 [行情序列](../server/src/models/market/series.rs)。官方证券资料通过 [SecuritySources](../server/src/models/market/securities.rs)返回，用户候选目录显式转换为自有 Company，市场适配不再借用用户 WatchInput 校验。内置资料包只负责公共事实；CSV 的观察参考价由[用户导出用例](../server/src/application/watch_export.rs)生成，运行入口协调加载与不覆盖文件的写入。
-- **精简模型输入**：用户授权当前状态在 `models/accounting/analysis.rs` 生成，交易明细、缺口码和审计材料不进入模型资料；`context/render.rs` 将业务输入渲染为 Markdown，内部引用结构与历史审计独立保存。新工作流版本与搜索默认值见 [AI spec](specs/ai.md#8-现有实现差异)。
+- **精简模型输入**：用户授权当前状态在 `models/accounting/analysis.rs` 生成，交易明细、缺口码和审计材料不进入模型资料；`context/render.rs` 将业务输入渲染为 Markdown，内部引用结构与历史审计独立保存。新工作流版本与搜索默认值见 [AI spec](specs/ai.md#9-现有实现差异)。
 - **契约归属**：后端 [models](../server/src/models.rs)只声明模块，不再提供跨域类型总入口；用户财务、资料、复盘和个人汇率分别在 `portfolio`、`research`、`reviews`、`fx`，公共查询与报价在 [market/quotes](../server/src/models/market/quotes.rs)，AI 请求和模型连接分别在 [analysis](../server/src/models/analysis.rs)、[connection](../server/src/models/connection.rs)。前端通过 [用户类型](../client/src/types/user.ts)、[市场类型](../client/src/types/market.ts)、[AI 类型](../client/src/types/ai.ts)显式导入。用户授权投影只接收用户资料筛选参数，AI 授权类型由适配层转换，用户契约不依赖 AI。
 - **依赖检查**：前端页面和 API 客户端显式登记业务归属；用户页面不能直接导入 AI API，跨页分析通过应用回调组合。后端显式登记用例与端口的业务归属；市场来源、公共市场仓储和市场用例禁止依赖用户或 AI 契约与账号端口，用户用例禁止反向依赖 AI，AI 通过授权来源读取用户资料。计划采集、仓储和用户日历还检查导入的具体符号，禁止以模块别名绕开窄接口。技术模块、循环与隔离检查继续执行，见 [lint 文档](lint.md)。
 

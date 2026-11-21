@@ -10,6 +10,11 @@ pub(crate) const ANALYSIS_TIMEOUT_MESSAGE: &str =
 pub(crate) const DREAM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2 * 180 + 30);
 pub(crate) const DREAM_TIMEOUT_MESSAGE: &str =
     "记忆整理超过执行上限，已停止；记忆和整理进度均未改变";
+/// Daily review runs optional public search plus structured generation and at most one repair.
+pub(crate) const DAILY_REVIEW_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(2 * 180 + 30);
+pub(crate) const DAILY_REVIEW_TIMEOUT_MESSAGE: &str =
+    "每日 AI 复盘超过执行上限，已停止；本次已保留昨日持仓事实与官方公告动态";
 
 /// Shared local-model failure categories keep their historical wire names.
 /// Upstream bodies and account details never cross the bridge.

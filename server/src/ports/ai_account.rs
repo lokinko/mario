@@ -5,6 +5,10 @@ use crate::{
         accounting::analysis::AuthorizedFinancialContext,
         analysis::{AnalysisResult, AnalysisSettings, ContextSelection},
         connection::ModelConfig,
+        daily_review::{
+            DailyReviewFeedItem, DailyReviewFeedQuery, DailyReviewRun, DailyReviewScope,
+            DailyReviewSettings, DailyReviewUserContext,
+        },
         memory::{
             AcceptedOperation, DreamInput, DreamSourceAnalysis, DreamState, DreamSummary,
             MemoryNote,
@@ -73,4 +77,31 @@ pub(crate) trait MemoryAccount: ModelConfiguration + AccountSession {
         operations: &[AcceptedOperation],
         rejected: Vec<String>,
     ) -> AppResult<DreamSummary>;
+}
+
+pub(crate) trait DailyReviewAccount: ModelConfiguration + AccountSession {
+    fn daily_review_settings(&self) -> AppResult<DailyReviewSettings>;
+    fn save_daily_review_settings(
+        &self,
+        settings: &DailyReviewSettings,
+    ) -> AppResult<DailyReviewSettings>;
+    fn daily_review_timezone(&self) -> AppResult<String>;
+    fn daily_review_runs(&self, limit: usize) -> AppResult<Vec<DailyReviewRun>>;
+    fn has_daily_review_for_day(&self, review_day: &str) -> AppResult<bool>;
+    fn daily_review_unread_count(&self) -> AppResult<usize>;
+    fn daily_review_items(
+        &self,
+        query: &DailyReviewFeedQuery,
+    ) -> AppResult<(Vec<DailyReviewFeedItem>, bool, Option<String>)>;
+    fn save_daily_review_run(
+        &self,
+        run: &DailyReviewRun,
+        items: &[DailyReviewFeedItem],
+    ) -> AppResult<()>;
+    fn mark_daily_review_read(&self, id: Option<&str>, all: bool) -> AppResult<usize>;
+    fn daily_review_context(
+        &self,
+        requested_day: Option<chrono::NaiveDate>,
+        scope: DailyReviewScope,
+    ) -> AppResult<DailyReviewUserContext>;
 }

@@ -390,7 +390,12 @@ mod tests {
 
         let mut old = exported;
         old.schema_version = 30;
-        old.tables.retain(|table| table.name != "analysis_memories");
+        old.tables.retain(|table| {
+            !matches!(
+                table.name.as_str(),
+                "analysis_memories" | "daily_review_runs" | "daily_review_items"
+            )
+        });
         let target = Database::test();
         target.import_sync_data(&old).unwrap();
         assert!(target.memory_notes().unwrap().is_empty());

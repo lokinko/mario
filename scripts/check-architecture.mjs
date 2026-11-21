@@ -234,6 +234,7 @@ export function serverSymbolViolation(source, target) {
     return 'AI inputs use the authorized current-state projection, never the full ledger snapshot';
   const capabilities = {
     'application/analysis.rs': ['AnalysisAccount', 'ModelConfiguration'],
+    'application/daily_review.rs': ['DailyReviewAccount', 'ModelConfiguration'],
     'application/memory.rs': ['MemoryAccount'],
     'application/model_settings.rs': ['ModelConfiguration', 'ModelSettingsStore'],
     'application/codex_bridge.rs': ['ModelConfiguration', 'ModelSettingsStore'],

@@ -4,6 +4,7 @@ pub(crate) mod analysis;
 pub(crate) mod connection;
 pub(crate) mod council;
 pub(crate) mod daily;
+pub(crate) mod daily_review;
 pub(crate) mod decimal;
 pub(crate) mod endpoint;
 pub(crate) mod fx;

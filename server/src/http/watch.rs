@@ -258,6 +258,8 @@ mod tests {
             watch_provider: runtime.watch_provider.clone(),
             watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
             dividend_calendar: calendar,
+            dividend_plans: runtime.dividend_plans.clone(),
+            announcements: runtime.announcements.clone(),
             market: runtime.services.clone(),
             analysis_executor: Arc::new(crate::agent::AgentExecutor),
         }));

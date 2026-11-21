@@ -1,4 +1,5 @@
 //! Market value contracts and deterministic identity/date policies. No providers or storage.
+pub(crate) mod announcements;
 pub(crate) mod close;
 pub(crate) mod dividend_archive;
 pub(crate) mod dividend_plans;

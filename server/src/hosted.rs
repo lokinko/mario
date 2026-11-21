@@ -55,6 +55,8 @@ struct HostedState {
     watch_provider: Arc<dyn crate::ports::market::SecurityMarketProvider>,
     watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
     dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
+    dividend_plans: Arc<crate::application::dividend_plans::PublicDividendPlanService>,
+    announcements: Arc<crate::application::announcements::PublicAnnouncementService>,
     analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
 }
 
@@ -84,9 +86,17 @@ where
         watch_provider: market_runtime.watch_provider.clone(),
         watch_catalog: market_runtime.watch_catalog.clone(),
         dividend_calendar: market_runtime.dividend_calendar.clone(),
+        dividend_plans: market_runtime.dividend_plans.clone(),
+        announcements: market_runtime.announcements.clone(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
     });
     market_runtime.start_account_tasks(state.accounts.clone(), state.tenant_connections.clone());
+    market_runtime.start_daily_review_task(
+        state.accounts.clone(),
+        state.tenant_connections.clone(),
+        state.model_services.clone(),
+        state.analysis_executor.clone(),
+    );
     let private = api_router()
         .route("/api/sync/version", get(version))
         .route("/api/data/export", get(export))
@@ -241,6 +251,8 @@ async fn authenticate(
             watch_provider: host.watch_provider.clone(),
             watch_catalog: host.watch_catalog.clone(),
             dividend_calendar: host.dividend_calendar.clone(),
+            dividend_plans: host.dividend_plans.clone(),
+            announcements: host.announcements.clone(),
             db: Database::pooled(&host.tenant_connections, &user)?,
             market: host.market.clone(),
             analysis_executor: host.analysis_executor.clone(),

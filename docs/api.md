@@ -2,7 +2,7 @@
 
 本文从当前代码重新记录可调用接口，按用户、市场、AI 三域及支撑能力组织，供开发和查询使用。业务行为分别引用[用户 spec](specs/user.md)、[市场 spec](specs/market.md)、[AI spec](specs/ai.md)，代码归属见[架构](architecture.md)。文件名或 URL 前缀不改变功能归属。
 
-这里记录实际实现，不将已认可但未实现的行为写成可用能力。HTTP 传输契约与传给模型的上下文格式是两个层次；当前 HTTP 使用 JSON，模型输入的精简要求及实现差异见 [AI spec](specs/ai.md#8-现有实现差异)。本文不恢复旧文档，也不建立第二套手工维护的 OpenAPI。
+这里记录实际实现，不将已认可但未实现的行为写成可用能力。HTTP 传输契约与传给模型的上下文格式是两个层次；当前 HTTP 使用 JSON，模型输入的精简要求及实现差异见 [AI spec](specs/ai.md#9-现有实现差异)。本文不恢复旧文档，也不建立第二套手工维护的 OpenAPI。
 
 ## 1. 阅读方式与公共约定
 
@@ -163,7 +163,7 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 
 ### 4.1 模型、分析与记忆
 
-以下均需账号 token。来源：[设置 HTTP](../server/src/http/model_settings.rs)、[分析 HTTP](../server/src/http/analysis.rs)、[记忆 HTTP](../server/src/http/memory.rs)、[桥接管理 HTTP](../server/src/http/codex_bridge.rs)。
+以下均需账号 token。来源：[设置 HTTP](../server/src/http/model_settings.rs)、[分析 HTTP](../server/src/http/analysis.rs)、[每日复盘 HTTP](../server/src/http/daily_review.rs)、[记忆 HTTP](../server/src/http/memory.rs)、[桥接管理 HTTP](../server/src/http/codex_bridge.rs)。
 
 | 方法 | 路径 | 版本 | 输入 → 响应 | 作用与限制 |
 | --- | --- | --- | --- | --- |
@@ -180,6 +180,10 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 | POST | `/api/analysis/stream` | R | B `AnalysisRequest` → SSE | 流式执行，终态见下节 |
 | GET | `/api/analyses` | — | — → `AnalysisHistoryItem[]` | 分析历史摘要 |
 | GET | `/api/analyses/{id}` | — | — → `StoredAnalysis` | 已保存的回答与审计信息 |
+| GET | `/api/daily-review` | — | Q `day?,kind?,symbol?,unreadOnly?,before?,limit?` → `DailyReviewFeedResponse` | 每日自动复盘设置、运行记录与微博式信息流动态 |
+| PUT | `/api/daily-review/settings` | R | B `DailyReviewSettings` → `DailyReviewSettings` | 保存自动复盘开关、触发时间、跟踪范围与联网检索偏好 |
+| POST | `/api/daily-review/run` | R | B `{reviewDay?:string}` → `DailyReviewRunResult` | 手动立即触发一次指定日或前一日复盘（先刷新巨潮官方公告，再聚合持仓事实与 AI 洞察） |
+| POST | `/api/daily-review/read` | R | B `{id?:string,all?:boolean}` → `{ok:true,unreadCount:integer}` | 标记单条或全部每日复盘动态为已读 |
 | GET | `/api/memory` | — | — → `MemoryOverview` | 当前记忆与整理状态 |
 | POST | `/api/memory/dream` | R | — → `MemoryOverview` | 执行记忆整理，可能调用模型并写入记忆 |
 | PUT | `/api/memory/{id}/status` | R | B `{active:boolean}` → `MemoryNote` | 启用或停用记忆 |
@@ -260,6 +264,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | POST | `/execute` | B `AgentJob` → `AnalysisResult` | 执行已冻结任务，不直接保存账号数据 |
 | POST | `/execute/stream` | B `AgentJob` → SSE `AnalysisEvent` | 流式执行已冻结任务 |
 | POST | `/dream` | B `DreamJob` → `DreamOutcome` | 生成记忆整理结果，账号写入由主服务负责 |
+| POST | `/daily-review` | B `DailyReviewJob` → `AiReviewOutcome` | 基于冻结昨日持仓、官方公告与规则生成多条每日复盘动态 |
 
 `AgentJob` 是 `{request:AnalysisRequest,context:BuiltContext,config:ModelConfig,api_key:string}`；`DreamJob` 是 `{input:DreamInput,config:ModelConfig,api_key:string}`。`BuiltContext` 的完整字段为 `payload,groups,payload_bytes,revision,evidence_items,valuation_evidence,evidence_catalog`，见[冻结上下文](../server/src/context.rs)；后两个集合可省略并默认空。`DreamInput` 是 `{analyses:DreamSourceAnalysis[],memories:MemoryNote[]}`，结果见[记忆类型](../server/src/models/memory.rs)。这些请求包含冻结凭据，只用于服务间调用，不作为浏览器公开执行入口。
 
@@ -326,6 +331,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | AnalysisHistoryItem / StoredAnalysis | 列表项含 `id,question,createdAt,transparency,workflowVersion,verdict`；详情含 `id,question,answer,createdAt,transparency,workflowTrace` |
 | MemoryNote | `id,kind,origin,statement,rationale,sourceAnalysisIds,quote,active,createdAt,updatedAt`；kind 为 `preference/viewpoint/context`，origin 为 `userStated/modelInferred` |
 | MemoryOverview | `items:MemoryNote[]; dream:DreamState; pendingAnalyses:integer; dreamDue,enabled:boolean`；DreamState 含可空 `dreamedThrough,lastRunAt,lastResult`，lastResult 汇总 analyses/added/updated/archived/rejected |
+| DailyReviewSettings / DailyReviewFeedResponse | 设置为 `enabled:boolean; scheduleTime:string(HH:MM); scope:holdingsAndWatch/holdingsOnly; webSearch:boolean`；信息流返回 `settings,timezone,latestReviewDay,unreadCount,runs,items,hasMore,nextBefore`，定义见[每日复盘契约](../server/src/models/daily_review.rs) |
 
 ### 6.4 大型响应查询地图
 

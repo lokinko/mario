@@ -304,3 +304,109 @@ export interface ModelCallTrace {
   inputTokens?: number | null;
   outputTokens?: number | null;
 }
+
+export type DailyReviewScope = "holdingsAndWatch" | "holdingsOnly";
+
+export interface DailyReviewSettings {
+  enabled: boolean;
+  scheduleTime: string;
+  scope: DailyReviewScope;
+  webSearch: boolean;
+}
+
+export type DailyReviewTrigger = "scheduled" | "manual";
+export type DailyReviewRunStatus = "completed" | "degraded" | "failed";
+export type DailyReviewAiStatus =
+  "completed" | "skippedNoModel" | "failed" | "empty";
+
+export type DailyReviewItemKind =
+  | "portfolioSummary"
+  | "holdingMove"
+  | "officialAnnouncement"
+  | "dividendUpdate"
+  | "watchSignal"
+  | "aiInsight"
+  | "externalClue";
+
+export type DailyReviewItemOrigin =
+  "deterministicFact" | "officialFiling" | "aiReview" | "webClue";
+
+export type DailyReviewImportance = "high" | "medium" | "normal";
+export type MetricTone = "positive" | "negative" | "neutral";
+
+export interface DailyReviewMetric {
+  label: string;
+  value: string;
+  tone: MetricTone;
+  sensitive: boolean;
+}
+
+export interface DailyReviewSource {
+  label: string;
+  url: string;
+  publisher: string;
+  publishedOn: string;
+}
+
+export interface DailyReviewFeedItem {
+  id: string;
+  runId: string;
+  reviewDay: string;
+  kind: DailyReviewItemKind;
+  origin: DailyReviewItemOrigin;
+  importance: DailyReviewImportance;
+  title: string;
+  summary: string;
+  body: string;
+  symbol?: string | null;
+  assetName?: string | null;
+  metrics: DailyReviewMetric[];
+  sources: DailyReviewSource[];
+  tags: string[];
+  askPrompt: string;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface DailyReviewRun {
+  id: string;
+  reviewDay: string;
+  trigger: DailyReviewTrigger;
+  status: DailyReviewRunStatus;
+  aiStatus: DailyReviewAiStatus;
+  aiModel?: string | null;
+  degradedReason?: string | null;
+  itemCount: number;
+  announcementCount: number;
+  createdAt: string;
+}
+
+export interface DailyReviewFeedQuery {
+  day?: string;
+  kind?: DailyReviewItemKind | "";
+  symbol?: string;
+  unreadOnly?: boolean;
+  before?: string;
+  limit?: number;
+}
+
+export interface DailyReviewFeedResponse {
+  settings: DailyReviewSettings;
+  timezone: string;
+  latestReviewDay?: string | null;
+  unreadCount: number;
+  runs: DailyReviewRun[];
+  items: DailyReviewFeedItem[];
+  hasMore: boolean;
+  nextBefore?: string | null;
+}
+
+export interface DailyReviewRunResult {
+  run: DailyReviewRun;
+  feed: DailyReviewFeedResponse;
+}
+
+export interface DailyReviewReadResult {
+  ok: boolean;
+  unreadCount: number;
+}

@@ -106,7 +106,18 @@ CSV 可以作为同一摘要的替代表达；如使用 CSV 文件，其内容�
 
 实现依据：[记忆用例](../../server/src/application/memory.rs)、[记忆整理代理](../../server/src/ai/dreaming.rs)、[筛选规则](../../server/src/models/memory.rs)、[记忆界面](../../client/src/features/advisor/MemoryPanel.tsx)。
 
-## 8. 现有实现差异
+## 8. 每日自动复盘信息流
+
+每日复盘作为独立一级模块运行，默认开启并在账号本地时区每日 `07:30` 自动复盘前一日（可修改开关、触发时间、跟踪范围「当前持仓 + 个人自选 / 仅当前持仓」与联网检索开关，并支持手动立即触发）。
+
+- 后台任务按账号时区检查到期状态，每个复盘日自动执行一次；执行前先通过市场域刷新涉及 A 股的巨潮资讯官方公告缓存。
+- 用例通过只读账号端口 `DailyReviewAccount` 冻结昨日组合与单标的变动、买点观察信号、有效投资规则与方法论（不读取逐笔成交明细，不写入用户账本），并结合市场只读端口的官方公告与分红计划生成确定性事实与法定公告动态。
+- 若账号或站点存在可用模型，在释放账号锁状态下调用 `AnalysisExecutor::daily_review`（可选先执行仅含公开标的代码/名称的联网检索）生成多条微博式信息流复盘动态；若模型未配置、不可用或调用失败，本次运行诚实标为 `degraded` 并说明原因，完整保留昨日持仓事实与官方公告动态。
+- 信息流支持按动态类型、复盘日期、标的与未读状态筛选，支持单条/全部标为已读、发布个人随手记、一键带入「问答」追问或沉淀为个人投资规则；运行记录、动态条目与复盘偏好纳入原生个人备份（v32）。
+
+实现依据：[每日复盘契约](../../server/src/models/daily_review.rs)、[每日复盘生成](../../server/src/ai/daily_review.rs)、[每日复盘用例](../../server/src/application/daily_review.rs)、[每日复盘仓储](../../server/src/db/daily_review.rs)、[每日复盘 HTTP](../../server/src/http/daily_review.rs)、[每日复盘页面](../../client/src/features/dailyReview/DailyReviewPage.tsx)。
+
+## 9. 现有实现差异
 
 默认搜索已开启，已保存的关闭选择继续保留。分析请求省略 `webSearch` 时也按开启处理；虚构质量评测显式关闭搜索，防止把虚构公司送到真实来源。
 

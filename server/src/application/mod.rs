@@ -1,6 +1,8 @@
 //! Use cases shared by local and hosted HTTP adapters.
 pub(crate) mod analysis;
+pub(crate) mod announcements;
 pub(crate) mod codex_bridge;
+pub(crate) mod daily_review;
 pub(crate) mod fx;
 pub(crate) mod memory;
 pub(crate) mod model_settings;

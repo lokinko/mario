@@ -2,14 +2,16 @@
 //! Only this adapter owns the concrete account store; route modules receive scoped extractors.
 use crate::{
     application::{
+        announcements::PublicAnnouncementService,
         dividend_calendar::DividendCalendarService,
+        dividend_plans::PublicDividendPlanService,
         model_settings::{ModelServices, ServerOpenAi},
         portfolio::{MarketServices, PortfolioService},
         watch_catalog::WatchCatalogService,
     },
     db::Database,
     ports::{
-        ai_account::{AnalysisAccount, MemoryAccount, ModelSettingsStore},
+        ai_account::{AnalysisAccount, DailyReviewAccount, MemoryAccount, ModelSettingsStore},
         ai_records::{AnalysisArchive, AnalysisPresets},
         analysis::AnalysisExecutor,
         market::SecurityMarketProvider,
@@ -31,6 +33,8 @@ pub(crate) struct RequestContextParts {
     pub watch_provider: Arc<dyn SecurityMarketProvider>,
     pub watch_catalog: Arc<WatchCatalogService>,
     pub dividend_calendar: Arc<DividendCalendarService>,
+    pub dividend_plans: Arc<PublicDividendPlanService>,
+    pub announcements: Arc<PublicAnnouncementService>,
     pub market: Arc<MarketServices>,
     pub analysis_executor: Arc<dyn AnalysisExecutor>,
 }
@@ -172,6 +176,24 @@ impl MemoryContext {
         self.0.parts.analysis_executor.as_ref()
     }
 }
+scoped_context!(DailyReviewContext);
+impl DailyReviewContext {
+    pub fn account(&self) -> &impl DailyReviewAccount {
+        &self.0.parts.db
+    }
+    pub fn server(&self) -> Option<&ServerOpenAi> {
+        self.0.parts.model_services.server.as_ref()
+    }
+    pub fn executor(&self) -> &dyn AnalysisExecutor {
+        self.0.parts.analysis_executor.as_ref()
+    }
+    pub fn announcements(&self) -> &Arc<PublicAnnouncementService> {
+        &self.0.parts.announcements
+    }
+    pub fn dividend_plans(&self) -> &Arc<PublicDividendPlanService> {
+        &self.0.parts.dividend_plans
+    }
+}
 scoped_context!(ModelSettingsContext);
 impl ModelSettingsContext {
     pub fn account(&self) -> &impl ModelSettingsStore {
@@ -228,6 +250,7 @@ mod tests {
         requires_account::<ReviewContext>().await;
         requires_account::<AnalysisContext>().await;
         requires_account::<MemoryContext>().await;
+        requires_account::<DailyReviewContext>().await;
         requires_account::<ModelSettingsContext>().await;
         requires_account::<BridgeContext>().await;
         requires_account::<BackupContext>().await;

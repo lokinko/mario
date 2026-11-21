@@ -2,6 +2,7 @@
 mod analysis;
 pub(crate) mod codex_bridge;
 pub(crate) mod context;
+mod daily_review;
 mod error;
 mod evidence;
 mod memory;
@@ -22,6 +23,7 @@ pub(crate) fn api_router() -> Router {
         )
         .merge(portfolio::router())
         .merge(analysis::router())
+        .merge(daily_review::router())
         .merge(evidence::router())
         .merge(memory::router())
         .merge(reviews::router())

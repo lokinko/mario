@@ -48,6 +48,8 @@
 
 实现依据：[分红来源](../../server/src/market_data/watch.rs)、[已披露计划解析](../../server/src/market_data/watch/plans.rs)、[公共分红仓储](../../server/src/db/public_dividends.rs)、[分红计划缓存](../../server/src/db/public_dividend_plans.rs)、[海外公司行动解析](../../server/src/market_data/history/overseas.rs)。已披露计划的类型、缓存和采集分别由市场域的[计划类型](../../server/src/models/market/dividend_plans.rs)、[计划仓储](../../server/src/db/public_dividend_plans.rs)、[计划服务](../../server/src/application/dividend_plans.rs)管理；用户日历只通过缓存读端口消费。计划仓储独立打开原有表，不初始化或升级候选目录。
 
+A 股法定官方公告通过[巨潮资讯适配](../../server/src/market_data/announcements.rs)按规范代码和日期窗口采集，经[公共公告服务](../../server/src/application/announcements.rs)缓存在 `mario_market.announcement_snapshots`（[公共公告仓储](../../server/src/db/public_announcements.rs)）跨账号复用；过滤明显重复的英文版条目并做确定性类别与重要度分级，保留原始官方披露链接与发布日期，采集失败时保留上次成功缓存。上层复盘用例仅通过只读端口 `AnnouncementReader` 消费。
+
 ## 5. 共享缓存、更新与失败处理
 
 同一交易标的数据在账号之间复用。更新需要控制并发、重试和超时，避免重复采集。

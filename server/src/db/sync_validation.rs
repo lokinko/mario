@@ -279,6 +279,9 @@ pub(super) fn validate_synced_settings(dataset: &SyncDataset) -> AppResult<()> {
             serde_json::from_str::<crate::models::watch::rules::WatchRules>(value)?.validate()?;
         } else if key == AiSetting::DreamState.key() {
             serde_json::from_str::<crate::models::memory::DreamState>(value)?.validate()?;
+        } else if key == AiSetting::DailyReviewSettings.key() {
+            serde_json::from_str::<crate::models::daily_review::DailyReviewSettings>(value)?
+                .validate()?;
         }
     }
     Ok(())

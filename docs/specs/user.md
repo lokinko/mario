@@ -73,9 +73,11 @@
 
 管理用户填写的方法论、文字复盘、手工投资规则及规则修订历史。
 
+前端将「复盘」从「参考信息」中独立为一级「每日复盘」入口，与 AI 每日自动复盘及官方公告信息流在同一时间线中展示，同时保留「参考信息」下的「参考资料」与「投资规则」管理。
+
 手工投资规则与买点观察的计算规则分别管理。AI 可以引用和讨论这些内容，但不能自动修改用户原则，也不能将模型建议当成用户已经作出的决定。
 
-实现依据：[方法论契约](../../server/src/models/methodology.rs)、[复盘仓储](../../server/src/db/reviews.rs)、[复盘页面](../../client/src/features/reviews/ReviewCenter.tsx)。
+实现依据：[方法论契约](../../server/src/models/methodology.rs)、[复盘仓储](../../server/src/db/reviews.rs)、[规则页面](../../client/src/features/reviews/ReviewCenter.tsx)、[每日复盘页面](../../client/src/features/dailyReview/DailyReviewPage.tsx)。
 
 ## 6. 验收场景
 

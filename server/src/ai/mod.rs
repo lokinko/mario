@@ -2,6 +2,7 @@ pub(crate) mod bridge;
 pub(crate) mod chatgpt;
 mod codex;
 mod council;
+mod daily_review;
 mod dreaming;
 pub(crate) mod management;
 pub(crate) mod model_catalog;
@@ -15,6 +16,7 @@ pub(crate) mod streaming;
 mod structured_output;
 mod workflow;
 
+pub use daily_review::generate_daily_review;
 pub use dreaming::dream;
 pub use native_provider::NativeModelProvider;
 #[cfg(test)]

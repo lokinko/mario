@@ -7,8 +7,8 @@ export const storageOwners = {
   fx: 'user', methodology: 'user', options: 'user', portfolio: 'user', public_watch: 'user',
   reminders: 'user', reviews: 'user', rule_values: 'user', snapshot: 'user', trades: 'user',
   user_access: 'user', user_records: 'user', validation: 'user', watch: 'user', watch_grid_migration: 'user',
-  ai_access: 'ai', ai_records: 'ai', analysis_history: 'ai', memory: 'ai', model_settings: 'ai', secrets: 'ai',
-  public_prices: 'market', public_dividends: 'market', public_dividend_plans: 'market',
+  ai_access: 'ai', ai_records: 'ai', analysis_history: 'ai', daily_review: 'ai', memory: 'ai', model_settings: 'ai', secrets: 'ai',
+  public_announcements: 'market', public_prices: 'market', public_dividends: 'market', public_dividend_plans: 'market',
 };
 export function storageOwner(source) {
   if (source === 'db.rs') return 'assembly';
@@ -25,8 +25,8 @@ export const tableOwners = Object.fromEntries(Object.entries({
     'holding_valuations', 'holdings', 'investment_rule_revisions', 'investment_rules', 'profile',
     'research_attachments', 'research_evidence', 'system_reviews', 'trade_settlements', 'trading_quarantine',
     'watch_catalog', 'watch_dividends', 'watch_entries', 'watch_observations', 'watch_snapshots'],
-  ai: ['analyses', 'analysis_memories'],
-  market: ['dividend_histories', 'dividend_plan_snapshots', 'price_fetch_days', 'price_histories', 'price_monitor_days', 'price_universe'],
+  ai: ['analyses', 'analysis_memories', 'daily_review_items', 'daily_review_runs'],
+  market: ['announcement_snapshots', 'dividend_histories', 'dividend_plan_snapshots', 'price_fetch_days', 'price_histories', 'price_monitor_days', 'price_universe'],
   shared: ['settings', 'data_revision'],
 }).flatMap(([owner, names]) => names.map(name => [name, owner])));
 
@@ -42,7 +42,7 @@ export function storageImportViolation(source, target) {
   if (sharedStorageImports.has(target)) return;
   const parts = target.split('::').slice(1);
   if (parts[0] === 'Database' || parts[0] === 'Self') return; // Calls are checked by declared method ownership.
-  const targetOwner = ['PublicPrices', 'PublicDividends', 'PublicDividendPlans'].includes(parts[0]) ? 'market'
+  const targetOwner = ['PublicAnnouncements', 'PublicPrices', 'PublicDividends', 'PublicDividendPlans'].includes(parts[0]) ? 'market'
     : parts[0] === 'PublicWatch' ? 'user' : storageOwner('db/' + parts.join('/') + '.rs');
   if (!targetOwner || targetOwner === 'assembly' || targetOwner !== owner)
     return 'owned repositories import only their domain helpers or explicit shared metadata and validation';
@@ -83,7 +83,7 @@ export function sqlStorageViolations(source, sql) {
       for (const match of sql.matchAll(/\b(?:key\s*=|VALUES\s*\()\s*'([^']+)'/gi)) {
         const key = match[1];
         const keyOwner = /^(?:fx\.(?:book|quote)\.|investment\.methodology$|watch\.rules$)/.test(key) ? 'user'
-          : /^(?:model\.|secret\.model$|analysis\.settings$|memory\.dream_state$)/.test(key) ? 'ai' : undefined;
+          : /^(?:model\.|secret\.model$|analysis\.settings$|memory\.dream_state$|daily_review\.settings$)/.test(key) ? 'ai' : undefined;
         if (keyOwner !== owner) issues.push(`setting key ${key} does not belong to ${owner}`);
       }
     }
@@ -97,7 +97,7 @@ export const settingMethodOwners = {
   user_setting: 'user', set_user_setting: 'user', ai_setting: 'ai', set_ai_setting: 'ai', delete_ai_setting: 'ai',
   export_sync_data: 'backup', import_sync_data: 'backup', import_account_data: 'backup', is_empty_for_import: 'backup',
 };
-const aiUserReads = new Set(['snapshot', 'investment_methodology', 'research_evidence', 'watch_board']);
+const aiUserReads = new Set(['snapshot', 'investment_methodology', 'research_evidence', 'watch_board', 'daily_history', 'investment_rules']);
 export function storageMethodViolation(source, name, targetOwner) {
   const owner = storageOwner(source);
   if (!['user', 'ai'].includes(owner) || !targetOwner || targetOwner === 'assembly') return;

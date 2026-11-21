@@ -109,6 +109,8 @@ async fn authenticated_security_preview_allows_reads_and_profile_writes_without_
         watch_provider: provider.clone(),
         watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
         dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),
+        dividend_plans: crate::application::dividend_calendar::tests::fixture_services().1,
+        announcements: crate::application::announcements::tests::fixture_service(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
     });
     // Authenticate creates a real account Database for each request, as in production.
@@ -281,6 +283,8 @@ async fn authenticated_watch_detail_reads_stay_account_scoped_and_preserve_store
         watch_provider: provider.clone(),
         watch_catalog: catalog.clone(),
         dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),
+        dividend_plans: crate::application::dividend_calendar::tests::fixture_services().1,
+        announcements: crate::application::announcements::tests::fixture_service(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
     });
     let app = api_router().route_layer(middleware::from_fn_with_state(host, authenticate));
@@ -399,6 +403,8 @@ async fn external_json_import_preserves_authentication_revision_tenant_and_resto
         watch_provider: provider,
         watch_catalog: crate::application::watch_catalog::tests::fixture_service(),
         dividend_calendar: crate::application::dividend_calendar::tests::fixture_service(),
+        dividend_plans: crate::application::dividend_calendar::tests::fixture_services().1,
+        announcements: crate::application::announcements::tests::fixture_service(),
         analysis_executor: Arc::new(crate::agent::AgentExecutor),
     });
     let app = api_router()

@@ -1,3 +1,4 @@
+pub(crate) mod announcements;
 mod history;
 pub(crate) mod price_universe;
 pub(crate) mod watch;

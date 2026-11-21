@@ -4,6 +4,7 @@ use crate::{
     models::{
         analysis::{AnalysisRequest, AnalysisResult},
         connection::ModelConfig,
+        daily_review::{AiReviewOutcome, DailyReviewPromptInput},
         memory::{DreamInput, DreamOutcome},
     },
     AppError, AppResult,
@@ -37,6 +38,15 @@ pub(crate) trait AnalysisExecutor: Send + Sync {
         _input: DreamInput,
     ) -> AppResult<DreamOutcome> {
         Err(AppError::Validation("当前执行器不支持记忆整理".into()))
+    }
+    /// Generate microblog-style daily review insights from frozen portfolio & official filings.
+    async fn daily_review(
+        &self,
+        _config: ModelConfig,
+        _api_key: Option<String>,
+        _input: DailyReviewPromptInput,
+    ) -> AppResult<AiReviewOutcome> {
+        Err(AppError::Validation("当前执行器不支持每日自动复盘".into()))
     }
 }
 

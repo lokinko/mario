@@ -36,6 +36,11 @@ import {
 const BuyWatch = lazy(() =>
   import("./features/watch/BuyWatch").then((m) => ({ default: m.BuyWatch })),
 );
+const DailyReviewPage = lazy(() =>
+  import("./features/dailyReview/DailyReviewPage").then((m) => ({
+    default: m.DailyReviewPage,
+  })),
+);
 const ReferenceInfo = lazy(() =>
   import("./app/ReferenceInfo").then((m) => ({ default: m.ReferenceInfo })),
 );
@@ -80,11 +85,13 @@ function App() {
   const [view, setView] = useState<View>(initialView);
   const [referenceTab, setReferenceTab] = useState<ReferenceTab>("evidence");
   useActivityTracking(
-    view !== "reference"
-      ? view
-      : referenceTab === "evidence"
-        ? "evidence"
-        : "review",
+    view === "dailyReview"
+      ? "review"
+      : view !== "reference"
+        ? view
+        : referenceTab === "evidence"
+          ? "evidence"
+          : "review",
   );
   const [advisorVisited, setAdvisorVisited] = useState(
     () => initialView() === "advisor",
@@ -456,6 +463,15 @@ function App() {
         )}
         {view !== "advisor" && (
           <DeferredPage key={view}>
+            {view === "dailyReview" && (
+              <DailyReviewPage
+                key={remoteViewRevision}
+                snapshot={snapshot}
+                onAsk={startAnalysis}
+                onOpenSettings={() => navigate("settings")}
+                flash={flash}
+              />
+            )}
             {view === "watch" && (
               <BuyWatch
                 key={remoteViewRevision}

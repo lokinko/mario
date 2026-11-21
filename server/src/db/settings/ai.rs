@@ -9,6 +9,7 @@ pub(in crate::db) enum AiSetting {
     Bridge,
     Presets,
     DreamState,
+    DailyReviewSettings,
     ModelCredential,
 }
 impl AiSetting {
@@ -23,6 +24,7 @@ impl AiSetting {
             Self::Bridge => "model.codex_bridge_id",
             Self::Presets => "analysis.settings",
             Self::DreamState => "memory.dream_state",
+            Self::DailyReviewSettings => "daily_review.settings",
             Self::ModelCredential => "secret.model",
         }
     }

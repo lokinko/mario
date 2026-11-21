@@ -92,3 +92,21 @@ pub(crate) trait DividendPlanProvider: Send + Sync {
         day: chrono::NaiveDate,
     ) -> AppResult<Vec<crate::models::market::dividend_plans::DividendPlan>>;
 }
+
+/// Cached statutory announcement reads never trigger source I/O.
+pub(crate) trait AnnouncementReader: Send + Sync {
+    fn snapshot(
+        &self,
+        symbol: &str,
+    ) -> AppResult<crate::models::market::announcements::AnnouncementSnapshot>;
+}
+
+#[async_trait]
+pub(crate) trait AnnouncementProvider: Send + Sync {
+    async fn announcements(
+        &self,
+        symbol: &str,
+        since: chrono::NaiveDate,
+        through: chrono::NaiveDate,
+    ) -> AppResult<Vec<crate::models::market::announcements::OfficialAnnouncement>>;
+}

@@ -262,6 +262,8 @@ pub(super) fn add_retired_tables(dataset: &mut SyncDataset) {
             "watch_observations",
             "watch_dividends",
             "analysis_memories",
+            "daily_review_runs",
+            "daily_review_items",
         ]
         .contains(&t.name.as_str())
     });
@@ -1426,6 +1428,11 @@ fn manual_holding_details_reject_invalid_values_and_inconsistent_sync() {
 /// Exports before v30 have no research evidence category column.
 pub(super) fn set_legacy_version(dataset: &mut SyncDataset, version: u32) {
     dataset.schema_version = version;
+    if version < 32 {
+        dataset
+            .tables
+            .retain(|t| !["daily_review_runs", "daily_review_items"].contains(&t.name.as_str()));
+    }
     if version < 31 {
         dataset.tables.retain(|t| t.name != "analysis_memories");
     }

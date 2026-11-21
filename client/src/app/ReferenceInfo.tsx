@@ -15,11 +15,10 @@ const ReviewCenter = lazy(() =>
   })),
 );
 
-export type ReferenceTab = "evidence" | "reviews" | "rules";
+export type ReferenceTab = "evidence" | "rules";
 
 const tabs: { id: ReferenceTab; label: string }[] = [
   { id: "evidence", label: "参考资料" },
-  { id: "reviews", label: "复盘记录" },
   { id: "rules", label: "投资规则" },
 ];
 

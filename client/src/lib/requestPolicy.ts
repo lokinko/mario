@@ -24,7 +24,7 @@ export function requestPolicy(path: string, method = "GET") {
       (resource === "/holdings" || /^\/holdings\/[^/]+$/.test(resource)));
   const timeoutMs = ["/analysis", "/analysis/stream"].includes(resource)
     ? 1800000
-    : resource === "/memory/dream"
+    : resource === "/memory/dream" || resource === "/daily-review/run"
       ? 420000
       : resource === "/watch/catalog/resolve"
         ? 30000

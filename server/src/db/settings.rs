@@ -30,12 +30,13 @@ fn remove(db: &Database, key: &str) -> AppResult<()> {
 /// Shared backup coordination includes user facts and memory progress, excluding model setup.
 pub(super) fn backup_predicate() -> String {
     format!(
-        "key LIKE '{}%' OR key LIKE '{}%' OR key='{}' OR key='{}' OR key='{}'",
+        "key LIKE '{}%' OR key LIKE '{}%' OR key='{}' OR key='{}' OR key='{}' OR key='{}'",
         UserSetting::FX_BOOK_PREFIX,
         UserSetting::FX_QUOTE_PREFIX,
         UserSetting::Methodology.key(),
         UserSetting::WatchRules.key(),
-        AiSetting::DreamState.key()
+        AiSetting::DreamState.key(),
+        AiSetting::DailyReviewSettings.key()
     )
 }
 pub(super) fn is_backup_setting(key: &str) -> bool {
@@ -44,6 +45,7 @@ pub(super) fn is_backup_setting(key: &str) -> bool {
         || key == UserSetting::Methodology.key()
         || key == UserSetting::WatchRules.key()
         || key == AiSetting::DreamState.key()
+        || key == AiSetting::DailyReviewSettings.key()
 }
 
 impl Database {

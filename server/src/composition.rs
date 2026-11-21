@@ -39,7 +39,8 @@ pub(crate) struct MarketRuntime {
     pub watch_provider: Arc<dyn crate::ports::market::SecurityMarketProvider>,
     pub watch_catalog: Arc<crate::application::watch_catalog::WatchCatalogService>,
     pub dividend_calendar: Arc<crate::application::dividend_calendar::DividendCalendarService>,
-    dividend_plans: Arc<crate::application::dividend_plans::PublicDividendPlanService>,
+    pub dividend_plans: Arc<crate::application::dividend_plans::PublicDividendPlanService>,
+    pub announcements: Arc<crate::application::announcements::PublicAnnouncementService>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 impl MarketRuntime {
@@ -143,6 +144,75 @@ impl MarketRuntime {
             }
         }));
     }
+    pub fn start_daily_review_task(
+        &mut self,
+        accounts: Arc<crate::accounts::Accounts>,
+        tenant_connections: Arc<crate::storage::ConnectionPool>,
+        model_services: Arc<crate::application::model_settings::ModelServices>,
+        analysis_executor: Arc<dyn crate::ports::analysis::AnalysisExecutor>,
+    ) {
+        let announcements = self.announcements.clone();
+        let plans = self.dividend_plans.clone();
+        self.tasks.push(tokio::spawn(async move {
+            tracing::info!("daily automated review background scheduler started; checking every 5 minutes");
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            // Skip immediate boot tick so startup completes cleanly before first check.
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                let users = match accounts.user_ids() {
+                    Ok(users) => users,
+                    Err(error) => {
+                        tracing::warn!(%error, "daily review account enumeration failed");
+                        continue;
+                    }
+                };
+                for user in users {
+                    let result = async {
+                        let db = crate::db::Database::pooled(&tenant_connections, &user)?;
+                        let _lock = db.lock_account()?;
+                        let service = crate::application::daily_review::DailyReviewService::new(
+                            &db,
+                            model_services.server.as_ref(),
+                        );
+                        let symbols = service.tracked_symbols()?;
+                        if !symbols.is_empty() {
+                            if let Err(error) = db
+                                .without_account_lock(announcements.refresh(&symbols, false))
+                                .await?
+                            {
+                                tracing::warn!(%user, %error, "background official announcement refresh failed; using cache");
+                            }
+                        }
+                        if let Some(run) = service
+                            .run_if_due(
+                                chrono::Utc::now(),
+                                announcements.as_ref(),
+                                plans.as_ref(),
+                                analysis_executor.as_ref(),
+                            )
+                            .await?
+                        {
+                            tracing::info!(
+                                %user,
+                                review_day = %run.review_day,
+                                status = ?run.status,
+                                items = run.item_count,
+                                announcements = run.announcement_count,
+                                "scheduled daily review completed"
+                            );
+                        }
+                        Ok::<_, crate::AppError>(())
+                    }
+                    .await;
+                    if let Err(error) = result {
+                        tracing::warn!(%user, %error, "scheduled daily review check failed");
+                    }
+                }
+            }
+        }));
+    }
     pub fn new(database_url: &str) -> AppResult<Self> {
         let public_dividends = Arc::new(crate::db::PublicDividends::postgres(
             database_url,
@@ -196,6 +266,12 @@ impl MarketRuntime {
                 public_source,
             ),
         );
+        let announcements = Arc::new(
+            crate::application::announcements::PublicAnnouncementService::new(
+                Arc::new(crate::db::PublicAnnouncements::postgres(database_url)?),
+                Arc::new(crate::market_data::announcements::CninfoAnnouncementProvider::new()?),
+            ),
+        );
         let dividend_calendar = Arc::new(
             crate::application::dividend_calendar::DividendCalendarService::new(
                 public_watch.clone(),
@@ -214,6 +290,7 @@ impl MarketRuntime {
             watch_catalog,
             dividend_calendar,
             dividend_plans,
+            announcements,
             tasks: vec![price_task, fx_task],
         })
     }

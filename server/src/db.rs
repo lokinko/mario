@@ -17,11 +17,14 @@ mod validation;
 #[cfg(test)]
 pub(crate) use cash::fund as fund_cash;
 mod daily;
+mod daily_review;
 mod fx;
 mod memory;
 mod portfolio;
+mod public_announcements;
 mod public_dividend_plans;
 mod public_dividends;
+pub(crate) use public_announcements::PublicAnnouncements;
 pub(crate) use public_dividend_plans::PublicDividendPlans;
 mod public_prices;
 mod public_watch;

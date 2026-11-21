@@ -5,7 +5,7 @@ use crate::storage::OptionalRow;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 20;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 21;
 
 // Keep migration order intact: re-running on an existing tenant schema is idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -153,7 +153,29 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            active INTEGER NOT NULL CHECK (active IN (0,1)),
            created_at TEXT NOT NULL,
            updated_at TEXT NOT NULL
-         );",
+         );
+         CREATE TABLE IF NOT EXISTS daily_review_runs (
+           id TEXT PRIMARY KEY,
+           review_day TEXT NOT NULL,
+           trigger TEXT NOT NULL,
+           status TEXT NOT NULL,
+           payload TEXT NOT NULL,
+           created_at TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_daily_review_runs_day ON daily_review_runs(review_day DESC, created_at DESC);
+         CREATE TABLE IF NOT EXISTS daily_review_items (
+           id TEXT PRIMARY KEY,
+           run_id TEXT NOT NULL REFERENCES daily_review_runs(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
+           review_day TEXT NOT NULL,
+           kind TEXT NOT NULL,
+           symbol TEXT NOT NULL DEFAULT '',
+           importance TEXT NOT NULL,
+           payload TEXT NOT NULL,
+           read_at TEXT,
+           created_at TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_daily_review_items_day ON daily_review_items(review_day DESC, created_at DESC);
+         CREATE INDEX IF NOT EXISTS idx_daily_review_items_unread ON daily_review_items(review_day DESC) WHERE read_at IS NULL;",
     )?;
     connection.execute_batch(
         "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS audit TEXT;
