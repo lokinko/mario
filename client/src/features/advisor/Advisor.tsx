@@ -17,6 +17,7 @@ import {
 import { getAnalysisSettings } from "../../api/settings";
 import { dreamMemory, getMemory } from "../../api/memory";
 import { MemoryPanel } from "./MemoryPanel";
+import { ContextPreview } from "./ContextPreview";
 import type {
   AnalysisRequest,
   AnalysisSettings,
@@ -655,6 +656,7 @@ export function Advisor({
       {previewOpen && (
         <Drawer
           title="将发送的数据"
+          size="wide"
           busy={previewBusy}
           onClose={() => {
             previewRequest.invalidate();
@@ -664,27 +666,10 @@ export function Advisor({
           {previewBusy && <p role="status">正在读取预览…</p>}
           {previewError && <Callout tone="danger">{previewError}</Callout>}
           {preview && (
-            <>
-              <DataStamp date={preview.generatedAt} source={preview.model} />
-              <p>
-                {previewQuestionCount
-                  ? `承接 ${previewQuestionCount} 条历史问题与上轮摘要。`
-                  : "新对话"}
-              </p>
-              <ul>
-                {preview.groups.map((group) => (
-                  <li key={group.key}>
-                    {group.label} ·{" "}
-                    {group.included ? `${group.recordCount} 条` : "未选择"}
-                  </li>
-                ))}
-              </ul>
-              <h3>实际资料正文</h3>
-              <pre className="context-preview">
-                {preview.renderedContext?.trim() ||
-                  JSON.stringify(preview.payload, null, 2)}
-              </pre>
-            </>
+            <ContextPreview
+              preview={preview}
+              previousQuestionCount={previewQuestionCount}
+            />
           )}
         </Drawer>
       )}

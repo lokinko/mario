@@ -618,8 +618,7 @@ it("keeps the first and latest user questions with the last structured follow-up
   const input = screen.getByRole("textbox", { name: "输入问题" });
   fireEvent.change(input, { target: { value: questions[7] } });
   fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
-  await screen.findByRole("heading", { name: "实际资料正文" });
-  expect(screen.getByText(/承接 6 条历史问题/)).toBeTruthy();
+  await screen.findByText(/承接 6 条历史问题/);
   const inspected = vi.mocked(researchApi.previewAnalysis).mock.lastCall![0];
   expect(inspected.previousTurn).toEqual({
     question: questions[6],
@@ -806,16 +805,40 @@ it("previews the actual selected payload without sending an analysis", async () 
         description: "已选择的资产",
       },
     ],
-    payload: { portfolio: [{ name: "核对样例", marketValue: "1234.56" }] },
-    renderedContext:
-      "## 当前持仓\n| 行ID | name | marketValue |\n| --- | --- | --- |\n| h1 | 核对样例 | 1234.56 |",
+    payload: {
+      question: "查看持仓集中度",
+      facts: {
+        summary: {
+          baseCurrency: "CNY",
+          portfolioValue: "1092305.160314077",
+          cashValue: "555268.850174216",
+          monthlyIncome: "43600",
+        },
+        holdings: {
+          h1: {
+            name: "招商银行",
+            symbol: "600036.SS",
+            currency: "CNY",
+            currentQuantity: "500",
+            quantityUnit: "股",
+            costBasis: "19545.424000000000000000000001",
+            marketValue: "22000",
+            unrealizedProfit: "2454.575999999999999999999999",
+            weightPct: "2.01",
+          },
+        },
+      },
+    },
     localOnly: ["API Key"],
   });
   render(<Advisor {...props} />);
   fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
-  await screen.findByRole("heading", { name: "实际资料正文" });
-  expect(screen.getByText(/核对样例/)).toBeTruthy();
-  expect(screen.getByText(/\| h1 \| 核对样例 \| 1234\.56 \|/)).toBeTruthy();
+  await screen.findByRole("heading", { name: "当前持仓（1）" });
+  expect(screen.getByText("招商银行")).toBeTruthy();
+  expect(screen.getByText("19,545.42")).toBeTruthy();
+  expect(screen.getByText("+2,454.58")).toBeTruthy();
+  expect(screen.getByText("2.01%")).toBeTruthy();
+  expect(screen.queryByText(/\/facts\/holdings/)).toBeNull();
   expect(screen.queryByText("仅本地保留")).toBeNull();
   expect(researchApi.runAnalysis).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
