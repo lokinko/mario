@@ -15,24 +15,43 @@ export function DividendShare({
   onDismiss: () => void;
 }) {
   const qr = useRef<HTMLDivElement>(null);
-  const [poster, setPoster] = useState<{ file: File; href: string }>();
+  const posterUrl = useRef<string | undefined>(undefined);
+  const [includeQr, setIncludeQr] = useState(false);
+  const [poster, setPoster] = useState<{
+    file: File;
+    href: string;
+    includeQr: boolean;
+  }>();
   const [message, setMessage] = useState("");
   const url = dividendShareUrl(card.symbol);
 
+  useEffect(
+    () => () => {
+      if (posterUrl.current) URL.revokeObjectURL(posterUrl.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     let active = true;
-    let href: string | undefined;
     const frame = window.requestAnimationFrame(async () => {
       try {
-        const code = qr.current?.querySelector("canvas");
-        if (!code) throw new Error("QR unavailable");
+        let code: HTMLCanvasElement | undefined;
+        if (includeQr) {
+          code = qr.current?.querySelector("canvas") ?? undefined;
+          if (!code) throw new Error("QR unavailable");
+        }
         const blob = await createDividendPoster(card, code);
         if (!active) return;
         const file = new File([blob], `mario-${card.symbol}.png`, {
           type: "image/png",
         });
-        href = URL.createObjectURL(file);
-        setPoster({ file, href });
+        const href = URL.createObjectURL(file);
+        const previous = posterUrl.current;
+        posterUrl.current = href;
+        setMessage("");
+        setPoster({ file, href, includeQr });
+        if (previous) URL.revokeObjectURL(previous);
       } catch {
         if (active) setMessage("图片生成失败，可以复制下方链接分享。");
       }
@@ -40,9 +59,8 @@ export function DividendShare({
     return () => {
       active = false;
       window.cancelAnimationFrame(frame);
-      if (href) URL.revokeObjectURL(href);
     };
-  }, [card]);
+  }, [card, includeQr]);
 
   const files = poster ? [poster.file] : [];
   const canShare = !!(
@@ -55,17 +73,19 @@ export function DividendShare({
 
   return (
     <Drawer title={`分享 ${card.name} 的分红卡`} onClose={onDismiss}>
-      <div ref={qr} className="dividend-share-qr" hidden={!!poster}>
-        <QRCode
-          value={url}
-          size={256}
-          bordered={false}
-          color="#172c47"
-          bgColor="#ffffff"
-          marginSize={4}
-          aria-label="扫码打开分红详情"
-        />
-      </div>
+      {includeQr && (
+        <div ref={qr} className="dividend-share-qr" hidden={!!poster}>
+          <QRCode
+            value={url}
+            size={256}
+            bordered={false}
+            color="#172c47"
+            bgColor="#ffffff"
+            marginSize={4}
+            aria-label="扫码打开分红详情"
+          />
+        </div>
+      )}
       {poster && (
         <div
           className="dividend-share-preview"
@@ -76,10 +96,22 @@ export function DividendShare({
           <img
             className="dividend-share-image"
             src={poster.href}
-            alt={`${card.name} 红利长图，含${headings}和详情二维码。`}
+            alt={
+              poster.includeQr
+                ? `${card.name} 红利长图，含${headings}和详情二维码。`
+                : `${card.name} 红利长图，含${headings}。`
+            }
           />
         </div>
       )}
+      <label className="dividend-share-toggle" data-presentation="true">
+        <input
+          type="checkbox"
+          checked={includeQr}
+          onChange={(event) => setIncludeQr(event.target.checked)}
+        />
+        导出时附带二维码
+      </label>
       <div className="dividend-share-options">
         {canShare && (
           <Button

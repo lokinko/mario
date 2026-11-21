@@ -28,7 +28,7 @@ export function wrapPosterText(value: string, fits: (line: string) => boolean) {
 
 export function createDividendPoster(
   card: DividendCard,
-  qr: HTMLCanvasElement,
+  qr?: HTMLCanvasElement,
 ): Promise<Blob> {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -108,11 +108,19 @@ export function createDividendPoster(
   text("mario  红利观察", left, headerTop + 58, 24, headerText, 500);
   text(name, left, headerTop + 118, 36, ink, 600);
   text(`A 股 ${symbol}`, left, headerTop + 162, 24, headerText);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr, qrLeft, qrTop, qrSize, qrSize);
-  ctx.textAlign = "center";
-  text("扫码查看详情", qrLeft + qrSize / 2, qrCaptionBaseline, 18, headerText);
-  ctx.textAlign = "left";
+  if (qr) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(qr, qrLeft, qrTop, qrSize, qrSize);
+    ctx.textAlign = "center";
+    text(
+      "扫码查看详情",
+      qrLeft + qrSize / 2,
+      qrCaptionBaseline,
+      18,
+      headerText,
+    );
+    ctx.textAlign = "left";
+  }
 
   for (const section of sectionLayout) {
     const { fill, edge } = blocks[section.kind];

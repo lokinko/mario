@@ -42,7 +42,7 @@
 
 市场域提供公司事实，用户域决定如何用于观察、日历和个人账本；公司分红不等于个人已经到账。
 
-访客可在公开「红利观察」按公司全名或股票代码查询内置历史样本，也可直接选用页面提供的示例公司。页面与分享 PNG 长图都在「分红与近一年股价」一段中汇总近 365 天税前股息率、近 1 年前复权累计涨跌和最近一次已实施现金分红，并标明行情基准日、除息日和每 10 股税前金额。长图二维码指向部署站点下对应标的的公开页面。收益指标以归档行情基准日计算。股息率使用基准日不复权收盘价和截至当日已实施的每股现金分红。区间涨跌对同一来源的前复权收盘价求比值减一，起点采用对应周年日或此前七日内最近的交易日。缺少有效起点显示历史不足。[行情样本](../../client/src/features/watch/dividend-preview/market-snapshot.json)与[页面计算](../../client/src/features/watch/dividend-preview/returns.ts)随公开页发布。逐股解读见 [AI 域 spec](ai.md#5-问答与多代理评议)。实现见[红利观察](../../client/src/features/watch/dividend-preview/DividendPreview.tsx)。
+访客可在公开「红利观察」按公司全名或股票代码查询内置历史样本，也可直接选用页面提供的示例公司。页面与分享 PNG 长图都在「分红与近一年股价」一段中汇总近 365 天税前股息率、近 1 年前复权累计涨跌和最近一次已实施现金分红，并标明行情基准日、除息日和每 10 股税前金额。分享长图默认不导出二维码，可按需勾选附带指向部署站点下对应标的公开页面的二维码。收益指标以归档行情基准日计算。股息率使用基准日不复权收盘价和截至当日已实施的每股现金分红。区间涨跌对同一来源的前复权收盘价求比值减一，起点采用对应周年日或此前七日内最近的交易日。缺少有效起点显示历史不足。[行情样本](../../client/src/features/watch/dividend-preview/market-snapshot.json)与[页面计算](../../client/src/features/watch/dividend-preview/returns.ts)随公开页发布。逐股解读见 [AI 域 spec](ai.md#5-问答与多代理评议)。实现见[红利观察](../../client/src/features/watch/dividend-preview/DividendPreview.tsx)。
 
 公共事件、日期覆盖和每股 TTM 计算由[市场分红契约](../../server/src/models/market/dividends.rs)维护，公共价格条目与采集输入见[行情序列](../../server/src/models/market/series.rs)。市场来源与公共仓储只使用市场契约，不依赖用户自选、观察阈值或账号锁能力。证券资料查询返回[官方来源元数据](../../server/src/models/market/securities.rs)，由用户域决定是否加入候选目录。内置分红资料包不计算用户观察参考价，CSV 参考价展示由用户域生成。
 
