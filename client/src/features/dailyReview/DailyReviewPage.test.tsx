@@ -9,7 +9,6 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DailyReviewPage } from "./DailyReviewPage";
 import * as dailyReviewApi from "../../api/dailyReview";
-import * as reviewsApi from "../../api/reviews";
 import type { DailyReviewFeedResponse } from "../../types/ai";
 import type { Snapshot } from "../../types/user";
 
@@ -18,12 +17,6 @@ vi.mock("../../api/dailyReview", () => ({
   saveDailyReviewSettings: vi.fn(),
   runDailyReviewNow: vi.fn(),
   markDailyReviewRead: vi.fn(),
-}));
-
-vi.mock("../../api/reviews", () => ({
-  getSystemReviews: vi.fn(),
-  saveSystemReview: vi.fn(),
-  saveInvestmentRule: vi.fn(),
 }));
 
 const sampleSnapshot = {
@@ -114,7 +107,7 @@ const sampleFeed: DailyReviewFeedResponse = {
       ],
       sources: [],
       tags: ["AI复盘"],
-      askPrompt: "请结合规则评估当前仓位。",
+      askPrompt: "请结合持仓评估当前仓位。",
       readAt: null,
       createdAt: "2026-11-21T00:00:00Z",
     },
@@ -125,7 +118,6 @@ const sampleFeed: DailyReviewFeedResponse = {
 
 beforeEach(() => {
   vi.mocked(dailyReviewApi.getDailyReviewFeed).mockResolvedValue(sampleFeed);
-  vi.mocked(reviewsApi.getSystemReviews).mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -178,30 +170,8 @@ it("renders the microblog feed with official CNINFO links, supports filtering, m
   expect(onAsk).toHaveBeenCalledWith("请解读贵州茅台最新中期分红公告。");
 });
 
-it("publishes manual review notes into the timeline and saves schedule settings", async () => {
+it("saves schedule settings", async () => {
   const flash = vi.fn();
-  vi.mocked(reviewsApi.saveSystemReview).mockResolvedValue({
-    id: "rev-new",
-    content: "今天重点跟踪茅台分红兑现",
-    periodLabel: "",
-    adherenceScore: null,
-    processSummary: "",
-    ruleViolations: "",
-    lessons: "",
-    nextActions: "",
-    nextReviewDate: "",
-    snapshot: {
-      portfolioValue: 150000,
-      baseCurrency: "CNY",
-      portfolioComparable: true,
-      emergencyMonths: 12,
-      concentrationPct: 20,
-      riskStatus: "within",
-      highRiskFindings: 0,
-      activeRules: 1,
-    },
-    createdAt: "2026-11-21T01:00:00Z",
-  });
   vi.mocked(dailyReviewApi.saveDailyReviewSettings).mockResolvedValue({
     enabled: true,
     scheduleTime: "08:00",
@@ -218,18 +188,7 @@ it("publishes manual review notes into the timeline and saves schedule settings"
     />,
   );
 
-  const composer = await screen.findByLabelText("写一条今日复盘想法");
-  fireEvent.change(composer, {
-    target: { value: "今天重点跟踪茅台分红兑现" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "发布随手记" }));
-  await waitFor(() =>
-    expect(reviewsApi.saveSystemReview).toHaveBeenCalledWith({
-      content: "今天重点跟踪茅台分红兑现",
-    }),
-  );
-  expect(await screen.findByText("我的复盘随手记")).toBeTruthy();
-
+  await screen.findByText("每日 07:30 自动复盘前一日");
   fireEvent.click(screen.getByRole("button", { name: "复盘设置" }));
   fireEvent.change(screen.getByDisplayValue("07:30"), {
     target: { value: "08:00" },

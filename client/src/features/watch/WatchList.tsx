@@ -3,7 +3,6 @@ import {
   ArrowUp,
   ArrowUpDown,
   Bell,
-  MessageCircle,
   Pin,
   PinOff,
   Star,
@@ -12,7 +11,6 @@ import type { WatchRules, WatchRow } from "../../api/watch";
 import { referenceLabels } from "./rules";
 import { Badge } from "../../components/Badge";
 import { formatAmount } from "../../lib/format";
-import { BandTrack, RuleChecks, YieldGrid } from "./WatchSignals";
 import {
   checks,
   distance,
@@ -38,7 +36,6 @@ const ruleMarker = (rule: RuleKey) => (
 
 export function WatchList({
   rows,
-  view,
   held,
   busy,
   rules,
@@ -46,8 +43,6 @@ export function WatchList({
   onSort,
   onPin,
   onDetails,
-  onAsk,
-  onEdit,
   onRead,
   onRetry,
   favorites,
@@ -55,7 +50,6 @@ export function WatchList({
   onAdd,
 }: {
   rows: WatchDisplayRow[];
-  view: "compact" | "cards";
   held: Set<string>;
   busy: boolean;
   rules: WatchRules;
@@ -63,8 +57,6 @@ export function WatchList({
   onSort: (sort: WatchSort) => void;
   onPin: (row: WatchRow) => void;
   onDetails: (row: WatchDisplayRow) => void;
-  onAsk: (row: WatchRow) => void;
-  onEdit: (row: WatchRow) => void;
   onRead: (row: WatchRow) => void;
   onRetry: () => void;
   favorites: Set<string>;
@@ -85,9 +77,11 @@ export function WatchList({
             ? "本次来源读取失败，保留上次结果与日期。"
             : row.latest?.issues.map((i) => issueLabels[i]).join("；")}
         </span>
-        <button className="text-button" disabled={busy} onClick={onRetry}>
-          重新检查数据
-        </button>
+        {row.watch && (
+          <button className="text-button" disabled={busy} onClick={onRetry}>
+            重新检查数据
+          </button>
+        )}
       </div>
     );
   const alert = (row: WatchDisplayRow) =>
@@ -101,25 +95,20 @@ export function WatchList({
         标为已读
       </button>
     );
-  const pin = (row: WatchDisplayRow, iconOnly = false) => {
+  const pin = (row: WatchDisplayRow) => {
     if (!row.watch) return null;
-    const pinned = row.watch?.entry.pinned;
+    const pinned = row.watch.entry.pinned;
     const Icon = pinned ? PinOff : Pin;
     const label = pinned ? "取消置顶" : "置顶";
     return (
       <button
-        className={
-          iconOnly
-            ? `watch-pin-toggle ${pinned ? "pinned" : ""}`
-            : "text-button"
-        }
+        className={`watch-pin-toggle ${pinned ? "pinned" : ""}`}
         disabled={busy}
         onClick={() => row.watch && onPin(row.watch)}
         aria-label={`${label}${row.company.name}`}
-        title={iconOnly ? label : undefined}
+        title={label}
       >
-        <Icon size={iconOnly ? 14 : 15} aria-hidden="true" />
-        {!iconOnly && label}
+        <Icon size={14} aria-hidden="true" />
       </button>
     );
   };
@@ -184,209 +173,118 @@ export function WatchList({
       </th>
     );
   };
-  if (view === "compact")
-    return (
-      <div className="panel watch-overview table-scroll">
-        <table aria-label="观察公司对比">
-          <thead>
-            <tr>
-              <th>公司 / 行情日</th>
-              {sortHeader("收盘价", "price-asc", "price-desc", "ascending")}
-              {sortHeader(
-                "TTM 股息率",
-                "yield",
-                "yield-asc",
-                "descending",
-                "yield",
-              )}
-              <th scope="col" className="rule-yield">
-                {ruleMarker("yield")}
-                {minYield}% 参考价
-              </th>
-              {sortHeader(
-                `距日线${referenceLabels[rules.daily.reference]}`,
-                "daily",
-                "daily-far",
-                "ascending",
-                "daily",
-                true,
-              )}
-              {sortHeader(
-                `距周线${referenceLabels[rules.weekly.reference]}`,
-                "weekly",
-                "weekly-far",
-                "ascending",
-                "weekly",
-                true,
-              )}
-              <th>观察状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr
-                key={row.company.symbol}
-                className={row.watch?.alert ? "watch-unread" : ""}
-              >
-                <td data-label="公司">
-                  <div className="watch-company-line">
-                    <button
-                      className="watch-company"
-                      onClick={() => onDetails(row)}
-                    >
-                      <strong>{row.company.name}</strong>
-                      <small>
-                        {row.company.symbol} ·{" "}
-                        {held.has(row.company.symbol) ? "已持有" : "未持有"}
-                      </small>
-                    </button>
-                    {pin(row, true)}
-                  </div>
-                  <small className="watch-row-date">
-                    {row.latest?.observedOn ?? "尚无行情"}
-                  </small>
-                </td>
-                <td data-label="收盘价" className="watch-numeric">
-                  {number(row.latest?.price)}
-                </td>
-                <td
-                  data-label="TTM 股息率"
-                  className={`watch-numeric rule-yield ${checks(row)[0] === true ? "watch-met" : ""}`}
-                >
-                  <span className="watch-value">
-                    {number(row.latest?.yieldPct, "%")}
-                  </span>
-                </td>
-                <td
-                  data-label={`${minYield}% 参考价`}
-                  className="watch-numeric rule-yield"
-                >
-                  {row.dividendPrices.find((p) => p.yieldPct === minYield)
-                    ?.price != null
-                    ? formatAmount(
-                        row.dividendPrices.find((p) => p.yieldPct === minYield)!
-                          .price,
-                      )
-                    : "—"}
-                </td>
-                <td
-                  data-label={`距日线${referenceLabels[rules.daily.reference]}`}
-                  className={`watch-numeric rule-daily ${row.latest?.daily?.matchesRule ? "watch-met" : ""}`}
-                >
-                  <span className="watch-value">
-                    {distance(row.latest?.daily?.distancePct)}
-                  </span>
-                </td>
-                <td
-                  data-label={`距周线${referenceLabels[rules.weekly.reference]}`}
-                  className={`watch-numeric rule-weekly ${row.latest?.weekly?.matchesRule ? "watch-met" : ""}`}
-                >
-                  <span className="watch-value">
-                    {distance(row.latest?.weekly?.distancePct)}
-                  </span>
-                </td>
-                <td data-label="状态">
-                  <div className="watch-row-status">
-                    {state(row)}
-                    {alert(row)}
-                    {!row.watch && add(row)}
-                  </div>
-                  {issue(row)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
   return (
-    <div className="watch-list">
-      {rows.map((row) => (
-        <article
-          className={`panel watch-card ${row.watch?.alert ? "watch-unread" : ""}`}
-          key={row.company.symbol}
-        >
-          <div className="watch-heading">
-            <div>
-              <h3>
-                {row.company.name}
-                <small>{row.company.symbol}</small>
-              </h3>
-              {row.watch?.entry.pinned && (
-                <span className="watch-pinned">已置顶</span>
-              )}
-              <span>
-                {held.has(row.company.symbol) ? "已关联原账本持仓" : "尚未持有"}
-              </span>
-            </div>
-            {state(row)}
-          </div>
-          <div className="watch-card-alert">{alert(row)}</div>
-          <div className="watch-metrics">
-            <div>
-              <span>收盘价</span>
-              <strong>{number(row.latest?.price)}</strong>
-            </div>
-            <div>
-              <span>TTM 税前股息率</span>
-              <strong>{number(row.latest?.yieldPct, "%")}</strong>
-            </div>
-            <div>
-              <span>TTM 每股分红</span>
-              <strong>{row.latest?.dividendPerShare ?? "—"}</strong>
-            </div>
-          </div>
-          <RuleChecks row={row} rules={rules} />
-          <div className="watch-bands">
-            <BandTrack
-              label="日线"
-              band={row.latest?.daily}
-              price={row.latest?.price}
-              rule={rules.daily}
-            />
-            <BandTrack
-              label="周线"
-              band={row.latest?.weekly}
-              price={row.latest?.price}
-              rule={rules.weekly}
-            />
-          </div>
-          <YieldGrid row={row} minYield={minYield} />
-          <p className="watch-meta">
-            行情日期 {row.latest?.observedOn ?? "—"} · 分红覆盖至{" "}
-            {row.latest?.dividendBasis?.asOf ?? "—"}
-          </p>
-          {issue(row)}
-          {row.watch?.entry.thesis && (
-            <p className="watch-thesis">{row.watch?.entry.thesis}</p>
-          )}
-          <div className="watch-actions">
-            {pin(row)}
-            {!row.watch && add(row)}
-            {row.watch && (
-              <button
-                className="primary"
-                onClick={() => row.watch && onAsk(row.watch)}
-              >
-                <MessageCircle size={15} />
-                结合我的交易讨论
-              </button>
+    <div className="panel watch-overview table-scroll">
+      <table aria-label="观察公司对比">
+        <thead>
+          <tr>
+            <th>公司 / 行情日</th>
+            {sortHeader("收盘价", "price-asc", "price-desc", "ascending")}
+            {sortHeader(
+              "TTM 股息率",
+              "yield",
+              "yield-asc",
+              "descending",
+              "yield",
             )}
-            <button className="text-button" onClick={() => onDetails(row)}>
-              {row.watch ? "查看依据与交易" : "查看依据"}
-            </button>
-            {row.watch && (
-              <button
-                className="text-button"
-                disabled={busy}
-                onClick={() => row.watch && onEdit(row.watch)}
-              >
-                编辑
-              </button>
+            <th scope="col" className="rule-yield">
+              {ruleMarker("yield")}
+              {minYield}% 参考价
+            </th>
+            {sortHeader(
+              `距日线${referenceLabels[rules.daily.reference]}`,
+              "daily",
+              "daily-far",
+              "ascending",
+              "daily",
+              true,
             )}
-          </div>
-        </article>
-      ))}
+            {sortHeader(
+              `距周线${referenceLabels[rules.weekly.reference]}`,
+              "weekly",
+              "weekly-far",
+              "ascending",
+              "weekly",
+              true,
+            )}
+            <th>观察状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              key={row.company.symbol}
+              className={row.watch?.alert ? "watch-unread" : ""}
+            >
+              <td data-label="公司">
+                <div className="watch-company-line">
+                  <button
+                    className="watch-company"
+                    onClick={() => onDetails(row)}
+                  >
+                    <strong>{row.company.name}</strong>
+                    <small>
+                      {row.company.symbol} ·{" "}
+                      {held.has(row.company.symbol) ? "已持有" : "未持有"}
+                    </small>
+                  </button>
+                  {pin(row)}
+                </div>
+                <small className="watch-row-date">
+                  {row.latest?.observedOn ?? "尚无行情"}
+                </small>
+              </td>
+              <td data-label="收盘价" className="watch-numeric">
+                {number(row.latest?.price)}
+              </td>
+              <td
+                data-label="TTM 股息率"
+                className={`watch-numeric rule-yield ${checks(row)[0] === true ? "watch-met" : ""}`}
+              >
+                <span className="watch-value">
+                  {number(row.latest?.yieldPct, "%")}
+                </span>
+              </td>
+              <td
+                data-label={`${minYield}% 参考价`}
+                className="watch-numeric rule-yield"
+              >
+                {row.dividendPrices.find((p) => p.yieldPct === minYield)
+                  ?.price != null
+                  ? formatAmount(
+                      row.dividendPrices.find((p) => p.yieldPct === minYield)!
+                        .price,
+                    )
+                  : "—"}
+              </td>
+              <td
+                data-label={`距日线${referenceLabels[rules.daily.reference]}`}
+                className={`watch-numeric rule-daily ${row.latest?.daily?.matchesRule ? "watch-met" : ""}`}
+              >
+                <span className="watch-value">
+                  {distance(row.latest?.daily?.distancePct)}
+                </span>
+              </td>
+              <td
+                data-label={`距周线${referenceLabels[rules.weekly.reference]}`}
+                className={`watch-numeric rule-weekly ${row.latest?.weekly?.matchesRule ? "watch-met" : ""}`}
+              >
+                <span className="watch-value">
+                  {distance(row.latest?.weekly?.distancePct)}
+                </span>
+              </td>
+              <td data-label="状态">
+                <div className="watch-row-status">
+                  {state(row)}
+                  {alert(row)}
+                  {!row.watch && add(row)}
+                </div>
+                {issue(row)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

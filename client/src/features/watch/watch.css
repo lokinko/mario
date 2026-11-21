@@ -219,37 +219,16 @@
   font-size: var(--fs-body-sm);
 }
 .watch-toolbar .watch-sort {
-  display: flex;
+  display: none;
   align-items: center;
   gap: 8px;
   margin: 0;
   color: var(--text-3);
   font-size: 12px;
 }
-.watch-view-toggle {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  background: var(--surface-hover);
-  border-radius: var(--radius-sm);
-}
-.watch-view-toggle button {
-  display: grid;
-  place-items: center;
-  padding: 6px 8px;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  color: var(--text-3);
-  transition:
-    background var(--duration-hover) var(--ease),
-    color var(--duration-hover) var(--ease),
-    box-shadow var(--duration-hover) var(--ease);
-}
-.watch-view-toggle button[aria-pressed="true"] {
-  background: var(--surface-raised);
-  color: var(--text-1);
-  box-shadow: var(--shadow-card);
+.watch-mode-bar {
+  display: inline-flex;
+  align-items: center;
 }
 .watch-result-meta {
   justify-content: flex-end;
@@ -821,6 +800,7 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
   .watch-toolbar .watch-sort {
+    display: flex;
     grid-column: 1 / -1;
     grid-row: 3;
   }

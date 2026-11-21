@@ -1,15 +1,13 @@
 import { Money } from "../../components/AmountPrivacy";
-import { Eye, EyeOff } from "lucide-react";
-import { Button, Card } from "antd";
+import { Card } from "antd";
 import { useEffect, useState } from "react";
 import { getDividendIncome, type DividendIncome } from "../../api/portfolio";
 import type { DataIssue, DailyHistory, Snapshot } from "../../types/user";
-import type { DisplayPreferenceProps } from "../../components/DisplayPreferences";
 import { formatAmount, formatMoney, formatNumber } from "../../lib/format";
+
 export function AssetOverview({
   snapshot,
   history,
-  display,
   onLocateIssue,
   issuesDisabled = false,
 }: {
@@ -17,7 +15,6 @@ export function AssetOverview({
   onLocateIssue?: (issue: DataIssue) => void;
   issuesDisabled?: boolean;
   history?: DailyHistory;
-  display: Pick<DisplayPreferenceProps, "maskAmounts" | "setMaskAmounts">;
 }) {
   const latest = snapshot.valuationStatus.comparable
     ? history?.records[0]
@@ -117,19 +114,6 @@ export function AssetOverview({
               {cashPct != null && <small>占总资产 {cashPct}%</small>}
             </div>
           </div>
-          <Button
-            type="text"
-            size="small"
-            className="hero-privacy"
-            icon={
-              display.maskAmounts ? <EyeOff size={15} /> : <Eye size={15} />
-            }
-            data-presentation="true"
-            onClick={() => display.setMaskAmounts(!display.maskAmounts)}
-            title="隐藏页面和读屏中的金额，复制和导出仍包含真实数据"
-          >
-            {display.maskAmounts ? "显示金额" : "隐藏金额"}
-          </Button>
           {snapshot.valuationStatus.issues.length > 0 && (
             <details className="hero-issues">
               <summary>

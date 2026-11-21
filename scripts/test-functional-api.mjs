@@ -468,39 +468,17 @@ try {
   assert.match(largeSource.attachments[0].extractionNote, /前 20000/);
   console.log("PASS evidence: text, file upload/download, attachment retrieval, authentication, archive, body limit");
 
-  const ruleInput = {
-    category: "风险",
-    statement: "检查应急资金",
-    trigger: "投资前",
-    rationale: "保留流动性",
-    active: true,
-  };
-  const rule = await api("/investment-rules", "POST", ruleInput);
-  await api("/decisions", "GET", undefined, 404);
-  await api("/decisions/retired/review", "PUT", {}, 404);
-  await api("/rule-effectiveness", "GET", undefined, 404);
-  assert.equal("dueDecisionCount" in (await api("/review-reminders")), false);
-  await api(`/investment-rules/${rule.id}`, "PUT", {
-    ...ruleInput,
-    statement: "每月检查应急资金",
-  });
-  assert.equal((await api(`/investment-rules/${rule.id}/history`)).length, 2);
-  await api("/system-reviews", "POST", { periodLabel: "旧结构化表单" }, 422);
-  const periodic = await api("/system-reviews", "POST", {
-    content: "检查预算。保持记录，持续跟踪。",
-  });
-  assert.equal(periodic.snapshot.portfolioValue, 102100);
-  assert.equal("decisionTotal" in periodic.snapshot, false);
-  assert.equal("reviewedDecisions" in periodic.snapshot, false);
-  const reviewContent = "我的观点：继续观察。\n\n顾虑：资料不足。";
-  await api("/system-reviews", "POST", { content: " \n\t " }, 400);
-  const textReview = await api("/system-reviews", "POST", { content: reviewContent });
-  assert.equal(textReview.content, reviewContent);
-  assert.equal(textReview.adherenceScore, null);
-  assert.equal(textReview.nextReviewDate, "");
-  assert.equal((await api("/system-reviews")).find((item) => item.id === textReview.id).content, reviewContent);
-  assert.equal((await api("/review-reminders")).periodicReviewDue, false);
-  console.log("PASS text reviews: content-only save, full original text, no invented scores or due dates");
+  for (const retired of [
+    "/decisions",
+    "/decisions/retired/review",
+    "/rule-effectiveness",
+    "/investment-rules",
+    "/system-reviews",
+    "/review-reminders",
+  ]) {
+    await api(retired, "GET", undefined, 404);
+  }
+  console.log("PASS retired routes: decisions, investment rules and legacy reviews return 404");
 
   const request = {
     question: "分析我的现金资产变化",
@@ -549,8 +527,6 @@ try {
   snap=await api("/snapshot");
   assert.equal(snap.holdings[0].marketValue, 102200);
   assert.equal((await api("/daily-assets")).records[0].totalAssets, 102200);
-  assert.equal((await api("/system-reviews")).find((item) => item.id === textReview.id).content, reviewContent);
-
   assert.equal((await fetch(base + "/daily-review")).status, 401);
   const dailyReviewBefore = await api("/daily-review");
   assert.equal(dailyReviewBefore.settings.scheduleTime, "07:30");

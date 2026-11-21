@@ -82,7 +82,7 @@ test('domain clients can split internally without importing another domain', () 
   assert.equal(clientViolation('api/portfolio.ts', 'api/portfolio/financialRequest.ts'), undefined);
   assert(clientViolation('api/analysis.ts', 'api/portfolio/financialRequest.ts'));
   assert(clientViolation('api/portfolio/financialRequest.ts', 'api/settings.ts'));
-  assert(clientViolation('features/reviews/ReviewCenter.tsx', 'app/navigation.ts'));
+  assert(clientViolation('features/evidence/EvidenceWorkbench.tsx', 'app/navigation.ts'));
 });
 test('market ports and workflows cannot reach concrete providers or account-writing adapters', () => {
   for (const [source, target] of [['secrets', 'db'], ['ports', 'ai'], ['ports', 'db'], ['models', 'db'], ['models', 'application'], ['market_data', 'accounts'], ['application', 'market_data']])

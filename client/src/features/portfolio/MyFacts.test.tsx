@@ -369,24 +369,20 @@ it("prioritizes holdings without reserving space for exchange rates", () => {
   expect(screen.queryByRole("region", { name: "汇率设置" })).toBeNull();
 });
 
-it("adds investments only by recording trades", () => {
+it("adds investments only by recording trades and keeps exchange rates accessible in header", () => {
   mount();
   fireEvent.click(screen.getByRole("tab", { name: "投资持仓" }));
   expect(screen.queryByRole("button", { name: "添加持仓" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "查看汇率" })).toBeNull();
+  expect(screen.getByRole("button", { name: "查看汇率" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "记录交易" }));
   expect(screen.getByRole("dialog", { name: "记录交易" })).toBeTruthy();
 });
 
-it("keeps the exchange rate entry next to the savings base currency", () => {
+it("keeps exchange rates accessible in header and omits duplicate cash overview on savings tab", () => {
   mount();
   fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
-  expect(
-    within(screen.getByRole("region", { name: "收支与风险设置" })).getByRole(
-      "button",
-      { name: "查看汇率" },
-    ),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "查看汇率" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "现金概览" })).toBeNull();
 });
 
 it("refreshes prices and displays the source date and partial failures", async () => {
@@ -951,7 +947,7 @@ const recordedPosition = () => ({
   ],
 });
 
-it("deletes a position with executions from its details without affecting deposits", async () => {
+it("deletes a position with executions from its details menu without affecting deposits", async () => {
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   let resolve!: (value: Snapshot) => void;
   vi.mocked(portfolioApi.deleteHolding).mockImplementationOnce(
@@ -960,8 +956,8 @@ it("deletes a position with executions from its details without affecting deposi
   const { onUpdate, rerender, flash } = mount(recordedPosition());
   expect(screen.getByRole("button", { name: "指数基金更多操作" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "查看 指数基金" }));
-  fireEvent.click(screen.getByRole("button", { name: "删除持仓" }));
-  fireEvent.click(screen.getByRole("button", { name: "删除持仓" }));
+  fireEvent.click(screen.getByRole("button", { name: "更多持仓操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "删除持仓" }));
   expect(confirm).toHaveBeenCalledExactlyOnceWith(
     expect.stringMatching(/1 笔交易.*存款余额保持不变/s),
   );
@@ -981,11 +977,11 @@ it("deletes a position with executions from its details without affecting deposi
   expect(screen.queryByRole("button", { name: "删除 指数基金" })).toBeNull();
 });
 
-it("locks position deletion while an execution is being edited", async () => {
+it("locks position actions while an execution is being edited", async () => {
   mount(recordedPosition());
   fireEvent.click(screen.getByRole("button", { name: "查看 指数基金" }));
   fireEvent.click(screen.getByRole("button", { name: "编辑交易" }));
-  expect(screen.getByRole("button", { name: "删除持仓" })).toHaveProperty(
+  expect(screen.getByRole("button", { name: "更多持仓操作" })).toHaveProperty(
     "disabled",
     true,
   );

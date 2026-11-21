@@ -1186,9 +1186,9 @@ mod tests {
         db.add_holding(&input("银行", 100.0)).unwrap();
         let data = db.export_sync_data().unwrap();
         let mut legacy = data.clone();
+        crate::db::tests::set_legacy_version(&mut legacy, 9);
         super::super::tests::add_retired_tables(&mut legacy);
         super::super::tests::strip_holding_details_for_legacy(&mut legacy);
-        crate::db::tests::set_legacy_version(&mut legacy, 9);
         let legacy_reviews = legacy
             .tables
             .iter_mut()

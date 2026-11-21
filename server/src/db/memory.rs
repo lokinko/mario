@@ -389,13 +389,7 @@ mod tests {
         assert!(Database::test().import_sync_data(&exported).is_err());
 
         let mut old = exported;
-        old.schema_version = 30;
-        old.tables.retain(|table| {
-            !matches!(
-                table.name.as_str(),
-                "analysis_memories" | "daily_review_runs" | "daily_review_items"
-            )
-        });
+        crate::db::tests::set_legacy_version(&mut old, 30);
         let target = Database::test();
         target.import_sync_data(&old).unwrap();
         assert!(target.memory_notes().unwrap().is_empty());

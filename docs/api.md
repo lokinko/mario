@@ -126,9 +126,9 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 | POST | `/api/watch/catalog/resolve` | —；管理 | B `{query:string}` → `Company` | 解析公司信息，不自动加入目录 |
 | GET | `/api/watch/dividend-calendar` | — | Q `scope?:all/favorites/public=all; from?:date` → `CalendarBoard` | 默认从服务的当前日期查看，从市场计划缓存只读生成账号日历与覆盖情况，不触发采集 |
 
-### 2.4 研究资料、方法论、规则与复盘
+### 2.4 研究资料与方法论
 
-下表均需账号。来源：[研究 HTTP](../server/src/http/evidence.rs)、[方法论 HTTP](../server/src/http/methodology.rs)、[复盘 HTTP](../server/src/http/reviews.rs)。
+下表均需账号。来源：[研究 HTTP](../server/src/http/evidence.rs)、[方法论 HTTP](../server/src/http/methodology.rs)。
 
 | 方法 | 路径 | 版本 | 输入 → 响应 | 作用与限制 |
 | --- | --- | --- | --- | --- |
@@ -139,13 +139,6 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 | PUT | `/api/research-evidence/{id}/tags` | R | B `{assetName?:string,category?:string}` → `ResearchEvidence` | 标签字段默认空字符串，按保存语义提交，不当作局部 PATCH |
 | GET | `/api/investment-methodology` | — | — → `InvestmentMethodology` | 当前方法论、默认文本及长度限制 |
 | PUT | `/api/investment-methodology` | R | B `{prompt:string}` → `InvestmentMethodology` | 保存方法论 |
-| GET | `/api/investment-rules` | — | — → `InvestmentRule[]` | 手工规则 |
-| POST | `/api/investment-rules` | R | B `InvestmentRuleInput` → `InvestmentRule` | 新增规则 |
-| PUT | `/api/investment-rules/{id}` | R | B `InvestmentRuleInput` → `InvestmentRule` | 更新并留修订记录 |
-| GET | `/api/investment-rules/{id}/history` | — | — → `InvestmentRuleRevision[]` | 规则修订历史 |
-| GET | `/api/system-reviews` | — | — → `SystemReviewRecord[]` | 复盘记录，含现有兼容字段 |
-| POST | `/api/system-reviews` | R | B `{content:string}` → `SystemReviewRecord` | 保存文字复盘；旧记录字段不等于当前输入字段 |
-| GET | `/api/review-reminders` | — | — → `{periodicReviewDue:boolean,checkedOn:string}` | 复盘提醒 |
 
 ## 3. 市场域接口
 
@@ -241,7 +234,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | POST | `/api/activity` | 账号 / — | B `{page:Page}` → `{ok:true}` | 记录页面活跃元数据，不写个人账本 |
 | GET | `/api/dashboard` | 管理 / — | Q `days?:integer=30` → `Dashboard` | 账号活跃度与公共价格采集状态，权限由账号数据库判定 |
 
-`Page` 为 `watch/calendar/facts/evidence/review/advisor/methodology/settings`。看板数据类型见[活跃度类型](../server/src/accounts/activity.rs)及[价格监控类型](../server/src/models/market/monitor.rs)。网站 `/dashboard`、`/dashboard/` 是静态页面入口，不是数据 API。静态资源中 `/assets/` 下带内容指纹的文件成功响应时返回 `public, max-age=31536000, immutable`，未找到时返回 `no-store`；页面入口与其余静态文件返回 `no-cache`，接口响应保持 `no-store`。[本机运行器](../scripts/host-runtime.mjs)生成的 nginx 片段对脚本、样式、JSON、SVG 和纯文本启用 gzip，事件流不压缩。`/api/{*path}` 是未知路径的 404 兜底，也不是通用调用接口。
+`Page` 为 `watch/facts/evidence/review/advisor/methodology/settings`。看板数据类型见[活跃度类型](../server/src/accounts/activity.rs)及[价格监控类型](../server/src/models/market/monitor.rs)。网站 `/dashboard`、`/dashboard/` 是静态页面入口，不是数据 API。静态资源中 `/assets/` 下带内容指纹的文件成功响应时返回 `public, max-age=31536000, immutable`，未找到时返回 `no-store`；页面入口与其余静态文件返回 `no-cache`，接口响应保持 `no-store`。[本机运行器](../scripts/host-runtime.mjs)生成的 nginx 片段对脚本、样式、JSON、SVG 和纯文本启用 gzip，事件流不压缩。`/api/{*path}` 是未知路径的 404 兜底，也不是通用调用接口。
 
 ### 5.2 桥接 Worker
 
@@ -297,7 +290,6 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | HoldingTrade | 返回记录含 `id,holdingId,kind,occurredOn,sequence,quantity,price,grossAmount,fees,taxes,currency,account,externalId,note,createdAt,updatedAt`；不含 settlementMode |
 | TradeRepairInput | `expectedRevision:string; trades:HoldingTrade[]; reason:string`；提供完整修复集合 |
 | SplitEvent / ManualCorporateActionInput | SplitEvent 为 `effectiveOn,numerator,denominator:string`；手工输入为 `requestId,expectedRevision,reason:string; split:SplitEvent` |
-| InvestmentRuleInput | `category,statement,trigger,rationale:string; active:boolean; sourceReviewId?:string/null` |
 | SyncDataset | `schemaVersion:integer; exportedAt:string; tables:SyncTable[]`；每表 `{name,columns,rows}`，rows 为单元格二维数组；SyncValue 使用带类型值：`"Null"` 或 `{Integer:number}`、`{Real:number}`、`{Text:string}`，不是普通扁平对象数组 |
 
 ### 6.2 观察与研究输入
@@ -348,7 +340,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | WatchEntry / WatchRow / WatchBoard | 个人条目、最新观察、历史、提醒及账号规则；日期与行情缺失状态保留其业务含义 | [观察类型](../server/src/models/watch.rs) |
 | CatalogBoard / CatalogRow / CalendarBoard | 目录版本、编辑权限、行业/公司观察；分红计划日历及覆盖状态 | [目录](../server/src/models/watch/catalog.rs)、[日历](../server/src/models/watch/calendar.rs)、[公共计划](../server/src/models/market/dividend_plans.rs) |
 | GridProjection | 网格档位与预算、买卖情景计算，不是成交记录 | [网格类型](../server/src/models/watch/grid.rs) |
-| ResearchEvidence / InvestmentRule / InvestmentRuleRevision / SystemReviewRecord | 原文和附件元数据、标签与归档；手工规则及修订；文字复盘、当时快照及兼容字段 | [研究资料](../server/src/models/research.rs)、[规则与复盘](../server/src/models/reviews.rs) |
+| ResearchEvidence | 原文和附件元数据、标签与归档 | [研究资料](../server/src/models/research.rs) |
 | InvestmentMethodology | prompt、defaultPrompt、maxLength | [方法论类型](../server/src/models/methodology.rs) |
 | ServerInfo / Dashboard | mode/database/protocol/codexBridge/analysisTimeoutSeconds/codexMaxAttempts/publicDividendData；活跃统计与 marketPrices。marketPrices.rows 覆盖全部已存公共价格，逐行含 scope（csi300/reference/other）、market（cn/hk/us/other）、instrumentType、currency、tracked；停止跟踪行 status 为 inactive，不计入 summary 与 daily | [托管类型](../server/src/hosted.rs)、[看板](../server/src/hosted/activity.rs)、[价格监控](../server/src/models/market/monitor.rs) |
 

@@ -16,5 +16,4 @@ pub(crate) mod options;
 pub(crate) mod portfolio;
 pub(crate) mod provider;
 pub(crate) mod research;
-pub(crate) mod reviews;
 pub(crate) mod watch;

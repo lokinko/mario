@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bell,
-  BookmarkPlus,
   Check,
   CheckCheck,
   Clock,
@@ -9,7 +8,6 @@ import {
   FileText,
   Globe,
   MessageSquare,
-  PenLine,
   Play,
   RefreshCw,
   Settings2,
@@ -22,11 +20,6 @@ import {
   runDailyReviewNow,
   saveDailyReviewSettings,
 } from "../../api/dailyReview";
-import {
-  getSystemReviews,
-  saveInvestmentRule,
-  saveSystemReview,
-} from "../../api/reviews";
 import { Money } from "../../components/AmountPrivacy";
 import { Badge } from "../../components/Badge";
 import { Callout } from "../../components/Callout";
@@ -34,8 +27,6 @@ import { Drawer } from "../../components/Drawer";
 import { EmptyState } from "../../components/EmptyState";
 import { LoadState } from "../../components/LoadState";
 import { PageHeader } from "../../components/PageHeader";
-import { localDateValue } from "../../lib/dates";
-import { systemReviewText } from "../../lib/reviewText";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 import type {
   DailyReviewFeedItem,
@@ -43,31 +34,11 @@ import type {
   DailyReviewItemKind,
   DailyReviewSettings,
 } from "../../types/ai";
-import type {
-  InvestmentRuleInput,
-  Snapshot,
-  SystemReviewRecord,
-} from "../../types/user";
+import type { Snapshot } from "../../types/user";
 import "./dailyReview.css";
 
 type StreamFilter =
-  "all" | "unread" | "ai" | "portfolio" | "official" | "signals" | "manual";
-
-type UnifiedEntry =
-  | {
-      type: "auto";
-      id: string;
-      day: string;
-      createdAt: string;
-      item: DailyReviewFeedItem;
-    }
-  | {
-      type: "manual";
-      id: string;
-      day: string;
-      createdAt: string;
-      review: SystemReviewRecord;
-    };
+  "all" | "unread" | "ai" | "portfolio" | "official" | "signals";
 
 const filterTabs: { id: StreamFilter; label: string }[] = [
   { id: "all", label: "全部动态" },
@@ -76,7 +47,6 @@ const filterTabs: { id: StreamFilter; label: string }[] = [
   { id: "portfolio", label: "持仓变动" },
   { id: "official", label: "官方公告" },
   { id: "signals", label: "分红与买点" },
-  { id: "manual", label: "我的随手记" },
 ];
 
 const kindMeta: Record<DailyReviewItemKind, { author: string; badge: string }> =
@@ -118,12 +88,13 @@ function formatClock(iso: string): string {
   });
 }
 
-function matchesFilter(entry: UnifiedEntry, filter: StreamFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "manual") return entry.type === "manual";
-  if (entry.type === "manual") return false;
-  const item = entry.item;
+function matchesFilter(
+  item: DailyReviewFeedItem,
+  filter: StreamFilter,
+): boolean {
   switch (filter) {
+    case "all":
+      return true;
     case "unread":
       return !item.readAt;
     case "ai":
@@ -149,7 +120,6 @@ export function DailyReviewPage({
   flash: (message: string, tone?: "success" | "danger") => void;
 }) {
   const [feed, setFeed] = useState<DailyReviewFeedResponse | null>(null);
-  const [manualReviews, setManualReviews] = useState<SystemReviewRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
@@ -158,8 +128,6 @@ export function DailyReviewPage({
   const [selectedDay, setSelectedDay] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState("");
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
-  const [noteText, setNoteText] = useState("");
-  const [postingNote, setPostingNote] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState<DailyReviewSettings>({
     enabled: true,
@@ -168,22 +136,16 @@ export function DailyReviewPage({
     webSearch: true,
   });
   const [savingSettings, setSavingSettings] = useState(false);
-  const [ruleDraft, setRuleDraft] = useState<InvestmentRuleInput | null>(null);
-  const [savingRule, setSavingRule] = useState(false);
   const requestGuard = useRequestGuard();
 
   const refresh = useCallback(async () => {
     const isCurrent = requestGuard.begin();
     setLoading(true);
     try {
-      const [nextFeed, nextManual] = await Promise.all([
-        getDailyReviewFeed({ limit: 80 }),
-        getSystemReviews(),
-      ]);
+      const nextFeed = await getDailyReviewFeed({ limit: 80 });
       if (!isCurrent()) return;
       setFeed(nextFeed);
       setSettingsDraft(nextFeed.settings);
-      setManualReviews(nextManual);
       setLoaded(true);
       setError("");
     } catch (nextError) {
@@ -246,21 +208,6 @@ export function DailyReviewPage({
     }
   };
 
-  const handlePostNote = async () => {
-    if (postingNote || !noteText.trim()) return;
-    setPostingNote(true);
-    try {
-      const created = await saveSystemReview({ content: noteText });
-      setManualReviews((prev) => [created, ...prev]);
-      setNoteText("");
-      flash("复盘随手记已发布到时间流");
-    } catch (nextError) {
-      flash(String(nextError), "danger");
-    } finally {
-      setPostingNote(false);
-    }
-  };
-
   const handleSaveSettings = async () => {
     if (savingSettings) return;
     setSavingSettings(true);
@@ -276,31 +223,6 @@ export function DailyReviewPage({
       flash(String(nextError), "danger");
     } finally {
       setSavingSettings(false);
-    }
-  };
-
-  const handleSaveRule = async () => {
-    if (!ruleDraft || savingRule) return;
-    if (
-      !ruleDraft.statement.trim() ||
-      !ruleDraft.trigger.trim() ||
-      !ruleDraft.rationale.trim()
-    )
-      return;
-    setSavingRule(true);
-    try {
-      await saveInvestmentRule({
-        ...ruleDraft,
-        statement: ruleDraft.statement.trim(),
-        trigger: ruleDraft.trigger.trim(),
-        rationale: ruleDraft.rationale.trim(),
-      });
-      setRuleDraft(null);
-      flash("已沉淀为个人投资规则（可在参考信息 → 投资规则查看）");
-    } catch (nextError) {
-      flash(String(nextError), "danger");
-    } finally {
-      setSavingRule(false);
     }
   };
 
@@ -324,51 +246,27 @@ export function DailyReviewPage({
     const set = new Set<string>();
     for (const run of feed?.runs ?? []) set.add(run.reviewDay);
     for (const item of feed?.items ?? []) set.add(item.reviewDay);
-    for (const review of manualReviews) {
-      set.add(localDateValue(new Date(review.createdAt)));
-    }
     return Array.from(set).sort((a, b) => b.localeCompare(a));
-  }, [feed?.runs, feed?.items, manualReviews]);
+  }, [feed?.runs, feed?.items]);
 
-  const unifiedEntries = useMemo<UnifiedEntry[]>(() => {
-    const autoEntries: UnifiedEntry[] = (feed?.items ?? []).map((item) => ({
-      type: "auto",
-      id: item.id,
-      day: item.reviewDay,
-      createdAt: item.createdAt,
-      item,
-    }));
-    const manualEntries: UnifiedEntry[] = manualReviews.map((review) => ({
-      type: "manual",
-      id: `manual:${review.id}`,
-      day: localDateValue(new Date(review.createdAt)),
-      createdAt: review.createdAt,
-      review,
-    }));
+  const visibleItems = useMemo(() => {
     const importanceOrder = { high: 0, medium: 1, normal: 2 } as const;
-    return [...autoEntries, ...manualEntries]
-      .filter((entry) => {
-        if (!matchesFilter(entry, filter)) return false;
-        if (selectedDay && entry.day !== selectedDay) return false;
-        if (selectedSymbol) {
-          if (entry.type === "manual") {
-            return systemReviewText(entry.review).includes(selectedSymbol);
-          }
-          return entry.item.symbol === selectedSymbol;
-        }
+    return [...(feed?.items ?? [])]
+      .filter((item) => {
+        if (!matchesFilter(item, filter)) return false;
+        if (selectedDay && item.reviewDay !== selectedDay) return false;
+        if (selectedSymbol && item.symbol !== selectedSymbol) return false;
         return true;
       })
       .sort((a, b) => {
-        if (a.day !== b.day) return b.day.localeCompare(a.day);
-        if (a.type === "auto" && b.type === "auto") {
-          const rankDiff =
-            importanceOrder[a.item.importance] -
-            importanceOrder[b.item.importance];
-          if (rankDiff !== 0) return rankDiff;
-        }
+        if (a.reviewDay !== b.reviewDay)
+          return b.reviewDay.localeCompare(a.reviewDay);
+        const rankDiff =
+          importanceOrder[a.importance] - importanceOrder[b.importance];
+        if (rankDiff !== 0) return rankDiff;
         return b.createdAt.localeCompare(a.createdAt);
       });
-  }, [feed?.items, manualReviews, filter, selectedDay, selectedSymbol]);
+  }, [feed?.items, filter, selectedDay, selectedSymbol]);
 
   const latestRun = feed?.runs[0];
 
@@ -479,33 +377,6 @@ export function DailyReviewPage({
         </Callout>
       )}
 
-      <section
-        className="daily-review-composer"
-        aria-label="发布个人复盘随手记"
-      >
-        <textarea
-          aria-label="写一条今日复盘想法"
-          value={noteText}
-          disabled={postingNote}
-          onChange={(event) => setNoteText(event.target.value)}
-          placeholder="像发微博一样记下今天的持仓思考、顾虑或复盘心得，随时可沉淀为投资规则…"
-        />
-        <div className="daily-review-composer-footer">
-          <span className="daily-review-composer-hint">
-            发布后作为个人复盘记录长期保存在同一时间流中
-          </span>
-          <button
-            type="button"
-            className="primary"
-            disabled={postingNote || !noteText.trim()}
-            onClick={() => void handlePostNote()}
-          >
-            <PenLine size={15} />
-            {postingNote ? "发布中…" : "发布随手记"}
-          </button>
-        </div>
-      </section>
-
       <section className="daily-review-filters" aria-label="信息流筛选">
         <div
           className="daily-review-filter-row"
@@ -578,7 +449,7 @@ export function DailyReviewPage({
       </section>
 
       <section className="daily-review-stream" aria-label="每日复盘信息流">
-        {unifiedEntries.length === 0 ? (
+        {visibleItems.length === 0 ? (
           <EmptyState
             title={
               filter === "all" && !selectedDay && !selectedSymbol
@@ -602,81 +473,10 @@ export function DailyReviewPage({
               : "可切换筛选条件或点击「立即复盘」生成最新内容。"}
           </EmptyState>
         ) : (
-          unifiedEntries.map((entry, index) => {
+          visibleItems.map((item, index) => {
             const showDayHeader =
-              index === 0 || unifiedEntries[index - 1].day !== entry.day;
-            if (entry.type === "manual") {
-              const text = systemReviewText(entry.review);
-              const firstLine = text.split("\n")[0].slice(0, 80);
-              return (
-                <div key={entry.id}>
-                  {showDayHeader && (
-                    <div className="feed-day-divider">{entry.day}</div>
-                  )}
-                  <article className="feed-card">
-                    <div className="feed-card-head">
-                      <div className="feed-author">
-                        <span className="feed-avatar kind-manualNote">
-                          <PenLine size={17} />
-                        </span>
-                        <div className="feed-author-meta">
-                          <div className="feed-author-line">
-                            <span className="feed-author-name">
-                              我的复盘随手记
-                            </span>
-                            <Badge>个人笔记</Badge>
-                          </div>
-                          <span className="feed-time">
-                            {formatClock(entry.createdAt)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <h3 className="feed-card-title">
-                      {firstLine || "复盘记录"}
-                    </h3>
-                    <p className="feed-card-body">{text}</p>
-                    <div className="feed-card-footer">
-                      <div className="feed-tags">
-                        <span className="feed-tag">#手工复盘</span>
-                      </div>
-                      <div className="feed-footer-actions">
-                        <button
-                          type="button"
-                          className="feed-action-btn primary-link"
-                          onClick={() =>
-                            onAsk(
-                              `请结合我这篇个人复盘笔记和当前持仓、投资规则给出客观反馈：\n\n${text}`,
-                            )
-                          }
-                        >
-                          <MessageSquare size={14} />问 AI 讨论
-                        </button>
-                        <button
-                          type="button"
-                          className="feed-action-btn"
-                          onClick={() =>
-                            setRuleDraft({
-                              category: "复盘",
-                              statement: "",
-                              trigger: "下次遇到相似情形时",
-                              rationale: text,
-                              active: true,
-                              sourceReviewId: entry.review.id,
-                            })
-                          }
-                        >
-                          <BookmarkPlus size={14} />
-                          沉淀为规则
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                </div>
-              );
-            }
-
-            const item = entry.item;
+              index === 0 ||
+              visibleItems[index - 1].reviewDay !== item.reviewDay;
             const meta = kindMeta[item.kind];
             const isUnread = !item.readAt;
             const expanded = Boolean(expandedIds[item.id]);
@@ -685,9 +485,9 @@ export function DailyReviewPage({
               item.body.trim() !== item.summary.trim();
 
             return (
-              <div key={entry.id}>
+              <div key={item.id}>
                 {showDayHeader && (
-                  <div className="feed-day-divider">{entry.day} 复盘</div>
+                  <div className="feed-day-divider">{item.reviewDay} 复盘</div>
                 )}
                 <article className={`feed-card ${isUnread ? "unread" : ""}`}>
                   <div className="feed-card-head">
@@ -838,29 +638,11 @@ export function DailyReviewPage({
                         onClick={() =>
                           onAsk(
                             item.askPrompt ||
-                              `请结合我的持仓与投资规则深入分析「${item.title}」：${item.summary}`,
+                              `请结合我的持仓深入分析「${item.title}」：${item.summary}`,
                           )
                         }
                       >
                         <MessageSquare size={14} />问 AI 深聊
-                      </button>
-                      <button
-                        type="button"
-                        className="feed-action-btn"
-                        onClick={() =>
-                          setRuleDraft({
-                            category: "复盘",
-                            statement: "",
-                            trigger: item.assetName
-                              ? `跟踪 ${item.assetName} 类似情形时`
-                              : "下次复盘类似情形时",
-                            rationale: `${item.title}：${item.summary}`,
-                            active: true,
-                          })
-                        }
-                      >
-                        <BookmarkPlus size={14} />
-                        沉淀为规则
                       </button>
                     </div>
                   </div>
@@ -992,81 +774,6 @@ export function DailyReviewPage({
               </div>
             )}
           </div>
-        </Drawer>
-      )}
-
-      {ruleDraft && (
-        <Drawer
-          title="从复盘动态沉淀投资规则"
-          busy={savingRule}
-          onClose={() => setRuleDraft(null)}
-        >
-          <fieldset
-            className="rule-editor holding-fields"
-            disabled={savingRule}
-          >
-            <label>
-              <span>类别</span>
-              <select
-                value={ruleDraft.category}
-                onChange={(e) =>
-                  setRuleDraft({
-                    ...ruleDraft,
-                    category: e.target.value as InvestmentRuleInput["category"],
-                  })
-                }
-              >
-                {["资产配置", "风险", "研究", "仓位", "行为", "复盘"].map(
-                  (value) => (
-                    <option key={value}>{value}</option>
-                  ),
-                )}
-              </select>
-            </label>
-            <label>
-              <span>规则内容</span>
-              <textarea
-                value={ruleDraft.statement}
-                onChange={(e) =>
-                  setRuleDraft({ ...ruleDraft, statement: e.target.value })
-                }
-                placeholder="例如：出现重大分红方案变化时，先核对自由现金流覆盖率再决定加减仓。"
-              />
-            </label>
-            <label>
-              <span>触发条件</span>
-              <textarea
-                value={ruleDraft.trigger}
-                onChange={(e) =>
-                  setRuleDraft({ ...ruleDraft, trigger: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>依据</span>
-              <textarea
-                value={ruleDraft.rationale}
-                onChange={(e) =>
-                  setRuleDraft({ ...ruleDraft, rationale: e.target.value })
-                }
-              />
-            </label>
-            <div className="rule-editor-actions">
-              <button
-                type="button"
-                className="primary"
-                disabled={
-                  savingRule ||
-                  !ruleDraft.statement.trim() ||
-                  !ruleDraft.trigger.trim() ||
-                  !ruleDraft.rationale.trim()
-                }
-                onClick={() => void handleSaveRule()}
-              >
-                {savingRule ? "保存中…" : "建立规则"}
-              </button>
-            </div>
-          </fieldset>
         </Drawer>
       )}
     </div>

@@ -80,6 +80,8 @@ export function HoldingTrades({
   onEditingChange,
   flash,
   hideSummary = false,
+  declaringSplit = false,
+  onDeclareSplitDone,
 }: {
   snapshot: Snapshot;
   holding?: Holding;
@@ -89,6 +91,8 @@ export function HoldingTrades({
   onEditingChange?: (editing: boolean) => void;
   flash: (message: string) => void;
   hideSummary?: boolean;
+  declaringSplit?: boolean;
+  onDeclareSplitDone?: () => void;
 }) {
   const option = holding
     ? snapshot.optionContracts?.[holding.id]
@@ -117,12 +121,6 @@ export function HoldingTrades({
     ? snapshot.holdingTradeSummaries?.[holding.id]
     : undefined;
   const [uncertain, setUncertain] = useState(false);
-  const [declaringSplit, setDeclaringSplit] = useState(false);
-  const canDeclareSplit =
-    !!holding &&
-    !option &&
-    trades.length > 0 &&
-    !snapshot.clearedTradeHoldings?.includes(holding.id);
   const [open, setOpen] = useState(!holding);
   const [editing, setEditing] = useState<HoldingTrade | null>(null);
   const [draft, setDraft] = useState<Draft>(() => ({
@@ -428,15 +426,6 @@ export function HoldingTrades({
               {kind === "dividend" ? "记现金分红" : `记${names[kind]}`}
             </button>
           ))}
-          {canDeclareSplit && (
-            <button
-              className="secondary"
-              disabled={busy || uncertain || open || declaringSplit}
-              onClick={() => setDeclaringSplit(true)}
-            >
-              登记拆合股
-            </button>
-          )}
         </div>
       )}
       {error && (
@@ -461,7 +450,7 @@ export function HoldingTrades({
           snapshot={snapshot}
           onUpdate={onUpdate}
           declaring={declaringSplit}
-          onDeclareDone={() => setDeclaringSplit(false)}
+          onDeclareDone={() => onDeclareSplitDone?.()}
         />
       )}
       {open && !quarantined && (

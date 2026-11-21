@@ -1,7 +1,6 @@
 import { Button } from "antd";
 import { Callout } from "../../components/Callout";
 import { Save } from "lucide-react";
-import type { ReactNode } from "react";
 import { saveProfile } from "../../api/portfolio";
 import type {
   FinancialProfile,
@@ -32,7 +31,6 @@ function validProfile(profile: FinancialProfile) {
 }
 
 export function ProfileForm({
-  exchangeRates,
   profile,
   savedBaseCurrency,
   onChange: setProfile,
@@ -42,7 +40,6 @@ export function ProfileForm({
   onSaved,
   flash,
 }: {
-  exchangeRates?: ReactNode;
   profile: FinancialProfile;
   savedBaseCurrency: string;
   onChange: (profile: FinancialProfile) => void;
@@ -107,93 +104,115 @@ export function ProfileForm({
     });
   };
 
+  const summaryBits = [
+    `记账币种 ${profile.baseCurrency}`,
+    profileFieldProvided(profile, "horizonYears")
+      ? `期限 ${profile.horizonYears} 年`
+      : null,
+    profileFieldProvided(profile, "maxDrawdownPct")
+      ? `最大回撤 ${profile.maxDrawdownPct}%`
+      : null,
+  ].filter(Boolean);
+
   return (
     <section
       className="panel form-panel profile-panel"
       aria-label="收支与风险设置"
     >
-      <div className="panel-title">
-        <h2>收入与支出</h2>
-        <div className="profile-title-actions">
-          <select
-            aria-label="记账币种"
-            value={profile.baseCurrency}
-            disabled={busy}
-            onChange={(event) =>
-              setProfile({ ...profile, baseCurrency: event.target.value })
-            }
+      <details className="profile-details">
+        <summary className="profile-summary">
+          <div className="profile-summary-heading">
+            <h2>收入、支出与风险档案</h2>
+            <span className="profile-summary-meta">
+              {summaryBits.join(" · ")}
+            </span>
+          </div>
+          <span className="profile-summary-action">编辑</span>
+        </summary>
+        <div className="profile-details-body">
+          <div className="profile-currency-row">
+            <label>
+              <span>记账币种</span>
+              <select
+                aria-label="记账币种"
+                value={profile.baseCurrency}
+                disabled={busy}
+                onChange={(event) =>
+                  setProfile({ ...profile, baseCurrency: event.target.value })
+                }
+              >
+                {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {!valid && (
+            <Callout tone="warning">
+              请核对金额和投资偏好：金额不能为负，投资期限为 0—80 年，回撤为
+              0—100%。
+            </Callout>
+          )}
+          <form
+            className="portfolio-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              save();
+            }}
           >
-            {["CNY", "USD", "HKD", "EUR", "JPY", "GBP"].map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-          {exchangeRates}
+            <fieldset className="holding-fields" disabled={busy}>
+              <div className="form-grid">
+                {amountField("monthlyIncome", "月收入")}
+                {amountField("monthlyExpense", "月支出")}
+                {amountField("liabilities", "负债")}
+                {amountField("emergencyFund", "备用金")}
+                <NumberField
+                  label="投资期限"
+                  value={
+                    profileFieldProvided(profile, "horizonYears")
+                      ? profile.horizonYears
+                      : ""
+                  }
+                  suffix="年"
+                  onChange={(value) =>
+                    setProfile({
+                      ...profile,
+                      horizonYears: value === "" ? 5 : Number(value),
+                      providedFields: providedFields("horizonYears", value),
+                    })
+                  }
+                />
+                <NumberField
+                  label="可承受最大回撤"
+                  value={
+                    profileFieldProvided(profile, "maxDrawdownPct")
+                      ? profile.maxDrawdownPct
+                      : ""
+                  }
+                  suffix="%"
+                  onChange={(value) =>
+                    setProfile({
+                      ...profile,
+                      maxDrawdownPct: value === "" ? 15 : Number(value),
+                      providedFields: providedFields("maxDrawdownPct", value),
+                    })
+                  }
+                />
+              </div>
+              <div className="form-actions">
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  disabled={busy || !valid}
+                  icon={<Save size={15} />}
+                >
+                  {busy ? "保存中…" : "保存收支"}
+                </Button>
+              </div>
+            </fieldset>
+          </form>
         </div>
-      </div>
-      {!valid && (
-        <Callout tone="warning">
-          请核对金额和投资偏好：金额不能为负，投资期限为 0—80 年，回撤为
-          0—100%。
-        </Callout>
-      )}
-      <form
-        className="portfolio-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          save();
-        }}
-      >
-        <fieldset className="holding-fields" disabled={busy}>
-          <div className="form-grid">
-            {amountField("monthlyIncome", "月收入")}
-            {amountField("monthlyExpense", "月支出")}
-            {amountField("liabilities", "负债")}
-            {amountField("emergencyFund", "备用金")}
-            <NumberField
-              label="投资期限"
-              value={
-                profileFieldProvided(profile, "horizonYears")
-                  ? profile.horizonYears
-                  : ""
-              }
-              suffix="年"
-              onChange={(value) =>
-                setProfile({
-                  ...profile,
-                  horizonYears: value === "" ? 5 : Number(value),
-                  providedFields: providedFields("horizonYears", value),
-                })
-              }
-            />
-            <NumberField
-              label="可承受最大回撤"
-              value={
-                profileFieldProvided(profile, "maxDrawdownPct")
-                  ? profile.maxDrawdownPct
-                  : ""
-              }
-              suffix="%"
-              onChange={(value) =>
-                setProfile({
-                  ...profile,
-                  maxDrawdownPct: value === "" ? 15 : Number(value),
-                  providedFields: providedFields("maxDrawdownPct", value),
-                })
-              }
-            />
-          </div>
-          <div className="form-actions">
-            <Button
-              type="primary"
-              htmlType="submit"
-              disabled={busy || !valid}
-              icon={<Save size={15} />}
-            >
-              {busy ? "保存中…" : "保存收支"}
-            </Button>
-          </div>
-        </fieldset>
-      </form>
+      </details>
     </section>
   );
 }

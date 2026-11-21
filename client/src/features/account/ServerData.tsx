@@ -1,14 +1,7 @@
 import { Drawer } from "../../components/Drawer";
 import { Callout } from "../../components/Callout";
 import { useState } from "react";
-import {
-  ClipboardPaste,
-  Cloud,
-  Download,
-  LoaderCircle,
-  RefreshCw,
-  Upload,
-} from "lucide-react";
+import { Download, LoaderCircle, Upload } from "lucide-react";
 import {
   exportData,
   importData,
@@ -18,8 +11,10 @@ import type { SyncState } from "../../lib/autoSync";
 import { saveTextDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
 import { useRequestGuard } from "../../lib/useRequestGuard";
+import { serviceUrlStorageKey } from "../../lib/service";
 import { AccountSettings } from "./WebAccess";
 import { ServerAddress } from "./ServerAddress";
+
 export function ServerData({
   flash,
   onRestore,
@@ -40,10 +35,11 @@ export function ServerData({
     data: unknown;
     replace: boolean;
   } | null>(null);
-  const [jsonText, setJsonText] = useState("");
-  const [pasting, setPasting] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState("");
   const [backupConfirmed, setBackupConfirmed] = useState(false);
+  const [hasCustomServer] = useState(() =>
+    Boolean(localStorage.getItem(serviceUrlStorageKey())),
+  );
   const source = pending ? describeImport(pending.data) : null;
   const selectedSource = source?.accounts.find(
     (account) => account.id === selectedAccount,
@@ -88,8 +84,8 @@ export function ServerData({
           pending.replace ? "数据已覆盖导入，覆盖前备份已下载" : "数据已导入",
         );
       }
-    } catch (error) {
-      if (isCurrent()) setError(String(error));
+    } catch (nextError) {
+      if (isCurrent()) setError(String(nextError));
     } finally {
       if (isCurrent()) setOperation(null);
     }
@@ -105,21 +101,11 @@ export function ServerData({
       const data = JSON.parse(await file.text());
       if (!isCurrent()) return;
       stageImport(data);
-    } catch (error) {
-      if (isCurrent()) setError(String(error));
+    } catch (nextError) {
+      if (isCurrent()) setError(String(nextError));
     } finally {
       if (isCurrent()) setOperation(null);
       input.value = "";
-    }
-  };
-  const previewPasted = () => {
-    setError("");
-    try {
-      if (new Blob([jsonText]).size > 64 * 1024 * 1024)
-        throw new Error("数据超过 64 MB");
-      stageImport(JSON.parse(jsonText));
-    } catch (error) {
-      setError(String(error));
     }
   };
   const exportBackup = async () => {
@@ -138,32 +124,30 @@ export function ServerData({
       setOperation(null);
     }
   };
+  const syncAttention =
+    autoState.phase === "offline" ||
+    autoState.phase === "attention" ||
+    autoState.phase === "paused";
   return (
     <div className="account-data" id="account-settings">
       <AccountSettings />
-      <section className="panel server-connection">
-        <div className="panel-title">
-          <h2>
-            <Cloud size={18} />
-            服务器连接
-          </h2>
-          <button
-            className="secondary"
-            onClick={onRetryAuto}
-            disabled={busy || autoState.phase === "syncing"}
-          >
-            <RefreshCw
-              size={15}
-              className={autoState.phase === "syncing" ? "spin" : undefined}
-            />
-            {autoState.phase === "syncing" ? "检查中…" : "检查最新数据"}
-          </button>
-        </div>
-        <ServerAddress />
-        <p className={`sync-live-status sync-${autoState.phase}`} role="status">
+      {syncAttention && (
+        <Callout
+          tone="warning"
+          action={
+            <button
+              type="button"
+              className="text-button"
+              disabled={busy}
+              onClick={onRetryAuto}
+            >
+              重试同步
+            </button>
+          }
+        >
           {autoState.message}
-        </p>
-      </section>
+        </Callout>
+      )}
       <section className="panel data-transfer" aria-label="备份与导入">
         <div className="data-transfer-row">
           <h3>
@@ -236,41 +220,19 @@ export function ServerData({
                   onChange={(e) => void chooseFile(e.currentTarget)}
                 />
               </label>
-              <button
-                type="button"
-                className="secondary"
-                aria-expanded={pasting}
-                disabled={busy}
-                onClick={() => setPasting(!pasting)}
-              >
-                <ClipboardPaste size={16} />
-                粘贴 JSON
-              </button>
             </div>
-            {pasting && (
-              <div className="data-import-paste">
-                <textarea
-                  aria-label="粘贴 JSON 数据"
-                  rows={6}
-                  value={jsonText}
-                  disabled={busy}
-                  autoFocus
-                  onChange={(event) => setJsonText(event.target.value)}
-                  placeholder={'{"version":"1.0","exportedAt":"…","data":{…}}'}
-                />
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={busy || !jsonText.trim()}
-                  onClick={previewPasted}
-                >
-                  预览导入
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </section>
+      <details
+        className="panel server-address-details"
+        open={hasCustomServer || undefined}
+      >
+        <summary>高级：自定义服务器地址</summary>
+        <div className="server-address-details-body">
+          <ServerAddress />
+        </div>
+      </details>
       {pending && (
         <Drawer
           title={pending.replace ? "确认覆盖当前账号数据" : "确认导入数据"}
@@ -321,7 +283,7 @@ export function ServerData({
                 disabled={busy}
                 onChange={(event) => setBackupConfirmed(event.target.checked)}
               />
-              我已导出当前数据
+              我确认覆盖当前账号的全部业务数据（覆盖前将自动下载备份）
             </label>
           )}
           {error && <Callout tone="danger">{error}</Callout>}

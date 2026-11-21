@@ -212,38 +212,6 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
         order_by: "id",
     },
     SyncTableSpec {
-        name: "system_reviews",
-        columns: &[
-            "id",
-            "payload",
-            "snapshot",
-            "next_review_date",
-            "created_at",
-        ],
-        order_by: "id",
-    },
-    SyncTableSpec {
-        name: "investment_rules",
-        columns: &[
-            "id",
-            "category",
-            "statement",
-            "trigger",
-            "rationale",
-            "active",
-            "source_review_id",
-            "revision",
-            "created_at",
-            "updated_at",
-        ],
-        order_by: "id",
-    },
-    SyncTableSpec {
-        name: "investment_rule_revisions",
-        columns: &["rule_id", "revision", "payload", "changed_at"],
-        order_by: "rule_id, revision",
-    },
-    SyncTableSpec {
         name: "research_evidence",
         columns: &[
             "id",
@@ -445,13 +413,52 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
     },
 ];
 
-pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 32;
+pub const SYNC_DATASET_SCHEMA_VERSION: u32 = 33;
 const V1_SYNC_TABLE_COUNT: usize = 10;
 const V2_V3_SYNC_TABLE_COUNT: usize = 11;
 const V8_SYNC_TABLE_COUNT: usize = 13;
 
 pub(super) fn sync_specs_for_version(version: u32) -> AppResult<Vec<SyncTableSpec>> {
     let mut specs = SYNC_TABLES.to_vec();
+    if version < 33 {
+        specs.splice(
+            3..3,
+            [
+                SyncTableSpec {
+                    name: "system_reviews",
+                    columns: &[
+                        "id",
+                        "payload",
+                        "snapshot",
+                        "next_review_date",
+                        "created_at",
+                    ],
+                    order_by: "id",
+                },
+                SyncTableSpec {
+                    name: "investment_rules",
+                    columns: &[
+                        "id",
+                        "category",
+                        "statement",
+                        "trigger",
+                        "rationale",
+                        "active",
+                        "source_review_id",
+                        "revision",
+                        "created_at",
+                        "updated_at",
+                    ],
+                    order_by: "id",
+                },
+                SyncTableSpec {
+                    name: "investment_rule_revisions",
+                    columns: &["rule_id", "revision", "payload", "changed_at"],
+                    order_by: "rule_id, revision",
+                },
+            ],
+        );
+    }
     if version < 32 {
         specs.retain(|s| !["daily_review_runs", "daily_review_items"].contains(&s.name));
     }

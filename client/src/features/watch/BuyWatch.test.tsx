@@ -189,9 +189,10 @@ it("lets users browse the directory while the personal watchlist is unavailable"
   expect(api.saveWatch).not.toHaveBeenCalled();
 });
 
-it("clears search and filters on group changes while keeping sorting and cards", async () => {
+it("clears search and filters on group changes while keeping sorting in the compact table", async () => {
   render(<BuyWatch {...props()} />);
   fireEvent.click(await screen.findByRole("tab", { name: "银行 14" }));
+  expect(screen.queryByRole("button", { name: "详细卡片" })).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "搜索观察公司" }), {
     target: { value: "招商" },
   });
@@ -201,7 +202,6 @@ it("clears search and filters on group changes while keeping sorting and cards",
   fireEvent.change(screen.getByRole("combobox", { name: "观察排序" }), {
     target: { value: "yield-asc" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
   expect(screen.getByText("当前条件下没有公司")).toBeTruthy();
   fireEvent.click(screen.getByRole("tab", { name: "能源 6" }));
   expect(screen.getByRole("textbox", { name: "搜索观察公司" })).toHaveProperty(
@@ -216,12 +216,11 @@ it("clears search and filters on group changes while keeping sorting and cards",
     "value",
     "yield-asc",
   );
-  expect(screen.getByRole("button", { name: "详细卡片" })).toHaveProperty(
-    "ariaPressed",
-    "true",
-  );
-  expect(screen.getAllByRole("button", { name: "查看依据" })).toHaveLength(6);
-  expect(screen.queryByRole("button", { name: "结合我的交易讨论" })).toBeNull();
+  expect(
+    within(screen.getByRole("table", { name: "观察公司对比" }))
+      .getAllByRole("row")
+      .slice(1),
+  ).toHaveLength(6);
 });
 
 it("adds from an industry once without overwriting existing personal reasons or copying public history", async () => {
@@ -285,12 +284,10 @@ it("adds from an industry once without overwriting existing personal reasons or 
   expect(screen.getByText("我的独立关注理由")).toBeTruthy();
 });
 
-it("keeps public details separate and refreshes only the selected industry", async () => {
-  vi.mocked(api.refreshWatchCatalog).mockRejectedValue(
-    new Error("行业来源暂不可用"),
-  );
+it("keeps public details separate and hides manual industry refresh buttons", async () => {
   render(<BuyWatch {...props()} />);
   fireEvent.click(await screen.findByRole("tab", { name: "银行 14" }));
+  expect(screen.queryByRole("button", { name: "检查最新收盘" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /招商银行.*600036/ }));
   const drawer = await screen.findByRole("dialog");
   expect(within(drawer).queryByText("公司公开报告")).toBeNull();
@@ -299,9 +296,9 @@ it("keeps public details separate and refreshes only the selected industry", asy
   expect(
     within(drawer).queryByRole("button", { name: "编辑观察资料" }),
   ).toBeNull();
-  fireEvent.click(within(drawer).getByRole("button", { name: "重新检查数据" }));
-  expect(await within(drawer).findByText(/行业来源暂不可用/)).toBeTruthy();
-  expect(api.refreshWatchCatalog).toHaveBeenCalledExactlyOnceWith("banks");
+  expect(
+    within(drawer).queryByRole("button", { name: "重新检查数据" }),
+  ).toBeNull();
   expect(within(drawer).getByText("收盘价 · 2026-11-04")).toBeTruthy();
   expect(api.refreshWatch).not.toHaveBeenCalled();
 });
@@ -505,7 +502,7 @@ it("sorts by yield by default and highlights met conditions while search and hol
   expect(api.deleteWatch).not.toHaveBeenCalled();
 });
 
-it("sorts missing metrics last and switches between compact and visual details", async () => {
+it("sorts missing metrics last and shows visual details in the drawer", async () => {
   const missing = structuredClone(row);
   missing.entry = { ...missing.entry, symbol: "600000.SS", name: "未知公司" };
   missing.latest = null;
@@ -526,13 +523,12 @@ it("sorts missing metrics last and switches between compact and visual details",
   ).getAllByRole("row");
   expect(records[1].textContent).toContain("测试公司");
   expect(records[2].textContent).toContain("未知公司");
-  fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
-  expect(screen.queryByRole("table", { name: "观察公司对比" })).toBeNull();
-  expect(screen.getAllByRole("img", { name: /日线下轨/ })).toHaveLength(1);
-  expect(screen.getByText("¥83.33")).toBeTruthy();
-  expect(
-    screen.getByText("暂无可用参考价：需要有效且为正的 TTM 每股分红。"),
-  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /测试公司.*600036/ }));
+  const drawer = await screen.findByRole("dialog");
+  expect(within(drawer).getAllByRole("img", { name: /日线下轨/ })).toHaveLength(
+    1,
+  );
+  expect(within(drawer).getByText("¥83.33")).toBeTruthy();
   expect(api.refreshWatch).not.toHaveBeenCalled();
 });
 
@@ -577,7 +573,7 @@ it("sorts all four metrics in both directions from the table headers", async () 
   }
 });
 
-it("puts a pinned company first in both views without overriding filters", async () => {
+it("puts a pinned company first without overriding filters", async () => {
   const other = structuredClone(row);
   other.entry = { ...other.entry, symbol: "600000.SS", name: "重点公司" };
   other.latest!.yieldPct = 2;
@@ -609,12 +605,14 @@ it("puts a pinned company first in both views without overriding filters", async
   });
   expect(within(table).queryByText("重点公司")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
-  fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
-  expect(screen.getAllByRole("article")[0].textContent).toContain("重点公司");
-  fireEvent.click(screen.getByRole("button", { name: "取消置顶重点公司" }));
-  await screen.findByRole("button", { name: "置顶重点公司" });
+  fireEvent.click(
+    within(table).getByRole("button", { name: "取消置顶重点公司" }),
+  );
+  await within(table).findByRole("button", { name: "置顶重点公司" });
   expect(api.setWatchPinned).toHaveBeenLastCalledWith("600000.SS", false);
-  expect(screen.getAllByRole("article")[0].textContent).toContain("测试公司");
+  expect(within(table).getAllByRole("row")[1].textContent).toContain(
+    "测试公司",
+  );
 });
 
 it("keeps the saved pin state when the write fails and sends only editable fields on edit", async () => {
@@ -629,8 +627,8 @@ it("keeps the saved pin state when the write fails and sends only editable field
   );
   await screen.findByText(/未能取消置顶/);
   expect(screen.getByRole("button", { name: "取消置顶测试公司" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
-  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+  fireEvent.click(screen.getByRole("button", { name: /测试公司.*600036/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "编辑观察资料" }));
   fireEvent.change(screen.getByLabelText("公司名称"), {
     target: { value: "更新名称" },
   });
@@ -803,12 +801,10 @@ it("ranks by the weekly middle and shades that range even far from the weekly lo
   expect(first.querySelector("td.rule-weekly.watch-met")).toBeTruthy();
   expect(second.textContent).toContain("周线未达标");
   expect(second.querySelector("td.rule-weekly.watch-met")).toBeNull();
-  fireEvent.change(screen.getByRole("textbox", { name: "搜索观察公司" }), {
-    target: { value: "测试公司" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "详细卡片" }));
-  expect(screen.getByText("周线不高于中轨")).toBeTruthy();
-  const track = screen.getByRole("img", { name: /周线下轨.*距中轨/ });
+  fireEvent.click(screen.getByRole("button", { name: /测试公司.*600036/ }));
+  const drawer = await screen.findByRole("dialog");
+  expect(within(drawer).getByText("周线不高于中轨")).toBeTruthy();
+  const track = within(drawer).getByRole("img", { name: /周线下轨.*距中轨/ });
   const middle = parseFloat(track.style.getPropertyValue("--middle"));
   const start = parseFloat(track.style.getPropertyValue("--zone-start"));
   const width = parseFloat(track.style.getPropertyValue("--zone-width"));

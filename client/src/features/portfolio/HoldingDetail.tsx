@@ -5,6 +5,7 @@ import type { Holding, Snapshot } from "../../types/user";
 import { formatMoney, formatSigned } from "../../lib/format";
 import { HoldingTrades } from "./HoldingTrades";
 import { isClosedHolding } from "./holdingMetrics";
+import { Menu } from "../../components/Menu";
 
 export function HoldingDetail({
   snapshot,
@@ -29,6 +30,8 @@ export function HoldingDetail({
 }) {
   const [stockEditing, setStockEditing] = useState(false);
   const [optionEditing, setOptionEditing] = useState(false);
+  const [declaringSplit, setDeclaringSplit] = useState(false);
+  const [addingOption, setAddingOption] = useState(false);
   useEffect(() => {
     onEditingTradeChange(stockEditing || optionEditing);
     return () => onEditingTradeChange(false);
@@ -36,6 +39,40 @@ export function HoldingDetail({
   const tradeSummary = snapshot.holdingTradeSummaries?.[holding.id];
   const usable = snapshot.accounting?.holdings[holding.id]?.usable !== false;
   const pendingTrade = editingTrade ? "请先保存或取消当前交易" : undefined;
+  const trades = (snapshot.holdingTrades ?? []).filter(
+    (t) => t.holdingId === holding.id,
+  );
+  const isOption = Boolean(snapshot.optionContracts?.[holding.id]);
+  const canDeclareSplit =
+    !isOption &&
+    trades.length > 0 &&
+    !snapshot.clearedTradeHoldings?.includes(holding.id);
+  const hasOptions = Object.values(snapshot.optionContracts ?? {}).some(
+    (contract) => contract.underlyingId === holding.id,
+  );
+  const moreItems = [
+    ...(canDeclareSplit
+      ? [
+          {
+            label: "登记拆合股",
+            action: () => setDeclaringSplit(true),
+          },
+        ]
+      : []),
+    ...(holding.assetClass === "股票" && !hasOptions
+      ? [
+          {
+            label: "添加期权合约",
+            action: () => setAddingOption(true),
+          },
+        ]
+      : []),
+    {
+      label: "删除持仓",
+      action: onDelete,
+      danger: true,
+    },
+  ];
   return (
     <>
       <dl className="detail-grid holding-detail-summary">
@@ -88,6 +125,8 @@ export function HoldingDetail({
           snapshot={snapshot}
           stock={holding}
           disabled={busy || stockEditing}
+          openAdd={addingOption}
+          onAddClosed={() => setAddingOption(false)}
           onEditingChange={setOptionEditing}
           onUpdate={onUpdate}
           flash={flash}
@@ -105,6 +144,8 @@ export function HoldingDetail({
               snapshot={snapshot}
               holding={holding}
               hideSummary
+              declaringSplit={declaringSplit}
+              onDeclareSplitDone={() => setDeclaringSplit(false)}
               onEditingChange={setStockEditing}
               onUpdate={onUpdate}
               flash={flash}
@@ -121,15 +162,11 @@ export function HoldingDetail({
         >
           编辑资产
         </button>
-        <button
-          type="button"
-          className="secondary danger-text"
+        <Menu
+          label="更多持仓操作"
           disabled={busy || editingTrade}
-          title={pendingTrade}
-          onClick={onDelete}
-        >
-          删除持仓
-        </button>
+          items={moreItems}
+        />
       </div>
     </>
   );

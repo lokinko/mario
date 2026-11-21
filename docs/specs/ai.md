@@ -59,9 +59,9 @@ CSV 可以作为同一摘要的替代表达；如使用 CSV 文件，其内容�
 
 搜索请求只使用公开标的和研究主题，不携带个人持仓金额、身份和财务档案，并优先检索最新估值、财报、现金流、分红拆分、核心商品价格/成本驱动与主要多空分歧。
 
-区分原始证据、网页线索和模型推断：原始证据（`nativeWebEvidence` / `researchEvidence`）可写入 `facts.evidenceIds`；网页线索（`webLeads`，包含供应商检索摘要与无原文时的综合检索线索）严禁写入 `facts.evidenceIds` 或冒充一手原文，但分析正文应充分利用其中查明的公开信息并明确标注“据网页线索，待公告复核”。搜索失败可以继续使用已有资料，但必须明确说明失败。历史问答中的网页摘录复用属于 AI 历史资料复用，不自动成为用户研究资料库中的正式记录。
+区分原始证据、网页线索和模型推断：原始证据（`nativeWebEvidence` / `researchEvidence`）可写入 `facts.evidenceIds`；网页线索（`webLeads`，包含供应商检索摘要与无原文时的综合检索线索）严禁写入 `facts.evidenceIds` 或冒充一手原文，但分析正文应充分利用其中查明的公开信息并明确标注“据网页线索，待公告复核”。搜索失败可以继续使用已有资料，但必须明确说明失败。历史问答中的网页摘录复用属于 AI 历史资料复用，不自动成为用户研究资料库中的正式记录。前端将联网搜索开关与上下文资料范围控制直接集成在问答输入框底部，修改后即时持久化至账号分析预设并刷新上下文预览。
 
-实现依据：[问答预设](../../server/src/models/analysis.rs)、[公开研究主题](../../server/src/context/discussion.rs)、[搜索编排](../../server/src/ai/orchestrator.rs)、[供应商适配](../../server/src/ai/native_provider.rs)、[前端预设](../../client/src/features/settings/AnalysisDefaults.tsx)。
+实现依据：[问答预设](../../server/src/models/analysis.rs)、[公开研究主题](../../server/src/context/discussion.rs)、[搜索编排](../../server/src/ai/orchestrator.rs)、[供应商适配](../../server/src/ai/native_provider.rs)、[问答上下文与搜索控制](../../client/src/features/advisor/Advisor.tsx)。
 
 ## 5. 问答与多代理评议
 
@@ -111,9 +111,9 @@ CSV 可以作为同一摘要的替代表达；如使用 CSV 文件，其内容�
 每日复盘作为独立一级模块运行，默认开启并在账号本地时区每日 `07:30` 自动复盘前一日（可修改开关、触发时间、跟踪范围「当前持仓 + 个人自选 / 仅当前持仓」与联网检索开关，并支持手动立即触发）。
 
 - 后台任务按账号时区检查到期状态，每个复盘日自动执行一次；执行前先通过市场域刷新涉及 A 股的巨潮资讯官方公告缓存。
-- 用例通过只读账号端口 `DailyReviewAccount` 冻结昨日组合与单标的变动、买点观察信号、有效投资规则与方法论（不读取逐笔成交明细，不写入用户账本），并结合市场只读端口的官方公告与分红计划生成确定性事实与法定公告动态。
+- 用例通过只读账号端口 `DailyReviewAccount` 冻结昨日组合与单标的变动、买点观察信号与用户方法论（不读取逐笔成交明细，不写入用户账本），并结合市场只读端口的官方公告与分红计划生成确定性事实与法定公告动态。
 - 若账号或站点存在可用模型，在释放账号锁状态下调用 `AnalysisExecutor::daily_review`（可选先执行仅含公开标的代码/名称的联网检索）生成多条微博式信息流复盘动态；若模型未配置、不可用或调用失败，本次运行诚实标为 `degraded` 并说明原因，完整保留昨日持仓事实与官方公告动态。
-- 信息流支持按动态类型、复盘日期、标的与未读状态筛选，支持单条/全部标为已读、发布个人随手记、一键带入「问答」追问或沉淀为个人投资规则；运行记录、动态条目与复盘偏好纳入原生个人备份（v32）。
+- 信息流支持按动态类型、复盘日期、标的与未读状态筛选，支持单条/全部标为已读及一键带入「问答」追问；运行记录、动态条目与复盘偏好纳入原生个人备份（当前备份格式 v33、数据库 schema v22，已移除旧版手工投资规则与文字复盘表）。
 
 实现依据：[每日复盘契约](../../server/src/models/daily_review.rs)、[每日复盘生成](../../server/src/ai/daily_review.rs)、[每日复盘用例](../../server/src/application/daily_review.rs)、[每日复盘仓储](../../server/src/db/daily_review.rs)、[每日复盘 HTTP](../../server/src/http/daily_review.rs)、[每日复盘页面](../../client/src/features/dailyReview/DailyReviewPage.tsx)。
 

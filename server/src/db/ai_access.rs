@@ -7,8 +7,8 @@ use crate::{
         daily::HistoryQuery,
         daily_review::{
             DailyReviewFeedItem, DailyReviewFeedQuery, DailyReviewPortfolioSummary, DailyReviewRun,
-            DailyReviewScope, DailyReviewSettings, DailyReviewUserContext, ReviewRuleBrief,
-            ReviewTrackedAsset, ReviewWatchSignal,
+            DailyReviewScope, DailyReviewSettings, DailyReviewUserContext, ReviewTrackedAsset,
+            ReviewWatchSignal,
         },
         memory::{
             AcceptedOperation, DreamInput, DreamSourceAnalysis, DreamState, DreamSummary,
@@ -417,16 +417,6 @@ impl DailyReviewAccount for Database {
                 .then_with(|| a.symbol.cmp(&b.symbol))
         });
 
-        let active_rules = Database::investment_rules(self)?
-            .into_iter()
-            .filter(|r| r.active)
-            .take(15)
-            .map(|r| ReviewRuleBrief {
-                category: r.category,
-                statement: r.statement,
-                trigger: r.trigger,
-            })
-            .collect();
         let methodology_prompt = Database::investment_methodology(self)?.prompt;
 
         Ok(DailyReviewUserContext {
@@ -436,7 +426,7 @@ impl DailyReviewAccount for Database {
             portfolio,
             tracked_assets,
             watch_signals,
-            active_rules,
+            active_rules: Vec::new(),
             methodology_prompt,
         })
     }

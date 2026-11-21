@@ -10,12 +10,10 @@ export interface DisplayPreferenceProps {
 }
 export function DisplayPreferences({
   pnl,
-  maskAmounts,
   theme,
   setPnl,
-  setMaskAmounts,
   setTheme,
-}: DisplayPreferenceProps) {
+}: Pick<DisplayPreferenceProps, "pnl" | "theme" | "setPnl" | "setTheme">) {
   return (
     <section
       className="panel form-panel"
@@ -47,18 +45,6 @@ export function DisplayPreferences({
           >
             <option value="cn">红涨绿跌</option>
             <option value="intl">绿涨红跌</option>
-          </select>
-        </label>
-        <label>
-          <span>金额显示</span>
-          <select
-            value={maskAmounts ? "hidden" : "visible"}
-            onChange={(event) =>
-              setMaskAmounts(event.target.value === "hidden")
-            }
-          >
-            <option value="visible">显示金额</option>
-            <option value="hidden">隐藏金额</option>
           </select>
         </label>
       </div>

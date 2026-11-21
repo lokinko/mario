@@ -1,17 +1,10 @@
 import { useEffect, useState } from "react";
 import {
   getFinancialHistory,
-  previewTradeRepair,
-  repairTrades,
   confirmCorporateAction,
   declareCorporateAction,
 } from "../../api/portfolio";
-import type {
-  Holding,
-  HoldingTrade,
-  HoldingTradeSummary,
-  Snapshot,
-} from "../../types/user";
+import type { Holding, Snapshot } from "../../types/user";
 
 export function FinancialHistory({
   holding,
@@ -29,45 +22,19 @@ export function FinancialHistory({
   const [history, setHistory] = useState<Awaited<
     ReturnType<typeof getFinancialHistory>
   > | null>(null);
-  const [candidate, setCandidate] = useState("");
   const [reason, setReason] = useState("");
-  const [preview, setPreview] = useState<HoldingTradeSummary | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [effectiveOn, setEffectiveOn] = useState("");
   const [numerator, setNumerator] = useState("");
   const [denominator, setDenominator] = useState("");
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+
   useEffect(() => {
     let active = true;
     getFinancialHistory(holding.id)
       .then((data) => {
-        if (active) {
-          setHistory(data);
-          if (data.quarantine) {
-            try {
-              const raw = JSON.parse(data.quarantine.payload) as {
-                id: string;
-                payload: string;
-              }[];
-              setCandidate(
-                JSON.stringify(
-                  raw.map((row) => {
-                    const original = [...data.records]
-                      .reverse()
-                      .map((r) => JSON.parse(r.after) as HoldingTrade | null)
-                      .find((t) => t?.id === row.id);
-                    return original ?? JSON.parse(row.payload);
-                  }),
-                  null,
-                  2,
-                ),
-              );
-            } catch {
-              setCandidate("[]");
-            }
-          }
-        }
+        if (active) setHistory(data);
       })
       .catch((e) => {
         if (active) setError(String(e));
@@ -76,26 +43,7 @@ export function FinancialHistory({
       active = false;
     };
   }, [holding.id, snapshot.updatedAt]);
-  const request = () => ({
-    expectedRevision: snapshot.holdingRevisions?.[holding.id] ?? "",
-    trades: JSON.parse(candidate) as HoldingTrade[],
-    reason,
-  });
-  const run = async (apply: boolean) => {
-    if (busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      if (apply) {
-        onUpdate(await repairTrades(holding.id, request()));
-        setPreview(null);
-      } else setPreview(await previewTradeRepair(holding.id, request()));
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+
   const actions = (snapshot.corporateActions ?? []).filter(
     (a) => a.holdingId === holding.id,
   );
@@ -300,51 +248,12 @@ export function FinancialHistory({
         <section>
           <p role="alert">
             {history.quarantine.reason}
-            。当前余额和原始记录均已保留。修复仅重算该持仓的数量、成本和盈亏，不影响存款余额。
+            。当前余额和原始记录均已保留。请导出备份或核对原始成交后通过数据接口修复。
           </p>
           <details>
             <summary>查看隔离原文</summary>
             <pre>{history.quarantine.payload}</pre>
           </details>
-          <label>
-            修复候选交易 JSON
-            <textarea
-              rows={12}
-              value={candidate}
-              onChange={(e) => {
-                setCandidate(e.target.value);
-                setPreview(null);
-              }}
-            />
-          </label>
-          <label>
-            核对依据与修复原因
-            <input
-              value={reason}
-              onChange={(e) => {
-                setReason(e.target.value);
-                setPreview(null);
-              }}
-            />
-          </label>
-          <button
-            disabled={busy || !reason.trim()}
-            onClick={() => void run(false)}
-          >
-            预览修复结果
-          </button>
-          {preview && (
-            <div>
-              <p>
-                恢复数量 {preview.quantity} · 成本 {preview.costBasis} ·
-                已结算盈亏 {preview.settledProfit} {holding.currency}
-                。存款保持当前余额。
-              </p>
-              <button disabled={busy} onClick={() => void run(true)}>
-                确认修复并保留原文
-              </button>
-            </div>
-          )}
         </section>
       )}
     </section>

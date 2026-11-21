@@ -1,3 +1,4 @@
+import { Tabs } from "antd";
 import { Callout } from "./components/Callout";
 import { DailyTracking } from "./features/portfolio/DailyTracking";
 import { useApplicationData } from "./app/useApplicationData";
@@ -7,6 +8,8 @@ import {
   AlertTriangle,
   Check,
   Ellipsis,
+  Eye,
+  EyeOff,
   Settings2,
   XCircle,
   X,
@@ -27,7 +30,6 @@ import { useDisplayPreferences } from "./app/useDisplayPreferences";
 import { DisplayPreferences } from "./components/DisplayPreferences";
 import { ApplicationSkeleton } from "./components/Skeleton";
 import { useActivityTracking } from "./app/useActivityTracking";
-import type { ReferenceTab } from "./app/ReferenceInfo";
 import {
   dividendQuestionParam,
   dividendQuestionSymbol,
@@ -40,15 +42,12 @@ const DailyReviewPage = lazy(() =>
     default: m.DailyReviewPage,
   })),
 );
-const ReferenceInfo = lazy(() =>
-  import("./app/ReferenceInfo").then((m) => ({ default: m.ReferenceInfo })),
-);
-const MyFacts = lazy(loadMyFacts);
-const DividendCalendar = lazy(() =>
-  import("./features/watch/DividendCalendar").then((m) => ({
-    default: m.DividendCalendar,
+const EvidenceWorkbench = lazy(() =>
+  import("./features/evidence/EvidenceWorkbench").then((m) => ({
+    default: m.EvidenceWorkbench,
   })),
 );
+const MyFacts = lazy(loadMyFacts);
 const Advisor = lazy(() =>
   import("./features/advisor/Advisor").then((m) => ({ default: m.Advisor })),
 );
@@ -80,16 +79,7 @@ const syncLabels = {
 function App() {
   const display = useDisplayPreferences();
   const [view, setView] = useState<View>(initialView);
-  const [referenceTab, setReferenceTab] = useState<ReferenceTab>("evidence");
-  useActivityTracking(
-    view === "dailyReview"
-      ? "review"
-      : view !== "reference"
-        ? view
-        : referenceTab === "evidence"
-          ? "evidence"
-          : "review",
-  );
+  useActivityTracking(view === "dailyReview" ? "review" : view);
   const [advisorVisited, setAdvisorVisited] = useState(
     () => initialView() === "advisor",
   );
@@ -146,10 +136,6 @@ function App() {
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [factsSection, setFactsSection] = useState<FactsSection>("holdings");
-  const [watchTarget, setWatchTarget] = useState<
-    { id: number; symbol: string; personal: boolean } | undefined
-  >(undefined);
-  const watchTargetId = useRef(0);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const mainRef = useRef<HTMLElement>(null);
@@ -246,11 +232,6 @@ function App() {
     setPendingQuestion({ id: ++questionId.current, question });
   };
 
-  const openWatchSymbol = (symbol: string, personal: boolean) => {
-    if (!navigate("watch")) return;
-    setWatchTarget({ id: ++watchTargetId.current, symbol, personal });
-  };
-
   useEffect(() => {
     const followLocation = () => {
       if (!changeView(initialView()))
@@ -287,6 +268,12 @@ function App() {
       </div>
     );
   }
+
+  const showSyncBadge =
+    syncState.phase === "offline" ||
+    syncState.phase === "attention" ||
+    syncState.phase === "paused" ||
+    syncState.phase === "syncing";
 
   const content = (
     <div className="app-shell">
@@ -398,16 +385,34 @@ function App() {
             <ChevronRight size={14} aria-hidden="true" />
             <strong>{viewLabels[view]}</strong>
           </div>
-          <button
-            className={`workspace-sync sync-${syncState.phase}`}
-            type="button"
-            aria-label={`${syncState.message}，打开设置`}
-            title={syncState.message}
-            onClick={() => navigate("settings")}
-          >
-            <span className="sync-indicator" aria-hidden="true" />
-            {syncLabels[syncState.phase]}
-          </button>
+          <div className="workspace-bar-actions">
+            {showSyncBadge && (
+              <button
+                className={`workspace-sync sync-${syncState.phase}`}
+                type="button"
+                aria-label={`${syncState.message}，重试同步`}
+                title={syncState.message}
+                onClick={() =>
+                  syncState.phase === "syncing" ? undefined : retrySync()
+                }
+              >
+                <span className="sync-indicator" aria-hidden="true" />
+                {syncLabels[syncState.phase]}
+              </button>
+            )}
+            <button
+              type="button"
+              className={`workspace-privacy ${display.maskAmounts ? "is-masked" : ""}`}
+              data-presentation="true"
+              aria-pressed={display.maskAmounts}
+              aria-label={display.maskAmounts ? "显示金额" : "隐藏金额"}
+              title="隐藏页面和读屏中的金额，复制和导出仍包含真实数据"
+              onClick={() => display.setMaskAmounts(!display.maskAmounts)}
+            >
+              {display.maskAmounts ? <EyeOff size={15} /> : <Eye size={15} />}
+              <span>{display.maskAmounts ? "显示金额" : "隐藏金额"}</span>
+            </button>
+          </div>
         </header>
         <DailyTracking onNewDay={refreshForNewDay} />
         {remotePending && (
@@ -477,12 +482,6 @@ function App() {
                 flash={flash}
                 onEdited={markEdited}
                 onSaved={clearDraft}
-                target={watchTarget}
-                onTargetConsumed={(id) =>
-                  setWatchTarget((current) =>
-                    current?.id === id ? undefined : current,
-                  )
-                }
               />
             )}
             {view === "facts" && (
@@ -490,28 +489,18 @@ function App() {
                 key={remoteViewRevision}
                 snapshot={snapshot}
                 onUpdate={setSnapshot}
-                display={display}
                 flash={flash}
                 section={factsSection}
                 onSectionChange={setFactsSection}
                 onSaved={clearDraft}
               />
             )}
-            {view === "reference" && (
-              <ReferenceInfo
+            {view === "evidence" && (
+              <EvidenceWorkbench
                 key={remoteViewRevision}
-                tab={referenceTab}
-                onTabChange={setReferenceTab}
                 snapshot={snapshot}
                 onAsk={startAnalysis}
                 flash={flash}
-              />
-            )}
-            {view === "calendar" && (
-              <DividendCalendar
-                key={remoteViewRevision}
-                onAsk={startAnalysis}
-                onInspectWatch={openWatchSymbol}
               />
             )}
             {view === "methodology" && (
@@ -543,35 +532,28 @@ function App() {
             {view === "settings" && !model && (
               <div className="page narrow settings-page">
                 <PageHeader title="设置" />
-                <nav className="settings-directory" aria-label="设置分区">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      document
-                        .getElementById("account-settings")
-                        ?.scrollIntoView({ behavior: "smooth" })
-                    }
-                  >
-                    账号与数据
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      document
-                        .getElementById("display-settings")
-                        ?.scrollIntoView({ behavior: "smooth" })
-                    }
-                  >
-                    显示偏好
-                  </button>
-                </nav>
-                <ServerData
-                  flash={flash}
-                  onRestore={refreshInvestmentData}
-                  autoState={syncState}
-                  onRetryAuto={retrySync}
+                <Tabs
+                  aria-label="设置分区"
+                  items={[
+                    {
+                      key: "account",
+                      label: "账号与数据",
+                      children: (
+                        <ServerData
+                          flash={flash}
+                          onRestore={refreshInvestmentData}
+                          autoState={syncState}
+                          onRetryAuto={retrySync}
+                        />
+                      ),
+                    },
+                    {
+                      key: "display",
+                      label: "显示偏好",
+                      children: <DisplayPreferences {...display} />,
+                    },
+                  ]}
                 />
-                <DisplayPreferences {...display} />
               </div>
             )}
           </DeferredPage>

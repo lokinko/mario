@@ -149,9 +149,11 @@ function PlanCard({
 export function DividendCalendar({
   onAsk,
   onInspectWatch,
+  embedded = false,
 }: {
   onAsk?: (question: string) => void;
   onInspectWatch?: (symbol: string, personal: boolean) => void;
+  embedded?: boolean;
 } = {}) {
   const [loaded, setLoaded] = useState<{
     scope: DividendCalendarScope;
@@ -203,8 +205,13 @@ export function DividendCalendar({
       (row) => !selected || dates(row).some((item) => item.date === selected),
     ) ?? [];
   return (
-    <div className="page dividend-calendar-page" data-presentation>
-      <PageHeader title="分红日历" />
+    <div
+      className={
+        embedded ? "dividend-calendar-embedded" : "page dividend-calendar-page"
+      }
+      data-presentation
+    >
+      {!embedded && <PageHeader title="分红日历" />}
       <div className="dividend-calendar">
         <div className="dividend-calendar-toolbar">
           {navigationStart && (

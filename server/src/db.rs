@@ -10,7 +10,6 @@ mod corporate;
 mod financial;
 #[cfg(test)]
 mod financial_tests;
-mod rule_values;
 mod snapshot;
 mod sync_validation;
 mod validation;
@@ -36,8 +35,6 @@ mod analysis_history;
 mod evidence;
 mod methodology;
 mod model_settings;
-mod reminders;
-mod reviews;
 mod secrets;
 mod settings;
 mod user_access;
@@ -55,8 +52,6 @@ use std::sync::{
     Mutex,
 };
 
-#[cfg(test)]
-use crate::storage::params;
 use crate::storage::Connection;
 #[cfg(test)]
 use chrono::NaiveDate;
@@ -68,7 +63,6 @@ use crate::models::{
     market::quotes::SecurityPriceQuote,
     portfolio::{FinancialProfile, HoldingInput, Snapshot},
     research::ResearchEvidenceInput,
-    reviews::{InvestmentRuleInput, SystemReviewInput},
 };
 use crate::{AppError, AppResult};
 

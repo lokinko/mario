@@ -383,7 +383,9 @@ impl Connection {
                     tracing::debug!(target: "mario::timing", stage = "db_connect", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
                     let mut c = result?;
                     let started = std::time::Instant::now();
-                    let result = c.batch_execute(&format!("SET statement_timeout TO '30s'; SELECT pg_advisory_lock(hashtextextended('{schema}',0)); CREATE SCHEMA IF NOT EXISTS {schema}; SET search_path TO {schema}; SELECT pg_advisory_unlock(hashtextextended('{schema}',0));"));
+                    let result = c.batch_execute(&format!(
+                        "SET statement_timeout TO '30s'; BEGIN; SELECT pg_advisory_xact_lock(hashtextextended('{schema}',0)); CREATE SCHEMA IF NOT EXISTS {schema}; COMMIT; SET search_path TO {schema};"
+                    ));
                     tracing::debug!(target: "mario::timing", stage = "db_bind", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
                     result?;
                     Ok::<_, Error>(c)

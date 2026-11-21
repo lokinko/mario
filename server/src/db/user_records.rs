@@ -14,17 +14,13 @@ use crate::{
             ResearchAttachmentDownload, ResearchEvidence, ResearchEvidenceInput,
             ResearchEvidenceTagsInput,
         },
-        reviews::{
-            InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, ReviewReminderSummary,
-            SystemReviewInput, SystemReviewRecord,
-        },
         watch::{grid::GridPlan, rules::WatchRules, WatchEntry, WatchInput, WatchRow},
     },
     AppResult,
 };
 
 use crate::ports::user_records::{
-    EvidenceAccount, LedgerAccount, MethodologyAccount, ReviewAccount, WatchManagement,
+    EvidenceAccount, LedgerAccount, MethodologyAccount, WatchManagement,
 };
 
 impl LedgerAccount for Database {
@@ -169,36 +165,5 @@ impl MethodologyAccount for Database {
         input: InvestmentMethodologyInput,
     ) -> AppResult<InvestmentMethodology> {
         Database::save_investment_methodology(self, input)
-    }
-}
-
-impl ReviewAccount for Database {
-    fn investment_rules(&self) -> AppResult<Vec<InvestmentRule>> {
-        Database::investment_rules(self)
-    }
-    fn add_investment_rule(&self, input: &InvestmentRuleInput) -> AppResult<InvestmentRule> {
-        Database::add_investment_rule(self, input)
-    }
-    fn update_investment_rule(
-        &self,
-        id: &str,
-        input: &InvestmentRuleInput,
-    ) -> AppResult<InvestmentRule> {
-        Database::update_investment_rule(self, id, input)
-    }
-    fn investment_rule_history(&self, id: &str) -> AppResult<Vec<InvestmentRuleRevision>> {
-        Database::investment_rule_history(self, id)
-    }
-    fn system_reviews(&self) -> AppResult<Vec<SystemReviewRecord>> {
-        Database::system_reviews(self)
-    }
-    fn save_system_review(&self, input: &SystemReviewInput) -> AppResult<SystemReviewRecord> {
-        Database::save_system_review(self, input)
-    }
-    fn review_reminder_summary(
-        &self,
-        today: chrono::NaiveDate,
-    ) -> AppResult<ReviewReminderSummary> {
-        Database::review_reminder_summary(self, today)
     }
 }

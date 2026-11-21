@@ -5,7 +5,7 @@ export const storageOwners = {
   'settings/user': 'user', 'settings/ai': 'ai',
   amounts: 'user', cash: 'user', corporate: 'user', daily: 'user', evidence: 'user', financial: 'user',
   fx: 'user', methodology: 'user', options: 'user', portfolio: 'user', public_watch: 'user',
-  reminders: 'user', reviews: 'user', rule_values: 'user', snapshot: 'user', trades: 'user',
+  snapshot: 'user', trades: 'user',
   user_access: 'user', user_records: 'user', validation: 'user', watch: 'user', watch_grid_migration: 'user',
   ai_access: 'ai', ai_records: 'ai', analysis_history: 'ai', daily_review: 'ai', memory: 'ai', model_settings: 'ai', secrets: 'ai',
   public_announcements: 'market', public_prices: 'market', public_dividends: 'market', public_dividend_plans: 'market',
@@ -22,8 +22,8 @@ export function storageOwner(source) {
 export const tableOwners = Object.fromEntries(Object.entries({
   user: ['cash_state', 'corporate_actions', 'daily_entries', 'daily_settings', 'daily_totals',
     'financial_journal', 'financial_operations', 'holding_amounts', 'holding_options', 'holding_trades',
-    'holding_valuations', 'holdings', 'investment_rule_revisions', 'investment_rules', 'profile',
-    'research_attachments', 'research_evidence', 'system_reviews', 'trade_settlements', 'trading_quarantine',
+    'holding_valuations', 'holdings', 'profile',
+    'research_attachments', 'research_evidence', 'trade_settlements', 'trading_quarantine',
     'watch_catalog', 'watch_dividends', 'watch_entries', 'watch_observations', 'watch_snapshots'],
   ai: ['analyses', 'analysis_memories', 'daily_review_items', 'daily_review_runs'],
   market: ['announcement_snapshots', 'dividend_histories', 'dividend_plan_snapshots', 'price_fetch_days', 'price_histories', 'price_monitor_days', 'price_universe'],
@@ -97,7 +97,7 @@ export const settingMethodOwners = {
   user_setting: 'user', set_user_setting: 'user', ai_setting: 'ai', set_ai_setting: 'ai', delete_ai_setting: 'ai',
   export_sync_data: 'backup', import_sync_data: 'backup', import_account_data: 'backup', is_empty_for_import: 'backup',
 };
-const aiUserReads = new Set(['snapshot', 'investment_methodology', 'research_evidence', 'watch_board', 'daily_history', 'investment_rules']);
+const aiUserReads = new Set(['snapshot', 'investment_methodology', 'research_evidence', 'watch_board', 'daily_history']);
 export function storageMethodViolation(source, name, targetOwner) {
   const owner = storageOwner(source);
   if (!['user', 'ai'].includes(owner) || !targetOwner || targetOwner === 'assembly') return;

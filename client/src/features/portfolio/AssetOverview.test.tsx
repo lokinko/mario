@@ -32,13 +32,7 @@ const history: DailyHistory = {
 };
 function Overview({ snapshot = fixture as Snapshot }: { snapshot?: Snapshot }) {
   const state = useAssetHistory(snapshot);
-  return (
-    <AssetOverview
-      snapshot={snapshot}
-      history={state}
-      display={{ maskAmounts: false, setMaskAmounts: vi.fn() }}
-    />
-  );
+  return <AssetOverview snapshot={snapshot} history={state} />;
 }
 beforeEach(() => {
   vi.clearAllMocks();

@@ -2,7 +2,6 @@ import { httpRequest } from "../lib/httpClient";
 
 export type ActivityPage =
   | "watch"
-  | "calendar"
   | "facts"
   | "evidence"
   | "review"

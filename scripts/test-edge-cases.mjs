@@ -213,19 +213,6 @@ suite.add("cross-tenant-idor-matrix", async () => {
   ).json;
   const attachmentId = evidence.attachments[0].id;
 
-  const rule = (
-    await owner.expectOk("/investment-rules", {
-      method: "POST",
-      body: {
-        category: "风险",
-        statement: "单标的仓位不超 20%",
-        trigger: "买入前",
-        rationale: "分散风险",
-        active: true,
-      },
-    })
-  ).json;
-
   await owner.expectOk("/daily-assets/ensure", {
     method: "POST",
     body: { timezone: "Asia/Shanghai" },
@@ -297,21 +284,6 @@ suite.add("cross-tenant-idor-matrix", async () => {
     { targetAccount: owner },
   );
   await attacker.assertRejectedWithoutMutation(
-    `/investment-rules/${rule.id}`,
-    {
-      method: "PUT",
-      body: {
-        category: "风险",
-        statement: "篡改规则",
-        trigger: "随时",
-        rationale: "攻击",
-        active: false,
-      },
-    },
-    [400, 404],
-    { targetAccount: owner },
-  );
-  await attacker.assertRejectedWithoutMutation(
     "/daily-review/read",
     { method: "POST", body: { id: reviewItemId } },
     [404],
@@ -359,9 +331,6 @@ suite.add("optimistic-locking-idempotency-and-races", async () => {
     "/watch",
     "/watch/catalog",
     "/watch/dividend-calendar",
-    "/investment-rules",
-    "/system-reviews",
-    "/review-reminders",
     "/model-config",
     "/daily-review",
   ];
@@ -765,15 +734,8 @@ suite.add("evidence-attachments-leak-and-validation-fuzzing", async () => {
     suite.count();
   }
 
-  // Blank investment rule, SQL-injection-like watch symbols, and invalid calendar dates.
-  await user.assertRejectedWithoutMutation(
-    "/investment-rules",
-    {
-      method: "POST",
-      body: { category: "  ", statement: "  ", trigger: "\t", rationale: "\n", active: true },
-    },
-    [400],
-  );
+  // Retired legacy review routes, SQL-injection-like watch symbols, and invalid calendar dates.
+  await user.assertRejectedWithoutMutation("/investment-rules", { method: "GET" }, [404]);
   for (const badSymbol of ["", "INVALID!", "600036.SS'; DROP TABLE watch_entries;--"]) {
     await user.assertRejectedWithoutMutation(
       "/watch",
@@ -1110,9 +1072,37 @@ suite.add("backup-corruption-rollback-and-static-caching", async () => {
   });
   const legacyV31 = structuredClone(validBackup);
   legacyV31.schemaVersion = 31;
-  legacyV31.tables = legacyV31.tables.filter(
-    (t) => t.name !== "daily_review_runs" && t.name !== "daily_review_items",
-  );
+  legacyV31.tables = [
+    ...legacyV31.tables.filter(
+      (t) => t.name !== "daily_review_runs" && t.name !== "daily_review_items",
+    ),
+    {
+      name: "system_reviews",
+      columns: ["id", "payload", "snapshot", "next_review_date", "created_at"],
+      rows: [],
+    },
+    {
+      name: "investment_rules",
+      columns: [
+        "id",
+        "category",
+        "statement",
+        "trigger",
+        "rationale",
+        "active",
+        "source_review_id",
+        "revision",
+        "created_at",
+        "updated_at",
+      ],
+      rows: [],
+    },
+    {
+      name: "investment_rule_revisions",
+      columns: ["rule_id", "revision", "payload", "changed_at"],
+      rows: [],
+    },
+  ];
   await legacyReader.expectOk("/data/import", { method: "POST", body: legacyV31 });
   const restoredSnap = (await legacyReader.expectOk("/snapshot")).json;
   assert.equal(restoredSnap.holdings[0].marketValue, 66666);

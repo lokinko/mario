@@ -17,8 +17,8 @@ export const clientLayers = {
   api: ['api'],
   shared: ['components', 'lib', 'types'],
 };
-export const featureModules = ['account', 'dailyReview', 'dashboard', 'methodology', 'portfolio', 'advisor', 'evidence', 'reviews', 'settings', 'watch'];
-export const apiModules = ['account', 'activity', 'dailyReview', 'memory', 'methodology', 'portfolio', 'analysis', 'evidence', 'reviews', 'settings', 'watch'];
+export const featureModules = ['account', 'dailyReview', 'dashboard', 'methodology', 'portfolio', 'advisor', 'evidence', 'settings', 'watch'];
+export const apiModules = ['account', 'activity', 'dailyReview', 'memory', 'methodology', 'portfolio', 'analysis', 'evidence', 'settings', 'watch'];
 export function boundaryOf(layers, name) {
   return Object.entries(layers).find(([, modules]) => modules.includes(name))?.[0];
 }
@@ -32,17 +32,17 @@ export function clientBoundaryViolation(path) {
 
 // Business ownership is separate from the physical technical layer.
 export const clientFeatureOwners = {
-  account: 'user', methodology: 'user', portfolio: 'user', evidence: 'user', reviews: 'user', watch: 'user',
+  account: 'user', methodology: 'user', portfolio: 'user', evidence: 'user', watch: 'user',
   advisor: 'ai', dailyReview: 'ai', settings: 'ai', dashboard: 'support',
 };
 export const clientApiOwners = {
-  account: 'user', methodology: 'user', portfolio: 'user', evidence: 'user', reviews: 'user', watch: 'user',
+  account: 'user', methodology: 'user', portfolio: 'user', evidence: 'user', watch: 'user',
   analysis: 'ai', dailyReview: 'ai', memory: 'ai', settings: 'ai', activity: 'support',
 };
 export const clientTypeOwners = { 'user.ts': 'user', 'market.ts': 'market', 'ai.ts': 'ai' };
 export const serverModelOwners = {
   accounting: 'user', daily: 'user', fx: 'user', methodology: 'user', options: 'user',
-  portfolio: 'user', research: 'user', reviews: 'user', watch: 'user',
+  portfolio: 'user', research: 'user', watch: 'user',
   market: 'market',
   analysis: 'ai', connection: 'ai', council: 'ai', daily_review: 'ai',
   endpoint: 'ai', inference: 'ai', memory: 'ai', provider: 'ai',
@@ -59,7 +59,7 @@ export const serverPortOwners = {
 };
 export const serverHttpOwners = {
   context: 'assembly', error: 'assembly', policy: 'assembly',
-  portfolio: 'user', watch: 'user', evidence: 'user', methodology: 'user', reviews: 'user',
+  portfolio: 'user', watch: 'user', evidence: 'user', methodology: 'user',
   analysis: 'ai', daily_review: 'ai', memory: 'ai', model_settings: 'ai', codex_bridge: 'ai',
 };
 export const httpCapabilities = {
@@ -67,7 +67,6 @@ export const httpCapabilities = {
   'http/watch.rs': { context: 'WatchContext', ports: ['user_records::WatchManagement', 'user_account::WatchAccount', 'account::AccountSession'] },
   'http/evidence.rs': { context: 'EvidenceContext', ports: ['user_records::EvidenceAccount'] },
   'http/methodology.rs': { context: 'MethodologyContext', ports: ['user_records::MethodologyAccount'] },
-  'http/reviews.rs': { context: 'ReviewContext', ports: ['user_records::ReviewAccount'] },
   'http/analysis.rs': { context: 'AnalysisContext', ports: ['ai_records::AnalysisArchive'] },
   'http/daily_review.rs': { context: 'DailyReviewContext', ports: ['ai_account::DailyReviewAccount', 'account::AccountSession'] },
   'http/memory.rs': { context: 'MemoryContext', ports: ['ai_account::MemoryAccount'] },
@@ -179,7 +178,6 @@ export const httpOwnedRoutes = {
   'http/memory.rs': ['/api/memory'],
   'http/codex_bridge.rs': ['/api/codex-bridge'],
   'http/watch.rs': ['/api/watch'],
-  'http/reviews.rs': ['/api/investment-rules', '/api/system-reviews', '/api/review-reminders'],
   'http/portfolio.rs': ['/api/snapshot', '/api/profile', '/api/holdings', '/api/holding-trades', '/api/corporate-actions', '/api/financial-operations', '/api/daily-assets', '/api/portfolio', '/api/market-data', '/api/fx-settings'],
 };
 export function httpRouteViolation(source, route) {

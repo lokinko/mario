@@ -49,11 +49,6 @@ function chooseFile(value: string, size = value.length, replace = false) {
       true,
     );
 }
-function pasteBox() {
-  if (!screen.queryByLabelText("粘贴 JSON 数据"))
-    fireEvent.click(screen.getByRole("button", { name: "粘贴 JSON" }));
-  return screen.getByLabelText("粘贴 JSON 数据");
-}
 
 function externalJson() {
   const watchlist = [
@@ -74,15 +69,15 @@ function externalJson() {
   };
 }
 
-it("previews pasted external JSON without counting the duplicate top-level watchlist", async () => {
+it("previews external JSON file without counting the duplicate top-level watchlist and removes paste mode", async () => {
   vi.mocked(accountApi.importData).mockResolvedValueOnce({});
   const { onRestore } = mount();
+  expect(screen.queryByRole("button", { name: "粘贴 JSON" })).toBeNull();
   const data = { ...externalJson(), version: "2.2" };
-  fireEvent.change(pasteBox(), {
-    target: { value: JSON.stringify(data) },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "预览导入" }));
-  expect(screen.getByText(/将导入 1 只自选证券、1 条交易记录/)).toBeTruthy();
+  chooseFile(JSON.stringify(data));
+  expect(
+    await screen.findByText(/将导入 1 只自选证券、1 条交易记录/),
+  ).toBeTruthy();
   expect(accountApi.importData).not.toHaveBeenCalled();
   await acceptImport();
   expect(accountApi.importData).toHaveBeenCalledWith({
@@ -122,34 +117,11 @@ it("rejects unsupported or malformed source formats before a write", async () =>
     { version: "1.0", data: { accounts: [] } },
     { version: "1.0", data: { accounts: [null] } },
   ]) {
-    fireEvent.change(pasteBox(), {
-      target: { value: JSON.stringify(data) },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "预览导入" }));
-    expect(screen.getByRole("alert")).toBeTruthy();
+    chooseFile(JSON.stringify(data));
+    expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
   }
   expect(accountApi.importData).not.toHaveBeenCalled();
-});
-
-it("preserves pasted input after a rejected import and permits correction", async () => {
-  vi.mocked(accountApi.importData).mockRejectedValueOnce(
-    new Error("源 shares 与逐笔交易重放后的股数不一致"),
-  );
-  mount();
-  const value = JSON.stringify(externalJson());
-  fireEvent.change(pasteBox(), {
-    target: { value },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "预览导入" }));
-  await acceptImport();
-  expect((await screen.findByRole("alert")).textContent).toContain(
-    "股数不一致",
-  );
-  fireEvent.click(screen.getByRole("button", { name: "取消" }));
-  expect(
-    (screen.getByLabelText("粘贴 JSON 数据") as HTMLTextAreaElement).value,
-  ).toBe(value);
 });
 
 it("restores export and import controls after an export failure", async () => {
@@ -192,7 +164,11 @@ async function acceptImport(replace = false) {
     }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     expect(accountApi.prepareDataReplacement).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("checkbox", { name: "我已导出当前数据" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "我确认覆盖当前账号的全部业务数据（覆盖前将自动下载备份）",
+      }),
+    );
   }
   fireEvent.click(
     screen.getByRole("button", { name: replace ? "确认覆盖导入" : "确认导入" }),

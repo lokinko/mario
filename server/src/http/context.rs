@@ -16,9 +16,7 @@ use crate::{
         analysis::AnalysisExecutor,
         market::SecurityMarketProvider,
         user_account::PortfolioAccount,
-        user_records::{
-            EvidenceAccount, LedgerAccount, MethodologyAccount, ReviewAccount, WatchManagement,
-        },
+        user_records::{EvidenceAccount, LedgerAccount, MethodologyAccount, WatchManagement},
     },
     AppResult,
 };
@@ -142,12 +140,6 @@ impl MethodologyContext {
         &self.0.parts.db
     }
 }
-scoped_context!(ReviewContext);
-impl ReviewContext {
-    pub fn account(&self) -> &impl ReviewAccount {
-        &self.0.parts.db
-    }
-}
 
 scoped_context!(AnalysisContext);
 impl AnalysisContext {
@@ -247,7 +239,6 @@ mod tests {
         requires_account::<WatchContext>().await;
         requires_account::<EvidenceContext>().await;
         requires_account::<MethodologyContext>().await;
-        requires_account::<ReviewContext>().await;
         requires_account::<AnalysisContext>().await;
         requires_account::<MemoryContext>().await;
         requires_account::<DailyReviewContext>().await;

@@ -465,7 +465,17 @@ export function WebAccess({
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
-        <ServerAddress />
+        <details
+          className="server-address-details login-server-details"
+          open={
+            Boolean(localStorage.getItem(serviceUrlStorageKey())) || undefined
+          }
+        >
+          <summary>自定义服务器地址</summary>
+          <div className="server-address-details-body">
+            <ServerAddress />
+          </div>
+        </details>
         {error && <Callout tone="danger">{error}</Callout>}
         <Button
           type="primary"

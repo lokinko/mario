@@ -214,16 +214,6 @@ fn current_backup_round_trip_preserves_data_and_excludes_private_settings() {
         .unwrap();
     source.add_holding(&detailed_holding_input()).unwrap();
     source
-        .add_investment_rule(&InvestmentRuleInput {
-            category: "仓位".into(),
-            statement: "核对集中度".into(),
-            trigger: "加仓前".into(),
-            rationale: "限制风险".into(),
-            active: true,
-            source_review_id: None,
-        })
-        .unwrap();
-    source
         .add_research_evidence(&ResearchEvidenceInput {
             content: "待核对资料\n来源：https://example.com/source\n原文".into(),
             ..Default::default()
@@ -359,51 +349,6 @@ fn retired_records_stay_out_of_exports_and_legacy_imports_preserve_active_data()
     ).unwrap();
     assert_eq!(retired_tables, 0);
     restored.export_sync_data().unwrap().validate().unwrap();
-}
-
-#[test]
-fn independent_text_reviews_preserve_content_through_restart_and_import() {
-    let account = crate::db::TestAccount::new();
-    let db = account.open();
-    for content in ["", " \n\t "] {
-        let input: SystemReviewInput =
-            serde_json::from_value(serde_json::json!({"content": content})).unwrap();
-        assert!(matches!(
-            db.save_system_review(&input),
-            Err(AppError::Validation(_))
-        ));
-    }
-    assert!(
-        db.review_reminder_summary(NaiveDate::from_ymd_opt(2026, 10, 12).unwrap())
-            .unwrap()
-            .periodic_review_due
-    );
-    let content = " 我的观点：继续观察。\n\n顾虑：资料不足。\n思考：<原文> **保留**。 ";
-    let input: SystemReviewInput =
-        serde_json::from_value(serde_json::json!({"content": content})).unwrap();
-    let review = db.save_system_review(&input).unwrap();
-    assert_eq!(review.content.as_deref(), Some(content));
-    assert!(review.next_review_date.is_empty());
-    assert_eq!(review.adherence_score, None);
-    assert!(
-        !db.review_reminder_summary(NaiveDate::from_ymd_opt(2026, 10, 12).unwrap())
-            .unwrap()
-            .periodic_review_due
-    );
-    drop(db);
-    let reopened = account.open();
-    assert_eq!(
-        reopened.system_reviews().unwrap()[0].content.as_deref(),
-        Some(content)
-    );
-    let target = Database::test();
-    target
-        .import_sync_data(&reopened.export_sync_data().unwrap())
-        .unwrap();
-    assert_eq!(
-        target.system_reviews().unwrap()[0].content.as_deref(),
-        Some(content)
-    );
 }
 
 fn verified_quote() -> SecurityPriceQuote {
@@ -1078,101 +1023,6 @@ fn ignores_unknown_fields_in_stored_workflow_trace() {
 }
 
 #[test]
-fn versions_investment_rules_without_overwriting_history() {
-    let db = Database::test();
-    let original = InvestmentRuleInput {
-        category: "仓位".into(),
-        statement: "单一主动仓位不超过 10%".into(),
-        trigger: "任何新建或加仓决定".into(),
-        rationale: "限制单一判断错误的永久损失".into(),
-        active: true,
-        source_review_id: None,
-    };
-    let created = db.add_investment_rule(&original).unwrap();
-    let revised = db
-        .update_investment_rule(
-            &created.id,
-            &InvestmentRuleInput {
-                statement: "单一主动仓位不超过 8%".into(),
-                ..original
-            },
-        )
-        .unwrap();
-
-    assert_eq!(revised.revision, 2);
-    let history = db.investment_rule_history(&created.id).unwrap();
-    assert_eq!(history.len(), 2);
-    assert_eq!(history[0].statement, "单一主动仓位不超过 8%");
-    assert_eq!(history[1].statement, "单一主动仓位不超过 10%");
-}
-
-#[test]
-fn system_review_freezes_portfolio_and_method_snapshot() {
-    let db = Database::test();
-    db.add_holding(&HoldingInput {
-        exact_values: None,
-        cash_amount: None,
-        symbol: "IDX".into(),
-        name: "指数".into(),
-        asset_class: "基金".into(),
-        market_value: 100_000.0,
-        cost_basis: 90_000.0,
-        cost_price: None,
-        quantity: None,
-        current_price: None,
-        target_pct: 100.0,
-        currency: "CNY".into(),
-        fx_rate_to_base: None,
-        valuation_date: "2026-01-01".into(),
-        fx_rate_source: String::new(),
-        fx_rate_observed_on: String::new(),
-    })
-    .unwrap();
-    db.add_investment_rule(&InvestmentRuleInput {
-        category: "行为".into(),
-        statement: "重大决定等待 24 小时".into(),
-        trigger: "出现计划外交易冲动".into(),
-        rationale: "降低情绪交易".into(),
-        active: true,
-        source_review_id: None,
-    })
-    .unwrap();
-    let review = db
-        .save_system_review(&SystemReviewInput {
-            content: "按计划定投，没有追涨。继续降低无效交易，下季度检查再平衡。".into(),
-        })
-        .unwrap();
-    let holding_id = db.snapshot().unwrap().holdings[0].id.clone();
-    db.update_holding(
-        &holding_id,
-        &HoldingInput {
-            exact_values: None,
-            cash_amount: None,
-            symbol: "IDX".into(),
-            name: "指数".into(),
-            asset_class: "基金".into(),
-            market_value: 200_000.0,
-            cost_basis: 90_000.0,
-            cost_price: None,
-            quantity: None,
-            current_price: None,
-            target_pct: 100.0,
-            currency: "CNY".into(),
-            fx_rate_to_base: None,
-            valuation_date: "2026-02-01".into(),
-            fx_rate_source: String::new(),
-            fx_rate_observed_on: String::new(),
-        },
-    )
-    .unwrap();
-
-    let stored = db.system_reviews().unwrap().remove(0);
-    assert_eq!(stored.id, review.id);
-    assert_eq!(stored.snapshot.portfolio_value, 100_000.0);
-    assert_eq!(stored.snapshot.active_rules, 1);
-}
-
-#[test]
 fn stores_immutable_research_evidence_and_allows_archiving() {
     let db = Database::test();
     let created = db
@@ -1250,34 +1100,10 @@ fn research_evidence_tags_are_editable_without_changing_content_and_survive_back
 }
 
 #[test]
-fn reads_frozen_structured_reviews_after_retiring_the_old_write_format() {
-    let db = Database::test();
-    db.conn().unwrap().execute(
-        "INSERT INTO system_reviews(id,payload,snapshot,next_review_date,created_at) VALUES ($1,$2,$3,$4,$5)",
-        params!["old-review", r#"{"periodLabel":"2026 Q3","adherenceScore":4,"processSummary":"原始过程","lessons":"原始经验","nextReviewDate":"2026-12-31"}"#,
-            r#"{"portfolioValue":100,"emergencyMonths":3,"concentrationPct":0,"riskStatus":"ready","highRiskFindings":0,"activeRules":0}"#,
-            "2026-12-31", "2026-09-30T00:00:00Z"]
-    ).unwrap();
-    let stored = db.system_reviews().unwrap().remove(0);
-    assert_eq!(stored.content, None);
-    assert_eq!(stored.period_label, "2026 Q3");
-    assert_eq!(stored.process_summary, "原始过程");
-    assert_eq!(stored.lessons, "原始经验");
-    assert_eq!(stored.adherence_score, Some(4));
-    assert_eq!(stored.snapshot.portfolio_value, 100.0);
-}
-
-#[test]
 fn rejects_retired_structured_write_formats() {
     assert!(
         serde_json::from_value::<ResearchEvidenceInput>(serde_json::json!({
             "assetName":"指数", "claim":"旧表单"
-        }))
-        .is_err()
-    );
-    assert!(
-        serde_json::from_value::<SystemReviewInput>(serde_json::json!({
-            "periodLabel":"旧周期", "processSummary":"旧复盘"
         }))
         .is_err()
     );
@@ -1428,6 +1254,25 @@ fn manual_holding_details_reject_invalid_values_and_inconsistent_sync() {
 /// Exports before v30 have no research evidence category column.
 pub(super) fn set_legacy_version(dataset: &mut SyncDataset, version: u32) {
     dataset.schema_version = version;
+    if version < 33 {
+        let specs = sync_specs_for_version(32).unwrap();
+        for (index, spec) in specs.iter().enumerate() {
+            if matches!(
+                spec.name,
+                "system_reviews" | "investment_rules" | "investment_rule_revisions"
+            ) && !dataset.tables.iter().any(|t| t.name == spec.name)
+            {
+                dataset.tables.insert(
+                    index,
+                    SyncTable {
+                        name: spec.name.into(),
+                        columns: spec.columns.iter().map(|column| (*column).into()).collect(),
+                        rows: Vec::new(),
+                    },
+                );
+            }
+        }
+    }
     if version < 32 {
         dataset
             .tables

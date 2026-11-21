@@ -184,17 +184,19 @@ it("shows original text and all legacy information, with reversible archiving", 
   expect(await screen.findByRole("button", { name: "恢复" })).toBeTruthy();
 });
 
-it("carries source topics into the question so saved text can be retrieved", async () => {
+it("asks AI directly about one selected evidence item from its drawer", async () => {
   vi.mocked(researchApi.getResearchEvidence).mockResolvedValue([
-    { ...saved, title: "黄金储备变化" },
+    { ...saved, title: "黄金储备变化", assetName: "招商银行 600036.SS" },
     { ...saved, id: "archived", title: "旧资料", active: false },
   ]);
   const onAsk = vi.fn();
   render(<EvidenceWorkbench stocks={stocks} flash={vi.fn()} onAsk={onAsk} />);
-  await screen.findByRole("button", { name: "黄金储备变化" });
-  fireEvent.click(screen.getByRole("button", { name: "用资料提问" }));
+  expect(screen.queryByRole("button", { name: "用资料提问" })).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "黄金储备变化" }));
+  fireEvent.click(screen.getByRole("button", { name: "基于此资料提问" }));
   const question = onAsk.mock.calls[0][0];
   expect(question).toContain("黄金储备变化");
+  expect(question).toContain("招商银行 600036.SS");
   expect(question).not.toContain("旧资料");
   expect(onAsk).toHaveBeenCalledTimes(1);
 });

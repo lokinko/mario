@@ -10,7 +10,6 @@ mod methodology;
 mod model_settings;
 pub(crate) mod policy;
 mod portfolio;
-mod reviews;
 mod watch;
 use axum::{routing::get, Json, Router};
 pub(crate) use context::{RequestContext, RequestContextParts};
@@ -26,7 +25,6 @@ pub(crate) fn api_router() -> Router {
         .merge(daily_review::router())
         .merge(evidence::router())
         .merge(memory::router())
-        .merge(reviews::router())
         .merge(methodology::router())
         .merge(model_settings::router())
         .merge(watch::router())

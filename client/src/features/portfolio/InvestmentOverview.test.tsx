@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { InvestmentOverview } from "./InvestmentOverview";
 import { emptyHolding } from "./forms";
@@ -43,7 +43,7 @@ const accounting: NonNullable<Snapshot["accounting"]> = {
     realized: { value: null, missing: 1 },
   },
 };
-it("renders the server's exact totals, P/L ratios to total assets and source amounts without recalculating projections", () => {
+it("renders the server's exact totals and P/L ratios to total assets without duplicate breakdown table", () => {
   const { container } = render(
     <InvestmentOverview holdings={[holding]} accounting={accounting} />,
   );
@@ -59,10 +59,7 @@ it("renders the server's exact totals, P/L ratios to total assets and source amo
     container.querySelector(".metric-realized .investment-metric-ratio")
       ?.textContent,
   ).toBe("占总资产 +5.83%");
-  expect(screen.queryByText("100.12")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "原币明细 ›" }));
-  expect(screen.getByText("100.12")).toBeTruthy();
-  expect(screen.getByText("2026-10-12")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "原币明细 ›" })).toBeNull();
   expect(container.querySelector("details")).toBeNull();
 });
 it("discloses unavailable accounting instead of calculating or fabricating a zero", () => {
@@ -72,7 +69,7 @@ it("discloses unavailable accounting instead of calculating or fabricating a zer
     container.querySelectorAll(".investment-overview-metric"),
   ).toHaveLength(0);
 });
-it("preserves server missing-data status and hides unusable per-holding amounts", () => {
+it("preserves server missing-data status", () => {
   render(
     <InvestmentOverview
       holdings={[holding]}
@@ -86,9 +83,8 @@ it("preserves server missing-data status and hides unusable per-holding amounts"
       }}
     />,
   );
-  expect(screen.queryByText("100.12")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "待补 1" }));
-  expect(screen.getAllByText("—")).toHaveLength(5);
+  expect(screen.getByText("待补 1")).toBeTruthy();
+  expect(screen.getByText("—")).toBeTruthy();
 });
 it("uses the server's cash total and shows only the cash metric", () => {
   const { container } = render(

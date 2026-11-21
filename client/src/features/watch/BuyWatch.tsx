@@ -1,17 +1,9 @@
 import { useEffect, useState } from "react";
-import { Button, Input, Tabs } from "antd";
-import {
-  Plus,
-  RefreshCw,
-  Search,
-  List,
-  LayoutGrid,
-  SlidersHorizontal,
-} from "lucide-react";
+import { Button, Input, Segmented, Tabs } from "antd";
+import { Plus, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
 import {
   getWatchBoard,
   getWatchCatalog,
-  refreshWatchCatalog,
   type CatalogBoard,
   saveWatch,
   saveWatchGrid,
@@ -25,7 +17,6 @@ import {
 } from "../../api/watch";
 import type { Snapshot } from "../../types/user";
 import { PageHeader } from "../../components/PageHeader";
-import { dividendPreviewHref } from "./dividend-preview/route";
 import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";
 import { useRequestGuard } from "../../lib/useRequestGuard";
@@ -43,6 +34,7 @@ import { WatchCatalogEditor } from "./WatchCatalogEditor";
 import { WatchList } from "./WatchList";
 import { WatchCatalogDetails } from "./WatchCatalogDetails";
 import { WatchDetails } from "./WatchDetails";
+import { DividendCalendar } from "./DividendCalendar";
 import {
   canonical,
   displayWatch,
@@ -61,17 +53,14 @@ export function BuyWatch({
   flash,
   onEdited,
   onSaved,
-  target,
-  onTargetConsumed,
 }: {
   snapshot: Snapshot;
   onAsk: (question: string) => void;
   flash: (message: string) => void;
   onEdited: () => void;
   onSaved: () => void;
-  target?: { id: number; symbol: string; personal: boolean };
-  onTargetConsumed?: (id: number) => void;
 }) {
+  const [mode, setMode] = useState<"watch" | "calendar">("watch");
   const [session] = useState(currentSession);
   const [board, setBoardState] = useState<WatchBoard | null>(() =>
     readSessionCache<WatchBoard>(session, "watch:board"),
@@ -106,7 +95,6 @@ export function BuyWatch({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<WatchSort>("yield");
   const [ownership, setOwnership] = useState("all");
-  const [view, setView] = useState<"compact" | "cards">("compact");
   const guard = useRequestGuard();
   const catalogGuard = useRequestGuard();
   const loadCatalog = async (usePrefetch = false) => {
@@ -142,8 +130,19 @@ export function BuyWatch({
     void Promise.all([load(true), loadCatalog(true)]);
   }, []);
   useEffect(() => {
-    if (!target) return;
-    const normalized = canonical(target.symbol);
+    if (busy || mode !== "watch") return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        if (group === "favorites") void load();
+        else void loadCatalog();
+      }
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [group, busy, mode]);
+
+  const inspectFromCalendar = (symbol: string) => {
+    const normalized = canonical(symbol);
+    setMode("watch");
     const inFavorites = board?.rows.some(
       (row) => canonical(row.entry.symbol) === normalized,
     );
@@ -151,7 +150,6 @@ export function BuyWatch({
       setGroup("favorites");
       setQuery(normalized);
       setExpanded(normalized);
-      onTargetConsumed?.(target.id);
       return;
     }
     const catalogMatch = catalog?.rows.find(
@@ -161,32 +159,47 @@ export function BuyWatch({
       setGroup(catalogMatch.industryId);
       setQuery(normalized);
       setExpanded(catalogMatch.company.symbol);
-      onTargetConsumed?.(target.id);
       return;
     }
-    if (board && catalog) {
-      setQuery(normalized);
-      onTargetConsumed?.(target.id);
-    }
-  }, [target, board, catalog, onTargetConsumed]);
-  useEffect(() => {
-    if (busy) return;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        if (group === "favorites") void load();
-        else void loadCatalog();
-      }
-    }, 30000);
-    return () => window.clearInterval(timer);
-  }, [group, busy]);
+    setQuery(normalized);
+  };
+
   const activeRules =
     (group === "favorites" ? board?.rules : catalog?.rules) ??
     board?.rules ??
     catalog?.rules;
+
+  const modeSwitcher = (
+    <div className="watch-mode-bar" data-presentation="true">
+      <Segmented
+        aria-label="观察视图"
+        value={mode}
+        onChange={(next) => setMode(next as "watch" | "calendar")}
+        options={[
+          { value: "watch", label: "买点观察" },
+          { value: "calendar", label: "分红日历" },
+        ]}
+      />
+    </div>
+  );
+
+  if (mode === "calendar") {
+    return (
+      <div className="page watch-page">
+        <PageHeader title="买点观察" action={modeSwitcher} />
+        <DividendCalendar
+          embedded
+          onAsk={onAsk}
+          onInspectWatch={inspectFromCalendar}
+        />
+      </div>
+    );
+  }
+
   if (!activeRules)
     return (
       <div className="page watch-page">
-        <PageHeader title="买点观察" />
+        <PageHeader title="买点观察" action={modeSwitcher} />
         {error || catalogError ? (
           <Callout tone="danger">
             <span>{error || catalogError}</span>
@@ -267,17 +280,7 @@ export function BuyWatch({
   const publicActive = !own
     ? catalog?.rows.find((row) => row.company.symbol === expanded)
     : undefined;
-  const refresh = () =>
-    own
-      ? run(refreshWatch)
-      : run(async () => {
-          const current = catalogGuard.begin();
-          const next = await refreshWatchCatalog(group);
-          if (current()) {
-            setCatalog(next);
-            setCatalogError("");
-          }
-        });
+  const refresh = () => run(refreshWatch);
   const add = (row: WatchDisplayRow) => {
     if (!board || favorites.has(row.company.symbol) || !canAdd || busy) return;
     void run(async () => {
@@ -329,9 +332,7 @@ export function BuyWatch({
         title="买点观察"
         action={
           <>
-            <Button href={dividendPreviewHref()} target="_blank" rel="noopener">
-              红利观察
-            </Button>
+            {modeSwitcher}
             {catalog?.canEdit && (
               <Button
                 disabled={busy || open || !!expanded}
@@ -340,15 +341,20 @@ export function BuyWatch({
                 维护公共公司
               </Button>
             )}
-            <Button
-              disabled={busy || !currentRows.length}
-              onClick={() => void refresh()}
-              icon={
-                <RefreshCw size={15} className={busy ? "watch-spinning" : ""} />
-              }
-            >
-              {busy ? "处理中…" : "检查最新收盘"}
-            </Button>
+            {own && (
+              <Button
+                disabled={busy || !currentRows.length}
+                onClick={() => void refresh()}
+                icon={
+                  <RefreshCw
+                    size={15}
+                    className={busy ? "watch-spinning" : ""}
+                  />
+                }
+              >
+                {busy ? "处理中…" : "检查最新收盘"}
+              </Button>
+            )}
             <Button
               type="primary"
               disabled={busy || !board}
@@ -502,26 +508,6 @@ export function BuyWatch({
                   ))}
                 </select>
               </label>
-              <div
-                className="watch-view-toggle"
-                role="group"
-                aria-label="展示方式"
-              >
-                <button
-                  aria-label="紧凑列表"
-                  aria-pressed={view === "compact"}
-                  onClick={() => setView("compact")}
-                >
-                  <List size={17} />
-                </button>
-                <button
-                  aria-label="详细卡片"
-                  aria-pressed={view === "cards"}
-                  onClick={() => setView("cards")}
-                >
-                  <LayoutGrid size={17} />
-                </button>
-              </div>
             </div>
           )}
           {currentRows.length > 0 && (
@@ -559,7 +545,6 @@ export function BuyWatch({
           {visible.length > 0 && (
             <WatchList
               rows={visible}
-              view={view}
               held={held}
               busy={busy}
               rules={rules}
@@ -586,8 +571,6 @@ export function BuyWatch({
               canAdd={canAdd}
               onAdd={add}
               onDetails={(row) => setExpanded(row.company.symbol)}
-              onAsk={ask}
-              onEdit={(row) => edit(row.entry)}
               onRetry={() => void refresh()}
               onRead={(row) =>
                 void run(async () => {
@@ -620,7 +603,6 @@ export function BuyWatch({
           canAdd={canAdd}
           onClose={() => setExpanded(null)}
           onAdd={() => add(publicActive)}
-          onRetry={() => void refresh()}
         />
       )}
       {active && !open && (

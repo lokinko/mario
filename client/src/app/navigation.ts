@@ -4,7 +4,6 @@ import {
   WalletCards,
   BookOpen,
   ChartNoAxesCombined,
-  CalendarDays,
   Newspaper,
 } from "lucide-react";
 import { dividendQuestionSymbol } from "../features/watch/dividend-preview/route";
@@ -12,9 +11,8 @@ import { dividendQuestionSymbol } from "../features/watch/dividend-preview/route
 export type View =
   | "watch"
   | "dailyReview"
-  | "calendar"
   | "facts"
-  | "reference"
+  | "evidence"
   | "advisor"
   | "methodology"
   | "settings";
@@ -22,9 +20,8 @@ export type View =
 export const views: View[] = [
   "watch",
   "dailyReview",
-  "calendar",
   "facts",
-  "reference",
+  "evidence",
   "advisor",
   "methodology",
   "settings",
@@ -49,14 +46,13 @@ export const navGroups: {
     items: [
       { id: "dailyReview", label: "每日复盘", icon: Newspaper },
       { id: "watch", label: "买点观察", icon: ChartNoAxesCombined },
-      { id: "calendar", label: "分红日历", icon: CalendarDays },
       { id: "advisor", label: "问答", icon: MessageCircle },
     ],
   },
   {
     caption: "研究",
     items: [
-      { id: "reference", label: "参考信息", icon: Database },
+      { id: "evidence", label: "研究资料", icon: Database },
       { id: "methodology", label: "投资方法论", icon: BookOpen },
     ],
   },
@@ -72,10 +68,9 @@ export const mobileTabs: (typeof navGroups)[number]["items"] = [
 export const viewLabels: Record<View, string> = {
   dailyReview: "每日复盘",
   watch: "买点观察",
-  calendar: "分红日历",
   methodology: "投资方法论",
   advisor: "问答",
   facts: "我的情况",
-  reference: "参考信息",
+  evidence: "研究资料",
   settings: "设置",
 };

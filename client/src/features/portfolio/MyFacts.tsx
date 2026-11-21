@@ -10,7 +10,6 @@ import { AllocationChart } from "./AllocationChart";
 import { AssetOverview } from "./AssetOverview";
 import { useAssetHistory } from "./useAssetHistory";
 import { Callout } from "../../components/Callout";
-import type { DisplayPreferenceProps } from "../../components/DisplayPreferences";
 import { HoldingDetail } from "./HoldingDetail";
 import { HoldingTrades } from "./HoldingTrades";
 import { HoldingsList, defaultHoldingFilters } from "./HoldingsList";
@@ -79,9 +78,7 @@ export function MyFacts({
   section: requestedSection,
   onSectionChange,
   onSaved,
-  display = { maskAmounts: false, setMaskAmounts: () => {} },
 }: {
-  display?: Pick<DisplayPreferenceProps, "maskAmounts" | "setMaskAmounts">;
   section?: FactsSection;
   onSectionChange?: (section: FactsSection) => void;
   onSaved?: () => void;
@@ -327,12 +324,13 @@ export function MyFacts({
             {snapshot.priceRefreshErrors?.join("；")}
           </Callout>
         )}
-      <InvestmentOverview
-        holdings={section === "holdings" ? investments : cash}
-        accounting={displayAccounting}
-        baseCurrency={currency}
-        cash={section === "savings"}
-      />
+      {section === "holdings" && (
+        <InvestmentOverview
+          holdings={investments}
+          accounting={displayAccounting}
+          baseCurrency={currency}
+        />
+      )}
       <section
         className={`panel form-panel ${section === "holdings" ? "investment-panel" : "cash-panel"}`}
       >
@@ -424,9 +422,6 @@ export function MyFacts({
       {section === "holdings" && <AllocationChart snapshot={snapshot} />}
       {section === "savings" && (
         <ProfileForm
-          exchangeRates={
-            <ExchangeRateAccess snapshot={snapshot} onUpdate={onUpdate} />
-          }
           profile={profile}
           savedBaseCurrency={snapshot.profile.baseCurrency}
           onChange={setProfile}
@@ -445,6 +440,7 @@ export function MyFacts({
         title="我的情况"
         action={
           <div className="trade-toolbar facts-heading-actions">
+            <ExchangeRateAccess snapshot={snapshot} onUpdate={onUpdate} />
             {section === "holdings" && investments.length > 0 && (
               <Button
                 icon={<RefreshCw size={15} />}
@@ -499,7 +495,6 @@ export function MyFacts({
           busy || Boolean(editing) || Boolean(selected) || addingTrade
         }
         history={history}
-        display={display}
       />
       {addingTrade && (
         <Drawer title="记录交易" onClose={() => setAddingTrade(false)}>

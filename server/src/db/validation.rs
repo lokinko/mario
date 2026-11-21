@@ -1,10 +1,8 @@
 use {
     crate::{
         models::{
-            market::quotes::SecurityPriceQuote,
-            portfolio::HoldingInput,
+            market::quotes::SecurityPriceQuote, portfolio::HoldingInput,
             research::ResearchEvidenceInput,
-            reviews::{InvestmentRuleInput, SystemReviewInput},
         },
         AppError, AppResult,
     },
@@ -261,32 +259,6 @@ pub(super) fn validate_holding_valuation_evidence(
 fn validate_percentage(value: f64, label: &str) -> AppResult<()> {
     if !value.is_finite() || !(0.0..=100.0).contains(&value) {
         return Err(AppError::Validation(format!("{label}必须在 0—100% 之间")));
-    }
-    Ok(())
-}
-
-pub(super) fn validate_investment_rule(input: &InvestmentRuleInput) -> AppResult<()> {
-    if input.category.trim().is_empty()
-        || input.statement.trim().is_empty()
-        || input.trigger.trim().is_empty()
-        || input.rationale.trim().is_empty()
-    {
-        return Err(AppError::Validation(
-            "规则类别、内容、触发条件和依据均为必填项".into(),
-        ));
-    }
-    if !matches!(
-        input.category.as_str(),
-        "资产配置" | "风险" | "研究" | "仓位" | "行为" | "复盘"
-    ) {
-        return Err(AppError::Validation("未知的投资规则类别".into()));
-    }
-    Ok(())
-}
-
-pub(super) fn validate_system_review(input: &SystemReviewInput) -> AppResult<()> {
-    if input.content.trim().is_empty() {
-        return Err(AppError::Validation("复盘内容不能为空".into()));
     }
     Ok(())
 }

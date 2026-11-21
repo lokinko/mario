@@ -12,7 +12,7 @@
   padding: 0;
 }
 .facts-page .asset-overview {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
   padding: var(--space-5) var(--space-6);
   margin: 0;
   border: 0;
@@ -122,7 +122,7 @@
   outline: none;
 }
 .facts-page .holdings-tools select {
-  display: block;
+  display: none;
   height: 36px;
   min-height: 36px;
   font-size: var(--fs-body-sm);
@@ -183,23 +183,63 @@
 }
 .facts-page .profile-panel {
   margin-top: var(--space-4);
-  padding: var(--space-5);
+  padding: var(--space-4) var(--space-5);
 }
-.profile-panel .panel-title {
-  margin-bottom: var(--space-2);
+.profile-details > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+.profile-details > summary::-webkit-details-marker {
+  display: none;
+}
+.profile-summary-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+}
+.profile-summary-heading h2 {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+.profile-summary-meta {
+  font-size: var(--fs-caption);
+  color: var(--text-3);
+}
+.profile-summary-action {
+  font-size: var(--fs-body-sm);
+  color: var(--brand);
+  font-weight: 500;
+}
+.profile-details[open] .profile-summary-action {
+  display: none;
+}
+.profile-details-body {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+.profile-currency-row {
+  margin-bottom: var(--space-4);
+  max-width: 220px;
+}
+.profile-currency-row label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.profile-currency-row span {
+  color: var(--text-2);
+  font-size: var(--fs-body-sm);
+  font-weight: 500;
 }
 .detail-grid.holding-detail-summary {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.profile-title-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.profile-panel > .section-intro {
-  margin: 0 0 var(--space-5);
-  color: var(--text-3);
-  font-size: var(--fs-body-sm);
 }
 .portfolio-form .form-grid {
   gap: var(--space-4);
@@ -316,6 +356,9 @@
   }
   .facts-page .holdings-tools {
     justify-content: flex-start;
+  }
+  .facts-page .holdings-tools select {
+    display: block;
   }
   .facts-page .portfolio-metric-card .ant-card-body {
     padding: var(--space-3);

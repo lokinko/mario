@@ -14,10 +14,6 @@ use crate::{
             ResearchAttachmentDownload, ResearchEvidence, ResearchEvidenceInput,
             ResearchEvidenceTagsInput,
         },
-        reviews::{
-            InvestmentRule, InvestmentRuleInput, InvestmentRuleRevision, ReviewReminderSummary,
-            SystemReviewInput, SystemReviewRecord,
-        },
         watch::{grid::GridPlan, rules::WatchRules, WatchEntry, WatchInput, WatchRow},
     },
     AppResult,
@@ -104,19 +100,4 @@ pub(crate) trait MethodologyAccount: Send + Sync {
         &self,
         input: InvestmentMethodologyInput,
     ) -> AppResult<InvestmentMethodology>;
-}
-
-pub(crate) trait ReviewAccount: Send + Sync {
-    fn investment_rules(&self) -> AppResult<Vec<InvestmentRule>>;
-    fn add_investment_rule(&self, input: &InvestmentRuleInput) -> AppResult<InvestmentRule>;
-    fn update_investment_rule(
-        &self,
-        id: &str,
-        input: &InvestmentRuleInput,
-    ) -> AppResult<InvestmentRule>;
-    fn investment_rule_history(&self, id: &str) -> AppResult<Vec<InvestmentRuleRevision>>;
-    fn system_reviews(&self) -> AppResult<Vec<SystemReviewRecord>>;
-    fn save_system_review(&self, input: &SystemReviewInput) -> AppResult<SystemReviewRecord>;
-    fn review_reminder_summary(&self, today: chrono::NaiveDate)
-        -> AppResult<ReviewReminderSummary>;
 }

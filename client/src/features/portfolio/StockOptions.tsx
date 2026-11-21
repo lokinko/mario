@@ -14,6 +14,8 @@ export function StockOptions({
   snapshot,
   stock,
   disabled,
+  openAdd = false,
+  onAddClosed,
   onEditingChange,
   onUpdate,
   flash,
@@ -21,11 +23,19 @@ export function StockOptions({
   snapshot: Snapshot;
   stock: Holding;
   disabled: boolean;
+  openAdd?: boolean;
+  onAddClosed?: () => void;
   onEditingChange: (editing: boolean) => void;
   onUpdate: (s: Snapshot) => void;
   flash: (message: string) => void;
 }) {
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(openAdd);
+  useEffect(() => {
+    if (openAdd) {
+      setAdding(true);
+      setSelected("");
+    }
+  }, [openAdd]);
   const [prepared, setPrepared] = useState<{
     contract: OptionContract;
     name: string;
@@ -108,6 +118,17 @@ export function StockOptions({
       setWorking(false);
     }
   }
+  if (
+    options.length === 0 &&
+    !adding &&
+    !prepared &&
+    !quote &&
+    !totals &&
+    !error &&
+    !removal.uncertain
+  ) {
+    return null;
+  }
   return (
     <section aria-label="股票关联期权">
       {totals && (
@@ -164,7 +185,7 @@ export function StockOptions({
           核对期权删除结果
         </button>
       )}
-      {!adding && !quote && (
+      {options.length > 0 && !adding && !quote && (
         <button
           type="button"
           className="secondary"
@@ -278,6 +299,7 @@ export function StockOptions({
               type="button"
               onClick={() => {
                 setAdding(false);
+                onAddClosed?.();
                 drawer.markClean();
               }}
             >
@@ -297,6 +319,7 @@ export function StockOptions({
           onClose={() => {
             setPrepared(null);
             setAdding(false);
+            onAddClosed?.();
           }}
         />
       )}

@@ -5,7 +5,7 @@ use crate::storage::OptionalRow;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 21;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 22;
 
 // Keep migration order intact: re-running on an existing tenant schema is idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -62,34 +62,6 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
            audit TEXT,
            trace TEXT,
            created_at TEXT NOT NULL
-         );
-         CREATE TABLE IF NOT EXISTS system_reviews (
-           id TEXT PRIMARY KEY,
-           payload TEXT NOT NULL,
-           snapshot TEXT NOT NULL,
-           next_review_date TEXT NOT NULL,
-           created_at TEXT NOT NULL
-         );
-         CREATE TABLE IF NOT EXISTS investment_rules (
-           id TEXT PRIMARY KEY,
-           category TEXT NOT NULL,
-           statement TEXT NOT NULL,
-           trigger TEXT NOT NULL,
-           rationale TEXT NOT NULL,
-           active INTEGER NOT NULL,
-           source_review_id TEXT,
-           revision INTEGER NOT NULL,
-           created_at TEXT NOT NULL,
-           updated_at TEXT NOT NULL,
-           FOREIGN KEY(source_review_id) REFERENCES system_reviews(id) DEFERRABLE INITIALLY IMMEDIATE
-         );
-         CREATE TABLE IF NOT EXISTS investment_rule_revisions (
-           rule_id TEXT NOT NULL,
-           revision INTEGER NOT NULL,
-           payload TEXT NOT NULL,
-           changed_at TEXT NOT NULL,
-           PRIMARY KEY(rule_id, revision),
-           FOREIGN KEY(rule_id) REFERENCES investment_rules(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE
          );
          CREATE TABLE IF NOT EXISTS research_evidence (
            id TEXT PRIMARY KEY,
@@ -199,7 +171,7 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
          CREATE INDEX IF NOT EXISTS idx_holding_trades_holding ON holding_trades(holding_id);",
     )?;
     connection
-        .execute_batch("DROP TABLE IF EXISTS portfolio_events; DROP TABLE IF EXISTS goals; DROP TABLE IF EXISTS memory_preferences;")?;
+        .execute_batch("DROP TABLE IF EXISTS portfolio_events; DROP TABLE IF EXISTS goals; DROP TABLE IF EXISTS memory_preferences; DROP TABLE IF EXISTS investment_rule_revisions; DROP TABLE IF EXISTS investment_rules; DROP TABLE IF EXISTS system_reviews;")?;
     // Canonicalize legacy settings once at the storage boundary.
     connection.execute_batch(
         "UPDATE settings SET value='openai-responses'

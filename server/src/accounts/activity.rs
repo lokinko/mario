@@ -20,7 +20,6 @@ pub(super) fn initialize(conn: &Connection) -> AppResult<()> {
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Page {
     Watch,
-    Calendar,
     Facts,
     Evidence,
     Review,
@@ -32,7 +31,6 @@ impl Page {
     fn name(self) -> &'static str {
         match self {
             Self::Watch => "watch",
-            Self::Calendar => "calendar",
             Self::Facts => "facts",
             Self::Evidence => "evidence",
             Self::Review => "review",

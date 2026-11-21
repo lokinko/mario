@@ -7,14 +7,21 @@ import { reportSources } from "./ReportSources";
 import { PageHeader } from "../../components/PageHeader";
 import { SERVER_DATA_UPDATED } from "../../lib/syncEvents";
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, LoaderCircle, Send, Square } from "lucide-react";
+import {
+  ChevronRight,
+  Globe,
+  LoaderCircle,
+  Send,
+  SlidersHorizontal,
+  Square,
+} from "lucide-react";
 import {
   getAnalysis,
   getAnalysisHistory,
   previewAnalysis,
   runAnalysis,
 } from "../../api/analysis";
-import { getAnalysisSettings } from "../../api/settings";
+import { getAnalysisSettings, saveAnalysisSettings } from "../../api/settings";
 import { dreamMemory, getMemory } from "../../api/memory";
 import { MemoryPanel } from "./MemoryPanel";
 import { ContextPreview } from "./ContextPreview";
@@ -24,6 +31,7 @@ import type {
   AnalysisPreview,
   AnalysisResult,
   AnalysisHistoryItem,
+  ContextSelection,
   ModelConfig,
   StoredAnalysis,
 } from "../../types/ai";
@@ -32,6 +40,27 @@ import { previousTurn } from "./previousTurn";
 import { useRequestGuard } from "../../lib/useRequestGuard";
 
 type Turn = { question: string; result: AnalysisResult | StoredAnalysis };
+
+const defaultAnalysisSettings: AnalysisSettings = {
+  workflow: "council",
+  webSearch: false,
+  contextSelection: {
+    includeProfile: true,
+    includeHoldings: true,
+    includeEvidence: true,
+    includeMemory: true,
+  },
+};
+
+const contextToggleItems: {
+  key: keyof ContextSelection;
+  label: string;
+}[] = [
+  { key: "includeProfile", label: "财务档案" },
+  { key: "includeHoldings", label: "当前持仓" },
+  { key: "includeEvidence", label: "研究资料" },
+  { key: "includeMemory", label: "长期记忆" },
+];
 
 function buildRequest(
   settings: AnalysisSettings,
@@ -89,8 +118,33 @@ export function Advisor({
   const [historyError, setHistoryError] = useState("");
   const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
   const handledQuestionId = useRef<number | null>(null);
+  const [analysisSettings, setAnalysisSettings] = useState<AnalysisSettings>(
+    defaultAnalysisSettings,
+  );
+  const [settingsSaving, setSettingsSaving] = useState(false);
+
+  const webSearchSupported = model.provider !== "openai-chat";
 
   useEffect(() => () => streamRef.current?.abort(), []);
+
+  useEffect(() => {
+    let mounted = true;
+    const refreshSettings = () => {
+      void getAnalysisSettings()
+        .then((next) => {
+          if (mounted) setAnalysisSettings(next);
+        })
+        .catch(() => {
+          // Keep defaults if settings fetch fails before sending.
+        });
+    };
+    refreshSettings();
+    window.addEventListener(SERVER_DATA_UPDATED, refreshSettings);
+    return () => {
+      mounted = false;
+      window.removeEventListener(SERVER_DATA_UPDATED, refreshSettings);
+    };
+  }, []);
 
   // One consolidation at a time; it changes the data revision, so a new
   // analysis waits for it rather than racing it.
@@ -195,6 +249,7 @@ export function Advisor({
       // settings change on this device or another device.
       const settings = await getAnalysisSettings();
       if (!isCurrent()) return;
+      setAnalysisSettings(settings);
       const request = buildRequest(settings, model, message, turns);
       // Keep the server's immutable context check without an extra UI step.
       const preview = await previewAnalysis(request);
@@ -298,15 +353,12 @@ export function Advisor({
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewQuestionCount, setPreviewQuestionCount] = useState(0);
   const previewRequest = useRequestGuard();
-  const inspectContext = async () => {
+
+  const loadPreviewFor = async (settings: AnalysisSettings) => {
     const current = previewRequest.begin();
-    setPreviewOpen(true);
     setPreviewBusy(true);
-    setPreview(undefined);
     setPreviewError("");
     try {
-      const settings = await getAnalysisSettings();
-      if (!current()) return;
       const request = buildRequest(
         settings,
         model,
@@ -320,12 +372,65 @@ export function Advisor({
       );
       const next = await previewAnalysis(request);
       if (current()) setPreview(next);
-    } catch (error) {
-      if (current()) setPreviewError(String(error));
+    } catch (nextError) {
+      if (current()) setPreviewError(String(nextError));
     } finally {
       if (current()) setPreviewBusy(false);
     }
   };
+
+  const inspectContext = async () => {
+    setPreviewOpen(true);
+    setPreview(undefined);
+    const current = previewRequest.begin();
+    setPreviewBusy(true);
+    setPreviewError("");
+    try {
+      const settings = await getAnalysisSettings();
+      if (!current()) return;
+      setAnalysisSettings(settings);
+      await loadPreviewFor(settings);
+    } catch (nextError) {
+      if (current()) {
+        setPreviewError(String(nextError));
+        setPreviewBusy(false);
+      }
+    }
+  };
+
+  const updateAnalysisSettings = async (optimistic: AnalysisSettings) => {
+    if (settingsSaving || running) return;
+    const previous = analysisSettings;
+    setAnalysisSettings(optimistic);
+    setSettingsSaving(true);
+    setPreviewError("");
+    try {
+      const saved = await saveAnalysisSettings(optimistic);
+      setAnalysisSettings(saved);
+      if (previewOpen) {
+        await loadPreviewFor(saved);
+      }
+    } catch (nextError) {
+      setAnalysisSettings(previous);
+      if (previewOpen) setPreviewError(String(nextError));
+      else setError(String(nextError));
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const toggleWebSearch = (value: boolean) =>
+    updateAnalysisSettings({ ...analysisSettings, webSearch: value });
+
+  const toggleContextItem = (key: keyof ContextSelection, value: boolean) =>
+    updateAnalysisSettings({
+      ...analysisSettings,
+      contextSelection: {
+        ...analysisSettings.contextSelection,
+        [key]: value,
+      },
+    });
+
   useEffect(() => {
     const input = inputRef.current;
     if (input) {
@@ -355,6 +460,9 @@ export function Advisor({
           : `${Math.floor(minutes / 1440)} 天前`;
   };
   const [historyOpen, setHistoryOpen] = useState(false);
+  const includedCount = contextToggleItems.filter(
+    (item) => analysisSettings.contextSelection[item.key],
+  ).length;
   return (
     <div className="page conversation-page">
       <PageHeader
@@ -436,9 +544,9 @@ export function Advisor({
             <section className="conversation-welcome" aria-label="开始问答">
               <div className="conversation-starters">
                 {[
-                  "如何核查我关注公司的分红持续性？",
-                  "请结合我的真实交易讨论最近一次红利投资决策。",
-                  "对我认可的红利公司，还需要等待哪些条件再考虑买入？",
+                  "结合我当前持仓和现金，分析组合最主要的风险集中点。",
+                  "帮我复盘最近一笔交易，检查当时的判断依据和潜在盲点。",
+                  "结合我的研究资料，帮我梳理当前最值得优先跟踪的公司。",
                 ].map((prompt) => (
                   <button
                     key={prompt}
@@ -599,21 +707,49 @@ export function Advisor({
               />
             </label>
             <div className="composer-footer">
-              <span role="status">
+              <div className="composer-controls" data-presentation="true">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={
+                    webSearchSupported && analysisSettings.webSearch
+                  }
+                  className={`composer-chip ${webSearchSupported && analysisSettings.webSearch ? "active" : ""}`}
+                  disabled={
+                    !webSearchSupported ||
+                    running ||
+                    Boolean(historyBusy) ||
+                    settingsSaving
+                  }
+                  title={
+                    webSearchSupported
+                      ? "允许模型联网核查最新公开信息"
+                      : "当前模型接口不支持联网搜索"
+                  }
+                  onClick={() =>
+                    void toggleWebSearch(!analysisSettings.webSearch)
+                  }
+                >
+                  <Globe size={14} aria-hidden="true" />
+                  联网搜索
+                </button>
+                <button
+                  type="button"
+                  className="composer-chip"
+                  disabled={running || Boolean(historyBusy)}
+                  onClick={() => void inspectContext()}
+                >
+                  <SlidersHorizontal size={14} aria-hidden="true" />
+                  上下文资料（{includedCount}/{contextToggleItems.length}）
+                </button>
+              </div>
+              <span className="composer-status" role="status">
                 {running
                   ? stage
                   : stopped
                     ? "已停止，已显示的内容尚未完成"
                     : "Ctrl / ⌘ + Enter 发送"}
               </span>
-              <button
-                type="button"
-                className="text-button"
-                disabled={running || Boolean(historyBusy)}
-                onClick={() => void inspectContext()}
-              >
-                查看将发送的数据
-              </button>
               {running ? (
                 <button
                   type="button"
@@ -655,14 +791,47 @@ export function Advisor({
       )}
       {previewOpen && (
         <Drawer
-          title="将发送的数据"
+          title="上下文资料与发送预览"
           size="wide"
-          busy={previewBusy}
+          busy={previewBusy || settingsSaving}
           onClose={() => {
             previewRequest.invalidate();
             setPreviewOpen(false);
           }}
         >
+          <section
+            className="context-scope-bar"
+            aria-label="发送给模型的资料范围"
+            data-presentation="true"
+          >
+            {contextToggleItems.map((item) => (
+              <label key={item.key} className="context-scope-toggle">
+                <input
+                  type="checkbox"
+                  checked={analysisSettings.contextSelection[item.key]}
+                  disabled={settingsSaving || running}
+                  onChange={(event) =>
+                    void toggleContextItem(item.key, event.target.checked)
+                  }
+                />
+                <span>{item.label}</span>
+              </label>
+            ))}
+            <label
+              className="context-scope-toggle"
+              title={
+                webSearchSupported ? undefined : "当前模型接口不支持联网搜索"
+              }
+            >
+              <input
+                type="checkbox"
+                checked={webSearchSupported && analysisSettings.webSearch}
+                disabled={!webSearchSupported || settingsSaving || running}
+                onChange={(event) => void toggleWebSearch(event.target.checked)}
+              />
+              <span>联网搜索</span>
+            </label>
+          </section>
           {previewBusy && <p role="status">正在读取预览…</p>}
           {previewError && <Callout tone="danger">{previewError}</Callout>}
           {preview && (

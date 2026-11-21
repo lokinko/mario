@@ -1,6 +1,7 @@
 import { Badge } from "../../components/Badge";
 import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";
+import { PageHeader } from "../../components/PageHeader";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "antd";
 import { FileText, Paperclip, Save, Search, Sparkles, X } from "lucide-react";
@@ -11,7 +12,12 @@ import {
   setResearchEvidenceStatus,
   setResearchEvidenceTags,
 } from "../../api/evidence";
-import type { ResearchEvidence, ResearchEvidenceTags } from "../../types/user";
+import { getWatchBoard } from "../../api/watch";
+import type {
+  ResearchEvidence,
+  ResearchEvidenceTags,
+  Snapshot,
+} from "../../types/user";
 import { LoadState } from "../../components/LoadState";
 import { saveAttachmentDownload } from "../../lib/download";
 import { localDateValue } from "../../lib/dates";
@@ -62,6 +68,25 @@ const noTags: ResearchEvidenceTags = { assetName: "", category: "" };
 
 function stockTag(stock: EvidenceStock) {
   return `${stock.name} ${stock.symbol}`;
+}
+
+function mergeStocks(
+  holdings: Snapshot["holdings"] | undefined,
+  watchStocks: EvidenceStock[],
+): EvidenceStock[] {
+  const seen = new Map<string, EvidenceStock>();
+  for (const holding of holdings ?? []) {
+    if (!holding.symbol) continue;
+    const key = holding.symbol.trim().toUpperCase();
+    if (!seen.has(key)) {
+      seen.set(key, { name: holding.name, symbol: holding.symbol });
+    }
+  }
+  for (const stock of watchStocks) {
+    const key = stock.symbol.trim().toUpperCase();
+    if (!seen.has(key)) seen.set(key, stock);
+  }
+  return Array.from(seen.values());
 }
 
 function TagFields({
@@ -116,14 +141,17 @@ function TagFields({
 }
 
 export function EvidenceWorkbench({
-  stocks,
+  snapshot,
+  stocks: explicitStocks,
   onAsk,
   flash,
 }: {
-  stocks: EvidenceStock[];
+  snapshot?: Snapshot;
+  stocks?: EvidenceStock[];
   onAsk: (question: string) => void;
   flash: (s: string) => void;
 }) {
+  const [watchStocks, setWatchStocks] = useState<EvidenceStock[]>([]);
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newTags, setNewTags] = useState(noTags);
@@ -144,6 +172,32 @@ export function EvidenceWorkbench({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const loadRequest = useRequestGuard();
+
+  useEffect(() => {
+    if (explicitStocks) return;
+    let cancelled = false;
+    void getWatchBoard()
+      .then((board) => {
+        if (cancelled) return;
+        setWatchStocks(
+          board.rows.map((row) => ({
+            name: row.entry.name,
+            symbol: row.entry.symbol,
+          })),
+        );
+      })
+      .catch(() => {
+        // Optional enrichment for stock tag options; holdings remain available.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [explicitStocks]);
+
+  const stocks = useMemo(
+    () => explicitStocks ?? mergeStocks(snapshot?.holdings, watchStocks),
+    [explicitStocks, snapshot?.holdings, watchStocks],
+  );
 
   const refresh = async () => {
     const isCurrent = loadRequest.begin();
@@ -170,7 +224,6 @@ export function EvidenceWorkbench({
     [items],
   );
   const selected = items.find((item) => item.id === selectedId);
-  const active = useMemo(() => items.filter((item) => item.active), [items]);
   const categories = useMemo(
     () => [
       ...new Set(items.map((item) => item.category ?? "").filter(Boolean)),
@@ -250,8 +303,8 @@ export function EvidenceWorkbench({
     }
   };
 
-  const addFiles = (selected: File[]) => {
-    const next = [...files, ...selected];
+  const addFiles = (selectedFiles: File[]) => {
+    const next = [...files, ...selectedFiles];
     const message = validateResearchFiles(next);
     setFileError(message);
     if (!message) setFiles(next);
@@ -308,32 +361,25 @@ export function EvidenceWorkbench({
     }
   };
 
-  const startEvidenceAnalysis = () => {
-    const topics = active
-      .slice(0, 12)
-      .map((item) => item.title)
-      .filter(Boolean)
-      .join("、");
+  const askAboutItem = (item: ResearchEvidence) => {
+    const title = evidenceName(item);
+    const subject = item.assetName ? `（关联标的：${item.assetName}）` : "";
+    setSelectedId(null);
     onAsk(
-      `请结合我保存的原始资料与资讯${topics ? `（${topics}）` : ""}，梳理其中的重要信息、局限和待核实事项，再分析它们对当前投资判断的影响。引用实际提供的资料，不要补造来源信息。`,
+      `请围绕我保存的研究资料「${title}」${subject}展开分析：梳理其中的关键事实、局限和待核实事项，并评估它对当前持仓或观察判断的影响。请直接引用实际提供的资料内容，不要补造来源信息。`,
     );
   };
 
   return (
-    <>
-      <div className="page-actions reference-actions">
-        <button className="primary" onClick={() => setCreating(true)}>
-          新增资料
-        </button>
-        <button
-          className="secondary"
-          onClick={startEvidenceAnalysis}
-          disabled={!active.length}
-        >
-          <Sparkles size={16} />
-          用资料提问
-        </button>
-      </div>
+    <div className="page narrow">
+      <PageHeader
+        title="研究资料"
+        action={
+          <button className="primary" onClick={() => setCreating(true)}>
+            新增资料
+          </button>
+        }
+      />
       <datalist id="evidence-categories">
         {categories.map((category) => (
           <option key={category} value={category} />
@@ -614,16 +660,26 @@ export function EvidenceWorkbench({
                 ))}
               </ul>
             )}
-            <button
-              className="secondary"
-              disabled={saving}
-              onClick={() => void toggleStatus(selected)}
-            >
-              {selected.active ? "归档" : "恢复"}
-            </button>
+            <div className="form-actions">
+              <button
+                className="primary"
+                disabled={saving}
+                onClick={() => askAboutItem(selected)}
+              >
+                <Sparkles size={15} />
+                基于此资料提问
+              </button>
+              <button
+                className="secondary"
+                disabled={saving}
+                onClick={() => void toggleStatus(selected)}
+              >
+                {selected.active ? "归档" : "恢复"}
+              </button>
+            </div>
           </Drawer>
         )}
       </section>
-    </>
+    </div>
   );
 }

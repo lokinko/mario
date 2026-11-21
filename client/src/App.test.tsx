@@ -14,7 +14,6 @@ import * as settingsApi from "./api/settings";
 import * as methodologyApi from "./api/methodology";
 import * as researchApi from "./api/evidence";
 import * as watchApi from "./api/watch";
-import * as reviewsApi from "./api/reviews";
 import * as dailyReviewApi from "./api/dailyReview";
 import * as activityApi from "./api/activity";
 import emptySnapshot from "./test/emptySnapshot.json";
@@ -46,7 +45,6 @@ vi.mock("./api/portfolio", async (original) => ({
 }));
 vi.mock("./api/watch", () => ({
   getDividendCalendar: vi.fn(() => new Promise(() => {})),
-  getWatchCatalog: vi.fn(() => new Promise(() => {})),
   getWatchBoard: vi.fn().mockResolvedValue({
     rows: [],
     weekly: [],
@@ -63,20 +61,34 @@ vi.mock("./api/watch", () => ({
       weekly: { reference: "middle", mode: "at_or_below", offsetBps: 0 },
     },
   }),
+  getWatchCatalog: vi.fn().mockResolvedValue({
+    canEdit: false,
+    catalog: { industries: [] },
+    rules: {
+      minYieldBps: 500,
+      daily: { reference: "lower", mode: "near", offsetBps: 200 },
+      weekly: { reference: "middle", mode: "at_or_below", offsetBps: 0 },
+    },
+    rows: [],
+  }),
 }));
 vi.mock("./api/settings", async (original) => ({
   ...(await original<typeof import("./api/settings")>()),
   getModelConfig: vi.fn(),
-  getAnalysisSettings: vi.fn(() => new Promise(() => {})),
+  getAnalysisSettings: vi.fn().mockResolvedValue({
+    workflow: "council",
+    webSearch: false,
+    contextSelection: {
+      includeProfile: true,
+      includeHoldings: true,
+      includeEvidence: true,
+      includeMemory: true,
+    },
+  }),
 }));
 vi.mock("./api/analysis", async (original) => ({
   ...(await original<typeof import("./api/analysis")>()),
   getAnalysisHistory: vi.fn().mockResolvedValue([]),
-}));
-vi.mock("./api/reviews", async (original) => ({
-  ...(await original<typeof import("./api/reviews")>()),
-  getInvestmentRules: vi.fn().mockResolvedValue([]),
-  getSystemReviews: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("./api/dailyReview", async (original) => ({
   ...(await original<typeof import("./api/dailyReview")>()),
@@ -117,7 +129,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("opens exchange rates from my facts instead of the sidebar", async () => {
+it("opens exchange rates directly from my facts header instead of the sidebar", async () => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
     emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
@@ -133,7 +145,6 @@ it("opens exchange rates from my facts instead of the sidebar", async () => {
       .querySelector("#main-navigation")
       ?.querySelector('[aria-label="查看汇率"]'),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
   fireEvent.click(screen.getByRole("button", { name: "查看汇率" }));
   const rates = await screen.findByRole("region", { name: "汇率设置" });
   expect(rates.closest("main")).toBeNull();
@@ -161,6 +172,7 @@ it("switches accounts from the settings page", async () => {
       </WebAccess>,
     );
     fireEvent.click(await screen.findByRole("button", { name: "设置" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "账号与数据" }));
     const account = await screen.findByRole("region", { name: "账号" });
     expect(
       within(account).getByRole("button", { name: "退出账号" }),
@@ -180,6 +192,7 @@ it("switches accounts from the settings page", async () => {
     ).toBeTruthy();
     expect(webToken()).toBe("account-b");
     expect(fetcher).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("tab", { name: "账号与数据" }));
     const switchedAccount = await screen.findByRole("region", {
       name: "账号",
     });
@@ -203,22 +216,26 @@ it("switches accounts from the settings page", async () => {
   }
 });
 
-it.each(["dashboard", "foundation", "goals", "ledger"])(
-  "falls back to buy watch for the retired %s bookmark",
-  async (bookmark) => {
-    window.location.hash = bookmark;
-    vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
-      emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
-    );
-    vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
-      new Error("optional model unavailable"),
-    );
-    render(<App />);
-    const questions = await screen.findByRole("button", { name: "买点观察" });
-    expect(questions.getAttribute("aria-current")).toBe("page");
-    expect(screen.queryByRole("button", { name: "分析看板" })).toBeNull();
-  },
-);
+it.each([
+  "dashboard",
+  "foundation",
+  "goals",
+  "ledger",
+  "calendar",
+  "reference",
+])("falls back to buy watch for the retired %s bookmark", async (bookmark) => {
+  window.location.hash = bookmark;
+  vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
+    emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
+  );
+  vi.mocked(settingsApi.getModelConfig).mockRejectedValue(
+    new Error("optional model unavailable"),
+  );
+  render(<App />);
+  const questions = await screen.findByRole("button", { name: "买点观察" });
+  expect(questions.getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByRole("button", { name: "分析看板" })).toBeNull();
+});
 
 it("keeps local application accessible when optional model configuration fails", async () => {
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
@@ -296,7 +313,7 @@ it("opens on buy watch and preserves a question draft when returning from suppor
     target: { value: "暂存的问题" },
   });
   fireEvent.click(screen.getByRole("button", { name: "设置" }));
-  await screen.findByRole("button", { name: "测试恢复数据" });
+  await screen.findByRole("heading", { name: "设置" });
   expect(screen.queryByRole("textbox", { name: "输入问题" })).toBeNull();
   fireEvent.click(
     within(screen.getByRole("complementary", { name: "主导航" })).getByRole(
@@ -308,7 +325,7 @@ it("opens on buy watch and preserves a question draft when returning from suppor
   expect(confirm).not.toHaveBeenCalled();
 });
 
-it("shows frequently used records in primary navigation", async () => {
+it("shows streamlined primary navigation and hides steady-state sync button", async () => {
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
     {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
   );
@@ -321,20 +338,20 @@ it("shows frequently used records in primary navigation", async () => {
   render(<App />);
   await screen.findAllByRole("button", { name: "问答" });
   expect(screen.getByRole("button", { name: "我的情况" })).toBeTruthy();
-  for (const name of ["参考信息"]) {
-    const entry = screen.getByRole("button", { name });
-    expect(entry.closest("aside")).toBeTruthy();
-    expect(entry.closest("details")).toBeNull();
-  }
+  expect(screen.getByRole("button", { name: "研究资料" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "隐藏金额" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /等待同步|已同步/ })).toBeNull();
   for (const name of [
+    "参考信息",
+    "分红日历",
     "决策确认",
-    "资料与确认",
     "投资目标",
     "组合流水",
     "长期记忆",
   ])
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
+
 it("responds to hash navigation without leaving the old page on screen", async () => {
   vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
     {} as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
@@ -346,11 +363,11 @@ it("responds to hash navigation without leaving the old page on screen", async (
     hasApiKey: false,
   });
   render(<App />);
-  await screen.findByRole("button", { name: "测试恢复数据" });
+  await screen.findByRole("heading", { name: "设置" });
   window.location.hash = "advisor";
   fireEvent(window, new HashChangeEvent("hashchange"));
   await screen.findByRole("textbox", { name: "输入问题" });
-  expect(screen.queryByRole("button", { name: "测试恢复数据" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "设置" })).toBeNull();
 });
 
 it("opens the public dividend link as an editable research question", async () => {
@@ -407,7 +424,7 @@ it("closes the more-navigation sheet with Escape and restores focus without chan
   ).toBe(false);
   expect(document.activeElement).toBe(trigger);
   expect(document.querySelector("main")?.hasAttribute("inert")).toBe(false);
-  expect(screen.getByRole("button", { name: "测试恢复数据" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "设置" })).toBeTruthy();
 });
 
 it("uses one mobile asset entry for both holdings and savings", async () => {
@@ -439,11 +456,9 @@ it("uses one mobile asset entry for both holdings and savings", async () => {
   expect(window.location.hash).toBe("#facts");
 });
 
-it("combines reference materials and rules under one page and promotes daily review standalone", async () => {
-  window.location.hash = "reference";
+it("opens standalone evidence and daily review pages and records activity", async () => {
+  window.location.hash = "evidence";
   vi.spyOn(researchApi, "getResearchEvidence").mockResolvedValue([]);
-  vi.spyOn(reviewsApi, "getInvestmentRules").mockResolvedValue([]);
-  vi.spyOn(reviewsApi, "getSystemReviews").mockResolvedValue([]);
   vi.spyOn(dailyReviewApi, "getDailyReviewFeed").mockResolvedValue({
     settings: {
       enabled: true,
@@ -469,13 +484,7 @@ it("combines reference materials and rules under one page and promotes daily rev
     hasApiKey: false,
   });
   render(<App />);
-  await screen.findByRole("heading", { name: "参考信息" });
-  const tabs = screen.getByRole("group", { name: "参考信息分类" });
-  expect(
-    within(tabs)
-      .getAllByRole("button")
-      .map((tab) => tab.textContent),
-  ).toEqual(["参考资料", "投资规则"]);
+  await screen.findByRole("heading", { name: "研究资料" });
   expect(await screen.findByRole("button", { name: "新增资料" })).toBeTruthy();
   await waitFor(() =>
     expect(activityApi.recordActivity).toHaveBeenLastCalledWith(
@@ -483,30 +492,27 @@ it("combines reference materials and rules under one page and promotes daily rev
       expect.anything(),
     ),
   );
-  fireEvent.click(within(tabs).getByRole("button", { name: "投资规则" }));
-  expect(await screen.findByRole("button", { name: "新建规则" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "新增资料" })).toBeNull();
+
+  const sidebar = screen.getByRole("complementary", { name: "主导航" });
+  fireEvent.click(within(sidebar).getByRole("button", { name: "每日复盘" }));
+  expect(await screen.findByRole("heading", { name: "每日复盘" })).toBeTruthy();
   await waitFor(() =>
     expect(activityApi.recordActivity).toHaveBeenLastCalledWith(
       "review",
       expect.anything(),
     ),
   );
-
-  const sidebar = screen.getByRole("complementary", { name: "主导航" });
-  fireEvent.click(within(sidebar).getByRole("button", { name: "每日复盘" }));
-  expect(await screen.findByRole("heading", { name: "每日复盘" })).toBeTruthy();
 });
 
 it.each([
   ["dailyReview", "每日复盘"],
-  ["reference", "参考信息"],
-  ["calendar", "分红日历"],
+  ["evidence", "研究资料"],
 ])(
   "opens %s directly from primary navigation with its own active state",
   async (view, label) => {
     window.location.hash = "facts";
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    vi.spyOn(researchApi, "getResearchEvidence").mockResolvedValue([]);
     const push = vi.spyOn(window.history, "pushState");
     vi.mocked(portfolioApi.getSnapshot).mockResolvedValue(
       emptySnapshot as Awaited<ReturnType<typeof portfolioApi.getSnapshot>>,
@@ -519,9 +525,6 @@ it.each([
     });
     render(<App />);
     await screen.findByRole("heading", { name: "我的情况" });
-    expect(screen.queryByText("更多资料与记录")).toBeNull();
-    for (const name of ["资产概览"])
-      expect(screen.queryByRole("button", { name })).toBeNull();
     const sidebar = screen.getByRole("complementary", { name: "主导航" });
     fireEvent.click(within(sidebar).getByRole("button", { name: label }));
     await screen.findByRole("heading", { name: label });
@@ -539,11 +542,10 @@ it.each([
     expect(document.querySelector(".sidebar button.active")?.textContent).toBe(
       label,
     );
-    expect(screen.queryByRole("navigation", { name: "当前位置" })).toBeNull();
   },
 );
 
-it("composes source questions through the shell and consumes them before a data reload", async () => {
+it("composes single-item source questions through the shell and consumes them before a data reload", async () => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   const evidence = vi
     .spyOn(researchApi, "getResearchEvidence")
@@ -573,20 +575,21 @@ it("composes source questions through the shell and consumes them before a data 
     model: "fixture",
     hasApiKey: false,
   });
-  window.location.hash = "reference";
+  window.location.hash = "evidence";
   try {
     render(<App />);
-    const ask = await screen.findByRole("button", { name: "用资料提问" });
-    await waitFor(() =>
-      expect((ask as HTMLButtonElement).disabled).toBe(false),
+    fireEvent.click(
+      await screen.findByRole("button", { name: "黄金储备变化" }),
     );
-    fireEvent.click(ask);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "基于此资料提问" }),
+    );
     const question = await screen.findByRole("textbox", { name: "输入问题" });
     await waitFor(() =>
       expect((question as HTMLTextAreaElement).value).toContain("黄金储备变化"),
     );
     fireEvent.change(question, { target: { value: "继续编辑后的草稿" } });
-    fireEvent.click(screen.getByRole("button", { name: "参考信息" }));
+    fireEvent.click(screen.getByRole("button", { name: "研究资料" }));
     fireEvent.click(
       within(screen.getByRole("complementary", { name: "主导航" })).getByRole(
         "button",
@@ -598,6 +601,7 @@ it("composes source questions through the shell and consumes them before a data 
         .value,
     ).toBe("继续编辑后的草稿");
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "账号与数据" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "测试恢复数据" }),
     );
@@ -700,7 +704,7 @@ it.each([false, true])(
     fireEvent(window, new HashChangeEvent("hashchange"));
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(window.location.hash).toBe(accepted ? "#settings" : "#methodology");
-    if (accepted) await screen.findByRole("button", { name: "测试恢复数据" });
+    if (accepted) await screen.findByRole("heading", { name: "设置" });
     else expect(screen.getByDisplayValue("尚未保存的方法论草稿")).toBeTruthy();
   },
 );
@@ -728,6 +732,7 @@ it("preserves the income draft guard when selecting the current mobile asset ent
   );
   render(<App />);
   fireEvent.click(await screen.findByRole("tab", { name: "存款与收支" }));
+  fireEvent.click(screen.getByText("收入、支出与风险档案"));
   fireEvent.change(screen.getByRole("spinbutton", { name: /月收入/ }), {
     target: { value: "12345" },
   });
@@ -820,6 +825,7 @@ it("keeps a separate income draft protected after discarding a trade draft", asy
   await openTradeDraft();
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
+  fireEvent.click(screen.getByText("收入、支出与风险档案"));
   fireEvent.change(screen.getByRole("spinbutton", { name: /月收入/ }), {
     target: { value: "12345" },
   });
@@ -834,6 +840,7 @@ it("keeps a separate income draft protected after discarding a trade draft", asy
   expect(confirm).toHaveBeenCalledTimes(1);
   expect(window.location.hash).toBe("#facts");
   fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
+  fireEvent.click(screen.getByText("收入、支出与风险档案"));
   expect(
     (screen.getByRole("spinbutton", { name: /月收入/ }) as HTMLInputElement)
       .value,
@@ -898,6 +905,7 @@ it("clears the unsaved draft guard after saving financial profile", async () => 
   );
   render(<App />);
   fireEvent.click(await screen.findByRole("tab", { name: "存款与收支" }));
+  fireEvent.click(screen.getByText("收入、支出与风险档案"));
   fireEvent.change(screen.getByRole("spinbutton", { name: /月收入/ }), {
     target: { value: "12345" },
   });

@@ -288,58 +288,6 @@ export interface RebalanceAction {
   direction: "增加" | "减少";
 }
 
-export interface InvestmentRuleInput {
-  category: "资产配置" | "风险" | "研究" | "仓位" | "行为" | "复盘";
-  statement: string;
-  trigger: string;
-  rationale: string;
-  active: boolean;
-  sourceReviewId?: string;
-}
-
-export interface InvestmentRule extends InvestmentRuleInput {
-  id: string;
-  revision: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface InvestmentRuleRevision extends InvestmentRuleInput {
-  ruleId: string;
-  revision: number;
-  changedAt: string;
-}
-
-export interface SystemReviewFields {
-  content?: string | null;
-  periodLabel: string;
-  adherenceScore?: number | null;
-  processSummary: string;
-  ruleViolations: string;
-  lessons: string;
-  nextActions: string;
-  nextReviewDate: string;
-}
-
-export type SystemReviewDraft = { content: string };
-
-export interface SystemReviewSnapshot {
-  portfolioValue: number;
-  baseCurrency: string;
-  portfolioComparable: boolean;
-  emergencyMonths: number;
-  concentrationPct: number;
-  riskStatus: PortfolioPlan["riskStatus"];
-  highRiskFindings: number;
-  activeRules: number;
-}
-
-export interface SystemReviewRecord extends SystemReviewFields {
-  id: string;
-  snapshot: SystemReviewSnapshot;
-  createdAt: string;
-}
-
 export type ResearchEvidenceTags = {
   assetName: string;
   category: string;

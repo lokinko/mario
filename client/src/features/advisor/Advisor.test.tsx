@@ -27,6 +27,7 @@ vi.mock("../../api/analysis", () => ({
 }));
 vi.mock("../../api/settings", () => ({
   getAnalysisSettings: vi.fn(),
+  saveAnalysisSettings: vi.fn(),
 }));
 vi.mock("../../api/memory", () => ({
   getMemory: vi.fn(),
@@ -69,6 +70,9 @@ beforeEach(() => {
   vi.mocked(settingsApi.getAnalysisSettings).mockResolvedValue(
     analysisSettings,
   );
+  vi.mocked(settingsApi.saveAnalysisSettings).mockImplementation(
+    async (next) => next,
+  );
   vi.mocked(researchApi.previewAnalysis).mockResolvedValue(preview);
   vi.mocked(researchApi.runAnalysis).mockResolvedValue(result);
   vi.mocked(researchApi.getAnalysisHistory).mockResolvedValue([]);
@@ -107,9 +111,9 @@ const ask = (question: string) => {
 };
 
 it.each([
-  "如何核查我关注公司的分红持续性？",
-  "请结合我的真实交易讨论最近一次红利投资决策。",
-  "对我认可的红利公司，还需要等待哪些条件再考虑买入？",
+  "结合我当前持仓和现金，分析组合最主要的风险集中点。",
+  "帮我复盘最近一笔交易，检查当时的判断依据和潜在盲点。",
+  "结合我的研究资料，帮我梳理当前最值得优先跟踪的公司。",
 ])(
   "fills the starter %s and focuses the composer without sending an analysis",
   async (prompt) => {
@@ -617,7 +621,7 @@ it("keeps the first and latest user questions with the last structured follow-up
   }
   const input = screen.getByRole("textbox", { name: "输入问题" });
   fireEvent.change(input, { target: { value: questions[7] } });
-  fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
+  fireEvent.click(screen.getByRole("button", { name: /上下文资料/ }));
   await screen.findByText(/承接 6 条历史问题/);
   const inspected = vi.mocked(researchApi.previewAnalysis).mock.lastCall![0];
   expect(inspected.previousTurn).toEqual({
@@ -712,7 +716,7 @@ it.each(["new conversation", "new company"])(
       );
     }
     expect(researchApi.runAnalysis).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
+    fireEvent.click(screen.getByRole("button", { name: /上下文资料/ }));
     await screen.findByText("新对话", { selector: "p" });
     expect(
       vi.mocked(researchApi.previewAnalysis).mock.lastCall![0].previousTurn,
@@ -832,7 +836,7 @@ it("previews the actual selected payload without sending an analysis", async () 
     localOnly: ["API Key"],
   });
   render(<Advisor {...props} />);
-  fireEvent.click(screen.getByRole("button", { name: "查看将发送的数据" }));
+  fireEvent.click(screen.getByRole("button", { name: /上下文资料/ }));
   await screen.findByRole("heading", { name: "当前持仓（1）" });
   expect(screen.getByText("招商银行")).toBeTruthy();
   expect(screen.getByText("19,545.42")).toBeTruthy();
@@ -841,6 +845,16 @@ it("previews the actual selected payload without sending an analysis", async () 
   expect(screen.queryByText(/\/facts\/holdings/)).toBeNull();
   expect(screen.queryByText("仅本地保留")).toBeNull();
   expect(researchApi.runAnalysis).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("checkbox", { name: "财务档案" }));
+  await waitFor(() =>
+    expect(settingsApi.saveAnalysisSettings).toHaveBeenCalledWith({
+      ...analysisSettings,
+      contextSelection: {
+        ...analysisSettings.contextSelection,
+        includeProfile: false,
+      },
+    }),
+  );
   fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
   expect(screen.queryByRole("dialog")).toBeNull();
 });
