@@ -23,14 +23,19 @@ fn now() -> u64 {
         .as_secs()
 }
 fn client() -> AppResult<reqwest::Client> {
-    reqwest::Client::builder()
-        .https_only(true)
-        .redirect(reqwest::redirect::Policy::none())
-        .retry(reqwest::retry::never())
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(25))
-        .build()
-        .map_err(|_| error("无法初始化 ChatGPT 授权连接"))
+    static CLIENT: std::sync::LazyLock<Option<reqwest::Client>> = std::sync::LazyLock::new(|| {
+        reqwest::Client::builder()
+            .https_only(true)
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(25))
+            .build()
+            .ok()
+    });
+    CLIENT
+        .clone()
+        .ok_or_else(|| error("无法初始化 ChatGPT 授权连接"))
 }
 async fn bounded_json(mut response: reqwest::Response) -> AppResult<serde_json::Value> {
     let mut bytes = Vec::new();

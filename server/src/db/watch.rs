@@ -74,6 +74,21 @@ impl Database {
             .transpose()
     }
 
+    pub fn watch_dividends_all(
+        &self,
+    ) -> AppResult<std::collections::BTreeMap<String, DividendHistory>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare("SELECT symbol, payload FROM watch_dividends")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut map = std::collections::BTreeMap::new();
+        for (symbol, payload) in rows {
+            map.insert(symbol, serde_json::from_str(&payload)?);
+        }
+        Ok(map)
+    }
+
     pub fn watch_entries(&self) -> AppResult<Vec<WatchEntry>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare("SELECT payload FROM watch_entries ORDER BY symbol")?;

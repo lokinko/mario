@@ -16,6 +16,16 @@ use {
 };
 impl Database {
     pub fn research_evidence(&self) -> AppResult<Vec<ResearchEvidence>> {
+        self.load_research_evidence(true)
+    }
+
+    /// Lightweight list projection for UI display: omits large attachment `extracted_text`
+    /// payloads that are only needed when building AI analysis context.
+    pub fn research_evidence_summary(&self) -> AppResult<Vec<ResearchEvidence>> {
+        self.load_research_evidence(false)
+    }
+
+    fn load_research_evidence(&self, include_extracted_text: bool) -> AppResult<Vec<ResearchEvidence>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
             "SELECT id, asset_name, title, publisher, source_url, source_tier, evidence_type,
@@ -44,10 +54,14 @@ impl Database {
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
-        let mut attachment_stmt = conn.prepare(
+        let attachment_sql = if include_extracted_text {
             "SELECT evidence_id, id, name, byte_size, extracted_text, extraction_note
-             FROM research_attachments ORDER BY id",
-        )?;
+             FROM research_attachments ORDER BY id"
+        } else {
+            "SELECT evidence_id, id, name, byte_size, ''::TEXT, extraction_note
+             FROM research_attachments ORDER BY id"
+        };
+        let mut attachment_stmt = conn.prepare(attachment_sql)?;
         let attachments = attachment_stmt.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,

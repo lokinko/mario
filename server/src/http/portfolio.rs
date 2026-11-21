@@ -291,9 +291,9 @@ async fn update_holding_amount(
 }
 
 async fn fx_settings(state: PortfolioContext) -> AppResult<Json<FxBook>> {
-    Ok(Json(state.account().fx_book(
-        &state.account().snapshot()?.profile.base_currency,
-    )?))
+    Ok(Json(
+        state.account().fx_book(&state.account().base_currency()?)?,
+    ))
 }
 
 async fn refresh_fx_settings(state: PortfolioContext) -> AppResult<Json<FxBook>> {

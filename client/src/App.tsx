@@ -1,4 +1,3 @@
-import { BuyWatch } from "./features/watch/BuyWatch";
 import { Callout } from "./components/Callout";
 import { DailyTracking } from "./features/portfolio/DailyTracking";
 import { useApplicationData } from "./app/useApplicationData";
@@ -28,12 +27,18 @@ import { useDisplayPreferences } from "./app/useDisplayPreferences";
 import { DisplayPreferences } from "./components/DisplayPreferences";
 import { ApplicationSkeleton } from "./components/Skeleton";
 import { useActivityTracking } from "./app/useActivityTracking";
-import { ReferenceInfo, type ReferenceTab } from "./app/ReferenceInfo";
+import type { ReferenceTab } from "./app/ReferenceInfo";
 import {
   dividendQuestionParam,
   dividendQuestionSymbol,
 } from "./features/watch/dividend-preview/route";
 
+const BuyWatch = lazy(() =>
+  import("./features/watch/BuyWatch").then((m) => ({ default: m.BuyWatch })),
+);
+const ReferenceInfo = lazy(() =>
+  import("./app/ReferenceInfo").then((m) => ({ default: m.ReferenceInfo })),
+);
 const MyFacts = lazy(() =>
   import("./features/portfolio/MyFacts").then((m) => ({ default: m.MyFacts })),
 );
@@ -449,24 +454,24 @@ function App() {
             <button onClick={loadApplication}>重试</button>
           </Callout>
         )}
-        {view === "watch" && (
-          <BuyWatch
-            key={remoteViewRevision}
-            snapshot={snapshot}
-            onAsk={startAnalysis}
-            flash={flash}
-            onEdited={markEdited}
-            onSaved={clearDraft}
-            target={watchTarget}
-            onTargetConsumed={(id) =>
-              setWatchTarget((current) =>
-                current?.id === id ? undefined : current,
-              )
-            }
-          />
-        )}
-        {view !== "watch" && view !== "advisor" && (
+        {view !== "advisor" && (
           <DeferredPage key={view}>
+            {view === "watch" && (
+              <BuyWatch
+                key={remoteViewRevision}
+                snapshot={snapshot}
+                onAsk={startAnalysis}
+                flash={flash}
+                onEdited={markEdited}
+                onSaved={clearDraft}
+                target={watchTarget}
+                onTargetConsumed={(id) =>
+                  setWatchTarget((current) =>
+                    current?.id === id ? undefined : current,
+                  )
+                }
+              />
+            )}
             {view === "facts" && (
               <MyFacts
                 key={remoteViewRevision}

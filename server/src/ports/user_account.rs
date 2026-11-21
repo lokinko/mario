@@ -19,6 +19,9 @@ use std::collections::BTreeMap;
 
 pub(crate) trait PortfolioState: AccountSession {
     fn snapshot(&self) -> AppResult<Snapshot>;
+    fn base_currency(&self) -> AppResult<String> {
+        Ok(self.snapshot()?.profile.base_currency)
+    }
     fn revision(&self) -> AppResult<String>;
     fn require_revision(&self, expected: &str) -> AppResult<()>;
 }
@@ -60,6 +63,9 @@ pub(crate) trait PortfolioAccount: FxAccount + ValuationAccount {
 pub(crate) trait WatchAccount: AccountSession {
     fn watch_board(&self, today: NaiveDate) -> AppResult<WatchBoard>;
     fn watch_dividends(&self, symbol: &str) -> AppResult<Option<DividendHistory>>;
+    fn watch_dividends_all(&self) -> AppResult<BTreeMap<String, DividendHistory>> {
+        Ok(BTreeMap::new())
+    }
     fn save_watch_observation(
         &self,
         expected: &WatchEntry,

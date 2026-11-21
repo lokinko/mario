@@ -12,12 +12,31 @@ use argon2::{
 pub(crate) use openai::{OpenAiAttempt, OpenAiIdentity};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const AUTH_SCHEMA: &str = "mario_auth";
+const SESSION_CACHE_TTL: Duration = Duration::from_secs(15);
+const SESSION_CACHE_MAX: usize = 1024;
+const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+
+#[derive(Clone)]
+struct CachedAuth {
+    user_id: String,
+    is_superuser: bool,
+    expires_at: i64,
+    cached_at: Instant,
+}
+
+struct PooledConn {
+    connection: Connection,
+    last_ok: Instant,
+}
 
 pub struct Accounts {
-    connection: Mutex<Connection>,
+    connection: Mutex<PooledConn>,
+    session_cache: Mutex<HashMap<String, CachedAuth>>,
     pub url: String,
     schema: String,
     dummy_hash: String,
@@ -37,21 +56,37 @@ pub struct Session {
     pub expires_at: i64,
 }
 
+impl std::ops::Deref for PooledConn {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        &self.connection
+    }
+}
+impl std::ops::DerefMut for PooledConn {
+    fn deref_mut(&mut self) -> &mut Connection {
+        &mut self.connection
+    }
+}
+
 impl Accounts {
-    fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
-        let mut connection = self
+    fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, PooledConn>> {
+        let mut guard = self
             .connection
             .lock()
             .map_err(|_| AppError::Busy("账户服务暂时不可用".into()))?;
         // The account connection outlives a request; recover it after a database
         // restart, before beginning any account transaction. Never replay writes.
-        if connection
-            .query_row("SELECT 1", [], |r| r.get::<_, i64>(0))
-            .is_err()
-        {
-            *connection = Connection::postgres(&self.url, &self.schema)?;
+        if guard.last_ok.elapsed() >= HEALTH_CHECK_INTERVAL {
+            if guard
+                .connection
+                .query_row("SELECT 1", [], |r| r.get::<_, i64>(0))
+                .is_err()
+            {
+                guard.connection = Connection::postgres(&self.url, &self.schema)?;
+            }
+            guard.last_ok = Instant::now();
         }
-        Ok(connection)
+        Ok(guard)
     }
     pub fn open(url: String) -> AppResult<Self> {
         Self::open_schema(url, AUTH_SCHEMA.into())
@@ -81,7 +116,11 @@ impl Accounts {
         ))?;
         let dummy_hash = hash_password("unused-dummy-password")?;
         Ok(Self {
-            connection: Mutex::new(connection),
+            connection: Mutex::new(PooledConn {
+                connection,
+                last_ok: Instant::now(),
+            }),
+            session_cache: Mutex::new(HashMap::new()),
             url,
             schema,
             dummy_hash,
@@ -168,28 +207,107 @@ impl Accounts {
             expires_at,
         })
     }
+    fn read_with_recovery<T>(
+        &self,
+        mut f: impl FnMut(&Connection) -> crate::storage::Result<T>,
+    ) -> AppResult<T> {
+        let mut guard = self
+            .connection
+            .lock()
+            .map_err(|_| AppError::Busy("账户服务暂时不可用".into()))?;
+        match f(&guard.connection) {
+            Ok(value) => {
+                guard.last_ok = Instant::now();
+                Ok(value)
+            }
+            Err(error) if error.is_connection_broken() => {
+                guard.connection = Connection::postgres(&self.url, &self.schema)?;
+                let value = f(&guard.connection)?;
+                guard.last_ok = Instant::now();
+                Ok(value)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
     pub fn authenticate(&self, token: &str) -> AppResult<String> {
-        self.conn()?
-            .query_row(
-                "SELECT user_id FROM sessions WHERE token_hash=$1 AND expires_at>$2",
-                params![digest(token), chrono::Utc::now().timestamp()],
-                |r| r.get(0),
-            )
-            .map_err(|error| match error {
-                crate::storage::Error::QueryReturnedNoRows => AppError::Auth("请重新登录".into()),
-                error => AppError::Database(error),
+        Ok(self.authenticate_with_role(token)?.0)
+    }
+    pub(crate) fn authenticate_with_role(&self, token: &str) -> AppResult<(String, bool)> {
+        let token_hash = digest(token);
+        let now = chrono::Utc::now().timestamp();
+        {
+            let cache = self
+                .session_cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(entry) = cache.get(&token_hash) {
+                if entry.cached_at.elapsed() < SESSION_CACHE_TTL && entry.expires_at > now {
+                    return Ok((entry.user_id.clone(), entry.is_superuser));
+                }
+            }
+        }
+        let row = self
+            .read_with_recovery(|conn| {
+                conn.query_row(
+                    "SELECT s.user_id, u.is_superuser, s.expires_at
+                     FROM sessions s
+                     JOIN users u ON u.id = s.user_id
+                     WHERE s.token_hash=$1 AND s.expires_at>$2",
+                    params![token_hash.as_str(), now],
+                    |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, bool>(1)?,
+                            r.get::<_, i64>(2)?,
+                        ))
+                    },
+                )
             })
+            .map_err(|error| match error {
+                AppError::Database(crate::storage::Error::QueryReturnedNoRows) => {
+                    AppError::Auth("请重新登录".into())
+                }
+                error => error,
+            })?;
+        let (user_id, is_superuser, expires_at) = row;
+        let mut cache = self
+            .session_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if cache.len() >= SESSION_CACHE_MAX {
+            cache.retain(|_, v| v.cached_at.elapsed() < SESSION_CACHE_TTL && v.expires_at > now);
+            if cache.len() >= SESSION_CACHE_MAX {
+                cache.clear();
+            }
+        }
+        cache.insert(
+            token_hash,
+            CachedAuth {
+                user_id: user_id.clone(),
+                is_superuser,
+                expires_at,
+                cached_at: Instant::now(),
+            },
+        );
+        Ok((user_id, is_superuser))
     }
     pub(crate) fn is_superuser(&self, user_id: &str) -> AppResult<bool> {
-        Ok(self.conn()?.query_row(
-            "SELECT is_superuser FROM users WHERE id=$1",
-            [user_id],
-            |row| row.get(0),
-        )?)
+        self.read_with_recovery(|conn| {
+            conn.query_row(
+                "SELECT is_superuser FROM users WHERE id=$1",
+                [user_id],
+                |row| row.get(0),
+            )
+        })
     }
     pub fn logout(&self, token: &str) -> AppResult<()> {
+        let token_hash = digest(token);
+        self.session_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&token_hash);
         self.conn()?
-            .execute("DELETE FROM sessions WHERE token_hash=$1", [digest(token)])?;
+            .execute("DELETE FROM sessions WHERE token_hash=$1", [token_hash])?;
         Ok(())
     }
     pub fn reset_password(&self, email: &str, password: &str) -> AppResult<()> {
@@ -209,8 +327,13 @@ impl Accounts {
             "UPDATE users SET password_hash=$1 WHERE id=$2",
             params![hash, id],
         )?;
-        tx.execute("DELETE FROM sessions WHERE user_id=$1", [id])?;
+        tx.execute("DELETE FROM sessions WHERE user_id=$1", [id.as_str()])?;
         tx.commit()?;
+        drop(connection);
+        self.session_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|_, entry| entry.user_id != id);
         Ok(())
     }
 }

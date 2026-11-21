@@ -90,8 +90,30 @@ impl Database {
 
     pub fn analysis_history(&self) -> AppResult<Vec<AnalysisHistoryItem>> {
         let conn = self.conn()?;
+        // Project only the small summary fields in PostgreSQL so large evidence catalogs
+        // and multi-stage reasoning payloads are never transferred or deserialized for lists.
         let mut statement = conn.prepare(
-            "SELECT id, question, created_at, audit, trace FROM analyses ORDER BY created_at DESC LIMIT 50",
+            "SELECT id, question, created_at, audit,
+                    CASE WHEN trace IS NOT NULL AND left(ltrim(trace), 1) = '{'
+                         THEN jsonb_build_object(
+                           'version', trace::jsonb->'version',
+                           'verdict', COALESCE(
+                             trace::jsonb->'structuredReport'->>'answer',
+                             trace::jsonb->'structuredReport'->>'verdict'
+                           ),
+                           'groundingStatuses', CASE
+                             WHEN jsonb_typeof(trace::jsonb->'adviceGrounding') = 'array' THEN (
+                               SELECT jsonb_agg(item->>'status')
+                               FROM jsonb_array_elements(trace::jsonb->'adviceGrounding') AS item
+                             )
+                             ELSE NULL
+                           END
+                         )::text
+                         ELSE NULL
+                    END
+             FROM analyses
+             ORDER BY created_at DESC, id DESC
+             LIMIT 50",
         )?;
         let rows = statement.query_map([], |row| {
             Ok((
@@ -102,23 +124,39 @@ impl Database {
                 row.get::<_, Option<String>>(4)?,
             ))
         })?;
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct TraceSummary {
+            version: Option<String>,
+            verdict: Option<String>,
+            grounding_statuses: Option<Vec<Option<String>>>,
+        }
         let mut history = Vec::new();
         for row in rows {
-            let (id, question, created_at, audit, trace) = row?;
-            let parsed_trace = trace.as_deref().and_then(|value| {
-                serde_json::from_str::<crate::models::analysis::AnalysisWorkflowTrace>(value).ok()
-            });
-            let grounding_status = parsed_trace
+            let (id, question, created_at, audit, summary) = row?;
+            let parsed = summary
+                .as_deref()
+                .and_then(|value| serde_json::from_str::<TraceSummary>(value).ok());
+            let grounding_status = parsed
                 .as_ref()
-                .map(|trace| {
-                    let grounding = &trace.legacy.advice_grounding;
-                    if grounding.is_empty() {
+                .map(|summary| {
+                    let statuses = summary.grounding_statuses.as_deref().unwrap_or(&[]);
+                    if statuses.is_empty() {
                         "unavailable"
-                    } else if grounding.iter().any(|item| item.status == "contradicted") {
+                    } else if statuses
+                        .iter()
+                        .any(|item| item.as_deref() == Some("contradicted"))
+                    {
                         "contradicted"
-                    } else if grounding.iter().any(|item| item.status == "insufficient") {
+                    } else if statuses
+                        .iter()
+                        .any(|item| item.as_deref() == Some("insufficient"))
+                    {
                         "insufficient"
-                    } else if grounding.iter().any(|item| item.status != "supported") {
+                    } else if statuses
+                        .iter()
+                        .any(|item| item.as_deref() != Some("supported"))
+                    {
                         "unavailable"
                     } else {
                         "supported"
@@ -133,13 +171,11 @@ impl Database {
                 transparency: audit
                     .as_deref()
                     .and_then(|value| serde_json::from_str(value).ok()),
-                workflow_version: parsed_trace
+                workflow_version: parsed
                     .as_ref()
-                    .map(|item| item.version.clone())
+                    .and_then(|item| item.version.clone())
                     .filter(|value| !value.is_empty()),
-                verdict: parsed_trace
-                    .and_then(|item| item.structured_report)
-                    .map(|report| report.headline().to_owned()),
+                verdict: parsed.and_then(|item| item.verdict),
             });
         }
         Ok(history)

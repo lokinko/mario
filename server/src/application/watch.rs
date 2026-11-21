@@ -29,9 +29,12 @@ pub async fn refresh(
     let day = cutoff();
     let board = db.watch_board(day)?;
     let rules = board.rules;
+    let mut private_dividends = db.watch_dividends_all()?;
     let mut entries = Vec::new();
     for row in board.rows {
-        let private = db.watch_dividends(&row.entry.input.symbol)?;
+        let private = private_dividends
+            .remove(&row.entry.input.symbol)
+            .or_else(|| db.watch_dividends(&row.entry.input.symbol).ok().flatten());
         let public = provider.dividend_seed(&row.entry.input.symbol, day);
         let catalogue_changed = public
             .as_ref()

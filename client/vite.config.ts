@@ -13,6 +13,42 @@ export default defineConfig(({ mode }) => {
     );
   return {
     base,
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes("node_modules")) return;
+            if (
+              id.includes("/node_modules/react/") ||
+              id.includes("/node_modules/react-dom/") ||
+              id.includes("/node_modules/scheduler/")
+            ) {
+              return "react-vendor";
+            }
+            if (
+              id.includes("/node_modules/@ant-design/cssinjs") ||
+              id.includes("/node_modules/@ant-design/colors") ||
+              id.includes("/node_modules/@ant-design/fast-color") ||
+              id.includes("/node_modules/@ant-design/icons") ||
+              id.includes("/node_modules/antd/es/theme/") ||
+              id.includes("/node_modules/antd/es/config-provider/") ||
+              id.includes("/node_modules/antd/es/button/") ||
+              id.includes("/node_modules/antd/es/input/") ||
+              id.includes("/node_modules/antd/es/alert/") ||
+              id.includes("/node_modules/antd/es/tag/") ||
+              id.includes("/node_modules/antd/es/locale/") ||
+              id.includes("/node_modules/antd/es/_util/") ||
+              id.includes("/node_modules/antd/es/style/")
+            ) {
+              return "antd-core";
+            }
+            if (id.includes("/node_modules/lucide-react/")) {
+              return "icons-vendor";
+            }
+          },
+        },
+      },
+    },
     plugins: [
       react(),
       {

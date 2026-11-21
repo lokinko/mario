@@ -47,7 +47,10 @@ mod options;
 mod sync_store;
 mod trades;
 mod watchlist_import;
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Mutex,
+};
 
 #[cfg(test)]
 use crate::storage::params;
@@ -68,6 +71,7 @@ use crate::{AppError, AppResult};
 
 pub struct Database {
     connection: Mutex<Connection>,
+    lock_depth: AtomicUsize,
 }
 
 const LOCK_ACCOUNT_SQL: &str = "SELECT pg_advisory_lock(hashtextextended(current_schema(),0));";
@@ -106,12 +110,23 @@ impl Database {
 
     pub(crate) fn pooled(pool: &crate::storage::ConnectionPool, user_id: &str) -> AppResult<Self> {
         let id = Uuid::parse_str(user_id).map_err(|_| AppError::Auth("无效账户".into()))?;
-        Self::migrated(pool.acquire(&format!("user_{}", id.simple()))?)
+        let schema = format!("user_{}", id.simple());
+        let connection = pool.acquire(&schema)?;
+        if pool.is_migrated(&schema) {
+            return Ok(Self {
+                connection: Mutex::new(connection),
+                lock_depth: AtomicUsize::new(0),
+            });
+        }
+        let db = Self::migrated(connection)?;
+        pool.mark_migrated(&schema);
+        Ok(db)
     }
 
     fn migrated(connection: Connection) -> AppResult<Self> {
         let db = Self {
             connection: Mutex::new(connection),
+            lock_depth: AtomicUsize::new(0),
         };
         {
             let _lock = db.lock_account()?;
@@ -188,19 +203,30 @@ impl Database {
         let result = self.conn()?.execute_batch(LOCK_ACCOUNT_SQL);
         tracing::debug!(target: "mario::timing", stage = "account_lock", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
         result?;
+        self.lock_depth.fetch_add(1, Ordering::AcqRel);
         Ok(())
     }
 
     fn unlock_account(&self) -> AppResult<()> {
-        Ok(self.conn()?.execute_batch(UNLOCK_ACCOUNT_SQL)?)
+        self.conn()?.execute_batch(UNLOCK_ACCOUNT_SQL)?;
+        let _ = self
+            .lock_depth
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |depth| {
+                Some(depth.saturating_sub(1))
+            });
+        Ok(())
     }
 
     /// Runs slow external work with one level of the caller's account lock released,
-    /// then reacquires it. A cancelled future leaves the lock released.
+    /// then reacquires it. Read-only callers without an active lock run `work` directly.
+    /// A cancelled future leaves the lock released.
     pub async fn without_account_lock<T>(
         &self,
         work: impl std::future::Future<Output = T>,
     ) -> AppResult<T> {
+        if self.lock_depth.load(Ordering::Acquire) == 0 {
+            return Ok(work.await);
+        }
         self.unlock_account()?;
         let output = work.await;
         self.acquire_account_lock()?;

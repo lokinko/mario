@@ -135,6 +135,9 @@ impl EvidenceAccount for Database {
     fn research_evidence(&self) -> AppResult<Vec<ResearchEvidence>> {
         Database::research_evidence(self)
     }
+    fn research_evidence_summary(&self) -> AppResult<Vec<ResearchEvidence>> {
+        Database::research_evidence_summary(self)
+    }
     fn add_research_evidence(&self, input: &ResearchEvidenceInput) -> AppResult<ResearchEvidence> {
         Database::add_research_evidence(self, input)
     }

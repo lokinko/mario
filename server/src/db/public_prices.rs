@@ -5,10 +5,12 @@ use crate::{
     AppError, AppResult,
 };
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 mod monitor;
 
 /// A registered symbol stays in the collection scope while it was requested within this window.
 const REQUEST_TTL_MS: i64 = 172_800_000;
+const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
 pub(crate) struct PriceState {
     pub history: Option<PriceHistory>,
@@ -16,8 +18,23 @@ pub(crate) struct PriceState {
     pub lease_until: i64,
     pub last_error: String,
 }
+struct PooledConn {
+    connection: Connection,
+    last_ok: Instant,
+}
+impl std::ops::Deref for PooledConn {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        &self.connection
+    }
+}
+impl std::ops::DerefMut for PooledConn {
+    fn deref_mut(&mut self) -> &mut Connection {
+        &mut self.connection
+    }
+}
 pub(crate) struct PublicPrices {
-    connection: Mutex<Connection>,
+    connection: Mutex<PooledConn>,
     url: String,
     schema: String,
 }
@@ -56,23 +73,70 @@ impl PublicPrices {
         "#)?;
         tx.commit()?;
         Ok(Self {
-            connection: Mutex::new(c),
+            connection: Mutex::new(PooledConn {
+                connection: c,
+                last_ok: Instant::now(),
+            }),
             url: url.into(),
             schema: schema.into(),
         })
     }
-    fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
-        let mut c = self
+    fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, PooledConn>> {
+        let mut guard = self
             .connection
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if c.query_row("SELECT 1", [], |r| r.get::<_, i64>(0)).is_err() {
-            *c = Connection::postgres(&self.url, &self.schema)?;
+        if guard.last_ok.elapsed() >= HEALTH_CHECK_INTERVAL {
+            if guard
+                .connection
+                .query_row("SELECT 1", [], |r| r.get::<_, i64>(0))
+                .is_err()
+            {
+                guard.connection = Connection::postgres(&self.url, &self.schema)?;
+            }
+            guard.last_ok = Instant::now();
         }
-        Ok(c)
+        Ok(guard)
     }
+    fn read_with_recovery<T>(
+        &self,
+        mut f: impl FnMut(&Connection) -> crate::storage::Result<T>,
+    ) -> crate::storage::Result<T> {
+        let mut guard = self
+            .connection
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match f(&guard.connection) {
+            Ok(value) => {
+                guard.last_ok = Instant::now();
+                Ok(value)
+            }
+            Err(error) if error.is_connection_broken() => {
+                guard.connection = Connection::postgres(&self.url, &self.schema)?;
+                let value = f(&guard.connection)?;
+                guard.last_ok = Instant::now();
+                Ok(value)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     pub fn state(&self, symbol: &str) -> AppResult<Option<PriceState>> {
-        let row=self.conn()?.query_row("SELECT payload,attempted_at,lease_until,last_error FROM price_histories WHERE symbol=$1",[symbol],|r|Ok((r.get::<_,Option<String>>(0)?,r.get::<_,i64>(1)?,r.get::<_,i64>(2)?,r.get::<_,String>(3)?))).optional()?;
+        let row = self.read_with_recovery(|c| {
+            c.query_row(
+                "SELECT payload,attempted_at,lease_until,last_error FROM price_histories WHERE symbol=$1",
+                [symbol],
+                |r| {
+                    Ok((
+                        r.get::<_, Option<String>>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, i64>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .optional()
+        })?;
         row.map(|(payload, attempted_at, lease_until, last_error)| {
             let history = payload
                 .map(|p| serde_json::from_str::<PriceHistory>(&p))

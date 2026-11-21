@@ -1,7 +1,7 @@
 import { Badge } from "../../components/Badge";
 import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";
-import { useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "antd";
 import { FileText, Paperclip, Save, Search, Sparkles, X } from "lucide-react";
 import {
@@ -164,40 +164,50 @@ export function EvidenceWorkbench({
     void refresh();
   }, []);
 
-  const sorted = [...items].sort((a, b) =>
-    b.capturedAt.localeCompare(a.capturedAt),
+  const deferredSearch = useDeferredValue(search);
+  const sorted = useMemo(
+    () => [...items].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt)),
+    [items],
   );
   const selected = items.find((item) => item.id === selectedId);
-  const active = items.filter((item) => item.active);
-  const categories = [
-    ...new Set(items.map((item) => item.category ?? "").filter(Boolean)),
-  ];
-  const taggedStocks = [
-    ...new Set(items.map((item) => item.assetName).filter(Boolean)),
-  ];
+  const active = useMemo(() => items.filter((item) => item.active), [items]);
+  const categories = useMemo(
+    () => [
+      ...new Set(items.map((item) => item.category ?? "").filter(Boolean)),
+    ],
+    [items],
+  );
+  const taggedStocks = useMemo(
+    () => [...new Set(items.map((item) => item.assetName).filter(Boolean))],
+    [items],
+  );
   const stockName = (assetName: string) =>
     stocks.find((stock) => stockTag(stock) === assetName)?.name ?? assetName;
-  const keyword = search.trim().toLocaleLowerCase();
-  const filtered = sorted.filter((item) => {
-    if (statusFilter === "active" && !item.active) return false;
-    if (statusFilter === "archived" && item.active) return false;
-    if (stockFilter && item.assetName !== stockFilter) return false;
-    if (categoryFilter && (item.category ?? "") !== categoryFilter)
-      return false;
-    if (!keyword) return true;
-    const haystack = [
-      evidenceName(item),
-      evidenceText(item),
-      item.assetName,
-      item.category ?? "",
-      ...(item.attachments?.map((file) => file.name) ?? []),
-    ]
-      .join(" ")
-      .toLocaleLowerCase();
-    return haystack.includes(keyword);
-  });
+  const keyword = deferredSearch.trim().toLocaleLowerCase();
+  const filtered = useMemo(
+    () =>
+      sorted.filter((item) => {
+        if (statusFilter === "active" && !item.active) return false;
+        if (statusFilter === "archived" && item.active) return false;
+        if (stockFilter && item.assetName !== stockFilter) return false;
+        if (categoryFilter && (item.category ?? "") !== categoryFilter)
+          return false;
+        if (!keyword) return true;
+        const haystack = [
+          evidenceName(item),
+          evidenceText(item),
+          item.assetName,
+          item.category ?? "",
+          ...(item.attachments?.map((file) => file.name) ?? []),
+        ]
+          .join(" ")
+          .toLocaleLowerCase();
+        return haystack.includes(keyword);
+      }),
+    [sorted, statusFilter, stockFilter, categoryFilter, keyword],
+  );
   const hasFilters = Boolean(
-    keyword || stockFilter || categoryFilter || statusFilter !== "all",
+    search.trim() || stockFilter || categoryFilter || statusFilter !== "all",
   );
   const resetFilters = () => {
     setSearch("");

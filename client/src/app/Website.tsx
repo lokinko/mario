@@ -1,11 +1,12 @@
 import { lazy } from "react";
-import App from "../App";
 import { DeferredPage } from "../components/DeferredPage";
 import { WebAccess } from "../features/account/WebAccess";
 import {
   dividendPreviewHref,
   isDividendPreview,
 } from "../features/watch/dividend-preview/route";
+
+const App = lazy(() => import("../App"));
 
 const DividendPreview = lazy(() =>
   import("../features/watch/dividend-preview/DividendPreview").then((m) => ({
@@ -34,7 +35,9 @@ export function Website() {
           <Dashboard />
         </DeferredPage>
       ) : (
-        <App />
+        <DeferredPage>
+          <App />
+        </DeferredPage>
       )}
     </WebAccess>
   );

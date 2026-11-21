@@ -1,7 +1,8 @@
 //! PostgreSQL boundary: repositories share dynamically typed rows over a dedicated client thread.
 //! Each tenant connection pins `search_path` to one account schema.
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::time::{Duration, Instant};
 
 #[cfg(test)]
@@ -22,6 +23,21 @@ pub enum Error {
     Disconnected,
     #[error("{0}")]
     Postgres(#[from] postgres::Error),
+}
+impl Error {
+    pub(crate) fn is_connection_broken(&self) -> bool {
+        match self {
+            Self::Disconnected => true,
+            Self::Postgres(error) => {
+                error.is_closed()
+                    || error.code().is_some_and(|code| {
+                        let state = code.code();
+                        state.starts_with("08") || matches!(state, "57P01" | "57P02" | "57P03")
+                    })
+            }
+            _ => false,
+        }
+    }
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -228,6 +244,7 @@ struct PoolInner {
     url: String,
     max_idle: usize,
     idle: Mutex<Vec<IdleConnection>>,
+    migrated_schemas: RwLock<HashSet<String>>,
 }
 
 /// API-owned bounded idle connections, never shared across database URLs or tenant schemas.
@@ -239,7 +256,24 @@ impl ConnectionPool {
             url,
             max_idle,
             idle: Mutex::new(Vec::new()),
+            migrated_schemas: RwLock::new(HashSet::new()),
         }))
+    }
+
+    pub(crate) fn is_migrated(&self, schema: &str) -> bool {
+        self.0
+            .migrated_schemas
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(schema)
+    }
+
+    pub(crate) fn mark_migrated(&self, schema: &str) {
+        self.0
+            .migrated_schemas
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(schema.to_owned());
     }
 
     pub(crate) fn acquire(&self, schema: &str) -> Result<Connection> {
@@ -363,9 +397,16 @@ impl Connection {
                         return;
                     }
                 };
+                let mut statements: HashMap<String, postgres::Statement> = HashMap::new();
                 for cmd in rx {
                     let started = std::time::Instant::now();
-                    let result = run(&mut client, &cmd.sql, cmd.values, cmd.batch);
+                    let result = run(
+                        &mut client,
+                        &mut statements,
+                        &cmd.sql,
+                        cmd.values,
+                        cmd.batch,
+                    );
                     tracing::debug!(target: "mario::timing", stage = "sql", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
                     let _ = cmd.reply.send(result);
                 }
@@ -493,14 +534,31 @@ impl postgres::types::ToSql for PgValue {
     }
     postgres::types::to_sql_checked!();
 }
+const MAX_PREPARED_STATEMENTS: usize = 128;
+
+fn invalidates_prepared_statements(sql: &str) -> bool {
+    let upper = sql.to_ascii_uppercase();
+    upper.contains("DISCARD")
+        || upper.contains("ALTER ")
+        || upper.contains("DROP ")
+        || upper.contains("CREATE ")
+        || upper.contains("SET SEARCH_PATH")
+}
+
 fn run(
     client: &mut postgres::Client,
+    statements: &mut HashMap<String, postgres::Statement>,
     sql: &str,
     values: Vec<Value>,
     batch: bool,
 ) -> Result<(usize, Vec<Row>)> {
     if batch {
-        client.batch_execute(sql)?;
+        let should_clear = invalidates_prepared_statements(sql);
+        let result = client.batch_execute(sql);
+        if should_clear || result.is_err() {
+            statements.clear();
+        }
+        result?;
         return Ok((0, vec![]));
     }
     let values = values.into_iter().map(PgValue).collect::<Vec<_>>();
@@ -508,12 +566,34 @@ fn run(
         .iter()
         .map(|v| v as &(dyn postgres::types::ToSql + Sync))
         .collect::<Vec<_>>();
-    let statement = client.prepare(sql)?;
+    let statement = if let Some(cached) = statements.get(sql) {
+        cached.clone()
+    } else {
+        let prepared = client.prepare(sql)?;
+        if statements.len() >= MAX_PREPARED_STATEMENTS {
+            statements.clear();
+        }
+        statements.insert(sql.to_owned(), prepared.clone());
+        prepared
+    };
     if statement.columns().is_empty() {
-        return Ok((client.execute(&statement, &params)? as usize, vec![]));
+        let affected = match client.execute(&statement, &params) {
+            Ok(affected) => affected as usize,
+            Err(error) => {
+                statements.remove(sql);
+                return Err(error.into());
+            }
+        };
+        return Ok((affected, vec![]));
     }
-    let rows = client
-        .query(&statement, &params)?
+    let raw_rows = match client.query(&statement, &params) {
+        Ok(rows) => rows,
+        Err(error) => {
+            statements.remove(sql);
+            return Err(error.into());
+        }
+    };
+    let rows = raw_rows
         .into_iter()
         .map(|r| {
             use postgres::types::Type;

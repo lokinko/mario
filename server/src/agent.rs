@@ -109,10 +109,15 @@ fn remote_agent(config: &ModelConfig) -> AppResult<Option<(String, String)>> {
 }
 
 fn agent_client() -> AppResult<reqwest::Client> {
-    Ok(reqwest::Client::builder()
-        .timeout(crate::models::inference::AGENT_HTTP_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?)
+    static CLIENT: std::sync::LazyLock<Result<reqwest::Client, String>> =
+        std::sync::LazyLock::new(|| {
+            reqwest::Client::builder()
+                .timeout(crate::models::inference::AGENT_HTTP_TIMEOUT)
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|error| error.to_string())
+        });
+    CLIENT.clone().map_err(AppError::Model)
 }
 
 fn local_provider(

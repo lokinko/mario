@@ -68,12 +68,15 @@ fn unavailable() -> AppError {
 }
 
 async fn fetch_models(url: &str, api_key: &str) -> AppResult<Vec<String>> {
-    let client = Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|_| unavailable())?;
+    static CLIENT: std::sync::LazyLock<Option<Client>> = std::sync::LazyLock::new(|| {
+        Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(10))
+            .build()
+            .ok()
+    });
+    let client = CLIENT.clone().ok_or_else(unavailable)?;
     let mut response = client
         .get(url)
         .bearer_auth(api_key)

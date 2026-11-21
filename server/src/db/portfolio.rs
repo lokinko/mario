@@ -38,8 +38,9 @@ impl Database {
         super::amounts::trailing_dividends(&self.snapshot()?, histories, today)
     }
 
-    pub(super) fn snapshot_on(conn: &crate::storage::Connection) -> AppResult<Snapshot> {
-        let profile = conn
+    pub fn base_currency(&self) -> AppResult<String> {
+        let profile: FinancialProfile = self
+            .conn()?
             .query_row("SELECT payload FROM profile WHERE id = 1", [], |row| {
                 row.get::<_, String>(0)
             })
@@ -47,29 +48,63 @@ impl Database {
             .map(|value| serde_json::from_str(&value))
             .transpose()?
             .unwrap_or_default();
+        Ok(profile.base_currency)
+    }
 
-        let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on, cost_price, quantity, current_price FROM holdings ORDER BY created_at")?;
+    pub(super) fn snapshot_on(conn: &crate::storage::Connection) -> AppResult<Snapshot> {
+        let profile_row = conn
+            .query_row(
+                "SELECT payload, updated_at FROM profile WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        let (profile, profile_updated_at) = match profile_row {
+            Some((payload, updated_at)) => (serde_json::from_str(&payload)?, Some(updated_at)),
+            None => (FinancialProfile::default(), None),
+        };
+
+        let mut holding_stmt = conn.prepare("SELECT id, symbol, name, asset_class, market_value, cost_basis, target_pct, currency, fx_rate_to_base, valuation_date, fx_rate_source, fx_rate_observed_on, cost_price, quantity, current_price, CASE WHEN updated_at='' THEN created_at ELSE updated_at END FROM holdings ORDER BY created_at")?;
+        let mut holding_revisions = std::collections::BTreeMap::new();
+        let mut latest_updated_at = profile_updated_at;
         let holdings = holding_stmt
             .query_map([], |row| {
-                Ok(Holding {
-                    id: row.get(0)?,
-                    symbol: row.get(1)?,
-                    name: row.get(2)?,
-                    asset_class: row.get(3)?,
-                    market_value: row.get(4)?,
-                    cost_basis: row.get(5)?,
-                    cost_price: row.get(12)?,
-                    quantity: row.get(13)?,
-                    current_price: row.get(14)?,
-                    target_pct: row.get(6)?,
-                    currency: row.get(7)?,
-                    fx_rate_to_base: row.get(8)?,
-                    valuation_date: row.get(9)?,
-                    fx_rate_source: row.get(10)?,
-                    fx_rate_observed_on: row.get(11)?,
-                })
+                let id: String = row.get(0)?;
+                let revision: String = row.get(15)?;
+                Ok((
+                    Holding {
+                        id,
+                        symbol: row.get(1)?,
+                        name: row.get(2)?,
+                        asset_class: row.get(3)?,
+                        market_value: row.get(4)?,
+                        cost_basis: row.get(5)?,
+                        cost_price: row.get(12)?,
+                        quantity: row.get(13)?,
+                        current_price: row.get(14)?,
+                        target_pct: row.get(6)?,
+                        currency: row.get(7)?,
+                        fx_rate_to_base: row.get(8)?,
+                        valuation_date: row.get(9)?,
+                        fx_rate_source: row.get(10)?,
+                        fx_rate_observed_on: row.get(11)?,
+                    },
+                    revision,
+                ))
             })?
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(|(holding, revision)| {
+                if latest_updated_at
+                    .as_deref()
+                    .is_none_or(|current| revision.as_str() > current)
+                {
+                    latest_updated_at = Some(revision.clone());
+                }
+                holding_revisions.insert(holding.id.clone(), revision);
+                holding
+            })
+            .collect::<Vec<_>>();
         let mut valuation_stmt = conn.prepare(
             "SELECT holding_id, symbol, quantity, unit_price, market_value, currency,
                     requested_on, observed_on, staleness_days, provider_code, provider_name,
@@ -105,24 +140,7 @@ impl Database {
         drop(valuation_stmt);
         drop(holding_stmt);
 
-        let updated_at = conn
-            .query_row(
-                "SELECT MAX(value) FROM (
-                   SELECT updated_at AS value FROM profile
-                   UNION ALL
-                   SELECT CASE WHEN updated_at='' THEN created_at ELSE updated_at END FROM holdings
-                 )",
-                [],
-                |row| row.get::<_, Option<String>>(0),
-            )?
-            .unwrap_or_else(|| Utc::now().to_rfc3339());
-
-        let mut statement = conn.prepare(
-            "SELECT id, CASE WHEN updated_at='' THEN created_at ELSE updated_at END FROM holdings",
-        )?;
-        let holding_revisions = statement
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<Result<_, _>>()?;
+        let updated_at = latest_updated_at.unwrap_or_else(|| Utc::now().to_rfc3339());
         let option_contracts = super::options::load(conn)?;
         let holding_trades = super::trades::load(conn)?;
         let cash_balances = super::cash::states(conn)?;

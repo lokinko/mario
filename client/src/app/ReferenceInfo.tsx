@@ -1,4 +1,4 @@
-import { lazy, useEffect, useState } from "react";
+import { lazy, useEffect, useMemo, useRef, useState } from "react";
 import { getWatchBoard } from "../api/watch";
 import { DeferredPage } from "../components/DeferredPage";
 import { PageHeader } from "../components/PageHeader";
@@ -39,30 +39,36 @@ export function ReferenceInfo({
   const [watched, setWatched] = useState<{ name: string; symbol: string }[]>(
     [],
   );
+  const loadedWatch = useRef(false);
   useEffect(() => {
+    if (tab !== "evidence" || loadedWatch.current) return;
     let current = true;
     getWatchBoard()
       .then((board) => {
-        if (current)
+        if (current) {
+          loadedWatch.current = true;
           setWatched(
             board.rows.map(({ entry }) => ({
               name: entry.name,
               symbol: entry.symbol,
             })),
           );
+        }
       })
       .catch(() => undefined);
     return () => {
       current = false;
     };
-  }, []);
-  const seen = new Set<string>();
-  const stocks = [
-    ...snapshot.holdings
-      .filter((holding) => holding.assetClass === "股票" && holding.symbol)
-      .map((holding) => ({ name: holding.name, symbol: holding.symbol })),
-    ...watched,
-  ].filter((stock) => !seen.has(stock.symbol) && seen.add(stock.symbol));
+  }, [tab]);
+  const stocks = useMemo(() => {
+    const seen = new Set<string>();
+    return [
+      ...snapshot.holdings
+        .filter((holding) => holding.assetClass === "股票" && holding.symbol)
+        .map((holding) => ({ name: holding.name, symbol: holding.symbol })),
+      ...watched,
+    ].filter((stock) => !seen.has(stock.symbol) && seen.add(stock.symbol));
+  }, [snapshot.holdings, watched]);
 
   return (
     <div className="page narrow">

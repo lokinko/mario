@@ -32,7 +32,7 @@ pub(super) fn router() -> Router {
         )
 }
 async fn research_evidence(state: EvidenceContext) -> AppResult<Json<Vec<ResearchEvidence>>> {
-    Ok(Json(state.account().research_evidence()?))
+    Ok(Json(state.account().research_evidence_summary()?))
 }
 
 async fn add_research_evidence(

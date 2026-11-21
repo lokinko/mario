@@ -37,12 +37,18 @@ impl NativeModelProvider {
             return Err(AppError::Validation("请先配置模型名称和 API Key".into()));
         }
         crate::models::endpoint::validate_endpoint(&base_url)?;
+        static SHARED_CLIENT: std::sync::LazyLock<Result<Client, String>> =
+            std::sync::LazyLock::new(|| {
+                Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .connect_timeout(std::time::Duration::from_secs(10))
+                    .timeout(std::time::Duration::from_secs(120))
+                    .build()
+                    .map_err(|error| error.to_string())
+            });
+        let client = SHARED_CLIENT.clone().map_err(AppError::Model)?;
         Ok(Self {
-            client: Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .connect_timeout(std::time::Duration::from_secs(10))
-                .timeout(std::time::Duration::from_secs(120))
-                .build()?,
+            client,
             protocol,
             base_url: base_url.trim_end_matches('/').into(),
             model,

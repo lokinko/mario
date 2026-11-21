@@ -26,7 +26,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 /// Concurrent authenticated requests; each holds one PostgreSQL connection.
 const REQUEST_SLOTS: usize = 24;
-const IDLE_TENANT_CONNECTIONS: usize = 8;
+const IDLE_TENANT_CONNECTIONS: usize = 16;
 /// Concurrent password hashing for login and registration.
 const AUTH_SLOTS: usize = 2;
 
@@ -231,10 +231,12 @@ async fn authenticate(
             .slots
             .try_acquire()
             .map_err(|_| AppError::Busy("服务繁忙，请稍后重试".into()))?;
-        let user = host.accounts.authenticate(bearer(request.headers())?)?;
+        let (user, is_superuser) = host
+            .accounts
+            .authenticate_with_role(bearer(request.headers())?)?;
         let state = Arc::new(RequestContext::from(RequestContextParts {
             model_services: host.model_services.clone(),
-            is_superuser: host.accounts.is_superuser(&user)?,
+            is_superuser,
             user_id: user.clone(),
             watch_provider: host.watch_provider.clone(),
             watch_catalog: host.watch_catalog.clone(),
@@ -244,54 +246,62 @@ async fn authenticate(
             analysis_executor: host.analysis_executor.clone(),
         }));
         let db = state.as_ref();
-        let _lock = db.lock_account()?;
-        let revision = db.revision()?;
+        let is_read_only = *request.method() == Method::GET;
+        let _lock = if is_read_only {
+            None
+        } else {
+            Some(db.lock_account()?)
+        };
         let is_write = policy::requires_revision(request.method(), request.uri().path());
-        let expected = request
-            .headers()
-            .get(header::IF_MATCH)
-            .and_then(|v| v.to_str().ok());
-        if is_write && expected != Some(revision.as_str()) {
-            // Financial writes carry durable, transactionally committed receipts. A lost
-            // response must remain recoverable even after the global version advanced.
-            let path = request.uri().path().to_owned();
-            if path.starts_with("/api/holding-trades")
-                || path.starts_with("/api/corporate-actions/")
-                || (path.starts_with("/api/holdings/")
-                    && ((request.method() == axum::http::Method::DELETE
-                        && !path[14..].contains('/'))
-                        || path.ends_with("/amount")
-                        || path.ends_with("/option-price")
-                        || path.ends_with("/trade-repair")
-                        || path.ends_with("/corporate-actions")))
-            {
-                let method = request.method().as_str().to_owned();
-                let bytes = axum::body::to_bytes(request.into_body(), 1024 * 1024)
-                    .await
-                    .map_err(|_| AppError::Validation("操作请求过大".into()))?;
-                if let Ok(input) = serde_json::from_slice(&bytes) {
-                    if let Some(snapshot) = db.replay_financial_request(&method, &path, &input)? {
-                        let mut response = Json(snapshot).into_response();
-                        response.headers_mut().insert(
-                            "x-data-revision",
-                            revision
-                                .parse()
-                                .map_err(|_| AppError::Validation("数据版本无效".into()))?,
-                        );
-                        return Ok(response);
+        if is_write {
+            let revision = db.revision()?;
+            let expected = request
+                .headers()
+                .get(header::IF_MATCH)
+                .and_then(|v| v.to_str().ok());
+            if expected != Some(revision.as_str()) {
+                // Financial writes carry durable, transactionally committed receipts. A lost
+                // response must remain recoverable even after the global version advanced.
+                let path = request.uri().path().to_owned();
+                if path.starts_with("/api/holding-trades")
+                    || path.starts_with("/api/corporate-actions/")
+                    || (path.starts_with("/api/holdings/")
+                        && ((request.method() == axum::http::Method::DELETE
+                            && !path[14..].contains('/'))
+                            || path.ends_with("/amount")
+                            || path.ends_with("/option-price")
+                            || path.ends_with("/trade-repair")
+                            || path.ends_with("/corporate-actions")))
+                {
+                    let method = request.method().as_str().to_owned();
+                    let bytes = axum::body::to_bytes(request.into_body(), 1024 * 1024)
+                        .await
+                        .map_err(|_| AppError::Validation("操作请求过大".into()))?;
+                    if let Ok(input) = serde_json::from_slice(&bytes) {
+                        if let Some(snapshot) = db.replay_financial_request(&method, &path, &input)?
+                        {
+                            let mut response = Json(snapshot).into_response();
+                            response.headers_mut().insert(
+                                "x-data-revision",
+                                revision
+                                    .parse()
+                                    .map_err(|_| AppError::Validation("数据版本无效".into()))?,
+                            );
+                            return Ok(response);
+                        }
                     }
                 }
+                return Ok::<_, AppError>(
+                    (
+                        StatusCode::CONFLICT,
+                        Json(serde_json::json!({
+                            "error":"资料已变化，请刷新核对后再保存；当前输入不会自动提交。",
+                            "revision":revision
+                        })),
+                    )
+                        .into_response(),
+                );
             }
-            return Ok::<_, AppError>(
-                (
-                    StatusCode::CONFLICT,
-                    Json(serde_json::json!({
-                        "error":"资料已变化，请刷新核对后再保存；当前输入不会自动提交。",
-                        "revision":revision
-                    })),
-                )
-                    .into_response(),
-            );
         }
         request.extensions_mut().insert(state.clone());
         let mut response = next.run(request).await;

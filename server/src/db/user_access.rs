@@ -24,6 +24,9 @@ impl PortfolioState for Database {
     fn snapshot(&self) -> AppResult<Snapshot> {
         Database::snapshot(self)
     }
+    fn base_currency(&self) -> AppResult<String> {
+        Database::base_currency(self)
+    }
     fn revision(&self) -> AppResult<String> {
         Database::revision(self)
     }
@@ -92,6 +95,9 @@ impl WatchAccount for Database {
     }
     fn watch_dividends(&self, symbol: &str) -> AppResult<Option<DividendHistory>> {
         Database::watch_dividends(self, symbol)
+    }
+    fn watch_dividends_all(&self) -> AppResult<BTreeMap<String, DividendHistory>> {
+        Database::watch_dividends_all(self)
     }
     fn save_watch_observation(
         &self,

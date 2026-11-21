@@ -5,9 +5,28 @@ use crate::{
     AppError, AppResult,
 };
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+
+struct PooledConn {
+    connection: Connection,
+    last_ok: Instant,
+}
+impl std::ops::Deref for PooledConn {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        &self.connection
+    }
+}
+impl std::ops::DerefMut for PooledConn {
+    fn deref_mut(&mut self) -> &mut Connection {
+        &mut self.connection
+    }
+}
 
 pub(crate) struct PublicWatch {
-    connection: Mutex<Connection>,
+    connection: Mutex<PooledConn>,
     url: String,
     schema: String,
 }
@@ -49,32 +68,64 @@ impl PublicWatch {
         }
         tx.commit()?;
         Ok(Self {
-            connection: Mutex::new(connection),
+            connection: Mutex::new(PooledConn {
+                connection,
+                last_ok: Instant::now(),
+            }),
             url: url.into(),
             schema: schema.into(),
         })
     }
 
-    fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, Connection>> {
-        let mut connection = self
+    fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, PooledConn>> {
+        let mut guard = self
             .connection
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if connection
-            .query_row("SELECT 1", [], |r| r.get::<_, i64>(0))
-            .is_err()
-        {
-            *connection = Connection::postgres(&self.url, &self.schema)?;
+        if guard.last_ok.elapsed() >= HEALTH_CHECK_INTERVAL {
+            if guard
+                .connection
+                .query_row("SELECT 1", [], |r| r.get::<_, i64>(0))
+                .is_err()
+            {
+                guard.connection = Connection::postgres(&self.url, &self.schema)?;
+            }
+            guard.last_ok = Instant::now();
         }
-        Ok(connection)
+        Ok(guard)
+    }
+
+    fn read_with_recovery<T>(
+        &self,
+        mut f: impl FnMut(&Connection) -> crate::storage::Result<T>,
+    ) -> crate::storage::Result<T> {
+        let mut guard = self
+            .connection
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match f(&guard.connection) {
+            Ok(value) => {
+                guard.last_ok = Instant::now();
+                Ok(value)
+            }
+            Err(error) if error.is_connection_broken() => {
+                guard.connection = Connection::postgres(&self.url, &self.schema)?;
+                let value = f(&guard.connection)?;
+                guard.last_ok = Instant::now();
+                Ok(value)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub fn catalog(&self) -> AppResult<(Catalog, i64)> {
-        let (payload, revision): (String, i64) = self.conn()?.query_row(
-            "SELECT payload,revision FROM watch_catalog WHERE id=1",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
+        let (payload, revision): (String, i64) = self.read_with_recovery(|c| {
+            c.query_row(
+                "SELECT payload,revision FROM watch_catalog WHERE id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+        })?;
         Ok((Catalog::parse(&payload)?, revision))
     }
 

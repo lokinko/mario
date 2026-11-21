@@ -57,16 +57,17 @@ export function useApplicationData(view: View) {
     async (protectDrafts = false) => {
       if (protectDrafts && protectDraft()) return false;
       const request = ++generation.current;
-      const next = await getSnapshot();
+      const [snapshotResult, modelResult] = await Promise.allSettled([
+        getSnapshot(),
+        getModelConfig(),
+      ]);
       if (request !== generation.current) return false;
-      let nextModel: ModelConfig | undefined;
-      let nextModelError = "";
-      try {
-        nextModel = await getModelConfig();
-      } catch (error) {
-        nextModelError = String(error);
-      }
-      if (request !== generation.current) return false;
+      if (snapshotResult.status === "rejected") throw snapshotResult.reason;
+      const next = snapshotResult.value;
+      const nextModel =
+        modelResult.status === "fulfilled" ? modelResult.value : undefined;
+      const nextModelError =
+        modelResult.status === "rejected" ? String(modelResult.reason) : "";
       // Input can change while either request is in flight.
       if (protectDrafts && protectDraft()) return false;
       if (nextModel) setModel(nextModel);

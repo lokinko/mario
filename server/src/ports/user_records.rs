@@ -81,6 +81,9 @@ pub(crate) trait WatchManagement: WatchAccount {
 
 pub(crate) trait EvidenceAccount: Send + Sync {
     fn research_evidence(&self) -> AppResult<Vec<ResearchEvidence>>;
+    fn research_evidence_summary(&self) -> AppResult<Vec<ResearchEvidence>> {
+        self.research_evidence()
+    }
     fn add_research_evidence(&self, input: &ResearchEvidenceInput) -> AppResult<ResearchEvidence>;
     fn research_attachment(
         &self,

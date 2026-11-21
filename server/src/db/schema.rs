@@ -5,7 +5,7 @@ use crate::storage::OptionalRow;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 18;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 19;
 
 // Keep migration order intact: re-running on an existing tenant schema is idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -201,6 +201,12 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
         underlying_id TEXT NOT NULL REFERENCES holdings(id) DEFERRABLE INITIALLY IMMEDIATE,
         payload TEXT NOT NULL
     ); CREATE INDEX IF NOT EXISTS holding_options_underlying ON holding_options(underlying_id);")?;
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_analyses_created_at ON analyses(created_at DESC, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_research_evidence_list ON research_evidence(active DESC, captured_at DESC, id ASC);
+         CREATE INDEX IF NOT EXISTS idx_watch_observations_unread ON watch_observations(symbol) WHERE alert = 1 AND read_at IS NULL;
+         CREATE INDEX IF NOT EXISTS idx_holdings_created_at ON holdings(created_at);",
+    )?;
     super::watch::migrate_rules(connection)?;
     super::watch_grid_migration::migrate(connection)?;
     Ok(())

@@ -5,8 +5,28 @@ use crate::{
     AppError, AppResult,
 };
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+
+struct PooledConn {
+    connection: crate::storage::Connection,
+    last_ok: Instant,
+}
+impl std::ops::Deref for PooledConn {
+    type Target = crate::storage::Connection;
+    fn deref(&self) -> &crate::storage::Connection {
+        &self.connection
+    }
+}
+impl std::ops::DerefMut for PooledConn {
+    fn deref_mut(&mut self) -> &mut crate::storage::Connection {
+        &mut self.connection
+    }
+}
+
 pub(crate) struct PublicDividendPlans {
-    connection: Mutex<crate::storage::Connection>,
+    connection: Mutex<PooledConn>,
     url: String,
     schema: String,
 }
@@ -21,23 +41,30 @@ impl PublicDividendPlans {
             CREATE TABLE IF NOT EXISTS dividend_plan_snapshots (symbol TEXT PRIMARY KEY, payload TEXT NOT NULL);")?;
         tx.commit()?;
         Ok(Self {
-            connection: Mutex::new(connection),
+            connection: Mutex::new(PooledConn {
+                connection,
+                last_ok: Instant::now(),
+            }),
             url: url.into(),
             schema: schema.into(),
         })
     }
-    fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, crate::storage::Connection>> {
-        let mut connection = self
+    fn conn(&self) -> AppResult<std::sync::MutexGuard<'_, PooledConn>> {
+        let mut guard = self
             .connection
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if connection
-            .query_row("SELECT 1", [], |r| r.get::<_, i64>(0))
-            .is_err()
-        {
-            *connection = crate::storage::Connection::postgres(&self.url, &self.schema)?;
+        if guard.last_ok.elapsed() >= HEALTH_CHECK_INTERVAL {
+            if guard
+                .connection
+                .query_row("SELECT 1", [], |r| r.get::<_, i64>(0))
+                .is_err()
+            {
+                guard.connection = crate::storage::Connection::postgres(&self.url, &self.schema)?;
+            }
+            guard.last_ok = Instant::now();
         }
-        Ok(connection)
+        Ok(guard)
     }
     #[cfg(test)]
     pub(crate) fn test() -> Self {
@@ -49,15 +76,38 @@ impl PublicDividendPlans {
     }
 }
 impl PublicDividendPlans {
+    fn read_with_recovery<T>(
+        &self,
+        mut f: impl FnMut(&crate::storage::Connection) -> crate::storage::Result<T>,
+    ) -> crate::storage::Result<T> {
+        let mut guard = self
+            .connection
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match f(&guard.connection) {
+            Ok(value) => {
+                guard.last_ok = Instant::now();
+                Ok(value)
+            }
+            Err(error) if error.is_connection_broken() => {
+                guard.connection = crate::storage::Connection::postgres(&self.url, &self.schema)?;
+                let value = f(&guard.connection)?;
+                guard.last_ok = Instant::now();
+                Ok(value)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     pub fn calendar_snapshot(&self, symbol: &str) -> AppResult<PlanSnapshot> {
-        let payload: Option<String> = self
-            .conn()?
-            .query_row(
+        let payload: Option<String> = self.read_with_recovery(|c| {
+            c.query_row(
                 "SELECT payload FROM dividend_plan_snapshots WHERE symbol=$1",
                 [symbol],
                 |r| r.get(0),
             )
-            .optional()?;
+            .optional()
+        })?;
         Ok(payload
             .as_deref()
             .map(serde_json::from_str)

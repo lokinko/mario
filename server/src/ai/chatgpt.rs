@@ -99,14 +99,19 @@ impl ChatGptProvider {
 }
 
 fn client() -> AppResult<Client> {
-    Client::builder()
-        .https_only(true)
-        .redirect(reqwest::redirect::Policy::none())
-        .retry(reqwest::retry::never())
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(MODEL_CALL_TIMEOUT)
-        .build()
-        .map_err(|_| failure(CodexFailure::Unavailable))
+    static CLIENT: std::sync::LazyLock<Option<Client>> = std::sync::LazyLock::new(|| {
+        Client::builder()
+            .https_only(true)
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(MODEL_CALL_TIMEOUT)
+            .build()
+            .ok()
+    });
+    CLIENT
+        .clone()
+        .ok_or_else(|| failure(CodexFailure::Unavailable))
 }
 
 fn request_body(model: &str, messages: Vec<ChatMessage>, search: bool) -> AppResult<Value> {
