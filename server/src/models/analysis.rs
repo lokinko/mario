@@ -299,6 +299,10 @@ pub struct AnalysisWorkflowTrace {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub research: Option<council::ResearchTrace>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<council::ModuleTrace>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synthesis: Option<council::SynthesisTrace>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub proposals: Vec<council::ProposalTrace>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vote: Option<council::VoteTrace>,

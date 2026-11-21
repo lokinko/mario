@@ -518,13 +518,17 @@ export function Advisor({
                           aria-label={
                             proposal === "DIRECT"
                               ? "回复草稿"
-                              : `方案 ${proposal} 草稿`
+                              : proposal === "SYNTHESIS"
+                                ? "策略汇总草稿"
+                                : `方案 ${proposal} 草稿`
                           }
                         >
                           <h3>
                             {proposal === "DIRECT"
                               ? "回复草稿"
-                              : `方案 ${proposal} · 草稿`}
+                              : proposal === "SYNTHESIS"
+                                ? "策略汇总 · 草稿"
+                                : `方案 ${proposal} · 草稿`}
                           </h3>
                           <ModelReport answer={answer} />
                         </section>

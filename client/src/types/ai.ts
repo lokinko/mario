@@ -194,8 +194,35 @@ export interface AnalysisWorkflowTrace {
   evidenceCatalog: AnalysisEvidenceReference[];
   route?: RouteTrace | null;
   research?: ResearchTrace | null;
+  modules?: ModuleTrace[];
+  synthesis?: SynthesisTrace | null;
   proposals?: ProposalTrace[];
   vote?: VoteTrace | null;
+}
+
+export interface ModuleAnalysis {
+  stance: string;
+  summary: string;
+  keyPoints: string[];
+  triggers: string[];
+  dataGaps?: string[];
+  facts?: AnalysisClaim[];
+}
+
+export interface ModuleTrace {
+  id: string;
+  module: string;
+  label: string;
+  analysis?: ModuleAnalysis | null;
+  validation?: OutputValidationTrace | null;
+  failure?: string | null;
+}
+
+export interface SynthesisTrace {
+  status: "completed" | "degraded" | string;
+  modulesUsed: number;
+  modulesTotal: number;
+  validation?: OutputValidationTrace | null;
 }
 
 export interface ResearchTrace {

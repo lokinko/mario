@@ -322,3 +322,115 @@ it("shows the routed domain and fast-mode path without fabricating a vote", () =
     screen.queryByRole("region", { name: "其他方案代理的质疑" }),
   ).toBeNull();
 });
+
+it("renders specialist modules and strategist synthesis summary for modular workflow traces", () => {
+  const report = {
+    answer:
+      "【核心结论】云铝股份当前维持底仓观察，暂不因浮亏加仓，等铝价回调或成本端企稳后再按左侧条件分批介入。",
+    suggestions: [
+      {
+        action:
+          "维持现有 4.23% 仓位观察，若股价回落至周期中枢 PB 低分位再分两批加仓",
+        why: "现有仓位已具参与弹性，浮亏补仓须满足基本面周期底部与赔率改善条件",
+        factIndices: [0],
+        unlessWhen: "氧化铝大幅涨价导致吨铝毛利转弱且云南限电减产时中止加仓",
+      },
+    ],
+    facts: [
+      {
+        statement: "当前持仓占比 4.2316%",
+        basis: "user_data" as const,
+        sourceRefs: ["/facts/holdings/ylgf/weightPct"],
+        evidenceIds: [],
+      },
+    ],
+    question: null,
+  };
+  const trace = {
+    version: "investment-workflow-v20",
+    calls: [],
+    evidenceCatalog: [],
+    structuredReport: report,
+    route: {
+      domain: "equity_valuation",
+      domainLabel: "个股估值与基本面",
+      executionMode: "council" as const,
+      reason: "属于投资决策或深度投研问题，启动分模块专业分析",
+      companies: ["000807.SZ"],
+    },
+    modules: [
+      {
+        id: "M1",
+        module: "fundamentals_valuation",
+        label: "基本面与估值定价",
+        analysis: {
+          stance: "水电铝成本优势突出，但须防按周期高点盈利误判低估",
+          summary: "云铝受益绿电成本优势，当前更需关注吨铝价差与周期中枢 PB。",
+          keyPoints: [
+            "水电铝具备长期成本曲线优势",
+            "周期股估值以周期中枢盈利和PB分位为准",
+          ],
+          triggers: ["铝价回落至行业高成本线附近且PB回落至历史低位"],
+          dataGaps: [],
+          facts: [],
+        },
+      },
+      {
+        id: "M2",
+        module: "portfolio_execution",
+        label: "组合策略与交易执行",
+        analysis: {
+          stance: "维持 4.23% 底仓，暂不因浮亏补仓",
+          summary: "组合已有敞口，不因成本价倒挂急于加仓。",
+          keyPoints: ["单标的仓位处于合理观察区"],
+          triggers: ["触发估值条件后按两批等额介入"],
+          dataGaps: [],
+          facts: [],
+        },
+      },
+      {
+        id: "M3",
+        module: "risk_bear_case",
+        label: "风险压力与反方证伪",
+        analysis: {
+          stance: "警惕氧化铝涨价与枯水期限电双重挤压",
+          summary: "若铝价回落叠加枯水期电价上行，吨铝利润弹性会迅速收敛。",
+          keyPoints: ["枯水期云南限电对产销量构成扰动"],
+          triggers: ["氧化铝持续涨价且铝价跌破成本支撑时复核仓位"],
+          dataGaps: [],
+          facts: [],
+        },
+      },
+    ],
+    synthesis: {
+      status: "completed",
+      modulesUsed: 3,
+      modulesTotal: 3,
+    },
+    webSearch: {
+      status: "incomplete",
+      searchCalls: 1,
+      warnings: ["本次未取得可引用的网页原文；外部信息仍待核实"],
+      leads: [
+        {
+          title: "网页检索综合摘要（公开线索，待公告复核）",
+          url: "",
+          summary: "沪铝主力震荡运行，云铝绿电铝产能占比高。",
+        },
+      ],
+    },
+  } as unknown as AnalysisWorkflowTrace;
+
+  render(<ModelReport answer="" trace={trace} />);
+  expect(
+    screen.getByText(
+      /分模块讨论与策略汇总：3\/3 个专业模块 · 个股估值与基本面/,
+    ),
+  ).toBeTruthy();
+  const process = screen.getByText(/分模块讨论与策略汇总/).closest("details")!;
+  expect(process.textContent).toContain("M1 · 基本面与估值定价");
+  expect(process.textContent).toContain("M2 · 组合策略与交易执行");
+  expect(process.textContent).toContain("M3 · 风险压力与反方证伪");
+  expect(process.textContent).toContain("涉及公开标的：000807.SZ");
+  expect(process.textContent).toContain("沪铝主力震荡运行");
+});

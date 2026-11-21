@@ -1040,6 +1040,8 @@ pub fn build_discussion(
         decide_execution_mode(request, domain, &selected, has_authorized_evidence);
     let topics = domain.public_topics(&request.question);
     let checks = domain.research_checks();
+    let strategy =
+        super::strategy::build_strategy_context(domain, &request.question, facts, &selected);
 
     json!({
         "kind": domain.as_str(),
@@ -1047,6 +1049,7 @@ pub fn build_discussion(
         "executionMode": execution_mode,
         "routeReason": route_reason,
         "frameworkFocus": domain.framework_focus(),
+        "investmentStrategy": strategy,
         "publicResearch": {
             "domain": domain.as_str(),
             "domainLabel": domain.label(),

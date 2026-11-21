@@ -440,8 +440,8 @@ mod tests {
             api_key: "custom-model-test-key".into(),
         };
         let Json(result) = run(Json(make_job())).await.unwrap();
-        assert!(result.answer.starts_with("P1 先处理集中风险"));
-        assert_eq!(result.transparency.model_calls, 7);
+        assert!(result.answer.starts_with("SYNTHESIS 先处理集中风险"));
+        assert_eq!(result.transparency.model_calls, 5);
         assert_eq!(result.transparency.provider, "openai-chat");
         assert_eq!(result.transparency.model, "third-party-model");
         let slots = Arc::new(tokio::sync::Semaphore::new(1));
@@ -456,14 +456,12 @@ mod tests {
         let events = crate::ai::streaming::SseDecoder::default()
             .feed(&body)
             .unwrap();
-        for proposal in ["P1", "P2", "P3"] {
-            assert!(events.iter().any(|data| data.contains("\"type\":\"draft\"")
-                && data.contains(&format!("\"proposal\":\"{proposal}\""))
-                && data.contains(&format!("{proposal} 先处理集中风险"))));
-        }
+        assert!(events.iter().any(|data| data.contains("\"type\":\"draft\"")
+            && data.contains("\"proposal\":\"SYNTHESIS\"")
+            && data.contains("SYNTHESIS 先处理集中风险")));
         let completed = events.last().unwrap();
         assert!(completed.contains("\"type\":\"complete\""));
-        assert!(completed.contains("P1 先处理集中风险"));
+        assert!(completed.contains("SYNTHESIS 先处理集中风险"));
         assert_eq!(slots.available_permits(), 1);
         server.abort();
         let requests = requests.lock().unwrap();
@@ -622,7 +620,7 @@ mod tests {
             .execute_remote(&endpoint, token, make_job(), Some(sender))
             .await
             .unwrap();
-        assert!(streamed.answer.starts_with("P1 先处理集中风险"));
+        assert!(streamed.answer.starts_with("SYNTHESIS 先处理集中风险"));
         assert_eq!(streamed.workflow_trace.valuation_evidence.len(), 1);
         assert_eq!(
             streamed.workflow_trace.valuation_evidence[0].quantity,
@@ -644,7 +642,7 @@ mod tests {
             .execute_remote(&endpoint, token, make_job(), None)
             .await
             .unwrap();
-        assert!(direct.answer.starts_with("P1 先处理集中风险"));
+        assert!(direct.answer.starts_with("SYNTHESIS 先处理集中风险"));
         assert_eq!(direct.workflow_trace.valuation_evidence[0].unit_price, 38.5);
         assert_eq!(slots.available_permits(), 2);
 

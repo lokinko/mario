@@ -4,14 +4,16 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde_json::Value;
 
-use crate::models::analysis::{AnalysisClaim, StructuredAnalysis};
+use crate::models::analysis::AnalysisClaim;
+use crate::models::council::ModuleTrace;
 
 const ALIAS_THRESHOLD: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderStage {
     Research,
-    Proposal { has_research_brief: bool },
+    Module { has_research_brief: bool },
+    Synthesizer { has_research_brief: bool },
     Ballot,
     Direct,
 }
@@ -292,7 +294,7 @@ pub fn render_for_stage(value: &Value, stage: RenderStage, aliases: &ContextAlia
     if stage != RenderStage::Ballot {
         if let Some(leads) = map.get("webLeads").and_then(Value::as_array) {
             if !leads.is_empty() {
-                out.push_str("\n## 待核实网页线索（非证据，禁止引用）\n");
+                out.push_str("\n## 网页检索线索（公开参考线索：正文分析应充分利用并注明“据网页线索，待公告复核”；非一手原文，禁止写入 facts.evidenceIds）\n");
                 for lead in leads {
                     let title = lead
                         .get("title")
@@ -372,7 +374,8 @@ pub fn render_for_stage(value: &Value, stage: RenderStage, aliases: &ContextAlia
 
     let include_checks = match stage {
         RenderStage::Research | RenderStage::Direct => true,
-        RenderStage::Proposal { has_research_brief } => !has_research_brief,
+        RenderStage::Module { has_research_brief }
+        | RenderStage::Synthesizer { has_research_brief } => !has_research_brief,
         RenderStage::Ballot => false,
     };
     if include_checks {
@@ -666,45 +669,43 @@ fn render_research_brief(
     }
 }
 
-/// Compact Markdown rendering of anonymous candidate proposals for cross-ballot voting.
-pub fn render_ballot_material(
-    proposals: &[(&str, &StructuredAnalysis)],
-    aliases: &ContextAliases,
-) -> String {
+/// Compact Markdown rendering of specialist module analyses for chief strategist synthesis.
+pub fn render_modules_for_synthesis(modules: &[ModuleTrace], aliases: &ContextAliases) -> String {
     let mut out = String::new();
-    for (id, report) in proposals {
-        out.push_str(&format!("\n## 方案 {id}\n"));
-        out.push_str("回答：");
-        if needs_fence(&report.answer) {
-            out.push('\n');
-            write_fenced_text(&mut out, &report.answer);
-        } else {
-            out.push_str(&report.answer);
-            out.push('\n');
-        }
-        if !report.suggestions.is_empty() {
-            out.push_str("建议：\n");
-            for (idx, s) in report.suggestions.iter().enumerate() {
-                let fidx = s
-                    .fact_indices
-                    .iter()
-                    .map(usize::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",");
-                out.push_str(&format!(
-                    "{}. 行动(依据facts[{fidx}]): {}\n   理由: {}\n",
-                    idx + 1,
-                    s.action,
-                    s.why
-                ));
-                if !s.unless_when.trim().is_empty() {
-                    out.push_str(&format!("   推翻/不适用条件: {}\n", s.unless_when));
-                }
+    for item in modules {
+        out.push_str(&format!("\n## 模块 {} · {}\n", item.id, item.label));
+        let Some(analysis) = item.analysis.as_ref() else {
+            let reason = item
+                .failure
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("该模块本轮未产出有效结果");
+            out.push_str(&format!("- 状态：未完成（{reason}）\n"));
+            continue;
+        };
+        out.push_str(&format!("- 核心立场：{}\n", analysis.stance));
+        out.push_str(&format!("- 模块分析：{}\n", analysis.summary));
+        if !analysis.key_points.is_empty() {
+            out.push_str("- 关键论点：\n");
+            for point in &analysis.key_points {
+                out.push_str(&format!("  - {point}\n"));
             }
         }
-        if !report.facts.is_empty() {
-            out.push_str("引用事实：\n");
-            for (idx, fact) in report.facts.iter().enumerate() {
+        if !analysis.triggers.is_empty() {
+            out.push_str("- 触发/证伪条件：\n");
+            for trigger in &analysis.triggers {
+                out.push_str(&format!("  - {trigger}\n"));
+            }
+        }
+        if !analysis.data_gaps.is_empty() {
+            out.push_str("- 资料缺口：\n");
+            for gap in &analysis.data_gaps {
+                out.push_str(&format!("  - {gap}\n"));
+            }
+        }
+        if !analysis.facts.is_empty() {
+            out.push_str("- 引用授权事实：\n");
+            for fact in &analysis.facts {
                 let mut refs: Vec<String> = fact
                     .source_refs
                     .iter()
@@ -716,15 +717,12 @@ pub fn render_ballot_material(
                         .map(|eid| aliases.evidence_display(eid).to_owned()),
                 );
                 out.push_str(&format!(
-                    "- [{idx}] ({}|{}) {}\n",
+                    "  - ({}|{}) {}\n",
                     fact.basis,
                     refs.join(", "),
                     fact.statement
                 ));
             }
-        }
-        if let Some(q) = report.question.as_deref().filter(|q| !q.trim().is_empty()) {
-            out.push_str(&format!("追问：{q}\n"));
         }
     }
     out
@@ -888,16 +886,16 @@ mod tests {
         assert!(research.contains("新闻线索"));
         assert!(!research.contains("dividend_composition_and_commitment"));
 
-        let proposal = render_for_stage(
+        let module_view = render_for_stage(
             &payload,
-            RenderStage::Proposal {
+            RenderStage::Module {
                 has_research_brief: true,
             },
             &aliases,
         );
-        assert!(!proposal.contains("0. 核查项零"));
-        assert!(proposal.contains("## 研究简报"));
-        assert!(proposal.contains("新闻线索"));
+        assert!(!module_view.contains("0. 核查项零"));
+        assert!(module_view.contains("## 研究简报"));
+        assert!(module_view.contains("新闻线索"));
 
         let ballot = render_for_stage(&payload, RenderStage::Ballot, &aliases);
         assert!(!ballot.contains("0. 核查项零"));

@@ -1,4 +1,4 @@
-const councilSteps = ["准备资料", "研究", "方案", "投票", "完成"];
+const councilSteps = ["准备资料", "研究", "分模块讨论", "策略汇总", "完成"];
 const fastSteps = ["准备资料", "场景路由", "直接作答", "完成"];
 
 export function GenerationSteps({ stage }: { stage: string }) {
@@ -16,9 +16,9 @@ export function GenerationSteps({ stage }: { stage: string }) {
             : -1
     : /完成/.test(stage)
       ? 4
-      : /评审|投票/.test(stage)
+      : /汇总|策略总监|裁决|评审|投票/.test(stage)
         ? 3
-        : /方案/.test(stage)
+        : /模块|方案/.test(stage)
           ? 2
           : /研究|检索|搜索|查找|识别|路由|投委会/.test(stage)
             ? 1

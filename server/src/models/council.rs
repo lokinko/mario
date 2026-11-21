@@ -2,20 +2,29 @@
 //! Model agents produce briefs, proposals and ballots; only this module decides the winner.
 use crate::models::analysis::{AnalysisClaim, OutputValidationTrace, StructuredAnalysis};
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
 use std::cmp::Ordering;
 
 pub const RESEARCH_FINDINGS_MAX: usize = 10;
 pub const RESEARCH_NOTES_MAX: usize = 6;
 pub const RESEARCH_NOTE_CHARS: usize = 300;
+#[cfg(test)]
 pub const BALLOT_OBJECTION_CHARS: usize = 300;
+#[cfg(test)]
 pub const BALLOT_VETO_CHARS: usize = 200;
+#[cfg(test)]
 pub const SCORE_MAX: u8 = 2;
+pub const MODULE_STANCE_CHARS: usize = 120;
+pub const MODULE_SUMMARY_CHARS: usize = 600;
+pub const MODULE_ITEM_CHARS: usize = 240;
+pub const MODULE_GAP_CHARS: usize = 180;
+pub const MODULE_FACTS_MAX: usize = 5;
 
 /// Adaptive workflow execution mode selected from the frozen inputs.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionMode {
-    /// Full multi-agent investment committee: research → three proposals → cross ballots → tally.
+    /// Full multi-module investment analysis: research → specialist modules → chief strategist synthesis.
     #[default]
     Council,
     /// Single direct structured advisor call for lightweight concept, data-status or lookup queries.
@@ -32,6 +41,44 @@ pub struct RouteTrace {
     pub reason: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub companies: Vec<String>,
+}
+
+/// Output of one specialist analysis module (fundamentals/valuation, portfolio/execution, risk/bear).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ModuleAnalysis {
+    pub stance: String,
+    pub summary: String,
+    pub key_points: Vec<String>,
+    pub triggers: Vec<String>,
+    #[serde(default)]
+    pub data_gaps: Vec<String>,
+    #[serde(default)]
+    pub facts: Vec<AnalysisClaim>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModuleTrace {
+    pub id: String,
+    pub module: String,
+    pub label: String,
+    #[serde(default)]
+    pub analysis: Option<ModuleAnalysis>,
+    #[serde(default)]
+    pub validation: Option<OutputValidationTrace>,
+    #[serde(default)]
+    pub failure: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SynthesisTrace {
+    pub status: String,
+    pub modules_used: usize,
+    pub modules_total: usize,
+    #[serde(default)]
+    pub validation: Option<OutputValidationTrace>,
 }
 
 /// Research agent output: cited findings shared by every proposal agent.
@@ -115,6 +162,7 @@ pub struct BallotScores {
     pub actionability: u8,
 }
 
+#[cfg(test)]
 impl BallotScores {
     pub fn total(&self) -> u32 {
         [
@@ -193,12 +241,14 @@ pub struct VoteTrace {
 }
 
 /// A valid proposal entering the vote, in fixed lens order.
+#[cfg(test)]
 pub struct Candidate<'a> {
     pub id: &'a str,
     pub repairs: usize,
 }
 
 /// Validate one ballot against the exact proposals its voter was shown.
+#[cfg(test)]
 pub fn validate_ballot(ballot: &Ballot, shown: &[&str]) -> Result<(), String> {
     if ballot.assessments.len() != shown.len() {
         return Err(format!(
@@ -259,6 +309,7 @@ pub fn validate_ballot(ballot: &Ballot, shown: &[&str]) -> Result<(), String> {
 /// Count validated ballots. A proposal is eliminated when vetoes reach half of its voters.
 /// Ranking: not eliminated, assessed, more preferences, higher mean score, fewer vetoes,
 /// fewer repairs, lens order.
+#[cfg(test)]
 pub fn tally(
     candidates: &[Candidate<'_>],
     ballots: &[(&str, &Ballot)],
@@ -326,10 +377,12 @@ pub fn tally(
     (status, rows)
 }
 
+#[cfg(test)]
 fn tied(a: &TallyRow, b: &TallyRow) -> bool {
     a.preferences == b.preferences && compare_mean(a, b).is_eq() && a.vetoes == b.vetoes
 }
 
+#[cfg(test)]
 fn compare_mean(a: &TallyRow, b: &TallyRow) -> Ordering {
     // Exact comparison of score_total / voters without floating point.
     let left = u64::from(a.score_total) * b.voters.max(1) as u64;
