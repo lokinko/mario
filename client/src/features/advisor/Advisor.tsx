@@ -475,14 +475,13 @@ export function Advisor({
                         "zh-CN",
                       )}
                     />
-                    <span>
-                      {" "}
-                      · 引用{" "}
-                      {
-                        reportSources(turn.result.workflowTrace).sources.length
-                      }{" "}
-                      条来源
-                    </span>
+                    {(() => {
+                      const count = reportSources(turn.result.workflowTrace)
+                        .sources.length;
+                      return count > 0 ? (
+                        <span> · 引用 {count} 条来源</span>
+                      ) : null;
+                    })()}
                   </div>
                   <ModelReport
                     answer={turn.result.answer}

@@ -62,7 +62,54 @@ const labels: Record<string, string> = {
   recordedTradeCount: "已录入交易笔数",
   confirmedOn: "余额核对日期",
   needsReconciliation: "余额待核对状态",
+  horizonYears: "投资期限",
+  maxDrawdownPct: "最大回撤",
 };
+
+const metadataOnlyFields = new Set([
+  "name",
+  "symbol",
+  "currency",
+  "quantityUnit",
+  "baseCurrency",
+]);
+
+const percentFields = new Set([
+  "weightPct",
+  "targetPct",
+  "deviationPct",
+  "profitPct",
+  "concentrationPct",
+  "maxDrawdownPct",
+]);
+
+const moneyFields = new Set([
+  "marketValue",
+  "costBasis",
+  "unrealizedProfit",
+  "monthlyIncome",
+  "monthlyExpense",
+  "monthlySurplus",
+  "emergencyFund",
+  "liabilities",
+  "debtBalance",
+  "portfolioValue",
+  "investmentValue",
+  "cashValue",
+  "totalValue",
+  "amount",
+  "grossAmount",
+  "fees",
+  "taxes",
+  "originalPrice",
+  "referencePrice",
+]);
+
+export interface PersonalFactSummary {
+  id: string;
+  title: string;
+  detail: string;
+}
 
 function pointer(context: unknown, path: string): unknown {
   if (!path.startsWith("/")) return undefined;
@@ -77,8 +124,35 @@ function pointer(context: unknown, path: string): unknown {
     }, context);
 }
 
-// A source appears only when the final report actually references it. Selecting
-// a candidate is not itself a citation, and internal model metadata is omitted.
+function formatPersonalValue(
+  field: string,
+  rawValue: string,
+  record?: Record<string, unknown>,
+  fallbackCurrency?: string,
+): string {
+  if (percentFields.has(field)) return `${rawValue}%`;
+  if (field === "currentQuantity") {
+    const unit =
+      record && typeof record.quantityUnit === "string"
+        ? record.quantityUnit
+        : "";
+    return unit ? `${rawValue} ${unit}` : rawValue;
+  }
+  if (field === "horizonYears") return `${rawValue} 年`;
+  if (field === "emergencyMonths") return `${rawValue} 个月`;
+  if (moneyFields.has(field)) {
+    const currency =
+      record && typeof record.currency === "string"
+        ? record.currency
+        : fallbackCurrency || "";
+    return currency ? `${rawValue} ${currency}` : rawValue;
+  }
+  return rawValue;
+}
+
+// External/saved sources and prior-turn user statements appear as clickable citations.
+// Individual fields from the user's own holdings or financial profile are grouped into
+// concise inline summaries instead of flooding the report with single-number footnotes.
 export function reportSources(trace?: AnalysisWorkflowTrace) {
   const catalog = new Map(
     (trace?.evidenceCatalog ?? []).map((source) => [source.id, source]),
@@ -86,7 +160,37 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
   const used = new Map<string, AnalysisEvidenceReference>();
   const localByFact = new Map<number, string[]>();
   const localByInference = new Map<number, string[]>();
-  const addLocal = (path: string, quote?: string) => {
+  const personalGroups = new Map<
+    string,
+    { title: string; entries: Map<string, string> }
+  >();
+
+  const summaryObj = pointer(trace?.personalContext, "/facts/summary");
+  const baseCurrency =
+    summaryObj &&
+    typeof summaryObj === "object" &&
+    "baseCurrency" in summaryObj &&
+    typeof (summaryObj as Record<string, unknown>).baseCurrency === "string"
+      ? String((summaryObj as Record<string, unknown>).baseCurrency)
+      : "";
+
+  const recordPersonal = (
+    groupId: string,
+    title: string,
+    fieldLabel: string,
+    formattedValue: string,
+  ) => {
+    const existing = personalGroups.get(groupId) ?? {
+      title,
+      entries: new Map<string, string>(),
+    };
+    if (!existing.entries.has(fieldLabel)) {
+      existing.entries.set(fieldLabel, formattedValue);
+    }
+    personalGroups.set(groupId, existing);
+  };
+
+  const processLocal = (path: string, quote?: string): string | undefined => {
     const userHistory = path.startsWith("/previousTurn/");
     if (
       userHistory &&
@@ -110,73 +214,130 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
         : Number(quote) !== value && String(value) !== quote)
     )
       return undefined;
-    const id = `local:${path}`;
+
     const parts = path.split("/").slice(1);
+    // Current-turn question is already visible right above the answer.
+    if (parts[0] === "question" || parts[0] === "currentUserMessage") {
+      return undefined;
+    }
+
+    if (userHistory) {
+      const id = `local:${path}`;
+      const title =
+        parts[1] === "question"
+          ? "上一轮用户原话"
+          : `早期用户原话 · 摘录 ${Number(parts[2]) + 1}`;
+      catalog.set(id, {
+        id,
+        title,
+        publisher: "本次对话中的用户原话",
+        sourceUrl: "",
+        sourceTier: "用户声明（未改写档案）",
+        notes: "用户声明（未改写档案）。",
+        asOfDate: "",
+        evidenceType: "personal_snapshot",
+        claim: quote ?? String(value),
+      });
+      return id;
+    }
+
+    const field = parts.at(-1) ?? "";
+    if (metadataOnlyFields.has(field)) return undefined;
+
+    const fieldLabel = labels[field] ?? field;
+    const rawValue = quote ?? String(value);
     const parent = pointer(
       trace?.personalContext,
       path.slice(0, path.lastIndexOf("/")),
     );
-    const holding =
-      parts[1] === "holdings"
-        ? pointer(trace?.personalContext, `/${parts.slice(0, 3).join("/")}`)
+    const parentRecord =
+      parent && typeof parent === "object"
+        ? (parent as Record<string, unknown>)
         : undefined;
-    const name =
-      parent && typeof parent === "object" && "name" in parent
-        ? String(parent.name)
-        : holding && typeof holding === "object" && "name" in holding
-          ? String(holding.name)
+
+    // Group holding fields (including legacy /portfolio/holdings/{idx} and trade refs).
+    const isFactsHolding = parts[0] === "facts" && parts[1] === "holdings";
+    const isLegacyHolding = parts[0] === "portfolio" && parts[1] === "holdings";
+    if ((isFactsHolding || isLegacyHolding) && parts.length >= 4) {
+      const holdingPath = `/${parts.slice(0, 3).join("/")}`;
+      const holding = pointer(trace?.personalContext, holdingPath);
+      const holdingRecord =
+        holding && typeof holding === "object"
+          ? (holding as Record<string, unknown>)
+          : undefined;
+      const name =
+        holdingRecord && typeof holdingRecord.name === "string"
+          ? holdingRecord.name
+          : parts[2];
+      const symbol =
+        holdingRecord && typeof holdingRecord.symbol === "string"
+          ? holdingRecord.symbol
           : "";
-    const tradeDate =
-      parent && typeof parent === "object" && "occurredOn" in parent
-        ? String(parent.occurredOn)
-        : "";
-    const title = userHistory
-      ? parts[1] === "question"
-        ? "上一轮用户原话"
-        : `早期用户原话 · 摘录 ${Number(parts[2]) + 1}`
-      : [
-          labels[parts[0]],
-          name,
-          tradeDate,
-          parts.length > 1 ? labels[parts.at(-1)!] : undefined,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-    catalog.set(id, {
-      id,
-      title,
-      publisher: userHistory
-        ? "本次对话中的用户原话"
-        : "本次问答使用的个人资料",
-      sourceUrl: "",
-      sourceTier: userHistory ? "用户声明（未改写档案）" : "用户记录",
-      notes: userHistory ? "用户声明（未改写档案）。" : undefined,
-      asOfDate: "",
-      evidenceType: "personal_snapshot",
-      claim: quote ?? String(value),
-    });
-    return id;
-  };
-  const report = trace?.structuredReport;
-  const referencedLocal = (path: string) => addLocal(path);
-  report?.facts.forEach((claim, index) => {
-    if (claim.basis === "user_data")
-      localByFact.set(
-        index,
-        (claim.sourceRefs ?? [])
-          .map(referencedLocal)
-          .filter((id): id is string => !!id),
+      const tradeDate =
+        parentRecord && typeof parentRecord.occurredOn === "string"
+          ? parentRecord.occurredOn
+          : "";
+      const groupId = tradeDate ? `${holdingPath}:${parts[4]}` : holdingPath;
+      const title = tradeDate
+        ? `${name} · ${tradeDate}`
+        : symbol && !name.includes(symbol) && !symbol.startsWith("CASH-")
+          ? `${name}（${symbol}）`
+          : name;
+      recordPersonal(
+        groupId,
+        title,
+        fieldLabel,
+        formatPersonalValue(
+          field,
+          rawValue,
+          parentRecord ?? holdingRecord,
+          baseCurrency,
+        ),
       );
+      return undefined;
+    }
+
+    // Group financial summary / profile / portfolio totals.
+    if (
+      (parts[0] === "facts" && parts[1] === "summary") ||
+      parts[0] === "financialProfile" ||
+      parts[0] === "portfolio"
+    ) {
+      recordPersonal(
+        "personal:summary",
+        "个人财务摘要",
+        fieldLabel,
+        formatPersonalValue(field, rawValue, parentRecord, baseCurrency),
+      );
+      return undefined;
+    }
+
+    recordPersonal(
+      `personal:${parts[0]}`,
+      labels[parts[0]] ?? parts[0],
+      fieldLabel,
+      formatPersonalValue(field, rawValue, parentRecord, baseCurrency),
+    );
+    return undefined;
+  };
+
+  const report = trace?.structuredReport;
+  report?.facts.forEach((claim, index) => {
+    if (claim.basis === "user_data") {
+      const refs = (claim.sourceRefs ?? [])
+        .map((path) => processLocal(path))
+        .filter((id): id is string => !!id);
+      if (refs.length) localByFact.set(index, refs);
+    }
   });
   (report && "inferences" in report ? report.inferences : []).forEach(
     (claim, index) => {
-      if (claim.basis === "user_data")
-        localByInference.set(
-          index,
-          (claim.sourceRefs ?? [])
-            .map(referencedLocal)
-            .filter((id): id is string => !!id),
-        );
+      if (claim.basis === "user_data") {
+        const refs = (claim.sourceRefs ?? [])
+          .map((path) => processLocal(path))
+          .filter((id): id is string => !!id);
+        if (refs.length) localByInference.set(index, refs);
+      }
     },
   );
   // Older reports may provide references only through the evidence review.
@@ -187,7 +348,7 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
         report?.facts[check.factIndex]?.basis !== "user_data"
       )
         continue;
-      const id = addLocal(check.sourceRef, check.quote);
+      const id = processLocal(check.sourceRef, check.quote);
       if (!id) continue;
       const refs = localByFact.get(check.factIndex) ?? [];
       if (!refs.includes(id)) refs.push(id);
@@ -214,7 +375,23 @@ export function reportSources(trace?: AnalysisWorkflowTrace) {
       }
     },
   );
-  return { sources: [...used.values()], localByFact, localByInference };
+
+  const personalFacts: PersonalFactSummary[] = [...personalGroups.entries()]
+    .map(([id, group]) => ({
+      id,
+      title: group.title,
+      detail: [...group.entries.entries()]
+        .map(([label, value]) => `${label} ${value}`)
+        .join(" · "),
+    }))
+    .filter((item) => item.detail.length > 0);
+
+  return {
+    sources: [...used.values()],
+    personalFacts,
+    localByFact,
+    localByInference,
+  };
 }
 
 function sourceUrl(value: string) {
@@ -287,9 +464,6 @@ export function SourceDetail({
     >
       <div className="report-source-heading">
         <h3>{source.title || "原始资料"}</h3>
-        <button type="button" className="text-button" onClick={close}>
-          收起原始信息
-        </button>
       </div>
       {source.publisher && <p className="muted">{source.publisher}</p>}
       {source.asOfDate && <p className="muted">资料日期：{source.asOfDate}</p>}

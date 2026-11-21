@@ -7,7 +7,12 @@ import type { AnalysisWorkflowTrace } from "../../types/ai";
 afterEach(cleanup);
 it("shows a concise answer, linked suggestions and one question with folded evidence", () => {
   const trace = {
-    personalContext: { question: "每月结余8000元" },
+    personalContext: {
+      question: "每月结余8000元",
+      facts: {
+        summary: { baseCurrency: "CNY", monthlySurplus: "8000" },
+      },
+    },
     evidenceCatalog: [],
     structuredReport: {
       answer: "本月先把结余转入备用金。",
@@ -23,7 +28,7 @@ it("shows a concise answer, linked suggestions and one question with folded evid
         {
           statement: "每月结余8000元",
           basis: "user_data",
-          sourceRefs: ["/question"],
+          sourceRefs: ["/question", "/facts/summary/monthlySurplus"],
           evidenceIds: [],
         },
       ],
@@ -37,11 +42,11 @@ it("shows a concise answer, linked suggestions and one question with folded evid
   );
   expect(screen.getByText("追问：负债何时需要偿还？")).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "方案比较" })).toBeNull();
-  expect(screen.getByText("依据与局限").closest("details")!.open).toBe(false);
-  fireEvent.click(screen.getAllByRole("button", { name: /查看引用 1/ })[0]);
-  expect(
-    screen.getByRole("region", { name: "引用原始信息" }).textContent,
-  ).toContain("每月结余8000元");
+  const details = screen.getByText("依据与局限").closest("details")!;
+  expect(details.open).toBe(false);
+  expect(screen.queryByRole("button", { name: /查看引用/ })).toBeNull();
+  expect(details.textContent).toContain("个人财务摘要");
+  expect(details.textContent).toContain("月结余 8000 CNY");
 });
 
 it("shows the complete report with sources and limitations, without process or action controls", () => {

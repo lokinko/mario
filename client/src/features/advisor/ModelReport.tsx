@@ -54,7 +54,8 @@ export function ModelReport({
   };
   if (!report) return <div className="answer model-report">{answer}</div>;
 
-  const { sources, localByFact, localByInference } = reportSources(trace);
+  const { sources, personalFacts, localByFact, localByInference } =
+    reportSources(trace);
   const sourceById = new Map(
     sources.map((source, index) => [source.id, { source, number: index + 1 }]),
   );
@@ -198,14 +199,27 @@ export function ModelReport({
             <p key={index}>{warning}</p>
           ))}
           {claims(report.facts, true)}
-          <ul>
-            {sources.map((source) => (
-              <li key={source.id}>
-                {citation(source.id)} {source.title || "原始资料"}
-              </li>
-            ))}
-          </ul>
-          {sources.length === 0 && <p>本次回答未提供可核对的引用来源。</p>}
+          {personalFacts.length > 0 && (
+            <ul>
+              {personalFacts.map((item) => (
+                <li key={item.id}>
+                  <strong>{item.title}</strong>：{item.detail}
+                </li>
+              ))}
+            </ul>
+          )}
+          {sources.length > 0 && (
+            <ul>
+              {sources.map((source) => (
+                <li key={source.id}>
+                  {citation(source.id)} {source.title || "原始资料"}
+                </li>
+              ))}
+            </ul>
+          )}
+          {sources.length === 0 && personalFacts.length === 0 && (
+            <p>本次回答未提供可核对的引用来源。</p>
+          )}
         </details>
         <button
           type="button"
