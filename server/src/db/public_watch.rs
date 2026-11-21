@@ -4,10 +4,12 @@ use crate::{
     storage::{params, Connection, OptionalRow},
     AppError, AppResult,
 };
-use std::sync::Mutex;
+use std::collections::BTreeMap;
+use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+const SUMMARIES_CACHE_TTL: Duration = Duration::from_secs(30);
 
 struct PooledConn {
     connection: Connection,
@@ -27,6 +29,7 @@ impl std::ops::DerefMut for PooledConn {
 
 pub(crate) struct PublicWatch {
     connection: Mutex<PooledConn>,
+    summaries_cache: RwLock<Option<(BTreeMap<String, CatalogSnapshot>, Instant)>>,
     url: String,
     schema: String,
 }
@@ -72,6 +75,7 @@ impl PublicWatch {
                 connection,
                 last_ok: Instant::now(),
             }),
+            summaries_cache: RwLock::new(None),
             url: url.into(),
             schema: schema.into(),
         })
@@ -166,7 +170,15 @@ impl PublicWatch {
             ));
         }
         tx.commit()?;
+        self.invalidate_summaries();
         Ok(())
+    }
+
+    fn invalidate_summaries(&self) {
+        *self
+            .summaries_cache
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 
     /// Public-source enrichment never restores removed companies or replaces edits.
@@ -203,6 +215,7 @@ impl PublicWatch {
             )?;
         }
         tx.commit()?;
+        self.invalidate_summaries();
         Ok(())
     }
 
@@ -223,21 +236,40 @@ impl PublicWatch {
     }
 
     /// List facts only; full persisted evidence remains available through `get`.
-    pub fn summaries(&self) -> AppResult<std::collections::BTreeMap<String, CatalogSnapshot>> {
-        let values = self.conn()?.prepare(
-            "SELECT symbol,CASE WHEN payload::jsonb->'latest' <> 'null'::jsonb
-             THEN jsonb_set(payload::jsonb,'{latest}',(payload::jsonb->'latest') - 'trends' - 'dividendHistory')::text
-             ELSE payload END FROM watch_snapshots WHERE symbol IN (
-             SELECT company->>'symbol' FROM watch_catalog c,
-               LATERAL jsonb_array_elements(c.payload::jsonb->'industries') industry,
-               LATERAL jsonb_array_elements(industry->'companies') company
-             )"
-        )?.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?
-        .collect::<Result<Vec<_>,_>>()?;
-        values
+    pub fn summaries(&self) -> AppResult<BTreeMap<String, CatalogSnapshot>> {
+        if let Some((cached, at)) = self
+            .summaries_cache
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            if at.elapsed() < SUMMARIES_CACHE_TTL {
+                return Ok(cached.clone());
+            }
+        }
+        let values = self.read_with_recovery(|c| {
+            c.prepare(
+                "SELECT symbol,CASE WHEN payload::jsonb->'latest' <> 'null'::jsonb
+                 THEN jsonb_set(payload::jsonb,'{latest}',(payload::jsonb->'latest') - 'trends' - 'dividendHistory')::text
+                 ELSE payload END FROM watch_snapshots WHERE symbol IN (
+                 SELECT company->>'symbol' FROM watch_catalog c,
+                   LATERAL jsonb_array_elements(c.payload::jsonb->'industries') industry,
+                   LATERAL jsonb_array_elements(industry->'companies') company
+                 )",
+            )?
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .collect::<Result<Vec<_>, _>>()
+        })?;
+        let map: BTreeMap<String, CatalogSnapshot> = values
             .into_iter()
             .map(|(symbol, payload)| Ok((symbol, serde_json::from_str(&payload)?)))
-            .collect()
+            .collect::<AppResult<_>>()?;
+        *self
+            .summaries_cache
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some((map.clone(), Instant::now()));
+        Ok(map)
     }
 
     pub fn save(&self, symbol: &str, snapshot: &CatalogSnapshot) -> AppResult<()> {
@@ -255,6 +287,7 @@ impl PublicWatch {
                 <= (excluded.payload::jsonb->>'checkedAt')::timestamptz",
             params![symbol, serde_json::to_string(snapshot)?],
         )?;
+        self.invalidate_summaries();
         Ok(())
     }
 

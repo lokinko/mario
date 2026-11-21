@@ -238,7 +238,9 @@ pub fn apply_cached(
     provider: &dyn SecurityPriceProvider,
 ) -> AppResult<Snapshot> {
     let before = db.snapshot()?;
+    let today = crate::models::market::today();
     let mut errors = Vec::new();
+    let mut changed = false;
     for holding in &before.holdings {
         if holding.asset_class == "现金"
             || holding.symbol.trim().is_empty()
@@ -250,7 +252,7 @@ pub fn apply_cached(
         let result = provider
             .cached_quote(&SecurityPriceQuery {
                 symbol: holding.symbol.clone(),
-                on_date: crate::models::market::today(),
+                on_date: today.clone(),
                 action_from: None,
             })
             .and_then(|quote| {
@@ -258,11 +260,15 @@ pub fn apply_cached(
                     .map(|q| apply_quote(db, &before, holding, &q))
                     .transpose()
             });
-        if let Err(error) = result {
-            errors.push(format!("{}（{}）：{}", holding.name, holding.symbol, error));
+        match result {
+            Ok(Some(true)) => changed = true,
+            Ok(_) => {}
+            Err(error) => {
+                errors.push(format!("{}（{}）：{}", holding.name, holding.symbol, error));
+            }
         }
     }
-    let mut snapshot = db.snapshot()?;
+    let mut snapshot = if changed { db.snapshot()? } else { before };
     snapshot.price_refresh_errors = errors;
     Ok(snapshot)
 }

@@ -5,8 +5,16 @@ import {
   dividendPreviewHref,
   isDividendPreview,
 } from "../features/watch/dividend-preview/route";
+import { preloadInitialRoute } from "./preload";
 
-const App = lazy(() => import("../App"));
+let appPromise: Promise<typeof import("../App")> | null = null;
+const loadApp = () => (appPromise ??= import("../App"));
+const preloadWorkspace = () => {
+  void loadApp();
+  preloadInitialRoute();
+};
+
+const App = lazy(loadApp);
 
 const DividendPreview = lazy(() =>
   import("../features/watch/dividend-preview/DividendPreview").then((m) => ({
@@ -29,7 +37,10 @@ export function Website() {
       </DeferredPage>
     );
   return (
-    <WebAccess publicPreviewHref={dividendPreviewHref()}>
+    <WebAccess
+      publicPreviewHref={dividendPreviewHref()}
+      onPreload={preloadWorkspace}
+    >
       {path === `${import.meta.env.BASE_URL}dashboard` ? (
         <DeferredPage>
           <Dashboard />

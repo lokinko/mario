@@ -366,6 +366,13 @@ async fn account_action(
     })
     .await
     .map_err(|_| AppError::Auth("登录服务不可用".into()))??;
+    // Warm one tenant connection (and schema migration marker) in the background so
+    // the immediate post-login bootstrap requests reuse a ready pooled connection.
+    let pool = state.tenant_connections.clone();
+    let user_id = result.user_id.clone();
+    tokio::task::spawn_blocking(move || {
+        let _ = Database::pooled(&pool, &user_id);
+    });
     Ok(Json(result))
 }
 async fn logout(

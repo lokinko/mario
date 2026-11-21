@@ -464,13 +464,33 @@ impl Database {
             .parse::<chrono_tz::Tz>()
             .map_err(|_| AppError::Validation("记账时区无效".into()))?;
         let mut conn = self.conn()?;
-        let tx = conn.transaction()?;
-        tx.execute(
-            "INSERT INTO daily_settings(id,timezone) VALUES ('account',$1) ON CONFLICT DO NOTHING",
-            [&input.timezone],
-        )?;
-        prepare(&tx)?;
-        tx.commit()?;
+        let saved_tz: Option<String> = conn
+            .query_row(
+                "SELECT timezone FROM daily_settings WHERE id='account'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let ready = if let Some(tz_name) = saved_tz {
+            let tz: chrono_tz::Tz = tz_name
+                .parse()
+                .map_err(|_| AppError::Validation("记账时区无效".into()))?;
+            let today = Utc::now().with_timezone(&tz).date_naive().to_string();
+            let through: Option<String> =
+                conn.query_row("SELECT MAX(day) FROM daily_totals", [], |r| r.get(0))?;
+            through.as_deref().is_some_and(|day| day >= today.as_str())
+        } else {
+            false
+        };
+        if !ready {
+            let tx = conn.transaction()?;
+            tx.execute(
+                "INSERT INTO daily_settings(id,timezone) VALUES ('account',$1) ON CONFLICT DO NOTHING",
+                [&input.timezone],
+            )?;
+            prepare(&tx)?;
+            tx.commit()?;
+        }
         drop(conn);
         self.daily_history(&HistoryQuery {
             limit: Some(30),

@@ -34,6 +34,17 @@ pub(super) fn read(conn: &Connection, id: &str) -> AppResult<Option<HoldingAmoun
     .map(|s| Ok(serde_json::from_str(&s)?))
     .transpose()
 }
+fn load_all(conn: &Connection) -> AppResult<std::collections::HashMap<String, HoldingAmounts>> {
+    let mut stmt = conn.prepare("SELECT holding_id, payload FROM holding_amounts")?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut map = std::collections::HashMap::with_capacity(rows.len());
+    for (id, payload) in rows {
+        map.insert(id, serde_json::from_str(&payload)?);
+    }
+    Ok(map)
+}
 pub(super) fn put(conn: &Connection, id: &str, amounts: &HoldingAmounts) -> AppResult<()> {
     let payload = serde_json::to_string(amounts)?;
     conn.execute("INSERT INTO holding_amounts(holding_id,payload) VALUES ($1,$2) ON CONFLICT(holding_id) DO UPDATE SET payload=excluded.payload",params![id,payload])?;
@@ -257,9 +268,20 @@ pub(super) fn build(
     conn: &Connection,
     snapshot: &super::snapshot::SnapshotData,
 ) -> AppResult<AccountingSnapshot> {
+    let mut stored_amounts = load_all(conn)?;
+    let needs_fx_book = snapshot.holdings.iter().any(|h| {
+        !h.currency
+            .eq_ignore_ascii_case(&snapshot.profile.base_currency)
+            && h.fx_rate_source.starts_with("central_")
+    });
+    let fx_book = if needs_fx_book {
+        super::fx::book_on(conn, &snapshot.profile.base_currency)?
+    } else {
+        None
+    };
     let mut holdings = std::collections::BTreeMap::new();
     for holding in &snapshot.holdings {
-        let stored = read(conn, &holding.id)?;
+        let stored = stored_amounts.remove(&holding.id);
         let authoritative = stored.is_some();
         let mut values = stored.unwrap_or_else(|| from_holding(holding));
         let summary = snapshot.holding_trade_summaries.get(&holding.id);
@@ -302,7 +324,11 @@ pub(super) fn build(
         } else {
             None
         };
-        let fx_rate = super::fx::exact_rate(conn, holding, &snapshot.profile.base_currency)?;
+        let fx_rate = super::fx::exact_rate_from_book(
+            fx_book.as_ref(),
+            holding,
+            &snapshot.profile.base_currency,
+        )?;
         holdings.insert(
             holding.id.clone(),
             AccountingHolding {

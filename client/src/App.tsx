@@ -32,10 +32,9 @@ import {
   dividendQuestionParam,
   dividendQuestionSymbol,
 } from "./features/watch/dividend-preview/route";
+import { loadBuyWatch, loadMyFacts } from "./app/preload";
 
-const BuyWatch = lazy(() =>
-  import("./features/watch/BuyWatch").then((m) => ({ default: m.BuyWatch })),
-);
+const BuyWatch = lazy(loadBuyWatch);
 const DailyReviewPage = lazy(() =>
   import("./features/dailyReview/DailyReviewPage").then((m) => ({
     default: m.DailyReviewPage,
@@ -44,9 +43,7 @@ const DailyReviewPage = lazy(() =>
 const ReferenceInfo = lazy(() =>
   import("./app/ReferenceInfo").then((m) => ({ default: m.ReferenceInfo })),
 );
-const MyFacts = lazy(() =>
-  import("./features/portfolio/MyFacts").then((m) => ({ default: m.MyFacts })),
-);
+const MyFacts = lazy(loadMyFacts);
 const DividendCalendar = lazy(() =>
   import("./features/watch/DividendCalendar").then((m) => ({
     default: m.DividendCalendar,

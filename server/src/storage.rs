@@ -224,6 +224,7 @@ struct Command {
     sql: String,
     values: Vec<Value>,
     batch: bool,
+    preserve_statements: bool,
     reply: Reply,
 }
 pub struct Connection {
@@ -284,7 +285,7 @@ impl ConnectionPool {
                 .idle
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            idle.retain(|entry| entry.since.elapsed() < Duration::from_secs(60));
+            idle.retain(|entry| entry.since.elapsed() < Duration::from_secs(300));
             idle.iter()
                 .rposition(|entry| entry.schema == schema)
                 .map(|index| idle.swap_remove(index))
@@ -322,17 +323,17 @@ impl Drop for Connection {
             return;
         };
         let started = Instant::now();
-        // DISCARD ALL is deliberately a standalone statement, outside any transaction.
-        // It clears advisory locks, temporary objects, prepared statements and session settings.
-        let reset = self
-            .execute_batch("ROLLBACK")
-            .and_then(|_| self.execute_batch("DISCARD ALL"))
-            .and_then(|_| {
-                self.execute_batch(&format!(
-                    "SET statement_timeout TO '30s'; SET search_path TO {}",
-                    lease.schema
-                ))
-            });
+        // Reset session state in one round trip while keeping prepared statements intact.
+        // Tenant connections are never shared across schemas, so schema-bound plans remain valid.
+        let reset = self.run_inner(
+            &format!(
+                "ROLLBACK; DISCARD TEMP; SELECT pg_advisory_unlock_all(); RESET ALL; SET statement_timeout TO '30s'; SET search_path TO {}",
+                lease.schema
+            ),
+            vec![],
+            true,
+            true,
+        );
         tracing::debug!(target: "mario::timing", stage = "db_reset", elapsed_us = started.elapsed().as_micros() as u64, success = reset.is_ok());
         if reset.is_err() {
             return;
@@ -406,6 +407,7 @@ impl Connection {
                         &cmd.sql,
                         cmd.values,
                         cmd.batch,
+                        cmd.preserve_statements,
                     );
                     tracing::debug!(target: "mario::timing", stage = "sql", elapsed_us = started.elapsed().as_micros() as u64, success = result.is_ok());
                     let _ = cmd.reply.send(result);
@@ -419,12 +421,22 @@ impl Connection {
         })
     }
     fn run(&self, sql: &str, values: Vec<Value>, batch: bool) -> Result<(usize, Vec<Row>)> {
+        self.run_inner(sql, values, batch, false)
+    }
+    fn run_inner(
+        &self,
+        sql: &str,
+        values: Vec<Value>,
+        batch: bool,
+        preserve_statements: bool,
+    ) -> Result<(usize, Vec<Row>)> {
         let (reply, rx) = mpsc::channel();
         self.commands
             .send(Command {
                 sql: sql.into(),
                 values,
                 batch,
+                preserve_statements,
                 reply,
             })
             .map_err(|_| Error::Disconnected)?;
@@ -551,9 +563,10 @@ fn run(
     sql: &str,
     values: Vec<Value>,
     batch: bool,
+    preserve_statements: bool,
 ) -> Result<(usize, Vec<Row>)> {
     if batch {
-        let should_clear = invalidates_prepared_statements(sql);
+        let should_clear = !preserve_statements && invalidates_prepared_statements(sql);
         let result = client.batch_execute(sql);
         if should_clear || result.is_err() {
             statements.clear();

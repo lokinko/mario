@@ -29,6 +29,12 @@ import { dividendPreviewHref } from "./dividend-preview/route";
 import { Callout } from "../../components/Callout";
 import { Drawer } from "../../components/Drawer";
 import { useRequestGuard } from "../../lib/useRequestGuard";
+import { currentSession } from "../../lib/webSession";
+import {
+  consumePrefetch,
+  readSessionCache,
+  writeSessionCache,
+} from "../../lib/sessionCache";
 import "./watch.css";
 
 import { WatchRuleStrip } from "./WatchRuleStrip";
@@ -66,8 +72,27 @@ export function BuyWatch({
   target?: { id: number; symbol: string; personal: boolean };
   onTargetConsumed?: (id: number) => void;
 }) {
-  const [board, setBoard] = useState<WatchBoard | null>(null);
-  const [catalog, setCatalog] = useState<CatalogBoard | null>(null);
+  const [session] = useState(currentSession);
+  const [board, setBoardState] = useState<WatchBoard | null>(() =>
+    readSessionCache<WatchBoard>(session, "watch:board"),
+  );
+  const [catalog, setCatalogState] = useState<CatalogBoard | null>(() =>
+    readSessionCache<CatalogBoard>(session, "watch:catalog"),
+  );
+  const setBoard = (next: WatchBoard) => {
+    setBoardState(next);
+    writeSessionCache(session, "watch:board", next);
+  };
+  const setCatalog = (
+    next:
+      CatalogBoard | ((previous: CatalogBoard | null) => CatalogBoard | null),
+  ) => {
+    setCatalogState((previous) => {
+      const resolved = typeof next === "function" ? next(previous) : next;
+      if (resolved) writeSessionCache(session, "watch:catalog", resolved);
+      return resolved;
+    });
+  };
   const [catalogEditing, setCatalogEditing] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const [group, setGroup] = useState("favorites");
@@ -84,10 +109,12 @@ export function BuyWatch({
   const [view, setView] = useState<"compact" | "cards">("compact");
   const guard = useRequestGuard();
   const catalogGuard = useRequestGuard();
-  const loadCatalog = async () => {
+  const loadCatalog = async (usePrefetch = false) => {
     const current = catalogGuard.begin();
     try {
-      const data = await getWatchCatalog();
+      const data = await (usePrefetch
+        ? consumePrefetch(session, "watch:catalog", getWatchCatalog)
+        : getWatchCatalog());
       if (current()) {
         setCatalog(data);
         setCatalogError("");
@@ -96,10 +123,12 @@ export function BuyWatch({
       if (current()) setCatalogError(String(e));
     }
   };
-  const load = async () => {
+  const load = async (usePrefetch = false) => {
     const current = guard.begin();
     try {
-      const data = await getWatchBoard();
+      const data = await (usePrefetch
+        ? consumePrefetch(session, "watch:board", getWatchBoard)
+        : getWatchBoard());
       if (current()) {
         setBoard(data);
         setError("");
@@ -109,8 +138,8 @@ export function BuyWatch({
     }
   };
   useEffect(() => {
-    // Personal rows get the first account read; the compact directory follows.
-    void load().then(loadCatalog);
+    // Load personal rows and the compact directory concurrently, reusing any bootstrap prefetch.
+    void Promise.all([load(true), loadCatalog(true)]);
   }, []);
   useEffect(() => {
     if (!target) return;

@@ -222,5 +222,90 @@ impl PriceHistory {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LatestPriceQuote {
+    pub symbol: String,
+    pub currency: String,
+    pub window_start: NaiveDate,
+    pub completed_through: NaiveDate,
+    pub adjustment_anchor: NaiveDate,
+    pub fetched_at: String,
+    pub provider_code: String,
+    pub provider_name: String,
+    pub exchange: String,
+    pub mic_code: String,
+    pub instrument_type: String,
+    pub adjusted_source_url: String,
+    pub methodology_url: String,
+    pub splits: Vec<SplitEvent>,
+    pub latest_day: NaiveDate,
+    pub latest_adjusted_close: String,
+}
+
+impl LatestPriceQuote {
+    pub fn from_history(h: &PriceHistory) -> Option<Self> {
+        let bar = h
+            .bars
+            .iter()
+            .rev()
+            .find(|b| b.raw_close.is_some() && b.adjusted_close.is_some())?;
+        Some(Self {
+            symbol: h.symbol.clone(),
+            currency: h.currency.clone(),
+            window_start: h.window_start,
+            completed_through: h.completed_through,
+            adjustment_anchor: h.adjustment_anchor,
+            fetched_at: h.fetched_at.clone(),
+            provider_code: h.provider_code.clone(),
+            provider_name: h.provider_name.clone(),
+            exchange: h.exchange.clone(),
+            mic_code: h.mic_code.clone(),
+            instrument_type: h.instrument_type.clone(),
+            adjusted_source_url: h.adjusted_source_url.clone(),
+            methodology_url: h.methodology_url.clone(),
+            splits: h.splits.clone(),
+            latest_day: bar.day,
+            latest_adjusted_close: bar.adjusted_close.clone()?,
+        })
+    }
+
+    pub fn to_quote(
+        &self,
+        requested: NaiveDate,
+        cutoff: NaiveDate,
+        original_symbol: &str,
+    ) -> AppResult<Option<SecurityPriceQuote>> {
+        if self.latest_day > cutoff {
+            return Ok(None);
+        }
+        let close = price(&self.latest_adjusted_close)?
+            .to_f64()
+            .ok_or_else(invalid)?;
+        Ok(Some(SecurityPriceQuote {
+            symbol: original_symbol.trim().into(),
+            currency: self.currency.clone(),
+            close,
+            exact_close: Some(self.latest_adjusted_close.clone()),
+            requested_on: requested.to_string(),
+            observed_on: self.latest_day.to_string(),
+            staleness_days: (requested - self.latest_day).num_days(),
+            provider_code: format!("{}_forward_close", self.provider_code),
+            provider_name: self.provider_name.clone(),
+            exchange: self.exchange.clone(),
+            mic_code: self.mic_code.clone(),
+            instrument_type: self.instrument_type.clone(),
+            price_basis: "forward_adjusted_daily_close".into(),
+            source_url: self.adjusted_source_url.clone(),
+            methodology_url: self.methodology_url.clone(),
+            splits: self.splits.clone(),
+            disclaimer: format!(
+                "公共数据库前复权收盘序列（窗口起点 {}）；复权基准 {}，行情采集 {}。历史复权价格不等于当时实际成交价；成交和成本保留原值，公司行动须人工核对。",
+                self.window_start, self.adjustment_anchor, self.fetched_at
+            ),
+        }))
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests;

@@ -144,8 +144,12 @@ impl Database {
         let option_contracts = super::options::load(conn)?;
         let holding_trades = super::trades::load(conn)?;
         let cash_balances = super::cash::states(conn)?;
-        let holding_trade_summaries = super::trades::summaries(conn, &holding_trades)?;
         let corporate_actions = super::corporate::load(conn)?;
+        let holding_trade_summaries = super::trades::summaries_with_loaded(
+            &holding_trades,
+            &option_contracts,
+            &corporate_actions,
+        )?;
         let mut notices =
             conn.prepare("SELECT holding_id FROM trading_quarantine ORDER BY holding_id")?;
         let cleared_trade_holdings = notices

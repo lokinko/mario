@@ -46,6 +46,7 @@ vi.mock("./api/portfolio", async (original) => ({
 }));
 vi.mock("./api/watch", () => ({
   getDividendCalendar: vi.fn(() => new Promise(() => {})),
+  getWatchCatalog: vi.fn(() => new Promise(() => {})),
   getWatchBoard: vi.fn().mockResolvedValue({
     rows: [],
     weekly: [],

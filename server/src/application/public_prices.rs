@@ -209,22 +209,24 @@ impl SecurityHistoryProvider for PublicPriceService {
 impl SecurityPriceProvider for PublicPriceService {
     fn cached_quote(&self, query: &SecurityPriceQuery) -> AppResult<Option<SecurityPriceQuote>> {
         let symbol = canonical_symbol(&query.symbol)?;
-        self.store.register(&symbol)?;
+        self.store.register_throttled(&symbol)?;
         let requested = query
             .on_date
             .parse::<NaiveDate>()
             .map_err(|_| AppError::Validation("证券价格日期无效".into()))?;
-        self.store
-            .state(&symbol)?
-            .and_then(|s| s.history)
-            .map(|h| {
-                h.quote(
-                    requested,
-                    close::completed_day(&symbol, requested, Utc::now()),
-                    &query.symbol,
-                )
-            })
-            .transpose()
+        let cutoff = close::completed_day(&symbol, requested, Utc::now());
+        if let Some(latest) = self.store.latest_quote(&symbol)? {
+            if let Some(quote) = latest.to_quote(requested, cutoff, &query.symbol)? {
+                return Ok(Some(quote));
+            }
+            return self
+                .store
+                .state(&symbol)?
+                .and_then(|s| s.history)
+                .map(|h| h.quote(requested, cutoff, &query.symbol))
+                .transpose();
+        }
+        Ok(None)
     }
     async fn quote(&self, query: &SecurityPriceQuery) -> AppResult<SecurityPriceQuote> {
         let symbol = canonical_symbol(&query.symbol)?;

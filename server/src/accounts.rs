@@ -25,6 +25,7 @@ struct PooledConn {
 
 pub struct Accounts {
     connection: Mutex<PooledConn>,
+    read_pool: crate::storage::ConnectionPool,
     pub url: String,
     schema: String,
     dummy_hash: String,
@@ -103,11 +104,13 @@ impl Accounts {
             "SELECT pg_advisory_unlock(hashtextextended('{schema}',0));"
         ))?;
         let dummy_hash = hash_password("unused-dummy-password")?;
+        let read_pool = crate::storage::ConnectionPool::new(url.clone(), 8);
         Ok(Self {
             connection: Mutex::new(PooledConn {
                 connection,
                 last_ok: Instant::now(),
             }),
+            read_pool,
             url,
             schema,
             dummy_hash,
@@ -194,35 +197,13 @@ impl Accounts {
             expires_at,
         })
     }
-    fn read_with_recovery<T>(
-        &self,
-        mut f: impl FnMut(&Connection) -> crate::storage::Result<T>,
-    ) -> AppResult<T> {
-        let mut guard = self
-            .connection
-            .lock()
-            .map_err(|_| AppError::Busy("账户服务暂时不可用".into()))?;
-        match f(&guard.connection) {
-            Ok(value) => {
-                guard.last_ok = Instant::now();
-                Ok(value)
-            }
-            Err(error) if error.is_connection_broken() => {
-                guard.connection = Connection::postgres(&self.url, &self.schema)?;
-                let value = f(&guard.connection)?;
-                guard.last_ok = Instant::now();
-                Ok(value)
-            }
-            Err(error) => Err(error.into()),
-        }
-    }
     pub fn authenticate(&self, token: &str) -> AppResult<String> {
         Ok(self.authenticate_with_role(token)?.0)
     }
     pub(crate) fn authenticate_with_role(&self, token: &str) -> AppResult<(String, bool)> {
         let token_hash = digest(token);
         let now = chrono::Utc::now().timestamp();
-        self.read_with_recovery(|conn| {
+        let query = |conn: &Connection| {
             conn.query_row(
                 "SELECT s.user_id, u.is_superuser
                  FROM sessions s
@@ -231,23 +212,32 @@ impl Accounts {
                 params![token_hash.as_str(), now],
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)),
             )
-        })
-        .map_err(|error| match error {
-            AppError::Database(crate::storage::Error::QueryReturnedNoRows) => {
-                AppError::Auth("请重新登录".into())
-            }
-            error => error,
+        };
+        let result = match self.read_pool.acquire(&self.schema) {
+            Ok(conn) => match query(&conn) {
+                Ok(value) => Ok(value),
+                Err(error) if error.is_connection_broken() => {
+                    drop(conn);
+                    let fresh = self.read_pool.acquire(&self.schema)?;
+                    query(&fresh)
+                }
+                Err(error) => Err(error),
+            },
+            Err(error) => Err(error),
+        };
+        result.map_err(|error| match error {
+            crate::storage::Error::QueryReturnedNoRows => AppError::Auth("请重新登录".into()),
+            error => error.into(),
         })
     }
     #[cfg(test)]
     pub(crate) fn is_superuser(&self, user_id: &str) -> AppResult<bool> {
-        self.read_with_recovery(|conn| {
-            conn.query_row(
-                "SELECT is_superuser FROM users WHERE id=$1",
-                [user_id],
-                |row| row.get(0),
-            )
-        })
+        let conn = self.read_pool.acquire(&self.schema)?;
+        Ok(conn.query_row(
+            "SELECT is_superuser FROM users WHERE id=$1",
+            [user_id],
+            |row| row.get(0),
+        )?)
     }
     pub fn logout(&self, token: &str) -> AppResult<()> {
         self.conn()?

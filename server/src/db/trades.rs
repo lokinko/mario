@@ -276,9 +276,10 @@ pub(super) fn position_with_splits(
     result.net_cash_flow = text(cash);
     Ok(result)
 }
-pub(super) fn summaries(
-    conn: &Connection,
+pub(super) fn summaries_with_loaded(
     trades: &[HoldingTrade],
+    option_contracts: &BTreeMap<String, crate::models::options::OptionContract>,
+    corporate_actions: &[crate::models::portfolio::CorporateActionRecord],
 ) -> AppResult<BTreeMap<String, HoldingTradeSummary>> {
     let mut groups: BTreeMap<String, Vec<HoldingTrade>> = BTreeMap::new();
     let mut identities = HashSet::new();
@@ -294,7 +295,12 @@ pub(super) fn summaries(
     groups
         .into_iter()
         .map(|(id, rows)| {
-            let summary = super::corporate::position(conn, &id, &rows)?;
+            let summary = super::corporate::position_with_loaded(
+                option_contracts.get(&id),
+                corporate_actions,
+                &id,
+                &rows,
+            )?;
             Ok((id, summary))
         })
         .collect()

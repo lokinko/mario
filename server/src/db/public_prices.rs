@@ -1,22 +1,33 @@
 //! Shared public price revisions and refresh leases. Never reads tenant data.
 use crate::{
-    models::market::{canonical_symbol, history::PriceHistory},
+    models::market::{
+        canonical_symbol,
+        history::{LatestPriceQuote, PriceHistory},
+    },
     storage::{params, Connection, OptionalRow},
     AppError, AppResult,
 };
-use std::sync::Mutex;
+use std::collections::HashMap;
+use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 mod monitor;
 
 /// A registered symbol stays in the collection scope while it was requested within this window.
 const REQUEST_TTL_MS: i64 = 172_800_000;
 const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+const QUOTE_CACHE_HIT_TTL: Duration = Duration::from_secs(60);
+const QUOTE_CACHE_MISS_TTL: Duration = Duration::from_secs(10);
+const REGISTER_THROTTLE: Duration = Duration::from_secs(600);
 
 pub(crate) struct PriceState {
     pub history: Option<PriceHistory>,
     pub attempted_at: i64,
     pub lease_until: i64,
     pub last_error: String,
+}
+struct CachedLatestQuote {
+    value: Option<LatestPriceQuote>,
+    cached_at: Instant,
 }
 struct PooledConn {
     connection: Connection,
@@ -35,6 +46,8 @@ impl std::ops::DerefMut for PooledConn {
 }
 pub(crate) struct PublicPrices {
     connection: Mutex<PooledConn>,
+    quote_cache: RwLock<HashMap<String, CachedLatestQuote>>,
+    registered_at: RwLock<HashMap<String, Instant>>,
     url: String,
     schema: String,
 }
@@ -71,12 +84,17 @@ impl PublicPrices {
                 currency TEXT,"instrumentType" TEXT
             ) WHERE p.symbol=old.symbol;
         "#)?;
+        tx.execute_batch(
+            "ALTER TABLE price_histories ADD COLUMN IF NOT EXISTS latest_quote TEXT;",
+        )?;
         tx.commit()?;
         Ok(Self {
             connection: Mutex::new(PooledConn {
                 connection: c,
                 last_ok: Instant::now(),
             }),
+            quote_cache: RwLock::new(HashMap::new()),
+            registered_at: RwLock::new(HashMap::new()),
             url: url.into(),
             schema: schema.into(),
         })
@@ -156,6 +174,88 @@ impl PublicPrices {
         })
         .transpose()
     }
+    pub fn latest_quote(&self, symbol: &str) -> AppResult<Option<LatestPriceQuote>> {
+        if let Some(entry) = self
+            .quote_cache
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(symbol)
+        {
+            let ttl = if entry.value.is_some() {
+                QUOTE_CACHE_HIT_TTL
+            } else {
+                QUOTE_CACHE_MISS_TTL
+            };
+            if entry.cached_at.elapsed() < ttl {
+                return Ok(entry.value.clone());
+            }
+        }
+        let row = self.read_with_recovery(|c| {
+            c.query_row(
+                "SELECT latest_quote, CASE WHEN latest_quote IS NULL THEN payload ELSE NULL END FROM price_histories WHERE symbol=$1",
+                [symbol],
+                |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
+            )
+            .optional()
+        })?;
+        let quote = match row {
+            Some((Some(raw), _)) => {
+                let parsed: LatestPriceQuote = serde_json::from_str(&raw)?;
+                if parsed.symbol != symbol {
+                    return Err(AppError::Validation("公共行情证券身份不一致".into()));
+                }
+                Some(parsed)
+            }
+            Some((None, Some(payload))) => {
+                let history: PriceHistory = serde_json::from_str(&payload)?;
+                history.validate()?;
+                if history.symbol != symbol {
+                    return Err(AppError::Validation("公共行情证券身份不一致".into()));
+                }
+                let summary = LatestPriceQuote::from_history(&history);
+                if let Some(summary_ref) = &summary {
+                    if let Ok(serialized) = serde_json::to_string(summary_ref) {
+                        let _ = self.conn().and_then(|c| {
+                            Ok(c.execute(
+                                "UPDATE price_histories SET latest_quote=$2 WHERE symbol=$1 AND latest_quote IS NULL",
+                                params![symbol, serialized],
+                            )?)
+                        });
+                    }
+                }
+                summary
+            }
+            _ => None,
+        };
+        self.quote_cache
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(
+                symbol.to_owned(),
+                CachedLatestQuote {
+                    value: quote.clone(),
+                    cached_at: Instant::now(),
+                },
+            );
+        Ok(quote)
+    }
+
+    pub fn register_throttled(&self, symbol: &str) -> AppResult<()> {
+        if canonical_symbol(symbol)? != symbol {
+            return Err(AppError::Validation("公共行情需要规范证券代码".into()));
+        }
+        if self
+            .registered_at
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(symbol)
+            .is_some_and(|seen| seen.elapsed() < REGISTER_THROTTLE)
+        {
+            return Ok(());
+        }
+        self.register(symbol)
+    }
+
     pub fn register(&self, symbol: &str) -> AppResult<()> {
         if canonical_symbol(symbol)? != symbol {
             return Err(AppError::Validation("公共行情需要规范证券代码".into()));
@@ -164,6 +264,10 @@ impl PublicPrices {
             "INSERT INTO price_histories(symbol,requested_at) VALUES($1,$2) ON CONFLICT(symbol) DO UPDATE SET requested_at=excluded.requested_at",
             params![symbol,chrono::Utc::now().timestamp_millis()],
         )?;
+        self.registered_at
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(symbol.to_owned(), Instant::now());
         Ok(())
     }
     pub fn symbols(&self) -> AppResult<Vec<String>> {
@@ -218,12 +322,28 @@ impl PublicPrices {
                 if h.symbol != symbol {
                     return Err(AppError::Validation("公共行情写入证券不一致".into()));
                 }
-                let accepted = tx.execute("UPDATE price_histories SET payload=$3,coverage=$6,lease_until=0,lease_token='',last_error='' WHERE symbol=$1 AND lease_token=$2 AND (payload IS NULL OR ((payload::jsonb->>'completedThrough') <= $4 AND (payload::jsonb->>'adjustmentAnchor') <= $5))",params![symbol,token,serde_json::to_string(h)?,h.completed_through.to_string(), h.adjustment_anchor.to_string(),serde_json::to_string(&monitor::PriceCoverage::from(h))?])?;
+                let latest = LatestPriceQuote::from_history(h);
+                let latest_json = latest.as_ref().map(serde_json::to_string).transpose()?;
+                let accepted = tx.execute("UPDATE price_histories SET payload=$3,coverage=$6,latest_quote=$7,lease_until=0,lease_token='',last_error='' WHERE symbol=$1 AND lease_token=$2 AND (payload IS NULL OR ((payload::jsonb->>'completedThrough') <= $4 AND (payload::jsonb->>'adjustmentAnchor') <= $5))",params![symbol,token,serde_json::to_string(h)?,h.completed_through.to_string(), h.adjustment_anchor.to_string(),serde_json::to_string(&monitor::PriceCoverage::from(h))?,latest_json])?;
                 if accepted > 0 {
                     Self::record_success(&tx, symbol, completed_at)?;
                 } else {
                     tx.execute("UPDATE price_histories SET lease_until=0,lease_token='',last_error='来源日期倒退，保留较新价格' WHERE symbol=$1 AND lease_token=$2",params![symbol,token])?;
                 }
+                tx.commit()?;
+                if accepted > 0 {
+                    self.quote_cache
+                        .write()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .insert(
+                            symbol.to_owned(),
+                            CachedLatestQuote {
+                                value: latest,
+                                cached_at: Instant::now(),
+                            },
+                        );
+                }
+                return Ok(());
             }
             Err(error) => {
                 tx.execute("UPDATE price_histories SET lease_until=0,lease_token='',last_error=$3 WHERE symbol=$1 AND lease_token=$2",params![symbol,token,error.to_string()])?;
@@ -273,7 +393,11 @@ mod tests {
         let reopened = PublicPrices::open(&store.url, &store.schema).unwrap();
         assert_eq!(
             reopened.state("600941.SS").unwrap().unwrap().history,
-            Some(h)
+            Some(h.clone())
+        );
+        assert_eq!(
+            reopened.latest_quote("600941.SS").unwrap(),
+            LatestPriceQuote::from_history(&h)
         );
         assert!(store.claim("600941.SH", now, "invalid").is_err());
     }

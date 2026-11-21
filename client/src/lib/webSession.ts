@@ -1,5 +1,6 @@
 import { serviceUrl } from "./service";
 import { accountSession, resetAccountSession } from "./accountSession";
+import { clearSessionCacheForToken } from "./sessionCache";
 
 export function currentSession() {
   return accountSession(webToken(), serviceUrl());
@@ -45,6 +46,7 @@ export function switchWebAccount(token: string): boolean {
 }
 
 export function forgetWebAccount(token: string) {
+  clearSessionCacheForToken(serviceUrl(), token);
   const accounts = savedWebAccounts().filter(
     (account) => account.token !== token,
   );
@@ -88,6 +90,9 @@ export function setWebToken(
     );
     localStorage.setItem(accountsKey(), JSON.stringify([...accounts, account]));
     localStorage.setItem(key(), JSON.stringify(account));
-  } else localStorage.removeItem(key());
+  } else {
+    clearSessionCacheForToken(serviceUrl());
+    localStorage.removeItem(key());
+  }
   sessionStorage.removeItem(key());
 }

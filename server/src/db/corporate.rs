@@ -21,23 +21,37 @@ pub(super) fn load(conn: &Connection) -> AppResult<Vec<CorporateActionRecord>> {
     rows.iter().map(|s| Ok(serde_json::from_str(s)?)).collect()
 }
 
+pub(super) fn position_with_loaded(
+    option_contract: Option<&crate::models::options::OptionContract>,
+    corporate_actions: &[CorporateActionRecord],
+    id: &str,
+    trades: &[crate::models::portfolio::HoldingTrade],
+) -> AppResult<crate::models::portfolio::HoldingTradeSummary> {
+    if let Some(contract) = option_contract {
+        for trade in trades {
+            super::trades::validate(trade, Some(contract))?;
+        }
+        return crate::models::options::position(contract, trades);
+    }
+    let actions = corporate_actions
+        .iter()
+        .filter(|a| a.holding_id == id && a.applied)
+        .map(|a| a.split.clone())
+        .collect::<Vec<_>>();
+    super::trades::position_with_splits(trades, &actions)
+}
+
 pub(super) fn position(
     conn: &Connection,
     id: &str,
     trades: &[crate::models::portfolio::HoldingTrade],
 ) -> AppResult<crate::models::portfolio::HoldingTradeSummary> {
-    if let Some(contract) = super::options::get(conn, id)? {
-        for trade in trades {
-            super::trades::validate(trade, Some(&contract))?;
-        }
-        return crate::models::options::position(&contract, trades);
+    let contract = super::options::get(conn, id)?;
+    if contract.is_some() {
+        return position_with_loaded(contract.as_ref(), &[], id, trades);
     }
-    let actions = load(conn)?
-        .into_iter()
-        .filter(|a| a.holding_id == id && a.applied)
-        .map(|a| a.split)
-        .collect::<Vec<_>>();
-    super::trades::position_with_splits(trades, &actions)
+    let actions = load(conn)?;
+    position_with_loaded(None, &actions, id, trades)
 }
 
 pub(super) fn validate(conn: &Connection) -> AppResult<()> {

@@ -901,10 +901,10 @@ it("shows personal summaries before the catalogue finishes and reads full eviden
     () => new Promise(() => {}),
   );
   render(<BuyWatch {...props()} />);
-  expect(api.getWatchCatalog).not.toHaveBeenCalled();
+  expect(api.getWatchBoard).toHaveBeenCalledOnce();
+  expect(api.getWatchCatalog).toHaveBeenCalledOnce();
   finishBoard({ ...empty, rows: [structuredClone(row)] });
   const table = await screen.findByRole("table", { name: "观察公司对比" });
-  await waitFor(() => expect(api.getWatchCatalog).toHaveBeenCalledOnce());
   expect(api.getWatchDetail).not.toHaveBeenCalled();
   expect(api.getWatchCatalogDetail).not.toHaveBeenCalled();
   fireEvent.click(within(table).getByRole("button", { name: /^测试公司/ }));

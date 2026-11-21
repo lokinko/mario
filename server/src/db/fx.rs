@@ -58,8 +58,8 @@ pub(super) fn holding_input(
     Ok(result)
 }
 
-pub(super) fn exact_rate(
-    conn: &Connection,
+pub(super) fn exact_rate_from_book(
+    book: Option<&FxBook>,
     holding: &Holding,
     base: &str,
 ) -> AppResult<Option<String>> {
@@ -67,7 +67,7 @@ pub(super) fn exact_rate(
         return Ok(Some("1".into()));
     }
     if holding.fx_rate_source.starts_with("central_") {
-        if let Some(book) = book_on(conn, base)? {
+        if let Some(book) = book {
             if let Some(manual) = book.manual.get(&holding.currency) {
                 return Ok(Some(
                     manual

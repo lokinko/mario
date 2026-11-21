@@ -152,9 +152,11 @@ export function AccountSettings() {
 export function WebAccess({
   children,
   publicPreviewHref,
+  onPreload,
 }: {
   children: ReactNode;
   publicPreviewHref?: string;
+  onPreload?: () => void;
 }) {
   const [connected, setConnected] = useState(webToken);
   const [accounts, setAccounts] = useState(savedWebAccounts);
@@ -250,6 +252,7 @@ export function WebAccess({
       setError("该账号的登录已过期，请重新登录。");
       return;
     }
+    onPreload?.();
     resetAccountState();
     setConnected(token);
     setAccounts(savedWebAccounts());
@@ -304,6 +307,11 @@ export function WebAccess({
     window.addEventListener("storage", restore);
     return () => window.removeEventListener("storage", restore);
   }, [connected]);
+  useEffect(() => {
+    if (connected || !onPreload) return;
+    const timer = window.setTimeout(() => onPreload(), 120);
+    return () => window.clearTimeout(timer);
+  }, [connected, onPreload]);
   if (completingOpenAi)
     return (
       <div className="login-status">
@@ -382,6 +390,7 @@ export function WebAccess({
           if (busy) return;
           setBusy(true);
           setError("");
+          onPreload?.();
           const startingToken = webToken();
           const startingServer = serviceUrl();
           try {

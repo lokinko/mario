@@ -3,7 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { checkServerVersion } from "../api/account";
 import { getSnapshot } from "../api/portfolio";
 import { getModelConfig } from "../api/settings";
+import { getWatchBoard, getWatchCatalog } from "../api/watch";
 import { startAutoSync, type SyncState } from "../lib/autoSync";
+import {
+  prefetchForSession,
+  readSessionCache,
+  writeSessionCache,
+} from "../lib/sessionCache";
 import {
   DATA_SAVED,
   SERVER_SESSION_CHANGED,
@@ -16,10 +22,14 @@ import type { View } from "./navigation";
 /** Owns the server-data lifecycle. Pages own their forms; the shell owns navigation. */
 export function useApplicationData(view: View) {
   const [session] = useState(currentSession);
-  const [snapshot, setSnapshotState] = useState<Snapshot | null>(null);
-  const [model, setModel] = useState<ModelConfig | null>(null);
+  const [snapshot, setSnapshotState] = useState<Snapshot | null>(() =>
+    readSessionCache<Snapshot>(session, "snapshot"),
+  );
+  const [model, setModelState] = useState<ModelConfig | null>(() =>
+    readSessionCache<ModelConfig>(session, "modelConfig"),
+  );
   const [modelError, setModelError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => snapshot === null);
   const [startupError, setStartupError] = useState("");
   const [remotePending, setRemotePending] = useState(false);
   const [remoteViewRevision, setRemoteViewRevision] = useState(0);
@@ -29,11 +39,24 @@ export function useApplicationData(view: View) {
     message: "正在检查同步状态",
   });
   const generation = useRef(0);
-  const setSnapshot = useCallback((next: Snapshot) => {
-    // A saved response supersedes every refresh that started before it.
-    generation.current += 1;
-    setSnapshotState(next);
-  }, []);
+  const hasSnapshot = useRef(snapshot !== null);
+  hasSnapshot.current = snapshot !== null;
+  const setSnapshot = useCallback(
+    (next: Snapshot) => {
+      // A saved response supersedes every refresh that started before it.
+      generation.current += 1;
+      setSnapshotState(next);
+      writeSessionCache(session, "snapshot", next);
+    },
+    [session],
+  );
+  const setModel = useCallback(
+    (next: ModelConfig | null) => {
+      setModelState(next);
+      if (next) writeSessionCache(session, "modelConfig", next);
+    },
+    [session],
+  );
   const edited = useRef(new Set<string>());
   const currentView = useRef(view);
   currentView.current = view;
@@ -73,25 +96,39 @@ export function useApplicationData(view: View) {
       if (nextModel) setModel(nextModel);
       setModelError(nextModelError);
       setSnapshotState(next);
+      writeSessionCache(session, "snapshot", next);
       setRemoteViewRevision((value) => value + 1);
       setRemotePending(false);
       session.blockStaleWrites(false);
       window.dispatchEvent(new Event(SERVER_DATA_UPDATED));
       return true;
     },
-    [protectDraft, session],
+    [protectDraft, session, setModel],
   );
 
   const loadApplication = useCallback(() => {
-    setLoading(true);
+    if (!hasSnapshot.current) setLoading(true);
     setStartupError("");
     const request = ++generation.current;
+    // Start initial route reads in parallel with snapshot instead of waiting for mount.
+    if (currentView.current === "watch") {
+      void prefetchForSession(session, "watch:board", getWatchBoard).catch(
+        () => {},
+      );
+      void prefetchForSession(session, "watch:catalog", getWatchCatalog).catch(
+        () => {},
+      );
+    }
     getSnapshot()
       .then((next) => {
-        if (request === generation.current) setSnapshotState(next);
+        if (request === generation.current) {
+          setSnapshotState(next);
+          writeSessionCache(session, "snapshot", next);
+        }
       })
       .catch((error) => {
-        if (request === generation.current) setStartupError(String(error));
+        if (request === generation.current && !hasSnapshot.current)
+          setStartupError(String(error));
       })
       .finally(() => {
         if (request === generation.current) setLoading(false);
@@ -106,7 +143,7 @@ export function useApplicationData(view: View) {
       .catch((error) => {
         if (request === generation.current) setModelError(String(error));
       });
-  }, []);
+  }, [session, setModel]);
 
   useEffect(() => {
     loadApplication();
