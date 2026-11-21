@@ -15,6 +15,9 @@ vi.mock("../../api/settings", () => ({
     models: ["site-model", "site-alt"],
     defaultModel: "site-model",
   }),
+  fetchAccountModels: vi.fn().mockResolvedValue({
+    models: ["existing-model", "gpt-5.4"],
+  }),
   getAnalysisSettings: vi.fn().mockResolvedValue(null),
   saveAnalysisSettings: vi.fn(),
   saveModelConfig: vi
@@ -28,7 +31,10 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("saves Anthropic with its endpoint and replacement key", async () => {
+it("fetches Anthropic models with a replacement key and saves the chosen model", async () => {
+  vi.mocked(settingsApi.fetchAccountModels).mockResolvedValue({
+    models: ["claude-fixture", "claude-alt"],
+  });
   const onUpdate = vi.fn();
   render(
     <ModelSettings
@@ -51,14 +57,21 @@ it("saves Anthropic with its endpoint and replacement key", async () => {
   expect(
     (screen.getByLabelText("API Base URL") as HTMLInputElement).value,
   ).toBe("https://api.anthropic.com/v1");
-  expect((screen.getByLabelText("模型名称") as HTMLInputElement).value).toBe(
+  expect((screen.getByLabelText("模型名称") as HTMLSelectElement).value).toBe(
     "",
   );
-  fireEvent.change(screen.getByLabelText("模型名称"), {
-    target: { value: "claude-fixture" },
-  });
   fireEvent.change(screen.getByLabelText("API Key"), {
     target: { value: "test-only-key" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
+  await screen.findByRole("option", { name: "claude-fixture" });
+  expect(settingsApi.fetchAccountModels).toHaveBeenCalledWith({
+    provider: "anthropic",
+    baseUrl: "https://api.anthropic.com/v1",
+    apiKey: "test-only-key",
+  });
+  fireEvent.change(screen.getByLabelText("模型名称"), {
+    target: { value: "claude-fixture" },
   });
   fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalled());
@@ -79,7 +92,7 @@ const existingModel = {
   hasApiKey: true,
 };
 
-it("saves a third-party Chat Completions connection with a custom URL, port and model", async () => {
+it("saves a third-party Chat Completions connection with a custom URL, port and custom model name", async () => {
   const onUpdate = vi.fn();
   render(
     <ModelSettings model={existingModel} onUpdate={onUpdate} flash={vi.fn()} />,
@@ -90,12 +103,14 @@ it("saves a third-party Chat Completions connection with a custom URL, port and 
   fireEvent.change(screen.getByLabelText("API Base URL", { exact: false }), {
     target: { value: "http://gateway.example.test:8080/custom/v1" },
   });
-  fireEvent.change(screen.getByLabelText("模型名称"), {
-    target: { value: "third-party-model" },
-  });
   fireEvent.change(screen.getByLabelText("API Key"), {
     target: { value: "third-party-key" },
   });
+  fireEvent.click(screen.getByRole("button", { name: "添加自定义模型" }));
+  fireEvent.change(screen.getByLabelText("自定义模型名称"), {
+    target: { value: "third-party-model" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "添加" }));
   fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
   await waitFor(() => expect(onUpdate).toHaveBeenCalled());
   expect(settingsApi.saveModelConfig).toHaveBeenCalledWith({
@@ -254,4 +269,25 @@ it("keeps a disabled site service visible and offers a personal model", () => {
     target: { value: "account" },
   });
   expect(screen.getByLabelText("API Key")).toBeTruthy();
+});
+
+it("does not copy the site default model into personal model selection when switching from server", () => {
+  render(
+    <ModelSettings
+      model={{
+        ...existingModel,
+        source: "server",
+        model: "site-only-model",
+        serverModel: "site-only-model",
+      }}
+      onUpdate={vi.fn()}
+      flash={vi.fn()}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("调用方式"), {
+    target: { value: "account" },
+  });
+  expect((screen.getByLabelText("模型名称") as HTMLSelectElement).value).toBe(
+    "",
+  );
 });

@@ -21,9 +21,9 @@ const filename = resolve(root, 'client/transport-contract.generated.ts');
 const source = `/// <reference types="vite/client" />
 import type { HoldingAmounts, HoldingTradeInput, HoldingTradeUpdateInput, FxBook, FinancialProfile } from './src/types/user';
 import type { AnalysisEvent, ModelConfig } from './src/types/ai';
-import type { CodexBridgeStatus, ServerModelCatalog } from './src/api/settings';
+import type { AccountModelCatalog, AccountModelCatalogInput, CodexBridgeStatus, ServerModelCatalog } from './src/api/settings';
 import type { WatchRules } from './src/api/watch';
-const fixture = ${JSON.stringify({ amounts: fixture.amounts, profiles: fixture.profiles, rules: fixture.rules, trades:fixture.trades, tradeUpdates:fixture.tradeUpdates, fx:fixture.fx, events:fixture.events, configs:fixture.configs, bridges:fixture.bridges, catalogs:fixture.catalogs })} satisfies { amounts: HoldingAmounts[]; profiles: FinancialProfile[]; rules: WatchRules[]; trades: HoldingTradeInput[]; tradeUpdates:HoldingTradeUpdateInput[]; fx:FxBook; events:AnalysisEvent[]; configs:ModelConfig[]; bridges:CodexBridgeStatus[]; catalogs:ServerModelCatalog[] };
+const fixture = ${JSON.stringify({ amounts: fixture.amounts, profiles: fixture.profiles, rules: fixture.rules, trades:fixture.trades, tradeUpdates:fixture.tradeUpdates, fx:fixture.fx, events:fixture.events, configs:fixture.configs, bridges:fixture.bridges, catalogs:fixture.catalogs, accountCatalogInputs:fixture.accountCatalogInputs, accountCatalogs:fixture.accountCatalogs })} satisfies { amounts: HoldingAmounts[]; profiles: FinancialProfile[]; rules: WatchRules[]; trades: HoldingTradeInput[]; tradeUpdates:HoldingTradeUpdateInput[]; fx:FxBook; events:AnalysisEvent[]; configs:ModelConfig[]; bridges:CodexBridgeStatus[]; catalogs:ServerModelCatalog[]; accountCatalogInputs:AccountModelCatalogInput[]; accountCatalogs:AccountModelCatalog[] };
 void fixture;`;
 const options = { strict: true, noEmit: true, skipLibCheck: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, types: [], lib: ['lib.es2022.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'] };
 const host = ts.createCompilerHost(options);

@@ -85,8 +85,14 @@ impl Database {
             ModelProviderKind::CodexBridge => {}
             _ => crate::models::endpoint::validate_endpoint(base_url)?,
         }
-        if model.trim().is_empty() {
+        let model = model.trim();
+        if model.is_empty() {
             return Err(AppError::Validation("请填写模型名称".into()));
+        }
+        if model.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err(AppError::Validation(
+                "模型名称不能包含空格或控制字符".into(),
+            ));
         }
         let base_url = base_url.trim_end_matches('/');
         let credential = match api_key {
@@ -383,5 +389,23 @@ mod tests {
                 None,
             )
             .is_err());
+        assert!(db
+            .save_model_configuration(
+                ModelProviderKind::OpenaiResponses,
+                "https://api.openai.com/v1",
+                "gpt-6.2 sol",
+                None,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("不能包含空格"));
+        db.save_model_configuration(
+            ModelProviderKind::OpenaiResponses,
+            "https://api.openai.com/v1",
+            "  gpt-5.4  ",
+            None,
+        )
+        .unwrap();
+        assert_eq!(db.model_config().unwrap().model, "gpt-5.4");
     }
 }

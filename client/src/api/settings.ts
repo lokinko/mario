@@ -3,6 +3,7 @@ import type {
   AnalysisSettings,
   ModelConfig,
   ModelConnectionTest,
+  ModelProviderKind,
 } from "../types/ai";
 export async function getModelConfig(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-config");
@@ -11,6 +12,21 @@ export async function getModelConfig(): Promise<ModelConfig> {
 export type ServerModelCatalog = { models: string[]; defaultModel: string };
 export function getServerModels(): Promise<ServerModelCatalog> {
   return httpRequest<ServerModelCatalog>("/model-config/models");
+}
+
+export type AccountModelCatalogInput = {
+  provider: ModelProviderKind;
+  baseUrl: string;
+  apiKey?: string | null;
+};
+export type AccountModelCatalog = { models: string[] };
+export function fetchAccountModels(
+  input: AccountModelCatalogInput,
+): Promise<AccountModelCatalog> {
+  return httpRequest<AccountModelCatalog>("/model-config/models", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function saveModelConfig(

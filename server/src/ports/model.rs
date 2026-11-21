@@ -7,6 +7,12 @@ use crate::{
     AppResult,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CatalogProtocol {
+    Openai,
+    Anthropic,
+}
+
 #[async_trait::async_trait]
 pub(crate) trait ModelConnector: Send + Sync {
     async fn test(&self, target: ModelTarget) -> AppResult<ModelConnectionTest>;
@@ -16,6 +22,13 @@ pub(crate) trait ModelConnector: Send + Sync {
 pub(crate) trait ModelCatalog: Send + Sync {
     /// Lists candidate text models from the official OpenAI endpoint only.
     async fn list(&self, api_key: &str) -> AppResult<Vec<String>>;
+    /// Lists candidate models from a validated native provider endpoint.
+    async fn list_provider(
+        &self,
+        protocol: CatalogProtocol,
+        base_url: &str,
+        api_key: &str,
+    ) -> AppResult<Vec<String>>;
 }
 
 pub(crate) trait BridgeRegistry: Send + Sync {

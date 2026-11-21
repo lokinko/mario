@@ -18,11 +18,16 @@ import {
 } from "../../api/settings";
 import type { ModelConfig } from "../../types/ai";
 import { PageHeader } from "../../components/PageHeader";
+import { AccountModelSelect } from "./AccountModelSelect";
 import { AnalysisDefaults } from "./AnalysisDefaults";
 import { CodexBridge } from "./CodexBridge";
 import { CodexModelSelect } from "./CodexModelSelect";
 import { ServerModelSelect } from "./ServerModelSelect";
 import type { ReactNode } from "react";
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function ModelSettings({
   model,
@@ -50,7 +55,9 @@ export function ModelSettings({
     model.provider,
   );
   const [baseUrl, setBaseUrl] = useState(model.baseUrl);
-  const [modelName, setModelName] = useState(model.model);
+  const [modelName, setModelName] = useState(
+    model.source === "server" ? "" : model.model,
+  );
   const [bridgeStatus, setBridgeStatus] = useState<CodexBridgeStatus | null>(
     null,
   );
@@ -60,6 +67,12 @@ export function ModelSettings({
   const [testing, setTesting] = useState(false);
   const [connectionResult, setConnectionResult] = useState("");
   const [error, setError] = useState("");
+  const hasSavedBinding =
+    model.source !== "server" &&
+    model.hasApiKey &&
+    model.provider === provider &&
+    model.baseUrl.trim().replace(/\/+$/, "") ===
+      baseUrl.trim().replace(/\/+$/, "");
   const persist = async () => {
     setSaving(true);
     setError("");
@@ -77,7 +90,7 @@ export function ModelSettings({
       onSaved?.();
       flash("模型配置已安全保存");
     } catch (nextError) {
-      setError(String(nextError));
+      setError(formatError(nextError));
     } finally {
       setSaving(false);
     }
@@ -91,7 +104,7 @@ export function ModelSettings({
       const result = await testModelConnection();
       setConnectionResult(`${result.model} · ${result.latencyMs} ms`);
     } catch (nextError) {
-      setError(String(nextError));
+      setError(formatError(nextError));
     } finally {
       setTesting(false);
     }
@@ -107,7 +120,7 @@ export function ModelSettings({
       onSaved?.();
       flash("模型密钥已从账户密钥存储移除");
     } catch (nextError) {
-      setError(String(nextError));
+      setError(formatError(nextError));
     } finally {
       setSaving(false);
     }
@@ -240,22 +253,6 @@ export function ModelSettings({
                   />
                 </label>
               )}
-              {provider === "codex-bridge" ? (
-                <CodexModelSelect
-                  value={modelName}
-                  onChange={setModelName}
-                  bridgeStatus={bridgeStatus}
-                />
-              ) : (
-                <label>
-                  <span>模型名称</span>
-                  <input
-                    value={modelName}
-                    onChange={(e) => setModelName(e.target.value)}
-                    placeholder="填写供应商提供的模型 ID"
-                  />
-                </label>
-              )}
               {provider !== "codex-bridge" && (
                 <label>
                   <span>API Key</span>
@@ -281,6 +278,24 @@ export function ModelSettings({
                     </button>
                   </div>
                 </label>
+              )}
+              {provider === "codex-bridge" ? (
+                <CodexModelSelect
+                  value={modelName}
+                  onChange={setModelName}
+                  bridgeStatus={bridgeStatus}
+                />
+              ) : (
+                <AccountModelSelect
+                  provider={provider}
+                  baseUrl={baseUrl}
+                  apiKey={apiKey}
+                  value={modelName}
+                  savedModel={model.source === "server" ? "" : model.model}
+                  hasSavedBinding={hasSavedBinding}
+                  disabled={saving || testing}
+                  onChange={setModelName}
+                />
               )}
             </div>
           )}

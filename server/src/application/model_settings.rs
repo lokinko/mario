@@ -4,15 +4,15 @@ use crate::db::Database;
 use crate::{
     models::{
         connection::{
-            ModelConfig, ModelConfigInput, ModelConfigSource, ModelConnectionTest,
-            ServerModelCatalog,
+            AccountModelCatalog, AccountModelCatalogInput, ModelConfig, ModelConfigInput,
+            ModelConfigSource, ModelConnectionTest, ServerModelCatalog,
         },
         provider::{model_key_binding, ModelProviderKind, ModelTarget},
     },
     ports::{
         account::AccountSession,
         ai_account::{ModelConfiguration, ModelSettingsStore},
-        model::{BridgeRegistry, ModelCatalog, ModelConnector},
+        model::{BridgeRegistry, CatalogProtocol, ModelCatalog, ModelConnector},
     },
     AppError, AppResult,
 };
@@ -95,6 +95,54 @@ pub(crate) async fn server_models(
         models,
         default_model: server.model.clone(),
     })
+}
+
+pub(crate) async fn account_models(
+    db: &(impl ModelConfiguration + AccountSession),
+    input: AccountModelCatalogInput,
+    services: &ModelServices,
+) -> AppResult<AccountModelCatalog> {
+    if !input.provider.is_native() {
+        return Err(AppError::Validation(
+            "请选择 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages".into(),
+        ));
+    }
+    let base_url = input.base_url.trim().trim_end_matches('/').to_string();
+    crate::models::endpoint::validate_endpoint(&base_url)?;
+    let credential = match input.api_key.as_deref().map(str::trim) {
+        Some(key) if !key.is_empty() => {
+            if key.contains(['\r', '\n']) {
+                return Err(AppError::Validation("API Key 格式无效".into()));
+            }
+            key.to_string()
+        }
+        _ => {
+            if db
+                .model_key_binding()?
+                .is_none_or(|binding| binding != model_key_binding(input.provider, &base_url))
+            {
+                return Err(AppError::Validation(
+                    "切换模型接口或地址时，请填写对应 API Key 后再获取可用模型".into(),
+                ));
+            }
+            db.model_credential()?
+        }
+    };
+    let protocol = match input.provider {
+        ModelProviderKind::Anthropic => CatalogProtocol::Anthropic,
+        ModelProviderKind::OpenaiResponses | ModelProviderKind::OpenaiChat => {
+            CatalogProtocol::Openai
+        }
+        ModelProviderKind::CodexBridge => unreachable!("non-native provider rejected above"),
+    };
+    let models = db
+        .without_account_lock(
+            services
+                .catalog
+                .list_provider(protocol, &base_url, &credential),
+        )
+        .await??;
+    Ok(AccountModelCatalog { models })
 }
 pub(crate) async fn test_connection(
     db: &(impl ModelConfiguration + AccountSession),
@@ -482,6 +530,14 @@ mod tests {
         async fn list(&self, _: &str) -> AppResult<Vec<String>> {
             Err(AppError::Model("catalog unavailable".into()))
         }
+        async fn list_provider(
+            &self,
+            _: CatalogProtocol,
+            _: &str,
+            _: &str,
+        ) -> AppResult<Vec<String>> {
+            Err(AppError::Model("provider catalog unavailable".into()))
+        }
     }
     #[tokio::test]
     async fn unavailable_catalog_preserves_current_choice_and_allows_the_site_default() {
@@ -523,6 +579,19 @@ mod tests {
         async fn list(&self, key: &str) -> AppResult<Vec<String>> {
             assert_eq!(key, "site-secret-never-export");
             Ok(vec!["catalog-fixture".into(), "catalog-second".into()])
+        }
+        async fn list_provider(
+            &self,
+            protocol: CatalogProtocol,
+            base_url: &str,
+            key: &str,
+        ) -> AppResult<Vec<String>> {
+            assert_ne!(key, "site-secret-never-export");
+            let tag = match protocol {
+                CatalogProtocol::Openai => "openai",
+                CatalogProtocol::Anthropic => "anthropic",
+            };
+            Ok(vec![format!("{tag}:{base_url}:{key}")])
         }
     }
     fn services(server: Option<ServerOpenAi>) -> ModelServices {
@@ -592,5 +661,104 @@ mod tests {
                 .to_string()
                 .contains("当前密钥不属于"));
         }
+    }
+
+    #[tokio::test]
+    async fn account_catalog_uses_supplied_or_bound_key_without_leaking_or_falling_back_to_site() {
+        crate::secrets::use_test_master_key();
+        let db = Database::test();
+        let services = services(Some(server()));
+        db.save_model_configuration(
+            ModelProviderKind::OpenaiResponses,
+            OPENAI_URL,
+            "gpt-5.4",
+            Some("personal-saved-key"),
+        )
+        .unwrap();
+        let revision = db.revision().unwrap();
+        let _lock = db.lock_account().unwrap();
+
+        // Bound saved key works for matching provider and URL.
+        let saved = account_models(
+            &db,
+            AccountModelCatalogInput {
+                provider: ModelProviderKind::OpenaiResponses,
+                base_url: "https://api.openai.com/v1/".into(),
+                api_key: None,
+            },
+            &services,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            saved.models,
+            ["openai:https://api.openai.com/v1:personal-saved-key"]
+        );
+
+        // Changing destination or provider without supplying a new key is rejected.
+        for (provider, url) in [
+            (ModelProviderKind::OpenaiChat, OPENAI_URL),
+            (
+                ModelProviderKind::OpenaiResponses,
+                "https://other.example.test/v1",
+            ),
+        ] {
+            let error = account_models(
+                &db,
+                AccountModelCatalogInput {
+                    provider,
+                    base_url: url.into(),
+                    api_key: None,
+                },
+                &services,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+            assert!(error.contains("填写对应 API Key"));
+        }
+
+        // Unsaved draft key works without mutating account revision or stored secret.
+        let draft = account_models(
+            &db,
+            AccountModelCatalogInput {
+                provider: ModelProviderKind::Anthropic,
+                base_url: "https://api.anthropic.com/v1".into(),
+                api_key: Some("  draft-anthropic-key  ".into()),
+            },
+            &services,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            draft.models,
+            ["anthropic:https://api.anthropic.com/v1:draft-anthropic-key"]
+        );
+        assert_eq!(db.revision().unwrap(), revision);
+        assert_eq!(db.model_credential().unwrap(), "personal-saved-key");
+
+        // Header-injecting keys and non-native providers are rejected.
+        assert!(account_models(
+            &db,
+            AccountModelCatalogInput {
+                provider: ModelProviderKind::OpenaiResponses,
+                base_url: OPENAI_URL.into(),
+                api_key: Some("bad\nkey".into()),
+            },
+            &services,
+        )
+        .await
+        .is_err());
+        assert!(account_models(
+            &db,
+            AccountModelCatalogInput {
+                provider: ModelProviderKind::CodexBridge,
+                base_url: "codex://bridge".into(),
+                api_key: Some("key".into()),
+            },
+            &services,
+        )
+        .await
+        .is_err());
     }
 }

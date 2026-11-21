@@ -3,7 +3,10 @@ use super::context::ModelSettingsContext;
 use crate::application::model_settings;
 use crate::models::{
     analysis::AnalysisSettings,
-    connection::{ModelConfig, ModelConfigInput, ModelConnectionTest},
+    connection::{
+        AccountModelCatalog, AccountModelCatalogInput, ModelConfig, ModelConfigInput,
+        ModelConnectionTest,
+    },
 };
 use crate::ports::ai_records::AnalysisPresets;
 use crate::AppResult;
@@ -19,7 +22,10 @@ pub(super) fn router() -> Router {
             get(model_config).put(save_model_config),
         )
         .route("/api/model-config/test", post(test_model_config))
-        .route("/api/model-config/models", get(server_models))
+        .route(
+            "/api/model-config/models",
+            get(server_models).post(account_models),
+        )
         .route("/api/model-key", axum::routing::delete(delete_model_key))
         .route(
             "/api/analysis-settings",
@@ -48,6 +54,15 @@ async fn server_models(
 ) -> AppResult<Json<crate::models::connection::ServerModelCatalog>> {
     Ok(Json(
         model_settings::server_models(state.account(), state.services()).await?,
+    ))
+}
+
+async fn account_models(
+    state: ModelSettingsContext,
+    Json(input): Json<AccountModelCatalogInput>,
+) -> AppResult<Json<AccountModelCatalog>> {
+    Ok(Json(
+        model_settings::account_models(state.account(), input, state.services()).await?,
     ))
 }
 

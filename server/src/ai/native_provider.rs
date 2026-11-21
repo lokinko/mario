@@ -384,6 +384,17 @@ impl UpstreamFailure {
             format!("{protocol} {reason}（HTTP 429，已请求 {attempts} 次）。{wait}请稍后再试；也可在问答预设中减少联网查找，或检查服务商 API 额度与限额。")
         } else if self.status == 503 {
             format!("{protocol} 模型服务暂时繁忙（HTTP 503，已请求 {attempts} 次），请稍后重试。")
+        } else if matches!(self.status, 401 | 403) {
+            format!(
+                "{protocol} 鉴权或权限被拒绝（HTTP {}），请检查 API Key 及该密钥对所选模型的访问权限",
+                self.status
+            )
+        } else if self.status == 404 {
+            format!(
+                "{protocol} 未找到目标模型或接口路径（HTTP 404），请检查模型名称与 API Base URL"
+            )
+        } else if self.status == 400 {
+            format!("{protocol} 拒绝请求（HTTP 400），请检查模型名称、协议类型及网页搜索支持")
         } else {
             format!(
                 "{protocol} 服务返回 HTTP {}，请检查协议、模型、密钥和网页搜索权限",

@@ -7,6 +7,7 @@ export function isDataWrite(path: string, method = "GET") {
     ![
       "/analysis/preview",
       "/activity",
+      "/model-config/models",
       "/model-config/test",
       "/financial-operations/resolve",
       "/watch/catalog/resolve",
@@ -34,14 +35,16 @@ export function requestPolicy(path: string, method = "GET") {
           ? 180000
           : resource === "/model-config/test"
             ? 300000
-            : resource === "/snapshot" ||
-                resource.startsWith("/fx-settings") ||
-                resource.startsWith("/market-data/fx-rate")
-              ? 30000
-              : resource.startsWith("/research-evidence") ||
-                  resource.startsWith("/data/")
-                ? 60000
-                : 15000;
+            : resource === "/model-config/models"
+              ? 20000
+              : resource === "/snapshot" ||
+                  resource.startsWith("/fx-settings") ||
+                  resource.startsWith("/market-data/fx-rate")
+                ? 30000
+                : resource.startsWith("/research-evidence") ||
+                    resource.startsWith("/data/")
+                  ? 60000
+                  : 15000;
   return {
     timeoutMs,
     ...(resource === "/analysis/stream" ? { idleTimeoutMs: 60000 } : {}),

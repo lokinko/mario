@@ -1079,6 +1079,43 @@ main {
   width: 100%;
   min-width: 0;
 }
+.account-model-picker {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+.account-model-picker select {
+  width: 100%;
+  min-width: 0;
+}
+.account-model-hint {
+  color: var(--text-3);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+}
+.account-model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.custom-model-entry {
+  display: grid;
+  gap: var(--space-1);
+}
+.custom-model-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.custom-model-row input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.field-error {
+  color: var(--danger);
+}
 .codex-bridge-panel {
   margin: var(--space-4) 0;
   padding: var(--space-4);

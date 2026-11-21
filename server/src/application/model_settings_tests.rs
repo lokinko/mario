@@ -146,6 +146,18 @@ mod tests {
             }
             Ok(vec!["catalog-fixture".into()])
         }
+        async fn list_provider(
+            &self,
+            _: CatalogProtocol,
+            _: &str,
+            _: &str,
+        ) -> AppResult<Vec<String>> {
+            self.entered.notify_one();
+            if let Some(gate) = self.gate.lock().await.take() {
+                let _ = gate.await;
+            }
+            Ok(vec!["provider-fixture".into()])
+        }
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn catalog_selection_unlocks_and_rejects_a_stale_write_after_network_wait() {

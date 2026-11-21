@@ -118,6 +118,21 @@ fn transport_contract_fixture() {
         models: vec!["gpt-5.4".into(), "gpt-5.4-mini".into()],
         default_model: "gpt-5.4".into(),
     }];
+    let account_catalog_inputs = [
+        crate::models::connection::AccountModelCatalogInput {
+            provider: crate::models::provider::ModelProviderKind::OpenaiResponses,
+            base_url: "https://api.openai.com/v1".into(),
+            api_key: None,
+        },
+        crate::models::connection::AccountModelCatalogInput {
+            provider: crate::models::provider::ModelProviderKind::Anthropic,
+            base_url: "https://api.anthropic.com/v1".into(),
+            api_key: Some("contract-key".into()),
+        },
+    ];
+    let account_catalogs = [crate::models::connection::AccountModelCatalog {
+        models: vec!["gpt-5.4".into(), "claude-sonnet-4-5".into()],
+    }];
     let profiles = [
         crate::models::portfolio::FinancialProfile::default(),
         crate::models::portfolio::FinancialProfile {
@@ -134,6 +149,6 @@ fn transport_contract_fixture() {
     ];
     println!(
         "MARIO_CONTRACT:{}",
-        json!({ "amounts": amounts, "profiles": profiles, "rules": rules, "policies": policies, "trades":trades, "tradeUpdates":trade_updates, "fx":fx, "events":events, "configs":configs, "bridges":bridges, "catalogs":catalogs })
+        json!({ "amounts": amounts, "profiles": profiles, "rules": rules, "policies": policies, "trades":trades, "tradeUpdates":trade_updates, "fx":fx, "events":events, "configs":configs, "bridges":bridges, "catalogs":catalogs, "accountCatalogInputs":account_catalog_inputs, "accountCatalogs":account_catalogs })
     );
 }

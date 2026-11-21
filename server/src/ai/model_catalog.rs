@@ -1,4 +1,4 @@
-//! The site catalog is public model metadata, fetched only from the official endpoint.
+//! Model catalog fetching for the site OpenAI key and user-configured native endpoints.
 use std::{future::Future, time::Duration};
 
 use reqwest::Client;
@@ -6,7 +6,10 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tokio::{sync::Mutex, time::Instant};
 
-use crate::{ports::model::ModelCatalog, AppError, AppResult};
+use crate::{
+    ports::model::{CatalogProtocol, ModelCatalog},
+    AppError, AppResult,
+};
 
 const MODELS_URL: &str = "https://api.openai.com/v1/models";
 const MAX_BYTES: usize = 1024 * 1024;
@@ -24,6 +27,15 @@ impl ModelCatalog for OpenAiModelCatalog {
         self.cache
             .get(api_key, fetch_models(MODELS_URL, api_key))
             .await
+    }
+
+    async fn list_provider(
+        &self,
+        protocol: CatalogProtocol,
+        base_url: &str,
+        api_key: &str,
+    ) -> AppResult<Vec<String>> {
+        fetch_provider_models(protocol, base_url, api_key).await
     }
 }
 
@@ -67,7 +79,11 @@ fn unavailable() -> AppError {
     AppError::Model("暂时无法读取站点模型目录，请稍后重试；当前选择仍然保留".into())
 }
 
-async fn fetch_models(url: &str, api_key: &str) -> AppResult<Vec<String>> {
+fn provider_unavailable() -> AppError {
+    AppError::Model("暂时无法读取可用模型列表，请检查接口地址与网络，或直接添加自定义模型名".into())
+}
+
+fn shared_client() -> Option<Client> {
     static CLIENT: std::sync::LazyLock<Option<Client>> = std::sync::LazyLock::new(|| {
         Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -76,7 +92,11 @@ async fn fetch_models(url: &str, api_key: &str) -> AppResult<Vec<String>> {
             .build()
             .ok()
     });
-    let client = CLIENT.clone().ok_or_else(unavailable)?;
+    CLIENT.clone()
+}
+
+async fn fetch_models(url: &str, api_key: &str) -> AppResult<Vec<String>> {
+    let client = shared_client().ok_or_else(unavailable)?;
     let mut response = client
         .get(url)
         .bearer_auth(api_key)
@@ -102,6 +122,54 @@ async fn fetch_models(url: &str, api_key: &str) -> AppResult<Vec<String>> {
     Ok(models)
 }
 
+async fn fetch_provider_models(
+    protocol: CatalogProtocol,
+    base_url: &str,
+    api_key: &str,
+) -> AppResult<Vec<String>> {
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let parsed = reqwest::Url::parse(&url).map_err(|_| provider_unavailable())?;
+    let official_openai = protocol == CatalogProtocol::Openai
+        && parsed
+            .host_str()
+            .map(str::to_ascii_lowercase)
+            .is_some_and(|host| host == "api.openai.com");
+    let client = shared_client().ok_or_else(provider_unavailable)?;
+    let request = client.get(parsed);
+    let request = if protocol == CatalogProtocol::Anthropic {
+        request
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01")
+    } else {
+        request.bearer_auth(api_key)
+    };
+    let mut response = request.send().await.map_err(|_| provider_unavailable())?;
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        // Never read or relay upstream error bodies, which may echo credentials.
+        let message = match status {
+            401 | 403 => {
+                format!("模型目录返回 HTTP {status}，请检查 API Key 权限或直接添加自定义模型名")
+            }
+            404 => {
+                "模型目录返回 HTTP 404，该地址可能不支持模型列表接口，可直接添加自定义模型名".into()
+            }
+            _ => format!("模型目录返回 HTTP {status}，请检查接口地址或直接添加自定义模型名"),
+        };
+        return Err(AppError::Model(message));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| provider_unavailable())? {
+        if bytes.len() + chunk.len() > MAX_BYTES {
+            return Err(provider_unavailable());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let mut models = parse_provider_models(&bytes, official_openai)?;
+    models.retain(|id| !id.contains(api_key));
+    Ok(models)
+}
+
 #[derive(Deserialize)]
 struct ModelList {
     data: Vec<Model>,
@@ -110,18 +178,20 @@ struct ModelList {
 struct Model {
     id: String,
 }
+fn is_valid_model_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 200
+        && id.is_ascii()
+        && !id
+            .bytes()
+            .any(|c| c.is_ascii_whitespace() || c.is_ascii_control())
+}
 fn parse_models(bytes: &[u8]) -> AppResult<Vec<String>> {
     let value: ModelList = serde_json::from_slice(bytes).map_err(|_| unavailable())?;
     let mut models = Vec::new();
     for model in value.data {
         let id = model.id;
-        if id.is_empty()
-            || id.len() > 200
-            || !id.is_ascii()
-            || id
-                .bytes()
-                .any(|c| c.is_ascii_whitespace() || c.is_ascii_control())
-        {
+        if !is_valid_model_id(&id) {
             return Err(unavailable());
         }
         if text_candidate(&id) {
@@ -131,6 +201,52 @@ fn parse_models(bytes: &[u8]) -> AppResult<Vec<String>> {
     models.sort();
     models.dedup();
     Ok(models)
+}
+
+fn parse_provider_models(bytes: &[u8], official_openai: bool) -> AppResult<Vec<String>> {
+    let value: ModelList = serde_json::from_slice(bytes).map_err(|_| provider_unavailable())?;
+    let mut all_valid = Vec::new();
+    let mut filtered = Vec::new();
+    for model in value.data {
+        let id = model.id;
+        if !is_valid_model_id(&id) {
+            return Err(provider_unavailable());
+        }
+        if official_openai {
+            if text_candidate(&id) {
+                filtered.push(id.clone());
+            }
+        } else if compatible_text_candidate(&id) {
+            filtered.push(id.clone());
+        }
+        all_valid.push(id);
+    }
+    let mut models = if filtered.is_empty() {
+        all_valid
+    } else {
+        filtered
+    };
+    models.sort();
+    models.dedup();
+    Ok(models)
+}
+
+fn compatible_text_candidate(id: &str) -> bool {
+    let lower = id.to_ascii_lowercase();
+    ![
+        "embedding",
+        "rerank",
+        "moderation",
+        "whisper",
+        "dall-e",
+        "audio",
+        "realtime",
+        "transcribe",
+        "tts",
+        "image",
+    ]
+    .iter()
+    .any(|kind| lower.contains(kind))
 }
 
 // /models does not describe supported endpoints. These are text candidates,
@@ -284,6 +400,75 @@ mod tests {
             assert!(!error.contains("private upstream body"));
             assert!(error.contains(if path == "denied" { "401" } else { "302" }));
         }
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn provider_catalog_supports_openai_compatible_and_anthropic_endpoints() {
+        let app = Router::new()
+            .route(
+                "/custom/v1/models",
+                get(|headers: HeaderMap| async move {
+                    assert_eq!(headers["authorization"], "Bearer compat-key");
+                    assert!(!headers.contains_key("x-api-key"));
+                    Json(json!({"data":[
+                        {"id":"deepseek-chat"},
+                        {"id":"qwen-max"},
+                        {"id":"text-embedding-v3"},
+                        {"id":"deepseek-chat"}
+                    ]}))
+                }),
+            )
+            .route(
+                "/anthropic/v1/models",
+                get(|headers: HeaderMap| async move {
+                    assert_eq!(headers["x-api-key"], "anthropic-key");
+                    assert_eq!(headers["anthropic-version"], "2023-06-01");
+                    assert!(!headers.contains_key("authorization"));
+                    Json(json!({"data":[
+                        {"id":"claude-sonnet-4-5"},
+                        {"id":"claude-haiku-4-5"}
+                    ]}))
+                }),
+            )
+            .route(
+                "/missing/v1/models",
+                get(|| async { (StatusCode::NOT_FOUND, "anthropic-key secret body") }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        assert_eq!(
+            fetch_provider_models(
+                CatalogProtocol::Openai,
+                &format!("{base}/custom/v1/"),
+                "compat-key",
+            )
+            .await
+            .unwrap(),
+            ["deepseek-chat", "qwen-max"]
+        );
+        assert_eq!(
+            fetch_provider_models(
+                CatalogProtocol::Anthropic,
+                &format!("{base}/anthropic/v1"),
+                "anthropic-key",
+            )
+            .await
+            .unwrap(),
+            ["claude-haiku-4-5", "claude-sonnet-4-5"]
+        );
+        let missing = fetch_provider_models(
+            CatalogProtocol::Openai,
+            &format!("{base}/missing/v1"),
+            "anthropic-key",
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(missing.contains("404") && missing.contains("自定义模型名"));
+        assert!(!missing.contains("anthropic-key"));
+        assert!(!missing.contains("secret body"));
         server.abort();
     }
 }

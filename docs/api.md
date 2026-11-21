@@ -171,6 +171,7 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 | PUT | `/api/model-config` | R | B `ModelConfigInput` → `ModelConfig` | 保存个人配置或选择站点配置 |
 | POST | `/api/model-config/test` | — | — → `{ok:boolean,model:string,latencyMs:number}` | 测试已保存配置，会调用模型 |
 | GET | `/api/model-config/models` | — | — → `{models:string[],defaultModel:string}` | 站点模型目录 |
+| POST | `/api/model-config/models` | — | B `AccountModelCatalogInput` → `AccountModelCatalog` | 拉取个人原生接口的可用模型目录；优先使用请求密钥，未提供时仅复用已绑定同接口与地址的个人密钥 |
 | DELETE | `/api/model-key` | R | — → `ModelConfig` | 移除个人密钥；站点密钥不能由个人移除 |
 | GET | `/api/analysis-settings` | — | — → `AnalysisSettings` | 已保存的问答预设 |
 | PUT | `/api/analysis-settings` | R | B `AnalysisSettings` → `AnalysisSettings` | 保存预设，不执行分析 |
@@ -314,6 +315,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | --- | --- |
 | ModelConfigInput | `provider:openai-responses/openai-chat/anthropic/codex-bridge; baseUrl,model:string; apiKey?:string/null; source?:account/server=account` |
 | ModelConfig | `provider,baseUrl,model,hasApiKey,source`，可有 `serverModel`；不返回 apiKey |
+| AccountModelCatalogInput / AccountModelCatalog | 输入 `provider:openai-responses/openai-chat/anthropic; baseUrl:string; apiKey?:string/null`；输出 `{models:string[]}` |
 | CodexModel / CodexBridgeStatus | CodexModel 为 `model,displayName:string; description?:string=""; isDefault?:boolean=false`；状态为 `paired,online:boolean; model:string/null; models:CodexModel[]` |
 | ContextSelection | `includeProfile?,includeHoldings?,includeEvidence?,includeMemory?:boolean`，当前各字段默认 true |
 | AnalysisRequest | `question:string; workflow:"council"; webSearch?:boolean=true; previousTurn?:PreviousTurn/null; contextSelection?:ContextSelection; previewRevision?:string/null`；拒绝未知字段，不接收持仓账本 JSON 作为独立请求字段 |
