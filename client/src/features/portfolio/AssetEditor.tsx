@@ -19,9 +19,18 @@ const currencies = ["CNY", "USD", "HKD", "EUR", "JPY", "GBP"];
 const assetClasses = ["股票", "基金", "债券", "黄金", "其他"];
 
 function initialAmount(snapshot: Snapshot, holding: Holding) {
+  if (holding.assetClass === "现金" && !holding.id) return "";
   return (
     snapshot.cashBalances?.find((b) => b.holdingId === holding.id)?.amount ??
     String(holding.marketValue)
+  );
+}
+
+function initialCashDate(snapshot: Snapshot, holding: Holding) {
+  if (!holding.id) return holding.valuationDate || localDateValue(new Date());
+  return (
+    snapshot.cashBalances?.find((b) => b.holdingId === holding.id)
+      ?.confirmedOn ?? holding.valuationDate
   );
 }
 
@@ -43,7 +52,15 @@ export function AssetEditor({
   onUpdate: (snapshot: Snapshot) => void;
   onSaved: (message: string) => void;
 }) {
-  const [editing, setEditing] = useState(initial);
+  const initialDate =
+    initial.assetClass === "现金"
+      ? initialCashDate(snapshot, initial)
+      : initial.valuationDate;
+  const [editing, setEditing] = useState<Holding>(() =>
+    initial.assetClass === "现金"
+      ? { ...initial, valuationDate: initialDate }
+      : initial,
+  );
   const [assetAmount, setAssetAmount] = useState(() =>
     initialAmount(snapshot, initial),
   );
@@ -52,11 +69,17 @@ export function AssetEditor({
   );
   const cashRevision = useRef(snapshot.holdingRevisions?.[initial.id] ?? "");
   const cash = editing.assetClass === "现金";
+  const cashMetadataChanged =
+    cash &&
+    (editing.name.trim() !== initial.name.trim() ||
+      editing.currency !== initial.currency ||
+      editing.valuationDate !== initialDate);
   const tradeManaged = Boolean(
     snapshot.holdingTrades?.some((t) => t.holdingId === editing.id),
   );
   const manualAssetAmount =
     cash || Boolean(editing.id && !hasHoldingDetails(editing));
+  const today = localDateValue(new Date());
   const valid = Boolean(
     editing.name.trim() &&
     (manualAssetAmount ? assetAmount.trim() : hasHoldingDetails(editing)) &&
@@ -67,16 +90,16 @@ export function AssetEditor({
     Number.isFinite(editing.costBasis) &&
     editing.costBasis >= 0 &&
     editing.costBasis <= 1e15 &&
-    (cash ||
-      (editing.valuationDate &&
-        editing.valuationDate <= localDateValue(new Date()))),
+    (cash
+      ? !editing.valuationDate || editing.valuationDate <= today
+      : editing.valuationDate && editing.valuationDate <= today),
   );
 
   const save = () => {
     if (busy || !valid) return;
     void run(async () => {
       const { id, ...values } = editing;
-      if (id && cash) {
+      if (id && cash && !cashMetadataChanged) {
         const key = JSON.stringify([id, assetAmount, cashRevision.current]);
         onUpdate(
           await updateHoldingAmount(
@@ -108,7 +131,7 @@ export function AssetEditor({
           id ? await updateHolding(id, input) : await saveHolding(input),
         );
       }
-      onSaved(cash ? "已保存你的实际余额" : "持仓已保存");
+      onSaved(cash ? "存款账户已保存" : "持仓已保存");
     });
   };
 
@@ -122,6 +145,42 @@ export function AssetEditor({
     >
       <fieldset className="holding-fields" disabled={busy}>
         <div className="form-grid">
+          {cash && (
+            <>
+              <label>
+                <span>账户名称</span>
+                <Input
+                  autoFocus
+                  required
+                  maxLength={200}
+                  value={editing.name}
+                  placeholder="例如：微信零钱、招商银行、公积金账户"
+                  onChange={(e) =>
+                    setEditing({ ...editing, name: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>币种</span>
+                <select
+                  value={editing.currency}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      currency: e.target.value,
+                      fxRateToBase: null,
+                      fxRateSource: "",
+                      fxRateObservedOn: "",
+                    })
+                  }
+                >
+                  {[...new Set([...currencies, editing.currency])].map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
           {!cash && (
             <>
               <label>
@@ -194,6 +253,25 @@ export function AssetEditor({
               />
             </div>
           </label>
+          {cash && (
+            <label>
+              <span>核对日期</span>
+              <Input
+                type="date"
+                max={today}
+                value={editing.valuationDate}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    valuationDate: e.target.value,
+                    fxRateToBase: null,
+                    fxRateSource: "",
+                    fxRateObservedOn: "",
+                  })
+                }
+              />
+            </label>
+          )}
           {!cash && (
             <div className="asset-cost-field">
               <label>

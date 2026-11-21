@@ -51,11 +51,11 @@ export function useHoldingRemoval({
     const expectedRevision = snapshot.holdingRevisions?.[item.id] ?? "";
     if (
       !window.confirm(
-        `确认删除“${item.name}”？\n` +
-          (count
-            ? `同时删除 ${count} 笔交易，并撤销其对当前存款的净影响；已核对余额覆盖的历史交易仅标记存款待核对。\n`
-            : "") +
-          "此操作不代表卖出；更正历史和此前资产记录保留。",
+        item.assetClass === "现金"
+          ? `确认删除存款账户“${item.name}”？\n删除后将不再计入存款与现金和总资产；更正历史和此前资产记录保留。`
+          : `确认删除“${item.name}”？\n` +
+              (count ? `同时删除 ${count} 笔交易；存款余额保持不变。\n` : "") +
+              "此操作不代表卖出；更正历史和此前资产记录保留。",
       )
     )
       return;

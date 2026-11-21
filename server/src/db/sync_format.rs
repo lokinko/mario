@@ -357,7 +357,7 @@ pub(super) const SYNC_TABLES: &[SyncTableSpec] = &[
             "confirmed_at",
             "needs_reconciliation",
         ],
-        order_by: "currency",
+        order_by: "currency, holding_id",
     },
     SyncTableSpec {
         name: "trade_settlements",

@@ -560,8 +560,8 @@ try {
   snap = await api("/holding-trades", "POST", execution);
   const trade = snap.holdingTrades.find(t => t.id === execution.requestId);
   assert.equal(snap.holdingTrades.length, 1);
-  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102097);
-  assert.equal(snap.totalValue, 102197);
+  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
+  assert.equal(snap.totalValue, 102300);
   assert.equal(snap.holdings.find(h => h.id === trade.holdingId).currentPrice, 10);
   const correction = {
     settlementMode: "history",
@@ -573,14 +573,12 @@ try {
   assert.equal(snap.holdingTrades.length, 1);
   assert.equal(snap.holdingTrades.find(t => t.id === trade.id).createdAt, trade.createdAt);
   assert.equal(snap.holdings.find(h => h.id === trade.holdingId).costBasis, 136);
-  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102064);
-  const { settlementMode: _mode, ...missingSettlementMode } = execution;
-  await api("/holding-trades", "POST", { ...missingSettlementMode, requestId: randomUUID() }, 422);
+  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
   await api("/holding-trades", "POST", { ...execution, requestId: randomUUID(), settlementMode: "auto" }, 422);
   const correctedRevision = snap.holdingRevisions[trade.holdingId];
   snap = await api(`/holding-trades/${trade.id}`, "PUT", correction);
   assert.equal(snap.holdingRevisions[trade.holdingId], correctedRevision);
-  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102064);
+  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
   await api(`/holding-trades/${trade.id}`, "PUT", { ...correction, note: "过期修改" }, 409);
   await api(`/holding-trades/${trade.id}`, "PUT", { ...correction, expectedRevision: correctedRevision, kind: "sell" }, 400);
   // Unknown trade kinds and old fields are rejected as a format error, never silently ignored.
@@ -594,7 +592,7 @@ try {
   };
   snap = await api("/holding-trades", "POST", dividend);
   assert.equal(snap.holdingTradeSummaries[trade.holdingId].dividendIncome, "16");
-  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102080);
+  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
   assert.equal(snap.holdingTradeSummaries[trade.holdingId].costBasis, "136");
   assert.equal(snap.holdingTradeSummaries[trade.holdingId].quantity, "12");
   const sale = {
@@ -604,7 +602,7 @@ try {
   snap = await api("/holding-trades", "POST", sale);
   assert.equal(snap.holdingTradeSummaries[trade.holdingId].settledProfit, "117");
   assert.equal(snap.holdings.find(h => h.id === trade.holdingId).quantity, 0);
-  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102317);
+  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
   const records = snap.holdingTrades;
   await stopServer(); await startServer();
   assert.deepEqual((await api("/snapshot")).holdingTrades, records);
@@ -639,7 +637,7 @@ try {
   snap = await api("/snapshot");
   assert.equal(snap.holdingTrades.length, 0);
   assert.equal(snap.holdings.find(h => h.id === trade.holdingId).quantity, 0);
-  console.log("PASS real trading: exact amounts, edits, confirmed deletion API, atomic rejection, dividends, restart, linked cash settlement and unchanged past observations");
+  console.log("PASS real trading: exact amounts, edits, confirmed deletion API, atomic rejection, dividends, restart, independent deposits and unchanged past observations");
   // Exercise browser JSON -> HTTP JSON parser with a recurring weighted average.
   const oppoBuy = {
     ...execution, requestId: randomUUID(),
@@ -681,17 +679,18 @@ try {
   assert.equal(reopenedOPPO.costBasis, originalOPPO.costBasis);
   assert.deepEqual(snap.holdingTrades, oppoTrades);
   assert.deepEqual(snap.holdingTradeSummaries[oppoId], oppoSummary);
-  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 101978.09);
-  console.log("PASS internal OPPO stock: manual price edits, JSON average-cost round trip, protected execution totals and linked cash persistence");
-  const noFunds = { ...execution, expectedCashBaseline:"", requestId: randomUUID(), newHolding: { ...execution.newHolding, currency: "USD" } };
-  const priorHoldings = snap.holdings;
-  const rejected = await api("/holding-trades", "POST", noFunds, 400);
-  assert(JSON.stringify(rejected).includes("USD 存款余额不足"));
-  snap = await api("/snapshot");
-  assert.deepEqual(snap.holdings, priorHoldings);
-  await api("/holdings", "POST", holding("重复人民币存款", 100), 409);
-  await api("/holdings", "POST", holding("欧元存款", 100, "EUR"), 400);
-  // Removing a recorded position is atomic, versioned, cash-aware and retryable.
+  assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
+  console.log("PASS internal OPPO stock: manual price edits, JSON average-cost round trip, protected execution totals and independent deposit persistence");
+  // Multiple named deposit accounts in the same currency and other currencies are supported and removable.
+  snap = await api("/holdings", "POST", holding("微信零钱", 100));
+  const wechatId = snap.holdings.find(h => h.name === "微信零钱").id;
+  snap = await api("/holdings", "POST", holding("欧元存款", 0, "EUR"));
+  const eurId = snap.holdings.find(h => h.name === "欧元存款").id;
+  assert.equal(snap.cashBalances.length, 3);
+  snap = await api(`/holdings/${wechatId}`, "DELETE", { expectedRevision: snap.holdingRevisions[wechatId] });
+  snap = await api(`/holdings/${eurId}`, "DELETE", { expectedRevision: snap.holdingRevisions[eurId] });
+  assert.equal(snap.cashBalances.length, 1);
+  // Removing a recorded position is atomic, versioned and retryable without touching deposits.
   const removal = { expectedRevision: snap.holdingRevisions[oppoId] };
   const beforeRemoval = snap;
   await api(`/holdings/${oppoId}`, "DELETE", { expectedRevision: "stale" }, 409);
@@ -704,14 +703,14 @@ try {
   const journal = await api(`/holdings/${oppoId}/financial-history`);
   const removed = journal.records.find(r => r.kind === "holding.delete");
   assert.equal(JSON.parse(removed.before).trades.length, 2);
-  assert.equal(removed.cashDelta, "221.91");
+  assert.equal(removed.cashDelta, "0");
   assert.equal((await api(`/holdings/${oppoId}`, "DELETE", removal)).holdings.find(h => h.id === cash).marketValue, 102200);
   assert.equal((await api("/financial-operations/resolve", "POST", { method: "DELETE", path: `/api/holdings/${oppoId}`, input: removal })).committed, true);
   await stopServer(); await startServer();
   snap = await api("/snapshot");
   assert(!snap.holdings.some(h => h.id === oppoId));
   assert.equal(snap.holdings.find(h => h.id === cash).marketValue, 102200);
-  console.log("PASS whole-position removal: stale version rollback, linked executions, net cash reversal, journal, receipts and restart persistence");
+  console.log("PASS whole-position removal: stale version rollback, linked executions, independent deposits, journal, receipts and restart persistence");
   // Options belong to a stock anchor; premium cash flows and liability valuation stay distinct.
   const underlyingId = trade.holdingId;
   const optionOpen = {
@@ -725,14 +724,14 @@ try {
   assert.equal(snap.holdings.find(h=>h.id===underlyingId).quantity,0);
   assert.equal(snap.accounting.holdings[optionId].marketValue,"-600");
   assert.equal(snap.accounting.holdings[optionId].costBasis,"-598");
-  assert.equal(snap.holdings.find(h=>h.id===cash).marketValue,102798);
+  assert.equal(snap.holdings.find(h=>h.id===cash).marketValue,102200);
   const quote={requestId:randomUUID(),expectedRevision:snap.holdingRevisions[optionId],price:"1.25",observedOn:today};
   snap=await api(`/holdings/${optionId}/option-price`,"PUT",quote);
   assert.equal(snap.stockOptionTotals[underlyingId].marketValue,"-250");
   assert.equal(snap.stockOptionTotals[underlyingId].optionUnrealizedProfit,"348");
-  assert.equal(snap.accounting.totalValue,"102548");
+  assert.equal(snap.accounting.totalValue,"101950");
   assert.equal((await api("/financial-operations/resolve","POST",{method:"PUT",path:`/api/holdings/${optionId}/option-price`,input:quote})).committed,true);
-  assert.equal((await api(`/holdings/${optionId}/option-price`,"PUT",quote)).accounting.totalValue,"102548");
+  assert.equal((await api(`/holdings/${optionId}/option-price`,"PUT",quote)).accounting.totalValue,"101950");
   await api(`/holdings/${optionId}/option-price`,"PUT",{...quote,requestId:randomUUID(),price:"2"},409);
   await api(`/holdings/${underlyingId}`,"DELETE",{expectedRevision:snap.holdingRevisions[underlyingId]},400);
   const optionClose={...optionOpen,requestId:randomUUID(),newHolding:null,holdingId:optionId,expectedRevision:snap.holdingRevisions[optionId],kind:"buy",sequence:2,quantity:"1",price:"1",grossAmount:"100",fees:"1",externalId:"option-close"};
@@ -744,8 +743,8 @@ try {
   snap=await api("/holding-trades","POST",expiry);
   assert.equal(snap.holdingTradeSummaries[optionId].quantity,"0");
   assert.equal(snap.stockOptionTotals[underlyingId].settledProfit,"497");
-  assert.equal(snap.accounting.totalValue,"102697");
-  assert.equal((await api("/daily-assets")).records[0].totalAssets,102697);
+  assert.equal(snap.accounting.totalValue,"102200");
+  assert.equal((await api("/daily-assets")).records[0].totalAssets,102200);
   await stopServer();await startServer();snap=await api("/snapshot");
   assert.equal(snap.optionContracts[optionId].underlyingId,underlyingId);
   assert.equal(snap.stockOptionTotals[underlyingId].optionSettledProfit,"497");

@@ -23,7 +23,7 @@ pub(super) fn initialize(conn: &Connection) -> AppResult<()> {
         holding_id TEXT PRIMARY KEY, payload TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS cash_state (
-        currency TEXT PRIMARY KEY, holding_id TEXT NOT NULL, amount TEXT NOT NULL,
+        holding_id TEXT PRIMARY KEY, currency TEXT NOT NULL, amount TEXT NOT NULL,
         baseline_id TEXT NOT NULL, confirmed_on TEXT NOT NULL, confirmed_at TEXT NOT NULL,
         needs_reconciliation INTEGER NOT NULL DEFAULT 0
     );
@@ -168,12 +168,6 @@ impl Database {
         tx.execute("DELETE FROM trading_quarantine WHERE holding_id=$1", [id])?;
         let holding = before.holdings.iter().find(|h| h.id == id).unwrap();
         super::trades::rebuild(&tx, holding, &summary)?;
-        // Repair does not replay already reflected cash flows; reconciliation is required separately.
-        super::cash::initialize_balances(&tx)?;
-        tx.execute(
-            "UPDATE cash_state SET needs_reconciliation=1 WHERE currency=$1",
-            [&holding.currency],
-        )?;
         super::daily::finish(&tx, &before, None)?;
         let snapshot = complete(&tx, &operation)?;
         tx.commit()?;

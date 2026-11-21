@@ -314,10 +314,13 @@ it("records exact real executions, separated charges and retry identity without 
   change("税费（CNY）", "0.01");
   fireEvent.click(screen.getByRole("button", { name: "保存交易并更新持仓" }));
   await screen.findByRole("alert");
+  expect(screen.queryByLabelText("资金处理")).toBeNull();
+  expect(screen.queryByText(/存款余额/)).toBeNull();
   expect(screen.getByLabelText("成交数量")).toHaveProperty("value", "0.1");
   const first = vi.mocked(portfolioApi.saveHoldingTrade).mock.calls[0][0];
   expect(first).toMatchObject({
     kind: "buy",
+    settlementMode: "history",
     sequence: 1,
     quantity: "0.1",
     price: "0.2",

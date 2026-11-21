@@ -92,19 +92,24 @@ fn postgres_canonicalizes_legacy_model_settings_without_rebinding_existing_crede
 }
 
 #[test]
-fn postgres_upgrades_cash_to_currency_balances_once_without_changing_asset_total() {
+fn postgres_upgrades_cash_preserves_accounts_and_migrates_cash_state_pk() {
     let mut tenant = Tenant::legacy();
     drop(Database::postgres(&tenant.url, &tenant.user).unwrap());
     tenant.sql("INSERT INTO holdings(id,symbol,name,asset_class,market_value,cost_basis,target_pct,currency,valuation_date,created_at,updated_at) VALUES
         ('bank-a','','银行A','现金',100,0,0,'CNY','2026-01-01','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z'),
         ('bank-b','','银行B','现金',23.45,0,0,'CNY','2026-01-01','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z');
-        UPDATE data_revision SET schema_version=6 WHERE id=1;");
+        DROP TABLE cash_state;
+        CREATE TABLE cash_state (currency TEXT PRIMARY KEY, holding_id TEXT NOT NULL, amount TEXT NOT NULL, baseline_id TEXT NOT NULL, confirmed_on TEXT NOT NULL, confirmed_at TEXT NOT NULL, needs_reconciliation INTEGER NOT NULL DEFAULT 0);
+        INSERT INTO cash_state VALUES ('CNY','bank-a','100','base-1','2026-01-01','2026-01-01T00:00:00Z',0);
+        UPDATE data_revision SET schema_version=19 WHERE id=1;");
     for _ in 0..2 {
         let db = Database::postgres(&tenant.url, &tenant.user).unwrap();
         let s = db.snapshot().unwrap();
-        assert_eq!(s.holdings.len(), 1);
-        assert_eq!(s.holdings[0].name, "CNY 存款");
+        assert_eq!(s.holdings.len(), 2);
+        assert_eq!(s.cash_balances.len(), 2);
         assert_eq!(s.total_value, 123.45);
+        assert!(s.holdings.iter().any(|h| h.name == "银行A"));
+        assert!(s.holdings.iter().any(|h| h.name == "银行B"));
     }
 }
 

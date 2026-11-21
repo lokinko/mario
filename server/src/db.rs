@@ -157,7 +157,6 @@ impl Database {
             let tx = connection.transaction()?;
             schema::initialize(&tx)?;
             trades::quarantine_invalid(&tx)?;
-            cash::consolidate(&tx)?;
             cash::initialize_balances(&tx)?;
             amounts::initialize(&tx)?;
             // Re-run for existing tenants too, so newly added tables get revision triggers.

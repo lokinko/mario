@@ -5,7 +5,7 @@ use crate::storage::OptionalRow;
 
 // Bump whenever hosted tables/columns or one-time data migrations change. This is independent of the
 // export format version: an existing tenant must also receive new SQL objects.
-pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 19;
+pub(super) const POSTGRES_SCHEMA_VERSION: i64 = 20;
 
 // Keep migration order intact: re-running on an existing tenant schema is idempotent.
 pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
@@ -196,6 +196,25 @@ pub(super) fn initialize(connection: &Connection) -> AppResult<()> {
     remove_retired_analysis_metadata(connection)?;
     connection.execute("DELETE FROM settings WHERE key LIKE 'trading.reset.%'", [])?;
     super::financial::initialize(connection)?;
+    // Migrate legacy per-currency cash_state primary key to per-account holding_id.
+    connection.execute_batch(
+        "DO $$
+         DECLARE pk_name text;
+         DECLARE pk_cols text;
+         BEGIN
+           SELECT c.conname, string_agg(a.attname, ',' ORDER BY u.ord)
+           INTO pk_name, pk_cols
+           FROM pg_constraint c
+           CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS u(attnum, ord)
+           JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.attnum
+           WHERE c.conrelid = to_regclass('cash_state') AND c.contype = 'p'
+           GROUP BY c.conname;
+           IF pk_name IS NOT NULL AND pk_cols <> 'holding_id' THEN
+             EXECUTE format('ALTER TABLE cash_state DROP CONSTRAINT %I', pk_name);
+             ALTER TABLE cash_state ADD PRIMARY KEY (holding_id);
+           END IF;
+         END $$;",
+    )?;
     connection.execute_batch("CREATE TABLE IF NOT EXISTS holding_options (
         holding_id TEXT PRIMARY KEY REFERENCES holdings(id) ON DELETE CASCADE DEFERRABLE INITIALLY IMMEDIATE,
         underlying_id TEXT NOT NULL REFERENCES holdings(id) DEFERRABLE INITIALLY IMMEDIATE,

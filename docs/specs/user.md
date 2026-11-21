@@ -20,7 +20,8 @@
 
 管理收支、负债、期限、持仓、现金、真实成交、期权和每日资产。区分“未填写”与“明确填写为零”，默认值不能冒充用户已确认的事实。
 
-- 成交、费用、税款、现金与持仓变化保持会计一致。
+- 存款与现金按自定义账户（如微信、不同银行卡、公积金账户等）分别记录账户名称、币种、余额与核对日期，支持同币种多账户独立维护、改名、改币种与删除，并汇总计入存款总额与总资产。
+- 证券/期权成交（买入、卖出、现金分红、更正、删除及删除持仓）与存款余额解耦，两者各自独立记录，成交不自动增减存款余额；成交、费用、税款与持仓变化保持会计一致。
 - 更正、删除和重试不能重复记账或留下部分更新；相关存储失败时，整个财务操作回滚。
 - 市场价格用于个人估值，不能改写真实成交。
 - 行情或汇率缺失时，明确标记不可计算或不可比较，不能把未知当作零。
@@ -81,7 +82,7 @@
 | 范围 | 必须核对的场景 | 现有验证入口 |
 | --- | --- | --- |
 | 账号与数据管理 | 账号隔离、账号切换后迟到响应、并发版本冲突、覆盖前备份失败、导入失败回滚 | [传输回归](../../client/src/api.hosted.test.ts)、[导入交互](../../client/src/features/account/ServerData.test.tsx)、[托管验收](../../scripts/test-hosted.mjs) |
-| 财务账本 | 真实成交与现金一致、更正删除的整体性、重复请求不重复记账、资料或汇率缺失 | [财务回归](../../server/src/db/financial_tests.rs)、[成交模块内测试](../../server/src/db/trades.rs)、[财务验收](../../scripts/test-financial.mjs) |
+| 财务账本 | 多账户存款独立维护、真实成交与持仓一致且不改写存款、更正删除的整体性、重复请求不重复记账、资料或汇率缺失 | [财务回归](../../server/src/db/financial_tests.rs)、[存款仓储内测试](../../server/src/db/cash.rs)、[成交模块内测试](../../server/src/db/trades.rs)、[财务验收](../../scripts/test-financial.mjs) |
 | 买点观察 | 规则变更建立新基准、历史保留、个人规则隔离、数据缺失不误判、网格不记账 | [规则保存回归](../../server/src/db/watch/rules.rs)、[规则计算回归](../../server/src/models/watch/rules.rs)、[网格交互](../../client/src/features/watch/WatchGrid.test.tsx) |
 | 研究资料 | 原文与附件完整、保存失败可重试、标签不修改原文、归档可恢复 | [资料交互](../../client/src/features/evidence/EvidenceWorkbench.test.tsx)、[资料仓储内测试](../../server/src/db/evidence.rs) |
 | 方法论与复盘 | 文字保存、手工规则修订与历史可追溯 | [方法论交互](../../client/src/features/methodology/InvestmentMethodology.test.tsx)、[复盘交互](../../client/src/features/reviews/ReviewCenter.test.tsx)、[功能 API 验收](../../scripts/test-functional-api.mjs) |

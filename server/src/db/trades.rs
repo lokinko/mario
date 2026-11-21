@@ -409,21 +409,14 @@ impl Database {
             )),
             other => other,
         })?;
-        let cash_delta = super::cash::settle_trade(
-            &tx,
-            &h.currency,
-            id,
-            None,
-            crate::models::portfolio::SettlementMode::History,
-            "",
-        )?;
+        tx.execute("DELETE FROM trade_settlements WHERE trade_id=$1", [id])?;
         super::financial::journal(
             &tx,
             &h.id,
             "trade.delete",
             trade,
             &Option::<HoldingTrade>::None,
-            &text(cash_delta),
+            "0",
             ("用户删除交易", Some(&operation.0)),
         )?;
         tx.execute("DELETE FROM holding_trades WHERE id=$1", [id])?;
@@ -669,14 +662,6 @@ impl Database {
             .collect();
         chain.push(trade.clone());
         let summary = super::corporate::position(&tx, &h.id, &chain)?;
-        let cash_delta = super::cash::settle_trade(
-            &tx,
-            &h.currency,
-            &trade.id,
-            Some(Decimal::from_str_exact(&summary.cash_flows[&trade.id]).unwrap()),
-            input.settlement_mode,
-            &input.expected_cash_baseline,
-        )?;
         super::financial::journal(
             &tx,
             &h.id,
@@ -687,7 +672,7 @@ impl Database {
             },
             &original,
             &trade,
-            &text(cash_delta),
+            "0",
             (
                 if trade.note.is_empty() {
                     if edit_id.is_some() {
@@ -887,7 +872,7 @@ mod tests {
     }
 
     #[test]
-    fn trades_settle_each_currency_and_keep_total_assets_correct() {
+    fn trades_keep_deposit_balances_independent_across_currencies() {
         for currency in ["CNY", "HKD", "USD"] {
             let db = Database::test();
             db.save_profile(&crate::models::portfolio::FinancialProfile {
@@ -900,33 +885,33 @@ mod tests {
             buy.new_holding.as_mut().unwrap().currency = currency.into();
             buy.taxes = "1".into();
             let s = db.save_holding_trade(&buy).unwrap();
-            assert_eq!(balance(&s, currency), 9897.0);
-            assert_eq!(s.total_value, 9997.0); // Only fees/taxes leave the portfolio.
+            assert_eq!(balance(&s, currency), 10000.0);
+            assert_eq!(s.total_value, 10100.0);
             let s = db.save_holding_trade(&buy).unwrap();
-            assert_eq!(balance(&s, currency), 9897.0);
+            assert_eq!(balance(&s, currency), 10000.0);
             let mut sale = next(&s, TradeKind::Sell, "5", "12", "2026-01-02");
             sale.fees = "1".into();
             sale.taxes = "2".into();
             let s = db.save_holding_trade(&sale).unwrap();
-            assert_eq!(balance(&s, currency), 9954.0);
+            assert_eq!(balance(&s, currency), 10000.0);
             let mut dividend = next(&s, TradeKind::Dividend, "0", "0", "2026-01-03");
             dividend.gross_amount = "10".into();
             dividend.taxes = "2".into();
             let s = db.save_holding_trade(&dividend).unwrap();
-            assert_eq!(balance(&s, currency), 9962.0);
+            assert_eq!(balance(&s, currency), 10000.0);
             let mut correction = edit(&s, &buy.request_id);
             correction.fees = "5".into();
             let s = db
                 .update_holding_trade(&buy.request_id, &correction)
                 .unwrap();
-            assert_eq!(balance(&s, currency), 9959.0);
+            assert_eq!(balance(&s, currency), 10000.0);
             assert_eq!(
                 balance(
                     &db.update_holding_trade(&buy.request_id, &correction)
                         .unwrap(),
                     currency
                 ),
-                9959.0
+                10000.0
             );
             let mut s = s;
             for id in [&dividend.request_id, &sale.request_id, &buy.request_id] {
@@ -952,45 +937,22 @@ mod tests {
     }
 
     #[test]
-    fn insufficient_cash_and_failed_daily_writes_roll_back_the_entire_trade() {
+    fn trades_succeed_without_deposits_and_failed_daily_writes_roll_back_the_entire_trade() {
         let db = Database::test();
         let buy = first();
-        let before = db.export_sync_data().unwrap().content_hash().unwrap();
-        assert!(db
-            .save_holding_trade(&buy)
-            .unwrap_err()
-            .to_string()
-            .contains("存款余额不足"));
-        assert_eq!(
-            db.export_sync_data().unwrap().content_hash().unwrap(),
-            before
-        );
-        assert!(db.snapshot().unwrap().holdings.is_empty());
-        super::super::cash::fund(&db, "CNY");
         let s = db.save_holding_trade(&buy).unwrap();
-        let cash = s.holdings.iter().find(|h| h.asset_class == "现金").unwrap();
-        db.update_holding_amount(
-            &cash.id,
-            &crate::models::daily::AmountInput {
-                amount: 0.0.to_string(),
-                expected_revision: s.holding_revisions[&cash.id].clone(),
-                request_id: Uuid::new_v4().to_string(),
-            },
-        )
-        .unwrap();
+        assert_eq!(s.holdings.len(), 1);
+        assert!(s.cash_balances.is_empty());
+        super::super::cash::fund(&db, "CNY");
         let s = db.snapshot().unwrap();
         let mut edited = edit(&s, &buy.request_id);
         edited.fees = "3".into();
         let changed = db.update_holding_trade(&buy.request_id, &edited).unwrap();
-        assert_eq!(balance(&changed, "CNY"), 0.0);
-        assert!(changed.cash_balances[0].needs_reconciliation);
+        assert_eq!(balance(&changed, "CNY"), 10000.0);
+        assert!(!changed.cash_balances[0].needs_reconciliation);
         let before = db.export_sync_data().unwrap().content_hash().unwrap();
-        assert_eq!(
-            db.export_sync_data().unwrap().content_hash().unwrap(),
-            before
-        );
         crate::db::fail_inserts(&db.conn().unwrap(), "daily_entries", "daily write failed");
-        edited.fees = "1".into(); // Would refund one unit before the daily write fails.
+        edited.fees = "1".into();
         assert!(db.update_holding_trade(&buy.request_id, &edited).is_err());
         assert_eq!(
             db.export_sync_data().unwrap().content_hash().unwrap(),
@@ -999,7 +961,7 @@ mod tests {
     }
 
     #[test]
-    fn deleting_income_covered_by_a_new_balance_confirmation_requires_reconciliation() {
+    fn deleting_trades_never_marks_deposit_accounts_for_reconciliation() {
         let db = funded(Database::test());
         let buy = first();
         let s = db.save_holding_trade(&buy).unwrap();
@@ -1025,66 +987,32 @@ mod tests {
             )
             .unwrap();
         assert_eq!(balance(&changed, "CNY"), 0.0);
-        assert!(changed.cash_balances[0].needs_reconciliation);
+        assert!(!changed.cash_balances[0].needs_reconciliation);
     }
 
     #[test]
-    fn cash_is_shared_between_positions_but_never_between_currencies() {
+    fn trades_in_any_currency_do_not_require_or_alter_deposit_accounts() {
         let db = funded(Database::test());
         db.save_holding_trade(&first()).unwrap();
         let mut other = first();
         other.new_holding.as_mut().unwrap().name = "另一证券".into();
         let s = db.save_holding_trade(&other).unwrap();
-        assert_eq!(balance(&s, "CNY"), 9796.0);
+        assert_eq!(balance(&s, "CNY"), 10000.0);
         let mut usd = first();
         usd.new_holding.as_mut().unwrap().currency = "USD".into();
-        assert!(db
-            .save_holding_trade(&usd)
-            .unwrap_err()
-            .to_string()
-            .contains("USD 存款余额不足"));
-        assert_eq!(balance(&db.snapshot().unwrap(), "CNY"), 9796.0);
-        let cash = s.holdings.iter().find(|h| h.asset_class == "现金").unwrap();
-        db.update_holding_amount(
-            &cash.id,
-            &crate::models::daily::AmountInput {
-                amount: 0.30.to_string(),
-                expected_revision: s.holding_revisions[&cash.id].clone(),
-                request_id: Uuid::new_v4().to_string(),
-            },
-        )
-        .unwrap();
-        let mut tiny = next(
-            &db.snapshot().unwrap(),
-            TradeKind::Buy,
-            "0.1",
-            "1",
-            &crate::models::market::today(),
+        let s = db.save_holding_trade(&usd).unwrap();
+        assert_eq!(balance(&s, "CNY"), 10000.0);
+        assert_eq!(
+            s.holdings
+                .iter()
+                .filter(|h| h.asset_class == "股票")
+                .count(),
+            3
         );
-        for expected in [0.2, 0.1, 0.0] {
-            tiny.request_id = Uuid::new_v4().to_string();
-            tiny.expected_revision = db
-                .snapshot()
-                .unwrap()
-                .holding_revisions
-                .get(&tiny.holding_id)
-                .cloned();
-            let s = db.save_holding_trade(&tiny).unwrap();
-            assert_eq!(balance(&s, "CNY"), expected);
-            tiny.sequence += 1;
-        }
-        tiny.request_id = Uuid::new_v4().to_string();
-        tiny.expected_revision = db
-            .snapshot()
-            .unwrap()
-            .holding_revisions
-            .get(&tiny.holding_id)
-            .cloned();
-        assert!(db.save_holding_trade(&tiny).is_err());
     }
 
     #[test]
-    fn legacy_backup_keeps_current_cash_and_later_corrections_only_settle_the_difference() {
+    fn legacy_backup_keeps_current_cash_and_later_trade_edits_leave_deposits_untouched() {
         let db = funded(Database::test());
         let buy = first();
         db.save_holding_trade(&buy).unwrap();
@@ -1106,29 +1034,28 @@ mod tests {
         let copy = Database::test();
         copy.import_sync_data(&backup).unwrap();
         let s = copy.snapshot().unwrap();
-        assert_eq!(balance(&s, "CNY"), 9898.0);
+        assert_eq!(balance(&s, "CNY"), 10000.0);
         let mut correction = edit(&s, &buy.request_id);
         correction.fees = "3".into();
         let s = copy
             .update_holding_trade(&buy.request_id, &correction)
             .unwrap();
-        assert_eq!(balance(&s, "CNY"), 9898.0);
-        assert!(s.cash_balances[0].needs_reconciliation);
-        // A fresh backup also carries the already settled current balance.
+        assert_eq!(balance(&s, "CNY"), 10000.0);
+        assert!(!s.cash_balances[0].needs_reconciliation);
         db.import_sync_data(&copy.export_sync_data().unwrap())
             .unwrap();
-        assert_eq!(balance(&db.snapshot().unwrap(), "CNY"), 9898.0);
+        assert_eq!(balance(&db.snapshot().unwrap(), "CNY"), 10000.0);
     }
 
     #[test]
-    fn sub_float_unit_cash_debits_are_preserved_in_the_exact_balance() {
+    fn exact_deposit_balance_preserves_sub_float_cents_across_trades_and_backup() {
         let db = funded(Database::test());
         let s = db.snapshot().unwrap();
         let cash = &s.holdings[0];
         db.update_holding_amount(
             &cash.id,
             &crate::models::daily::AmountInput {
-                amount: 1e15.to_string(),
+                amount: "999999999999999.99".into(),
                 expected_revision: s.holding_revisions[&cash.id].clone(),
                 request_id: Uuid::new_v4().to_string(),
             },
@@ -1140,7 +1067,6 @@ mod tests {
         buy.gross_amount = "0.01".into();
         buy.fees = "0".into();
         buy.occurred_on = crate::models::market::today();
-        buy.expected_cash_baseline = db.snapshot().unwrap().cash_balances[0].baseline_id.clone();
         let snapshot = db.save_holding_trade(&buy).unwrap();
         assert_eq!(snapshot.cash_balances[0].amount, "999999999999999.99");
         let restored = Database::test();

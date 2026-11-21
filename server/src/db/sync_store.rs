@@ -142,7 +142,6 @@ impl Database {
         super::options::validate(&transaction)?;
         super::daily::validate(&transaction)?;
         super::trades::validate_stored(&transaction)?;
-        super::cash::consolidate(&transaction)?;
         super::cash::initialize_balances(&transaction)?;
         super::amounts::initialize(&transaction)?;
         super::amounts::validate(&transaction)?;

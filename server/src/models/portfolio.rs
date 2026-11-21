@@ -308,6 +308,7 @@ pub struct HoldingTradeInput {
     pub external_id: String,
     #[serde(default)]
     pub note: String,
+    #[serde(default)]
     pub settlement_mode: SettlementMode,
 }
 
@@ -322,9 +323,10 @@ pub enum TradeKind {
     Expire,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SettlementMode {
+    #[default]
     History,
     Settle,
 }
@@ -367,6 +369,7 @@ pub struct HoldingTradeUpdateInput {
     pub external_id: String,
     #[serde(default)]
     pub note: String,
+    #[serde(default)]
     pub settlement_mode: SettlementMode,
 }
 

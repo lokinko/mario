@@ -124,14 +124,14 @@ fn deleting_whole_position_nets_cash_preserves_evidence_and_replays_after_restor
 }
 
 #[test]
-fn deleting_mixed_history_and_live_position_reverses_only_current_cash() {
+fn deleting_position_leaves_deposit_accounts_untouched() {
     let db = funded();
     let s = db
         .save_holding_trade(&buy("HISTORY-REMOVE", "history", "2026-01-01"))
         .unwrap();
     let id = s.holding_trades[0].holding_id.clone();
     let s = sell_all(&db, &s, &id, "11");
-    assert_eq!(s.cash_balances[0].amount, "10110");
+    assert_eq!(s.cash_balances[0].amount, "10000");
     let s = db
         .delete_holding(
             &id,
@@ -141,43 +141,17 @@ fn deleting_mixed_history_and_live_position_reverses_only_current_cash() {
         )
         .unwrap();
     assert_eq!(s.cash_balances[0].amount, "10000");
-    assert!(s.cash_balances[0].needs_reconciliation);
-    assert_eq!(
-        s.valuation_status.issues[0].code,
-        crate::models::portfolio::IssueCode::CashNeedsReconciliation
-    );
+    assert!(!s.cash_balances[0].needs_reconciliation);
+    assert!(s.valuation_status.issues.is_empty());
     assert!(s.valuation_status.comparable);
-    assert!(!s
-        .plan
-        .rebalancing_blocked_by
-        .contains(&crate::models::portfolio::IssueCode::CashNeedsReconciliation));
     assert!(s.holding_trades.is_empty());
-
-    // A later cash confirmation covers all earlier executions.
-    let s = confirm(&db, "500");
-    let mut input = buy("COVERED-REMOVE", "settle", "2026-01-01");
-    input.expected_cash_baseline = s.cash_balances[0].baseline_id.clone();
-    let s = db.save_holding_trade(&input).unwrap();
-    let id = s.holding_trades[0].holding_id.clone();
-    let s = confirm(&db, "400");
-    let s = db
-        .delete_holding(
-            &id,
-            &crate::models::portfolio::HoldingDeleteInput {
-                expected_revision: s.holding_revisions[&id].clone(),
-            },
-        )
-        .unwrap();
-    assert_eq!(s.cash_balances[0].amount, "400");
-    assert!(s.cash_balances[0].needs_reconciliation);
 }
 
 #[test]
-fn deleting_position_rejects_stale_revision_and_insufficient_net_cash_atomically() {
+fn deleting_position_rejects_stale_revision_atomically() {
     let db = funded();
-    let s = confirm(&db, "100");
-    let mut input = buy("SPENT", "settle", "2026-01-01");
-    input.expected_cash_baseline = s.cash_balances[0].baseline_id.clone();
+    let _s = confirm(&db, "100");
+    let input = buy("SPENT", "settle", "2026-01-01");
     let s = db.save_holding_trade(&input).unwrap();
     let id = s.holding_trades[0].holding_id.clone();
     let stale = crate::models::portfolio::HoldingDeleteInput {
@@ -187,11 +161,6 @@ fn deleting_position_rejects_stale_revision_and_insufficient_net_cash_atomically
     let current = crate::models::portfolio::HoldingDeleteInput {
         expected_revision: s.holding_revisions[&id].clone(),
     };
-    let mut spend = buy("OTHER", "settle", "2026-01-03");
-    spend.expected_cash_baseline = s.cash_balances[0].baseline_id.clone();
-    spend.price = "20".into();
-    spend.gross_amount = "200".into();
-    db.save_holding_trade(&spend).unwrap();
     let before = db.export_sync_data().unwrap().content_hash().unwrap();
     assert!(matches!(
         db.delete_holding(&id, &stale),
@@ -201,23 +170,13 @@ fn deleting_position_rejects_stale_revision_and_insufficient_net_cash_atomically
         db.delete_holding(&id, &Default::default()),
         Err(AppError::Conflict(_))
     ));
-    assert!(db
-        .delete_holding(&id, &current)
-        .unwrap_err()
-        .to_string()
-        .contains("余额不足"));
     assert_eq!(
         before,
         db.export_sync_data().unwrap().content_hash().unwrap()
     );
-    assert!(db
-        .replay_financial_request(
-            "DELETE",
-            &format!("/api/holdings/{id}"),
-            &serde_json::to_value(&current).unwrap()
-        )
-        .unwrap()
-        .is_none());
+    let after = db.delete_holding(&id, &current).unwrap();
+    assert!(after.holding_trades.is_empty());
+    assert_eq!(after.cash_balances[0].amount, "100");
 }
 
 #[test]
@@ -240,23 +199,20 @@ fn deleting_position_rolls_back_cash_and_trades_when_journal_fails() {
 }
 
 #[test]
-fn cash_cutover_prevents_double_settlement_and_corrections_require_reconciliation() {
+fn trade_lifecycle_stays_decoupled_from_deposit_accounts() {
     let db = funded();
     confirm(&db, "1000.01");
     let history = buy("HISTORY", "history", "2026-01-01");
     let s = db.save_holding_trade(&history).unwrap();
     assert_eq!(s.cash_balances[0].amount, "1000.01");
     let t = s.holding_trades[0].clone();
-    let edit:HoldingTradeUpdateInput=serde_json::from_value(serde_json::json!({"settlementMode":"history","expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":"1","taxes":"0","account":t.account,"note":"按成交单更正"})).unwrap();
+    let edit: HoldingTradeUpdateInput = serde_json::from_value(serde_json::json!({"settlementMode":"history","expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":"1","taxes":"0","account":t.account,"note":"按成交单更正"})).unwrap();
     let s = db.update_holding_trade(&t.id, &edit).unwrap();
     assert_eq!(s.cash_balances[0].amount, "1000.01");
-    assert!(s.cash_balances[0].needs_reconciliation);
-    let s = confirm(&db, "1000.01");
     assert!(!s.cash_balances[0].needs_reconciliation);
-    let mut live = buy("LIVE", "settle", &crate::models::market::today());
-    live.expected_cash_baseline = db.snapshot().unwrap().cash_balances[0].baseline_id.clone();
+    let live = buy("LIVE", "settle", &crate::models::market::today());
     let s = db.save_holding_trade(&live).unwrap();
-    assert_eq!(s.cash_balances[0].amount, "900.01");
+    assert_eq!(s.cash_balances[0].amount, "1000.01");
     let id = s
         .holding_trades
         .iter()
@@ -422,21 +378,15 @@ fn split_review_rebuilds_quantity_and_cost_without_changing_original_executions_
 }
 
 #[test]
-fn cash_confirmation_fences_old_forms_but_note_only_history_edits_preserve_readiness() {
+fn cash_confirmation_updates_do_not_block_or_conflict_with_trades() {
     let db = funded();
-    let mut stale = buy("STALE", "settle", "2026-01-01");
-    let s = confirm(&db, "1000.01");
-    assert!(matches!(
-        db.save_holding_trade(&stale),
-        Err(AppError::Conflict(_))
-    ));
-    assert!(db.snapshot().unwrap().holding_trades.is_empty());
-    stale.expected_cash_baseline = s.cash_balances[0].baseline_id.clone();
+    let stale = buy("STALE", "settle", "2026-01-01");
+    confirm(&db, "1000.01");
     let s = db.save_holding_trade(&stale).unwrap();
-    assert_eq!(s.cash_balances[0].amount, "900.01");
+    assert_eq!(s.cash_balances[0].amount, "1000.01");
     let s = confirm(&db, "900.01");
     let t = &s.holding_trades[0];
-    let edit:HoldingTradeUpdateInput=serde_json::from_value(serde_json::json!({"settlementMode":"history","expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":t.fees,"taxes":t.taxes,"account":t.account,"note":"仅补充成交说明"})).unwrap();
+    let edit: HoldingTradeUpdateInput = serde_json::from_value(serde_json::json!({"settlementMode":"history","expectedRevision":s.holding_revisions[&t.holding_id],"kind":t.kind,"occurredOn":t.occurred_on,"sequence":t.sequence,"quantity":t.quantity,"price":t.price,"grossAmount":t.gross_amount,"fees":t.fees,"taxes":t.taxes,"account":t.account,"note":"仅补充成交说明"})).unwrap();
     let s = db.update_holding_trade(&t.id, &edit).unwrap();
     assert_eq!(s.cash_balances[0].amount, "900.01");
     assert!(!s.cash_balances[0].needs_reconciliation);

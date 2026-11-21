@@ -142,9 +142,6 @@ export function HoldingTrades({
         ? snapshot.profile.baseCurrency
         : "CNY"),
   );
-  const [settlementMode, setSettlementMode] = useState<"settle" | "history">(
-    "settle",
-  );
   const quarantined = Boolean(
     holding && snapshot.clearedTradeHoldings?.includes(holding.id),
   );
@@ -156,7 +153,6 @@ export function HoldingTrades({
   const [error, setError] = useState("");
   const pendingAction = useRef<(() => Promise<Snapshot>) | null>(null);
   const pendingDelete = useRef(false);
-  const cashBaselines = useRef(snapshot.cashBalances ?? []);
   const drawer = useDrawerControls();
   useEffect(() => {
     drawer.setBusy(busy || uncertain);
@@ -211,12 +207,10 @@ export function HoldingTrades({
       ) + 1,
     );
   const begin = (kind: HoldingTradeKind, t?: HoldingTrade) => {
-    cashBaselines.current = snapshot.cashBalances ?? [];
     revision.current = holding
       ? (snapshot.holdingRevisions?.[holding.id] ?? null)
       : null;
     setEditing(t ?? null);
-    setSettlementMode("settle");
     setDraft(
       t
         ? { ...t, sequence: String(t.sequence) }
@@ -254,7 +248,7 @@ export function HoldingTrades({
     setBusy(true);
     setError("");
     const fields: HoldingTradeFields & {
-      settlementMode: "history" | "settle";
+      settlementMode: "history";
     } = {
       kind: draft.kind,
       occurredOn: draft.occurredOn,
@@ -267,12 +261,10 @@ export function HoldingTrades({
       account: draft.account.trim(),
       externalId: draft.externalId.trim(),
       note: draft.note.trim(),
-      settlementMode: editing ? "history" : settlementMode,
+      settlementMode: "history",
     };
     const input = {
-      expectedCashBaseline:
-        cashBaselines.current.find((b) => b.currency === currency)
-          ?.baselineId ?? "",
+      expectedCashBaseline: "",
       ...fields,
       holdingId: holding?.id ?? "",
       expectedRevision: revision.current,
@@ -333,7 +325,7 @@ export function HoldingTrades({
       !window.confirm(
         `确认删除“${holding?.name}”在 ${t.occurredOn} 的第 ${t.sequence} 笔${names[t.kind]}？\n` +
           `账户：${t.account} · 金额：${money(t.grossAmount)}\n` +
-          "删除后重算持仓和盈亏，并撤销该交易对当前存款的影响；已核对余额覆盖的历史交易仅标记存款待核对。更正历史保留。",
+          "删除后重算持仓和盈亏，不影响存款余额；更正历史保留。",
       )
     )
       return;
@@ -666,37 +658,11 @@ export function HoldingTrades({
                 <Money className="num">{money(draft.fees)}</Money> · 税费{" "}
                 <Money className="num">{money(draft.taxes)}</Money>
               </small>
-              <small>
-                {currency} 存款余额{" "}
-                <Money className="num">
-                  {money(
-                    snapshot.holdings.find(
-                      (item) =>
-                        item.assetClass === "现金" &&
-                        item.currency === currency,
-                    )?.marketValue ?? 0,
-                  )}
-                </Money>
-              </small>
             </p>
             {holding && !trades.length && (
               <p className="section-intro">
                 首次录入将按交易重建持仓并替换手工数量与成本。
               </p>
-            )}
-            {!editing && (
-              <label>
-                资金处理
-                <select
-                  value={settlementMode}
-                  onChange={(e) =>
-                    setSettlementMode(e.target.value as "history" | "settle")
-                  }
-                >
-                  <option value="settle">新增成交，结算当前存款</option>
-                  <option value="history">历史补录，当前余额已包含</option>
-                </select>
-              </label>
             )}
             <div className="form-actions">
               <Button

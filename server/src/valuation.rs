@@ -74,7 +74,7 @@ pub fn issues(
         {
             add(
                 IssueCode::CashNeedsReconciliation,
-                format!("{} 存款待核对", holding.currency),
+                format!("{} 待核对", holding.name),
             );
         }
     }

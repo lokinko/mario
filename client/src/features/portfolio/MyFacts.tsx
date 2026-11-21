@@ -1,5 +1,7 @@
-import { Button, Tabs } from "antd";
+import { Button, Tabs, Tag } from "antd";
 import { Drawer } from "../../components/Drawer";
+import { Money } from "../../components/AmountPrivacy";
+import { EmptyState } from "../../components/EmptyState";
 import { AssetAmountRow } from "./AssetAmountRow";
 import { ExchangeRates } from "./ExchangeRates";
 import { ExchangeRateAccess } from "./ExchangeRateAccess";
@@ -21,10 +23,36 @@ import { Plus, RefreshCw } from "lucide-react";
 import { refreshSecurityPrices } from "../../api/portfolio";
 import type { DataIssue, Holding, Snapshot } from "../../types/user";
 import { PageHeader } from "../../components/PageHeader";
+import { formatAmount } from "../../lib/format";
 import { emptyHolding } from "./forms";
 import "./portfolio.css";
 
-const defaultCashCurrencies = ["CNY", "HKD", "USD"];
+function sumDecimalStrings(values: string[]): string {
+  let maxScale = 0;
+  const parts = values.map((raw) => {
+    const text = raw.trim();
+    if (!/^-?\d+(?:\.\d+)?$/.test(text))
+      return { neg: false, whole: "0", frac: "" };
+    const neg = text.startsWith("-");
+    const [whole, frac = ""] = text.replace(/^-/, "").split(".");
+    if (frac.length > maxScale) maxScale = frac.length;
+    return { neg, whole, frac };
+  });
+  const factor = 10n ** BigInt(maxScale);
+  let total = 0n;
+  for (const { neg, whole, frac } of parts) {
+    const units =
+      BigInt(whole) * factor + BigInt(frac.padEnd(maxScale, "0") || "0");
+    total += neg ? -units : units;
+  }
+  if (total === 0n) return "0";
+  const neg = total < 0n;
+  const abs = (neg ? -total : total).toString().padStart(maxScale + 1, "0");
+  if (maxScale === 0) return (neg ? "-" : "") + abs;
+  const intPart = abs.slice(0, -maxScale);
+  const fracPart = abs.slice(-maxScale).replace(/0+$/, "");
+  return (neg ? "-" : "") + intPart + (fracPart ? "." + fracPart : "");
+}
 
 function withExactValues(snapshot: Snapshot, holding: Holding): Holding {
   const source = snapshot.accounting?.holdings[holding.id];
@@ -94,10 +122,30 @@ export function MyFacts({
   const [ownSection, setOwnSection] = useState<FactsSection>("holdings");
   const section = requestedSection ?? ownSection;
   const setSection = onSectionChange ?? setOwnSection;
+  const currency = snapshot.profile.baseCurrency;
   const cash = snapshot.holdings.filter((item) => item.assetClass === "现金");
-  const cashCurrencies = [
-    ...new Set([...defaultCashCurrencies, ...cash.map((h) => h.currency)]),
-  ];
+  const cashAmountOf = (item: Holding) =>
+    snapshot.cashBalances?.find((b) => b.holdingId === item.id)?.amount ??
+    snapshot.accounting?.holdings[item.id]?.marketValue ??
+    String(item.marketValue);
+  const cashGroups = Array.from(new Set(cash.map((item) => item.currency)))
+    .sort((a, b) =>
+      a === currency ? -1 : b === currency ? 1 : a.localeCompare(b),
+    )
+    .map((code) => {
+      const groupHoldings = cash
+        .filter((item) => item.currency === code)
+        .sort(
+          (a, b) =>
+            Number(cashAmountOf(b)) - Number(cashAmountOf(a)) ||
+            a.name.localeCompare(b.name, "zh-CN"),
+        );
+      return {
+        currency: code,
+        holdings: groupHoldings,
+        total: sumDecimalStrings(groupHoldings.map(cashAmountOf)),
+      };
+    });
   useEffect(() => {
     if (!issueTarget) return;
     const row = document.getElementById(`asset-${issueTarget}`);
@@ -125,15 +173,6 @@ export function MyFacts({
     else if (issue.code === "cashNeedsReconciliation") openEditor(holding);
     else setSelectedId(holding.id);
   };
-  const cashRows = cashCurrencies.map(
-    (currency) =>
-      cash.find((item) => item.currency === currency) ?? {
-        ...emptyHolding(currency),
-        id: "",
-        name: `${currency} 存款`,
-        assetClass: "现金" as const,
-      },
-  );
   const investments = sortInvestmentHoldings(
     snapshot.holdings.filter(
       (item) =>
@@ -165,7 +204,6 @@ export function MyFacts({
         usable: totals.usable,
       };
   }
-  const currency = snapshot.profile.baseCurrency;
 
   const run = async (
     task: () => Promise<void>,
@@ -190,6 +228,13 @@ export function MyFacts({
     setEditing(withExactValues(snapshot, holding));
     setError("");
   };
+  const openNewCashEditor = () =>
+    openEditor({
+      ...emptyHolding(currency),
+      id: "",
+      name: "",
+      assetClass: "现金",
+    });
   const refreshPrices = () =>
     run(
       async () => {
@@ -218,27 +263,10 @@ export function MyFacts({
     </Callout>
   );
   const renderAssetRow = (item: Holding) => {
-    if (item.assetClass === "现金" && !item.id)
-      return (
-        <div
-          key={item.currency}
-          role="row"
-          className="asset-list-row cash-list-row unrecorded-cash"
-        >
-          <div role="cell">{item.currency}</div>
-          <div role="cell">未记录</div>
-          <div role="cell">—</div>
-          <div role="cell">
-            <Button type="link" size="small" onClick={() => openEditor(item)}>
-              添加
-            </Button>
-          </div>
-        </div>
-      );
     const tradeSummary = snapshot.holdingTradeSummaries?.[item.id];
     return (
       <div
-        key={item.id || item.currency}
+        key={item.id}
         id={`asset-${item.id}`}
         tabIndex={-1}
         className="facts-asset-entry"
@@ -263,7 +291,7 @@ export function MyFacts({
           holding={withExactValues(snapshot, item)}
           exact={displayAccounting?.holdings[item.id]}
           confirmedOn={
-            snapshot.cashBalances?.find((b) => b.currency === item.currency)
+            snapshot.cashBalances?.find((b) => b.holdingId === item.id)
               ?.confirmedOn
           }
           onTrade={
@@ -281,7 +309,7 @@ export function MyFacts({
             else setSelectedId(item.id);
           }}
           disabled={busy}
-          canDelete={item.assetClass !== "现金"}
+          canDelete={true}
           onDelete={() => removeAsset(item)}
           onEdit={() => openEditor(item)}
         />
@@ -320,22 +348,77 @@ export function MyFacts({
               setAddingTrade(true);
             }}
           />
-        ) : (
+        ) : cash.length === 0 ? (
           <div
             className="facts-assets"
             role="table"
             aria-label="现金列表"
             aria-colcount={4}
           >
-            <div role="row" className="holdings-list-header cash-list-header">
-              {["币种", "余额", "核对日期", "操作"].map((label) => (
-                <span role="columnheader" key={label}>
-                  {label}
-                </span>
+            <div role="row">
+              <div role="cell" aria-colspan={4}>
+                <EmptyState
+                  title="还没有存款账户"
+                  action={
+                    <Button type="primary" onClick={openNewCashEditor}>
+                      添加第一个存款账户
+                    </Button>
+                  }
+                >
+                  可按微信、支付宝、各银行卡、公积金等账户分别记录余额。
+                </EmptyState>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div
+              className="holdings-toolbar cash-toolbar"
+              data-presentation="true"
+            >
+              <div className="position-filters">
+                <strong>存款账户</strong>
+                <Tag variant="filled">{cash.length} 个</Tag>
+              </div>
+            </div>
+            <div
+              className="facts-assets"
+              role="table"
+              aria-label="现金列表"
+              aria-colcount={4}
+            >
+              <div role="row" className="holdings-list-header cash-list-header">
+                {["账户", "余额", "核对日期", "操作"].map((label) => (
+                  <span role="columnheader" key={label}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+              {cashGroups.map((group) => (
+                <div
+                  role="rowgroup"
+                  aria-label={`${group.currency} 存款账户`}
+                  key={group.currency}
+                >
+                  <div
+                    role="row"
+                    className="holdings-currency-header cash-currency-header"
+                  >
+                    <div role="cell" aria-colspan={4}>
+                      <span className="cash-currency-meta">
+                        <strong>{group.currency}</strong>
+                        <span>{group.holdings.length} 个账户</span>
+                      </span>
+                      <Money as="strong" className="num cash-currency-total">
+                        {formatAmount(group.total, group.currency)}
+                      </Money>
+                    </div>
+                  </div>
+                  {group.holdings.map(renderAssetRow)}
+                </div>
               ))}
             </div>
-            <div role="rowgroup">{cashRows.map(renderAssetRow)}</div>
-          </div>
+          </>
         )}
       </section>
       {section === "holdings" && <AllocationChart snapshot={snapshot} />}
@@ -382,6 +465,16 @@ export function MyFacts({
                 }}
               >
                 记录交易
+              </Button>
+            )}
+            {section === "savings" && (
+              <Button
+                type="primary"
+                icon={<Plus size={16} />}
+                disabled={busy || Boolean(editing)}
+                onClick={openNewCashEditor}
+              >
+                添加存款账户
               </Button>
             )}
           </div>
@@ -446,7 +539,7 @@ export function MyFacts({
             editing
               ? editing.id
                 ? "编辑 " + editing.name
-                : "添加存款"
+                : "添加存款账户"
               : selected!.name
           }
           size={editing ? "default" : "wide"}

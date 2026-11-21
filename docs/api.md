@@ -79,15 +79,15 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 | --- | --- | --- | --- | --- |
 | GET | `/api/snapshot` | — | — → `Snapshot` | 账号财务总览、持仓、账本投影、风险与规划 |
 | PUT | `/api/profile` | R | B `FinancialProfile` → `Snapshot` | 保存财务档案 |
-| POST | `/api/holdings` | R | B `HoldingInput` → `Snapshot` | 当前只允许新增现金持仓；投资持仓通过新增成交建立 |
-| PUT | `/api/holdings/{id}` | R | B `HoldingInput` → `Snapshot` | 更新非期权持仓，可补取报价；不能据此绕过账本业务约束 |
-| DELETE | `/api/holdings/{id}` | R | B `{expectedRevision?:string}` → `Snapshot` | 删除持仓；传输层允许空体，实体校验仍可能拒绝 |
-| PUT | `/api/holdings/{id}/amount` | R | B `AmountInput` → `Snapshot` | 确认现金余额，生成财务记录 |
+| POST | `/api/holdings` | R | B `HoldingInput` → `Snapshot` | 当前只允许新增现金存款账户（支持同币种多账户，保留账户名与币种）；投资持仓通过新增成交建立 |
+| PUT | `/api/holdings/{id}` | R | B `HoldingInput` → `Snapshot` | 更新非期权持仓（存款账户可改名、改币种、改余额与核对日期），可补取报价；不能据此绕过账本业务约束 |
+| DELETE | `/api/holdings/{id}` | R | B `{expectedRevision?:string}` → `Snapshot` | 删除持仓或存款账户；传输层允许空体，实体校验仍可能拒绝 |
+| PUT | `/api/holdings/{id}/amount` | R | B `AmountInput` → `Snapshot` | 确认指定存款账户的余额，生成财务记录 |
 | PUT | `/api/holdings/{id}/option-price` | R | B `OptionPriceInput` → `Snapshot` | 确认期权估价 |
 | PUT | `/api/holdings/{id}/verified-valuation` | R | B `{symbol:string,quantity:number,onDate:string}` → `Snapshot` | 从市场数据核验并保存估值 |
-| POST | `/api/holding-trades` | R | B `HoldingTradeInput` → `Snapshot` | 新增成交，按结算模式更新账本 |
-| PUT | `/api/holding-trades/{id}` | R | B `HoldingTradeUpdateInput` → `Snapshot` | 更正成交 |
-| DELETE | `/api/holding-trades/{id}` | R | B `{expectedRevision:string}` → `Snapshot` | 删除成交并按账本规则重算 |
+| POST | `/api/holding-trades` | R | B `HoldingTradeInput` → `Snapshot` | 新增成交并重算持仓与盈亏，不改写存款账户余额 |
+| PUT | `/api/holding-trades/{id}` | R | B `HoldingTradeUpdateInput` → `Snapshot` | 更正成交并重算持仓与盈亏，不改写存款账户余额 |
+| DELETE | `/api/holding-trades/{id}` | R | B `{expectedRevision:string}` → `Snapshot` | 删除成交并重算持仓与盈亏，不改写存款账户余额 |
 | GET | `/api/holdings/{id}/financial-history` | — | — → `FinancialHistory` | 更正审计与隔离记录 |
 | POST | `/api/holdings/{id}/trade-repair/preview` | R | B `TradeRepairInput` → `HoldingTradeSummary` | 预览修复，不落账；当前仍须账号版本 |
 | POST | `/api/holdings/{id}/trade-repair` | R | B `TradeRepairInput` → `Snapshot` | 提交修复与原因 |
@@ -287,7 +287,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | TradeSecurityInput | `name,symbol,assetClass,currency:string; option?:OptionContract/null` |
 | OptionContract | `underlyingId,account,strike,expiresOn,multiplier:string; optionType:call/put; side:long/short`；strike、multiplier 为十进制字符串 |
 | HoldingTradeInput | `requestId:string; holdingId?:string=""; expectedRevision?:string/null; newHolding?:TradeSecurityInput/null; expectedCashBaseline?:string=""`，加下行成交字段；已有持仓与新证券按业务校验选用 |
-| 成交字段 | `kind:buy/sell/dividend/expire; occurredOn:string; sequence:integer; quantity,price,grossAmount,fees,taxes,account:string; externalId?,note?:string=""; settlementMode:history/settle`；history 记录历史，settle 按现金基线结算；金额与数量均为十进制字符串 |
+| 成交字段 | `kind:buy/sell/dividend/expire; occurredOn:string; sequence:integer; quantity,price,grossAmount,fees,taxes,account:string; externalId?,note?:string=""; settlementMode?:history/settle=history`；`settlementMode` 与 `expectedCashBaseline` 仅作兼容保留，成交不再自动联动或修改存款余额；金额与数量均为十进制字符串 |
 | HoldingTradeUpdateInput | `expectedRevision:string` 加成交字段；不接收新增成交的 requestId/newHolding/holdingId |
 | HoldingTrade | 返回记录含 `id,holdingId,kind,occurredOn,sequence,quantity,price,grossAmount,fees,taxes,currency,account,externalId,note,createdAt,updatedAt`；不含 settlementMode |
 | TradeRepairInput | `expectedRevision:string; trades:HoldingTrade[]; reason:string`；提供完整修复集合 |

@@ -300,7 +300,7 @@ export function FinancialHistory({
         <section>
           <p role="alert">
             {history.quarantine.reason}
-            。当前余额和原始记录均已保留。修复不会重放历史现金流，完成后请核对存款。
+            。当前余额和原始记录均已保留。修复仅重算该持仓的数量、成本和盈亏，不影响存款余额。
           </p>
           <details>
             <summary>查看隔离原文</summary>

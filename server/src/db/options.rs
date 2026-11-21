@@ -430,19 +430,9 @@ mod tests {
                 Decimal::from_str_exact(&s.stock_option_totals[&parent].market_value).unwrap(),
                 Decimal::from(100) + Decimal::from_str_exact(market).unwrap()
             );
-            let expected_flow = if side == "short" {
-                Decimal::from(6) * Decimal::from_str_exact(multiplier).unwrap()
-                    - Decimal::from(2)
-                    - Decimal::from(5) * Decimal::from_str_exact(multiplier).unwrap()
-                    - Decimal::ONE
-            } else {
-                -Decimal::from(6) * Decimal::from_str_exact(multiplier).unwrap() - Decimal::from(2)
-                    + Decimal::from(5) * Decimal::from_str_exact(multiplier).unwrap()
-                    - Decimal::ONE
-            };
             assert_eq!(
                 Decimal::from_str_exact(&s.cash_balances[0].amount).unwrap(),
-                start + expected_flow
+                start
             );
             assert!(s.plan.excluded_holding_ids.contains(&id));
             assert!(s.plan.excluded_holding_ids.contains(&parent));
@@ -601,7 +591,7 @@ mod tests {
             .unwrap();
     }
     #[test]
-    fn short_close_insufficient_cash_rolls_back_contract_execution_and_observation() {
+    fn short_close_succeeds_independently_of_deposit_balance() {
         let db = Database::test();
         let (s, parent) = setup(&db);
         let input = opening(&s, &parent, "short", "100");
@@ -618,11 +608,11 @@ mod tests {
                 },
             )
             .unwrap();
-        let before = hash(&db);
-        assert!(db
+        let closed = db
             .save_holding_trade(&next(&s, &id, TradeKind::Buy, "2", "4", "2026-01-03"))
-            .is_err());
-        assert_eq!(before, hash(&db));
+            .unwrap();
+        assert_eq!(closed.holding_trade_summaries[&id].quantity, "0");
+        assert_eq!(closed.cash_balances[0].amount, "0");
     }
     #[test]
     fn backup_cannot_duplicate_a_contract_or_remove_its_underlying() {

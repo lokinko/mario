@@ -97,19 +97,8 @@ afterEach(() => {
 const snapshot = fixture as Snapshot;
 
 function editAsset(name: string) {
-  const trigger = screen.queryByRole("button", { name: name + "更多操作" });
-  if (trigger) {
-    fireEvent.click(trigger);
-    fireEvent.click(screen.getByRole("menuitem", { name: "编辑 " + name }));
-  } else {
-    const table = screen.getByRole("table", { name: "现金列表" });
-    const row = within(table)
-      .getByText(name.replace(" 存款", ""))
-      .closest('[role="row"]')!;
-    fireEvent.click(
-      within(row as HTMLElement).getByRole("button", { name: "添加" }),
-    );
-  }
+  fireEvent.click(screen.getByRole("button", { name: name + "更多操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "编辑 " + name }));
 }
 function deleteAsset(name: string) {
   fireEvent.click(screen.getByRole("button", { name: name + "更多操作" }));
@@ -645,8 +634,11 @@ it("stores deposits once as cash holdings, without adding them again to the prof
   vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
-  editAsset("CNY 存款");
+  fireEvent.click(screen.getByRole("button", { name: "添加存款账户" }));
   expect(screen.queryByRole("spinbutton", { name: /持仓成本/ })).toBeNull();
+  fireEvent.change(screen.getByRole("textbox", { name: "账户名称" }), {
+    target: { value: "招商银行" },
+  });
   fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
     target: { value: "50000" },
   });
@@ -654,7 +646,7 @@ it("stores deposits once as cash holdings, without adding them again to the prof
   await waitFor(() =>
     expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "CNY 存款",
+        name: "招商银行",
         assetClass: "现金",
         marketValue: 50000,
       }),
@@ -725,23 +717,19 @@ it("preserves the user's entered balance on failure and keeps existing cost and 
     }),
   );
 });
-it("shows exactly three currency balances and accepts zero without an FX rate", async () => {
+it("creates a named foreign-currency deposit account and accepts zero without an FX rate", async () => {
   vi.mocked(portfolioApi.saveHolding).mockResolvedValue(snapshot);
   mount();
   fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
-  for (const currency of ["CNY", "HKD", "USD"]) {
-    expect(
-      within(screen.getByRole("table", { name: "现金列表" })).getByText(
-        currency,
-      ),
-    ).toBeTruthy();
-  }
-  expect(screen.queryByRole("button", { name: "添加存款" })).toBeNull();
-  editAsset("USD 存款");
-  expect(screen.queryByRole("combobox", { name: "币种" })).toBeNull();
-  expect(screen.queryByRole("textbox", { name: "名称" })).toBeNull();
+  expect(screen.getByText("还没有存款账户")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "添加存款账户" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "账户名称" }), {
+    target: { value: "汇丰美元" },
+  });
+  fireEvent.change(screen.getByRole("combobox", { name: "币种" }), {
+    target: { value: "USD" },
+  });
   const input = screen.getByRole("spinbutton", { name: "当前金额 USD" });
-  fireEvent.change(input, { target: { value: "" } });
   const save = screen.getByRole("button", { name: "保存这笔资产" });
   expect((save as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(input, { target: { value: "0" } });
@@ -750,6 +738,7 @@ it("shows exactly three currency balances and accepts zero without an FX rate", 
   await waitFor(() =>
     expect(portfolioApi.saveHolding).toHaveBeenCalledWith(
       expect.objectContaining({
+        name: "汇丰美元",
         marketValue: 0,
         currency: "USD",
         fxRateToBase: null,
@@ -761,7 +750,7 @@ it("shows exactly three currency balances and accepts zero without an FX rate", 
 it("keeps asset categories fixed while an asset form is open, then unlocks on cancel", () => {
   mount();
   fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
-  editAsset("CNY 存款");
+  fireEvent.click(screen.getByRole("button", { name: "添加存款账户" }));
   expect(
     screen.getByRole("tab", { name: "投资持仓" }).getAttribute("aria-disabled"),
   ).toBe("true");
@@ -790,7 +779,10 @@ it("blocks negative monthly facts and re-enables saving after correction", async
 it("blocks invalid asset amounts even when a form is submitted with Enter", () => {
   mount();
   fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
-  editAsset("CNY 存款");
+  fireEvent.click(screen.getByRole("button", { name: "添加存款账户" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "账户名称" }), {
+    target: { value: "微信零钱" },
+  });
   fireEvent.change(screen.getByRole("spinbutton", { name: "当前金额 CNY" }), {
     target: { value: "1000000000000001" },
   });
@@ -959,7 +951,7 @@ const recordedPosition = () => ({
   ],
 });
 
-it("deletes a position with executions from its details after explaining linked cash effects", async () => {
+it("deletes a position with executions from its details without affecting deposits", async () => {
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   let resolve!: (value: Snapshot) => void;
   vi.mocked(portfolioApi.deleteHolding).mockImplementationOnce(
@@ -971,7 +963,7 @@ it("deletes a position with executions from its details after explaining linked 
   fireEvent.click(screen.getByRole("button", { name: "删除持仓" }));
   fireEvent.click(screen.getByRole("button", { name: "删除持仓" }));
   expect(confirm).toHaveBeenCalledExactlyOnceWith(
-    expect.stringMatching(/1 笔交易.*净影响/s),
+    expect.stringMatching(/1 笔交易.*存款余额保持不变/s),
   );
   expect(portfolioApi.deleteHolding).toHaveBeenCalledExactlyOnceWith(
     investment.id,
@@ -1039,11 +1031,11 @@ it("keeps an uncertain deletion frozen and rechecks the original revision after 
   );
 });
 
-it("updates a currency balance with the form revision and preserves input on a conflict", async () => {
+it("updates a deposit account balance with the form revision and preserves input on a conflict", async () => {
   const cash = {
     ...investment,
     id: "cash",
-    name: "CNY 存款",
+    name: "微信零钱",
     assetClass: "现金" as const,
     valuationDate: "",
   };
@@ -1056,8 +1048,7 @@ it("updates a currency balance with the form revision and preserves input on a c
     holdingRevisions: { cash: "old" },
   });
   fireEvent.click(screen.getByRole("tab", { name: "存款与收支" }));
-  expect(screen.queryByRole("button", { name: "删除 CNY 存款" })).toBeNull();
-  editAsset("CNY 存款");
+  editAsset("微信零钱");
   const input = screen.getByRole("spinbutton", { name: "当前金额 CNY" });
   fireEvent.change(input, { target: { value: "2000" } });
   rerender(

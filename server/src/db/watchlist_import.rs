@@ -267,9 +267,8 @@ fn convert(value: &Value) -> AppResult<SyncDataset> {
             .and_then(|v| v.as_object().cloned())
             .ok_or_else(|| invalid("已启用现金追踪但缺少 cashBalance"))?;
         for (currency, value) in balances {
-            if !super::cash::CURRENCIES.contains(&currency.as_str()) {
-                return Err(invalid("现金仅支持 CNY、HKD、USD"));
-            }
+            super::validation::validate_currency(&currency)?;
+            let currency = currency.trim().to_ascii_uppercase();
             let amount = decimal(&value)?;
             let id = Uuid::new_v4().to_string();
             push_holding(

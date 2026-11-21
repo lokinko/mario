@@ -364,38 +364,40 @@ impl Database {
             transaction.execute("DELETE FROM holding_valuations WHERE holding_id=$1", [id])?;
         }
         if input.asset_class == "现金" {
+            let next_amount = crate::models::decimal::parse(
+                input
+                    .cash_amount
+                    .as_deref()
+                    .unwrap_or(&input.market_value.to_string()),
+            )?;
             super::cash::confirm(
                 &transaction,
                 id,
                 &input.currency,
-                crate::models::decimal::parse(
-                    input
-                        .cash_amount
-                        .as_deref()
-                        .unwrap_or(&input.market_value.to_string()),
-                )?,
+                next_amount,
                 &input.valuation_date,
             )?;
+            let cash_delta = if previous.2.eq_ignore_ascii_case(&input.currency) {
+                (next_amount
+                    - crate::models::decimal::parse(
+                        &before
+                            .cash_balances
+                            .iter()
+                            .find(|b| b.holding_id == id)
+                            .map_or_else(|| previous.1.to_string(), |b| b.amount.clone()),
+                    )?)
+                .normalize()
+                .to_string()
+            } else {
+                "0".into()
+            };
             super::financial::journal(
                 &transaction,
                 id,
                 "balance.confirm",
                 &serde_json::json!({"holding":before.holdings.iter().find(|h| h.id == id),"cashBalance":before.cash_balances.iter().find(|b|b.holding_id==id)}),
                 input,
-                &(crate::models::decimal::parse(
-                    input
-                        .cash_amount
-                        .as_deref()
-                        .unwrap_or(&input.market_value.to_string()),
-                )? - crate::models::decimal::parse(
-                    &before
-                        .cash_balances
-                        .iter()
-                        .find(|b| b.holding_id == id)
-                        .map_or_else(|| previous.1.to_string(), |b| b.amount.clone()),
-                )?)
-                .normalize()
-                .to_string(),
+                &cash_delta,
                 ("重新核对实际存款", None),
             )?;
         }
@@ -565,9 +567,13 @@ impl Database {
             ));
         }
         let cash_delta = if !trades.is_empty() {
-            super::cash::remove_holding_trades(&transaction, &holding.currency, &trades)?
-                .normalize()
-                .to_string()
+            for trade in &trades {
+                transaction.execute(
+                    "DELETE FROM trade_settlements WHERE trade_id=$1",
+                    [&trade.id],
+                )?;
+            }
+            "0".into()
         } else {
             before
                 .cash_balances

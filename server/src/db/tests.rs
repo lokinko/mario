@@ -849,7 +849,7 @@ fn foreign_currency_is_normalized_and_base_changes_invalidate_old_rates() {
     assert_eq!(changed.total_value, 0.0);
     assert_eq!(
         changed.valuation_status.missing_fx_holdings,
-        vec!["CNY 存款"]
+        vec!["人民币现金"]
     );
     let usd_after_base_change = changed
         .holdings
