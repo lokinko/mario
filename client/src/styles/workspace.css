@@ -2361,6 +2361,12 @@ input[type="number"] {
   align-items: center;
   gap: var(--space-1);
 }
+.codex-bridge-oauth-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
 .codex-bridge-usage-link {
   display: inline-flex;
   align-items: center;

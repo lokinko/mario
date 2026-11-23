@@ -56,6 +56,7 @@ export type CodexBridgeStatus = {
   models?: CodexModel[];
   mode?: BridgeMode | null;
   accountLabel?: string | null;
+  authRequired?: boolean;
 };
 export type CodexModel = {
   model: string;
@@ -77,6 +78,12 @@ export function enableCodexBridge() {
 }
 export function revokeCodexBridge() {
   return httpRequest<{ ok: boolean }>("/codex-bridge", { method: "DELETE" });
+}
+export function startCodexBridgeOAuth(newAccount = false) {
+  return httpRequest<{ url: string }>("/codex-bridge/oauth", {
+    method: "POST",
+    body: JSON.stringify({ newAccount }),
+  });
 }
 
 export async function getAnalysisSettings(): Promise<AnalysisSettings> {

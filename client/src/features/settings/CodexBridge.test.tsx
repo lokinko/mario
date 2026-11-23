@@ -15,6 +15,7 @@ vi.mock("../../api/settings", () => ({
   pairCodexBridge: vi.fn(),
   enableCodexBridge: vi.fn(),
   revokeCodexBridge: vi.fn(),
+  startCodexBridgeOAuth: vi.fn(),
   getModelConfig: vi.fn(),
 }));
 afterEach(() => {
@@ -55,6 +56,42 @@ it("displays ChatGPT official authorization status, account label and usage link
     "https://chatgpt.com/settings/usage",
   );
   expect(usageLink.getAttribute("target")).toBe("_blank");
+});
+it("jumps to ChatGPT OAuth login from settings when clicked in pending or active state", async () => {
+  vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({
+    paired: true,
+    online: true,
+    model: null,
+    mode: "chatgpt",
+    accountLabel: null,
+    authRequired: true,
+  });
+  const oauthUrl =
+    "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&response_type=code";
+  vi.mocked(api.startCodexBridgeOAuth).mockResolvedValue({ url: oauthUrl });
+  const openSpy = vi
+    .spyOn(window, "open")
+    .mockImplementation(() => ({}) as Window);
+  render(<CodexBridge onUpdate={vi.fn()} disabled={false} />);
+  await screen.findByText(/请点击下方按钮跳转 ChatGPT 完成 OAuth 授权/);
+  expect(screen.getByText("待登录 ChatGPT")).toBeTruthy();
+  expect((screen.getByText("启用本机模型") as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  const loginButton = screen.getByRole("button", {
+    name: "跳转 ChatGPT OAuth 登录",
+  });
+  expect(loginButton.hasAttribute("data-oai-siwc-button")).toBe(true);
+  fireEvent.click(loginButton);
+  await waitFor(() =>
+    expect(api.startCodexBridgeOAuth).toHaveBeenCalledWith(false),
+  );
+  expect(openSpy).toHaveBeenCalledWith(
+    oauthUrl,
+    "_blank",
+    "noopener,noreferrer",
+  );
+  openSpy.mockRestore();
 });
 it("distinguishes local Codex mode without rendering ChatGPT account details", async () => {
   vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({

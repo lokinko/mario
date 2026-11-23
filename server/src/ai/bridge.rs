@@ -26,8 +26,12 @@ const ONLINE_TTL: Duration = Duration::from_secs(35);
 pub(crate) struct Job {
     pub id: String,
     pub model: String,
+    #[serde(default)]
     pub messages: Vec<ChatMessage>,
+    #[serde(default)]
     pub search: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth_new_account: Option<bool>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -37,6 +41,9 @@ pub(crate) enum Event {
     },
     Complete {
         result: SearchCompletion,
+    },
+    OAuthReady {
+        url: String,
     },
     Error,
     Heartbeat,
@@ -59,6 +66,7 @@ struct State {
     models: Vec<CodexModel>,
     mode: Option<BridgeMode>,
     account_label: Option<String>,
+    auth_required: bool,
     active: Option<Active>,
 }
 pub(crate) struct Connection {
@@ -94,8 +102,8 @@ impl Connection {
         let state = self.state.lock().unwrap();
         !self.expired(&state) && state.seen.is_some_and(|seen| seen.elapsed() < ONLINE_TTL)
     }
-    fn claim(&self, runner: &str, model: &str) -> AppResult<()> {
-        if runner.len() != 36 || model.is_empty() || model.len() > 200 {
+    fn claim_runner(&self, runner: &str, model: Option<&str>) -> AppResult<()> {
+        if runner.len() != 36 || model.is_some_and(|m| m.is_empty() || m.len() > 200) {
             return Err(AppError::Validation("桥接身份或模型无效".into()));
         }
         let mut state = self.state.lock().unwrap();
@@ -108,12 +116,18 @@ impl Connection {
             ));
         }
         state.runner = Some(runner.into());
-        state.model = Some(model.into());
+        state.model = model.map(String::from);
         state.seen = Some(Instant::now());
         Ok(())
     }
+    fn claim(&self, runner: &str, model: &str) -> AppResult<()> {
+        if model.is_empty() {
+            return Err(AppError::Validation("桥接身份或模型无效".into()));
+        }
+        self.claim_runner(runner, Some(model))
+    }
     pub async fn poll(&self, runner: &str, model: &str) -> AppResult<Option<Job>> {
-        self.claim(runner, model)?;
+        self.claim_runner(runner, if model.is_empty() { None } else { Some(model) })?;
         let mut rx = self
             .receiver
             .try_lock()
@@ -137,6 +151,15 @@ impl Connection {
         Ok(tokio::time::timeout(Duration::from_secs(15), future)
             .await
             .unwrap_or(None))
+    }
+    pub fn advertise_auth_required(&self, runner: &str) -> AppResult<()> {
+        self.claim_runner(runner, None)?;
+        let mut state = self.state.lock().unwrap();
+        state.models.clear();
+        state.mode = Some(BridgeMode::Chatgpt);
+        state.account_label = None;
+        state.auth_required = true;
+        Ok(())
     }
     pub fn advertise(
         &self,
@@ -173,6 +196,7 @@ impl Connection {
         state.models = models.to_vec();
         state.mode = mode;
         state.account_label = account_label;
+        state.auth_required = false;
         Ok(())
     }
     pub fn event(&self, runner: &str, id: &str, event: Event) -> AppResult<bool> {
@@ -227,6 +251,7 @@ pub(crate) fn create() -> AppResult<(String, String)> {
                 models: Vec::new(),
                 mode: None,
                 account_label: None,
+                auth_required: false,
                 active: None,
             }),
         }),
@@ -273,7 +298,114 @@ pub(crate) fn status(id: &str) -> CodexBridgeStatus {
         } else {
             None
         },
+        auth_required: paired && state.auth_required,
     }
+}
+pub(crate) fn validate_oauth_authorize_url(raw: &str) -> AppResult<String> {
+    if raw.len() > 8192 {
+        return Err(AppError::Validation("ChatGPT OAuth 授权地址过长".into()));
+    }
+    let url = reqwest::Url::parse(raw)
+        .map_err(|_| AppError::Validation("ChatGPT OAuth 授权地址无效".into()))?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("auth.openai.com")
+        || url.port_or_known_default() != Some(443)
+        || url.path() != "/api/accounts/authorize"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(AppError::Validation(
+            "ChatGPT OAuth 授权地址不属于官方 auth.openai.com 端点".into(),
+        ));
+    }
+    let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
+    let redirect_ok = query
+        .get("redirect_uri")
+        .and_then(|value| reqwest::Url::parse(value).ok())
+        .is_some_and(|redirect| {
+            redirect.scheme() == "http"
+                && redirect.host_str() == Some("127.0.0.1")
+                && redirect.port().is_some()
+                && redirect.path() == "/auth/callback"
+        });
+    if !redirect_ok
+        || query.get("response_type").map(String::as_str) != Some("code")
+        || query.get("code_challenge_method").map(String::as_str) != Some("S256")
+        || query.get("code_challenge").is_none_or(String::is_empty)
+        || query.get("state").is_none_or(String::is_empty)
+        || query.get("nonce").is_none_or(String::is_empty)
+    {
+        return Err(AppError::Validation(
+            "ChatGPT OAuth 授权参数不完整或回环回调地址无效".into(),
+        ));
+    }
+    Ok(url.into())
+}
+pub(crate) async fn start_oauth(id: &str, new_account: bool) -> AppResult<String> {
+    let connection = registry()
+        .lock()
+        .unwrap()
+        .get(id)
+        .cloned()
+        .ok_or_else(offline)?;
+    if !connection.live() {
+        return Err(offline());
+    }
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let (sender, mut receiver) = mpsc::channel(4);
+    {
+        let mut state = connection.state.lock().unwrap();
+        if state.mode != Some(BridgeMode::Chatgpt) {
+            return Err(AppError::Validation(
+                "当前桥接不是 ChatGPT 官方授权模式；请在本机运行 npm run chatgpt:bridge 并配对后再点击跳转登录"
+                    .into(),
+            ));
+        }
+        if state.active.is_some() {
+            return Err(AppError::Busy(
+                "本机模型 正在处理另一请求，请稍后重试".into(),
+            ));
+        }
+        state.active = Some(Active {
+            id: job_id.clone(),
+            events: sender,
+        });
+    }
+    let _guard = ActiveGuard {
+        connection: connection.clone(),
+        id: job_id.clone(),
+    };
+    connection
+        .jobs
+        .try_send(Job {
+            id: job_id,
+            model: String::new(),
+            messages: Vec::new(),
+            search: false,
+            oauth_new_account: Some(new_account),
+        })
+        .map_err(|_| AppError::Busy("本机桥接队列繁忙".into()))?;
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let event = receiver.recv().await.ok_or_else(offline)?;
+            if connection.expired(&connection.state.lock().unwrap()) {
+                return Err(offline());
+            }
+            match event {
+                Event::OAuthReady { url } => return validate_oauth_authorize_url(&url),
+                Event::Heartbeat => {}
+                Event::Failure { reason } => return Err(reason.into()),
+                _ => {
+                    return Err(AppError::Model(
+                        "本机桥接无法启动 ChatGPT OAuth 回环监听，请查看本机桥接终端".into(),
+                    ))
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| AppError::Model("等待本机桥接生成 ChatGPT OAuth 登录地址超时".into()))?
 }
 pub(crate) struct BridgeProvider {
     id: String,
@@ -337,6 +469,7 @@ impl BridgeProvider {
                 model: self.model.clone(),
                 messages,
                 search,
+                oauth_new_account: None,
             })
             .map_err(|_| AppError::Busy("本机桥接队列繁忙".into()))?;
         tokio::time::timeout(Duration::from_secs(240), async {
@@ -638,5 +771,38 @@ mod tests {
         assert!(!revoked.paired);
         assert_eq!(revoked.mode, None);
         assert_eq!(revoked.account_label, None);
+    }
+    #[tokio::test]
+    async fn bridge_oauth_handshake_relays_validated_authorize_url_from_worker() {
+        let (id, token) = create().unwrap();
+        let connection = authenticate(&token).unwrap();
+        let runner = uuid::Uuid::new_v4().to_string();
+        connection.advertise_auth_required(&runner).unwrap();
+        let current = status(&id);
+        assert!(current.online);
+        assert!(current.auth_required);
+        assert_eq!(current.mode, Some(BridgeMode::Chatgpt));
+
+        let id_for_oauth = id.clone();
+        let task = tokio::spawn(async move { start_oauth(&id_for_oauth, true).await });
+        let job = connection.poll(&runner, "").await.unwrap().unwrap();
+        assert_eq!(job.oauth_new_account, Some(true));
+        let valid_url = "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&ext_agent_host_id=urn%3Auuid%3Atest&response_type=code&redirect_uri=http%3A%2F%2F127.0.0.1%3A54321%2Fauth%2Fcallback&scope=openid&state=s&nonce=n&code_challenge_method=S256&code_challenge=c";
+        connection
+            .event(
+                &runner,
+                &job.id,
+                Event::OAuthReady {
+                    url: valid_url.into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(task.await.unwrap().unwrap(), valid_url);
+        assert!(validate_oauth_authorize_url("https://evil.example/authorize").is_err());
+        assert!(validate_oauth_authorize_url(
+            "https://auth.openai.com/api/accounts/authorize?response_type=code&redirect_uri=https%3A%2F%2Fevil.example%2Fcb&state=s&nonce=n&code_challenge_method=S256&code_challenge=c"
+        )
+        .is_err());
+        revoke(&id);
     }
 }

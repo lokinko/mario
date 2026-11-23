@@ -31,8 +31,10 @@ pub(crate) trait ModelCatalog: Send + Sync {
     ) -> AppResult<Vec<String>>;
 }
 
+#[async_trait::async_trait]
 pub(crate) trait BridgeRegistry: Send + Sync {
     fn status(&self, id: Option<&str>) -> CodexBridgeStatus;
     fn create(&self) -> AppResult<BridgePairing>;
     fn revoke(&self, id: &str);
+    async fn start_oauth(&self, id: &str, new_account: bool) -> AppResult<String>;
 }

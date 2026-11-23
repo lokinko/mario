@@ -43,6 +43,7 @@ impl ModelConnector for ModelConnectorAdapter {
 }
 
 pub(crate) struct BridgeRegistryAdapter;
+#[async_trait::async_trait]
 impl BridgeRegistry for BridgeRegistryAdapter {
     fn status(&self, id: Option<&str>) -> CodexBridgeStatus {
         id.map(bridge::status).unwrap_or_default()
@@ -53,5 +54,8 @@ impl BridgeRegistry for BridgeRegistryAdapter {
     }
     fn revoke(&self, id: &str) {
         bridge::revoke(id);
+    }
+    async fn start_oauth(&self, id: &str, new_account: bool) -> AppResult<String> {
+        bridge::start_oauth(id, new_account).await
     }
 }

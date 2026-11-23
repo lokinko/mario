@@ -185,6 +185,7 @@ OAuth 的 `url` 用于浏览器跳转，不是模型 API endpoint；回调后的
 | POST | `/api/codex-bridge` | R | — → `{pairingCode:string,expiresInSeconds:600}` | 创建短期配对凭据 |
 | DELETE | `/api/codex-bridge` | R | — → `{ok:true}` | 撤销桥接 |
 | POST | `/api/codex-bridge/enable` | R | — → `ModelConfig` | 启用配对桥接作为模型配置 |
+| POST | `/api/codex-bridge/oauth` | — | B `{newAccount?:boolean=false}` → `{url:string}` | 请求已连接本机桥接启动 `127.0.0.1` 回环回调并返回官方 ChatGPT OAuth 授权跳转地址 |
 
 预览返回 `contextRevision`，执行请求必须用 `previewRevision` 携带匹配指纹；字段在反序列化层可省略，但执行时缺失或不匹配会失败。它表示授权输入与模型目标的准备状态，不替代 `If-Match`。客户端可自动准备再执行，不要求额外弹窗确认。分析执行与校验见[分析用例](../server/src/application/analysis.rs)。省略 `webSearch` 时默认开启；已保存的用户关闭选择由客户端显式传入并继续尊重。当前也未提供通用 CSV 模型附件接口。
 
@@ -313,7 +314,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | ModelConfigInput | `provider:openai-responses/openai-chat/anthropic/codex-bridge; baseUrl,model:string; apiKey?:string/null; source?:account/server=account` |
 | ModelConfig | `provider,baseUrl,model,hasApiKey,source`，可有 `serverModel`；不返回 apiKey |
 | AccountModelCatalogInput / AccountModelCatalog | 输入 `provider:openai-responses/openai-chat/anthropic; baseUrl:string; apiKey?:string/null`；输出 `{models:string[]}` |
-| CodexModel / CodexBridgeStatus | CodexModel 为 `model,displayName:string; description?:string=""; isDefault?:boolean=false`；状态为 `paired,online:boolean; model:string/null; models:CodexModel[]` |
+| CodexModel / CodexBridgeStatus | CodexModel 为 `model,displayName:string; description?:string=""; isDefault?:boolean=false`；状态为 `paired,online:boolean; model:string/null; models:CodexModel[]; mode?:codex/chatgpt/null; accountLabel?:string/null; authRequired?:boolean=false` |
 | ContextSelection | `includeProfile?,includeHoldings?,includeEvidence?,includeMemory?:boolean`，当前各字段默认 true |
 | AnalysisRequest | `question:string; workflow:"council"; webSearch?:boolean=true; previousTurn?:PreviousTurn/null; contextSelection?:ContextSelection; previewRevision?:string/null`；拒绝未知字段，不接收持仓账本 JSON 作为独立请求字段 |
 | PreviousTurn | `question,answer:string; suggestions:string[]; earlierQuestions?:string[]=[]; pendingQuestion?:string/null`；主摘要总长不超过 800 字符，建议最多 3 条；早期问题最多 5 条，每条不超过 300 字符，追问不超过 200 字符 |

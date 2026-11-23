@@ -106,12 +106,17 @@ fn transport_contract_fixture() {
     let bridges = [
         crate::models::connection::CodexBridgeStatus::default(),
         serde_json::from_value(json!({
-            "paired":true,"online":true,"model":"fixture","mode":"chatgpt","accountLabel":"investor@example.invalid",
+            "paired":true,"online":true,"model":"fixture","mode":"chatgpt","accountLabel":"investor@example.invalid","authRequired":false,
             "models":[{"model":"fixture","displayName":"Fixture","description":"catalog fixture","isDefault":true}]
         }))
         .unwrap(),
         serde_json::from_value(json!({
-            "paired":true,"online":true,"model":"fixture","mode":"codex","accountLabel":null,
+            "paired":true,"online":true,"model":null,"mode":"chatgpt","accountLabel":null,"authRequired":true,
+            "models":[]
+        }))
+        .unwrap(),
+        serde_json::from_value(json!({
+            "paired":true,"online":true,"model":"fixture","mode":"codex","accountLabel":null,"authRequired":false,
             "models":[{"model":"fixture","displayName":"Fixture","description":"catalog fixture","isDefault":true}]
         }))
         .unwrap(),

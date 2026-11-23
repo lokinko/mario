@@ -7,6 +7,7 @@ export function isDataWrite(path: string, method = "GET") {
     ![
       "/analysis/preview",
       "/activity",
+      "/codex-bridge/oauth",
       "/model-config/models",
       "/model-config/test",
       "/financial-operations/resolve",
@@ -35,8 +36,9 @@ export function requestPolicy(path: string, method = "GET") {
           ? 180000
           : resource === "/model-config/test"
             ? 300000
-            : resource === "/model-config/models"
-              ? 20000
+            : resource === "/model-config/models" ||
+                resource === "/codex-bridge/oauth"
+              ? 25000
               : resource === "/snapshot" ||
                   resource.startsWith("/fx-settings") ||
                   resource.startsWith("/market-data/fx-rate")

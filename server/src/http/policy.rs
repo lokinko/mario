@@ -10,6 +10,7 @@ pub(crate) fn requires_revision(method: &Method, path: &str) -> bool {
             path,
             "/api/analysis/preview"
                 | "/api/activity"
+                | "/api/codex-bridge/oauth"
                 | "/api/model-config/models"
                 | "/api/model-config/test"
                 | "/api/financial-operations/resolve"

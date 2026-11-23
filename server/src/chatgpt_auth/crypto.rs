@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 const ENVELOPE_VERSION: u8 = 1;
 
-pub(super) trait CredentialCipher {
+pub(super) trait CredentialCipher: Send + Sync {
     fn provider_id(&self) -> &'static str;
     fn encrypt(&self, plaintext: &[u8]) -> AppResult<Vec<u8>>;
     fn decrypt(&self, ciphertext: &[u8]) -> AppResult<Vec<u8>>;

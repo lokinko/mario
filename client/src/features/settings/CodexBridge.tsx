@@ -6,6 +6,7 @@ import {
   pairCodexBridge,
   enableCodexBridge,
   revokeCodexBridge,
+  startCodexBridgeOAuth,
   getModelConfig,
   type CodexBridgeStatus,
 } from "../../api/settings";
@@ -72,6 +73,33 @@ export function CodexBridge({
     }
   }
 
+  async function startOAuth(newAccount: boolean) {
+    setBusy(true);
+    setMessage("");
+    try {
+      const { url } = await startCodexBridgeOAuth(newAccount);
+      if (!alive.current) return;
+      const parsed = new URL(url);
+      if (
+        parsed.origin !== "https://auth.openai.com" ||
+        parsed.pathname !== "/api/accounts/authorize"
+      ) {
+        throw new Error("返回的 ChatGPT OAuth 授权地址无效");
+      }
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        window.location.assign(url);
+      }
+      setMessage(
+        "已打开 ChatGPT 官方 OAuth 登录页，授权完成后将自动回跳本机 127.0.0.1 并刷新模型列表。",
+      );
+    } catch (error) {
+      if (alive.current) setMessage(String(error));
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  }
+
   async function act(action: "pair" | "enable" | "revoke") {
     setBusy(true);
     setMessage("");
@@ -87,6 +115,7 @@ export function CodexBridge({
           model: null,
           mode: null,
           accountLabel: null,
+          authRequired: false,
         });
         setMessage("配对码 10 分钟内有效。重新配对会断开原连接。");
       } else if (action === "enable") {
@@ -107,6 +136,7 @@ export function CodexBridge({
           model: null,
           mode: null,
           accountLabel: null,
+          authRequired: false,
         });
         setMessage("已撤销配对，本机进程无法继续接收请求。");
       }
@@ -123,11 +153,13 @@ export function CodexBridge({
     : status === null
       ? { tone: "neutral" as const, label: "检查中" }
       : status.online
-        ? status.mode === "chatgpt"
-          ? { tone: "success" as const, label: "ChatGPT 官方授权" }
-          : status.mode === "codex"
-            ? { tone: "success" as const, label: "本机 Codex" }
-            : { tone: "success" as const, label: "本机在线" }
+        ? status.authRequired
+          ? { tone: "warning" as const, label: "待登录 ChatGPT" }
+          : status.mode === "chatgpt"
+            ? { tone: "success" as const, label: "ChatGPT 官方授权" }
+            : status.mode === "codex"
+              ? { tone: "success" as const, label: "本机 Codex" }
+              : { tone: "success" as const, label: "本机在线" }
         : status.paired
           ? { tone: "warning" as const, label: "等待连接" }
           : { tone: "neutral" as const, label: "未配对" };
@@ -147,28 +179,58 @@ export function CodexBridge({
               : status === null
                 ? "正在检查连接状态…"
                 : status.online
-                  ? `本机在线 · 默认模型 ${status.model}`
+                  ? status.authRequired
+                    ? "本机桥接已连接 · 请点击下方按钮跳转 ChatGPT 完成 OAuth 授权"
+                    : `本机在线 · 默认模型 ${status.model}`
                   : status.paired
                     ? "等待本机连接"
                     : "尚未配对或配对已过期"}
           </p>
           {status?.online && status.mode === "chatgpt" && (
             <div className="codex-bridge-account-meta">
-              <span>
-                <ShieldCheck size={14} aria-hidden="true" />
-                {status.accountLabel
-                  ? `已授权账号：${status.accountLabel}`
-                  : "已通过本机 Sign in with ChatGPT 官方授权连接"}
-              </span>
-              <a
-                className="codex-bridge-usage-link"
-                href={CHATGPT_USAGE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                管理 ChatGPT 用量与授权
-                <ExternalLink size={13} aria-hidden="true" />
-              </a>
+              {!status.authRequired && (
+                <span>
+                  <ShieldCheck size={14} aria-hidden="true" />
+                  {status.accountLabel
+                    ? `已授权账号：${status.accountLabel}`
+                    : "已通过本机 Sign in with ChatGPT 官方授权连接"}
+                </span>
+              )}
+              <div className="codex-bridge-oauth-actions">
+                <button
+                  type="button"
+                  className="secondary siwc-button"
+                  data-oai-siwc-button=""
+                  disabled={busy || disabled}
+                  onClick={() => void startOAuth(false)}
+                >
+                  <span className="siwc-mark" aria-hidden="true" />
+                  <span>
+                    {status.authRequired
+                      ? "跳转 ChatGPT OAuth 登录"
+                      : "重新登录 ChatGPT"}
+                  </span>
+                </button>
+                {!status.authRequired && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy || disabled}
+                    onClick={() => void startOAuth(true)}
+                  >
+                    切换新 ChatGPT 账号
+                  </button>
+                )}
+                <a
+                  className="codex-bridge-usage-link"
+                  href={CHATGPT_USAGE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  管理 ChatGPT 用量与授权
+                  <ExternalLink size={13} aria-hidden="true" />
+                </a>
+              </div>
             </div>
           )}
         </div>
@@ -200,7 +262,10 @@ export function CodexBridge({
                   复制命令
                 </button>
               </div>
-              <small>无需安装 Codex；无已选账号时自动打开浏览器授权。</small>
+              <small>
+                无需安装 Codex；粘贴配对码连接后可直接在上方点击“跳转 ChatGPT
+                OAuth 登录”。
+              </small>
             </li>
             <li>
               <div className="codex-bridge-command-row">
@@ -228,8 +293,9 @@ export function CodexBridge({
           连接其他站点可附加 <code>-- https://你的站点/mario/</code>
           ，按提示粘贴配对码。
         </li>
-        <li>显示在线后点击“启用本机模型”。</li>
+        <li>完成登录并显示在线后点击“启用本机模型”。</li>
       </ol>
+
       {code && (
         <label className="codex-bridge-pairing">
           配对码（仅本次显示）
@@ -267,7 +333,9 @@ export function CodexBridge({
         <button
           type="button"
           className="secondary"
-          disabled={busy || disabled || !status?.online}
+          disabled={
+            busy || disabled || !status?.online || Boolean(status?.authRequired)
+          }
           onClick={() => void act("enable")}
         >
           启用本机模型

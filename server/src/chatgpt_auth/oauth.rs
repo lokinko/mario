@@ -278,11 +278,16 @@ pub(super) struct Authorized {
     pub identity: Identity,
     pub client_id: String,
 }
-pub(super) async fn authorize(
-    client: &reqwest::Client,
+pub(super) struct PendingAuthorization {
+    pub url: String,
+    pending: Arc<Pending>,
+    receiver: oneshot::Receiver<Callback>,
+    _server: Server,
+}
+pub(super) async fn start(
     host_id: &str,
     existing: Option<&Account>,
-) -> AppResult<Authorized> {
+) -> AppResult<PendingAuthorization> {
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
     let redirect = format!(
         "http://127.0.0.1:{}/auth/callback",
@@ -295,7 +300,7 @@ pub(super) async fn authorize(
         redirect,
         existing: existing.cloned(),
     };
-    let url = attempt.url(host_id)?;
+    let url = attempt.url(host_id)?.into();
     let (sender, receiver) = oneshot::channel();
     let pending = Arc::new(Pending {
         attempt,
@@ -304,12 +309,26 @@ pub(super) async fn authorize(
     let router = Router::new()
         .route("/auth/callback", get(callback))
         .with_state(pending.clone());
-    let _server = Server(tokio::spawn(async move {
+    let server = Server(tokio::spawn(async move {
         let _ = axum::serve(listener, router).await;
     }));
-    eprintln!("Continue with ChatGPT：正在打开系统浏览器，请登录并允许 Mario 使用订阅。10 分钟内有效；Ctrl+C 取消。");
-    // No auth URL logging: returning sign-ins include an ID-token hint.
-    open_browser(url.as_str())?;
+    Ok(PendingAuthorization {
+        url,
+        pending,
+        receiver,
+        _server: server,
+    })
+}
+pub(super) async fn complete(
+    client: &reqwest::Client,
+    auth: PendingAuthorization,
+) -> AppResult<Authorized> {
+    let PendingAuthorization {
+        pending,
+        receiver,
+        _server,
+        ..
+    } = auth;
     let callback = tokio::time::timeout(Duration::from_secs(600), receiver)
         .await
         .map_err(|_| error("ChatGPT 登录等待超时，请重新登录"))?
@@ -346,6 +365,17 @@ pub(super) async fn authorize(
         identity,
         client_id,
     })
+}
+pub(super) async fn authorize(
+    client: &reqwest::Client,
+    host_id: &str,
+    existing: Option<&Account>,
+) -> AppResult<Authorized> {
+    let auth = start(host_id, existing).await?;
+    eprintln!("Continue with ChatGPT：正在打开系统浏览器，请登录并允许 Mario 使用订阅。10 分钟内有效；Ctrl+C 取消。");
+    // No auth URL logging: returning sign-ins include an ID-token hint.
+    open_browser(auth.url.as_str())?;
+    complete(client, auth).await
 }
 #[cfg(windows)]
 fn open_browser(url: &str) -> AppResult<()> {

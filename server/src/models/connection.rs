@@ -74,6 +74,8 @@ pub(crate) struct CodexBridgeStatus {
     pub mode: Option<BridgeMode>,
     #[serde(default)]
     pub account_label: Option<String>,
+    #[serde(default)]
+    pub auth_required: bool,
 }
 
 pub(crate) struct BridgePairing {

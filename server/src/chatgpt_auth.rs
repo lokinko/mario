@@ -345,29 +345,52 @@ pub(crate) async fn command(args: &[String]) -> AppResult<()> {
 fn usage() -> AppError {
     error("用法：chatgpt:auth -- login [--new | --account <注册 ID>] | status | select <注册 ID> | logout [注册 ID]")
 }
-async fn login(selection: Option<Option<&str>>) -> AppResult<()> {
-    // Held across consent intentionally: another process cannot rotate/overwrite
-    // credentials while this registration is being validated. No database used.
-    let mut store = Store::open()?;
-    let existing = match selection {
-        Some(None) => None,
-        Some(Some(id)) => Some(store.account(id)?.clone()),
-        None => store
-            .state
-            .active
-            .as_deref()
-            .map(|id| store.account(id).cloned())
-            .transpose()?,
+pub(crate) struct BrowserLogin {
+    pub url: String,
+    existing: Option<Account>,
+    auth: oauth::PendingAuthorization,
+}
+pub(crate) async fn begin_browser_login(new_account: bool) -> AppResult<BrowserLogin> {
+    let (host_id, existing) = {
+        let store = Store::open()?;
+        let existing = if new_account {
+            None
+        } else {
+            store
+                .state
+                .active
+                .as_deref()
+                .and_then(|id| store.account(id).ok().cloned())
+        };
+        (store.state.host_id.clone(), existing)
     };
-    let client = client()?;
-    let result = oauth::authorize(&client, &store.state.host_id, existing.as_ref()).await?;
+    let auth = oauth::start(&host_id, existing.as_ref()).await?;
+    Ok(BrowserLogin {
+        url: auth.url.clone(),
+        existing,
+        auth,
+    })
+}
+impl BrowserLogin {
+    pub(crate) async fn complete(self) -> AppResult<String> {
+        let client = client()?;
+        let result = oauth::complete(&client, self.auth).await?;
+        let mut store = Store::open()?;
+        save_authorized_account(&mut store, self.existing.as_ref(), result)
+    }
+}
+fn save_authorized_account(
+    store: &mut Store<'_>,
+    existing: Option<&Account>,
+    result: oauth::Authorized,
+) -> AppResult<String> {
     let tokens = result.tokens;
     let enabled = plan_enabled(&tokens);
     let identity = result.identity;
-    if let Some(account) = existing.as_ref() {
+    if let Some(account) = existing {
         if account.subject != identity.sub || account.client_id != result.client_id {
             return Err(error(
-                "ChatGPT 返回了不同的账号身份，原凭据未改动；新增账号请用 login --new",
+                "ChatGPT 返回了不同的账号身份，原凭据未改动；新增账号请用切换新账号或 login --new",
             ));
         }
     }
@@ -400,7 +423,25 @@ async fn login(selection: Option<Option<&str>>) -> AppResult<()> {
     } else {
         eprintln!("已保存 ChatGPT 身份注册：{id}，但尚未开启订阅使用；不会调用模型。请运行 npm run chatgpt:auth -- login --account {id} 重新同意完整授权。");
     }
-    Ok(())
+    Ok(id)
+}
+async fn login(selection: Option<Option<&str>>) -> AppResult<()> {
+    // Held across consent intentionally: another process cannot rotate/overwrite
+    // credentials while this registration is being validated. No database used.
+    let mut store = Store::open()?;
+    let existing = match selection {
+        Some(None) => None,
+        Some(Some(id)) => Some(store.account(id)?.clone()),
+        None => store
+            .state
+            .active
+            .as_deref()
+            .map(|id| store.account(id).cloned())
+            .transpose()?,
+    };
+    let client = client()?;
+    let result = oauth::authorize(&client, &store.state.host_id, existing.as_ref()).await?;
+    save_authorized_account(&mut store, existing.as_ref(), result).map(|_| ())
 }
 async fn logout(id: Option<&str>) -> AppResult<()> {
     let mut store = Store::open()?;

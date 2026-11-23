@@ -54,6 +54,11 @@ pub(crate) fn enable(
             "请先在本机启动桥接，待显示在线后再启用".into(),
         ));
     }
+    if state.auth_required {
+        return Err(AppError::Validation(
+            "请先在设置中点击“跳转 ChatGPT OAuth 登录”完成本机授权".into(),
+        ));
+    }
     let previous = db.model_config()?;
     let selected = if previous.provider == ModelProviderKind::CodexBridge
         && state
@@ -66,6 +71,14 @@ pub(crate) fn enable(
         state.model.as_deref().unwrap_or_default()
     };
     save(db, selected, bridges)
+}
+pub(crate) async fn start_oauth(
+    db: &impl ModelConfiguration,
+    bridges: &dyn BridgeRegistry,
+    new_account: bool,
+) -> AppResult<String> {
+    let bridge_id = id(db)?;
+    bridges.start_oauth(&bridge_id, new_account).await
 }
 pub(crate) fn save(
     db: &impl ModelSettingsStore,

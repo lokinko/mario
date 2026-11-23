@@ -4,6 +4,7 @@ use crate::{
         bridge::{Event, Job},
         CodexProvider,
     },
+    models::connection::{BridgeMode, CodexModel},
     AppError, AppResult,
 };
 use serde_json::{json, Value};
@@ -11,6 +12,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+use tokio::{sync::mpsc, task::JoinHandle};
 
 fn api_url(site: &str) -> AppResult<String> {
     let url =
@@ -31,37 +33,61 @@ fn api_url(site: &str) -> AppResult<String> {
         url.as_str().trim_end_matches('/')
     ))
 }
-enum Backend {
-    Codex,
-    ChatGpt {
-        account: String,
-        session: String,
-        account_label: Option<String>,
-    },
+
+#[derive(Clone)]
+struct ChatGptSession {
+    account: String,
+    session: String,
+    account_label: Option<String>,
+    model: String,
+    models: Vec<CodexModel>,
 }
+
+enum Backend {
+    Codex {
+        model: String,
+        models: Vec<CodexModel>,
+    },
+    ChatGpt(Option<ChatGptSession>),
+}
+
 impl Backend {
-    fn mode(&self) -> crate::models::connection::BridgeMode {
+    fn mode(&self) -> BridgeMode {
         match self {
-            Self::Codex => crate::models::connection::BridgeMode::Codex,
-            Self::ChatGpt { .. } => crate::models::connection::BridgeMode::Chatgpt,
+            Self::Codex { .. } => BridgeMode::Codex,
+            Self::ChatGpt(_) => BridgeMode::Chatgpt,
+        }
+    }
+    fn auth_required(&self) -> bool {
+        matches!(self, Self::ChatGpt(None))
+    }
+    fn model(&self) -> &str {
+        match self {
+            Self::Codex { model, .. } => model,
+            Self::ChatGpt(Some(current)) => &current.model,
+            Self::ChatGpt(None) => "",
+        }
+    }
+    fn models(&self) -> &[CodexModel] {
+        match self {
+            Self::Codex { models, .. } => models,
+            Self::ChatGpt(Some(current)) => &current.models,
+            Self::ChatGpt(None) => &[],
         }
     }
     fn account_label(&self) -> Option<&str> {
         match self {
-            Self::Codex => None,
-            Self::ChatGpt { account_label, .. } => account_label.as_deref(),
+            Self::Codex { .. } | Self::ChatGpt(None) => None,
+            Self::ChatGpt(Some(current)) => current.account_label.as_deref(),
         }
     }
     fn check(&self) -> AppResult<()> {
-        if let Self::ChatGpt {
-            account, session, ..
-        } = self
-        {
-            match crate::chatgpt_auth::is_authorized(account, session) {
+        if let Self::ChatGpt(Some(current)) = self {
+            match crate::chatgpt_auth::is_authorized(&current.account, &current.session) {
                 Ok(true) | Err(AppError::Busy(_)) => {}
                 _ => {
                     return Err(AppError::Validation(
-                        "ChatGPT 授权已退出、失效或重新登录；已停止此桥接，请重新配对并启动".into(),
+                        "ChatGPT 授权已退出、失效或在终端被替换；请重新授权".into(),
                     ))
                 }
             }
@@ -69,45 +95,66 @@ impl Backend {
         Ok(())
     }
 }
-pub(crate) async fn run(site: &str) -> AppResult<()> {
-    connect(site, Backend::Codex).await
-}
-pub(crate) async fn run_chatgpt(site: &str) -> AppResult<()> {
-    api_url(site)?;
-    // Explicit login errors are never disguised as a fresh-account sign-in.
-    // The user authorizes locally; only the model catalog goes to Mario.
-    if !crate::chatgpt_auth::has_active_account()? {
-        crate::chatgpt_auth::command(&["login".into()]).await?;
-    }
-    let account = crate::chatgpt_auth::active_account()?;
+
+async fn load_chatgpt_session(account: String) -> AppResult<ChatGptSession> {
     let account_label = crate::chatgpt_auth::account_label(&account)?;
-    eprintln!("本机 ChatGPT 注册：{account}（此进程固定使用该注册；切换账号后请重启并重新配对）");
     let session = crate::chatgpt_auth::session(&account)?;
-    connect(
-        site,
-        Backend::ChatGpt {
-            account,
-            session,
-            account_label,
-        },
-    )
-    .await
-}
-async fn connect(site: &str, backend: Backend) -> AppResult<()> {
-    let base = api_url(site)?;
-    eprintln!("正在检查本机模型授权与模型列表…");
-    let models = match &backend {
-        Backend::Codex => CodexProvider::models().await?,
-        Backend::ChatGpt {
-            account, session, ..
-        } => crate::ai::chatgpt::ChatGptProvider::models(account, session).await?,
-    };
-    let model = &models
+    let models = crate::ai::chatgpt::ChatGptProvider::models(&account, &session).await?;
+    let model = models
         .iter()
         .find(|entry| entry.is_default)
         .unwrap_or(&models[0])
-        .model;
+        .model
+        .clone();
+    Ok(ChatGptSession {
+        account,
+        session,
+        account_label,
+        model,
+        models,
+    })
+}
+
+pub(crate) async fn run(site: &str) -> AppResult<()> {
+    api_url(site)?;
+    eprintln!("正在检查本机 Codex 模型授权与模型列表…");
+    let models = CodexProvider::models().await?;
+    let model = models
+        .iter()
+        .find(|entry| entry.is_default)
+        .unwrap_or(&models[0])
+        .model
+        .clone();
     eprintln!("本机模型已就绪：{model}");
+    connect(site, Backend::Codex { model, models }).await
+}
+
+pub(crate) async fn run_chatgpt(site: &str) -> AppResult<()> {
+    api_url(site)?;
+    let initial = if crate::chatgpt_auth::has_active_account()? {
+        let account = crate::chatgpt_auth::active_account()?;
+        eprintln!("正在检查本机 ChatGPT 注册 {account} 的模型列表…");
+        match load_chatgpt_session(account).await {
+            Ok(session) => {
+                eprintln!("本机 ChatGPT 模型已就绪：{}", session.model);
+                Some(session)
+            }
+            Err(error) => {
+                eprintln!("{error}；可在配对后于 Mario 网页设置点击“跳转 ChatGPT OAuth 登录”。");
+                None
+            }
+        }
+    } else {
+        eprintln!(
+            "本机尚无已授权的 ChatGPT 账号；请先粘贴配对码连接 Mario，随后直接在网页设置点击“跳转 ChatGPT OAuth 登录”。"
+        );
+        None
+    };
+    connect(site, Backend::ChatGpt(initial)).await
+}
+
+async fn connect(site: &str, backend: Backend) -> AppResult<()> {
+    let base = api_url(site)?;
     eprintln!("目标网站：{site}");
     eprintln!("请粘贴 Mario 设置页面生成的配对码，然后回车（不需要 ChatGPT 密码或 API Key）：");
     let mut token = String::new();
@@ -123,34 +170,46 @@ async fn connect(site: &str, backend: Backend) -> AppResult<()> {
     let runner = uuid::Uuid::new_v4().to_string();
     eprintln!("正在连接；保持此进程运行，关闭窗口或按 Ctrl+C 即停止。配对最长有效 12 小时。");
     tokio::select! {
-        result = work(&client, &base, &token, &runner, model, &models, &backend) => result,
+        result = work(&client, &base, &token, &runner, backend) => result,
         _ = tokio::signal::ctrl_c() => Ok(()),
     }
 }
+
 async fn work(
     client: &reqwest::Client,
     base: &str,
     token: &str,
     runner: &str,
-    model: &str,
-    models: &[crate::models::connection::CodexModel],
-    backend: &Backend,
+    mut backend: Backend,
 ) -> AppResult<()> {
     let mut connected = false;
+    let (oauth_tx, mut oauth_rx) = mpsc::channel::<ChatGptSession>(2);
+    let mut oauth_task: Option<JoinHandle<()>> = None;
     loop {
-        backend.check()?;
-        let response = client
+        if matches!(backend, Backend::ChatGpt(Some(_))) && backend.check().is_err() {
+            eprintln!("本机 ChatGPT 授权已退出或失效，已切换为待登录状态；可在 Mario 网页设置点击“跳转 ChatGPT OAuth 登录”。");
+            backend = Backend::ChatGpt(None);
+        }
+        let poll_future = client
             .post(format!("{base}/poll"))
             .bearer_auth(token)
             .json(&json!({
                 "runner": runner,
-                "model": model,
-                "models": models,
+                "model": backend.model(),
+                "models": backend.models(),
                 "mode": backend.mode(),
-                "accountLabel": backend.account_label()
+                "accountLabel": backend.account_label(),
+                "authRequired": backend.auth_required(),
             }))
-            .send()
-            .await;
+            .send();
+        let response = tokio::select! {
+            Some(session) = oauth_rx.recv() => {
+                eprintln!("网页 ChatGPT OAuth 登录已完成，模型已就绪：{}", session.model);
+                backend = Backend::ChatGpt(Some(session));
+                continue;
+            }
+            response = poll_future => response,
+        };
         let response = match response {
             Ok(response) => response,
             Err(_) => {
@@ -177,18 +236,63 @@ async fn work(
             )));
         }
         if !connected {
-            eprintln!("桥接已在线，请回到 Mario 设置点击“启用本机模型”。");
+            if backend.auth_required() {
+                eprintln!("桥接已在线，请回到 Mario 设置点击“跳转 ChatGPT OAuth 登录”。");
+            } else {
+                eprintln!("桥接已在线，请回到 Mario 设置点击“启用本机模型”。");
+            }
             connected = true;
         }
         let job: Option<Job> = response.json().await?;
         if let Some(job) = job {
-            if !models.iter().any(|entry| entry.model == job.model) {
+            if let Some(new_account) = job.oauth_new_account {
+                match crate::chatgpt_auth::begin_browser_login(new_account).await {
+                    Ok(login) => {
+                        let url = login.url.clone();
+                        send(
+                            client,
+                            base,
+                            token,
+                            runner,
+                            &job.id,
+                            Event::OAuthReady { url },
+                        )
+                        .await?;
+                        if let Some(previous) = oauth_task.take() {
+                            previous.abort();
+                        }
+                        let tx = oauth_tx.clone();
+                        oauth_task = Some(tokio::spawn(async move {
+                            eprintln!("已在网页发起 ChatGPT OAuth 授权，等待本机 127.0.0.1 回调…");
+                            match login.complete().await {
+                                Ok(account) => match load_chatgpt_session(account).await {
+                                    Ok(session) => {
+                                        let _ = tx.send(session).await;
+                                    }
+                                    Err(error) => eprintln!("读取 ChatGPT 模型目录失败：{error}"),
+                                },
+                                Err(error) => eprintln!("ChatGPT OAuth 登录未完成：{error}"),
+                            }
+                        }));
+                    }
+                    Err(error) => {
+                        eprintln!("无法初始化本机 ChatGPT OAuth 回环监听：{error}");
+                        let _ = send(client, base, token, runner, &job.id, Event::Error).await;
+                    }
+                }
+                continue;
+            }
+            if !backend
+                .models()
+                .iter()
+                .any(|entry| entry.model == job.model)
+            {
                 send(client, base, token, runner, &job.id, Event::Error).await?;
                 eprintln!("请求的模型不在本机模型列表中，请刷新网页设置。");
                 continue;
             }
             eprintln!("正在处理模型请求…");
-            if execute(client, base, token, runner, job, backend)
+            if execute(client, base, token, runner, job, &backend)
                 .await
                 .is_err()
             {
@@ -199,6 +303,7 @@ async fn work(
         }
     }
 }
+
 async fn send(
     client: &reqwest::Client,
     base: &str,
@@ -218,6 +323,7 @@ async fn send(
     }
     Ok(response.json::<Value>().await?["active"] == true)
 }
+
 async fn execute(
     client: &reqwest::Client,
     base: &str,
@@ -250,22 +356,23 @@ async fn execute(
     });
     let future = async {
         match backend {
-            Backend::Codex => {
+            Backend::Codex { .. } => {
                 provider
                     .generate(job.messages, job.search, Some(callback))
                     .await
             }
-            Backend::ChatGpt {
-                account, session, ..
-            } => {
+            Backend::ChatGpt(Some(current)) => {
                 crate::ai::chatgpt::ChatGptProvider::new(
                     job.model,
-                    account.clone(),
-                    session.clone(),
+                    current.account.clone(),
+                    current.session.clone(),
                 )
                 .generate(job.messages, job.search, Some(callback))
                 .await
             }
+            Backend::ChatGpt(None) => Err(AppError::Codex(
+                crate::models::inference::CodexFailure::Unauthorized,
+            )),
         }
     };
     tokio::pin!(future);
@@ -309,6 +416,7 @@ async fn execute(
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

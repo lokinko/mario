@@ -14,6 +14,7 @@ pub(super) fn router() -> Router {
     Router::new()
         .route("/api/codex-bridge", get(status).post(pair).delete(revoke))
         .route("/api/codex-bridge/enable", post(enable))
+        .route("/api/codex-bridge/oauth", post(oauth))
 }
 // Separate from account middleware: long polling must never hold a database lock.
 // The capability token grants only this bridge's job/result channel, no account APIs.
@@ -47,10 +48,26 @@ async fn enable(state: BridgeContext) -> AppResult<Json<crate::models::connectio
         state.services().server.as_ref(),
     )?))
 }
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct OAuthStart {
+    #[serde(default)]
+    new_account: bool,
+}
+async fn oauth(state: BridgeContext, Json(input): Json<OAuthStart>) -> AppResult<Json<Value>> {
+    let url = codex_bridge::start_oauth(
+        state.account(),
+        state.services().bridges.as_ref(),
+        input.new_account,
+    )
+    .await?;
+    Ok(Json(json!({"url": url})))
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Poll {
     runner: String,
+    #[serde(default)]
     model: String,
     #[serde(default)]
     models: Vec<crate::models::connection::CodexModel>,
@@ -58,6 +75,8 @@ struct Poll {
     mode: Option<crate::models::connection::BridgeMode>,
     #[serde(default)]
     account_label: Option<String>,
+    #[serde(default)]
+    auth_required: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,13 +95,25 @@ fn authenticate(headers: &HeaderMap) -> AppResult<Arc<bridge::Connection>> {
 }
 async fn poll(headers: HeaderMap, Json(input): Json<Poll>) -> AppResult<Json<Option<bridge::Job>>> {
     let connection = authenticate(&headers)?;
-    connection.advertise(
-        &input.runner,
-        &input.model,
-        &input.models,
-        input.mode,
-        input.account_label.as_deref(),
-    )?;
+    if input.auth_required {
+        if !input.model.is_empty()
+            || !input.models.is_empty()
+            || input
+                .mode
+                .is_some_and(|mode| mode != crate::models::connection::BridgeMode::Chatgpt)
+        {
+            return Err(AppError::Validation("待登录桥接状态字段无效".into()));
+        }
+        connection.advertise_auth_required(&input.runner)?;
+    } else {
+        connection.advertise(
+            &input.runner,
+            &input.model,
+            &input.models,
+            input.mode,
+            input.account_label.as_deref(),
+        )?;
+    }
     Ok(Json(connection.poll(&input.runner, &input.model).await?))
 }
 async fn event(headers: HeaderMap, Json(input): Json<Output>) -> AppResult<Json<Value>> {
