@@ -48,11 +48,16 @@ async fn enable(state: BridgeContext) -> AppResult<Json<crate::models::connectio
     )?))
 }
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Poll {
     runner: String,
     model: String,
     #[serde(default)]
     models: Vec<crate::models::connection::CodexModel>,
+    #[serde(default)]
+    mode: Option<crate::models::connection::BridgeMode>,
+    #[serde(default)]
+    account_label: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,7 +76,13 @@ fn authenticate(headers: &HeaderMap) -> AppResult<Arc<bridge::Connection>> {
 }
 async fn poll(headers: HeaderMap, Json(input): Json<Poll>) -> AppResult<Json<Option<bridge::Job>>> {
     let connection = authenticate(&headers)?;
-    connection.advertise(&input.runner, &input.model, &input.models)?;
+    connection.advertise(
+        &input.runner,
+        &input.model,
+        &input.models,
+        input.mode,
+        input.account_label.as_deref(),
+    )?;
     Ok(Json(connection.poll(&input.runner, &input.model).await?))
 }
 async fn event(headers: HeaderMap, Json(input): Json<Output>) -> AppResult<Json<Value>> {

@@ -32,8 +32,42 @@ it("explains both local execution choices without asking the webpage for ChatGPT
   expect(screen.getByText("npm run chatgpt:bridge")).toBeTruthy();
   expect(screen.getByText("npm run codex:bridge")).toBeTruthy();
   expect(screen.getByText(/127\.0\.0\.1/)).toBeTruthy();
+  expect(screen.getByText(/本机系统加密保管/)).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByLabelText(/密码|令牌|API Key/)).toBeNull();
+});
+it("displays ChatGPT official authorization status, account label and usage link", async () => {
+  vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({
+    paired: true,
+    online: true,
+    model: "gpt-5",
+    mode: "chatgpt",
+    accountLabel: "investor@example.invalid",
+  });
+  render(<CodexBridge onUpdate={vi.fn()} disabled={false} />);
+  await screen.findByText("本机在线 · 默认模型 gpt-5");
+  expect(screen.getByText("ChatGPT 官方授权")).toBeTruthy();
+  expect(screen.getByText("已授权账号：investor@example.invalid")).toBeTruthy();
+  const usageLink = screen.getByRole("link", {
+    name: /管理 ChatGPT 用量与授权/,
+  });
+  expect(usageLink.getAttribute("href")).toBe(
+    "https://chatgpt.com/settings/usage",
+  );
+  expect(usageLink.getAttribute("target")).toBe("_blank");
+});
+it("distinguishes local Codex mode without rendering ChatGPT account details", async () => {
+  vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({
+    paired: true,
+    online: true,
+    model: "codex-mini",
+    mode: "codex",
+    accountLabel: null,
+  });
+  render(<CodexBridge onUpdate={vi.fn()} disabled={false} />);
+  await screen.findByText("本机在线 · 默认模型 codex-mini");
+  expect(screen.getByText("本机 Codex")).toBeTruthy();
+  expect(screen.queryByText(/已授权账号：/)).toBeNull();
 });
 it("requires an online paired computer before enabling and keeps pairing code out of storage", async () => {
   vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({

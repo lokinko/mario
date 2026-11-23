@@ -4,7 +4,10 @@ use super::{
     provider::{ModelCompletion, SearchCompletion},
     ChatMessage, ModelProvider,
 };
-use crate::{models::connection::CodexBridgeStatus, AppError, AppResult};
+use crate::{
+    models::connection::{BridgeMode, CodexBridgeStatus, CodexModel},
+    AppError, AppResult,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -53,7 +56,9 @@ struct State {
     runner: Option<String>,
     seen: Option<Instant>,
     model: Option<String>,
-    models: Vec<crate::models::connection::CodexModel>,
+    models: Vec<CodexModel>,
+    mode: Option<BridgeMode>,
+    account_label: Option<String>,
     active: Option<Active>,
 }
 pub(crate) struct Connection {
@@ -137,7 +142,9 @@ impl Connection {
         &self,
         runner: &str,
         model: &str,
-        models: &[crate::models::connection::CodexModel],
+        models: &[CodexModel],
+        mode: Option<BridgeMode>,
+        account_label: Option<&str>,
     ) -> AppResult<()> {
         if models.is_empty()
             || models.len() > 100
@@ -151,9 +158,21 @@ impl Connection {
         {
             return Err(AppError::Validation("桥接模型列表无效".into()));
         }
+        let account_label = match account_label
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(value) if value.chars().count() <= 200 && !value.chars().any(char::is_control) => {
+                Some(value.to_owned())
+            }
+            Some(_) => return Err(AppError::Validation("桥接账号展示标签无效".into())),
+            None => None,
+        };
         self.claim(runner, model)?;
         let mut state = self.state.lock().unwrap();
         state.models = models.to_vec();
+        state.mode = mode;
+        state.account_label = account_label;
         Ok(())
     }
     pub fn event(&self, runner: &str, id: &str, event: Event) -> AppResult<bool> {
@@ -206,6 +225,8 @@ pub(crate) fn create() -> AppResult<(String, String)> {
                 seen: None,
                 model: None,
                 models: Vec::new(),
+                mode: None,
+                account_label: None,
                 active: None,
             }),
         }),
@@ -239,12 +260,19 @@ pub(crate) fn status(id: &str) -> CodexBridgeStatus {
         return CodexBridgeStatus::default();
     };
     let state = connection.state.lock().unwrap();
+    let paired = !connection.expired(&state);
+    let online = paired && state.seen.is_some_and(|seen| seen.elapsed() < ONLINE_TTL);
     CodexBridgeStatus {
-        paired: !connection.expired(&state),
-        online: !connection.expired(&state)
-            && state.seen.is_some_and(|seen| seen.elapsed() < ONLINE_TTL),
+        paired,
+        online,
         model: state.model.clone(),
         models: state.models.clone(),
+        mode: if paired { state.mode } else { None },
+        account_label: if paired {
+            state.account_label.clone()
+        } else {
+            None
+        },
     }
 }
 pub(crate) struct BridgeProvider {
@@ -559,5 +587,56 @@ mod tests {
         connection.created = Instant::now();
         tokio::time::advance(PAIR_TTL + Duration::from_nanos(1)).await;
         assert!(connection.expired(&connection.state.lock().unwrap()));
+    }
+    #[test]
+    fn bridge_advertises_mode_and_sanitized_account_label_only_while_paired() {
+        let (id, token) = create().unwrap();
+        let connection = authenticate(&token).unwrap();
+        let runner = uuid::Uuid::new_v4().to_string();
+        let models = vec![CodexModel {
+            model: "gpt-5".into(),
+            display_name: "GPT-5".into(),
+            description: String::new(),
+            is_default: true,
+        }];
+        assert!(connection
+            .advertise(
+                &runner,
+                "gpt-5",
+                &models,
+                Some(BridgeMode::Chatgpt),
+                Some("bad\nlabel"),
+            )
+            .is_err());
+        assert!(connection
+            .advertise(
+                &runner,
+                "gpt-5",
+                &models,
+                Some(BridgeMode::Chatgpt),
+                Some(&"a".repeat(201)),
+            )
+            .is_err());
+        connection
+            .advertise(
+                &runner,
+                "gpt-5",
+                &models,
+                Some(BridgeMode::Chatgpt),
+                Some(" user@example.invalid "),
+            )
+            .unwrap();
+        let current = status(&id);
+        assert!(current.online);
+        assert_eq!(current.mode, Some(BridgeMode::Chatgpt));
+        assert_eq!(
+            current.account_label.as_deref(),
+            Some("user@example.invalid")
+        );
+        revoke(&id);
+        let revoked = status(&id);
+        assert!(!revoked.paired);
+        assert_eq!(revoked.mode, None);
+        assert_eq!(revoked.account_label, None);
     }
 }

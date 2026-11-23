@@ -164,10 +164,14 @@ fn parse_models(value: &Value) -> AppResult<Vec<CodexModel>> {
         if models.iter().any(|entry| entry.model == model) {
             continue;
         }
+        let description = entry["description"]
+            .as_str()
+            .map(|text| text.trim().chars().take(800).collect())
+            .unwrap_or_default();
         models.push(CodexModel {
             model: model.into(),
             display_name: display_name.into(),
-            description: String::new(),
+            description,
             is_default: models.is_empty(),
         });
         if models.len() > 100 {
@@ -695,7 +699,7 @@ mod tests {
     fn chatgpt_models_use_visible_account_catalog_and_preserve_order() {
         let models = parse_models(&json!({"models":[
             {"slug":"hidden","display_name":"Hidden","visibility":"hidden"},
-            {"slug":"model-b","display_name":"Model B","visibility":"list"},
+            {"slug":"model-b","display_name":"Model B","description":"Flagship reasoning","visibility":"list"},
             {"slug":"model-a","display_name":"Model A","visibility":"list"},
             {"slug":"model-b","display_name":"duplicate","visibility":"list"}
         ]}))
@@ -703,7 +707,9 @@ mod tests {
         assert_eq!(models.len(), 2);
         assert_eq!(models[0].model, "model-b");
         assert_eq!(models[0].display_name, "Model B");
+        assert_eq!(models[0].description, "Flagship reasoning");
         assert!(models[0].is_default);
+        assert_eq!(models[1].description, "");
         assert!(!models[1].is_default);
         assert!(parse_models(&json!({"data":[{"id":"not-the-account-catalog"}]})).is_err());
         assert!(parse_models(&json!({"models":[]})).is_err());

@@ -41,7 +41,7 @@ export function OpenAiSignIn({
     <div className="form-grid single-column">
       <button
         type="button"
-        className="secondary"
+        className="secondary siwc-button"
         data-oai-siwc-button=""
         disabled={disabled || busy}
         onClick={async () => {
@@ -65,11 +65,14 @@ export function OpenAiSignIn({
           }
         }}
       >
-        {busy
-          ? "等待 ChatGPT 授权…"
-          : link
-            ? "关联 ChatGPT 登录"
-            : "Continue with ChatGPT"}
+        <span className="siwc-mark" aria-hidden="true" />
+        <span>
+          {busy
+            ? "等待 ChatGPT 授权…"
+            : link
+              ? "关联 ChatGPT 登录"
+              : "Continue with ChatGPT"}
+        </span>
       </button>
       <small>仅用于 Mario 账号登录与关联；模型订阅授权单独开通。</small>
       {message && <p role="status">{message}</p>}

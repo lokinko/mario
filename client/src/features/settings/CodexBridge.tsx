@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Copy, ExternalLink, ShieldCheck } from "lucide-react";
+import { Badge } from "../../components/Badge";
 import {
   getCodexBridgeStatus,
   pairCodexBridge,
@@ -8,6 +10,8 @@ import {
   type CodexBridgeStatus,
 } from "../../api/settings";
 import type { ModelConfig } from "../../types/ai";
+
+const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
 
 export function CodexBridge({
   onUpdate,
@@ -58,6 +62,16 @@ export function CodexBridge({
       clearTimeout(timer);
     };
   }, []);
+
+  async function copyText(text: string, successText: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (alive.current) setMessage(successText);
+    } catch {
+      if (alive.current) setMessage("复制失败，请手动选中复制。");
+    }
+  }
+
   async function act(action: "pair" | "enable" | "revoke") {
     setBusy(true);
     setMessage("");
@@ -67,7 +81,13 @@ export function CodexBridge({
         const next = await pairCodexBridge();
         if (!alive.current) return;
         setCode(next.pairingCode);
-        setStatus({ paired: true, online: false, model: null });
+        setStatus({
+          paired: true,
+          online: false,
+          model: null,
+          mode: null,
+          accountLabel: null,
+        });
         setMessage("配对码 10 分钟内有效。重新配对会断开原连接。");
       } else if (action === "enable") {
         const next = await enableCodexBridge();
@@ -81,7 +101,13 @@ export function CodexBridge({
         if (!alive.current) return;
         onUpdate(next);
         setCode("");
-        setStatus({ paired: false, online: false, model: null });
+        setStatus({
+          paired: false,
+          online: false,
+          model: null,
+          mode: null,
+          accountLabel: null,
+        });
         setMessage("已撤销配对，本机进程无法继续接收请求。");
       }
     } catch (error) {
@@ -91,19 +117,112 @@ export function CodexBridge({
       if (alive.current) setBusy(false);
     }
   }
+
+  const modeBadge = statusError
+    ? { tone: "warning" as const, label: "状态不可用" }
+    : status === null
+      ? { tone: "neutral" as const, label: "检查中" }
+      : status.online
+        ? status.mode === "chatgpt"
+          ? { tone: "success" as const, label: "ChatGPT 官方授权" }
+          : status.mode === "codex"
+            ? { tone: "success" as const, label: "本机 Codex" }
+            : { tone: "success" as const, label: "本机在线" }
+        : status.paired
+          ? { tone: "warning" as const, label: "等待连接" }
+          : { tone: "neutral" as const, label: "未配对" };
+
   return (
     <div className="codex-bridge-panel">
-      <strong>本机桥接</strong>
-      <ol>
+      <div className="codex-bridge-header">
+        <strong>本机桥接</strong>
+        <Badge tone={modeBadge.tone}>{modeBadge.label}</Badge>
+      </div>
+
+      <div className="codex-bridge-status-card">
+        <div className="codex-bridge-status-main">
+          <p role="status" className="codex-bridge-status-line">
+            {statusError
+              ? "无法读取连接状态，请确认服务已部署新版并检查网络。"
+              : status === null
+                ? "正在检查连接状态…"
+                : status.online
+                  ? `本机在线 · 默认模型 ${status.model}`
+                  : status.paired
+                    ? "等待本机连接"
+                    : "尚未配对或配对已过期"}
+          </p>
+          {status?.online && status.mode === "chatgpt" && (
+            <div className="codex-bridge-account-meta">
+              <span>
+                <ShieldCheck size={14} aria-hidden="true" />
+                {status.accountLabel
+                  ? `已授权账号：${status.accountLabel}`
+                  : "已通过本机 Sign in with ChatGPT 官方授权连接"}
+              </span>
+              <a
+                className="codex-bridge-usage-link"
+                href={CHATGPT_USAGE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                管理 ChatGPT 用量与授权
+                <ExternalLink size={13} aria-hidden="true" />
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <ol className="codex-bridge-steps">
         <li>点击“生成配对码”。</li>
         <li>
           在电脑的 Mario 目录运行：
-          <ul>
+          <ul className="codex-bridge-commands">
             <li>
-              ChatGPT 登录：<code>npm run chatgpt:bridge</code>
+              <div className="codex-bridge-command-row">
+                <span>
+                  ChatGPT 官方登录：<code>npm run chatgpt:bridge</code>
+                </span>
+                <button
+                  type="button"
+                  className="ghost codex-bridge-copy"
+                  disabled={busy || disabled}
+                  aria-label="复制 ChatGPT 官方登录启动命令"
+                  onClick={() =>
+                    void copyText(
+                      "npm run chatgpt:bridge",
+                      "已复制 npm run chatgpt:bridge",
+                    )
+                  }
+                >
+                  <Copy size={13} aria-hidden="true" />
+                  复制命令
+                </button>
+              </div>
+              <small>无需安装 Codex；无已选账号时自动打开浏览器授权。</small>
             </li>
             <li>
-              本机 Codex：<code>npm run codex:bridge</code>
+              <div className="codex-bridge-command-row">
+                <span>
+                  本机 Codex：<code>npm run codex:bridge</code>
+                </span>
+                <button
+                  type="button"
+                  className="ghost codex-bridge-copy"
+                  disabled={busy || disabled}
+                  aria-label="复制 Codex 启动命令"
+                  onClick={() =>
+                    void copyText(
+                      "npm run codex:bridge",
+                      "已复制 npm run codex:bridge",
+                    )
+                  }
+                >
+                  <Copy size={13} aria-hidden="true" />
+                  复制命令
+                </button>
+              </div>
             </li>
           </ul>
           连接其他站点可附加 <code>-- https://你的站点/mario/</code>
@@ -111,49 +230,34 @@ export function CodexBridge({
         </li>
         <li>显示在线后点击“启用本机模型”。</li>
       </ol>
-      <p role="status">
-        {statusError
-          ? "无法读取连接状态，请确认服务已部署新版并检查网络。"
-          : status === null
-            ? "正在检查连接状态…"
-            : status.online
-              ? `本机在线 · 默认模型 ${status.model}`
-              : status.paired
-                ? "等待本机连接"
-                : "尚未配对或配对已过期"}
-      </p>
       {code && (
-        <label>
+        <label className="codex-bridge-pairing">
           配对码（仅本次显示）
-          <input
-            aria-label="配对码"
-            type="password"
-            readOnly
-            value={code}
-            autoComplete="off"
-          />
-          <button
-            className="secondary"
-            disabled={busy || disabled}
-            onClick={() => {
-              void Promise.resolve()
-                .then(() => navigator.clipboard.writeText(code))
-                .then(() => {
-                  if (alive.current)
-                    setMessage("配对码已复制，请粘贴到本机桥接窗口。");
-                })
-                .catch(() => {
-                  if (alive.current)
-                    setMessage("复制失败，请选中配对码手动复制。");
-                });
-            }}
-          >
-            复制配对码
-          </button>
+          <div className="codex-bridge-pairing-row">
+            <input
+              aria-label="配对码"
+              type="password"
+              readOnly
+              value={code}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || disabled}
+              onClick={() =>
+                void copyText(code, "配对码已复制，请粘贴到本机桥接窗口。")
+              }
+            >
+              复制配对码
+            </button>
+          </div>
         </label>
       )}
+
       <div className="form-actions">
         <button
+          type="button"
           className="secondary"
           disabled={busy || disabled}
           onClick={() => void act("pair")}
@@ -161,6 +265,7 @@ export function CodexBridge({
           {status?.paired ? "重新配对" : "生成配对码"}
         </button>
         <button
+          type="button"
           className="secondary"
           disabled={busy || disabled || !status?.online}
           onClick={() => void act("enable")}
@@ -169,6 +274,7 @@ export function CodexBridge({
         </button>
         {status?.paired && (
           <button
+            type="button"
             className="danger-text"
             disabled={busy || disabled}
             onClick={() => void act("revoke")}
@@ -177,9 +283,15 @@ export function CodexBridge({
           </button>
         )}
       </div>
+
       {message && <p role="status">{message}</p>}
-      <small>
-        授权仅在本机（127.0.0.1）完成，凭据不上传服务器；配对有效期 12 小时。
+      <small className="codex-bridge-note">
+        授权仅在本机（127.0.0.1）完成，凭据由本机系统加密保管且不上传服务器；配对有效期
+        12 小时。查看或撤销订阅额度请前往{" "}
+        <a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer">
+          ChatGPT 设置 → Usage
+        </a>
+        。
       </small>
     </div>
   );

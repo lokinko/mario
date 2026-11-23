@@ -103,9 +103,19 @@ fn transport_contract_fixture() {
         serde_json::from_value::<crate::models::connection::ModelConfig>(json!({"provider":provider,"baseUrl":"https://example.test","model":"fixture","hasApiKey":false})).unwrap()
     }).to_vec();
     configs.push(serde_json::from_value(json!({"provider":"openai-responses","baseUrl":"https://api.openai.com/v1","model":"site-model","hasApiKey":true,"source":"server","serverModel":"site-model"})).unwrap());
-    let bridges = [crate::models::connection::CodexBridgeStatus::default(), serde_json::from_value(json!({
-        "paired":true,"online":true,"model":"fixture","models":[{"model":"fixture","displayName":"Fixture","description":"catalog fixture","isDefault":true}]
-    })).unwrap()];
+    let bridges = [
+        crate::models::connection::CodexBridgeStatus::default(),
+        serde_json::from_value(json!({
+            "paired":true,"online":true,"model":"fixture","mode":"chatgpt","accountLabel":"investor@example.invalid",
+            "models":[{"model":"fixture","displayName":"Fixture","description":"catalog fixture","isDefault":true}]
+        }))
+        .unwrap(),
+        serde_json::from_value(json!({
+            "paired":true,"online":true,"model":"fixture","mode":"codex","accountLabel":null,
+            "models":[{"model":"fixture","displayName":"Fixture","description":"catalog fixture","isDefault":true}]
+        }))
+        .unwrap(),
+    ];
     let catalogs = [crate::models::connection::ServerModelCatalog {
         models: vec!["gpt-5.4".into(), "gpt-5.4-mini".into()],
         default_model: "gpt-5.4".into(),

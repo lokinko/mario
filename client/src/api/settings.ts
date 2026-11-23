@@ -48,11 +48,14 @@ export async function deleteModelKey(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-key", { method: "DELETE" });
 }
 
+export type BridgeMode = "codex" | "chatgpt";
 export type CodexBridgeStatus = {
   paired: boolean;
   online: boolean;
   model: string | null;
   models?: CodexModel[];
+  mode?: BridgeMode | null;
+  accountLabel?: string | null;
 };
 export type CodexModel = {
   model: string;

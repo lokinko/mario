@@ -8,9 +8,11 @@ AI 域基于授权资料提供可追溯的分析，管理模型执行与讨论�
 
 管理个人模型配置、站点提供的模型、本机授权和桥接。模型目标与对应凭据一起确定，不能因配置并发变化把凭据发送到另一个地址。个人原生模型支持从所选接口拉取可用模型列表进行选择，并支持手动添加自定义模型名称；拉取目录不落库且绝不回退使用站点密钥。
 
+本机官方 ChatGPT 授权遵循 Sign in with ChatGPT 动态客户端协议：非敏感主机标识保存于本机 `chatgpt-host.json`，OAuth 注册与令牌经本机 OS 加密后端（Windows DPAPI、macOS 钥匙串、Linux Secret Service，无明文回退）写入 `accounts.enc`，并支持对旧版明文 `accounts.json` 执行锁内一次性原地加密迁移。本机桥接仅上报非敏感执行模式（`chatgpt` / `codex`）、模型目录及可选账号展示标签，仅驻留服务端内存通道，不写入账号数据库或备份。
+
 执行器接收冻结任务，不直接读取账号数据库，也不写入用户账本。模型选择与执行能力不改变资料的业务授权。
 
-实现依据：[模型配置用例](../../server/src/application/model_settings.rs)、[执行端口](../../server/src/ports/analysis.rs)、[模型管理端口](../../server/src/ports/model.rs)、[Agent](../../server/src/agent.rs)。
+实现依据：[模型配置用例](../../server/src/application/model_settings.rs)、[执行端口](../../server/src/ports/analysis.rs)、[模型管理端口](../../server/src/ports/model.rs)、[本机授权与加密存储](../../server/src/chatgpt_auth.rs)、[Agent](../../server/src/agent.rs)。
 
 ## 2. 资料授权与上下文冻结
 

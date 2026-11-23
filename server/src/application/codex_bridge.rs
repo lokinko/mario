@@ -115,14 +115,16 @@ mod tests {
                 is_default: false,
             },
         ];
-        connection.advertise(&runner, "a", &models).unwrap();
+        connection
+            .advertise(&runner, "a", &models, None, None)
+            .unwrap();
         assert_eq!(status(&db, &REGISTRY).unwrap().models, models);
         assert_eq!(enable(&db, &REGISTRY).unwrap().model, "a");
         assert!(save(&db, "unknown", &REGISTRY).is_err());
         assert_eq!(save(&db, "b", &REGISTRY).unwrap().model, "b");
         assert_eq!(enable(&db, &REGISTRY).unwrap().model, "b");
         assert!(connection
-            .advertise(&uuid::Uuid::new_v4().to_string(), "a", &models)
+            .advertise(&uuid::Uuid::new_v4().to_string(), "a", &models, None, None)
             .is_err());
         assert_eq!(status(&db, &REGISTRY).unwrap().models, models);
         revoke(&db, &REGISTRY).unwrap();
@@ -149,6 +151,8 @@ mod tests {
                 description: String::new(),
                 is_default: true,
             }],
+            None,
+            None,
         )
         .unwrap();
         let poll = tokio::spawn(async move { ca.poll(&runner, "fixture").await });

@@ -33,11 +33,30 @@ fn api_url(site: &str) -> AppResult<String> {
 }
 enum Backend {
     Codex,
-    ChatGpt { account: String, session: String },
+    ChatGpt {
+        account: String,
+        session: String,
+        account_label: Option<String>,
+    },
 }
 impl Backend {
+    fn mode(&self) -> crate::models::connection::BridgeMode {
+        match self {
+            Self::Codex => crate::models::connection::BridgeMode::Codex,
+            Self::ChatGpt { .. } => crate::models::connection::BridgeMode::Chatgpt,
+        }
+    }
+    fn account_label(&self) -> Option<&str> {
+        match self {
+            Self::Codex => None,
+            Self::ChatGpt { account_label, .. } => account_label.as_deref(),
+        }
+    }
     fn check(&self) -> AppResult<()> {
-        if let Self::ChatGpt { account, session } = self {
+        if let Self::ChatGpt {
+            account, session, ..
+        } = self
+        {
             match crate::chatgpt_auth::is_authorized(account, session) {
                 Ok(true) | Err(AppError::Busy(_)) => {}
                 _ => {
@@ -61,18 +80,27 @@ pub(crate) async fn run_chatgpt(site: &str) -> AppResult<()> {
         crate::chatgpt_auth::command(&["login".into()]).await?;
     }
     let account = crate::chatgpt_auth::active_account()?;
+    let account_label = crate::chatgpt_auth::account_label(&account)?;
     eprintln!("本机 ChatGPT 注册：{account}（此进程固定使用该注册；切换账号后请重启并重新配对）");
     let session = crate::chatgpt_auth::session(&account)?;
-    connect(site, Backend::ChatGpt { account, session }).await
+    connect(
+        site,
+        Backend::ChatGpt {
+            account,
+            session,
+            account_label,
+        },
+    )
+    .await
 }
 async fn connect(site: &str, backend: Backend) -> AppResult<()> {
     let base = api_url(site)?;
     eprintln!("正在检查本机模型授权与模型列表…");
     let models = match &backend {
         Backend::Codex => CodexProvider::models().await?,
-        Backend::ChatGpt { account, session } => {
-            crate::ai::chatgpt::ChatGptProvider::models(account, session).await?
-        }
+        Backend::ChatGpt {
+            account, session, ..
+        } => crate::ai::chatgpt::ChatGptProvider::models(account, session).await?,
     };
     let model = &models
         .iter()
@@ -114,7 +142,13 @@ async fn work(
         let response = client
             .post(format!("{base}/poll"))
             .bearer_auth(token)
-            .json(&json!({"runner":runner,"model":model,"models":models}))
+            .json(&json!({
+                "runner": runner,
+                "model": model,
+                "models": models,
+                "mode": backend.mode(),
+                "accountLabel": backend.account_label()
+            }))
             .send()
             .await;
         let response = match response {
@@ -221,7 +255,9 @@ async fn execute(
                     .generate(job.messages, job.search, Some(callback))
                     .await
             }
-            Backend::ChatGpt { account, session } => {
+            Backend::ChatGpt {
+                account, session, ..
+            } => {
                 crate::ai::chatgpt::ChatGptProvider::new(
                     job.model,
                     account.clone(),

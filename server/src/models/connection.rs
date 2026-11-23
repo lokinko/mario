@@ -56,6 +56,13 @@ pub struct CodexModel {
     pub is_default: bool,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum BridgeMode {
+    Codex,
+    Chatgpt,
+}
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CodexBridgeStatus {
@@ -63,6 +70,10 @@ pub(crate) struct CodexBridgeStatus {
     pub online: bool,
     pub model: Option<String>,
     pub models: Vec<CodexModel>,
+    #[serde(default)]
+    pub mode: Option<BridgeMode>,
+    #[serde(default)]
+    pub account_label: Option<String>,
 }
 
 pub(crate) struct BridgePairing {

@@ -1,4 +1,5 @@
 //! Official OAuth for the LOCAL worker only. No API routes expose tokens or login.
+mod crypto;
 mod oauth;
 mod store;
 use crate::{AppError, AppResult};
@@ -167,6 +168,11 @@ pub(crate) fn session(id: &str) -> AppResult<String> {
         })
 }
 
+pub(crate) fn account_label(id: &str) -> AppResult<Option<String>> {
+    let store = Store::open()?;
+    Ok(store.account(id)?.display_label())
+}
+
 pub(crate) fn has_active_account() -> AppResult<bool> {
     let store = Store::open()?;
     Ok(store
@@ -269,7 +275,7 @@ pub(crate) async fn access_token(id: &str, session: &str) -> AppResult<String> {
     }
     Ok(token)
 }
-fn clear_tokens(store: &mut Store, id: &str) -> AppResult<()> {
+fn clear_tokens(store: &mut Store<'_>, id: &str) -> AppResult<()> {
     store
         .state
         .accounts
@@ -293,10 +299,14 @@ pub(crate) async fn command(args: &[String]) -> AppResult<()> {
         }
         Some("status") if args.len() == 1 => {
             let store = Store::open()?;
+            eprintln!("本机凭据加密后端：{}", store.cipher_provider());
             if store.state.accounts.is_empty() {
                 eprintln!("尚无 ChatGPT 授权账号。运行 npm run chatgpt:auth -- login");
             }
             for account in &store.state.accounts {
+                let label = account
+                    .display_label()
+                    .unwrap_or_else(|| "未提供展示信息".into());
                 eprintln!(
                     "{} {} · {} · {}",
                     if store.state.active.as_deref() == Some(&account.id) {
@@ -305,10 +315,10 @@ pub(crate) async fn command(args: &[String]) -> AppResult<()> {
                         " "
                     },
                     account.id,
-                    account.email,
+                    label,
                     match account.tokens.as_ref() {
                         Some(tokens) if plan_enabled(tokens) =>
-                            "已保存订阅授权（实际可用性需连接测试）",
+                            "已保存订阅授权（实际可用性需连接测试；用量：https://chatgpt.com/settings/usage）",
                         Some(_) => "已登录，订阅使用未开启；login --account <注册 ID> 重新授权",
                         None => "已退出",
                     }
@@ -368,6 +378,7 @@ async fn login(selection: Option<Option<&str>>) -> AppResult<()> {
         .find(|a| a.client_id == result.client_id && a.subject == identity.sub)
     {
         account.email = identity.email;
+        account.name = identity.name;
         account.tokens = Some(tokens);
         account.id.clone()
     } else {
@@ -377,6 +388,7 @@ async fn login(selection: Option<Option<&str>>) -> AppResult<()> {
             client_id: result.client_id,
             subject: identity.sub,
             email: identity.email,
+            name: identity.name,
             tokens: Some(tokens),
         });
         id

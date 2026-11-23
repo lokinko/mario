@@ -62,6 +62,8 @@ pub(super) struct Identity {
     #[serde(default)]
     pub email: String,
     #[serde(default)]
+    pub name: String,
+    #[serde(default)]
     nonce: Option<String>,
     exp: u64,
 }
@@ -432,6 +434,7 @@ mod tests {
             client_id: "issued".into(),
             subject: "subject".into(),
             email: "example@test".into(),
+            name: String::new(),
             tokens: None,
         });
         assert!(matches!(
