@@ -14,7 +14,7 @@ use crate::{
 };
 pub(crate) fn id(db: &impl ModelConfiguration) -> AppResult<String> {
     db.bridge_id()?
-        .ok_or_else(|| AppError::Validation("请先配对本机 Codex".into()))
+        .ok_or_else(|| AppError::Validation("请先配对本机 ChatGPT 桥接".into()))
 }
 pub(crate) fn status(
     db: &impl ModelConfiguration,
@@ -91,7 +91,7 @@ pub(crate) fn save(
     }
     if !state.models.iter().any(|entry| entry.model == model) {
         return Err(AppError::Validation(
-            "此模型不在本机 Codex 返回的模型列表中，请重新选择".into(),
+            "此模型不在本机 ChatGPT 桥接返回的模型列表中，请重新选择".into(),
         ));
     }
     db.save_model_configuration(

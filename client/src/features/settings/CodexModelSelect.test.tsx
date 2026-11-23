@@ -105,7 +105,7 @@ it("saves the selected bridge model rather than the computer default", async () 
   expect(
     (
       screen.getByRole("option", {
-        name: "本机桥接（ChatGPT 登录 / Codex）",
+        name: "本机 ChatGPT 官方授权（OAuth）",
       }) as HTMLOptionElement
     ).selected,
   ).toBe(true);

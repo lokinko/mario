@@ -2,7 +2,7 @@
 pub(crate) const ANALYSIS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25 * 60);
 pub(crate) const AGENT_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(26 * 60);
 pub(crate) const MODEL_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
-/// Codex turns are retried only before any assistant output was emitted.
+/// Retained as a `/api/server` compatibility capability field for deployment probes.
 pub(crate) const CODEX_MAX_ATTEMPTS: usize = 3;
 pub(crate) const ANALYSIS_TIMEOUT_MESSAGE: &str =
     "问答达到 25 分钟执行上限，已停止模型调用；本次未保存完整结果。可缩小问题或关闭网页搜索后重试";
@@ -43,11 +43,6 @@ pub enum CodexFailure {
     Rejected,
     #[error("本机模型调用失败且未提供可识别的错误分类，请检查本机登录和授权状态后重试")]
     Other,
-}
-impl CodexFailure {
-    pub(crate) fn retryable(self) -> bool {
-        matches!(self, Self::Busy | Self::Unavailable | Self::Disconnected)
-    }
 }
 
 #[derive(Clone, Debug, serde::Serialize)]

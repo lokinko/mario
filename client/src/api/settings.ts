@@ -48,7 +48,7 @@ export async function deleteModelKey(): Promise<ModelConfig> {
   return httpRequest<ModelConfig>("/model-key", { method: "DELETE" });
 }
 
-export type BridgeMode = "codex" | "chatgpt";
+export type BridgeMode = "chatgpt";
 export type CodexBridgeStatus = {
   paired: boolean;
   online: boolean;

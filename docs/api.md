@@ -243,10 +243,10 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 
 | 方法 | 路径 | 输入 → 响应 | 作用 |
 | --- | --- | --- | --- |
-| POST | `/api/codex-bridge/worker/poll` | B `{runner:string,model:string,models?:CodexModel[]}` → `BridgeJob/null` | 宣告能力并领取任务，暂无任务可返回 null |
+| POST | `/api/codex-bridge/worker/poll` | B `{runner:string,model?:string="",models?:CodexModel[],mode?:BridgeMode,accountLabel?:string/null,authRequired?:boolean=false}` → `BridgeJob/null` | 宣告能力并领取任务，暂无任务可返回 null |
 | POST | `/api/codex-bridge/worker/event` | B `{runner:string,jobId:string,event:BridgeEvent}` → `{active:boolean}` | 上报输出/心跳；active 表示任务仍有效 |
 
-`BridgeJob` 为 `{id,model,messages,search}`，其中 `messages` 是模型消息数组，`search` 是布尔值。`BridgeEvent` 为带 `type` 的联合类型：`delta{text}`、`complete{result:SearchCompletion}`、`error`、`heartbeat`、`status{message}`、`failure{reason:CodexFailure}`。这与浏览器分析 SSE 是不同协议，不能混用 `complete` 的字段。`CodexFailure` 的枚举见[推理契约](../server/src/models/inference.rs)。
+`BridgeJob` 为 `{id,model,messages,search,oauthNewAccount?:boolean}`，其中 `messages` 是模型消息数组，`search` 是布尔值，`oauthNewAccount` 为网页触发 ChatGPT OAuth 授权时的控制标记。`BridgeEvent` 为带 `type` 的联合类型：`delta{text}`、`complete{result:SearchCompletion}`、`oauthReady{url}`、`error`、`heartbeat`、`status{message}`、`failure{reason:CodexFailure}`。这与浏览器分析 SSE 是不同协议，不能混用 `complete` 的字段。`CodexFailure` 的枚举见[推理契约](../server/src/models/inference.rs)。
 
 ### 5.3 独立 Agent
 
@@ -314,7 +314,7 @@ data: {"type":"draft","proposal":"P1","answer":"初步分析文本"}
 | ModelConfigInput | `provider:openai-responses/openai-chat/anthropic/codex-bridge; baseUrl,model:string; apiKey?:string/null; source?:account/server=account` |
 | ModelConfig | `provider,baseUrl,model,hasApiKey,source`，可有 `serverModel`；不返回 apiKey |
 | AccountModelCatalogInput / AccountModelCatalog | 输入 `provider:openai-responses/openai-chat/anthropic; baseUrl:string; apiKey?:string/null`；输出 `{models:string[]}` |
-| CodexModel / CodexBridgeStatus | CodexModel 为 `model,displayName:string; description?:string=""; isDefault?:boolean=false`；状态为 `paired,online:boolean; model:string/null; models:CodexModel[]; mode?:codex/chatgpt/null; accountLabel?:string/null; authRequired?:boolean=false` |
+| CodexModel / CodexBridgeStatus | CodexModel 为 `model,displayName:string; description?:string=""; isDefault?:boolean=false`；状态为 `paired,online:boolean; model:string/null; models:CodexModel[]; mode?:chatgpt/null; accountLabel?:string/null; authRequired?:boolean=false` |
 | ContextSelection | `includeProfile?,includeHoldings?,includeEvidence?,includeMemory?:boolean`，当前各字段默认 true |
 | AnalysisRequest | `question:string; workflow:"council"; webSearch?:boolean=true; previousTurn?:PreviousTurn/null; contextSelection?:ContextSelection; previewRevision?:string/null`；拒绝未知字段，不接收持仓账本 JSON 作为独立请求字段 |
 | PreviousTurn | `question,answer:string; suggestions:string[]; earlierQuestions?:string[]=[]; pendingQuestion?:string/null`；主摘要总长不超过 800 字符，建议最多 3 条；早期问题最多 5 条，每条不超过 300 字符，追问不超过 200 字符 |

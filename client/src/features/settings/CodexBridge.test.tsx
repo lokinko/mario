@@ -22,7 +22,7 @@ afterEach(() => {
   cleanup();
   vi.resetAllMocks();
 });
-it("explains both local execution choices without asking the webpage for ChatGPT credentials", async () => {
+it("explains the local ChatGPT OAuth channel without asking the webpage for ChatGPT credentials", async () => {
   vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({
     paired: false,
     online: false,
@@ -31,7 +31,7 @@ it("explains both local execution choices without asking the webpage for ChatGPT
   render(<CodexBridge onUpdate={vi.fn()} disabled={false} />);
   await screen.findByText("尚未配对或配对已过期");
   expect(screen.getByText("npm run chatgpt:bridge")).toBeTruthy();
-  expect(screen.getByText("npm run codex:bridge")).toBeTruthy();
+  expect(screen.queryByText("npm run codex:bridge")).toBeNull();
   expect(screen.getByText(/127\.0\.0\.1/)).toBeTruthy();
   expect(screen.getByText(/本机系统加密保管/)).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
@@ -93,18 +93,33 @@ it("jumps to ChatGPT OAuth login from settings when clicked in pending or active
   );
   openSpy.mockRestore();
 });
-it("distinguishes local Codex mode without rendering ChatGPT account details", async () => {
+it("allows switching to a new ChatGPT account from an active OAuth session", async () => {
   vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({
     paired: true,
     online: true,
-    model: "codex-mini",
-    mode: "codex",
-    accountLabel: null,
+    model: "gpt-5",
+    mode: "chatgpt",
+    accountLabel: "investor@example.invalid",
+    authRequired: false,
   });
+  const oauthUrl =
+    "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&prompt=login&response_type=code";
+  vi.mocked(api.startCodexBridgeOAuth).mockResolvedValue({ url: oauthUrl });
+  const openSpy = vi
+    .spyOn(window, "open")
+    .mockImplementation(() => ({}) as Window);
   render(<CodexBridge onUpdate={vi.fn()} disabled={false} />);
-  await screen.findByText("本机在线 · 默认模型 codex-mini");
-  expect(screen.getByText("本机 Codex")).toBeTruthy();
-  expect(screen.queryByText(/已授权账号：/)).toBeNull();
+  await screen.findByText("本机在线 · 默认模型 gpt-5");
+  fireEvent.click(screen.getByRole("button", { name: "切换新 ChatGPT 账号" }));
+  await waitFor(() =>
+    expect(api.startCodexBridgeOAuth).toHaveBeenCalledWith(true),
+  );
+  expect(openSpy).toHaveBeenCalledWith(
+    oauthUrl,
+    "_blank",
+    "noopener,noreferrer",
+  );
+  openSpy.mockRestore();
 });
 it("requires an online paired computer before enabling and keeps pairing code out of storage", async () => {
   vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({

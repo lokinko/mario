@@ -3,7 +3,6 @@
   "private": true,
   "version": "0.6.0",
   "scripts": {
-    "codex:bridge": "node scripts/codex-bridge.mjs",
     "chatgpt:bridge": "node scripts/codex-bridge.mjs --chatgpt-bridge",
     "chatgpt:auth": "node scripts/codex-bridge.mjs --chatgpt-auth",
     "test:chatgpt": "node --test scripts/codex-bridge.test.mjs && cargo test --manifest-path server/Cargo.toml --lib chatgpt",

@@ -30,6 +30,5 @@ npm run check:contracts
   node scripts/test-edge-cases.mjs
   node scripts/test-web.mjs
   node scripts/test-codex-bridge.mjs
-  node scripts/test-codex-bridge.mjs --protocol-fixture
 ')
 (cd "$root_dir" && npm run test:financial)

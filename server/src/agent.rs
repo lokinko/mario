@@ -132,7 +132,7 @@ impl crate::ports::analysis::AnalysisExecutor for AgentExecutor {
     }
 }
 
-/// The remote Agent endpoint, unless the model runs through the user's Codex bridge.
+/// The remote Agent endpoint, unless the model runs through the user's local ChatGPT bridge.
 fn remote_agent(config: &ModelConfig) -> AppResult<Option<(String, String)>> {
     let Some(endpoint) = std::env::var("MARIO_AGENT_URL")
         .ok()
@@ -165,7 +165,7 @@ fn local_provider(
     Ok(if config.provider == ModelProviderKind::CodexBridge {
         Box::new(
             crate::ai::bridge::BridgeProvider::new(
-                api_key.ok_or_else(|| AppError::Validation("请先配对本机 Codex".into()))?,
+                api_key.ok_or_else(|| AppError::Validation("请先配对本机 ChatGPT 桥接".into()))?,
                 config.model,
             )
             .with_events(events),

@@ -3,7 +3,7 @@ use crate::{models::inference::AnalysisEvent, AppResult};
 use std::{future::Future, pin::Pin};
 
 // Own the execution future in the response body: dropping the connection cancels
-// provider IO and Codex subprocesses, without leaving detached analysis jobs.
+// provider IO and local bridge turns, without leaving detached analysis jobs.
 pub(crate) fn response_stream(
     future: Pin<
         Box<dyn Future<Output = AppResult<crate::models::analysis::AnalysisResult>> + Send>,

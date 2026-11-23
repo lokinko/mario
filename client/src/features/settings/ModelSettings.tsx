@@ -193,7 +193,7 @@ export function ModelSettings({
                 <option value="openai-responses">OpenAI Responses</option>
                 <option value="anthropic">Anthropic Messages</option>
                 <option value="codex-bridge">
-                  本机桥接（ChatGPT 登录 / Codex）
+                  本机 ChatGPT 官方授权（OAuth）
                 </option>
               </select>
             </label>

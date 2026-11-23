@@ -96,12 +96,7 @@ fn authenticate(headers: &HeaderMap) -> AppResult<Arc<bridge::Connection>> {
 async fn poll(headers: HeaderMap, Json(input): Json<Poll>) -> AppResult<Json<Option<bridge::Job>>> {
     let connection = authenticate(&headers)?;
     if input.auth_required {
-        if !input.model.is_empty()
-            || !input.models.is_empty()
-            || input
-                .mode
-                .is_some_and(|mode| mode != crate::models::connection::BridgeMode::Chatgpt)
-        {
+        if !input.model.is_empty() || !input.models.is_empty() {
             return Err(AppError::Validation("待登录桥接状态字段无效".into()));
         }
         connection.advertise_auth_required(&input.runner)?;

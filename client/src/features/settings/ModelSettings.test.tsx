@@ -123,7 +123,7 @@ it("saves a third-party Chat Completions connection with a custom URL, port and 
   expect((screen.getByLabelText("API Key") as HTMLInputElement).value).toBe("");
 });
 
-it("offers Codex only through the paired bridge", () => {
+it("offers local ChatGPT OAuth only through the paired bridge", () => {
   render(
     <ModelSettings model={existingModel} onUpdate={vi.fn()} flash={vi.fn()} />,
   );

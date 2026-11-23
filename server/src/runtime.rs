@@ -38,12 +38,6 @@ pub async fn run_from_env() -> AppResult<()> {
             _ = tokio::signal::ctrl_c() => Ok(()),
         };
     }
-    if let Some(site) = std::env::args()
-        .skip_while(|arg| arg != "--codex-bridge")
-        .nth(1)
-    {
-        return crate::codex_bridge_worker::run(&site).await;
-    }
     if std::env::var("MARIO_ROLE").as_deref() == Ok("agent") {
         return agent::serve().await;
     }

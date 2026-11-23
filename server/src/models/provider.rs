@@ -16,7 +16,7 @@ pub enum ModelProviderKind {
     OpenaiResponses,
     OpenaiChat,
     Anthropic,
-    /// Codex running on the user's computer, reached through the paired bridge.
+    /// Local ChatGPT OAuth model reached through the paired bridge.
     CodexBridge,
 }
 
@@ -56,7 +56,7 @@ impl std::str::FromStr for ModelProviderKind {
             "codex-bridge" => Self::CodexBridge,
             _ => {
                 return Err(AppError::Validation(
-                    "请选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或本机 Codex 桥接"
+                    "请选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或本机 ChatGPT 桥接"
                         .into(),
                 ))
             }

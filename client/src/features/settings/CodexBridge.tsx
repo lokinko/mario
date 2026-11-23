@@ -157,9 +157,7 @@ export function CodexBridge({
           ? { tone: "warning" as const, label: "待登录 ChatGPT" }
           : status.mode === "chatgpt"
             ? { tone: "success" as const, label: "ChatGPT 官方授权" }
-            : status.mode === "codex"
-              ? { tone: "success" as const, label: "本机 Codex" }
-              : { tone: "success" as const, label: "本机在线" }
+            : { tone: "success" as const, label: "本机在线" }
         : status.paired
           ? { tone: "warning" as const, label: "等待连接" }
           : { tone: "neutral" as const, label: "未配对" };
@@ -167,7 +165,7 @@ export function CodexBridge({
   return (
     <div className="codex-bridge-panel">
       <div className="codex-bridge-header">
-        <strong>本机桥接</strong>
+        <strong>本机 ChatGPT 官方授权</strong>
         <Badge tone={modeBadge.tone}>{modeBadge.label}</Badge>
       </div>
 
@@ -263,31 +261,9 @@ export function CodexBridge({
                 </button>
               </div>
               <small>
-                无需安装 Codex；粘贴配对码连接后可直接在上方点击“跳转 ChatGPT
-                OAuth 登录”。
+                粘贴配对码连接后，直接在上方点击“跳转 ChatGPT OAuth
+                登录”完成授权。
               </small>
-            </li>
-            <li>
-              <div className="codex-bridge-command-row">
-                <span>
-                  本机 Codex：<code>npm run codex:bridge</code>
-                </span>
-                <button
-                  type="button"
-                  className="ghost codex-bridge-copy"
-                  disabled={busy || disabled}
-                  aria-label="复制 Codex 启动命令"
-                  onClick={() =>
-                    void copyText(
-                      "npm run codex:bridge",
-                      "已复制 npm run codex:bridge",
-                    )
-                  }
-                >
-                  <Copy size={13} aria-hidden="true" />
-                  复制命令
-                </button>
-              </div>
             </li>
           </ul>
           连接其他站点可附加 <code>-- https://你的站点/mario/</code>

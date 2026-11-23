@@ -115,11 +115,6 @@ fn transport_contract_fixture() {
             "models":[]
         }))
         .unwrap(),
-        serde_json::from_value(json!({
-            "paired":true,"online":true,"model":"fixture","mode":"codex","accountLabel":null,"authRequired":false,
-            "models":[{"model":"fixture","displayName":"Fixture","description":"catalog fixture","isDefault":true}]
-        }))
-        .unwrap(),
     ];
     let catalogs = [crate::models::connection::ServerModelCatalog {
         models: vec!["gpt-5.4".into(), "gpt-5.4-mini".into()],

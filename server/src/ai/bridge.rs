@@ -42,6 +42,7 @@ pub(crate) enum Event {
     Complete {
         result: SearchCompletion,
     },
+    #[serde(rename = "oauthReady")]
     OAuthReady {
         url: String,
     },
@@ -457,7 +458,7 @@ impl BridgeProvider {
             });
         }
         // Dropping the browser's execution future cancels this job; the next worker
-        // heartbeat observes cancellation and drops its Codex child process.
+        // heartbeat observes cancellation.
         let _guard = ActiveGuard {
             connection: connection.clone(),
             id: id.clone(),
@@ -581,7 +582,7 @@ mod tests {
                 &runner,
                 &job.id,
                 Event::Status {
-                    message: "Codex 正在自动重试（1/2）…".into(),
+                    message: "本机模型正在自动重试（1/2）…".into(),
                 },
             )
             .unwrap();
@@ -788,15 +789,11 @@ mod tests {
         let job = connection.poll(&runner, "").await.unwrap().unwrap();
         assert_eq!(job.oauth_new_account, Some(true));
         let valid_url = "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&ext_agent_host_id=urn%3Auuid%3Atest&response_type=code&redirect_uri=http%3A%2F%2F127.0.0.1%3A54321%2Fauth%2Fcallback&scope=openid&state=s&nonce=n&code_challenge_method=S256&code_challenge=c";
-        connection
-            .event(
-                &runner,
-                &job.id,
-                Event::OAuthReady {
-                    url: valid_url.into(),
-                },
-            )
-            .unwrap();
+        let ready = Event::OAuthReady {
+            url: valid_url.into(),
+        };
+        assert_eq!(serde_json::to_value(&ready).unwrap()["type"], "oauthReady");
+        connection.event(&runner, &job.id, ready).unwrap();
         assert_eq!(task.await.unwrap().unwrap(), valid_url);
         assert!(validate_oauth_authorize_url("https://evil.example/authorize").is_err());
         assert!(validate_oauth_authorize_url(
