@@ -9,6 +9,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { CodexBridge } from "./CodexBridge";
 import * as api from "../../api/settings";
+import { serviceUrlStorageKey } from "../../lib/service";
 import type { ModelConfig } from "../../types/ai";
 vi.mock("../../api/settings", () => ({
   getCodexBridgeStatus: vi.fn(),
@@ -21,8 +22,11 @@ vi.mock("../../api/settings", () => ({
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  vi.unstubAllEnvs();
+  localStorage.removeItem(serviceUrlStorageKey());
 });
 it("explains the local ChatGPT OAuth channel without asking the webpage for ChatGPT credentials", async () => {
+  vi.stubEnv("VITE_API_URL", "/mario/api");
   vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({
     paired: false,
     online: false,
@@ -30,12 +34,43 @@ it("explains the local ChatGPT OAuth channel without asking the webpage for Chat
   });
   render(<CodexBridge onUpdate={vi.fn()} disabled={false} />);
   await screen.findByText("尚未配对或配对已过期");
-  expect(screen.getByText("npm run chatgpt:bridge")).toBeTruthy();
+  expect(
+    screen.getByText(
+      `npm run chatgpt:bridge -- --api-url "${window.location.origin}/mario/api"`,
+    ),
+  ).toBeTruthy();
   expect(screen.queryByText("npm run codex:bridge")).toBeNull();
   expect(screen.getByText(/127\.0\.0\.1/)).toBeTruthy();
   expect(screen.getByText(/本机系统加密保管/)).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByLabelText(/密码|令牌|API Key/)).toBeNull();
+});
+it("copies the configured API address used to generate the pairing code", async () => {
+  const configuredApi = "https://mario.example.org/custom/gateway";
+  localStorage.setItem(serviceUrlStorageKey(), configuredApi);
+  vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({
+    paired: false,
+    online: false,
+    model: null,
+  });
+  const clipboard = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: clipboard },
+  });
+  try {
+    render(<CodexBridge onUpdate={vi.fn()} disabled={false} />);
+    await screen.findByText("尚未配对或配对已过期");
+    fireEvent.click(
+      screen.getByRole("button", { name: "复制 ChatGPT 官方登录启动命令" }),
+    );
+    await screen.findByText("已复制桥接启动命令。");
+    expect(clipboard).toHaveBeenCalledWith(
+      `npm run chatgpt:bridge -- --api-url "${configuredApi}"`,
+    );
+  } finally {
+    Reflect.deleteProperty(navigator, "clipboard");
+  }
 });
 it("displays ChatGPT official authorization status, account label and usage link", async () => {
   vi.mocked(api.getCodexBridgeStatus).mockResolvedValue({

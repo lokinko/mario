@@ -28,13 +28,17 @@ pub async fn run_from_env() -> AppResult<()> {
         };
     }
     if args.first().map(String::as_str) == Some("--chatgpt-bridge") {
-        if args.len() != 2 {
-            return Err(AppError::Validation(
-                "--chatgpt-bridge 需要 Mario 网站地址".into(),
-            ));
-        }
+        let (address, explicit_api) = match args[1..] {
+            [ref site] if site != "--api-url" => (site, false),
+            [ref flag, ref base] if flag == "--api-url" => (base, true),
+            _ => {
+                return Err(AppError::Validation(
+                    "--chatgpt-bridge 需要 Mario 网站地址或 --api-url <API 基址>".into(),
+                ))
+            }
+        };
         return tokio::select! {
-            result = crate::codex_bridge_worker::run_chatgpt(&args[1]) => result,
+            result = crate::codex_bridge_worker::run_chatgpt(address, explicit_api) => result,
             _ = tokio::signal::ctrl_c() => Ok(()),
         };
     }

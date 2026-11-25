@@ -20,13 +20,17 @@ export function workerArguments(input) {
     if (!valid) throw Error('用法：npm run chatgpt:auth -- login [--new | --account <注册 ID>] | status | select <注册 ID> | logout [注册 ID]');
     return [mode, ...args];
   }
-  if (mode !== '--chatgpt-bridge' || args.length > 1) throw Error('桥接只接受一个 Mario 网页地址。');
-  const site = args[0] || 'https://www.madeagents.ai/mario/';
-  const url = new URL(site);
-  if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) || url.username || url.password || url.search || url.hash) {
-    throw Error('请输入 HTTPS Mario 网页地址；仅本机测试允许 HTTP。');
+  if (mode !== '--chatgpt-bridge') throw Error('未知桥接启动模式。');
+  const explicitApi = args[0] === '--api-url';
+  const address = args[explicitApi ? 1 : 0];
+  if (!address || args.length !== (explicitApi ? 2 : 1)) {
+    throw Error('请复制 Mario 设置页的桥接启动命令，或运行 npm run chatgpt:bridge -- <生成配对码的 Mario 网页地址>。');
   }
-  return [mode, site];
+  const url = new URL(address);
+  if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) || url.username || url.password || url.search || url.hash) {
+    throw Error('请输入不含凭据、查询或片段的 HTTPS Mario 地址；仅本机测试允许 HTTP。');
+  }
+  return [mode, ...args];
 }
 function run(command, args) {
   return new Promise((done, reject) => {

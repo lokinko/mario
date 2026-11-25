@@ -8,7 +8,9 @@ AI 域基于授权资料提供可追溯的分析，管理模型执行与讨论�
 
 管理个人模型配置、站点提供的模型、本机授权和桥接。模型目标与对应凭据一起确定，不能因配置并发变化把凭据发送到另一个地址。个人原生模型支持从所选接口拉取可用模型列表进行选择，并支持手动添加自定义模型名称；拉取目录不落库且绝不回退使用站点密钥。
 
-本机官方 ChatGPT 授权遵循 Sign in with ChatGPT 动态客户端协议：非敏感主机标识保存于本机 `chatgpt-host.json`，OAuth 注册与令牌经本机 OS 加密后端（Windows DPAPI、macOS 钥匙串、Linux Secret Service，无明文回退）写入 `accounts.enc`，并支持对旧版明文 `accounts.json` 执行锁内一次性原地加密迁移。用户可在设置页直接点击“跳转 ChatGPT OAuth 登录”或“切换新 ChatGPT 账号”，由已配对本机通道（`npm run chatgpt:bridge`，已移除旧版 Codex CLI 桥接）在 `127.0.0.1` 启动临时回环回调并返回经过校验的 `https://auth.openai.com/api/accounts/authorize` 跳转地址，浏览器完成授权后自动在本机完成令牌交换与模型目录刷新。本机通道仅上报非敏感执行模式（`chatgpt`）、待登录状态、模型目录及可选账号展示标签，仅驻留服务端内存通道，不写入账号数据库或备份。
+在 Mario 设置页生成配对码，并复制使用当前 Mario API 基址的启动命令 `npm run chatgpt:bridge -- --api-url "<API 基址>"`。手动启动时也可运行 `npm run chatgpt:bridge -- "<Mario 网页地址>"`，由本机通道在网页路径后添加 `/api`。地址必须显式提供。配对请求遇到重定向时终止并提示核对地址，配对凭据只发往指定服务。
+
+本机官方 ChatGPT 授权遵循 Sign in with ChatGPT 动态客户端协议：非敏感主机标识保存于本机 `chatgpt-host.json`，OAuth 注册与令牌经本机 OS 加密后端（Windows DPAPI、macOS 钥匙串、Linux Secret Service，无明文回退）写入 `accounts.enc`，并支持对旧版明文 `accounts.json` 执行锁内一次性原地加密迁移。用户可在设置页直接点击“跳转 ChatGPT OAuth 登录”或“切换新 ChatGPT 账号”，由已配对本机通道在 `127.0.0.1` 启动临时回环回调并返回经过校验的 `https://auth.openai.com/api/accounts/authorize` 跳转地址，浏览器完成授权后自动在本机完成令牌交换与模型目录刷新。本机通道仅上报非敏感执行模式（`chatgpt`）、待登录状态、模型目录及可选账号展示标签，仅驻留服务端内存通道，不写入账号数据库或备份。
 
 执行器接收冻结任务，不直接读取账号数据库，也不写入用户账本。模型选择与执行能力不改变资料的业务授权。
 

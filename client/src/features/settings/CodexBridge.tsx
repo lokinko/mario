@@ -10,9 +10,25 @@ import {
   getModelConfig,
   type CodexBridgeStatus,
 } from "../../api/settings";
+import { serviceUrl } from "../../lib/service";
 import type { ModelConfig } from "../../types/ai";
 
 const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
+
+function bridgeLaunchCommand() {
+  const api = new URL(serviceUrl(), window.location.origin);
+  const localHttp =
+    api.protocol === "http:" &&
+    ["localhost", "127.0.0.1", "[::1]"].includes(api.hostname);
+  // The copied command can be pasted into PowerShell, CMD, or a POSIX shell.
+  if (
+    (api.protocol !== "https:" && !localHttp) ||
+    !/^[\w.:/~[\]-]+$/.test(api.href)
+  ) {
+    return null;
+  }
+  return `npm run chatgpt:bridge -- --api-url "${api.href}"`;
+}
 
 export function CodexBridge({
   onUpdate,
@@ -23,6 +39,7 @@ export function CodexBridge({
   disabled: boolean;
   onStatus?: (status: CodexBridgeStatus | null) => void;
 }) {
+  const launchCommand = bridgeLaunchCommand();
   const [status, setStatus] = useState<CodexBridgeStatus | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -237,37 +254,41 @@ export function CodexBridge({
       <ol className="codex-bridge-steps">
         <li>点击“生成配对码”。</li>
         <li>
-          在电脑的 Mario 目录运行：
-          <ul className="codex-bridge-commands">
-            <li>
-              <div className="codex-bridge-command-row">
-                <span>
-                  ChatGPT 官方登录：<code>npm run chatgpt:bridge</code>
-                </span>
-                <button
-                  type="button"
-                  className="ghost codex-bridge-copy"
-                  disabled={busy || disabled}
-                  aria-label="复制 ChatGPT 官方登录启动命令"
-                  onClick={() =>
-                    void copyText(
-                      "npm run chatgpt:bridge",
-                      "已复制 npm run chatgpt:bridge",
-                    )
-                  }
-                >
-                  <Copy size={13} aria-hidden="true" />
-                  复制命令
-                </button>
-              </div>
-              <small>
-                粘贴配对码连接后，直接在上方点击“跳转 ChatGPT OAuth
-                登录”完成授权。
-              </small>
-            </li>
-          </ul>
-          连接其他站点可附加 <code>-- https://你的站点/mario/</code>
-          ，按提示粘贴配对码。
+          {launchCommand ? (
+            <>
+              在电脑的 Mario 目录运行以下命令。
+              <ul className="codex-bridge-commands">
+                <li>
+                  <div className="codex-bridge-command-row">
+                    <span>
+                      <code>{launchCommand}</code>
+                    </span>
+                    <button
+                      type="button"
+                      className="ghost codex-bridge-copy"
+                      disabled={busy || disabled}
+                      aria-label="复制 ChatGPT 官方登录启动命令"
+                      onClick={() =>
+                        void copyText(launchCommand, "已复制桥接启动命令。")
+                      }
+                    >
+                      <Copy size={13} aria-hidden="true" />
+                      复制命令
+                    </button>
+                  </div>
+                  <small>
+                    在终端粘贴配对码。连接后点击“跳转 ChatGPT OAuth 登录”。
+                  </small>
+                </li>
+              </ul>
+            </>
+          ) : (
+            <span>
+              无法为当前服务地址生成启动命令。请在终端运行{" "}
+              <code>npm run chatgpt:bridge -- --api-url</code> 并附上当前 Mario
+              API 的 HTTPS 地址。本机服务可使用 HTTP。
+            </span>
+          )}
         </li>
         <li>完成登录并显示在线后点击“启用本机模型”。</li>
       </ol>

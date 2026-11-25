@@ -300,7 +300,7 @@ done
 "$NODE" --input-type=module -e 'const r=await fetch(process.argv[1],{signal:AbortSignal.timeout(5000)}); const b=await r.json(); if(!r.ok || b.codexBridge!==1 || b.analysisTimeoutSeconds!==1500 || b.codexMaxAttempts!==3) { console.error("本机模型通道及超时能力未就绪，请检查当前运行的后端版本"); process.exit(1); }' "http://127.0.0.1:$API_PORT/api/server"
 echo "宿主机服务已就绪，关闭 SSH 后继续运行，重启主机自动启动。"
 echo '本机 ChatGPT 官方授权通道已部署：网页 设置 → 模型接口 → 本机 ChatGPT 官方授权（OAuth）→ 生成配对码。'
-echo '在个人电脑的同版 Mario 源码目录执行 npm run chatgpt:bridge，粘贴配对码；连接后点击网页「跳转 ChatGPT OAuth 登录」并启用本机模型。'
+echo '复制设置页的桥接命令，在个人电脑的同版 Mario 源码目录执行并粘贴配对码。连接后在网页点击「跳转 ChatGPT OAuth 登录」并启用本机模型。'
 echo '本机通道主动通过 HTTPS 连接网页，仅在 127.0.0.1 接收一次性 OAuth 回调，无需开放公网端口；服务重启后需重新配对。'
 configure_domain
 if [[ "$DOMAIN_PROVIDED" != true ]]; then

@@ -359,7 +359,7 @@ pub(crate) async fn start_oauth(id: &str, new_account: bool) -> AppResult<String
         let mut state = connection.state.lock().unwrap();
         if state.mode != Some(BridgeMode::Chatgpt) {
             return Err(AppError::Validation(
-                "当前桥接不是 ChatGPT 官方授权模式；请在本机运行 npm run chatgpt:bridge 并配对后再点击跳转登录"
+                "当前桥接不是 ChatGPT 官方授权模式。请在本机运行 Mario 设置页的桥接命令并配对，再点击跳转登录。"
                     .into(),
             ));
         }

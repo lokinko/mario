@@ -419,7 +419,7 @@ fn save_authorized_account(
     store.state.active = Some(id.clone());
     store.save()?;
     if enabled {
-        eprintln!("ChatGPT 官方授权已保存至本机，注册 ID：{id}。可运行 npm run chatgpt:bridge；用量：https://chatgpt.com/settings/usage");
+        eprintln!("ChatGPT 官方授权已保存至本机，注册 ID：{id}。连接 Mario 时请复制其设置页的桥接启动命令。用量：https://chatgpt.com/settings/usage");
     } else {
         eprintln!("已保存 ChatGPT 身份注册：{id}，但尚未开启订阅使用；不会调用模型。请运行 npm run chatgpt:auth -- login --account {id} 重新同意完整授权。");
     }

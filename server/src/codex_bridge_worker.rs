@@ -11,9 +11,9 @@ use std::{
 };
 use tokio::{sync::mpsc, task::JoinHandle};
 
-fn api_url(site: &str) -> AppResult<String> {
+fn worker_url(address: &str, explicit_api: bool) -> AppResult<String> {
     let url =
-        reqwest::Url::parse(site).map_err(|_| AppError::Validation("Mario 网页地址无效".into()))?;
+        reqwest::Url::parse(address).map_err(|_| AppError::Validation("Mario 地址无效".into()))?;
     let local = matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
     if !(url.scheme() == "https" || (url.scheme() == "http" && local))
         || !url.username().is_empty()
@@ -22,13 +22,44 @@ fn api_url(site: &str) -> AppResult<String> {
         || url.fragment().is_some()
     {
         return Err(AppError::Validation(
-            "桥接要求 HTTPS 网页地址（本机测试可用 HTTP），且不能含凭据、查询或片段".into(),
+            "桥接要求 HTTPS 地址（本机测试可用 HTTP），且不能含凭据、查询或片段".into(),
         ));
     }
     Ok(format!(
-        "{}/api/codex-bridge/worker",
-        url.as_str().trim_end_matches('/')
+        "{}{}/codex-bridge/worker",
+        url.as_str().trim_end_matches('/'),
+        if explicit_api { "" } else { "/api" }
     ))
+}
+
+fn poll_error(status: reqwest::StatusCode, auth_required: bool) -> AppError {
+    use reqwest::StatusCode;
+    let detail = match status {
+        status if status.is_redirection() => {
+            "目标服务发生重定向。请使用生成配对码的 Mario 设置页所提供的启动命令。"
+        }
+        StatusCode::UNAUTHORIZED => {
+            "配对码无效、已过期或被撤销。请在同一 Mario 站点重新生成配对码。"
+        }
+        StatusCode::BAD_REQUEST if auth_required => {
+            "服务未接受待登录状态。请更新 Mario 站点，或先在本机执行 npm run chatgpt:auth -- login，再重新配对。"
+        }
+        StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED => {
+            "目标服务没有提供桥接接口。请核对 Mario 服务地址及部署版本。"
+        }
+        _ => "请核对 Mario 服务地址及部署版本，再重新配对。",
+    };
+    AppError::Model(format!(
+        "桥接连接失败（HTTP {}）。{detail}",
+        status.as_u16()
+    ))
+}
+
+fn worker_client() -> AppResult<reqwest::Client> {
+    Ok(reqwest::Client::builder()
+        .timeout(Duration::from_secs(25))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?)
 }
 
 #[derive(Clone)]
@@ -91,8 +122,8 @@ async fn load_chatgpt_session(account: String) -> AppResult<ChatGptSession> {
     })
 }
 
-pub(crate) async fn run_chatgpt(site: &str) -> AppResult<()> {
-    api_url(site)?;
+pub(crate) async fn run_chatgpt(address: &str, explicit_api: bool) -> AppResult<()> {
+    let base = worker_url(address, explicit_api)?;
     let initial = if crate::chatgpt_auth::has_active_account()? {
         let account = crate::chatgpt_auth::active_account()?;
         eprintln!("正在检查本机 ChatGPT 注册 {account} 的模型列表…");
@@ -112,12 +143,11 @@ pub(crate) async fn run_chatgpt(site: &str) -> AppResult<()> {
         );
         None
     };
-    connect(site, SessionState(initial)).await
+    eprintln!("Mario 桥接接口：{base}");
+    connect(&base, SessionState(initial)).await
 }
 
-async fn connect(site: &str, session: SessionState) -> AppResult<()> {
-    let base = api_url(site)?;
-    eprintln!("目标网站：{site}");
+async fn connect(base: &str, session: SessionState) -> AppResult<()> {
     eprintln!("请粘贴 Mario 设置页面生成的配对码，然后回车（不需要 ChatGPT 密码或 API Key）：");
     let mut token = String::new();
     std::io::stdin().read_line(&mut token)?;
@@ -125,14 +155,11 @@ async fn connect(site: &str, session: SessionState) -> AppResult<()> {
     if token.len() != 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(AppError::Validation("配对码格式无效".into()));
     }
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(25))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+    let client = worker_client()?;
     let runner = uuid::Uuid::new_v4().to_string();
     eprintln!("正在连接；保持此进程运行，关闭窗口或按 Ctrl+C 即停止。配对最长有效 12 小时。");
     tokio::select! {
-        result = work(&client, &base, &token, &runner, session) => result,
+        result = work(&client, base, &token, &runner, session) => result,
         _ = tokio::signal::ctrl_c() => Ok(()),
     }
 }
@@ -192,11 +219,13 @@ async fn work(
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
-            return Err(AppError::Model(format!(
-                "桥接连接失败（HTTP {}）。请确认服务器已部署新版，并在网页重新配对。",
-                response.status().as_u16()
-            )));
+            return Err(poll_error(response.status(), session.auth_required()));
         }
+        let job: Option<Job> = response.json().await.map_err(|_| {
+            AppError::Model(
+                "目标服务未返回有效的桥接响应。请核对 Mario 服务地址及部署版本。".into(),
+            )
+        })?;
         if !connected {
             if session.auth_required() {
                 eprintln!("桥接已在线，请回到 Mario 设置点击“跳转 ChatGPT OAuth 登录”。");
@@ -205,7 +234,6 @@ async fn work(
             }
             connected = true;
         }
-        let job: Option<Job> = response.json().await?;
         if let Some(job) = job {
             if let Some(new_account) = job.oauth_new_account {
                 match crate::chatgpt_auth::begin_browser_login(new_account).await {
@@ -359,20 +387,80 @@ async fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{http::StatusCode, response::Redirect, routing::post, Router};
+
     #[test]
     fn preserves_site_prefix_and_rejects_insecure_remote_or_embedded_credentials() {
         assert_eq!(
-            api_url("https://www.madeagents.ai/mario/").unwrap(),
-            "https://www.madeagents.ai/mario/api/codex-bridge/worker"
+            worker_url("https://mario.example.org/mario/", false).unwrap(),
+            "https://mario.example.org/mario/api/codex-bridge/worker"
         );
-        assert!(api_url("http://127.0.0.1:4217/").is_ok());
+        assert_eq!(
+            worker_url("https://mario.example.org/custom/gateway/", true).unwrap(),
+            "https://mario.example.org/custom/gateway/codex-bridge/worker"
+        );
+        assert!(worker_url("http://127.0.0.1:4217/", false).is_ok());
         for site in [
             "http://example.org",
             "https://user:secret@example.org",
             "https://example.org/?token=x",
             "file:///tmp/test",
         ] {
-            assert!(api_url(site).is_err());
+            assert!(worker_url(site, false).is_err());
+            assert!(worker_url(site, true).is_err());
         }
+    }
+
+    #[tokio::test]
+    async fn worker_pairs_through_the_configured_api_and_rejects_redirects() {
+        let (id, token) = crate::ai::bridge::create().unwrap();
+        let router = Router::new()
+            .nest("/gateway", crate::http::codex_bridge::worker_router())
+            .route(
+                "/redirect/codex-bridge/worker/poll",
+                post(|| async { Redirect::temporary("/gateway/api/codex-bridge/worker/poll") }),
+            )
+            .route(
+                "/legacy-api/codex-bridge/worker/poll",
+                post(|| async { StatusCode::BAD_REQUEST }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let client = worker_client().unwrap();
+        let runner = uuid::Uuid::new_v4().to_string();
+        let redirect = worker_url(&format!("http://{address}/redirect"), true).unwrap();
+        let error = work(&client, &redirect, &token, &runner, SessionState(None))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("HTTP 307"));
+        assert!(error.contains("重定向"));
+        assert!(!error.contains(&token));
+        assert!(!crate::ai::bridge::status(&id).online);
+
+        let legacy = worker_url(&format!("http://{address}/legacy-api"), true).unwrap();
+        let error = work(&client, &legacy, &token, &runner, SessionState(None))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("npm run chatgpt:auth -- login"));
+
+        let base = worker_url(&format!("http://{address}/gateway/api"), true).unwrap();
+        tokio::select! {
+            result = work(&client, &base, &token, &runner, SessionState(None)) => {
+                panic!("worker exited before pairing: {result:?}");
+            }
+            online = tokio::time::timeout(Duration::from_secs(5), async {
+                while !crate::ai::bridge::status(&id).online {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }) => {
+                online.expect("worker did not pair");
+                assert!(crate::ai::bridge::status(&id).auth_required);
+            }
+        }
+        crate::ai::bridge::revoke(&id);
+        server.abort();
     }
 }
