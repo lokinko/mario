@@ -17,6 +17,11 @@ use std::{
 };
 use tokio::sync::{Mutex, Semaphore};
 
+/// Completed closes are reused for 12 hours (at most 2 refreshes per day).
+const CURRENT_CLOSE_TTL_MS: i64 = 12 * 60 * 60 * 1000;
+/// Lagging closes (post-close settlement, exchange holidays, or suspensions) retry every 30 minutes.
+const LAGGING_CLOSE_TTL_MS: i64 = 30 * 60 * 1000;
+
 pub(crate) struct PublicPriceService {
     store: Arc<PublicPrices>,
     source: Arc<dyn SecurityHistoryProvider>,
@@ -112,9 +117,9 @@ impl PublicPriceService {
                     .map_err(|_| AppError::MarketData("公共行情采集日期无效".into()))?
                     .timestamp_millis();
             let ttl = if h.adjustment_anchor == end {
-                3_600_000
+                CURRENT_CLOSE_TTL_MS
             } else {
-                60_000
+                LAGGING_CLOSE_TTL_MS
             };
             if h.window_start == crate::models::market::history::history_start(end)
                 && h.completed_through == end

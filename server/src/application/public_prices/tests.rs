@@ -236,3 +236,89 @@ async fn fresh_five_year_cache_is_backfilled_and_failed_backfills_keep_the_origi
         }
     }
 }
+
+#[tokio::test]
+async fn completed_close_is_reused_for_twelve_hours_and_lagging_close_retries_after_thirty_minutes()
+{
+    let store = Arc::new(PublicPrices::test());
+    let source = Arc::new(Source {
+        calls: AtomicUsize::new(0),
+        fail: AtomicBool::new(false),
+    });
+    let now = Utc::now();
+    let today = now.with_timezone(&chrono_tz::Asia::Shanghai).date_naive();
+    let end = close::completed_day("600941.SS", today, now);
+    let service = PublicPriceService::new(store.clone(), source.clone());
+
+    let seed = |symbol: &str, mut history: PriceHistory, age: chrono::Duration, token: &str| {
+        let fetched = now - age;
+        history.fetched_at = fetched.to_rfc3339();
+        let ts = fetched.timestamp_millis();
+        assert!(store.claim(symbol, ts, token).unwrap());
+        store.finish_at(symbol, token, &Ok(history), ts).unwrap();
+    };
+
+    // 1. Current close fetched 11 hours ago stays cached within the 12-hour window.
+    seed(
+        "600941.SS",
+        fixture("600941.SS", end),
+        chrono::Duration::hours(11),
+        "cur-fresh",
+    );
+    service.history("600941.SS", end).await.unwrap();
+    assert_eq!(
+        source.calls.load(Ordering::SeqCst),
+        0,
+        "completed close must reuse cache inside 12-hour TTL"
+    );
+
+    // 2. Current close fetched 13 hours ago refreshes once.
+    seed(
+        "600036.SS",
+        fixture("600036.SS", end),
+        chrono::Duration::hours(13),
+        "cur-stale",
+    );
+    service.history("600036.SS", end).await.unwrap();
+    assert_eq!(
+        source.calls.load(Ordering::SeqCst),
+        1,
+        "completed close must refresh once 12-hour TTL elapses"
+    );
+
+    // 3. Lagging close (adjustment_anchor < end) stays cached inside 30 minutes.
+    let mut lagging_fresh = fixture("600519.SS", end);
+    lagging_fresh.bars.pop();
+    lagging_fresh = lagging_fresh.normalize().unwrap();
+    assert!(lagging_fresh.adjustment_anchor < end);
+    seed(
+        "600519.SS",
+        lagging_fresh,
+        chrono::Duration::minutes(20),
+        "lag-fresh",
+    );
+    service.history("600519.SS", end).await.unwrap();
+    assert_eq!(
+        source.calls.load(Ordering::SeqCst),
+        1,
+        "lagging close must stay cached within 30-minute retry window"
+    );
+
+    // 4. Lagging close older than 30 minutes retries once.
+    let mut lagging_stale = fixture("600900.SS", end);
+    lagging_stale.bars.pop();
+    lagging_stale = lagging_stale.normalize().unwrap();
+    assert!(lagging_stale.adjustment_anchor < end);
+    seed(
+        "600900.SS",
+        lagging_stale,
+        chrono::Duration::minutes(35),
+        "lag-stale",
+    );
+    service.history("600900.SS", end).await.unwrap();
+    assert_eq!(
+        source.calls.load(Ordering::SeqCst),
+        2,
+        "lagging close must retry after 30-minute window"
+    );
+}
